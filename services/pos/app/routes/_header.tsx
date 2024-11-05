@@ -12,6 +12,10 @@ export default function BaseHeader() {
   const isOnline = useOnlineStatus();
   const isOperational = useOrderStat();
 
+  /**
+   * BAD
+   * https://ja.react.dev/learn/you-might-not-need-an-effect#initializing-the-application
+   */
   useEffect(() => {
     onAuthStateChanged(auth, (user) => {
       if (user?.emailVerified) {

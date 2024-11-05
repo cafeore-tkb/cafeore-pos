@@ -15,6 +15,9 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
     [order],
   );
 
+  /**
+   * OK
+   */
   useEffect(() => {
     if (focus) {
       buttonRef.current?.focus();

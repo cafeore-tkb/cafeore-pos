@@ -24,6 +24,10 @@ const AttractiveInput = ({ focus, onTextSet, ...props }: props) => {
     [],
   );
 
+  /**
+   * FIXME #412 stateの更新にはuseEffectを使わない
+   * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
+   */
   useEffect(() => {
     onTextSet(text);
   }, [text, onTextSet]);

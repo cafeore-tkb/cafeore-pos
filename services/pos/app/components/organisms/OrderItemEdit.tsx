@@ -68,6 +68,9 @@ const OrderItemEdit = memo(
     }, [itemFocus, onRemoveItem]);
 
     // ↑・↓ が押されたときに itemFocus を移動
+    /**
+     * OK
+     */
     useEffect(() => {
       const handler = (event: KeyboardEvent) => {
         switch (event.key) {
@@ -90,6 +93,9 @@ const OrderItemEdit = memo(
     }, [focus, moveItemFocus]);
 
     // Enter が押されたときに assign 入力欄を開く
+    /**
+     * OK
+     */
     useEffect(() => {
       const handler = (event: KeyboardEvent) => {
         if (event.key === "Enter") {
@@ -106,6 +112,9 @@ const OrderItemEdit = memo(
 
     // キー操作でアイテムを追加
     // Backspace でアイテムを削除
+    /**
+     * OK
+     */
     useEffect(() => {
       const handler = (event: KeyboardEvent) => {
         if (!focus) return;
@@ -122,6 +131,9 @@ const OrderItemEdit = memo(
     }, [focus, onAddItem, removeItem, editable]);
 
     // focus が外れたときに itemFocus をリセット
+    /**
+     * OK
+     */
     useEffect(() => {
       if (!focus) {
         setItemFocus(-1);
@@ -132,6 +144,10 @@ const OrderItemEdit = memo(
     }, [focus]);
 
     // itemFocus が range 外に出ないように調整
+    /**
+     * FIXME #412 useEffect内でstateを更新している
+     * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
+     */
     useEffect(() => {
       setItemFocus((prev) =>
         Math.min(order.items.length - 1, Math.max(-1, prev)),

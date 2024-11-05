@@ -9,6 +9,10 @@ export const useRawPrinter = () => {
   const ePosDeviceRef = useRef();
   const printerRef = useRef();
 
+  /**
+   * BAD
+   * https://ja.react.dev/learn/you-might-not-need-an-effect#initializing-the-application
+   */
   useEffect(() => {
     if (status === "init") {
       connect();

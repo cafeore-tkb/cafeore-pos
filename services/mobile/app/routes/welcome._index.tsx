@@ -26,6 +26,10 @@ export default function Welcome() {
     documentSub({ converter: orderConverter }),
   );
 
+  /**
+   * 注文が完了した際に音を鳴らす
+   * OK
+   */
   useEffect(() => {
     if (!order?.readyAt) {
       return;

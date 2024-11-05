@@ -39,10 +39,17 @@ export default function CasherMini() {
     return order?.orderId;
   }, [order, logoShown, preOrder]);
 
+  /**
+   * FIXME #412 useEffect内でstateを更新している
+   * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
+   */
   useEffect(() => {
     setLogoShown(submittedOrderId != null || !isOperational);
   }, [submittedOrderId, isOperational]);
 
+  /**
+   * OK
+   */
   useEffect(() => {
     if (!logoShown) {
       return;
@@ -50,6 +57,9 @@ export default function CasherMini() {
     videoRef.current?.play();
   }, [logoShown]);
 
+  /**
+   * OK
+   */
   useEffect(() => {
     if (submittedOrderId === null) {
       return;

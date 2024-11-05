@@ -21,6 +21,9 @@ type props = ComponentProps<typeof DrawerPrimitive.Root> & {
 const ConfirmDrawer = ({ children, focus, onConfirm, ...props }: props) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
+  /**
+   * OK
+   */
   useEffect(() => {
     console.log("use eefect");
     const wait = async () => {
