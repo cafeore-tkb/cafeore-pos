@@ -1,5 +1,10 @@
 # cafeore
 
+## Get Started
+
+1. Run `pnpm i` to install dependencies.
+2. Run `pnpm setup` to setup git hooks. (First time only)
+
 ## Commands
 |command|description|
 |--|--|
