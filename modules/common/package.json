@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dl-store": "tsx scripts/download-firestore.ts",
+    "dl-store": "tsx src/scripts/download-firestore.ts",
     "test:unit": "vitest test -t unit",
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"
   },
