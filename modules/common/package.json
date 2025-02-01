@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dl-store": "tsx scripts/download-firestore.ts",
     "test:unit": "bun test -t unit",
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'bun test -t db'"
   },
@@ -14,7 +15,8 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.4",
+    "@types/node": "^22.13.0",
     "firebase-tools": "^13.20.2",
-    "vite": "^5.4.8"
+    "tsx": "^4.19.2"
   }
 }
