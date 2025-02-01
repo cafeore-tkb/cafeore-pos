@@ -1,0 +1,32 @@
+{
+  "name": "@cafeore/common",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "types": "./build/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -d -p tsconfig.json",
+    "dl-store": "tsx src/scripts/download-firestore.ts",
+    "test:unit": "vitest test -t unit",
+    "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"
+  },
+  "dependencies": {
+    "@remix-run/react": "^2.13.1",
+    "firebase": "^10.14.0",
+    "lodash": "^4.17.21",
+    "swr": "^2.2.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "@types/lodash": "^4.17.12",
+    "@types/node": "^22.13.0",
+    "firebase-tools": "^13.20.2",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.3"
+  }
+}
