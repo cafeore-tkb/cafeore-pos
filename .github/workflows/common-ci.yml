@@ -1,0 +1,33 @@
+name: common
+
+on:
+  pull_request:
+    paths:
+      - 'modules/common/**'
+      - '.github/workflows/common-ci.yml'
+
+defaults:
+  run:
+    working-directory: modules/common
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run typecheck
+
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run test:unit
+
+  db-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run test:db
