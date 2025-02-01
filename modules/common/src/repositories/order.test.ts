@@ -1,9 +1,9 @@
-import { beforeAll, describe, expect, test } from "vitest";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import type { Firestore } from "firebase/firestore";
-import { ItemEntity } from "../models/item";
+import { beforeAll, describe, expect, test } from "vitest";
 import firebasejson from "../../firebase.json";
 import type { WithId } from "../lib/typeguard";
+import { ItemEntity } from "../models/item";
 import { OrderEntity } from "../models/order";
 import { orderRepoFactory } from "./order";
 import type { OrderRepository } from "./type";
