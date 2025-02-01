@@ -55,6 +55,10 @@ const DiscountInput = memo(
       [discountOrder],
     );
 
+    /**
+     * FIXME #412 useEffect内でstateを更新している
+     * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
+     */
     useEffect(() => {
       if (isComplete && discountOrder) {
         onDiscountOrderFind(discountOrder);

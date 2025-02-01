@@ -57,6 +57,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
 
   usePreventNumberKeyUpDown();
 
+  /**
+   * FIXME #412 useEffect内でstateを更新している
+   * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
+   */
   useEffect(() => {
     newOrderDispatch({ type: "updateOrderId", orderId: nextOrderId });
   }, [nextOrderId, newOrderDispatch]);
@@ -95,6 +99,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     };
   }, [proceedStatus, previousStatus, resetAll]);
 
+  /**
+   * OK
+   */
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const key = event.key;

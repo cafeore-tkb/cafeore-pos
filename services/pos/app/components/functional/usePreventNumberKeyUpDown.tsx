@@ -4,6 +4,9 @@ import { useEffect } from "react";
  * 上下キーで数値を増減させないEffect
  */
 const usePreventNumberKeyUpDown = () => {
+  /**
+   * OK
+   */
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {

@@ -8,6 +8,9 @@ import { useEffect, useRef } from "react";
 const useFocusRef = <T extends HTMLElement>(focus: boolean) => {
   const DOMRef = useRef<T>(null);
 
+  /**
+   * OK
+   */
   useEffect(() => {
     if (focus) {
       DOMRef.current?.focus();
