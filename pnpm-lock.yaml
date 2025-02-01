@@ -57,6 +57,9 @@ importers:
 
   services/mobile:
     dependencies:
+      '@cafeore/common':
+        specifier: workspace:*
+        version: link:../../modules/common
       '@remix-run/cloudflare':
         specifier: ^2.13.1
         version: 2.15.3(@cloudflare/workers-types@4.20250129.0)(typescript@5.7.3)
@@ -66,6 +69,9 @@ importers:
       '@remix-run/react':
         specifier: ^2.13.1
         version: 2.15.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.7.3)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       isbot:
         specifier: ^5.1.17
         version: 5.1.22
@@ -81,6 +87,9 @@ importers:
       swr:
         specifier: ^2.2.5
         version: 2.3.0(react@18.3.1)
+      tailwind-merge:
+        specifier: ^2.5.4
+        version: 2.6.0
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241022.0
