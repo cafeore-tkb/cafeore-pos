@@ -1,4 +1,8 @@
-import { documentSub, cashierStateConverter, orderConverter } from "@cafeore/common";
+import {
+  cashierStateConverter,
+  documentSub,
+  orderConverter,
+} from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWRSubscription from "swr/subscription";

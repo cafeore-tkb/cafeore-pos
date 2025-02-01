@@ -1,6 +1,6 @@
+import type { OrderEntity, WithId } from "@cafeore/common";
 import { useState } from "react";
 import { Input } from "../ui/input";
-import { WithId, OrderEntity } from "@cafeore/common";
 
 type props = {
   order: WithId<OrderEntity>;

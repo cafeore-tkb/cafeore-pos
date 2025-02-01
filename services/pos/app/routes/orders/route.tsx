@@ -1,4 +1,8 @@
-import { orderRepository, useClientLoaderData, type2label } from "@cafeore/common";
+import {
+  orderRepository,
+  type2label,
+  useClientLoaderData,
+} from "@cafeore/common";
 import { Form, type MetaFunction } from "@remix-run/react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";

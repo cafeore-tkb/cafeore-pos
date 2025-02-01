@@ -66,10 +66,5 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "trustedDependencies": [
-    "@biomejs/biome",
-    "esbuild",
-    "protobufjs",
-    "re2"
-  ]
+  "trustedDependencies": ["@biomejs/biome", "esbuild", "protobufjs", "re2"]
 }

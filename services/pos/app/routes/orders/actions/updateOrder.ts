@@ -1,7 +1,6 @@
 import { orderRepository } from "@cafeore/common";
 import type { ClientActionFunctionArgs } from "@remix-run/react";
 
-
 export const updateOrder = async ({ request }: ClientActionFunctionArgs) => {
   const formData = await request.formData();
   console.log("save(update)のテスト");

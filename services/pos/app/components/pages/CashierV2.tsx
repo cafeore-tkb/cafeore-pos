@@ -1,3 +1,4 @@
+import type { ItemEntity, OrderEntity, WithId } from "@cafeore/common";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
@@ -18,7 +19,6 @@ import { OrderItemEdit } from "../organisms/OrderItemEdit";
 import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
 import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
-import { WithId, ItemEntity, OrderEntity } from "@cafeore/common";
 
 type props = {
   items: WithId<ItemEntity>[] | undefined;

@@ -1,3 +1,4 @@
+import { type OrderEntity, type2label } from "@cafeore/common";
 import { type ComponentPropsWithoutRef, forwardRef } from "react";
 import {
   AlertDialog,
@@ -9,7 +10,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
-import { OrderEntity, type2label } from "@cafeore/common";
 
 // TODO: 表示内容が整ってないので、きれいにする
 /**

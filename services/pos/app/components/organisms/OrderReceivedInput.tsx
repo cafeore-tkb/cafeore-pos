@@ -1,7 +1,7 @@
+import type { OrderEntity } from "@cafeore/common";
 import { CrossCircledIcon } from "@radix-ui/react-icons";
 import { memo, useMemo } from "react";
 import { AttractiveInput } from "../molecules/AttractiveInput";
-import { OrderEntity } from "@cafeore/common";
 
 type props = {
   order: OrderEntity;

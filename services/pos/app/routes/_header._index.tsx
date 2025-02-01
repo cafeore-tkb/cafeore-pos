@@ -1,4 +1,4 @@
-import { prodDB, converter, itemSchema } from "@cafeore/common";
+import { converter, itemSchema, prodDB } from "@cafeore/common";
 import { type MetaFunction, useLoaderData } from "@remix-run/react";
 import { collection, getDocs } from "firebase/firestore";
 import { Button } from "~/components/ui/button";

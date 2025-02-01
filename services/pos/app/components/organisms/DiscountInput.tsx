@@ -1,3 +1,4 @@
+import { OrderEntity, type WithId } from "@cafeore/common";
 import { CheckCircledIcon, CrossCircledIcon } from "@radix-ui/react-icons";
 import {
   type ComponentPropsWithoutRef,
@@ -9,7 +10,6 @@ import {
 import { cn } from "~/lib/utils";
 import { useFocusRef } from "../functional/useFocusRef";
 import { ThreeDigitsInput } from "../molecules/ThreeDigitsInput";
-import { WithId, OrderEntity } from "@cafeore/common";
 
 const findByOrderId = (
   orders: WithId<OrderEntity>[] | undefined,

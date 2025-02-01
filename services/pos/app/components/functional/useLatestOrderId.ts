@@ -1,4 +1,4 @@
-import { WithId, OrderEntity } from "@cafeore/common";
+import type { OrderEntity, WithId } from "@cafeore/common";
 import { useMemo } from "react";
 
 /**

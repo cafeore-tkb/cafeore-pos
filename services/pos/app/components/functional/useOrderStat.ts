@@ -1,4 +1,8 @@
-import { documentSub, masterStateConverter, MasterStateEntity } from "@cafeore/common";
+import {
+  MasterStateEntity,
+  documentSub,
+  masterStateConverter,
+} from "@cafeore/common";
 import useSWRSubscription from "swr/subscription";
 
 /**

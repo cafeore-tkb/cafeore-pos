@@ -1,4 +1,10 @@
-import { collectionSub, orderConverter, itemSource, ITEM_MASTER, OrderEntity } from "@cafeore/common";
+import {
+  ITEM_MASTER,
+  type OrderEntity,
+  collectionSub,
+  itemSource,
+  orderConverter,
+} from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";

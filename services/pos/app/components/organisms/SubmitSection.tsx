@@ -1,6 +1,6 @@
+import type { OrderEntity } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
-import { OrderEntity } from "@cafeore/common";
 
 type props = {
   submitOrder: () => void;

@@ -1,4 +1,4 @@
-import { WithId, ItemEntity, key2item } from "@cafeore/common";
+import { type ItemEntity, type WithId, key2item } from "@cafeore/common";
 import { Button } from "../ui/button";
 
 type props = {

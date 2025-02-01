@@ -1,4 +1,4 @@
-import { WithId, ItemEntity, OrderEntity } from "@cafeore/common";
+import { type ItemEntity, OrderEntity, type WithId } from "@cafeore/common";
 import { useReducer } from "react";
 
 type BaseAction<TypeName extends string> = { type: TypeName };
