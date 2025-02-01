@@ -23,7 +23,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^3.0.4",
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@types/lodash": "^4.17.12",
     "@types/node": "^22.13.0",
     "dayjs": "^1.11.13",
