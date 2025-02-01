@@ -4,13 +4,14 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": "./build/index.js",
-      "types": "./build/index.d.ts"
+      "default": "./src/index.ts"
     }
   },
   "scripts": {
+    "typecheck": "tsc",
     "build": "tsc -d -p tsconfig.json",
-    "dl-store": "tsx src/scripts/download-firestore.ts",
+    "dl-store": "tsx src/scripts/download-orders.ts",
+    "dl-state": "tsx src/scripts/download-master-state.ts",
     "test:unit": "vitest test -t unit",
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"
   },

@@ -4,7 +4,6 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "sync": "pnpm i --frozen-lockfile",
     "build": "remix vite:build",
     "dev": "remix vite:dev",
     "preview": "vite preview",
