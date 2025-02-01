@@ -4,13 +4,10 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "sync": "bun install --frozen-lockfile",
     "build": "remix vite:build",
     "deploy": "wrangler pages deploy ./build/client",
     "start": "wrangler pages dev ./build/client",
     "dev": "remix vite:dev",
-    "lint": "biome check",
-    "fmt": "biome check --write",
     "typecheck": "tsc",
     "typegen": "wrangler types"
   },
