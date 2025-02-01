@@ -39,6 +39,9 @@ importers:
       '@types/node':
         specifier: ^22.13.0
         version: 22.13.0
+      dayjs:
+        specifier: ^1.11.13
+        version: 1.11.13
       firebase-tools:
         specifier: ^13.20.2
         version: 13.29.3(encoding@0.1.13)
