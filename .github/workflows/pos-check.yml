@@ -3,13 +3,13 @@ name: pos / check
 on:
   push:
     paths:
-      - "pos/**"
-      - "common/**"
+      - "services/pos/**"
+      - "modules/common/**"
       - ".github/workflows/pos-check.yml"
 
 defaults:
   run:
-    working-directory: ./pos
+    working-directory: ./services/pos
 
 jobs:
   biome:

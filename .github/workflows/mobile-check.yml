@@ -3,13 +3,13 @@ name: mobile / check
 on:
   push:
     paths:
-      - "mobile/**"
-      - "common/**"
+      - "services/mobile/**"
+      - "modules/common/**"
       - ".github/workflows/mobile-check.yml"
 
 defaults:
   run:
-    working-directory: ./mobile
+    working-directory: ./services/mobile
 
 jobs:
   biome:

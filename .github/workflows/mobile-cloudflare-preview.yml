@@ -3,13 +3,13 @@ name: mobile / preview
 on:
   pull_request:
     paths:
-      - "mobile/**"
-      - "common/**"
+      - "services/mobile/**"
+      - "modules/common/**"
       - ".github/workflows/mobile-cloudflare-preview.yml"
 
 defaults:
   run:
-    working-directory: ./mobile
+    working-directory: ./services/mobile
 
 permissions:
   contents: read

@@ -8,13 +8,13 @@ on:
     branches:
       - main
     paths:
-      - "pos/**"
-      - "common/**"
+      - "services/pos/**"
+      - "modules/common/**"
       - ".github/workflows/pos-firebase-hosting-merge.yml"
   
 defaults:
   run:
-    working-directory: ./pos
+    working-directory: ./services/pos
   
 jobs:
   build_and_deploy:

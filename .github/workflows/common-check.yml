@@ -3,12 +3,12 @@ name: common / check
 on:
   push:
     paths:
-      - "common/**"
+      - "modules/common/**"
       - ".github/workflows/common-check.yml"
 
 defaults:
   run:
-    working-directory: ./common
+    working-directory: ./modules/common
 
 jobs:
   biome:
