@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dl-store": "tsx scripts/download-firestore.ts",
-    "test:unit": "bun test -t unit",
-    "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'bun test -t db'"
+    "test:unit": "vitest test -t unit",
+    "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"
   },
   "dependencies": {
     "firebase": "^10.14.0",
@@ -17,6 +17,7 @@
     "@firebase/rules-unit-testing": "^3.0.4",
     "@types/node": "^22.13.0",
     "firebase-tools": "^13.20.2",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.3"
   }
 }
