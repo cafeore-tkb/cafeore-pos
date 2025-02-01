@@ -1,8 +1,15 @@
 {
-  "name": "common",
+  "name": "@cafeore/common",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "types": "./build/index.d.ts"
+    }
+  },
   "scripts": {
+    "build": "tsc -d -p tsconfig.json",
     "dl-store": "tsx src/scripts/download-firestore.ts",
     "test:unit": "vitest test -t unit",
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"

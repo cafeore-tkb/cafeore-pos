@@ -112,6 +112,9 @@ importers:
 
   services/pos:
     dependencies:
+      '@cafeore/common':
+        specifier: workspace:*
+        version: link:../../modules/common
       '@conform-to/react':
         specifier: ^1.2.2
         version: 1.2.2(react@18.3.1)
