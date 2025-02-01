@@ -1,6 +1,4 @@
-import { key2item } from "common/data/items";
-import type { WithId } from "common/lib/typeguard";
-import type { ItemEntity } from "common/models/item";
+import { WithId, ItemEntity, key2item } from "@cafeore/common";
 import { Button } from "../ui/button";
 
 type props = {

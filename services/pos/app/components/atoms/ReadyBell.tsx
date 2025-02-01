@@ -1,5 +1,4 @@
-import type { WithId } from "common/lib/typeguard";
-import type { OrderEntity } from "common/models/order";
+import type { OrderEntity,  WithId } from "@cafeore/common";
 import { HiBell, HiBellAlert } from "react-icons/hi2";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";

@@ -1,6 +1,6 @@
-import type { OrderEntity } from "common/models/order";
 import { useMemo } from "react";
 import { Input } from "../ui/input";
+import { OrderEntity } from "@cafeore/common";
 
 type props = {
   order: OrderEntity;

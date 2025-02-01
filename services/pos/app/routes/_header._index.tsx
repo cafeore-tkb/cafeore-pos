@@ -1,7 +1,5 @@
+import { prodDB, converter, itemSchema } from "@cafeore/common";
 import { type MetaFunction, useLoaderData } from "@remix-run/react";
-import { converter } from "common/firebase-utils/converter";
-import { prodDB } from "common/firebase-utils/firebase";
-import { itemSchema } from "common/models/item";
 import { collection, getDocs } from "firebase/firestore";
 import { Button } from "~/components/ui/button";
 

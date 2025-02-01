@@ -1,5 +1,5 @@
+import { auth, login, logout } from "@cafeore/common";
 import { Outlet } from "@remix-run/react";
-import { auth, login, logout } from "common/firebase-utils/firebase";
 import { type User, onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";

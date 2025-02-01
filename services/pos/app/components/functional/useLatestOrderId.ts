@@ -1,5 +1,4 @@
-import type { WithId } from "common/lib/typeguard";
-import type { OrderEntity } from "common/models/order";
+import { WithId, OrderEntity } from "@cafeore/common";
 import { useMemo } from "react";
 
 /**

@@ -1,6 +1,4 @@
-import { masterStateConverter } from "common/firebase-utils/converter";
-import { documentSub } from "common/firebase-utils/subscription";
-import { MasterStateEntity } from "common/models/global";
+import { documentSub, masterStateConverter, MasterStateEntity } from "@cafeore/common";
 import useSWRSubscription from "swr/subscription";
 
 /**

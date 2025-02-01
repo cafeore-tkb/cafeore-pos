@@ -1,10 +1,9 @@
 import { Cross2Icon, Pencil2Icon } from "@radix-ui/react-icons";
-import type { WithId } from "common/lib/typeguard";
-import { type ItemEntity, type2label } from "common/models/item";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "~/lib/utils";
 import { useFocusRef } from "../functional/useFocusRef";
 import { Input } from "../ui/input";
+import { WithId, ItemEntity, type2label } from "@cafeore/common";
 
 type props = {
   item: WithId<ItemEntity>;

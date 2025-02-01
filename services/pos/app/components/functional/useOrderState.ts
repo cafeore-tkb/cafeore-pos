@@ -1,6 +1,4 @@
-import type { WithId } from "common/lib/typeguard";
-import type { ItemEntity } from "common/models/item";
-import { OrderEntity } from "common/models/order";
+import { WithId, ItemEntity, OrderEntity } from "@cafeore/common";
 import { useReducer } from "react";
 
 type BaseAction<TypeName extends string> = { type: TypeName };

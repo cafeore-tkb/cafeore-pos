@@ -1,5 +1,4 @@
-import type { ItemEntity } from "common/models/item";
-import type { OrderEntity } from "common/models/order";
+import { ItemEntity, OrderEntity } from "@cafeore/common";
 import { useRawPrinter } from "./printer";
 
 export const usePrinter = () => {

@@ -1,4 +1,4 @@
-import type { OrderEntity } from "common/models/order";
+import { OrderEntity } from "@cafeore/common";
 import { useEffect } from "react";
 
 export const useSyncCahiserOrder = (
