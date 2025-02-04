@@ -1,10 +1,4 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-pnpm fmt
-retval=$?
-
-if [ $retval -ne 0 ]
-then
-  exit 1
-fi
+pnpm exec lint-staged
