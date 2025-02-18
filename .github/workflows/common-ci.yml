@@ -6,6 +6,7 @@ on:
       - 'modules/common/**'
       - '.github/workflows/common-ci.yml'
       - 'pnpm-lock.yaml'
+  merge_group:
 
 defaults:
   run:
