@@ -6,6 +6,7 @@ on:
       - 'services/pos/**'
       - 'modules/common/**'
       - '.github/workflows/common-ci.yml'
+      - 'pnpm-lock.yaml'
 
 defaults:
   run:

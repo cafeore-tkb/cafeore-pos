@@ -5,6 +5,7 @@ on:
     paths:
       - 'modules/common/**'
       - '.github/workflows/common-ci.yml'
+      - 'pnpm-lock.yaml'
 
 defaults:
   run:

@@ -7,6 +7,7 @@ on:
       - "services/pos/**"
       - "modules/common/**"
       - ".github/workflows/pos-deploy-pull-request.yml"
+      - "pnpm-lock.yaml"
 
 defaults:
   run:
@@ -31,6 +32,6 @@ jobs:
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CAFEORE_2024 }}
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_CAFEORE_2024 }}"
           projectId: cafeore-2024
           entryPoint: services/pos
