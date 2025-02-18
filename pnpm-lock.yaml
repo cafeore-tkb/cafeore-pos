@@ -30,8 +30,8 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       swr:
-        specifier: ^2.2.5
-        version: 2.3.0(react@18.3.1)
+        specifier: ^2.3.2
+        version: 2.3.2(react@18.3.1)
       zod:
         specifier: ^3.23.8
         version: 3.24.1
@@ -88,8 +88,8 @@ importers:
         specifier: ^5.3.0
         version: 5.4.0(react@18.3.1)
       swr:
-        specifier: ^2.2.5
-        version: 2.3.0(react@18.3.1)
+        specifier: ^2.3.2
+        version: 2.3.2(react@18.3.1)
       tailwind-merge:
         specifier: ^2.5.4
         version: 2.6.0
@@ -224,8 +224,8 @@ importers:
         specifier: ^1.5.0
         version: 1.7.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       swr:
-        specifier: ^2.2.5
-        version: 2.3.0(react@18.3.1)
+        specifier: ^2.3.2
+        version: 2.3.2(react@18.3.1)
       tailwind-merge:
         specifier: ^2.5.4
         version: 2.6.0
@@ -5570,8 +5570,8 @@ packages:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
 
-  swr@2.3.0:
-    resolution: {integrity: sha512-NyZ76wA4yElZWBHzSgEJc28a0u6QZvhb6w0azeL2k7+Q1gAzVK+IqQYXhVOC/mzi+HZIozrZvBVeSeOZNR2bqA==}
+  swr@2.3.2:
+    resolution: {integrity: sha512-RosxFpiabojs75IwQ316DGoDRmOqtiAj0tg8wCcbEu4CiLZBs/a9QNtHV7TUfDXmmlgqij/NqzKq/eLelyv9xA==}
     peerDependencies:
       react: ^16.11.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -12031,7 +12031,7 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  swr@2.3.0(react@18.3.1):
+  swr@2.3.2(react@18.3.1):
     dependencies:
       dequal: 2.0.3
       react: 18.3.1
