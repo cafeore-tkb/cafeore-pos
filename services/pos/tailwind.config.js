@@ -52,6 +52,7 @@ module.exports = {
           foreground: "hsl(var(--card-foreground))",
         },
         theme: "#a59aca",
+        theme2025: "#006763",
         hot: "#f74316",
         ice: "#0ebbf0",
         ore: "#834f2f",
