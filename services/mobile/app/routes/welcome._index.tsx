@@ -142,14 +142,14 @@ export default function Welcome() {
             </div>
           ) : (
             <div className="flex h-5/6">
-              <div className="h-full flex-1">
-                <div className="flex h-3/8 items-center justify-center">
+              <div className="flex h-full flex-col">
+                <div className="flex flex-[3] items-center justify-center">
                   <h1>オーダーの提供状況</h1>
                 </div>
-                <div className="flex h-5/8 items-center justify-center">
+                <div className="flex flex-[5] items-center justify-center">
                   <ViewState order={order} />
                 </div>
-                <div className="flex h-1/4 items-center justify-center">
+                <div className="flex flex-[4] items-center justify-center">
                   {order.servedAt && (
                     <div>
                       <h1 className="text-2xl">
@@ -174,6 +174,7 @@ export default function Welcome() {
               </div>
             </div>
           )}
+          {/* 珈琲・俺Webサイト見てね！を入れる */}
         </div>
         <footer className="h-1/6 w-screen bg-gray-100">
           <a
