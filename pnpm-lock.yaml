@@ -140,8 +140,8 @@ importers:
         specifier: ^1.2.2
         version: 1.8.2(zod@3.25.76)
       '@fontsource-variable/noto-sans-jp':
-        specifier: ^5.1.0
-        version: 5.2.6
+        specifier: ^5.2.9
+        version: 5.2.9
       '@fontsource/zen-old-mincho':
         specifier: ^5.1.0
         version: 5.2.6
@@ -1373,8 +1373,8 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@fontsource-variable/noto-sans-jp@5.2.6':
-    resolution: {integrity: sha512-YjN8UF1hX8ZFkYx95NMz8XeojsCIF5dGPu1htoWkbXyTZj3Z29cxDT8glaT/cOg1BstyOlmtvNC8crPF5Csj/w==}
+  '@fontsource-variable/noto-sans-jp@5.2.9':
+    resolution: {integrity: sha512-osPL5f7dvGDjuMuFwDTGPLG37030D8X5zk+3BWea6txAVDFeE/ZIrKW0DY0uSDfRn9+NiKbiFn/2QvZveKXTog==}
 
   '@fontsource/zen-old-mincho@5.2.6':
     resolution: {integrity: sha512-d3ZDFonjo2IJ22caT8RJWGalXI4k0gFG/T1aPM7aPo7+a1cPjcFFtLTwibM2c6/5R4AhnMJRF8kkQqWQ2SgjpQ==}
@@ -7437,7 +7437,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@fontsource-variable/noto-sans-jp@5.2.6': {}
+  '@fontsource-variable/noto-sans-jp@5.2.9': {}
 
   '@fontsource/zen-old-mincho@5.2.6': {}
 
