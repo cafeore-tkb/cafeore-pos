@@ -1,30 +1,15 @@
-import { auth, login, logout } from "@cafeore/common";
+import { login, logout } from "@cafeore/common";
 import { Outlet } from "@remix-run/react";
-import { type User, onAuthStateChanged } from "firebase/auth";
-import { useEffect, useState } from "react";
+import { useAuth } from "~/components/functional/useAuth";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
 export default function BaseHeader() {
-  const [user, setUser] = useState<User | null>(null);
+  const user = useAuth();
   const isOnline = useOnlineStatus();
   const isOperational = useOrderStat();
-
-  /**
-   * BAD
-   * https://ja.react.dev/learn/you-might-not-need-an-effect#initializing-the-application
-   */
-  useEffect(() => {
-    onAuthStateChanged(auth, (user) => {
-      if (user?.emailVerified) {
-        setUser(user);
-      } else {
-        setUser(null);
-      }
-    });
-  }, []);
 
   return (
     <div>
