@@ -7,9 +7,9 @@ type RawItemSource = {
 
 export const ITEM_MASTER = {
   "-": {
-    id: "01_beppin_brend",
-    name: "べっぴんブレンド",
-    abbr: "べっぴん",
+    id: "01_yushou_brend",
+    name: "優勝ブレンド",
+    abbr: "優勝",
     price: 500,
     type: "hot",
   },
@@ -28,9 +28,9 @@ export const ITEM_MASTER = {
     type: "hot",
   },
   ";": {
-    id: "04_mandheling",
-    name: "マンデリン",
-    abbr: "マンデ",
+    id: "04_kilimanjaro",
+    name: "キリマンジャロ",
+    abbr: "キリマン",
     price: 400,
     type: "hot",
   },
@@ -42,9 +42,9 @@ export const ITEM_MASTER = {
     type: "hot",
   },
   "]": {
-    id: "06_costa_rica_red_honey",
-    name: "コスタリカ レッドハニー",
-    abbr: "コスタ",
+    id: "06_toraja",
+    name: "トラジャ",
+    abbr: "トラジャ",
     price: 400,
     type: "hot",
   },
@@ -54,13 +54,6 @@ export const ITEM_MASTER = {
     abbr: "氷",
     price: 400,
     type: "ice",
-  },
-  "@": {
-    id: "20_hot_ore",
-    name: "ホットオレ",
-    abbr: "Hotオレ",
-    price: 500,
-    type: "hotOre",
   },
   "[": {
     id: "30_ice_ore",
