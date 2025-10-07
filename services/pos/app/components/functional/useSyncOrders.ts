@@ -11,13 +11,13 @@ type props = {
  * @returns
  */
 export const useSyncOrders = ({ disableFirebase }: props) => {
-  if (disableFirebase) {
-    return undefined;
-  }
   const { data: orders } = useSWRSubscription(
     "orders",
     collectionSub({ converter: orderConverter }),
   );
 
+  if (disableFirebase) {
+    return undefined;
+  }
   return orders;
 };

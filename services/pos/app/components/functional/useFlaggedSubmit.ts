@@ -5,6 +5,7 @@ type props = {
 };
 
 export const useFlaggedSubmit = ({ disableFirebase }: props) => {
+  const submit = useSubmit();
   if (disableFirebase) {
     return () => {
       console.warn(
@@ -12,6 +13,5 @@ export const useFlaggedSubmit = ({ disableFirebase }: props) => {
       );
     };
   }
-  const submit = useSubmit();
   return submit;
 };
