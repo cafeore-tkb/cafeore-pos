@@ -1,8 +1,16 @@
 import { auth } from "@cafeore/common";
 import { type User, onAuthStateChanged } from "firebase/auth";
-import { useEffect, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
-export const useAuth = () => {
+const AuthContext = createContext<User | null>(null);
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(
@@ -17,5 +25,7 @@ export const useAuth = () => {
     [],
   );
 
-  return user;
+  return <AuthContext.Provider value={user}>{children}</AuthContext.Provider>;
 };
+
+export const useAuth = () => useContext(AuthContext);
