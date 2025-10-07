@@ -7,13 +7,10 @@ import {
   stringToJSONSchema,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import {
-  type ClientActionFunction,
-  type MetaFunction,
-  useSearchParams,
-} from "@remix-run/react";
+import type { ClientActionFunction, MetaFunction } from "@remix-run/react";
 import { useCallback } from "react";
 import { z } from "zod";
+import { useAuth } from "~/components/functional/useAuth";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { useSyncOrders } from "~/components/functional/useSyncOrders";
 import { CashierV2 } from "~/components/pages/CashierV2";
@@ -22,13 +19,10 @@ export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
 };
 
-const DISABLE_FIREBASE = "dont_connect_to_firebase";
-
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
-  // dont_connect_to_firebase = true にすると、Firebase に接続しない
-  const [searchParams, setSearchParams] = useSearchParams();
-  const disableFirebase = searchParams.get(DISABLE_FIREBASE) === "true";
+  const user = useAuth();
+  const disableFirebase = user == null;
   const items = itemSource;
   const orders = useSyncOrders({ disableFirebase });
   const submit = useFlaggedSubmit({ disableFirebase });
