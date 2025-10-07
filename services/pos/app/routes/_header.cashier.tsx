@@ -8,9 +8,9 @@ import {
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import type { ClientActionFunction, MetaFunction } from "@remix-run/react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { z } from "zod";
-import { useAuth } from "~/components/functional/useAuth";
+import { useAuth } from "~/components/functional/AuthProvider";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { useSyncOrders } from "~/components/functional/useSyncOrders";
 import { CashierV2 } from "~/components/pages/CashierV2";
@@ -22,7 +22,7 @@ export const meta: MetaFunction = () => {
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const user = useAuth();
-  const disableFirebase = user == null;
+  const disableFirebase = useMemo(() => user == null, [user]);
   const items = itemSource;
   const orders = useSyncOrders({ disableFirebase });
   const submit = useFlaggedSubmit({ disableFirebase });
