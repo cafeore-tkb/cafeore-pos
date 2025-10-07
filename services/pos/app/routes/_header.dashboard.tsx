@@ -85,7 +85,7 @@ export default function Dashboard() {
 
   const chartData = [
     {
-      name: "べっぴん",
+      name: "優勝",
       num: itemValue(ITEM_MASTER["-"].name),
       fill: "var(--color-hot)",
     },
@@ -100,12 +100,12 @@ export default function Dashboard() {
       fill: "var(--color-hot)",
     },
     {
-      name: "コスタ",
+      name: "トラジャ",
       num: itemValue(ITEM_MASTER["]"].name),
       fill: "var(--color-hot)",
     },
     {
-      name: "マンデ",
+      name: "キリマン",
       num: itemValue(ITEM_MASTER[";"].name),
       fill: "var(--color-hot)",
     },
@@ -125,7 +125,7 @@ export default function Dashboard() {
       fill: "var(--color-aulait)",
     },
     {
-      name: "Hotオレ",
+      name: "優勝+コ",
       num: itemValue(ITEM_MASTER["@"].name),
       fill: "var(--color-aulait)",
     },

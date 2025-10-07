@@ -76,6 +76,13 @@ export const ITEM_MASTER = {
     price: 100,
     type: "others",
   },
+  "@": {
+    id: "51_coaster_yushou",
+    name: "コースター+優勝ブレンド",
+    abbr: "優勝+コ",
+    price: 500,
+    type: "hot",
+  },
 } as const satisfies RawItemSource;
 
 type Keys = keyof typeof ITEM_MASTER;
