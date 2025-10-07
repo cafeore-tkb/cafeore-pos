@@ -7,6 +7,7 @@ import {
 } from "@remix-run/react";
 import "./tailwind.css";
 import { Toaster } from "~/components/ui/sonner";
+import { AuthProvider } from "./components/functional/AuthProvider";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,7 +19,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
+        <AuthProvider>{children}</AuthProvider>
         <ScrollRestoration />
         <Scripts />
         <Toaster />
