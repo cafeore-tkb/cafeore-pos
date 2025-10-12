@@ -125,7 +125,7 @@ export default function Dashboard() {
       fill: "var(--color-aulait)",
     },
     {
-      name: "優勝+コ",
+      name: "トート+優勝",
       num: itemValue(ITEM_MASTER["@"].name),
       fill: "var(--color-aulait)",
     },

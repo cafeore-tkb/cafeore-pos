@@ -149,7 +149,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
             addItem(key2item("@"));
           }}
         >
-          優勝ブレンド+コースター
+          トートバッグ+優勝ブレンド
         </Button>
       </div>
     </div>

@@ -77,10 +77,10 @@ export const ITEM_MASTER = {
     type: "others",
   },
   "@": {
-    id: "51_coaster_yushou",
-    name: "コースター+優勝ブレンド",
-    abbr: "優勝+コ",
-    price: 500,
+    id: "51_item_yushou",
+    name: "トートバッグ+優勝ブレンド+",
+    abbr: "トート+優勝",
+    price: 1000,
     type: "hot",
   },
 } as const satisfies RawItemSource;
