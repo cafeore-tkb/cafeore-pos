@@ -120,7 +120,7 @@ export default function CasherMini() {
       <div
         className={cn(
           "absolute top-0 left-0 z-0 h-screen w-screen",
-          "bg-gradient-to-br from-[#A877D9] via-[#E665C5] to-[#E67651]",
+          "bg-theme2025",
         )}
       >
         <button type="button" className="absolute top-0 left-0 h-24 w-60" />
