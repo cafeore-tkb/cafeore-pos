@@ -58,7 +58,7 @@ export const ITEM_MASTER = {
   "[": {
     id: "30_ice_ore",
     name: "アイスオレ",
-    abbr: "Iceオレ",
+    abbr: "牛",
     price: 500,
     type: "iceOre",
   },
@@ -78,7 +78,7 @@ export const ITEM_MASTER = {
   },
   "@": {
     id: "51_item_yushou",
-    name: "トートバッグ+優勝ブレンド+",
+    name: "トートバッグ+優勝ブレンド",
     abbr: "トート+優勝",
     price: 1000,
     type: "hot",
