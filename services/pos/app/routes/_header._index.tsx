@@ -1,56 +1,85 @@
-import { converter, itemSchema, prodDB } from "@cafeore/common";
-import { type MetaFunction, useLoaderData } from "@remix-run/react";
-import { collection, getDocs } from "firebase/firestore";
-import { Button } from "~/components/ui/button";
+// import { converter, itemSchema, prodDB } from "@cafeore/common";
+import type { MetaFunction } from "@remix-run/react";
 
 export const meta: MetaFunction = () => {
-  return [
-    { title: "New Remix SPA" },
-    { name: "description", content: "Welcome to Remix (SPA Mode)!" },
-  ];
+  return [{ title: "Top / 珈琲・俺POS" }];
 };
 
-export const clientLoader = async () => {
-  // clientLoader は Remix SPA 特有の関数で、ページロード時にクライアント側で実行される
-  // したがって現時点ではリアルタイムデータの取得はできない
-  const itemsRef = collection(prodDB, "items").withConverter(
-    converter(itemSchema),
-  );
-  const docSnap = await getDocs(itemsRef);
-  const items = docSnap.docs.map((doc) => doc.data());
-  console.log(items);
-  return { items };
-};
+// export const clientLoader = async () => {
+//   // clientLoader は Remix SPA 特有の関数で、ページロード時にクライアント側で実行される
+//   // したがって現時点ではリアルタイムデータの取得はできない
+//   // const itemsRef = collection(prodDB, "items").withConverter(
+//   //   converter(itemSchema),
+//   // );
+//   // const docSnap = await getDocs(itemsRef);
+//   // const items = docSnap.docs.map((doc) => doc.data());
+//   // console.log(items);
+//   // return { items };
+// };
 
 export default function Index() {
-  const { items } = useLoaderData<typeof clientLoader>();
+  // const { items } = useLoaderData<typeof clientLoader>();
 
   return (
     <div className="p-4 font-sans">
-      <h1 className="text-3xl">Welcome to Remix (SPA Mode)</h1>
+      <h1 className="text-3xl">珈琲・俺POS</h1>
       <ul className="mt-4 list-disc space-y-2 pl-6">
         <li>
           <a
-            className="text-blue-700 underline visited:text-purple-900"
-            target="_blank"
-            href="https://remix.run/guides/spa-mode"
+            className="font-bold text-4xl text-amber-950"
+            href="/cashier"
             rel="noreferrer"
           >
-            SPA Mode Guide
+            レジ
           </a>
         </li>
         <li>
           <a
-            className="text-blue-700 underline visited:text-purple-900"
-            target="_blank"
-            href="https://remix.run/docs"
+            className="font-bold text-4xl text-amber-950"
+            href="/master"
             rel="noreferrer"
           >
-            Remix Docs
+            マスター
+          </a>
+        </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
+            href="/serve"
+            rel="noreferrer"
+          >
+            提供
+          </a>
+        </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
+            href="/cashier-mini"
+            rel="noreferrer"
+          >
+            レジ客用画面
+          </a>
+        </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
+            href="/callscreen"
+            rel="noreferrer"
+          >
+            呼び出し画面
+          </a>
+        </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
+            href="/dashboard"
+            rel="noreferrer"
+          >
+            ダッシュボード
           </a>
         </li>
       </ul>
-      <Button className="mt-4 bg-sky-900 text-white">Click me</Button>
+      {/* <Button className="mt-4 bg-sky-900 text-white">Click me</Button>
       <ul>
         {items.map((item) => (
           <li key={item.id} className="mt-4">
@@ -59,7 +88,7 @@ export default function Index() {
             <p>{item.type}</p>
           </li>
         ))}
-      </ul>
+      </ul> */}
     </div>
   );
 }
