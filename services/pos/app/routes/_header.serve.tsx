@@ -83,6 +83,7 @@ export default function Serve() {
     (servedOrder: OrderEntity) => {
       const order = servedOrder.clone();
       order.undoServed();
+      order.undoReady();
       submit(
         { servedOrder: JSON.stringify(order.toOrder()) },
         { method: "PUT" },
@@ -228,12 +229,9 @@ export default function Serve() {
                         </div>
                       )}
 
-                      <InputComment order={order} addComment={addComment} />
-
                       <div className="mt-2 flex items-center justify-between">
                         <Button
                           onClick={() => {
-                            const now = new Date();
                             undoServe(order);
                           }}
                           className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
