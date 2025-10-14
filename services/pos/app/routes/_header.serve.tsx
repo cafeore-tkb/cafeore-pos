@@ -285,24 +285,30 @@ export default function Serve() {
               <div key={order.id}>
                 <Card className={cn(isReady && "bg-gray-300 text-gray-500")}>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{`No. ${order.orderId}`}</CardTitle>
-                      <a
-                        // link for debug
-                        className="px-2"
-                        href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-                          {order.getDrinkCups().length}
-                        </CardTitle>
-                      </a>
+                    <div className="flex items-end justify-between">
+                      <CardTitle className="flex items-end font-normal">
+                        <p className="font-black text-gray-800 text-sm">No.</p>
+                        <p className="font-black text-6xl">{order.orderId}</p>
+                      </CardTitle>
+                      <RealtimeElapsedTime order={order} />
                       <div className="grid">
                         <div className="px-2 text-right">
-                          {dayjs(order.createdAt).format("H時m分")}
+                          {dayjs(order.createdAt).format("H:mm")}
                         </div>
-                        <RealtimeElapsedTime order={order} />
+                        <a
+                          // link for debug
+                          className="items-end px-2"
+                          href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <CardTitle className="flex h-10 items-end">
+                            <p className="text-5xl">
+                              {order.getDrinkCups().length}
+                            </p>
+                            <p className="text-sm">杯</p>
+                          </CardTitle>
+                        </a>
                       </div>
                     </div>
                   </CardHeader>
@@ -312,14 +318,14 @@ export default function Serve() {
                         <div key={`${idx}-${item.id}`}>
                           <Card
                             className={cn(
-                              "p-1",
+                              "p-3",
                               item.type === "milk" && "bg-yellow-200",
                               item.type === "hotOre" && "bg-orange-300",
                               item.type === "iceOre" && "bg-sky-200",
                               isReady && "bg-gray-200 text-gray-500",
                             )}
                           >
-                            <h3 className="text-center font-bold text-4xl">
+                            <h3 className="text-center font-bold text-3xl">
                               {id2abbr(item.id)}
                             </h3>
                           </Card>
@@ -360,12 +366,6 @@ export default function Serve() {
                         order={order}
                         changeReady={(ready) => changeReady(order, ready)}
                       />
-                      {/* {isReady && (
-                        <div className="flex-1 px-2">
-                          <div>呼び出し時刻</div>
-                          <div>{dayjs(order.readyAt).format("H時m分")}</div>
-                        </div>
-                      )} */}
                       <Button
                         onClick={() => {
                           const now = new Date();
