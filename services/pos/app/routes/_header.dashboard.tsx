@@ -1,36 +1,15 @@
 import {
-  ITEM_MASTER,
   type OrderEntity,
   collectionSub,
-  itemSource,
   orderConverter,
 } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Rectangle,
-  XAxis,
-  YAxis,
-} from "recharts";
 import useSWRSubscription from "swr/subscription";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "~/components/ui/chart";
-import type { ChartConfig } from "~/components/ui/chart";
+import { ItemBarChart } from "~/components/organisms/ItemBarChart";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Table,
   TableBody,
@@ -52,7 +31,6 @@ export default function Dashboard() {
     "orders",
     collectionSub({ converter: orderConverter }, orderBy("orderId", "desc")),
   );
-  const items = itemSource;
   const [focusedOrderId, setFocusedOrderId] = useState(1);
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
@@ -60,81 +38,7 @@ export default function Dashboard() {
     }
     return acc;
   }, 0);
-  const itemNamesArray = items.map((items) => items.name);
-  const init = new Map<string, number>();
-  const numPerItem = orders?.reduce((acc, cur) => {
-    if (itemNamesArray !== undefined) {
-      for (let i = 0; i < cur.items.length; i++) {
-        for (let j = 0; j < itemNamesArray?.length; j++) {
-          if (cur.items[i].name === itemNamesArray[j]) {
-            const num = acc.get(cur.items[i].name) ?? 0;
-            acc.set(cur.items[i].name, num + 1);
-          }
-        }
-      }
-    }
-    return acc;
-  }, init);
-  const itemValue = (name: string): number | undefined => {
-    let valueNum = undefined;
-    if (numPerItem !== undefined) {
-      valueNum = numPerItem.get(name);
-    }
-    return valueNum;
-  };
 
-  const chartData = [
-    {
-      name: "優勝",
-      num: itemValue(ITEM_MASTER["-"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "俺ブレ",
-      num: itemValue(ITEM_MASTER["^"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "ピンク",
-      num: itemValue(ITEM_MASTER[":"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "トラジャ",
-      num: itemValue(ITEM_MASTER["]"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "キリマン",
-      num: itemValue(ITEM_MASTER[";"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "限定",
-      num: itemValue(ITEM_MASTER["/"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "氷",
-      num: itemValue(ITEM_MASTER["\\"].name),
-      fill: "var(--color-ice)",
-    },
-    {
-      name: "Iceオレ",
-      num: itemValue(ITEM_MASTER["["].name),
-      fill: "var(--color-aulait)",
-    },
-    {
-      name: "トート+優勝",
-      num: itemValue(ITEM_MASTER["@"].name),
-      fill: "var(--color-aulait)",
-    },
-    {
-      name: "ミルク",
-      num: itemValue(ITEM_MASTER["."].name),
-      fill: "var(--color-milk)",
-    },
-  ];
   const detailOrder = orders?.find((order) => order.orderId === focusedOrderId);
   return (
     <div className="flex justify-start p-4 pb-2 font-sans">
@@ -184,46 +88,7 @@ export default function Dashboard() {
       </div>
       <div className="w-1/2">
         <div className="sticky top-0">
-          <Card>
-            <CardHeader>
-              <CardTitle>商品ごとの杯数</CardTitle>
-              <CardDescription>{}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={chartConfig}>
-                <BarChart accessibilityLayer data={chartData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickFormatter={(value) => value.slice(0, 5)}
-                  />
-                  <YAxis />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent nameKey="name" />}
-                  />
-                  <Bar
-                    dataKey="num"
-                    radius={8}
-                    activeBar={({ ...props }) => {
-                      return (
-                        <Rectangle
-                          {...props}
-                          fillOpacity={0.8}
-                          stroke={props.payload.fill}
-                          strokeDasharray={4}
-                          strokeDashoffset={4}
-                        />
-                      );
-                    }}
-                  />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
+          <ItemBarChart orders={orders} />
           {detailOrder && (
             <div key={detailOrder.id}>
               <Card className="mt-3">
@@ -301,29 +166,3 @@ const pass15Minutes = (order: OrderEntity) => {
       dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
     );
 };
-
-const chartConfig = {
-  name: {
-    label: "杯数",
-  },
-  hot: {
-    label: "ホット",
-    color: "hsl(var(--chart-1))",
-  },
-  ice: {
-    label: "アイス",
-    color: "hsl(var(--chart-2))",
-  },
-  aulait: {
-    label: "オレ",
-    color: "hsl(var(--chart-3))",
-  },
-  milk: {
-    label: "ミルク",
-    color: "hsl(var(--chart-4))",
-  },
-  other: {
-    label: "Other",
-    color: "hsl(var(--chart-5))",
-  },
-} satisfies ChartConfig;
