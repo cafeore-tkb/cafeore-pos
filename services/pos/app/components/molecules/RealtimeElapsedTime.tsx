@@ -17,12 +17,13 @@ export const RealtimeElapsedTime = ({
   return (
     <div
       className={cn(
-        "rounded-md px-2",
+        "grid rounded-md px-2",
         dayjs(currentTime).isAfter(createdAt.add(15, "minutes")) &&
           "bg-red-500 text-white",
       )}
     >
-      <div>経過時間 {diffTime.format("m分")}</div>
+      <div>経過時間</div>
+      <div className="text-2xl">{diffTime.format("m分")}</div>
     </div>
   );
 };
