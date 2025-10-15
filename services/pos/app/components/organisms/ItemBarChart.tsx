@@ -12,13 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   type ChartConfig,
   ChartContainer,
@@ -59,64 +53,25 @@ const ItemBarChart = ({ orders }: props) => {
     }
     return valueNum;
   };
-  const chartData = [
-    {
-      name: "優勝",
-      num: itemValue(ITEM_MASTER["-"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "俺ブレ",
-      num: itemValue(ITEM_MASTER["^"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "ピンク",
-      num: itemValue(ITEM_MASTER[":"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "トラジャ",
-      num: itemValue(ITEM_MASTER["]"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "キリマン",
-      num: itemValue(ITEM_MASTER[";"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "限定",
-      num: itemValue(ITEM_MASTER["/"].name),
-      fill: "var(--color-hot)",
-    },
-    {
-      name: "氷",
-      num: itemValue(ITEM_MASTER["\\"].name),
-      fill: "var(--color-ice)",
-    },
-    {
-      name: "牛",
-      num: itemValue(ITEM_MASTER["["].name),
-      fill: "var(--color-aulait)",
-    },
-    {
-      name: "トート+優勝",
-      num: itemValue(ITEM_MASTER["@"].name),
-      fill: "var(--color-aulait)",
-    },
-    {
-      name: "ミルク",
-      num: itemValue(ITEM_MASTER["."].name),
-      fill: "var(--color-milk)",
-    },
-  ];
+
+  const TYPE_COLOR_MAP = {
+    hot: "var(--color-hot)",
+    ice: "var(--color-ice)",
+    iceOre: "var(--color-aulait)",
+    milk: "var(--color-milk)",
+    others: "var(--color-others)",
+  } as const;
+
+  const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
+    name: item.abbr,
+    num: itemValue(item.name),
+    fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
+  }));
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>商品ごとの杯数</CardTitle>
-        <CardDescription>{}</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig}>
