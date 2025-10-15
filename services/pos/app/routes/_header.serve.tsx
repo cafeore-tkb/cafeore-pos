@@ -144,7 +144,7 @@ export default function Serve() {
             </Button>
           </SheetTrigger>
 
-          <SheetContent className="max-w-[90vw] overflow-y-auto">
+          <SheetContent className="w-1/2 overflow-y-auto sm:max-w-none">
             <SheetHeader>
               <SheetTitle>提供済みの注文</SheetTitle>
             </SheetHeader>
@@ -161,30 +161,43 @@ export default function Serve() {
                       isReady && "bg-gray-300 text-gray-500",
                     )}
                   >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">{`No.${order.orderId}`}</CardTitle>
-                        <a
-                          href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-1"
-                        >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-stone-500 text-sm">
-                            {order.getDrinkCups().length}
+                    <CardHeader>
+                      <div className="flex items-end justify-between">
+                        <CardTitle className="flex items-end font-normal">
+                          <div className="font-black text-sm">No.</div>
+                          <div className="font-black text-6xl">
+                            {order.orderId}
                           </div>
-                        </a>
-                      </div>
-                      <div className="text-right text-muted-foreground text-xs">
-                        {dayjs(order.createdAt).format("H時m分")}
-                      </div>
-                      <div
-                        className={cn(
-                          "rounded-md px-2",
-                          pass15Minutes(order) && "bg-red-500 text-white",
-                        )}
-                      >
-                        <div>{diffTime(order)}</div>
+                        </CardTitle>
+                        <div
+                          className={cn(
+                            "rounded-md px-2",
+                            pass15Minutes(order)
+                              ? "bg-red-500 text-white"
+                              : "bg-slate-100",
+                          )}
+                        >
+                          <div>{diffTime(order)}</div>
+                        </div>
+                        <div className="grid">
+                          <div className="px-2 text-right">
+                            {dayjs(order.createdAt).format("H:mm")}
+                          </div>
+                          <a
+                            // link for debug
+                            className="items-end px-2"
+                            href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <CardTitle className="flex h-10 items-end">
+                              <p className="text-5xl">
+                                {order.getDrinkCups().length}
+                              </p>
+                              <p className="text-sm">杯</p>
+                            </CardTitle>
+                          </a>
+                        </div>
                       </div>
                     </CardHeader>
 
@@ -287,8 +300,10 @@ export default function Serve() {
                   <CardHeader>
                     <div className="flex items-end justify-between">
                       <CardTitle className="flex items-end font-normal">
-                        <p className="font-black text-gray-800 text-sm">No.</p>
-                        <p className="font-black text-6xl">{order.orderId}</p>
+                        <div className="font-black text-sm">No.</div>
+                        <div className="font-black text-6xl">
+                          {order.orderId}
+                        </div>
                       </CardTitle>
                       <RealtimeElapsedTime order={order} />
                       <div className="grid">
