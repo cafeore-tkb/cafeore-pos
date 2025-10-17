@@ -25,7 +25,7 @@ export const usePrinter = () => {
   // 追加で番号と注文を載せたラベルを印刷
   const printOrderSummaryLabel = (order: OrderEntity) => {
     rawPrinter.addLine(
-      `No. ${order.orderId.toString().padEnd(4, " ")}￥${order.total}`,
+      `No. ${order.orderId.toString()}${" ".repeat(1)}￥${order.total}`,
       [2, 2],
     );
 
@@ -35,7 +35,7 @@ export const usePrinter = () => {
 
       if (item2) {
         // 2つある場合は横に並べる
-        const line = `${item1.name.padEnd(10, " ")}${item2.name}`;
+        const line = `${item1.name}${" ".repeat(4)}${item2.name}`;
         rawPrinter.addLine(line, [1, 1]);
       } else {
         // 1つだけの場合
