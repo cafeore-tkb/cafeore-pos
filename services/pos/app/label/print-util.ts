@@ -22,6 +22,28 @@ export const usePrinter = () => {
     rawPrinter.addFeed(1);
   };
 
+  // 追加で番号と注文を載せたラベルを印刷
+  const printOrderSummaryLabel = (order: OrderEntity) => {
+    rawPrinter.addLine(
+      `No. ${order.orderId.toString()}${" ".repeat(1)}￥${order.total}`,
+      [2, 2],
+    );
+
+    for (let i = 0; i < order.items.length; i += 2) {
+      const item1 = order.items[i];
+      const item2 = order.items[i + 1];
+
+      if (item2) {
+        // 2つある場合は横に並べる
+        const line = `${item1.name}${" ".repeat(4)}${item2.name}`;
+        rawPrinter.addLine(line, [1, 1]);
+      } else {
+        // 1つだけの場合
+        rawPrinter.addLine(item1.name, [1, 1]);
+      }
+    }
+  };
+
   const printOrderLabel = (order: OrderEntity) => {
     const items = order.items.toSorted((a, b) => a.name.localeCompare(b.name));
     rawPrinter.init();
@@ -30,6 +52,7 @@ export const usePrinter = () => {
 
     console.log(coffees);
 
+    // 各アイテムのラベルを印刷
     for (const [idx, item] of coffees.entries()) {
       printSingleItemLabel(
         order.orderId,
@@ -38,6 +61,10 @@ export const usePrinter = () => {
         item,
       );
     }
+
+    // 引換券に貼るラベルを印刷
+    printOrderSummaryLabel(order);
+
     rawPrinter.addFeed(7);
     rawPrinter.print();
   };
