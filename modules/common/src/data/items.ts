@@ -77,11 +77,11 @@ export const ITEM_MASTER = {
     type: "others",
   },
   "@": {
-    id: "51_item_yushou",
-    name: "トートバッグ+優勝ブレンド",
-    abbr: "トート+優勝",
+    id: "51_tote",
+    name: "トートバッグ",
+    abbr: "トート",
     price: 1000,
-    type: "hot",
+    type: "others",
   },
 } as const satisfies RawItemSource;
 
@@ -108,6 +108,11 @@ export const keyEventHandler = (
   const key = e.key;
   if (IncludedIn(ITEM_MASTER, key)) {
     e.preventDefault();
-    func(key2item(key));
+    if (key === "@") {
+      func(key2item("@"));
+      func(key2item("-"));
+    } else {
+      func(key2item(key));
+    }
   }
 };

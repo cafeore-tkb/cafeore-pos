@@ -167,8 +167,15 @@ export class OrderEntity implements Order {
     // items の更新に合わせて total を自動で計算する
     // その代わり total は直接更新できない
     // TODO(toririm): 計算するのは items が変更された時だけでいい
+
+    // トート+優勝の金額計算
+    const freeCoffeeCount = Math.min(
+      this._items.filter((i) => i.id === "51_tote").length,
+      this._items.filter((i) => i.id === "01_yushou_brend").length,
+    );
+
     this._total = this._items.reduce((acc, item) => acc + item.price, 0);
-    return this._total;
+    return this._total - freeCoffeeCount * 500;
   }
 
   get comments() {

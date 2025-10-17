@@ -147,6 +147,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
           className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
           onClick={() => {
             addItem(key2item("@"));
+            addItem(key2item("-"));
           }}
         >
           トートバッグ+優勝ブレンド
