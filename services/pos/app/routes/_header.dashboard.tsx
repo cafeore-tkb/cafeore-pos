@@ -55,7 +55,7 @@ export default function Dashboard() {
             >
               <TableRow>
                 <TableHead>No.</TableHead>
-                <TableHead>杯数</TableHead>
+                <TableHead>品数</TableHead>
                 <TableHead>合計額</TableHead>
                 <TableHead>受付時刻</TableHead>
                 <TableHead>提供時刻</TableHead>
@@ -70,7 +70,7 @@ export default function Dashboard() {
                   onClick={() => setFocusedOrderId(order.orderId)}
                 >
                   <TableCell className="font-medium">{order.orderId}</TableCell>
-                  <TableCell>{numOfCups(order)}</TableCell>
+                  <TableCell>{order.items.length}</TableCell>
                   <TableCell>￥{order.total}</TableCell>
                   <TableCell>{order.createdAt.toLocaleTimeString()}</TableCell>
                   <TableCell>
@@ -146,10 +146,6 @@ export default function Dashboard() {
     </div>
   );
 }
-
-const numOfCups = (order: OrderEntity): number => {
-  return order.items.length;
-};
 
 const diffTime = (order: OrderEntity) => {
   if (order.servedAt == null) return "未提供";
