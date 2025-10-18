@@ -84,6 +84,43 @@ export const useRawPrinter = () => {
   };
 
   /**
+   *
+   * @param {number} orderId
+   * @param {number || null} total
+   * @returns {void}
+   */
+  const addHeader = (orderId, total) => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+
+    if (total !== null) {
+      prn.addTextSize(1, 1);
+      prn.addText(" ");
+      prn.addTextSize(1, 2);
+      prn.addText("領収書 ");
+      prn.addTextSize(1, 1);
+      prn.addText("No.");
+      prn.addTextSize(2, 2);
+      prn.addText(`${orderId.toString().padEnd(3, " ")}`);
+      prn.addTextSize(1, 2);
+      prn.addText(" ￥");
+      prn.addTextSize(2, 2);
+      prn.addText(`${total.toString()}-\n`);
+    } else {
+      prn.addTextSize(2, 2);
+      prn.addText(" ");
+      prn.addTextSize(1, 1);
+      prn.addText("No.");
+      prn.addTextSize(2, 2);
+      prn.addText(`${orderId.toString()}\n`);
+    }
+  };
+
+  /**
    * @param {number} line
    * @returns {void}
    * */
@@ -121,6 +158,7 @@ export const useRawPrinter = () => {
     status,
     init,
     addLine,
+    addHeader,
     addFeed,
     print,
   };
