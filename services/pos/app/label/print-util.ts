@@ -30,16 +30,23 @@ export const usePrinter = () => {
     );
 
     for (let i = 0; i < order.items.length; i += 2) {
-      const item1 = order.items[i];
-      const item2 = order.items[i + 1];
+      // アイテム名が8文字以上のときは6文字だけ取り出す
+      const item1 =
+        order.items[i].name.length < 8
+          ? order.items[i].name
+          : order.items[i].name.slice(0, 6);
+      const item2 =
+        order.items[i + 1].name.length < 8
+          ? order.items[i + 1].name
+          : order.items[i + 1].name.slice(0, 6);
 
       if (item2) {
         // 2つある場合は横に並べる
-        const line = `${item1.name}${" ".repeat(4)}${item2.name}`;
+        const line = `${item1.padEnd(8)}${item2}`;
         rawPrinter.addLine(line, [1, 1]);
       } else {
         // 1つだけの場合
-        rawPrinter.addLine(item1.name, [1, 1]);
+        rawPrinter.addLine(item1, [1, 1]);
       }
     }
   };
