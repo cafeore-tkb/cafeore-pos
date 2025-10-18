@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { ReadyBell } from "~/components/atoms/ReadyBell";
+import { ServeCheck } from "~/components/atoms/ServeCheck";
 import { InputComment } from "~/components/molecules/InputComment";
 import { RealtimeElapsedTime } from "~/components/molecules/RealtimeElapsedTime";
 import { Button } from "~/components/ui/button";
@@ -381,8 +382,9 @@ export default function Serve() {
                         order={order}
                         changeReady={(ready) => changeReady(order, ready)}
                       />
-                      <Button
-                        onClick={() => {
+                      <ServeCheck
+                        order={order}
+                        onServe={(order) => {
                           const now = new Date();
                           beServed(order);
                           toast(`提供完了 No.${order.orderId}`, {
@@ -393,10 +395,7 @@ export default function Serve() {
                             },
                           });
                         }}
-                        className="h-16 w-16 bg-green-700 text-lg hover:bg-green-600 "
-                      >
-                        提供
-                      </Button>
+                      />
                     </div>
                   </CardContent>
                 </Card>
