@@ -26,7 +26,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
             addItem(key2item("-"));
           }}
         >
-          優勝ブレンド
+          縁ブレンド
         </Button>
         <Button
           key="^"
@@ -55,7 +55,16 @@ export const ItemButtons = ({ items, addItem }: props) => {
             addItem(key2item("/"));
           }}
         >
-          限定
+          ライチ
+        </Button>
+        <Button
+          key="#"
+          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          onClick={() => {
+            addItem(key2item("#"));
+          }}
+        >
+          ブルマン
         </Button>
       </div>
       <div
@@ -144,12 +153,12 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="@"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] text-lg hover:ring-4"
           onClick={() => {
             addItem(key2item("@"));
           }}
         >
-          トートバッグ+優勝ブレンド
+          トートセット
         </Button>
       </div>
     </div>
