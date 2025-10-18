@@ -28,6 +28,7 @@ export const usePrinter = () => {
 
     for (let i = 0; i < order.items.length; i += 2) {
       // アイテム名が8文字以上のときは6文字だけ取り出す
+      // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
       const item1 =
         order.items[i].name.length < 8
           ? order.items[i].name
