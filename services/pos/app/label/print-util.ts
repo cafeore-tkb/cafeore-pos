@@ -11,7 +11,7 @@ export const usePrinter = () => {
     item: ItemEntity,
   ) => {
     console.log(item.name);
-    rawPrinter.addLine(`No. ${orderId.toString()}`, [2, 2]);
+    rawPrinter.addHeader(orderId, null);
     rawPrinter.addLine(item.name, [1, 2]);
     rawPrinter.addLine(`${index}/${total}`, [2, 1]);
     if (item.assignee) {
@@ -24,28 +24,33 @@ export const usePrinter = () => {
 
   // 追加で番号と注文を載せたラベルを印刷
   const printOrderSummaryLabel = (order: OrderEntity) => {
-    rawPrinter.addLine(
-      `No. ${order.orderId.toString()}${" ".repeat(1)}￥${order.total}`,
-      [2, 2],
-    );
+    rawPrinter.addHeader(order.orderId, order.total);
 
     for (let i = 0; i < order.items.length; i += 2) {
-      const item1 = order.items[i];
-      const item2 = order.items[i + 1];
+      // アイテム名が8文字以上のときは6文字だけ取り出す
+      // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
+      const item1 =
+        order.items[i].name.length < 8
+          ? order.items[i].name
+          : order.items[i].name.slice(0, 6);
+      const item2 = order.items[i + 1]
+        ? order.items[i + 1].name.length < 8
+          ? order.items[i + 1].name
+          : order.items[i + 1].name.slice(0, 6)
+        : null;
 
       if (item2) {
         // 2つある場合は横に並べる
-        const line = `${item1.name}${" ".repeat(4)}${item2.name}`;
+        const line = `${item1.padEnd(8, " ")}${item2}`;
         rawPrinter.addLine(line, [1, 1]);
       } else {
         // 1つだけの場合
-        rawPrinter.addLine(item1.name, [1, 1]);
+        rawPrinter.addLine(item1, [1, 1]);
       }
     }
   };
 
   const printOrderLabel = (order: OrderEntity) => {
-    const items = order.items.toSorted((a, b) => a.name.localeCompare(b.name));
     rawPrinter.init();
 
     const coffees = order.getCoffeeCups();
