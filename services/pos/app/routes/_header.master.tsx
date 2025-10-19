@@ -20,6 +20,7 @@ import {
 import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useCallback } from "react";
+import { LuHourglass } from "react-icons/lu";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
@@ -134,6 +135,9 @@ export default function FielsOfMaster() {
                             <h3 className="text-center font-bold text-3xl">
                               {id2abbr(item.id)}
                             </h3>
+                            {item.assignee && (
+                              <p className="text-sm">指名:{item.assignee}</p>
+                            )}
                           </Card>
                         </div>
                       ))}
@@ -167,6 +171,12 @@ export default function FielsOfMaster() {
                       </div>
                     )}
                     <InputComment order={order} addComment={mutateOrder} />
+                    {isReady && (
+                      <div className="mt-5 flex items-center">
+                        <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
+                        <p className="text-yellow-700">提供待ち</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
