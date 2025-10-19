@@ -20,7 +20,6 @@ import {
 import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useCallback } from "react";
-import { LuHourglass } from "react-icons/lu";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
@@ -93,23 +92,32 @@ export default function FielsOfMaster() {
               <div key={order.id}>
                 <Card className={cn(isReady && "bg-gray-300 text-gray-500")}>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{`No. ${order.orderId}`}</CardTitle>
-                      <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-                        {order.getDrinkCups().length}
+                    <div className="flex items-end justify-between">
+                      <CardTitle className="flex items-end font-normal">
+                        <div className="font-black text-sm">No.</div>
+                        <div className="font-black text-6xl">
+                          {order.orderId}
+                        </div>
                       </CardTitle>
+                      <RealtimeElapsedTime order={order} />
                       <div className="grid">
                         <div className="px-2 text-right">
-                          {dayjs(order.createdAt).format("H時m分")}
+                          {dayjs(order.createdAt).format("H:mm")}
                         </div>
-                        <RealtimeElapsedTime order={order} />
+
+                        <CardTitle className="flex h-10 items-end">
+                          <p className="text-5xl">
+                            {order.getDrinkCups().length}
+                          </p>
+                          <p className="text-sm">杯</p>
+                        </CardTitle>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="mb-4 grid grid-cols-2 gap-2">
-                      {order.getDrinkCups().map((item, index) => (
-                        <div key={`${order.id}-${index}-${item.id}`}>
+                      {order.getDrinkCups().map((item, idx) => (
+                        <div key={`${idx}-${item.id}`}>
                           <Card
                             className={cn(
                               "pt-6",
@@ -121,14 +129,9 @@ export default function FielsOfMaster() {
                               isReady && "bg-gray-200 text-gray-500",
                             )}
                           >
-                            <CardContent>
-                              <h3 className="text-center font-bold">
-                                {id2abbr(item.id)}
-                              </h3>
-                              {item.assignee && (
-                                <p className="text-sm">指名:{item.assignee}</p>
-                              )}
-                            </CardContent>
+                            <h3 className="text-center font-bold text-3xl">
+                              {id2abbr(item.id)}
+                            </h3>
                           </Card>
                         </div>
                       ))}
@@ -162,12 +165,6 @@ export default function FielsOfMaster() {
                       </div>
                     )}
                     <InputComment order={order} addComment={mutateOrder} />
-                    {isReady && (
-                      <div className="mt-5 flex items-center">
-                        <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
-                        <p className="text-yellow-700">提供待ち</p>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               </div>
