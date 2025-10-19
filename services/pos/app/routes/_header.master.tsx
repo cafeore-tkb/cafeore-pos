@@ -120,12 +120,14 @@ export default function FielsOfMaster() {
                         <div key={`${idx}-${item.id}`}>
                           <Card
                             className={cn(
-                              "pt-6",
+                              "p-3",
                               item.type === "iceOre" && "bg-sky-200",
                               item.type === "hotOre" && "bg-orange-300",
                               item.type === "ice" && "bg-blue-200",
                               item.type === "milk" && "bg-gray-300",
-                              item.name === "限定" && "bg-red-300",
+                              (item.name === "ブルマン" ||
+                                item.name === "ライチ") &&
+                                "bg-green-300",
                               isReady && "bg-gray-200 text-gray-500",
                             )}
                           >
