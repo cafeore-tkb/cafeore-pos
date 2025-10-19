@@ -9,7 +9,7 @@ export const ITEM_MASTER = {
   "-": {
     id: "01_yukari_brend",
     name: "縁ブレンド",
-    abbr: "縁ブレ",
+    abbr: "ゆかり",
     price: 500,
     type: "hot",
   },
