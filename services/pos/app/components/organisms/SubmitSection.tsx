@@ -6,9 +6,10 @@ type props = {
   submitOrder: () => void;
   order: OrderEntity;
   focus: boolean;
+  splitDetails?: ReturnType<OrderEntity["shouldSplitOrder"]>;
 };
 
-export const SubmitSection = ({ submitOrder, order, focus }: props) => {
+export const SubmitSection = ({ submitOrder, order, focus, splitDetails }: props) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const billingOk = useMemo(
     () => order.items.length > 0 && order.getCharge() >= 0,
@@ -40,6 +41,11 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
         </label>
+        {splitDetails?.shouldSplit && (
+          <div className="mt-2 text-sm font-semibold text-red-600">
+            注文番号の分割を推奨します（種類: {splitDetails.uniqueCoffeeCount} 種 / 総杯数: {splitDetails.totalCoffeeCups} 杯 / トートセット: {splitDetails.toteSets.length} 個）
+          </div>
+        )}
       </div>
     </div>
   );
