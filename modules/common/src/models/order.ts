@@ -229,6 +229,40 @@ export class OrderEntity implements Order {
     );
   }
 
+  /**
+   * ドリッパーを3人以上確保する注文かどうかを判定する
+   * 条件：コーヒーが3種以上 または 5杯以上
+   * @returns 分割判定の詳細情報
+   */
+  shouldSplitOrder(): {
+    coffeeCups: WithId<ItemEntity>[];
+    toteSets: WithId<ItemEntity>[];
+    uniqueCoffeeCount: number;
+    totalCoffeeCups: number;
+    shouldSplit: boolean;
+  } {
+    const coffeeCups = this.getCoffeeCups();
+    const toteSets = this.items.filter(item => item.id === "51_tote_yukari");
+    
+    // トートセットはコーヒー1杯分としてカウント
+    const totalCoffeeCups = coffeeCups.length + toteSets.length;
+    
+    // コーヒーの種類数を計算（同じアイテムIDの重複を除く）
+    const uniqueCoffeeTypes = new Set(coffeeCups.map(item => item.id));
+    const uniqueCoffeeCount = uniqueCoffeeTypes.size;
+    
+    // 条件：コーヒーが3種以上 または 5杯以上（トートセット含む）
+    const shouldSplit = uniqueCoffeeCount >= 3 || totalCoffeeCups >= 5;
+    
+    return {
+      coffeeCups,
+      toteSets,
+      uniqueCoffeeCount,
+      totalCoffeeCups,
+      shouldSplit,
+    };
+  }
+
   getDrinkCups() {
     // others 以外のアイテムを返す
     return this.items.filter((item) => item.type !== "others");
