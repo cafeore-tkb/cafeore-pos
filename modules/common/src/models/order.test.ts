@@ -244,4 +244,245 @@ describe("[unit] order entity", () => {
     expect(order.comments[1].author).toBe("master");
     expect(order.comments[1].text).toBe("2");
   });
+
+// 分割判定のテスト
+  test("shouldSplitOrder - コーヒー3種以上で分割が必要", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // 3種類のコーヒーを追加
+    order.items = [
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "02_cafeore_brend",
+        name: "珈琲・俺ブレンド",
+        price: 300,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "03_Lychee",
+        name: "ライチ",
+        price: 1000,
+        type: "hot",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(3);
+    expect(details.totalCoffeeCups).toBe(3);
+    expect(details.toteSets.length).toBe(0);
+    expect(details.shouldSplit).toBe(true);
+  });
+
+  test("shouldSplitOrder - コーヒー5杯以上で分割が必要", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // 同じコーヒーを5杯追加
+    order.items = [
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(1);
+    expect(details.totalCoffeeCups).toBe(5);
+    expect(details.toteSets.length).toBe(0);
+    expect(details.shouldSplit).toBe(true);
+  });
+
+  test("shouldSplitOrder - トートセットを含む場合", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // トートセット1個 + コーヒー4杯 = 5杯
+    order.items = [
+      ItemEntity.fromItem({
+        id: "51_tote_yukari",
+        name: "トートセット",
+        price: 1000,
+        type: "others",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(1);
+    expect(details.totalCoffeeCups).toBe(5); // コーヒー4杯 + トートセット1個
+    expect(details.toteSets.length).toBe(1);
+    expect(details.coffeeCups.length).toBe(4);
+    expect(details.shouldSplit).toBe(true);
+  });
+
+  test("shouldSplitOrder - 分割不要な場合", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // コーヒー2種類、4杯
+    order.items = [
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "02_cafeore_brend",
+        name: "珈琲・俺ブレンド",
+        price: 300,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "02_cafeore_brend",
+        name: "珈琲・俺ブレンド",
+        price: 300,
+        type: "hot",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(2);
+    expect(details.totalCoffeeCups).toBe(4);
+    expect(details.toteSets.length).toBe(0);
+    expect(details.shouldSplit).toBe(false);
+  });
+
+  test("shouldSplitOrder - ミルクやその他はカウントされない", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // ミルクとその他を大量に追加しても分割判定に影響しない
+    order.items = [
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "01_yukari_brend",
+        name: "縁ブレンド",
+        price: 500,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "40_ice_milk",
+        name: "アイスミルク",
+        price: 100,
+        type: "milk",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "50_coaster",
+        name: "コースター",
+        price: 100,
+        type: "others",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "52_tote",
+        name: "トートバッグ単体",
+        price: 1000,
+        type: "others",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(1);
+    expect(details.totalCoffeeCups).toBe(4);
+    expect(details.toteSets.length).toBe(0);
+    expect(details.coffeeCups.length).toBe(4);
+    expect(details.shouldSplit).toBe(false);
+  });
 });
