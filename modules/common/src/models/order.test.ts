@@ -330,10 +330,46 @@ describe("[unit] order entity", () => {
     expect(details.shouldSplit).toBe(true);
   });
 
-  test("shouldSplitOrder - トートセットを含む場合", () => {
+  test("shouldSplitOrder - トートセットを含む場合（縁ブレンドとして読み替え）", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     
-    // トートセット1個 + コーヒー4杯 = 5杯
+    // トートセット1個 + コーヒー2種類 = 3種類（トートセットは縁ブレンドとして読み替え）
+    order.items = [
+      ItemEntity.fromItem({
+        id: "51_tote_yukari",
+        name: "トートセット",
+        price: 1000,
+        type: "others",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "02_cafeore_brend",
+        name: "珈琲・俺ブレンド",
+        price: 300,
+        type: "hot",
+        assignee: null,
+      }),
+      ItemEntity.fromItem({
+        id: "03_Lychee",
+        name: "ライチ",
+        price: 1000,
+        type: "hot",
+        assignee: null,
+      }),
+    ];
+    
+    const details = order.shouldSplitOrder();
+    expect(details.uniqueCoffeeCount).toBe(3); // トートセットが縁ブレンドとして読み替えられる
+    expect(details.totalCoffeeCups).toBe(3); // コーヒー2杯 + トートセット1個
+    expect(details.toteSets.length).toBe(1);
+    expect(details.coffeeCups.length).toBe(2);
+    expect(details.shouldSplit).toBe(true);
+  });
+
+  test("shouldSplitOrder - トートセットと縁ブレンドが重複する場合", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    
+    // トートセット1個 + 縁ブレンド1杯 + 他のコーヒー1種類 = 2種類（トートセットと縁ブレンドは重複）
     order.items = [
       ItemEntity.fromItem({
         id: "51_tote_yukari",
@@ -350,34 +386,20 @@ describe("[unit] order entity", () => {
         assignee: null,
       }),
       ItemEntity.fromItem({
-        id: "01_yukari_brend",
-        name: "縁ブレンド",
-        price: 500,
-        type: "hot",
-        assignee: null,
-      }),
-      ItemEntity.fromItem({
-        id: "01_yukari_brend",
-        name: "縁ブレンド",
-        price: 500,
-        type: "hot",
-        assignee: null,
-      }),
-      ItemEntity.fromItem({
-        id: "01_yukari_brend",
-        name: "縁ブレンド",
-        price: 500,
+        id: "02_cafeore_brend",
+        name: "珈琲・俺ブレンド",
+        price: 300,
         type: "hot",
         assignee: null,
       }),
     ];
     
     const details = order.shouldSplitOrder();
-    expect(details.uniqueCoffeeCount).toBe(1);
-    expect(details.totalCoffeeCups).toBe(5); // コーヒー4杯 + トートセット1個
+    expect(details.uniqueCoffeeCount).toBe(2); // トートセットと縁ブレンドは重複して1種類としてカウント
+    expect(details.totalCoffeeCups).toBe(3); // コーヒー2杯 + トートセット1個
     expect(details.toteSets.length).toBe(1);
-    expect(details.coffeeCups.length).toBe(4);
-    expect(details.shouldSplit).toBe(true);
+    expect(details.coffeeCups.length).toBe(2);
+    expect(details.shouldSplit).toBe(false);
   });
 
   test("shouldSplitOrder - 分割不要な場合", () => {

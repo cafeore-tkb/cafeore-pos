@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ITEM_MASTER } from "../data/items";
 import type { WithId } from "../lib/typeguard";
 import { ItemEntity, itemSchema } from "./item";
 
@@ -242,13 +243,16 @@ export class OrderEntity implements Order {
     shouldSplit: boolean;
   } {
     const coffeeCups = this.getCoffeeCups();
-    const toteSets = this.items.filter(item => item.id === "51_tote_yukari");
-    
+    const toteSetsId = ITEM_MASTER["@"].id; // トートセット
+    const yushoId = ITEM_MASTER["-"].id; // 優勝ブレンド
+    const toteSets = this.items.filter((item) => item.id === toteSetsId);
+
     // トートセットはコーヒー1杯分としてカウント
     const totalCoffeeCups = coffeeCups.length + toteSets.length;
-    
+
     // コーヒーの種類数を計算（同じアイテムIDの重複を除く）
     const uniqueCoffeeTypes = new Set(coffeeCups.map(item => item.id));
+    if (toteSets.length > 0) uniqueCoffeeTypes.add(yushoId);
     const uniqueCoffeeCount = uniqueCoffeeTypes.size;
     
     // 条件：コーヒーが3種以上 または 5杯以上（トートセット含む）
