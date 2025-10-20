@@ -6,8 +6,6 @@ export async function getOrders() {
   return orderEntities.map((order) => order.toOrder());
 }
 
-const orders = await getOrders();
-
 export function DownloadButton() {
   // CSV用に文字列をエスケープ
   const escapeCSV = (value: unknown): string => {
@@ -29,7 +27,8 @@ export function DownloadButton() {
   };
 
   // 🎯 メイン関数：orders配列からCSVを生成してダウンロード
-  const downloadOrdersCsv = () => {
+  const downloadOrdersCsv = async () => {
+    const orders = await getOrders();
     const headers = [
       "id",
       "orderId",
@@ -108,14 +107,15 @@ export function DownloadButton() {
     URL.revokeObjectURL(link.href);
   };
 
-  const downloadOrdersJson = () => {
+  const downloadOrdersJson = async () => {
+    const orders = await getOrders();
     const output = { orders };
     const blob = new Blob([JSON.stringify(output, null, 2)], {
       type: "text/json",
     });
 
     const timestamp = getTimestamp();
-    const filename = `orders-${timestamp}.csv`;
+    const filename = `orders-${timestamp}.json`;
 
     // ブラウザで自動ダウンロード
     const link = document.createElement("a");
