@@ -15,7 +15,7 @@ export const usePrinter = () => {
     rawPrinter.addLine(item.name, [1, 2]);
     rawPrinter.addLine(`${index}/${total}`, [2, 1]);
     if (item.assignee) {
-      rawPrinter.addLine(`指名：${item.assignee}`, [1, 1]);
+      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }
@@ -33,7 +33,7 @@ export const usePrinter = () => {
 
     assignedItems.map((item) => {
       rawPrinter.addLine(item.name, [1, 1]);
-      rawPrinter.addLine(`　指名： ${item.assignee}`, [1, 1]);
+      rawPrinter.addLine(`  指名：${item.assignee}`, [1, 1]);
     });
 
     for (let i = 0; i < unassignedItems.length; i += 2) {
