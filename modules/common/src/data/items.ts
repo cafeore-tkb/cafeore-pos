@@ -9,9 +9,9 @@ type RawItemSource = {
 
 export const ITEM_MASTER = {
   "-": {
-    id: "01_yushou_brend",
-    name: "優勝ブレンド",
-    abbr: "優勝",
+    id: "01_yukari_brend",
+    name: "縁ブレンド",
+    abbr: "ゆかり",
     price: 500,
     type: "hot",
   },
@@ -23,9 +23,16 @@ export const ITEM_MASTER = {
     type: "hot",
   },
   "/": {
-    id: "03_special",
-    name: "限定",
-    abbr: "限定",
+    id: "03_Lychee",
+    name: "ライチ",
+    abbr: "ライチ",
+    price: 1000,
+    type: "hot",
+  },
+  "#": {
+    id: "07_blumoun",
+    name: "ブルマン",
+    abbr: "ブルマン",
     price: 1000,
     type: "hot",
   },
@@ -79,11 +86,18 @@ export const ITEM_MASTER = {
     type: "others",
   },
   "@": {
-    id: "51_item_yushou",
-    name: "トートバッグ+優勝ブレンド",
-    abbr: "トート+優勝",
+    id: "51_tote_yukari",
+    name: "トートセット",
+    abbr: "セット",
     price: 1000,
-    type: "hot",
+    type: "others",
+  },
+  "*": {
+    id: "52_tote",
+    name: "トートバッグ単体",
+    abbr: "トート単",
+    price: 1000,
+    type: "others",
   },
 } as const satisfies RawItemSource;
 
