@@ -93,42 +93,51 @@ export default function FielsOfMaster() {
               <div key={order.id}>
                 <Card className={cn(isReady && "bg-gray-300 text-gray-500")}>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{`No. ${order.orderId}`}</CardTitle>
-                      <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-                        {order.getDrinkCups().length}
+                    <div className="flex items-end justify-between">
+                      <CardTitle className="flex items-end font-normal">
+                        <div className="font-black text-sm">No.</div>
+                        <div className="font-black text-6xl">
+                          {order.orderId}
+                        </div>
                       </CardTitle>
+                      <RealtimeElapsedTime order={order} />
                       <div className="grid">
                         <div className="px-2 text-right">
-                          {dayjs(order.createdAt).format("H時m分")}
+                          {dayjs(order.createdAt).format("H:mm")}
                         </div>
-                        <RealtimeElapsedTime order={order} />
+
+                        <CardTitle className="flex h-10 items-end">
+                          <p className="text-5xl">
+                            {order.getDrinkCups().length}
+                          </p>
+                          <p className="text-sm">杯</p>
+                        </CardTitle>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="mb-4 grid grid-cols-2 gap-2">
-                      {order.getDrinkCups().map((item, index) => (
-                        <div key={`${order.id}-${index}-${item.id}`}>
+                      {order.getDrinkCups().map((item, idx) => (
+                        <div key={`${idx}-${item.id}`}>
                           <Card
                             className={cn(
-                              "pt-6",
+                              "p-3",
                               item.type === "iceOre" && "bg-sky-200",
                               item.type === "hotOre" && "bg-orange-300",
                               item.type === "ice" && "bg-blue-200",
                               item.type === "milk" && "bg-gray-300",
-                              item.name === "限定" && "bg-red-300",
+                              (item.name === "ブルマン" ||
+                                item.name === "ライチ") &&
+                                "bg-green-300",
                               isReady && "bg-gray-200 text-gray-500",
                             )}
                           >
-                            <CardContent>
-                              <h3 className="text-center font-bold">
-                                {id2abbr(item.id)}
-                              </h3>
-                              {item.assignee && (
-                                <p className="text-sm">指名:{item.assignee}</p>
-                              )}
-                            </CardContent>
+                            <h3 className="text-center font-bold text-3xl">
+                              {id2abbr(item.id)}
+                            </h3>
+                            {item.assignee && (
+                              <p className="text-sm">指名:{item.assignee}</p>
+                            )}
                           </Card>
                         </div>
                       ))}
