@@ -72,17 +72,21 @@ export default function FielsOfMaster() {
   }, 0);
 
   const handleEmergencyClick = useCallback(
-    (item: WithId<ItemEntity>, orderId: number) => {
-      // 緊急フラグを立てたアイテムで新しいオーダーを作成
-      const emergencyItem = item.clone();
-      emergencyItem.emergency = true;
+    (item: WithId<ItemEntity>, orderId: number, originalOrder: OrderEntity) => {
+      // 既存のオーダーをクローンして緊急コメントを追加
+      const order = originalOrder.clone();
 
-      const emergencyOrder = OrderEntity.createNew({ orderId });
-      emergencyOrder.items = [emergencyItem];
-      emergencyOrder.addComment("master", "緊急対応");
+      // 該当アイテムに緊急フラグを立てる
+      const itemIndex = order.items.findIndex((i) => i.id === item.id);
+      if (itemIndex !== -1) {
+        order.items[itemIndex].emergency = true;
+      }
+
+      // 緊急対応のコメントを追加
+      order.addComment("master", `緊急対応: ${id2abbr(item.id)}`);
 
       submit(
-        { emergencyOrder: JSON.stringify(emergencyOrder.toOrder()) },
+        { emergencyOrder: JSON.stringify(order.toOrder()) },
         { method: "PATCH" },
       );
     },
@@ -163,7 +167,9 @@ export default function FielsOfMaster() {
                               <EmergencyButton
                                 item={item}
                                 orderId={order.orderId}
-                                onEmergencyClick={handleEmergencyClick}
+                                onEmergencyClick={(item, orderId) =>
+                                  handleEmergencyClick(item, orderId, order)
+                                }
                               />
                             </CardContent>
                           </Card>
