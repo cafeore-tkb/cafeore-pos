@@ -1,4 +1,4 @@
-import { orderRepository } from "@cafeore/common";
+import { type Order, orderRepository } from "@cafeore/common";
 import { Button } from "../ui/button";
 
 export async function getOrders() {
@@ -26,26 +26,12 @@ export function DownloadButton() {
     return `${date}_${time}`;
   };
 
-  // 🎯 メイン関数：orders配列からCSVを生成してダウンロード
+  // ordersからCSVを生成してダウンロード
   const downloadOrdersCsv = async () => {
     const orders = await getOrders();
-    const headers = [
-      "id",
-      "orderId",
-      "createdAt",
-      "readyAt",
-      "servedAt",
-      "items",
-      "total",
-      "comments",
-      "billingAmount",
-      "received",
-      "discountOrderId",
-      "discountOrderCups",
-      "DISCOUNT_PER_CUP",
-      "discount",
-      "estimateTime",
-    ];
+    const headers = Object.keys(orders[0]) as (keyof Order)[];
+
+    console.log(headers);
 
     const formatDate = (value?: null | Date) => {
       if (!value) return "";
@@ -60,37 +46,20 @@ export function DownloadButton() {
     };
 
     const sortedOrders = [...orders].sort((a, b) => {
-      const idA = Number(a.orderId);
-      const idB = Number(b.orderId);
-      return idA - idB;
+      return a.orderId - b.orderId;
     });
 
     const rows = sortedOrders.map((o) => {
-      const itemsStr = o.items
-        .map((i) => `${i.name}(${i.assignee ?? "なし"})`)
-        .join("; ");
-
-      const commentsStr = (o.comments ?? []).join("; ");
-
-      const values = [
-        o.id,
-        o.orderId,
-        formatDate(o.createdAt),
-        formatDate(o.readyAt),
-        formatDate(o.servedAt),
-        itemsStr,
-        o.total,
-        commentsStr,
-        o.billingAmount,
-        o.received,
-        o.discountOrderId,
-        o.discountOrderCups,
-        o.DISCOUNT_PER_CUP,
-        o.discount,
-        o.estimateTime,
-      ];
-
-      return values.map(escapeCSV).join(",");
+      const values = headers.map((key) => {
+        let value = o[key];
+        // 日付をフォーマット
+        if (value instanceof Date) value = formatDate(value);
+        // items や comments は文字列化
+        if (Array.isArray(value))
+          value = value.map((v) => JSON.stringify(v)).join("; ");
+        return escapeCSV(value);
+      });
+      return values.join(",");
     });
 
     const csv = [headers.join(","), ...rows].join("\n");
@@ -99,7 +68,7 @@ export function DownloadButton() {
     const timestamp = getTimestamp();
     const filename = `orders-${timestamp}.csv`;
 
-    // ブラウザで自動ダウンロード
+    // ブラウザでダウンロード
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = filename;
@@ -117,7 +86,7 @@ export function DownloadButton() {
     const timestamp = getTimestamp();
     const filename = `orders-${timestamp}.json`;
 
-    // ブラウザで自動ダウンロード
+    // ブラウザでダウンロード
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = filename;
