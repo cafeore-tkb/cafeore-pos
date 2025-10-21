@@ -101,7 +101,7 @@ export const useRawPrinter = () => {
       prn.addTextSize(1, 1);
       prn.addText(" ");
       prn.addTextSize(1, 2);
-      prn.addText("領収書 ");
+      prn.addText("明細 ");
       prn.addTextSize(1, 1);
       prn.addText("No.");
       prn.addTextSize(2, 2);
