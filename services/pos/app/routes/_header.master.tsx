@@ -1,7 +1,9 @@
 import {
+  type ItemEntity,
   MasterStateEntity,
   OrderEntity,
   type OrderStatType,
+  type WithId,
   collectionSub,
   id2abbr,
   masterRepository,
@@ -24,6 +26,7 @@ import { LuHourglass } from "react-icons/lu";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import { EmergencyButton } from "~/components/molecules/EmergencyButton";
 import { InputComment } from "~/components/molecules/InputComment";
 import { RealtimeElapsedTime } from "~/components/molecules/RealtimeElapsedTime";
 import { Button } from "~/components/ui/button";
@@ -67,6 +70,24 @@ export default function FielsOfMaster() {
     }
     return acc;
   }, 0);
+
+  const handleEmergencyClick = useCallback(
+    (item: WithId<ItemEntity>, orderId: number) => {
+      // 緊急フラグを立てたアイテムで新しいオーダーを作成
+      const emergencyItem = item.clone();
+      emergencyItem.emergency = true;
+
+      const emergencyOrder = OrderEntity.createNew({ orderId });
+      emergencyOrder.items = [emergencyItem];
+      emergencyOrder.addComment("master", "緊急対応");
+
+      submit(
+        { emergencyOrder: JSON.stringify(emergencyOrder.toOrder()) },
+        { method: "PATCH" },
+      );
+    },
+    [submit],
+  );
 
   return (
     <div className="p-4 font-sans">
@@ -128,6 +149,11 @@ export default function FielsOfMaster() {
                               {item.assignee && (
                                 <p className="text-sm">指名:{item.assignee}</p>
                               )}
+                              <EmergencyButton
+                                item={item}
+                                orderId={order.orderId}
+                                onEmergencyClick={handleEmergencyClick}
+                              />
                             </CardContent>
                           </Card>
                         </div>
@@ -187,6 +213,8 @@ export const clientAction: ClientActionFunction = async (args) => {
       return addComment(args);
     case "POST":
       return changeOrderStat(args);
+    case "PATCH":
+      return submitEmergencyOrder(args);
     default:
       throw new Error(`Method ${method} is not allowed`);
   }
@@ -240,6 +268,36 @@ export const changeOrderStat: ClientActionFunction = async ({ request }) => {
   console.log(masterStats);
 
   await masterRepository.set(masterStats);
+
+  return new Response("ok");
+};
+
+export const submitEmergencyOrder: ClientActionFunction = async ({
+  request,
+}) => {
+  const formData = await request.formData();
+
+  const schema = z.object({
+    emergencyOrder: stringToJSONSchema.pipe(orderSchema),
+  });
+  const submission = parseWithZod(formData, {
+    schema,
+  });
+
+  if (submission.status !== "success") {
+    console.error("Validation error:", submission.error);
+    return submission.reply();
+  }
+
+  const { emergencyOrder } = submission.value;
+  console.log("emergencyOrder:", emergencyOrder);
+
+  const order = OrderEntity.fromOrder(emergencyOrder);
+  console.log("order:", order);
+
+  const savedOrder = await orderRepository.save(order);
+
+  console.log("savedOrder", savedOrder);
 
   return new Response("ok");
 };
