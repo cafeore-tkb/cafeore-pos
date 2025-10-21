@@ -1,7 +1,6 @@
 import {
   OrderEntity,
   collectionSub,
-  id2abbr,
   orderConverter,
   orderRepository,
   orderSchema,
@@ -13,18 +12,12 @@ import {
   type MetaFunction,
   useSubmit,
 } from "@remix-run/react";
-import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
-import { ReadyBell } from "~/components/atoms/ReadyBell";
-import { ServeCheck } from "~/components/atoms/ServeCheck";
-import { InputComment } from "~/components/molecules/InputComment";
-import { RealtimeElapsedTime } from "~/components/molecules/RealtimeElapsedTime";
+import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Sheet,
   SheetClose,
@@ -34,7 +27,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet";
-import { cn } from "~/lib/utils";
 
 export const BASE_CLIENT_URL = "https://cafeore-2024.pages.dev";
 
@@ -67,47 +59,6 @@ export default function Serve() {
     }
     return acc;
   }, 0);
-
-  const beServed = useCallback(
-    (servedOrder: OrderEntity) => {
-      const order = servedOrder.clone();
-      order.beServed();
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
-
-  const undoServe = useCallback(
-    (servedOrder: OrderEntity) => {
-      const order = servedOrder.clone();
-      order.undoServed();
-      order.undoReady();
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
-
-  const changeReady = useCallback(
-    (servedOrder: OrderEntity, ready: boolean) => {
-      const order = servedOrder.clone();
-      if (ready) {
-        order.beReady();
-      } else {
-        order.undoReady();
-      }
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
 
   const ITEMS_PER_PAGE = 20;
   const [page, setPage] = useState(0);
@@ -152,109 +103,13 @@ export default function Serve() {
 
             <div className="mt-4 grid grid-cols-2 gap-4">
               {currentPageOrders.map((order) => {
-                const isReady = order.readyAt !== null;
                 return (
-                  <Card
+                  <OrderInfoCard
                     key={order.id}
-                    className={cn(
-                      "transition-all duration-200",
-                      "hover:scale-[1.02]",
-                      isReady && "bg-gray-300 text-gray-500",
-                    )}
-                  >
-                    <CardHeader>
-                      <div className="flex items-end justify-between">
-                        <CardTitle className="flex items-end font-normal">
-                          <div className="font-black text-sm">No.</div>
-                          <div className="font-black text-6xl">
-                            {order.orderId}
-                          </div>
-                        </CardTitle>
-                        <div
-                          className={cn(
-                            "rounded-md px-2",
-                            pass15Minutes(order)
-                              ? "bg-red-500 text-white"
-                              : "bg-slate-100",
-                          )}
-                        >
-                          <div>{diffTime(order)}</div>
-                        </div>
-                        <div className="grid">
-                          <div className="px-2 text-right">
-                            {dayjs(order.createdAt).format("H:mm")}
-                          </div>
-                          <a
-                            // link for debug
-                            className="items-end px-2"
-                            href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <CardTitle className="flex h-10 items-end">
-                              <p className="text-5xl">
-                                {order.getDrinkCups().length}
-                              </p>
-                              <p className="text-sm">杯</p>
-                            </CardTitle>
-                          </a>
-                        </div>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="space-y-2">
-                      <div className="grid grid-cols-2 gap-1">
-                        {order.getDrinkCups().map((item, idx) => (
-                          <Card
-                            key={`${idx}-${item.id}`}
-                            className={cn(
-                              "p-1 text-center font-bold text-xl",
-                              item.type === "milk" && "bg-yellow-200",
-                              item.type === "hotOre" && "bg-orange-300",
-                              item.type === "iceOre" && "bg-sky-200",
-                              isReady && "bg-gray-200 text-gray-500",
-                            )}
-                          >
-                            {id2abbr(item.id)}
-                          </Card>
-                        ))}
-                      </div>
-
-                      {/* コメント */}
-                      {order.comments.length > 0 && (
-                        <div className="space-y-1">
-                          {order.comments.map((comment, index) => (
-                            <div
-                              key={`${index}-${comment.author}`}
-                              className={cn(
-                                "flex gap-1 rounded-md bg-gray-200 px-2 py-1 text-xs",
-                                isReady && "bg-gray-400",
-                              )}
-                            >
-                              <div className="font-bold">
-                                {(comment.author === "cashier" && "レ") ||
-                                  (comment.author === "master" && "マ") ||
-                                  (comment.author === "serve" && "提") ||
-                                  (comment.author === "others" && "他")}
-                              </div>
-                              <div>{comment.text}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="mt-2 flex items-center justify-between">
-                        <Button
-                          onClick={() => {
-                            undoServe(order);
-                          }}
-                          className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
-                        >
-                          提供取消
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    order={order}
+                    user={"serve-served"}
+                    comment={() => {}}
+                  />
                 );
               })}
             </div>
@@ -293,113 +148,14 @@ export default function Serve() {
 
       <div className="grid grid-cols-4 gap-4">
         {orders?.map((order) => {
-          const isReady = order.readyAt !== null;
           return (
             order.servedAt === null && (
-              <div key={order.id}>
-                <Card className={cn(isReady && "bg-gray-300 text-gray-500")}>
-                  <CardHeader>
-                    <div className="flex items-end justify-between">
-                      <CardTitle className="flex items-end font-normal">
-                        <div className="font-black text-sm">No.</div>
-                        <div className="font-black text-6xl">
-                          {order.orderId}
-                        </div>
-                      </CardTitle>
-                      <RealtimeElapsedTime order={order} />
-                      <div className="grid">
-                        <div className="px-2 text-right">
-                          {dayjs(order.createdAt).format("H:mm")}
-                        </div>
-                        <a
-                          // link for debug
-                          className="items-end px-2"
-                          href={`${BASE_CLIENT_URL}/welcome?id=${order.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <CardTitle className="flex h-10 items-end">
-                            <p className="text-5xl">
-                              {order.getDrinkCups().length}
-                            </p>
-                            <p className="text-sm">杯</p>
-                          </CardTitle>
-                        </a>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="mb-4 grid grid-cols-2 gap-2">
-                      {order.getDrinkCups().map((item, idx) => (
-                        <div key={`${idx}-${item.id}`}>
-                          <Card
-                            className={cn(
-                              "p-3",
-                              item.type === "milk" && "bg-yellow-200",
-                              item.type === "hotOre" && "bg-orange-300",
-                              item.type === "iceOre" && "bg-sky-200",
-                              isReady && "bg-gray-200 text-gray-500",
-                            )}
-                          >
-                            <h3 className="text-center font-bold text-3xl">
-                              {id2abbr(item.id)}
-                            </h3>
-                          </Card>
-                        </div>
-                      ))}
-                    </div>
-
-                    {order?.comments.length !== 0 && (
-                      <div>
-                        {order.comments.map((comment, index) => (
-                          <div
-                            key={`${index}-${comment.author}`}
-                            className={cn(
-                              isReady && "bg-gray-400",
-                              "my-2",
-                              "flex",
-                              "gap-2",
-                              "rounded-md",
-                              "bg-gray-200",
-                              "px-2",
-                              "py-1",
-                            )}
-                          >
-                            <div className="flex-none font-bold">
-                              {(comment.author === "cashier" && "レ") ||
-                                (comment.author === "master" && "マ") ||
-                                (comment.author === "serve" && "提") ||
-                                (comment.author === "others" && "他")}
-                            </div>
-                            <div>{comment.text}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <InputComment order={order} addComment={addComment} />
-                    <div className="mt-4 flex items-center justify-between">
-                      <ReadyBell
-                        order={order}
-                        changeReady={(ready) => changeReady(order, ready)}
-                      />
-                      <ServeCheck
-                        order={order}
-                        onServe={(order) => {
-                          const now = new Date();
-                          beServed(order);
-                          toast(`提供完了 No.${order.orderId}`, {
-                            description: `${dayjs(now).format("H時m分")}`,
-                            action: {
-                              label: "取消",
-                              onClick: () => undoServe(order),
-                            },
-                          });
-                        }}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <OrderInfoCard
+                key={order.id}
+                order={order}
+                user={"serve-unserved"}
+                comment={addComment}
+              />
             )
           );
         })}
@@ -430,20 +186,4 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
   console.log("savedOrder", savedOrder);
 
   return new Response("ok");
-};
-
-const diffTime = (order: OrderEntity) => {
-  if (order.servedAt == null) return "未提供";
-  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-    "m分ss秒",
-  );
-};
-
-const pass15Minutes = (order: OrderEntity) => {
-  if (order.servedAt === null)
-    return dayjs(dayjs().diff(dayjs(order.createdAt))).minute() >= 15;
-  if (order.servedAt !== null)
-    return (
-      dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
-    );
 };
