@@ -17,7 +17,7 @@ export const InputComment = ({ order, addComment }: props) => {
         name="comment"
         type="string"
         value={descComment}
-        placeholder="追記"
+        placeholder="コメント"
         onChange={(e) => {
           setDescComment(e.target.value);
         }}
