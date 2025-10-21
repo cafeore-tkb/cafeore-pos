@@ -236,40 +236,134 @@ export class OrderEntity implements Order {
    * @returns 分割判定の詳細情報
    */
   shouldSplitOrder(): {
-    coffeeCups: WithId<ItemEntity>[];
-    toteSets: WithId<ItemEntity>[];
-    uniqueCoffeeCount: number;
-    totalCoffeeCups: number;
     shouldSplit: boolean;
+    recommendation?: {
+      id: string;
+      name: string;
+      count: number;
+    }[][];
   } {
-    const coffeeCups = this.getCoffeeCups();
-    const toteSetsId = ITEM_MASTER["@"].id; // トートセット
-    const yushoId = ITEM_MASTER["-"].id; // 優勝ブレンド
-    const toteSets = this.items.filter((item) => item.id === toteSetsId);
-
-    // トートセットはコーヒー1杯分としてカウント
-    const totalCoffeeCups = coffeeCups.length + toteSets.length;
-
-    // コーヒーの種類数を計算（同じアイテムIDの重複を除く）
-    const uniqueCoffeeTypes = new Set(coffeeCups.map(item => item.id));
-    if (toteSets.length > 0) uniqueCoffeeTypes.add(yushoId);
-    const uniqueCoffeeCount = uniqueCoffeeTypes.size;
-    
-    // 条件：コーヒーが3種以上 または 5杯以上（トートセット含む）
-    const shouldSplit = uniqueCoffeeCount >= 3 || totalCoffeeCups >= 5;
+    const recommendation = this.generateSimpleRecommendation();
+    const shouldSplit = recommendation.length > 1;
     
     return {
-      coffeeCups,
-      toteSets,
-      uniqueCoffeeCount,
-      totalCoffeeCups,
       shouldSplit,
+      recommendation: shouldSplit ? recommendation : undefined,
     };
   }
 
   getDrinkCups() {
     // others 以外のアイテムを返す
     return this.items.filter((item) => item.type !== "others");
+  }
+
+  /**
+   * シンプルな分割推奨案を生成する
+   */
+  private generateSimpleRecommendation(): {
+    id: string;
+    name: string;
+    count: number;
+  }[][] {
+    const yushoId = ITEM_MASTER["-"].id;
+    const toteSetsId = ITEM_MASTER["@"].id;
+    
+    const coffeeCups = this.getCoffeeCups();
+    const toteSets = this.items.filter((item) => item.id === toteSetsId);
+    
+    // コーヒーを種類ごとにカウント
+    const coffeeCounts = new Map<string, number>();
+    coffeeCups.forEach(item => {
+      coffeeCounts.set(item.id, (coffeeCounts.get(item.id) || 0) + 1);
+    });
+    
+    const toteSetsCount = toteSets.length;
+    const othersItems = this.items.filter(item => 
+      (item.type === "others" || item.type === "milk") && item.id !== toteSetsId
+    );
+    
+    const getItemInfo = (id: string) => {
+      const item = Object.values(ITEM_MASTER).find(item => item.id === id);
+      return { id, name: item?.name || id };
+    };
+    
+    const orders: { id: string; name: string; count: number; }[][] = [];
+    const remaining = new Map(coffeeCounts);
+    
+    // トートセット・othersがある場合のみ、縁ブレンドとトートセットを最初の注文に追加
+    if (toteSetsCount > 0 || othersItems.length > 0) {
+      const firstOrder: { id: string; name: string; count: number; }[] = [];
+      let typesInFirstOrder = 0;
+      let totalCupsInFirstOrder = 0;
+      
+      // 縁ブレンドを追加
+      if (remaining.has(yushoId)) {
+        const count = remaining.get(yushoId)!;
+        firstOrder.push({ ...getItemInfo(yushoId), count });
+        remaining.delete(yushoId);
+        typesInFirstOrder++;
+        totalCupsInFirstOrder += count;
+      }
+      
+      // トートセットを追加（縁ブレンドとしてカウント）
+      if (toteSetsCount > 0) {
+        firstOrder.push({ ...getItemInfo(toteSetsId), count: toteSetsCount });
+        // トートセットは縁ブレンドとして扱うので、縁ブレンドが既にない場合は種類数をカウント
+        if (!remaining.has(yushoId)) {
+          typesInFirstOrder++;
+        }
+        totalCupsInFirstOrder += toteSetsCount;
+      }
+      
+      // othersタイプのアイテムを追加
+      othersItems.forEach(item => {
+        firstOrder.push({ id: item.id, name: item.name, count: 1 });
+      });
+      
+      // 最初の注文に他のコーヒーも追加（2種類2杯まで）
+      for (const [id, count] of remaining) {
+        if (typesInFirstOrder >= 2 || totalCupsInFirstOrder >= 4) break;
+        
+        const addCount = Math.min(count, 2);
+        firstOrder.push({ ...getItemInfo(id), count: addCount });
+        
+        typesInFirstOrder++;
+        totalCupsInFirstOrder += addCount;
+        remaining.set(id, count - addCount);
+        
+        if (remaining.get(id) === 0) {
+          remaining.delete(id);
+        }
+      }
+      
+      orders.push(firstOrder);
+    }
+    
+    // 他のコーヒーは2種類2杯までまとめる（前から埋める）
+    while (remaining.size > 0) {
+      const currentOrder: { id: string; name: string; count: number; }[] = [];
+      let typesInOrder = 0;
+      let totalCupsInOrder = 0;
+      
+      for (const [id, count] of remaining) {
+        if (typesInOrder >= 2 || totalCupsInOrder >= 4) break;
+        
+        const addCount = remaining.size === 1 ? Math.min(count, 4) : Math.min(count, 2);
+        currentOrder.push({ ...getItemInfo(id), count: addCount });
+        
+        typesInOrder++;
+        totalCupsInOrder += addCount;
+        remaining.set(id, count - addCount);
+        
+        if (remaining.get(id) === 0) {
+          remaining.delete(id);
+        }
+      }
+      
+      orders.push(currentOrder);
+    }
+    
+    return orders;
   }
 
   /**

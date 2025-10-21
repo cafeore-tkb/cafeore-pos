@@ -41,9 +41,16 @@ export const SubmitSection = ({ submitOrder, order, focus, splitDetails }: props
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
         </label>
-        {splitDetails?.shouldSplit && (
+        {splitDetails?.shouldSplit && splitDetails.recommendation && (
           <div className="mt-2 text-sm font-semibold text-red-600">
-            注文番号の分割を推奨します（種類: {splitDetails.uniqueCoffeeCount} 種 / 総杯数: {splitDetails.totalCoffeeCups} 杯 / トートセット: {splitDetails.toteSets.length} 個）
+            <div className="mb-2">注文番号の分割を推奨します</div>
+            <div className="text-xs text-red-500">
+              {splitDetails.recommendation.map((order, index) => (
+                <div key={index} className="mb-1">
+                  注文{index + 1}: {order.map(item => `${item.name}${item.count}${item.name.includes('杯') ? '' : '個'}`).join(' + ')}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
