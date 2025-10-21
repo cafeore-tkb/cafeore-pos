@@ -81,7 +81,10 @@ export const itemConverter: FirestoreDataConverter<WithId<ItemEntity>> = {
       snapshot,
       options,
     );
-    return ItemEntity.fromItem(convertedData);
+    return ItemEntity.fromItem({
+      ...convertedData,
+      emergency: convertedData.emergency ?? false,
+    });
   },
 };
 
@@ -98,7 +101,13 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
       snapshot,
       options,
     );
-    return OrderEntity.fromOrder(convertedData);
+    return OrderEntity.fromOrder({
+      ...convertedData,
+      items: convertedData.items.map((item) => ({
+        ...item,
+        emergency: item.emergency ?? false,
+      })),
+    });
   },
 };
 
@@ -114,7 +123,16 @@ export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
         options,
       );
 
-      return CashierStateEntity.fromCashierState(convertedData);
+      return CashierStateEntity.fromCashierState({
+        ...convertedData,
+        edittingOrder: {
+          ...convertedData.edittingOrder,
+          items: convertedData.edittingOrder.items.map((item) => ({
+            ...item,
+            emergency: item.emergency ?? false,
+          })),
+        },
+      });
     },
   };
 

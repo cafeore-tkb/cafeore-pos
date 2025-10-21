@@ -18,6 +18,7 @@ export const itemSchema = z.object({
     required_error: "種類が未選択です",
     invalid_type_error: "不正な種類です",
   }),
+  emergency: z.boolean().optional().default(false),
   assignee: z.string().nullable(),
 });
 
@@ -40,11 +41,12 @@ export class ItemEntity implements Item {
     private readonly _name: string,
     private readonly _price: number,
     private readonly _type: ItemType,
+    private _emergency: boolean,
     private _assignee: string | null,
   ) {}
 
   static createNew({ name, price, type }: Omit<Item, "assignee">): ItemEntity {
-    return new ItemEntity(undefined, name, price, type, null);
+    return new ItemEntity(undefined, name, price, type, false, null);
   }
 
   static fromItem(item: WithId<Item>): WithId<ItemEntity>;
@@ -55,6 +57,7 @@ export class ItemEntity implements Item {
       item.name,
       item.price,
       item.type,
+      item.emergency,
       item.assignee,
     );
   }
@@ -77,6 +80,13 @@ export class ItemEntity implements Item {
 
   get type() {
     return this._type;
+  }
+
+  get emergency() {
+    return this._emergency;
+  }
+  set emergency(emergency: boolean) {
+    this._emergency = emergency;
   }
 
   get assignee() {
@@ -106,6 +116,7 @@ export class ItemEntity implements Item {
       name: this.name,
       price: this.price,
       type: this.type,
+      emergency: this._emergency,
       assignee: this.assignee,
     };
   }

@@ -2,7 +2,9 @@ import { IncludedIn, type WithId } from "../lib/typeguard";
 import { type Item, ItemEntity } from "../models/item";
 
 type RawItemSource = {
-  [keymap: string]: Omit<WithId<Item>, "assignee"> & { abbr: string };
+  [keymap: string]: Omit<WithId<Item>, "assignee" | "emergency"> & {
+    abbr: string;
+  };
 };
 
 export const ITEM_MASTER = {
@@ -90,11 +92,16 @@ type Keys = keyof typeof ITEM_MASTER;
 type Values = (typeof ITEM_MASTER)[Keys];
 
 export const itemSource: WithId<ItemEntity>[] = Object.entries(ITEM_MASTER).map(
-  ([_key, item]) => ItemEntity.fromItem({ ...item, assignee: null }),
+  ([_key, item]) =>
+    ItemEntity.fromItem({ ...item, assignee: null, emergency: false }),
 );
 
 export const key2item = (key: Keys) =>
-  ItemEntity.fromItem({ ...ITEM_MASTER[key], assignee: null });
+  ItemEntity.fromItem({
+    ...ITEM_MASTER[key],
+    assignee: null,
+    emergency: false,
+  });
 
 export const id2abbr = (id: string): Values["abbr"] | undefined =>
   Object.entries(ITEM_MASTER)
