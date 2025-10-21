@@ -6,6 +6,7 @@ import { usePrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
+import { useObserveEmergency } from "../functional/useObserveEmergency";
 import { useOrderState } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
 import { useSyncCahiserOrder } from "../functional/useSyncCahiserOrder";
@@ -54,6 +55,17 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   useSyncCahiserOrder(newOrder, syncOrder);
 
   const printer = usePrinter();
+
+  useObserveEmergency({
+    onEmergencyAdded: useCallback(
+      (order: OrderEntity) => {
+        console.log("緊急オーダーが追加されました:", order);
+        printer.printOrderLabel(order);
+        playSound();
+      },
+      [printer, playSound],
+    ),
+  });
 
   usePreventNumberKeyUpDown();
 
