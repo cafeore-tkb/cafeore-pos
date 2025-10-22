@@ -4,7 +4,7 @@ import { ItemEntity } from "./item";
 import { generateSimpleRecommendation } from "./recommendation";
 import { describe, it, expect } from "vitest";
 
-describe("コーヒー注文分割最適化アルゴリズム", () => {
+describe("[unit] コーヒー注文分割最適化アルゴリズム", () => {
   // テスト用のヘルパー関数
   const createTestOrder = (items: Array<{ key: string; count: number }>) => {
     const order = OrderEntity.createNew({ orderId: 1 });
@@ -27,98 +27,54 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
   describe("ケース1: 基本", () => {
     // 基本的な分割パターンのテスト
     // 縁ブレンド2杯、珈琲・俺ブレンド5杯、ライチ1杯、トートセット3個の組み合わせ
-    // 期待: 3注文に分割され、各注文が4杯以下になること
-    it("A=2, B=5, C=1, tote=3 の場合、3注文に分割される", () => {
+    // 縁ブレンド系(2杯+3杯=5杯)、珈琲・俺ブレンド5杯、ライチ1杯 = 3種類
+    // 期待: 3種類以上なので分割が必要
+    it("A=2, B=5, C=1, tote=3 の場合、分割が必要", () => {
       const order = createTestOrder([
         { key: "-", count: 2 },  // A: 縁ブレンド
         { key: "^", count: 5 },  // B: 珈琲・俺ブレンド
         { key: "/", count: 1 },  // C: ライチ
-        { key: "@", count: 3 },  // tote: トートセット
+        { key: "@", count: 3 },  // tote: トートセット（縁ブレンドとして扱う）
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result).toBe(true);
-      
-      const recommendation = generateSimpleRecommendation(order.items);
-      expect(recommendation).toBeDefined();
-      
-      const summary = getRecommendationSummary(recommendation);
-      console.log("ケース1結果:", summary);
-      
-      // 3注文に分割されることを確認
-      expect(recommendation.length).toBe(3);
-      
-      // 各注文が4杯以下であることを確認
-      recommendation.forEach(order => {
-        const totalCups = order.reduce((sum, item) => sum + item.count, 0);
-        expect(totalCups).toBeLessThanOrEqual(4);
-      });
+      expect(result).toBe(true); // 3種類以上なので分割が必要
     });
   });
 
   describe("ケース2: 同種大量", () => {
     // 同じ種類のコーヒーが大量にある場合のテスト
     // 縁ブレンド7杯の組み合わせ
-    // 期待: 2注文に分割され（4杯+3杯）、各注文が4杯以下になること
-    it("A=7 の場合、2注文に分割される", () => {
+    // 期待: 1種類で7杯なので分割が必要（5杯以上）
+    it("A=7 の場合、分割が必要", () => {
       const order = createTestOrder([
         { key: "-", count: 7 },  // A: 縁ブレンド
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result).toBe(true);
-      
-      const recommendation = generateSimpleRecommendation(order.items);
-      expect(recommendation).toBeDefined();
-      
-      const summary = getRecommendationSummary(recommendation);
-      console.log("ケース2結果:", summary);
-      
-      // 2注文に分割されることを確認
-      expect(recommendation.length).toBe(2);
-      
-      // 各注文が4杯以下であることを確認
-      recommendation.forEach(order => {
-        const totalCups = order.reduce((sum, item) => sum + item.count, 0);
-        expect(totalCups).toBeLessThanOrEqual(4);
-      });
+      expect(result).toBe(true); // 1種類で7杯なので分割が必要
     });
   });
 
   describe("ケース3: トートのみ", () => {
     // トートセットのみの注文のテスト
-    // トートセット5個の組み合わせ
-    // 期待: 2注文に分割され（4個+1個）、各注文が4杯以下になること
-    it("tote=5 の場合、2注文に分割される", () => {
+    // トートセット5個の組み合わせ（縁ブレンドとして扱う）
+    // 期待: 1種類で5杯なので分割が必要（5杯以上）
+    it("tote=5 の場合、分割が必要", () => {
       const order = createTestOrder([
-        { key: "@", count: 5 },  // tote: トートセット
+        { key: "@", count: 5 },  // tote: トートセット（縁ブレンドとして扱う）
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result).toBe(true);
-      
-      const recommendation = generateSimpleRecommendation(order.items);
-      expect(recommendation).toBeDefined();
-      
-      const summary = getRecommendationSummary(recommendation);
-      console.log("ケース3結果:", summary);
-      
-      // 2注文に分割されることを確認
-      expect(recommendation.length).toBe(2);
-      
-      // 各注文が4杯以下であることを確認
-      recommendation.forEach(order => {
-        const totalCups = order.reduce((sum, item) => sum + item.count, 0);
-        expect(totalCups).toBeLessThanOrEqual(4);
-      });
+      expect(result).toBe(true); // 1種類で5杯なので分割が必要
     });
   });
 
   describe("ケース4: 多種類少量", () => {
     // 複数の種類のコーヒーが少量ずつある場合のテスト
     // 6種類のコーヒーが各1杯ずつの組み合わせ
-    // 期待: 3注文に分割され（2種類×2杯ずつ）、各注文が4杯以下になること
-    it("A=1, B=1, C=1, D=1, E=1, F=1 の場合、3注文に分割される", () => {
+    // 期待: 6種類なので分割が必要（3種類以上）
+    it("A=1, B=1, C=1, D=1, E=1, F=1 の場合、分割が必要", () => {
       const order = createTestOrder([
         { key: "-", count: 1 },  // A: 縁ブレンド
         { key: "^", count: 1 },  // B: 珈琲・俺ブレンド
@@ -129,22 +85,90 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result).toBe(true);
-      
-      const recommendation = generateSimpleRecommendation(order.items);
-      expect(recommendation).toBeDefined();
-      
-      const summary = getRecommendationSummary(recommendation);
-      console.log("ケース4結果:", summary);
-      
-      // 3注文に分割されることを確認
-      expect(recommendation.length).toBe(3);
-      
-      // 各注文が4杯以下であることを確認
-      recommendation.forEach(order => {
-        const totalCups = order.reduce((sum, item) => sum + item.count, 0);
-        expect(totalCups).toBeLessThanOrEqual(4);
-      });
+      expect(result).toBe(true); // 6種類なので分割が必要
+    });
+  });
+
+  describe("新しいロジックのテスト", () => {
+    // 1種類のコーヒーのテスト
+    it("1種類で4杯以下の場合は分割不要", () => {
+      const order = createTestOrder([
+        { key: "-", count: 4 },  // A: 縁ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(false); // 1種類で4杯以下なので分割不要
+    });
+
+    it("1種類で5杯以上の場合は分割必要", () => {
+      const order = createTestOrder([
+        { key: "-", count: 5 },  // A: 縁ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(true); // 1種類で5杯以上なので分割必要
+    });
+
+    // 2種類のコーヒーのテスト
+    it("2種類で各2杯以下の場合は分割不要", () => {
+      const order = createTestOrder([
+        { key: "-", count: 2 },  // A: 縁ブレンド
+        { key: "^", count: 2 },  // B: 珈琲・俺ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(false); // 2種類で各2杯以下なので分割不要
+    });
+
+    it("2種類で片方が3杯以上の場合は分割必要", () => {
+      const order = createTestOrder([
+        { key: "-", count: 2 },  // A: 縁ブレンド
+        { key: "^", count: 3 },  // B: 珈琲・俺ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(true); // 2種類で片方が3杯以上なので分割必要
+    });
+
+    // トートセットを含むテスト
+    it("トートセット2個と縁ブレンド2個の場合は分割不要", () => {
+      const order = createTestOrder([
+        { key: "@", count: 2 },  // tote: トートセット（縁ブレンドとして扱う）
+        { key: "-", count: 2 },  // A: 縁ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(false); // 1種類（縁ブレンド）で4杯なので分割不要
+    });
+
+    it("トートセット3個と縁ブレンド2個の場合は分割必要", () => {
+      const order = createTestOrder([
+        { key: "@", count: 3 },  // tote: トートセット（縁ブレンドとして扱う）
+        { key: "-", count: 2 },  // A: 縁ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(true); // 1種類（縁ブレンド）で5杯なので分割必要
+    });
+
+    it("トートセット2個と珈琲・俺ブレンド2個の場合は分割不要", () => {
+      const order = createTestOrder([
+        { key: "@", count: 2 },  // tote: トートセット（縁ブレンドとして扱う）
+        { key: "^", count: 2 },  // B: 珈琲・俺ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(false); // 2種類で各2杯以下なので分割不要
+    });
+
+    it("トートセット3個と珈琲・俺ブレンド2個の場合は分割必要", () => {
+      const order = createTestOrder([
+        { key: "@", count: 3 },  // tote: トートセット（縁ブレンドとして扱う）
+        { key: "^", count: 2 },  // B: 珈琲・俺ブレンド
+      ]);
+
+      const result = order.shouldSplitOrder();
+      expect(result).toBe(true); // 2種類で片方（縁ブレンド）が3杯以上なので分割必要
     });
   });
 

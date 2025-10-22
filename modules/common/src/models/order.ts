@@ -232,23 +232,33 @@ export class OrderEntity implements Order {
 
   /**
    * ドリッパーを3人以上確保する注文かどうかを判定する
-   * 条件：コーヒーが3種以上 または 5杯以上
+   * 条件：
+   * - トートセットは縁ブレンドとして扱う
+   * - コーヒーの種類が1種類なら4杯までならtrue、5杯以上ならfalse
+   * - コーヒーの種類が2種類なら、1種類につき2杯までならtrue、3杯以上のものが1種類でもあればfalse
    * @returns 分割が必要かどうかのboolean値
    */
   shouldSplitOrder(): boolean {
     const yushoId = ITEM_MASTER["-"].id;
     const toteSetsId = ITEM_MASTER["@"].id;
     
-    const coffeeCups = this.getCoffeeCups();
-    const toteSets = this.items.filter((item) => item.id === toteSetsId);
+    // トートセットを縁ブレンドとして扱い、種類別にカウント
+    const coffeeCounts = new Map<string, number>();
     
-    // トートセットを縁ブレンドとして扱う
-    const totalCoffeeCups = coffeeCups.length + toteSets.length;
-    const uniqueCoffeeTypes = new Set(coffeeCups.map(item => item.id));
-    if (toteSets.length > 0) uniqueCoffeeTypes.add(yushoId);
-    const uniqueCoffeeCount = uniqueCoffeeTypes.size;
+    this.items.forEach(item => {
+      if (item.type !== "milk" && item.type !== "others") {
+        // 通常のコーヒー
+        coffeeCounts.set(item.id, (coffeeCounts.get(item.id) || 0) + 1);
+      } else if (item.id === toteSetsId) {
+        // トートセットは縁ブレンドとして扱う
+        coffeeCounts.set(yushoId, (coffeeCounts.get(yushoId) || 0) + 1);
+      }
+    });
     
-    return uniqueCoffeeCount >= 3 || totalCoffeeCups >= 5;
+    const types = coffeeCounts.size;
+    const counts = Array.from(coffeeCounts.values());
+    
+    return types >= 3 || (types === 2 && counts.some(count => count >= 3)) || (types === 1 && counts[0] >= 5);
   }
 
   getDrinkCups() {
