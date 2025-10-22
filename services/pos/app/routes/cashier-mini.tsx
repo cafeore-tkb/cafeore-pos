@@ -10,6 +10,7 @@ import logoSVG from "~/assets/cafeore.svg";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
+import Gradation2025 from "~/assets/gradation2025.png";
 
 export const meta: MetaFunction = () => {
   return [{ title: "珈琲・俺 1号店" }];
@@ -120,8 +121,9 @@ export default function CasherMini() {
       <div
         className={cn(
           "absolute top-0 left-0 z-0 h-screen w-screen",
-          "bg-theme2025",
+          "bg-cover bg-center bg-no-repeat",
         )}
+        style={{ backgroundImage: `url(${Gradation2025})` }}
       >
         <button type="button" className="absolute top-0 left-0 h-24 w-60" />
         <img
@@ -129,8 +131,8 @@ export default function CasherMini() {
           alt=""
           className="absolute bottom-10 h-screen w-screen p-40"
         />
-        <div className="flex h-screen w-screen flex-col px-28 py-10 font-noto">
-          <p className="flex-none pb-16 font-medium text-5xl text-white">
+        <div className="flex h-screen w-screen flex-col px-28 py-10 font-zen">
+          <p className="flex-none pb-16 font-medium text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
             No. <span className="font-semibold text-7xl">{orderId}</span>
           </p>
           <div className="flex h-4/5 flex-col justify-between">
@@ -141,13 +143,13 @@ export default function CasherMini() {
                     key={`${idx}-${item.id}`}
                     className="flex items-center justify-between pb-7"
                   >
-                    <p className="flex-none pr-14 font-bold text-6xl text-white">
+                    <p className="flex-none pr-14 font-bold text-6xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {idx + 1}
                     </p>
-                    <p className="flex-1 font-bold text-5xl text-white">
+                    <p className="flex-1 font-bold text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {item.name}
                     </p>
-                    <p className="flex-none font-bold text-5xl text-white">
+                    <p className="flex-none font-bold text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {item.price} 円
                     </p>
                   </div>
@@ -156,10 +158,10 @@ export default function CasherMini() {
               <div className="flex items-center justify-between pb-7">
                 {(order?.discount ?? 0) > 0 && (
                   <>
-                    <p className="flex-none pr-14 font-bold text-3xl text-white">
+                    <p className="flex-none pr-14 font-bold text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       割引
                     </p>
-                    <p className="font-bold text-4xl text-white">
+                    <p className="font-bold text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       -{order?.discount} 円
                     </p>
                   </>
@@ -167,22 +169,22 @@ export default function CasherMini() {
               </div>
             </div>
             <div className="">
-              <div className="mb-7 h-1 w-full bg-white" />
+              <div className="mb-7 h-1 w-full bg-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]" />
               <div className="flex items-center justify-between pb-7">
-                <p className="flex-none pr-14 font-bold text-5xl text-white">
+                <p className="flex-none pr-14 font-bold text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                   合計
                 </p>
-                <p className="font-bold text-5xl text-white">
+                <p className="font-bold text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                   {order?.billingAmount} 円
                 </p>
               </div>
               <div className="flex h-14 items-center justify-between pb-7">
                 {(order?.received ?? 0) > 0 && (
                   <>
-                    <p className="flex-none pr-14 font-bold text-4xl text-white">
+                    <p className="flex-none pr-14 font-bold text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       お預かり
                     </p>
-                    <p className="font-bold text-4xl text-white">
+                    <p className="font-bold text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {order?.received} 円
                     </p>
                   </>
@@ -191,10 +193,10 @@ export default function CasherMini() {
               <div className="flex h-12 items-center justify-between pb-7">
                 {charge >= 0 && (
                   <>
-                    <p className="flex-none pr-14 font-bold text-4xl text-white">
+                    <p className="flex-none pr-14 font-bold text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       おつり
                     </p>
-                    <p className="font-bold text-4xl text-white">{charge} 円</p>
+                    <p className="font-bold text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">{charge} 円</p>
                   </>
                 )}
               </div>
