@@ -57,24 +57,19 @@ export default function Cashier() {
 // TODO(toririm): リファクタリングするときにファイルを切り出す
 export const clientAction: ClientActionFunction = async (args) => {
   const method = args.request.method;
-  const formData = await args.request.formData();
-  
-  // servedOrderがある場合は注文更新アクションを実行
-  if (formData.has("servedOrder")) {
-    return updateOrderAction({ formData });
-  }
-  
   switch (method) {
     case "POST":
-      return submitOrderAction({ formData });
+      return submitOrderAction(args);
     case "PUT":
-      return syncOrderAction({ formData });
+      return syncOrderAction(args);
     default:
       return new Response("Method not allowed", { status: 405 });
   }
 };
 
-export const submitOrderAction = async ({ formData }: { formData: FormData }) => {
+export const submitOrderAction: ClientActionFunction = async ({ request }) => {
+  const formData = await request.formData();
+
   const schema = z.object({
     newOrder: stringToJSONSchema.pipe(orderSchema),
   });
@@ -103,7 +98,9 @@ export const submitOrderAction = async ({ formData }: { formData: FormData }) =>
   return new Response("ok");
 };
 
-export const syncOrderAction = async ({ formData }: { formData: FormData }) => {
+export const syncOrderAction: ClientActionFunction = async ({ request }) => {
+  const formData = await request.formData();
+
   const schema = z.object({
     syncOrder: stringToJSONSchema.pipe(orderSchema),
   });
@@ -122,28 +119,6 @@ export const syncOrderAction = async ({ formData }: { formData: FormData }) => {
     edittingOrder: OrderEntity.fromOrder(syncOrder),
     submittedOrderId: null,
   });
-
-  return new Response("ok");
-};
-
-export const updateOrderAction = async ({ formData }: { formData: FormData }) => {
-  const schema = z.object({
-    servedOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { servedOrder } = submission.value;
-  const order = OrderEntity.fromOrder(servedOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  console.log("savedOrder", savedOrder);
 
   return new Response("ok");
 };
