@@ -1,17 +1,11 @@
-import {
-  type OrderEntity,
-  collectionSub,
-  orderConverter,
-} from "@cafeore/common";
+import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
-import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useState } from "react";
 import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/ItemBarChart";
+import { OrderDetail } from "~/components/organisms/OrderDetail";
 import { OrderList } from "~/components/organisms/OrderList";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
@@ -43,67 +37,9 @@ export default function Dashboard() {
       <div className="w-1/2">
         <div className="sticky top-0">
           <ItemBarChart orders={orders} />
-          {detailOrder && (
-            <div key={detailOrder.id}>
-              <Card className="mt-3">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>{`No. ${detailOrder.orderId}`}</CardTitle>
-                    <CardTitle>合計金額: {detailOrder.total}円</CardTitle>
-                    <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-                      {detailOrder.items.length}
-                    </CardTitle>
-                    <div className="grid">
-                      <div className="px-2 text-right">
-                        受付時刻:{" "}
-                        {dayjs(detailOrder.createdAt).format("H:mm:ss")}
-                      </div>
-                      <p className="px-2 text-right">
-                        時間: {diffTime(detailOrder)}
-                      </p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-1">
-                    {detailOrder.items.map((item, idx) => (
-                      <div key={`${idx}-${item.id}`}>
-                        <Card
-                          className={cn(
-                            "flex h-10 flex-col items-center justify-center",
-                          )}
-                        >
-                          <h3 className="font-bold">{item.name}</h3>
-                        </Card>
-                      </div>
-                    ))}
-                  </div>
-                  {detailOrder?.comments.length === 0 && (
-                    <div>
-                      {detailOrder.comments.map((comment, index) => (
-                        <div
-                          key={`${comment.author}-${comment.text}`}
-                          className="my-2 flex rounded-md bg-gray-200 p-1"
-                        >
-                          <div className="flex-none">{comment.author}：</div>
-                          <div>{comment.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          {detailOrder && <OrderDetail order={detailOrder} />}
         </div>
       </div>
     </div>
   );
 }
-
-const diffTime = (order: OrderEntity) => {
-  if (order.servedAt == null) return "未提供";
-  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-    "m:ss",
-  );
-};
