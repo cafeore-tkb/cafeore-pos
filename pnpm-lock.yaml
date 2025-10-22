@@ -205,18 +205,12 @@ importers:
       input-otp:
         specifier: ^1.2.4
         version: 1.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      lodash:
-        specifier: ^4.17.21
-        version: 4.17.21
       lucide-react:
         specifier: 0.453.0
         version: 0.453.0(react@18.3.1)
       next-themes:
         specifier: ^0.3.0
         version: 0.3.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      qrcode.react:
-        specifier: ^4.1.0
-        version: 4.2.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -248,15 +242,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@firebase/rules-unit-testing':
-        specifier: ^4.0.1
-        version: 4.0.1(firebase@12.4.0)
       '@remix-run/dev':
         specifier: ^2.13.1
         version: 2.17.0(@remix-run/react@2.17.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.2))(@types/node@24.7.2)(jiti@1.21.7)(tsx@4.20.5)(typescript@5.9.2)(vite@6.3.6(@types/node@24.7.2)(jiti@1.21.7)(tsx@4.20.5)(yaml@2.8.1))(wrangler@3.80.4(@cloudflare/workers-types@4.20250830.0))(yaml@2.8.1)
-      '@types/lodash':
-        specifier: ^4.17.12
-        version: 4.17.20
       '@types/react':
         specifier: ^18.3.12
         version: 18.3.24
@@ -5310,11 +5298,6 @@ packages:
   pupa@2.1.1:
     resolution: {integrity: sha512-l1jNAspIBSFqbT+y+5FosojNpVpF94nlI+wDUpqP9enwOTfHx9f0gh5nB96vl+6yTpsJsypeNrwfzPrKuHB41A==}
     engines: {node: '>=8'}
-
-  qrcode.react@4.2.0:
-    resolution: {integrity: sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   qs@6.13.0:
     resolution: {integrity: sha512-+38qI9SOr8tfZ4QmJNplMUxqjbe7LKvvZgWdExBOmd+egZTtjLB67Gu0HRX3u/XOq7UU2Nx6nsjvS16Z9uwfpg==}
@@ -12213,10 +12196,6 @@ snapshots:
   pupa@2.1.1:
     dependencies:
       escape-goat: 2.1.1
-
-  qrcode.react@4.2.0(react@18.3.1):
-    dependencies:
-      react: 18.3.1
 
   qs@6.13.0:
     dependencies:
