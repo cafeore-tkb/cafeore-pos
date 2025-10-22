@@ -1,4 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
+import { OrderRecommendationGenerator } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
 
@@ -6,15 +7,25 @@ type props = {
   submitOrder: () => void;
   order: OrderEntity;
   focus: boolean;
-  splitDetails?: ReturnType<OrderEntity["shouldSplitOrder"]>;
 };
 
-export const SubmitSection = ({ submitOrder, order, focus, splitDetails }: props) => {
+export const SubmitSection = ({ submitOrder, order, focus }: props) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const billingOk = useMemo(
     () => order.items.length > 0 && order.getCharge() >= 0,
     [order],
   );
+
+  // 分割が必要かチェック
+  const shouldSplit = order.shouldSplitOrder();
+  
+  // 分割が必要な場合の推奨案を生成
+  const recommendations = useMemo(() => {
+    if (shouldSplit) {
+      return OrderRecommendationGenerator.generateSimpleRecommendation(order.items);
+    }
+    return null;
+  }, [shouldSplit, order.items]);
 
   /**
    * OK
@@ -41,11 +52,11 @@ export const SubmitSection = ({ submitOrder, order, focus, splitDetails }: props
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
         </label>
-        {splitDetails?.shouldSplit && splitDetails.recommendation && (
+        {shouldSplit && recommendations && (
           <div className="mt-2 text-sm font-semibold text-red-600">
             <div className="mb-2">注文番号の分割を推奨します</div>
             <div className="text-xs text-red-500">
-              {splitDetails.recommendation.map((order, index) => (
+              {recommendations.map((order, index) => (
                 <div key={index} className="mb-1">
                   注文{index + 1}: {order.map(item => `${item.name}${item.count}${item.name.includes('杯') ? '' : '個'}`).join(' + ')}
                 </div>
