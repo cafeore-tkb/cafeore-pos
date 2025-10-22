@@ -362,14 +362,14 @@ describe("[unit] order entity", () => {
     // アイスオレ + アイスミルク + コースター + トートセット + 珈琲・俺ブレンド + 縁ブレンド + 縁ブレンド + トートバッグ単体
     order.items = [
       ItemEntity.fromItem({
-        id: "04_ice_ore",
+        id: "30_ice_ore",
         name: "アイスオレ",
         price: 400,
         type: "iceOre",
         assignee: null,
       }),
       ItemEntity.fromItem({
-        id: "05_ice_milk",
+        id: "40_ice_milk",
         name: "アイスミルク",
         price: 300,
         type: "milk",
@@ -453,7 +453,7 @@ describe("[unit] order entity", () => {
     expect(coasterItem!.count).toBe(1);
     
     // アイスミルク1つが含まれていることを確認
-    const iceMilkItem = firstOrder.find(item => item.id === "05_ice_milk");
+    const iceMilkItem = firstOrder.find(item => item.id === "40_ice_milk");
     expect(iceMilkItem).toBeDefined();
     expect(iceMilkItem!.count).toBe(1);
     
@@ -462,7 +462,7 @@ describe("[unit] order entity", () => {
     expect(secondOrder).toHaveLength(2); // アイスオレ1杯 + 珈琲・俺ブレンド1杯
     
     // アイスオレ1杯が含まれていることを確認（2番目の注文に移動）
-    const iceOreItem = secondOrder.find(item => item.id === "04_ice_ore");
+    const iceOreItem = secondOrder.find(item => item.id === "30_ice_ore");
     expect(iceOreItem).toBeDefined();
     expect(iceOreItem!.count).toBe(1);
     
