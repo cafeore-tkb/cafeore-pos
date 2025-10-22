@@ -40,13 +40,7 @@ export type RecommendationOrder = RecommendationItem[];
  * - その他アイテムを1つの注文にまとめることで注文数を最小化
  * - 制約条件を満たしながら理論的最小注文数に近づける
  */
-export class OrderRecommendationGenerator {
-  /**
-   * 注文分割の推奨案を生成する
-   * @param items 注文アイテムの配列
-   * @returns 分割推奨案の配列
-   */
-  static generateSimpleRecommendation(items: WithId<ItemEntity>[]): RecommendationOrder[] {
+export function generateSimpleRecommendation(items: WithId<ItemEntity>[]): RecommendationOrder[] {
     const yushoId = ITEM_MASTER["-"].id;
     const toteSetsId = ITEM_MASTER["@"].id;
     
@@ -181,7 +175,7 @@ export class OrderRecommendationGenerator {
     }
     
     // 残りのコーヒー分割ループ（すべてのアイテムが0になるまで）
-    while (this.hasRemainingItems(itemsMap)) {
+    while (hasRemainingItems(itemsMap)) {
       const currentOrder: RecommendationOrder = [];
       let totalCups = 0;
       let typeCount = 0;
@@ -271,13 +265,12 @@ export class OrderRecommendationGenerator {
       }
     }
     
-    return orders;
-  }
-  
-  /**
-   * 残りのアイテムがあるかチェック
-   */
-  private static hasRemainingItems(items: Record<string, number>): boolean {
-    return Object.values(items).some(count => count > 0);
-  }
+  return orders;
+}
+
+/**
+ * 残りのアイテムがあるかチェック
+ */
+function hasRemainingItems(items: Record<string, number>): boolean {
+  return Object.values(items).some(count => count > 0);
 }
