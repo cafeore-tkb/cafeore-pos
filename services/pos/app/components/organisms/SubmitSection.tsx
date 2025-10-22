@@ -1,5 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
-import { OrderRecommendationGenerator } from "@cafeore/common";
+import { OrderRecommendationGenerator, ITEM_MASTER } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
 
@@ -58,7 +58,11 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
             <div className="text-xs text-red-500">
               {recommendations.map((order, index) => (
                 <div key={index} className="mb-1">
-                  注文{index + 1}: {order.map(item => `${item.name}${item.count}${item.name.includes('杯') ? '' : '個'}`).join(' + ')}
+                  注文{index + 1}: {order.map(item => {
+                    const itemMaster = Object.values(ITEM_MASTER).find(im => im.id === item.id);
+                    const unit = itemMaster?.type === "others" ? "個" : "杯";
+                    return `${item.name}${item.count}${unit}`;
+                  }).join(' + ')}
                 </div>
               ))}
             </div>
