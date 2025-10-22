@@ -22,8 +22,8 @@ export const RealtimeElapsedTime = ({
           "bg-red-500 text-white",
       )}
     >
-      <div>経過時間</div>
-      <div className="text-2xl">{diffTime.format("m分")}</div>
+      <div className="text-sm">経過時間</div>
+      <div className="font-bold text-3xl">{diffTime.format("m分")}</div>
     </div>
   );
 };

@@ -3,7 +3,6 @@ import {
   OrderEntity,
   type OrderStatType,
   collectionSub,
-  id2abbr,
   masterRepository,
   orderConverter,
   orderRepository,
@@ -17,17 +16,13 @@ import {
   type MetaFunction,
   useSubmit,
 } from "@remix-run/react";
-import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useCallback } from "react";
-import { LuHourglass } from "react-icons/lu";
 import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
-import { InputComment } from "~/components/molecules/InputComment";
-import { RealtimeElapsedTime } from "~/components/molecules/RealtimeElapsedTime";
+import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
@@ -87,99 +82,14 @@ export default function FielsOfMaster() {
 
       <div className="grid grid-cols-4 gap-4">
         {orders?.map((order) => {
-          const isReady = order.readyAt !== null;
           return (
             order.servedAt === null && (
-              <div key={order.id}>
-                <Card className={cn(isReady && "bg-gray-300 text-gray-500")}>
-                  <CardHeader>
-                    <div className="flex items-end justify-between">
-                      <CardTitle className="flex items-end font-normal">
-                        <div className="font-black text-sm">No.</div>
-                        <div className="font-black text-6xl">
-                          {order.orderId}
-                        </div>
-                      </CardTitle>
-                      <RealtimeElapsedTime order={order} />
-                      <div className="grid">
-                        <div className="px-2 text-right">
-                          {dayjs(order.createdAt).format("H:mm")}
-                        </div>
-
-                        <CardTitle className="flex h-10 items-end">
-                          <p className="text-5xl">
-                            {order.getDrinkCups().length}
-                          </p>
-                          <p className="text-sm">杯</p>
-                        </CardTitle>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="mb-4 grid grid-cols-2 gap-2">
-                      {order.getDrinkCups().map((item, idx) => (
-                        <div key={`${idx}-${item.id}`}>
-                          <Card
-                            className={cn(
-                              "p-3",
-                              item.type === "iceOre" && "bg-sky-200",
-                              item.type === "hotOre" && "bg-orange-300",
-                              item.type === "ice" && "bg-blue-200",
-                              item.type === "milk" && "bg-gray-300",
-                              (item.name === "ブルマン" ||
-                                item.name === "ライチ") &&
-                                "bg-green-300",
-                              isReady && "bg-gray-200 text-gray-500",
-                            )}
-                          >
-                            <h3 className="text-center font-bold text-3xl">
-                              {id2abbr(item.id)}
-                            </h3>
-                            {item.assignee && (
-                              <p className="text-sm">指名:{item.assignee}</p>
-                            )}
-                          </Card>
-                        </div>
-                      ))}
-                    </div>
-
-                    {order?.comments.length !== 0 && (
-                      <div>
-                        {order.comments.map((comment, index) => (
-                          <div
-                            key={`${index}-${comment.author}`}
-                            className={cn(
-                              isReady && "bg-gray-400",
-                              "my-2",
-                              "flex",
-                              "gap-2",
-                              "rounded-md",
-                              "bg-gray-200",
-                              "px-2",
-                              "py-1",
-                            )}
-                          >
-                            <div className="flex-none font-bold">
-                              {(comment.author === "cashier" && "レ") ||
-                                (comment.author === "master" && "マ") ||
-                                (comment.author === "serve" && "提") ||
-                                (comment.author === "others" && "他")}
-                            </div>
-                            <div>{comment.text}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <InputComment order={order} addComment={mutateOrder} />
-                    {isReady && (
-                      <div className="mt-5 flex items-center">
-                        <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
-                        <p className="text-yellow-700">提供待ち</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              <OrderInfoCard
+                key={order.id}
+                order={order}
+                user="master"
+                comment={mutateOrder}
+              />
             )
           );
         })}
