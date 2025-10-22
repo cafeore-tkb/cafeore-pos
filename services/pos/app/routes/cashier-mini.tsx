@@ -131,9 +131,9 @@ export default function CasherMini() {
           alt=""
           className="absolute bottom-10 h-screen w-screen p-40"
         />
-        <div className="flex h-screen w-screen flex-col px-8 md:px-16 lg:px-28 py-4 md:py-6 lg:py-10 font-zen">
-          <p className="flex-none pb-8 md:pb-12 lg:pb-16 font-medium text-3xl md:text-4xl lg:text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
-            No. <span className="font-semibold text-4xl md:text-5xl lg:text-7xl">{orderId}</span>
+        <div className="flex h-screen w-screen flex-col px-4 md:px-8 lg:px-16 py-2 md:py-4 lg:py-6 font-zen overflow-hidden">
+          <p className="flex-none pb-4 md:pb-6 lg:pb-8 font-medium text-2xl md:text-3xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+            No. <span className="font-semibold text-3xl md:text-4xl lg:text-6xl">{orderId}</span>
           </p>
           <div className="flex h-4/5 flex-col justify-between">
             <div className="">
@@ -141,27 +141,27 @@ export default function CasherMini() {
                 return (
                   <div
                     key={`${idx}-${item.id}`}
-                    className="flex items-center justify-between pb-7"
+                    className="flex items-center justify-between pb-3 md:pb-4 lg:pb-7"
                   >
-                    <p className="flex-none pr-6 md:pr-10 lg:pr-14 font-bold text-3xl md:text-4xl lg:text-6xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-none pr-3 md:pr-6 lg:pr-10 font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {idx + 1}
                     </p>
-                    <p className="flex-1 font-bold text-2xl md:text-3xl lg:text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-1 font-bold text-lg md:text-xl lg:text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {item.name}
                     </p>
-                    <p className="flex-none font-bold text-2xl md:text-3xl lg:text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-none font-bold text-lg md:text-xl lg:text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {item.price} 円
                     </p>
                   </div>
                 );
               })}
-              <div className="flex items-center justify-between pb-7">
+              <div className="flex items-center justify-between pb-3 md:pb-4 lg:pb-7">
                 {(order?.discount ?? 0) > 0 && (
                   <>
-                    <p className="flex-none pr-6 md:pr-10 lg:pr-14 font-bold text-xl md:text-2xl lg:text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-none pr-3 md:pr-6 lg:pr-10 font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       割引
                     </p>
-                    <p className="font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       -{order?.discount} 円
                     </p>
                   </>
@@ -169,34 +169,34 @@ export default function CasherMini() {
               </div>
             </div>
             <div className="">
-              <div className="mb-7 h-1 w-full bg-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]" />
-              <div className="flex items-center justify-between pb-7">
-                <p className="flex-none pr-6 md:pr-10 lg:pr-14 font-bold text-2xl md:text-3xl lg:text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+              <div className="mb-3 md:mb-4 lg:mb-7 h-1 w-full bg-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]" />
+              <div className="flex items-center justify-between pb-3 md:pb-4 lg:pb-7">
+                <p className="flex-none pr-3 md:pr-6 lg:pr-10 font-bold text-lg md:text-xl lg:text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                   合計
                 </p>
-                <p className="font-bold text-2xl md:text-3xl lg:text-5xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                <p className="font-bold text-lg md:text-xl lg:text-3xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                   {order?.billingAmount} 円
                 </p>
               </div>
-              <div className="flex h-14 items-center justify-between pb-7">
+              <div className="flex h-8 md:h-10 lg:h-14 items-center justify-between pb-3 md:pb-4 lg:pb-7">
                 {(order?.received ?? 0) > 0 && (
                   <>
-                    <p className="flex-none pr-6 md:pr-10 lg:pr-14 font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-none pr-3 md:pr-6 lg:pr-10 font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       お預かり
                     </p>
-                    <p className="font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       {order?.received} 円
                     </p>
                   </>
                 )}
               </div>
-              <div className="flex h-12 items-center justify-between pb-7">
+              <div className="flex h-6 md:h-8 lg:h-12 items-center justify-between pb-3 md:pb-4 lg:pb-7">
                 {charge >= 0 && (
                   <>
-                    <p className="flex-none pr-6 md:pr-10 lg:pr-14 font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+                    <p className="flex-none pr-3 md:pr-6 lg:pr-10 font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
                       おつり
                     </p>
-                    <p className="font-bold text-xl md:text-2xl lg:text-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">{charge} 円</p>
+                    <p className="font-bold text-base md:text-lg lg:text-2xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">{charge} 円</p>
                   </>
                 )}
               </div>
