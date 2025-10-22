@@ -1,6 +1,7 @@
 import { OrderEntity } from "./order";
 import { ITEM_MASTER } from "../data/items";
 import { ItemEntity } from "./item";
+import { generateSimpleRecommendation } from "./recommendation";
 import { describe, it, expect } from "vitest";
 
 describe("コーヒー注文分割最適化アルゴリズム", () => {
@@ -36,17 +37,19 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
-      expect(result.recommendation).toBeDefined();
+      expect(result).toBe(true);
       
-      const summary = getRecommendationSummary(result.recommendation!);
+      const recommendation = generateSimpleRecommendation(order.items);
+      expect(recommendation).toBeDefined();
+      
+      const summary = getRecommendationSummary(recommendation);
       console.log("ケース1結果:", summary);
       
       // 3注文に分割されることを確認
-      expect(result.recommendation!.length).toBe(3);
+      expect(recommendation.length).toBe(3);
       
       // 各注文が4杯以下であることを確認
-      result.recommendation!.forEach(order => {
+      recommendation.forEach(order => {
         const totalCups = order.reduce((sum, item) => sum + item.count, 0);
         expect(totalCups).toBeLessThanOrEqual(4);
       });
@@ -63,17 +66,19 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
-      expect(result.recommendation).toBeDefined();
+      expect(result).toBe(true);
       
-      const summary = getRecommendationSummary(result.recommendation!);
+      const recommendation = generateSimpleRecommendation(order.items);
+      expect(recommendation).toBeDefined();
+      
+      const summary = getRecommendationSummary(recommendation);
       console.log("ケース2結果:", summary);
       
       // 2注文に分割されることを確認
-      expect(result.recommendation!.length).toBe(2);
+      expect(recommendation.length).toBe(2);
       
       // 各注文が4杯以下であることを確認
-      result.recommendation!.forEach(order => {
+      recommendation.forEach(order => {
         const totalCups = order.reduce((sum, item) => sum + item.count, 0);
         expect(totalCups).toBeLessThanOrEqual(4);
       });
@@ -90,17 +95,19 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
-      expect(result.recommendation).toBeDefined();
+      expect(result).toBe(true);
       
-      const summary = getRecommendationSummary(result.recommendation!);
+      const recommendation = generateSimpleRecommendation(order.items);
+      expect(recommendation).toBeDefined();
+      
+      const summary = getRecommendationSummary(recommendation);
       console.log("ケース3結果:", summary);
       
       // 2注文に分割されることを確認
-      expect(result.recommendation!.length).toBe(2);
+      expect(recommendation.length).toBe(2);
       
       // 各注文が4杯以下であることを確認
-      result.recommendation!.forEach(order => {
+      recommendation.forEach(order => {
         const totalCups = order.reduce((sum, item) => sum + item.count, 0);
         expect(totalCups).toBeLessThanOrEqual(4);
       });
@@ -122,17 +129,19 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
-      expect(result.recommendation).toBeDefined();
+      expect(result).toBe(true);
       
-      const summary = getRecommendationSummary(result.recommendation!);
+      const recommendation = generateSimpleRecommendation(order.items);
+      expect(recommendation).toBeDefined();
+      
+      const summary = getRecommendationSummary(recommendation);
       console.log("ケース4結果:", summary);
       
       // 3注文に分割されることを確認
-      expect(result.recommendation!.length).toBe(3);
+      expect(recommendation.length).toBe(3);
       
       // 各注文が4杯以下であることを確認
-      result.recommendation!.forEach(order => {
+      recommendation.forEach(order => {
         const totalCups = order.reduce((sum, item) => sum + item.count, 0);
         expect(totalCups).toBeLessThanOrEqual(4);
       });
@@ -148,9 +157,10 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
+      expect(result).toBe(true);
       
-      result.recommendation!.forEach(order => {
+      const recommendation = generateSimpleRecommendation(order.items);
+      recommendation.forEach(order => {
         const totalCups = order.reduce((sum, item) => sum + item.count, 0);
         expect(totalCups).toBeLessThanOrEqual(4);
       });
@@ -169,9 +179,10 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
+      expect(result).toBe(true);
       
-      result.recommendation!.forEach(order => {
+      const recommendation = generateSimpleRecommendation(order.items);
+      recommendation.forEach(order => {
         const uniqueTypes = new Set(order.map(item => item.id)).size;
         expect(uniqueTypes).toBeLessThanOrEqual(2);
       });
@@ -187,10 +198,11 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
       ]);
 
       const result = order.shouldSplitOrder();
-      expect(result.shouldSplit).toBe(true);
+      expect(result).toBe(true);
       
+      const recommendation = generateSimpleRecommendation(order.items);
       // 最初の注文にトートセットが含まれることを確認
-      const firstOrder = result.recommendation![0];
+      const firstOrder = recommendation[0];
       const hasToteSet = firstOrder.some(item => item.id === ITEM_MASTER["@"].id);
       expect(hasToteSet).toBe(true);
     });
@@ -212,8 +224,9 @@ describe("コーヒー注文分割最適化アルゴリズム", () => {
         const order = createTestOrder(items);
         const result = order.shouldSplitOrder();
         
-        if (result.shouldSplit) {
-          const actualOrders = result.recommendation!.length;
+        if (result) {
+          const recommendation = generateSimpleRecommendation(order.items);
+          const actualOrders = recommendation.length;
           console.log(`理論的最小: ${expectedMin}, 実際: ${actualOrders}`);
           // 実際の注文数は理論的最小値以上であることを確認
           expect(actualOrders).toBeGreaterThanOrEqual(expectedMin);
