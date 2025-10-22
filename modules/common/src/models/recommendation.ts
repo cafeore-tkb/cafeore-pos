@@ -41,7 +41,6 @@ export type RecommendationOrder = RecommendationItem[];
  * - 制約条件を満たしながら理論的最小注文数に近づける
  */
 export function generateSimpleRecommendation(items: WithId<ItemEntity>[]): RecommendationOrder[] {
-    const yushoId = ITEM_MASTER["-"].id;
     const toteSetsId = ITEM_MASTER["@"].id;
     
     const coffeeCups = items.filter(
