@@ -1,4 +1,4 @@
-import type { ClientActionFunction } from "@remix-run/react";
+import type { ClientActionFunction } from "react-router";
 
 import { createOrder } from "./actions/createOrder";
 import { deleteOrder } from "./actions/deleteOrder";

@@ -11,11 +11,7 @@ import {
   stringToJSONSchema,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import {
-  type ClientActionFunction,
-  type MetaFunction,
-  useSubmit,
-} from "@remix-run/react";
+import { type ClientActionFunction, type MetaFunction, useSubmit } from "react-router";
 import { orderBy } from "firebase/firestore";
 import { useCallback } from "react";
 import useSWRSubscription from "swr/subscription";

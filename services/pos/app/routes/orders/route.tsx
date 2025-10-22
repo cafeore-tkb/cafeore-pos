@@ -3,7 +3,7 @@ import {
   type2label,
   useClientLoaderData,
 } from "@cafeore/common";
-import { Form, type MetaFunction } from "@remix-run/react";
+import { Form, type MetaFunction } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 export { clientAction } from "./action";

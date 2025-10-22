@@ -1,5 +1,5 @@
 import { type OrderEntity, type WithId, id2abbr } from "@cafeore/common";
-import { useSubmit } from "@remix-run/react";
+import { useSubmit } from "react-router";
 import dayjs from "dayjs";
 import { useCallback } from "react";
 import { LuHourglass } from "react-icons/lu";

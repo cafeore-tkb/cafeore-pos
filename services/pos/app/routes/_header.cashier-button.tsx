@@ -12,7 +12,7 @@ import {
 import { parseWithZod } from "@conform-to/zod";
 import { AlertDialogCancel } from "@radix-ui/react-alert-dialog";
 import { TrashIcon } from "@radix-ui/react-icons";
-import { type ClientActionFunction, useSubmit } from "@remix-run/react";
+import { type ClientActionFunction, useSubmit } from "react-router";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { useState } from "react";
 import useSWRSubscription from "swr/subscription";

@@ -3,7 +3,7 @@ import {
   collectionSub,
   orderConverter,
 } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
 import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
 import { useState } from "react";

@@ -1,7 +1,7 @@
 import type { ItemEntity, OrderEntity, WithId } from "@cafeore/common";
 import { id2abbr } from "@cafeore/common";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSubmit } from "@remix-run/react";
+import { useSubmit } from "react-router";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";

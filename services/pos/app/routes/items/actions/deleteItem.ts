@@ -1,6 +1,6 @@
 import { itemRepository } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { type ClientActionFunction, json } from "@remix-run/react";
+import { type ClientActionFunction, json } from "react-router";
 import { z } from "zod";
 
 // TODO(toririm): テストを書く
