@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
 import { type Item, ItemEntity } from "./item";
 import { OrderEntity } from "./order";
-import { OrderRecommendationGenerator } from "./recommendation";
+import { generateSimpleRecommendation } from "./recommendation";
 
 const coffeeItem = ItemEntity.fromItem({
   id: "1",
@@ -417,7 +417,7 @@ describe("[unit] order entity", () => {
     expect(shouldSplit).toBe(true);
     
     // 推奨案を別途生成してテスト
-    const recommendation = OrderRecommendationGenerator.generateSimpleRecommendation(order.items);
+    const recommendation = generateSimpleRecommendation(order.items);
     expect(recommendation).toBeDefined();
     
     console.log("分割推奨案:", JSON.stringify(recommendation, null, 2));
