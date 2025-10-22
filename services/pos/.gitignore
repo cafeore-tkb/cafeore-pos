@@ -11,3 +11,5 @@ node_modules
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+.react-router
+
