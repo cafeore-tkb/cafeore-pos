@@ -29,8 +29,6 @@
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
     "firebase": "^12.3.0",
-    "highcharts": "^11.4.8",
-    "highcharts-react-official": "^3.2.1",
     "input-otp": "^1.2.4",
     "lodash": "^4.17.21",
     "lucide-react": "0.453.0",
@@ -65,5 +63,10 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "trustedDependencies": ["@biomejs/biome", "esbuild", "protobufjs", "re2"]
+  "trustedDependencies": [
+    "@biomejs/biome",
+    "esbuild",
+    "protobufjs",
+    "re2"
+  ]
 }

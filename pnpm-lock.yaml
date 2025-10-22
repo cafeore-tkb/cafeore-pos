@@ -202,12 +202,6 @@ importers:
       firebase:
         specifier: ^12.3.0
         version: 12.4.0
-      highcharts:
-        specifier: ^11.4.8
-        version: 11.4.8
-      highcharts-react-official:
-        specifier: ^3.2.1
-        version: 3.2.2(highcharts@11.4.8)(react@18.3.1)
       input-otp:
         specifier: ^1.2.4
         version: 1.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -3938,15 +3932,6 @@ packages:
   heap-js@2.6.0:
     resolution: {integrity: sha512-trFMIq3PATiFRiQmNNeHtsrkwYRByIXUbYNbotiY9RLVfMkdwZdd2eQ38mGt7BRiCKBaj1DyBAIHmm7mmXPuuw==}
     engines: {node: '>=10.0.0'}
-
-  highcharts-react-official@3.2.2:
-    resolution: {integrity: sha512-2kkWOB6RpdR26fmAJkrtJFG9xWFUDGKWyat88tW3fa/3l/Jc7D5ZfwTng2MZsdiKIH32AFy0Pr75udUe7uN6LA==}
-    peerDependencies:
-      highcharts: '>=6.0.0'
-      react: '>=16.8.0'
-
-  highcharts@11.4.8:
-    resolution: {integrity: sha512-5Tke9LuzZszC4osaFisxLIcw7xgNGz4Sy3Jc9pRMV+ydm6sYqsPYdU8ELOgpzGNrbrRNDRBtveoR5xS3SzneEA==}
 
   highlight.js@10.7.3:
     resolution: {integrity: sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==}
@@ -10694,13 +10679,6 @@ snapshots:
   hast-util-whitespace@2.0.1: {}
 
   heap-js@2.6.0: {}
-
-  highcharts-react-official@3.2.2(highcharts@11.4.8)(react@18.3.1):
-    dependencies:
-      highcharts: 11.4.8
-      react: 18.3.1
-
-  highcharts@11.4.8: {}
 
   highlight.js@10.7.3: {}
 
