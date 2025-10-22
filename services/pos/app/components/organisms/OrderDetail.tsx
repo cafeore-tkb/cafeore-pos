@@ -3,6 +3,11 @@ import dayjs from "dayjs";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { cn } from "~/lib/utils";
 
+/**
+ * ダッシュボードで注文内容一覧を表示するコンポーネント
+ * @returns
+ */
+
 interface OrderDetailProps {
   order: OrderEntity;
 }

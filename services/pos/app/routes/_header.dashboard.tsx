@@ -3,9 +3,9 @@ import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
 import { useState } from "react";
 import useSWRSubscription from "swr/subscription";
-import { ItemBarChart } from "~/components/organisms/ItemBarChart";
 import { OrderDetail } from "~/components/organisms/OrderDetail";
 import { OrderList } from "~/components/organisms/OrderList";
+import { ServeTimeGraph } from "~/components/organisms/ServeTimeGraph";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
@@ -36,7 +36,7 @@ export default function Dashboard() {
       </div>
       <div className="w-1/2">
         <div className="sticky top-0">
-          <ItemBarChart orders={orders} />
+          <ServeTimeGraph orders={orders} />
           {detailOrder && <OrderDetail order={detailOrder} />}
         </div>
       </div>

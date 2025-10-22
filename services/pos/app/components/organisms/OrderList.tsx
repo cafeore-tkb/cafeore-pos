@@ -14,6 +14,11 @@ interface OrderStatusListProps {
   onOrderClick: (orderId: number) => void;
 }
 
+/**
+ * ダッシュボードで注文リストを表示するコンポーネント
+ * @returns
+ */
+
 export const OrderList: React.FC<OrderStatusListProps> = ({
   orders,
   onOrderClick,
