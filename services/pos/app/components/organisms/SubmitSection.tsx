@@ -1,5 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
-import { OrderRecommendationGenerator, ITEM_MASTER } from "@cafeore/common";
+import { generateSimpleRecommendation, ITEM_MASTER } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
 
@@ -22,7 +22,7 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
   // 分割が必要な場合の推奨案を生成
   const recommendations = useMemo(() => {
     if (shouldSplit) {
-      return OrderRecommendationGenerator.generateSimpleRecommendation(order.items);
+      return generateSimpleRecommendation(order.items);
     }
     return null;
   }, [shouldSplit, order.items]);
