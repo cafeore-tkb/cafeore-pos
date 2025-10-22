@@ -1,5 +1,5 @@
 import { collectionSub, orderConverter } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
 import { orderBy } from "firebase/firestore";
 import useSWRSubscription from "swr/subscription";
 import { Card } from "~/components/ui/card";

@@ -1,4 +1,4 @@
-import { useSubmit } from "@remix-run/react";
+import { useSubmit } from "react-router";
 
 type props = {
   disableFirebase: boolean;

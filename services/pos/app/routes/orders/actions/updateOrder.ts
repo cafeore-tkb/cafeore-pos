@@ -1,5 +1,5 @@
 import { orderRepository } from "@cafeore/common";
-import type { ClientActionFunctionArgs } from "@remix-run/react";
+import type { ClientActionFunctionArgs } from "react-router";
 
 export const updateOrder = async ({ request }: ClientActionFunctionArgs) => {
   const formData = await request.formData();

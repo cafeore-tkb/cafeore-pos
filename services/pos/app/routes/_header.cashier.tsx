@@ -7,7 +7,7 @@ import {
   stringToJSONSchema,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import type { ClientActionFunction, MetaFunction } from "@remix-run/react";
+import type { ClientActionFunction, MetaFunction } from "react-router";
 import { useCallback, useMemo } from "react";
 import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";

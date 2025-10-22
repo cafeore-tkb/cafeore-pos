@@ -1,4 +1,4 @@
-import type { ClientActionFunction } from "@remix-run/react";
+import type { ClientActionFunction } from "react-router";
 import { addItem } from "./actions/addItem";
 import { deleteItem } from "./actions/deleteItem";
 

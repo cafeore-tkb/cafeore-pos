@@ -1,5 +1,5 @@
 import { login, logout } from "@cafeore/common";
-import { Outlet } from "@remix-run/react";
+import { Outlet } from "react-router";
 import { useAuth } from "~/components/functional/AuthProvider";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { useOrderStat } from "~/components/functional/useOrderStat";
