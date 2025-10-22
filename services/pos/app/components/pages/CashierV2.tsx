@@ -48,7 +48,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
-  const [splitDetails, setSplitDetails] = useState<ReturnType<OrderEntity["shouldSplitOrder"]>>();
 
   const playSound = useCallback(() => {
     soundRef.current?.play();
@@ -92,11 +91,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     resetAll();
     playSound();
   }, [newOrder, resetAll, printer, submitPayload, descComment, playSound]);
-
-  // アイテム変更のたびに分割条件を自動チェック（削除操作も含む）
-  useEffect(() => {
-    setSplitDetails(newOrder.shouldSplitOrder());
-  }, [newOrder]);
 
   const keyEventHandlers = useMemo(() => {
     return {
@@ -259,7 +253,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
               submitOrder={submitOrder}
               order={newOrder}
               focus={inputStatus === "submit"}
-              splitDetails={splitDetails}
             />
           </div>
         </div>
