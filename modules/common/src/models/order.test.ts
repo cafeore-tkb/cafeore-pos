@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
 import { type Item, ItemEntity } from "./item";
 import { OrderEntity } from "./order";
+import { OrderRecommendationGenerator } from "./recommendation";
 
 const coffeeItem = ItemEntity.fromItem({
   id: "1",
@@ -274,12 +275,8 @@ describe("[unit] order entity", () => {
       }),
     ];
     
-    const details = order.shouldSplitOrder();
-    expect(details.shouldSplit).toBe(true);
-    expect(details.recommendation).toBeDefined();
-    expect(details.recommendation).toHaveLength(2); // 2つの注文に分割
-    expect(details.recommendation![0]).toHaveLength(2); // 縁ブレンド1杯 + 珈琲・俺ブレンド1杯
-    expect(details.recommendation![1]).toHaveLength(1); // ライチ1杯
+    const shouldSplit = order.shouldSplitOrder();
+    expect(shouldSplit).toBe(true);
   });
 
   test("shouldSplitOrder - 5杯同じコーヒーの場合", () => {
@@ -324,10 +321,8 @@ describe("[unit] order entity", () => {
       }),
     ];
     
-    const details = order.shouldSplitOrder();
-    expect(details.shouldSplit).toBe(true);
-    expect(details.recommendation).toBeDefined();
-    expect(details.recommendation).toHaveLength(2); // 縁ブレンド4杯 + 縁ブレンド1杯で2つの注文に
+    const shouldSplit = order.shouldSplitOrder();
+    expect(shouldSplit).toBe(true);
   });
 
   test("shouldSplitOrder - 分割不要な場合", () => {
@@ -351,9 +346,8 @@ describe("[unit] order entity", () => {
       }),
     ];
     
-    const details = order.shouldSplitOrder();
-    expect(details.shouldSplit).toBe(false);
-    expect(details.recommendation).toBeUndefined();
+    const shouldSplit = order.shouldSplitOrder();
+    expect(shouldSplit).toBe(false);
   });
 
   test("shouldSplitOrder - 複雑な注文パターン", () => {
@@ -419,17 +413,20 @@ describe("[unit] order entity", () => {
       }),
     ];
     
-    const details = order.shouldSplitOrder();
-    expect(details.shouldSplit).toBe(true);
-    expect(details.recommendation).toBeDefined();
+    const shouldSplit = order.shouldSplitOrder();
+    expect(shouldSplit).toBe(true);
     
-    console.log("分割推奨案:", JSON.stringify(details.recommendation, null, 2));
+    // 推奨案を別途生成してテスト
+    const recommendation = OrderRecommendationGenerator.generateSimpleRecommendation(order.items);
+    expect(recommendation).toBeDefined();
+    
+    console.log("分割推奨案:", JSON.stringify(recommendation, null, 2));
     
     // 実際の分割結果を確認
-    expect(details.recommendation).toHaveLength(2); // 2つの注文に分割
+    expect(recommendation).toHaveLength(2); // 2つの注文に分割
     
     // 最初の注文: 縁ブレンド2杯 + トートセット1つ + トートバッグ1つ + コースター1つ + アイスミルク1つ
-    const firstOrder = details.recommendation![0];
+    const firstOrder = recommendation[0];
     expect(firstOrder).toHaveLength(5); // 縁ブレンド2杯 + トートセット1つ + トートバッグ1つ + コースター1つ + アイスミルク1つ
     
     // 縁ブレンド2杯が含まれていることを確認
@@ -458,7 +455,7 @@ describe("[unit] order entity", () => {
     expect(iceMilkItem!.count).toBe(1);
     
     // 2番目の注文: アイスオレ1杯 + 珈琲・俺ブレンド1杯
-    const secondOrder = details.recommendation![1];
+    const secondOrder = recommendation[1];
     expect(secondOrder).toHaveLength(2); // アイスオレ1杯 + 珈琲・俺ブレンド1杯
     
     // アイスオレ1杯が含まれていることを確認（2番目の注文に移動）
