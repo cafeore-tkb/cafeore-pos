@@ -5,7 +5,7 @@ import { useState } from "react";
 import useSWRSubscription from "swr/subscription";
 import { OrderDetail } from "~/components/organisms/OrderDetail";
 import { OrderList } from "~/components/organisms/OrderList";
-import { ServeTimeGraph } from "~/components/organisms/ServeTimeGraph";
+import { FileUploadGraph } from "~/components/organisms/FileUploadGraph";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
@@ -36,7 +36,7 @@ export default function Dashboard() {
       </div>
       <div className="w-1/2">
         <div className="sticky top-0">
-          <ServeTimeGraph orders={orders} />
+          <FileUploadGraph orders={orders} />
           {detailOrder && <OrderDetail order={detailOrder} />}
         </div>
       </div>
