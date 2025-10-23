@@ -1,26 +1,11 @@
-import {
-  type OrderEntity,
-  collectionSub,
-  orderConverter,
-} from "@cafeore/common";
+import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
-import dayjs from "dayjs";
 import { orderBy } from "firebase/firestore";
-import { useState } from "react";
 import useSWRSubscription from "swr/subscription";
-import { ItemBarChart } from "~/components/organisms/ItemBarChart";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table";
+import { ServeTimeGraph } from "~/components/organisms/ServeTimeGraph";
+import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
+import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
@@ -31,7 +16,6 @@ export default function Dashboard() {
     "orders",
     collectionSub({ converter: orderConverter }, orderBy("orderId", "desc")),
   );
-  const [focusedOrderId, setFocusedOrderId] = useState(1);
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;
@@ -39,7 +23,6 @@ export default function Dashboard() {
     return acc;
   }, 0);
 
-  const detailOrder = orders?.find((order) => order.orderId === focusedOrderId);
   return (
     <div className="h-full">
       <div className="sticky top-0 flex justify-between p-4">
@@ -48,136 +31,24 @@ export default function Dashboard() {
       </div>
       <Tabs defaultValue="itemBar">
         <TabsList>
-          <TabsTrigger value="itemBar">Itembar</TabsTrigger>
-          <TabsTrigger value="orderList">OrderList</TabsTrigger>
+          <TabsTrigger value="itemBar">種類別注文数</TabsTrigger>
+          <TabsTrigger value="serveTimeGraph">提供時間推移</TabsTrigger>
+          <TabsTrigger value="orderList">注文一覧</TabsTrigger>
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
             <ItemBarChart orders={orders} />
           </div>
         </TabsContent>
+        <TabsContent value="serveTimeGraph" className="p-2">
+          <div className="w-2/3">
+            <ServeTimeGraph orders={orders} />
+          </div>
+        </TabsContent>
         <TabsContent value="orderList" className="flex p-2">
-          <div className="h-[650px] w-1/2 overflow-auto">
-            <Table>
-              <TableHeader
-                className={cn(
-                  "sticky top-0 z-10 bg-background [&_tr]:border-b",
-                )}
-              >
-                <TableRow>
-                  <TableHead>No.</TableHead>
-                  <TableHead>杯数</TableHead>
-                  <TableHead>合計額</TableHead>
-                  <TableHead>受付時刻</TableHead>
-                  <TableHead>提供時刻</TableHead>
-                  <TableHead>時間</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders?.map((order) => (
-                  <TableRow
-                    className={cn(
-                      pass15Minutes(order) === true && "bg-red-300",
-                    )}
-                    key={order.orderId}
-                    onClick={() => setFocusedOrderId(order.orderId)}
-                  >
-                    <TableCell className="font-medium">
-                      {order.orderId}
-                    </TableCell>
-                    <TableCell>{numOfCups(order)}</TableCell>
-                    <TableCell>￥{order.total}</TableCell>
-                    <TableCell>
-                      {order.createdAt.toLocaleTimeString()}
-                    </TableCell>
-                    <TableCell>
-                      {order.servedAt == null
-                        ? "未提供"
-                        : order.servedAt?.toLocaleTimeString()}
-                    </TableCell>
-                    <TableCell>{diffTime(order)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter />
-            </Table>
-          </div>
-          <div className="w-1/2">
-            {detailOrder && (
-              <div key={detailOrder.id}>
-                <Card className="mt-3">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{`No. ${detailOrder.orderId}`}</CardTitle>
-                      <CardTitle>合計金額: {detailOrder.total}円</CardTitle>
-                      <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-                        {detailOrder.items.length}
-                      </CardTitle>
-                      <div className="grid">
-                        <div className="px-2 text-right">
-                          受付時刻:{" "}
-                          {dayjs(detailOrder.createdAt).format("H:mm:ss")}
-                        </div>
-                        <p className="px-2 text-right">
-                          時間: {diffTime(detailOrder)}
-                        </p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-1">
-                      {detailOrder.items.map((item, idx) => (
-                        <div key={`${idx}-${item.id}`}>
-                          <Card
-                            className={cn(
-                              "flex h-10 flex-col items-center justify-center",
-                            )}
-                          >
-                            <h3 className="font-bold">{item.name}</h3>
-                          </Card>
-                        </div>
-                      ))}
-                    </div>
-                    {detailOrder?.comments.length === 0 && (
-                      <div>
-                        {detailOrder.comments.map((comment, index) => (
-                          <div
-                            key={`${comment.author}-${comment.text}`}
-                            className="my-2 flex rounded-md bg-gray-200 p-1"
-                          >
-                            <div className="flex-none">{comment.author}：</div>
-                            <div>{comment.text}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </div>
+          <OrderList orders={orders} />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
-
-const numOfCups = (order: OrderEntity): number => {
-  return order.items.length;
-};
-
-const diffTime = (order: OrderEntity) => {
-  if (order.servedAt == null) return "未提供";
-  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-    "m:ss",
-  );
-};
-
-const pass15Minutes = (order: OrderEntity) => {
-  if (order.servedAt === null)
-    return dayjs(dayjs().diff(dayjs(order.createdAt))).minute() >= 15;
-  if (order.servedAt !== null)
-    return (
-      dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
-    );
-};

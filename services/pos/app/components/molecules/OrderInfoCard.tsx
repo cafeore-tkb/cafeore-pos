@@ -14,7 +14,7 @@ import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 
 type props = {
   order: WithId<OrderEntity>;
-  user: "master" | "serve-unserved" | "serve-served";
+  user: "master" | "serve-unserved" | "serve-served" | "dashboard";
   comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
@@ -66,7 +66,11 @@ export function OrderInfoCard({ order, user, comment }: props) {
     <div key={order.id}>
       <Card
         className={cn(
-          isReady && "bg-gray-300 text-gray-500",
+          (user === "master" ||
+            user === "serve-unserved" ||
+            user === "serve-served") &&
+            isReady &&
+            "bg-gray-300 text-gray-500",
           user === "serve-served" && "transition-all duration-200",
         )}
       >
@@ -79,7 +83,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
             {(user === "master" || user === "serve-unserved") && (
               <RealtimeElapsedTime order={order} />
             )}
-            {user === "serve-served" && (
+            {(user === "serve-served" || user === "dashboard") && (
               <div
                 className={cn(
                   "rounded-md px-2",
@@ -127,7 +131,11 @@ export function OrderInfoCard({ order, user, comment }: props) {
                     user === "master" &&
                       (item.name === "ブルマン" || item.name === "ライチ") &&
                       "bg-green-300",
-                    isReady && "bg-gray-200 text-gray-500",
+                    (user === "master" ||
+                      user === "serve-unserved" ||
+                      user === "serve-served") &&
+                      isReady &&
+                      "bg-gray-200 text-gray-500",
                   )}
                 >
                   <h3
@@ -138,9 +146,10 @@ export function OrderInfoCard({ order, user, comment }: props) {
                   >
                     {id2abbr(item.id)}
                   </h3>
-                  {user === "master" && item.assignee && (
-                    <p className="text-sm">指名:{item.assignee}</p>
-                  )}
+                  {(user === "master" || user === "dashboard") &&
+                    item.assignee && (
+                      <p className="text-sm">指名:{item.assignee}</p>
+                    )}
                 </Card>
               </div>
             ))}
@@ -176,12 +185,14 @@ export function OrderInfoCard({ order, user, comment }: props) {
           {(user === "master" || user === "serve-unserved") && (
             <InputComment order={order} addComment={comment} />
           )}
-          {user === "master" && isReady && (
-            <div className="mt-5 flex items-center">
-              <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
-              <p className="text-yellow-700">提供待ち</p>
-            </div>
-          )}
+          {(user === "master" || user === "dashboard") &&
+            isReady &&
+            !order.servedAt && (
+              <div className="mt-5 flex items-center">
+                <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
+                <p className="text-yellow-700">提供待ち</p>
+              </div>
+            )}
           {user === "serve-unserved" && (
             <div className="mt-4 flex items-center justify-between">
               <ReadyBell
