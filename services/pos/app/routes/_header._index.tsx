@@ -1,5 +1,6 @@
 // import { converter, itemSchema, prodDB } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
+import { DownloadButton } from "~/components/organisms/DownloadData";
 
 export const meta: MetaFunction = () => {
   return [{ title: "Top / 珈琲・俺POS" }];
@@ -22,7 +23,7 @@ export default function Index() {
 
   return (
     <div className="p-4 font-sans">
-      <h1 className="text-3xl">珈琲・俺POS</h1>
+      <h1 className="font-bold font-noto text-3xl">珈琲・俺POS</h1>
       <ul className="mt-4 list-disc space-y-2 pl-6">
         <li>
           <a
@@ -79,6 +80,10 @@ export default function Index() {
           </a>
         </li>
       </ul>
+      <h2 className="mt-5 font-bold font-noto text-3xl">
+        オーダーデータ書き出し
+      </h2>
+      <DownloadButton />
       {/* <Button className="mt-4 bg-sky-900 text-white">Click me</Button>
       <ul>
         {items.map((item) => (

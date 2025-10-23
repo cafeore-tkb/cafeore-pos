@@ -26,17 +26,27 @@ export const usePrinter = () => {
   const printOrderSummaryLabel = (order: OrderEntity) => {
     rawPrinter.addHeader(order.orderId, order.total);
 
-    for (let i = 0; i < order.items.length; i += 2) {
+    const assignedItems = order.items.filter((item) => item.assignee !== null);
+    const unassignedItems = order.items.filter(
+      (item) => item.assignee === null,
+    );
+
+    assignedItems.map((item) => {
+      rawPrinter.addLine(item.name, [1, 1]);
+      rawPrinter.addLine(`  指名：${item.assignee}`, [1, 1]);
+    });
+
+    for (let i = 0; i < unassignedItems.length; i += 2) {
       // アイテム名が8文字以上のときは6文字だけ取り出す
       // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
       const item1 =
-        order.items[i].name.length < 8
-          ? order.items[i].name
-          : order.items[i].name.slice(0, 6);
-      const item2 = order.items[i + 1]
-        ? order.items[i + 1].name.length < 8
-          ? order.items[i + 1].name
-          : order.items[i + 1].name.slice(0, 6)
+        unassignedItems[i].name.length < 8
+          ? unassignedItems[i].name
+          : unassignedItems[i].name.slice(0, 6);
+      const item2 = unassignedItems[i + 1]
+        ? unassignedItems[i + 1].name.length < 8
+          ? unassignedItems[i + 1].name
+          : unassignedItems[i + 1].name.slice(0, 6)
         : null;
 
       if (item2) {
