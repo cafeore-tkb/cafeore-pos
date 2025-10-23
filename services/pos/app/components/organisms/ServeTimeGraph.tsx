@@ -2,7 +2,7 @@
 
 import type { OrderEntity, WithId } from "@cafeore/common";
 import dayjs from "dayjs";
-import { CartesianGrid, Line, LineChart, XAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   Card,
   CardContent,
@@ -14,7 +14,6 @@ import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
 } from "~/components/ui/chart";
 
 type props = {
@@ -27,6 +26,38 @@ type props = {
  * @param props
  */
 
+// カスタムツールチップコンポーネント
+import type { TooltipProps } from "recharts";
+
+const CustomTooltipContent = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="rounded-lg border bg-background p-2 shadow-md">
+        <div className="grid gap-2">
+          <div className="flex flex-col">
+            <span className="text-[0.70rem] text-muted-foreground uppercase">
+              時刻
+            </span>
+            <span className="font-bold">{label}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[0.70rem] text-muted-foreground uppercase">
+              提供時間
+            </span>
+            <span className="font-bold">{data.serveTimeText}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 const ServeTimeGraph = ({ orders }: props) => {
   const chartData =
     orders
@@ -34,11 +65,15 @@ const ServeTimeGraph = ({ orders }: props) => {
       .map((order) => {
         const createdAt = dayjs(order.createdAt);
         const servedAt = dayjs(order.servedAt);
-        const serveTime = servedAt.diff(createdAt, "minute");
+        const totalSeconds = servedAt.diff(createdAt, "second");
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const serveTimeMinutes = minutes + seconds / 60; // グラフ用の分単位の値
 
         return {
           createdAt: createdAt.format("HH:mm"), // x軸に使用する時刻
-          serveTime,
+          serveTime: serveTimeMinutes,
+          serveTimeText: `${minutes}分${seconds}秒`, // ツールチップ用のテキスト
         };
       }) ?? [];
 
@@ -75,10 +110,8 @@ const ServeTimeGraph = ({ orders }: props) => {
               tickMargin={8}
               tickFormatter={(value) => value}
             />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
+            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <ChartTooltip cursor={false} content={<CustomTooltipContent />} />
             <Line
               dataKey="serveTime"
               type="natural"
