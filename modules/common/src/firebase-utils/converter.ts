@@ -76,14 +76,14 @@ export const itemConverter: FirestoreDataConverter<WithId<ItemEntity>> = {
   fromFirestore: (
     snapshot: QueryDocumentSnapshot,
     options: SnapshotOptions,
-  ) => {
-    const convertedData = converter(itemSchema.required()).fromFirestore(
+  ): WithId<ItemEntity> => {
+    const convertedData = converter(itemSchema).fromFirestore(
       snapshot,
       options,
     );
     return ItemEntity.fromItem({
       ...convertedData,
-    });
+    }) as WithId<ItemEntity>;
   },
 };
 
@@ -96,19 +96,19 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
     snapshot: QueryDocumentSnapshot,
     options: SnapshotOptions,
   ): WithId<OrderEntity> => {
-    const convertedData = converter(orderSchema.required()).fromFirestore(
+    const convertedData = converter(orderSchema).fromFirestore(
       snapshot,
       options,
     );
+
     return OrderEntity.fromOrder({
       ...convertedData,
       items: convertedData.items.map((item) => ({
         ...item,
       })),
-    });
+    }) as WithId<OrderEntity>;
   },
 };
-
 export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
   {
     toFirestore: converter(globalCashierStateSchema).toFirestore,

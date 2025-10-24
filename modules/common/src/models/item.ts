@@ -18,7 +18,7 @@ export const itemSchema = z.object({
     required_error: "種類が未選択です",
     invalid_type_error: "不正な種類です",
   }),
-  emergency: z.boolean(),
+  emergency: z.boolean().optional(),
   assignee: z.string().nullable(),
 });
 
@@ -57,7 +57,7 @@ export class ItemEntity implements Item {
       item.name,
       item.price,
       item.type,
-      item.emergency,
+      item.emergency ?? false,
       item.assignee,
     );
   }
@@ -116,7 +116,7 @@ export class ItemEntity implements Item {
       name: this.name,
       price: this.price,
       type: this.type,
-      emergency: this._emergency,
+      emergency: this._emergency ?? false,
       assignee: this.assignee,
     };
   }
