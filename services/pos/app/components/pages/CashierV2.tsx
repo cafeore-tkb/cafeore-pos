@@ -3,8 +3,8 @@ import { id2abbr } from "@cafeore/common";
 import { useSubmit } from "@remix-run/react";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import bell from "~/assets/bell.mp3";
 import bellTwice from "~/assets/bell_twice.mp3";
-import emergency from "~/assets/emergency.mp3";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
@@ -427,10 +427,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
             />
           </div>
         </div>
-        <audio src={bellTwice} ref={soundRef}>
+        <audio src={bell} ref={soundRef}>
           <track kind="captions" />
         </audio>
-        <audio src={emergency} ref={emergencySoundRef}>
+        <audio src={bellTwice} ref={emergencySoundRef}>
           <track kind="captions" />
         </audio>
       </div>
