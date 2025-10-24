@@ -83,7 +83,6 @@ export const itemConverter: FirestoreDataConverter<WithId<ItemEntity>> = {
     );
     return ItemEntity.fromItem({
       ...convertedData,
-      emergency: convertedData.emergency ?? false,
     });
   },
 };
@@ -105,7 +104,6 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
       ...convertedData,
       items: convertedData.items.map((item) => ({
         ...item,
-        emergency: item.emergency ?? false,
       })),
     });
   },
@@ -129,7 +127,6 @@ export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
           ...convertedData.edittingOrder,
           items: convertedData.edittingOrder.items.map((item) => ({
             ...item,
-            emergency: item.emergency ?? false,
           })),
         },
       });

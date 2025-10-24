@@ -18,7 +18,7 @@ export const itemSchema = z.object({
     required_error: "種類が未選択です",
     invalid_type_error: "不正な種類です",
   }),
-  emergency: z.boolean().optional().default(false),
+  emergency: z.boolean(),
   assignee: z.string().nullable(),
 });
 
