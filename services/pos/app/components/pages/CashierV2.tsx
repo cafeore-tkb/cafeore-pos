@@ -4,6 +4,7 @@ import { useSubmit } from "@remix-run/react";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
+import emergency from "~/assets/emergency.mp3";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
@@ -61,6 +62,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
+  const emergencySoundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
 
   // 過去の注文表示用の状態
@@ -101,6 +103,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     soundRef.current?.play();
   }, []);
 
+  const playEmergencySound = useCallback(() => {
+    emergencySoundRef.current?.play();
+  }, []);
+
   useSyncCahiserOrder(newOrder, syncOrder);
 
   const printer = usePrinter();
@@ -110,9 +116,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
       (order: OrderEntity, item: ItemEntity) => {
         console.log("緊急アイテムが追加されました:", order.orderId, item.name);
         printer.printEmergencyItem(order, item);
-        playSound();
+        playEmergencySound();
       },
-      [printer, playSound],
+      [printer, playEmergencySound],
     ),
   });
 
@@ -422,6 +428,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
           </div>
         </div>
         <audio src={bellTwice} ref={soundRef}>
+          <track kind="captions" />
+        </audio>
+        <audio src={emergency} ref={emergencySoundRef}>
           <track kind="captions" />
         </audio>
       </div>
