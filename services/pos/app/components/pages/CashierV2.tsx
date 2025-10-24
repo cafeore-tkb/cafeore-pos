@@ -107,9 +107,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
 
   useObserveEmergency({
     onEmergencyAdded: useCallback(
-      (order: OrderEntity) => {
-        console.log("緊急オーダーが追加されました:", order);
-        printer.printOrderLabel(order);
+      (order: OrderEntity, item: ItemEntity) => {
+        console.log("緊急アイテムが追加されました:", order.orderId, item.name);
+        printer.printEmergencyItem(order, item);
         playSound();
       },
       [printer, playSound],
