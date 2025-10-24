@@ -1,4 +1,9 @@
-import { type OrderEntity, type WithId, id2abbr } from "@cafeore/common";
+import {
+  type ItemEntity,
+  type OrderEntity,
+  type WithId,
+  id2abbr,
+} from "@cafeore/common";
 import { useSubmit } from "@remix-run/react";
 import dayjs from "dayjs";
 import { useCallback } from "react";
@@ -9,6 +14,7 @@ import { ReadyBell } from "../atoms/ReadyBell";
 import { ServeCheck } from "../atoms/ServeCheck";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { EmergencyButton } from "./EmergencyButton";
 import { InputComment } from "./InputComment";
 import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 
@@ -60,6 +66,25 @@ export function OrderInfoCard({ order, user, comment }: props) {
       );
     },
     [submit],
+  );
+
+  const handleEmergency = useCallback(
+    (item: WithId<ItemEntity>, orderId: number) => {
+      const orderClone = order.clone();
+      // 該当アイテムに緊急フラグを立てる
+      const itemIndex = orderClone.items.findIndex((i) => i.id === item.id);
+      if (itemIndex !== -1) {
+        orderClone.items[itemIndex].emergency = true;
+      }
+      // 緊急対応のコメントを追加
+      orderClone.addComment("master", `緊急対応: ${id2abbr(item.id)}`);
+      submit(
+        { servedOrder: JSON.stringify(orderClone.toOrder()) },
+        { method: "PUT" },
+      );
+      toast.success(`${id2abbr(item.id)}を緊急対応にしました`);
+    },
+    [order, submit],
   );
 
   return (
@@ -138,9 +163,16 @@ export function OrderInfoCard({ order, user, comment }: props) {
                   >
                     {id2abbr(item.id)}
                   </h3>
-                  {user === "master" && item.assignee && (
-                    <p className="text-sm">指名:{item.assignee}</p>
-                  )}
+                  <div>
+                    {user === "master" && item.assignee && (
+                      <p className="text-sm">指名:{item.assignee}</p>
+                    )}
+                    <EmergencyButton
+                      orderId={order.orderId}
+                      item={item}
+                      onEmergencyClick={handleEmergency}
+                    />
+                  </div>
                 </Card>
               </div>
             ))}
