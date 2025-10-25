@@ -39,22 +39,25 @@ const DiscountInput = memo(
 
     // InputOTPに対してフォーカス制御を行う
     useEffect(() => {
-      if (focus) {
-        const timeoutId = setTimeout(() => {
-          const otpInput = document.querySelector<HTMLInputElement>(
-            "input[data-input-otp]",
-          );
-          if (otpInput) {
+      const timeoutId = setTimeout(() => {
+        const otpInput = document.querySelector<HTMLInputElement>(
+          "input[data-input-otp]",
+        );
+        if (otpInput) {
+          if (focus) {
             otpInput.focus();
             if (discountOrderId.length === 3) {
               // 3桁入力済みの場合、カーソルを最後に移動
               const length = otpInput.value.length;
               otpInput.setSelectionRange(length, length);
             }
+          } else {
+            // フォーカスが外れたらblurする
+            otpInput.blur();
           }
-        }, 0);
-        return () => clearTimeout(timeoutId);
-      }
+        }
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }, [focus, discountOrderId]);
 
     const isComplete = useMemo(
