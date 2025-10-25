@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { getDiscountOrderStatus } from "../lib/discount-validation";
 import type { WithId } from "../lib/typeguard";
 import { type Item, ItemEntity } from "./item";
 import { OrderEntity } from "./order";
@@ -243,5 +244,139 @@ describe("[unit] order entity", () => {
     order.addComment("master", "2");
     expect(order.comments[1].author).toBe("master");
     expect(order.comments[1].text).toBe("2");
+  });
+
+  test("getDiscountOrderStatus - まだ提供されていないオーダーはunserved", () => {
+    const unservedOrder = OrderEntity.fromOrder({
+      id: "1",
+      orderId: 100,
+      createdAt: new Date(),
+      readyAt: null,
+      servedAt: null, // まだ提供されていない
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 300,
+      received: 300,
+      discountOrderId: null,
+      discountOrderCups: 0,
+      DISCOUNT_PER_CUP: 100,
+      discount: 0,
+      estimateTime: -1,
+    });
+
+    const allOrders: WithId<OrderEntity>[] = [];
+
+    expect(getDiscountOrderStatus(100, allOrders)).toBe("unserved");
+  });
+
+  test("getDiscountOrderStatus - 既に使用されているオーダーはalready_used", () => {
+    const servedOrder = OrderEntity.fromOrder({
+      id: "1",
+      orderId: 100,
+      createdAt: new Date(),
+      readyAt: new Date(),
+      servedAt: new Date(), // 提供済み
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 300,
+      received: 300,
+      discountOrderId: null,
+      discountOrderCups: 0,
+      DISCOUNT_PER_CUP: 100,
+      discount: 0,
+      estimateTime: -1,
+    });
+
+    // 既に他のオーダーで割引として使用されている
+    const orderUsingDiscount = OrderEntity.fromOrder({
+      id: "2",
+      orderId: 200,
+      createdAt: new Date(),
+      readyAt: null,
+      servedAt: null,
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 200,
+      received: 0,
+      discountOrderId: 100, // このオーダーで既に使用されている
+      discountOrderCups: 1,
+      DISCOUNT_PER_CUP: 100,
+      discount: 100,
+      estimateTime: -1,
+    });
+
+    const allOrders: WithId<OrderEntity>[] = [servedOrder, orderUsingDiscount];
+
+    expect(getDiscountOrderStatus(100, allOrders)).toBe("already_used");
+  });
+
+  test("getDiscountOrderStatus - 利用可能なオーダーはavailable", () => {
+    const availableOrder = OrderEntity.fromOrder({
+      id: "1",
+      orderId: 100,
+      createdAt: new Date(),
+      readyAt: new Date(),
+      servedAt: new Date(), // 提供済み
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 300,
+      received: 300,
+      discountOrderId: null,
+      discountOrderCups: 0,
+      DISCOUNT_PER_CUP: 100,
+      discount: 0,
+      estimateTime: -1,
+    });
+
+    const allOrders: WithId<OrderEntity>[] = [availableOrder];
+
+    expect(getDiscountOrderStatus(100, allOrders)).toBe("available");
+  });
+
+  test("getDiscountOrderStatus - 自分自身を参照している場合はavailable", () => {
+    const order = OrderEntity.fromOrder({
+      id: "1",
+      orderId: 100,
+      createdAt: new Date(),
+      readyAt: new Date(),
+      servedAt: new Date(), // 提供済み
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 300,
+      received: 300,
+      discountOrderId: null,
+      discountOrderCups: 0,
+      DISCOUNT_PER_CUP: 100,
+      discount: 0,
+      estimateTime: -1,
+    });
+
+    // 自分自身を参照しているオーダーが含まれている
+    const orderWithSelfReference = OrderEntity.fromOrder({
+      id: "2",
+      orderId: 200,
+      createdAt: new Date(),
+      readyAt: null,
+      servedAt: null,
+      items: [coffeeItem],
+      total: 300,
+      comments: [],
+      billingAmount: 200,
+      received: 0,
+      discountOrderId: 200, // 自分自身を参照
+      discountOrderCups: 1,
+      DISCOUNT_PER_CUP: 100,
+      discount: 100,
+      estimateTime: -1,
+    });
+
+    const allOrders: WithId<OrderEntity>[] = [order, orderWithSelfReference];
+
+    expect(getDiscountOrderStatus(100, allOrders)).toBe("available");
   });
 });
