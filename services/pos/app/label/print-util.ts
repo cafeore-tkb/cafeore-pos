@@ -84,5 +84,20 @@ export const usePrinter = () => {
     rawPrinter.print();
   };
 
-  return { status: rawPrinter.status, printOrderLabel };
+  // 緊急アイテムだけを印刷
+  const printEmergencyItem = (order: OrderEntity, item: ItemEntity) => {
+    rawPrinter.init();
+
+    const coffees = order.getCoffeeCups();
+    const itemIndex = coffees.findIndex((i) => i.id === item.id);
+
+    if (itemIndex !== -1) {
+      printSingleItemLabel(order.orderId, itemIndex + 1, coffees.length, item);
+    }
+
+    rawPrinter.addFeed(7);
+    rawPrinter.print();
+  };
+
+  return { status: rawPrinter.status, printOrderLabel, printEmergencyItem };
 };
