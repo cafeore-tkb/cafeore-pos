@@ -12,7 +12,7 @@
   "dependencies": {
     "@cafeore/common": "workspace:*",
     "@conform-to/react": "^1.2.2",
-    "@conform-to/zod": "^1.2.2",
+    "@conform-to/zod": "^1.13.1",
     "@fontsource-variable/noto-sans-jp": "^5.2.9",
     "@fontsource/zen-old-mincho": "^5.1.0",
     "@radix-ui/react-alert-dialog": "^1.1.2",
