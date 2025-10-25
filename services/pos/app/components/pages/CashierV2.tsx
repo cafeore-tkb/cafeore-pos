@@ -1,15 +1,21 @@
 import type { ItemEntity, OrderEntity, WithId } from "@cafeore/common";
 import { id2abbr } from "@cafeore/common";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSubmit } from "@remix-run/react";
+import dayjs from "dayjs";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "~/components/ui/sheet";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
-import dayjs from "dayjs";
 import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
@@ -201,7 +207,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                 </SheetHeader>
                 <div className="mt-4 grid grid-cols-2 gap-4">
                   {currentPageOrders.map((order) => (
-                    <Card key={order.id} className="transition-all duration-200 hover:scale-[1.02]">
+                    <Card
+                      key={order.id}
+                      className="transition-all duration-200 hover:scale-[1.02]"
+                    >
                       <CardHeader>
                         <div className="flex items-end justify-between">
                           <CardTitle className="flex items-end font-normal">
@@ -215,7 +224,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                               受付: {dayjs(order.createdAt).format("H:mm")}
                             </div>
                             <div className="px-2 text-right text-sm">
-                              提供: {order.servedAt ? dayjs(order.servedAt).format("H:mm") : "未提供"}
+                              提供:{" "}
+                              {order.servedAt
+                                ? dayjs(order.servedAt).format("H:mm")
+                                : "未提供"}
                             </div>
                           </div>
                         </div>
@@ -225,7 +237,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                           {order.getDrinkCups().map((item, idx) => (
                             <Card
                               key={`${idx}-${item.id}`}
-                              className="p-1 text-center font-bold text-xl bg-white"
+                              className="bg-white p-1 text-center font-bold text-xl"
                             >
                               {id2abbr(item.id)}
                             </Card>
@@ -239,13 +251,13 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                                 key={`${index}-${comment.author}`}
                                 className="flex gap-1 rounded-md bg-gray-200 px-2 py-1 text-xs"
                               >
-                                <div className="font-bold flex-shrink-0">
+                                <div className="flex-shrink-0 font-bold">
                                   {(comment.author === "cashier" && "レ") ||
                                     (comment.author === "master" && "マ") ||
                                     (comment.author === "serve" && "提") ||
                                     (comment.author === "others" && "他")}
                                 </div>
-                                <div className="whitespace-pre-wrap break-words min-w-0 flex-1">
+                                <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
                                   {comment.text}
                                 </div>
                               </div>
@@ -275,7 +287,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                     variant="outline"
                     size="sm"
                     disabled={page >= totalPages - 1}
-                    onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+                    onClick={() =>
+                      setPage((p) => Math.min(p + 1, totalPages - 1))
+                    }
                   >
                     次へ
                   </Button>
