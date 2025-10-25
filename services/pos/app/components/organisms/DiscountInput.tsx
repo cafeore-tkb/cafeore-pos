@@ -1,4 +1,8 @@
-import { OrderEntity, type WithId } from "@cafeore/common";
+import {
+  type OrderEntity,
+  type WithId,
+  getDiscountOrderStatus,
+} from "@cafeore/common";
 import { CheckCircledIcon, CrossCircledIcon } from "@radix-ui/react-icons";
 import {
   type ComponentPropsWithoutRef,
@@ -44,11 +48,17 @@ const DiscountInput = memo(
       [discountOrderId],
     );
 
+    const discountOrderStatus = useMemo(() => {
+      if (!isComplete) return null;
+      const discountOrderIdNum = Number(discountOrderId);
+      return getDiscountOrderStatus(discountOrderIdNum, orders || []);
+    }, [orders, isComplete, discountOrderId]);
+
     const discountOrder = useMemo(() => {
-      if (!isComplete) return;
+      if (!isComplete || discountOrderStatus !== "available") return null;
       const discountOrderIdNum = Number(discountOrderId);
       return findByOrderId(orders, discountOrderIdNum);
-    }, [orders, isComplete, discountOrderId]);
+    }, [orders, isComplete, discountOrderId, discountOrderStatus]);
 
     const lastPurchasedCups = useMemo(
       () => discountOrder?.getCoffeeCups().length ?? 0,
@@ -60,13 +70,15 @@ const DiscountInput = memo(
      * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
      */
     useEffect(() => {
-      if (isComplete && discountOrder) {
+      if (isComplete && discountOrder && discountOrderStatus === "available") {
         onDiscountOrderFind(discountOrder);
+      } else {
+        onDiscountOrderRemoved();
       }
-      return onDiscountOrderRemoved;
     }, [
       isComplete,
       discountOrder,
+      discountOrderStatus,
       onDiscountOrderFind,
       onDiscountOrderRemoved,
     ]);
@@ -93,7 +105,7 @@ const DiscountInput = memo(
             </div>
           )}
           {isComplete &&
-            (discountOrder instanceof OrderEntity ? (
+            (discountOrderStatus === "available" && discountOrder ? (
               <>
                 <div className="flex items-center">
                   <CheckCircledIcon className="mr-1 h-5 w-5 stroke-green-700" />
@@ -117,6 +129,20 @@ const DiscountInput = memo(
                   ))}
                 </ul>
               </>
+            ) : discountOrderStatus === "already_used" ? (
+              <div className="flex items-center">
+                <CrossCircledIcon className="mr-1 h-5 w-5 stroke-red-700" />
+                <p className="text-red-700 text-sm">
+                  この番号はもうすでに使用済みの番号です。割引は適用されません。
+                </p>
+              </div>
+            ) : discountOrderStatus === "unserved" ? (
+              <div className="flex items-center">
+                <CrossCircledIcon className="mr-1 h-5 w-5 stroke-red-700" />
+                <p className="text-red-700 text-sm">
+                  この番号はまだ提供されていない番号です。割引は適用されません。
+                </p>
+              </div>
             ) : (
               <div className="flex items-center">
                 <CrossCircledIcon className="mr-1 h-5 w-5 stroke-red-700" />
