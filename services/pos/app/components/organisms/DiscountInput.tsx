@@ -133,14 +133,19 @@ const DiscountInput = memo(
               <div className="flex items-center">
                 <CrossCircledIcon className="mr-1 h-5 w-5 stroke-red-700" />
                 <p className="text-red-700 text-sm">
-                  この番号はもうすでに使用済みの番号です。割引は適用されません。
+                  <span className="font-bold">使用済み</span>の番号です。
+                  <br />
+                  割引は<span className="font-bold">適用できません。</span>
                 </p>
               </div>
             ) : discountOrderStatus === "unserved" ? (
               <div className="flex items-center">
                 <CrossCircledIcon className="mr-1 h-5 w-5 stroke-red-700" />
                 <p className="text-red-700 text-sm">
-                  この番号はまだ提供されていない番号です。割引は適用されません。
+                  <span className="font-bold">まだ提供されていない</span>
+                  番号です。
+                  <br />
+                  割引は<span className="font-bold">適用できません。</span>
                 </p>
               </div>
             ) : (
