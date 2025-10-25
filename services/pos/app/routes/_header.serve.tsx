@@ -107,7 +107,7 @@ export default function Serve() {
                   <OrderInfoCard
                     key={order.id}
                     order={order}
-                    user={"serve-served"}
+                    user={"serve"}
                     comment={() => {}}
                   />
                 );
@@ -153,7 +153,7 @@ export default function Serve() {
               <OrderInfoCard
                 key={order.id}
                 order={order}
-                user={"serve-unserved"}
+                user={"serve"}
                 comment={addComment}
               />
             )
