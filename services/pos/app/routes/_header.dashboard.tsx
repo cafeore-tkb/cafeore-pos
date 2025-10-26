@@ -2,9 +2,9 @@ import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
 import useSWRSubscription from "swr/subscription";
-import { ServeTimeGraph } from "~/components/organisms/ServeTimeGraph";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
+import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
 export const meta: MetaFunction = () => {
