@@ -322,7 +322,7 @@ export class OrderEntity implements Order {
    * statusを取得する
    * @returns status
    */
-  getStatus() {
+  get status() {
     let status: OrderStatus;
     if (this._servedAt !== null) {
       status = "served";
