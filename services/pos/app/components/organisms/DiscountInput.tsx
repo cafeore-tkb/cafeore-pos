@@ -5,6 +5,7 @@ import {
   memo,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { cn } from "~/lib/utils";
@@ -36,24 +37,22 @@ const DiscountInput = memo(
     ...props
   }: props) => {
     const [discountOrderId, setDiscountOrderId] = useState("");
+    const otpRef = useRef<HTMLInputElement>(null);
 
     // InputOTPに対してフォーカス制御を行う
     useEffect(() => {
       const timeoutId = setTimeout(() => {
-        const otpInput = document.querySelector<HTMLInputElement>(
-          "input[data-input-otp]",
-        );
-        if (otpInput) {
+        if (otpRef.current) {
           if (focus) {
-            otpInput.focus();
+            otpRef.current.focus();
             if (discountOrderId.length === 3) {
               // 3桁入力済みの場合、カーソルを最後に移動
-              const length = otpInput.value.length;
-              otpInput.setSelectionRange(length, length);
+              const length = otpRef.current.value.length;
+              otpRef.current.setSelectionRange(length, length);
             }
           } else {
             // フォーカスが外れたらblurする
-            otpInput.blur();
+            otpRef.current.blur();
           }
         }
       }, 0);
@@ -98,6 +97,7 @@ const DiscountInput = memo(
           <div className="">
             <p className="pb-1 text-sm">番号</p>
             <ThreeDigitsInput
+              ref={otpRef}
               value={discountOrderId}
               onChange={(value) => setDiscountOrderId(value)}
               {...props}
