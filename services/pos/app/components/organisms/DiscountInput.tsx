@@ -75,7 +75,7 @@ const DiscountInput = memo(
       <div className="">
         <div className="flex justify-center p-6">
           <div className="">
-            <p className="pb-1 text-sm">番号</p>
+            <p className="pb-1 text-sm">引換券番号</p>
             <ThreeDigitsInput
               ref={ref}
               value={discountOrderId}
