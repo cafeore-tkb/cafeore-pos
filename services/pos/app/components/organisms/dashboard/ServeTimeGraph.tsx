@@ -124,7 +124,7 @@ const ServeTimeGraph = ({ orders }: props) => {
             />
             <YAxis
               tickMargin={8}
-              ticks={[0, 5, 10, 15, 20, 25, 30]}
+              ticks={[0, 5, 10, 15, 30]}
               domain={[0, 30]}
               allowDataOverflow={true}
               tickFormatter={(value) => `${value}分`}
