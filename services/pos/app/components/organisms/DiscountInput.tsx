@@ -5,10 +5,10 @@ import {
   memo,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { cn } from "~/lib/utils";
-import { useFocusRef } from "../functional/useFocusRef";
 import { ThreeDigitsInput } from "../molecules/ThreeDigitsInput";
 
 const findByOrderId = (
@@ -37,7 +37,27 @@ const DiscountInput = memo(
     ...props
   }: props) => {
     const [discountOrderId, setDiscountOrderId] = useState("");
-    const ref = useFocusRef<HTMLInputElement>(focus);
+    const otpRef = useRef<HTMLInputElement>(null);
+    const previousFocusRef = useRef<boolean>(focus);
+
+    // InputOTPに対してフォーカス制御を行う
+    useEffect(() => {
+      // focusが変更された場合のみ処理
+      if (previousFocusRef.current === focus) return;
+      previousFocusRef.current = focus;
+
+      const rafId = requestAnimationFrame(() => {
+        if (otpRef.current) {
+          if (focus) {
+            otpRef.current.focus();
+          } else {
+            // フォーカスが外れたらblurする
+            otpRef.current.blur();
+          }
+        }
+      });
+      return () => cancelAnimationFrame(rafId);
+    }, [focus]);
 
     const isComplete = useMemo(
       () => discountOrderId.length === 3,
@@ -77,7 +97,7 @@ const DiscountInput = memo(
           <div className="">
             <p className="pb-1 text-sm">引換券番号</p>
             <ThreeDigitsInput
-              ref={ref}
+              ref={otpRef}
               value={discountOrderId}
               onChange={(value) => setDiscountOrderId(value)}
               {...props}
