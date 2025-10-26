@@ -123,7 +123,6 @@ const ServeTimeGraph = ({ orders }: props) => {
               tickFormatter={(value) => value}
             />
             <YAxis
-              yAxisId="time"
               tickMargin={8}
               ticks={[0, 5, 10, 15, 20, 25, 30]}
               domain={[0, 30]}
@@ -132,9 +131,8 @@ const ServeTimeGraph = ({ orders }: props) => {
             />
             <ChartTooltip cursor={false} content={<CustomTooltipContent />} />
             <Line
-              yAxisId="time"
               dataKey="serveTime"
-              type="natural"
+              type="monotone"
               stroke="var(--color-serve)"
               strokeWidth={2}
               dot={false}
