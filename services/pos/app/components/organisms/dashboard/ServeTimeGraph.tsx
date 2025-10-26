@@ -109,15 +109,23 @@ const ServeTimeGraph = ({ orders }: props) => {
               right: 12,
             }}
           >
-            <CartesianGrid vertical={false} />
+            <CartesianGrid
+              vertical={false}
+              horizontal={true}
+              stroke="hsl(var(--muted-foreground))"
+              strokeOpacity={0.5}
+            />
             <XAxis
               dataKey="createdAt"
-              tickLine={false}
-              axisLine={false}
               tickMargin={8}
               tickFormatter={(value) => value}
             />
-            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <YAxis
+              tickMargin={8}
+              ticks={[0, 10, 20, 30]}
+              domain={[0, 30]}
+              tickFormatter={(value) => `${value}分`}
+            />
             <ChartTooltip cursor={false} content={<CustomTooltipContent />} />
             <Line
               dataKey="serveTime"
