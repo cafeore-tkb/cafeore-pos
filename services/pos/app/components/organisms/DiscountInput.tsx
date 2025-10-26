@@ -38,10 +38,15 @@ const DiscountInput = memo(
   }: props) => {
     const [discountOrderId, setDiscountOrderId] = useState("");
     const otpRef = useRef<HTMLInputElement>(null);
+    const previousFocusRef = useRef<boolean>(focus);
 
     // InputOTPに対してフォーカス制御を行う
     useEffect(() => {
-      const timeoutId = setTimeout(() => {
+      // focusが変更された場合のみ処理
+      if (previousFocusRef.current === focus) return;
+      previousFocusRef.current = focus;
+
+      const rafId = requestAnimationFrame(() => {
         if (otpRef.current) {
           if (focus) {
             otpRef.current.focus();
@@ -55,8 +60,8 @@ const DiscountInput = memo(
             otpRef.current.blur();
           }
         }
-      }, 0);
-      return () => clearTimeout(timeoutId);
+      });
+      return () => cancelAnimationFrame(rafId);
     }, [focus, discountOrderId]);
 
     const isComplete = useMemo(
