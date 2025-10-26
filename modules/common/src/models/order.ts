@@ -23,7 +23,6 @@ export const orderSchema = z.object({
   comments: z.array(commentSchema),
   billingAmount: z.number(), // total - discount
   received: z.number(), // お預かり金額
-  status: z.enum(["preparing", "calling", "served", "expired"]),
   discountOrderId: z.number().nullable(),
   discountOrderCups: z.number(),
   DISCOUNT_PER_CUP: z.number(),
@@ -79,7 +78,6 @@ export class OrderEntity implements Order {
     private _comments: CommentEntity[],
     private _billingAmount: number,
     private _received: number,
-    private _status: "preparing" | "calling" | "served" | "expired",
     private _discountOrderId: number | null,
     private _discountOrderCups: number,
     private readonly _DISCOUNT_PER_CUP: number,
@@ -99,7 +97,6 @@ export class OrderEntity implements Order {
       [],
       0,
       0,
-      "preparing",
       null,
       0,
       STATIC_DISCOUNT_PER_CUP,
@@ -124,7 +121,6 @@ export class OrderEntity implements Order {
       order.comments.map((comment) => CommentEntity.fromComment(comment)),
       order.billingAmount,
       order.received,
-      order.status,
       order.discountOrderId,
       order.discountOrderCups,
       order.DISCOUNT_PER_CUP,
@@ -189,13 +185,6 @@ export class OrderEntity implements Order {
   }
   set received(received: number) {
     this._received = received;
-  }
-
-  get status() {
-    return this._status;
-  }
-  set status(status: "preparing" | "calling" | "served" | "expired") {
-    this._status = status;
   }
 
   get discountOrderId() {
@@ -343,7 +332,6 @@ export class OrderEntity implements Order {
       comments: this.comments.map((comment) => comment.toComment()),
       billingAmount: this.billingAmount,
       received: this.received,
-      status: this.status,
       discountOrderId: this.discountOrderId,
       discountOrderCups: this.discountOrderCups,
       DISCOUNT_PER_CUP: this.DISCOUNT_PER_CUP,
