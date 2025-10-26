@@ -82,7 +82,9 @@ const ServeTimeGraph = ({ orders }: props) => {
           serveTimeText: `${minutes}分${seconds}秒`, // ツールチップ用のテキスト
           orderId: order.orderId, // 注文番号を追加
         };
-      }) ?? [];
+      })
+      .reverse() ?? // 配列を逆順にする（最新の注文が左側に来るように）
+    [];
 
   const chartConfig = {
     serve: {
