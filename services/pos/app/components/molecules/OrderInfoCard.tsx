@@ -69,7 +69,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
           (user === "master" || user === "serve") &&
             isReady &&
             "bg-gray-300 text-gray-500",
-          order.status === "served" && "transition-all duration-200",
+          order.getStatus() === "served" && "transition-all duration-200",
         )}
       >
         <CardHeader>
@@ -79,12 +79,12 @@ export function OrderInfoCard({ order, user, comment }: props) {
               <div className="font-black text-6xl">{order.orderId}</div>
             </CardTitle>
             {(user === "master" ||
-              order.status === "preparing" ||
-              order.status === "calling") && (
+              order.getStatus() === "preparing" ||
+              order.getStatus() === "calling") && (
               <RealtimeElapsedTime order={order} />
             )}
-            {(order.status === "preparing" ||
-              order.status === "calling" ||
+            {(order.getStatus() === "preparing" ||
+              order.getStatus() === "calling" ||
               user === "dashboard") && (
               <div
                 className={cn(
@@ -111,7 +111,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
         <CardContent>
           <div
             className={cn(
-              order.status === "served" && "mb-4",
+              order.getStatus() === "served" && "mb-4",
               "grid grid-cols-2 gap-2",
             )}
           >
@@ -121,17 +121,18 @@ export function OrderInfoCard({ order, user, comment }: props) {
                   className={cn(
                     "p-3",
                     user === "master" && item.type === "ice" && "bg-blue-200",
-                    order.status === "preparing" || order.status === "calling"
+                    order.getStatus() === "preparing" ||
+                      order.getStatus() === "calling"
                       ? item.type === "milk" && "bg-yellow-200"
                       : item.type === "milk" && "bg-gray-300",
                     (user === "master" ||
-                      order.status === "preparing" ||
-                      order.status === "calling") &&
+                      order.getStatus() === "preparing" ||
+                      order.getStatus() === "calling") &&
                       item.type === "hotOre" &&
                       "bg-orange-300",
                     (user === "master" ||
-                      order.status === "preparing" ||
-                      order.status === "calling") &&
+                      order.getStatus() === "preparing" ||
+                      order.getStatus() === "calling") &&
                       item.type === "iceOre" &&
                       "bg-sky-200",
                     user === "master" &&
@@ -144,7 +145,9 @@ export function OrderInfoCard({ order, user, comment }: props) {
                 >
                   <h3
                     className={cn(
-                      order.status === "served" ? "p-1 text-3xl" : "text-3xl",
+                      order.getStatus() === "served"
+                        ? "p-1 text-3xl"
+                        : "text-3xl",
                       "text-center font-bold",
                     )}
                   >
@@ -187,8 +190,8 @@ export function OrderInfoCard({ order, user, comment }: props) {
             </div>
           )}
           {(user === "master" ||
-            order.status === "preparing" ||
-            order.status === "calling") && (
+            order.getStatus() === "preparing" ||
+            order.getStatus() === "calling") && (
             <InputComment order={order} addComment={comment} />
           )}
           {(user === "master" || user === "dashboard") &&
@@ -199,8 +202,8 @@ export function OrderInfoCard({ order, user, comment }: props) {
                 <p className="text-yellow-700">提供待ち</p>
               </div>
             )}
-          {order.status === "preparing" ||
-            (order.status === "calling" && (
+          {order.getStatus() === "preparing" ||
+            (order.getStatus() === "calling" && (
               <div className="mt-4 flex items-center justify-between">
                 <ReadyBell
                   order={order}
@@ -222,7 +225,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
                 />
               </div>
             ))}
-          {order.status === "served" && (
+          {order.getStatus() === "served" && (
             <div className="mt-2 flex items-center justify-between">
               <Button
                 onClick={() => {
