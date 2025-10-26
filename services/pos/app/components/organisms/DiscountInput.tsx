@@ -50,11 +50,6 @@ const DiscountInput = memo(
         if (otpRef.current) {
           if (focus) {
             otpRef.current.focus();
-            if (discountOrderId.length === 3) {
-              // 3桁入力済みの場合、カーソルを最後に移動
-              const length = otpRef.current.value.length;
-              otpRef.current.setSelectionRange(length, length);
-            }
           } else {
             // フォーカスが外れたらblurする
             otpRef.current.blur();
@@ -62,7 +57,7 @@ const DiscountInput = memo(
         }
       });
       return () => cancelAnimationFrame(rafId);
-    }, [focus, discountOrderId]);
+    }, [focus]);
 
     const isComplete = useMemo(
       () => discountOrderId.length === 3,
