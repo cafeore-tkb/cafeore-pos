@@ -31,6 +31,7 @@ import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
 import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
+import { ServiceDiscountButton } from "../organisms/ServiceDiscountButton";
 import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
@@ -354,6 +355,19 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                 onClick={useCallback(() => {
                   setInputStatus("discount");
                 }, [setInputStatus])}
+              />
+            </div>
+            <div className="mt-5 flex justify-center">
+              <ServiceDiscountButton
+                onServiceDiscountOrder={useCallback(
+                  () =>
+                    newOrderDispatch({ type: "applyServiceOneCupDiscount" }),
+                  [newOrderDispatch],
+                )}
+                onDiscountOrderRemoved={useCallback(
+                  () => newOrderDispatch({ type: "removeDiscount" }),
+                  [newOrderDispatch],
+                )}
               />
             </div>
           </div>
