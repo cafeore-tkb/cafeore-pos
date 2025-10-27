@@ -6,6 +6,9 @@ type Props = {
   onDiscountOrderRemoved: () => void;
 };
 
+/**
+ * 割引券なしでサービス割引を適用するコンポーネント
+ */
 export function ServiceDiscountButton({
   onServiceDiscountOrder,
   onDiscountOrderRemoved,
