@@ -41,7 +41,13 @@ const CustomTooltipContent = ({
         <div className="grid gap-2">
           <div className="flex flex-col">
             <span className="text-[0.70rem] text-muted-foreground uppercase">
-              時刻
+              注文番号
+            </span>
+            <span className="font-bold">#{data.orderId}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[0.70rem] text-muted-foreground uppercase">
+              注文時刻
             </span>
             <span className="font-bold">{label}</span>
           </div>
@@ -71,11 +77,14 @@ const ServeTimeGraph = ({ orders }: props) => {
         const serveTimeMinutes = minutes + seconds / 60; // グラフ用の分単位の値
 
         return {
-          createdAt: createdAt.format("HH:mm"), // x軸に使用する時刻
+          createdAt: createdAt.format("HH:mm"), // x軸に使用する注文時刻
           serveTime: serveTimeMinutes,
           serveTimeText: `${minutes}分${seconds}秒`, // ツールチップ用のテキスト
+          orderId: order.orderId, // 注文番号を追加
         };
-      }) ?? [];
+      })
+      .reverse() ?? // 配列を逆順にする（最新の注文が左側に来るように）
+    [];
 
   const chartConfig = {
     serve: {
@@ -102,19 +111,28 @@ const ServeTimeGraph = ({ orders }: props) => {
               right: 12,
             }}
           >
-            <CartesianGrid vertical={false} />
+            <CartesianGrid
+              vertical={false}
+              horizontal={true}
+              stroke="hsl(var(--muted-foreground))"
+              strokeOpacity={0.5}
+            />
             <XAxis
               dataKey="createdAt"
-              tickLine={false}
-              axisLine={false}
               tickMargin={8}
               tickFormatter={(value) => value}
             />
-            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <YAxis
+              tickMargin={8}
+              ticks={[0, 5, 10, 15, 30]}
+              domain={[0, 30]}
+              allowDataOverflow={true}
+              tickFormatter={(value) => `${value}分`}
+            />
             <ChartTooltip cursor={false} content={<CustomTooltipContent />} />
             <Line
               dataKey="serveTime"
-              type="natural"
+              type="monotone"
               stroke="var(--color-serve)"
               strokeWidth={2}
               dot={false}
