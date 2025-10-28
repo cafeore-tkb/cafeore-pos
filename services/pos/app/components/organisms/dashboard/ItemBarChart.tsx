@@ -1,6 +1,12 @@
-import { ITEM_MASTER, type OrderEntity, itemSource } from "@cafeore/common";
+import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import {
   type ChartConfig,
   ChartContainer,
@@ -19,31 +25,6 @@ type props = {
  * @returns
  */
 const ItemBarChart = ({ orders, pastOrders }: props) => {
-  console.log(pastOrders);
-  const items = itemSource;
-  const itemNamesArray = items.map((items) => items.name);
-  const init = new Map<string, number>();
-  const numPerItem = orders?.reduce((acc, cur) => {
-    if (itemNamesArray !== undefined) {
-      for (let i = 0; i < cur.items.length; i++) {
-        for (let j = 0; j < itemNamesArray?.length; j++) {
-          if (cur.items[i].name === itemNamesArray[j]) {
-            const num = acc.get(cur.items[i].name) ?? 0;
-            acc.set(cur.items[i].name, num + 1);
-          }
-        }
-      }
-    }
-    return acc;
-  }, init);
-  const itemValue = (name: string): number | undefined => {
-    let valueNum = undefined;
-    if (numPerItem !== undefined) {
-      valueNum = numPerItem.get(name);
-    }
-    return valueNum;
-  };
-
   // リアルタイムと過去の最初の時刻を取得
   const realtimeStart = new Date(orders?.at(-1)?.createdAt ?? Date.now());
   const pastStart = new Date(pastOrders?.at(0)?.createdAt ?? Date.now());
@@ -89,7 +70,10 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>商品ごとの杯数</CardTitle>
+        <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
+        <CardDescription>
+          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig}>
@@ -98,17 +82,13 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
             <XAxis
               dataKey="name"
               tickLine={false}
-              tickMargin={10}
               axisLine={false}
               tickFormatter={(value) => value.slice(0, 5)}
             />
             <YAxis />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent nameKey="name" />}
-            />
-            <Bar dataKey="realtimeData" radius={8} />
-            <Bar dataKey="pastData" radius={8} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="realtimeData" radius={1} />
+            <Bar dataKey="pastData" radius={1} style={{ opacity: 0.4 }} />
           </BarChart>
         </ChartContainer>
       </CardContent>
@@ -124,6 +104,26 @@ const chartConfig = {
   pastData: {
     label: "過去のデータ",
     color: "var(--chart-2)",
+  },
+  hot: {
+    label: "ホット",
+    color: "hsl(var(--chart-1))",
+  },
+  ice: {
+    label: "アイス",
+    color: "hsl(var(--chart-2))",
+  },
+  aulait: {
+    label: "オレ",
+    color: "hsl(var(--chart-3))",
+  },
+  milk: {
+    label: "ミルク",
+    color: "hsl(var(--chart-4))",
+  },
+  other: {
+    label: "Other",
+    color: "hsl(var(--chart-5))",
   },
 } satisfies ChartConfig;
 

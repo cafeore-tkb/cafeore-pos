@@ -10,7 +10,6 @@ import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
-import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
@@ -32,36 +31,29 @@ export default function Dashboard() {
   }, 0);
 
   const [pastOrders, setPastOrders] = useState<OrderEntity[]>();
-  const { fileName, isLoading, error, handleFileUpload, resetUpload } =
-    useFileUpload(
-      useCallback(
-        (sortedPastOrders: OrderEntity[]) => setPastOrders(sortedPastOrders),
-        [],
-      ),
-    );
+  const { handleFileUpload } = useFileUpload(
+    useCallback(
+      (sortedPastOrders: OrderEntity[]) => setPastOrders(sortedPastOrders),
+      [],
+    ),
+  );
 
   return (
     <div className="h-full">
       <div className="sticky top-0 flex justify-between p-4">
         <h1 className="w-auto whitespace-nowrap text-3xl">ダッシュボード</h1>
         <p>提供待ちオーダー数：{unseved}</p>
-        <div className="flex items-center gap-2 rounded-md bg-theme p-2">
-          <div className="whitespace-nowrap font-bold text-sm text-white">
+        <div className="flex items-center gap-2 p-2">
+          <div className="whitespace-nowrap font-bold text-sm">
             <p>過去のデータを</p>
             <p>読み込む</p>
           </div>
-          <Input type="file" accept=".json" onChange={handleFileUpload} />
-          {/* 読み込めないとき */}
-          {fileName && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={resetUpload}
-              disabled={isLoading}
-            >
-              リセット
-            </Button>
-          )}
+          <Input
+            className="w-60"
+            type="file"
+            accept=".json"
+            onChange={handleFileUpload}
+          />
         </div>
       </div>
       <Tabs defaultValue="itemBar">
