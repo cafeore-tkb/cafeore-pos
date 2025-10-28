@@ -304,7 +304,6 @@ export class OrderEntity implements Order {
    * 番号入力無しで100円引きを適用する
    */
   applyServiceOneCupDiscount() {
-    this._discountOrderId;
     this._discountOrderCups = 1;
   }
 
