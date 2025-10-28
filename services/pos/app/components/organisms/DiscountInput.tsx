@@ -24,6 +24,7 @@ const findByOrderId = (
 
 type props = ComponentPropsWithoutRef<typeof ThreeDigitsInput> & {
   focus: boolean;
+  disabled?: boolean;
   orders: WithId<OrderEntity>[] | undefined;
   onDiscountOrderFind: (order: WithId<OrderEntity>) => void;
   onDiscountOrderRemoved: () => void;
@@ -35,6 +36,7 @@ type props = ComponentPropsWithoutRef<typeof ThreeDigitsInput> & {
 const DiscountInput = memo(
   ({
     focus,
+    disabled = false,
     orders,
     onDiscountOrderFind,
     onDiscountOrderRemoved,
@@ -111,6 +113,7 @@ const DiscountInput = memo(
             <ThreeDigitsInput
               ref={otpRef}
               value={discountOrderId}
+              disabled={disabled}
               onChange={(value) => setDiscountOrderId(value)}
               {...props}
             />

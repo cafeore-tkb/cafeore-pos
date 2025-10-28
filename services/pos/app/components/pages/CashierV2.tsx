@@ -31,6 +31,7 @@ import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
 import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
+import { ServiceDiscountButton } from "../organisms/ServiceDiscountButton";
 import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
@@ -61,6 +62,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   const { nextOrderId } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
+  const [serviceActive, setServiceActive] = useState(false);
 
   // 過去の注文表示用の状態
   const ITEMS_PER_PAGE = 20;
@@ -323,7 +325,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
               )}
               focus={inputStatus === "items"}
               discountOrder={useMemo(
-                () => newOrder.discountOrderId !== null,
+                () => newOrder.discountOrderCups !== 0,
                 [newOrder],
               )}
               onClick={useCallback(() => {
@@ -341,6 +343,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
               <DiscountInput
                 key={`DiscountInput-${UISession.key}`}
                 focus={inputStatus === "discount"}
+                disabled={serviceActive}
                 orders={orders}
                 onDiscountOrderFind={useCallback(
                   (discountOrder) =>
@@ -354,6 +357,22 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                 onClick={useCallback(() => {
                   setInputStatus("discount");
                 }, [setInputStatus])}
+              />
+            </div>
+            <div className="mt-5 flex justify-center">
+              <ServiceDiscountButton
+                active={serviceActive}
+                disabled={newOrder.discountOrderId !== null}
+                onServiceDiscountOrder={useCallback(() => {
+                  newOrderDispatch({ type: "applyServiceOneCupDiscount" });
+                  setServiceActive(true);
+                }, [newOrderDispatch])}
+                onDiscountOrderRemoved={useCallback(() => {
+                  if (serviceActive) {
+                    newOrderDispatch({ type: "removeDiscount" });
+                    setServiceActive(false);
+                  }
+                }, [newOrderDispatch, serviceActive])}
               />
             </div>
           </div>
