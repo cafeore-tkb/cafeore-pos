@@ -1,17 +1,5 @@
-import {
-  ITEM_MASTER,
-  type OrderEntity,
-  type WithId,
-  itemSource,
-} from "@cafeore/common";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Rectangle,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { ITEM_MASTER, type OrderEntity, itemSource } from "@cafeore/common";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   type ChartConfig,
@@ -21,7 +9,8 @@ import {
 } from "~/components/ui/chart";
 
 type props = {
-  orders: WithId<OrderEntity>[] | undefined;
+  orders: OrderEntity[] | undefined;
+  pastOrders: OrderEntity[] | undefined;
 };
 
 /**
@@ -29,7 +18,8 @@ type props = {
  * @param props
  * @returns
  */
-const ItemBarChart = ({ orders }: props) => {
+const ItemBarChart = ({ orders, pastOrders }: props) => {
+  console.log(pastOrders);
   const items = itemSource;
   const itemNamesArray = items.map((items) => items.name);
   const init = new Map<string, number>();
@@ -54,6 +44,19 @@ const ItemBarChart = ({ orders }: props) => {
     return valueNum;
   };
 
+  // リアルタイムと過去の最初の時刻を取得
+  const realtimeStart = new Date(orders?.at(-1)?.createdAt ?? Date.now());
+  const pastStart = new Date(pastOrders?.at(0)?.createdAt ?? Date.now());
+
+  // リアルタイムの経過時間を算出
+  const elapsedMs = Date.now() - realtimeStart.getTime();
+
+  // 過去データを「同じ経過時間分」だけ切り出し
+  const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
+  const pastRange = pastOrders?.filter(
+    (o) => new Date(o.createdAt) <= pastCutoff,
+  );
+
   const TYPE_COLOR_MAP = {
     hot: "var(--color-hot)",
     ice: "var(--color-ice)",
@@ -62,9 +65,24 @@ const ItemBarChart = ({ orders }: props) => {
     others: "var(--color-others)",
   } as const;
 
+  const sumByItem = (orders: OrderEntity[] | undefined) => {
+    if (orders === undefined) return;
+    const result: Record<string, number> = {};
+    for (const o of orders) {
+      for (const item of o.items) {
+        result[item.name] = (result[item.name] ?? 0) + 1;
+      }
+    }
+    return result;
+  };
+
+  const realtimeSum = sumByItem(orders);
+  const pastSum = sumByItem(pastRange);
+
   const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
     name: item.abbr,
-    num: itemValue(item.name),
+    realtimeData: realtimeSum ? realtimeSum[item.name] : 0,
+    pastData: pastSum ? pastSum[item.name] : 0,
     fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
   }));
 
@@ -89,21 +107,8 @@ const ItemBarChart = ({ orders }: props) => {
               cursor={false}
               content={<ChartTooltipContent nameKey="name" />}
             />
-            <Bar
-              dataKey="num"
-              radius={8}
-              activeBar={({ ...props }) => {
-                return (
-                  <Rectangle
-                    {...props}
-                    fillOpacity={0.8}
-                    stroke={props.payload.fill}
-                    strokeDasharray={4}
-                    strokeDashoffset={4}
-                  />
-                );
-              }}
-            />
+            <Bar dataKey="realtimeData" radius={8} />
+            <Bar dataKey="pastData" radius={8} />
           </BarChart>
         </ChartContainer>
       </CardContent>
@@ -112,28 +117,13 @@ const ItemBarChart = ({ orders }: props) => {
 };
 
 const chartConfig = {
-  name: {
-    label: "杯数",
+  realtimeData: {
+    label: "現在のデータ",
+    color: "var(--chart-1)",
   },
-  hot: {
-    label: "ホット",
-    color: "hsl(var(--chart-1))",
-  },
-  ice: {
-    label: "アイス",
-    color: "hsl(var(--chart-2))",
-  },
-  aulait: {
-    label: "オレ",
-    color: "hsl(var(--chart-3))",
-  },
-  milk: {
-    label: "ミルク",
-    color: "hsl(var(--chart-4))",
-  },
-  other: {
-    label: "Other",
-    color: "hsl(var(--chart-5))",
+  pastData: {
+    label: "過去のデータ",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig;
 

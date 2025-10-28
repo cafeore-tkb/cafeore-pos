@@ -10,6 +10,7 @@ import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
+import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
@@ -50,6 +51,17 @@ export default function Dashboard() {
             <p>読み込む</p>
           </div>
           <Input type="file" accept=".json" onChange={handleFileUpload} />
+          {/* 読み込めないとき */}
+          {fileName && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={resetUpload}
+              disabled={isLoading}
+            >
+              リセット
+            </Button>
+          )}
         </div>
       </div>
       <Tabs defaultValue="itemBar">
@@ -60,7 +72,7 @@ export default function Dashboard() {
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
-            <ItemBarChart orders={orders} />
+            <ItemBarChart orders={orders} pastOrders={pastOrders} />
           </div>
         </TabsContent>
         <TabsContent value="serveTimeGraph" className="p-2">
