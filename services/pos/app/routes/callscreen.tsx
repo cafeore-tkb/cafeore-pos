@@ -74,31 +74,19 @@ export default function FielsOfCallScreen() {
   }, [current]);
 
   return (
-    <div className="flex h-screen p-2 font-sans">
-      {/* 準備中 */}
-      <div className="w-1/3 border-r p-4">
-        <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
-          準備中
-        </h1>
-        <div className="grid grid-cols-4 gap-2">
-          {orders?.map(
-            (order) =>
-              order.servedAt === null &&
-              order.readyAt === null && (
-                <Card
-                  key={order.id}
-                  className="flex items-center justify-center border-4"
-                >
-                  <div className="p-3 font-bold text-5xl">{order.orderId}</div>
-                </Card>
-              ),
+    <div className="flex h-screen flex-col p-2 font-sans">
+      {/* 画面上部（70%） */}
+      <div className="flex h-[70%]">
+        {/* 左側：一個ずつ表示 */}
+        <div className="flex w-[40%] items-center justify-center border-r">
+          {current !== null && (
+            <div className="animate-pulse rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg">
+              {current}
+            </div>
           )}
         </div>
-      </div>
-
-      <div className="w-2/3 p-4">
-        <div className="h-2/5 border-b">
-          {/* お呼び出し中 */}
+        {/* 右側：お呼び出し中 */}
+        <div className="w-[60%] p-4">
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
             お呼び出し中
           </h1>
@@ -119,12 +107,25 @@ export default function FielsOfCallScreen() {
             )}
           </div>
         </div>
-        {/* 一個ずつ表示 */}
-        <div className="flex h-3/5 items-center justify-center">
-          {current !== null && (
-            <div className="animate-pulse rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg">
-              {current}
-            </div>
+      </div>
+
+      {/* 画面下部（30%） */}
+      <div className="border-t p-4">
+        <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
+          準備中
+        </h1>
+        <div className="grid grid-cols-8 gap-2">
+          {orders?.map(
+            (order) =>
+              order.servedAt === null &&
+              order.readyAt === null && (
+                <Card
+                  key={order.id}
+                  className="flex items-center justify-center border-4"
+                >
+                  <div className="p-3 font-bold text-5xl">{order.orderId}</div>
+                </Card>
+              ),
           )}
         </div>
       </div>
