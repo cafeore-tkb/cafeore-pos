@@ -1,4 +1,5 @@
 import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
+import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   Card,
@@ -25,31 +26,38 @@ type props = {
  * @returns
  */
 const ItemBarChart = ({ orders, pastOrders }: props) => {
-  // リアルタイムと過去の最初の時刻を取得
+  const [pastRange, setPastRange] = useState<OrderEntity[] | undefined>([]);
+
+  // 各基準時刻を計算
   const realtimeStart = new Date(orders?.at(-1)?.createdAt ?? Date.now());
   const pastStart = new Date(pastOrders?.at(0)?.createdAt ?? Date.now());
 
-  // リアルタイムの経過時間を算出
-  const elapsedMs = Date.now() - realtimeStart.getTime();
+  // 10分間隔でpastRangeを更新
+  useEffect(() => {
+    if (!pastOrders?.length) return;
 
-  // 過去データを「同じ経過時間分」だけ切り出し
-  const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
-  const pastRange = pastOrders?.filter(
-    (o) => new Date(o.createdAt) <= pastCutoff,
-  );
+    const updatePastRange = () => {
+      const elapsedMs = Date.now() - realtimeStart.getTime();
+      const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
+      const range = pastOrders.filter(
+        (o) => new Date(o.createdAt) <= pastCutoff,
+      );
+      setPastRange(range);
+    };
 
-  const TYPE_COLOR_MAP = {
-    hot: "var(--color-hot)",
-    ice: "var(--color-ice)",
-    iceOre: "var(--color-aulait)",
-    milk: "var(--color-milk)",
-    others: "var(--color-others)",
-  } as const;
+    // 初回更新
+    updatePastRange();
 
+    // 10分ごとに更新
+    const timer = setInterval(updatePastRange, 10 * 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, [pastOrders, realtimeStart, pastStart]);
+
+  // 集計関数
   const sumByItem = (orders: OrderEntity[] | undefined) => {
     if (!orders) return;
 
-    // 名前読み替えハードコード
     const renameMap: Record<string, string | string[]> = {
       べっぴんブレンド: "縁ブレンド",
       マンデリン: "トラジャ",
@@ -62,23 +70,28 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
     for (const o of orders) {
       for (const item of o.items) {
         const mapped = renameMap[item.name];
-
         if (mapped === undefined) {
-          // 読み替え対象外はそのままカウント
           result[item.name] = (result[item.name] ?? 0) + 1;
         } else if (typeof mapped === "string") {
-          // 単一置き換え
           result[mapped] = (result[mapped] ?? 0) + 1;
         } else {
-          // 複数展開（例：「限定」→「ライチ」「ブルマン」）
           for (const newName of mapped) {
             result[newName] = (result[newName] ?? 0) + 1;
           }
         }
       }
     }
+
     return result;
   };
+
+  const TYPE_COLOR_MAP = {
+    hot: "var(--color-hot)",
+    ice: "var(--color-ice)",
+    iceOre: "var(--color-aulait)",
+    milk: "var(--color-milk)",
+    others: "var(--color-others)",
+  } as const;
 
   const realtimeSum = sumByItem(orders);
   const pastSum = sumByItem(pastRange);
