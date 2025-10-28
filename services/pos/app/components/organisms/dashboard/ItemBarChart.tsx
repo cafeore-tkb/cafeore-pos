@@ -47,11 +47,34 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   } as const;
 
   const sumByItem = (orders: OrderEntity[] | undefined) => {
-    if (orders === undefined) return;
+    if (!orders) return;
+
+    // 名前読み替えハードコード
+    const renameMap: Record<string, string | string[]> = {
+      べっぴんブレンド: "縁ブレンド",
+      マンデリン: "トラジャ",
+      "コスタリカ レッドハニー": "キリマンジャロ",
+      限定: ["ライチ", "ブルマン"],
+    };
+
     const result: Record<string, number> = {};
+
     for (const o of orders) {
       for (const item of o.items) {
-        result[item.name] = (result[item.name] ?? 0) + 1;
+        const mapped = renameMap[item.name];
+
+        if (mapped === undefined) {
+          // 読み替え対象外はそのままカウント
+          result[item.name] = (result[item.name] ?? 0) + 1;
+        } else if (typeof mapped === "string") {
+          // 単一置き換え
+          result[mapped] = (result[mapped] ?? 0) + 1;
+        } else {
+          // 複数展開（例：「限定」→「ライチ」「ブルマン」）
+          for (const newName of mapped) {
+            result[newName] = (result[newName] ?? 0) + 1;
+          }
+        }
       }
     }
     return result;
@@ -72,7 +95,12 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
       <CardHeader>
         <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
         <CardDescription>
-          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します
+          <p>
+            商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します
+          </p>
+          <p>
+            読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
+          </p>
         </CardDescription>
       </CardHeader>
       <CardContent>
