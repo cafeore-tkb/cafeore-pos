@@ -80,7 +80,7 @@ export default function FielsOfCallScreen() {
       <img
         src={CafeoreLogo}
         alt="Cafeore Logo"
-        className="pointer-events-none absolute inset-0 z-0 h-full w-full object-contain opacity-10"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[80%] w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-10"
       />
 
       {/* 準備中 */}
