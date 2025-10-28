@@ -100,6 +100,7 @@ export default function FielsOfCallScreen() {
   );
 
   return (
+<<<<<<< HEAD
     <div className="flex h-screen flex-col p-2 font-sans">
       <div className="flex h-[70%]">
         {/* 左側：一個ずつ表示 */}
@@ -108,6 +109,16 @@ export default function FielsOfCallScreen() {
             <CurrentOrderCard orderId={current} cardRef={currentElementRef} />
           )}
         </div>
+=======
+<<<<<<< HEAD
+    <div className="relative flex h-screen overflow-hidden p-2 font-sans">
+      {/* 背景ロゴ */}
+      <img
+        src={CafeoreLogo}
+        alt="Cafeore Logo"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[80%] w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-10"
+      />
+>>>>>>> 762573d (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
 
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
@@ -162,9 +173,73 @@ export default function FielsOfCallScreen() {
           )}
         </div>
       </div>
+<<<<<<< HEAD
       <audio src={brightNotifications} ref={soundRef}>
         <track kind="captions" />
       </audio>
+=======
+
+      <div className="relative z-10 w-2/3 p-4">
+        <div className="h-2/5 border-b">
+          {/* お呼び出し中 */}
+=======
+    <div className="flex h-screen flex-col p-2 font-sans">
+      {/* 画面上部（70%） */}
+      <div className="flex h-[70%]">
+        {/* 左側：一個ずつ表示 */}
+        <div className="flex w-[40%] items-center justify-center border-r">
+          {current !== null && (
+            <div className="animate-pulse rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg">
+              {current}
+            </div>
+          )}
+        </div>
+        {/* 右側：お呼び出し中 */}
+        <div className="w-[60%] p-4">
+>>>>>>> 5fb7555 (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
+          <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
+            お呼び出し中
+          </h1>
+          <div className="grid grid-cols-5 gap-4">
+            {orders?.map(
+              (order) =>
+                order.servedAt === null &&
+                order.readyAt !== null && (
+                  <Card
+                    key={order.id}
+                    className="flex items-center justify-center"
+                  >
+                    <div className="p-3 font-bold text-7xl">
+                      {order.orderId}
+                    </div>
+                  </Card>
+                ),
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 画面下部（30%） */}
+      <div className="border-t p-4">
+        <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
+          準備中
+        </h1>
+        <div className="grid grid-cols-8 gap-2">
+          {orders?.map(
+            (order) =>
+              order.servedAt === null &&
+              order.readyAt === null && (
+                <Card
+                  key={order.id}
+                  className="flex items-center justify-center border-4"
+                >
+                  <div className="p-3 font-bold text-5xl">{order.orderId}</div>
+                </Card>
+              ),
+          )}
+        </div>
+      </div>
+>>>>>>> 762573d (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
     </div>
   );
 }
