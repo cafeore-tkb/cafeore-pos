@@ -1,11 +1,18 @@
-import { collectionSub, orderConverter } from "@cafeore/common";
+import {
+  type OrderEntity,
+  collectionSub,
+  orderConverter,
+} from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
+import { useCallback, useState } from "react";
 import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
+import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { useFileUpload } from "~/lib/fileUpload";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
@@ -23,11 +30,31 @@ export default function Dashboard() {
     return acc;
   }, 0);
 
+  const [pastOrders, setPastOrders] = useState<OrderEntity[]>();
+  const { handleFileUpload } = useFileUpload(
+    useCallback(
+      (sortedPastOrders: OrderEntity[]) => setPastOrders(sortedPastOrders),
+      [],
+    ),
+  );
+
   return (
     <div className="h-full">
       <div className="sticky top-0 flex justify-between p-4">
-        <h1 className="text-3xl">ダッシュボード</h1>
+        <h1 className="w-auto whitespace-nowrap text-3xl">ダッシュボード</h1>
         <p>提供待ちオーダー数：{unseved}</p>
+        <div className="flex items-center gap-2 p-2">
+          <div className="whitespace-nowrap font-bold text-sm">
+            <p>過去のデータを</p>
+            <p>読み込む</p>
+          </div>
+          <Input
+            className="w-60"
+            type="file"
+            accept=".json"
+            onChange={handleFileUpload}
+          />
+        </div>
       </div>
       <Tabs defaultValue="itemBar">
         <TabsList>
@@ -37,7 +64,7 @@ export default function Dashboard() {
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
-            <ItemBarChart orders={orders} />
+            <ItemBarChart orders={orders} pastOrders={pastOrders} />
           </div>
         </TabsContent>
         <TabsContent value="serveTimeGraph" className="p-2">
