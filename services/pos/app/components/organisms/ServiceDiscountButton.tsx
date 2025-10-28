@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 
 type Props = {
+  disabled?: boolean;
   onServiceDiscountOrder: () => void;
   onDiscountOrderRemoved: () => void;
 };
@@ -10,6 +11,7 @@ type Props = {
  * 割引券なしでサービス割引を適用するコンポーネント
  */
 export function ServiceDiscountButton({
+  disabled,
   onServiceDiscountOrder,
   onDiscountOrderRemoved,
 }: Props) {
@@ -34,6 +36,7 @@ export function ServiceDiscountButton({
       variant={active ? "destructive" : "default"}
       className="h-auto whitespace-pre-line px-4 py-2 text-center text-xl"
       onClick={handleClick}
+      disabled={disabled}
     >
       {active ? "サービス割引\nを解除" : "サービス割引\nを適用"}
     </Button>

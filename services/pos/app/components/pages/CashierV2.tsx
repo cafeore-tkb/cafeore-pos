@@ -324,7 +324,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
               )}
               focus={inputStatus === "items"}
               discountOrder={useMemo(
-                () => newOrder.discountOrderId !== null,
+                () => newOrder.discountOrderCups !== 0,
                 [newOrder],
               )}
               onClick={useCallback(() => {
@@ -359,6 +359,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
             </div>
             <div className="mt-5 flex justify-center">
               <ServiceDiscountButton
+                disabled={newOrder.discountOrderId !== null}
                 onServiceDiscountOrder={useCallback(
                   () =>
                     newOrderDispatch({ type: "applyServiceOneCupDiscount" }),
