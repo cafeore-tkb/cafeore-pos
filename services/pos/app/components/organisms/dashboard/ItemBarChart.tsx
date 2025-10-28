@@ -1,5 +1,5 @@
 import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   Card,
@@ -29,8 +29,15 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   const [pastRange, setPastRange] = useState<OrderEntity[] | undefined>([]);
 
   // 各基準時刻を計算
-  const realtimeStart = new Date(orders?.at(-1)?.createdAt ?? Date.now());
-  const pastStart = new Date(pastOrders?.at(0)?.createdAt ?? Date.now());
+  const realtimeStart = useMemo(() => {
+    const first = orders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [orders]);
+
+  const pastStart = useMemo(() => {
+    const first = pastOrders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [pastOrders]);
 
   // 10分間隔でpastRangeを更新
   useEffect(() => {
@@ -58,20 +65,21 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   const sumByItem = (orders: OrderEntity[] | undefined) => {
     if (!orders) return;
 
+    // 読み替えをハードコード
     const renameMap: Record<string, string | string[]> = {
-      べっぴんブレンド: "縁ブレンド",
-      マンデリン: "トラジャ",
-      "コスタリカ レッドハニー": "キリマンジャロ",
-      限定: ["ライチ", "ブルマン"],
+      "01_beppin_brend": "01_yukari_brend",
+      "04_mandheling": "06_toraja",
+      "06_costa_rica_red_honey": "04_kilimanjaro",
+      "03_special": ["03_Lychee", "07_blumoun"],
     };
 
     const result: Record<string, number> = {};
 
-    for (const o of orders) {
-      for (const item of o.items) {
-        const mapped = renameMap[item.name];
+    for (const order of orders) {
+      for (const item of order.items) {
+        const mapped = renameMap[item.id];
         if (mapped === undefined) {
-          result[item.name] = (result[item.name] ?? 0) + 1;
+          result[item.id] = (result[item.id] ?? 0) + 1;
         } else if (typeof mapped === "string") {
           result[mapped] = (result[mapped] ?? 0) + 1;
         } else {
@@ -98,8 +106,8 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
 
   const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
     name: item.abbr,
-    realtimeData: realtimeSum ? realtimeSum[item.name] : 0,
-    pastData: pastSum ? pastSum[item.name] : 0,
+    realtimeData: realtimeSum ? realtimeSum[item.id] : 0,
+    pastData: pastSum ? pastSum[item.id] : 0,
     fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
   }));
 
@@ -108,12 +116,9 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
       <CardHeader>
         <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
         <CardDescription>
-          <p>
-            商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します
-          </p>
-          <p>
-            読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
-          </p>
+          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します{" "}
+          <br />
+          読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
         </CardDescription>
       </CardHeader>
       <CardContent>
