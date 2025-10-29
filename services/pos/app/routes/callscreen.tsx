@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import useSWRSubscription from "swr/subscription";
 import { Card } from "~/components/ui/card";
 
+type GsapCSSVars = Record<string, string | number>;
+
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
 };
@@ -26,9 +28,11 @@ export default function FielsOfCallScreen() {
   const currentElementRef = useRef<HTMLDivElement>(null);
   const leftContainerRef = useRef<HTMLDivElement>(null);
   const rightCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const rightTextRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
     null,
   );
+  const animatedRightCardsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (!orders) return;
@@ -116,44 +120,48 @@ export default function FielsOfCallScreen() {
 
     // DOMに追加された後にアニメーションを実行
     const timer = setTimeout(() => {
-      const cardElement = rightCardRefs.current.get(newlyAddedOrderId);
-      if (cardElement) {
-        const timeline = gsap.timeline();
-
-        // スライドインアニメーション
-        timeline.fromTo(
-          cardElement,
-          { x: -100, opacity: 0 },
-          {
-            x: 0,
-            opacity: 1,
-            duration: 0.5,
-            ease: "power2.out",
-          },
-        );
-
-        // スライドイン完了後、オレンジで点滅アニメーション（数秒間）
-        // 現在の文字色を取得（デフォルトはカードの文字色）
-        const defaultTextColor = window.getComputedStyle(cardElement).color;
-
-        timeline.to(cardElement, {
-          color: "#ea580c", // orange-600
-          duration: 0.4,
-          repeat: 4, // 合計5回点滅（往復で約2.4秒）
-          yoyo: true,
-          ease: "power2.inOut",
-        });
-
-        // 点滅終了後、滑らかに元の文字色に戻す
-        timeline.to(cardElement, {
-          color: defaultTextColor,
-          duration: 1,
-          ease: "power2.out",
-          onComplete: () => {
+      requestAnimationFrame(() => {
+        const cardElement = rightCardRefs.current.get(newlyAddedOrderId);
+        const textElement = rightTextRefs.current.get(newlyAddedOrderId);
+        if (cardElement && textElement) {
+          if (animatedRightCardsRef.current.has(newlyAddedOrderId)) {
             setNewlyAddedOrderId(null);
-          },
-        });
-      }
+            return;
+          }
+
+          // カードのスライドインアニメーション（位置・透明度）
+          // 文字要素のグラデーションは初期オレンジにセット
+          gsap.set(cardElement, {
+            x: -100,
+            opacity: 0,
+          });
+          gsap.set(textElement, {
+            "--grad-start": "#f97316", // orange-500
+            "--grad-mid": "#ea580c", // orange-600
+            "--grad-end": "#ef4444", // red-500
+          } as GsapCSSVars);
+
+          const timeline = gsap.timeline({
+            defaults: { ease: "power2.out" },
+            onComplete: () => {
+              animatedRightCardsRef.current.add(newlyAddedOrderId);
+              setNewlyAddedOrderId(null);
+            },
+          });
+
+          // スライドインと同時に色のアニメーション開始
+          timeline.to(cardElement, { x: 0, opacity: 1, duration: 0.5 }, 0).to(
+            textElement,
+            {
+              "--grad-start": "#14b8a6", // theme2025想定: teal-500 近似
+              "--grad-mid": "#0d9488", // teal-600
+              "--grad-end": "#14b8a6",
+              duration: 1.0,
+            } as GsapCSSVars,
+            0.5, // スライドイン開始後少し経ってから開始
+          );
+        }
+      });
     }, 0);
 
     return () => {
@@ -212,7 +220,20 @@ export default function FielsOfCallScreen() {
                         "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
                     }}
                   >
-                    <div className="bg-gradient-to-br from-theme2025 via-teal-600 to-theme2025 bg-clip-text font-bold text-7xl text-transparent">
+                    <div
+                      ref={(el) => {
+                        if (el) {
+                          rightTextRefs.current.set(order.orderId, el);
+                        }
+                      }}
+                      className="pointer-events-none bg-clip-text font-bold text-7xl text-transparent"
+                      style={{
+                        WebkitBackgroundClip: "text",
+                        backgroundClip: "text",
+                        backgroundImage:
+                          "linear-gradient(135deg, var(--grad-start, #14b8a6), var(--grad-mid, #0d9488), var(--grad-end, #14b8a6))",
+                      }}
+                    >
                       {order.orderId}
                     </div>
                   </Card>
