@@ -83,7 +83,7 @@ export default function FielsOfCallScreen() {
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
             お呼び出し中
           </h1>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             {orders?.map(
               (order) =>
                 order.servedAt === null &&
