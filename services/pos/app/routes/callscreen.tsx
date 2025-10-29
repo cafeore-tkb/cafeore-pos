@@ -27,12 +27,16 @@ import {
 import { useCallback, useRef, useState } from "react";
 import useSWRSubscription from "swr/subscription";
 <<<<<<< HEAD
+<<<<<<< HEAD
 import CafeoreLogo from "~/assets/callscreen/cafeore_logo_theme2025.svg";
 import { Card } from "~/components/ui/card";
 >>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
 
 type GsapCSSVars = Record<string, string | number>;
 =======
+=======
+import brightNotifications from "~/assets/bright-notifications.mp3";
+>>>>>>> 3d6b110 (feat: 呼び出し画面で新規注文が左上に表示された時に音声を再生)
 import {
   CallingOrderCard,
   CurrentOrderCard,
@@ -102,6 +106,11 @@ export default function FielsOfCallScreen() {
   const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
     null,
   );
+  const soundRef = useRef<HTMLAudioElement>(null);
+
+  const playSound = useCallback(() => {
+    soundRef.current?.play();
+  }, []);
 
   // スライドアウト完了時のコールバック
   const handleSlideOutComplete = useCallback(
@@ -109,8 +118,9 @@ export default function FielsOfCallScreen() {
       setDisplayedOrders((prev) => new Set([...prev, orderId]));
       setNewlyAddedOrderId(orderId);
       setCurrent(null);
+      playSound(); // 左上に表示されるときに音声を再生
     },
-    [setDisplayedOrders, setCurrent],
+    [setDisplayedOrders, setCurrent, playSound],
   );
 
   // スライドイン完了時のコールバック
@@ -492,7 +502,13 @@ export default function FielsOfCallScreen() {
           )}
         </div>
       </div>
+<<<<<<< HEAD
 >>>>>>> 762573d (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
+=======
+      <audio src={brightNotifications} ref={soundRef}>
+        <track kind="captions" />
+      </audio>
+>>>>>>> 6d771ab (feat: 呼び出し画面で新規注文が左上に表示された時に音声を再生)
     </div>
   );
 }
