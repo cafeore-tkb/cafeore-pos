@@ -118,7 +118,10 @@ export default function FielsOfCallScreen() {
     const timer = setTimeout(() => {
       const cardElement = rightCardRefs.current.get(newlyAddedOrderId);
       if (cardElement) {
-        gsap.fromTo(
+        const timeline = gsap.timeline();
+
+        // スライドインアニメーション
+        timeline.fromTo(
           cardElement,
           { x: -100, opacity: 0 },
           {
@@ -126,11 +129,30 @@ export default function FielsOfCallScreen() {
             opacity: 1,
             duration: 0.5,
             ease: "power2.out",
-            onComplete: () => {
-              setNewlyAddedOrderId(null);
-            },
           },
         );
+
+        // スライドイン完了後、オレンジで点滅アニメーション（数秒間）
+        // 現在の文字色を取得（デフォルトはカードの文字色）
+        const defaultTextColor = window.getComputedStyle(cardElement).color;
+
+        timeline.to(cardElement, {
+          color: "#ea580c", // orange-600
+          duration: 0.4,
+          repeat: 4, // 合計5回点滅（往復で約2.4秒）
+          yoyo: true,
+          ease: "power2.inOut",
+        });
+
+        // 点滅終了後、滑らかに元の文字色に戻す
+        timeline.to(cardElement, {
+          color: defaultTextColor,
+          duration: 1,
+          ease: "power2.out",
+          onComplete: () => {
+            setNewlyAddedOrderId(null);
+          },
+        });
       }
     }, 0);
 
