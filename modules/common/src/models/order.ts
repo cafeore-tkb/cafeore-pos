@@ -18,7 +18,7 @@ export const orderSchema = z.object({
   createdAt: z.date(),
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
-  items: z.array(itemSchema),
+  items: z.array(itemSchema.required()),
   total: z.number(), // sum of item.price
   comments: z.array(commentSchema),
   billingAmount: z.number(), // total - discount
@@ -116,9 +116,7 @@ export class OrderEntity implements Order {
       order.createdAt,
       order.readyAt,
       order.servedAt,
-      order.items.map((item) =>
-        ItemEntity.fromItem(item),
-      ) as WithId<ItemEntity>[],
+      order.items.map((item) => ItemEntity.fromItem(item)),
       order.total,
       order.comments.map((comment) => CommentEntity.fromComment(comment)),
       order.billingAmount,
