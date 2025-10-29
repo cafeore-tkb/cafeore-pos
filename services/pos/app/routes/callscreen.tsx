@@ -23,6 +23,8 @@ import {
   useSlideInAnimation,
 } from "./callscreen.hooks";
 
+type GsapCSSVars = Record<string, string | number>;
+
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
 };
@@ -70,9 +72,11 @@ export default function FielsOfCallScreen() {
   const currentElementRef = useRef<HTMLDivElement>(null);
   const leftContainerRef = useRef<HTMLDivElement>(null);
   const rightCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const rightTextRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
     null,
   );
+  const animatedRightCardsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (!orders) return;
@@ -203,6 +207,7 @@ export default function FielsOfCallScreen() {
 
     // DOMに追加された後にアニメーションを実行
     const timer = setTimeout(() => {
+<<<<<<< HEAD
       const cardElement = rightCardRefs.current.get(newlyAddedOrderId);
       if (cardElement) {
         gsap.fromTo(
@@ -219,6 +224,50 @@ export default function FielsOfCallScreen() {
           },
         );
       }
+=======
+      requestAnimationFrame(() => {
+        const cardElement = rightCardRefs.current.get(newlyAddedOrderId);
+        const textElement = rightTextRefs.current.get(newlyAddedOrderId);
+        if (cardElement && textElement) {
+          if (animatedRightCardsRef.current.has(newlyAddedOrderId)) {
+            setNewlyAddedOrderId(null);
+            return;
+          }
+
+          // カードのスライドインアニメーション（位置・透明度）
+          // 文字要素のグラデーションは初期オレンジにセット
+          gsap.set(cardElement, {
+            x: -100,
+            opacity: 0,
+          });
+          gsap.set(textElement, {
+            "--grad-start": "#f97316", // orange-500
+            "--grad-mid": "#ea580c", // orange-600
+            "--grad-end": "#ef4444", // red-500
+          } as GsapCSSVars);
+
+          const timeline = gsap.timeline({
+            defaults: { ease: "power2.out" },
+            onComplete: () => {
+              animatedRightCardsRef.current.add(newlyAddedOrderId);
+              setNewlyAddedOrderId(null);
+            },
+          });
+
+          // スライドインと同時に色のアニメーション開始
+          timeline.to(cardElement, { x: 0, opacity: 1, duration: 0.5 }, 0).to(
+            textElement,
+            {
+              "--grad-start": "#14b8a6", // theme2025想定: teal-500 近似
+              "--grad-mid": "#0d9488", // teal-600
+              "--grad-end": "#14b8a6",
+              duration: 1.0,
+            } as GsapCSSVars,
+            0.5, // スライドイン開始後少し経ってから開始
+          );
+        }
+      });
+>>>>>>> 9b2115c (refactor: お呼び出し画面のアニメーションをGSAP+CSS変数方式に変更)
     }, 0);
 
     return () => {
@@ -351,7 +400,24 @@ export default function FielsOfCallScreen() {
                     }}
                     className="flex items-center justify-center"
                   >
+<<<<<<< HEAD
                     <div className="p-3 font-bold text-7xl">
+=======
+                    <div
+                      ref={(el) => {
+                        if (el) {
+                          rightTextRefs.current.set(order.orderId, el);
+                        }
+                      }}
+                      className="pointer-events-none bg-clip-text font-bold text-7xl text-transparent"
+                      style={{
+                        WebkitBackgroundClip: "text",
+                        backgroundClip: "text",
+                        backgroundImage:
+                          "linear-gradient(135deg, var(--grad-start, #14b8a6), var(--grad-mid, #0d9488), var(--grad-end, #14b8a6))",
+                      }}
+                    >
+>>>>>>> 9b2115c (refactor: お呼び出し画面のアニメーションをGSAP+CSS変数方式に変更)
                       {order.orderId}
                     </div>
                   </Card>
