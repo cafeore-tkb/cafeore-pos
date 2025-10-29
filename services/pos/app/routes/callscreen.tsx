@@ -174,9 +174,15 @@ export default function FielsOfCallScreen() {
           {current !== null && (
             <div
               ref={currentElementRef}
-              className="rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg"
+              className="relative flex items-center justify-center rounded-2xl px-16 py-8"
+              style={{
+                boxShadow:
+                  "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
+              }}
             >
-              {current}
+              <div className="bg-gradient-to-br from-theme2025 via-teal-600 to-theme2025 bg-clip-text font-extrabold text-9xl text-transparent">
+                {current}
+              </div>
             </div>
           )}
         </div>
