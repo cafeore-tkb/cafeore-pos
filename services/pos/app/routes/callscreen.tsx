@@ -94,6 +94,10 @@ export default function FielsOfCallScreen() {
                   <CallingOrderCard
                     key={order.id}
                     orderId={order.orderId}
+                    isNewlyAdded={newlyAddedOrderId === order.orderId}
+                    isAnimated={animatedRightCardsRef.current.has(
+                      order.orderId,
+                    )}
                     onCardRef={(el) => {
                       if (el) rightCardRefs.current.set(order.orderId, el);
                     }}

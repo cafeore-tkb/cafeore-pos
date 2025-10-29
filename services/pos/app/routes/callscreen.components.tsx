@@ -1,4 +1,5 @@
 import { Card } from "~/components/ui/card";
+import { cn } from "~/lib/utils";
 
 // 左側カード表示コンポーネント
 export function CurrentOrderCard({
@@ -27,17 +28,26 @@ export function CurrentOrderCard({
 // 右側呼び出し中カードコンポーネント
 export function CallingOrderCard({
   orderId,
+  isNewlyAdded,
+  isAnimated,
   onCardRef,
   onTextRef,
 }: {
   orderId: number;
+  isNewlyAdded: boolean;
+  isAnimated: boolean;
   onCardRef: (el: HTMLDivElement | null) => void;
   onTextRef: (el: HTMLDivElement | null) => void;
 }) {
+  // アニメーションが開始されるまで（isNewlyAddedがtrueでisAnimatedがfalse）は非表示にする
+  const shouldHide = isNewlyAdded && !isAnimated;
   return (
     <Card
       ref={onCardRef}
-      className="flex items-center justify-center rounded-2xl px-8 py-3"
+      className={cn(
+        "flex items-center justify-center rounded-2xl px-8 py-3",
+        shouldHide && "opacity-0",
+      )}
       style={{
         boxShadow:
           "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
