@@ -88,11 +88,11 @@ export default function FielsOfCallScreen() {
 
     // スライドアウトアニメーション（すぐに実行）
     const slideOutTimeline = gsap.timeline({ delay: 1 });
-    const slideDistance = window.innerWidth * 0.5; // 左側40%から右側10%くらいまで
+    const slideDistance = window.innerWidth * 0.1; // 左側40%から右側10%くらいまで
     slideOutTimeline.to(element, {
       x: slideDistance,
       opacity: 0,
-      duration: 0.8,
+      duration: 0.5,
       ease: "power2.in",
       onComplete: () => {
         // スライドアウト完了後、右側に追加
