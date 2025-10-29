@@ -2,6 +2,7 @@ import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { useCallback, useMemo, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
@@ -22,8 +23,28 @@ import {
   useQueueProcessing,
   useSlideInAnimation,
 } from "./callscreen.hooks";
+=======
+import { useCallback, useRef, useState } from "react";
+import useSWRSubscription from "swr/subscription";
+<<<<<<< HEAD
+import CafeoreLogo from "~/assets/callscreen/cafeore_logo_theme2025.svg";
+import { Card } from "~/components/ui/card";
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
 
 type GsapCSSVars = Record<string, string | number>;
+=======
+import {
+  CallingOrderCard,
+  CurrentOrderCard,
+  PreparingOrderCard,
+} from "./callscreen.components";
+import {
+  useCallScreenAnimation,
+  useOrderState,
+  useQueueProcessing,
+  useSlideInAnimation,
+} from "./callscreen.hooks";
+>>>>>>> 6f03434 (refactor: callscreen.tsxをコンポーネントとフックに分割)
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
@@ -36,6 +57,9 @@ export default function FielsOfCallScreen() {
   );
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
   const orderState = useOrderState(orders);
   const {
     queue,
@@ -47,6 +71,7 @@ export default function FielsOfCallScreen() {
     setDisplayedOrders,
   } = orderState;
 
+<<<<<<< HEAD
   const currentElementRef = useRef<HTMLDivElement>(null);
   const rightCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const rightTextRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -69,29 +94,31 @@ export default function FielsOfCallScreen() {
   );
   const prevOrdersRef = useRef<typeof orders>();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+=======
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
   const currentElementRef = useRef<HTMLDivElement>(null);
-  const leftContainerRef = useRef<HTMLDivElement>(null);
   const rightCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const rightTextRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
     null,
   );
-  const animatedRightCardsRef = useRef<Set<number>>(new Set());
 
-  useEffect(() => {
-    if (!orders) return;
+  // スライドアウト完了時のコールバック
+  const handleSlideOutComplete = useCallback(
+    (orderId: number) => {
+      setDisplayedOrders((prev) => new Set([...prev, orderId]));
+      setNewlyAddedOrderId(orderId);
+      setCurrent(null);
+    },
+    [setDisplayedOrders, setCurrent],
+  );
 
-    // 初期化時は、readyAtが設定されているオーダーを全てdisplayedOrdersに追加
-    // それ以降は、ready になった新しいオーダーのみ queue に追加
-    if (!prevOrdersRef.current) {
-      const existingReadyOrders = orders.filter(
-        (order) => order.readyAt !== null && order.servedAt === null,
-      );
-      setDisplayedOrders(new Set(existingReadyOrders.map((o) => o.orderId)));
-      prevOrdersRef.current = orders;
-      return;
-    }
+  // スライドイン完了時のコールバック
+  const handleSlideInComplete = useCallback(() => {
+    setNewlyAddedOrderId(null);
+  }, []);
 
+<<<<<<< HEAD
     // 前回 null → 今回 not null になった order を検出（新しい ready オーダー）
     const newlyReady = orders.filter((order) => {
       const prev = prevOrdersRef.current?.find((p) => p.id === order.id);
@@ -147,6 +174,8 @@ export default function FielsOfCallScreen() {
     setNewlyAddedOrderId(null);
   }, []);
 
+=======
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
   useQueueProcessing(current, queue, setCurrent, setQueue);
   useCallScreenAnimation(current, currentElementRef, handleSlideOutComplete);
   useSlideInAnimation(
@@ -156,6 +185,7 @@ export default function FielsOfCallScreen() {
     animatedRightCardsRef,
     handleSlideInComplete,
   );
+<<<<<<< HEAD
 =======
     // 次の要素を0.5秒待つ
     const timerId = setTimeout(() => {
@@ -275,6 +305,8 @@ export default function FielsOfCallScreen() {
       setNewlyAddedOrderId(null);
     };
   }, [newlyAddedOrderId]);
+=======
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
 
   return (
 <<<<<<< HEAD
@@ -361,22 +393,23 @@ export default function FielsOfCallScreen() {
           {/* お呼び出し中 */}
 =======
     <div className="flex h-screen flex-col p-2 font-sans">
-      {/* 画面上部（70%） */}
       <div className="flex h-[70%]">
         {/* 左側：一個ずつ表示 */}
-        <div
-          ref={leftContainerRef}
-          className="flex w-[40%] items-center justify-center border-r"
-        >
+        <div className="flex w-[40%] items-center justify-center border-r">
           {current !== null && (
+<<<<<<< HEAD
             <div
               ref={currentElementRef}
               className="rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg"
             >
               {current}
             </div>
+=======
+            <CurrentOrderCard orderId={current} cardRef={currentElementRef} />
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
           )}
         </div>
+
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
 >>>>>>> 5fb7555 (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
@@ -391,13 +424,13 @@ export default function FielsOfCallScreen() {
                 displayedOrders.has(order.orderId) &&
                 order.orderId !== current &&
                 !queue.includes(order.orderId) && (
-                  <Card
+                  <CallingOrderCard
                     key={order.id}
-                    ref={(el) => {
-                      if (el) {
-                        rightCardRefs.current.set(order.orderId, el);
-                      }
+                    orderId={order.orderId}
+                    onCardRef={(el) => {
+                      if (el) rightCardRefs.current.set(order.orderId, el);
                     }}
+<<<<<<< HEAD
                     className="flex items-center justify-center"
                   >
 <<<<<<< HEAD
@@ -421,13 +454,19 @@ export default function FielsOfCallScreen() {
                       {order.orderId}
                     </div>
                   </Card>
+=======
+                    onTextRef={(el) => {
+                      if (el) rightTextRefs.current.set(order.orderId, el);
+                    }}
+                  />
+>>>>>>> 4232748 (refactor: callscreen.tsxをコンポーネントとフックに分割)
                 ),
             )}
           </div>
         </div>
       </div>
 
-      {/* 画面下部（30%） */}
+      {/* 画面下部（30%）：準備中 */}
       <div className="border-t p-4">
         <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
           準備中
@@ -437,12 +476,7 @@ export default function FielsOfCallScreen() {
             (order) =>
               order.servedAt === null &&
               order.readyAt === null && (
-                <Card
-                  key={order.id}
-                  className="flex items-center justify-center border-4"
-                >
-                  <div className="p-3 font-bold text-5xl">{order.orderId}</div>
-                </Card>
+                <PreparingOrderCard key={order.id} orderId={order.orderId} />
               ),
           )}
         </div>
