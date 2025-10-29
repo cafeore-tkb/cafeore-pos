@@ -185,7 +185,7 @@ export default function FielsOfCallScreen() {
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
             お呼び出し中
           </h1>
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             {orders?.map(
               (order) =>
                 order.servedAt === null &&
@@ -200,9 +200,13 @@ export default function FielsOfCallScreen() {
                         rightCardRefs.current.set(order.orderId, el);
                       }
                     }}
-                    className="flex items-center justify-center"
+                    className="relative flex items-center justify-center rounded-2xl px-8 py-3"
+                    style={{
+                      boxShadow:
+                        "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
+                    }}
                   >
-                    <div className="p-3 font-bold text-7xl">
+                    <div className="bg-gradient-to-br from-theme2025 via-teal-600 to-theme2025 bg-clip-text font-bold text-7xl text-transparent">
                       {order.orderId}
                     </div>
                   </Card>
