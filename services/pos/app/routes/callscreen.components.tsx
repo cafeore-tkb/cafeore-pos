@@ -62,8 +62,23 @@ export function CallingOrderCard({
 // 準備中カードコンポーネント
 export function PreparingOrderCard({ orderId }: { orderId: number }) {
   return (
-    <Card className="flex items-center justify-center border-4">
-      <div className="p-3 font-bold text-5xl">{orderId}</div>
+    <Card
+      className="flex items-center justify-center rounded-xl px-4 py-2"
+      style={{
+        boxShadow:
+          "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
+      }}
+    >
+      <div
+        className="pointer-events-none bg-clip-text font-bold text-5xl text-transparent"
+        style={{
+          WebkitBackgroundClip: "text",
+          backgroundClip: "text",
+          backgroundImage: "linear-gradient(135deg, #007d79, #006763, #00524f)",
+        }}
+      >
+        {orderId}
+      </div>
     </Card>
   );
 }
