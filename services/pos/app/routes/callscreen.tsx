@@ -25,6 +25,8 @@ import {
 } from "./callscreen.hooks";
 =======
 import { useCallback, useRef, useState } from "react";
+import { FaCoffee, FaSpinner } from "react-icons/fa";
+import { HiBell } from "react-icons/hi2";
 import useSWRSubscription from "swr/subscription";
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -423,12 +425,18 @@ export default function FielsOfCallScreen() {
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 5fb7555 (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
 =======
           <h1 className="mb-2 rounded-full bg-gradient-to-r from-orange-500 via-theme2025 to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
 >>>>>>> ecd8638 (feat: 呼び出し画面のヘッダーデザインを改善)
+=======
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 via-theme2025 to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
+            <HiBell className="text-3xl" />
+>>>>>>> b136cec (feat: callscreenのヘッダーにアイコンを追加)
             お呼び出し中
+            <HiBell className="text-3xl" />
           </h1>
           <div className="grid grid-cols-5 gap-4">
             {orders?.map(
@@ -483,14 +491,19 @@ export default function FielsOfCallScreen() {
       {/* 画面下部（30%）：準備中 */}
       <div className="border-t p-4">
         <h1
-          className="mb-2 rounded-full py-2 text-center font-bold text-3xl shadow-lg"
+          className="mb-2 flex items-center justify-center gap-2 rounded-full py-2 text-center font-bold text-3xl shadow-lg"
           style={{
             backgroundImage:
               "linear-gradient(135deg, #00524f, #00403e, #002e2d)",
             color: "white",
           }}
         >
-          準備中
+          <FaCoffee className="text-3xl" />
+          ドリップ中
+          <FaSpinner
+            className="text-3xl"
+            style={{ animation: "spin 1.5s linear infinite" }}
+          />
         </h1>
         <div className="grid grid-cols-8 gap-2">
           {orders?.map(
