@@ -3,6 +3,7 @@ import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
 import { useCallback, useRef, useState } from "react";
 import useSWRSubscription from "swr/subscription";
+import brightNotifications from "~/assets/bright-notifications.mp3";
 import {
   CallingOrderCard,
   CurrentOrderCard,
@@ -42,6 +43,11 @@ export default function FielsOfCallScreen() {
   const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
     null,
   );
+  const soundRef = useRef<HTMLAudioElement>(null);
+
+  const playSound = useCallback(() => {
+    soundRef.current?.play();
+  }, []);
 
   // スライドアウト完了時のコールバック
   const handleSlideOutComplete = useCallback(
@@ -49,8 +55,9 @@ export default function FielsOfCallScreen() {
       setDisplayedOrders((prev) => new Set([...prev, orderId]));
       setNewlyAddedOrderId(orderId);
       setCurrent(null);
+      playSound(); // 左上に表示されるときに音声を再生
     },
-    [setDisplayedOrders, setCurrent],
+    [setDisplayedOrders, setCurrent, playSound],
   );
 
   // スライドイン完了時のコールバック
@@ -133,6 +140,9 @@ export default function FielsOfCallScreen() {
           )}
         </div>
       </div>
+      <audio src={brightNotifications} ref={soundRef}>
+        <track kind="captions" />
+      </audio>
     </div>
   );
 }
