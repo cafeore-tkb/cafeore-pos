@@ -180,7 +180,7 @@ const OrderItemEdit = memo(
         <hr className="my-3" />
         <div className="grid grid-cols-6 text-stone-400">
           <p className="col-span-5 font-bold">小計</p>
-          <div className="flex items-center justify-end text-right">
+          <div className="flex items-center justify-end text-right font-bold text-xl">
             &yen;{order.total}
           </div>
         </div>
@@ -189,7 +189,7 @@ const OrderItemEdit = memo(
             <hr className="my-3" />
             <div className="grid grid-cols-6 text-stone-400">
               <p className="col-span-5 font-bold">割引</p>
-              <div className="flex items-center justify-end text-right">
+              <div className="flex items-center justify-end whitespace-nowrap text-right">
                 &minus; &yen;{order.discount}
               </div>
             </div>
@@ -198,7 +198,7 @@ const OrderItemEdit = memo(
         <hr className="my-3" />
         <div className="grid grid-cols-6">
           <p className="col-span-5 font-bold text-lg">合計</p>
-          <div className="flex items-center justify-end text-right">
+          <div className="flex items-center justify-end text-right font-bold text-xl">
             &yen;{order.billingAmount}
           </div>
         </div>

@@ -23,6 +23,7 @@ type ApplyDiscount = Action<
   { discountOrder: WithId<OrderEntity> }
 >;
 type RemoveDiscount = Action<"removeDiscount">;
+type ApplyServiceOneCupDiscount = Action<"applyServiceOneCupDiscount">;
 type SetReceived = Action<"setReceived", { received: string }>;
 
 /**
@@ -36,6 +37,7 @@ export type OrderAction =
   | MutateItem
   | ApplyDiscount
   | RemoveDiscount
+  | ApplyServiceOneCupDiscount
   | SetReceived;
 
 type OrderReducer<T extends OrderAction> = (
@@ -87,6 +89,15 @@ const removeDiscount: OrderReducer<RemoveDiscount> = (state, action) => {
   return updated;
 };
 
+const applyServiceOneCupDiscount: OrderReducer<ApplyServiceOneCupDiscount> = (
+  state,
+  action,
+) => {
+  const updated = state.clone();
+  updated.applyServiceOneCupDiscount();
+  return updated;
+};
+
 const setReceived: OrderReducer<SetReceived> = (state, action) => {
   const updated = state.clone();
   updated.received = Number(action.received);
@@ -101,6 +112,8 @@ const reducer: OrderReducer<OrderAction> = (state, action): OrderEntity => {
       return applyDiscount(state, action);
     case "removeDiscount":
       return removeDiscount(state, action);
+    case "applyServiceOneCupDiscount":
+      return applyServiceOneCupDiscount(state, action);
     case "addItem":
       return addItem(state, action);
     case "removeItem":

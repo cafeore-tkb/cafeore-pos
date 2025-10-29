@@ -13,7 +13,7 @@
     "@cafeore/common": "workspace:*",
     "@conform-to/react": "^1.2.2",
     "@conform-to/zod": "^1.2.2",
-    "@fontsource-variable/noto-sans-jp": "^5.1.0",
+    "@fontsource-variable/noto-sans-jp": "^5.2.9",
     "@fontsource/zen-old-mincho": "^5.1.0",
     "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -24,7 +24,6 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-switch": "^1.2.5",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@radix-ui/react-toast": "^1.2.2",
     "@remix-run/react": "^2.13.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -60,10 +59,5 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "trustedDependencies": [
-    "@biomejs/biome",
-    "esbuild",
-    "protobufjs",
-    "re2"
-  ]
+  "trustedDependencies": ["@biomejs/biome", "esbuild", "protobufjs", "re2"]
 }

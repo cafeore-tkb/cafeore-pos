@@ -20,13 +20,15 @@ const OrderReceivedInput = memo(
           <div className="grid grid-cols-6">
             <p className="col-span-5 font-bold text-lg">合計</p>
             <div className="flex items-center justify-end text-right">
-              <span className="font-bold pr-1">&yen;</span>
-              <span className="text-xl font-bold">{order.billingAmount}</span>
+              <span className="pr-1 font-bold">&yen;</span>
+              <span className="font-bold text-xl">{order.billingAmount}</span>
             </div>
           </div>
           <hr className="my-3" />
           <div className="grid grid-cols-6">
-            <p className="col-span-3 font-bold text-lg flex items-center">受取金額</p>
+            <p className="col-span-3 flex items-center font-bold text-lg">
+              受取金額
+            </p>
             <div className="col-span-3 flex items-center">
               <span className="mr-2 font-bold">&yen;</span>
               <AttractiveInput
@@ -34,7 +36,7 @@ const OrderReceivedInput = memo(
                 onTextSet={onTextSet}
                 focus={focus}
                 onClick={onClick}
-                className="text-xl font-bold"
+                className="font-bold text-xl"
               />
             </div>
           </div>
@@ -50,8 +52,8 @@ const OrderReceivedInput = memo(
               <div className="grid grid-cols-6">
                 <p className="col-span-5 font-bold text-lg">おつり</p>
                 <div className="flex items-center justify-end text-right">
-                  <span className="font-bold pr-1">&yen;</span>
-                  <span className="text-xl font-bold">{charge}</span>
+                  <span className="pr-1 font-bold">&yen;</span>
+                  <span className="font-bold text-xl">{charge}</span>
                 </div>
               </div>
             </>
