@@ -22,17 +22,20 @@ export const ServiceDiscountButton = ({
   };
 
   return (
-    <div className="flex flex-col items-center">
-      <Button
-        variant={active ? "destructive" : "default"}
-        className="h-auto whitespace-pre-line px-4 py-2 text-center text-xl"
-        onClick={handleClick}
-        disabled={disabled}
-      >
-        {active ? "サービス割引\nを解除" : "サービス割引\nを適用"}
-      </Button>
-      <div className="my-2 px-10 text-center text-sm text-stone-400">
-        過去に出店した際の引換券などがあれば適用できます
+    <div className="mt-5 border-t-4">
+      <p className="pb-1 text-sm">特殊な割引</p>
+      <div className="flex flex-col items-center">
+        <Button
+          variant={active ? "destructive" : "default"}
+          className="h-auto whitespace-pre-line px-4 py-2 text-center text-xl"
+          onClick={handleClick}
+          disabled={disabled}
+        >
+          {active ? "特殊な割引\nを解除" : "特殊な割引\nを適用"}
+        </Button>
+        <div className="my-2 px-10 text-center text-sm text-stone-400">
+          今年以外の引換券があるときは1杯分に限り特殊な割引を適用できます。
+        </div>
       </div>
     </div>
   );
