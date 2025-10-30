@@ -87,6 +87,7 @@ export function OrderList({ orders }: OrderStatusListProps) {
           <OrderInfoCard
             order={detailOrder}
             user={"dashboard"}
+            timing="all"
             comment={() => {}}
           />
         )}

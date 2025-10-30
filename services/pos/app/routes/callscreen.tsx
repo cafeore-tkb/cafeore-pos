@@ -3,6 +3,7 @@ import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import useSWRSubscription from "swr/subscription";
+import CafeoreLogo from "~/assets/callscreen/cafeore_logo_theme2025.svg";
 import { Card } from "~/components/ui/card";
 
 export const meta: MetaFunction = () => {
@@ -74,9 +75,16 @@ export default function FielsOfCallScreen() {
   }, [current]);
 
   return (
-    <div className="flex h-screen p-2 font-sans">
+    <div className="relative flex h-screen overflow-hidden p-2 font-sans">
+      {/* 背景ロゴ */}
+      <img
+        src={CafeoreLogo}
+        alt="Cafeore Logo"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[80%] w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-10"
+      />
+
       {/* 準備中 */}
-      <div className="w-1/3 border-r p-4">
+      <div className="relative z-10 w-1/3 border-r p-4">
         <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
           準備中
         </h1>
@@ -96,7 +104,7 @@ export default function FielsOfCallScreen() {
         </div>
       </div>
 
-      <div className="w-2/3 p-4">
+      <div className="relative z-10 w-2/3 p-4">
         <div className="h-2/5 border-b">
           {/* お呼び出し中 */}
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">

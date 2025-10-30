@@ -32,6 +32,8 @@ export const orderSchema = z.object({
 
 export type Order = z.infer<typeof orderSchema>;
 
+type OrderStatus = "preparing" | "calling" | "served";
+
 type Comment = z.infer<typeof commentSchema>;
 
 // 途中から割引額を変更する場合はこの値を変更する
@@ -301,6 +303,13 @@ export class OrderEntity implements Order {
   }
 
   /**
+   * 番号入力無しで100円引きを適用する
+   */
+  applyServiceOneCupDiscount() {
+    this._discountOrderCups = 1;
+  }
+
+  /**
    * オーダーを作成した時刻を更新する
    */
   nowCreated() {
@@ -314,6 +323,22 @@ export class OrderEntity implements Order {
    */
   getCharge() {
     return this.received - this.billingAmount;
+  }
+
+  /**
+   * statusを取得する
+   * @returns status
+   */
+  get status() {
+    let status: OrderStatus;
+    if (this._servedAt !== null) {
+      status = "served";
+    } else if (this._readyAt !== null) {
+      status = "calling";
+    } else {
+      status = "preparing";
+    }
+    return status;
   }
 
   /**

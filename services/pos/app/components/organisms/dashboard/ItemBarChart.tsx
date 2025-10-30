@@ -1,18 +1,13 @@
+import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
-  ITEM_MASTER,
-  type OrderEntity,
-  type WithId,
-  itemSource,
-} from "@cafeore/common";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Rectangle,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import {
   type ChartConfig,
   ChartContainer,
@@ -21,7 +16,8 @@ import {
 } from "~/components/ui/chart";
 
 type props = {
-  orders: WithId<OrderEntity>[] | undefined;
+  orders: OrderEntity[] | undefined;
+  pastOrders: OrderEntity[] | undefined;
 };
 
 /**
@@ -29,29 +25,72 @@ type props = {
  * @param props
  * @returns
  */
-const ItemBarChart = ({ orders }: props) => {
-  const items = itemSource;
-  const itemNamesArray = items.map((items) => items.name);
-  const init = new Map<string, number>();
-  const numPerItem = orders?.reduce((acc, cur) => {
-    if (itemNamesArray !== undefined) {
-      for (let i = 0; i < cur.items.length; i++) {
-        for (let j = 0; j < itemNamesArray?.length; j++) {
-          if (cur.items[i].name === itemNamesArray[j]) {
-            const num = acc.get(cur.items[i].name) ?? 0;
-            acc.set(cur.items[i].name, num + 1);
+const ItemBarChart = ({ orders, pastOrders }: props) => {
+  const [pastRange, setPastRange] = useState<OrderEntity[] | undefined>([]);
+
+  // 各基準時刻を計算
+  const realtimeStart = useMemo(() => {
+    const first = orders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [orders]);
+
+  const pastStart = useMemo(() => {
+    const first = pastOrders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [pastOrders]);
+
+  // 10分間隔でpastRangeを更新
+  useEffect(() => {
+    if (!pastOrders?.length) return;
+
+    const updatePastRange = () => {
+      const elapsedMs = Date.now() - realtimeStart.getTime();
+      const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
+      const range = pastOrders.filter(
+        (o) => new Date(o.createdAt) <= pastCutoff,
+      );
+      setPastRange(range);
+    };
+
+    // 初回更新
+    updatePastRange();
+
+    // 10分ごとに更新
+    const timer = setInterval(updatePastRange, 10 * 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, [pastOrders, realtimeStart, pastStart]);
+
+  // 集計関数
+  const sumByItem = (orders: OrderEntity[] | undefined) => {
+    if (!orders) return;
+
+    // 読み替えをハードコード
+    const renameMap: Record<string, string | string[]> = {
+      "01_beppin_brend": "01_yukari_brend",
+      "04_mandheling": "06_toraja",
+      "06_costa_rica_red_honey": "04_kilimanjaro",
+      "03_special": ["03_Lychee", "07_blumoun"],
+    };
+
+    const result: Record<string, number> = {};
+
+    for (const order of orders) {
+      for (const item of order.items) {
+        const mapped = renameMap[item.id];
+        if (mapped === undefined) {
+          result[item.id] = (result[item.id] ?? 0) + 1;
+        } else if (typeof mapped === "string") {
+          result[mapped] = (result[mapped] ?? 0) + 1;
+        } else {
+          for (const newName of mapped) {
+            result[newName] = (result[newName] ?? 0) + 1;
           }
         }
       }
     }
-    return acc;
-  }, init);
-  const itemValue = (name: string): number | undefined => {
-    let valueNum = undefined;
-    if (numPerItem !== undefined) {
-      valueNum = numPerItem.get(name);
-    }
-    return valueNum;
+
+    return result;
   };
 
   const TYPE_COLOR_MAP = {
@@ -62,16 +101,25 @@ const ItemBarChart = ({ orders }: props) => {
     others: "var(--color-others)",
   } as const;
 
+  const realtimeSum = sumByItem(orders);
+  const pastSum = sumByItem(pastRange);
+
   const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
     name: item.abbr,
-    num: itemValue(item.name),
+    realtimeData: realtimeSum ? realtimeSum[item.id] : 0,
+    pastData: pastSum ? pastSum[item.id] : 0,
     fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
   }));
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>商品ごとの杯数</CardTitle>
+        <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
+        <CardDescription>
+          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します{" "}
+          <br />
+          読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig}>
@@ -80,30 +128,13 @@ const ItemBarChart = ({ orders }: props) => {
             <XAxis
               dataKey="name"
               tickLine={false}
-              tickMargin={10}
               axisLine={false}
               tickFormatter={(value) => value.slice(0, 5)}
             />
             <YAxis />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent nameKey="name" />}
-            />
-            <Bar
-              dataKey="num"
-              radius={8}
-              activeBar={({ ...props }) => {
-                return (
-                  <Rectangle
-                    {...props}
-                    fillOpacity={0.8}
-                    stroke={props.payload.fill}
-                    strokeDasharray={4}
-                    strokeDashoffset={4}
-                  />
-                );
-              }}
-            />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="realtimeData" radius={1} />
+            <Bar dataKey="pastData" radius={1} style={{ opacity: 0.4 }} />
           </BarChart>
         </ChartContainer>
       </CardContent>
@@ -112,8 +143,13 @@ const ItemBarChart = ({ orders }: props) => {
 };
 
 const chartConfig = {
-  name: {
-    label: "杯数",
+  realtimeData: {
+    label: "現在のデータ",
+    color: "var(--chart-1)",
+  },
+  pastData: {
+    label: "過去のデータ",
+    color: "var(--chart-2)",
   },
   hot: {
     label: "ホット",

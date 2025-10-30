@@ -1,4 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
+import { shouldSplitOrder } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
 
@@ -13,6 +14,11 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
   const billingOk = useMemo(
     () => order.items.length > 0 && order.getCharge() >= 0,
     [order],
+  );
+
+  const needsSplit = useMemo(
+    () => shouldSplitOrder(order.items),
+    [order.items],
   );
 
   /**
@@ -40,6 +46,11 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
         </label>
+        {needsSplit && (
+          <p className="text-red-500 font-bold text-center">
+            この注文の分割を推奨します
+          </p>
+        )}
       </div>
     </div>
   );

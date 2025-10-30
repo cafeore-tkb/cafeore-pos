@@ -48,7 +48,7 @@ const ItemAssign = memo(
 
     const assignView = useMemo(() => {
       if (item.assignee) return item.assignee;
-      return highlight ? "Enterで入力" : "　　　　　　";
+      return highlight ? "Enterで入力" : "　　指名　　";
     }, [highlight, item.assignee]);
 
     return (
