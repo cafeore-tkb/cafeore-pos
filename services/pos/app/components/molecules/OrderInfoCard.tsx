@@ -15,12 +15,13 @@ import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 type props = {
   order: WithId<OrderEntity>;
   user: "cashier" | "master" | "serve" | "dashboard";
-  timing: "past" | "present" | "all";
+  timing: "past" | "present" | "all"; // どの注文を表示するか
   comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
 export function OrderInfoCard({ order, user, timing, comment }: props) {
   const submit = useSubmit();
+
   const changeReady = useCallback(
     (servedOrder: OrderEntity, ready: boolean) => {
       const order = servedOrder.clone();
@@ -61,6 +62,11 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     },
     [submit],
   );
+
+  const displayOrders =
+    user === "cashier" || user === "dashboard"
+      ? order.items
+      : order.getDrinkCups();
 
   return (
     <div key={order.id}>
@@ -109,45 +115,44 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
               "grid grid-cols-2 gap-2",
             )}
           >
-            {order.getDrinkCups().map((item, idx) => (
+            {displayOrders.map((item, idx) => (
               <div key={`${idx}-${item.id}`}>
                 <Card
                   className={cn(
                     "p-3",
-                    user === "master" && item.type === "ice" && "bg-blue-200",
-                    order.status === "preparing" || order.status === "calling"
+                    user === "master" &&
+                      ((item.type === "ice" && "bg-blue-200") ||
+                        ((item.name === "ブルマン" || item.name === "ライチ") &&
+                          "bg-green-300")),
+                    user === "serve"
                       ? item.type === "milk" && "bg-yellow-200"
                       : item.type === "milk" && "bg-gray-300",
-                    (user === "master" ||
-                      order.status === "preparing" ||
-                      order.status === "calling") &&
-                      item.type === "hotOre" &&
-                      "bg-orange-300",
-                    (user === "master" ||
-                      order.status === "preparing" ||
-                      order.status === "calling") &&
-                      item.type === "iceOre" &&
-                      "bg-sky-200",
-                    user === "master" &&
-                      (item.name === "ブルマン" || item.name === "ライチ") &&
-                      "bg-green-300",
+                    // (user === "master" ||
+                    //   user === "serve") &&
+                    //   item.type === "hotOre" &&
+                    //   "bg-orange-300",
                     (user === "master" || user === "serve") &&
-                      order.status === "calling" &&
-                      "bg-gray-200 text-gray-500",
+                      ((order.status === "calling" &&
+                        "bg-gray-200 text-gray-500") ||
+                        (item.type === "iceOre" && "bg-sky-200")),
+                    user === "cashier" &&
+                      item.type === "others" &&
+                      "bg-green-300",
                   )}
                 >
-                  <h3
-                    className={cn(
-                      order.status === "served" ? "p-1 text-3xl" : "text-3xl",
-                      "text-center font-bold",
-                    )}
-                  >
+                  <h3 className="text-center font-bold text-3xl">
                     {id2abbr(item.id)}
                   </h3>
-                  {(user === "master" || user === "dashboard") &&
-                    item.assignee && (
-                      <p className="text-sm">指名:{item.assignee}</p>
-                    )}
+                  {item.assignee && (
+                    <p
+                      className={cn(
+                        order.status === "preparing" && "text-red-500",
+                        "font-bold text-sm",
+                      )}
+                    >
+                      指名:{item.assignee}
+                    </p>
+                  )}
                 </Card>
               </div>
             ))}
@@ -183,7 +188,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
           {user !== "dashboard" && (
             <InputComment order={order} addComment={comment} />
           )}
-          {(user === "master" || user === "dashboard") &&
+          {(user === "cashier" || user === "master" || user === "dashboard") &&
             order.status === "calling" &&
             !order.servedAt && (
               <div className="mt-5 flex items-center">
