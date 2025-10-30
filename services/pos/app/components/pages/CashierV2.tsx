@@ -1,15 +1,11 @@
 import {
   type ItemEntity,
-  OrderEntity,
+  type OrderEntity,
   type WithId,
   orderRepository,
-  orderSchema,
-  stringToJSONSchema,
 } from "@cafeore/common";
-import { parseWithZod } from "@conform-to/zod";
-import { type ClientActionFunction, useSubmit } from "@remix-run/react";
+import { useSubmit } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import z from "zod";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
@@ -321,30 +317,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
       </div>
     </>
   );
-};
-
-export const addComment: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
-
-  const schema = z.object({
-    servedOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { servedOrder } = submission.value;
-  const order = OrderEntity.fromOrder(servedOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  console.log("savedOrder", savedOrder);
-
-  return new Response("ok");
 };
 
 export { CashierV2 };
