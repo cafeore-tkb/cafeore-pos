@@ -22,6 +22,7 @@ import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
@@ -66,18 +67,28 @@ export default function FielsOfMaster() {
   return (
     <div className="p-4 font-sans">
       <div className="flex justify-between pb-4">
-        <h1 className="text-3xl">マスター</h1>
-        <Button
-          type="submit"
-          className={cn(isOperational ? "bg-red-700" : "bg-sky-700")}
-          onClick={() =>
-            changeOrderStat(isOperational ? "stop" : "operational")
-          }
-        >
-          {isOperational && "オーダーストップする"}
-          {!isOperational && "オーダー再開する"}
-        </Button>
-        <p>提供待ちオーダー数：{unserved}</p>
+        <h1 className="w-1/3 text-3xl">マスター</h1>
+        <div className="flex w-1/3 justify-center">
+          <Button
+            type="submit"
+            className={cn(isOperational ? "bg-red-700" : "bg-sky-700")}
+            onClick={() =>
+              changeOrderStat(isOperational ? "stop" : "operational")
+            }
+          >
+            {isOperational && "オーダーストップする"}
+            {!isOperational && "オーダー再開する"}
+          </Button>
+        </div>
+        <div className="flex w-1/3 items-center justify-end gap-3">
+          <p>提供待ちオーダー数：{unserved}</p>
+          <PastOrderSideSheet
+            orders={orders}
+            cardUser={"master"}
+            cardTiming={"past"}
+            comment={mutateOrder}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -87,7 +98,8 @@ export default function FielsOfMaster() {
               <OrderInfoCard
                 key={order.id}
                 order={order}
-                user="master"
+                timing={"present"}
+                user={"master"}
                 comment={mutateOrder}
               />
             )
