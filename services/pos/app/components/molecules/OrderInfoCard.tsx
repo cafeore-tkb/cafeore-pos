@@ -15,12 +15,12 @@ import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 type props = {
   order: WithId<OrderEntity>;
   user: "cashier" | "master" | "serve" | "dashboard";
+  timing: "past" | "present" | "all";
   comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
-export function OrderInfoCard({ order, user, comment }: props) {
+export function OrderInfoCard({ order, user, timing, comment }: props) {
   const submit = useSubmit();
-  const isReady = order.readyAt !== null;
   const changeReady = useCallback(
     (servedOrder: OrderEntity, ready: boolean) => {
       const order = servedOrder.clone();
@@ -67,7 +67,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
       <Card
         className={cn(
           (user === "master" || user === "serve") &&
-            isReady &&
+            order.status === "calling" &&
             "bg-gray-300 text-gray-500",
           order.status === "served" && "transition-all duration-200",
         )}
@@ -78,14 +78,8 @@ export function OrderInfoCard({ order, user, comment }: props) {
               <div className="font-black text-sm">No.</div>
               <div className="font-black text-6xl">{order.orderId}</div>
             </CardTitle>
-            {(user === "master" ||
-              order.status === "preparing" ||
-              order.status === "calling") && (
-              <RealtimeElapsedTime order={order} />
-            )}
-            {(order.status === "preparing" ||
-              order.status === "calling" ||
-              user === "dashboard") && (
+            {timing === "present" && <RealtimeElapsedTime order={order} />}
+            {(timing === "past" || timing === "all") && (
               <div
                 className={cn(
                   "rounded-md px-2",
@@ -111,7 +105,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
         <CardContent>
           <div
             className={cn(
-              order.status === "served" && "mb-4",
+              timing === "past" && "mb-4",
               "grid grid-cols-2 gap-2",
             )}
           >
@@ -138,7 +132,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
                       (item.name === "ブルマン" || item.name === "ライチ") &&
                       "bg-green-300",
                     (user === "master" || user === "serve") &&
-                      isReady &&
+                      order.status === "calling" &&
                       "bg-gray-200 text-gray-500",
                   )}
                 >
@@ -165,7 +159,7 @@ export function OrderInfoCard({ order, user, comment }: props) {
                 <div
                   key={`${index}-${comment.author}`}
                   className={cn(
-                    isReady && "bg-gray-400",
+                    order.status === "calling" && "bg-gray-400",
                     "my-2",
                     "flex",
                     "gap-2",
@@ -186,43 +180,40 @@ export function OrderInfoCard({ order, user, comment }: props) {
               ))}
             </div>
           )}
-          {(user === "master" ||
-            order.status === "preparing" ||
-            order.status === "calling") && (
+          {user !== "dashboard" && (
             <InputComment order={order} addComment={comment} />
           )}
           {(user === "master" || user === "dashboard") &&
-            isReady &&
+            order.status === "calling" &&
             !order.servedAt && (
               <div className="mt-5 flex items-center">
                 <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
                 <p className="text-yellow-700">提供待ち</p>
               </div>
             )}
-          {order.status === "preparing" ||
-            (order.status === "calling" && (
-              <div className="mt-4 flex items-center justify-between">
-                <ReadyBell
-                  order={order}
-                  changeReady={(ready) => changeReady(order, ready)}
-                />
-                <ServeCheck
-                  order={order}
-                  onServe={(order) => {
-                    const now = new Date();
-                    beServed(order);
-                    toast(`提供完了 No.${order.orderId}`, {
-                      description: `${dayjs(now).format("H時m分")}`,
-                      action: {
-                        label: "取消",
-                        onClick: () => undoServe(order),
-                      },
-                    });
-                  }}
-                />
-              </div>
-            ))}
-          {order.status === "served" && (
+          {user === "serve" && timing === "present" && (
+            <div className="mt-4 flex items-center justify-between">
+              <ReadyBell
+                order={order}
+                changeReady={(ready) => changeReady(order, ready)}
+              />
+              <ServeCheck
+                order={order}
+                onServe={(order) => {
+                  const now = new Date();
+                  beServed(order);
+                  toast(`提供完了 No.${order.orderId}`, {
+                    description: `${dayjs(now).format("H時m分")}`,
+                    action: {
+                      label: "取消",
+                      onClick: () => undoServe(order),
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+          {user === "serve" && timing === "past" && (
             <div className="mt-2 flex items-center justify-between">
               <Button
                 onClick={() => {
