@@ -87,7 +87,8 @@ export default function FielsOfMaster() {
               <OrderInfoCard
                 key={order.id}
                 order={order}
-                user="master"
+                timing={"present"}
+                user={"master"}
                 comment={mutateOrder}
               />
             )
