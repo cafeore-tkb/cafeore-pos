@@ -4,8 +4,10 @@ import {
   type WithId,
   orderRepository,
 } from "@cafeore/common";
+import { id2abbr } from "@cafeore/common";
 import { useSubmit } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import bell from "~/assets/bell.mp3";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
@@ -13,6 +15,7 @@ import { cn } from "~/lib/utils";
 import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
+import { useObserveEmergency } from "../functional/useObserveEmergency";
 import { useOrderState } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
 import { useSyncCahiserOrder } from "../functional/useSyncCahiserOrder";
@@ -55,6 +58,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
+  const emergencySoundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
   const [serviceActive, setServiceActive] = useState(false);
 
@@ -83,9 +87,24 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     soundRef.current?.play();
   }, []);
 
+  const playEmergencySound = useCallback(() => {
+    emergencySoundRef.current?.play();
+  }, []);
+
   useSyncCahiserOrder(newOrder, syncOrder);
 
   const printer = usePrinter();
+
+  useObserveEmergency({
+    onEmergencyAdded: useCallback(
+      (order: OrderEntity, item: ItemEntity) => {
+        console.log("緊急アイテムが追加されました:", order.orderId, item.name);
+        printer.printEmergencyItem(order, item);
+        playEmergencySound();
+      },
+      [printer, playEmergencySound],
+    ),
+  });
 
   usePreventNumberKeyUpDown();
 
@@ -311,7 +330,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
             />
           </div>
         </div>
-        <audio src={bellTwice} ref={soundRef}>
+        <audio src={bell} ref={soundRef}>
+          <track kind="captions" />
+        </audio>
+        <audio src={bellTwice} ref={emergencySoundRef}>
           <track kind="captions" />
         </audio>
       </div>

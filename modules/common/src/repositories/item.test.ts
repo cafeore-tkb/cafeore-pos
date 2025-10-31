@@ -37,6 +37,7 @@ describe("[db] itemRepository", async () => {
       name: "Hoge",
       price: 100,
       type: "hot",
+      emergency: false,
     });
     savedItemHoge = await itemRepository.save(item);
     expect(savedItemHoge.id).toBeDefined();
@@ -54,6 +55,7 @@ describe("[db] itemRepository", async () => {
       name: "Fuga",
       price: 200,
       type: "ice",
+      emergency: false,
     });
     const savedItem = await itemRepository.save(item);
     const foundItem = await itemRepository.findById(savedItem.id);
@@ -65,6 +67,7 @@ describe("[db] itemRepository", async () => {
       name: "Foo",
       price: 300,
       type: "hotOre",
+      emergency: false,
     });
     const savedItem = await itemRepository.save(item);
     const items = await itemRepository.findAll();
@@ -76,6 +79,7 @@ describe("[db] itemRepository", async () => {
       name: "Bar",
       price: 400,
       type: "milk",
+      emergency: false,
     });
     const savedItem = await itemRepository.save(item);
     await itemRepository.delete(savedItem.id);
