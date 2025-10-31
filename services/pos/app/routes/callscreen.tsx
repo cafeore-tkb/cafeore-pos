@@ -426,6 +426,7 @@ export default function FielsOfCallScreen() {
         <div className="w-[60%] p-4">
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 5fb7555 (呼び出し画面のレイアウトを変更: 上部70%を左右分割（左40%:個別表示、右60%:一覧）、下部30%を準備中)
           <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
 =======
@@ -433,6 +434,15 @@ export default function FielsOfCallScreen() {
 >>>>>>> ecd8638 (feat: 呼び出し画面のヘッダーデザインを改善)
 =======
           <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 via-theme2025 to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
+=======
+          <h1
+            className="mb-2 flex items-center justify-center gap-2 rounded-full py-2 text-center font-bold text-3xl text-white shadow-lg"
+            style={{
+              backgroundImage:
+                "linear-gradient(135deg, var(--grad-start, #14b8a6), var(--grad-mid, #0d9488), var(--grad-end, #14b8a6))",
+            }}
+          >
+>>>>>>> 600ea2d (呼び出し画面のカードとグラデーションを調整)
             <HiBell className="text-3xl" />
 >>>>>>> b136cec (feat: callscreenのヘッダーにアイコンを追加)
             お呼び出し中
