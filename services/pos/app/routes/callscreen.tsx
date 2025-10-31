@@ -1,7 +1,7 @@
 import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
 import useSWRSubscription from "swr/subscription";
@@ -51,6 +51,28 @@ export default function FielsOfCallScreen() {
     soundRef.current?.play();
   }, []);
 
+  const callingOrders = useMemo(() => {
+    if (!orders) return [];
+
+    return orders
+      .filter(
+        (order) =>
+          order.servedAt === null &&
+          order.readyAt !== null &&
+          displayedOrders.has(order.orderId) &&
+          order.orderId !== current &&
+          !queue.includes(order.orderId),
+      )
+      .sort((a, b) => {
+        const aReadyAt = a.readyAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const bReadyAt = b.readyAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        if (aReadyAt !== bReadyAt) {
+          return aReadyAt - bReadyAt;
+        }
+        return a.orderId - b.orderId;
+      });
+  }, [orders, displayedOrders, current, queue]);
+
   // スライドアウト完了時のコールバック
   const handleSlideOutComplete = useCallback(
     (orderId: number) => {
@@ -95,29 +117,20 @@ export default function FielsOfCallScreen() {
             <HiBell className="text-3xl" />
           </h1>
           <div className="grid grid-cols-3 gap-4">
-            {orders?.map(
-              (order) =>
-                order.servedAt === null &&
-                order.readyAt !== null &&
-                displayedOrders.has(order.orderId) &&
-                order.orderId !== current &&
-                !queue.includes(order.orderId) && (
-                  <CallingOrderCard
-                    key={order.id}
-                    orderId={order.orderId}
-                    isNewlyAdded={newlyAddedOrderId === order.orderId}
-                    isAnimated={animatedRightCardsRef.current.has(
-                      order.orderId,
-                    )}
-                    onCardRef={(el) => {
-                      if (el) rightCardRefs.current.set(order.orderId, el);
-                    }}
-                    onTextRef={(el) => {
-                      if (el) rightTextRefs.current.set(order.orderId, el);
-                    }}
-                  />
-                ),
-            )}
+            {callingOrders.map((order) => (
+              <CallingOrderCard
+                key={order.id}
+                orderId={order.orderId}
+                isNewlyAdded={newlyAddedOrderId === order.orderId}
+                isAnimated={animatedRightCardsRef.current.has(order.orderId)}
+                onCardRef={(el) => {
+                  if (el) rightCardRefs.current.set(order.orderId, el);
+                }}
+                onTextRef={(el) => {
+                  if (el) rightTextRefs.current.set(order.orderId, el);
+                }}
+              />
+            ))}
           </div>
         </div>
       </div>
