@@ -107,6 +107,7 @@ const DiscountInput = memo(
 
     return (
       <div className="">
+        <p className="pb-1">通常の割引</p>
         <div className="flex justify-center p-6">
           <div className="">
             <p className="pb-1 text-sm">引換券番号</p>
