@@ -1,10 +1,22 @@
 import { collectionSub, orderConverter } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { FaCoffee, FaSpinner } from "react-icons/fa";
+import { HiBell } from "react-icons/hi2";
 import useSWRSubscription from "swr/subscription";
-import CafeoreLogo from "~/assets/callscreen/cafeore_logo_theme2025.svg";
-import { Card } from "~/components/ui/card";
+import brightNotifications from "~/assets/bright-notifications.mp3";
+import {
+  CallingOrderCard,
+  CurrentOrderCard,
+  PreparingOrderCard,
+} from "./callscreen.components";
+import {
+  useCallScreenAnimation,
+  useOrderState,
+  useQueueProcessing,
+  useSlideInAnimation,
+} from "./callscreen.hooks";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
@@ -16,126 +28,130 @@ export default function FielsOfCallScreen() {
     collectionSub({ converter: orderConverter }, orderBy("orderId", "asc")),
   );
 
-  const [queue, setQueue] = useState<number[]>([]);
-  const [current, setCurrent] = useState<number | null>(null);
-  const prevOrdersRef = useRef<typeof orders>();
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const orderState = useOrderState(orders);
+  const {
+    queue,
+    current,
+    displayedOrders,
+    animatedRightCardsRef,
+    setQueue,
+    setCurrent,
+    setDisplayedOrders,
+  } = orderState;
 
-  useEffect(() => {
-    if (!orders || !prevOrdersRef.current) {
-      prevOrdersRef.current = orders;
-      return;
-    }
+  const currentElementRef = useRef<HTMLDivElement>(null);
+  const rightCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const rightTextRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [newlyAddedOrderId, setNewlyAddedOrderId] = useState<number | null>(
+    null,
+  );
+  const soundRef = useRef<HTMLAudioElement>(null);
 
-    // 前回 null → 今回 not null になった order を検出
-    const newlyReady = orders.filter((order) => {
-      const prev = prevOrdersRef.current?.find((p) => p.id === order.id);
-      return (
-        prev?.readyAt === null &&
-        order.readyAt !== null &&
-        order.servedAt === null
-      );
-    });
+  const playSound = useCallback(() => {
+    soundRef.current?.play();
+  }, []);
 
-    if (newlyReady.length > 0) {
-      setQueue((prev) => [...prev, ...newlyReady.map((o) => o.orderId)]);
-    }
-    prevOrdersRef.current = orders;
-  }, [orders]);
-
-  // current が null になったら次を表示
-  useEffect(() => {
-    if (current !== null) return;
-    if (queue.length === 0) return;
-
-    // 次の要素を0.5秒待つ
-    const timerId = setTimeout(() => {
-      const next = queue[0];
-      setQueue((prev) => prev.slice(1));
-      setCurrent(next);
-    }, 500);
-    return () => clearTimeout(timerId);
-  }, [current, queue]);
-
-  // current が設定されたら 5秒後に null に戻す
-  useEffect(() => {
-    if (current === null) return;
-
-    timerRef.current = setTimeout(() => {
+  // スライドアウト完了時のコールバック
+  const handleSlideOutComplete = useCallback(
+    (orderId: number) => {
+      setDisplayedOrders((prev) => new Set([...prev, orderId]));
+      setNewlyAddedOrderId(orderId);
       setCurrent(null);
-      timerRef.current = null;
-    }, 5000);
+      playSound(); // 左上に表示されるときに音声を再生
+    },
+    [setDisplayedOrders, setCurrent, playSound],
+  );
 
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [current]);
+  // スライドイン完了時のコールバック
+  const handleSlideInComplete = useCallback(() => {
+    setNewlyAddedOrderId(null);
+  }, []);
+
+  useQueueProcessing(current, queue, setCurrent, setQueue);
+  useCallScreenAnimation(current, currentElementRef, handleSlideOutComplete);
+  useSlideInAnimation(
+    newlyAddedOrderId,
+    rightCardRefs,
+    rightTextRefs,
+    animatedRightCardsRef,
+    handleSlideInComplete,
+  );
 
   return (
-    <div className="relative flex h-screen overflow-hidden p-2 font-sans">
-      {/* 背景ロゴ */}
-      <img
-        src={CafeoreLogo}
-        alt="Cafeore Logo"
-        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[80%] w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-10"
-      />
-
-      {/* 準備中 */}
-      <div className="relative z-10 w-1/3 border-r p-4">
-        <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
-          準備中
-        </h1>
-        <div className="grid grid-cols-4 gap-2">
-          {orders?.map(
-            (order) =>
-              order.servedAt === null &&
-              order.readyAt === null && (
-                <Card
-                  key={order.id}
-                  className="flex items-center justify-center border-4"
-                >
-                  <div className="p-3 font-bold text-5xl">{order.orderId}</div>
-                </Card>
-              ),
+    <div className="flex h-screen flex-col p-2 font-sans">
+      <div className="flex h-[70%]">
+        {/* 左側：一個ずつ表示 */}
+        <div className="flex w-[40%] items-center justify-center border-r">
+          {current !== null && (
+            <CurrentOrderCard orderId={current} cardRef={currentElementRef} />
           )}
         </div>
-      </div>
 
-      <div className="relative z-10 w-2/3 p-4">
-        <div className="h-2/5 border-b">
-          {/* お呼び出し中 */}
-          <h1 className="mb-2 bg-theme2025 text-center font-bold text-3xl text-white">
+        {/* 右側：お呼び出し中 */}
+        <div className="w-[60%] p-4">
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 via-theme2025 to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
+            <HiBell className="text-3xl" />
             お呼び出し中
+            <HiBell className="text-3xl" />
           </h1>
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             {orders?.map(
               (order) =>
                 order.servedAt === null &&
-                order.readyAt !== null && (
-                  <Card
+                order.readyAt !== null &&
+                displayedOrders.has(order.orderId) &&
+                order.orderId !== current &&
+                !queue.includes(order.orderId) && (
+                  <CallingOrderCard
                     key={order.id}
-                    className="flex items-center justify-center"
-                  >
-                    <div className="p-3 font-bold text-7xl">
-                      {order.orderId}
-                    </div>
-                  </Card>
+                    orderId={order.orderId}
+                    isNewlyAdded={newlyAddedOrderId === order.orderId}
+                    isAnimated={animatedRightCardsRef.current.has(
+                      order.orderId,
+                    )}
+                    onCardRef={(el) => {
+                      if (el) rightCardRefs.current.set(order.orderId, el);
+                    }}
+                    onTextRef={(el) => {
+                      if (el) rightTextRefs.current.set(order.orderId, el);
+                    }}
+                  />
                 ),
             )}
           </div>
         </div>
-        {/* 一個ずつ表示 */}
-        <div className="flex h-3/5 items-center justify-center">
-          {current !== null && (
-            <div className="animate-pulse rounded-xl border-2 px-16 py-8 font-extrabold text-9xl text-theme2025 shadow-lg">
-              {current}
-            </div>
+      </div>
+
+      {/* 画面下部（30%）：準備中 */}
+      <div className="border-t p-4">
+        <h1
+          className="mb-2 flex items-center justify-center gap-2 rounded-full py-2 text-center font-bold text-3xl shadow-lg"
+          style={{
+            backgroundImage:
+              "linear-gradient(135deg, #00524f, #00403e, #002e2d)",
+            color: "white",
+          }}
+        >
+          <FaCoffee className="text-3xl" />
+          ドリップ中
+          <FaSpinner
+            className="text-3xl"
+            style={{ animation: "spin 1.5s linear infinite" }}
+          />
+        </h1>
+        <div className="grid grid-cols-8 gap-2">
+          {orders?.map(
+            (order) =>
+              order.servedAt === null &&
+              order.readyAt === null && (
+                <PreparingOrderCard key={order.id} orderId={order.orderId} />
+              ),
           )}
         </div>
       </div>
+      <audio src={brightNotifications} ref={soundRef}>
+        <track kind="captions" />
+      </audio>
     </div>
   );
 }
