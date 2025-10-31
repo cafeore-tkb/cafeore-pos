@@ -339,7 +339,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
               focus={inputStatus === "discount"}
               number={2}
             />
-            <div className="flex justify-center">
+            <div className="pt-5">
               <DiscountInput
                 key={`DiscountInput-${UISession.key}`}
                 focus={inputStatus === "discount"}
@@ -359,7 +359,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
                 }, [setInputStatus])}
               />
             </div>
-            <div className="mt-5 flex justify-center">
+            <div className="">
               <ServiceDiscountButton
                 active={serviceActive}
                 disabled={newOrder.discountOrderId !== null}
