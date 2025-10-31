@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
 import useSWRSubscription from "swr/subscription";
-import brightNotifications from "~/assets/bright-notifications.mp3";
+import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import {
   CallingOrderCard,
   CurrentOrderCard,
@@ -48,7 +48,21 @@ export default function FielsOfCallScreen() {
   const soundRef = useRef<HTMLAudioElement>(null);
 
   const playSound = useCallback(() => {
-    soundRef.current?.play();
+    const audio = soundRef.current;
+    if (!audio) return;
+
+    try {
+      audio.currentTime = 0;
+    } catch (error) {
+      // SafariなどでcurrentTimeの操作に失敗するケースを考慮
+    }
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      void playPromise.catch(() => {
+        // 自動再生制限などで再生に失敗した場合は握りつぶす
+      });
+    }
   }, []);
 
   // スライドアウト完了時のコールバック
@@ -149,7 +163,7 @@ export default function FielsOfCallScreen() {
           )}
         </div>
       </div>
-      <audio src={brightNotifications} ref={soundRef}>
+      <audio src={brightNotifications} ref={soundRef} preload="auto">
         <track kind="captions" />
       </audio>
     </div>
