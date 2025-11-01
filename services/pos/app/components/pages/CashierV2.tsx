@@ -69,7 +69,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     [orders],
   );
 
-  // コメント追加機能
+  // 過去の注文からのコメント追加機能
   const addComment = useCallback(
     async (servedOrder: OrderEntity, descComment: string) => {
       const order = servedOrder.clone();
@@ -119,6 +119,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     printer.printOrderLabel(submitOne);
     submitPayload(submitOne);
     resetAll();
+    setServiceActive(false);
     playSound();
   }, [newOrder, resetAll, printer, submitPayload, descComment, playSound]);
 
