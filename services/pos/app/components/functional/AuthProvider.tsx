@@ -17,6 +17,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     () =>
       onAuthStateChanged(auth, (user) => {
         if (user?.emailVerified) {
+          console.log("email", user.email);
+          console.log("uid", user.uid);
           setUser(user);
         } else {
           setUser(null);
