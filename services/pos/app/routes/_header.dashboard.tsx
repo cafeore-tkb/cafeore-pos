@@ -5,7 +5,7 @@ import {
 } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
 import { orderBy } from "firebase/firestore";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
@@ -38,6 +38,43 @@ export default function Dashboard() {
     ),
   );
 
+  const [pastRangeOrders, setPastRangeOrders] = useState<
+    OrderEntity[] | undefined
+  >([]);
+
+  // 各基準時刻を計算
+  const realtimeStart = useMemo(() => {
+    const first = orders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [orders]);
+
+  const pastStart = useMemo(() => {
+    const first = pastOrders?.at(0);
+    return first ? new Date(first.createdAt) : new Date();
+  }, [pastOrders]);
+
+  // 10分間隔でpastRangeを更新
+  useEffect(() => {
+    if (!pastOrders?.length) return;
+
+    const updatePastRange = () => {
+      const elapsedMs = Date.now() - realtimeStart.getTime();
+      const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
+      const range = pastOrders.filter(
+        (o) => new Date(o.createdAt) <= pastCutoff,
+      );
+      setPastRangeOrders(range);
+    };
+
+    // 初回更新
+    updatePastRange();
+
+    // 10分ごとに更新
+    const timer = setInterval(updatePastRange, 10 * 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, [pastOrders, realtimeStart, pastStart]);
+
   return (
     <div className="h-full">
       <div className="sticky top-0 flex justify-between p-4">
@@ -64,7 +101,7 @@ export default function Dashboard() {
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
-            <ItemBarChart orders={orders} pastOrders={pastOrders} />
+            <ItemBarChart orders={orders} pastRangeOrders={pastRangeOrders} />
           </div>
         </TabsContent>
         <TabsContent value="serveTimeGraph" className="p-2">

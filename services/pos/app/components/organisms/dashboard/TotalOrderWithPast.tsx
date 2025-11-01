@@ -16,7 +16,7 @@ import {
 
 type props = {
   orders: OrderEntity[] | undefined;
-  pastRangeOrders: OrderEntity[] | undefined;
+  pastRange: OrderEntity[] | undefined;
 };
 
 /**
@@ -24,7 +24,7 @@ type props = {
  * @param props
  * @returns
  */
-const ItemBarChart = ({ orders, pastRangeOrders }: props) => {
+const ItemBarChart = ({ orders, pastRange }: props) => {
   // 集計関数
   const sumByItem = (orders: OrderEntity[] | undefined) => {
     if (!orders) return;
@@ -66,7 +66,7 @@ const ItemBarChart = ({ orders, pastRangeOrders }: props) => {
   } as const;
 
   const realtimeSum = sumByItem(orders);
-  const pastSum = sumByItem(pastRangeOrders);
+  const pastSum = sumByItem(pastRange);
 
   const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
     name: item.abbr,
