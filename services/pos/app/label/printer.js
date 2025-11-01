@@ -105,7 +105,7 @@ export const useRawPrinter = () => {
       prn.addTextSize(1, 1);
       prn.addText("No.");
       prn.addTextSize(2, 2);
-      prn.addText(`${orderId.toString().padEnd(3, " ")}`);
+      prn.addText(`${orderId.toString().padStart(3, "0")}`);
       prn.addTextSize(1, 2);
       prn.addText(" ￥");
       prn.addTextSize(2, 2);
