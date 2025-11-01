@@ -85,7 +85,7 @@ export default function CasherMini() {
 
   const charge = useMemo(() => order?.getCharge() ?? 0, [order]);
   const textShadowStyle = useMemo(
-    () => ({ textShadow: "0 8px 18px rgba(0, 0, 0, 0.45)" }),
+    () => ({ textShadow: "0 10px 28px rgba(0, 0, 0, 0.6)" }),
     [],
   );
 
