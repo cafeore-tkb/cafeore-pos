@@ -37,6 +37,15 @@ export const ItemButtons = ({ items, addItem }: props) => {
         >
           珈琲・俺ブレンド
         </Button>
+        <Button
+          key="+"
+          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          onClick={() => {
+            addItem(key2item("+"));
+          }}
+        >
+          も花も香ブレンド
+        </Button>
       </div>
       <div
         key="hot"

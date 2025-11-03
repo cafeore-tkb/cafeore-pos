@@ -13,6 +13,13 @@ export const ITEM_MASTER = {
     price: 500,
     type: "hot",
   },
+  "+": {
+    id: "08_special_mocha_blend",
+    name: "も花も香ブレンド",
+    abbr: "もかもか",
+    price: 500,
+    type: "hot",
+  },
   "^": {
     id: "02_cafeore_brend",
     name: "珈琲・俺ブレンド",
