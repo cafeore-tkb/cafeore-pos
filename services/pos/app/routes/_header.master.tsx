@@ -1,8 +1,11 @@
 import {
+  type ItemEntity,
   MasterStateEntity,
   OrderEntity,
   type OrderStatType,
+  type WithId,
   collectionSub,
+  id2abbr,
   masterRepository,
   orderConverter,
   orderRepository,
@@ -64,6 +67,28 @@ export default function FielsOfMaster() {
     return acc;
   }, 0);
 
+  const handleEmergencyClick = useCallback(
+    (item: WithId<ItemEntity>, orderId: number, originalOrder: OrderEntity) => {
+      // 既存のオーダーをクローンして緊急コメントを追加
+      const order = originalOrder.clone();
+
+      // 該当アイテムに緊急フラグを立てる
+      const itemIndex = order.items.findIndex((i) => i.id === item.id);
+      if (itemIndex !== -1) {
+        order.items[itemIndex].emergency = true;
+      }
+
+      // 緊急対応のコメントを追加
+      order.addComment("master", `緊急対応: ${id2abbr(item.id)}`);
+
+      submit(
+        { emergencyOrder: JSON.stringify(order.toOrder()) },
+        { method: "PATCH" },
+      );
+    },
+    [submit],
+  );
+
   return (
     <div className="p-4 font-sans">
       <div className="flex justify-between pb-4">
@@ -118,6 +143,8 @@ export const clientAction: ClientActionFunction = async (args) => {
       return addComment(args);
     case "POST":
       return changeOrderStat(args);
+    case "PATCH":
+      return submitEmergencyOrder(args);
     default:
       throw new Error(`Method ${method} is not allowed`);
   }
@@ -171,6 +198,36 @@ export const changeOrderStat: ClientActionFunction = async ({ request }) => {
   console.log(masterStats);
 
   await masterRepository.set(masterStats);
+
+  return new Response("ok");
+};
+
+export const submitEmergencyOrder: ClientActionFunction = async ({
+  request,
+}) => {
+  const formData = await request.formData();
+
+  const schema = z.object({
+    emergencyOrder: stringToJSONSchema.pipe(orderSchema),
+  });
+  const submission = parseWithZod(formData, {
+    schema,
+  });
+
+  if (submission.status !== "success") {
+    console.error("Validation error:", submission.error);
+    return submission.reply();
+  }
+
+  const { emergencyOrder } = submission.value;
+  console.log("emergencyOrder:", emergencyOrder);
+
+  const order = OrderEntity.fromOrder(emergencyOrder);
+  console.log("order:", order);
+
+  const savedOrder = await orderRepository.save(order);
+
+  console.log("savedOrder", savedOrder);
 
   return new Response("ok");
 };
