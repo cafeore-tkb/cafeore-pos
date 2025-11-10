@@ -10,6 +10,7 @@ import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
+import { TotalOrderWithPast } from "~/components/organisms/dashboard/TotalOrderWithPast";
 import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
@@ -44,13 +45,23 @@ export default function Dashboard() {
 
   // 各基準時刻を計算
   const realtimeStart = useMemo(() => {
-    const first = orders?.at(0);
-    return first ? new Date(first.createdAt) : new Date();
+    const first = [...(orders ?? [])].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    )[0];
+    if (!first?.createdAt) return new Date();
+    const date = new Date(first.createdAt);
+    return date;
   }, [orders]);
 
   const pastStart = useMemo(() => {
-    const first = pastOrders?.at(0);
-    return first ? new Date(first.createdAt) : new Date();
+    const first = [...(pastOrders ?? [])].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    )[0];
+    if (!first?.createdAt) return new Date();
+    const date = new Date(first.createdAt);
+    return date;
   }, [pastOrders]);
 
   // 10分間隔でpastRangeを更新
@@ -97,6 +108,7 @@ export default function Dashboard() {
         <TabsList>
           <TabsTrigger value="itemBar">種類別注文数</TabsTrigger>
           <TabsTrigger value="serveTimeGraph">提供時間推移</TabsTrigger>
+          <TabsTrigger value="totalOrder">総杯数比較</TabsTrigger>
           <TabsTrigger value="orderList">注文一覧</TabsTrigger>
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
@@ -107,6 +119,14 @@ export default function Dashboard() {
         <TabsContent value="serveTimeGraph" className="p-2">
           <div className="w-2/3">
             <ServeTimeGraph orders={orders} />
+          </div>
+        </TabsContent>
+        <TabsContent value="totalOrder" className="p-2">
+          <div className="w-2/3">
+            <TotalOrderWithPast
+              realtimeOrders={orders}
+              pastOrders={pastRangeOrders}
+            />
           </div>
         </TabsContent>
         <TabsContent value="orderList" className="flex p-2">

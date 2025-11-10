@@ -1,5 +1,8 @@
-import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { OrderEntity } from "@cafeore/common";
+import dayjs from "dayjs";
+import { useMemo, useState } from "react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { TooltipProps } from "recharts";
 import {
   Card,
   CardContent,
@@ -11,12 +14,18 @@ import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
 } from "~/components/ui/chart";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 
 type props = {
-  orders: OrderEntity[] | undefined;
-  pastRange: OrderEntity[] | undefined;
+  realtimeOrders: OrderEntity[] | undefined;
+  pastOrders: OrderEntity[] | undefined;
 };
 
 /**
@@ -24,117 +33,212 @@ type props = {
  * @param props
  * @returns
  */
-const ItemBarChart = ({ orders, pastRange }: props) => {
-  // 集計関数
-  const sumByItem = (orders: OrderEntity[] | undefined) => {
-    if (!orders) return;
+const TotalOrderWithPast = ({ realtimeOrders, pastOrders }: props) => {
+  const [displayRange, setDisplayRange] = useState(10);
+  const [displayIsSum, setDisplayIsSum] = useState(true);
+  const chartData = useMemo(() => {
+    // 時系列順にソート
+    const sortedRealtime = [...(realtimeOrders ? realtimeOrders : [])].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const sortedPast = [...(pastOrders ? pastOrders : [])].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
 
-    // 読み替えをハードコード
-    const renameMap: Record<string, string | string[]> = {
-      "01_beppin_brend": "01_yukari_brend",
-      "04_mandheling": "06_toraja",
-      "06_costa_rica_red_honey": "04_kilimanjaro",
-      "03_special": ["03_Lychee", "07_blumoun"],
-    };
+    const pastStart = sortedPast[0]?.createdAt ?? new Date();
 
-    const result: Record<string, number> = {};
-
-    for (const order of orders) {
-      for (const item of order.items) {
-        const mapped = renameMap[item.id];
-        if (mapped === undefined) {
-          result[item.id] = (result[item.id] ?? 0) + 1;
-        } else if (typeof mapped === "string") {
-          result[mapped] = (result[mapped] ?? 0) + 1;
-        } else {
-          for (const newName of mapped) {
-            result[newName] = (result[newName] ?? 0) + 1;
-          }
-        }
-      }
+    // 時刻をdisplayRange分ごとに丸める
+    function roundToMin(date: Date): string {
+      const d = dayjs(date);
+      const minutes = Math.floor(d.minute() / displayRange) * displayRange; // 10分単位に切り捨て
+      return d.minute(minutes).second(0).millisecond(0).toString();
     }
 
-    return result;
-  };
+    //時間帯の合計を作る
+    const realtimeMap = sortedRealtime.reduce((map, o) => {
+      const key = roundToMin(new Date(o.createdAt));
+      const prev = map.get(key) ?? 0;
+      map.set(key, prev + o.getDrinkCups().length);
+      return map;
+    }, new Map<string, number>());
 
-  const TYPE_COLOR_MAP = {
-    hot: "var(--color-hot)",
-    ice: "var(--color-ice)",
-    iceOre: "var(--color-aulait)",
-    milk: "var(--color-milk)",
-    others: "var(--color-others)",
-  } as const;
+    const pastMap = sortedPast.reduce((map, o) => {
+      const key = roundToMin(new Date(o.createdAt));
+      const prev = map.get(key) ?? 0;
+      map.set(key, prev + o.getDrinkCups().length);
+      return map;
+    }, new Map<string, number>());
 
-  const realtimeSum = sumByItem(orders);
-  const pastSum = sumByItem(pastRange);
+    // 時刻の全リストを作って結合
+    const allKeys = Array.from(
+      new Set([...realtimeMap.keys(), ...pastMap.keys()]),
+    ).sort();
 
-  const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
-    name: item.abbr,
-    realtimeData: realtimeSum ? realtimeSum[item.id] : 0,
-    pastData: pastSum ? pastSum[item.id] : 0,
-    fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
-  }));
+    let realtimeSum = 0;
+    let pastSum = 0;
+
+    // 結合したchartDataを作成
+    const chartData = allKeys.map((key) => {
+      const start = dayjs(key, "HH:mm");
+      const end = start.add(displayRange, "minute");
+      const rangeLabel = `${start.format("HH:mm")}-${end.format("HH:mm")}`;
+      realtimeSum += realtimeMap.get(key) ?? 0;
+      pastSum += pastMap.get(key) ?? 0;
+
+      return {
+        createdAt: rangeLabel, // x軸に使用する注文時刻
+        realtimeData:
+          displayIsSum === true ? realtimeSum : realtimeMap.get(key),
+        pastData: displayIsSum === true ? pastSum : pastMap.get(key),
+        fill: "var(--color-aulait)",
+      };
+    });
+    return chartData;
+  }, [realtimeOrders, pastOrders, displayRange, displayIsSum]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
-        <CardDescription>
-          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します{" "}
-          <br />
-          読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig}>
-          <BarChart accessibilityLayer data={chartData}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="name"
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => value.slice(0, 5)}
-            />
-            <YAxis />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="realtimeData" radius={1} />
-            <Bar dataKey="pastData" radius={1} style={{ opacity: 0.4 }} />
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        <CardHeader className="flex justify-between">
+          <CardTitle>総注文杯数（去年との比較）</CardTitle>
+          <CardDescription>ドリンクのみ</CardDescription>
+          <Select
+            onValueChange={(value) => {
+              const [range, type] = value.split("-");
+              setDisplayRange(Number(range));
+              setDisplayIsSum(type === "sum");
+            }}
+            defaultValue={"10-sum"} // 初期値
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="表示データ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10-sum">10分毎、総杯数</SelectItem>
+              <SelectItem value="10-per">10分毎、毎杯数</SelectItem>
+              <SelectItem value="60-sum">1時間毎、総杯数</SelectItem>
+              <SelectItem value="60-per">1時間毎、毎杯数</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer config={chartConfig}>
+            <AreaChart data={chartData}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="createdAt"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+              />
+              <YAxis
+                tickMargin={8}
+                dataKey={"realtimeData"}
+                tickFormatter={(v) => v}
+                allowDataOverflow={true}
+              />
+              <ChartTooltip cursor={false} content={<CustomTooltipContent />} />
+
+              {/* グラデーション設定 */}
+              <defs>
+                {/* 緑系（現在データ） */}
+                <linearGradient id="fillRealtime" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6EE7B7" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#6EE7B7" stopOpacity={0.1} />
+                </linearGradient>
+
+                {/* 紫系（過去データ） */}
+                <linearGradient id="fillPast" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#A78BFA" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#A78BFA" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+
+              <Area
+                dataKey="realtimeData"
+                type="monotone"
+                fill="url(#fillRealtime)"
+                stroke="#6EE7B7"
+                strokeWidth={2}
+                fillOpacity={0.4}
+              />
+
+              <Area
+                dataKey="pastData"
+                type="monotone"
+                fill="url(#fillPast)"
+                stroke="#A78BFA"
+                strokeWidth={2}
+                fillOpacity={0.3}
+              />
+            </AreaChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+    </>
   );
+};
+
+// カスタムツールチップコンポーネント
+const CustomTooltipContent = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    // payload[0], payload[1] などに各系列データが入っている
+    const current = payload.find((p) => p.dataKey === "realtimeData");
+    const past = payload.find((p) => p.dataKey === "pastData");
+
+    return (
+      <div className="rounded-lg border bg-background p-2 shadow-md">
+        <div className="grid gap-2">
+          {/* 時間帯 */}
+          <div className="flex flex-col">
+            <span className="text-[0.70rem] text-muted-foreground uppercase">
+              注文時刻
+            </span>
+            <span className="font-bold">{label}</span>
+          </div>
+
+          {/* 現在の注文 */}
+          {current && (
+            <div className="flex flex-col">
+              <span className="text-[0.70rem] text-muted-foreground uppercase">
+                現在のデータ
+              </span>
+              <span className="font-bold">{current.value}</span>
+            </div>
+          )}
+
+          {/* 過去の注文 */}
+          {past && (
+            <div className="flex flex-col">
+              <span className="text-[0.70rem] text-muted-foreground uppercase">
+                過去のデータ
+              </span>
+              <span className="font-bold">{past.value}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 const chartConfig = {
   realtimeData: {
     label: "現在のデータ",
-    color: "var(--chart-1)",
+    color: "hsl(var(--chart-1))",
   },
   pastData: {
     label: "過去のデータ",
-    color: "var(--chart-2)",
-  },
-  hot: {
-    label: "ホット",
-    color: "hsl(var(--chart-1))",
-  },
-  ice: {
-    label: "アイス",
     color: "hsl(var(--chart-2))",
-  },
-  aulait: {
-    label: "オレ",
-    color: "hsl(var(--chart-3))",
-  },
-  milk: {
-    label: "ミルク",
-    color: "hsl(var(--chart-4))",
-  },
-  other: {
-    label: "Other",
-    color: "hsl(var(--chart-5))",
   },
 } satisfies ChartConfig;
 
-export { ItemBarChart };
+export { TotalOrderWithPast };

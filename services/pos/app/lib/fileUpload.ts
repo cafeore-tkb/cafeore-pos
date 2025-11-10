@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import { OrderEntity } from "@cafeore/common";
 import { useState } from "react";
 
 type UploadedOrderData = {
@@ -23,10 +23,12 @@ export const uploadAndSortOrders = async (
         ) as UploadedOrderData;
 
         // createdAtでソート
-        const sortedOrders = jsonData.orders.sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        );
+        const sortedOrders = jsonData.orders
+          .sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          )
+          .map((o) => OrderEntity.fromOrder(o));
 
         resolve(sortedOrders);
       } catch (error) {
