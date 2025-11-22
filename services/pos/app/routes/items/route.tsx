@@ -9,15 +9,19 @@ import {
 } from "@cafeore/common";
 import { useForm } from "@conform-to/react";
 import { parseWithZod } from "@conform-to/zod";
-import { Form, type MetaFunction, useActionData, useNavigation } from "react-router";
 import { useMemo } from "react";
+import {
+  Form,
+  type MetaFunction,
+  useActionData,
+  useNavigation,
+} from "react-router";
 import useSWRSubscription from "swr/subscription";
 import { usePreventNumberKeyUpDown } from "~/components/functional/usePreventNumberKeyUpDown";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import type { addItem } from "./actions/addItem";
 
 export { action as clientAction } from "./action";
 
@@ -31,9 +35,10 @@ export default function Item() {
     collectionSub({ converter: itemConverter }),
   );
   const navigation = useNavigation();
-  const lastResult = useActionData<typeof addItem>();
+  const actionData = useActionData<unknown>();
   const [form, fields] = useForm({
-    lastResult: navigation.state === "idle" ? lastResult : null,
+    // biome-ignore lint/suspicious/noExplicitAny: submission.reply()の戻り値の型を正確に推論できないため
+    lastResult: navigation.state === "idle" ? (actionData as any) : null,
     onValidate({ formData }) {
       return parseWithZod(formData, {
         schema: itemSchema.omit({ assignee: true }),
