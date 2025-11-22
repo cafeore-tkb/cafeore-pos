@@ -16,7 +16,7 @@
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"
   },
   "dependencies": {
-    "@remix-run/react": "^2.13.1",
+    "react-router": "^7.0.0",
     "firebase": "^12.3.0",
     "lodash": "^4.17.21",
     "swr": "^2.3.2",
