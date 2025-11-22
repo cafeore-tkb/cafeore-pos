@@ -7,7 +7,7 @@ import {
   itemtypes,
   type2label,
 } from "@cafeore/common";
-import { useForm } from "@conform-to/react";
+import { type SubmissionResult, useForm } from "@conform-to/react";
 import { parseWithZod } from "@conform-to/zod";
 import { useMemo } from "react";
 import {
@@ -35,10 +35,11 @@ export default function Item() {
     collectionSub({ converter: itemConverter }),
   );
   const navigation = useNavigation();
-  const actionData = useActionData<unknown>();
+  // addItem関数はResponse.json(submission.reply(), ...)を返す
+  // useActionDataは自動的にJSONをパースするため、SubmissionResult<string[]>型になる
+  const actionData = useActionData<SubmissionResult<string[]>>();
   const [form, fields] = useForm({
-    // biome-ignore lint/suspicious/noExplicitAny: submission.reply()の戻り値の型を正確に推論できないため
-    lastResult: navigation.state === "idle" ? (actionData as any) : null,
+    lastResult: navigation.state === "idle" ? actionData : null,
     onValidate({ formData }) {
       return parseWithZod(formData, {
         schema: itemSchema.omit({ assignee: true }),
