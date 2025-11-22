@@ -1,10 +1,12 @@
 import { itemRepository } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { type ClientActionFunction, json } from "react-router";
+import type { ClientActionFunction } from "react-router";
 import { z } from "zod";
 
 // TODO(toririm): テストを書く
-export const deleteItem: ClientActionFunction = async ({ request }) => {
+export const deleteItem: ClientActionFunction = async ({
+  request,
+}: { request: Request }) => {
   const formData = await request.formData();
   const submission = parseWithZod(formData, {
     schema: z.object({ itemId: z.string() }),
@@ -12,7 +14,7 @@ export const deleteItem: ClientActionFunction = async ({ request }) => {
 
   if (submission.status !== "success") {
     console.error("Invalid form data", submission.reply());
-    return json(submission.reply(), { status: 400 });
+    return Response.json(submission.reply(), { status: 400 });
   }
 
   const { itemId } = submission.value;
