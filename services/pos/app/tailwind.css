@@ -146,6 +146,10 @@
   * {
     @apply border-border;
   }
+  /* borderクラスが使われている要素にもデフォルトでborder色を適用 */
+  [class*="border"] {
+    border-color: hsl(var(--border));
+  }
   body {
     @apply bg-background text-foreground;
   }
