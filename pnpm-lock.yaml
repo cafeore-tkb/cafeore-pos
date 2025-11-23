@@ -152,8 +152,8 @@ importers:
         specifier: ^1.2.2
         version: 1.8.2(react@18.3.1)
       '@conform-to/zod':
-        specifier: ^1.2.2
-        version: 1.8.2(zod@3.25.76)
+        specifier: ^1.13.3
+        version: 1.13.3(zod@3.25.76)
       '@fontsource-variable/noto-sans-jp':
         specifier: ^5.2.9
         version: 5.2.9
@@ -539,6 +539,9 @@ packages:
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
     engines: {node: '>=0.1.90'}
 
+  '@conform-to/dom@1.13.3':
+    resolution: {integrity: sha512-V4uNfUcx0cfuwnL/yNtjRvWxzwyNWhayBJXhRDBxEtiqBJiSEge6qeMN0xSUDbZezj5uAl13rzVQyf6FZXoOZQ==}
+
   '@conform-to/dom@1.8.2':
     resolution: {integrity: sha512-5eDqI9366+23Fl/E5zxebuy2FCebJKpSrdE/c6PZQ5Ul59BYQ17pBmkLkvxAKjPXW+Qq77BJyjGjuklwmqN08A==}
 
@@ -547,8 +550,8 @@ packages:
     peerDependencies:
       react: '>=18'
 
-  '@conform-to/zod@1.8.2':
-    resolution: {integrity: sha512-uYipAoNByusRji7j84o40r9IvYmsV84utfCfvqr2b746/8JnBuoO6C90yltan5D9OVAJMIKejXW4T1XfOsaMWg==}
+  '@conform-to/zod@1.13.3':
+    resolution: {integrity: sha512-HimtfcJPgjlhmMRWUvvyFvgdPgAmG/54qY/Bp1Wtoi+mRQ4ffBuBy+0L8mlc1USeI1X2YEZDfMurOlTf92xQwA==}
     peerDependencies:
       zod: ^3.21.0 || ^4.0.0
 
@@ -6846,6 +6849,8 @@ snapshots:
 
   '@colors/colors@1.6.0': {}
 
+  '@conform-to/dom@1.13.3': {}
+
   '@conform-to/dom@1.8.2': {}
 
   '@conform-to/react@1.8.2(react@18.3.1)':
@@ -6853,9 +6858,9 @@ snapshots:
       '@conform-to/dom': 1.8.2
       react: 18.3.1
 
-  '@conform-to/zod@1.8.2(zod@3.25.76)':
+  '@conform-to/zod@1.13.3(zod@3.25.76)':
     dependencies:
-      '@conform-to/dom': 1.8.2
+      '@conform-to/dom': 1.13.3
       zod: 3.25.76
 
   '@cspotcode/source-map-support@0.8.1':
