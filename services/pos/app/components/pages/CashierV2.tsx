@@ -113,10 +113,9 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     }
     const toteSetProcessedOrder = transformToteSet(newOrder);
     // 送信する直前に createdAt を更新する
-    const goodsOnlyProcessedOrder = goodsOnlyServed(toteSetProcessedOrder);
-    const submitOne = goodsOnlyProcessedOrder.clone();
-    //const submitOne = toteSetProcessedOrder.clone();
+    const submitOne = toteSetProcessedOrder.clone();
     submitOne.nowCreated();
+    goodsOnlyServed(submitOne);
     // 備考を追加
     submitOne.addComment("cashier", descComment);
     printer.printOrderLabel(submitOne);
