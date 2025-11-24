@@ -60,9 +60,21 @@ export const usePrinter = () => {
     }
   };
 
+  const printLogoLabel = () => {
+    rawPrinter.feedCurrentTop();
+    rawPrinter.addPageBegin();
+    rawPrinter.addPageArea(0, 20, 570, 230);
+    for (let i = 0; i < 10; i++) {
+      rawPrinter.addPagePosition(0, 24 * i + 24);
+      rawPrinter.addLine("キリマンジャロ", [1, 1]);
+    }
+    rawPrinter.addPagePosition(230, 200);
+    rawPrinter.addLogo();
+    rawPrinter.addPageEnd();
+  };
   const printOrderLabel = (order: OrderEntity) => {
     rawPrinter.init();
-
+    /*
     const coffees = order.getCoffeeCups();
 
     console.log(coffees);
@@ -81,6 +93,8 @@ export const usePrinter = () => {
     printOrderSummaryLabel(order);
 
     rawPrinter.addFeed(7);
+    */
+    printLogoLabel();
     rawPrinter.print();
   };
 

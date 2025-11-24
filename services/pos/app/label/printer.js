@@ -120,6 +120,55 @@ export const useRawPrinter = () => {
     }
   };
 
+  const addPageBegin = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addPageBegin();
+  };
+
+  const addPageEnd = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addPageEnd();
+  };
+
+  const addLogo = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addLogo(32, 32);
+  };
+
+  const addPageArea = (x, y, w, h) => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addPageArea(x, y, w, h);
+  };
+
+  const addPagePosition = (x, y) => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addPagePosition(x, y);
+  };
   /**
    * @param {number} line
    * @returns {void}
@@ -133,6 +182,36 @@ export const useRawPrinter = () => {
     }
 
     prn.addFeedLine(line);
+  };
+
+  const feedNextTop = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addFeedPosition(prn.FEED_NEXT_TOF);
+  };
+
+  const feedCurrentTop = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addFeedPosition(prn.FEED_CURRENT_TOF);
+  };
+
+  const feedCut = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return;
+    }
+    prn.addFeedPosition(prn.FEED_PEELING);
   };
 
   /**
@@ -160,6 +239,14 @@ export const useRawPrinter = () => {
     addLine,
     addHeader,
     addFeed,
+    feedNextTop,
+    feedCurrentTop,
+    feedCut,
+    addPageBegin,
+    addPageEnd,
+    addPageArea,
+    addPagePosition,
+    addLogo,
     print,
   };
 
