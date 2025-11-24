@@ -26,8 +26,9 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
-  --color-theme2024: #a59aca;
-  --color-theme2025: #006763;
+  /* theme colors */
+  --color-theme-primary: #006763;
+  --color-theme-secondary: #0067631a;
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
