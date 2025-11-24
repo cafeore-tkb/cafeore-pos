@@ -10,6 +10,7 @@ import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
+import { goodsOnlyServed } from "../functional/goodsOnlyServed";
 import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
@@ -114,6 +115,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     // 送信する直前に createdAt を更新する
     const submitOne = toteSetProcessedOrder.clone();
     submitOne.nowCreated();
+    goodsOnlyServed(submitOne);
     // 備考を追加
     submitOne.addComment("cashier", descComment);
     printer.printOrderLabel(submitOne);
