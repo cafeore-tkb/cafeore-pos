@@ -59,6 +59,7 @@ describe("[db] orderRepository", async () => {
         name: "item1",
         price: 100,
         type: "hot",
+        emergency: false,
         assignee: null,
       }),
     );

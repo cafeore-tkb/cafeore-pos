@@ -8,6 +8,7 @@ const coffeeItem = ItemEntity.fromItem({
   name: "item1",
   price: 300,
   type: "hot",
+  emergency: false,
   assignee: null,
 });
 
@@ -16,6 +17,7 @@ const milkItem = ItemEntity.fromItem({
   name: "item2",
   price: 100,
   type: "milk",
+  emergency: false,
   assignee: null,
 });
 
@@ -30,6 +32,7 @@ describe("[unit] order entity", () => {
         name: "item1",
         price: 100,
         type: "hot",
+        emergency: false,
         assignee: null,
       }),
       ItemEntity.fromItem({
@@ -37,6 +40,7 @@ describe("[unit] order entity", () => {
         name: "item2",
         price: 341,
         type: "ice",
+        emergency: false,
         assignee: null,
       }),
     ];
@@ -50,6 +54,7 @@ describe("[unit] order entity", () => {
         name: "item3",
         price: 100,
         type: "hotOre",
+        emergency: false,
         assignee: null,
       }),
     );
@@ -109,6 +114,7 @@ describe("[unit] order entity", () => {
         name: "item1",
         price: 400,
         type: "hot",
+        emergency: false,
         assignee: null,
       },
       {
@@ -116,6 +122,7 @@ describe("[unit] order entity", () => {
         name: "item2",
         price: 500,
         type: "ice",
+        emergency: false,
         assignee: null,
       },
     ];
@@ -167,6 +174,7 @@ describe("[unit] order entity", () => {
         name: "item1",
         price: 400,
         type: "hot",
+        emergency: false,
         assignee: null,
       },
       {
@@ -174,6 +182,7 @@ describe("[unit] order entity", () => {
         name: "item2",
         price: 500,
         type: "ice",
+        emergency: false,
         assignee: null,
       },
     ];
