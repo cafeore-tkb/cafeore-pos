@@ -18,7 +18,7 @@ export function CurrentOrderCard({
           "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
       }}
     >
-      <div className="bg-gradient-to-br from-theme2025 via-teal-600 to-theme2025 bg-clip-text font-extrabold text-7xl text-transparent">
+      <div className="bg-gradient-to-br from-theme-primary via-teal-600 to-theme-primary bg-clip-text font-extrabold text-7xl text-transparent">
         {orderId}
       </div>
     </Card>

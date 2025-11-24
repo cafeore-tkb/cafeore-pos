@@ -21,7 +21,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
       >
         <Button
           key="-"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("-"));
           }}
@@ -30,7 +30,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="^"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("^"));
           }}
@@ -39,7 +39,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="+"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("+"));
           }}
@@ -49,7 +49,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
       </div>
       <div
         key="hot"
-        className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl text-theme2025"
+        className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl text-theme-primary"
       >
         限定
       </div>
@@ -59,7 +59,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
       >
         <Button
           key="/"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("/"));
           }}
@@ -68,7 +68,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="#"
-          className="h-[50px] w-[150px] bg-theme2025 text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("#"));
           }}
@@ -88,7 +88,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
       >
         <Button
           key=";"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item(";"));
           }}
@@ -97,7 +97,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key=":"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item(":"));
           }}
@@ -106,7 +106,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="]"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("]"));
           }}
@@ -135,7 +135,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
         </Button>
         <Button
           key="\\"
-          className="h-[50px] w-[150px] bg-ice text-lg hover:bg-theme2025 hover:ring-4"
+          className="h-[50px] w-[150px] bg-ice text-lg hover:bg-theme-primary hover:ring-4"
           onClick={() => {
             addItem(key2item("\\"));
           }}
