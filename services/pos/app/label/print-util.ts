@@ -60,22 +60,37 @@ export const usePrinter = () => {
     }
   };
 
-  const printLogoLabel = () => {
+  const printLogoLabel = (
+    orderId: number,
+    index: number,
+    total: number,
+    item: ItemEntity,
+  ) => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 20, 570, 230);
-    for (let i = 0; i < 10; i++) {
-      rawPrinter.addPagePosition(0, 24 * i + 24);
-      rawPrinter.addLine("キリマンジャロ", [1, 1]);
+    rawPrinter.addPageArea(0, 24, 570, 230);
+
+    const y = 48;
+    rawPrinter.addPagePosition(0, 48);
+    rawPrinter.addHeader(orderId, null);
+    rawPrinter.addPagePosition(0, 108);
+    rawPrinter.addLine(item.name, [1, 2]);
+    rawPrinter.addPagePosition(0, 156);
+    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
+    rawPrinter.addPagePosition(0, 204);
+    if (item.assignee) {
+      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
+    } else {
+      rawPrinter.addLine("　", [1, 1]);
     }
-    rawPrinter.addPagePosition(230, 200);
+    rawPrinter.addPagePosition(230, y);
     rawPrinter.addLogo();
     rawPrinter.addPageEnd();
   };
   const printOrderLabel = (order: OrderEntity) => {
     rawPrinter.init();
-    /*
     const coffees = order.getCoffeeCups();
+    /*
 
     console.log(coffees);
 
@@ -94,7 +109,9 @@ export const usePrinter = () => {
 
     rawPrinter.addFeed(7);
     */
-    printLogoLabel();
+    printLogoLabel(order.orderId, 1, 1, coffees[0]);
+
+    //printOrderSummaryLabel(order);
     rawPrinter.print();
   };
 
