@@ -83,7 +83,7 @@ export const usePrinter = () => {
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }
-    rawPrinter.addPagePosition(230, y);
+    rawPrinter.addPagePosition(230, 204);
     rawPrinter.addLogo();
     rawPrinter.addPageEnd();
   };
