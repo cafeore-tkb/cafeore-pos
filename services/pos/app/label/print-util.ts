@@ -90,13 +90,12 @@ export const usePrinter = () => {
   const printOrderLabel = (order: OrderEntity) => {
     rawPrinter.init();
     const coffees = order.getCoffeeCups();
-    /*
 
     console.log(coffees);
 
     // 各アイテムのラベルを印刷
     for (const [idx, item] of coffees.entries()) {
-      printSingleItemLabel(
+      printLogoLabel(
         order.orderId,
         idx + 1,
         order.getCoffeeCups().length,
@@ -108,10 +107,6 @@ export const usePrinter = () => {
     printOrderSummaryLabel(order);
 
     rawPrinter.addFeed(7);
-    */
-    printLogoLabel(order.orderId, 1, 1, coffees[0]);
-
-    //printOrderSummaryLabel(order);
     rawPrinter.print();
   };
 

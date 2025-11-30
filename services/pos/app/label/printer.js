@@ -120,6 +120,10 @@ export const useRawPrinter = () => {
     }
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const addPageBegin = () => {
     const prn = printerRef.current;
     if (!prn) {
@@ -130,6 +134,10 @@ export const useRawPrinter = () => {
     prn.addPageBegin();
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const addPageEnd = () => {
     const prn = printerRef.current;
     if (!prn) {
@@ -140,6 +148,10 @@ export const useRawPrinter = () => {
     prn.addPageEnd();
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const addLogo = () => {
     const prn = printerRef.current;
     if (!prn) {
@@ -150,6 +162,14 @@ export const useRawPrinter = () => {
     prn.addLogo(32, 32);
   };
 
+  /**
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @returns {void}
+   */
   const addPageArea = (x, y, w, h) => {
     const prn = printerRef.current;
     if (!prn) {
@@ -160,6 +180,12 @@ export const useRawPrinter = () => {
     prn.addPageArea(x, y, w, h);
   };
 
+  /**
+   *
+   * @param {number} x
+   * @param {number} y
+   * @returns {void}
+   */
   const addPagePosition = (x, y) => {
     const prn = printerRef.current;
     if (!prn) {
@@ -169,6 +195,7 @@ export const useRawPrinter = () => {
     }
     prn.addPagePosition(x, y);
   };
+
   /**
    * @param {number} line
    * @returns {void}
@@ -184,6 +211,10 @@ export const useRawPrinter = () => {
     prn.addFeedLine(line);
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const feedNextTop = () => {
     const prn = printerRef.current;
     if (!prn) {
@@ -194,6 +225,10 @@ export const useRawPrinter = () => {
     prn.addFeedPosition(prn.FEED_NEXT_TOF);
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const feedCurrentTop = () => {
     const prn = printerRef.current;
     if (!prn) {
@@ -204,6 +239,10 @@ export const useRawPrinter = () => {
     prn.addFeedPosition(prn.FEED_CURRENT_TOF);
   };
 
+  /**
+   *
+   * @returns {void}
+   */
   const feedCut = () => {
     const prn = printerRef.current;
     if (!prn) {
