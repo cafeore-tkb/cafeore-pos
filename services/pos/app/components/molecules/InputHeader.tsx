@@ -13,7 +13,7 @@ const InputHeader = memo(({ title, focus, number }: props) => {
     <div
       className={cn(
         "flex items-center rounded-xl p-3",
-        focus && "bg-theme2025/10",
+        focus && "bg-theme-secondary",
       )}
     >
       <Circle focus={focus} className="flex-initial">
