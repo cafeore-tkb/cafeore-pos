@@ -8,14 +8,23 @@
     "fmt": "biome check --write",
     "common": "pnpm -F \"common\"",
     "pos": "pnpm -F \"pos\"",
-    "mobile": "pnpm -F \"mobile\""
+    "mobile": "pnpm -F \"mobile\"",
+    "generate:types": "cd openapi && ./generate.sh",
+    "generate:ts": "openapi-typescript openapi/openapi.yaml -o modules/common/types/api.ts",
+    "validate:api": "swagger-cli validate openapi/openapi.yaml"
   },
   "devDependencies": {
+    "@apidevtools/swagger-cli": "^4.0.4",
     "@biomejs/biome": "1.9.4",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.5"
+    "lint-staged": "^16.2.5",
+    "openapi-typescript": "^6.7.6",
+    "typescript": "^5.9.3"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,jsonc}": "pnpm run fmt"
+  },
+  "dependencies": {
+    "pnpm": "^10.27.0"
   }
 }

@@ -1,0 +1,261 @@
+# openapi/openapi.yaml
+openapi: 3.1.0
+info:
+  title: CafeOre POS API
+  version: 1.0.0
+  description: 珈琲・俺POSシステムのAPI仕様
+
+servers:
+  - url: http://localhost:8080
+    description: 開発環境
+
+paths:
+  /status:
+    get:
+      summary: サーバーステータス取得
+      operationId: getStatus
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/items:
+    get:
+      summary: アイテム一覧取得
+      operationId: getItems
+      tags:
+        - items
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Item'
+
+  /api/menu-items:
+    get:
+      summary: メニューアイテム一覧取得
+      operationId: getMenuItems
+      tags:
+        - menu
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItem'
+
+  /api/orders:
+    get:
+      summary: 注文一覧取得
+      operationId: getOrders
+      tags:
+        - orders
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+
+  /api/work-items:
+    get:
+      summary: 作業アイテム一覧取得
+      operationId: getWorkItems
+      tags:
+        - work
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/WorkItemStatus'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderWorkItem'
+
+  /api/work-items/{id}/status:
+    put:
+      summary: 作業アイテムのステータス更新
+      operationId: updateWorkItemStatus
+      tags:
+        - work
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: 見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    StatusResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+        - database
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 1.0.0
+        database:
+          type: string
+          example: connected
+
+    Item:
+      type: object
+      required:
+        - id
+        - name
+        - item_type
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        item_type:
+          $ref: '#/components/schemas/ItemType'
+
+    ItemType:
+      type: string
+      enum:
+        - hot
+        - ice
+        - ore
+        - milk
+        - goods
+        - other
+
+    MenuItem:
+      type: object
+      required:
+        - id
+        - name
+        - price
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        price:
+          type: integer
+
+    Order:
+      type: object
+      required:
+        - id
+        - order_num
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_num:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    OrderWorkItem:
+      type: object
+      required:
+        - id
+        - order_menu_item_id
+        - item_id
+        - status
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_menu_item_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/WorkItemStatus'
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkItemStatus:
+      type: string
+      enum:
+        - pending
+        - preparing
+        - ready
+        - served
+
+    UpdateStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/WorkItemStatus'
+
+    MessageResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
