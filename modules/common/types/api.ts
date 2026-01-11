@@ -44,49 +44,6 @@ export interface components {
       /** @example connected */
       database: string;
     };
-    Item: {
-      /** Format: uuid */
-      id: string;
-      name: string;
-      item_type: components["schemas"]["ItemType"];
-    };
-    /** @enum {string} */
-    ItemType: "hot" | "ice" | "ore" | "milk" | "goods" | "other";
-    MenuItem: {
-      /** Format: uuid */
-      id: string;
-      name: string;
-      price: number;
-    };
-    Order: {
-      /** Format: uuid */
-      id: string;
-      order_num: number;
-      /** Format: date-time */
-      created_at: string;
-    };
-    OrderWorkItem: {
-      /** Format: uuid */
-      id: string;
-      /** Format: uuid */
-      order_menu_item_id: string;
-      /** Format: uuid */
-      item_id: string;
-      status: components["schemas"]["WorkItemStatus"];
-      /** Format: date-time */
-      updated_at: string;
-    };
-    /** @enum {string} */
-    WorkItemStatus: "pending" | "preparing" | "ready" | "served";
-    UpdateStatusRequest: {
-      status: components["schemas"]["WorkItemStatus"];
-    };
-    MessageResponse: {
-      message: string;
-    };
-    ErrorResponse: {
-      error: string;
-    };
   };
   responses: never;
   parameters: never;
@@ -117,7 +74,7 @@ export interface operations {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["Item"][];
+          "application/json": Record<string, never>[];
         };
       };
     };
@@ -128,7 +85,7 @@ export interface operations {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["MenuItem"][];
+          "application/json": Record<string, never>[];
         };
       };
     };
@@ -139,7 +96,7 @@ export interface operations {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["Order"][];
+          "application/json": Record<string, never>[];
         };
       };
     };
@@ -148,14 +105,14 @@ export interface operations {
   getWorkItems: {
     parameters: {
       query?: {
-        status?: components["schemas"]["WorkItemStatus"];
+        status?: string;
       };
     };
     responses: {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["OrderWorkItem"][];
+          "application/json": Record<string, never>[];
         };
       };
     };
@@ -169,20 +126,26 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["UpdateStatusRequest"];
+        "application/json": {
+          status: string;
+        };
       };
     };
     responses: {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["MessageResponse"];
+          "application/json": {
+            message?: string;
+          };
         };
       };
       /** @description 見つかりません */
       404: {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            error?: string;
+          };
         };
       };
     };

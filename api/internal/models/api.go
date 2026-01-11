@@ -5,70 +5,7 @@ package models
 
 import (
 	"time"
-
-	openapi_types "github.com/oapi-codegen/runtime/types"
 )
-
-// Defines values for ItemType.
-const (
-	Goods ItemType = "goods"
-	Hot   ItemType = "hot"
-	Ice   ItemType = "ice"
-	Milk  ItemType = "milk"
-	Ore   ItemType = "ore"
-	Other ItemType = "other"
-)
-
-// Defines values for WorkItemStatus.
-const (
-	Pending   WorkItemStatus = "pending"
-	Preparing WorkItemStatus = "preparing"
-	Ready     WorkItemStatus = "ready"
-	Served    WorkItemStatus = "served"
-)
-
-// ErrorResponse defines model for ErrorResponse.
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// Item defines model for Item.
-type Item struct {
-	Id       openapi_types.UUID `json:"id"`
-	ItemType ItemType           `json:"item_type"`
-	Name     string             `json:"name"`
-}
-
-// ItemType defines model for ItemType.
-type ItemType string
-
-// MenuItem defines model for MenuItem.
-type MenuItem struct {
-	Id    openapi_types.UUID `json:"id"`
-	Name  string             `json:"name"`
-	Price int                `json:"price"`
-}
-
-// MessageResponse defines model for MessageResponse.
-type MessageResponse struct {
-	Message string `json:"message"`
-}
-
-// Order defines model for Order.
-type Order struct {
-	CreatedAt time.Time          `json:"created_at"`
-	Id        openapi_types.UUID `json:"id"`
-	OrderNum  int                `json:"order_num"`
-}
-
-// OrderWorkItem defines model for OrderWorkItem.
-type OrderWorkItem struct {
-	Id              openapi_types.UUID `json:"id"`
-	ItemId          openapi_types.UUID `json:"item_id"`
-	OrderMenuItemId openapi_types.UUID `json:"order_menu_item_id"`
-	Status          WorkItemStatus     `json:"status"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-}
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
@@ -78,18 +15,15 @@ type StatusResponse struct {
 	Version   string    `json:"version"`
 }
 
-// UpdateStatusRequest defines model for UpdateStatusRequest.
-type UpdateStatusRequest struct {
-	Status WorkItemStatus `json:"status"`
-}
-
-// WorkItemStatus defines model for WorkItemStatus.
-type WorkItemStatus string
-
 // GetWorkItemsParams defines parameters for GetWorkItems.
 type GetWorkItemsParams struct {
-	Status *WorkItemStatus `form:"status,omitempty" json:"status,omitempty"`
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// UpdateWorkItemStatusJSONBody defines parameters for UpdateWorkItemStatus.
+type UpdateWorkItemStatusJSONBody struct {
+	Status string `json:"status"`
 }
 
 // UpdateWorkItemStatusJSONRequestBody defines body for UpdateWorkItemStatus for application/json ContentType.
-type UpdateWorkItemStatusJSONRequestBody = UpdateStatusRequest
+type UpdateWorkItemStatusJSONRequestBody UpdateWorkItemStatusJSONBody

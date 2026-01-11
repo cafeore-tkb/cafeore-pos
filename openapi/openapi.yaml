@@ -38,7 +38,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Item'
+                  type: object
 
   /api/menu-items:
     get:
@@ -54,7 +54,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/MenuItem'
+                  type: object
 
   /api/orders:
     get:
@@ -70,7 +70,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Order'
+                  type: object
 
   /api/work-items:
     get:
@@ -81,8 +81,9 @@ paths:
       parameters:
         - name: status
           in: query
+          required: false
           schema:
-            $ref: '#/components/schemas/WorkItemStatus'
+            type: string
       responses:
         '200':
           description: 成功
@@ -91,7 +92,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/OrderWorkItem'
+                  type: object
 
   /api/work-items/{id}/status:
     put:
@@ -110,20 +111,31 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateStatusRequest'
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
       responses:
         '200':
           description: 成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
         '404':
           description: 見つかりません
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  error:
+                    type: string
 
 components:
   schemas:
@@ -147,115 +159,4 @@ components:
         database:
           type: string
           example: connected
-
-    Item:
-      type: object
-      required:
-        - id
-        - name
-        - item_type
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        item_type:
-          $ref: '#/components/schemas/ItemType'
-
-    ItemType:
-      type: string
-      enum:
-        - hot
-        - ice
-        - ore
-        - milk
-        - goods
-        - other
-
-    MenuItem:
-      type: object
-      required:
-        - id
-        - name
-        - price
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        price:
-          type: integer
-
-    Order:
-      type: object
-      required:
-        - id
-        - order_num
-        - created_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        order_num:
-          type: integer
-        created_at:
-          type: string
-          format: date-time
-
-    OrderWorkItem:
-      type: object
-      required:
-        - id
-        - order_menu_item_id
-        - item_id
-        - status
-        - updated_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        order_menu_item_id:
-          type: string
-          format: uuid
-        item_id:
-          type: string
-          format: uuid
-        status:
-          $ref: '#/components/schemas/WorkItemStatus'
-        updated_at:
-          type: string
-          format: date-time
-
-    WorkItemStatus:
-      type: string
-      enum:
-        - pending
-        - preparing
-        - ready
-        - served
-
-    UpdateStatusRequest:
-      type: object
-      required:
-        - status
-      properties:
-        status:
-          $ref: '#/components/schemas/WorkItemStatus'
-
-    MessageResponse:
-      type: object
-      required:
-        - message
-      properties:
-        message:
-          type: string
-
-    ErrorResponse:
-      type: object
-      required:
-        - error
-      properties:
-        error:
-          type: string
+          

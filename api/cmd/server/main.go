@@ -7,49 +7,14 @@ import (
 	"os"
 	"time"
 
+	"cafeore-pos/api/internal/handlers"
+	"cafeore-pos/api/internal/models"
+
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-type Item struct {
-	ID       uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	Name     string    `json:"name"`
-	ItemType string    `gorm:"column:item_type" json:"item_type"`
-}
-
-type MenuItem struct {
-	ID    uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	Name  string    `json:"name"`
-	Price int       `json:"price"`
-}
-
-type ItemMenuItem struct {
-	MenuItemID uuid.UUID `gorm:"type:uuid" json:"menu_item_id"`
-	ItemID     uuid.UUID `gorm:"type:uuid" json:"item_id"`
-}
-
-type Order struct {
-	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	OrderNum  int       `json:"order_num"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type OrderMenuItem struct {
-	ID         uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	OrderID    uuid.UUID `gorm:"type:uuid" json:"order_id"`
-	MenuItemID uuid.UUID `gorm:"type:uuid" json:"menu_item_id"`
-}
-
-type OrderWorkItem struct {
-	ID              uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	OrderMenuItemID uuid.UUID `gorm:"type:uuid" json:"order_menu_item_id"`
-	ItemID          uuid.UUID `gorm:"type:uuid" json:"item_id"`
-	Status          string    `json:"status"`
-	UpdatedAt       time.Time `json:"updated_at"`
-}
 
 type StatusResponse struct {
 	Status    string    `json:"status"`
@@ -67,8 +32,14 @@ func initDB() error {
 	}
 
 	var err error
-	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		PrepareStmt: false,
+	db, err = gorm.Open(
+        postgres.New(postgres.Config{
+			DSN:                  dsn,
+			PreferSimpleProtocol: true,
+		}), 
+        &gorm.Config{
+		    PrepareStmt: false,
+            DisableForeignKeyConstraintWhenMigrating: true,
 	})
 
 	// 接続テスト
@@ -80,6 +51,20 @@ func initDB() error {
 	if err = sqlDB.Ping(); err != nil {
 		return err
 	}
+
+    err = db.AutoMigrate(
+        &models.ItemType{},
+        &models.Item{},
+        &models.MenuItem{},
+        &models.ItemMenuItem{},
+        &models.Order{},
+        &models.OrderMenuItem{},
+        &models.OrderWorkItem{},
+        &models.Comment{},
+    )
+    if err != nil {
+        panic(err)
+    }
 
 	log.Println("Database connected successfully")
 	return nil
@@ -122,19 +107,9 @@ func healthHandler(c *gin.Context) {
 	})
 }
 
-// アイテム一覧取得
-func getItems(c *gin.Context) {
-	var items []Item
-	if err := db.Find(&items).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, items)
-}
-
 // メニューアイテム一覧取得
 func getMenuItems(c *gin.Context) {
-	var menuItems []MenuItem
+	var menuItems []models.MenuItem
 	if err := db.Find(&menuItems).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -144,7 +119,7 @@ func getMenuItems(c *gin.Context) {
 
 // 注文一覧取得
 func getOrders(c *gin.Context) {
-	var orders []Order
+	var orders []models.Order
 	if err := db.Order("created_at DESC").Find(&orders).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -156,8 +131,8 @@ func getOrders(c *gin.Context) {
 func getWorkItems(c *gin.Context) {
 	status := c.Query("status") // ?status=pending
 
-	var workItems []OrderWorkItem
-	query := db.Model(&OrderWorkItem{})
+	var workItems []models.OrderWorkItem
+	query := db.Model(&models.OrderWorkItem{})
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -183,7 +158,7 @@ func updateWorkItemStatus(c *gin.Context) {
 		return
 	}
 
-	result := db.Model(&OrderWorkItem{}).
+	result := db.Model(&models.OrderWorkItem{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"status":     req.Status,
@@ -231,6 +206,10 @@ func main() {
 		c.Next()
 	})
 
+    // ハンドラー初期化
+	itemHandler := handlers.NewItemHandler(db)
+    itemTypeHandler := handlers.NewItemTypeHandler(db)
+
 	// エンドポイント
 	r.GET("/status", statusHandler)
 	r.GET("/health", healthHandler)
@@ -238,7 +217,12 @@ func main() {
 	// API エンドポイント
 	api := r.Group("/api")
 	{
-		api.GET("/items", getItems)
+		api.GET("/items", itemHandler.GetAll)
+        api.PUT("/items", itemHandler.CreateItem)
+        api.GET("/items/:id", itemHandler.GetItem)
+        api.PUT("/items/:id", itemHandler.UpdateItem)
+        api.DELETE("/items/:id", itemHandler.DeleteItem)
+        api.GET("/item-types", itemTypeHandler.GetItemTypes)
 		api.GET("/menu-items", getMenuItems)
 		api.GET("/orders", getOrders)
 		api.GET("/work-items", getWorkItems)
