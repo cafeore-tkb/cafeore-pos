@@ -10,6 +10,7 @@ type ItemType struct {
 	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
 	Name        string    `json:"name"`
 	DisplayName string    `json:"display_name"`
+	Deleted    gorm.DeletedAt
 
 	Items       []Item    `gorm:"foreignKey:ItemTypeID" json:"-"`
 }

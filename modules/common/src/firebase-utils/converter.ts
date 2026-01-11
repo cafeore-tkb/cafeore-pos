@@ -67,9 +67,6 @@ const parseDateProperty = (data: DocumentData): DocumentData => {
 
 /**
  * Firestore のデータを ItemEntity に変換する
- *
- * @deprecated アイテムはソースコードに直接ハードコードするようになりました
- * @see `data/items.ts`
  */
 export const itemConverter: FirestoreDataConverter<WithId<ItemEntity>> = {
   toFirestore: converter(itemSchema).toFirestore,

@@ -217,7 +217,7 @@ func main() {
 	// API エンドポイント
 	api := r.Group("/api")
 	{
-		api.GET("/items", itemHandler.GetAll)
+		api.GET("/items", itemHandler.GetItems)
         api.PUT("/items", itemHandler.CreateItem)
         api.GET("/items/:id", itemHandler.GetItem)
         api.PUT("/items/:id", itemHandler.UpdateItem)

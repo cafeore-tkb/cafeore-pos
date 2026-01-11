@@ -20,7 +20,7 @@ func NewItemHandler(db *gorm.DB) *ItemHandler {
 }
 
 // GET /api/items - アイテム一覧取得
-func (h *ItemHandler) GetAll(c *gin.Context) {
+func (h *ItemHandler) GetItems(c *gin.Context) {
 	var items []models.Item
 	if err := h.db.Preload("ItemType").Preload("MenuItems").Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
