@@ -14,16 +14,3 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 }
-
-// GetWorkItemsParams defines parameters for GetWorkItems.
-type GetWorkItemsParams struct {
-	Status *string `form:"status,omitempty" json:"status,omitempty"`
-}
-
-// UpdateWorkItemStatusJSONBody defines parameters for UpdateWorkItemStatus.
-type UpdateWorkItemStatusJSONBody struct {
-	Status string `json:"status"`
-}
-
-// UpdateWorkItemStatusJSONRequestBody defines body for UpdateWorkItemStatus for application/json ContentType.
-type UpdateWorkItemStatusJSONRequestBody UpdateWorkItemStatusJSONBody

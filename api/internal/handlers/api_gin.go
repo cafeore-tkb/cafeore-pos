@@ -4,31 +4,28 @@
 package handlers
 
 import (
-	"cafeore-pos/api/internal/models"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// タイプ一覧取得
+	// (GET /api/item-types)
+	GetItemTypes(c *gin.Context)
 	// アイテム一覧取得
 	// (GET /api/items)
 	GetItems(c *gin.Context)
-	// メニューアイテム一覧取得
-	// (GET /api/menu-items)
-	GetMenuItems(c *gin.Context)
-	// 注文一覧取得
-	// (GET /api/orders)
-	GetOrders(c *gin.Context)
-	// 作業アイテム一覧取得
-	// (GET /api/work-items)
-	GetWorkItems(c *gin.Context, params models.GetWorkItemsParams)
-	// 作業アイテムのステータス更新
-	// (PUT /api/work-items/{id}/status)
-	UpdateWorkItemStatus(c *gin.Context, id string)
+	// アイテム作成
+	// (POST /api/items)
+	CreateItem(c *gin.Context)
+	// idからアイテム情報取得
+	// (GET /api/items/{id})
+	GetItem(c *gin.Context, id openapi_types.UUID)
 	// サーバーステータス取得
 	// (GET /status)
 	GetStatus(c *gin.Context)
@@ -43,6 +40,19 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(c *gin.Context)
 
+// GetItemTypes operation middleware
+func (siw *ServerInterfaceWrapper) GetItemTypes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetItemTypes(c)
+}
+
 // GetItems operation middleware
 func (siw *ServerInterfaceWrapper) GetItems(c *gin.Context) {
 
@@ -56,8 +66,8 @@ func (siw *ServerInterfaceWrapper) GetItems(c *gin.Context) {
 	siw.Handler.GetItems(c)
 }
 
-// GetMenuItems operation middleware
-func (siw *ServerInterfaceWrapper) GetMenuItems(c *gin.Context) {
+// CreateItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateItem(c *gin.Context) {
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -66,55 +76,16 @@ func (siw *ServerInterfaceWrapper) GetMenuItems(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.GetMenuItems(c)
+	siw.Handler.CreateItem(c)
 }
 
-// GetOrders operation middleware
-func (siw *ServerInterfaceWrapper) GetOrders(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetOrders(c)
-}
-
-// GetWorkItems operation middleware
-func (siw *ServerInterfaceWrapper) GetWorkItems(c *gin.Context) {
-
-	var err error
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params models.GetWorkItemsParams
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "status", c.Request.URL.Query(), &params.Status)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetWorkItems(c, params)
-}
-
-// UpdateWorkItemStatus operation middleware
-func (siw *ServerInterfaceWrapper) UpdateWorkItemStatus(c *gin.Context) {
+// GetItem operation middleware
+func (siw *ServerInterfaceWrapper) GetItem(c *gin.Context) {
 
 	var err error
 
 	// ------------- Path parameter "id" -------------
-	var id string
+	var id openapi_types.UUID
 
 	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
 	if err != nil {
@@ -129,7 +100,7 @@ func (siw *ServerInterfaceWrapper) UpdateWorkItemStatus(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.UpdateWorkItemStatus(c, id)
+	siw.Handler.GetItem(c, id)
 }
 
 // GetStatus operation middleware
@@ -172,10 +143,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.GET(options.BaseURL+"/api/items", wrapper.GetItems)
-	router.GET(options.BaseURL+"/api/menu-items", wrapper.GetMenuItems)
-	router.GET(options.BaseURL+"/api/orders", wrapper.GetOrders)
-	router.GET(options.BaseURL+"/api/work-items", wrapper.GetWorkItems)
-	router.PUT(options.BaseURL+"/api/work-items/:id/status", wrapper.UpdateWorkItemStatus)
+	router.POST(options.BaseURL+"/api/items", wrapper.CreateItem)
+	router.GET(options.BaseURL+"/api/items/:id", wrapper.GetItem)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)
 }

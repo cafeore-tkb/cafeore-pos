@@ -11,22 +11,16 @@ export interface paths {
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
+    /** アイテム作成 */
+    post: operations["createItem"];
   };
-  "/api/menu-items": {
-    /** メニューアイテム一覧取得 */
-    get: operations["getMenuItems"];
+  "/api/items/{id}": {
+    /** idからアイテム情報取得 */
+    get: operations["getItem"];
   };
-  "/api/orders": {
-    /** 注文一覧取得 */
-    get: operations["getOrders"];
-  };
-  "/api/work-items": {
-    /** 作業アイテム一覧取得 */
-    get: operations["getWorkItems"];
-  };
-  "/api/work-items/{id}/status": {
-    /** 作業アイテムのステータス更新 */
-    put: operations["updateWorkItemStatus"];
+  "/api/item-types": {
+    /** タイプ一覧取得 */
+    get: operations["getItemTypes"];
   };
 }
 
@@ -79,74 +73,37 @@ export interface operations {
       };
     };
   };
-  /** メニューアイテム一覧取得 */
-  getMenuItems: {
+  /** アイテム作成 */
+  createItem: {
     responses: {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": Record<string, never>[];
+          "application/json": unknown;
         };
       };
     };
   };
-  /** 注文一覧取得 */
-  getOrders: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": Record<string, never>[];
-        };
-      };
-    };
-  };
-  /** 作業アイテム一覧取得 */
-  getWorkItems: {
-    parameters: {
-      query?: {
-        status?: string;
-      };
-    };
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": Record<string, never>[];
-        };
-      };
-    };
-  };
-  /** 作業アイテムのステータス更新 */
-  updateWorkItemStatus: {
+  /** idからアイテム情報取得 */
+  getItem: {
     parameters: {
       path: {
         id: string;
       };
     };
-    requestBody: {
-      content: {
-        "application/json": {
-          status: string;
-        };
-      };
-    };
     responses: {
       /** @description 成功 */
       200: {
-        content: {
-          "application/json": {
-            message?: string;
-          };
-        };
+        content: never;
       };
-      /** @description 見つかりません */
-      404: {
-        content: {
-          "application/json": {
-            error?: string;
-          };
-        };
+    };
+  };
+  /** タイプ一覧取得 */
+  getItemTypes: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: never;
       };
     };
   };
