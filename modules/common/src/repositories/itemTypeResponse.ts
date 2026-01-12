@@ -1,6 +1,6 @@
 import { type WithId, hasId } from "../lib/typeguard";
 import type { ItemTypeResponse } from "../models/item";
-import { API_BASE_URL } from "./itemResponse";
+import { API_BASE_URL, throwApiError } from "./itemResponse";
 import type { ItemTypeResponseRepository } from "./type";
 
 // APIやり取り用の仮itemTypeRepository
@@ -17,8 +17,7 @@ export const itemTypeResponseRepoFactory = (): ItemTypeResponseRepository => {
       body: JSON.stringify(itemType),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to update item-type");
+      throwApiError;
     }
     return response.json();
   };
@@ -34,8 +33,7 @@ export const itemTypeResponseRepoFactory = (): ItemTypeResponseRepository => {
       body: JSON.stringify(itemType),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to create item-type");
+      throwApiError;
     }
     return response.json();
   };
@@ -53,8 +51,7 @@ export const itemTypeResponseRepoFactory = (): ItemTypeResponseRepository => {
         method: "DELETE",
       });
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete item");
+        throwApiError;
       }
     },
 

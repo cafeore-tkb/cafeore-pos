@@ -82,11 +82,11 @@ export default function ItemsList() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen p-4">
       <div className="mx-auto max-w-4xl">
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="font-bold text-2xl">アイテム一覧</h1>
-          <Button>
+          <h1 className="font-bold text-2xl text-gray-700">アイテム一覧</h1>
+          <Button className="bg-amber-950 hover:bg-amber-900">
             <Link to="/items/create">+ 新規作成</Link>
           </Button>
         </div>
@@ -108,19 +108,19 @@ export default function ItemsList() {
             <Table className="w-full">
               <TableHeader className="border-b bg-gray-50">
                 <TableRow>
-                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
+                  <TableHead className="px-6 py-3 text-center font-medium text-gray-700 text-sm">
                     名前
                   </TableHead>
-                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
+                  <TableHead className="px-6 py-3 text-center font-medium text-gray-700 text-sm">
                     タイプ
                   </TableHead>
-                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
+                  <TableHead className="px-6 py-3 text-center font-medium text-gray-700 text-sm">
                     略称
                   </TableHead>
-                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
+                  <TableHead className="px-6 py-3 text-center font-medium text-gray-700 text-sm">
                     割当キー
                   </TableHead>
-                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
+                  <TableHead className="px-6 py-3 text-center font-medium text-gray-700 text-sm">
                     操作
                   </TableHead>
                 </TableRow>
@@ -131,28 +131,30 @@ export default function ItemsList() {
                     <TableCell className="px-6 py-4 text-gray-900 text-sm">
                       {item.name}
                     </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 text-sm">
-                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 font-medium text-blue-800 text-xs">
+                    <TableCell className="flex justify-center px-6 py-4 text-gray-600">
+                      <span className="rounded-full bg-blue-100 px-2.5 py-0.5 font-medium text-blue-800 text-xs">
                         {itemTypeMap[item.item_type_id]?.display_name ?? "不明"}
                       </span>
                     </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-900 text-sm">
+                    <TableCell className="px-6 py-4 text-gray-600 text-sm">
                       {item.abbr}
                     </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-900 text-sm">
-                      {item.key}
+                    <TableCell className="flex justify-center px-6 py-2 text-gray-900 text-sm">
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 font-bold text-gray-900 text-l">
+                        {item.key}
+                      </span>
                     </TableCell>
                     <TableCell className="space-x-2 px-6 py-4 text-right text-sm">
                       <Link
                         to={`/items/${item.id}/edit`}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-blue-600 hover:text-blue-800 font-bold"
                       >
                         編集
                       </Link>
                       <button
                         type="button"
                         onClick={() => handleDelete(item.id)}
-                        className="text-red-600 hover:text-red-800"
+                        className="text-red-600 hover:text-red-800 font-bold"
                       >
                         削除
                       </button>

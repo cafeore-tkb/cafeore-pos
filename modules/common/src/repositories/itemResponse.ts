@@ -18,8 +18,7 @@ export const itemResponseRepoFactory = (): ItemResponseRepository => {
       body: JSON.stringify(item),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to update item");
+      throwApiError;
     }
     return response.json();
   };
@@ -33,8 +32,7 @@ export const itemResponseRepoFactory = (): ItemResponseRepository => {
       body: JSON.stringify(item),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Failed to create item");
+      throwApiError;
     }
     return response.json();
   };
@@ -52,8 +50,7 @@ export const itemResponseRepoFactory = (): ItemResponseRepository => {
         method: "DELETE",
       });
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete item");
+        throwApiError;
       }
     },
 
@@ -80,3 +77,15 @@ export const itemResponseRepoFactory = (): ItemResponseRepository => {
 
 export const itemResponseRepository: ItemResponseRepository =
   itemResponseRepoFactory();
+
+export async function throwApiError(
+  response: Response,
+  fallback: string,
+): Promise<never> {
+  try {
+    const body = (await response.json()) as { error?: string };
+    throw new Error(body.error ?? fallback);
+  } catch {
+    throw new Error(fallback);
+  }
+}
