@@ -2,10 +2,10 @@ import { type WithId, hasId } from "../lib/typeguard";
 import type { ItemResponse } from "../models/item";
 import type { ItemResponseRepository } from "./type";
 
+export const API_BASE_URL = "http://localhost:8080";
+
 // APIやり取り用の仮itemRepository
 export const itemResponseRepoFactory = (): ItemResponseRepository => {
-  const API_BASE_URL = "http://localhost:8080";
-
   const update = async (
     id: string,
     item: ItemResponse,

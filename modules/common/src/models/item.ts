@@ -135,14 +135,16 @@ export const menuItemResponseSchema = z.object({
 });
 
 export const itemResponseSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().uuid().optional(),
   name: z.string({ required_error: "名前が未入力です" }),
   abbr: z.string({ required_error: "略称がありません" }),
   key: z.string({ required_error: "キー割り当てがありません" }),
-  item_type: itemTypeResponseSchema,
-  menu_items: z.array(menuItemResponseSchema),
+  item_type_id: z.string({ required_error: "不正なタイプです" }).uuid(),
+  menu_items: z.array(menuItemResponseSchema).optional(),
 });
 
 export const itemsResponseSchema = z.array(itemResponseSchema);
 
 export type ItemResponse = z.infer<typeof itemResponseSchema>;
+
+export type ItemTypeResponse = z.infer<typeof itemTypeResponseSchema>;

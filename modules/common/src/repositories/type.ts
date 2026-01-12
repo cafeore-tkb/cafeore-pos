@@ -1,5 +1,9 @@
 import type { WithId } from "../lib/typeguard";
-import type { ItemEntity, ItemResponse } from "../models/item";
+import type {
+  ItemEntity,
+  ItemResponse,
+  ItemTypeResponse,
+} from "../models/item";
 import type { OrderEntity } from "../models/order";
 
 export type BaseRepository<T extends { id?: unknown }> = {
@@ -13,4 +17,7 @@ export type ItemRepository = BaseRepository<ItemEntity>;
 
 export type OrderRepository = BaseRepository<OrderEntity>;
 
+// 以下仮
 export type ItemResponseRepository = BaseRepository<ItemResponse>;
+
+export type ItemTypeResponseRepository = BaseRepository<ItemTypeResponse>;

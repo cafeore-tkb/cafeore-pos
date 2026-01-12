@@ -218,7 +218,7 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/items", itemHandler.GetItems)
-        api.PUT("/items", itemHandler.CreateItem)
+        api.POST("/items", itemHandler.CreateItem)
         api.GET("/items/:id", itemHandler.GetItem)
         api.PUT("/items/:id", itemHandler.UpdateItem)
         api.DELETE("/items/:id", itemHandler.DeleteItem)
