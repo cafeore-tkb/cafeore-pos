@@ -1,5 +1,8 @@
 import {
+  type ItemResponse,
   type ItemTypeResponse,
+  type WithId,
+  itemResponseRepository,
   itemResponseSchema,
   itemTypeResponseRepository,
 } from "@cafeore/common";
@@ -11,6 +14,7 @@ import {
   type MetaFunction,
   useActionData,
   useNavigation,
+  useParams,
 } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
@@ -25,20 +29,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { addItem } from "./items/actions/addItem";
+import { editItem } from "./items/actions/editItem";
 
 export const meta: MetaFunction = () => [
-  { title: "アイテム作成 / 珈琲・俺POS" },
+  { title: "アイテム編集 / 珈琲・俺POS" },
 ];
 
-export const clientAction: ClientActionFunction = addItem;
+export const clientAction: ClientActionFunction = editItem;
 
-export default function ItemCreate() {
+export default function ItemEdit() {
+  const [item, setItem] = useState<WithId<ItemResponse> | null>();
   const [itemTypes, setItemTypes] = useState<ItemTypeResponse[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<string>("");
+  const { id } = useParams<{ id: string }>();
 
   useEffect(() => {
     loadItemTypes();
+    loadItem();
   }, []);
 
   const loadItemTypes = async () => {
@@ -46,8 +53,17 @@ export default function ItemCreate() {
     setItemTypes(types);
   };
 
+  const loadItem = async () => {
+    if (!id) return;
+    const item = await itemResponseRepository.findById(id);
+    setItem(item);
+    if (item) {
+      setSelectedTypeId(item.item_type_id);
+    }
+  };
+
   const navigation = useNavigation();
-  const lastResult = useActionData<typeof addItem>();
+  const lastResult = useActionData<typeof editItem>();
 
   const [form, fields] = useForm({
     lastResult: navigation.state === "idle" ? lastResult : null,
@@ -59,13 +75,18 @@ export default function ItemCreate() {
     shouldValidate: "onBlur",
     shouldRevalidate: "onInput",
   });
+
+  if (!item) {
+    return <div>404 not Found.</div>;
+  }
+
   return (
     <div>
       <h2 className="mb-4 font-semibold text-2xl text-gray-700">
-        新規アイテム登録
+        アイテム編集
       </h2>
       <Form
-        method="POST"
+        method="PUT"
         id={form.id}
         onSubmit={form.onSubmit}
         className="space-y-4 rounded-lg border border-gray-200 bg-white p-6 shadow-md"
@@ -79,7 +100,7 @@ export default function ItemCreate() {
             id={fields.name.id}
             key={fields.name.key}
             name={fields.name.name}
-            defaultValue={fields.name.initialValue}
+            defaultValue={item.name}
             required
             placeholder="アイテム名"
             className="mt-1 w-full"
@@ -96,6 +117,7 @@ export default function ItemCreate() {
             タイプ
           </Label>
           <Select
+            defaultValue={item.item_type_id}
             onValueChange={(value) => {
               setSelectedTypeId(value);
             }}
@@ -129,7 +151,7 @@ export default function ItemCreate() {
             id={fields.abbr.id}
             key={fields.abbr.key}
             name={fields.abbr.name}
-            defaultValue={fields.abbr.initialValue}
+            defaultValue={item.abbr}
             required
             placeholder="俺ブレ"
             className="mt-1 w-full"
@@ -147,7 +169,7 @@ export default function ItemCreate() {
             id={fields.key.id}
             key={fields.key.key}
             name={fields.key.name}
-            defaultValue={fields.key.initialValue}
+            defaultValue={item.key}
             required
             placeholder=". @ など記号1文字"
             className="mt-1 w-full"
@@ -156,12 +178,13 @@ export default function ItemCreate() {
             <span className="text-red-500 text-sm">{fields.key.errors}</span>
           )}
         </div>
+        <input type="hidden" name="id" value={id} />
         <input type="hidden" name="item_type_id" value={selectedTypeId} />
         <Button
           type="submit"
           className="w-full bg-purple-600 text-white hover:bg-purple-700"
         >
-          登録
+          更新
         </Button>
       </Form>
     </div>

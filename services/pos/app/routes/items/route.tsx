@@ -3,6 +3,15 @@ import { itemResponseRepository } from "@cafeore/common";
 import { itemTypeResponseRepository } from "@cafeore/common";
 import { Link, type MetaFunction, Outlet } from "@remix-run/react";
 import { useEffect, useState } from "react";
+import { Button } from "~/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui/table";
 
 export const meta: MetaFunction = () => {
   return [{ title: "アイテム一覧 / 珈琲・俺POS" }];
@@ -13,24 +22,12 @@ export default function ItemsList() {
   const [items, setItems] = useState<ItemResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [itemTypes, setItemTypes] = useState<ItemTypeResponse[]>([]);
   const [itemTypeMap, setItemTypeMap] = useState<
     Record<string, ItemTypeResponse>
   >({});
 
   useEffect(() => {
     loadItems();
-    const loadItemTypes = async () => {
-      const types = await itemTypeResponseRepository.findAll();
-      setItemTypes(types);
-
-      const map: Record<string, ItemTypeResponse> = {};
-      for (const t of types) {
-        map[t.id] = t;
-      }
-      setItemTypeMap(map);
-    };
-
     loadItemTypes();
   }, []);
 
@@ -45,6 +42,16 @@ export default function ItemsList() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadItemTypes = async () => {
+    const types = await itemTypeResponseRepository.findAll();
+
+    const map: Record<string, ItemTypeResponse> = {};
+    for (const t of types) {
+      map[t.id] = t;
+    }
+    setItemTypeMap(map);
   };
 
   const handleDelete = async (id: string | undefined) => {
@@ -63,7 +70,7 @@ export default function ItemsList() {
   // もともとのにあった気がする
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-gray-600">読み込み中...</div>
       </div>
     );
@@ -76,69 +83,66 @@ export default function ItemsList() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">アイテム一覧</h1>
-          <Link
-            to="/items/create"
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-          >
-            + 新規作成
-          </Link>
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="font-bold text-2xl">アイテム一覧</h1>
+          <Button>
+            <Link to="/items/create">+ 新規作成</Link>
+          </Button>
         </div>
 
         {/* エラーメッセージ */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-red-700">
             {error}
           </div>
         )}
 
         {/* アイテム一覧 */}
         {items.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+          <div className="rounded-lg bg-white p-8 text-center text-gray-500 shadow">
             アイテムがありません
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">
+          <div className="overflow-hidden rounded-lg bg-white shadow">
+            <Table className="w-full">
+              <TableHeader className="border-b bg-gray-50">
+                <TableRow>
+                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
                     名前
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">
+                  </TableHead>
+                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
                     タイプ
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">
+                  </TableHead>
+                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
                     略称
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">
+                  </TableHead>
+                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
                     割当キー
-                  </th>
-                  <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">
+                  </TableHead>
+                  <TableHead className="px-6 py-3 text-right font-medium text-gray-700 text-sm">
                     操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y">
                 {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">
+                  <TableRow key={item.id} className="hover:bg-gray-50">
+                    <TableCell className="px-6 py-4 text-gray-900 text-sm">
                       {item.name}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    </TableCell>
+                    <TableCell className="px-6 py-4 text-gray-600 text-sm">
+                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 font-medium text-blue-800 text-xs">
                         {itemTypeMap[item.item_type_id]?.display_name ?? "不明"}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
+                    </TableCell>
+                    <TableCell className="px-6 py-4 text-gray-900 text-sm">
                       {item.abbr}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
+                    </TableCell>
+                    <TableCell className="px-6 py-4 text-gray-900 text-sm">
                       {item.key}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-right space-x-2">
+                    </TableCell>
+                    <TableCell className="space-x-2 px-6 py-4 text-right text-sm">
                       <Link
                         to={`/items/${item.id}/edit`}
                         className="text-blue-600 hover:text-blue-800"
@@ -146,16 +150,17 @@ export default function ItemsList() {
                         編集
                       </Link>
                       <button
+                        type="button"
                         onClick={() => handleDelete(item.id)}
                         className="text-red-600 hover:text-red-800"
                       >
                         削除
                       </button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
