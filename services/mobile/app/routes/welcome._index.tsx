@@ -17,6 +17,7 @@ import { cn } from "~/lib/utils";
 export default function Welcome() {
   const [searchParam, setSearchParam] = useSearchParams();
   const [videoShown, setVideoShown] = useState(true);
+  // いつか使うならuseParamsに直したい
   const id = searchParam.get("id") ?? "none";
 
   const soundRef1 = useRef<HTMLAudioElement>(null);

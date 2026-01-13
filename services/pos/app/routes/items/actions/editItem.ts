@@ -3,7 +3,7 @@ import { parseWithZod } from "@conform-to/zod";
 import { redirect } from "@remix-run/react";
 import { type ClientActionFunction, json } from "@remix-run/react";
 
-export const addItem: ClientActionFunction = async ({ request }) => {
+export const editItem: ClientActionFunction = async ({ request, params }) => {
   const formData = await request.formData();
 
   const submission = parseWithZod(formData, { schema: itemResponseSchema });
@@ -13,13 +13,20 @@ export const addItem: ClientActionFunction = async ({ request }) => {
     return json(submission.reply(), { status: 400 });
   }
 
-  const newItem = itemResponseSchema.parse({
+  const { id } = params;
+
+  if (!id) {
+    return json({ error: "Item ID is required" }, { status: 400 });
+  }
+
+  const updateItem = itemResponseSchema.parse({
+    id: id,
     name: submission.value.name,
     abbr: submission.value.abbr,
     key: submission.value.key,
     item_type_id: submission.value.item_type_id,
   });
-  const itemSavePromise = itemResponseRepository.save(newItem);
+  const itemSavePromise = itemResponseRepository.save(updateItem);
   // // // const webhookSendPromise = sendSlackMessage(
   // // //   `新しいアイテムが追加されました！\n${newItem.name}`,
   // // // );
