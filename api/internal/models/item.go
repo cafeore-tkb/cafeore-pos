@@ -15,7 +15,6 @@ type Item struct {
 	Deleted    gorm.DeletedAt
 
 	ItemType   ItemType       `gorm:"foreignKey:ItemTypeID;references:ID" json:"item_type"`
-  MenuItems  []MenuItem     `gorm:"many2many:item_menu_items"`
 }
 
 func (item *Item) BeforeCreate(tx *gorm.DB) error {

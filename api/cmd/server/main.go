@@ -33,13 +33,13 @@ func initDB() error {
 
 	var err error
 	db, err = gorm.Open(
-        postgres.New(postgres.Config{
-			DSN:                  dsn,
-			PreferSimpleProtocol: true,
-		}), 
-        &gorm.Config{
-		    PrepareStmt: false,
-            DisableForeignKeyConstraintWhenMigrating: true,
+    postgres.New(postgres.Config{
+      DSN:                  dsn,
+      PreferSimpleProtocol: true,
+    }), 
+    &gorm.Config{
+      PrepareStmt: false,
+      DisableForeignKeyConstraintWhenMigrating: true,
 	})
 
 	// 接続テスト
@@ -208,7 +208,8 @@ func main() {
 
     // ハンドラー初期化
 	itemHandler := handlers.NewItemHandler(db)
-    itemTypeHandler := handlers.NewItemTypeHandler(db)
+	itemTypeHandler := handlers.NewItemTypeHandler(db)
+	orderHandler := handlers.NewOrderHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -218,13 +219,19 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/items", itemHandler.GetItems)
-        api.POST("/items", itemHandler.CreateItem)
-        api.GET("/items/:id", itemHandler.GetItem)
-        api.PUT("/items/:id", itemHandler.UpdateItem)
-        api.DELETE("/items/:id", itemHandler.DeleteItem)
-        api.GET("/item-types", itemTypeHandler.GetItemTypes)
+		api.POST("/items", itemHandler.CreateItem)
+		api.GET("/items/:id", itemHandler.GetItem)
+		api.PUT("/items/:id", itemHandler.UpdateItem)
+		api.DELETE("/items/:id", itemHandler.DeleteItem)
+		api.GET("/item-types", itemTypeHandler.GetItemTypes)
 		api.GET("/menu-items", getMenuItems)
-		api.GET("/orders", getOrders)
+		api.GET("/orders", orderHandler.GetOrders)
+		api.POST("/orders", orderHandler.CreateOrder)
+		api.GET("/orders/:id", orderHandler.GetOrder)
+		api.PUT("/orders/:id", orderHandler.UpdateOrder)
+		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
+		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
+		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
 		api.GET("/work-items", getWorkItems)
 		api.PUT("/work-items/:id/status", updateWorkItemStatus)
 	}

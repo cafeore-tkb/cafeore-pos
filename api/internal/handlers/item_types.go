@@ -4,10 +4,11 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"cafeore-pos/api/internal/models"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type ItemTypeHandler struct {
@@ -53,3 +54,72 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	c.JSON(http.StatusCreated, item_type)
 }
 
+// PUT /api/item-types/:id - アイテムタイプ更新
+func (h *ItemHandler) UpdateItemType(c *gin.Context) {
+	id := c.Param("id")
+	
+	itemTypeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
+	var req struct {
+		Name        string    `json:"name"`
+		DisplayName string    `json:"display_name"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var itemType models.ItemType
+	if err := h.db.First(&itemType, "id = ?", itemTypeID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 更新
+	if req.Name != "" {
+		itemType.Name = req.Name
+	}
+	if req.DisplayName != "" {
+		itemType.DisplayName = req.DisplayName
+	}
+
+	if err := h.db.Save(&itemType).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, itemType)
+}
+
+// DELETE /api/item-types/:id - アイテムタイプ削除
+func (h *ItemHandler) DeleteItemType(c *gin.Context) {
+	id := c.Param("id")
+	
+	itemTypeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
+	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+}
