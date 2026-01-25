@@ -33,7 +33,7 @@ func (h *OrderHandler) GetOrders(c *gin.Context) {
 // POST /api/orders - オーダー作成
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var req struct {
-		OrderId          int         `json:"order_id" binding:"required"`
+		OrderId           int         `json:"order_id" binding:"required"`
 		BillingAmount     int         `json:"billing_amount" binding:"required"`
 		Received          int         `json:"received"`
 		DiscountOrderID   *uuid.UUID  `json:"discount_order_id"`

@@ -55,11 +55,7 @@ func initDB() error {
     err = db.AutoMigrate(
         &models.ItemType{},
         &models.Item{},
-        &models.MenuItem{},
-        &models.ItemMenuItem{},
         &models.Order{},
-        &models.OrderMenuItem{},
-        &models.OrderWorkItem{},
         &models.Comment{},
     )
     if err != nil {
@@ -107,77 +103,6 @@ func healthHandler(c *gin.Context) {
 	})
 }
 
-// メニューアイテム一覧取得
-func getMenuItems(c *gin.Context) {
-	var menuItems []models.MenuItem
-	if err := db.Find(&menuItems).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, menuItems)
-}
-
-// 注文一覧取得
-func getOrders(c *gin.Context) {
-	var orders []models.Order
-	if err := db.Order("created_at DESC").Find(&orders).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, orders)
-}
-
-// 作業アイテム一覧取得（ステータスでフィルタ可能）
-func getWorkItems(c *gin.Context) {
-	status := c.Query("status") // ?status=pending
-
-	var workItems []models.OrderWorkItem
-	query := db.Model(&models.OrderWorkItem{})
-
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	if err := query.Find(&workItems).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, workItems)
-}
-
-// 作業アイテムのステータス更新
-func updateWorkItemStatus(c *gin.Context) {
-	id := c.Param("id")
-
-	var req struct {
-		Status string `json:"status" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	result := db.Model(&models.OrderWorkItem{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{
-			"status":     req.Status,
-			"updated_at": time.Now(),
-		})
-
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "work item not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "updated successfully"})
-}
-
 func main() {
 	// 環境変数読み込み
 	if err := godotenv.Load(); err != nil {
@@ -210,6 +135,7 @@ func main() {
 	itemHandler := handlers.NewItemHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	orderHandler := handlers.NewOrderHandler(db)
+	commentHandler := handlers.NewCommentHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -224,7 +150,6 @@ func main() {
 		api.PUT("/items/:id", itemHandler.UpdateItem)
 		api.DELETE("/items/:id", itemHandler.DeleteItem)
 		api.GET("/item-types", itemTypeHandler.GetItemTypes)
-		api.GET("/menu-items", getMenuItems)
 		api.GET("/orders", orderHandler.GetOrders)
 		api.POST("/orders", orderHandler.CreateOrder)
 		api.GET("/orders/:id", orderHandler.GetOrder)
@@ -232,8 +157,8 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
-		api.GET("/work-items", getWorkItems)
-		api.PUT("/work-items/:id/status", updateWorkItemStatus)
+		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
+		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 	}
 
 	// サーバー起動

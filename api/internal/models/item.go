@@ -8,13 +8,13 @@ import (
 
 type Item struct {
 	ID         uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	Name       string         `json:"name"`
+	Name       string         `gorm:"not null" json:"name"`
 	ItemTypeID uuid.UUID      `gorm:"type:uuid;not null;index" json:"item_type_id"`
-	Abbr       string         `json:"abbr"`
-	Key        string         `json:"key"`
-	Deleted    gorm.DeletedAt
+	Abbr       string         `gorm:"not null" json:"abbr"`
+	Key        string         `gorm:"not null" json:"key"`
+	Deleted    gorm.DeletedAt `gorm:"index" json:"-"`
 
-	ItemType   ItemType       `gorm:"foreignKey:ItemTypeID;references:ID" json:"item_type"`
+	ItemType ItemType `gorm:"foreignKey:ItemTypeID" json:"item_type,omitempty"`
 }
 
 func (item *Item) BeforeCreate(tx *gorm.DB) error {

@@ -1,4 +1,4 @@
-// api/internal/handlers/item_types.go
+// api/internal/handlers/item_type.go
 package handlers
 
 import (

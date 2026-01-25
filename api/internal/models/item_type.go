@@ -8,11 +8,9 @@ import (
 
 type ItemType struct {
 	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	Name        string    `json:"name"`
-	DisplayName string    `json:"display_name"`
-	Deleted    gorm.DeletedAt
-
-	Items       []Item    `gorm:"foreignKey:ItemTypeID" json:"-"`
+	Name        string         `gorm:"not null" json:"name"`
+	DisplayName string         `gorm:"not null" json:"display_name"`
+	Deleted     gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 func (item_type *ItemType) BeforeCreate(tx *gorm.DB) error {
