@@ -47,6 +47,14 @@ export interface paths {
     get: operations["getOrder"];
     /** オーダー情報更新 */
     put: operations["updateOrder"];
+    /** オーダー削除 */
+    delete: operations["deleteOrder"];
+  };
+  "/api/orders/{id}/comments": {
+    /** 特定オーダーのコメント一覧取得 */
+    get: operations["getOrderComments"];
+    /** オーダーにコメント追加 */
+    post: operations["createOrderComment"];
   };
 }
 
@@ -84,14 +92,24 @@ export interface components {
     ItemUpdateRequest: {
       /** Format: uuid */
       id: string;
-      name?: string;
-      abbr?: string;
-      price?: number;
-      key?: string;
-      item_type?: components["schemas"]["ItemTypeResponse"];
+      name: string;
+      abbr: string;
+      price: number;
+      key: string;
+      item_type: components["schemas"]["ItemTypeResponse"];
       assignee?: string;
     };
     ItemTypeResponse: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      display_name: string;
+    };
+    ItemTypeCreateRequest: {
+      name: string;
+      display_name: string;
+    };
+    ItemTypeUpdateRequest: {
       /** Format: uuid */
       id: string;
       name: string;
@@ -112,7 +130,7 @@ export interface components {
       /** Format: uuid */
       discount_order_id?: string | null;
       discount_order_cups?: number;
-      items?: components["schemas"]["ItemResponse"][];
+      items: components["schemas"]["ItemResponse"][];
       comments?: components["schemas"]["CommentResponse"][];
     };
     OrderCreateRequest: {
@@ -124,27 +142,26 @@ export interface components {
        * @default 0
        * @example 500
        */
-      received?: number;
+      received: number;
       /** Format: uuid */
       discount_order_id?: string | null;
       /** @default 0 */
       discount_order_cups?: number;
-      /** @description 関連するアイテムのIDリスト */
-      item_ids?: string[];
+      items: components["schemas"]["ItemResponse"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
     };
     OrderUpdateRequest: {
-      order_id?: number;
+      order_id: number;
       /** Format: date-time */
       ready_at?: string | null;
       /** Format: date-time */
       served_at?: string | null;
-      billing_amount?: number;
-      received?: number;
+      billing_amount: number;
+      received: number;
       /** Format: uuid */
       discount_order_id?: string | null;
       discount_order_cups?: number;
-      item_ids?: string[];
+      items: components["schemas"]["ItemResponse"][];
     };
     OrderListItem: {
       /** Format: uuid */
@@ -171,6 +188,10 @@ export interface components {
       text: string;
       /** Format: date-time */
       created_at: string;
+    };
+    ErrorResponse: {
+      /** @example Invalid order ID format */
+      error: string;
     };
   };
   responses: never;
@@ -211,7 +232,7 @@ export interface operations {
   createItem: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ItemResponse"];
+        "application/json": components["schemas"]["ItemCreateRequest"];
       };
     };
     responses: {
@@ -248,7 +269,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ItemResponse"];
+        "application/json": components["schemas"]["ItemUpdateRequest"];
       };
     };
     responses: {
@@ -289,7 +310,7 @@ export interface operations {
   createItemType: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ItemTypeResponse"];
+        "application/json": components["schemas"]["ItemTypeCreateRequest"];
       };
     };
     responses: {
@@ -326,7 +347,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ItemTypeResponse"];
+        "application/json": components["schemas"]["ItemTypeUpdateRequest"];
       };
     };
     responses: {
@@ -367,7 +388,7 @@ export interface operations {
   createOrder: {
     requestBody: {
       content: {
-        "application/json": components["schemas"]["OrderResponse"];
+        "application/json": components["schemas"]["OrderCreateRequest"];
       };
     };
     responses: {
@@ -404,7 +425,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["OrderResponse"];
+        "application/json": components["schemas"]["OrderUpdateRequest"];
       };
     };
     responses: {
@@ -412,6 +433,71 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+    };
+  };
+  /** オーダー削除 */
+  deleteOrder: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /** 特定オーダーのコメント一覧取得 */
+  getOrderComments: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CommentResponse"][];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** オーダーにコメント追加 */
+  createOrderComment: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CommentCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 作成成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CommentResponse"];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

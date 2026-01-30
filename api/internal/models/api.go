@@ -9,12 +9,32 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// CommentCreateRequest defines model for CommentCreateRequest.
+type CommentCreateRequest struct {
+	Author string `json:"author"`
+	Text   string `json:"text"`
+}
+
 // CommentResponse defines model for CommentResponse.
 type CommentResponse struct {
 	Author    string             `json:"author"`
 	CreatedAt time.Time          `json:"created_at"`
 	OrderId   openapi_types.UUID `json:"order_id"`
 	Text      string             `json:"text"`
+}
+
+// ErrorResponse defines model for ErrorResponse.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// ItemCreateRequest defines model for ItemCreateRequest.
+type ItemCreateRequest struct {
+	Abbr     string           `json:"abbr"`
+	ItemType ItemTypeResponse `json:"item_type"`
+	Key      string           `json:"key"`
+	Name     string           `json:"name"`
+	Price    int              `json:"price"`
 }
 
 // ItemResponse defines model for ItemResponse.
@@ -28,11 +48,46 @@ type ItemResponse struct {
 	Price    int                `json:"price"`
 }
 
+// ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
+type ItemTypeCreateRequest struct {
+	DisplayName string `json:"display_name"`
+	Name        string `json:"name"`
+}
+
 // ItemTypeResponse defines model for ItemTypeResponse.
 type ItemTypeResponse struct {
 	DisplayName string             `json:"display_name"`
 	Id          openapi_types.UUID `json:"id"`
 	Name        string             `json:"name"`
+}
+
+// ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
+type ItemTypeUpdateRequest struct {
+	DisplayName string             `json:"display_name"`
+	Id          openapi_types.UUID `json:"id"`
+	Name        string             `json:"name"`
+}
+
+// ItemUpdateRequest defines model for ItemUpdateRequest.
+type ItemUpdateRequest struct {
+	Abbr     string             `json:"abbr"`
+	Assignee *string            `json:"assignee,omitempty"`
+	Id       openapi_types.UUID `json:"id"`
+	ItemType ItemTypeResponse   `json:"item_type"`
+	Key      string             `json:"key"`
+	Name     string             `json:"name"`
+	Price    int                `json:"price"`
+}
+
+// OrderCreateRequest defines model for OrderCreateRequest.
+type OrderCreateRequest struct {
+	BillingAmount     int                     `json:"billing_amount"`
+	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
+	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *openapi_types.UUID     `json:"discount_order_id"`
+	Items             []ItemResponse          `json:"items"`
+	OrderId           int                     `json:"order_id"`
+	Received          int                     `json:"received"`
 }
 
 // OrderResponse defines model for OrderResponse.
@@ -43,7 +98,19 @@ type OrderResponse struct {
 	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
 	Id                openapi_types.UUID  `json:"id"`
-	Items             *[]ItemResponse     `json:"items,omitempty"`
+	Items             []ItemResponse      `json:"items"`
+	OrderId           int                 `json:"order_id"`
+	ReadyAt           *time.Time          `json:"ready_at"`
+	Received          int                 `json:"received"`
+	ServedAt          *time.Time          `json:"served_at"`
+}
+
+// OrderUpdateRequest defines model for OrderUpdateRequest.
+type OrderUpdateRequest struct {
+	BillingAmount     int                 `json:"billing_amount"`
+	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
+	Items             []ItemResponse      `json:"items"`
 	OrderId           int                 `json:"order_id"`
 	ReadyAt           *time.Time          `json:"ready_at"`
 	Received          int                 `json:"received"`
@@ -59,19 +126,22 @@ type StatusResponse struct {
 }
 
 // UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
-type UpdateOrderJSONRequestBody = OrderResponse
+type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
-type CreateItemTypeJSONRequestBody = ItemTypeResponse
+type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest
 
 // UpdateItemTypeJSONRequestBody defines body for UpdateItemType for application/json ContentType.
-type UpdateItemTypeJSONRequestBody = ItemTypeResponse
+type UpdateItemTypeJSONRequestBody = ItemTypeUpdateRequest
 
 // CreateItemJSONRequestBody defines body for CreateItem for application/json ContentType.
-type CreateItemJSONRequestBody = ItemResponse
+type CreateItemJSONRequestBody = ItemCreateRequest
 
 // UpdateItemJSONRequestBody defines body for UpdateItem for application/json ContentType.
-type UpdateItemJSONRequestBody = ItemResponse
+type UpdateItemJSONRequestBody = ItemUpdateRequest
 
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
-type CreateOrderJSONRequestBody = OrderResponse
+type CreateOrderJSONRequestBody = OrderCreateRequest
+
+// CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
+type CreateOrderCommentJSONRequestBody = CommentCreateRequest

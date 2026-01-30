@@ -40,7 +40,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		for i, item := range order.Items {
 			items[i] = toItemResponse(&item)
 		}
-		resp.Items = &items
+		resp.Items = items
 	}
 	// Comments変換
 	if len(order.Comments) > 0 {
@@ -98,9 +98,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	// アイテムの関連付け
-	if req.Items != nil && len(*req.Items) > 0 {
-		itemIDs := make([]uuid.UUID, len(*req.Items))
-		for i, item := range *req.Items {
+	if len(req.Items) > 0 {
+		itemIDs := make([]uuid.UUID, len(req.Items))
+		for i, item := range req.Items {
 			itemIDs[i] = uuid.UUID(item.Id)
 		}
 
@@ -205,9 +205,9 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 
 	// アイテムの更新
-	if req.Items != nil && len(*req.Items) > 0 {
-		itemIDs := make([]uuid.UUID, len(*req.Items))
-		for i, item := range *req.Items {
+	if len(req.Items) > 0 {
+		itemIDs := make([]uuid.UUID, len(req.Items))
+		for i, item := range req.Items {
 			itemIDs[i] = uuid.UUID(item.Id)
 		}
 

@@ -21,12 +21,11 @@ func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
-	resp := models.ItemTypeResponse{
+	return models.ItemTypeResponse{
 		Id:          openapi_types.UUID(itemType.ID),
 		Name:        itemType.Name,
 		DisplayName: itemType.DisplayName,
 	}
-	return resp
 }
 
 // GET /api/item-types - ItemType一覧取得
@@ -36,36 +35,40 @@ func (h *ItemTypeHandler) GetItemTypes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, itemTypes)
+
+	// API型に変換
+	responses := make([]models.ItemTypeResponse, len(itemTypes))
+	for i, itemType := range itemTypes {
+		responses[i] = toItemTypeResponse(&itemType)
+	}
+
+	c.JSON(http.StatusOK, responses)
 }
 
 // POST /api/item-types - ItemType作成
 func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
-	var req struct {
-		Name        string    `json:"name" binding:"required"`
-		DisplayName string    `json:"display_name" binding:"required"`
-	}
+	var req models.CreateItemTypeJSONRequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	item_type := models.ItemType{
+	itemType := models.ItemType{
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
 	}
 
-	if err := h.db.Create(&item_type).Error; err != nil {
+	if err := h.db.Create(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, item_type)
+	c.JSON(http.StatusCreated, toItemTypeResponse(&itemType))
 }
 
-// PUT /api/item-types/:id - アイテムタイプ更新
-func (h *ItemHandler) UpdateItemType(c *gin.Context) {
+// GET /api/item-types/:id - idからアイテムタイプ取得
+func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
 	
 	itemTypeID, err := uuid.Parse(id)
@@ -74,10 +77,30 @@ func (h *ItemHandler) UpdateItemType(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Name        string    `json:"name"`
-		DisplayName string    `json:"display_name"`
+	var itemType models.ItemType
+	if err := h.db.First(&itemType, "id = ?", itemTypeID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ItemType not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
+
+	c.JSON(http.StatusOK, toItemTypeResponse(&itemType))
+}
+
+// PUT /api/item-types/:id - アイテムタイプ更新
+func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
+	id := c.Param("id")
+	
+	itemTypeID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
+	var req models.ItemTypeUpdateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -95,23 +118,25 @@ func (h *ItemHandler) UpdateItemType(c *gin.Context) {
 	}
 
 	// 更新
-	if req.Name != "" {
-		itemType.Name = req.Name
-	}
-	if req.DisplayName != "" {
-		itemType.DisplayName = req.DisplayName
-	}
+	itemType.Name = req.Name
+	itemType.DisplayName = req.DisplayName
 
 	if err := h.db.Save(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, itemType)
+	// 更新後のデータをロード
+	if err := h.db.First(&itemType, "id = ?", itemType.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, toItemTypeResponse(&itemType))
 }
 
 // DELETE /api/item-types/:id - アイテムタイプ削除
-func (h *ItemHandler) DeleteItemType(c *gin.Context) {
+func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
 	
 	itemTypeID, err := uuid.Parse(id)

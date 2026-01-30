@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// オーダー削除
+	// (DELETE /api/Orders/{id})
+	DeleteOrder(c *gin.Context, id openapi_types.UUID)
 	// idからオーダー情報取得
 	// (GET /api/Orders/{id})
 	GetOrder(c *gin.Context, id openapi_types.UUID)
@@ -56,6 +59,12 @@ type ServerInterface interface {
 	// オーダー作成
 	// (POST /api/orders)
 	CreateOrder(c *gin.Context)
+	// 特定オーダーのコメント一覧取得
+	// (GET /api/orders/{id}/comments)
+	GetOrderComments(c *gin.Context, id openapi_types.UUID)
+	// オーダーにコメント追加
+	// (POST /api/orders/{id}/comments)
+	CreateOrderComment(c *gin.Context, id openapi_types.UUID)
 	// サーバーステータス取得
 	// (GET /status)
 	GetStatus(c *gin.Context)
@@ -69,6 +78,30 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// DeleteOrder operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOrder(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteOrder(c, id)
+}
 
 // GetOrder operation middleware
 func (siw *ServerInterfaceWrapper) GetOrder(c *gin.Context) {
@@ -340,6 +373,54 @@ func (siw *ServerInterfaceWrapper) CreateOrder(c *gin.Context) {
 	siw.Handler.CreateOrder(c)
 }
 
+// GetOrderComments operation middleware
+func (siw *ServerInterfaceWrapper) GetOrderComments(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetOrderComments(c, id)
+}
+
+// CreateOrderComment operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrderComment(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateOrderComment(c, id)
+}
+
 // GetStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetStatus(c *gin.Context) {
 
@@ -380,6 +461,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.DELETE(options.BaseURL+"/api/Orders/:id", wrapper.DeleteOrder)
 	router.GET(options.BaseURL+"/api/Orders/:id", wrapper.GetOrder)
 	router.PUT(options.BaseURL+"/api/Orders/:id", wrapper.UpdateOrder)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
@@ -394,5 +476,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/items/:id", wrapper.UpdateItem)
 	router.GET(options.BaseURL+"/api/orders", wrapper.GetOrders)
 	router.POST(options.BaseURL+"/api/orders", wrapper.CreateOrder)
+	router.GET(options.BaseURL+"/api/orders/:id/comments", wrapper.GetOrderComments)
+	router.POST(options.BaseURL+"/api/orders/:id/comments", wrapper.CreateOrderComment)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)
 }

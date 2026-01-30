@@ -22,13 +22,12 @@ func NewCommentHandler(db *gorm.DB) *CommentHandler {
 }
 
 func toCommentResponse(comment *models.Comment) models.CommentResponse {
-	resp := models.CommentResponse{
+	return models.CommentResponse{
 		OrderId:   openapi_types.UUID(comment.OrderID),
 		Author:    comment.Author,
 		Text:      comment.Text,
 		CreatedAt: comment.CreatedAt,
 	}
-	return resp
 }
 
 // GET /api/orders/:id/comments - 特定オーダーのコメント一覧取得
@@ -53,12 +52,18 @@ func (h *CommentHandler) GetOrderComments(c *gin.Context) {
 	}
 
 	var comments []models.Comment
-	if err := h.db.Where("id = ?", orderUUID).Order("created_at DESC").Find(&comments).Error; err != nil {
+	if err := h.db.Where("order_id = ?", orderUUID).Order("created_at DESC").Find(&comments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, comments)
+	// API型に変換
+	responses := make([]models.CommentResponse, len(comments))
+	for i, comment := range comments {
+		responses[i] = toCommentResponse(&comment)
+	}
+
+	c.JSON(http.StatusOK, responses)
 }
 
 // POST /api/orders/:id/comments - コメント作成
@@ -71,10 +76,7 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Author string `json:"author" binding:"required"`
-		Text   string `json:"text" binding:"required"`
-	}
+	var req models.CreateOrderCommentJSONRequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -104,5 +106,5 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, comment)
+	c.JSON(http.StatusCreated, toCommentResponse(&comment))
 }

@@ -71,8 +71,8 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	itemTypeID := uuid.UUID(req.ItemType.Id)
 
 	var itemType models.ItemType
-	if err := h.db.Where("id IN ?", itemTypeID).Find(&itemType).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
+	if err := h.db.First(&itemType, itemTypeID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID"})
 		return
 	}
 	item.ItemType = itemType
@@ -89,11 +89,6 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemResponse(&item))
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 }
 
 // GET /api/items/:id - アイテム取得
@@ -157,16 +152,11 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	// タイプの更新
-	itemTypeID := uuid.UUID(item.ItemType.ID)
+	itemTypeID := uuid.UUID(req.ItemType.Id)
 
-	var itemTypes models.ItemType
-	if err := h.db.Where("id IN ?", itemTypeID).Find(&itemTypes).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
-		return
-	}
-
-	if err := h.db.Model(&item).Association("ItemTypes").Replace(itemTypes); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var itemType models.ItemType
+	if err := h.db.First(&itemType, itemTypeID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID"})
 		return
 	}
 

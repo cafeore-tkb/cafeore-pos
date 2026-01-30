@@ -46,7 +46,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ItemResponse'
+              $ref: '#/components/schemas/ItemCreateRequest'
       responses:
         '200':
           description: 成功
@@ -87,7 +87,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ItemResponse'
+              $ref: '#/components/schemas/ItemUpdateRequest'
       responses:
         '200':
           description: 成功
@@ -130,7 +130,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ItemTypeResponse'
+              $ref: '#/components/schemas/ItemTypeCreateRequest'
       responses:
         '200':
           description: 成功
@@ -171,7 +171,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ItemTypeResponse'
+              $ref: '#/components/schemas/ItemTypeUpdateRequest'
       responses:
         '200':
           description: 成功
@@ -214,7 +214,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrderResponse'
+              $ref: '#/components/schemas/OrderCreateRequest'
       responses:
         '200':
           description: 成功
@@ -255,7 +255,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrderResponse'
+              $ref: '#/components/schemas/OrderUpdateRequest'
       responses:
         '200':
           description: 成功
@@ -263,6 +263,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderResponse'
+    delete:
+      summary: オーダー削除
+      operationId: deleteOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功    
+  /api/orders/{id}/comments:
+    get:
+      summary: 特定オーダーのコメント一覧取得
+      operationId: getOrderComments
+      tags:
+        - comments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommentResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: オーダーにコメント追加
+      operationId: createOrderComment
+      tags:
+        - comments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateRequest'
+      responses:
+        '201':
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
@@ -331,11 +405,16 @@ components:
           type: string
         item_type:
           $ref: '#/components/schemas/ItemTypeResponse'
-    # 更新リクエスト用（すべてオプション）
+    # 更新リクエスト用
     ItemUpdateRequest:
       type: object
       required:
         - id
+        - name
+        - abbr
+        - price
+        - key
+        - item_type
       properties:
         id:
           type: string
@@ -366,6 +445,31 @@ components:
           type: string
         display_name:
           type: string
+    ItemTypeCreateRequest:
+      type: object
+      required:
+        - name
+        - display_name
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+    # 更新リクエスト用
+    ItemTypeUpdateRequest:
+      type: object
+      required:
+        - id
+        - name
+        - display_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_name:
+          type: string
     # レスポンス用（完全な情報）
     OrderResponse:
       type: object
@@ -375,6 +479,7 @@ components:
         - created_at
         - billing_amount
         - received
+        - items
       properties:
         id:
           type: string
@@ -417,6 +522,8 @@ components:
       required:
         - order_id
         - billing_amount
+        - received
+        - items
       properties:
         order_id:
           type: integer
@@ -435,20 +542,24 @@ components:
         discount_order_cups:
           type: integer
           default: 0
-        item_ids:
+        items:
           type: array
           items:
-            type: string
-            format: uuid
-          description: 関連するアイテムのIDリスト
+            $ref: '#/components/schemas/ItemResponse'
         comments:
           type: array
           items:
             $ref: '#/components/schemas/CommentCreateRequest'
 
-    # 更新リクエスト用（すべてオプション）
+    # 更新リクエスト用
     OrderUpdateRequest:
       type: object
+      required:
+        - id
+        - order_id
+        - billing_amount
+        - received
+        - items
       properties:
         order_id:
           type: integer
@@ -470,11 +581,10 @@ components:
           nullable: true
         discount_order_cups:
           type: integer
-        item_ids:
+        items:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/ItemResponse'
 
     # 一覧取得用（軽量版、関連データを含まない場合）
     OrderListItem:
@@ -538,4 +648,11 @@ components:
         created_at:
           type: string
           format: date-time
-          
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: "Invalid order ID format"
