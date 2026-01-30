@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +18,15 @@ type ItemTypeHandler struct {
 
 func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
 	return &ItemTypeHandler{db: db}
+}
+
+func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
+	resp := models.ItemTypeResponse{
+		Id:          openapi_types.UUID(itemType.ID),
+		Name:        itemType.Name,
+		DisplayName: itemType.DisplayName,
+	}
+	return resp
 }
 
 // GET /api/item-types - ItemType一覧取得

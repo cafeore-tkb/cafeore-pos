@@ -7,14 +7,16 @@ import (
 )
 
 type Item struct {
-	ID         uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	Name       string         `gorm:"not null" json:"name"`
-	ItemTypeID uuid.UUID      `gorm:"type:uuid;not null;index" json:"item_type_id"`
-	Abbr       string         `gorm:"not null" json:"abbr"`
-	Key        string         `gorm:"not null" json:"key"`
-	Deleted    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID         uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	Name       string         `gorm:"not null"`
+	Abbr       string         `gorm:"not null"`
+	Price      int            `gorm:"not null"`
+	Key        string         `gorm:"not null"`
+	Deleted    gorm.DeletedAt `gorm:"index"`
+	Assignee   string         `json:"assignee"`
 
-	ItemType ItemType `gorm:"foreignKey:ItemTypeID" json:"item_type,omitempty"`
+	ItemTypeID uuid.UUID      `gorm:"type:uuid;not null"`
+	ItemType   ItemType       `gorm:"foreignKey:ItemTypeID" json:"item_type,omitempty"`
 }
 
 func (item *Item) BeforeCreate(tx *gorm.DB) error {

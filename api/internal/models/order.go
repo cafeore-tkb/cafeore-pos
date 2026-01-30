@@ -9,18 +9,18 @@ import (
 )
 
 type Order struct {
-	ID                uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
-	OrderId           int            `json:"order_id"`
-	CreatedAt         time.Time      `json:"created_at"`
-	ReadyAt           *time.Time     `json:"ready_at,omitempty"`
-	ServedAt          *time.Time     `json:"served_at,omitempty"`
-	BillingAmount     int            `json:"billing_amount"`
-	Received          int            `json:"received"`
-	DiscountOrderId   uuid.UUID      `gorm:"type:uuid" json:"discount_order_id,omitempty"`
-	DiscountOrderCups int            `json:"discount_order_cups"`
+	ID                uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	OrderId           int            `gorm:"not null"`
+	CreatedAt         time.Time      `gorm:"not null"`
+	ReadyAt           *time.Time     
+	ServedAt          *time.Time     
+	BillingAmount     int            `gorm:"not null"`
+	Received          int            `gorm:"not null"`
+	DiscountOrderId   uuid.UUID      `gorm:"type:uuid"`
+	DiscountOrderCups int
 
-	Items    []Item    `gorm:"many2many:order_items;" json:"items,omitempty"`
-	Comments []Comment `gorm:"foreignKey:OrderID;references:ID" json:"comments,omitempty"`
+	Items    []Item    `gorm:"many2many:order_items;"`
+	Comments []Comment `gorm:"foreignKey:OrderID;references:ID"`
 }
 
 func (o *Order) BeforeCreate(tx *gorm.DB) error {

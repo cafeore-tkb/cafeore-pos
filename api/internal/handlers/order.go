@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
@@ -20,52 +21,108 @@ func NewOrderHandler(db *gorm.DB) *OrderHandler {
 	return &OrderHandler{db: db}
 }
 
+// DB models → API models 変換関数
+func toOrderResponse(order *models.Order) models.OrderResponse {
+	resp := models.OrderResponse{
+		Id:                openapi_types.UUID(order.ID),
+		OrderId:           order.OrderId,
+		CreatedAt:         order.CreatedAt,
+		ReadyAt:           order.ReadyAt,
+		ServedAt:          order.ServedAt,
+		BillingAmount:     order.BillingAmount,
+		Received:          order.Received,
+		DiscountOrderId:   (*openapi_types.UUID)(&order.DiscountOrderId),
+		DiscountOrderCups: &order.DiscountOrderCups,
+	}
+	// Items変換
+	if len(order.Items) > 0 {
+		items := make([]models.ItemResponse, len(order.Items))
+		for i, item := range order.Items {
+			items[i] = toItemResponse(&item)
+		}
+		resp.Items = &items
+	}
+	// Comments変換
+	if len(order.Comments) > 0 {
+		comments := make([]models.CommentResponse, len(order.Comments))
+		for i, comment := range order.Comments {
+			comments[i] = toCommentResponse(&comment)
+		}
+		resp.Comments = &comments
+	}
+
+	return resp
+}
+
 // GET /api/orders - オーダー一覧取得
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order
-	if err := h.db.Preload("Items").Preload("Comments").Find(&orders).Error; err != nil {
+	if err := h.db.Preload("Items.ItemType").Preload("Comments").Find(&orders).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, orders)
+
+	// API型に変換
+	responses := make([]models.OrderResponse, len(orders))
+	for i, order := range orders {
+		responses[i] = toOrderResponse(&order)
+	}
+
+	c.JSON(http.StatusOK, responses)
 }
 
 // POST /api/orders - オーダー作成
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
-	var req struct {
-		OrderId           int         `json:"order_id" binding:"required"`
-		BillingAmount     int         `json:"billing_amount" binding:"required"`
-		Received          int         `json:"received"`
-		DiscountOrderID   *uuid.UUID  `json:"discount_order_id"`
-		DiscountOrderCups int         `json:"discount_order_cups"`
-		ItemIDs           []uuid.UUID `json:"item_ids"`
-	}
+	var req models.CreateOrderJSONRequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// API型 → DB型に変換
 	order := models.Order{
 		OrderId:           req.OrderId,
 		CreatedAt:         time.Now(),
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
-		DiscountOrderCups: req.DiscountOrderCups,
+		DiscountOrderCups: 0,
 	}
 
-	if req.DiscountOrderID != nil {
-		order.DiscountOrderId = *req.DiscountOrderID
+	if req.DiscountOrderId != nil {
+		order.DiscountOrderId = uuid.UUID(*req.DiscountOrderId)
+	}
+
+	if req.DiscountOrderCups != nil {
+		order.DiscountOrderCups = *req.DiscountOrderCups
 	}
 
 	// アイテムの関連付け
-	if len(req.ItemIDs) > 0 {
+	if req.Items != nil && len(*req.Items) > 0 {
+		itemIDs := make([]uuid.UUID, len(*req.Items))
+		for i, item := range *req.Items {
+			itemIDs[i] = uuid.UUID(item.Id)
+		}
+
 		var items []models.Item
-		if err := h.db.Where("id IN ?", req.ItemIDs).Find(&items).Error; err != nil {
+		if err := h.db.Where("id IN ?", itemIDs).Find(&items).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
 			return
 		}
 		order.Items = items
+	}
+
+	// コメントの作成
+	if req.Comments != nil && len(*req.Comments) > 0 {
+		comments := make([]models.Comment, len(*req.Comments))
+		for i, commentReq := range *req.Comments {
+			comments[i] = models.Comment{
+				Author:    commentReq.Author,
+				Text:      commentReq.Text,
+				CreatedAt: time.Now(),
+			}
+		}
+		order.Comments = comments
 	}
 
 	if err := h.db.Create(&order).Error; err != nil {
@@ -74,12 +131,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	// 関連データをロード
-	if err := h.db.Preload("Items").Preload("Comments").First(&order, "id = ?", order.ID).Error; err != nil {
+	if err := h.db.Preload("Items.ItemType").Preload("Comments").First(&order, "id = ?", order.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, order)
+	c.JSON(http.StatusCreated, toOrderResponse(&order))
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -93,7 +150,7 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 	}
 
 	var order models.Order
-	if err := h.db.Preload("Items").Preload("Comments").First(&order, "id = ?", orderID).Error; err != nil {
+	if err := h.db.Preload("Items.ItemType").Preload("Comments").First(&order, "id = ?", orderID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
@@ -102,7 +159,7 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, order)
+	c.JSON(http.StatusOK, toOrderResponse(&order))
 }
 
 // PUT /api/orders/:id - オーダー更新
@@ -115,16 +172,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		OrderId           *int        `json:"order_num"`
-		ReadyAt           *time.Time  `json:"ready_at"`
-		ServedAt          *time.Time  `json:"served_at"`
-		BillingAmount     *int        `json:"billing_amount"`
-		Received          *int        `json:"received"`
-		DiscountOrderID   *uuid.UUID  `json:"discount_order_id"`
-		DiscountOrderCups *int        `json:"discount_order_cups"`
-		ItemIDs           []uuid.UUID `json:"item_ids"`
-	}
+	var req models.UpdateOrderJSONRequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -142,36 +190,33 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 
 	// 更新
-	if req.OrderId != nil {
-		order.OrderId = *req.OrderId
+	order.OrderId = req.OrderId
+	order.ReadyAt = req.ReadyAt
+	order.ServedAt = req.ServedAt
+	order.BillingAmount = req.BillingAmount
+	order.Received = req.Received
+
+	if req.DiscountOrderId != nil {
+		order.DiscountOrderId = uuid.UUID(*req.DiscountOrderId)
 	}
-	if req.ReadyAt != nil {
-		order.ReadyAt = req.ReadyAt
-	}
-	if req.ServedAt != nil {
-		order.ServedAt = req.ServedAt
-	}
-	if req.BillingAmount != nil {
-		order.BillingAmount = *req.BillingAmount
-	}
-	if req.Received != nil {
-		order.Received = *req.Received
-	}
-	if req.DiscountOrderID != nil {
-		order.DiscountOrderId = *req.DiscountOrderID
-	}
+
 	if req.DiscountOrderCups != nil {
 		order.DiscountOrderCups = *req.DiscountOrderCups
 	}
 
 	// アイテムの更新
-	if len(req.ItemIDs) > 0 {
+	if req.Items != nil && len(*req.Items) > 0 {
+		itemIDs := make([]uuid.UUID, len(*req.Items))
+		for i, item := range *req.Items {
+			itemIDs[i] = uuid.UUID(item.Id)
+		}
+
 		var items []models.Item
-		if err := h.db.Where("id IN ?", req.ItemIDs).Find(&items).Error; err != nil {
+		if err := h.db.Where("id IN ?", itemIDs).Find(&items).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
 			return
 		}
-		// 既存の関連を削除して新しい関連を設定
+
 		if err := h.db.Model(&order).Association("Items").Replace(items); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -184,12 +229,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 
 	// 更新後のデータをロード
-	if err := h.db.Preload("Items").Preload("Comments").First(&order, "id = ?", order.ID).Error; err != nil {
+	if err := h.db.Preload("Items.ItemType").Preload("Comments").First(&order, "id = ?", order.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, order)
+	c.JSON(http.StatusOK, toOrderResponse(&order))
 }
 
 // DELETE /api/orders/:id - オーダー削除
@@ -261,7 +306,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, order)
+	c.JSON(http.StatusOK, toOrderResponse(&order))
 }
 
 // PATCH /api/orders/:id/served - オーダーを提供済みにする
@@ -292,5 +337,5 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, order)
+	c.JSON(http.StatusOK, toOrderResponse(&order))
 }

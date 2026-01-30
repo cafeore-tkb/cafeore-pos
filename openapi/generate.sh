@@ -7,8 +7,8 @@ echo "OpenAPIから型を生成します..."
 
 # TypeScript型生成
 echo "TypeScript型を生成中..."
-mkdir -p ../modules/common/types
-npx openapi-typescript openapi.yaml -o ../modules/common/types/api.ts
+mkdir -p ../modules/common/src/types
+npx openapi-typescript openapi.yaml -o ../modules/common/src/types/api.ts
 echo "TypeScript型を生成しました"
 
 # Go型生成

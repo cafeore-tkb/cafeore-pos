@@ -5,7 +5,50 @@ package models
 
 import (
 	"time"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// CommentResponse defines model for CommentResponse.
+type CommentResponse struct {
+	Author    string             `json:"author"`
+	CreatedAt time.Time          `json:"created_at"`
+	OrderId   openapi_types.UUID `json:"order_id"`
+	Text      string             `json:"text"`
+}
+
+// ItemResponse defines model for ItemResponse.
+type ItemResponse struct {
+	Abbr     string             `json:"abbr"`
+	Assignee *string            `json:"assignee,omitempty"`
+	Id       openapi_types.UUID `json:"id"`
+	ItemType ItemTypeResponse   `json:"item_type"`
+	Key      string             `json:"key"`
+	Name     string             `json:"name"`
+	Price    int                `json:"price"`
+}
+
+// ItemTypeResponse defines model for ItemTypeResponse.
+type ItemTypeResponse struct {
+	DisplayName string             `json:"display_name"`
+	Id          openapi_types.UUID `json:"id"`
+	Name        string             `json:"name"`
+}
+
+// OrderResponse defines model for OrderResponse.
+type OrderResponse struct {
+	BillingAmount     int                 `json:"billing_amount"`
+	Comments          *[]CommentResponse  `json:"comments,omitempty"`
+	CreatedAt         time.Time           `json:"created_at"`
+	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
+	Id                openapi_types.UUID  `json:"id"`
+	Items             *[]ItemResponse     `json:"items,omitempty"`
+	OrderId           int                 `json:"order_id"`
+	ReadyAt           *time.Time          `json:"ready_at"`
+	Received          int                 `json:"received"`
+	ServedAt          *time.Time          `json:"served_at"`
+}
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
@@ -14,3 +57,21 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 }
+
+// UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
+type UpdateOrderJSONRequestBody = OrderResponse
+
+// CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
+type CreateItemTypeJSONRequestBody = ItemTypeResponse
+
+// UpdateItemTypeJSONRequestBody defines body for UpdateItemType for application/json ContentType.
+type UpdateItemTypeJSONRequestBody = ItemTypeResponse
+
+// CreateItemJSONRequestBody defines body for CreateItem for application/json ContentType.
+type CreateItemJSONRequestBody = ItemResponse
+
+// UpdateItemJSONRequestBody defines body for UpdateItem for application/json ContentType.
+type UpdateItemJSONRequestBody = ItemResponse
+
+// CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
+type CreateOrderJSONRequestBody = OrderResponse

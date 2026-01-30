@@ -172,10 +172,9 @@ func main() {
 	log.Printf("  GET  /status")
 	log.Printf("  GET  /health")
 	log.Printf("  GET  /api/items")
-	log.Printf("  GET  /api/menu-items")
+	log.Printf("  GET  /api/item-types")
 	log.Printf("  GET  /api/orders")
-	log.Printf("  GET  /api/work-items?status=pending")
-	log.Printf("  PUT  /api/work-items/:id/status")
+	log.Printf("  GET  /api/orders/:id/comments")
 
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal(err)

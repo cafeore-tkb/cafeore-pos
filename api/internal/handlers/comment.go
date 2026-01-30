@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
@@ -18,6 +19,16 @@ type CommentHandler struct {
 
 func NewCommentHandler(db *gorm.DB) *CommentHandler {
 	return &CommentHandler{db: db}
+}
+
+func toCommentResponse(comment *models.Comment) models.CommentResponse {
+	resp := models.CommentResponse{
+		OrderId:   openapi_types.UUID(comment.OrderID),
+		Author:    comment.Author,
+		Text:      comment.Text,
+		CreatedAt: comment.CreatedAt,
+	}
+	return resp
 }
 
 // GET /api/orders/:id/comments - 特定オーダーのコメント一覧取得
