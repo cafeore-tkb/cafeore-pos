@@ -120,31 +120,3 @@ export class ItemEntity implements Item {
     return ItemEntity.fromItem(this.toItem());
   }
 }
-
-// *Response*系はAPI Response用の一時的なもの
-export const itemTypeResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  display_name: z.string(),
-});
-
-export const menuItemResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  price: z.number(),
-});
-
-export const itemResponseSchema = z.object({
-  id: z.string().uuid().optional(),
-  name: z.string({ required_error: "名前が未入力です" }),
-  abbr: z.string({ required_error: "略称がありません" }),
-  key: z.string({ required_error: "キー割り当てがありません" }),
-  item_type_id: z.string({ required_error: "不正なタイプです" }).uuid(),
-  menu_items: z.array(menuItemResponseSchema).optional(),
-});
-
-export const itemsResponseSchema = z.array(itemResponseSchema);
-
-export type ItemResponse = z.infer<typeof itemResponseSchema>;
-
-export type ItemTypeResponse = z.infer<typeof itemTypeResponseSchema>;
