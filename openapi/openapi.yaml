@@ -393,7 +393,7 @@ components:
         - abbr
         - price
         - key
-        - item_type
+        - item_type_id
       properties:
         name:
           type: string
@@ -403,8 +403,9 @@ components:
           type: integer
         key:
           type: string
-        item_type:
-          $ref: '#/components/schemas/ItemTypeResponse'
+        item_type_id:
+          type: string
+          format: uuid
     # 更新リクエスト用
     ItemUpdateRequest:
       type: object
@@ -414,7 +415,7 @@ components:
         - abbr
         - price
         - key
-        - item_type
+        - item_type_id
       properties:
         id:
           type: string
@@ -427,8 +428,9 @@ components:
           type: integer
         key:
           type: string
-        item_type:
-          $ref: '#/components/schemas/ItemTypeResponse'
+        item_type_id:
+          type: string
+          format: uuid
         assignee:
           type: string
     ItemTypeResponse:
@@ -523,7 +525,7 @@ components:
         - order_id
         - billing_amount
         - received
-        - items
+        - item_ids
       properties:
         order_id:
           type: integer
@@ -542,10 +544,11 @@ components:
         discount_order_cups:
           type: integer
           default: 0
-        items:
+        item_ids:
           type: array
           items:
-            $ref: '#/components/schemas/ItemResponse'
+            type: string
+            format: uuid
         comments:
           type: array
           items:
@@ -559,7 +562,7 @@ components:
         - order_id
         - billing_amount
         - received
-        - items
+        - item_ids
       properties:
         order_id:
           type: integer
@@ -581,10 +584,11 @@ components:
           nullable: true
         discount_order_cups:
           type: integer
-        items:
+        item_ids:
           type: array
           items:
-            $ref: '#/components/schemas/ItemResponse'
+            type: string
+            format: uuid
 
     # 一覧取得用（軽量版、関連データを含まない場合）
     OrderListItem:

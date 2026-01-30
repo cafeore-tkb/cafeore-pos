@@ -68,14 +68,12 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 
 	// タイプの関連付け
-	itemTypeID := uuid.UUID(req.ItemType.Id)
-
-	var itemType models.ItemType
-	if err := h.db.First(&itemType, itemTypeID).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID"})
-		return
+	itemTypeID, err := uuid.Parse(req.ItemTypeId.String())
+	if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
+			return
 	}
-	item.ItemType = itemType
+	item.ItemTypeID = itemTypeID
 
 	if err := h.db.Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -152,13 +150,13 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	// タイプの更新
-	itemTypeID := uuid.UUID(req.ItemType.Id)
+	itemTypeID, err := uuid.Parse(req.ItemTypeId.String())
 
-	var itemType models.ItemType
-	if err := h.db.First(&itemType, itemTypeID).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID"})
-		return
+	if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
+    return
 	}
+	item.ItemTypeID = itemTypeID
 
 	if err := h.db.Save(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

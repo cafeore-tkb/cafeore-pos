@@ -87,7 +87,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
-      item_type: components["schemas"]["ItemTypeResponse"];
+      /** Format: uuid */
+      item_type_id: string;
     };
     ItemUpdateRequest: {
       /** Format: uuid */
@@ -96,7 +97,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
-      item_type: components["schemas"]["ItemTypeResponse"];
+      /** Format: uuid */
+      item_type_id: string;
       assignee?: string;
     };
     ItemTypeResponse: {
@@ -147,7 +149,7 @@ export interface components {
       discount_order_id?: string | null;
       /** @default 0 */
       discount_order_cups?: number;
-      items: components["schemas"]["ItemResponse"][];
+      item_ids: string[];
       comments?: components["schemas"]["CommentCreateRequest"][];
     };
     OrderUpdateRequest: {
@@ -161,7 +163,7 @@ export interface components {
       /** Format: uuid */
       discount_order_id?: string | null;
       discount_order_cups?: number;
-      items: components["schemas"]["ItemResponse"][];
+      item_ids: string[];
     };
     OrderListItem: {
       /** Format: uuid */

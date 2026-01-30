@@ -19,7 +19,7 @@ type Order struct {
 	DiscountOrderId   uuid.UUID      `gorm:"type:uuid"`
 	DiscountOrderCups int
 
-	Items    []Item    `gorm:"many2many:order_items;"`
+	OrderItems    []OrderItem    `gorm:"foreignKey:OrderID;references:ID"`
 	Comments []Comment `gorm:"foreignKey:OrderID;references:ID"`
 }
 

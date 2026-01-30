@@ -57,6 +57,7 @@ func initDB() error {
         &models.Item{},
         &models.Order{},
         &models.Comment{},
+				&models.OrderItem{},
     )
     if err != nil {
         panic(err)

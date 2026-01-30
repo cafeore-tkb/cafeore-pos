@@ -30,11 +30,11 @@ type ErrorResponse struct {
 
 // ItemCreateRequest defines model for ItemCreateRequest.
 type ItemCreateRequest struct {
-	Abbr     string           `json:"abbr"`
-	ItemType ItemTypeResponse `json:"item_type"`
-	Key      string           `json:"key"`
-	Name     string           `json:"name"`
-	Price    int              `json:"price"`
+	Abbr       string             `json:"abbr"`
+	ItemTypeId openapi_types.UUID `json:"item_type_id"`
+	Key        string             `json:"key"`
+	Name       string             `json:"name"`
+	Price      int                `json:"price"`
 }
 
 // ItemResponse defines model for ItemResponse.
@@ -70,13 +70,13 @@ type ItemTypeUpdateRequest struct {
 
 // ItemUpdateRequest defines model for ItemUpdateRequest.
 type ItemUpdateRequest struct {
-	Abbr     string             `json:"abbr"`
-	Assignee *string            `json:"assignee,omitempty"`
-	Id       openapi_types.UUID `json:"id"`
-	ItemType ItemTypeResponse   `json:"item_type"`
-	Key      string             `json:"key"`
-	Name     string             `json:"name"`
-	Price    int                `json:"price"`
+	Abbr       string             `json:"abbr"`
+	Assignee   *string            `json:"assignee,omitempty"`
+	Id         openapi_types.UUID `json:"id"`
+	ItemTypeId openapi_types.UUID `json:"item_type_id"`
+	Key        string             `json:"key"`
+	Name       string             `json:"name"`
+	Price      int                `json:"price"`
 }
 
 // OrderCreateRequest defines model for OrderCreateRequest.
@@ -85,7 +85,7 @@ type OrderCreateRequest struct {
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *openapi_types.UUID     `json:"discount_order_id"`
-	Items             []ItemResponse          `json:"items"`
+	ItemIds           []openapi_types.UUID    `json:"item_ids"`
 	OrderId           int                     `json:"order_id"`
 	Received          int                     `json:"received"`
 }
@@ -107,14 +107,14 @@ type OrderResponse struct {
 
 // OrderUpdateRequest defines model for OrderUpdateRequest.
 type OrderUpdateRequest struct {
-	BillingAmount     int                 `json:"billing_amount"`
-	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
-	Items             []ItemResponse      `json:"items"`
-	OrderId           int                 `json:"order_id"`
-	ReadyAt           *time.Time          `json:"ready_at"`
-	Received          int                 `json:"received"`
-	ServedAt          *time.Time          `json:"served_at"`
+	BillingAmount     int                  `json:"billing_amount"`
+	DiscountOrderCups *int                 `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *openapi_types.UUID  `json:"discount_order_id"`
+	ItemIds           []openapi_types.UUID `json:"item_ids"`
+	OrderId           int                  `json:"order_id"`
+	ReadyAt           *time.Time           `json:"ready_at"`
+	Received          int                  `json:"received"`
+	ServedAt          *time.Time           `json:"served_at"`
 }
 
 // StatusResponse defines model for StatusResponse.
