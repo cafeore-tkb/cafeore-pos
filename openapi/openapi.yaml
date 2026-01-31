@@ -1,0 +1,662 @@
+# openapi/openapi.yaml
+openapi: 3.1.0
+info:
+  title: CafeOre POS API
+  version: 1.0.0
+  description: 珈琲・俺POSシステムのAPI仕様
+
+servers:
+  - url: http://localhost:8080
+    description: 開発環境
+
+paths:
+  /status:
+    get:
+      summary: サーバーステータス取得
+      operationId: getStatus
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/items:
+    get:
+      summary: アイテム一覧取得
+      operationId: getItems
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  $ref: '#/components/schemas/ItemResponse'
+    post:
+      summary: アイテム作成
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+  /api/items/{id}:
+    get:
+      summary: idからアイテム情報取得
+      operationId: getItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+    put:
+      summary: アイテム情報更新
+      operationId: updateItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+    delete:
+      summary: アイテム削除
+      operationId: deleteItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+  /api/item-types:
+    get:
+      summary: アイテムタイプ一覧取得
+      operationId: getItemTypes
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  $ref: '#/components/schemas/ItemTypeResponse'
+    post:
+      summary: アイテムタイプ作成
+      operationId: createItemType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemTypeCreateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemTypeResponse'
+  /api/item-types/{id}:
+    get:
+      summary: idからアイテムタイプ情報取得
+      operationId: getItemType
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemTypeResponse'
+    put:
+      summary: アイテム情報更新
+      operationId: updateItemType
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemTypeUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemTypeResponse'
+    delete:
+      summary: アイテムタイプ削除
+      operationId: deleteItemType
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+  /api/orders:
+    get:
+      summary: オーダー一覧取得
+      operationId: getOrders
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  $ref: '#/components/schemas/OrderResponse'
+    post:
+      summary: オーダー作成
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+  /api/Orders/{id}:
+    get:
+      summary: idからオーダー情報取得
+      operationId: getOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+    put:
+      summary: オーダー情報更新
+      operationId: updateOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+    delete:
+      summary: オーダー削除
+      operationId: deleteOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功    
+  /api/orders/{id}/comments:
+    get:
+      summary: 特定オーダーのコメント一覧取得
+      operationId: getOrderComments
+      tags:
+        - comments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommentResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: オーダーにコメント追加
+      operationId: createOrderComment
+      tags:
+        - comments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateRequest'
+      responses:
+        '201':
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    StatusResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+        - database
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 1.0.0
+        database:
+          type: string
+          example: connected
+    ItemResponse:
+      type: object
+      required:
+        - id
+        - name
+        - abbr
+        - price
+        - key
+        - item_type
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        abbr:
+          type: string
+        price:
+          type: integer
+        key:
+          type: string
+        item_type:
+          $ref: '#/components/schemas/ItemTypeResponse'
+        assignee:
+          type: string
+    # 作成リクエスト用（IDや自動生成フィールドを除外）
+    ItemCreateRequest:
+      type: object
+      required:
+        - name
+        - abbr
+        - price
+        - key
+        - item_type_id
+      properties:
+        name:
+          type: string
+        abbr:
+          type: string
+        price:
+          type: integer
+        key:
+          type: string
+        item_type_id:
+          type: string
+          format: uuid
+    # 更新リクエスト用
+    ItemUpdateRequest:
+      type: object
+      required:
+        - id
+        - name
+        - abbr
+        - price
+        - key
+        - item_type_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        abbr:
+          type: string
+        price:
+          type: integer
+        key:
+          type: string
+        item_type_id:
+          type: string
+          format: uuid
+        assignee:
+          type: string
+    ItemTypeResponse:
+      type: object
+      required:
+        - id
+        - name
+        - display_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_name:
+          type: string
+    ItemTypeCreateRequest:
+      type: object
+      required:
+        - name
+        - display_name
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+    # 更新リクエスト用
+    ItemTypeUpdateRequest:
+      type: object
+      required:
+        - id
+        - name
+        - display_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_name:
+          type: string
+    # レスポンス用（完全な情報）
+    OrderResponse:
+      type: object
+      required:
+        - id
+        - order_id
+        - created_at
+        - billing_amount
+        - received
+        - items
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+        served_at:
+          type: string
+          format: date-time
+          nullable: true
+        billing_amount:
+          type: integer
+        received:
+          type: integer
+        discount_order_id:
+          type: string
+          format: uuid
+          nullable: true
+        discount_order_cups:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemResponse'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentResponse'
+
+    # 作成リクエスト用（IDや自動生成フィールドを除外）
+    OrderCreateRequest:
+      type: object
+      required:
+        - order_id
+        - billing_amount
+        - received
+        - item_ids
+      properties:
+        order_id:
+          type: integer
+          example: 1
+        billing_amount:
+          type: integer
+          example: 500
+        received:
+          type: integer
+          example: 500
+          default: 0
+        discount_order_id:
+          type: string
+          format: uuid
+          nullable: true
+        discount_order_cups:
+          type: integer
+          default: 0
+        item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentCreateRequest'
+
+    # 更新リクエスト用
+    OrderUpdateRequest:
+      type: object
+      required:
+        - id
+        - order_id
+        - billing_amount
+        - received
+        - item_ids
+      properties:
+        order_id:
+          type: integer
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+        served_at:
+          type: string
+          format: date-time
+          nullable: true
+        billing_amount:
+          type: integer
+        received:
+          type: integer
+        discount_order_id:
+          type: string
+          format: uuid
+          nullable: true
+        discount_order_cups:
+          type: integer
+        item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    # 一覧取得用（軽量版、関連データを含まない場合）
+    OrderListItem:
+      type: object
+      required:
+        - id
+        - order_id
+        - created_at
+        - billing_amount
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+        served_at:
+          type: string
+          format: date-time
+          nullable: true
+        billing_amount:
+          type: integer
+        received:
+          type: integer
+        discount_order_cups:
+          type: integer
+
+    # コメント作成用
+    CommentCreateRequest:
+      type: object
+      required:
+        - author
+        - text
+      properties:
+        author:
+          type: string
+        text:
+          type: string
+
+    CommentResponse:
+      type: object
+      required:
+        - order_id
+        - author
+        - text
+        - created_at
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        author:
+          type: string
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: "Invalid order ID format"
