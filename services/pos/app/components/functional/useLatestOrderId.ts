@@ -28,45 +28,35 @@ const calcCannotAutoAssignOrderId = (
 const useOrderIdOverride = () => {
   const [manualOrderId, setManualOrderId] = useState<number | null>(null);
 
-  // 手動で番号を設定する（オフライン時に使用）
+  // 手動で番号を設定する（null で自動モードに戻す）
   const setOrderIdOverride = useCallback((orderId: number | null) => {
     setManualOrderId(orderId);
   }, []);
 
-  // 手動設定をクリアして自動モードに戻す
-  const clearOrderIdOverride = useCallback(() => {
-    setManualOrderId(null);
-  }, []);
-
-  return { manualOrderId, setOrderIdOverride, clearOrderIdOverride };
+  return { manualOrderId, setOrderIdOverride };
 };
 
 /**
  * オーダーのIDの最大値と次のIDを取得する
  * @param orders オーダーのリスト
- * @returns オーダーIDの最大値と次のID、および手動オーバーライド用の関数
+ * @returns 次のID、手動採番要否、手動指定値、およびオーバーライド用の setter（null で自動に戻す）
  */
 const useLatestOrderId = (orders: WithId<OrderEntity>[] | undefined) => {
   const isNetworkOnline = useOnlineStatus();
-  const { manualOrderId, setOrderIdOverride, clearOrderIdOverride } =
-    useOrderIdOverride();
+  const { manualOrderId, setOrderIdOverride } = useOrderIdOverride();
 
   const latestOrderId = useMemo(() => calcLatestOrderId(orders), [orders]);
-  // 手動指定がなければ自動採番（最大ID + 1）を使用
-  const autoNextOrderId = latestOrderId + 1;
-  const nextOrderId = manualOrderId ?? autoNextOrderId;
+  const nextOrderId = manualOrderId ?? latestOrderId + 1;
   const isNeedManualOrderId = calcCannotAutoAssignOrderId(
     isNetworkOnline,
     orders,
   );
 
   return {
-    latestOrderId,
     nextOrderId,
     isNeedManualOrderId,
     manualOrderId,
     setOrderIdOverride,
-    clearOrderIdOverride,
   };
 };
 

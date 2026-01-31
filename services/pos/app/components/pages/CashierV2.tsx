@@ -60,7 +60,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     isNeedManualOrderId,
     manualOrderId,
     setOrderIdOverride,
-    clearOrderIdOverride,
   } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
@@ -194,7 +193,6 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
             isNeedManualOrderId={isNeedManualOrderId}
             manualOrderId={manualOrderId}
             onOrderIdOverride={setOrderIdOverride}
-            onClearOverride={clearOrderIdOverride}
           />
           <div className="flex items-center space-x-2">
             <Switch

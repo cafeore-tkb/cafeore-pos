@@ -7,7 +7,6 @@ type Props = {
   isNeedManualOrderId: boolean;
   manualOrderId: number | null;
   onOrderIdOverride: (orderId: number | null) => void;
-  onClearOverride: () => void;
 };
 
 /**
@@ -19,18 +18,18 @@ const OrderIdDisplay = ({
   isNeedManualOrderId,
   manualOrderId,
   onOrderIdOverride,
-  onClearOverride,
 }: Props) => {
   const [isEditingOrderId, setIsEditingOrderId] = useState(false);
   const [orderIdInputValue, setOrderIdInputValue] = useState("");
   const orderIdInputRef = useFocusRef<HTMLInputElement>(isEditingOrderId);
+  const isEditable = isNeedManualOrderId || manualOrderId !== null;
 
   const handleOrderIdClick = useCallback(() => {
-    if (isNeedManualOrderId || manualOrderId !== null) {
+    if (isEditable) {
       setIsEditingOrderId(true);
       setOrderIdInputValue(orderId.toString());
     }
-  }, [isNeedManualOrderId, manualOrderId, orderId]);
+  }, [isEditable, orderId]);
 
   const handleOrderIdChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,15 +85,15 @@ const OrderIdDisplay = ({
           onClick={handleOrderIdClick}
           className={cn(
             "font-extrabold text-3xl",
-            (isNeedManualOrderId || manualOrderId !== null) &&
+            isEditable &&
               "cursor-pointer underline decoration-dotted hover:text-theme",
           )}
           title={
-            isNeedManualOrderId
-              ? "オフラインモード: クリックして番号を指定"
-              : manualOrderId !== null
-                ? "番号を手動指定中: クリックして変更"
-                : undefined
+            isEditable
+              ? isNeedManualOrderId
+                ? "オフラインモード: クリックして番号を指定"
+                : "番号を手動指定中: クリックして変更"
+              : undefined
           }
         >
           No.{orderId}
@@ -108,7 +107,7 @@ const OrderIdDisplay = ({
       {manualOrderId !== null && (
         <button
           type="button"
-          onClick={onClearOverride}
+          onClick={() => onOrderIdOverride(null)}
           className="rounded bg-gray-400 px-2 py-1 text-sm text-white hover:bg-gray-500"
         >
           自動に戻す
