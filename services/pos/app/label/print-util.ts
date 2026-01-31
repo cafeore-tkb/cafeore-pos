@@ -60,16 +60,42 @@ export const usePrinter = () => {
     }
   };
 
+  const printLogoLabel = (
+    orderId: number,
+    index: number,
+    total: number,
+    item: ItemEntity,
+  ) => {
+    rawPrinter.feedCurrentTop();
+    rawPrinter.addPageBegin();
+    rawPrinter.addPageArea(0, 24, 570, 230);
+
+    const y = 48;
+    rawPrinter.addPagePosition(0, 48);
+    rawPrinter.addHeader(orderId, null);
+    rawPrinter.addPagePosition(0, 108);
+    rawPrinter.addLine(item.name, [1, 2]);
+    rawPrinter.addPagePosition(0, 156);
+    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
+    rawPrinter.addPagePosition(0, 204);
+    if (item.assignee) {
+      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
+    } else {
+      rawPrinter.addLine("　", [1, 1]);
+    }
+    rawPrinter.addPagePosition(230, 204);
+    rawPrinter.addLogo();
+    rawPrinter.addPageEnd();
+  };
   const printOrderLabel = (order: OrderEntity) => {
     rawPrinter.init();
-
     const coffees = order.getCoffeeCups();
 
     console.log(coffees);
 
     // 各アイテムのラベルを印刷
     for (const [idx, item] of coffees.entries()) {
-      printSingleItemLabel(
+      printLogoLabel(
         order.orderId,
         idx + 1,
         order.getCoffeeCups().length,
