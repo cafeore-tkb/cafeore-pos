@@ -8,7 +8,14 @@ export function transformToteSet(order: OrderEntity): OrderEntity {
     .map((item) => item.assignee);
   for (const assignee of toteSetAssinees) {
     order.items.push(
-      ItemEntity.fromItem({ ...yusho, price: 0, assignee: assignee }),
+      ItemEntity.fromItem({
+        id: yusho.id,
+        name: yusho.name,
+        type: yusho.type,
+        price: 0,
+        emergency: false,
+        assignee: assignee,
+      }),
     );
   }
   console.dir(order);
