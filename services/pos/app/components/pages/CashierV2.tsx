@@ -20,6 +20,7 @@ import { useSyncCahiserOrder } from "../functional/useSyncCahiserOrder";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
+import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
 import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
@@ -54,7 +55,12 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   const [descComment, setDescComment] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [UISession, renewUISession] = useUISession();
-  const { nextOrderId } = useLatestOrderId(orders);
+  const {
+    nextOrderId,
+    isNeedManualOrderId,
+    manualOrderId,
+    setOrderIdOverride,
+  } = useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
   const [serviceActive, setServiceActive] = useState(false);
@@ -120,10 +126,25 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     submitOne.addComment("cashier", descComment);
     printer.printOrderLabel(submitOne);
     submitPayload(submitOne);
+
+    // オフライン時（手動番号指定時）は次の番号を自動設定
+    if (manualOrderId !== null) {
+      setOrderIdOverride(manualOrderId + 1);
+    }
+
     resetAll();
     setServiceActive(false);
     playSound();
-  }, [newOrder, resetAll, printer, submitPayload, descComment, playSound]);
+  }, [
+    newOrder,
+    resetAll,
+    printer,
+    submitPayload,
+    descComment,
+    playSound,
+    manualOrderId,
+    setOrderIdOverride,
+  ]);
 
   const keyEventHandlers = useMemo(() => {
     return {
@@ -167,7 +188,12 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     <>
       <div className="p-4">
         <div className="flex justify-between">
-          <div className="font-extrabold text-3xl">No.{newOrder.orderId}</div>
+          <OrderIdDisplay
+            orderId={newOrder.orderId}
+            isNeedManualOrderId={isNeedManualOrderId}
+            manualOrderId={manualOrderId}
+            onOrderIdOverride={setOrderIdOverride}
+          />
           <div className="flex items-center space-x-2">
             <Switch
               id="menu-button"
