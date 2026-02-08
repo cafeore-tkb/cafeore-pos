@@ -6,16 +6,20 @@ import { OrderEntity } from "./order";
 const coffeeItem = ItemEntity.fromItem({
   id: "1",
   name: "item1",
+  abbr: "1",
   price: 300,
-  type: "hot",
+  key: "1",
+  item_type: { id: "1", name: "hot", display_name: "ホット" },
   assignee: null,
 });
 
 const milkItem = ItemEntity.fromItem({
   id: "2",
   name: "item2",
+  abbr: "2",
   price: 100,
-  type: "milk",
+  key: "2",
+  item_type: { id: "3", name: "milk", display_name: "ミルク" },
   assignee: null,
 });
 
@@ -28,15 +32,19 @@ describe("[unit] order entity", () => {
       ItemEntity.fromItem({
         id: "1",
         name: "item1",
-        price: 100,
-        type: "hot",
+        abbr: "1",
+        price: 300,
+        key: "1",
+        item_type: { id: "1", name: "hot", display_name: "ホット" },
         assignee: null,
       }),
       ItemEntity.fromItem({
         id: "2",
         name: "item2",
-        price: 341,
-        type: "ice",
+        abbr: "2",
+        price: 100,
+        key: "2",
+        item_type: { id: "3", name: "milk", display_name: "ミルク" },
         assignee: null,
       }),
     ];
@@ -48,8 +56,10 @@ describe("[unit] order entity", () => {
       ItemEntity.fromItem({
         id: "3",
         name: "item3",
-        price: 100,
-        type: "hotOre",
+        abbr: "3",
+        price: 500,
+        key: "3",
+        item_type: { id: "2", name: "ice", display_name: "アイス" },
         assignee: null,
       }),
     );
@@ -107,15 +117,19 @@ describe("[unit] order entity", () => {
       {
         id: "1",
         name: "item1",
-        price: 400,
-        type: "hot",
+        abbr: "1",
+        price: 100,
+        key: "1",
+        item_type: { id: "1", name: "hot", display_name: "ホット" },
         assignee: null,
       },
       {
         id: "2",
         name: "item2",
-        price: 500,
-        type: "ice",
+        abbr: "2",
+        price: 100,
+        key: "2",
+        item_type: { id: "3", name: "milk", display_name: "ミルク" },
         assignee: null,
       },
     ];
@@ -165,15 +179,19 @@ describe("[unit] order entity", () => {
       {
         id: "1",
         name: "item1",
-        price: 400,
-        type: "hot",
+        abbr: "1",
+        price: 100,
+        key: "1",
+        item_type: { id: "1", name: "hot", display_name: "ホット" },
         assignee: null,
       },
       {
         id: "2",
         name: "item2",
-        price: 500,
-        type: "ice",
+        abbr: "2",
+        price: 100,
+        key: "2",
+        item_type: { id: "3", name: "milk", display_name: "ミルク" },
         assignee: null,
       },
     ];
