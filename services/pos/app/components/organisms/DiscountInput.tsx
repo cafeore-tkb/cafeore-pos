@@ -144,7 +144,8 @@ const DiscountInput = memo(
                       key={`${idx}-${item.id}`}
                       className={cn(
                         "text-sm text-stone-600",
-                        (item.type === "milk" || item.type === "others") &&
+                        (item.item_type.name === "milk" ||
+                          item.item_type.name === "others") &&
                           "text-stone-400",
                       )}
                     >

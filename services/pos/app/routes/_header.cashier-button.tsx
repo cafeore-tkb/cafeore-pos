@@ -3,7 +3,7 @@ import {
   OrderEntity,
   type WithId,
   collectionSub,
-  itemSource,
+  itemMaster,
   orderConverter,
   orderRepository,
   orderSchema,
@@ -54,7 +54,7 @@ import {
 } from "~/components/ui/table";
 
 export default function Casher() {
-  const items = itemSource;
+  const items = itemMaster;
   const { data: orders } = useSWRSubscription(
     "orders",
     collectionSub({ converter: orderConverter }),
@@ -116,7 +116,7 @@ export default function Casher() {
           >
             {items.map(
               (item) =>
-                item.type === "hot" && (
+                item.item_type.name === "hot" && (
                   <Button
                     key={item.id}
                     className="h-[50px] w-[200px] bg-hot text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
@@ -141,7 +141,8 @@ export default function Casher() {
           >
             {items.map(
               (item) =>
-                (item.type === "ice" || item.type === "milk") && (
+                (item.item_type.name === "ice" ||
+                  item.item_type.name === "milk") && (
                   <Button
                     key={item.id}
                     className="h-[50px] w-[200px] bg-ice text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
@@ -166,7 +167,8 @@ export default function Casher() {
           >
             {items.map(
               (item) =>
-                (item.type === "hotOre" || item.type === "iceOre") && (
+                (item.item_type.name === "hotOre" ||
+                  item.item_type.name === "iceOre") && (
                   <Button
                     key={item.id}
                     className="h-[50px] w-[200px] bg-ore text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
@@ -191,7 +193,7 @@ export default function Casher() {
           >
             {items.map(
               (item) =>
-                item.type === "others" && (
+                item.item_type.name === "others" && (
                   <Button
                     key={item.id}
                     className="h-[50px] w-[200px] text-lg hover:bg-theme hover:ring-4 hover:ring-theme"

@@ -1,4 +1,4 @@
-import { ITEM_MASTER, type OrderEntity } from "@cafeore/common";
+import { type OrderEntity, itemMaster } from "@cafeore/common";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
@@ -99,16 +99,25 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
     iceOre: "var(--color-aulait)",
     milk: "var(--color-milk)",
     others: "var(--color-others)",
-  } as const;
+  };
+
+  type ColorKey = keyof typeof TYPE_COLOR_MAP;
+
+  const getTypeColor = (name: string): string => {
+    if (name in TYPE_COLOR_MAP) {
+      return TYPE_COLOR_MAP[name as ColorKey];
+    }
+    return "var(--color-default)"; // 存在しないキーの場合のフォールバック
+  };
 
   const realtimeSum = sumByItem(orders);
   const pastSum = sumByItem(pastRange);
 
-  const chartData = Object.entries(ITEM_MASTER).map(([, item]) => ({
+  const chartData = Object.entries(itemMaster).map(([, item]) => ({
     name: item.abbr,
     realtimeData: realtimeSum ? realtimeSum[item.id] : 0,
     pastData: pastSum ? pastSum[item.id] : 0,
-    fill: TYPE_COLOR_MAP[item.type] ?? "var(--color-hot)",
+    fill: getTypeColor(item.item_type.name) ?? "var(--color-hot)",
   }));
 
   return (

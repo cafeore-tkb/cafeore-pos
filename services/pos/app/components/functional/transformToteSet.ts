@@ -1,16 +1,27 @@
-import { ITEM_MASTER, ItemEntity, type OrderEntity } from "@cafeore/common";
+import {
+  type Item,
+  ItemEntity,
+  type OrderEntity,
+  type WithId,
+  itemMaster,
+} from "@cafeore/common";
 
 export function transformToteSet(order: OrderEntity): OrderEntity {
-  const yusho = ITEM_MASTER["-"];
-  const toteSet = ITEM_MASTER["@"];
-  const toteSetAssinees = order.items
+  const yusho = itemMaster.find((i) => i.name === "縁ブレンド");
+  const toteSet = itemMaster.find((i) => i.name === "トートセット");
+
+  if (!yusho || !toteSet) return order;
+  const toteSetAssignees = order.items
     .filter((item) => item.id === toteSet.id)
     .map((item) => item.assignee);
-  for (const assignee of toteSetAssinees) {
+  for (const assignee of toteSetAssignees) {
     order.items.push(
-      ItemEntity.fromItem({ ...yusho, price: 0, assignee: assignee }),
+      ItemEntity.fromItem({
+        ...yusho,
+        price: 0,
+        assignee: assignee,
+      } as WithId<Item>),
     );
   }
-  console.dir(order);
   return order;
 }
