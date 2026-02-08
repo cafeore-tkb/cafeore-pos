@@ -29,7 +29,6 @@ func toItemResponse(item *models.Item) models.ItemResponse {
 		Price: item.Price,
 		Key:  item.Key,
 		ItemType: toItemTypeResponse(&item.ItemType),
-		Assignee: &item.Assignee,
 	}
 	return resp
 }
@@ -144,10 +143,6 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	item.Abbr = req.Abbr
 	item.Price = req.Price
 	item.Key = req.Key
-
-	if req.Assignee != nil {
-		item.Assignee = *req.Assignee
-	}
 
 	// タイプの更新
 	itemTypeID, err := uuid.Parse(req.ItemTypeId.String())
