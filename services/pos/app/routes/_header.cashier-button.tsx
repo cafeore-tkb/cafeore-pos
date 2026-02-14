@@ -3,7 +3,7 @@ import {
   OrderEntity,
   type WithId,
   collectionSub,
-  itemMaster,
+  getItemMaster,
   orderConverter,
   orderRepository,
   orderSchema,
@@ -54,7 +54,7 @@ import {
 } from "~/components/ui/table";
 
 export default function Casher() {
-  const items = itemMaster;
+  const items = getItemMaster();
   const { data: orders } = useSWRSubscription(
     "orders",
     collectionSub({ converter: orderConverter }),

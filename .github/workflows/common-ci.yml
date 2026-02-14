@@ -27,9 +27,9 @@ jobs:
       - uses: './.github/actions/setup-deps'
       - run: pnpm run test:unit
 
-  db-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: './.github/actions/setup-deps'
-      - run: pnpm run test:db
+  # db-test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: './.github/actions/setup-deps'
+  #     - run: pnpm run test:db

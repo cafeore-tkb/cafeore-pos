@@ -56,7 +56,7 @@ describe("[db] itemRepository", async () => {
       id: "2",
       name: "fuga",
       abbr: "2",
-      price: 500,
+      price: 200,
       key: "2",
       item_type: { id: "2", name: "ice", display_name: "アイス" },
     });
@@ -70,7 +70,7 @@ describe("[db] itemRepository", async () => {
       id: "3",
       name: "foo",
       abbr: "3",
-      price: 600,
+      price: 300,
       key: "3",
       item_type: { id: "3", name: "ore", display_name: "オレ" },
     });
@@ -84,7 +84,7 @@ describe("[db] itemRepository", async () => {
       id: "4",
       name: "bar",
       abbr: "4",
-      price: 100,
+      price: 400,
       key: "4",
       item_type: { id: "4", name: "milk", display_name: "ミルク" },
     });

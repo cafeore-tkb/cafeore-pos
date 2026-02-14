@@ -2,9 +2,19 @@ import type { WithId } from "../lib/typeguard";
 import type { ItemEntity } from "../models/item";
 import { itemRepository, itemTypeRepository } from "../repositories";
 
-export const itemMaster = await itemRepository.findAll();
+// データを格納する変数
+let itemMaster: Awaited<ReturnType<typeof itemRepository.findAll>> = [];
+let itemTypes: Awaited<ReturnType<typeof itemTypeRepository.findAll>> = [];
 
-export const itemTypes = await itemTypeRepository.findAll();
+// 初期化関数
+export async function initializeItemMaster() {
+  itemMaster = await itemRepository.findAll();
+  itemTypes = await itemTypeRepository.findAll();
+}
+
+// ゲッター関数としてエクスポート
+export const getItemMaster = () => itemMaster;
+export const getItemTypes = () => itemTypes;
 
 export const key2item = (key: string) => {
   const item = itemMaster.find((i) => i.key === key);
@@ -13,6 +23,7 @@ export const key2item = (key: string) => {
   }
   return item;
 };
+
 export const id2abbr = (id: string): string | undefined => {
   const item = itemMaster.find((i) => i.id === id);
   return item?.abbr;

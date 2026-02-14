@@ -3,10 +3,11 @@ import {
   ItemEntity,
   type OrderEntity,
   type WithId,
-  itemMaster,
+  getItemMaster,
 } from "@cafeore/common";
 
 export function transformToteSet(order: OrderEntity): OrderEntity {
+  const itemMaster = getItemMaster();
   const yusho = itemMaster.find((i) => i.name === "縁ブレンド");
   const toteSet = itemMaster.find((i) => i.name === "トートセット");
 

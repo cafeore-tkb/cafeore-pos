@@ -1,4 +1,4 @@
-import { itemMaster } from "../data/items";
+import { getItemMaster } from "../data";
 import type { WithId } from "../lib/typeguard";
 import type { ItemEntity } from "./item";
 
@@ -12,6 +12,7 @@ import type { ItemEntity } from "./item";
  * @returns 分割が必要かどうかのboolean値
  */
 export function shouldSplitOrder(items: WithId<ItemEntity>[]): boolean {
+  const itemMaster = getItemMaster();
   const yushoId = itemMaster.find((i) => i.name === "縁ブレンド")?.id;
   const toteSetsId = itemMaster.find((i) => i.name === "トートセット")?.id;
 
