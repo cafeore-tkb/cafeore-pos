@@ -191,7 +191,7 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 500,
         key: "2",
-        item_type: { id: "3", name: "milk", display_name: "ミルク" },
+        item_type: { id: "2", name: "ice", display_name: "アイス" },
         assignee: null,
       },
     ];

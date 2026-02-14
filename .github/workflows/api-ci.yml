@@ -9,6 +9,9 @@ on:
       - 'go.sum'
   merge_group:
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: api
@@ -25,7 +28,7 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           working-directory: api
-          version: latest
+          version: v2.2.0
 
   # test:
   #   runs-on: ubuntu-latest
