@@ -25,7 +25,7 @@ describe("[db] itemRepository", async () => {
     const testDB = testEnv
       .unauthenticatedContext()
       .firestore() as unknown as Firestore;
-    itemRepository = itemRepoFactory(testDB);
+    itemRepository = itemRepoFactory();
   });
 
   test("itemRepository is defined", () => {
@@ -34,9 +34,11 @@ describe("[db] itemRepository", async () => {
 
   test("itemRepository.save (create)", async () => {
     const item = ItemEntity.createNew({
-      name: "Hoge",
+      name: "hoge",
+      abbr: "1",
       price: 100,
-      type: "hot",
+      key: "1",
+      item_type: { id: "1", name: "hot", display_name: "ホット" },
     });
     savedItemHoge = await itemRepository.save(item);
     expect(savedItemHoge.id).toBeDefined();
@@ -51,9 +53,12 @@ describe("[db] itemRepository", async () => {
 
   test("itemRepository.findById", async () => {
     const item = ItemEntity.createNew({
-      name: "Fuga",
+      id: "2",
+      name: "fuga",
+      abbr: "2",
       price: 200,
-      type: "ice",
+      key: "2",
+      item_type: { id: "2", name: "ice", display_name: "アイス" },
     });
     const savedItem = await itemRepository.save(item);
     const foundItem = await itemRepository.findById(savedItem.id);
@@ -62,9 +67,12 @@ describe("[db] itemRepository", async () => {
 
   test("itemRepository.findAll", async () => {
     const item = ItemEntity.createNew({
-      name: "Foo",
+      id: "3",
+      name: "foo",
+      abbr: "3",
       price: 300,
-      type: "hotOre",
+      key: "3",
+      item_type: { id: "3", name: "ore", display_name: "オレ" },
     });
     const savedItem = await itemRepository.save(item);
     const items = await itemRepository.findAll();
@@ -73,9 +81,12 @@ describe("[db] itemRepository", async () => {
 
   test("itemRepository.delete", async () => {
     const item = ItemEntity.createNew({
-      name: "Bar",
+      id: "4",
+      name: "bar",
+      abbr: "4",
       price: 400,
-      type: "milk",
+      key: "4",
+      item_type: { id: "4", name: "milk", display_name: "ミルク" },
     });
     const savedItem = await itemRepository.save(item);
     await itemRepository.delete(savedItem.id);

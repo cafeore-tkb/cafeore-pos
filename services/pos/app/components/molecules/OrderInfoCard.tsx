@@ -121,22 +121,22 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                   className={cn(
                     "p-3",
                     user === "master" &&
-                      ((item.type === "ice" && "bg-blue-200") ||
+                      ((item.item_type.name === "ice" && "bg-blue-200") ||
                         ((item.name === "ブルマン" || item.name === "ライチ") &&
                           "bg-green-300")),
                     user === "serve"
-                      ? item.type === "milk" && "bg-yellow-200"
-                      : item.type === "milk" && "bg-gray-300",
+                      ? item.item_type.name === "milk" && "bg-yellow-200"
+                      : item.item_type.name === "milk" && "bg-gray-300",
                     // (user === "master" ||
                     //   user === "serve") &&
-                    //   item.type === "hotOre" &&
+                    //   item.item_type.name === "hotOre" &&
                     //   "bg-orange-300",
                     (user === "master" || user === "serve") &&
                       ((order.status === "calling" &&
                         "bg-gray-200 text-gray-500") ||
-                        (item.type === "iceOre" && "bg-sky-200")),
+                        (item.item_type.name === "iceOre" && "bg-sky-200")),
                     user === "cashier" &&
-                      item.type === "others" &&
+                      item.item_type.name === "others" &&
                       "bg-green-300",
                   )}
                 >

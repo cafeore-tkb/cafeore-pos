@@ -57,8 +57,10 @@ describe("[db] orderRepository", async () => {
       ItemEntity.fromItem({
         id: "1",
         name: "item1",
+        abbr: "1",
         price: 100,
-        type: "hot",
+        key: "1",
+        item_type: { id: "1", name: "hot", display_name: "ホット" },
         assignee: null,
       }),
     );

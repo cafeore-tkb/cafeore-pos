@@ -1,7 +1,7 @@
 import {
   OrderEntity,
   cashierRepository,
-  itemSource,
+  getItemMaster,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
@@ -23,7 +23,7 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
-  const items = itemSource;
+  const items = getItemMaster();
   const orders = useSyncOrders({ disableFirebase });
   const submit = useFlaggedSubmit({ disableFirebase });
 

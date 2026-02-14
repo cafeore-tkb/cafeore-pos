@@ -1,4 +1,4 @@
-import { type ItemEntity, type WithId, type2label } from "@cafeore/common";
+import type { ItemEntity, WithId } from "@cafeore/common";
 import { Cross2Icon, Pencil2Icon } from "@radix-ui/react-icons";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "~/lib/utils";
@@ -62,7 +62,9 @@ const ItemAssign = memo(
           <p className="flex-none p-3 font-bold font-mono text-lg">{idx + 1}</p>
           <div className="flex-1">
             <p className="font-bold text-lg">{item.name}</p>
-            <p className="text-stone-500 text-xs">{type2label[item.type]}</p>
+            <p className="text-stone-500 text-xs">
+              {item.item_type.display_name}
+            </p>
             <div className="flex justify-end">
               {focus ? (
                 <Input

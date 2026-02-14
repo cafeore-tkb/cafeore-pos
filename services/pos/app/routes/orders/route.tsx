@@ -1,8 +1,4 @@
-import {
-  orderRepository,
-  type2label,
-  useClientLoaderData,
-} from "@cafeore/common";
+import { orderRepository, useClientLoaderData } from "@cafeore/common";
 import { Form, type MetaFunction } from "@remix-run/react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -35,7 +31,7 @@ export default function Order() {
                 <div key={item.id}>
                   <h3>{item.name}</h3>
                   <p>{item.price}</p>
-                  <p>{type2label[item.type]}</p>
+                  <p>{item.item_type.display_name}</p>
                 </div>
               ))}
             </div>
