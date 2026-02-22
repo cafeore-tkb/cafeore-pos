@@ -1,4 +1,4 @@
-import { ITEM_MASTER } from "../data/items";
+import { getItemMaster } from "../data";
 import type { WithId } from "../lib/typeguard";
 import type { ItemEntity } from "./item";
 
@@ -12,14 +12,17 @@ import type { ItemEntity } from "./item";
  * @returns 分割が必要かどうかのboolean値
  */
 export function shouldSplitOrder(items: WithId<ItemEntity>[]): boolean {
-  const yushoId = ITEM_MASTER["-"].id;
-  const toteSetsId = ITEM_MASTER["@"].id;
+  const itemMaster = getItemMaster();
+  const yushoId = itemMaster.find((i) => i.name === "縁ブレンド")?.id;
+  const toteSetsId = itemMaster.find((i) => i.name === "トートセット")?.id;
+
+  if (!yushoId || !toteSetsId) return false;
 
   // トートセットを縁ブレンドとして扱い、種類別にカウント
   const coffeeCounts = new Map<string, number>();
 
   for (const item of items) {
-    if (item.type !== "milk" && item.type !== "others") {
+    if (item.item_type.name !== "milk" && item.item_type.name !== "others") {
       // 通常のコーヒー
       coffeeCounts.set(item.id, (coffeeCounts.get(item.id) || 0) + 1);
     } else if (item.id === toteSetsId) {

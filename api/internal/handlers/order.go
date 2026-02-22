@@ -36,12 +36,10 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 	// Items変換
 	if len(order.OrderItems) > 0 {
-		items := make([]models.ItemResponse, 0)
+		items := make([]models.ItemInfo, 0, len(order.OrderItems))
 		for _, oi := range order.OrderItems {
-			ir := toItemResponse(&oi.Item)
-				for i := 0; i < oi.Qty; i++ {
-					items = append(items, ir)
-				}
+			itemInfo := models.ItemInfo{Assignee: oi.Assignee, Item: toItemResponse(&oi.Item)} 
+			items = append(items, itemInfo)
 		}
 		resp.Items = items
 	}
@@ -118,52 +116,60 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		order.Comments = comments
 	}
 
-	// アイテムの関連付け
-	qtyMap := map[uuid.UUID]int{}
-	for _, id := range req.ItemIds {
-		u, err := uuid.Parse(id.String())
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item_id"})
-			return
-		}
-		qtyMap[u]++
-	}
-
 	// Orederを先に作る
 	if err := h.db.Create(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	itemIDs := make([]uuid.UUID, 0, len(qtyMap))
-	for id := range qtyMap {
-		itemIDs = append(itemIDs, id)
+	if len(req.ItemIds) == 0 {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "item_ids is required"})
+    return
+	}
+
+	// ItemIDを収集
+	itemIDs := make([]uuid.UUID, 0, len(req.ItemIds))
+	for _, itemInfo := range req.ItemIds {
+    u, err := uuid.Parse(itemInfo.ItemId.String())
+    if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item_id"})
+			return
+    }
+    itemIDs = append(itemIDs, u)
+	}
+
+	// アイテムの存在確認（重複を除いてユニークなIDのみチェック）
+	uniqueItemIDs := make(map[uuid.UUID]bool)
+	for _, id := range itemIDs {
+    uniqueItemIDs[id] = true
 	}
 
 	var items []models.Item
-	if len(itemIDs) > 0 {
-		if err := h.db.Where("id IN ?", itemIDs).Find(&items).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
-			return
-		}
-		if len(items) != len(itemIDs) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Some item IDs not found"})
-			return
-		}
+	if err := h.db.Where("id IN ?", itemIDs).Find(&items).Error; err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item IDs"})
+    return
+	}
+	if len(items) != len(uniqueItemIDs) {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "Some item IDs not found"})
+    return
+	}
+	// OrderItemを作成
+	orderItems := make([]models.OrderItem, 0, len(req.ItemIds))
+	for _, itemInfo := range req.ItemIds {
+    itemID, _ := uuid.Parse(itemInfo.ItemId.String())  
+    orderItems = append(orderItems, models.OrderItem{
+			OrderID:  order.ID,
+			ItemID:   itemID,
+			Assignee: itemInfo.Assignee,
+    })
+	}
 
-		orderItems := make([]models.OrderItem, 0, len(items))
-		for _, item := range items {
-			orderItems = append(orderItems, models.OrderItem{
-				OrderID:    order.ID,
-				ItemID:     item.ID,
-				Qty:        qtyMap[item.ID],
-			})
-		}
-
-		if err := h.db.Create(&orderItems).Error; err != nil {
+	// OrderItemsを一括作成
+	if len(orderItems) > 0 {
+    if err := h.db.Create(&orderItems).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
-		}
+    }
 	}
 
 	// 関連データをロード

@@ -1,4 +1,4 @@
-import { type OrderEntity, type2label } from "@cafeore/common";
+import type { OrderEntity } from "@cafeore/common";
 import { type ComponentPropsWithoutRef, forwardRef } from "react";
 import {
   AlertDialog,
@@ -33,7 +33,7 @@ const OrderAlertDialog = forwardRef<
           </AlertDialogDescription>
           {order.items.map((item, idx) => (
             <AlertDialogDescription key={`${idx}-${item.id}`}>
-              {`${idx + 1} ―― ${item.name}  ¥${item.price}  ${type2label[item.type]}`}
+              {`${idx + 1} ―― ${item.name}  ¥${item.price}  ${item.item_type.display_name}`}
             </AlertDialogDescription>
           ))}
           <AlertDialogDescription>

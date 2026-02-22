@@ -41,6 +41,9 @@ func initDB() error {
       PrepareStmt: false,
       DisableForeignKeyConstraintWhenMigrating: true,
 	})
+	if err != nil {
+		return err
+	}
 
 	// 接続テスト
 	sqlDB, err := db.DB()

@@ -383,8 +383,6 @@ components:
           type: string
         item_type:
           $ref: '#/components/schemas/ItemTypeResponse'
-        assignee:
-          type: string
     # 作成リクエスト用（IDや自動生成フィールドを除外）
     ItemCreateRequest:
       type: object
@@ -431,8 +429,6 @@ components:
         item_type_id:
           type: string
           format: uuid
-        assignee:
-          type: string
     ItemTypeResponse:
       type: object
       required:
@@ -472,6 +468,31 @@ components:
           type: string
         display_name:
           type: string
+    # 指名を入れたItem
+    ItemInfo:
+      type: object
+      required:
+        - item
+        - assignee
+      properties:
+        item:
+          $ref: '#/components/schemas/ItemResponse'
+        assignee:
+          type: string
+          nullable: true
+    # Create用のItemInfo
+    ItemInfoCreate:
+      type: object
+      required:
+        - item_id
+        - assignee
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        assignee:
+          type: string
+          nullable: true
     # レスポンス用（完全な情報）
     OrderResponse:
       type: object
@@ -512,7 +533,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/ItemResponse'
+            $ref: '#/components/schemas/ItemInfo'
         comments:
           type: array
           items:
@@ -547,8 +568,7 @@ components:
         item_ids:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/ItemInfoCreate'
         comments:
           type: array
           items:
@@ -587,8 +607,7 @@ components:
         item_ids:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/ItemInfoCreate'
 
     # 一覧取得用（軽量版、関連データを含まない場合）
     OrderListItem:

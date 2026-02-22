@@ -1,50 +1,45 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
 
-export const itemtypes = [
-  "hot",
-  "ice",
-  "hotOre",
-  "iceOre",
-  "milk",
-  "others",
-] as const;
+export const itemTypeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  display_name: z.string(),
+});
 
 export const itemSchema = z.object({
-  id: z.string().optional(), // Firestore のドキュメント ID
+  id: z.string().uuid().optional(),
   name: z.string({ required_error: "名前が未入力です" }),
-  price: z.number({ required_error: "価格が未入力です" }),
-  type: z.enum(itemtypes, {
-    required_error: "種類が未選択です",
-    invalid_type_error: "不正な種類です",
-  }),
+  abbr: z.string({ required_error: "略称がありません" }),
+  price: z.number(),
+  key: z.string({ required_error: "キー割り当てがありません" }),
+  item_type: itemTypeSchema,
   assignee: z.string().nullable(),
 });
 
 export type Item = z.infer<typeof itemSchema>;
 
-export type ItemType = Item["type"];
-
-export const type2label = {
-  hot: "ホット",
-  ice: "アイス",
-  hotOre: "ホットオレ",
-  iceOre: "アイスオレ",
-  milk: "アイスミルク",
-  others: "その他",
-} as const satisfies Record<ItemType, string>;
+export type ItemType = z.infer<typeof itemTypeSchema>;
 
 export class ItemEntity implements Item {
   private constructor(
     private readonly _id: string | undefined,
     private readonly _name: string,
+    private readonly _abbr: string,
     private readonly _price: number,
-    private readonly _type: ItemType,
+    private readonly _key: string,
+    private readonly _item_type: ItemType,
     private _assignee: string | null,
   ) {}
 
-  static createNew({ name, price, type }: Omit<Item, "assignee">): ItemEntity {
-    return new ItemEntity(undefined, name, price, type, null);
+  static createNew({
+    name,
+    abbr,
+    price,
+    key,
+    item_type,
+  }: Omit<Item, "assignee">): ItemEntity {
+    return new ItemEntity(undefined, name, abbr, price, key, item_type, null);
   }
 
   static fromItem(item: WithId<Item>): WithId<ItemEntity>;
@@ -53,8 +48,10 @@ export class ItemEntity implements Item {
     return new ItemEntity(
       item.id,
       item.name,
+      item.abbr,
       item.price,
-      item.type,
+      item.key,
+      item.item_type,
       item.assignee,
     );
   }
@@ -71,12 +68,20 @@ export class ItemEntity implements Item {
     return this._name;
   }
 
+  get abbr() {
+    return this._abbr;
+  }
+
   get price() {
     return this._price;
   }
 
-  get type() {
-    return this._type;
+  get key() {
+    return this._key;
+  }
+
+  get item_type() {
+    return this._item_type;
   }
 
   get assignee() {
@@ -104,8 +109,10 @@ export class ItemEntity implements Item {
     return {
       id: this.id,
       name: this.name,
+      abbr: this.abbr,
       price: this.price,
-      type: this.type,
+      key: this.key,
+      item_type: this.item_type,
       assignee: this.assignee,
     };
   }

@@ -227,13 +227,14 @@ export class OrderEntity implements Order {
     // milk と others 以外のアイテムを返す
     // TODO(toririm): このメソッドは items が変更された時だけでいい
     return this.items.filter(
-      (item) => item.type !== "milk" && item.type !== "others",
+      (item) =>
+        item.item_type.name !== "milk" && item.item_type.name !== "others",
     );
   }
 
   getDrinkCups() {
     // others 以外のアイテムを返す
-    return this.items.filter((item) => item.type !== "others");
+    return this.items.filter((item) => item.item_type.name !== "others");
   }
 
   /**

@@ -25,6 +25,7 @@
     "*.{js,jsx,ts,tsx,json,jsonc}": "pnpm run fmt"
   },
   "dependencies": {
+    "openapi-fetch": "^0.15.0",
     "pnpm": "^10.27.0"
   }
 }
