@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"cafeore-pos/api/internal/models"
+	"log"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -26,7 +27,9 @@ func (h *Hub) Run() {
 		h.mu.Lock()
 		for conn := range h.clients {
 			if err := conn.WriteJSON(orders); err != nil {
-				conn.Close()
+				if err := conn.Close(); err != nil {
+					log.Println("failed to close connection:", err)
+				}
 				delete(h.clients, conn)
 			}
 		}

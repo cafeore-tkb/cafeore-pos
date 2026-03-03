@@ -1,10 +1,8 @@
-import { collectionSub, orderConverter } from "@cafeore/common";
+import { useOrdersWS } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
-import { orderBy } from "firebase/firestore";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
-import useSWRSubscription from "swr/subscription";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import {
   CallingOrderCard,
@@ -23,10 +21,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function FielsOfCallScreen() {
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }, orderBy("orderId", "asc")),
-  );
+  const { orders } = useOrdersWS();
 
   const orderState = useOrderState(orders);
   const {
@@ -127,7 +122,7 @@ export default function FielsOfCallScreen() {
 
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
-          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 via-theme-primary to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-orange-500 via-theme-primary to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
             <HiBell className="text-3xl" />
             お呼び出し中
             <HiBell className="text-3xl" />

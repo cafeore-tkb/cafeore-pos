@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -477,7 +478,9 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	}
 	defer func() {
 		h.hub.Unregister(conn)
-		conn.Close()
+		if err := conn.Close(); err != nil {
+    	log.Println("failed to close connection:", err)
+		}
 	}()
 
 	h.hub.Register(conn)
