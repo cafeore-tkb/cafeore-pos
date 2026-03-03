@@ -2,13 +2,12 @@ import {
   MasterStateEntity,
   OrderEntity,
   type OrderStatType,
-  collectionSub,
   masterRepository,
-  orderConverter,
   orderRepository,
   orderSchema,
   orderStatTypes,
   stringToJSONSchema,
+  useOrdersWS,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import {
@@ -16,9 +15,7 @@ import {
   type MetaFunction,
   useSubmit,
 } from "@remix-run/react";
-import { orderBy } from "firebase/firestore";
 import { useCallback } from "react";
-import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
@@ -31,18 +28,12 @@ export const meta: MetaFunction = () => {
 };
 
 export default function FielsOfMaster() {
+  const { orders } = useOrdersWS();
   const submit = useSubmit();
-  const mutateOrder = useCallback(
-    (servedOrder: OrderEntity, descComment: string) => {
-      const order = servedOrder.clone();
-      order.addComment("master", descComment);
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
+  const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
+    if (servedOrder.id)
+      orderRepository.addComment(servedOrder.id, "master", descComment);
+  };
   const isOperational = useOrderStat();
 
   const changeOrderStat = useCallback(
@@ -50,11 +41,6 @@ export default function FielsOfMaster() {
       submit({ status }, { method: "POST" });
     },
     [submit],
-  );
-
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }, orderBy("orderId", "asc")),
   );
 
   const unserved = orders?.reduce((acc, cur) => {
@@ -109,19 +95,6 @@ export default function FielsOfMaster() {
     </div>
   );
 }
-
-// TODO: ファイル分割してリファクタリングする
-export const clientAction: ClientActionFunction = async (args) => {
-  const method = args.request.method;
-  switch (method) {
-    case "PUT":
-      return addComment(args);
-    case "POST":
-      return changeOrderStat(args);
-    default:
-      throw new Error(`Method ${method} is not allowed`);
-  }
-};
 
 export const addComment: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();

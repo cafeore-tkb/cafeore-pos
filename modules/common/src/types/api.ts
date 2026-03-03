@@ -42,13 +42,21 @@ export interface paths {
     /** オーダー作成 */
     post: operations["createOrder"];
   };
-  "/api/Orders/{id}": {
+  "/api/orders/{id}": {
     /** idからオーダー情報取得 */
     get: operations["getOrder"];
     /** オーダー情報更新 */
     put: operations["updateOrder"];
     /** オーダー削除 */
     delete: operations["deleteOrder"];
+  };
+  "/api/orders/{id}/ready": {
+    /** オーダーを準備完了にする */
+    patch: operations["markOrderReady"];
+  };
+  "/api/orders/{id}/served": {
+    /** オーダーを提供完了にする */
+    patch: operations["markOrderServe"];
   };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
@@ -136,8 +144,7 @@ export interface components {
       served_at?: string | null;
       billing_amount: number;
       received: number;
-      /** Format: uuid */
-      discount_order_id?: string | null;
+      discount_order_id?: number | null;
       discount_order_cups?: number;
       items: components["schemas"]["ItemInfo"][];
       comments?: components["schemas"]["CommentResponse"][];
@@ -152,14 +159,15 @@ export interface components {
        * @example 500
        */
       received: number;
-      /** Format: uuid */
-      discount_order_id?: string | null;
+      discount_order_id?: number | null;
       /** @default 0 */
       discount_order_cups?: number;
       item_ids: components["schemas"]["ItemInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
     };
     OrderUpdateRequest: {
+      /** Format: uuid */
+      id: string;
       order_id: number;
       /** Format: date-time */
       ready_at?: string | null;
@@ -167,8 +175,7 @@ export interface components {
       served_at?: string | null;
       billing_amount: number;
       received: number;
-      /** Format: uuid */
-      discount_order_id?: string | null;
+      discount_order_id?: number | null;
       discount_order_cups?: number;
       item_ids: components["schemas"]["ItemInfoCreate"][];
     };
@@ -457,6 +464,50 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
+      };
+    };
+  };
+  /** オーダーを準備完了にする */
+  markOrderReady: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"][];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** オーダーを提供完了にする */
+  markOrderServe: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"][];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };

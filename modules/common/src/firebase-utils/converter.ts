@@ -14,8 +14,14 @@ import {
   globalCashierStateSchema,
   globalMasterStateSchema,
 } from "../models/global";
-import { ItemEntity, itemSchema } from "../models/item";
-import { OrderEntity, orderSchema } from "../models/order";
+import { type Item, ItemEntity } from "../models/item";
+import {
+  type Order,
+  type OrderComment,
+  OrderEntity,
+  orderSchema,
+} from "../models/order";
+import type { components } from "../types/api";
 
 export const converter = <T>(
   schema: ZodSchema<T>,
@@ -66,23 +72,50 @@ const parseDateProperty = (data: DocumentData): DocumentData => {
 };
 
 /**
- * Firestore のデータを ItemEntity に変換する
- *
- * @deprecated アイテムはソースコードに直接ハードコードするようになりました
- * @see `data/items.ts`
+ * openapi のデータを ItemEntity に変換する
  */
-export const itemConverter: FirestoreDataConverter<WithId<ItemEntity>> = {
-  toFirestore: converter(itemSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ) => {
-    const convertedData = converter(itemSchema.required()).fromFirestore(
-      snapshot,
-      options,
-    );
-    return ItemEntity.fromItem(convertedData);
-  },
+type ItemResponse = components["schemas"]["ItemResponse"];
+type ItemCreateRequest = components["schemas"]["ItemCreateRequest"];
+type ItemUpdateRequest = components["schemas"]["ItemUpdateRequest"];
+
+// ItemResponse を ItemEntity に変換
+export const responseToItemEntity = (
+  response: ItemResponse,
+): WithId<ItemEntity> => {
+  const item: WithId<Item> = {
+    id: response.id,
+    name: response.name,
+    abbr: response.abbr,
+    price: response.price,
+    key: response.key,
+    item_type: response.item_type,
+    assignee: null,
+  };
+  return ItemEntity.fromItem(item);
+};
+// Item を CreateRequest に変換
+export const itemToCreateRequest = (item: ItemEntity): ItemCreateRequest => {
+  return {
+    name: item.name,
+    abbr: item.abbr,
+    price: item.price,
+    key: item.key,
+    item_type_id: item.item_type.id,
+  };
+};
+
+// Item を UpdateRequest に変換
+export const itemToUpdateRequest = (
+  item: WithId<ItemEntity>,
+): ItemUpdateRequest => {
+  return {
+    id: item.id,
+    name: item.name,
+    abbr: item.abbr,
+    price: item.price,
+    key: item.key,
+    item_type_id: item.item_type.id,
+  };
 };
 
 /**
@@ -131,4 +164,117 @@ export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
 
     return MasterStateEntity.fromMasterState(convertedData);
   },
+};
+
+type OrderResponse = components["schemas"]["OrderResponse"];
+type ItemInfo = components["schemas"]["ItemInfo"];
+type CommentResponse = components["schemas"]["CommentResponse"];
+type OrderCreateRequest = components["schemas"]["OrderCreateRequest"];
+type ItemInfoCreate = components["schemas"]["ItemInfoCreate"];
+type OrderUpdateRequest = components["schemas"]["OrderUpdateRequest"];
+
+export const responseToOrderEntity = (
+  response: OrderResponse,
+): WithId<OrderEntity> => {
+  const items = response.items.reduce(
+    (acc: WithId<ItemEntity>[], cur: ItemInfo) => {
+      acc.push(itemInfostoItems(cur));
+      return acc;
+    },
+    [],
+  );
+  const comments = response.comments?.reduce(
+    (acc: OrderComment[], cur: CommentResponse) => {
+      acc.push(commentConverter(cur));
+      return acc;
+    },
+    [],
+  );
+  const order: WithId<Order> = {
+    id: response.id,
+    orderId: response.order_id,
+    createdAt: new Date(response.created_at),
+    readyAt: response.ready_at ? new Date(response.ready_at) : null,
+    servedAt: response.served_at ? new Date(response.served_at) : null,
+    total: 0,
+    discount: 100,
+    estimateTime: 10,
+    billingAmount: response.billing_amount,
+    received: response.received,
+    DISCOUNT_PER_CUP: 100,
+    discountOrderId: response.discount_order_id
+      ? response.discount_order_id
+      : null,
+    discountOrderCups: response.discount_order_cups
+      ? response.discount_order_cups
+      : 0,
+    items: items,
+    comments: comments ? comments : [],
+  };
+  return OrderEntity.fromOrder(order);
+};
+
+export const itemInfostoItems = (itemInfo: ItemInfo): WithId<ItemEntity> => {
+  const item: WithId<Item> = {
+    id: itemInfo.item.id,
+    name: itemInfo.item.name,
+    abbr: itemInfo.item.abbr,
+    price: itemInfo.item.price,
+    key: itemInfo.item.key,
+    item_type: itemInfo.item.item_type,
+    assignee: itemInfo.assignee,
+  };
+  return ItemEntity.fromItem(item);
+};
+
+export const commentConverter = (comment: CommentResponse): OrderComment => {
+  const author =
+    comment.author === "cashier" ||
+    comment.author === "master" ||
+    comment.author === "serve"
+      ? comment.author
+      : "others";
+  return {
+    author: author,
+    text: comment.text,
+    createdAt: new Date(comment.created_at),
+  };
+};
+
+// OrderEntity を CreateRequest に変換
+export const orderEntityToCreateRequest = (
+  order: OrderEntity,
+): OrderCreateRequest => {
+  const itemIds = order.items.reduce((acc: ItemInfoCreate[], cur) => {
+    acc.push({ assignee: cur.assignee, item_id: cur.id });
+    return acc;
+  }, []);
+  return {
+    order_id: order.orderId,
+    billing_amount: order.billingAmount,
+    received: order.received,
+    discount_order_id: order.discountOrderId,
+    discount_order_cups: order.discountOrderCups,
+    item_ids: itemIds,
+    comments: order.comments,
+  };
+};
+
+// OrderEntity を UpdateRequest に変換
+export const orderToUpdateRequest = (
+  order: WithId<OrderEntity>,
+): OrderUpdateRequest => {
+  const itemIds = order.items.reduce((acc: ItemInfoCreate[], cur) => {
+    acc.push({ assignee: cur.assignee, item_id: cur.id });
+    return acc;
+  }, []);
+  return {
+    id: order.id,
+    order_id: order.orderId,
+    billing_amount: order.billingAmount,
+    received: order.received,
+    discount_order_id: order.discountOrderId,
+    discount_order_cups: order.discountOrderCups,
+    item_ids: itemIds,
+  };
 };

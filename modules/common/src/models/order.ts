@@ -34,30 +34,30 @@ export type Order = z.infer<typeof orderSchema>;
 
 type OrderStatus = "preparing" | "calling" | "served";
 
-type Comment = z.infer<typeof commentSchema>;
+export type OrderComment = z.infer<typeof commentSchema>;
 
 // 途中から割引額を変更する場合はこの値を変更する
 const STATIC_DISCOUNT_PER_CUP = 100;
 
-class CommentEntity implements Comment {
+class CommentEntity implements OrderComment {
   constructor(
     public readonly author: Author,
     public readonly text: string,
     public readonly createdAt: Date,
   ) {}
 
-  static fromComment(comment: Comment): CommentEntity {
+  static fromComment(comment: OrderComment): CommentEntity {
     return new CommentEntity(comment.author, comment.text, comment.createdAt);
   }
 
   static createNew({
     author,
     text,
-  }: Omit<Comment, "createdAt">): CommentEntity {
+  }: Omit<OrderComment, "createdAt">): CommentEntity {
     return new CommentEntity(author, text, new Date());
   }
 
-  toComment(): Comment {
+  toComment(): OrderComment {
     return {
       author: this.author,
       text: this.text,

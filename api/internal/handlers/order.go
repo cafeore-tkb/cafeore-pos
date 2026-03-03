@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
@@ -15,10 +16,11 @@ import (
 
 type OrderHandler struct {
 	db *gorm.DB
+	hub *Hub
 }
 
-func NewOrderHandler(db *gorm.DB) *OrderHandler {
-	return &OrderHandler{db: db}
+func NewOrderHandler(db *gorm.DB, hub *Hub) *OrderHandler {
+	return &OrderHandler{db: db, hub: hub}
 }
 
 // DB models → API models 変換関数
@@ -31,7 +33,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		ServedAt:          order.ServedAt,
 		BillingAmount:     order.BillingAmount,
 		Received:          order.Received,
-		DiscountOrderId:   (*openapi_types.UUID)(&order.DiscountOrderId),
+		DiscountOrderId:   &order.DiscountOrderId,
 		DiscountOrderCups: &order.DiscountOrderCups,
 	}
 	// Items変換
@@ -53,6 +55,19 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// ブロードキャスト用のヘルパー
+func (h *OrderHandler) broadcastOrders() {
+	var orders []models.Order
+	if err := h.db.Preload("OrderItems.Item.ItemType").Preload("Comments").Find(&orders).Error; err != nil {
+			return
+	}
+	responses := make([]models.OrderResponse, len(orders))
+	for i, o := range orders {
+			responses[i] = toOrderResponse(&o)
+	}
+	h.hub.Broadcast(responses)
 }
 
 // GET /api/orders - オーダー一覧取得
@@ -91,12 +106,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	if req.DiscountOrderId != nil {
-		u, err := uuid.Parse(req.DiscountOrderId.String())
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid discount_order_id"})
-				return
-			}
-        order.DiscountOrderId = u
+		order.DiscountOrderId = *req.DiscountOrderId
 	}
 
 	if req.DiscountOrderCups != nil {
@@ -183,6 +193,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
     }
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
+	h.broadcastOrders()
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -401,8 +412,12 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	now := time.Now()
-	order.ReadyAt = &now
+	if order.ReadyAt == nil{
+		now := time.Now()
+		order.ReadyAt = &now
+	} else {
+		order.ReadyAt = nil
+	}
 
 	if err := h.db.Save(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -410,6 +425,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toOrderResponse(&order))
+	h.broadcastOrders()
 }
 
 // PATCH /api/orders/:id/served - オーダーを提供済みにする
@@ -432,8 +448,14 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	order.ServedAt = &now
+	if order.ServedAt == nil{
+		now := time.Now()
+		order.ServedAt = &now
+		order.ReadyAt = &now
+	} else {
+		order.ServedAt = nil
+		order.ReadyAt = nil
+	}
 
 	if err := h.db.Save(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -441,4 +463,32 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toOrderResponse(&order))
+	h.broadcastOrders()
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+func (h *OrderHandler) WSHandler(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer func() {
+		h.hub.Unregister(conn)
+		conn.Close()
+	}()
+
+	h.hub.Register(conn)
+
+	// 接続直後に現在のデータを送信
+	h.broadcastOrders()
+
+	// 接続維持（クライアントからのメッセージは今は無視）
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
 }

@@ -13,4 +13,8 @@ export type ItemRepository = BaseRepository<ItemEntity>;
 
 export type ItemTypeRepository = BaseRepository<ItemType>;
 
-export type OrderRepository = BaseRepository<OrderEntity>;
+export type OrderRepository = BaseRepository<OrderEntity> & {
+  ready(id: string): Promise<void>;
+  serve(id: string): Promise<void>;
+  addComment(id: string, author: string, text: string): Promise<void>;
+};

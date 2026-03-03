@@ -1,21 +1,9 @@
 import {
-  OrderEntity,
-  collectionSub,
-  orderConverter,
+  type OrderEntity,
   orderRepository,
-  orderSchema,
-  stringToJSONSchema,
+  useOrdersWS,
 } from "@cafeore/common";
-import { parseWithZod } from "@conform-to/zod";
-import {
-  type ClientActionFunction,
-  type MetaFunction,
-  useSubmit,
-} from "@remix-run/react";
-import { orderBy } from "firebase/firestore";
-import { useCallback } from "react";
-import useSWRSubscription from "swr/subscription";
-import { z } from "zod";
+import type { MetaFunction } from "@remix-run/react";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 
@@ -26,23 +14,11 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Serve() {
-  const submit = useSubmit();
-  const addComment = useCallback(
-    (servedOrder: OrderEntity, descComment: string) => {
-      const order = servedOrder.clone();
-      order.addComment("serve", descComment);
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
-
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }, orderBy("orderId", "asc")),
-  );
+  const { orders } = useOrdersWS();
+  const addComment = async (servedOrder: OrderEntity, descComment: string) => {
+    if (servedOrder.id)
+      orderRepository.addComment(servedOrder.id, "serve", descComment);
+  };
 
   const unserved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
@@ -65,44 +41,22 @@ export default function Serve() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        {orders?.map((order) => {
-          return (
-            order.servedAt === null && (
-              <OrderInfoCard
-                key={order.id}
-                order={order}
-                timing={"present"}
-                user={"serve"}
-                comment={addComment}
-              />
-            )
-          );
-        })}
+        {orders
+          ?.sort((a, b) => a.orderId - b.orderId)
+          .map((order) => {
+            return (
+              order.servedAt === null && (
+                <OrderInfoCard
+                  key={order.id}
+                  order={order}
+                  timing={"present"}
+                  user={"serve"}
+                  comment={addComment}
+                />
+              )
+            );
+          })}
       </div>
     </div>
   );
 }
-
-export const clientAction: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
-
-  const schema = z.object({
-    servedOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { servedOrder } = submission.value;
-  const order = OrderEntity.fromOrder(servedOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  console.log("savedOrder", savedOrder);
-
-  return new Response("ok");
-};
