@@ -4,9 +4,7 @@ import { responseToOrderEntity } from "../firebase-utils";
 import type { WithId } from "../lib";
 import type { OrderEntity } from "../models";
 export const useOrdersWS = () => {
-  const [orders, setOrders] = useState<WithId<OrderEntity>[] | undefined>(
-    undefined,
-  );
+  const [orders, setOrders] = useState<WithId<OrderEntity>[]>([]);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8080/api/ws/orders");
