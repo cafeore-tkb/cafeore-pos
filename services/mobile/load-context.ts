@@ -10,7 +10,7 @@ type Env = {};
 
 type Cloudflare = Omit<PlatformProxy<Env>, "dispose">;
 
-declare module "@remix-run/cloudflare" {
+declare module "@react-router/cloudflare" {
   interface AppLoadContext {
     cloudflare: Cloudflare;
   }

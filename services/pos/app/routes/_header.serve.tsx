@@ -3,7 +3,7 @@ import {
   orderRepository,
   useOrdersWS,
 } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 

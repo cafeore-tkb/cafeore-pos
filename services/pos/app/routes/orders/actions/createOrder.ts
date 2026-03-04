@@ -1,5 +1,5 @@
 import { OrderEntity, orderRepository } from "@cafeore/common";
-import type { ClientActionFunction } from "@remix-run/react";
+import type { ClientActionFunction } from "react-router";
 
 export const createOrder: ClientActionFunction = async () => {
   console.log("save(create)のテスト");
