@@ -1,12 +1,6 @@
-import {
-  type OrderEntity,
-  collectionSub,
-  orderConverter,
-} from "@cafeore/common";
+import { type OrderEntity, useOrdersWS } from "@cafeore/common";
 import type { MetaFunction } from "@remix-run/react";
-import { orderBy } from "firebase/firestore";
 import { useCallback, useState } from "react";
-import useSWRSubscription from "swr/subscription";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
@@ -19,10 +13,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Dashboard() {
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }, orderBy("orderId", "desc")),
-  );
+  const { orders } = useOrdersWS();
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;

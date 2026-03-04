@@ -10,6 +10,7 @@ import (
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/models"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -122,24 +123,23 @@ func main() {
 	r := gin.Default()
 
 	// CORS設定
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	r.Use(cors.New(cors.Config{
+    AllowOrigins:     []string{"*"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, // PATCHを追加
+    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+    ExposeHeaders:    []string{"Content-Length"},
+    AllowCredentials: true,
+	}))
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
+	hub := handlers.NewHub()
+	go hub.Run()
 
-		c.Next()
-	})
-
-    // ハンドラー初期化
+	// ハンドラー初期化
 	itemHandler := handlers.NewItemHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
-	orderHandler := handlers.NewOrderHandler(db)
-	commentHandler := handlers.NewCommentHandler(db)
+	orderHandler := handlers.NewOrderHandler(db, hub)
+	commentHandler := handlers.NewCommentHandler(db, hub)
+
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -159,6 +159,7 @@ func main() {
 		api.PUT("/item-types/:id", itemTypeHandler.UpdateItemType)
 		api.DELETE("/item-types/:id", itemTypeHandler.DeleteItemType)
 		api.GET("/orders", orderHandler.GetOrders)
+		api.GET("/ws/orders", orderHandler.WSHandler)
 		api.POST("/orders", orderHandler.CreateOrder)
 		api.GET("/orders/:id", orderHandler.GetOrder)
 		api.PUT("/orders/:id", orderHandler.UpdateOrder)

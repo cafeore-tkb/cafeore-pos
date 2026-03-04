@@ -1,53 +1,17 @@
 import createClient from "openapi-fetch";
+import {
+  itemToCreateRequest,
+  itemToUpdateRequest,
+  responseToItemEntity,
+} from "../firebase-utils";
 import { type WithId, hasId } from "../lib/typeguard";
-import { type Item, ItemEntity } from "../models/item";
-import type { components, paths } from "../types/api";
+import type { ItemEntity } from "../models/item";
+import type { paths } from "../types/api";
 import type { ItemRepository } from "./type";
 
 export const API_BASE_URL = "http://localhost:8080";
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
-
-// OpenAPI型のエイリアス
-type ItemResponse = components["schemas"]["ItemResponse"];
-type ItemCreateRequest = components["schemas"]["ItemCreateRequest"];
-type ItemUpdateRequest = components["schemas"]["ItemUpdateRequest"];
-
-// ItemResponse を Item に変換
-const responseToItemEntity = (response: ItemResponse): WithId<ItemEntity> => {
-  const item: WithId<Item> = {
-    id: response.id,
-    name: response.name,
-    abbr: response.abbr,
-    price: response.price,
-    key: response.key,
-    item_type: response.item_type,
-    assignee: null,
-  };
-  return ItemEntity.fromItem(item);
-};
-// Item を CreateRequest に変換
-const itemToCreateRequest = (item: Item): ItemCreateRequest => {
-  return {
-    name: item.name,
-    abbr: item.abbr,
-    price: item.price,
-    key: item.key,
-    item_type_id: item.item_type.id,
-  };
-};
-
-// Item を UpdateRequest に変換
-const itemToUpdateRequest = (item: WithId<Item>): ItemUpdateRequest => {
-  return {
-    id: item.id,
-    name: item.name,
-    abbr: item.abbr,
-    price: item.price,
-    key: item.key,
-    item_type_id: item.item_type.id,
-  };
-};
 
 export const itemRepoFactory = (): ItemRepository => {
   const update = async (
@@ -125,6 +89,7 @@ export const itemRepoFactory = (): ItemRepository => {
         throw new Error("Failed to fetch items");
       }
 
+      console.log("raw data:", data); // APIレスポンス確認
       return data.map(responseToItemEntity);
     },
   };

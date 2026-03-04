@@ -1,4 +1,5 @@
-import { type ItemEntity, type WithId, key2item } from "@cafeore/common";
+import type { ItemEntity, WithId } from "@cafeore/common";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
 type props = {
@@ -7,47 +8,41 @@ type props = {
 };
 
 export const ItemButtons = ({ items, addItem }: props) => {
+  const bgColor: Record<string, string> = {
+    iceOre: "bg-ore hover:bg-ore/70",
+    ice: "bg-ice hover:bg-ice/70",
+    milk: "bg-ice hover:bg-ice/70",
+    other: "bg-gray-500 hover:bg-gray-500/70",
+  };
   return (
-    <div className="relative h-screen pr-[20px] pl-[20px]">
+    <div className="relative h-screen pr-5 pl-5">
       <div
         key="hot"
-        className="pt-[20px] pb-[15px] pl-[20px] font-medium text-2xl text-theme"
+        className="pt-5 pb-3.75 pl-5 font-medium text-2xl text-theme"
       >
         ブレンド
       </div>
       <div
-        className="grid grid-cols-3 items-center justify-items-start gap-[30px]"
+        className="grid grid-cols-3 items-center justify-items-start gap-7.5"
         style={{ gridTemplateRows: "auto" }}
       >
-        <Button
-          key="-"
-          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("-"));
-          }}
-        >
-          縁ブレンド
-        </Button>
-        <Button
-          key="^"
-          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("^"));
-          }}
-        >
-          珈琲・俺ブレンド
-        </Button>
-        <Button
-          key="+"
-          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("+"));
-          }}
-        >
-          も花も香ブレンド
-        </Button>
+        {items.map(
+          (item) =>
+            item.item_type.name === "hot" && (
+              <Button
+                key={item.id}
+                className="h-12.5 w-37.5 bg-theme-primary text-lg hover:bg-theme-primary/70 hover:ring-4"
+                onClick={() => {
+                  addItem(item);
+                }}
+              >
+                {item.abbr}
+              </Button>
+            ),
+        )}
       </div>
-      <div
+      {/* imte_typeにサブタイプみたいなフィールド用意してブレンド、限定、グルメを区別したい */}
+      {/* <div
         key="hot"
         className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl text-theme-primary"
       >
@@ -57,24 +52,20 @@ export const ItemButtons = ({ items, addItem }: props) => {
         className="grid grid-cols-3 items-center justify-items-start gap-[30px]"
         style={{ gridTemplateRows: "auto" }}
       >
-        <Button
-          key="/"
-          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("/"));
-          }}
-        >
-          ライチ
-        </Button>
-        <Button
-          key="#"
-          className="h-[50px] w-[150px] bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("#"));
-          }}
-        >
-          ブルマン
-        </Button>
+        {items.map(
+          (item) =>
+            item.item_type.name === "hot" && (
+              <Button
+                key={item.id}
+                className="h-12.5 w-37.5 bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
+                onClick={() => {
+                  addItem(item);
+                }}
+              >
+                {item.abbr}
+              </Button>
+            ),
+        )}
       </div>
       <div
         key="hot"
@@ -86,89 +77,45 @@ export const ItemButtons = ({ items, addItem }: props) => {
         className="grid grid-cols-3 items-center justify-items-start gap-[30px]"
         style={{ gridTemplateRows: "auto" }}
       >
-        <Button
-          key=";"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item(";"));
-          }}
-        >
-          キリマンジャロ
-        </Button>
-        <Button
-          key=":"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item(":"));
-          }}
-        >
-          ピンクブルボン
-        </Button>
-        <Button
-          key="]"
-          className="h-[50px] w-[150px] bg-hot text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("]"));
-          }}
-        >
-          トラジャ
-        </Button>
-      </div>
-      <div
-        key="ice"
-        className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl"
-      >
+        {items.map(
+          (item) =>
+            item.item_type.name === "hot" && (
+              <Button
+                key={item.id}
+                className="h-12.5 w-37.5 bg-theme-primary text-lg hover:bg-theme-primary hover:ring-4"
+                onClick={() => {
+                  addItem(item);
+                }}
+              >
+                {item.abbr}
+              </Button>
+            ),
+        )}
+      </div> */}
+      <div key="ice" className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl">
         others
       </div>
       <div
-        className="grid grid-cols-3 items-center justify-items-start gap-[30px]"
+        className="grid grid-cols-3 items-center justify-items-start gap-7.5"
         style={{ gridTemplateRows: "auto" }}
       >
-        <Button
-          key="["
-          className="h-[50px] w-[150px] bg-ore text-lg hover:bg-ice hover:ring-4"
-          onClick={() => {
-            addItem(key2item("["));
-          }}
-        >
-          アイスオレ
-        </Button>
-        <Button
-          key="\\"
-          className="h-[50px] w-[150px] bg-ice text-lg hover:bg-theme-primary hover:ring-4"
-          onClick={() => {
-            addItem(key2item("\\"));
-          }}
-        >
-          アイスコーヒー
-        </Button>
-        <Button
-          key="."
-          className="h-[50px] w-[150px] bg-ice text-lg hover:bg-ice hover:ring-4"
-          onClick={() => {
-            addItem(key2item("."));
-          }}
-        >
-          アイスミルク
-        </Button>
-        <Button
-          key=","
-          className="h-[50px] w-[150px] text-lg hover:ring-4"
-          onClick={() => {
-            addItem(key2item(","));
-          }}
-        >
-          コースター
-        </Button>
-        <Button
-          key="@"
-          className="h-[50px] w-[150px] text-lg hover:ring-4"
-          onClick={() => {
-            addItem(key2item("@"));
-          }}
-        >
-          トートセット
-        </Button>
+        {items.map(
+          (item) =>
+            item.item_type.name !== "hot" && (
+              <Button
+                key={item.id}
+                className={cn(
+                  "h-12.5 w-37.5 hover:ring-4",
+                  bgColor[item.item_type.name],
+                )}
+                onClick={() => {
+                  addItem(item);
+                }}
+              >
+                {item.abbr}
+              </Button>
+            ),
+        )}
       </div>
     </div>
   );

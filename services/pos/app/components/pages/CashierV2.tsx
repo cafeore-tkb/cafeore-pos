@@ -77,14 +77,10 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
   );
 
   // 過去の注文からのコメント追加機能
-  const addComment = useCallback(
-    async (servedOrder: OrderEntity, descComment: string) => {
-      const order = servedOrder.clone();
-      order.addComment("cashier", descComment);
-      await orderRepository.save(order);
-    },
-    [],
-  );
+  const addComment = async (servedOrder: OrderEntity, descComment: string) => {
+    if (servedOrder.id)
+      orderRepository.addComment(servedOrder.id, "cashier", descComment);
+  };
 
   const playSound = useCallback(() => {
     soundRef.current?.play();

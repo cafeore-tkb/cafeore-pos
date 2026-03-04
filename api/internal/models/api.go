@@ -94,7 +94,7 @@ type OrderCreateRequest struct {
 	BillingAmount     int                     `json:"billing_amount"`
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *openapi_types.UUID     `json:"discount_order_id"`
+	DiscountOrderId   *int                    `json:"discount_order_id"`
 	ItemIds           []ItemInfoCreate        `json:"item_ids"`
 	OrderId           int                     `json:"order_id"`
 	Received          int                     `json:"received"`
@@ -102,29 +102,30 @@ type OrderCreateRequest struct {
 
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount     int                 `json:"billing_amount"`
-	Comments          *[]CommentResponse  `json:"comments,omitempty"`
-	CreatedAt         time.Time           `json:"created_at"`
-	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
-	Id                openapi_types.UUID  `json:"id"`
-	Items             []ItemInfo          `json:"items"`
-	OrderId           int                 `json:"order_id"`
-	ReadyAt           *time.Time          `json:"ready_at"`
-	Received          int                 `json:"received"`
-	ServedAt          *time.Time          `json:"served_at"`
+	BillingAmount     int                `json:"billing_amount"`
+	Comments          *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt         time.Time          `json:"created_at"`
+	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *int               `json:"discount_order_id"`
+	Id                openapi_types.UUID `json:"id"`
+	Items             []ItemInfo         `json:"items"`
+	OrderId           int                `json:"order_id"`
+	ReadyAt           *time.Time         `json:"ready_at"`
+	Received          int                `json:"received"`
+	ServedAt          *time.Time         `json:"served_at"`
 }
 
 // OrderUpdateRequest defines model for OrderUpdateRequest.
 type OrderUpdateRequest struct {
-	BillingAmount     int                 `json:"billing_amount"`
-	DiscountOrderCups *int                `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *openapi_types.UUID `json:"discount_order_id"`
-	ItemIds           []ItemInfoCreate    `json:"item_ids"`
-	OrderId           int                 `json:"order_id"`
-	ReadyAt           *time.Time          `json:"ready_at"`
-	Received          int                 `json:"received"`
-	ServedAt          *time.Time          `json:"served_at"`
+	BillingAmount     int                `json:"billing_amount"`
+	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *int               `json:"discount_order_id"`
+	Id                openapi_types.UUID `json:"id"`
+	ItemIds           []ItemInfoCreate   `json:"item_ids"`
+	OrderId           int                `json:"order_id"`
+	ReadyAt           *time.Time         `json:"ready_at"`
+	Received          int                `json:"received"`
+	ServedAt          *time.Time         `json:"served_at"`
 }
 
 // StatusResponse defines model for StatusResponse.
@@ -134,9 +135,6 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 }
-
-// UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
-type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest
@@ -152,6 +150,9 @@ type UpdateItemJSONRequestBody = ItemUpdateRequest
 
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
 type CreateOrderJSONRequestBody = OrderCreateRequest
+
+// UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
+type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest

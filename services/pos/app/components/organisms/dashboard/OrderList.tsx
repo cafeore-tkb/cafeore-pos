@@ -24,6 +24,8 @@ export function OrderList({ orders }: OrderStatusListProps) {
   const [focusedOrderId, setFocusedOrderId] = useState(1);
   const detailOrder = orders?.find((order) => order.orderId === focusedOrderId);
 
+  console.log(detailOrder);
+
   const numOfCups = (order: OrderEntity): number => {
     return order.items.length;
   };

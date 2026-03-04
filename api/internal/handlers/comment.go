@@ -8,17 +8,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
 )
 
 type CommentHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	hub *Hub
 }
 
-func NewCommentHandler(db *gorm.DB) *CommentHandler {
-	return &CommentHandler{db: db}
+func NewCommentHandler(db *gorm.DB, hub *Hub) *CommentHandler {
+	return &CommentHandler{db: db, hub: hub}
 }
 
 func toCommentResponse(comment *models.Comment) models.CommentResponse {
@@ -107,4 +109,13 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toCommentResponse(&comment))
+	var orders []models.Order
+	if err := h.db.Preload("OrderItems.Item.ItemType").Preload("Comments").Find(&orders).Error; err != nil {
+			return
+	}
+	responses := make([]models.OrderResponse, len(orders))
+	for i, o := range orders {
+			responses[i] = toOrderResponse(&o)
+	}
+	h.hub.Broadcast(responses)
 }

@@ -1,7 +1,9 @@
-import { type OrderEntity, type WithId, id2abbr } from "@cafeore/common";
-import { useSubmit } from "@remix-run/react";
+import {
+  type OrderEntity,
+  type WithId,
+  orderRepository,
+} from "@cafeore/common";
 import dayjs from "dayjs";
-import { useCallback } from "react";
 import { LuHourglass } from "react-icons/lu";
 import { toast } from "sonner";
 import { cn } from "~/lib/utils";
@@ -20,48 +22,9 @@ type props = {
 };
 
 export function OrderInfoCard({ order, user, timing, comment }: props) {
-  const submit = useSubmit();
+  const changeReady = () => orderRepository.ready(order.id);
 
-  const changeReady = useCallback(
-    (servedOrder: OrderEntity, ready: boolean) => {
-      const order = servedOrder.clone();
-      if (ready) {
-        order.beReady();
-      } else {
-        order.undoReady();
-      }
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
-
-  const beServed = useCallback(
-    (servedOrder: OrderEntity) => {
-      const order = servedOrder.clone();
-      order.beServed();
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
-
-  const undoServe = useCallback(
-    (servedOrder: OrderEntity) => {
-      const order = servedOrder.clone();
-      order.undoServed();
-      order.undoReady();
-      submit(
-        { servedOrder: JSON.stringify(order.toOrder()) },
-        { method: "PUT" },
-      );
-    },
-    [submit],
-  );
+  const changeServed = () => orderRepository.serve(order.id);
 
   const displayOrders =
     user === "cashier" || user === "dashboard"
@@ -141,7 +104,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                   )}
                 >
                   <h3 className="text-center font-bold text-3xl">
-                    {id2abbr(item.id)}
+                    {item.abbr}
                   </h3>
                   {item.assignee && (
                     <p
@@ -198,20 +161,17 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
             )}
           {user === "serve" && timing === "present" && (
             <div className="mt-4 flex items-center justify-between">
-              <ReadyBell
-                order={order}
-                changeReady={(ready) => changeReady(order, ready)}
-              />
+              <ReadyBell order={order} changeReady={(ready) => changeReady()} />
               <ServeCheck
                 order={order}
                 onServe={(order) => {
                   const now = new Date();
-                  beServed(order);
+                  changeServed();
                   toast(`提供完了 No.${order.orderId}`, {
                     description: `${dayjs(now).format("H時m分")}`,
                     action: {
                       label: "取消",
-                      onClick: () => undoServe(order),
+                      onClick: () => changeServed(),
                     },
                   });
                 }}
@@ -222,7 +182,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
             <div className="mt-2 flex items-center justify-between">
               <Button
                 onClick={() => {
-                  undoServe(order);
+                  changeServed();
                 }}
                 className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
               >

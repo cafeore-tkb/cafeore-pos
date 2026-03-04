@@ -16,7 +16,7 @@ type Order struct {
 	ServedAt          *time.Time     
 	BillingAmount     int            `gorm:"not null"`
 	Received          int            `gorm:"not null"`
-	DiscountOrderId   uuid.UUID      `gorm:"type:uuid"`
+	DiscountOrderId   int
 	DiscountOrderCups int
 
 	OrderItems    []OrderItem    `gorm:"foreignKey:OrderID;references:ID"`

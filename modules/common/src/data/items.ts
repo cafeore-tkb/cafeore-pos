@@ -25,7 +25,9 @@ export const key2item = (key: string) => {
 };
 
 export const id2abbr = (id: string): string | undefined => {
+  console.log(id);
   const item = itemMaster.find((i) => i.id === id);
+  console.log(item);
   return item?.abbr;
 };
 

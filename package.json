@@ -16,6 +16,8 @@
   "devDependencies": {
     "@apidevtools/swagger-cli": "^4.0.4",
     "@biomejs/biome": "1.9.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.5",
     "openapi-typescript": "^6.7.6",
@@ -25,6 +27,7 @@
     "*.{js,jsx,ts,tsx,json,jsonc}": "pnpm run fmt"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.20",
     "openapi-fetch": "^0.15.0",
     "pnpm": "^10.27.0"
   }

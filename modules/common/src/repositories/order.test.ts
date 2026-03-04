@@ -36,7 +36,7 @@ describe("[db] orderRepository", async () => {
     const testDB = testEnv
       .unauthenticatedContext()
       .firestore() as unknown as Firestore;
-    orderRepository = orderRepoFactory(testDB);
+    orderRepository = orderRepoFactory();
     if (!(await isEmulatorRunning())) {
       console.log("Emulator is not running");
     }

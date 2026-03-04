@@ -222,7 +222,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderResponse'
-  /api/Orders/{id}:
+  /api/orders/{id}:
     get:
       summary: idからオーダー情報取得
       operationId: getOrder
@@ -275,7 +275,59 @@ paths:
             format: uuid
       responses:
         '204':
-          description: 成功    
+          description: 成功
+  /api/orders/{id}/ready:
+    patch:
+      summary: オーダーを準備完了にする
+      operationId: markOrderReady
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/served:
+    patch:
+      summary: オーダーを提供完了にする
+      operationId: markOrderServe
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders/{id}/comments:
     get:
       summary: 特定オーダーのコメント一覧取得
@@ -525,8 +577,7 @@ components:
         received:
           type: integer
         discount_order_id:
-          type: string
-          format: uuid
+          type: integer
           nullable: true
         discount_order_cups:
           type: integer
@@ -559,8 +610,7 @@ components:
           example: 500
           default: 0
         discount_order_id:
-          type: string
-          format: uuid
+          type: integer
           nullable: true
         discount_order_cups:
           type: integer
@@ -584,6 +634,9 @@ components:
         - received
         - item_ids
       properties:
+        id:
+          type: string
+          format: uuid
         order_id:
           type: integer
         ready_at:
@@ -599,8 +652,7 @@ components:
         received:
           type: integer
         discount_order_id:
-          type: string
-          format: uuid
+          type: integer
           nullable: true
         discount_order_cups:
           type: integer
