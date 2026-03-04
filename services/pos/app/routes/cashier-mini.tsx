@@ -3,8 +3,8 @@ import {
   documentSub,
   orderConverter,
 } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { MetaFunction } from "react-router";
 import useSWRSubscription from "swr/subscription";
 import logoSVG from "~/assets/cafeore.svg";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";

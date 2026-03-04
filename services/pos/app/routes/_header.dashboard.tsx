@@ -1,6 +1,6 @@
 import { type OrderEntity, useOrdersWS } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
 import { useCallback, useState } from "react";
+import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";

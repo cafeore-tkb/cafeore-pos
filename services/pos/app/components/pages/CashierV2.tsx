@@ -4,8 +4,8 @@ import {
   type WithId,
   orderRepository,
 } from "@cafeore/common";
-import { useSubmit } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSubmit } from "react-router";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";

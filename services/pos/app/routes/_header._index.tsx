@@ -1,5 +1,5 @@
 // import { converter, itemSchema, prodDB } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
+import type { MetaFunction } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
 
 export const meta: MetaFunction = () => {

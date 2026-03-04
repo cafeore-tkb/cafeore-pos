@@ -1,4 +1,4 @@
-import { type MetaFunction, redirect } from "@remix-run/cloudflare";
+import { type MetaFunction, redirect } from "react-router";
 
 export const meta: MetaFunction = () => {
   return [

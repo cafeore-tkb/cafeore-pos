@@ -1,5 +1,5 @@
 import { orderRepository } from "@cafeore/common";
-import type { ClientActionFunction } from "@remix-run/react";
+import type { ClientActionFunction } from "react-router";
 
 export const deleteOrder: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();

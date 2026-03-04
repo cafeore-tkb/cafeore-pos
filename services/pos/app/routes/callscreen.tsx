@@ -1,8 +1,8 @@
 import { useOrdersWS } from "@cafeore/common";
-import type { MetaFunction } from "@remix-run/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
+import type { MetaFunction } from "react-router";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import {
   CallingOrderCard,
