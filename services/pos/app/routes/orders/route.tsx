@@ -1,4 +1,4 @@
-import { orderRepository, useClientLoaderData } from "@cafeore/common";
+import { orderRepository, useOrdersWS } from "@cafeore/common";
 import { Form, type MetaFunction } from "@remix-run/react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -15,8 +15,7 @@ export const clientLoader = async () => {
 };
 
 export default function Order() {
-  // TODO(toririm): useSWRSubscription を使う。clientLoader は削除
-  const { orders } = useClientLoaderData<typeof clientLoader>();
+  const { orders } = useOrdersWS();
 
   return (
     <div className="p-4 font-sans">
