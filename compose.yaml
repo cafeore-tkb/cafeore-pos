@@ -1,0 +1,46 @@
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./api/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+
+  backend:
+    image: golang:1.25-alpine
+    working_dir: /go/src/app
+    volumes:
+      - ./api:/go/src/app:cached
+    command: >
+      sh -c "go mod download && go run ./cmd/server"
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://postgres:example@db:5432/postgres?sslmode=disable"
+      PORT: "8080"
+    depends_on:
+      - db
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /workspace/services/pos
+    volumes:
+      - ./:/workspace:cached
+    ports:
+      - "5173:5173"
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    command: >
+      sh -c "corepack enable && cd /workspace && corepack pnpm install && cd /workspace/services/pos && corepack pnpm dev --host 0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:

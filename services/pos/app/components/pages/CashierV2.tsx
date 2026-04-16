@@ -34,6 +34,7 @@ import { Label } from "../ui/label";
 type props = {
   items: WithId<ItemEntity>[] | undefined;
   orders: WithId<OrderEntity>[] | undefined;
+  wsStatus: "connecting" | "open" | "closed" | "error";
   submitPayload: (order: OrderEntity) => void;
   syncOrder: (order: OrderEntity) => void;
 };
@@ -43,7 +44,13 @@ type props = {
  *
  * データの入出力は親コンポーネントに任せる
  */
-const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
+const CashierV2 = ({
+  items,
+  orders,
+  wsStatus,
+  submitPayload,
+  syncOrder,
+}: props) => {
   const [newOrder, newOrderDispatch] = useOrderState();
   const {
     inputStatus,
@@ -124,7 +131,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     submitPayload(submitOne);
 
     // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null) {
+    if (manualOrderId !== null && wsStatus !== "open") {
       setOrderIdOverride(manualOrderId + 1);
     }
 
@@ -140,6 +147,7 @@ const CashierV2 = ({ items, orders, submitPayload, syncOrder }: props) => {
     playSound,
     manualOrderId,
     setOrderIdOverride,
+    wsStatus,
   ]);
 
   const keyEventHandlers = useMemo(() => {
