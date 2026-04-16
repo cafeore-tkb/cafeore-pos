@@ -8,6 +8,8 @@ ui-debug.log
 
 .react-router/
 
+.pnpm_store
+
 **/build
 
 .env

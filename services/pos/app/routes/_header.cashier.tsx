@@ -27,7 +27,7 @@ export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
   const [items, setItems] = useState<WithId<ItemEntity>[]>([]);
-  const { orders } = useOrdersWS();
+  const { orders, status } = useOrdersWS();
   const submit = useFlaggedSubmit({ disableFirebase });
 
   useEffect(() => {
@@ -57,6 +57,7 @@ export default function Cashier() {
     <CashierV2
       items={items}
       orders={orders}
+      wsStatus={status}
       submitPayload={submitPayload}
       syncOrder={syncOrder}
     />
