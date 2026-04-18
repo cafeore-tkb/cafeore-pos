@@ -48,7 +48,7 @@ export function OrderList({ orders }: OrderStatusListProps) {
 
   return (
     <>
-      <div className="h-[650px] w-1/2 overflow-auto">
+      <div className="h-162.5 w-1/2 overflow-auto">
         <Table>
           <TableHeader
             className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b")}

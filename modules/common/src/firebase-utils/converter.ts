@@ -95,6 +95,9 @@ export const responseToItemEntity = (
 };
 // Item を CreateRequest に変換
 export const itemToCreateRequest = (item: ItemEntity): ItemCreateRequest => {
+  if (!item.item_type.id) {
+    throw new Error("item type に id が見つかりません");
+  }
   return {
     name: item.name,
     abbr: item.abbr,
@@ -108,6 +111,9 @@ export const itemToCreateRequest = (item: ItemEntity): ItemCreateRequest => {
 export const itemToUpdateRequest = (
   item: WithId<ItemEntity>,
 ): ItemUpdateRequest => {
+  if (!item.item_type.id) {
+    throw new Error("item type に id が見つかりません");
+  }
   return {
     id: item.id,
     name: item.name,
