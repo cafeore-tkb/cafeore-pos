@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
 
 export const itemTypeSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   name: z.string(),
   display_name: z.string(),
 });
