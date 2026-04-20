@@ -89,7 +89,6 @@ export const itemRepoFactory = (): ItemRepository => {
         throw new Error("Failed to fetch items");
       }
 
-      console.log("raw data:", data); // APIレスポンス確認
       return data.map(responseToItemEntity);
     },
   };

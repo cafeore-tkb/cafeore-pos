@@ -7,7 +7,6 @@ import {
   orderSchema,
   orderStatTypes,
   stringToJSONSchema,
-  useOrdersWS,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback } from "react";
@@ -22,13 +21,14 @@ import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "マスター / 珈琲・俺POS" }];
 };
 
 export default function FielsOfMaster() {
-  const { orders } = useOrdersWS();
+  const { orders } = useOrdersWSContext();
   const submit = useSubmit();
   const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
     if (servedOrder.id)

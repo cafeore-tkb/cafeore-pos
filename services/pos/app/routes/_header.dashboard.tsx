@@ -1,4 +1,4 @@
-import { type OrderEntity, useOrdersWS } from "@cafeore/common";
+import type { OrderEntity } from "@cafeore/common";
 import { useCallback, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
@@ -7,13 +7,14 @@ import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph"
 import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "注文状況 / 珈琲・俺POS" }];
 };
 
 export default function Dashboard() {
-  const { orders } = useOrdersWS();
+  const { orders, status } = useOrdersWSContext();
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;

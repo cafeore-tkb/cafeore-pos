@@ -8,7 +8,6 @@ import {
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useOrdersWS,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +16,7 @@ import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { CashierV2 } from "~/components/pages/CashierV2";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
@@ -27,7 +27,7 @@ export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
   const [items, setItems] = useState<WithId<ItemEntity>[]>([]);
-  const { orders, status } = useOrdersWS();
+  const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
 
   useEffect(() => {

@@ -21,6 +21,11 @@ export const useRawPrinter = () => {
 
   const connect = () => {
     setStatus("connecting");
+    if (!window.epson) {
+      setStatus("disconnected");
+      console.error("ePOSDevice not found");
+      return;
+    }
     const ePosDev = new window.epson.ePOSDevice();
     ePosDeviceRef.current = ePosDev;
 

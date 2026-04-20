@@ -1,4 +1,3 @@
-import { useOrdersWS } from "@cafeore/common";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { FaCoffee, FaSpinner } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
@@ -15,13 +14,14 @@ import {
   useQueueProcessing,
   useSlideInAnimation,
 } from "./callscreen.hooks";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
 };
 
 export default function FielsOfCallScreen() {
-  const { orders } = useOrdersWS();
+  const { orders } = useOrdersWSContext();
 
   const orderState = useOrderState(orders);
   const {

@@ -1,7 +1,8 @@
-import { orderRepository, useOrdersWS } from "@cafeore/common";
+import { orderRepository } from "@cafeore/common";
 import { Form, type MetaFunction } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { useOrdersWSContext } from "../context/OrdersWSContext";
 export { clientAction } from "./action";
 
 export const meta: MetaFunction = () => {
@@ -15,7 +16,7 @@ export const clientLoader = async () => {
 };
 
 export default function Order() {
-  const { orders } = useOrdersWS();
+  const { orders } = useOrdersWSContext();
 
   return (
     <div className="p-4 font-sans">
