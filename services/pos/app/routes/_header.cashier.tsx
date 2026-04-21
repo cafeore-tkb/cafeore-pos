@@ -1,16 +1,13 @@
 import {
-  type ItemEntity,
   OrderEntity,
-  type WithId,
   cashierRepository,
-  getItemMaster,
-  initializeItemMaster,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
+  useItemMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { ClientActionFunction, MetaFunction } from "react-router";
 import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
@@ -26,15 +23,9 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
-  const [items, setItems] = useState<WithId<ItemEntity>[]>([]);
+  const { items } = useItemMaster();
   const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
-
-  useEffect(() => {
-    initializeItemMaster().then(() => {
-      setItems(getItemMaster());
-    });
-  }, []);
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {

@@ -2,10 +2,10 @@ import {
   type ItemEntity,
   OrderEntity,
   type WithId,
-  getItemMaster,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
+  useItemMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { AlertDialogCancel } from "@radix-ui/react-alert-dialog";
@@ -52,7 +52,7 @@ import {
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function Casher() {
-  const items = getItemMaster();
+  const items = useItemMaster().items;
   const { orders } = useOrdersWSContext();
   const curOrderId =
     orders?.reduce((acc, cur) => Math.max(acc, cur.orderId), 0) ?? 0;
