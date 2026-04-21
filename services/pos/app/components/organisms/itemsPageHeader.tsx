@@ -8,8 +8,8 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { label: "一覧", to: "/items", exact: true },
-  { label: "新規作成", to: "/items/new" },
+  { label: "アイテム一覧", to: "/items", exact: true },
+  { label: "アイテム新規作成", to: "/items/new" },
   { label: "タイプ一覧", to: "/item-types", exact: true },
   { label: "タイプ新規作成", to: "/item-types/new" },
 ];
@@ -29,7 +29,7 @@ export function ItemsPageHeader() {
       <div className="space-y-1">
         <h1 className="font-semibold text-2xl tracking-tight">商品管理</h1>
         <p className="text-muted-foreground text-sm">
-          アイテムと商品タイプの作成・編集・削除を行います
+          アイテムとアイテムタイプの作成・編集・削除を行います
         </p>
       </div>
 

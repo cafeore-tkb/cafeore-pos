@@ -1,22 +1,19 @@
 import {
-  type ItemEntity,
   OrderEntity,
-  type WithId,
   cashierRepository,
-  getItemMaster,
-  initializeItemMaster,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useOrdersWS,
+  useItemMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { ClientActionFunction, MetaFunction } from "react-router";
 import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { CashierV2 } from "~/components/pages/CashierV2";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
@@ -26,15 +23,9 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
-  const [items, setItems] = useState<WithId<ItemEntity>[]>([]);
-  const { orders, status } = useOrdersWS();
+  const { items } = useItemMaster();
+  const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
-
-  useEffect(() => {
-    initializeItemMaster().then(() => {
-      setItems(getItemMaster());
-    });
-  }, []);
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {

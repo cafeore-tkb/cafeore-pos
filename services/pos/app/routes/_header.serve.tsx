@@ -1,11 +1,8 @@
-import {
-  type OrderEntity,
-  orderRepository,
-  useOrdersWS,
-} from "@cafeore/common";
+import { type OrderEntity, orderRepository } from "@cafeore/common";
 import type { MetaFunction } from "react-router";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const BASE_CLIENT_URL = "https://cafeore-2024.pages.dev";
 
@@ -14,7 +11,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Serve() {
-  const { orders } = useOrdersWS();
+  const { orders } = useOrdersWSContext();
   const addComment = async (servedOrder: OrderEntity, descComment: string) => {
     if (servedOrder.id)
       orderRepository.addComment(servedOrder.id, "serve", descComment);

@@ -1,6 +1,7 @@
+// routes/item-types._index.tsx
 import { type ItemType, itemTypeRepository } from "@cafeore/common";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { type MetaFunction, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button";
 import {
   Table,
@@ -11,6 +12,10 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+
+export const meta: MetaFunction = () => {
+  return [{ title: "アイテムタイプ一覧 / 珈琲・俺POS" }];
+};
 
 export default function ItemTypesPage() {
   const navigate = useNavigate();
@@ -40,7 +45,7 @@ export default function ItemTypesPage() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      <h1 className="text-xl font-bold">アイテム一覧</h1>
+      <h1 className="text-xl font-bold">アイテムタイプ一覧</h1>
       <Table>
         <TableHeader
           className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b")}
@@ -54,7 +59,11 @@ export default function ItemTypesPage() {
 
         <TableBody>
           {itemTypes.map((itemType) => (
-            <TableRow key={itemType.id}>
+            <TableRow
+              key={itemType.id}
+              className="cursor-pointer"
+              onClick={() => navigate(`/item-types/${itemType.id}/edit`)}
+            >
               <TableCell className="font-medium">{itemType.name}</TableCell>
               <TableCell>{itemType.display_name}</TableCell>
               <TableCell>

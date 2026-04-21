@@ -2,12 +2,10 @@ import {
   type ItemEntity,
   OrderEntity,
   type WithId,
-  collectionSub,
-  getItemMaster,
-  orderConverter,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
+  useItemMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { AlertDialogCancel } from "@radix-ui/react-alert-dialog";
@@ -15,7 +13,6 @@ import { TrashIcon } from "@radix-ui/react-icons";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { useState } from "react";
 import { type ClientActionFunction, useSubmit } from "react-router";
-import useSWRSubscription from "swr/subscription";
 import { z } from "zod";
 import {
   AlertDialog,
@@ -52,13 +49,11 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function Casher() {
-  const items = getItemMaster();
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }),
-  );
+  const items = useItemMaster().items;
+  const { orders } = useOrdersWSContext();
   const curOrderId =
     orders?.reduce((acc, cur) => Math.max(acc, cur.orderId), 0) ?? 0;
   const nextOrderId = curOrderId + 1;
@@ -101,17 +96,14 @@ export default function Casher() {
   }
 
   return (
-    <div className="p-[20px]">
+    <div className="p-5">
       <div className="flex flex-row flex-wrap ">
-        <div className="relative w-2/3 pr-[20px] pl-[20px]">
-          <div
-            key="hot"
-            className="pb-[15px] pl-[20px] font-medium text-2xl text-hot"
-          >
+        <div className="relative w-2/3 pr-5 pl-5">
+          <div key="hot" className="pb-3.75 pl-5 font-medium text-2xl text-hot">
             ホット
           </div>
           <div
-            className="grid grid-cols-3 items-center justify-items-center gap-[30px]"
+            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
             style={{ gridTemplateRows: "auto" }}
           >
             {items.map(
@@ -119,7 +111,7 @@ export default function Casher() {
                 item.item_type.name === "hot" && (
                   <Button
                     key={item.id}
-                    className="h-[50px] w-[200px] bg-hot text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
+                    className="h-12.5 w-50 bg-hot text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
                     onClick={async () => {
                       setQueue([...queue, item]);
                     }}
@@ -131,12 +123,12 @@ export default function Casher() {
           </div>
           <div
             key="ice"
-            className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl text-ice"
+            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl text-ice"
           >
             アイス
           </div>
           <div
-            className="grid grid-cols-3 items-center justify-items-center gap-[30px]"
+            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
             style={{ gridTemplateRows: "auto" }}
           >
             {items.map(
@@ -145,7 +137,7 @@ export default function Casher() {
                   item.item_type.name === "milk") && (
                   <Button
                     key={item.id}
-                    className="h-[50px] w-[200px] bg-ice text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
+                    className="h-12.5 w-50 bg-ice text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
                     onClick={async () => {
                       setQueue([...queue, item]);
                     }}
@@ -157,12 +149,12 @@ export default function Casher() {
           </div>
           <div
             key="ore"
-            className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl text-ore"
+            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl text-ore"
           >
             オレ
           </div>
           <div
-            className="grid grid-cols-3 items-center justify-items-center gap-[30px]"
+            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
             style={{ gridTemplateRows: "auto" }}
           >
             {items.map(
@@ -171,7 +163,7 @@ export default function Casher() {
                   item.item_type.name === "iceOre") && (
                   <Button
                     key={item.id}
-                    className="h-[50px] w-[200px] bg-ore text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
+                    className="h-12.5 w-50 bg-ore text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
                     onClick={async () => {
                       setQueue([...queue, item]);
                     }}
@@ -183,12 +175,12 @@ export default function Casher() {
           </div>
           <div
             key="others"
-            className="pt-[30px] pb-[15px] pl-[20px] font-medium text-2xl"
+            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl"
           >
             その他
           </div>
           <div
-            className="grid grid-cols-3 items-center justify-items-center gap-[30px]"
+            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
             style={{ gridTemplateRows: "auto" }}
           >
             {items.map(
@@ -196,7 +188,7 @@ export default function Casher() {
                 item.item_type.name === "others" && (
                   <Button
                     key={item.id}
-                    className="h-[50px] w-[200px] text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
+                    className="h-12.5 w-50 text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
                     onClick={async () => {
                       setQueue([...queue, item]);
                     }}
@@ -207,21 +199,21 @@ export default function Casher() {
             )}
           </div>
         </div>
-        <div className="relative w-1/3 pl-[20px]">
+        <div className="relative w-1/3 pl-5">
           <Table>
             <TableCaption />
             <TableHeader>
               <TableRow>
-                <TableHead className="w-500 pb-[15px] font-medium text-4xl text-theme">
+                <TableHead className="w-500 pb-3.75 font-medium text-4xl text-theme">
                   No. {nextOrderId}
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {queue?.map((item, index) => (
-                <TableRow key={`${index}-${item.id}`} className="h-[50px]">
-                  <TableCell className="flex flex-row items-center gap-[20px] font-medium">
-                    <div className="w-[250px] flex-none justify-start pl-[40px] text-xl">
+                <TableRow key={`${index}-${item.id}`} className="h-12.5">
+                  <TableCell className="flex flex-row items-center gap-5 font-medium">
+                    <div className="w-50 flex-none justify-start pl-10 text-xl">
                       {item.name}
                     </div>
                     <div>
@@ -238,7 +230,7 @@ export default function Casher() {
                           });
                         }}
                       >
-                        <SelectTrigger className="w-[100px] justify-center">
+                        <SelectTrigger className="w-25 justify-center">
                           <SelectValue placeholder="指名欄" />
                         </SelectTrigger>
                         <SelectContent>
@@ -299,14 +291,14 @@ export default function Casher() {
               <InputOTPSlot index={2} className="font-mono text-3xl" />
             </InputOTPGroup>
           </InputOTP>
-          <div className="relative pt-[20px] pl-[20px] font-medium text-3xl">
+          <div className="relative pt-5 pl-5 font-medium text-3xl">
             合計金額：{order.billingAmount} 円
           </div>
           <form>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
-                  className="absolute right-[30px] h-[50px] w-[150px] text-xl hover:bg-theme hover:ring-4 hover:ring-theme"
+                  className="absolute right-7.5 h-12.5 w-37.5 text-xl hover:bg-theme hover:ring-4 hover:ring-theme"
                   disabled={queue.length === 0}
                   onClick={() => {
                     const discountOrder = findByOrderId(

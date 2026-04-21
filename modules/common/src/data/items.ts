@@ -1,47 +1,72 @@
+// data/items.ts
+import useSWR from "swr";
 import type { WithId } from "../lib/typeguard";
 import type { ItemEntity } from "../models/item";
 import { itemRepository, itemTypeRepository } from "../repositories";
 
-// データを格納する変数
-let itemMaster: Awaited<ReturnType<typeof itemRepository.findAll>> = [];
-let itemTypes: Awaited<ReturnType<typeof itemTypeRepository.findAll>> = [];
+const ITEM_MASTER_KEY = "item-master";
+const ITEM_TYPES_KEY = "item-types";
 
-// 初期化関数
-export async function initializeItemMaster() {
-  itemMaster = await itemRepository.findAll();
-  itemTypes = await itemTypeRepository.findAll();
-}
-
-// ゲッター関数としてエクスポート
-export const getItemMaster = () => itemMaster;
-export const getItemTypes = () => itemTypes;
-
-export const key2item = (key: string) => {
-  const item = itemMaster.find((i) => i.key === key);
-  if (!item) {
-    throw new Error(`item not found: ${key}`);
-  }
-  return item;
+const fetchItems = async () => {
+  return await itemRepository.findAll();
 };
 
-export const id2abbr = (id: string): string | undefined => {
-  console.log(id);
-  const item = itemMaster.find((i) => i.id === id);
-  console.log(item);
-  return item?.abbr;
+const fetchItemTypes = async () => {
+  return await itemTypeRepository.findAll();
 };
 
-export const keyEventHandler = (
-  e: KeyboardEvent,
-  func: (item: WithId<ItemEntity>) => void,
-) => {
-  const key = e.key;
-  const hasKeyItem = itemMaster.find((i) => i.key === key);
-  if (hasKeyItem) {
-    e.preventDefault();
-    const item = key2item(key);
-    if (item) {
-      func(item);
+export const useItemMaster = () => {
+  const {
+    data: items = [],
+    error: itemsError,
+    isLoading: itemsLoading,
+    mutate: mutateItems,
+  } = useSWR(ITEM_MASTER_KEY, fetchItems);
+
+  const {
+    data: itemTypes = [],
+    error: itemTypesError,
+    isLoading: itemTypesLoading,
+    mutate: mutateItemTypes,
+  } = useSWR(ITEM_TYPES_KEY, fetchItemTypes);
+
+  const key2item = (key: string) => {
+    const item = items.find((i) => i.key === key);
+    if (!item) {
+      throw new Error(`item not found: ${key}`);
     }
-  }
+    return item;
+  };
+
+  const id2abbr = (id: string): string | undefined => {
+    const item = items.find((i) => i.id === id);
+    return item?.abbr;
+  };
+
+  const keyEventHandler = (
+    e: KeyboardEvent,
+    func: (item: WithId<ItemEntity>) => void,
+  ) => {
+    const key = e.key;
+    const item = items.find((i) => i.key === key);
+
+    if (!item) {
+      return;
+    }
+
+    e.preventDefault();
+    func(item);
+  };
+
+  return {
+    items,
+    itemTypes,
+    isLoading: itemsLoading || itemTypesLoading,
+    error: itemsError ?? itemTypesError,
+    mutateItems,
+    mutateItemTypes,
+    key2item,
+    id2abbr,
+    keyEventHandler,
+  };
 };

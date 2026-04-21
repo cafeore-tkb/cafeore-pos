@@ -32,7 +32,7 @@ import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
 type props = {
-  items: WithId<ItemEntity>[] | undefined;
+  items: WithId<ItemEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   submitPayload: (order: OrderEntity) => void;
@@ -120,7 +120,7 @@ const CashierV2 = ({
     if (newOrder.items.length === 0) {
       return;
     }
-    const toteSetProcessedOrder = transformToteSet(newOrder);
+    const toteSetProcessedOrder = transformToteSet(newOrder, items ?? []);
     // 送信する直前に createdAt を更新する
     const submitOne = toteSetProcessedOrder.clone();
     submitOne.nowCreated();
@@ -148,6 +148,7 @@ const CashierV2 = ({
     manualOrderId,
     setOrderIdOverride,
     wsStatus,
+    items,
   ]);
 
   const keyEventHandlers = useMemo(() => {

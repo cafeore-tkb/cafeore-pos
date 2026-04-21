@@ -1,7 +1,7 @@
+// routes/items._index.tsx
 import { type ItemEntity, type WithId, itemRepository } from "@cafeore/common";
-// routes/items/_index.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { type MetaFunction, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button";
 import {
   Table,
@@ -12,6 +12,10 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+
+export const meta: MetaFunction = () => {
+  return [{ title: "アイテム一覧 / 珈琲・俺POS" }];
+};
 
 export default function ItemsPage() {
   const navigate = useNavigate();

@@ -1,4 +1,3 @@
-import { getItemMaster } from "../data";
 import type { WithId } from "../lib/typeguard";
 import type { ItemEntity } from "./item";
 
@@ -9,10 +8,13 @@ import type { ItemEntity } from "./item";
  * - コーヒーの種類が1種類なら4杯までならtrue、5杯以上ならfalse
  * - コーヒーの種類が2種類なら、1種類につき2杯までならtrue、3杯以上のものが1種類でもあればfalse
  * @param items 注文アイテムの配列
+ * @param itemMaster 全アイテムの配列
  * @returns 分割が必要かどうかのboolean値
  */
-export function shouldSplitOrder(items: WithId<ItemEntity>[]): boolean {
-  const itemMaster = getItemMaster();
+export function shouldSplitOrder(
+  items: WithId<ItemEntity>[],
+  itemMaster: WithId<ItemEntity>[],
+): boolean {
   const yushoId = itemMaster.find((i) => i.name === "縁ブレンド")?.id;
   const toteSetsId = itemMaster.find((i) => i.name === "トートセット")?.id;
 

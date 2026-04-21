@@ -2,7 +2,7 @@ import {
   type ItemEntity,
   type OrderEntity,
   type WithId,
-  keyEventHandler,
+  useItemMaster,
 } from "@cafeore/common";
 import { memo, useCallback, useEffect, useState } from "react";
 import { ItemAssign } from "./ItemAssign";
@@ -35,6 +35,7 @@ const OrderItemEdit = memo(
   }: props) => {
     const [itemFocus, setItemFocus] = useState<number>(0);
     const [editable, setEditable] = useState(false);
+    const { keyEventHandler } = useItemMaster();
 
     /**
      * step だけ itemFocus を移動する
@@ -128,7 +129,7 @@ const OrderItemEdit = memo(
       return () => {
         window.removeEventListener("keydown", handler);
       };
-    }, [focus, onAddItem, removeItem, editable]);
+    }, [focus, onAddItem, removeItem, editable, keyEventHandler]);
 
     // focus が外れたときに itemFocus をリセット
     /**
