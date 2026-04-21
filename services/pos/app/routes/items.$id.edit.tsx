@@ -1,4 +1,4 @@
-// routes/items/$id.edit.tsx
+// routes/items.$id.edit.tsx
 import {
   type ItemEntity,
   type ItemType,
@@ -7,9 +7,13 @@ import {
   itemTypeRepository,
 } from "@cafeore/common";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { type MetaFunction, useNavigate, useParams } from "react-router";
 import { ItemForm } from "../components/organisms/itemForm";
 import { buildUpdatedItemEntity } from "./items/actions/update";
+
+export const meta: MetaFunction = () => {
+  return [{ title: "アイテム編集 / 珈琲・俺POS" }];
+};
 
 export default function EditItemPage() {
   const { id } = useParams();

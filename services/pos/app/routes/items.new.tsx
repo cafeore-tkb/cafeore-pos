@@ -5,9 +5,13 @@ import {
   itemTypeRepository,
 } from "@cafeore/common";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { type MetaFunction, useNavigate } from "react-router";
 import { ItemForm } from "../components/organisms/itemForm";
 import { buildNewItemEntity } from "./items/actions/add";
+
+export const meta: MetaFunction = () => {
+  return [{ title: "アイテム作成 / 珈琲・俺POS" }];
+};
 
 export default function NewItemPage() {
   const navigate = useNavigate();
