@@ -172,7 +172,7 @@ export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
   },
 };
 
-type OrderResponse = components["schemas"]["OrderResponse"];
+export type OrderResponse = components["schemas"]["OrderResponse"];
 type ItemInfo = components["schemas"]["ItemInfo"];
 type CommentResponse = components["schemas"]["CommentResponse"];
 type OrderCreateRequest = components["schemas"]["OrderCreateRequest"];

@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"cafeore-pos/api/internal/models"
 	"log"
 	"sync"
 
@@ -11,22 +10,22 @@ import (
 
 type Hub struct {
 	clients   map[*websocket.Conn]bool
-	broadcast chan []models.OrderResponse
+	broadcast chan WSMessage
 	mu        sync.Mutex
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan []models.OrderResponse, 10),
+		broadcast: make(chan WSMessage, 10),
 	}
 }
 
 func (h *Hub) Run() {
-	for orders := range h.broadcast {
+	for msg := range h.broadcast {
 		h.mu.Lock()
 		for conn := range h.clients {
-			if err := conn.WriteJSON(orders); err != nil {
+			if err := conn.WriteJSON(msg); err != nil {
 				if err := conn.Close(); err != nil {
 					log.Println("failed to close connection:", err)
 				}
@@ -49,6 +48,6 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) Broadcast(orders []models.OrderResponse) {
-	h.broadcast <- orders
+func (h *Hub) Broadcast(msg WSMessage) {
+	h.broadcast <- msg
 }

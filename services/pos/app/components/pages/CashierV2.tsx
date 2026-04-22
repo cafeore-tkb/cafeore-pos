@@ -62,12 +62,8 @@ const CashierV2 = ({
   const [descComment, setDescComment] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [UISession, renewUISession] = useUISession();
-  const {
-    nextOrderId,
-    isNeedManualOrderId,
-    manualOrderId,
-    setOrderIdOverride,
-  } = useLatestOrderId(orders);
+  const { nextOrderId, manualOrderId, setOrderIdOverride } =
+    useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const submit = useSubmit();
   const [serviceActive, setServiceActive] = useState(false);
@@ -195,7 +191,9 @@ const CashierV2 = ({
         <div className="flex justify-between">
           <OrderIdDisplay
             orderId={newOrder.orderId}
-            isNeedManualOrderId={isNeedManualOrderId}
+            isNeedManualOrderId={
+              wsStatus !== "connecting" && wsStatus !== "open"
+            }
             manualOrderId={manualOrderId}
             onOrderIdOverride={setOrderIdOverride}
           />
