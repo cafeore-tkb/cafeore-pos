@@ -1,13 +1,19 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import { responseToOrderEntity } from "../firebase-utils";
+import type { MasterState } from "../data";
+import { type OrderResponse, responseToOrderEntity } from "../firebase-utils";
 import type { WithId } from "../lib";
 import type { OrderEntity } from "../models";
 
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
+type WSMessage =
+  | { type: "orders"; orders: OrderResponse[] }
+  | { type: "master_state"; master_state: MasterState };
+
 export const useOrdersWS = () => {
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>([]);
+  const [masterState, setMasterState] = useState<MasterState | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -20,8 +26,24 @@ export const useOrdersWS = () => {
     };
 
     ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      setOrders(data.map(responseToOrderEntity));
+      try {
+        const data: WSMessage = JSON.parse(e.data);
+
+        switch (data.type) {
+          case "orders":
+            setOrders(data.orders.map(responseToOrderEntity));
+            break;
+
+          case "master_state":
+            setMasterState(data.master_state);
+            break;
+
+          default:
+            console.warn("Unknown WS message:", data);
+        }
+      } catch (err) {
+        console.error("Failed to parse WS message:", err);
+      }
     };
 
     ws.onerror = () => {
@@ -33,11 +55,9 @@ export const useOrdersWS = () => {
     };
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
+      ws.close();
     };
   }, []);
 
-  return { orders, status };
+  return { orders, masterState, status };
 };

@@ -117,5 +117,8 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 	for i, o := range orders {
 			responses[i] = toOrderResponse(&o)
 	}
-	h.hub.Broadcast(responses)
+	h.hub.Broadcast(WSMessage{
+		Type: WSMessageTypeOrders,
+		Orders: responses,
+	})
 }

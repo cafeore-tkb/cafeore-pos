@@ -76,7 +76,7 @@ export function ItemForm({
               id="name"
               value={values.name}
               onChange={(e) => updateField("name", e.target.value)}
-              placeholder="コーヒー"
+              placeholder="キリマンジャロ"
             />
           </div>
 
@@ -86,7 +86,7 @@ export function ItemForm({
               id="abbr"
               value={values.abbr}
               onChange={(e) => updateField("abbr", e.target.value)}
-              placeholder="COF"
+              placeholder="キリマン"
             />
           </div>
 
@@ -108,7 +108,7 @@ export function ItemForm({
               id="key"
               value={values.key}
               onChange={(e) => updateField("key", e.target.value)}
-              placeholder="A"
+              placeholder="-"
             />
           </div>
 

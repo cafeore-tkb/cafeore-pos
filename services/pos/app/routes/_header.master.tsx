@@ -1,12 +1,11 @@
 import {
   MasterStateEntity,
-  OrderEntity,
+  type OrderEntity,
   type OrderStatType,
   masterRepository,
   orderRepository,
-  orderSchema,
   orderStatTypes,
-  stringToJSONSchema,
+  updateMasterStatus,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback } from "react";
@@ -30,15 +29,30 @@ export const meta: MetaFunction = () => {
 export default function FielsOfMaster() {
   const { orders } = useOrdersWSContext();
   const submit = useSubmit();
-  const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
-    if (servedOrder.id)
-      orderRepository.addComment(servedOrder.id, "master", descComment);
-  };
   const isOperational = useOrderStat();
 
-  const changeOrderStat = useCallback(
+  const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
+    if (!servedOrder.id) return;
+
+    submit(
+      {
+        intent: "addComment",
+        servedOrderId: servedOrder.id,
+        descComment,
+      },
+      { method: "POST" },
+    );
+  };
+
+  const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
-      submit({ status }, { method: "POST" });
+      submit(
+        {
+          intent: "changeOrderStat",
+          status,
+        },
+        { method: "POST" },
+      );
     },
     [submit],
   );
@@ -56,14 +70,13 @@ export default function FielsOfMaster() {
         <h1 className="w-1/3 text-3xl">マスター</h1>
         <div className="flex w-1/3 justify-center">
           <Button
-            type="submit"
+            type="button"
             className={cn(isOperational ? "bg-red-700" : "bg-sky-700")}
             onClick={() =>
-              changeOrderStat(isOperational ? "stop" : "operational")
+              submitOrderStatChange(isOperational ? "stop" : "operational")
             }
           >
-            {isOperational && "オーダーストップする"}
-            {!isOperational && "オーダー再開する"}
+            {isOperational ? "オーダーストップする" : "オーダー再開する"}
           </Button>
         </div>
         <div className="flex w-1/3 items-center justify-end gap-3">
@@ -96,54 +109,56 @@ export default function FielsOfMaster() {
   );
 }
 
-export const addComment: ClientActionFunction = async ({ request }) => {
+export const clientAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
+  const intent = formData.get("intent");
 
-  const schema = z.object({
-    servedOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
+  if (intent === "addComment") {
+    const schema = z.object({
+      intent: z.literal("addComment"),
+      servedOrderId: z.string().min(1),
+      descComment: z.string(),
+    });
+
+    const submission = parseWithZod(formData, { schema });
+
+    if (submission.status !== "success") {
+      console.error(submission.error);
+      return submission.reply();
+    }
+
+    const { servedOrderId, descComment } = submission.value;
+
+    await orderRepository.addComment(servedOrderId, "master", descComment);
+
+    return new Response("ok");
   }
 
-  const { servedOrder } = submission.value;
-  const order = OrderEntity.fromOrder(servedOrder);
+  if (intent === "changeOrderStat") {
+    const schema = z.object({
+      intent: z.literal("changeOrderStat"),
+      status: z.enum(orderStatTypes),
+    });
 
-  const savedOrder = await orderRepository.save(order);
+    const submission = parseWithZod(formData, { schema });
 
-  console.log("savedOrder", savedOrder);
+    if (submission.status !== "success") {
+      console.error(submission.error);
+      return submission.reply();
+    }
 
-  return new Response("ok");
-};
+    const { status } = submission.value;
 
-export const changeOrderStat: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
+    const masterStats =
+      (await masterRepository.get()) ?? MasterStateEntity.createNew();
 
-  const schema = z.object({
-    status: z.enum(orderStatTypes),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
+    masterStats.addOrderStat(status);
+    await masterRepository.set(masterStats);
+
+    await updateMasterStatus(status);
+
+    return new Response("ok");
   }
 
-  const { status } = submission.value;
-
-  const masterStats: MasterStateEntity =
-    (await masterRepository.get()) ?? MasterStateEntity.createNew();
-
-  console.log(status);
-  masterStats.addOrderStat(status);
-  console.log(masterStats);
-
-  await masterRepository.set(masterStats);
-
-  return new Response("ok");
+  return new Response("Bad Request", { status: 400 });
 };

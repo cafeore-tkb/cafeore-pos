@@ -1,4 +1,4 @@
-// api/internal/models/comment.go
+// api/internal/models/master_state.go
 package models
 
 import (
@@ -7,5 +7,6 @@ import (
 
 type MasterState struct {
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;primary_key"`	
-	Type      string `gorm:"not null"`
+	Type      string    `gorm:"not null"`
 }
+

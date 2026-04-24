@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -68,7 +67,10 @@ func (h *OrderHandler) broadcastOrders() {
 	for i, o := range orders {
 			responses[i] = toOrderResponse(&o)
 	}
-	h.hub.Broadcast(responses)
+	h.hub.Broadcast(WSMessage{
+		Type: WSMessageTypeOrders,
+		Orders: responses,
+	})
 }
 
 // GET /api/orders - オーダー一覧取得
@@ -469,29 +471,4 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
-func (h *OrderHandler) WSHandler(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-	defer func() {
-		h.hub.Unregister(conn)
-		if err := conn.Close(); err != nil {
-    	log.Println("failed to close connection:", err)
-		}
-	}()
-
-	h.hub.Register(conn)
-
-	// 接続直後に現在のデータを送信
-	h.broadcastOrders()
-
-	// 接続維持（クライアントからのメッセージは今は無視）
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			break
-		}
-	}
 }

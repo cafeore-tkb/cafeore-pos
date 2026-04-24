@@ -64,6 +64,12 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/master-status": {
+    /** マスターステート取得 */
+    get: operations["getMasterState"];
+    /** マスターステート更新 */
+    post: operations["updateMasterState"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -204,6 +210,14 @@ export interface components {
       text: string;
       /** Format: date-time */
       created_at: string;
+    };
+    MasterStateResponse: {
+      /** Format: date-time */
+      created_at: string;
+      type: string;
+    };
+    MasterStateUpdateRequest: {
+      type: string;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -558,6 +572,33 @@ export interface operations {
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** マスターステート取得 */
+  getMasterState: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MasterStateResponse"][];
+        };
+      };
+    };
+  };
+  /** マスターステート更新 */
+  updateMasterState: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MasterStateUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MasterStateResponse"];
         };
       };
     };

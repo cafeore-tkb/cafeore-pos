@@ -389,6 +389,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/master-status:
+    get:
+      summary: マスターステート取得
+      operationId: getMasterState
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MasterStateResponse'
+    post: 
+      summary: マスターステート更新
+      operationId: updateMasterState
+      tags:
+        - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasterStateUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterStateResponse'
 
 components:
   schemas:
@@ -723,6 +756,24 @@ components:
         created_at:
           type: string
           format: date-time
+    MasterStateResponse:
+      type: object
+      required:
+        - created_at
+        - type
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+    MasterStateUpdateRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
     ErrorResponse:
       type: object
       required:
