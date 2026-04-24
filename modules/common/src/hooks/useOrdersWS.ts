@@ -1,15 +1,11 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
+import type { MasterState } from "../data";
 import { type OrderResponse, responseToOrderEntity } from "../firebase-utils";
 import type { WithId } from "../lib";
 import type { OrderEntity } from "../models";
 
 type WsStatus = "connecting" | "open" | "closed" | "error";
-
-type MasterState = {
-  created_at: string;
-  type: string;
-};
 
 type WSMessage =
   | { type: "orders"; orders: OrderResponse[] }

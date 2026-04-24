@@ -62,6 +62,7 @@ func initDB() error {
         &models.Order{},
         &models.Comment{},
 				&models.OrderItem{},
+				&models.MasterState{},
     )
     if err != nil {
         panic(err)
@@ -139,6 +140,7 @@ func main() {
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
+	masterStateHandler := handlers.NewMasterStateHandler(db)
 
 
 	// エンドポイント
@@ -168,6 +170,8 @@ func main() {
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
+		api.GET("/master-status", masterStateHandler.GetMasterStatus)
+		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 	}
 
 	// サーバー起動

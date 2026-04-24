@@ -44,6 +44,12 @@ type ServerInterface interface {
 	// アイテム情報更新
 	// (PUT /api/items/{id})
 	UpdateItem(c *gin.Context, id openapi_types.UUID)
+	// マスターステート取得
+	// (GET /api/master-status)
+	GetMasterState(c *gin.Context)
+	// マスターステート更新
+	// (POST /api/master-status)
+	UpdateMasterState(c *gin.Context)
 	// オーダー一覧取得
 	// (GET /api/orders)
 	GetOrders(c *gin.Context)
@@ -279,6 +285,32 @@ func (siw *ServerInterfaceWrapper) UpdateItem(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateItem(c, id)
+}
+
+// GetMasterState operation middleware
+func (siw *ServerInterfaceWrapper) GetMasterState(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetMasterState(c)
+}
+
+// UpdateMasterState operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMasterState(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateMasterState(c)
 }
 
 // GetOrders operation middleware
@@ -525,6 +557,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/api/items/:id", wrapper.DeleteItem)
 	router.GET(options.BaseURL+"/api/items/:id", wrapper.GetItem)
 	router.PUT(options.BaseURL+"/api/items/:id", wrapper.UpdateItem)
+	router.GET(options.BaseURL+"/api/master-status", wrapper.GetMasterState)
+	router.POST(options.BaseURL+"/api/master-status", wrapper.UpdateMasterState)
 	router.GET(options.BaseURL+"/api/orders", wrapper.GetOrders)
 	router.POST(options.BaseURL+"/api/orders", wrapper.CreateOrder)
 	router.DELETE(options.BaseURL+"/api/orders/:id", wrapper.DeleteOrder)

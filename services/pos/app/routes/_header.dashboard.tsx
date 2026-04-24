@@ -2,6 +2,7 @@ import type { OrderEntity } from "@cafeore/common";
 import { useCallback, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
+import { OrderStatusList } from "~/components/organisms/dashboard/MasterState";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
 import { Input } from "~/components/ui/input";
@@ -14,7 +15,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Dashboard() {
-  const { orders, status } = useOrdersWSContext();
+  const { orders } = useOrdersWSContext();
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;
@@ -53,6 +54,7 @@ export default function Dashboard() {
           <TabsTrigger value="itemBar">種類別注文数</TabsTrigger>
           <TabsTrigger value="serveTimeGraph">提供時間推移</TabsTrigger>
           <TabsTrigger value="orderList">注文一覧</TabsTrigger>
+          <TabsTrigger value="masterState">オーダーストップ記録</TabsTrigger>
         </TabsList>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
@@ -66,6 +68,9 @@ export default function Dashboard() {
         </TabsContent>
         <TabsContent value="orderList" className="flex p-2">
           <OrderList orders={orders} />
+        </TabsContent>
+        <TabsContent value="masterState" className="flex p-2">
+          <OrderStatusList />
         </TabsContent>
       </Tabs>
     </div>

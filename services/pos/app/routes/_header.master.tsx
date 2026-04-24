@@ -5,6 +5,7 @@ import {
   masterRepository,
   orderRepository,
   orderStatTypes,
+  updateMasterStatus,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback } from "react";
@@ -153,6 +154,8 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     masterStats.addOrderStat(status);
     await masterRepository.set(masterStats);
+
+    await updateMasterStatus(status);
 
     return new Response("ok");
   }

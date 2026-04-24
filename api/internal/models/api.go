@@ -89,6 +89,17 @@ type ItemUpdateRequest struct {
 	Price      int                `json:"price"`
 }
 
+// MasterStateResponse defines model for MasterStateResponse.
+type MasterStateResponse struct {
+	CreatedAt time.Time `json:"created_at"`
+	Type      string    `json:"type"`
+}
+
+// MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
+type MasterStateUpdateRequest struct {
+	Type string `json:"type"`
+}
+
 // OrderCreateRequest defines model for OrderCreateRequest.
 type OrderCreateRequest struct {
 	BillingAmount     int                     `json:"billing_amount"`
@@ -147,6 +158,9 @@ type CreateItemJSONRequestBody = ItemCreateRequest
 
 // UpdateItemJSONRequestBody defines body for UpdateItem for application/json ContentType.
 type UpdateItemJSONRequestBody = ItemUpdateRequest
+
+// UpdateMasterStateJSONRequestBody defines body for UpdateMasterState for application/json ContentType.
+type UpdateMasterStateJSONRequestBody = MasterStateUpdateRequest
 
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
 type CreateOrderJSONRequestBody = OrderCreateRequest
