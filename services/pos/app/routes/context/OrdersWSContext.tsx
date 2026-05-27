@@ -1,6 +1,8 @@
 import { type OrderEntity, type WithId, useOrdersWS } from "@cafeore/common";
 // context/OrdersWSContext.tsx
 import { createContext, useContext } from "react";
+import { isPreviewMockEnabled } from "~/lib/preview/previewMode";
+import { usePreviewOrders } from "~/lib/preview/usePreviewOrders";
 
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
@@ -16,7 +18,12 @@ export const OrdersWSProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const value = useOrdersWS();
+  const previewMockEnabled = isPreviewMockEnabled();
+  const wsValue = useOrdersWS();
+  const previewOrders = usePreviewOrders();
+  const value = previewMockEnabled
+    ? { orders: previewOrders, status: "open" as const }
+    : wsValue;
 
   return (
     <OrdersWSContext.Provider value={value}>
