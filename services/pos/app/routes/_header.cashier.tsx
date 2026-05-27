@@ -13,6 +13,12 @@ import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { CashierV2 } from "~/components/pages/CashierV2";
+import { getPreviewSeedItems } from "~/lib/preview/itemSeeds";
+import {
+  savePreviewSubmittedOrder,
+  syncPreviewEditingOrder,
+} from "~/lib/preview/localOrderStore";
+import { isPreviewMockEnabled } from "~/lib/preview/previewMode";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
@@ -23,30 +29,45 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
+  const previewMockEnabled = useMemo(() => isPreviewMockEnabled(), []);
   const { items } = useItemMaster();
+  const effectiveItems = useMemo(() => {
+    if (previewMockEnabled && items.length === 0) {
+      return getPreviewSeedItems();
+    }
+    return items;
+  }, [previewMockEnabled, items]);
   const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {
+      if (previewMockEnabled) {
+        savePreviewSubmittedOrder(newOrder);
+        return;
+      }
       submit(
         { newOrder: JSON.stringify(newOrder.toOrder()) },
         { method: "POST" },
       );
     },
-    [submit],
+    [previewMockEnabled, submit],
   );
 
   const syncOrder = useCallback(
     (order: OrderEntity) => {
+      if (previewMockEnabled) {
+        syncPreviewEditingOrder(order);
+        return;
+      }
       submit({ syncOrder: JSON.stringify(order.toOrder()) }, { method: "PUT" });
     },
-    [submit],
+    [previewMockEnabled, submit],
   );
 
   return (
     <CashierV2
-      items={items}
+      items={effectiveItems}
       orders={orders}
       wsStatus={status}
       submitPayload={submitPayload}
