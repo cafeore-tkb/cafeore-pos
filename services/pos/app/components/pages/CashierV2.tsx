@@ -225,6 +225,7 @@ const CashierV2 = ({
             />
             <OrderItemEdit
               order={newOrder}
+              keyboardItems={items}
               onAddItem={useCallback(
                 (item) => newOrderDispatch({ type: "addItem", item }),
                 [newOrderDispatch],

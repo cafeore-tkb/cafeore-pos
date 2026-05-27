@@ -2,14 +2,17 @@ import {
   type ItemEntity,
   type OrderEntity,
   type WithId,
+  createKeyEventHandler,
   useItemMaster,
 } from "@cafeore/common";
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ItemAssign } from "./ItemAssign";
 
 type props = {
   order: OrderEntity;
   focus: boolean;
+  /** 指定時はこの一覧でキー割り当てを解決（Previewのシード等、親の商品源と揃える） */
+  keyboardItems?: WithId<ItemEntity>[];
   onAddItem: (item: WithId<ItemEntity>) => void;
   onRemoveItem: (idx: number) => void;
   mutateItem: (
@@ -26,6 +29,7 @@ type props = {
 const OrderItemEdit = memo(
   ({
     focus,
+    keyboardItems,
     discountOrder,
     onAddItem,
     onRemoveItem,
@@ -35,7 +39,13 @@ const OrderItemEdit = memo(
   }: props) => {
     const [itemFocus, setItemFocus] = useState<number>(0);
     const [editable, setEditable] = useState(false);
-    const { keyEventHandler } = useItemMaster();
+    const { keyEventHandler: masterKeyHandler } = useItemMaster();
+    const keyEventHandler = useMemo(() => {
+      if (keyboardItems !== undefined) {
+        return createKeyEventHandler(keyboardItems);
+      }
+      return masterKeyHandler;
+    }, [keyboardItems, masterKeyHandler]);
 
     /**
      * step だけ itemFocus を移動する

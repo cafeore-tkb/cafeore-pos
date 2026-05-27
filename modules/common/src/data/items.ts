@@ -15,6 +15,23 @@ const fetchItemTypes = async () => {
   return await itemTypeRepository.findAll();
 };
 
+/**
+ * 商品マスタ一覧から、キー割り当てに一致する商品を追加するキーボードハンドラを作る
+ */
+export const createKeyEventHandler = (items: WithId<ItemEntity>[]) => {
+  return (e: KeyboardEvent, func: (item: WithId<ItemEntity>) => void) => {
+    const key = e.key;
+    const item = items.find((i) => i.key === key);
+
+    if (!item) {
+      return;
+    }
+
+    e.preventDefault();
+    func(item);
+  };
+};
+
 export const useItemMaster = () => {
   const {
     data: items = [],
@@ -47,15 +64,7 @@ export const useItemMaster = () => {
     e: KeyboardEvent,
     func: (item: WithId<ItemEntity>) => void,
   ) => {
-    const key = e.key;
-    const item = items.find((i) => i.key === key);
-
-    if (!item) {
-      return;
-    }
-
-    e.preventDefault();
-    func(item);
+    createKeyEventHandler(items)(e, func);
   };
 
   return {
