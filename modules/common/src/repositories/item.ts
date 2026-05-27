@@ -9,7 +9,7 @@ import type { ItemEntity } from "../models/item";
 import type { paths } from "../types/api";
 import type { ItemRepository } from "./type";
 
-export const API_BASE_URL = "http://localhost:8080";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
