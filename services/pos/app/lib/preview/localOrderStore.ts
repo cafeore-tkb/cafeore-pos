@@ -6,6 +6,15 @@ export const PREVIEW_ORDERS_UPDATED_EVENT = "pos-preview-orders-updated";
 
 const isBrowser = () => typeof window !== "undefined";
 
+const sanitizeOrderForLocalStorage = (order: Order): Order => {
+  return {
+    ...order,
+    // Avoid persisting sensitive payment information in cleartext localStorage.
+    billingAmount: 0,
+    received: 0,
+  };
+};
+
 const generateId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -58,7 +67,9 @@ const writeOrders = (orders: WithId<OrderEntity>[]) => {
   }
   window.localStorage.setItem(
     PREVIEW_ORDERS_KEY,
-    JSON.stringify(orders.map((order) => order.toOrder())),
+    JSON.stringify(
+      orders.map((order) => sanitizeOrderForLocalStorage(order.toOrder())),
+    ),
   );
   notifyPreviewOrdersUpdated();
 };
@@ -91,6 +102,6 @@ export const syncPreviewEditingOrder = (order: OrderEntity) => {
   }
   window.localStorage.setItem(
     PREVIEW_EDITING_ORDER_KEY,
-    JSON.stringify(order.toOrder()),
+    JSON.stringify(sanitizeOrderForLocalStorage(order.toOrder())),
   );
 };
