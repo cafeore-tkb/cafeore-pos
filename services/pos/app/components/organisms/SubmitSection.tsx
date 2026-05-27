@@ -5,11 +5,17 @@ import { Button } from "../ui/button";
 
 type props = {
   submitOrder: () => void;
+  onExactPayment: () => void;
   order: OrderEntity;
   focus: boolean;
 };
 
-export const SubmitSection = ({ submitOrder, order, focus }: props) => {
+export const SubmitSection = ({
+  submitOrder,
+  onExactPayment,
+  order,
+  focus,
+}: props) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const billingOk = useMemo(
     () => order.items.length > 0 && order.getCharge() >= 0,
@@ -46,6 +52,21 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
         </Button>
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
+        </label>
+        <Button
+          id="exact-payment-button"
+          variant="outline"
+          className="h-14 w-40 border-stone-400 font-bold text-lg hover:bg-stone-100 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:border-stone-300 disabled:text-stone-400"
+          onClick={() => onExactPayment()}
+          disabled={order.items.length === 0}
+        >
+          お釣り 0
+        </Button>
+        <label
+          htmlFor="exact-payment-button"
+          className="text-sm text-stone-400"
+        >
+          合計どおり受け取ったとき
         </label>
         {needsSplit && (
           <p className="text-center font-bold text-red-500">

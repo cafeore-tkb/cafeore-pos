@@ -109,43 +109,47 @@ const CashierV2 = ({
     renewUISession();
   }, [newOrderDispatch, resetStatus, renewUISession]);
 
-  const submitOrder = useCallback(() => {
-    if (newOrder.getCharge() < 0) {
-      return;
-    }
-    if (newOrder.items.length === 0) {
-      return;
-    }
-    const toteSetProcessedOrder = transformToteSet(newOrder, items ?? []);
-    // 送信する直前に createdAt を更新する
-    const submitOne = toteSetProcessedOrder.clone();
-    submitOne.nowCreated();
-    goodsOnlyServed(submitOne);
-    // 備考を追加
-    submitOne.addComment("cashier", descComment);
-    printer.printOrderLabel(submitOne);
-    submitPayload(submitOne);
+  const submitOrder = useCallback(
+    (exactPayment?: boolean) => {
+      if (!exactPayment && newOrder.getCharge() < 0) {
+        return;
+      }
+      if (newOrder.items.length === 0) {
+        return;
+      }
+      const toteSetProcessedOrder = transformToteSet(newOrder, items ?? []);
+      // 送信する直前に createdAt を更新する
+      const submitOne = toteSetProcessedOrder.clone();
+      if (exactPayment) submitOne.received = submitOne.billingAmount;
+      submitOne.nowCreated();
+      goodsOnlyServed(submitOne);
+      // 備考を追加
+      submitOne.addComment("cashier", descComment);
+      printer.printOrderLabel(submitOne);
+      submitPayload(submitOne);
 
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && wsStatus !== "open") {
-      setOrderIdOverride(manualOrderId + 1);
-    }
+      // オフライン時（手動番号指定時）は次の番号を自動設定
+      if (manualOrderId !== null && wsStatus !== "open") {
+        setOrderIdOverride(manualOrderId + 1);
+      }
 
-    resetAll();
-    setServiceActive(false);
-    playSound();
-  }, [
-    newOrder,
-    resetAll,
-    printer,
-    submitPayload,
-    descComment,
-    playSound,
-    manualOrderId,
-    setOrderIdOverride,
-    wsStatus,
-    items,
-  ]);
+      resetAll();
+      setServiceActive(false);
+      playSound();
+    },
+    [
+      newOrder,
+      resetAll,
+      printer,
+      submitPayload,
+      descComment,
+      playSound,
+      manualOrderId,
+      setOrderIdOverride,
+      wsStatus,
+      items,
+    ],
+  );
 
   const keyEventHandlers = useMemo(() => {
     return {
@@ -338,6 +342,7 @@ const CashierV2 = ({
             />
             <SubmitSection
               submitOrder={submitOrder}
+              onExactPayment={() => submitOrder(true)}
               order={newOrder}
               focus={inputStatus === "submit"}
             />
