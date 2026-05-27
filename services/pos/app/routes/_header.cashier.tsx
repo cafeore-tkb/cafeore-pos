@@ -12,6 +12,7 @@ import type { ClientActionFunction, MetaFunction } from "react-router";
 import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
 import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
+import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -25,7 +26,12 @@ export default function Cashier() {
   const disableFirebase = useMemo(() => user == null, [user]);
   const { items } = useItemMaster();
   const { orders, status } = useOrdersWSContext();
+  const isNetworkOnline = useOnlineStatus();
   const submit = useFlaggedSubmit({ disableFirebase });
+  const canSubmitOrder = useMemo(
+    () => user != null && isNetworkOnline && status === "open",
+    [user, isNetworkOnline, status],
+  );
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {
@@ -49,6 +55,7 @@ export default function Cashier() {
       items={items}
       orders={orders}
       wsStatus={status}
+      canSubmitOrder={canSubmitOrder}
       submitPayload={submitPayload}
       syncOrder={syncOrder}
     />
