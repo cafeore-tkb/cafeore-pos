@@ -35,6 +35,7 @@ type props = {
   items: WithId<ItemEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
+  canSubmitOrder: boolean;
   submitPayload: (order: OrderEntity) => void;
   syncOrder: (order: OrderEntity) => void;
 };
@@ -48,6 +49,7 @@ const CashierV2 = ({
   items,
   orders,
   wsStatus,
+  canSubmitOrder,
   submitPayload,
   syncOrder,
 }: props) => {
@@ -109,8 +111,29 @@ const CashierV2 = ({
     renewUISession();
   }, [newOrderDispatch, resetStatus, renewUISession]);
 
+  const canEnterSubmit = canSubmitOrder && newOrder.items.length > 0;
+
+  const proceedStatusGuarded = useCallback(() => {
+    if (inputStatus === "received" && !canEnterSubmit) {
+      return;
+    }
+    proceedStatus();
+  }, [inputStatus, canEnterSubmit, proceedStatus]);
+
+  /**
+   * FIXME #412 useEffect内でstateを更新している
+   */
+  useEffect(() => {
+    if (inputStatus === "submit" && !canEnterSubmit) {
+      setInputStatus("received");
+    }
+  }, [inputStatus, canEnterSubmit, setInputStatus]);
+
   const submitOrder = useCallback(
     (exactPayment?: boolean) => {
+      if (!canSubmitOrder) {
+        return;
+      }
       if (!exactPayment && newOrder.getCharge() < 0) {
         return;
       }
@@ -138,6 +161,7 @@ const CashierV2 = ({
       playSound();
     },
     [
+      canSubmitOrder,
       newOrder,
       resetAll,
       printer,
@@ -153,13 +177,13 @@ const CashierV2 = ({
 
   const keyEventHandlers = useMemo(() => {
     return {
-      ArrowRight: proceedStatus,
+      ArrowRight: proceedStatusGuarded,
       ArrowLeft: previousStatus,
       Escape: () => {
         resetAll();
       },
     };
-  }, [proceedStatus, previousStatus, resetAll]);
+  }, [proceedStatusGuarded, previousStatus, resetAll]);
 
   /**
    * OK
@@ -340,12 +364,17 @@ const CashierV2 = ({
               focus={inputStatus === "submit"}
               number={5}
             />
-            <SubmitSection
-              submitOrder={submitOrder}
-              onExactPayment={() => submitOrder(true)}
-              order={newOrder}
-              focus={inputStatus === "submit"}
-            />
+            <fieldset
+              disabled={!canEnterSubmit}
+              className="min-w-0 border-0 p-0"
+            >
+              <SubmitSection
+                submitOrder={submitOrder}
+                onExactPayment={() => submitOrder(true)}
+                order={newOrder}
+                focus={inputStatus === "submit"}
+              />
+            </fieldset>
           </div>
         </div>
         <audio src={bellTwice} ref={soundRef}>
