@@ -19,9 +19,32 @@ const fetchItemTypes = async () => {
  * 商品マスタ一覧から、キー割り当てに一致する商品を追加するキーボードハンドラを作る
  */
 export const createKeyEventHandler = (items: WithId<ItemEntity>[]) => {
+  const normalizeDigitKey = (key: string) => {
+    return key.replace(/[０-９]/g, (char) =>
+      String.fromCharCode(char.charCodeAt(0) - 0xfee0),
+    );
+  };
+
+  const keyCandidates = (event: KeyboardEvent) => {
+    const normalized = normalizeDigitKey(event.key);
+    const keys = new Set<string>([event.key, normalized]);
+
+    const digitMatch = event.code.match(/^Digit([0-9])$/);
+    if (digitMatch) {
+      keys.add(digitMatch[1]);
+    }
+
+    const numpadMatch = event.code.match(/^Numpad([0-9])$/);
+    if (numpadMatch) {
+      keys.add(numpadMatch[1]);
+    }
+
+    return keys;
+  };
+
   return (e: KeyboardEvent, func: (item: WithId<ItemEntity>) => void) => {
-    const key = e.key;
-    const item = items.find((i) => i.key === key);
+    const candidates = keyCandidates(e);
+    const item = items.find((i) => candidates.has(i.key));
 
     if (!item) {
       return;
