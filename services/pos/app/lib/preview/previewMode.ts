@@ -4,12 +4,16 @@ const isPagesPreviewHost = (hostname: string) => {
   return hostname.endsWith(".pages.dev");
 };
 
+const isFirebasePrPreviewHost = (hostname: string) => {
+  return hostname.includes("--pr") && hostname.endsWith(".web.app");
+};
+
 /**
  * Preview 用のローカルモックモード判定
  *
  * 優先順位:
  * 1. VITE_POS_PREVIEW_MOCK=true/false
- * 2. Cloudflare Pages の preview host かつ production build
+ * 2. Preview host（Cloudflare Pages / Firebase PR Preview）かつ production build
  */
 export const isPreviewMockEnabled = (): boolean => {
   const raw = import.meta.env[PREVIEW_MOCK_ENV_KEY];
@@ -24,5 +28,10 @@ export const isPreviewMockEnabled = (): boolean => {
     return false;
   }
 
-  return import.meta.env.PROD && isPagesPreviewHost(window.location.hostname);
+  if (!import.meta.env.PROD) {
+    return false;
+  }
+
+  const hostname = window.location.hostname;
+  return isPagesPreviewHost(hostname) || isFirebasePrPreviewHost(hostname);
 };
