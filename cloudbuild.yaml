@@ -1,0 +1,58 @@
+steps:
+  # Dockerイメージをビルド
+  - name: gcr.io/cloud-builders/docker
+    id: Build
+    args:
+      - build
+      - --file
+      - api/Dockerfile
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest
+      - api
+
+  # Artifact Registryへpush
+  - name: gcr.io/cloud-builders/docker
+    id: Push
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}
+
+  # Cloud Runへデプロイ
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    id: Deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --service-account=${_RUNTIME_SERVICE_ACCOUNT}
+      - --allow-unauthenticated
+      - --set-env-vars=GIN_MODE=release
+      - --set-env-vars=RUN_MIGRATIONS=true
+      - --port=8080
+      - --cpu=1
+      - --memory=512Mi
+      - --concurrency=40
+      - --min-instances=0
+      - --max-instances=1
+      - --timeout=3600
+      - --quiet
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPOSITORY: cafeore-pos
+  _SERVICE: cafeore-pos-api
+  _RUNTIME_SERVICE_ACCOUNT: cafeore-pos-runtime@$PROJECT_ID.iam.gserviceaccount.com
+
+options:
+  logging: CLOUD_LOGGING_ONLY

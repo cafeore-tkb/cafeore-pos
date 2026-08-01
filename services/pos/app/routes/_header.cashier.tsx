@@ -7,7 +7,7 @@ import {
   useItemMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import type { ClientActionFunction, MetaFunction } from "react-router";
 import { z } from "zod";
 import { useAuth } from "~/components/functional/AuthProvider";
@@ -22,7 +22,8 @@ export const meta: MetaFunction = () => {
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const user = useAuth();
-  const disableFirebase = useMemo(() => user == null, [user]);
+  // const disableFirebase = useMemo(() => user == null, [user]);
+  const disableFirebase = false; // google認証を使わない;
   const { items } = useItemMaster();
   const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
