@@ -34,6 +34,8 @@ services:
     working_dir: /workspace/services/pos
     volumes:
       - ./:/workspace:cached
+      - frontend_node_modules:/workspace/node_modules
+      - pos_node_modules:/workspace/services/pos/node_module
     ports:
       - "5173:5173"
     environment:
@@ -46,3 +48,5 @@ services:
 
 volumes:
   db-data:
+  frontend_node_modules:
+  pos_node_modules: 
