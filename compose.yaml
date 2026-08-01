@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: "postgres://postgres:example@db:5432/postgres?sslmode=disable"
       PORT: "8080"
+      HOST_IP: "${HOST_IP:-localhost}"
     depends_on:
       - db
 
@@ -33,10 +34,13 @@ services:
     working_dir: /workspace/services/pos
     volumes:
       - ./:/workspace:cached
+      - frontend_node_modules:/workspace/node_modules
+      - pos_node_modules:/workspace/services/pos/node_module
     ports:
       - "5173:5173"
     environment:
       CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: "http://${HOST_IP:-localhost}:8080"
     command: >
       sh -c "corepack enable && cd /workspace && corepack pnpm install && cd /workspace/services/pos && corepack pnpm dev --host 0.0.0.0"
     depends_on:
@@ -44,3 +48,5 @@ services:
 
 volumes:
   db-data:
+  frontend_node_modules:
+  pos_node_modules: 

@@ -17,7 +17,12 @@ export const useOrdersWS = () => {
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8080/api/ws/orders");
+    const apiBaseUrl =
+      import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+    const wsUrl = apiBaseUrl
+      .replace("http://", "ws://")
+      .replace("https://", "wss://");
+    const ws = new WebSocket(`${wsUrl}/api/ws/orders`);
 
     setStatus("connecting");
 
