@@ -1,5 +1,6 @@
 import type { OrderEntity, WithId } from "@cafeore/common";
 import { useMemo, useState } from "react";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import {
   Sheet,
@@ -17,6 +18,7 @@ type props = {
   cardUser: "cashier" | "master" | "serve";
   cardTiming: "present" | "past" | "all";
   comment: (servedOrder: OrderEntity, descComment: string) => void;
+  compact?: boolean;
 };
 
 export function PastOrderSideSheet({
@@ -24,6 +26,7 @@ export function PastOrderSideSheet({
   cardUser,
   cardTiming,
   comment,
+  compact = false,
 }: props) {
   const ITEMS_PER_PAGE = 20;
   const [page, setPage] = useState(0);
@@ -49,7 +52,10 @@ export function PastOrderSideSheet({
     <Sheet>
       <SheetTrigger asChild>
         <Button
-          className="h-10 bg-slate-200 text-slate-700 text-sm hover:bg-slate-100"
+          className={cn(
+            "bg-slate-200 text-slate-700 hover:bg-slate-100",
+            compact ? "h-8 px-3 text-xs" : "h-10 text-sm",
+          )}
           variant="outline"
         >
           過去の注文
