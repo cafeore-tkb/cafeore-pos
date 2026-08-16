@@ -38,7 +38,17 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR �
 プレビュー URL 付きのバージョンだけ作る。URL は job の Summary に出る。
 
 **初回だけ順番に注意。** `versions upload` は対象の Worker が既に存在している
-ことが前提なので、いちばん最初は main へのマージか手動実行を先に通すこと。
+ことが前提なので、まだ無いと失敗する。いちばん最初は main へのマージか手動実行を
+先に通すこと。
+
+それができない場合のために、Variables に `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` = `true`
+を置くと、**Worker が存在しないときに限り** PR でも `wrangler deploy` に
+フォールバックして Worker を作る。存在するかどうかは `wrangler versions list` で
+先に確認しており、判定できなかった場合（認証エラーなど）は存在する前提で
+`versions upload` を走らせる（誤って本番へ倒さないため）。
+
+**この変数が有効な間は、PR から本番の Worker が作られる。** 立ち上げが済んだら
+変数を消すこと。
 
 | Worker 名 | 対象 |
 |--|--|
@@ -127,6 +137,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 |--|--|--|
 | `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
+| `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
