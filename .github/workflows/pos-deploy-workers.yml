@@ -8,6 +8,10 @@ name: pos / deploy (Workers)
 # main への push と手動実行では本番へ deploy する。
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
 # プレビュー URL 付きのバージョンだけ作る。
+#
+# ただし versions upload は Worker が既にあることが前提なので、まだ無いと
+# 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
+# その場合だけ deploy にフォールバックして Worker を作る。
 
 on:
   push:
@@ -80,24 +84,66 @@ jobs:
           # コマンドを差し込まれうるので、値は env 経由で渡す。
           IS_PR: ${{ github.event_name == 'pull_request' }}
           PR_NUMBER: ${{ github.event.number }}
+          # Worker がまだ存在しないときに限り、PR でも wrangler deploy に
+          # フォールバックする。詳しくは下のスクリプト内のコメントを参照。
+          AUTO_DEPLOY_IF_NOT_EXIST: ${{ vars.WORKERS_AUTO_DEPLOY_IF_NOT_EXIST }}
         run: |
           set -uo pipefail
 
-          status=0
-          if [ "$IS_PR" = "true" ]; then
+          # Worker が既に存在するかどうか。
+          #
+          # 判定できないとき（認証エラーなど別の理由で失敗したとき）は
+          # **存在する扱いにして true を返す**。ここで存在しないと誤断定すると、
+          # 本来 versions upload で済むところを本番の deploy に倒してしまうため。
+          # その場合は本来のコマンドを走らせて、そちらのエラーを出させる。
+          worker_exists() {
+            local out
+            local status=0
+
+            out=$(pnpm exec wrangler versions list 2>&1) || status=$?
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist|10007'; then
+              return 1
+            fi
+
+            echo "Worker の存在を判定できなかった。存在する前提で続行する:"
+            echo "$out"
+            return 0
+          }
+
+          # 走らせるコマンドを決める。
+          if [ "$IS_PR" != "true" ]; then
+            # main への push と手動実行は本番へ。
+            mode="deploy"
+          elif [ "$AUTO_DEPLOY_IF_NOT_EXIST" = "true" ] && ! worker_exists; then
+            # wrangler versions upload は対象の Worker が既にあることが前提で、
+            # 無いと失敗する。初回だけ deploy に倒して Worker を作る。
+            #
+            # **PR から本番の Worker が作られる**ことになるので、変数
+            # WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が明示的に true のときだけ
+            # この経路に入る。初回の立ち上げが済んだら変数を消すこと。
+            echo "Worker が存在しないので deploy にフォールバックする"
+            mode="deploy"
+          else
             # 本番のトラフィックは向けない。プレビュー URL が出力に出る。
-            # 対象の Worker がまだ1度も deploy されていないと失敗するので、
-            # 初回だけは main へのマージ（または手動実行）を先に通すこと。
+            mode="versions-upload"
+          fi
+
+          status=0
+          if [ "$mode" = "deploy" ]; then
+            out=$(pnpm exec wrangler deploy 2>&1) || status=$?
+          else
             out=$(pnpm exec wrangler versions upload \
               --tag "pr-$PR_NUMBER" \
               --message "PR #$PR_NUMBER ($GITHUB_SHA)" 2>&1) || status=$?
-          else
-            out=$(pnpm exec wrangler deploy 2>&1) || status=$?
           fi
 
           echo "$out"
           {
-            echo "### wrangler の出力"
+            echo "### wrangler の出力（mode: $mode）"
             echo '```'
             echo "$out"
             echo '```'
