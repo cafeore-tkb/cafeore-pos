@@ -24,6 +24,13 @@ type StatusResponse struct {
 	Database  string    `json:"database"`
 }
 
+// テスト用。デプロイが反映されたかを確かめるためのレスポンス。
+type TestResponse struct {
+	Time   time.Time `json:"time"`
+	Unix   int64     `json:"unix"`
+	Marker string    `json:"marker"`
+}
+
 var db *gorm.DB
 
 func initDB() error {
@@ -91,6 +98,19 @@ func statusHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// デプロイが反映されたかを確かめるためのエンドポイント。
+// **DB に一切触らない**ので、DB が落ちていても応答する。
+// marker はどの PR のイメージが動いているかを見分けるためのもの。
+func testHandler(c *gin.Context) {
+	now := time.Now()
+
+	c.JSON(http.StatusOK, TestResponse{
+		Time:   now,
+		Unix:   now.Unix(),
+		Marker: "test-colorful-background-2",
+	})
+}
+
 func healthHandler(c *gin.Context) {
 	var result int
 	err := db.Raw("SELECT 1").Scan(&result).Error
@@ -146,6 +166,7 @@ func main() {
 	// エンドポイント
 	r.GET("/status", statusHandler)
 	r.GET("/health", healthHandler)
+	r.GET("/test", testHandler)
 
 	// API エンドポイント
 	api := r.Group("/api")
@@ -184,6 +205,7 @@ func main() {
 	log.Printf("Endpoints:")
 	log.Printf("  GET  /status")
 	log.Printf("  GET  /health")
+	log.Printf("  GET  /test")
 	log.Printf("  GET  /api/items")
 	log.Printf("  GET  /api/item-types")
 	log.Printf("  GET  /api/orders")
