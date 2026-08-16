@@ -1,7 +1,8 @@
 name: Setup dependencies
+description: pnpm と Node をセットアップして、ワークスペース全体の依存をインストールする
 
-on:
-  workflow_call
+# `on:` は composite action では読まれないので置かない
+# （description が無いと actionlint が落ちるので、こちらは必須）。
 
 runs:
   using: 'composite'

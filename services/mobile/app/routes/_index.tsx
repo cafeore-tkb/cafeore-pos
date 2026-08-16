@@ -7,7 +7,9 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export const loader = () => {
+// SPA モード (ssr: false) では `loader` を export できずビルドが落ちる。
+// クライアント側で走る `clientLoader` に置き換えている。
+export const clientLoader = () => {
   return redirect("/welcome");
 };
 

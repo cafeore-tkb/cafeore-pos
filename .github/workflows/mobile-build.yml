@@ -1,0 +1,132 @@
+name: mobile / build
+
+# mobile フロントをビルドして、静的ファイルを Artifact Registry の
+# GENERIC リポジトリへ upload する。
+#
+# ssr: false の SPA なので成果物は build/client 以下の静的ファイルだけ。
+# コンテナ化はせず tar.gz 1 個にまとめて置く。
+#
+# 認証は Workload Identity Federation。GCP 側の構成は infra リポジトリの
+# gcp/github_actions.tf を参照。pos / build と同じ GENERIC リポジトリを使い、
+# package 名（pos / mobile）で分けている。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile-build.yml'
+  pull_request:
+    paths:
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and upload to Artifact Registry
+    runs-on: ubuntu-latest
+
+    # fork からの PR には id-token が発行されない。
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_WEB_REPOSITORY || 'cafeore-pos-web' }}
+      AR_PACKAGE: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: './.github/actions/setup-deps'
+
+      - name: ビルドする
+        working-directory: services/mobile
+        run: pnpm run build
+        env:
+          # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SOHOSAI_VOTE_URL: ${{ vars.VITE_SOHOSAI_VOTE_URL }}
+
+      - name: バージョン文字列を決める
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # main の成果物と混ざらないように PR 番号を前に付ける。
+            echo "value=pr-${{ github.event.number }}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 成果物を tar.gz にまとめる
+        id: archive
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/$AR_PACKAGE-$VERSION.tar.gz"
+          # -C で build/client の中身をトップレベルに置く。
+          # 展開したらそのまま配信ルートになる。
+          tar -czf "$archive" -C services/mobile/build/client .
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+          ls -lh "$archive"
+
+      - name: GCP に認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Artifact Registry へ upload する
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          ARCHIVE: ${{ steps.archive.outputs.path }}
+        run: |
+          set -uo pipefail
+
+          # GENERIC リポジトリの version は不変。同じ package/version へ 2 回
+          # upload すると ALREADY_EXISTS で落ちる。同じコミットで workflow を
+          # 再実行しただけのときに赤くならないよう、その場合だけ握りつぶす。
+          # それ以外の失敗はそのまま落とす。
+          status=0
+          out=$(gcloud artifacts generic upload \
+            --project="$GCP_PROJECT_ID" \
+            --location="$GCP_REGION" \
+            --repository="$AR_REPOSITORY" \
+            --package="$AR_PACKAGE" \
+            --version="$VERSION" \
+            --source="$ARCHIVE" 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            if printf '%s\n' "$out" | grep -qiE 'already exists|ALREADY_EXISTS'; then
+              echo "$AR_PACKAGE/$VERSION は既に存在する。再実行とみなして続行する"
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### upload した成果物"
+            echo '```'
+            echo "repository: $GCP_REGION / $AR_REPOSITORY"
+            echo "package:    $AR_PACKAGE"
+            echo "version:    $VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
