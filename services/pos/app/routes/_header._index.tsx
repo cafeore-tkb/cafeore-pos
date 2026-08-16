@@ -1,4 +1,5 @@
 // import { converter, itemSchema, prodDB } from "@cafeore/common";
+import { API_BASE_URL } from "@cafeore/common";
 import type { MetaFunction } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
 
@@ -24,6 +25,14 @@ export default function Index() {
   return (
     <div className="p-4 font-sans">
       <h1 className="font-bold font-noto text-3xl">珈琲・俺POS</h1>
+      <div className="mt-4 rounded-lg border-4 border-amber-900 bg-amber-50 p-4">
+        <p className="font-bold font-noto text-amber-900 text-xl">
+          API BASE URL
+        </p>
+        <p className="break-all font-bold font-mono text-3xl text-amber-950">
+          {API_BASE_URL}
+        </p>
+      </div>
       <ul className="mt-4 list-disc space-y-2 pl-6">
         <li>
           <a
