@@ -32,6 +32,10 @@ on:
 
 permissions:
   contents: read
+  # プレビュー URL を PR にコメントするのに必要。
+  # fork からの PR は job の if で除外してあるので、書き込みを許しても
+  # 外部の人のコードがこの権限を使うことはない。
+  pull-requests: write
 
 concurrency:
   group: pos-deploy-workers-${{ github.ref }}
@@ -57,6 +61,12 @@ jobs:
           && (github.event_name != 'pull_request'
               || github.event.pull_request.head.repo.full_name == github.repository) }}
 
+    env:
+      # PR コメントを service ごとに1件へまとめるための目印。
+      # pos と mobile で別のコメントになるので、互いに上書きし合わない。
+      COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
+      SERVICE_LABEL: 'POS'
+
     steps:
       - uses: actions/checkout@v4
 
@@ -68,9 +78,15 @@ jobs:
         env:
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          # PR のプレビューは本番とは別の API を向けたいことがある。
+          # VITE_API_BASE_URL_PREVIEW（Cloud Run の URL を入れる想定）が
+          # 設定されていればそれを使い、無ければ通常の値にフォールバックする。
+          VITE_API_BASE_URL: >-
+            ${{ (github.event_name == 'pull_request' && vars.VITE_API_BASE_URL_PREVIEW)
+                || vars.VITE_API_BASE_URL }}
 
       - name: デプロイする
+        id: deploy
         working-directory: services/pos
         env:
           # wrangler が読む名前は CLOUDFLARE_* 固定なので、GitHub 側の
@@ -142,6 +158,19 @@ jobs:
           fi
 
           echo "$out"
+
+          # wrangler の出力から workers.dev の URL を拾う。
+          # versions upload ならプレビュー URL、deploy なら本番の URL。
+          # 取れなくてもここでは失敗させない（コメントを省くだけ）。
+          preview_url=$(printf '%s\n' "$out" \
+            | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
+            | head -1) || true
+
+          {
+            echo "mode=$mode"
+            echo "preview_url=$preview_url"
+          } >> "$GITHUB_OUTPUT"
+
           {
             echo "### wrangler の出力（mode: $mode）"
             echo '```'
@@ -150,3 +179,43 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$status"
+
+      # デプロイが成功したときだけ走る（既定の if: success()）。
+      - name: プレビュー URL を PR にコメントする
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.preview_url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+          MODE: ${{ steps.deploy.outputs.mode }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### $SERVICE_LABEL のプレビュー" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| URL | $PREVIEW_URL |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "| mode | \`$MODE\` |" \
+            "" \
+            "このコメントは push のたびに書き換わる。")
+
+          # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
