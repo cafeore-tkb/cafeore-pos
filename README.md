@@ -20,7 +20,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | workflow | 対象 | 何をするか |
 |--|--|--|
 | `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test |
-| `api-build` | `api` | コンテナイメージをビルドして Artifact Registry へ push |
+| `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上 |
 | `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
@@ -47,10 +47,19 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR �
 
 ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
 
-### backend（Artifact Registry）
+### backend（Artifact Registry → Cloud Run）
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
-デプロイはしない（イメージを置くだけ）。
+main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-git` を
+そのイメージで更新する。**PR ではデプロイしない**（push するところまで）。
+
+イメージはタグではなく**ダイジェスト**で指定している。タグは後から別のイメージへ
+付け替わりうるが、ダイジェストは今ビルドしたものを必ず指すため。
+
+デプロイ先のサービスは既存の Cloud Build トリガー（infra の `cloud_build.tf`）も
+更新している。あちらの発火条件は **`disable-auth` ブランチへの push** なので普段は
+ぶつからないが、`disable-auth` に push するとそちらのビルドで上書きされる。
+移行が済んだら Cloud Build トリガーを止めること。
 
 GCP への認証は Workload Identity Federation で、サービスアカウントキーは使わない。
 そのため job に `permissions: id-token: write` が要る（消すと認証が落ちる）。
@@ -116,8 +125,8 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
-| `CLOUDFLARE_ACCOUNT_ID` | Secrets | 同上 |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
@@ -127,4 +136,5 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
-`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` を Variables で上書きする。
+`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` を
+Variables で上書きする。

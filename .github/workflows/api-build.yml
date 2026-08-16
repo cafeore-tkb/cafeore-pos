@@ -1,13 +1,23 @@
-name: api / build
+name: api / build & deploy
 
-# backend のコンテナイメージをビルドして Artifact Registry へ push する。
+# backend のコンテナイメージをビルドして Artifact Registry へ push し、
+# main への push と手動実行では Cloud Run にデプロイまでする。
 #
 # 認証は Workload Identity Federation。サービスアカウントキーは使わない。
 # GCP 側の構成は infra リポジトリの gcp/github_actions.tf を参照。
 #
 # push 先は Terraform で新しく作った Docker リポジトリ（既定 cafeore-pos）で、
 # Cloud Build が使っている cloud-run-source-deploy とは別物。
-# この workflow はデプロイまではしない（イメージを置くだけ）。
+#
+# ## Cloud Build と同じサービスを更新する
+#
+# デプロイ先の Cloud Run サービス cafeore-pos-git は、既存の Cloud Build
+# トリガー（infra の cloud_build.tf）も更新している。あちらの発火条件は
+# **disable-auth ブランチへの push** なので普段はぶつからないが、
+# disable-auth に push すると、そちらのビルドで上書きされる。
+# 移行が済んだら Cloud Build トリガーを止めること。
+#
+# PR ではデプロイしない（イメージを作って push するところまで）。
 
 on:
   push:
@@ -58,6 +68,7 @@ jobs:
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
       AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
       IMAGE_NAME: api
+      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +110,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: ビルドして push する
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: api
@@ -116,9 +128,43 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - uses: google-github-actions/setup-gcloud@v2
+        if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Cloud Run にデプロイする
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          # タグではなくダイジェストで指定する。タグは後から別のイメージへ
+          # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -uo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # 新しいリビジョンが作られ、traffic は LATEST に向いているので
+          # そのまま切り替わる（infra の cloud_run.tf を参照）。
+          # image は Terraform 側で ignore_changes してあるので、
+          # 次の apply で巻き戻ることはない。
+          gcloud run services update "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="$image" \
+            --quiet
+
+          {
+            echo "### Cloud Run にデプロイした"
+            echo '```'
+            echo "service: $CLOUD_RUN_SERVICE ($GCP_REGION)"
+            echo "image:   $image"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: push したイメージを表示する
         run: |
-          echo "### push したイメージ" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### push したイメージ"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

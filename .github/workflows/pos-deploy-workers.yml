@@ -69,8 +69,11 @@ jobs:
       - name: デプロイする
         working-directory: services/pos
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # wrangler が読む名前は CLOUDFLARE_* 固定なので、GitHub 側の
+          # WORKERS_ 接頭辞つきの名前からここで詰め替える。
+          # アカウント ID は秘密情報ではないので Variables に置いている。
+          CLOUDFLARE_API_TOKEN: ${{ secrets.WORKERS_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.WORKERS_CLOUDFLARE_ACCOUNT_ID }}
           # CI からテレメトリを送らない。
           WRANGLER_SEND_METRICS: 'false'
           # スクリプトに ${{ }} を直接埋めるとログや PR タイトル経由で
