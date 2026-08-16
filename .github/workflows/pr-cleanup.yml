@@ -13,6 +13,12 @@ name: pr / cleanup
 # 内容のイメージが latest と同じダイジェストを指すことがあり、バージョンごと
 # 消すと本番の参照先を壊しうるため。タグを外すだけならその心配がない。
 #
+# ## Cloud Run
+#
+# その PR に割り当てたリビジョンタグ（pr-<番号>）を外す。タグはサービスあたりの
+# 上限があるので放置できない。タグが外れたリビジョンはトラフィックを持たない
+# ままなので、インスタンスは立たず課金もされない。
+#
 # ## Neon
 #
 # その PR 専用に作ったブランチ（preview/pr-<番号>）を消す。compute ごと消えるので
@@ -104,6 +110,31 @@ jobs:
             echo '```'
             echo "タグを外した。イメージ本体は UNTAGGED になり、クリーンアップポリシーが後で回収する。"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cloud Run のリビジョンタグを外す
+        env:
+          CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          status=0
+          out=$(gcloud run services update-traffic "$CLOUD_RUN_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --remove-tags="pr-$PR_NUMBER" \
+            --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではタグを付けていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist|no tag'; then
+              echo "pr-$PR_NUMBER のタグは無い。この PR は backend をデプロイしていないとみなす"
+            else
+              exit "$status"
+            fi
+          fi
 
   neon-branch:
     name: Delete Neon preview branch

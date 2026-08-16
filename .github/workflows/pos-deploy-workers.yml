@@ -106,17 +106,39 @@ jobs:
         id: api_url
         if: ${{ github.event_name == 'pull_request' && steps.gcp_auth.outcome == 'success' }}
         continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.number }}
         run: |
           set -uo pipefail
 
-          url=$(gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
+          # backend は PR ごとに pr-<番号> のリビジョンタグを付けてデプロイされ、
+          # そのタグ専用の URL を持つ。まずは実物を引く。
+          spec=$(gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
             --project="$GCP_PROJECT_ID" \
             --region="$GCP_REGION" \
-            --format='value(status.url)' 2>&1) || url=""
+            --format=json 2>&1) || spec=""
+
+          url=""
+          if [ -n "$spec" ]; then
+            url=$(printf '%s' "$spec" \
+              | jq -r --arg t "pr-$PR_NUMBER" \
+                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty' \
+              2>/dev/null) || url=""
+          fi
+
+          # まだ backend がデプロイされていないと、そのタグは存在しない。
+          # タグ URL はサービス URL のホスト名に "<タグ>---" を足した形なので、
+          # サービス URL から組み立てておく。あとで backend が出れば有効になる。
+          if [ -z "$url" ] && [ -n "$spec" ]; then
+            base=$(printf '%s' "$spec" | jq -r '.status.url // empty' 2>/dev/null) || base=""
+            case "$base" in
+              https://*) url="https://pr-$PR_NUMBER---${base#https://}" ;;
+            esac
+          fi
 
           case "$url" in
             https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url を使う" ;;
-            *) echo "URL を引けなかったので変数のフォールバックに任せる: $url" ;;
+            *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
           esac
 
       - name: ビルドする
