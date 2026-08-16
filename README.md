@@ -35,7 +35,21 @@ POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプト�
 
 main への push と手動実行では本番へ `wrangler deploy` する。PR では
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
-プレビュー URL 付きのバージョンだけ作る。URL は job の Summary に出る。
+プレビュー URL 付きのバージョンだけ作る。
+
+PR ではプレビュー URL を**コメントで貼る**。2回目以降は新しいコメントを足さず、
+同じコメントを書き換える（本文に埋めた目印で自分のコメントを探している）。
+POS と mobile は目印が別なので、それぞれ1件ずつ独立して更新される。
+
+PR のビルドでは、`VITE_API_BASE_URL_PREVIEW` が設定されていればそれを
+`VITE_API_BASE_URL` として焼き込む（Cloud Run の URL を入れる想定）。
+未設定なら通常の `VITE_API_BASE_URL` にフォールバックする。値は次で取れる。
+
+```
+gcloud run services describe cafeore-pos-git \
+  --project project-5d6e656b-4871-46ff-96f \
+  --region asia-northeast1 --format='value(status.url)'
+```
 
 **初回だけ順番に注意。** `versions upload` は対象の Worker が既に存在している
 ことが前提なので、まだ無いと失敗する。いちばん最初は main へのマージか手動実行を
@@ -140,6 +154,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR のビルドでのみ `VITE_API_BASE_URL` の代わりに使う |
 | `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
