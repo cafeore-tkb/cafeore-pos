@@ -220,11 +220,26 @@ jobs:
           # PR で Neon ブランチを用意できていれば、その接続先を一緒に渡す。
           # 環境変数はリビジョン単位なので、PR ごとに違う DB を指せる。
           #
-          # 区切り文字を ^@^ にしているのは、接続文字列に = と & が含まれるため。
-          # 既定のカンマ区切りのままだと gcloud が値を途中で切る。
+          # **区切り文字は既定のカンマのまま。** gcloud はキーと値を最初の = で
+          # 分けるだけなので、値の中の = や & はそのまま通る。
+          #
+          # ここを ^@^ にしてはいけない。gcloud topic escaping のとおり ^DELIM^ の
+          # DELIM は値に絶対現れない文字である必要があり、@ は Postgres の URL に
+          # 必ず出る。実際それで接続文字列が user:pass と host の境目で割れ、
+          # 後半が別の環境変数に化けて、アプリが DSN のパースに失敗して
+          # exit(1) していた。
+          #
+          # 既定のカンマで唯一困るのは値にカンマが含まれる場合。その場合は
+          # 黙って壊れるより止める。
           extra=()
           if [ -n "${NEON_DB_URL:-}" ]; then
-            extra+=(--update-env-vars "^@^DATABASE_URL=$NEON_DB_URL")
+            case "$NEON_DB_URL" in
+              *,*)
+                echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
+                exit 1
+                ;;
+            esac
+            extra+=(--update-env-vars "DATABASE_URL=$NEON_DB_URL")
           fi
 
           gcloud run services update "$service" \
