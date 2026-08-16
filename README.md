@@ -84,8 +84,28 @@ main への push と手動実行では、続けて Cloud Run サービス `cafeo
 Terraform の `traffic { type = LATEST }` と綱引きになるため。
 
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
-費用は増えない。ただし**本番と同じデータベースを見る**点に注意（詳細と変更方法は
-infra の `cloud_run_preview.tf`）。
+費用は増えない。
+
+### PR ごとの Neon ブランチ
+
+`NEON_PROJECT_ID` が設定されていれば、PR ごとに Neon のブランチ
+`preview/pr-<番号>` を **0.25〜1 CU** で作り、その接続文字列を
+プレビュー用 Cloud Run の `DATABASE_URL` に渡す。Cloud Run の環境変数は
+リビジョン単位なので、PR ごとに違う DB を指せる。
+
+ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
+PR を閉じると `pr-cleanup` が compute ごと消す。
+
+**ブランチ名の規則は `api-build.yml` の `NEON_BRANCH_PREFIX` と
+`pr-cleanup.yml` の同名変数で揃えること。** ずれると閉じても消えず溜まる。
+
+接続文字列は `::add-mask::` でログから伏せている。`gcloud` に渡すときは
+区切り文字を `^@^` にしている（接続文字列に `=` と `&` が含まれ、既定の
+カンマ区切りだと値が途中で切れるため）。
+
+`NEON_PROJECT_ID` が未設定なら Neon まわりは丸ごとスキップする。その場合
+`DATABASE_URL` が渡らないので、**プレビューのコンテナは起動時に落ちる**
+（`initDB` が `log.Fatal` するため）。
 
 イメージはタグではなく**ダイジェスト**で指定している。タグは後から別のイメージへ
 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指すため。
@@ -165,6 +185,9 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR のビルドでのみ `VITE_API_BASE_URL` の代わりに使う |
+| `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
+| `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
+| `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
 | `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと

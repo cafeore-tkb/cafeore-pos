@@ -13,6 +13,12 @@ name: pr / cleanup
 # 内容のイメージが latest と同じダイジェストを指すことがあり、バージョンごと
 # 消すと本番の参照先を壊しうるため。タグを外すだけならその心配がない。
 #
+# ## Neon
+#
+# その PR 専用に作ったブランチ（preview/pr-<番号>）を消す。compute ごと消えるので
+# CU-hours もストレージも解放される。**ブランチ名の規則は api-build.yml の
+# NEON_BRANCH_PREFIX と必ず揃えること。** ずれると消えずに溜まる。
+#
 # ## Cloudflare Workers
 #
 # こちらは**片付けていない**。wrangler に versions delete が無く、
@@ -97,4 +103,50 @@ jobs:
             echo "$image:$tag"
             echo '```'
             echo "タグを外した。イメージ本体は UNTAGGED になり、クリーンアップポリシーが後で回収する。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  neon-branch:
+    name: Delete Neon preview branch
+    runs-on: ubuntu-latest
+
+    # Artifact Registry 側と同じ条件に加え、Neon を使っていない場合はスキップ。
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && vars.NEON_PROJECT_ID != '' }}
+
+    steps:
+      - name: preview/pr-<番号> ブランチを消す
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          # api-build.yml の NEON_BRANCH_PREFIX と同じ値にすること。
+          NEON_BRANCH_PREFIX: preview/pr-
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
+
+          status=0
+          out=$(npx --yes neonctl@3 branches delete "$branch" \
+            --project-id "$NEON_PROJECT_ID" 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではブランチを作っていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist'; then
+              echo "$branch は存在しない。この PR は Neon ブランチを作っていないとみなす"
+              status=0
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### Neon の後片付け"
+            echo '```'
+            echo "branch: $branch"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
