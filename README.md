@@ -14,42 +14,64 @@ Run `pnpm i` to install dependencies.
 
 ## CI / CD
 
-`.github/workflows` にある workflow。`*-ci` は検査のみ、`*-build` は成果物を
-Artifact Registry に置く、`pos-deploy-*` は Firebase Hosting に出す。
+`.github/workflows` にある workflow。`*-ci` は検査のみ、`api-build` は Artifact
+Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
 | `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test |
-| `pos-build` | `services/pos` | ビルドして静的ファイルを Artifact Registry へ upload |
-| `mobile-build` | `services/mobile` | 同上 |
 | `api-build` | `api` | コンテナイメージをビルドして Artifact Registry へ push |
-| `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ |
+| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
+| `mobile-deploy-workers` | `services/mobile` | 同上 |
+| `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
 
-### `*-build` について
+### フロントエンド（Cloudflare Workers）
 
-main への push・PR・手動実行（`workflow_dispatch`）で動く。**デプロイはしない**。
-成果物を置くところまで。
+POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプトは持たず、
+`build/client` を静的アセットとして配信するだけの構成にしている
+（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
+（`not_found_handling: single-page-application`）。
+
+main への push と手動実行では本番へ `wrangler deploy` する。PR では
+`wrangler versions upload` に切り替え、本番のトラフィックは向けずに
+プレビュー URL 付きのバージョンだけ作る。URL は job の Summary に出る。
+
+**初回だけ順番に注意。** `versions upload` は対象の Worker が既に存在している
+ことが前提なので、いちばん最初は main へのマージか手動実行を先に通すこと。
+
+| Worker 名 | 対象 |
+|--|--|
+| `cafeore-pos` | `services/pos` |
+| `cafeore-mobile` | `services/mobile` |
+
+ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
+
+### backend（Artifact Registry）
+
+`api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
+デプロイはしない（イメージを置くだけ）。
 
 GCP への認証は Workload Identity Federation で、サービスアカウントキーは使わない。
 そのため job に `permissions: id-token: write` が要る（消すと認証が落ちる）。
-fork からの PR には OIDC トークンが発行されないので、job 自体をスキップしている。
+GCP 側の構成は [infra リポジトリ](https://github.com/cafeore-tkb/infra) の
+`gcp/github_actions.tf` にある。
 
-GCP 側の構成（WIF プール・サービスアカウント・Artifact Registry リポジトリ）は
-[infra リポジトリ](https://github.com/cafeore-tkb/infra) の `gcp/github_actions.tf`
-にある。成果物のパスやタグの一覧もそちらの README にまとめてある。
+fork からの PR には secrets も OIDC トークンも渡らないので、
+デプロイ系の job は fork PR ではスキップしている。
 
-### 設定値
-
-Terraform を既定値のまま apply していれば、**追加設定なしで動く**。
-値を変えたときだけリポジトリの Variables で上書きする（秘密情報ではないので Secrets ではない）。
-
-`GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` / `GCP_PROJECT_ID` /
-`GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_AR_WEB_REPOSITORY`
-
-フロントのビルドに焼き込む値は別で、これらは**ブラウザから読める**ので注意。
+### 必要な設定
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `VITE_API_BASE_URL` | Variables | `pos-build` / `mobile-build` |
-| `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-build` |
-| `WEBHOOK_URL` | Secrets | `pos-build`（既存の `pos-deploy-*` と共用） |
+| `CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `CLOUDFLARE_ACCOUNT_ID` | Secrets | 同上 |
+| `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
+| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
+
+`VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
+空文字が焼き込まれる。
+
+GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
+値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
+`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` を Variables で上書きする。

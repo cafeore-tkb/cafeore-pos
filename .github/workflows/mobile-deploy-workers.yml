@@ -1,0 +1,93 @@
+name: mobile / deploy (Workers)
+
+# mobile フロントをビルドして Cloudflare Workers へデプロイする。
+#
+# ssr: false の SPA なので、Worker のスクリプトは持たず build/client を
+# 静的アセットとして配信するだけ（設定は services/mobile/wrangler.jsonc）。
+#
+# main への push と手動実行では本番へ deploy する。
+# PR では versions upload に切り替え、本番のトラフィックは向けずに
+# プレビュー URL 付きのバージョンだけ作る。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile-deploy-workers.yml'
+  pull_request:
+    paths:
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile-deploy-workers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-deploy-workers-${{ github.ref }}
+  # 本番へのデプロイを途中で止めると中途半端な状態になりうるので、
+  # 打ち切ってよいのは PR のプレビューだけにする。
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+
+    # fork からの PR には secrets が渡らないので、実行しても必ず落ちる。
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: './.github/actions/setup-deps'
+
+      - name: ビルドする
+        working-directory: services/mobile
+        run: pnpm run build
+        env:
+          # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SOHOSAI_VOTE_URL: ${{ vars.VITE_SOHOSAI_VOTE_URL }}
+
+      - name: デプロイする
+        working-directory: services/mobile
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # CI からテレメトリを送らない。
+          WRANGLER_SEND_METRICS: 'false'
+          # スクリプトに ${{ }} を直接埋めるとログや PR タイトル経由で
+          # コマンドを差し込まれうるので、値は env 経由で渡す。
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          status=0
+          if [ "$IS_PR" = "true" ]; then
+            # 本番のトラフィックは向けない。プレビュー URL が出力に出る。
+            # 対象の Worker がまだ1度も deploy されていないと失敗するので、
+            # 初回だけは main へのマージ（または手動実行）を先に通すこと。
+            out=$(pnpm exec wrangler versions upload \
+              --tag "pr-$PR_NUMBER" \
+              --message "PR #$PR_NUMBER ($GITHUB_SHA)" 2>&1) || status=$?
+          else
+            out=$(pnpm exec wrangler deploy 2>&1) || status=$?
+          fi
+
+          echo "$out"
+          {
+            echo "### wrangler の出力"
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"

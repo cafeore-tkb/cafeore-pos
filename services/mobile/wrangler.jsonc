@@ -1,0 +1,18 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cafeore-mobile",
+  // wrangler 4.123.0 が同梱する workerd は 2026-08-11 相当。
+  // ここを未来の日付にすると deploy が API 側で弾かれる。
+  "compatibility_date": "2026-08-04",
+
+  // main（Worker のスクリプト）を持たない、静的アセットだけの Worker。
+  // react-router は ssr: false なので、出荷するのは build/client の中身だけ。
+  //
+  // Cloudflare Pages 時代の functions/[[path]].ts は build/server を import して
+  // いたが、ssr: false ではその出力自体が消えるので機能しておらず、削除した。
+  "assets": {
+    "directory": "./build/client",
+    // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
+    "not_found_handling": "single-page-application"
+  }
+}
