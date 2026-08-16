@@ -17,9 +17,21 @@ name: api / build & deploy
 # disable-auth に push すると、そちらのビルドで上書きされる。
 # 移行が済んだら Cloud Build トリガーを止めること。
 #
-# PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へデプロイする。
+# PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へ、
+# **リビジョンタグ付き・トラフィックなし**でデプロイする。PR ごとに
+#
+#   https://pr-<番号>---<service>-<hash>.<region>.run.app
+#
+# という専用 URL が生え、環境変数もリビジョン単位なので DATABASE_URL も分かれる。
+# 同時に複数の PR が開いていても潰し合わない。
+#
 # 本番には一切触らない。プレビュー用サービスはアクセスが無ければゼロまで縮むので、
 # PR が放置されても費用は増えない（infra の cloud_run_preview.tf を参照）。
+#
+# --no-traffic を使うため、プレビュー用サービスのトラフィックは
+# 「常に最新リビジョン」ではなく固定になる。サービスの素の URL は
+# Terraform が置いたプレースホルダのままになるが、PR は必ずタグ URL を見るので
+# 問題ない（infra 側で traffic を ignore_changes に入れてある）。
 
 on:
   push:
@@ -218,18 +230,19 @@ jobs:
           # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
+          PR_NUMBER: ${{ github.event.number }}
           NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
         run: |
           set -uo pipefail
 
-          # PR は本番に触らず、プレビュー用の別サービスへ出す。
-          # 同じサービスにリビジョンタグを足す方法は取っていない
-          # （トラフィック設定が LATEST 追従から固定に変わってしまうため。
-          #  理由は infra の cloud_run_preview.tf に書いてある）。
+          # PR は本番に触らず、プレビュー用の別サービスへ
+          # リビジョンタグ付き・トラフィックなしで出す。
           if [ "$IS_PR" = "true" ]; then
             service="$CLOUD_RUN_PREVIEW_SERVICE"
+            tag="pr-$PR_NUMBER"
           else
             service="$CLOUD_RUN_SERVICE"
+            tag=""
           fi
 
           image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
@@ -262,17 +275,44 @@ jobs:
             extra+=(--update-env-vars "DATABASE_URL=$NEON_DB_URL")
           fi
 
-          gcloud run services update "$service" \
-            --project="$GCP_PROJECT_ID" \
-            --region="$GCP_REGION" \
-            --image="$image" \
-            "${extra[@]}" \
-            --quiet
+          if [ -n "$tag" ]; then
+            # --no-traffic なので本番トラフィックは動かず、タグ URL からだけ
+            # 到達できるリビジョンができる。同じ PR に push し直すと、その
+            # タグが新しいリビジョンへ付け替わる。
+            gcloud run deploy "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              --no-traffic \
+              --tag="$tag" \
+              "${extra[@]}" \
+              --quiet
+          else
+            # 本番は traffic が LATEST 追従なので、image を差し替えれば切り替わる。
+            gcloud run services update "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              "${extra[@]}" \
+              --quiet
+          fi
 
-          url=$(gcloud run services describe "$service" \
-            --project="$GCP_PROJECT_ID" \
-            --region="$GCP_REGION" \
-            --format='value(status.url)')
+          # URL を確定させる。PR はタグ URL、それ以外はサービスの URL。
+          url=""
+          if [ -n "$tag" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format=json \
+              | jq -r --arg t "$tag" \
+                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty')
+          fi
+          if [ -z "$url" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format='value(status.url)')
+          fi
 
           {
             echo "service=$service"
