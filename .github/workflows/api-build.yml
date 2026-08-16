@@ -76,6 +76,12 @@ jobs:
       CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
       CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
       COMMENT_MARKER: '<!-- cafeore-preview: api -->'
+      # Neon のプレビュー用ブランチ。NEON_PROJECT_ID が未設定なら丸ごとスキップする。
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      NEON_CU: ${{ vars.NEON_PREVIEW_CU || '0.25-1' }}
+      # cleanup 側（pr-cleanup.yml）と**必ず同じ規則**にすること。
+      # ずれると PR を閉じてもブランチが消えない。
+      NEON_BRANCH_PREFIX: preview/pr-
 
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +143,54 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # PR のときだけ、その PR 専用の Neon ブランチを用意する。
+      # NEON_PROJECT_ID が未設定なら何もしない（DATABASE_URL も渡らないので、
+      # プレビューのコンテナは起動時に落ちる）。
+      - name: Neon のプレビューブランチを用意する
+        id: neon
+        if: ${{ github.event_name == 'pull_request' && vars.NEON_PROJECT_ID != '' }}
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
+          neon() { npx --yes neonctl@3 "$@" --project-id "$NEON_PROJECT_ID"; }
+
+          # ブランチ名はプロジェクト内で一意。同名があると create は失敗するので、
+          # 失敗しても「既にある」なら続行する。PR に複数回 push しても増えない。
+          status=0
+          out=$(neon branches create \
+            --name "$branch" \
+            --cu "$NEON_CU" \
+            --output json 2>&1) || status=$?
+
+          if [ "$status" -ne 0 ]; then
+            if printf '%s\n' "$out" | grep -qiE 'already exists|not unique'; then
+              echo "$branch は既にある。作成をスキップする"
+            else
+              echo "$out"
+              exit "$status"
+            fi
+          fi
+
+          # 作成レスポンスから拾わず、必ず connection-string で引き直す。
+          # 親ブランチに role / database が複数あると作成レスポンスに
+          # 接続文字列が入らないため（既存ブランチを再利用する経路でも同じ）。
+          db_url=$(neon connection-string "$branch" --pooled) || exit $?
+
+          # **ログに出させない。** 以降このステップの出力や後続ステップのログで
+          # マスクされる。GITHUB_OUTPUT 経由で渡す値も同様。
+          echo "::add-mask::$db_url"
+
+          {
+            echo "branch=$branch"
+            echo "db_url=$db_url"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
+
       - name: Cloud Run にデプロイする
         id: deploy
         env:
@@ -144,6 +198,7 @@ jobs:
           # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
+          NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
         run: |
           set -uo pipefail
 
@@ -162,10 +217,21 @@ jobs:
           # 新しいリビジョンが作られ、traffic は LATEST に向いているので
           # そのまま切り替わる。image は Terraform 側で ignore_changes して
           # あるので、次の apply で巻き戻ることはない。
+          # PR で Neon ブランチを用意できていれば、その接続先を一緒に渡す。
+          # 環境変数はリビジョン単位なので、PR ごとに違う DB を指せる。
+          #
+          # 区切り文字を ^@^ にしているのは、接続文字列に = と & が含まれるため。
+          # 既定のカンマ区切りのままだと gcloud が値を途中で切る。
+          extra=()
+          if [ -n "${NEON_DB_URL:-}" ]; then
+            extra+=(--update-env-vars "^@^DATABASE_URL=$NEON_DB_URL")
+          fi
+
           gcloud run services update "$service" \
             --project="$GCP_PROJECT_ID" \
             --region="$GCP_REGION" \
             --image="$image" \
+            "${extra[@]}" \
             --quiet
 
           url=$(gcloud run services describe "$service" \
@@ -195,6 +261,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           SERVICE: ${{ steps.deploy.outputs.service }}
+          NEON_BRANCH: ${{ steps.neon.outputs.branch || '(なし)' }}
         run: |
           set -uo pipefail
 
@@ -206,6 +273,7 @@ jobs:
             "| --- | --- |" \
             "| URL | $PREVIEW_URL |" \
             "| service | \`$SERVICE\` |" \
+            "| DB | \`$NEON_BRANCH\` |" \
             "| commit | \`$GITHUB_SHA\` |" \
             "" \
             "本番とは別のサービス。アクセスが無ければゼロまで縮む。" \
