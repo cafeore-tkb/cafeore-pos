@@ -32,6 +32,22 @@ name: api / build & deploy
 # 「常に最新リビジョン」ではなく固定になる。サービスの素の URL は
 # Terraform が置いたプレースホルダのままになるが、PR は必ずタグ URL を見るので
 # 問題ない（infra 側で traffic を ignore_changes に入れてある）。
+#
+# ## PR ではフロントの変更でも走らせる
+#
+# pos / mobile のプレビューは、ビルド時に backend のタグ URL
+# （https://pr-<番号>---<host>）を VITE_API_BASE_URL へ焼き込む。タグがまだ
+# 無ければサービス URL から組み立てるだけなので、この workflow が走らない
+# PR ではそのリビジョンが永久に生えず、焼き込んだ URL が 404 のままになる。
+#
+# なので **PR のトリガーにはフロント側のパスも入れてある**。フロントだけの
+# 変更でも pr-<番号> のリビジョンが必ず用意され、プレビューが API に届く。
+# 対象は pos / mobile の deploy workflow が見ているパスと揃えること。
+# ずれると、フロントのプレビューだけ出て backend が出ない PR が復活する。
+#
+# main への push は api/** のままにしてある。本番フロントは固定の
+# VITE_API_BASE_URL を見るので backend を出し直す理由が無く、同じイメージの
+# リビジョンが本番サービスに積み上がるだけだから。
 
 on:
   push:
@@ -44,6 +60,13 @@ on:
     paths:
       - 'api/**'
       - '.github/workflows/api-build.yml'
+      # ここから下はフロント側。上の「PR ではフロントの変更でも走らせる」を参照。
+      - 'services/pos/**'
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pos-deploy-workers.yml'
+      - '.github/workflows/mobile-deploy-workers.yml'
   workflow_dispatch:
 
 # WIF の OIDC トークン発行に id-token: write が必須。
