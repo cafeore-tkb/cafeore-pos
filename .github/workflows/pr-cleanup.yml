@@ -1,0 +1,94 @@
+name: pr / cleanup
+
+# PR を閉じた（マージ含む）ときに、その PR がビルドした成果物を片付ける。
+#
+# ## Artifact Registry
+#
+# api-build が付けた pr-<番号> タグを外す。タグが外れたイメージは UNTAGGED に
+# なり、infra 側のクリーンアップポリシー（gcp/artifact_registry.tf）が
+# 一定期間後に本体を消す。
+#
+# **タグだけを消し、イメージ本体（バージョン）は消さない。** PR の head と
+# main の tip が同じコミットになった場合（fast-forward マージなど）、同じ
+# 内容のイメージが latest と同じダイジェストを指すことがあり、バージョンごと
+# 消すと本番の参照先を壊しうるため。タグを外すだけならその心配がない。
+#
+# ## Cloudflare Workers
+#
+# こちらは**片付けていない**。wrangler に versions delete が無く、
+# versions upload で作ったバージョンを個別に消す手段が今のところ無いため
+# （wrangler preview delete は private beta）。閉じた PR のプレビュー URL も
+# 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
+# プレビュー URL の配信自体を止めること。
+
+on:
+  pull_request:
+    types:
+      - closed
+
+# paths でのフィルタは付けない。その PR が実際にイメージを作ったかどうかは
+# ここでは分からないので、常に走らせて「無ければ何もしない」で扱う。
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pr-cleanup-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  artifact-registry:
+    name: Delete PR image tag
+    runs-on: ubuntu-latest
+
+    # fork からの PR には id-token が発行されない。
+    # そもそも fork PR ではイメージを作っていないので消すものも無い。
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: api
+
+    steps:
+      - name: GCP に認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: pr-<番号> タグを消す
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME"
+          tag="pr-$PR_NUMBER"
+
+          status=0
+          out=$(gcloud artifacts docker tags delete "$image:$tag" --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではイメージ自体が作られていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|NOT_FOUND|does not exist'; then
+              echo "$image:$tag は存在しない。この PR は api のイメージを作っていないとみなす"
+              status=0
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### Artifact Registry の後片付け"
+            echo '```'
+            echo "$image:$tag"
+            echo '```'
+            echo "タグを外した。イメージ本体は UNTAGGED になり、クリーンアップポリシーが後で回収する。"
+          } >> "$GITHUB_STEP_SUMMARY"

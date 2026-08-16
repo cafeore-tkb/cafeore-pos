@@ -75,8 +75,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          # PR のイメージには **pr-<番号> しか付けない**。
+          # sha タグも一緒に付けてしまうと、PR を閉じたときに pr- タグを消しても
+          # sha タグが残ってバージョンが TAGGED のままになり、
+          # 「未参照になったら消す」クリーンアップの対象から漏れる。
+          #
+          # pr-<番号> は PR に push するたび新しいイメージへ付け替わる。
+          # 外れた古いイメージは UNTAGGED になり、こちらもクリーンアップで回収される。
           tags: |
-            type=sha,format=long,prefix=
+            type=sha,format=long,prefix=,enable=${{ github.event_name != 'pull_request' }}
             type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
 

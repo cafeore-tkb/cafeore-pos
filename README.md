@@ -24,6 +24,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上 |
 | `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
+| `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 
 ### フロントエンド（Cloudflare Workers）
 
@@ -58,6 +59,25 @@ GCP 側の構成は [infra リポジトリ](https://github.com/cafeore-tkb/infra
 
 fork からの PR には secrets も OIDC トークンも渡らないので、
 デプロイ系の job は fork PR ではスキップしている。
+
+### PR を閉じたときの後片付け
+
+**Artifact Registry** … `pr-cleanup` がその PR の `pr-<番号>` タグを外す。
+タグが外れたイメージは infra 側のクリーンアップポリシーが7日後に消す。
+タグだけを外して本体を消さないのは、fast-forward マージなどで PR の head と
+main の tip が同じコミットになったとき、同じダイジェストを `latest` が
+指している可能性があるため。
+
+そのため `api-build` は **PR のイメージに `pr-<番号>` しか付けない**
+（sha タグも付けると、タグを外してもイメージが TAGGED のまま残り回収されない）。
+workflow が落ちた PR や閉じられないまま放置された PR 用に、30日経った `pr-` タグを
+消す保険のポリシーも入れてある。
+
+**Cloudflare Workers** … 片付けていない。wrangler に `versions delete` が無く、
+`versions upload` で作ったバージョンを個別に消す手段が今のところ無いため
+（`wrangler preview delete` は private beta）。閉じた PR のプレビュー URL も
+残り続ける。公開したままにしたくない場合は `wrangler.jsonc` の `preview_urls` を
+`false` にして、プレビュー URL の配信自体を止めること。
 
 ### 必要な設定
 
