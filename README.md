@@ -41,15 +41,17 @@ PR ではプレビュー URL を**コメントで貼る**。2回目以降は新�
 同じコメントを書き換える（本文に埋めた目印で自分のコメントを探している）。
 POS と mobile は目印が別なので、それぞれ1件ずつ独立して更新される。
 
-PR のビルドでは、`VITE_API_BASE_URL_PREVIEW` が設定されていればそれを
-`VITE_API_BASE_URL` として焼き込む（Cloud Run の URL を入れる想定）。
-未設定なら通常の `VITE_API_BASE_URL` にフォールバックする。値は次で取れる。
+PR のビルドでは、**プレビュー用 backend の URL をビルド前に引いて**
+`VITE_API_BASE_URL` に焼き込む。
 
-```
-gcloud run services describe cafeore-pos-git \
-  --project project-5d6e656b-4871-46ff-96f \
-  --region asia-northeast1 --format='value(status.url)'
-```
+Cloud Run のサービス URL は**サービス単位で固定**で、リビジョンが変わっても
+変わらない。そのため backend のデプロイを待つ必要はなく、サービスさえ存在して
+いれば先に引ける（ワークフロー間の順序制御は不要）。`VITE_*` はビルド時に
+焼き込まれるので、この確定はビルドより前に置いてある。
+
+引けなかった場合は**落とさず**、`VITE_API_BASE_URL_PREVIEW` →
+`VITE_API_BASE_URL` の順にフォールバックする。サービス未作成・GCP 障害・
+権限不足のいずれでも、Cloudflare へのデプロイ自体は止めない。
 
 **初回だけ順番に注意。** `versions upload` は対象の Worker が既に存在している
 ことが前提なので、まだ無いと失敗する。いちばん最初は main へのマージか手動実行を
@@ -194,7 +196,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
-| `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR のビルドでのみ `VITE_API_BASE_URL` の代わりに使う |
+| `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
