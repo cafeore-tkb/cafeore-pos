@@ -75,7 +75,17 @@ gcloud run services describe cafeore-pos-git \
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
 main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-git` を
-そのイメージで更新する。**PR ではデプロイしない**（push するところまで）。
+そのイメージで更新する。**PR では本番に触らず、プレビュー用の別サービス**
+（既定 `cafeore-pos-preview`）へデプロイし、その URL を PR にコメントする。
+
+同じサービスにリビジョンタグ（`--no-traffic --tag`）を足す方法は取っていない。
+それをやるとサービスのトラフィック設定が「常に最新リビジョン」から
+「特定リビジョンへの固定」に変わり、main のデプロイが自動で切り替わらなくなるうえ、
+Terraform の `traffic { type = LATEST }` と綱引きになるため。
+
+プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
+費用は増えない。ただし**本番と同じデータベースを見る**点に注意（詳細と変更方法は
+infra の `cloud_run_preview.tf`）。
 
 イメージはタグではなく**ダイジェスト**で指定している。タグは後から別のイメージへ
 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指すため。
@@ -162,5 +172,5 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
-`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` を
-Variables で上書きする。
+`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` /
+`GCP_CLOUD_RUN_PREVIEW_SERVICE` を Variables で上書きする。
