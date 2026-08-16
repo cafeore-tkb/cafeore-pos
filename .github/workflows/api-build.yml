@@ -17,7 +17,9 @@ name: api / build & deploy
 # disable-auth に push すると、そちらのビルドで上書きされる。
 # 移行が済んだら Cloud Build トリガーを止めること。
 #
-# PR ではデプロイしない（イメージを作って push するところまで）。
+# PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へデプロイする。
+# 本番には一切触らない。プレビュー用サービスはアクセスが無ければゼロまで縮むので、
+# PR が放置されても費用は増えない（infra の cloud_run_preview.tf を参照）。
 
 on:
   push:
@@ -38,6 +40,9 @@ on:
 permissions:
   contents: read
   id-token: write
+  # プレビュー URL を PR にコメントするのに必要。
+  # fork からの PR は job の if で除外してある。
+  pull-requests: write
 
 concurrency:
   group: api-build-${{ github.ref }}
@@ -69,6 +74,8 @@ jobs:
       AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
       IMAGE_NAME: api
       CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+      COMMENT_MARKER: '<!-- cafeore-preview: api -->'
 
     steps:
       - uses: actions/checkout@v4
@@ -129,36 +136,96 @@ jobs:
           cache-to: type=gha,mode=max
 
       - uses: google-github-actions/setup-gcloud@v2
-        if: ${{ github.event_name != 'pull_request' }}
 
       - name: Cloud Run にデプロイする
-        if: ${{ github.event_name != 'pull_request' }}
+        id: deploy
         env:
           # タグではなくダイジェストで指定する。タグは後から別のイメージへ
           # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
         run: |
           set -uo pipefail
+
+          # PR は本番に触らず、プレビュー用の別サービスへ出す。
+          # 同じサービスにリビジョンタグを足す方法は取っていない
+          # （トラフィック設定が LATEST 追従から固定に変わってしまうため。
+          #  理由は infra の cloud_run_preview.tf に書いてある）。
+          if [ "$IS_PR" = "true" ]; then
+            service="$CLOUD_RUN_PREVIEW_SERVICE"
+          else
+            service="$CLOUD_RUN_SERVICE"
+          fi
 
           image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
 
           # 新しいリビジョンが作られ、traffic は LATEST に向いているので
-          # そのまま切り替わる（infra の cloud_run.tf を参照）。
-          # image は Terraform 側で ignore_changes してあるので、
-          # 次の apply で巻き戻ることはない。
-          gcloud run services update "$CLOUD_RUN_SERVICE" \
+          # そのまま切り替わる。image は Terraform 側で ignore_changes して
+          # あるので、次の apply で巻き戻ることはない。
+          gcloud run services update "$service" \
             --project="$GCP_PROJECT_ID" \
             --region="$GCP_REGION" \
             --image="$image" \
             --quiet
 
+          url=$(gcloud run services describe "$service" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+
+          {
+            echo "service=$service"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
           {
             echo "### Cloud Run にデプロイした"
             echo '```'
-            echo "service: $CLOUD_RUN_SERVICE ($GCP_REGION)"
+            echo "service: $service ($GCP_REGION)"
+            echo "url:     $url"
             echo "image:   $image"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # デプロイが成功したときだけ走る（既定の if: success()）。
+      - name: プレビュー URL を PR にコメントする
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          SERVICE: ${{ steps.deploy.outputs.service }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### backend のプレビュー" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| URL | $PREVIEW_URL |" \
+            "| service | \`$SERVICE\` |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "" \
+            "本番とは別のサービス。アクセスが無ければゼロまで縮む。" \
+            "このコメントは push のたびに書き換わる。")
+
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
 
       - name: push したイメージを表示する
         run: |
