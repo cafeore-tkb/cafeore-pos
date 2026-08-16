@@ -32,6 +32,9 @@ on:
 
 permissions:
   contents: read
+  # プレビュー用 backend の URL を引くための WIF。
+  # 引けなくてもデプロイは止めないので、GCP が落ちていても Cloudflare へは出せる。
+  id-token: write
   # プレビュー URL を PR にコメントするのに必要。
   # fork からの PR は job の if で除外してあるので、書き込みを許しても
   # 外部の人のコードがこの権限を使うことはない。
@@ -65,6 +68,9 @@ jobs:
       # PR コメントを service ごとに1件へまとめるための目印。
       # pos と mobile で別のコメントになるので、互いに上書きし合わない。
       COMMENT_MARKER: '<!-- cafeore-preview: mobile -->'
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
       SERVICE_LABEL: 'mobile'
 
     steps:
@@ -72,16 +78,58 @@ jobs:
 
       - uses: './.github/actions/setup-deps'
 
+      # PR のビルドに焼き込む API の URL を確定させる。
+      #
+      # Cloud Run のサービス URL は**サービス単位で固定**で、リビジョンが
+      # 変わっても変わらない。つまり backend のデプロイを待つ必要はなく、
+      # サービスさえ存在していれば先に引ける。ビルドは VITE_* を焼き込むので、
+      # この確定はビルドより前でなければならない。
+      #
+      # 引けなくても**落とさない**（サービス未作成、GCP 障害、権限不足など）。
+      # その場合は下の VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の順に
+      # フォールバックする。Cloudflare へのデプロイを GCP の可用性に
+      # 引きずられないようにするため。
+      - name: GCP に認証する
+        id: gcp_auth
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: ${{ github.event_name == 'pull_request' && steps.gcp_auth.outcome == 'success' }}
+        continue-on-error: true
+
+      - name: プレビュー用 backend の URL を引く
+        id: api_url
+        if: ${{ github.event_name == 'pull_request' && steps.gcp_auth.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+
+          url=$(gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)' 2>&1) || url=""
+
+          case "$url" in
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url を使う" ;;
+            *) echo "URL を引けなかったので変数のフォールバックに任せる: $url" ;;
+          esac
+
       - name: ビルドする
         working-directory: services/mobile
         run: pnpm run build
         env:
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
-          # PR のプレビューは本番とは別の API を向けたいことがある。
-          # VITE_API_BASE_URL_PREVIEW（Cloud Run の URL を入れる想定）が
-          # 設定されていればそれを使い、無ければ通常の値にフォールバックする。
+          # PR では上で引いたプレビュー用 backend の URL を焼き込む。
+          # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
+          # 順にフォールバックする。
           VITE_API_BASE_URL: >-
-            ${{ (github.event_name == 'pull_request' && vars.VITE_API_BASE_URL_PREVIEW)
+            ${{ (github.event_name == 'pull_request'
+                 && (steps.api_url.outputs.url || vars.VITE_API_BASE_URL_PREVIEW))
                 || vars.VITE_API_BASE_URL }}
           VITE_SOHOSAI_VOTE_URL: ${{ vars.VITE_SOHOSAI_VOTE_URL }}
 
