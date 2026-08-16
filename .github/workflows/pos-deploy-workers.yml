@@ -40,9 +40,18 @@ jobs:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # fork からの PR には secrets が渡らないので、実行しても必ず落ちる。
-    # 既存の pos-deploy-pull-request.yml と同じ条件で除外する。
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    # 2つ除外している。
+    #
+    #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
+    #     （既存の pos-deploy-pull-request.yml と同じ条件）
+    #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
+    #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
+    #     渡らない（Dependabot 用の別ストアが引かれる）ので、やはり認証で落ちる。
+    #     npm の更新は pnpm-lock.yaml を触るため、除外しないと毎週赤くなる
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || github.event.pull_request.head.repo.full_name == github.repository) }}
 
     steps:
       - uses: actions/checkout@v4

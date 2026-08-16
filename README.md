@@ -60,6 +60,39 @@ GCP 側の構成は [infra リポジトリ](https://github.com/cafeore-tkb/infra
 fork からの PR には secrets も OIDC トークンも渡らないので、
 デプロイ系の job は fork PR ではスキップしている。
 
+### 誰がデプロイできるか（public リポジトリ前提）
+
+**信頼の境界は「このリポジトリへの write 権限」。** write を持つ人はデプロイできる、
+という前提で運用する。逆に言えば、**write を持たない人はデプロイできない。**
+
+fork からの PR は二重に止まる。
+
+1. GitHub 自体が、fork からの `pull_request` に secrets を渡さず `id-token: write` も
+   与えない。`CLOUDFLARE_API_TOKEN` は空になり、WIF のトークンも発行されない
+2. デプロイ系 job の `if` が `head.repo.full_name == github.repository` を見ていて、
+   fork の PR では job ごとスキップされる
+
+デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
+そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
+
+一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
+上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば
+secrets も取り出せる。main への直 push もそのまま本番デプロイになる。これは想定どおりで、
+権限の配り方でコントロールする。
+
+そのため次の運用を守ること。
+
+- 外部の人には write 権限を渡さない。コントリビュートは fork からの PR に統一する
+- Settings → Actions → General の
+  「Fork pull request workflows from outside collaborators」を
+  **Require approval for all external contributors** にする
+  （fork の PR はデプロイできないが、runner の使用自体を承認制にする）
+- `main` にブランチ保護をかけ、直 push を禁止して PR 経由に統一する
+
+Dependabot の PR はデプロイ系 job から除外している（`github.actor != 'dependabot[bot]'`）。
+Dependabot が起点の実行には Actions の secrets が渡らず、権限も read-only なので、
+除外しないと npm 更新のたびに落ちるため。依存更新の妥当性は `*-ci` の typecheck で見る。
+
 ### PR を閉じたときの後片付け
 
 **Artifact Registry** … `pr-cleanup` がその PR の `pr-<番号>` タグを外す。

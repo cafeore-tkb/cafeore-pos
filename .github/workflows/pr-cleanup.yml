@@ -44,7 +44,13 @@ jobs:
 
     # fork からの PR には id-token が発行されない。
     # そもそも fork PR ではイメージを作っていないので消すものも無い。
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    #
+    # Dependabot も除外する。Dependabot は不要になった PR を自分で閉じることが
+    # あり、その実行には id-token が渡らないため。人がマージした場合は
+    # ここを通るが、イメージが無いので NOT_FOUND 扱いで正常終了する。
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository }}
 
     env:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}

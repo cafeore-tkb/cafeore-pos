@@ -38,9 +38,18 @@ jobs:
     name: Build and push to Artifact Registry
     runs-on: ubuntu-latest
 
-    # fork からの PR には id-token が発行されないので、実行しても必ず落ちる。
-    # 既存の pos-deploy-pull-request.yml と同じ条件で除外する。
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    # 2つ除外している。
+    #
+    #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
+    #     （既存の pos-deploy-pull-request.yml と同じ条件）
+    #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
+    #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
+    #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
+    #     やはり認証で落ちる。依存更新の妥当性は *-ci の typecheck で見る
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || github.event.pull_request.head.repo.full_name == github.repository) }}
 
     env:
       # いずれも秘密情報ではない。既定値は infra の `terraform output` の現行値。
