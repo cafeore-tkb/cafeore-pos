@@ -93,6 +93,16 @@ Terraform の `traffic { type = LATEST }` と綱引きになるため。
 プレビュー用 Cloud Run の `DATABASE_URL` に渡す。Cloud Run の環境変数は
 リビジョン単位なので、PR ごとに違う DB を指せる。
 
+ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
+モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
+`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` が panic して
+コンテナが exit(2) する。ローカルの compose では
+`api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
+初期化ディレクトリにマウントしているだけなので Neon には効かない。
+
+Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
+拡張を持つのでこのステップは保険になる。
+
 ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
 PR を閉じると `pr-cleanup` が compute ごと消す。
 
