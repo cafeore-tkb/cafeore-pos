@@ -1,0 +1,183 @@
+name: pr / cleanup
+
+# PR を閉じた（マージ含む）ときに、その PR がビルドした成果物を片付ける。
+#
+# ## Artifact Registry
+#
+# api-build が付けた pr-<番号> タグを外す。タグが外れたイメージは UNTAGGED に
+# なり、infra 側のクリーンアップポリシー（gcp/artifact_registry.tf）が
+# 一定期間後に本体を消す。
+#
+# **タグだけを消し、イメージ本体（バージョン）は消さない。** PR の head と
+# main の tip が同じコミットになった場合（fast-forward マージなど）、同じ
+# 内容のイメージが latest と同じダイジェストを指すことがあり、バージョンごと
+# 消すと本番の参照先を壊しうるため。タグを外すだけならその心配がない。
+#
+# ## Cloud Run
+#
+# その PR に割り当てたリビジョンタグ（pr-<番号>）を外す。タグはサービスあたりの
+# 上限があるので放置できない。タグが外れたリビジョンはトラフィックを持たない
+# ままなので、インスタンスは立たず課金もされない。
+#
+# ## Neon
+#
+# その PR 専用に作ったブランチ（preview/pr-<番号>）を消す。compute ごと消えるので
+# CU-hours もストレージも解放される。**ブランチ名の規則は api-build.yml の
+# NEON_BRANCH_PREFIX と必ず揃えること。** ずれると消えずに溜まる。
+#
+# ## Cloudflare Workers
+#
+# こちらは**片付けていない**。wrangler に versions delete が無く、
+# versions upload で作ったバージョンを個別に消す手段が今のところ無いため
+# （wrangler preview delete は private beta）。閉じた PR のプレビュー URL も
+# 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
+# プレビュー URL の配信自体を止めること。
+
+on:
+  pull_request:
+    types:
+      - closed
+
+# paths でのフィルタは付けない。その PR が実際にイメージを作ったかどうかは
+# ここでは分からないので、常に走らせて「無ければ何もしない」で扱う。
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pr-cleanup-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  artifact-registry:
+    name: Delete PR image tag
+    runs-on: ubuntu-latest
+
+    # fork からの PR には id-token が発行されない。
+    # そもそも fork PR ではイメージを作っていないので消すものも無い。
+    #
+    # Dependabot も除外する。Dependabot は不要になった PR を自分で閉じることが
+    # あり、その実行には id-token が渡らないため。人がマージした場合は
+    # ここを通るが、イメージが無いので NOT_FOUND 扱いで正常終了する。
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository }}
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: api
+
+    steps:
+      - name: GCP に認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: pr-<番号> タグを消す
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME"
+          tag="pr-$PR_NUMBER"
+
+          status=0
+          out=$(gcloud artifacts docker tags delete "$image:$tag" --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではイメージ自体が作られていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|NOT_FOUND|does not exist'; then
+              echo "$image:$tag は存在しない。この PR は api のイメージを作っていないとみなす"
+              status=0
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### Artifact Registry の後片付け"
+            echo '```'
+            echo "$image:$tag"
+            echo '```'
+            echo "タグを外した。イメージ本体は UNTAGGED になり、クリーンアップポリシーが後で回収する。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cloud Run のリビジョンタグを外す
+        env:
+          CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          status=0
+          out=$(gcloud run services update-traffic "$CLOUD_RUN_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --remove-tags="pr-$PR_NUMBER" \
+            --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではタグを付けていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist|no tag'; then
+              echo "pr-$PR_NUMBER のタグは無い。この PR は backend をデプロイしていないとみなす"
+            else
+              exit "$status"
+            fi
+          fi
+
+  neon-branch:
+    name: Delete Neon preview branch
+    runs-on: ubuntu-latest
+
+    # Artifact Registry 側と同じ条件に加え、Neon を使っていない場合はスキップ。
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && vars.NEON_PROJECT_ID != '' }}
+
+    steps:
+      - name: preview/pr-<番号> ブランチを消す
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          # api-build.yml の NEON_BRANCH_PREFIX と同じ値にすること。
+          NEON_BRANCH_PREFIX: preview/pr-
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
+
+          status=0
+          out=$(npx --yes neonctl@3 branches delete "$branch" \
+            --project-id "$NEON_PROJECT_ID" 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # api を触っていない PR ではブランチを作っていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist'; then
+              echo "$branch は存在しない。この PR は Neon ブランチを作っていないとみなす"
+              status=0
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### Neon の後片付け"
+            echo '```'
+            echo "branch: $branch"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

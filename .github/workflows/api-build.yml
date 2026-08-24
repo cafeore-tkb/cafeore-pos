@@ -1,0 +1,403 @@
+name: api / build & deploy
+
+# backend のコンテナイメージをビルドして Artifact Registry へ push し、
+# main への push と手動実行では Cloud Run にデプロイまでする。
+#
+# 認証は Workload Identity Federation。サービスアカウントキーは使わない。
+# GCP 側の構成は infra リポジトリの gcp/github_actions.tf を参照。
+#
+# push 先は Terraform で新しく作った Docker リポジトリ（既定 cafeore-pos）で、
+# Cloud Build が使っている cloud-run-source-deploy とは別物。
+#
+# ## Cloud Build と同じサービスを更新する
+#
+# デプロイ先の Cloud Run サービス cafeore-pos-git は、既存の Cloud Build
+# トリガー（infra の cloud_build.tf）も更新している。あちらの発火条件は
+# **disable-auth ブランチへの push** なので普段はぶつからないが、
+# disable-auth に push すると、そちらのビルドで上書きされる。
+# 移行が済んだら Cloud Build トリガーを止めること。
+#
+# PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へ、
+# **リビジョンタグ付き・トラフィックなし**でデプロイする。PR ごとに
+#
+#   https://pr-<番号>---<service>-<hash>.<region>.run.app
+#
+# という専用 URL が生え、環境変数もリビジョン単位なので DATABASE_URL も分かれる。
+# 同時に複数の PR が開いていても潰し合わない。
+#
+# 本番には一切触らない。プレビュー用サービスはアクセスが無ければゼロまで縮むので、
+# PR が放置されても費用は増えない（infra の cloud_run_preview.tf を参照）。
+#
+# --no-traffic を使うため、プレビュー用サービスのトラフィックは
+# 「常に最新リビジョン」ではなく固定になる。サービスの素の URL は
+# Terraform が置いたプレースホルダのままになるが、PR は必ずタグ URL を見るので
+# 問題ない（infra 側で traffic を ignore_changes に入れてある）。
+#
+# ## PR ではフロントの変更でも走らせる
+#
+# pos / mobile のプレビューは、ビルド時に backend のタグ URL
+# （https://pr-<番号>---<host>）を VITE_API_BASE_URL へ焼き込む。タグがまだ
+# 無ければサービス URL から組み立てるだけなので、この workflow が走らない
+# PR ではそのリビジョンが永久に生えず、焼き込んだ URL が 404 のままになる。
+#
+# なので **PR のトリガーにはフロント側のパスも入れてある**。フロントだけの
+# 変更でも pr-<番号> のリビジョンが必ず用意され、プレビューが API に届く。
+# 対象は pos / mobile の deploy workflow が見ているパスと揃えること。
+# ずれると、フロントのプレビューだけ出て backend が出ない PR が復活する。
+#
+# main への push は api/** のままにしてある。本番フロントは固定の
+# VITE_API_BASE_URL を見るので backend を出し直す理由が無く、同じイメージの
+# リビジョンが本番サービスに積み上がるだけだから。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/**'
+      - '.github/workflows/api-build.yml'
+  pull_request:
+    paths:
+      - 'api/**'
+      - '.github/workflows/api-build.yml'
+      # ここから下はフロント側。上の「PR ではフロントの変更でも走らせる」を参照。
+      - 'services/pos/**'
+      - 'services/mobile/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pos-deploy-workers.yml'
+      - '.github/workflows/mobile-deploy-workers.yml'
+  workflow_dispatch:
+
+# WIF の OIDC トークン発行に id-token: write が必須。
+# 足りないと google-github-actions/auth が
+# "Failed to get ID token" で落ちる。
+permissions:
+  contents: read
+  id-token: write
+  # プレビュー URL を PR にコメントするのに必要。
+  # fork からの PR は job の if で除外してある。
+  pull-requests: write
+
+concurrency:
+  group: api-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and push to Artifact Registry
+    runs-on: ubuntu-latest
+
+    # 2つ除外している。
+    #
+    #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
+    #     （既存の pos-deploy-pull-request.yml と同じ条件）
+    #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
+    #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
+    #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
+    #     やはり認証で落ちる。依存更新の妥当性は *-ci の typecheck で見る
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || github.event.pull_request.head.repo.full_name == github.repository) }}
+
+    env:
+      # いずれも秘密情報ではない。既定値は infra の `terraform output` の現行値。
+      # Terraform 側で ID を変えたら、このリポジトリの Variables に入れて上書きする。
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: api
+      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+      COMMENT_MARKER: '<!-- cafeore-preview: api -->'
+      # Neon のプレビュー用ブランチ。NEON_PROJECT_ID が未設定なら丸ごとスキップする。
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      NEON_CU: ${{ vars.NEON_PREVIEW_CU || '0.25-1' }}
+      # cleanup 側（pr-cleanup.yml）と**必ず同じ規則**にすること。
+      # ずれると PR を閉じてもブランチが消えない。
+      NEON_BRANCH_PREFIX: preview/pr-
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GCP に認証する
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+          # docker login にそのまま渡せる短期トークンを受け取る。
+          # SA を impersonate するので service_account の指定が必要。
+          token_format: access_token
+
+      - name: Artifact Registry に docker login する
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: タグを決める
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          # PR のイメージには **pr-<番号> しか付けない**。
+          # sha タグも一緒に付けてしまうと、PR を閉じたときに pr- タグを消しても
+          # sha タグが残ってバージョンが TAGGED のままになり、
+          # 「未参照になったら消す」クリーンアップの対象から漏れる。
+          #
+          # pr-<番号> は PR に push するたび新しいイメージへ付け替わる。
+          # 外れた古いイメージは UNTAGGED になり、こちらもクリーンアップで回収される。
+          tags: |
+            type=sha,format=long,prefix=,enable=${{ github.event_name != 'pull_request' }}
+            type=ref,event=pr
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ビルドして push する
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          # Cloud Run は amd64。Dockerfile 側でも GOARCH=amd64 を固定している。
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 既定では provenance attestation が付いて OCI index になり、
+          # 単一イメージを前提にしたツール（gcloud run deploy の一部経路など）が
+          # 扱いを間違えることがある。Cloud Build が作っている既存イメージと
+          # 形を揃えるため無効化している。
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # PR のときだけ、その PR 専用の Neon ブランチを用意する。
+      # NEON_PROJECT_ID が未設定なら何もしない（DATABASE_URL も渡らないので、
+      # プレビューのコンテナは起動時に落ちる）。
+      - name: Neon のプレビューブランチを用意する
+        id: neon
+        if: ${{ github.event_name == 'pull_request' && vars.NEON_PROJECT_ID != '' }}
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
+          neon() { npx --yes neonctl@3 "$@" --project-id "$NEON_PROJECT_ID"; }
+
+          # ブランチ名はプロジェクト内で一意。同名があると create は失敗するので、
+          # 失敗しても「既にある」なら続行する。PR に複数回 push しても増えない。
+          status=0
+          out=$(neon branches create \
+            --name "$branch" \
+            --cu "$NEON_CU" \
+            --output json 2>&1) || status=$?
+
+          if [ "$status" -ne 0 ]; then
+            if printf '%s\n' "$out" | grep -qiE 'already exists|not unique'; then
+              echo "$branch は既にある。作成をスキップする"
+            else
+              echo "$out"
+              exit "$status"
+            fi
+          fi
+
+          # 作成レスポンスから拾わず、必ず connection-string で引き直す。
+          # 親ブランチに role / database が複数あると作成レスポンスに
+          # 接続文字列が入らないため（既存ブランチを再利用する経路でも同じ）。
+          db_url=$(neon connection-string "$branch" --pooled) || exit $?
+
+          # **ログに出させない。** 以降このステップの出力や後続ステップのログで
+          # マスクされる。GITHUB_OUTPUT 経由で渡す値も同様。
+          echo "::add-mask::$db_url"
+
+          {
+            echo "branch=$branch"
+            echo "db_url=$db_url"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
+
+      # 新しく作った Neon ブランチは空なので、AutoMigrate の最初の CREATE TABLE が
+      # uuid_generate_v4() を呼んだ時点で 42883 になり、initDB が panic して
+      # コンテナが exit(2) する（api/internal/models/*.go の
+      # `default:uuid_generate_v4()` が拡張に依存しているため）。
+      #
+      # ローカルの compose では api/init/00_enable_extension.sql が同じことを
+      # している。あちらは ./api/init を Postgres の初期化ディレクトリに
+      # マウントしているだけなので、Neon には効かない。
+      #
+      # 本番（Supabase）は過去に手で拡張を入れテーブルも既にあるため
+      # AutoMigrate が実質 no-op になり、この問題が表面化していなかった。
+      #
+      # IF NOT EXISTS なので毎 push 走っても害はない。親ブランチに拡張が
+      # 入っていれば CoW クローンにも引き継がれるので、その場合は保険になる。
+      - name: Neon ブランチに uuid-ossp を入れる
+        if: ${{ steps.neon.outputs.db_url != '' }}
+        env:
+          DB_URL: ${{ steps.neon.outputs.db_url }}
+        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+      - name: Cloud Run にデプロイする
+        id: deploy
+        env:
+          # タグではなくダイジェストで指定する。タグは後から別のイメージへ
+          # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          PR_NUMBER: ${{ github.event.number }}
+          NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
+        run: |
+          set -uo pipefail
+
+          # PR は本番に触らず、プレビュー用の別サービスへ
+          # リビジョンタグ付き・トラフィックなしで出す。
+          if [ "$IS_PR" = "true" ]; then
+            service="$CLOUD_RUN_PREVIEW_SERVICE"
+            tag="pr-$PR_NUMBER"
+          else
+            service="$CLOUD_RUN_SERVICE"
+            tag=""
+          fi
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # 新しいリビジョンが作られ、traffic は LATEST に向いているので
+          # そのまま切り替わる。image は Terraform 側で ignore_changes して
+          # あるので、次の apply で巻き戻ることはない。
+          # PR で Neon ブランチを用意できていれば、その接続先を一緒に渡す。
+          # 環境変数はリビジョン単位なので、PR ごとに違う DB を指せる。
+          #
+          # **区切り文字は既定のカンマのまま。** gcloud はキーと値を最初の = で
+          # 分けるだけなので、値の中の = や & はそのまま通る。
+          #
+          # ここを ^@^ にしてはいけない。gcloud topic escaping のとおり ^DELIM^ の
+          # DELIM は値に絶対現れない文字である必要があり、@ は Postgres の URL に
+          # 必ず出る。実際それで接続文字列が user:pass と host の境目で割れ、
+          # 後半が別の環境変数に化けて、アプリが DSN のパースに失敗して
+          # exit(1) していた。
+          #
+          # 既定のカンマで唯一困るのは値にカンマが含まれる場合。その場合は
+          # 黙って壊れるより止める。
+          extra=()
+          if [ -n "${NEON_DB_URL:-}" ]; then
+            case "$NEON_DB_URL" in
+              *,*)
+                echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
+                exit 1
+                ;;
+            esac
+            extra+=(--update-env-vars "DATABASE_URL=$NEON_DB_URL")
+          fi
+
+          if [ -n "$tag" ]; then
+            # --no-traffic なので本番トラフィックは動かず、タグ URL からだけ
+            # 到達できるリビジョンができる。同じ PR に push し直すと、その
+            # タグが新しいリビジョンへ付け替わる。
+            gcloud run deploy "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              --no-traffic \
+              --tag="$tag" \
+              "${extra[@]}" \
+              --quiet
+          else
+            # 本番は traffic が LATEST 追従なので、image を差し替えれば切り替わる。
+            gcloud run services update "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              "${extra[@]}" \
+              --quiet
+          fi
+
+          # URL を確定させる。PR はタグ URL、それ以外はサービスの URL。
+          url=""
+          if [ -n "$tag" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format=json \
+              | jq -r --arg t "$tag" \
+                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty')
+          fi
+          if [ -z "$url" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format='value(status.url)')
+          fi
+
+          {
+            echo "service=$service"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Cloud Run にデプロイした"
+            echo '```'
+            echo "service: $service ($GCP_REGION)"
+            echo "url:     $url"
+            echo "image:   $image"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # デプロイが成功したときだけ走る（既定の if: success()）。
+      - name: プレビュー URL を PR にコメントする
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          SERVICE: ${{ steps.deploy.outputs.service }}
+          NEON_BRANCH: ${{ steps.neon.outputs.branch || '(なし)' }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### backend のプレビュー" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| URL | $PREVIEW_URL |" \
+            "| service | \`$SERVICE\` |" \
+            "| DB | \`$NEON_BRANCH\` |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "" \
+            "本番とは別のサービス。アクセスが無ければゼロまで縮む。" \
+            "このコメントは push のたびに書き換わる。")
+
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
+
+      - name: push したイメージを表示する
+        run: |
+          {
+            echo "### push したイメージ"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
