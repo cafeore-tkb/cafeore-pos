@@ -5,16 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "react-router build",
-    "deploy": "wrangler pages deploy ./build/client",
-    "start": "wrangler pages dev ./build/client",
+    "deploy": "wrangler deploy",
+    "start": "wrangler dev",
     "dev": "react-router dev",
-    "typecheck": "react-router typegen && tsc",
-    "typegen": "wrangler types"
+    "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
     "@cafeore/common": "workspace:*",
     "@radix-ui/react-slot": "^1.1.0",
-    "@react-router/cloudflare": "^7.0.0",
     "@react-router/fs-routes": "^7.13.1",
     "@react-router/node": "^7.13.1",
     "class-variance-authority": "^0.7.0",
@@ -31,7 +29,6 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250214.0",
     "@react-router/dev": "^7.0.0",
     "@tailwindcss/vite": "^4.1.17",
     "@types/react": "^18.3.12",
@@ -42,7 +39,7 @@
     "typescript": "^5.6.3",
     "vite": "^6.4.1",
     "vite-tsconfig-paths": "^5.0.1",
-    "wrangler": "3.80.4"
+    "wrangler": "^4.123.0"
   },
   "engines": {
     "node": ">=20.0.0"
