@@ -1,5 +1,6 @@
 import type { Config } from "@react-router/dev/config";
 
 export default {
-  ssr: false,
+  // Cloudflare Pages Functions serves the generated server bundle.
+  ssr: true,
 } satisfies Config;
