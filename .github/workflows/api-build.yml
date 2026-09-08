@@ -351,6 +351,116 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 空の Neon ブランチには AutoMigrate でテーブルだけが作られるため、レジに
+      # 必要な商品マスタだけを本番 API からコピーする。本番側は GET しかしない。
+      # name（item type）/ key（item）を論理キーとして既存行を再利用するので、
+      # 同じ PR の workflow を再実行しても重複登録しない。
+      - name: プレビュー DB に商品マスタを投入する
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
+        env:
+          PREVIEW_API_URL: ${{ steps.deploy.outputs.url }}
+          PRODUCTION_API_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PRODUCTION_API_URL:-}" ]; then
+            echo "Repository variable VITE_API_BASE_URL が未設定です" >&2
+            exit 1
+          fi
+          PREVIEW_API_URL=${PREVIEW_API_URL%/}
+          PRODUCTION_API_URL=${PRODUCTION_API_URL%/}
+          if [ "$PREVIEW_API_URL" = "$PRODUCTION_API_URL" ]; then
+            echo "preview API と production API の URL が同一です" >&2
+            exit 1
+          fi
+
+          # Cloud Run の新リビジョン起動と AutoMigrate の完了を待つ。
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 10 \
+              "$PREVIEW_API_URL/health" > /dev/null; then
+              ready=true
+              break
+            fi
+            echo "preview API の起動待ち ($attempt/30)"
+            sleep 5
+          done
+          if [ "$ready" != true ]; then
+            echo "preview API が時間内に起動しませんでした" >&2
+            exit 1
+          fi
+
+          tmp_dir=$(mktemp -d)
+          trap 'rm -rf "$tmp_dir"' EXIT
+
+          # production API はこの2つの GET だけ。運用データは取得しない。
+          curl --fail --silent --show-error \
+            "$PRODUCTION_API_URL/api/item-types" > "$tmp_dir/source-types.json"
+          curl --fail --silent --show-error \
+            "$PRODUCTION_API_URL/api/items" > "$tmp_dir/source-items.json"
+          curl --fail --silent --show-error \
+            "$PREVIEW_API_URL/api/item-types" > "$tmp_dir/preview-types.json"
+          curl --fail --silent --show-error \
+            "$PREVIEW_API_URL/api/items" > "$tmp_dir/preview-items.json"
+
+          jq -e 'type == "array"' "$tmp_dir/source-types.json" "$tmp_dir/source-items.json" \
+            "$tmp_dir/preview-types.json" "$tmp_dir/preview-items.json" > /dev/null
+          jq -e 'group_by(.name) | all(length == 1)' "$tmp_dir/source-types.json" > /dev/null
+          jq -e 'group_by(.key) | all(length == 1)' "$tmp_dir/source-items.json" > /dev/null
+
+          jq -n '{}' > "$tmp_dir/type-id-map.json"
+          while IFS= read -r source_type; do
+            source_id=$(jq -er '.id' <<< "$source_type")
+            name=$(jq -er '.name' <<< "$source_type")
+            matches=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' \
+              "$tmp_dir/preview-types.json")
+            if [ "$matches" -gt 1 ]; then
+              echo "preview に item type name=$name が複数あります" >&2
+              exit 1
+            elif [ "$matches" -eq 1 ]; then
+              preview_id=$(jq -er --arg name "$name" '.[] | select(.name == $name) | .id' \
+                "$tmp_dir/preview-types.json")
+            else
+              body=$(jq -c '{name, display_name}' <<< "$source_type")
+              preview_id=$(curl --fail --silent --show-error \
+                -X POST -H 'Content-Type: application/json' \
+                --data "$body" "$PREVIEW_API_URL/api/item-types" | jq -er '.id')
+              jq --arg id "$preview_id" --arg name "$name" --arg display_name "$(jq -r '.display_name' <<< "$source_type")" \
+                '. + [{id: $id, name: $name, display_name: $display_name}]' \
+                "$tmp_dir/preview-types.json" > "$tmp_dir/preview-types.next.json"
+              mv "$tmp_dir/preview-types.next.json" "$tmp_dir/preview-types.json"
+            fi
+            jq --arg source "$source_id" --arg preview "$preview_id" \
+              '.[$source] = $preview' "$tmp_dir/type-id-map.json" > "$tmp_dir/type-id-map.next.json"
+            mv "$tmp_dir/type-id-map.next.json" "$tmp_dir/type-id-map.json"
+          done < <(jq -c '.[]' "$tmp_dir/source-types.json")
+
+          created_items=0
+          while IFS= read -r source_item; do
+            key=$(jq -er '.key' <<< "$source_item")
+            matches=$(jq --arg key "$key" '[.[] | select(.key == $key)] | length' \
+              "$tmp_dir/preview-items.json")
+            if [ "$matches" -gt 1 ]; then
+              echo "preview に item key=$key が複数あります" >&2
+              exit 1
+            elif [ "$matches" -eq 1 ]; then
+              continue
+            fi
+
+            source_type_id=$(jq -er '.item_type.id' <<< "$source_item")
+            preview_type_id=$(jq -er --arg id "$source_type_id" '.[$id]' \
+              "$tmp_dir/type-id-map.json")
+            body=$(jq -c --arg item_type_id "$preview_type_id" \
+              '{name, abbr, price, key, item_type_id: $item_type_id}' <<< "$source_item")
+            curl --fail --silent --show-error \
+              -X POST -H 'Content-Type: application/json' \
+              --data "$body" "$PREVIEW_API_URL/api/items" > /dev/null
+            created_items=$((created_items + 1))
+          done < <(jq -c '.[]' "$tmp_dir/source-items.json")
+
+          echo "商品マスタ投入完了: item types=$(jq 'length' "$tmp_dir/type-id-map.json"), new items=$created_items"
+
       # デプロイが成功したときだけ走る（既定の if: success()）。
       - name: プレビュー URL を PR にコメントする
         if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
