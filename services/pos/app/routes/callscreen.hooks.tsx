@@ -1,229 +1,156 @@
-import type { Order } from "@cafeore/common";
-import { gsap } from "gsap";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type GsapCSSVars = Record<string, string | number | (() => void)>;
-
-/**
- * オーダーの状態が変化したかを判定するヘルパー関数
- */
-function isOrderReadyStateChanged(
-  prev: Order | undefined,
-  current: Order,
-): boolean {
-  return (
-    prev?.readyAt === null &&
-    current.readyAt !== null &&
-    current.servedAt === null
-  );
-}
+/** 点滅 1 コマの長さ */
+const FLASH_STEP_MS = 280;
+/** 1 つの番号が点滅するコマ数 */
+const FLASH_STEPS = 8;
 
 /**
- * オーダーが準備中に戻ったかを判定するヘルパー関数
+ * 固定サイズのステージを画面に収める倍率を返す。
+ * レイアウトは実寸のまま、拡大縮小だけで解像度差を吸収する。
  */
-function isOrderUnreadyStateChanged(
-  prev: Order | undefined,
-  current: Order,
-): boolean {
-  return prev?.readyAt !== null && current.readyAt === null;
-}
-
-/**
- * オーダー状態管理フック
- * オーダーの状態（準備中 → 提供可能）の変化を監視し、
- * 適切な処理（キュー追加、表示更新など）を実行します。
- */
-export function useOrderState(orders: Order[] | undefined) {
-  const [queue, setQueue] = useState<number[]>([]);
-  const [current, setCurrent] = useState<number | null>(null);
-  const [displayedOrders, setDisplayedOrders] = useState<Set<number>>(
-    new Set(),
-  );
-  const prevOrdersRef = useRef<typeof orders>();
-  const animatedRightCardsRef = useRef<Set<number>>(new Set());
+export function useStageScale(width: number, height: number) {
+  const [scale, setScale] = useState(1);
 
   useEffect(() => {
-    if (!orders) return;
-
-    // 初期化処理: 既に準備完了のオーダーを表示リストに追加
-    if (!prevOrdersRef.current) {
-      const existingReadyOrders = orders.filter(
-        (order) => order.readyAt !== null && order.servedAt === null,
+    const update = () => {
+      setScale(
+        Math.min(window.innerWidth / width, window.innerHeight / height),
       );
-      setDisplayedOrders(new Set(existingReadyOrders.map((o) => o.orderId)));
-      prevOrdersRef.current = orders;
-      return;
-    }
-
-    // 新しく準備完了になったオーダーを検出し、キューに追加
-    const newlyReady = orders.filter((order) => {
-      const prev = prevOrdersRef.current?.find((p) => p.id === order.id);
-      return isOrderReadyStateChanged(prev, order);
-    });
-
-    if (newlyReady.length > 0) {
-      setQueue((prev) => [...prev, ...newlyReady.map((o) => o.orderId)]);
-    }
-
-    // 準備中に戻ったオーダーを検出し、アニメーション履歴から削除
-    const newlyUnready = orders.filter((order) => {
-      const prev = prevOrdersRef.current?.find((p) => p.id === order.id);
-      return isOrderUnreadyStateChanged(prev, order);
-    });
-
-    // 再び準備完了になった際にアニメーションが再生されるよう、履歴をクリア
-    for (const order of newlyUnready) {
-      animatedRightCardsRef.current.delete(order.orderId);
-    }
-
-    prevOrdersRef.current = orders;
-  }, [orders]);
-
-  return {
-    queue,
-    current,
-    displayedOrders,
-    animatedRightCardsRef,
-    setQueue,
-    setCurrent,
-    setDisplayedOrders,
-  };
-}
-
-/**
- * スライドアウトアニメーション管理フック
- * 左側のカードを右にスライドさせて、画面外に移動させるアニメーションを実行します。
- */
-export function useCallScreenAnimation(
-  current: number | null,
-  currentElementRef: React.RefObject<HTMLDivElement>,
-  onComplete: (orderId: number) => void,
-) {
-  useEffect(() => {
-    if (current === null || !currentElementRef.current) return;
-
-    const element = currentElementRef.current;
-    const currentOrderId = current;
-
-    // 初期位置をリセット（アニメーション開始時の状態）
-    gsap.set(element, { x: 0, opacity: 1 });
-
-    // 右方向にスライドアウトするアニメーション（1秒後に開始）
-    gsap.to(element, {
-      x: window.innerWidth * 0.1,
-      opacity: 0,
-      duration: 0.5,
-      delay: 1,
-      ease: "power2.in",
-      onComplete: () => {
-        onComplete(currentOrderId);
-      },
-    });
-
-    // クリーンアップ: アニメーションを中断し、スタイルをリセット
-    return () => {
-      gsap.killTweensOf(element);
-      gsap.set(element, { clearProps: "all" });
     };
-  }, [current, currentElementRef, onComplete]);
+
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [width, height]);
+
+  return scale;
 }
 
-/**
- * キュー処理フック
- * 現在表示中のオーダーが完了したら、次のオーダーをキューから取り出して表示します。
- * 一定時間待ってから次を表示することで、アニメーションが途切れないようにしています。
- */
-export function useQueueProcessing(
-  current: number | null,
-  queue: number[],
-  setCurrent: (orderId: number) => void,
-  setQueue: React.Dispatch<React.SetStateAction<number[]>>,
-) {
-  useEffect(() => {
-    // 現在表示中のオーダーが存在する場合は何もしない
-    if (current !== null) return;
-    // キューが空の場合は何もしない
-    if (queue.length === 0) return;
+type FlashState = {
+  beat: number;
+  /** 番号 → 点滅が終わるビート */
+  until: Record<number, number>;
+};
 
-    // 次のオーダーを一定時間後に表示（前のアニメーションとの間隔を空ける）
-    const timerId = setTimeout(() => {
-      setQueue((prev) => {
-        const next = prev[0];
-        if (next !== undefined) {
-          setCurrent(next);
+/**
+ * 点滅を共通の 1 本のビートで駆動する。
+ * 番号ごとに終わりのビートだけを持つので、何件同時に光ってもタイミングが揃い、
+ * どの番号も同じ長さだけ点滅する。
+ */
+export function useFlash() {
+  const [state, setState] = useState<FlashState>({ beat: 0, until: {} });
+  const running = Object.keys(state.until).length > 0;
+
+  useEffect(() => {
+    if (!running) return;
+
+    const timer = setInterval(() => {
+      setState((prev) => {
+        const beat = prev.beat + 1;
+        const until: Record<number, number> = {};
+        for (const [id, end] of Object.entries(prev.until)) {
+          if (end > beat) until[Number(id)] = end;
         }
-        return prev.slice(1);
+        return { beat, until };
       });
-    }, 500);
+    }, FLASH_STEP_MS);
 
-    return () => clearTimeout(timerId);
-  }, [current, queue, setCurrent, setQueue]);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  const startFlash = useCallback((id: number) => {
+    setState((prev) => {
+      // 既に回っているビートには合わせる。止まっていれば点灯から始める
+      const isRunning = Object.keys(prev.until).length > 0;
+      const beat = isRunning ? prev.beat : prev.beat + (prev.beat % 2);
+      return { beat, until: { ...prev.until, [id]: beat + FLASH_STEPS } };
+    });
+  }, []);
+
+  const isFlashing = useCallback(
+    (id: number) => state.until[id] !== undefined && state.beat % 2 === 0,
+    [state],
+  );
+
+  return { startFlash, isFlashing };
 }
 
 /**
- * スライドインアニメーション管理フック
- * 右側のカードを左からスライドインさせ、同時にオレンジ色からテール色にグラデーションを変化させるアニメーションを実行します。
+ * 一覧に新しく入った番号だけを知らせる。
+ *
+ * enabled が false の間は控えを取らず、true になった最初の一覧は
+ * 「既にあったもの」として黙って覚える。画面を開き直したときに
+ * 前からの呼び出しで鳴らしたり光らせたりしないため。
  */
-export function useSlideInAnimation(
-  newlyAddedOrderId: number | null,
-  cardRefs: React.RefObject<Map<number, HTMLDivElement>>,
-  textRefs: React.RefObject<Map<number, HTMLDivElement>>,
-  animatedCardsRef: React.RefObject<Set<number>>,
-  onComplete: () => void,
+export function useOnAdded(
+  ids: number[],
+  onAdded: (id: number) => void,
+  enabled: boolean,
 ) {
+  const knownRef = useRef<Set<number> | null>(null);
+
   useEffect(() => {
-    if (newlyAddedOrderId === null) return;
+    const known = knownRef.current;
+    knownRef.current = enabled ? new Set(ids) : null;
 
-    const id = newlyAddedOrderId;
-    const cardElement = cardRefs.current?.get(id);
-    const textElement = textRefs.current?.get(id);
+    if (known === null) return;
 
-    // 要素が存在しない、または既にアニメーション済みの場合はスキップ
-    if (!cardElement || !textElement || animatedCardsRef.current?.has(id)) {
-      onComplete();
+    for (const id of ids) {
+      if (!known.has(id)) onAdded(id);
+    }
+  }, [ids, onAdded, enabled]);
+}
+
+/**
+ * 呼び出しがある間は呼び出し画面を出し、無くなってから delayMs 後に PV へ戻す。
+ * 提供が途切れるたびに切り替わらないよう、少し待ってから戻す。
+ */
+export function useCallVisibility(hasCalling: boolean, delayMs: number) {
+  const [showCall, setShowCall] = useState(false);
+
+  useEffect(() => {
+    if (hasCalling) {
+      setShowCall(true);
       return;
     }
 
-    // カードの初期状態をセット（左側に隠れた状態、透明）
-    gsap.set(cardElement, {
-      x: -100,
-      opacity: 0,
+    const timer = setTimeout(() => setShowCall(false), delayMs);
+    return () => clearTimeout(timer);
+  }, [hasCalling, delayMs]);
+
+  return showCall;
+}
+
+/**
+ * 呼び出し中は PV を止め、それ以外では流し続ける。
+ * 戻り値は再生を促すコールバックで、再生が途切れたときに呼ぶ。
+ */
+export function usePvPlayback(
+  videoRef: React.RefObject<HTMLVideoElement>,
+  paused: boolean,
+) {
+  const resume = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.loop = true;
+    void video.play().catch(() => {
+      // 自動再生の制限で弾かれた場合は握りつぶす
     });
+  }, [videoRef]);
 
-    // テキストのグラデーション初期色をセット（オレンジ系）
-    gsap.set(textElement, {
-      "--grad-start": "#f97316", // orange-500
-      "--grad-mid": "#ea580c", // orange-600
-      "--grad-end": "#ef4444", // red-500
-    } as GsapCSSVars);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
 
-    // カードのスライドインアニメーション（左から中心へ移動、同時に不透明化）
-    gsap.to(cardElement, {
-      x: 0,
-      opacity: 1,
-      duration: 0.5,
-      ease: "power2.out",
-    });
+    if (paused) {
+      video.pause();
+      return;
+    }
 
-    // テキストのグラデーションカラーアニメーション（オレンジ → テール）
-    // スライドイン完了後に少し待ってから色を切り替える
-    gsap.to(textElement, {
-      "--grad-start": "#14b8a6", // teal-500
-      "--grad-mid": "#0d9488", // teal-600
-      "--grad-end": "#14b8a6", // teal-500
-      duration: 1,
-      delay: 1.0, // スライドイン完了後、さらに0.5秒待ってから色変更を開始
-      ease: "power2.out",
-      onComplete: () => {
-        // アニメーション完了を記録し、コールバックを実行
-        animatedCardsRef.current?.add(id);
-        onComplete();
-      },
-    });
+    resume();
+  }, [videoRef, paused, resume]);
 
-    // クリーンアップ: アニメーションを中断
-    return () => {
-      gsap.killTweensOf([cardElement, textElement]);
-    };
-  }, [newlyAddedOrderId, cardRefs, textRefs, animatedCardsRef, onComplete]);
+  return resume;
 }
