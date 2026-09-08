@@ -2,9 +2,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
 
 	"cafeore-pos/api/internal/handlers"
@@ -34,42 +39,96 @@ func initDB() error {
 
 	var err error
 	db, err = gorm.Open(
-    postgres.New(postgres.Config{
-      DSN:                  dsn,
-      PreferSimpleProtocol: true,
-    }), 
-    &gorm.Config{
-      PrepareStmt: false,
-      DisableForeignKeyConstraintWhenMigrating: true,
-	})
+		postgres.New(postgres.Config{
+			DSN:                  dsn,
+			PreferSimpleProtocol: true,
+		}),
+		&gorm.Config{
+			PrepareStmt:                              false,
+			DisableForeignKeyConstraintWhenMigrating: true,
+		})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// 接続テスト
 	sqlDB, err := db.DB()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get database connection: %w", err)
 	}
 
-	if err = sqlDB.Ping(); err != nil {
-		return err
+	// Cloud Run はリクエストが増えるとインスタンスを増やす。1インスタンスが
+	// 際限なく接続を張ると、マネージド Postgres 側の上限にすぐ届く。
+	sqlDB.SetMaxOpenConns(5)
+	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+
+	// 起動時の疎通確認。タイムアウトを付けないと、DB が応答しないときに
+	// listen へ進めないまま Cloud Run の起動プローブが切れるのを待つことになる。
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-    err = db.AutoMigrate(
-        &models.ItemType{},
-        &models.Item{},
-        &models.Order{},
-        &models.Comment{},
-				&models.OrderItem{},
-				&models.MasterState{},
-    )
-    if err != nil {
-        panic(err)
-    }
+	// AutoMigrate は RUN_MIGRATIONS=true のときだけ走らせる。
+	//
+	// 本番のスキーマは手で作られている。ここで無条件に AutoMigrate を走らせて
+	// 失敗すると、listen は initDB の後なのでコンテナが PORT を開けられず、
+	// Cloud Run のデプロイごと落ちる。
+	//
+	// 逆に PR プレビューは空の Neon ブランチを使うので、走らせないと
+	// テーブルが無いままになる。CI（api-build.yml）が true を渡している。
+	if os.Getenv("RUN_MIGRATIONS") == "true" {
+		if err := db.AutoMigrate(
+			&models.ItemType{},
+			&models.Item{},
+			&models.Order{},
+			&models.Comment{},
+			&models.OrderItem{},
+			&models.MasterState{},
+		); err != nil {
+			return fmt.Errorf("failed to migrate database: %w", err)
+		}
+
+		log.Println("Database migration completed")
+	} else {
+		// 空の DB に対して黙って起動すると、テーブルが無いまま全クエリが
+		// 失敗して原因が分かりにくい。スキップしたことは必ず残す。
+		log.Println("RUN_MIGRATIONS is not \"true\": skipped AutoMigrate")
+	}
 
 	log.Println("Database connected successfully")
 	return nil
+}
+
+// CORS で許可する origin。FRONTEND_ORIGINS にカンマ区切りで入れる。
+//
+// 本番は Cloudflare Workers 上の pos / mobile。プレビューはデプロイごとに
+// URL が変わって列挙できないので "*" を入れている（infra の
+// cloud_run_preview.tf を参照）。未設定ならローカル開発用のポートだけ許可する。
+func getAllowedOrigins() []string {
+	originsEnv := os.Getenv("FRONTEND_ORIGINS")
+
+	if originsEnv == "" {
+		return []string{
+			"http://localhost:5173",
+			"http://localhost:3000",
+		}
+	}
+
+	origins := strings.Split(originsEnv, ",")
+	result := make([]string, 0, len(origins))
+
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			result = append(result, origin)
+		}
+	}
+
+	return result
 }
 
 func statusHandler(c *gin.Context) {
@@ -77,8 +136,15 @@ func statusHandler(c *gin.Context) {
 
 	// DB接続確認
 	sqlDB, err := db.DB()
-	if err != nil || sqlDB.Ping() != nil {
+	if err != nil {
 		dbStatus = "disconnected"
+	} else {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+		defer cancel()
+
+		if err := sqlDB.PingContext(ctx); err != nil {
+			dbStatus = "disconnected"
+		}
 	}
 
 	response := StatusResponse{
@@ -92,8 +158,15 @@ func statusHandler(c *gin.Context) {
 }
 
 func healthHandler(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+	defer cancel()
+
 	var result int
-	err := db.Raw("SELECT 1").Scan(&result).Error
+
+	err := db.WithContext(ctx).
+		Raw("SELECT 1").
+		Scan(&result).
+		Error
 
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -110,9 +183,12 @@ func healthHandler(c *gin.Context) {
 }
 
 func main() {
-	// 環境変数読み込み
-	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found")
+	// 環境変数読み込み。Cloud Run では環境変数がサービス側から渡るので、
+	// .env を探すのはローカル（GIN_MODE が release 以外）のときだけにする。
+	if os.Getenv("GIN_MODE") != "release" {
+		if err := godotenv.Load(); err != nil {
+			log.Println("Warning: .env file not found")
+		}
 	}
 
 	// データベース初期化
@@ -125,11 +201,25 @@ func main() {
 
 	// CORS設定
 	r.Use(cors.New(cors.Config{
-    AllowOrigins:     []string{"*"},
-    AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, // PATCHを追加
-    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-    ExposeHeaders:    []string{"Content-Length"},
-    AllowCredentials: true,
+		AllowOrigins: getAllowedOrigins(),
+		AllowMethods: []string{
+			"GET",
+			"POST",
+			"PUT",
+			"PATCH",
+			"DELETE",
+			"OPTIONS",
+		},
+		AllowHeaders: []string{
+			"Origin",
+			"Content-Type",
+			"Authorization",
+		},
+		ExposeHeaders: []string{
+			"Content-Length",
+		},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
 	}))
 
 	hub := handlers.NewHub()
@@ -141,7 +231,6 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db)
-
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -155,11 +244,13 @@ func main() {
 		api.GET("/items/:id", itemHandler.GetItem)
 		api.PUT("/items/:id", itemHandler.UpdateItem)
 		api.DELETE("/items/:id", itemHandler.DeleteItem)
+
 		api.GET("/item-types", itemTypeHandler.GetItemTypes)
 		api.POST("/item-types", itemTypeHandler.CreateItemType)
 		api.GET("/item-types/:id", itemTypeHandler.GetItemType)
 		api.PUT("/item-types/:id", itemTypeHandler.UpdateItemType)
 		api.DELETE("/item-types/:id", itemTypeHandler.DeleteItemType)
+
 		api.GET("/orders", orderHandler.GetOrders)
 		api.GET("/ws/orders", orderHandler.WSHandler)
 		api.POST("/orders", orderHandler.CreateOrder)
@@ -168,8 +259,10 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
+
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 	}
@@ -180,7 +273,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on :%s", port)
 	log.Printf("Endpoints:")
 	log.Printf("  GET  /status")
 	log.Printf("  GET  /health")
@@ -188,8 +280,48 @@ func main() {
 	log.Printf("  GET  /api/item-types")
 	log.Printf("  GET  /api/orders")
 	log.Printf("  GET  /api/orders/:id/comments")
+	log.Printf("  GET  /api/ws/orders")
 
-	if err := r.Run(":" + port); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	go func() {
+		log.Printf("Server starting on :%s", port)
+
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Cloud Run はインスタンスを畳むときに SIGTERM を送る。受けずに落とすと
+	// 処理中のリクエストと WebSocket がその場で切れる。
+	quit := make(chan os.Signal, 1)
+
+	signal.Notify(
+		quit,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	if sqlDB, err := db.DB(); err == nil {
+		if err := sqlDB.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}
+
+	log.Println("Server stopped")
 }

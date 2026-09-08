@@ -227,16 +227,16 @@ jobs:
           echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
 
       # 新しく作った Neon ブランチは空なので、AutoMigrate の最初の CREATE TABLE が
-      # uuid_generate_v4() を呼んだ時点で 42883 になり、initDB が panic して
-      # コンテナが exit(2) する（api/internal/models/*.go の
+      # uuid_generate_v4() を呼んだ時点で 42883 になり、initDB がエラーを返して
+      # コンテナが起動できない（api/internal/models/*.go の
       # `default:uuid_generate_v4()` が拡張に依存しているため）。
       #
       # ローカルの compose では api/init/00_enable_extension.sql が同じことを
       # している。あちらは ./api/init を Postgres の初期化ディレクトリに
       # マウントしているだけなので、Neon には効かない。
       #
-      # 本番（Supabase）は過去に手で拡張を入れテーブルも既にあるため
-      # AutoMigrate が実質 no-op になり、この問題が表面化していなかった。
+      # 本番はスキーマが手で作られており、そもそも AutoMigrate を走らせない
+      # （RUN_MIGRATIONS=false）。この拡張が要るのはプレビューだけ。
       #
       # IF NOT EXISTS なので毎 push 走っても害はない。親ブランチに拡張が
       # 入っていれば CoW クローンにも引き継がれるので、その場合は保険になる。
@@ -287,7 +287,7 @@ jobs:
           #
           # 既定のカンマで唯一困るのは値にカンマが含まれる場合。その場合は
           # 黙って壊れるより止める。
-          extra=()
+          env_pairs=()
           if [ -n "${NEON_DB_URL:-}" ]; then
             case "$NEON_DB_URL" in
               *,*)
@@ -295,7 +295,24 @@ jobs:
                 exit 1
                 ;;
             esac
-            extra+=(--update-env-vars "DATABASE_URL=$NEON_DB_URL")
+            env_pairs+=("DATABASE_URL=$NEON_DB_URL")
+          fi
+
+          # プレビューは PR ごとに**空の** Neon ブランチを使うので、
+          # AutoMigrate を走らせないとテーブルが無いまま起動してしまう。
+          #
+          # 本番には渡さない。あちらのスキーマは手で作られており、
+          # Terraform が置いた RUN_MIGRATIONS=false をそのまま効かせる
+          # （infra の gcp/cloud_run.tf を参照）。
+          if [ -n "$tag" ]; then
+            env_pairs+=("RUN_MIGRATIONS=true")
+          fi
+
+          # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
+          # 1回にまとめてカンマで並べる。
+          extra=()
+          if [ "${#env_pairs[@]}" -gt 0 ]; then
+            extra+=(--update-env-vars "$(IFS=,; printf '%s' "${env_pairs[*]}")")
           fi
 
           if [ -n "$tag" ]; then
