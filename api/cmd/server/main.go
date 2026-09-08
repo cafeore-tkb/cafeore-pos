@@ -168,6 +168,7 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+		api.PATCH("/orders/:id/dripper", orderHandler.SetOrderDripper)
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)

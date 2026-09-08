@@ -202,6 +202,7 @@ export const responseToOrderEntity = (
     createdAt: new Date(response.created_at),
     readyAt: response.ready_at ? new Date(response.ready_at) : null,
     servedAt: response.served_at ? new Date(response.served_at) : null,
+    dripper: response.dripper ?? null,
     total: 0,
     discount: 100,
     estimateTime: 10,

@@ -31,6 +31,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		CreatedAt:         order.CreatedAt,
 		ReadyAt:           order.ReadyAt,
 		ServedAt:          order.ServedAt,
+		Dripper:           order.Dripper,
 		BillingAmount:     order.BillingAmount,
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
@@ -421,6 +422,8 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	} else {
 		order.ReadyAt = nil
 	}
+	// 呼び出しに進んだ時点でドリッパーは空くので、割当を外す
+	order.Dripper = nil
 
 	if err := h.db.Save(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -459,11 +462,77 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		order.ServedAt = nil
 		order.ReadyAt = nil
 	}
+	order.Dripper = nil
 
 	if err := h.db.Save(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	c.JSON(http.StatusOK, toOrderResponse(&order))
+	h.broadcastOrders()
+}
+
+// PATCH /api/orders/:id/dripper - オーダーにドリッパーを割り当てる
+func (h *OrderHandler) SetOrderDripper(c *gin.Context) {
+	id := c.Param("id")
+
+	orderID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
+	var req models.SetOrderDripperJSONRequestBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Dripper != nil && *req.Dripper < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dripper must be a positive integer"})
+		return
+	}
+
+	var order models.Order
+	if err := h.db.First(&order, "id = ?", orderID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 呼び出し中・提供済みのオーダーはもうドリッパーを使っていない
+	if req.Dripper != nil && order.ReadyAt != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order is not preparing"})
+		return
+	}
+
+	// nil のままなら NULL になる。ポインタのまま渡すと NULL 扱いが処理系任せになる
+	var dripper any
+	if req.Dripper != nil {
+		dripper = *req.Dripper
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 同じ番号が二重に表示されないよう、他のオーダーの同番号は先に外す
+		if req.Dripper != nil {
+			if err := tx.Model(&models.Order{}).
+				Where("dripper = ? AND served_at IS NULL AND id <> ?", *req.Dripper, order.ID).
+				Update("dripper", nil).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&order).Update("dripper", dripper).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	order.Dripper = req.Dripper
 
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
