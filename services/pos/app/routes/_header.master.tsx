@@ -8,7 +8,7 @@ import {
   updateMasterStatus,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
@@ -57,6 +57,17 @@ export default function FielsOfMaster() {
     [submit],
   );
 
+  // 同じドリッパーを二重に割り当てないよう、使用中の番号を集める
+  const usedDrippers = useMemo(() => {
+    const used = new Map<number, number>();
+    for (const order of orders ?? []) {
+      if (order.servedAt !== null) continue;
+      if (order.dripper === null) continue;
+      used.set(order.dripper, order.orderId);
+    }
+    return used;
+  }, [orders]);
+
   const unserved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;
@@ -100,6 +111,7 @@ export default function FielsOfMaster() {
                 timing={"present"}
                 user={"master"}
                 comment={mutateOrder}
+                usedDrippers={usedDrippers}
               />
             )
           );
