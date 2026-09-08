@@ -14,6 +14,8 @@ type Order struct {
 	CreatedAt         time.Time      `gorm:"not null"`
 	ReadyAt           *time.Time     
 	ServedAt          *time.Time     
+	// ドリップ中のドリッパー番号。準備中（未割当）と提供以降は null
+	Dripper           *int
 	BillingAmount     int            `gorm:"not null"`
 	Received          int            `gorm:"not null"`
 	DiscountOrderId   int

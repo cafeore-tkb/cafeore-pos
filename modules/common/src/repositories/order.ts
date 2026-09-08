@@ -88,6 +88,22 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
+    setDripper: async (id: string, dripper: number | null): Promise<void> => {
+      const { error, response } = await client.PATCH(
+        "/api/orders/{id}/dripper",
+        {
+          params: {
+            path: { id },
+          },
+          body: { dripper },
+        },
+      );
+
+      if (error || !response.ok) {
+        await throwApiError(response, "Failed to set dripper");
+      }
+    },
+
     addComment: async (
       id: string,
       author: string,

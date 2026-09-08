@@ -58,6 +58,10 @@ export interface paths {
     /** オーダーを提供完了にする */
     patch: operations["markOrderServe"];
   };
+  "/api/orders/{id}/dripper": {
+    /** オーダーにドリッパーを割り当てる */
+    patch: operations["setOrderDripper"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -148,6 +152,8 @@ export interface components {
       ready_at?: string | null;
       /** Format: date-time */
       served_at?: string | null;
+      /** @description ドリップ中のドリッパー番号。未割当なら null */
+      dripper?: number | null;
       billing_amount: number;
       received: number;
       discount_order_id?: number | null;
@@ -198,6 +204,10 @@ export interface components {
       billing_amount: number;
       received?: number;
       discount_order_cups?: number;
+    };
+    OrderDripperUpdateRequest: {
+      /** @description 割り当てるドリッパー番号。null で割当を解除する */
+      dripper: number | null;
     };
     CommentCreateRequest: {
       author: string;
@@ -515,6 +525,39 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["OrderResponse"][];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** オーダーにドリッパーを割り当てる */
+  setOrderDripper: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OrderDripperUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description リクエストが不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description オーダーが見つかりません */

@@ -111,6 +111,12 @@ type OrderCreateRequest struct {
 	Received          int                     `json:"received"`
 }
 
+// OrderDripperUpdateRequest defines model for OrderDripperUpdateRequest.
+type OrderDripperUpdateRequest struct {
+	// Dripper 割り当てるドリッパー番号。null で割当を解除する
+	Dripper *int `json:"dripper"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
 	BillingAmount     int                `json:"billing_amount"`
@@ -118,12 +124,15 @@ type OrderResponse struct {
 	CreatedAt         time.Time          `json:"created_at"`
 	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int               `json:"discount_order_id"`
-	Id                openapi_types.UUID `json:"id"`
-	Items             []ItemInfo         `json:"items"`
-	OrderId           int                `json:"order_id"`
-	ReadyAt           *time.Time         `json:"ready_at"`
-	Received          int                `json:"received"`
-	ServedAt          *time.Time         `json:"served_at"`
+
+	// Dripper ドリップ中のドリッパー番号。未割当なら null
+	Dripper  *int               `json:"dripper"`
+	Id       openapi_types.UUID `json:"id"`
+	Items    []ItemInfo         `json:"items"`
+	OrderId  int                `json:"order_id"`
+	ReadyAt  *time.Time         `json:"ready_at"`
+	Received int                `json:"received"`
+	ServedAt *time.Time         `json:"served_at"`
 }
 
 // OrderUpdateRequest defines model for OrderUpdateRequest.
@@ -170,3 +179,6 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// SetOrderDripperJSONRequestBody defines body for SetOrderDripper for application/json ContentType.
+type SetOrderDripperJSONRequestBody = OrderDripperUpdateRequest

@@ -16,5 +16,6 @@ export type ItemTypeRepository = BaseRepository<ItemType>;
 export type OrderRepository = BaseRepository<OrderEntity> & {
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
+  setDripper(id: string, dripper: number | null): Promise<void>;
   addComment(id: string, author: string, text: string): Promise<void>;
 };

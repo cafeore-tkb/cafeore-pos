@@ -328,6 +328,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/dripper:
+    patch:
+      summary: オーダーにドリッパーを割り当てる
+      operationId: setOrderDripper
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderDripperUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: リクエストが不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders/{id}/comments:
     get:
       summary: 特定オーダーのコメント一覧取得
@@ -605,6 +641,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        dripper:
+          type: integer
+          nullable: true
+          description: ドリップ中のドリッパー番号。未割当なら null
         billing_amount:
           type: integer
         received:
@@ -725,6 +765,17 @@ components:
           type: integer
         discount_order_cups:
           type: integer
+
+    # ドリッパー割当用
+    OrderDripperUpdateRequest:
+      type: object
+      required:
+        - dripper
+      properties:
+        dripper:
+          type: integer
+          nullable: true
+          description: 割り当てるドリッパー番号。null で割当を解除する
 
     # コメント作成用
     CommentCreateRequest:

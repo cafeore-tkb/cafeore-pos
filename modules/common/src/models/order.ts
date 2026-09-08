@@ -18,6 +18,8 @@ export const orderSchema = z.object({
   createdAt: z.date(),
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
+  // ドリップ中のドリッパー番号。準備中（未割当）と提供以降は null
+  dripper: z.number().int().positive().nullable(),
   items: z.array(itemSchema.required()),
   total: z.number(), // sum of item.price
   comments: z.array(commentSchema),
@@ -38,6 +40,9 @@ export type OrderComment = z.infer<typeof commentSchema>;
 
 // 途中から割引額を変更する場合はこの値を変更する
 const STATIC_DISCOUNT_PER_CUP = 100;
+
+// 店舗のドリッパー台数。増減したらこの値を変更する
+export const DRIPPER_COUNT = 4;
 
 class CommentEntity implements OrderComment {
   constructor(
@@ -75,6 +80,7 @@ export class OrderEntity implements Order {
     private _createdAt: Date,
     private _readyAt: Date | null,
     private _servedAt: Date | null,
+    private _dripper: number | null,
     private _items: WithId<ItemEntity>[],
     private _total: number,
     private _comments: CommentEntity[],
@@ -92,6 +98,7 @@ export class OrderEntity implements Order {
       undefined,
       orderId,
       new Date(),
+      null,
       null,
       null,
       [],
@@ -118,6 +125,7 @@ export class OrderEntity implements Order {
       order.createdAt,
       order.readyAt,
       order.servedAt,
+      order.dripper,
       order.items.map((item) => ItemEntity.fromItem(item)),
       order.total,
       order.comments.map((comment) => CommentEntity.fromComment(comment)),
@@ -156,6 +164,10 @@ export class OrderEntity implements Order {
 
   get servedAt() {
     return this._servedAt;
+  }
+
+  get dripper() {
+    return this._dripper;
   }
 
   get items() {
@@ -242,6 +254,8 @@ export class OrderEntity implements Order {
    */
   beReady() {
     this._readyAt = new Date();
+    // 呼び出しに進んだ時点でドリッパーは空く
+    this._dripper = null;
   }
 
   /**
@@ -249,6 +263,14 @@ export class OrderEntity implements Order {
    */
   undoReady() {
     this._readyAt = null;
+  }
+
+  /**
+   * ドリッパーを割り当てる
+   * @param dripper ドリッパー番号。null で割当を解除する
+   */
+  assignDripper(dripper: number | null) {
+    this._dripper = dripper;
   }
 
   /**
@@ -273,6 +295,7 @@ export class OrderEntity implements Order {
     if (this._readyAt === null) {
       this._readyAt = now;
     }
+    this._dripper = null;
   }
 
   /**
@@ -353,6 +376,7 @@ export class OrderEntity implements Order {
       createdAt: this.createdAt,
       readyAt: this.readyAt,
       servedAt: this.servedAt,
+      dripper: this.dripper,
       items: this.items.map((item) => item.toItem()),
       total: this.total,
       comments: this.comments.map((comment) => comment.toComment()),

@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import { LuHourglass } from "react-icons/lu";
 import { toast } from "sonner";
 import { cn } from "~/lib/utils";
+import { DripperSelect } from "../atoms/DripperSelect";
 import { ReadyBell } from "../atoms/ReadyBell";
 import { ServeCheck } from "../atoms/ServeCheck";
 import { Button } from "../ui/button";
@@ -19,12 +20,26 @@ type props = {
   user: "cashier" | "master" | "serve" | "dashboard";
   timing: "past" | "present" | "all"; // どの注文を表示するか
   comment: (servedOrder: OrderEntity, descComment: string) => void;
+  // ドリッパー番号 → それを使っているオーダー番号。渡すとドリッパー割当を表示する
+  usedDrippers?: Map<number, number>;
 };
 
-export function OrderInfoCard({ order, user, timing, comment }: props) {
+export function OrderInfoCard({
+  order,
+  user,
+  timing,
+  comment,
+  usedDrippers,
+}: props) {
   const changeReady = () => orderRepository.ready(order.id);
 
   const changeServed = () => orderRepository.serve(order.id);
+
+  const changeDripper = (dripper: number | null) => {
+    orderRepository.setDripper(order.id, dripper).catch(() => {
+      toast.error(`ドリッパーを割り当てられませんでした No.${order.orderId}`);
+    });
+  };
 
   const displayOrders =
     user === "cashier" || user === "dashboard"
@@ -147,6 +162,13 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                 </div>
               ))}
             </div>
+          )}
+          {usedDrippers && order.status === "preparing" && (
+            <DripperSelect
+              order={order}
+              usedDrippers={usedDrippers}
+              onSelect={changeDripper}
+            />
           )}
           {user !== "dashboard" && (
             <InputComment order={order} addComment={comment} />
