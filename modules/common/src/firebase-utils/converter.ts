@@ -8,12 +8,7 @@ import {
 import _ from "lodash";
 import type { ZodSchema } from "zod";
 import type { WithId } from "../lib/typeguard";
-import {
-  CashierStateEntity,
-  MasterStateEntity,
-  globalCashierStateSchema,
-  globalMasterStateSchema,
-} from "../models/global";
+import { MasterStateEntity, globalMasterStateSchema } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import {
   type Order,
@@ -140,22 +135,6 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
     return OrderEntity.fromOrder(convertedData);
   },
 };
-
-export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
-  {
-    toFirestore: converter(globalCashierStateSchema).toFirestore,
-    fromFirestore: (
-      snapshot: QueryDocumentSnapshot,
-      options: SnapshotOptions,
-    ) => {
-      const convertedData = converter(globalCashierStateSchema).fromFirestore(
-        snapshot,
-        options,
-      );
-
-      return CashierStateEntity.fromCashierState(convertedData);
-    },
-  };
 
 export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
   toFirestore: converter(globalMasterStateSchema).toFirestore,

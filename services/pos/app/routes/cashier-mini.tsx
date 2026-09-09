@@ -1,13 +1,8 @@
-import {
-  cashierStateConverter,
-  documentSub,
-  orderConverter,
-} from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
-import useSWRSubscription from "swr/subscription";
 import logoSVG from "~/assets/cafeore.svg";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";
+import { useCashierDisplay } from "~/components/functional/useCashierDisplay";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
 
@@ -20,32 +15,28 @@ export default function CasherMini() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const soundRef1 = useRef<HTMLAudioElement>(null);
   const soundRef2 = useRef<HTMLAudioElement>(null);
-  const { data: orderState } = useSWRSubscription(
-    ["global", "cashier-state"],
-    documentSub({ converter: cashierStateConverter }),
-  );
-  const order = orderState?.edittingOrder;
-  const submittedOrderId = orderState?.submittedOrderId;
-  const { data: preOrder } = useSWRSubscription(
-    ["orders", submittedOrderId ?? "none"],
-    documentSub({ converter: orderConverter }),
-  );
+  // レジ画面 (/cashier) から同じパソコン内で配信されてくる
+  const display = useCashierDisplay();
+  const order = display?.edittingOrder;
+  const submittedOrder = display?.submittedOrder ?? null;
+  const submittedOrderId = submittedOrder?.orderId ?? null;
   const isOperational = useOrderStat();
 
   const orderId = useMemo(() => {
     if (logoShown) {
-      return preOrder?.orderId;
+      return submittedOrder?.orderId;
     }
     return order?.orderId;
-  }, [order, logoShown, preOrder]);
+  }, [order, logoShown, submittedOrder]);
 
   /**
    * FIXME #412 useEffect内でstateを更新している
    * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
    */
   useEffect(() => {
-    setLogoShown(submittedOrderId != null || !isOperational);
-  }, [submittedOrderId, isOperational]);
+    // レジ画面が開かれていない間 (display == null) はロゴを出しておく
+    setLogoShown(display == null || submittedOrderId != null || !isOperational);
+  }, [display, submittedOrderId, isOperational]);
 
   /**
    * OK
@@ -61,7 +52,7 @@ export default function CasherMini() {
    * OK
    */
   useEffect(() => {
-    if (submittedOrderId === null) {
+    if (submittedOrderId == null) {
       return;
     }
     soundRef1.current?.play();
