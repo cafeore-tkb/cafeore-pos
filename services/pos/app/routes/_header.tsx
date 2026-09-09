@@ -8,6 +8,7 @@ import { cn } from "~/lib/utils";
 
 export default function BaseHeader() {
   const user = useAuth();
+  const isPrPreview = import.meta.env.VITE_PR_PREVIEW === "true";
   const isOnline = useOnlineStatus();
   const isOperational = useOrderStat();
 
@@ -21,7 +22,7 @@ export default function BaseHeader() {
           isOnline && "bg-green-600",
           !isOnline && "h-min bg-red-700",
           !isOperational && "h-min bg-violet-600",
-          !user && "h-min bg-yellow-600",
+          !user && !isPrPreview && "h-min bg-yellow-600",
         )}
       >
         {!isOnline && (
@@ -32,7 +33,7 @@ export default function BaseHeader() {
         {!isOperational && (
           <div className="p-2 text-center text-white">オーダーストップ中</div>
         )}
-        {!user && (
+        {!user && !isPrPreview && (
           <div className="flex items-center justify-center">
             <div className="m-2 text-center text-white">
               未ログイン状態です。書き込みができません
