@@ -5,12 +5,19 @@ import { Button } from "../ui/button";
 
 type props = {
   submitOrder: () => void;
+  onExactPayment: () => void;
   order: OrderEntity;
   focus: boolean;
 };
 
-export const SubmitSection = ({ submitOrder, order, focus }: props) => {
-  const buttonRef = useRef<HTMLButtonElement>(null);
+export const SubmitSection = ({
+  submitOrder,
+  onExactPayment,
+  order,
+  focus,
+}: props) => {
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const exactPaymentButtonRef = useRef<HTMLButtonElement>(null);
   const billingOk = useMemo(
     () => order.items.length > 0 && order.getCharge() >= 0,
     [order],
@@ -26,17 +33,20 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
    * OK
    */
   useEffect(() => {
-    if (focus) {
-      buttonRef.current?.focus();
+    if (!focus) return;
+    if (billingOk) {
+      submitButtonRef.current?.focus();
+    } else if (order.items.length > 0) {
+      exactPaymentButtonRef.current?.focus();
     }
-  }, [focus]);
+  }, [focus, billingOk, order.items.length]);
 
   return (
     <div className="pt-5">
       <div className="flex flex-col items-center gap-2">
         <Button
           id="submit-button"
-          ref={buttonRef}
+          ref={submitButtonRef}
           className="h-20 w-40 bg-stone-900 font-bold text-2xl hover:bg-pink-700 focus-visible:ring-4 focus-visible:ring-pink-500 disabled:bg-stone-400"
           onClick={() => submitOrder()}
           disabled={!billingOk}
@@ -46,6 +56,22 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
         </Button>
         <label htmlFor="submit-button" className="text-sm text-stone-400">
           赤枠が出ている状態で Enter で送信
+        </label>
+        <Button
+          id="exact-payment-button"
+          ref={exactPaymentButtonRef}
+          variant="outline"
+          className="h-14 w-40 border-stone-400 font-bold text-lg hover:bg-stone-100 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:border-stone-300 disabled:text-stone-400"
+          onClick={() => onExactPayment()}
+          disabled={order.items.length === 0}
+        >
+          お釣り 0
+        </Button>
+        <label
+          htmlFor="exact-payment-button"
+          className="text-sm text-stone-400"
+        >
+          合計どおり受け取ったとき
         </label>
         {needsSplit && (
           <p className="text-center font-bold text-red-500">
