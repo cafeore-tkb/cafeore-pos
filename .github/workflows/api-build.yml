@@ -359,12 +359,17 @@ jobs:
         if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
         env:
           PREVIEW_API_URL: ${{ steps.deploy.outputs.url }}
-          PRODUCTION_API_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           set -euo pipefail
 
-          if [ -z "${PRODUCTION_API_URL:-}" ]; then
-            echo "Repository variable VITE_API_BASE_URL が未設定です" >&2
+          # 本番フロント用の変数に依存せず、既存の本番 Cloud Run サービスから
+          # URL を読み取る。describe のみで、本番サービスには変更を加えない。
+          PRODUCTION_API_URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+          if [ -z "$PRODUCTION_API_URL" ]; then
+            echo "本番 Cloud Run サービスの URL を取得できませんでした" >&2
             exit 1
           fi
           PREVIEW_API_URL=${PREVIEW_API_URL%/}
