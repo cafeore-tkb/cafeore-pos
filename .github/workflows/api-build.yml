@@ -352,7 +352,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # 空の Neon ブランチには AutoMigrate でテーブルだけが作られるため、レジに
-      # 必要な商品マスタだけを本番 API からコピーする。本番側は GET しかしない。
+      # 必要な固定商品マスタを投入する。本番環境にはアクセスしない。
       # name（item type）/ key（item）を論理キーとして既存行を再利用するので、
       # 同じ PR の workflow を再実行しても重複登録しない。
       - name: プレビュー DB に商品マスタを投入する
@@ -362,22 +362,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 本番フロント用の変数に依存せず、既存の本番 Cloud Run サービスから
-          # URL を読み取る。describe のみで、本番サービスには変更を加えない。
-          PRODUCTION_API_URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
-            --project="$GCP_PROJECT_ID" \
-            --region="$GCP_REGION" \
-            --format='value(status.url)')
-          if [ -z "$PRODUCTION_API_URL" ]; then
-            echo "本番 Cloud Run サービスの URL を取得できませんでした" >&2
-            exit 1
-          fi
           PREVIEW_API_URL=${PREVIEW_API_URL%/}
-          PRODUCTION_API_URL=${PRODUCTION_API_URL%/}
-          if [ "$PREVIEW_API_URL" = "$PRODUCTION_API_URL" ]; then
-            echo "preview API と production API の URL が同一です" >&2
-            exit 1
-          fi
 
           # Cloud Run の新リビジョン起動と AutoMigrate の完了を待つ。
           ready=false
@@ -399,11 +384,8 @@ jobs:
           tmp_dir=$(mktemp -d)
           trap 'rm -rf "$tmp_dir"' EXIT
 
-          # production API はこの2つの GET だけ。運用データは取得しない。
-          curl --fail --silent --show-error \
-            "$PRODUCTION_API_URL/api/item-types" > "$tmp_dir/source-types.json"
-          curl --fail --silent --show-error \
-            "$PRODUCTION_API_URL/api/items" > "$tmp_dir/source-items.json"
+          jq '.item_types' api/seed/preview-master.json > "$tmp_dir/source-types.json"
+          jq '.items' api/seed/preview-master.json > "$tmp_dir/source-items.json"
           curl --fail --silent --show-error \
             "$PREVIEW_API_URL/api/item-types" > "$tmp_dir/preview-types.json"
           curl --fail --silent --show-error \
@@ -413,10 +395,12 @@ jobs:
             "$tmp_dir/preview-types.json" "$tmp_dir/preview-items.json" > /dev/null
           jq -e 'group_by(.name) | all(length == 1)' "$tmp_dir/source-types.json" > /dev/null
           jq -e 'group_by(.key) | all(length == 1)' "$tmp_dir/source-items.json" > /dev/null
+          jq -e --slurpfile types "$tmp_dir/source-types.json" \
+            'all(.[]; .item_type as $name | any($types[0][]; .name == $name))' \
+            "$tmp_dir/source-items.json" > /dev/null
 
           jq -n '{}' > "$tmp_dir/type-id-map.json"
           while IFS= read -r source_type; do
-            source_id=$(jq -er '.id' <<< "$source_type")
             name=$(jq -er '.name' <<< "$source_type")
             matches=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' \
               "$tmp_dir/preview-types.json")
@@ -436,8 +420,8 @@ jobs:
                 "$tmp_dir/preview-types.json" > "$tmp_dir/preview-types.next.json"
               mv "$tmp_dir/preview-types.next.json" "$tmp_dir/preview-types.json"
             fi
-            jq --arg source "$source_id" --arg preview "$preview_id" \
-              '.[$source] = $preview' "$tmp_dir/type-id-map.json" > "$tmp_dir/type-id-map.next.json"
+            jq --arg name "$name" --arg preview "$preview_id" \
+              '.[$name] = $preview' "$tmp_dir/type-id-map.json" > "$tmp_dir/type-id-map.next.json"
             mv "$tmp_dir/type-id-map.next.json" "$tmp_dir/type-id-map.json"
           done < <(jq -c '.[]' "$tmp_dir/source-types.json")
 
@@ -453,8 +437,8 @@ jobs:
               continue
             fi
 
-            source_type_id=$(jq -er '.item_type.id' <<< "$source_item")
-            preview_type_id=$(jq -er --arg id "$source_type_id" '.[$id]' \
+            source_type_name=$(jq -er '.item_type' <<< "$source_item")
+            preview_type_id=$(jq -er --arg name "$source_type_name" '.[$name]' \
               "$tmp_dir/type-id-map.json")
             body=$(jq -c --arg item_type_id "$preview_type_id" \
               '{name, abbr, price, key, item_type_id: $item_type_id}' <<< "$source_item")
