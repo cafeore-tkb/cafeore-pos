@@ -19,10 +19,12 @@ export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
 };
 
+const isPrPreview = import.meta.env.VITE_PR_PREVIEW === "true";
+
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const user = useAuth();
-  const disableFirebase = useMemo(() => user == null, [user]);
+  const disableFirebase = useMemo(() => user == null && !isPrPreview, [user]);
   const { items } = useItemMaster();
   const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
@@ -87,6 +89,11 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
 
   const savedOrder = await orderRepository.save(order);
 
+  // PR preview は専用 Neon DB だけを変更し、本番 Firestore には触れない。
+  if (isPrPreview) {
+    return new Response("ok");
+  }
+
   const cashierState = await cashierRepository.get();
   if (cashierState == null) {
     return console.log("cashierState is null");
@@ -114,6 +121,11 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
   }
 
   const { syncOrder } = submission.value;
+
+  // 編集中状態は本番 Firestore のデータなので、PR preview では同期しない。
+  if (isPrPreview) {
+    return new Response("ok");
+  }
 
   cashierRepository.set({
     id: "cashier-state",

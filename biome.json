@@ -3,6 +3,7 @@
   "files": {
     "ignore": [
       "**/node_modules/**",
+      "**/.react-router/**",
       "**/build",
       "**/public/build",
       "**/epos-2.27.0.js"

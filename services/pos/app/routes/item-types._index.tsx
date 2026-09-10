@@ -44,8 +44,8 @@ export default function ItemTypesPage() {
   if (error) return <div>エラー: {error}</div>;
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <h1 className="text-xl font-bold">アイテムタイプ一覧</h1>
+    <div className="flex flex-col gap-4 p-4">
+      <h1 className="font-bold text-xl">アイテムタイプ一覧</h1>
       <Table>
         <TableHeader
           className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b")}

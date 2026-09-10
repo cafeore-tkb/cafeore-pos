@@ -46,6 +46,15 @@ export default function Index() {
         <li>
           <a
             className="font-bold text-4xl text-amber-950"
+            href="/master-sheet"
+            rel="noreferrer"
+          >
+            マスターシート
+          </a>
+        </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
             href="/serve"
             rel="noreferrer"
           >

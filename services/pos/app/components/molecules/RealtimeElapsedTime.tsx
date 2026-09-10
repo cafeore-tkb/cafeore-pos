@@ -5,7 +5,8 @@ import { useCurrentTime } from "../functional/useCurrentTime";
 
 export const RealtimeElapsedTime = ({
   order,
-}: { order: WithId<OrderEntity> }) => {
+  compact = false,
+}: { order: WithId<OrderEntity>; compact?: boolean }) => {
   const currentTime = useCurrentTime(1000);
   const createdAt = dayjs(order.createdAt);
   const getDiffTime = (order: WithId<OrderEntity>) => {
@@ -17,13 +18,16 @@ export const RealtimeElapsedTime = ({
   return (
     <div
       className={cn(
-        "grid rounded-md px-2",
+        "grid rounded-md",
+        compact ? "px-1" : "px-2",
         dayjs(currentTime).isAfter(createdAt.add(15, "minutes")) &&
           "bg-red-500 text-white",
       )}
     >
-      <div className="text-sm">経過時間</div>
-      <div className="font-bold text-3xl">{diffTime.format("m分")}</div>
+      <div className={compact ? "text-[10px]" : "text-sm"}>経過時間</div>
+      <div className={cn("font-bold", compact ? "text-lg" : "text-3xl")}>
+        {diffTime.format("m分")}
+      </div>
     </div>
   );
 };
