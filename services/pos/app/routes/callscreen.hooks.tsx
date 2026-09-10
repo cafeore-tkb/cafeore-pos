@@ -33,20 +33,24 @@ function isOrderUnreadyStateChanged(
  * オーダーの状態（準備中 → 提供可能）の変化を監視し、
  * 適切な処理（キュー追加、表示更新など）を実行します。
  */
-export function useOrderState(orders: Order[] | undefined) {
+export function useOrderState(orders: Order[], isOrdersLoaded: boolean) {
   const [queue, setQueue] = useState<number[]>([]);
   const [current, setCurrent] = useState<number | null>(null);
   const [displayedOrders, setDisplayedOrders] = useState<Set<number>>(
     new Set(),
   );
-  const prevOrdersRef = useRef<typeof orders>();
+  const prevOrdersRef = useRef<Order[]>();
+  const initializedRef = useRef(false);
   const animatedRightCardsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
-    if (!orders) return;
+    // 未受信の空配列で初期化してしまうと、リロード前から準備完了だったオーダーが
+    // 表示リストにも「新しく準備完了になったオーダー」にも入らず表示されなくなる
+    if (!isOrdersLoaded) return;
 
     // 初期化処理: 既に準備完了のオーダーを表示リストに追加
-    if (!prevOrdersRef.current) {
+    if (!initializedRef.current) {
+      initializedRef.current = true;
       const existingReadyOrders = orders.filter(
         (order) => order.readyAt !== null && order.servedAt === null,
       );
@@ -77,7 +81,7 @@ export function useOrderState(orders: Order[] | undefined) {
     }
 
     prevOrdersRef.current = orders;
-  }, [orders]);
+  }, [orders, isOrdersLoaded]);
 
   return {
     queue,

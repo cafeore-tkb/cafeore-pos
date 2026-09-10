@@ -21,9 +21,9 @@ export const meta: MetaFunction = () => {
 };
 
 export default function FielsOfCallScreen() {
-  const { orders } = useOrdersWSContext();
+  const { orders, isOrdersLoaded } = useOrdersWSContext();
 
-  const orderState = useOrderState(orders);
+  const orderState = useOrderState(orders, isOrdersLoaded);
   const {
     queue,
     current,
@@ -43,8 +43,6 @@ export default function FielsOfCallScreen() {
   const soundRef = useRef<HTMLAudioElement>(null);
 
   const callingOrders = useMemo(() => {
-    if (!orders) return [];
-
     return orders
       .filter((order) => {
         if (order.servedAt !== null) return false;
@@ -164,7 +162,7 @@ export default function FielsOfCallScreen() {
           />
         </h1>
         <div className="grid grid-cols-8 gap-2">
-          {orders?.map(
+          {orders.map(
             (order) =>
               order.servedAt === null &&
               order.readyAt === null && (

@@ -1,13 +1,8 @@
-import { type OrderEntity, type WithId, useOrdersWS } from "@cafeore/common";
+import { useOrdersWS } from "@cafeore/common";
 // context/OrdersWSContext.tsx
 import { createContext, useContext } from "react";
 
-type WsStatus = "connecting" | "open" | "closed" | "error";
-
-type OrdersWSContextValue = {
-  orders: WithId<OrderEntity>[];
-  status: WsStatus;
-};
+type OrdersWSContextValue = ReturnType<typeof useOrdersWS>;
 
 const OrdersWSContext = createContext<OrdersWSContextValue | null>(null);
 
