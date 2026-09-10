@@ -91,6 +91,26 @@ PR を閉じると `pr-cleanup` がタグを外す。
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
 
+### backend の環境変数
+
+| 変数 | ローカル | プレビュー | 本番 |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
+| `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
+| `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
+| `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
+
+プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
+`gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+**本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
+無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
+開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
+逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
+
+**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
+フロントのデプロイ先を増やしたら infra 側にも足すこと。
+
 ### PR ごとの Neon ブランチ
 
 `NEON_PROJECT_ID` が設定されていれば、PR ごとに Neon のブランチ
@@ -100,10 +120,13 @@ PR を閉じると `pr-cleanup` がタグを外す。
 
 ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
 モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
-`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` が panic して
-コンテナが exit(2) する。ローカルの compose では
+`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` がエラーを返して
+コンテナが起動できない。ローカルの compose では
 `api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
 初期化ディレクトリにマウントしているだけなので Neon には効かない。
+
+プレビューは空の DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
+渡している（下の[環境変数](#backend-の環境変数)を参照）。
 
 Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
 拡張を持つのでこのステップは保険になる。
