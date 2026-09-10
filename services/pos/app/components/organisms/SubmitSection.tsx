@@ -8,6 +8,7 @@ type props = {
   onExactPayment: () => void;
   order: OrderEntity;
   focus: boolean;
+  focusTarget: "submit" | "exactPayment";
 };
 
 export const SubmitSection = ({
@@ -15,6 +16,7 @@ export const SubmitSection = ({
   onExactPayment,
   order,
   focus,
+  focusTarget,
 }: props) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const exactPaymentButtonRef = useRef<HTMLButtonElement>(null);
@@ -34,12 +36,12 @@ export const SubmitSection = ({
    */
   useEffect(() => {
     if (!focus) return;
-    if (billingOk) {
+    if (focusTarget === "submit" && billingOk) {
       submitButtonRef.current?.focus();
     } else if (order.items.length > 0) {
       exactPaymentButtonRef.current?.focus();
     }
-  }, [focus, billingOk, order.items.length]);
+  }, [focus, focusTarget, billingOk, order.items.length]);
 
   return (
     <div className="pt-5">
@@ -60,8 +62,7 @@ export const SubmitSection = ({
         <Button
           id="exact-payment-button"
           ref={exactPaymentButtonRef}
-          variant="outline"
-          className="h-14 w-40 border-stone-400 font-bold text-lg hover:bg-stone-100 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:border-stone-300 disabled:text-stone-400"
+          className="h-14 w-40 bg-stone-700 font-bold text-lg text-white hover:bg-stone-600 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:bg-stone-400"
           onClick={() => onExactPayment()}
           disabled={order.items.length === 0}
         >
@@ -73,6 +74,9 @@ export const SubmitSection = ({
         >
           合計どおり受け取ったとき
         </label>
+        <p className="text-sm text-stone-400">
+          上下キーで「送信」と「お釣り 0」を選択
+        </p>
         {needsSplit && (
           <p className="text-center font-bold text-red-500">
             この注文の分割を推奨します

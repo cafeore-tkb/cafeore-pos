@@ -5,7 +5,7 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
@@ -77,6 +77,9 @@ const CashierV2 = ({
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
+  const [submitFocusTarget, setSubmitFocusTarget] = useState<
+    "submit" | "exactPayment"
+  >("submit");
   const dispatchOrder = useCallback(
     (action: OrderAction) => {
       applyOrderAction({ action, syncOrder });
@@ -124,13 +127,26 @@ const CashierV2 = ({
   }, [dispatchOrder, resetStatus, renewUISession]);
 
   const canEnterSubmit = canSubmitOrder && newOrder.items.length > 0;
+  const billingOk = newOrder.items.length > 0 && newOrder.getCharge() >= 0;
 
   const proceedStatusGuarded = useCallback(() => {
     if (inputStatus === "received" && !canEnterSubmit) {
       return;
     }
+    if (inputStatus === "received") {
+      setSubmitFocusTarget(billingOk ? "submit" : "exactPayment");
+    }
     proceedStatus();
-  }, [inputStatus, canEnterSubmit, proceedStatus]);
+  }, [inputStatus, canEnterSubmit, billingOk, proceedStatus]);
+
+  const focusSubmitAction = useCallback(
+    (target: "submit" | "exactPayment") => {
+      if (inputStatus === "submit") {
+        setSubmitFocusTarget(target);
+      }
+    },
+    [inputStatus],
+  );
 
   /**
    * FIXME #412 useEffect内でstateを更新している
@@ -192,11 +208,13 @@ const CashierV2 = ({
     return {
       ArrowRight: proceedStatusGuarded,
       ArrowLeft: previousStatus,
+      ArrowUp: () => focusSubmitAction("submit"),
+      ArrowDown: () => focusSubmitAction("exactPayment"),
       Escape: () => {
         resetAll();
       },
     };
-  }, [proceedStatusGuarded, previousStatus, resetAll]);
+  }, [proceedStatusGuarded, previousStatus, focusSubmitAction, resetAll]);
 
   /**
    * OK
@@ -386,6 +404,7 @@ const CashierV2 = ({
                 onExactPayment={() => submitOrder(true)}
                 order={newOrder}
                 focus={inputStatus === "submit"}
+                focusTarget={submitFocusTarget}
               />
             </fieldset>
           </div>
