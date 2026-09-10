@@ -127,12 +127,18 @@ const reducer: OrderReducer<OrderAction> = (state, action): OrderEntity => {
   }
 };
 
+const createInitialOrderState = () => OrderEntity.createNew({ orderId: -1 });
+
+const applyOrderAction = {
+  reduce: reducer,
+  initialState: createInitialOrderState,
+};
+
 /**
  * オーダーの状態を管理する
  *
  * @returns オーダーの状態とそれを更新する関数
  */
-const useOrderState = () =>
-  useReducer(reducer, OrderEntity.createNew({ orderId: -1 }));
+const useOrderState = () => useReducer(reducer, createInitialOrderState());
 
-export { useOrderState };
+export { applyOrderAction, useOrderState };

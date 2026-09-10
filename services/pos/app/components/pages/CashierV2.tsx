@@ -4,19 +4,27 @@ import {
   type WithId,
   orderRepository,
 } from "@cafeore/common";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSubmit } from "react-router";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
+import {
+  applyCashierOrderActionAtom,
+  editingOrderAtom,
+} from "../functional/cashierAtoms";
+import {
+  cashierDescCommentAtom,
+  cashierMenuOpenAtom,
+  cashierServiceActiveAtom,
+} from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
 import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
-import { useOrderState } from "../functional/useOrderState";
+import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
-import { useSyncCahiserOrder } from "../functional/useSyncCahiserOrder";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -51,7 +59,8 @@ const CashierV2 = ({
   submitPayload,
   syncOrder,
 }: props) => {
-  const [newOrder, newOrderDispatch] = useOrderState();
+  const newOrder = useAtomValue(editingOrderAtom);
+  const applyOrderAction = useSetAtom(applyCashierOrderActionAtom);
   const {
     inputStatus,
     proceedStatus,
@@ -59,14 +68,19 @@ const CashierV2 = ({
     resetStatus,
     setInputStatus,
   } = useInputStatus();
-  const [descComment, setDescComment] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
+  const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId, manualOrderId, setOrderIdOverride } =
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
-  const submit = useSubmit();
-  const [serviceActive, setServiceActive] = useState(false);
+  const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
+  const dispatchOrder = useCallback(
+    (action: OrderAction) => {
+      applyOrderAction({ action, syncOrder });
+    },
+    [applyOrderAction, syncOrder],
+  );
 
   // 過去の注文を取得（全注文）
   const servedOrders = useMemo(
@@ -89,8 +103,6 @@ const CashierV2 = ({
     soundRef.current?.play();
   }, []);
 
-  useSyncCahiserOrder(newOrder, syncOrder);
-
   const printer = usePrinter();
 
   usePreventNumberKeyUpDown();
@@ -100,14 +112,14 @@ const CashierV2 = ({
    * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
    */
   useEffect(() => {
-    newOrderDispatch({ type: "updateOrderId", orderId: nextOrderId });
-  }, [nextOrderId, newOrderDispatch]);
+    dispatchOrder({ type: "updateOrderId", orderId: nextOrderId });
+  }, [nextOrderId, dispatchOrder]);
 
   const resetAll = useCallback(() => {
-    newOrderDispatch({ type: "clear" });
+    dispatchOrder({ type: "clear" });
     resetStatus();
     renewUISession();
-  }, [newOrderDispatch, resetStatus, renewUISession]);
+  }, [dispatchOrder, resetStatus, renewUISession]);
 
   const submitOrder = useCallback(() => {
     if (newOrder.getCharge() < 0) {
@@ -145,6 +157,7 @@ const CashierV2 = ({
     setOrderIdOverride,
     wsStatus,
     items,
+    setServiceActive,
   ]);
 
   const keyEventHandlers = useMemo(() => {
@@ -179,8 +192,8 @@ const CashierV2 = ({
     <ItemButtons
       items={items ?? []}
       addItem={useCallback(
-        (item) => newOrderDispatch({ type: "addItem", item }),
-        [newOrderDispatch],
+        (item) => dispatchOrder({ type: "addItem", item }),
+        [dispatchOrder],
       )}
     />
   );
@@ -226,17 +239,17 @@ const CashierV2 = ({
             <OrderItemEdit
               order={newOrder}
               onAddItem={useCallback(
-                (item) => newOrderDispatch({ type: "addItem", item }),
-                [newOrderDispatch],
+                (item) => dispatchOrder({ type: "addItem", item }),
+                [dispatchOrder],
               )}
               onRemoveItem={useCallback(
-                (idx) => newOrderDispatch({ type: "removeItem", idx }),
-                [newOrderDispatch],
+                (idx) => dispatchOrder({ type: "removeItem", idx }),
+                [dispatchOrder],
               )}
               mutateItem={useCallback(
                 (idx, action) =>
-                  newOrderDispatch({ type: "mutateItem", idx, action }),
-                [newOrderDispatch],
+                  dispatchOrder({ type: "mutateItem", idx, action }),
+                [dispatchOrder],
               )}
               focus={inputStatus === "items"}
               discountOrder={useMemo(
@@ -262,12 +275,12 @@ const CashierV2 = ({
                 orders={orders}
                 onDiscountOrderFind={useCallback(
                   (discountOrder) =>
-                    newOrderDispatch({ type: "applyDiscount", discountOrder }),
-                  [newOrderDispatch],
+                    dispatchOrder({ type: "applyDiscount", discountOrder }),
+                  [dispatchOrder],
                 )}
                 onDiscountOrderRemoved={useCallback(
-                  () => newOrderDispatch({ type: "removeDiscount" }),
-                  [newOrderDispatch],
+                  () => dispatchOrder({ type: "removeDiscount" }),
+                  [dispatchOrder],
                 )}
                 onClick={useCallback(() => {
                   setInputStatus("discount");
@@ -279,15 +292,15 @@ const CashierV2 = ({
                 active={serviceActive}
                 disabled={newOrder.discountOrderId !== null}
                 onServiceDiscountOrder={useCallback(() => {
-                  newOrderDispatch({ type: "applyServiceOneCupDiscount" });
+                  dispatchOrder({ type: "applyServiceOneCupDiscount" });
                   setServiceActive(true);
-                }, [newOrderDispatch])}
+                }, [dispatchOrder, setServiceActive])}
                 onDiscountOrderRemoved={useCallback(() => {
                   if (serviceActive) {
-                    newOrderDispatch({ type: "removeDiscount" });
+                    dispatchOrder({ type: "removeDiscount" });
                     setServiceActive(false);
                   }
-                }, [newOrderDispatch, serviceActive])}
+                }, [dispatchOrder, serviceActive, setServiceActive])}
               />
             </div>
           </div>
@@ -319,8 +332,8 @@ const CashierV2 = ({
                 key={`Received-${UISession.key}`}
                 onTextSet={useCallback(
                   (received) =>
-                    newOrderDispatch({ type: "setReceived", received }),
-                  [newOrderDispatch],
+                    dispatchOrder({ type: "setReceived", received }),
+                  [dispatchOrder],
                 )}
                 focus={inputStatus === "received"}
                 order={newOrder}
