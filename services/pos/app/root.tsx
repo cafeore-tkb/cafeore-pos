@@ -1,7 +1,6 @@
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 import "./tailwind.css";
 import { Toaster } from "~/components/ui/sonner";
-import { AuthProvider } from "./components/functional/AuthProvider";
 import { OrdersWSProvider } from "./routes/context/OrdersWSContext";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -14,7 +13,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        {children}
         <ScrollRestoration />
         <Scripts />
         <Toaster />
