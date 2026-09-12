@@ -62,7 +62,7 @@ export const SubmitSection = ({
         <Button
           id="exact-payment-button"
           ref={exactPaymentButtonRef}
-          className="h-14 w-40 bg-stone-700 font-bold text-lg text-white hover:bg-stone-600 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:bg-stone-400"
+          className="h-14 w-40 bg-stone-700 font-bold text-lg text-white hover:bg-stone-600 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:bg-stone-400 disabled:text-stone-300"
           onClick={() => onExactPayment()}
           disabled={order.items.length === 0}
         >
