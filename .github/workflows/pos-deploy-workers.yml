@@ -147,6 +147,8 @@ jobs:
         env:
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          # PR は専用 Neon DB だけへ書き込み、本番 Firestore/Auth に依存しない。
+          VITE_PR_PREVIEW: ${{ github.event_name == 'pull_request' }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
           # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
           # 順にフォールバックする。
