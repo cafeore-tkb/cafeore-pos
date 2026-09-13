@@ -77,6 +77,7 @@ const CashierV2 = ({
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
+  const [hasReceivedInput, setHasReceivedInput] = useState(false);
   const [submitFocusTarget, setSubmitFocusTarget] = useState<
     "submit" | "exactPayment"
   >("submit");
@@ -122,6 +123,7 @@ const CashierV2 = ({
 
   const resetAll = useCallback(() => {
     dispatchOrder({ type: "clear" });
+    setHasReceivedInput(false);
     resetStatus();
     renewUISession();
   }, [dispatchOrder, resetStatus, renewUISession]);
@@ -141,11 +143,14 @@ const CashierV2 = ({
 
   const focusSubmitAction = useCallback(
     (target: "submit" | "exactPayment") => {
-      if (inputStatus === "submit") {
+      if (
+        inputStatus === "submit" &&
+        !(target === "exactPayment" && hasReceivedInput)
+      ) {
         setSubmitFocusTarget(target);
       }
     },
-    [inputStatus],
+    [inputStatus, hasReceivedInput],
   );
 
   /**
@@ -377,8 +382,10 @@ const CashierV2 = ({
               <OrderReceivedInput
                 key={`Received-${UISession.key}`}
                 onTextSet={useCallback(
-                  (received) =>
-                    dispatchOrder({ type: "setReceived", received }),
+                  (received) => {
+                    setHasReceivedInput(received !== "");
+                    dispatchOrder({ type: "setReceived", received });
+                  },
                   [dispatchOrder],
                 )}
                 focus={inputStatus === "received"}
@@ -405,6 +412,9 @@ const CashierV2 = ({
                 order={newOrder}
                 focus={inputStatus === "submit"}
                 focusTarget={submitFocusTarget}
+                exactPaymentDisabled={
+                  newOrder.items.length === 0 || hasReceivedInput
+                }
               />
             </fieldset>
           </div>

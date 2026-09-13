@@ -9,6 +9,7 @@ type props = {
   order: OrderEntity;
   focus: boolean;
   focusTarget: "submit" | "exactPayment";
+  exactPaymentDisabled: boolean;
 };
 
 export const SubmitSection = ({
@@ -17,6 +18,7 @@ export const SubmitSection = ({
   order,
   focus,
   focusTarget,
+  exactPaymentDisabled,
 }: props) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const exactPaymentButtonRef = useRef<HTMLButtonElement>(null);
@@ -38,10 +40,12 @@ export const SubmitSection = ({
     if (!focus) return;
     if (focusTarget === "submit" && billingOk) {
       submitButtonRef.current?.focus();
-    } else if (order.items.length > 0) {
+    } else if (!exactPaymentDisabled) {
       exactPaymentButtonRef.current?.focus();
+    } else if (billingOk) {
+      submitButtonRef.current?.focus();
     }
-  }, [focus, focusTarget, billingOk, order.items.length]);
+  }, [focus, focusTarget, billingOk, exactPaymentDisabled]);
 
   return (
     <div className="pt-5">
@@ -64,7 +68,7 @@ export const SubmitSection = ({
           ref={exactPaymentButtonRef}
           className="h-14 w-40 bg-stone-700 font-bold text-lg text-white hover:bg-stone-600 focus-visible:ring-4 focus-visible:ring-stone-400 disabled:bg-stone-400 disabled:text-stone-300"
           onClick={() => onExactPayment()}
-          disabled={order.items.length === 0}
+          disabled={exactPaymentDisabled}
         >
           お釣り 0
         </Button>
