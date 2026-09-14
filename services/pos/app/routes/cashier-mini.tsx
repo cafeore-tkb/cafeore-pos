@@ -142,7 +142,7 @@ export default function CasherMini() {
           </p>
           <div className="flex h-4/5 flex-col justify-between">
             <div className="">
-              {order?.items.map((item, idx) => {
+              {order?.menus.map((item, idx) => {
                 return (
                   <div
                     key={`${idx}-${item.id}`}

@@ -1,4 +1,4 @@
-import { type ItemEntity, OrderEntity, type WithId } from "@cafeore/common";
+import { type MenuEntity, OrderEntity, type WithId } from "@cafeore/common";
 import { useReducer } from "react";
 
 type BaseAction<TypeName extends string> = { type: TypeName };
@@ -12,11 +12,11 @@ type Action<
 
 type Clear = Action<"clear", { effectFn?: () => void }>;
 type UpdateOrderId = Action<"updateOrderId", { orderId: number }>;
-type AddItem = Action<"addItem", { item: WithId<ItemEntity> }>;
+type AddItem = Action<"addItem", { item: WithId<MenuEntity> }>;
 type RemoveItem = Action<"removeItem", { idx: number }>;
 type MutateItem = Action<
   "mutateItem",
-  { idx: number; action: (prev: WithId<ItemEntity>) => WithId<ItemEntity> }
+  { idx: number; action: (prev: WithId<MenuEntity>) => WithId<MenuEntity> }
 >;
 type ApplyDiscount = Action<
   "applyDiscount",
@@ -61,19 +61,19 @@ const updateOrderId: OrderReducer<UpdateOrderId> = (state, action) => {
 
 const addItem: OrderReducer<AddItem> = (state, action) => {
   const updated = state.clone();
-  updated.items = [...updated.items, action.item];
+  updated.menus = [...updated.menus, action.item];
   return updated;
 };
 
 const removeItem: OrderReducer<RemoveItem> = (state, action) => {
   const updated = state.clone();
-  updated.items = updated.items.filter((_, idx) => idx !== action.idx);
+  updated.menus = updated.menus.filter((_, idx) => idx !== action.idx);
   return updated;
 };
 
 const mutateItem: OrderReducer<MutateItem> = (state, action) => {
   const updated = state.clone();
-  updated.items[action.idx] = action.action(updated.items[action.idx]);
+  updated.menus[action.idx] = action.action(updated.menus[action.idx]);
   return updated;
 };
 

@@ -9,18 +9,18 @@ import (
 )
 
 type Order struct {
-	ID                uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	OrderId           int            `gorm:"not null"`
-	CreatedAt         time.Time      `gorm:"not null"`
-	ReadyAt           *time.Time     
-	ServedAt          *time.Time     
-	BillingAmount     int            `gorm:"not null"`
-	Received          int            `gorm:"not null"`
+	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	OrderId           int       `gorm:"column:order_id;type:bigint;not null"`
+	CreatedAt         time.Time `gorm:"not null"`
+	ReadyAt           *time.Time
+	ServedAt          *time.Time
+	BillingAmount     int `gorm:"not null"`
+	Received          int `gorm:"not null"`
 	DiscountOrderId   int
 	DiscountOrderCups int
 
-	OrderItems    []OrderItem    `gorm:"foreignKey:OrderID;references:ID"`
-	Comments []Comment `gorm:"foreignKey:OrderID;references:ID"`
+	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
+	Comments   []Comment   `gorm:"foreignKey:OrderID;references:ID"`
 }
 
 func (o *Order) BeforeCreate(tx *gorm.DB) error {

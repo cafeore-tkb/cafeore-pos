@@ -4,7 +4,7 @@ import {
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback, useMemo } from "react";
@@ -23,7 +23,7 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const user = useAuth();
   const disableFirebase = useMemo(() => user == null, [user]);
-  const { items } = useItemMaster();
+  const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
   const submit = useFlaggedSubmit({ disableFirebase });
 

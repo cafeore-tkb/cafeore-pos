@@ -32,21 +32,7 @@ type ErrorResponse struct {
 type ItemCreateRequest struct {
 	Abbr       string             `json:"abbr"`
 	ItemTypeId openapi_types.UUID `json:"item_type_id"`
-	Key        string             `json:"key"`
 	Name       string             `json:"name"`
-	Price      int                `json:"price"`
-}
-
-// ItemInfo defines model for ItemInfo.
-type ItemInfo struct {
-	Assignee *string      `json:"assignee"`
-	Item     ItemResponse `json:"item"`
-}
-
-// ItemInfoCreate defines model for ItemInfoCreate.
-type ItemInfoCreate struct {
-	Assignee *string            `json:"assignee"`
-	ItemId   openapi_types.UUID `json:"item_id"`
 }
 
 // ItemResponse defines model for ItemResponse.
@@ -54,9 +40,7 @@ type ItemResponse struct {
 	Abbr     string             `json:"abbr"`
 	Id       openapi_types.UUID `json:"id"`
 	ItemType ItemTypeResponse   `json:"item_type"`
-	Key      string             `json:"key"`
 	Name     string             `json:"name"`
-	Price    int                `json:"price"`
 }
 
 // ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
@@ -84,9 +68,7 @@ type ItemUpdateRequest struct {
 	Abbr       string             `json:"abbr"`
 	Id         openapi_types.UUID `json:"id"`
 	ItemTypeId openapi_types.UUID `json:"item_type_id"`
-	Key        string             `json:"key"`
 	Name       string             `json:"name"`
-	Price      int                `json:"price"`
 }
 
 // MasterStateResponse defines model for MasterStateResponse.
@@ -100,13 +82,78 @@ type MasterStateUpdateRequest struct {
 	Type string `json:"type"`
 }
 
+// MenuCreateRequest defines model for MenuCreateRequest.
+type MenuCreateRequest struct {
+	Abbr  string            `json:"abbr"`
+	Items []MenuItemRequest `json:"items"`
+	Key   string            `json:"key"`
+	Name  string            `json:"name"`
+	Price int               `json:"price"`
+}
+
+// MenuInfo defines model for MenuInfo.
+type MenuInfo struct {
+	Assignee *string `json:"assignee"`
+
+	// Id 注文明細ID
+	Id   openapi_types.UUID `json:"id"`
+	Menu MenuResponse       `json:"menu"`
+
+	// MenuName 注文時点のメニュー名
+	MenuName string `json:"menu_name"`
+
+	// UnitPrice 注文時点のメニュー価格
+	UnitPrice int `json:"unit_price"`
+}
+
+// MenuInfoCreate defines model for MenuInfoCreate.
+type MenuInfoCreate struct {
+	Assignee *string            `json:"assignee"`
+	MenuId   openapi_types.UUID `json:"menu_id"`
+
+	// OrderMenuId 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
+	OrderMenuId *openapi_types.UUID `json:"order_menu_id,omitempty"`
+}
+
+// MenuItemRequest defines model for MenuItemRequest.
+type MenuItemRequest struct {
+	ItemId   openapi_types.UUID `json:"item_id"`
+	Quantity int                `json:"quantity"`
+}
+
+// MenuItemResponse defines model for MenuItemResponse.
+type MenuItemResponse struct {
+	Item     ItemResponse `json:"item"`
+	Quantity int          `json:"quantity"`
+}
+
+// MenuResponse defines model for MenuResponse.
+type MenuResponse struct {
+	Abbr  string             `json:"abbr"`
+	Id    openapi_types.UUID `json:"id"`
+	Items []MenuItemResponse `json:"items"`
+	Key   string             `json:"key"`
+	Name  string             `json:"name"`
+	Price int                `json:"price"`
+}
+
+// MenuUpdateRequest defines model for MenuUpdateRequest.
+type MenuUpdateRequest struct {
+	Abbr  string             `json:"abbr"`
+	Id    openapi_types.UUID `json:"id"`
+	Items []MenuItemRequest  `json:"items"`
+	Key   string             `json:"key"`
+	Name  string             `json:"name"`
+	Price int                `json:"price"`
+}
+
 // OrderCreateRequest defines model for OrderCreateRequest.
 type OrderCreateRequest struct {
 	BillingAmount     int                     `json:"billing_amount"`
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int                    `json:"discount_order_id"`
-	ItemIds           []ItemInfoCreate        `json:"item_ids"`
+	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
 	OrderId           int                     `json:"order_id"`
 	Received          int                     `json:"received"`
 }
@@ -119,7 +166,7 @@ type OrderResponse struct {
 	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int               `json:"discount_order_id"`
 	Id                openapi_types.UUID `json:"id"`
-	Items             []ItemInfo         `json:"items"`
+	Menus             []MenuInfo         `json:"menus"`
 	OrderId           int                `json:"order_id"`
 	ReadyAt           *time.Time         `json:"ready_at"`
 	Received          int                `json:"received"`
@@ -132,7 +179,7 @@ type OrderUpdateRequest struct {
 	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int               `json:"discount_order_id"`
 	Id                openapi_types.UUID `json:"id"`
-	ItemIds           []ItemInfoCreate   `json:"item_ids"`
+	MenuIds           []MenuInfoCreate   `json:"menu_ids"`
 	OrderId           int                `json:"order_id"`
 	ReadyAt           *time.Time         `json:"ready_at"`
 	Received          int                `json:"received"`
@@ -161,6 +208,12 @@ type UpdateItemJSONRequestBody = ItemUpdateRequest
 
 // UpdateMasterStateJSONRequestBody defines body for UpdateMasterState for application/json ContentType.
 type UpdateMasterStateJSONRequestBody = MasterStateUpdateRequest
+
+// CreateMenuJSONRequestBody defines body for CreateMenu for application/json ContentType.
+type CreateMenuJSONRequestBody = MenuCreateRequest
+
+// UpdateMenuJSONRequestBody defines body for UpdateMenu for application/json ContentType.
+type UpdateMenuJSONRequestBody = MenuUpdateRequest
 
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
 type CreateOrderJSONRequestBody = OrderCreateRequest

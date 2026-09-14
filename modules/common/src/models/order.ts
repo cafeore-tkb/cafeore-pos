@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
-import { ItemEntity, itemSchema } from "./item";
+import { MenuEntity, menuSchema } from "./menu";
 
 const AUTHORS = ["cashier", "master", "serve", "others"] as const;
 
@@ -18,7 +18,7 @@ export const orderSchema = z.object({
   createdAt: z.date(),
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
-  items: z.array(itemSchema.required()),
+  menus: z.array(menuSchema.required({ id: true })),
   total: z.number(), // sum of item.price
   comments: z.array(commentSchema),
   billingAmount: z.number(), // total - discount
@@ -67,7 +67,7 @@ class CommentEntity implements OrderComment {
 }
 
 export class OrderEntity implements Order {
-  order: ItemEntity | undefined;
+  order: MenuEntity | undefined;
   // 全てのプロパティを private にして外部からの直接アクセスを禁止
   private constructor(
     private readonly _id: string | undefined,
@@ -75,7 +75,7 @@ export class OrderEntity implements Order {
     private _createdAt: Date,
     private _readyAt: Date | null,
     private _servedAt: Date | null,
-    private _items: WithId<ItemEntity>[],
+    private _menus: WithId<MenuEntity>[],
     private _total: number,
     private _comments: CommentEntity[],
     private _billingAmount: number,
@@ -118,7 +118,7 @@ export class OrderEntity implements Order {
       order.createdAt,
       order.readyAt,
       order.servedAt,
-      order.items.map((item) => ItemEntity.fromItem(item)),
+      order.menus.map((item) => MenuEntity.fromMenu(item)),
       order.total,
       order.comments.map((comment) => CommentEntity.fromComment(comment)),
       order.billingAmount,
@@ -158,18 +158,18 @@ export class OrderEntity implements Order {
     return this._servedAt;
   }
 
-  get items() {
-    return this._items;
+  get menus() {
+    return this._menus;
   }
-  set items(items: WithId<ItemEntity>[]) {
-    this._items = items;
+  set menus(menus: WithId<MenuEntity>[]) {
+    this._menus = menus;
   }
 
   get total() {
     // items の更新に合わせて total を自動で計算する
     // その代わり total は直接更新できない
     // TODO(toririm): 計算するのは items が変更された時だけでいい
-    this._total = this._items.reduce((acc, item) => acc + item.price, 0);
+    this._total = this._menus.reduce((acc, item) => acc + item.price, 0);
     return this._total;
   }
 
@@ -224,17 +224,31 @@ export class OrderEntity implements Order {
    * @returns 割引の対象となるコーヒーの数
    */
   getCoffeeCups() {
-    // milk と others 以外のアイテムを返す
-    // TODO(toririm): このメソッドは items が変更された時だけでいい
-    return this.items.filter(
-      (item) =>
-        item.item_type.name !== "milk" && item.item_type.name !== "others",
+    return this.menus.flatMap((menu) =>
+      menu.items.flatMap(({ item, quantity }) =>
+        item.item_type.name !== "milk" && item.item_type.name !== "others"
+          ? Array.from({ length: quantity }, () => menu)
+          : [],
+      ),
+    );
+  }
+
+  getItems() {
+    return this.menus.flatMap((menu) =>
+      menu.items.flatMap(({ item, quantity }) =>
+        Array.from({ length: quantity }, () => ({
+          id: item.id,
+          name: item.name,
+          abbr: item.abbr,
+          item_type: item.item_type,
+          assignee: menu.assignee,
+        })),
+      ),
     );
   }
 
   getDrinkCups() {
-    // others 以外のアイテムを返す
-    return this.items.filter((item) => item.item_type.name !== "others");
+    return this.getItems().filter((item) => item.item_type.name !== "others");
   }
 
   /**
@@ -353,7 +367,7 @@ export class OrderEntity implements Order {
       createdAt: this.createdAt,
       readyAt: this.readyAt,
       servedAt: this.servedAt,
-      items: this.items.map((item) => item.toItem()),
+      menus: this.menus.map((menu) => menu.toMenu()),
       total: this.total,
       comments: this.comments.map((comment) => comment.toComment()),
       billingAmount: this.billingAmount,

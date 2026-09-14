@@ -23,11 +23,9 @@ func NewItemHandler(db *gorm.DB) *ItemHandler {
 // DB models → API models 変換関数
 func toItemResponse(item *models.Item) models.ItemResponse {
 	resp := models.ItemResponse{
-		Id: openapi_types.UUID(item.ID),
-		Name: item.Name,
-		Abbr: item.Abbr,
-		Price: item.Price,
-		Key:  item.Key,
+		Id:       openapi_types.UUID(item.ID),
+		Name:     item.Name,
+		Abbr:     item.Abbr,
 		ItemType: toItemTypeResponse(&item.ItemType),
 	}
 	return resp
@@ -60,17 +58,15 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 
 	// API型 → DB型に変換
 	item := models.Item{
-		Name:     req.Name,
-		Abbr:     req.Abbr,
-		Price:    req.Price,
-		Key:      req.Key,
+		Name: req.Name,
+		Abbr: req.Abbr,
 	}
 
 	// タイプの関連付け
 	itemTypeID, err := uuid.Parse(req.ItemTypeId.String())
 	if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
-			return
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
+		return
 	}
 	item.ItemTypeID = itemTypeID
 
@@ -91,7 +87,7 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 // GET /api/items/:id - アイテム取得
 func (h *ItemHandler) GetItem(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -114,7 +110,7 @@ func (h *ItemHandler) GetItem(c *gin.Context) {
 // PUT /api/items/:id - アイテム更新
 func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -141,15 +137,13 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	// 更新
 	item.Name = req.Name
 	item.Abbr = req.Abbr
-	item.Price = req.Price
-	item.Key = req.Key
 
 	// タイプの更新
 	itemTypeID, err := uuid.Parse(req.ItemTypeId.String())
 
 	if err != nil {
-    c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
-    return
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid itemType ID format"})
+		return
 	}
 	item.ItemTypeID = itemTypeID
 
@@ -170,7 +164,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 // DELETE /api/items/:id - アイテム削除
 func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})

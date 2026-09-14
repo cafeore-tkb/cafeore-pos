@@ -1,4 +1,4 @@
-import type { ItemEntity, OrderEntity } from "@cafeore/common";
+import type { MenuEntity, OrderEntity } from "@cafeore/common";
 import { useRawPrinter } from "./printer";
 
 export const usePrinter = () => {
@@ -8,7 +8,7 @@ export const usePrinter = () => {
     orderId: number,
     index: number,
     total: number,
-    item: ItemEntity,
+    item: MenuEntity,
   ) => {
     console.log(item.name);
     rawPrinter.addHeader(orderId, null);
@@ -26,8 +26,8 @@ export const usePrinter = () => {
   const printOrderSummaryLabel = (order: OrderEntity) => {
     rawPrinter.addHeader(order.orderId, order.total);
 
-    const assignedItems = order.items.filter((item) => item.assignee !== null);
-    const unassignedItems = order.items.filter(
+    const assignedItems = order.menus.filter((item) => item.assignee !== null);
+    const unassignedItems = order.menus.filter(
       (item) => item.assignee === null,
     );
 
@@ -64,7 +64,7 @@ export const usePrinter = () => {
     orderId: number,
     index: number,
     total: number,
-    item: ItemEntity,
+    item: MenuEntity,
   ) => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
