@@ -206,6 +206,10 @@ describe("[unit] order entity", () => {
     expect(order.getDrinkCups().map((item) => item.abbr)).not.toContain(
       "セット",
     );
+    expect(order.getCoffeeCups().map((item) => item.abbr)).toEqual([
+      "ブレンド",
+      "ブレンド",
+    ]);
     expect(order.getItems().map((item) => item.abbr)).toEqual([
       "ブレンド",
       "ブレンド",

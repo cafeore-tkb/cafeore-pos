@@ -224,12 +224,9 @@ export class OrderEntity implements Order {
    * @returns 割引の対象となるコーヒーの数
    */
   getCoffeeCups() {
-    return this.menus.flatMap((menu) =>
-      menu.items.flatMap(({ item, quantity }) =>
-        item.item_type.name !== "milk" && item.item_type.name !== "others"
-          ? Array.from({ length: quantity }, () => menu)
-          : [],
-      ),
+    return this.getItems().filter(
+      (item) =>
+        item.item_type.name !== "milk" && item.item_type.name !== "others",
     );
   }
 
