@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
-import { type Item, ItemEntity } from "./item";
+import { MenuEntity } from "./menu";
 import { OrderEntity } from "./order";
 
-const coffeeItem = ItemEntity.fromItem({
+const coffeeItem = MenuEntity.fromMenu({
   id: "1",
   name: "item1",
   abbr: "1",
@@ -13,7 +13,7 @@ const coffeeItem = ItemEntity.fromItem({
   assignee: null,
 });
 
-const milkItem = ItemEntity.fromItem({
+const milkItem = MenuEntity.fromMenu({
   id: "2",
   name: "item2",
   abbr: "2",
@@ -28,8 +28,8 @@ describe("[unit] order entity", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     expect(order.total).toBe(0);
 
-    const items: WithId<ItemEntity>[] = [
-      ItemEntity.fromItem({
+    const items: WithId<MenuEntity>[] = [
+      MenuEntity.fromMenu({
         id: "1",
         name: "item1",
         abbr: "1",
@@ -38,7 +38,7 @@ describe("[unit] order entity", () => {
         item_type: { id: "1", name: "hot", display_name: "ホット" },
         assignee: null,
       }),
-      ItemEntity.fromItem({
+      MenuEntity.fromMenu({
         id: "2",
         name: "item2",
         abbr: "2",
@@ -49,11 +49,11 @@ describe("[unit] order entity", () => {
       }),
     ];
 
-    order.items = items;
+    order.menus = items;
     expect(order.total).toBe(441);
 
-    order.items.push(
-      ItemEntity.fromItem({
+    order.menus.push(
+      MenuEntity.fromMenu({
         id: "3",
         name: "item3",
         abbr: "3",
@@ -113,7 +113,7 @@ describe("[unit] order entity", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     expect(order.billingAmount).toBe(0);
 
-    const items: WithId<Item>[] = [
+    const items = [
       {
         id: "1",
         name: "item1",
@@ -133,9 +133,9 @@ describe("[unit] order entity", () => {
         assignee: null,
       },
     ];
-    const itemEntities = items.map((item) => ItemEntity.fromItem(item));
+    const menuEntities = items.map((item) => MenuEntity.fromMenu(item));
 
-    order.items = itemEntities;
+    order.menus = menuEntities;
     expect(order.billingAmount).toBe(900);
 
     const previousOrder = OrderEntity.fromOrder({
@@ -144,7 +144,7 @@ describe("[unit] order entity", () => {
       createdAt: new Date(),
       readyAt: null,
       servedAt: null,
-      items: itemEntities.slice(0, 1),
+      menus: menuEntities.slice(0, 1),
       total: 900,
       comments: [],
       billingAmount: 900,
@@ -171,11 +171,56 @@ describe("[unit] order entity", () => {
     expect(order.received).toBe(1000);
   });
 
+  test("getDrinkCups returns each constituent item's abbreviation", () => {
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    order.menus = [
+      MenuEntity.fromMenu({
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "コーヒーセット",
+        abbr: "セット",
+        price: 500,
+        key: "s",
+        assignee: "担当者",
+        items: [
+          {
+            item: {
+              id: "00000000-0000-4000-8000-000000000002",
+              name: "ブレンドコーヒー",
+              abbr: "ブレンド",
+              item_type: {
+                id: "00000000-0000-4000-8000-000000000003",
+                name: "hot",
+                display_name: "ホット",
+              },
+            },
+            quantity: 2,
+          },
+        ],
+      }),
+    ];
+
+    expect(order.getDrinkCups()).toEqual([
+      expect.objectContaining({ abbr: "ブレンド", assignee: "担当者" }),
+      expect.objectContaining({ abbr: "ブレンド", assignee: "担当者" }),
+    ]);
+    expect(order.getDrinkCups().map((item) => item.abbr)).not.toContain(
+      "セット",
+    );
+    expect(order.getCoffeeCups().map((item) => item.abbr)).toEqual([
+      "ブレンド",
+      "ブレンド",
+    ]);
+    expect(order.getItems().map((item) => item.abbr)).toEqual([
+      "ブレンド",
+      "ブレンド",
+    ]);
+  });
+
   test("applyDiscount", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     expect(order.billingAmount).toBe(0);
 
-    const items: WithId<Item>[] = [
+    const items = [
       {
         id: "1",
         name: "item1",
@@ -195,9 +240,9 @@ describe("[unit] order entity", () => {
         assignee: null,
       },
     ];
-    const itemEntities = items.map((item) => ItemEntity.fromItem(item));
+    const menuEntities = items.map((item) => MenuEntity.fromMenu(item));
 
-    order.items = itemEntities;
+    order.menus = menuEntities;
     expect(order.billingAmount).toBe(900);
 
     const previousOrder = OrderEntity.fromOrder({
@@ -206,7 +251,7 @@ describe("[unit] order entity", () => {
       createdAt: new Date(),
       readyAt: null,
       servedAt: null,
-      items: itemEntities,
+      menus: menuEntities,
       total: 900,
       comments: [],
       billingAmount: 900,
@@ -224,12 +269,12 @@ describe("[unit] order entity", () => {
     expect(order.discount).toBe(200);
     expect(order.billingAmount).toBe(700);
 
-    order.items.pop();
+    order.menus.pop();
     expect(order.discount).toBe(100);
     expect(order.total).toBe(400);
     expect(order.billingAmount).toBe(300);
 
-    order.items.push(milkItem);
+    order.menus.push(milkItem);
     expect(order.discount).toBe(100);
     expect(order.total).toBe(500);
     expect(order.billingAmount).toBe(400);
@@ -242,7 +287,7 @@ describe("[unit] order entity", () => {
       createdAt: new Date(),
       readyAt: null,
       servedAt: null,
-      items: [],
+      menus: [],
       total: 900,
       comments: [],
       billingAmount: 900,

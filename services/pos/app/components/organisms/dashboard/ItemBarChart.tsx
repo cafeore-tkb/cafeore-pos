@@ -1,4 +1,4 @@
-import { type OrderEntity, useItemMaster } from "@cafeore/common";
+import { type OrderEntity, useMenuMaster } from "@cafeore/common";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
@@ -27,7 +27,7 @@ type props = {
  */
 const ItemBarChart = ({ orders, pastOrders }: props) => {
   const [pastRange, setPastRange] = useState<OrderEntity[] | undefined>([]);
-  const itemMaster = useItemMaster().items;
+  const itemMaster = useMenuMaster().items;
 
   // 各基準時刻を計算
   const realtimeStart = useMemo(() => {
@@ -77,7 +77,7 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
     const result: Record<string, number> = {};
 
     for (const order of orders) {
-      for (const item of order.items) {
+      for (const item of order.menus) {
         const mapped = renameMap[item.id];
         if (mapped === undefined) {
           result[item.id] = (result[item.id] ?? 0) + 1;
