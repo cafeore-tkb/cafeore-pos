@@ -42,7 +42,7 @@ const useOrderIdOverride = () => {
  * @returns 次のID、手動採番要否、手動指定値、およびオーバーライド用の setter（null で自動に戻す）
  */
 const useLatestOrderId = (orders: WithId<OrderEntity>[] | undefined) => {
-  const isNetworkOnline = useOnlineStatus();
+  const { isOnline: isNetworkOnline } = useOnlineStatus();
   const { manualOrderId, setOrderIdOverride } = useOrderIdOverride();
 
   const latestOrderId = useMemo(() => calcLatestOrderId(orders), [orders]);
