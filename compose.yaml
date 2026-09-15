@@ -26,6 +26,8 @@ services:
       DATABASE_URL: "postgres://postgres:example@db:5432/postgres?sslmode=disable"
       PORT: "8080"
       HOST_IP: "${HOST_IP:-localhost}"
+      # ローカルDBをモデルの変更に追従させる。
+      RUN_MIGRATIONS: "true"
     depends_on:
       - db
 

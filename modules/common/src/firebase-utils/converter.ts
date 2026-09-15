@@ -15,6 +15,7 @@ import {
   globalMasterStateSchema,
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
+import { MenuEntity } from "../models/menu";
 import {
   type Order,
   type OrderComment,
@@ -86,10 +87,7 @@ export const responseToItemEntity = (
     id: response.id,
     name: response.name,
     abbr: response.abbr,
-    price: response.price,
-    key: response.key,
     item_type: response.item_type,
-    assignee: null,
   };
   return ItemEntity.fromItem(item);
 };
@@ -101,8 +99,6 @@ export const itemToCreateRequest = (item: ItemEntity): ItemCreateRequest => {
   return {
     name: item.name,
     abbr: item.abbr,
-    price: item.price,
-    key: item.key,
     item_type_id: item.item_type.id,
   };
 };
@@ -118,11 +114,47 @@ export const itemToUpdateRequest = (
     id: item.id,
     name: item.name,
     abbr: item.abbr,
-    price: item.price,
-    key: item.key,
     item_type_id: item.item_type.id,
   };
 };
+
+type MenuResponse = components["schemas"]["MenuResponse"];
+type MenuCreateRequest = components["schemas"]["MenuCreateRequest"];
+type MenuUpdateRequest = components["schemas"]["MenuUpdateRequest"];
+
+export const responseToMenuEntity = (
+  response: MenuResponse,
+): WithId<MenuEntity> =>
+  MenuEntity.fromMenu({
+    id: response.id,
+    name: response.name,
+    abbr: response.abbr,
+    price: response.price,
+    key: response.key,
+    items: response.items.map(({ item, quantity }) => ({
+      item: responseToItemEntity(item),
+      quantity,
+    })),
+    assignee: null,
+  });
+
+const menuItemsToRequest = (menu: MenuEntity) =>
+  menu.items.map(({ item, quantity }) => ({ item_id: item.id, quantity }));
+
+export const menuToCreateRequest = (menu: MenuEntity): MenuCreateRequest => ({
+  name: menu.name,
+  abbr: menu.abbr,
+  price: menu.price,
+  key: menu.key,
+  items: menuItemsToRequest(menu),
+});
+
+export const menuToUpdateRequest = (
+  menu: WithId<MenuEntity>,
+): MenuUpdateRequest => ({
+  id: menu.id,
+  ...menuToCreateRequest(menu),
+});
 
 /**
  * Firestore のデータを OrderEntity に変換する
@@ -173,18 +205,25 @@ export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
 };
 
 export type OrderResponse = components["schemas"]["OrderResponse"];
-type ItemInfo = components["schemas"]["ItemInfo"];
+type MenuInfo = components["schemas"]["MenuInfo"];
 type CommentResponse = components["schemas"]["CommentResponse"];
 type OrderCreateRequest = components["schemas"]["OrderCreateRequest"];
-type ItemInfoCreate = components["schemas"]["ItemInfoCreate"];
+type MenuInfoCreate = components["schemas"]["MenuInfoCreate"];
 type OrderUpdateRequest = components["schemas"]["OrderUpdateRequest"];
 
 export const responseToOrderEntity = (
   response: OrderResponse,
 ): WithId<OrderEntity> => {
-  const items = response.items.reduce(
-    (acc: WithId<ItemEntity>[], cur: ItemInfo) => {
-      acc.push(itemInfostoItems(cur));
+  const menus = response.menus.reduce(
+    (acc: WithId<MenuEntity>[], cur: MenuInfo) => {
+      const menu = MenuEntity.fromMenu({
+        ...responseToMenuEntity(cur.menu).toMenu(),
+        orderMenuId: cur.id,
+        name: cur.menu_name,
+        price: cur.unit_price,
+        assignee: cur.assignee,
+      });
+      acc.push(menu);
       return acc;
     },
     [],
@@ -214,23 +253,10 @@ export const responseToOrderEntity = (
     discountOrderCups: response.discount_order_cups
       ? response.discount_order_cups
       : 0,
-    items: items,
+    menus,
     comments: comments ? comments : [],
   };
   return OrderEntity.fromOrder(order);
-};
-
-export const itemInfostoItems = (itemInfo: ItemInfo): WithId<ItemEntity> => {
-  const item: WithId<Item> = {
-    id: itemInfo.item.id,
-    name: itemInfo.item.name,
-    abbr: itemInfo.item.abbr,
-    price: itemInfo.item.price,
-    key: itemInfo.item.key,
-    item_type: itemInfo.item.item_type,
-    assignee: itemInfo.assignee,
-  };
-  return ItemEntity.fromItem(item);
 };
 
 export const commentConverter = (comment: CommentResponse): OrderComment => {
@@ -251,8 +277,8 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
 ): OrderCreateRequest => {
-  const itemIds = order.items.reduce((acc: ItemInfoCreate[], cur) => {
-    acc.push({ assignee: cur.assignee, item_id: cur.id });
+  const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
+    acc.push({ assignee: cur.assignee, menu_id: cur.id });
     return acc;
   }, []);
   return {
@@ -261,7 +287,7 @@ export const orderEntityToCreateRequest = (
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
-    item_ids: itemIds,
+    menu_ids: menuIds,
     comments: order.comments,
   };
 };
@@ -270,17 +296,23 @@ export const orderEntityToCreateRequest = (
 export const orderToUpdateRequest = (
   order: WithId<OrderEntity>,
 ): OrderUpdateRequest => {
-  const itemIds = order.items.reduce((acc: ItemInfoCreate[], cur) => {
-    acc.push({ assignee: cur.assignee, item_id: cur.id });
+  const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
+    acc.push({
+      assignee: cur.assignee,
+      menu_id: cur.id,
+      order_menu_id: cur.orderMenuId,
+    });
     return acc;
   }, []);
   return {
     id: order.id,
     order_id: order.orderId,
+    ready_at: order.readyAt?.toISOString() ?? null,
+    served_at: order.servedAt?.toISOString() ?? null,
     billing_amount: order.billingAmount,
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
-    item_ids: itemIds,
+    menu_ids: menuIds,
   };
 };

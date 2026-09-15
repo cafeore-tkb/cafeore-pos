@@ -1,4 +1,4 @@
-import type { ItemEntity, WithId } from "@cafeore/common";
+import type { MenuEntity, WithId } from "@cafeore/common";
 import { Cross2Icon, Pencil2Icon } from "@radix-ui/react-icons";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "~/lib/utils";
@@ -6,11 +6,11 @@ import { useFocusRef } from "../functional/useFocusRef";
 import { Input } from "../ui/input";
 
 type props = {
-  item: WithId<ItemEntity>;
+  item: WithId<MenuEntity>;
   idx: number;
   mutateItem: (
     idx: number,
-    action: (prev: WithId<ItemEntity>) => WithId<ItemEntity>,
+    action: (prev: WithId<MenuEntity>) => WithId<MenuEntity>,
   ) => void;
   removeItem: () => void;
   highlight: boolean;

@@ -4,7 +4,7 @@ import {
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback } from "react";
@@ -23,7 +23,7 @@ export const meta: MetaFunction = () => {
 
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
-  const { items } = useItemMaster();
+  const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
   const submit = useSubmit();
 
