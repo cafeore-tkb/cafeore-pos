@@ -33,7 +33,7 @@ export const usePrinter = () => {
       (menu) => menu.assignee === null,
     );
 
-    assignedMenus.map((menu) => {
+    assignedMenus.forEach((menu) => {
       rawPrinter.addLine(menu.name, [1, 1]);
       rawPrinter.addLine(`  指名：${menu.assignee}`, [1, 1]);
     });

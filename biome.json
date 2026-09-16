@@ -1,22 +1,32 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "files": {
-    "ignore": [
-      "**/node_modules/**",
-      "**/build",
-      "**/public/build",
-      "**/epos-2.27.0.js"
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/build",
+      "!**/public/build",
+      "!**/epos-2.27.0.js",
+      "!**/*.svg"
     ]
   },
   "formatter": {
     "indentStyle": "space"
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedImports": "warn"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn"
       },
       "nursery": {
         "useSortedClasses": "warn"
