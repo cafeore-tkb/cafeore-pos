@@ -4,7 +4,7 @@ import {
   itemToUpdateRequest,
   responseToItemEntity,
 } from "../firebase-utils";
-import { type WithId, hasId } from "../lib/typeguard";
+import { hasId, type WithId } from "../lib/typeguard";
 import type { ItemEntity } from "../models/item";
 import type { paths } from "../types/api";
 import type { ItemRepository } from "./type";

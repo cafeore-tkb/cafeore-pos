@@ -1,8 +1,8 @@
 import {
   type MenuEntity,
   type OrderEntity,
-  type WithId,
   orderRepository,
+  type WithId,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -85,9 +85,7 @@ const CashierV2 = ({
   const servedOrders = useMemo(
     () =>
       orders
-        ? orders
-            .slice()
-            .sort((a, b) => b.orderId - a.orderId) // 注文番号の降順（新しい順）
+        ? orders.slice().sort((a, b) => b.orderId - a.orderId) // 注文番号の降順（新しい順）
         : [],
     [orders],
   );

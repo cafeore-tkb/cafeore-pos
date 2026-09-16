@@ -1,6 +1,6 @@
 import type { OrderEntity } from "@cafeore/common";
 import { atom } from "jotai";
-import { type OrderAction, applyOrderAction } from "./useOrderState";
+import { applyOrderAction, type OrderAction } from "./useOrderState";
 
 type SyncOrder = (order: OrderEntity) => void;
 

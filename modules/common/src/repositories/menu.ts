@@ -4,7 +4,7 @@ import {
   menuToUpdateRequest,
   responseToMenuEntity,
 } from "../firebase-utils";
-import { type WithId, hasId } from "../lib/typeguard";
+import { hasId, type WithId } from "../lib/typeguard";
 import type { MenuEntity } from "../models/menu";
 import type { paths } from "../types/api";
 import { API_BASE_URL, throwApiError } from "./item";

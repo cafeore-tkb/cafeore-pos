@@ -1,6 +1,6 @@
 import {
-  MasterStateEntity,
   documentSub,
+  MasterStateEntity,
   masterStateConverter,
 } from "@cafeore/common";
 import useSWRSubscription from "swr/subscription";

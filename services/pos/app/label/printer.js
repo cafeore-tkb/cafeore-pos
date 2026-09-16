@@ -13,6 +13,7 @@ export const useRawPrinter = () => {
    * BAD
    * https://ja.react.dev/learn/you-might-not-need-an-effect#initializing-the-application
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connect は毎レンダーで再生成されるため依存に含めると初回接続以外でも effect が走る。status が init のときだけ接続する
   useEffect(() => {
     if (status === "init") {
       connect();

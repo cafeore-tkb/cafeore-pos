@@ -60,12 +60,11 @@ const InputOTPSeparator = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div">
 >(({ ...props }, ref) => (
-  // biome-ignore lint/a11y/useSemanticElements: <explanation>
-  // biome-ignore lint/a11y/useFocusableInteractive: <explanation>
+  // biome-ignore lint/a11y/useSemanticElements: shadcn/ui の input-otp の実装に合わせて div に role="separator" を付けている
   <div ref={ref} role="separator" {...props}>
     <Dot />
   </div>
 ));
 InputOTPSeparator.displayName = "InputOTPSeparator";
 
-export { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator };
+export { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot };

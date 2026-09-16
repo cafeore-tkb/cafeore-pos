@@ -1,6 +1,6 @@
 import {
-  OrderEntity,
   cashierRepository,
+  OrderEntity,
   orderRepository,
   orderSchema,
   stringToJSONSchema,

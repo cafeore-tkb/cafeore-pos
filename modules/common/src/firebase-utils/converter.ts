@@ -10,9 +10,9 @@ import type { ZodSchema } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
-  MasterStateEntity,
   globalCashierStateSchema,
   globalMasterStateSchema,
+  MasterStateEntity,
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import { MenuEntity } from "../models/menu";
