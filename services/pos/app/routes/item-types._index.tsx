@@ -40,6 +40,17 @@ export default function ItemTypesPage() {
     void load();
   }, [load]);
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("このアイテムタイプを削除しますか？")) return;
+
+    try {
+      await itemTypeRepository.delete(id);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "削除に失敗しました");
+    }
+  };
+
   if (loading) return <div>読み込み中...</div>;
   if (error) return <div>エラー: {error}</div>;
 
@@ -53,7 +64,7 @@ export default function ItemTypesPage() {
           <TableRow>
             <TableHead>name</TableHead>
             <TableHead>display_name</TableHead>
-            <TableHead className="w-30">操作</TableHead>
+            <TableHead className="w-40">操作</TableHead>
           </TableRow>
         </TableHeader>
 
@@ -67,13 +78,28 @@ export default function ItemTypesPage() {
               <TableCell className="font-medium">{itemType.name}</TableCell>
               <TableCell>{itemType.display_name}</TableCell>
               <TableCell>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate(`/item-types/${itemType.id}/edit`)}
-                >
-                  編集
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      navigate(`/item-types/${itemType.id}/edit`);
+                    }}
+                  >
+                    編集
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={async (event) => {
+                      event.stopPropagation();
+                      if (itemType.id) await handleDelete(itemType.id);
+                    }}
+                  >
+                    削除
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

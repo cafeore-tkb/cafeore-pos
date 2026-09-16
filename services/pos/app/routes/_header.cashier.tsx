@@ -4,14 +4,16 @@ import {
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback, useMemo } from "react";
-import type { ClientActionFunction, MetaFunction } from "react-router";
+import {
+  type ClientActionFunction,
+  type MetaFunction,
+  useSubmit,
+} from "react-router";
 import { z } from "zod";
-import { useAuth } from "~/components/functional/AuthProvider";
-import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -22,15 +24,13 @@ export const meta: MetaFunction = () => {
 
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
-  const user = useAuth();
-  const disableFirebase = useMemo(() => user == null, [user]);
-  const { items } = useItemMaster();
+  const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
   const isNetworkOnline = useOnlineStatus();
-  const submit = useFlaggedSubmit({ disableFirebase });
+  const submit = useSubmit();
   const canSubmitOrder = useMemo(
-    () => user != null && isNetworkOnline && status === "open",
-    [user, isNetworkOnline, status],
+    () => isNetworkOnline && status === "open",
+    [isNetworkOnline, status],
   );
 
   const submitPayload = useCallback(

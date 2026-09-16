@@ -3,7 +3,7 @@ import type { Firestore } from "firebase/firestore";
 import { beforeAll, describe, expect, test } from "vitest";
 import firebasejson from "../../firebase.json";
 import type { WithId } from "../lib/typeguard";
-import { ItemEntity } from "../models/item";
+import { MenuEntity } from "../models/menu";
 import { OrderEntity } from "../models/order";
 import { orderRepoFactory } from "./order";
 import type { OrderRepository } from "./type";
@@ -53,8 +53,8 @@ describe("[db] orderRepository", async () => {
   });
 
   test("orderRepository.save (update)", async () => {
-    savedOrderChange.items.push(
-      ItemEntity.fromItem({
+    savedOrderChange.menus.push(
+      MenuEntity.fromMenu({
         id: "1",
         name: "item1",
         abbr: "1",
@@ -66,7 +66,7 @@ describe("[db] orderRepository", async () => {
     );
     const savedOrder = await orderRepository.save(savedOrderChange);
     expect(savedOrder.id).toEqual(savedOrderChange.id);
-    expect(savedOrder.items).toEqual(savedOrderChange.items);
+    expect(savedOrder.menus).toEqual(savedOrderChange.menus);
   });
 
   test("orderRepository.findById", async () => {

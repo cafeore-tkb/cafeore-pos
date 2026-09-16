@@ -77,8 +77,6 @@ export default function ItemsPage() {
           <TableRow>
             <TableHead>名前</TableHead>
             <TableHead>略称</TableHead>
-            <TableHead>価格</TableHead>
-            <TableHead>キー</TableHead>
             <TableHead>種別</TableHead>
             <TableHead className="w-40">操作</TableHead>
           </TableRow>
@@ -93,8 +91,6 @@ export default function ItemsPage() {
             >
               <TableCell className="font-medium">{item.name}</TableCell>
               <TableCell>{item.abbr}</TableCell>
-              <TableCell>￥{item.price}</TableCell>
-              <TableCell>{item.key}</TableCell>
               <TableCell>{item.item_type.display_name}</TableCell>
               <TableCell>
                 <div className="flex gap-2">

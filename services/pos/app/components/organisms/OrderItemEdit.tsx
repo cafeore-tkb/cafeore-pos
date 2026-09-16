@@ -1,8 +1,8 @@
 import {
-  type ItemEntity,
+  type MenuEntity,
   type OrderEntity,
   type WithId,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { memo, useCallback, useEffect, useState } from "react";
 import { ItemAssign } from "./ItemAssign";
@@ -10,11 +10,11 @@ import { ItemAssign } from "./ItemAssign";
 type props = {
   order: OrderEntity;
   focus: boolean;
-  onAddItem: (item: WithId<ItemEntity>) => void;
+  onAddItem: (item: WithId<MenuEntity>) => void;
   onRemoveItem: (idx: number) => void;
   mutateItem: (
     idx: number,
-    action: (prev: WithId<ItemEntity>) => WithId<ItemEntity>,
+    action: (prev: WithId<MenuEntity>) => WithId<MenuEntity>,
   ) => void;
   discountOrder: boolean;
   onClick: () => void;
@@ -35,7 +35,7 @@ const OrderItemEdit = memo(
   }: props) => {
     const [itemFocus, setItemFocus] = useState<number>(0);
     const [editable, setEditable] = useState(false);
-    const { keyEventHandler } = useItemMaster();
+    const { keyEventHandler } = useMenuMaster();
 
     /**
      * step だけ itemFocus を移動する
@@ -46,10 +46,10 @@ const OrderItemEdit = memo(
     const moveItemFocus = useCallback(
       (step: number) => {
         setItemFocus(
-          (prev) => (prev + step + order.items.length) % order.items.length,
+          (prev) => (prev + step + order.menus.length) % order.menus.length,
         );
       },
-      [order.items],
+      [order.menus],
     );
 
     /**
@@ -151,7 +151,7 @@ const OrderItemEdit = memo(
      */
     useEffect(() => {
       setItemFocus((prev) =>
-        Math.min(order.items.length - 1, Math.max(-1, prev)),
+        Math.min(order.menus.length - 1, Math.max(-1, prev)),
       );
     });
 
@@ -161,7 +161,7 @@ const OrderItemEdit = memo(
           <p className="text-sm text-stone-400">上下矢印キーでアイテムを選択</p>
         </div>
         <div className="grid gap-5 pb-10">
-          {order.items.map((item, idx) => (
+          {order.menus.map((item, idx) => (
             <ItemAssign
               onClick={() => {
                 setEditable(true);

@@ -32,9 +32,9 @@ export function ViewState({ order }: { order: WithId<OrderEntity> }) {
           )}
           <h2>ご注文内容</h2>
           <ul>
-            {order.items.map((item, idx) => (
-              <div key={`${idx}-${item.id}`}>
-                <li className="font-bold">{item.name}</li>
+            {order.menus.map((menu, idx) => (
+              <div key={`${idx}-${menu.id}`}>
+                <li className="font-bold">{menu.name}</li>
               </div>
             ))}
           </ul>

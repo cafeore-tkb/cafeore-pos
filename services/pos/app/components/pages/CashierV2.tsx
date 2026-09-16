@@ -1,5 +1,5 @@
 import {
-  type ItemEntity,
+  type MenuEntity,
   type OrderEntity,
   type WithId,
   orderRepository,
@@ -20,7 +20,6 @@ import {
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
-import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -40,7 +39,7 @@ import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
 type props = {
-  items: WithId<ItemEntity>[] | undefined; // itemMasterを渡す
+  items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
@@ -128,8 +127,8 @@ const CashierV2 = ({
     renewUISession();
   }, [dispatchOrder, resetStatus, renewUISession]);
 
-  const canEnterSubmit = canSubmitOrder && newOrder.items.length > 0;
-  const billingOk = newOrder.items.length > 0 && newOrder.getCharge() >= 0;
+  const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
+  const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
 
   const proceedStatusGuarded = useCallback(() => {
     if (inputStatus === "received" && !canEnterSubmit) {
@@ -170,12 +169,11 @@ const CashierV2 = ({
       if (!exactPayment && newOrder.getCharge() < 0) {
         return;
       }
-      if (newOrder.items.length === 0) {
+      if (newOrder.menus.length === 0) {
         return;
       }
-      const toteSetProcessedOrder = transformToteSet(newOrder, items ?? []);
       // 送信する直前に createdAt を更新する
-      const submitOne = toteSetProcessedOrder.clone();
+      const submitOne = newOrder.clone();
       if (exactPayment) submitOne.received = submitOne.billingAmount;
       submitOne.nowCreated();
       goodsOnlyServed(submitOne);
@@ -204,7 +202,6 @@ const CashierV2 = ({
       manualOrderId,
       setOrderIdOverride,
       wsStatus,
-      items,
       setServiceActive,
     ],
   );
@@ -413,7 +410,7 @@ const CashierV2 = ({
                 focus={inputStatus === "submit"}
                 focusTarget={submitFocusTarget}
                 exactPaymentDisabled={
-                  newOrder.items.length === 0 || hasReceivedInput
+                  newOrder.menus.length === 0 || hasReceivedInput
                 }
               />
             </fieldset>

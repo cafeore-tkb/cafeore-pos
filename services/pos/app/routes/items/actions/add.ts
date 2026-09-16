@@ -14,11 +14,7 @@ export function buildNewItemEntity(
   const entity = ItemEntity.createNew({
     name: values.name,
     abbr: values.abbr,
-    price: Number(values.price),
-    key: values.key,
     item_type: itemType,
   });
-
-  entity.assignee = values.assignee || null;
   return entity;
 }

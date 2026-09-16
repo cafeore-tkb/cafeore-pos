@@ -28,7 +28,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
 
   const displayOrders =
     user === "cashier" || user === "dashboard"
-      ? order.items
+      ? order.getItems()
       : order.getDrinkCups();
 
   return (

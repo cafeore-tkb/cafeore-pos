@@ -1,5 +1,7 @@
-import type { ItemEntity, OrderEntity } from "@cafeore/common";
+import type { OrderEntity } from "@cafeore/common";
 import { useRawPrinter } from "./printer";
+
+type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
 
 export const usePrinter = () => {
   const rawPrinter = useRawPrinter();
@@ -8,7 +10,7 @@ export const usePrinter = () => {
     orderId: number,
     index: number,
     total: number,
-    item: ItemEntity,
+    item: CupItem,
   ) => {
     console.log(item.name);
     rawPrinter.addHeader(orderId, null);
@@ -26,27 +28,27 @@ export const usePrinter = () => {
   const printOrderSummaryLabel = (order: OrderEntity) => {
     rawPrinter.addHeader(order.orderId, order.total);
 
-    const assignedItems = order.items.filter((item) => item.assignee !== null);
-    const unassignedItems = order.items.filter(
-      (item) => item.assignee === null,
+    const assignedMenus = order.menus.filter((menu) => menu.assignee !== null);
+    const unassignedMenus = order.menus.filter(
+      (menu) => menu.assignee === null,
     );
 
-    assignedItems.map((item) => {
-      rawPrinter.addLine(item.name, [1, 1]);
-      rawPrinter.addLine(`  指名：${item.assignee}`, [1, 1]);
+    assignedMenus.map((menu) => {
+      rawPrinter.addLine(menu.name, [1, 1]);
+      rawPrinter.addLine(`  指名：${menu.assignee}`, [1, 1]);
     });
 
-    for (let i = 0; i < unassignedItems.length; i += 2) {
+    for (let i = 0; i < unassignedMenus.length; i += 2) {
       // アイテム名が8文字以上のときは6文字だけ取り出す
       // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
       const item1 =
-        unassignedItems[i].name.length < 8
-          ? unassignedItems[i].name
-          : unassignedItems[i].name.slice(0, 6);
-      const item2 = unassignedItems[i + 1]
-        ? unassignedItems[i + 1].name.length < 8
-          ? unassignedItems[i + 1].name
-          : unassignedItems[i + 1].name.slice(0, 6)
+        unassignedMenus[i].name.length < 8
+          ? unassignedMenus[i].name
+          : unassignedMenus[i].name.slice(0, 6);
+      const item2 = unassignedMenus[i + 1]
+        ? unassignedMenus[i + 1].name.length < 8
+          ? unassignedMenus[i + 1].name
+          : unassignedMenus[i + 1].name.slice(0, 6)
         : null;
 
       if (item2) {
@@ -64,7 +66,7 @@ export const usePrinter = () => {
     orderId: number,
     index: number,
     total: number,
-    item: ItemEntity,
+    item: CupItem,
   ) => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
