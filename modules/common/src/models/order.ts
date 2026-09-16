@@ -6,7 +6,7 @@ const AUTHORS = ["cashier", "master", "serve", "others"] as const;
 
 export type Author = (typeof AUTHORS)[number];
 
-const commentSchema = z.object({
+export const commentSchema = z.object({
   author: z.enum(AUTHORS),
   text: z.string(),
   createdAt: z.date(),

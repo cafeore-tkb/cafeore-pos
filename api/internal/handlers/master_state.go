@@ -16,8 +16,8 @@ type MasterStateHandler struct {
 	hub *Hub
 }
 
-func NewMasterStateHandler(db *gorm.DB) *MasterStateHandler {
-	return &MasterStateHandler{db: db}
+func NewMasterStateHandler(db *gorm.DB, hub *Hub) *MasterStateHandler {
+	return &MasterStateHandler{db: db, hub: hub}
 }
 
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
@@ -63,24 +63,6 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, state)
-	h.broadcastMasterState()
-}
-
-func (h *MasterStateHandler) broadcastMasterState() {
-	var state models.MasterState
-
-	if err := h.db.
-		Order("created_at DESC").
-		First(&state).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return
-		}
-		return
-	}
-
-	h.hub.Broadcast(WSMessage{
-		Type:        WSMessageTypeMasterState,
-		MasterState: &state,
-	})
+	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
+	broadcastMasterState(h.db, h.hub)
 }

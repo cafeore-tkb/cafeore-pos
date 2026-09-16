@@ -505,6 +505,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
+  /api/cashier-state:
+    get:
+      summary: レジ状態取得
+      description: レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+      operationId: getCashierState
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierStateResponse'
+        '404':
+          description: まだレジ状態が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: レジ状態更新
+      description: 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+      operationId: updateCashierState
+      tags:
+        - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashierStateUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierStateResponse'
 
 components:
   schemas:
@@ -936,6 +975,38 @@ components:
       properties:
         type:
           type: string
+    CashierStateResponse:
+      type: object
+      required:
+        - editting_order
+        - submitted_order_id
+        - updated_at
+      properties:
+        editting_order:
+          type: object
+          additionalProperties: true
+          description: レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは中身を解釈しない
+        submitted_order_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 直前に確定した注文の ID。編集中は null
+        updated_at:
+          type: string
+          format: date-time
+    CashierStateUpdateRequest:
+      type: object
+      required:
+        - editting_order
+        - submitted_order_id
+      properties:
+        editting_order:
+          type: object
+          additionalProperties: true
+        submitted_order_id:
+          type: string
+          format: uuid
+          nullable: true
     ErrorResponse:
       type: object
       required:

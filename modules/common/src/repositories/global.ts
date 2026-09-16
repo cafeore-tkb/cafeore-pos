@@ -1,62 +1,46 @@
-import { type Firestore, doc, getDoc, setDoc } from "firebase/firestore";
+import createClient from "openapi-fetch";
 import {
-  cashierStateConverter,
-  masterStateConverter,
+  cashierStateToUpdateRequest,
+  responseToCashierState,
 } from "../firebase-utils/converter";
-import { prodDB } from "../firebase-utils/firebase";
-import type { GlobalCashierState, MasterStateEntity } from "../models/global";
+import type { CashierStateEntity, GlobalCashierState } from "../models/global";
+import type { paths } from "../types/api";
+import { API_BASE_URL, throwApiError } from "./item";
+
+const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 export type CashierStateRepo = {
-  get: () => Promise<GlobalCashierState | undefined>;
+  /** まだ一度も同期されていなければ undefined */
+  get: () => Promise<CashierStateEntity | undefined>;
   set: (state: GlobalCashierState) => Promise<void>;
 };
 
-export type MasterStateRepo = {
-  get: () => Promise<MasterStateEntity | undefined>;
-  set: (state: MasterStateEntity) => Promise<void>;
-};
-
-export const cashierStateRepoFactory = (db: Firestore): CashierStateRepo => {
+// レジの編集中注文と直前に確定した注文 ID。
+// API の単一行 /api/cashier-state に丸ごと置く。購読は useOrdersWS の cashier_state。
+export const cashierStateRepoFactory = (): CashierStateRepo => {
   return {
     get: async () => {
-      const docRef = doc(db, "global", "cashier-state").withConverter(
-        cashierStateConverter,
+      const { data, error, response } = await client.GET(
+        "/api/cashier-state",
+        {},
       );
-      const docSnap = await getDoc(docRef);
-      const data = docSnap.data();
-      if (data?.id === "cashier-state") {
-        return data;
+      if (response.status === 404) {
+        return undefined;
       }
+      if (error || !response.ok || !data) {
+        return await throwApiError(response, "レジ状態の取得に失敗しました");
+      }
+      return responseToCashierState(data);
     },
     set: async (state) => {
-      const docRef = doc(db, "global", "cashier-state").withConverter(
-        cashierStateConverter,
-      );
-      await setDoc(docRef, state);
+      const { error, response } = await client.PUT("/api/cashier-state", {
+        body: cashierStateToUpdateRequest(state),
+      });
+      if (error || !response.ok) {
+        await throwApiError(response, "レジ状態の更新に失敗しました");
+      }
     },
   };
 };
 
-export const masterStateRepoFactory = (db: Firestore): MasterStateRepo => {
-  return {
-    get: async () => {
-      const docRef = doc(db, "global", "master-state").withConverter(
-        masterStateConverter,
-      );
-      const docSnap = await getDoc(docRef);
-      const data = docSnap.data();
-      if (data?.id === "master-state") {
-        return data;
-      }
-    },
-    set: async (state) => {
-      const docRef = doc(db, "global", "master-state").withConverter(
-        masterStateConverter,
-      );
-      await setDoc(docRef, state);
-    },
-  };
-};
-
-export const cashierRepository = cashierStateRepoFactory(prodDB);
-export const masterRepository = masterStateRepoFactory(prodDB);
+export const cashierRepository = cashierStateRepoFactory();
