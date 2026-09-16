@@ -27,13 +27,13 @@ type props = {
  */
 
 // カスタムツールチップコンポーネント
-import type { TooltipProps } from "recharts";
+import type { TooltipContentProps } from "recharts";
 
 const CustomTooltipContent = ({
   active,
   payload,
   label,
-}: TooltipProps<number, string>) => {
+}: Partial<TooltipContentProps<number, string>>) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
