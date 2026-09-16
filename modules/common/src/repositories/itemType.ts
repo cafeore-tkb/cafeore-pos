@@ -1,5 +1,5 @@
 import createClient from "openapi-fetch";
-import { type WithId, hasId } from "../lib/typeguard";
+import { hasId, type WithId } from "../lib/typeguard";
 import type { ItemType } from "../models/item";
 import type { components, paths } from "../types/api";
 import { API_BASE_URL, throwApiError } from "./item";

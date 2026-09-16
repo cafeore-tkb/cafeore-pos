@@ -5,7 +5,9 @@ import { useCurrentTime } from "../functional/useCurrentTime";
 
 export const RealtimeElapsedTime = ({
   order,
-}: { order: WithId<OrderEntity> }) => {
+}: {
+  order: WithId<OrderEntity>;
+}) => {
   const currentTime = useCurrentTime(1000);
   const createdAt = dayjs(order.createdAt);
   const getDiffTime = (order: WithId<OrderEntity>) => {

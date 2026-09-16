@@ -1,4 +1,4 @@
-import { type Firestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, type Firestore, getDoc, setDoc } from "firebase/firestore";
 import {
   cashierStateConverter,
   masterStateConverter,

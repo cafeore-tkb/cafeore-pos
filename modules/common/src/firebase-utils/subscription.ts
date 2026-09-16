@@ -1,9 +1,9 @@
 import {
-  type FirestoreDataConverter,
-  type QueryConstraint,
   collection,
   doc,
+  type FirestoreDataConverter,
   onSnapshot,
+  type QueryConstraint,
   query,
 } from "firebase/firestore";
 import type { SWRSubscription } from "swr/subscription";
@@ -38,7 +38,9 @@ export const collectionSub = <T>(
 
 export const documentSub = <T>({
   converter,
-}: { converter: FirestoreDataConverter<T> }) => {
+}: {
+  converter: FirestoreDataConverter<T>;
+}) => {
   const sub: SWRSubscription<string[], T, Error> = (
     [collectionName, ...keys],
     { next },

@@ -1,4 +1,4 @@
-import { type MenuEntity, type WithId, menuRepository } from "@cafeore/common";
+import { type MenuEntity, menuRepository, type WithId } from "@cafeore/common";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "~/components/ui/button";
