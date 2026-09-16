@@ -48,9 +48,6 @@ importers:
       firebase:
         specifier: ^12.3.0
         version: 12.10.0
-      lodash:
-        specifier: ^4.17.21
-        version: 4.17.23
       swr:
         specifier: ^2.3.2
         version: 2.4.1(react@18.3.1)
@@ -58,21 +55,12 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@firebase/rules-unit-testing':
-        specifier: ^4.0.1
-        version: 4.0.1(firebase@12.10.0)
-      '@types/lodash':
-        specifier: ^4.17.12
-        version: 4.17.24
       '@types/node':
         specifier: ^24.5.2
         version: 24.11.0
       dayjs:
         specifier: ^1.11.13
         version: 1.11.19
-      firebase-tools:
-        specifier: ^14.7.0
-        version: 14.27.0(@types/node@24.11.0)(typescript@5.9.3)
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
@@ -1427,12 +1415,6 @@ packages:
     peerDependencies:
       '@firebase/app': 0.x
 
-  '@firebase/rules-unit-testing@4.0.1':
-    resolution: {integrity: sha512-Vu8iMLP+dO9hCAqUCitWZQdORyM6CxucilRZtleeTZd5bejZmyOiaBPwYm3NOYG6025ac99CEeA+ETmJRxa9zg==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      firebase: ^11.0.0
-
   '@firebase/storage-compat@0.4.0':
     resolution: {integrity: sha512-vDzhgGczr1OfcOy285YAPur5pWDEvD67w4thyeCUh6Ys0izN9fNYtA1MJERmNBfqjqu0lg0FM5GLbw0Il21M+g==}
     engines: {node: '>=20.0.0'}
@@ -2704,9 +2686,6 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
-
-  '@types/lodash@4.17.24':
-    resolution: {integrity: sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==}
 
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
@@ -7179,10 +7158,6 @@ snapshots:
       '@firebase/util': 1.14.0
       tslib: 2.8.1
 
-  '@firebase/rules-unit-testing@4.0.1(firebase@12.10.0)':
-    dependencies:
-      firebase: 12.10.0
-
   '@firebase/storage-compat@0.4.0(@firebase/app-compat@0.5.2)(@firebase/app-types@0.9.3)(@firebase/app@0.14.2)':
     dependencies:
       '@firebase/app-compat': 0.5.2
@@ -8369,8 +8344,6 @@ snapshots:
   '@types/estree@1.0.8': {}
 
   '@types/json-schema@7.0.15': {}
-
-  '@types/lodash@4.17.24': {}
 
   '@types/ms@2.1.0':
     optional: true

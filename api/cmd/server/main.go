@@ -90,6 +90,7 @@ func initDB() error {
 			&models.Comment{},
 			&models.OrderMenu{},
 			&models.MasterState{},
+			&models.CashierState{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
@@ -233,7 +234,8 @@ func main() {
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db)
+	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
+	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -274,6 +276,9 @@ func main() {
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
+
+		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
+		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
 	}
 
 	// サーバー起動

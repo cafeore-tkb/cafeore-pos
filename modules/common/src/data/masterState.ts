@@ -11,7 +11,7 @@ export type MasterState = {
   type: string;
 };
 
-const responseToMasterState = (res: {
+export const responseToMasterState = (res: {
   created_at?: string;
   createdAt?: string;
   type: string;

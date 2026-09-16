@@ -5,7 +5,9 @@ import {
   signInWithPopup,
   signOut,
 } from "firebase/auth";
-import { getFirestore, initializeFirestore } from "firebase/firestore";
+
+// Firestore はもう使っていない。データは全て Go API（Postgres）側にある。
+// ここに残っているのは Google サインインだけで、それも #710 で消える予定。
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: "AIzaSyC3llKAZQOVQEFV0-0xHiseDB55YXJilHM",
@@ -17,12 +19,6 @@ const firebaseConfig: FirebaseOptions = {
 };
 
 const app = initializeApp(firebaseConfig);
-
-initializeFirestore(app, {
-  ignoreUndefinedProperties: true,
-});
-
-export const prodDB = getFirestore(app);
 
 export const auth = getAuth(app);
 
