@@ -107,7 +107,7 @@ func initDB() error {
 
 // CORS で許可する origin。FRONTEND_ORIGINS にカンマ区切りで入れる。
 //
-// 本番は Cloudflare Workers 上の pos / mobile。プレビューはデプロイごとに
+// 本番は Cloudflare Workers 上の pos。プレビューはデプロイごとに
 // URL が変わって列挙できないので "*" を入れている（infra の
 // cloud_run_preview.tf を参照）。未設定ならローカル開発用のポートだけ許可する。
 func getAllowedOrigins() []string {

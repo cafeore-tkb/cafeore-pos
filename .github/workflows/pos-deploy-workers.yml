@@ -65,8 +65,7 @@ jobs:
               || github.event.pull_request.head.repo.full_name == github.repository) }}
 
     env:
-      # PR コメントを service ごとに1件へまとめるための目印。
-      # pos と mobile で別のコメントになるので、互いに上書きし合わない。
+      # PR コメントを1件へまとめるための目印。
       COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}

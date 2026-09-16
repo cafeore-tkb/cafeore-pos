@@ -8,7 +8,6 @@
     "fmt": "biome check --write",
     "common": "pnpm -F \"common\"",
     "pos": "pnpm -F \"pos\"",
-    "mobile": "pnpm -F \"mobile\"",
     "generate:types": "cd openapi && ./generate.sh",
     "generate:ts": "openapi-typescript openapi/openapi.yaml -o modules/common/types/api.ts",
     "validate:api": "swagger-cli validate openapi/openapi.yaml"
