@@ -183,8 +183,8 @@ importers:
         specifier: ^5.2.9
         version: 5.2.10
       '@fontsource/zen-old-mincho':
-        specifier: ^5.1.0
-        version: 5.2.8
+        specifier: ^5.3.0
+        version: 5.3.0
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.2
         version: 1.1.15(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -1495,8 +1495,8 @@ packages:
   '@fontsource-variable/noto-sans-jp@5.2.10':
     resolution: {integrity: sha512-m0XfZ38rZtCaGAuAQL0cBPQ6fc/RguYEOqw66zvuLOV9vNRUBf9MFqyoazTu2JVCRIcnkrxbwF29UUaHHgTKdg==}
 
-  '@fontsource/zen-old-mincho@5.2.8':
-    resolution: {integrity: sha512-ZMnFdz7/a97kdeR5KNfjiBJZc26BZhyI7+wgO87Z6lh+g6WtTJBvUokHyeQgjiCyXCXybpEuFLmc4zEZtzdNYA==}
+  '@fontsource/zen-old-mincho@5.3.0':
+    resolution: {integrity: sha512-pNvegTkx6rOQRaBMcUoxxeNoIRJajdY0TeX4ngf/26KrtsVoqY11ho6WlwPWDYHi7PY65vf88TV2xjIO+YxQ8Q==}
 
   '@gar/promise-retry@1.0.2':
     resolution: {integrity: sha512-Lm/ZLhDZcBECta3TmCQSngiQykFdfw+QtI1/GYMsZd4l3nG+P8WLB16XuS7WaBGLQ+9E+cOcWQsth9cayuGt8g==}
@@ -5595,6 +5595,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -7262,7 +7263,7 @@ snapshots:
 
   '@fontsource-variable/noto-sans-jp@5.2.10': {}
 
-  '@fontsource/zen-old-mincho@5.2.8': {}
+  '@fontsource/zen-old-mincho@5.3.0': {}
 
   '@gar/promise-retry@1.0.2':
     dependencies:
