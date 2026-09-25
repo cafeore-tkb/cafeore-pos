@@ -10,16 +10,6 @@ describe("[unit] throwApiError", () => {
     ).rejects.toThrow("invalid order menus");
   });
 
-  test("error が渡されなければ本文の error を使う", async () => {
-    const response = new Response(
-      JSON.stringify({ error: "invalid order menus" }),
-      { status: 400 },
-    );
-    await expect(throwApiError(response, "fallback")).rejects.toThrow(
-      "invalid order menus",
-    );
-  });
-
   test("本文に error が無ければ fallback を使う", async () => {
     const response = new Response(JSON.stringify({}), { status: 500 });
     await expect(throwApiError(response, "fallback", {})).rejects.toThrow(

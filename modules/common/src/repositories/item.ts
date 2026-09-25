@@ -98,10 +98,10 @@ export const itemRepoFactory = (): ItemRepository => {
 export const itemRepository: ItemRepository = itemRepoFactory();
 
 /**
- * API のエラーを Error にして投げる。API は { error: string } を返す。
+ * API のエラーを Error にして投げる。
  *
  * openapi-fetch はエラー時の本文を読み終えて error に入れているので、
- * 渡されていればそちらを使う。どちらからも取れなければ fallback を使う
+ * 渡されていればその文言を使う
  */
 export async function throwApiError(
   response: Response,
@@ -111,14 +111,12 @@ export async function throwApiError(
   if (hasErrorMessage(error)) {
     throw new Error(error.error);
   }
-  let message = fallback;
   try {
-    const body = (await response.json()) as unknown;
-    if (hasErrorMessage(body)) {
-      message = body.error;
-    }
-  } catch {}
-  throw new Error(message);
+    const body = (await response.json()) as { error?: string };
+    throw new Error(body.error ?? fallback);
+  } catch {
+    throw new Error(fallback);
+  }
 }
 
 const hasErrorMessage = (body: unknown): body is { error: string } =>
