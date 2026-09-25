@@ -86,6 +86,39 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	return buildOrderMenus(orderID, requests, existing, menus)
 }
 
+// グッズの item_type。フロントの getDrinkCups と同じく名前で判定する
+const itemTypeOthers = "others"
+
+// 構成品に飲み物（グッズ以外の item）が1つでもあれば true
+func hasDrink(menus []models.Menu) bool {
+	for _, menu := range menus {
+		for _, menuItem := range menu.MenuItems {
+			if menuItem.Item.ItemType.Name != itemTypeOthers {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// グッズだけの注文は作るカップが無いので、作成時点で提供済みにする。
+// クライアントの値は使わず、DB のメニュー構成で判定する。
+func markGoodsOnlyServed(db *gorm.DB, order *models.Order) error {
+	ids := make([]uuid.UUID, 0, len(order.OrderMenus))
+	for _, line := range order.OrderMenus {
+		ids = append(ids, line.MenuID)
+	}
+	var menus []models.Menu
+	if err := preloadMenu(db).Where("id IN ?", ids).Find(&menus).Error; err != nil {
+		return err
+	}
+	if !hasDrink(menus) {
+		now := order.CreatedAt
+		order.ReadyAt, order.ServedAt = &now, &now
+	}
+	return nil
+}
+
 // DB models → API models 変換関数
 func toOrderResponse(order *models.Order) models.OrderResponse {
 	resp := models.OrderResponse{
@@ -208,6 +241,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		order.OrderMenus = lines
+		if err := markGoodsOnlyServed(tx, &order); err != nil {
+			return err
+		}
 		return tx.Create(&order).Error
 	}); err != nil {
 		status := http.StatusInternalServerError
