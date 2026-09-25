@@ -90,6 +90,7 @@ func initDB() error {
 			&models.Comment{},
 			&models.OrderMenu{},
 			&models.MasterState{},
+			&models.ColorSetting{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
@@ -234,6 +235,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db)
+	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -274,6 +276,8 @@ func main() {
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
+
+		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 	}
 
 	// サーバー起動
@@ -287,6 +291,7 @@ func main() {
 	log.Printf("  GET  /health")
 	log.Printf("  GET  /api/items")
 	log.Printf("  GET  /api/item-types")
+	log.Printf("  GET  /api/color-settings")
 	log.Printf("  GET  /api/orders")
 	log.Printf("  GET  /api/orders/:id/comments")
 	log.Printf("  GET  /api/ws/orders")

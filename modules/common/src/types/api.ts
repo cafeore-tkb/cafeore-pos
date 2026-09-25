@@ -50,6 +50,10 @@ export interface paths {
     /** アイテムタイプ削除 */
     delete: operations["deleteItemType"];
   };
+  "/api/color-settings": {
+    /** 背景色設定一覧取得 */
+    get: operations["getColorSettings"];
+  };
   "/api/orders": {
     /** オーダー一覧取得 */
     get: operations["getOrders"];
@@ -269,6 +273,29 @@ export interface components {
     };
     MasterStateUpdateRequest: {
       type: string;
+    };
+    /**
+     * @description 背景色を設定する対象の種類
+     * @enum {string}
+     */
+    ColorTargetType: "Item" | "ItemType";
+    /**
+     * @description 背景色を適用する画面
+     * @enum {string}
+     */
+    ColorScreen: "master" | "serve";
+    ColorSettingResponse: {
+      /** Format: uuid */
+      id: string;
+      target_type: components["schemas"]["ColorTargetType"];
+      /**
+       * Format: uuid
+       * @description Item または ItemType の ID
+       */
+      target_id: string;
+      screen: components["schemas"]["ColorScreen"];
+      /** @example #bfdbfe */
+      color: string;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -529,6 +556,17 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
+      };
+    };
+  };
+  /** 背景色設定一覧取得 */
+  getColorSettings: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ColorSettingResponse"][];
+        };
       };
     };
   };

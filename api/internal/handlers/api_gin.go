@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 背景色設定一覧取得
+	// (GET /api/color-settings)
+	GetColorSettings(c *gin.Context)
 	// アイテムタイプ一覧取得
 	// (GET /api/item-types)
 	GetItemTypes(c *gin.Context)
@@ -105,6 +108,19 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetColorSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetColorSettings(c)
+}
 
 // GetItemTypes operation middleware
 func (siw *ServerInterfaceWrapper) GetItemTypes(c *gin.Context) {
@@ -660,6 +676,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.POST(options.BaseURL+"/api/item-types", wrapper.CreateItemType)
 	router.DELETE(options.BaseURL+"/api/item-types/:id", wrapper.DeleteItemType)
