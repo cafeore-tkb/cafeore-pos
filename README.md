@@ -120,11 +120,18 @@ PR ごとに違う DB を指せる。
 
 | PR の種類 | 使うブランチ |
 | --- | --- |
-| `api/**` を変えている | その PR 専用の `preview/pr-<番号>` |
+| DB のスキーマや中身に影響するファイルを変えている | その PR 専用の `preview/pr-<番号>` |
 | それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
 
-フロントだけの PR の backend は main と同じコードなので、スキーマが食い違わず
-共有ブランチで足りる。PR ごとに作っていた頃は、open な PR の数だけブランチが
+「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
+今は `api/`（イメージの中身すべて）と `.github/workflows/api-build.yml`
+（DB を触るステップ）。名前変更は移動前のパスも見る。**DB のスキーマや中身に
+影響するファイルを `api/` の外に置くときは、`DB_AFFECTING_PATHS` に足すこと**
+（例: ルートに `migrations/` を作る、seed を別の場所に置く）。
+
+それ以外の PR の backend は main と同じコードなので、スキーマが食い違わず
+共有ブランチで足りる。ただし共有ブランチの注文やレジ状態（`cashier_states`）は
+フロントだけの PR 同士で共有される。PR ごとに作っていた頃は、open な PR の数だけブランチが
 溜まってプランの上限（`branches limit exceeded`）に当たり、新しい PR の build が
 落ちていた。上限に当たった場合は、Neon のコンソールで不要な `preview/pr-*` を
 消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
