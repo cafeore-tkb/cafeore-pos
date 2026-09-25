@@ -33,8 +33,12 @@ name: pr / cleanup
 # 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
 # プレビュー URL の配信自体を止めること。
 
+# pull_request ではなく pull_request_target を使う。コンフリクトしている PR では
+# pull_request のワークフローが動かず、閉じても片付けが走らないため。
+# PR のコードは checkout せず PR 番号しか使わない。pull_request_target は fork の PR
+# にも secrets と id-token を渡すので、fork は各 job の if で必ず除外すること。
 on:
-  pull_request:
+  pull_request_target:
     types:
       - closed
 
@@ -54,8 +58,8 @@ jobs:
     name: Delete PR image tag
     runs-on: ubuntu-latest
 
-    # fork からの PR には id-token が発行されない。
-    # そもそも fork PR ではイメージを作っていないので消すものも無い。
+    # fork からの PR は必ず除外する。pull_request_target は fork の PR にも
+    # secrets と id-token を渡すため。fork の PR はイメージも作っていない。
     #
     # Dependabot も除外する。Dependabot は不要になった PR を自分で閉じることが
     # あり、その実行には id-token が渡らないため。人がマージした場合は

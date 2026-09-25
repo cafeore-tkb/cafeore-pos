@@ -175,6 +175,9 @@ fork からの PR は二重に止まる。
 
 デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
 そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
+例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR でも
+走らせるために `pull_request_target` を使っている。こちらは PR のコードを
+checkout せず PR 番号しか使わないので、fork の PR のコードが実行されることはない。
 
 一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
 上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば
