@@ -222,6 +222,8 @@ export const responseToOrderEntity = (
         name: cur.menu_name,
         price: cur.unit_price,
         assignee: cur.assignee,
+        readyAt: cur.ready_at ? new Date(cur.ready_at) : null,
+        servedAt: cur.served_at ? new Date(cur.served_at) : null,
       });
       acc.push(menu);
       return acc;

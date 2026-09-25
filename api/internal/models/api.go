@@ -102,6 +102,12 @@ type MenuInfo struct {
 	// MenuName 注文時点のメニュー名
 	MenuName string `json:"menu_name"`
 
+	// ReadyAt このカップが準備完了になった時刻。未準備なら null
+	ReadyAt *time.Time `json:"ready_at"`
+
+	// ServedAt このカップを提供した時刻。未提供なら null
+	ServedAt *time.Time `json:"served_at"`
+
 	// UnitPrice 注文時点のメニュー価格
 	UnitPrice int `json:"unit_price"`
 }

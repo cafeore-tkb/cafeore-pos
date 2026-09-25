@@ -27,14 +27,17 @@ func NewOrderHandler(db *gorm.DB, hub *Hub) *OrderHandler {
 // 注文履歴では販売終了（論理削除）したメニューも参照する。
 // 注文自体や販売用マスター一覧のスコープは変更しない。
 func preloadOrder(db *gorm.DB) *gorm.DB {
-	return db.Preload("OrderMenus.Menu", func(db *gorm.DB) *gorm.DB {
+	// カップ単位の状態更新で行の物理的な並びが変わっても、カップが注文した順に並ぶようにする
+	return db.Preload("OrderMenus", func(db *gorm.DB) *gorm.DB {
+		return db.Order("order_menus.id")
+	}).Preload("OrderMenus.Menu", func(db *gorm.DB) *gorm.DB {
 		return db.Unscoped()
 	}).Preload("OrderMenus.Menu.MenuItems.Item.ItemType").Preload("Comments")
 }
 
 var errInvalidOrderMenus = errors.New("invalid order menus")
 
-// 既存明細はIDで識別し、担当者以外の保存値は引き継ぐ。
+// 既存明細はIDで識別し、担当者以外の保存値（カップの状態を含む）は引き継ぐ。
 // 新規明細だけ販売中のマスターから価格・名称をスナップショットする。
 func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existing []models.OrderMenu, menus []models.Menu) ([]models.OrderMenu, error) {
 	byID := make(map[uuid.UUID]models.OrderMenu, len(existing))
@@ -50,13 +53,15 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 	lines := make([]models.OrderMenu, 0, len(requests))
 	for _, request := range requests {
 		menuID := uuid.UUID(request.MenuId)
-		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: request.Assignee}
+		// 時刻順に並ぶ UUIDv7 にして、ID順が注文した順になるようにする
+		line := models.OrderMenu{ID: uuid.Must(uuid.NewV7()), OrderID: orderID, MenuID: menuID, Assignee: request.Assignee}
 		if request.OrderMenuId != nil {
 			old, ok := byID[uuid.UUID(*request.OrderMenuId)]
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
 			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
+			line.ReadyAt, line.ServedAt = old.ReadyAt, old.ServedAt
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
 			menu, ok := masters[menuID]
@@ -107,6 +112,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 			menuInfo := models.MenuInfo{
 				Id: openapi_types.UUID(oi.ID), MenuName: oi.MenuName, UnitPrice: oi.UnitPrice,
 				Assignee: oi.Assignee, Menu: toMenuResponse(&oi.Menu),
+				ReadyAt: oi.ReadyAt, ServedAt: oi.ServedAt,
 			}
 			menus = append(menus, menuInfo)
 		}
@@ -362,87 +368,6 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
-}
-
-// PATCH /api/orders/:id/ready - オーダーを準備完了にする
-func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
-	id := c.Param("id")
-
-	orderID, err := uuid.Parse(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
-		return
-	}
-
-	var order models.Order
-	if err := h.db.First(&order, "id = ?", orderID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if order.ReadyAt == nil {
-		now := time.Now()
-		order.ReadyAt = &now
-	} else {
-		order.ReadyAt = nil
-	}
-
-	if err := h.db.Save(&order).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, toOrderResponse(&order))
-	h.broadcastOrders()
-}
-
-// PATCH /api/orders/:id/served - オーダーを提供済みにする
-func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
-	id := c.Param("id")
-
-	orderID, err := uuid.Parse(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
-		return
-	}
-
-	var order models.Order
-	if err := h.db.First(&order, "id = ?", orderID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if order.ServedAt == nil {
-		now := time.Now()
-		order.ServedAt = &now
-		order.ReadyAt = &now
-	} else {
-		order.ServedAt = nil
-		order.ReadyAt = nil
-	}
-
-	if err := h.db.Save(&order).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, toOrderResponse(&order))
-	h.broadcastOrders()
 }
 
 var upgrader = websocket.Upgrader{

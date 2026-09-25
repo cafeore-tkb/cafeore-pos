@@ -268,6 +268,8 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+		api.PATCH("/orders/:id/menus/:orderMenuId/ready", orderHandler.MarkOrderMenuReady)
+		api.PATCH("/orders/:id/menus/:orderMenuId/served", orderHandler.MarkOrderMenuServed)
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)

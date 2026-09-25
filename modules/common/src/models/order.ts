@@ -239,6 +239,8 @@ export class OrderEntity implements Order {
           abbr: item.abbr,
           item_type: item.item_type,
           assignee: menu.assignee,
+          orderMenuId: menu.orderMenuId,
+          status: menu.status,
         })),
       ),
     );

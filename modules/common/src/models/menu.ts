@@ -16,9 +16,18 @@ export const menuSchema = z.object({
   key: z.string(),
   items: z.array(menuItemSchema).min(1),
   assignee: z.string().nullable(),
+  // 注文明細（カップ）ごとの状態。注文に含まれるときだけ持つ
+  readyAt: z.date().nullable().optional(),
+  servedAt: z.date().nullable().optional(),
 });
 
 export type Menu = z.infer<typeof menuSchema>;
+
+/**
+ * カップの状態
+ * preparing: 準備中 / ready: 準備完了 / served: 提供済み
+ */
+export type CupStatus = "preparing" | "ready" | "served";
 
 type LegacyMenu = {
   id?: string;
@@ -40,6 +49,8 @@ export class MenuEntity implements Menu {
     private readonly _items: { item: WithId<ItemEntity>; quantity: number }[],
     private _assignee: string | null,
     private readonly _orderMenuId?: string,
+    private readonly _readyAt: Date | null = null,
+    private readonly _servedAt: Date | null = null,
   ) {}
 
   static createNew(menu: Omit<Menu, "id" | "assignee">): MenuEntity {
@@ -79,6 +90,8 @@ export class MenuEntity implements Menu {
       })),
       menu.assignee,
       "orderMenuId" in menu ? menu.orderMenuId : undefined,
+      "readyAt" in menu ? (menu.readyAt ?? null) : null,
+      "servedAt" in menu ? (menu.servedAt ?? null) : null,
     );
   }
 
@@ -112,6 +125,25 @@ export class MenuEntity implements Menu {
   set assignee(value: string | null) {
     this._assignee = value === "" ? null : value;
   }
+  get readyAt() {
+    return this._readyAt;
+  }
+  get servedAt() {
+    return this._servedAt;
+  }
+
+  /**
+   * カップの状態を取得する
+   */
+  get status(): CupStatus {
+    if (this._servedAt !== null) {
+      return "served";
+    }
+    if (this._readyAt !== null) {
+      return "ready";
+    }
+    return "preparing";
+  }
 
   toMenu(): WithId<Menu>;
   toMenu(): Menu;
@@ -128,6 +160,8 @@ export class MenuEntity implements Menu {
         quantity,
       })),
       assignee: this.assignee,
+      readyAt: this.readyAt,
+      servedAt: this.servedAt,
     };
   }
 

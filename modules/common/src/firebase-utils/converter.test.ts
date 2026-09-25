@@ -18,6 +18,8 @@ const response: OrderResponse = {
       menu_name: "注文時のセット名",
       unit_price: 500,
       assignee: null,
+      ready_at: null,
+      served_at: null,
       menu: {
         id: "00000000-0000-4000-8000-000000000003",
         name: "変更後のセット名",
@@ -70,6 +72,34 @@ describe("[unit] order snapshot conversion", () => {
     expect(orderEntityToCreateRequest(order).menu_ids[0]).not.toHaveProperty(
       "order_menu_id",
     );
+  });
+
+  test("converts each cup's ready and served status", () => {
+    const readyAt = "2026-09-11T00:05:00Z";
+    const servedAt = "2026-09-11T00:06:00Z";
+    const order = responseToOrderEntity({
+      ...response,
+      menus: [
+        response.menus[0],
+        { ...response.menus[0], ready_at: readyAt },
+        { ...response.menus[0], ready_at: readyAt, served_at: servedAt },
+      ],
+    });
+    expect(order.menus.map((menu) => menu.status)).toEqual([
+      "preparing",
+      "ready",
+      "served",
+    ]);
+    expect(order.menus[2].servedAt).toEqual(new Date(servedAt));
+    expect(order.getItems().map((item) => item.status)).toEqual([
+      "preparing",
+      "preparing",
+      "ready",
+      "ready",
+      "served",
+      "served",
+    ]);
+    expect(order.clone().menus[2].status).toBe("served");
   });
 
   test("zero-price snapshots are not replaced with current prices", () => {

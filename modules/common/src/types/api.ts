@@ -72,6 +72,20 @@ export interface paths {
     /** オーダーを提供完了にする */
     patch: operations["markOrderServe"];
   };
+  "/api/orders/{id}/menus/{orderMenuId}/ready": {
+    /**
+     * 注文明細（カップ）を準備完了にする
+     * @description 準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     */
+    patch: operations["markOrderMenuReady"];
+  };
+  "/api/orders/{id}/menus/{orderMenuId}/served": {
+    /**
+     * 注文明細（カップ）を提供完了にする
+     * @description 提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     */
+    patch: operations["markOrderMenuServe"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -178,6 +192,16 @@ export interface components {
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
       assignee: string | null;
+      /**
+       * Format: date-time
+       * @description このカップが準備完了になった時刻。未準備なら null
+       */
+      ready_at: string | null;
+      /**
+       * Format: date-time
+       * @description このカップを提供した時刻。未提供なら null
+       */
+      served_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -647,6 +671,62 @@ export interface operations {
         };
       };
       /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文明細（カップ）を準備完了にする
+   * @description 準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   */
+  markOrderMenuReady: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description 注文明細ID */
+        orderMenuId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description オーダーまたは注文明細が見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文明細（カップ）を提供完了にする
+   * @description 提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   */
+  markOrderMenuServe: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description 注文明細ID */
+        orderMenuId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description オーダーまたは注文明細が見つかりません */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
