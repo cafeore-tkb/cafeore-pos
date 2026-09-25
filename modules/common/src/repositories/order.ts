@@ -88,6 +88,36 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
+    readyCup: async (id: string, cupId: string): Promise<void> => {
+      const { error, response } = await client.PATCH(
+        "/api/orders/{id}/cups/{cupId}/ready",
+        {
+          params: {
+            path: { id, cupId },
+          },
+        },
+      );
+
+      if (error || !response.ok) {
+        await throwApiError(response, "Failed to mark cup as ready");
+      }
+    },
+
+    serveCup: async (id: string, cupId: string): Promise<void> => {
+      const { error, response } = await client.PATCH(
+        "/api/orders/{id}/cups/{cupId}/served",
+        {
+          params: {
+            path: { id, cupId },
+          },
+        },
+      );
+
+      if (error || !response.ok) {
+        await throwApiError(response, "Failed to mark cup as served");
+      }
+    },
+
     addComment: async (
       id: string,
       author: string,

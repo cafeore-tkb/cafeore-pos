@@ -1,4 +1,5 @@
 import {
+  type CupStatus,
   type OrderEntity,
   type WithId,
   orderRepository,
@@ -21,15 +22,47 @@ type props = {
   comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
+// マスター・提供画面ではカード1枚がカップ1杯（cupId）にあたる
+type CupItem = ReturnType<OrderEntity["getItems"]>[number] & {
+  cupId?: string;
+  status?: CupStatus;
+};
+
 export function OrderInfoCard({ order, user, timing, comment }: props) {
   const changeReady = () => orderRepository.ready(order.id);
 
   const changeServed = () => orderRepository.serve(order.id);
 
-  const displayOrders =
+  const displayOrders: CupItem[] =
     user === "cashier" || user === "dashboard"
       ? order.getItems()
-      : order.getDrinkCups();
+      : order.getCups();
+
+  // 提供画面ではカップを押すと提供済み、マスター画面では準備完了を切り替える
+  const cupAction =
+    timing === "present" && (user === "serve" || user === "master")
+      ? user
+      : null;
+
+  const changeCup = (item: CupItem) => {
+    const { cupId } = item;
+    if (!cupId) return;
+    if (cupAction === "master") {
+      orderRepository.readyCup(order.id, cupId);
+      return;
+    }
+    const changeCupServed = () => orderRepository.serveCup(order.id, cupId);
+    changeCupServed();
+    if (item.status !== "served") {
+      toast(`提供完了 No.${order.orderId} ${item.abbr}`, {
+        description: `${dayjs().format("H時m分")}`,
+        action: {
+          label: "取消",
+          onClick: () => changeCupServed(),
+        },
+      });
+    }
+  };
 
   return (
     <div key={order.id}>
@@ -65,7 +98,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                 {dayjs(order.createdAt).format("H:mm")}
               </div>
               <CardTitle className="flex h-10 items-end justify-center">
-                <p className="text-5xl">{order.getDrinkCups().length}</p>
+                <p className="text-5xl">{order.getCups().length}</p>
                 <p className="text-sm">杯</p>
               </CardTitle>
             </div>
@@ -79,7 +112,17 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
             )}
           >
             {displayOrders.map((item, idx) => (
-              <div key={`${idx}-${item.id}`}>
+              <CupButton
+                key={item.cupId ?? `${idx}-${item.id}`}
+                onClick={
+                  // マスター画面で提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
+                  cupAction &&
+                  item.cupId &&
+                  !(cupAction === "master" && item.status === "served")
+                    ? () => changeCup(item)
+                    : undefined
+                }
+              >
                 <Card
                   className={cn(
                     "p-3",
@@ -95,9 +138,11 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                     //   item.item_type.name === "hotOre" &&
                     //   "bg-orange-300",
                     (user === "master" || user === "serve") &&
-                      ((order.status === "calling" &&
+                      (((order.status === "calling" ||
+                        item.status !== "preparing") &&
                         "bg-gray-200 text-gray-500") ||
                         (item.item_type.name === "iceOre" && "bg-sky-200")),
+                    isPartlyServed(order, item) && "opacity-50",
                     user === "cashier" &&
                       item.item_type.name === "others" &&
                       "bg-green-300",
@@ -106,6 +151,9 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                   <h3 className="text-center font-bold text-3xl">
                     {item.abbr}
                   </h3>
+                  {isPartlyServed(order, item) && (
+                    <p className="text-center font-bold text-sm">提供済</p>
+                  )}
                   {item.assignee && (
                     <p
                       className={cn(
@@ -117,7 +165,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                     </p>
                   )}
                 </Card>
-              </div>
+              </CupButton>
             ))}
           </div>
 
@@ -195,6 +243,26 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     </div>
   );
 }
+
+// 押して状態を切り替えられるカップだけボタンにする
+const CupButton = ({
+  onClick,
+  children,
+}: {
+  onClick: (() => void) | undefined;
+  children: React.ReactNode;
+}) =>
+  onClick ? (
+    <button type="button" onClick={onClick} className="block w-full text-left">
+      {children}
+    </button>
+  ) : (
+    <div>{children}</div>
+  );
+
+// 一部だけ提供済みの注文で、提供済みのカップを見分けられるようにする
+const isPartlyServed = (order: OrderEntity, item: CupItem) =>
+  order.status !== "served" && item.status === "served";
 
 const diffTime = (order: OrderEntity) => {
   if (order.servedAt == null) return "未提供";

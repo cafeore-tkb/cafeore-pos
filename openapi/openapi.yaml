@@ -411,6 +411,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/cups/{cupId}/ready:
+    patch:
+      summary: カップを準備完了にする
+      description: 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+      operationId: markOrderCupReady
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+        - name: cupId
+          in: path
+          required: true
+          description: カップID（OrderResponse.cups[].id）
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: IDの形式が不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: オーダーまたはカップが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/cups/{cupId}/served:
+    patch:
+      summary: カップを提供完了にする
+      description: 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+      operationId: markOrderCupServe
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+        - name: cupId
+          in: path
+          required: true
+          description: カップID（OrderResponse.cups[].id）
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: IDの形式が不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: オーダーまたはカップが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders/{id}/comments:
     get:
       summary: 特定オーダーのコメント一覧取得
@@ -723,6 +801,35 @@ components:
         assignee:
           type: string
           nullable: true
+    # 注文の1杯。注文明細（メニュー）の構成品を数量分に展開したもの（グッズは含まない）
+    OrderCupResponse:
+      type: object
+      required:
+        - id
+        - order_menu_id
+        - item
+        - ready_at
+        - served_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_menu_id:
+          type: string
+          format: uuid
+          description: このカップを含む注文明細のID（MenuInfo.id）
+        item:
+          $ref: '#/components/schemas/ItemResponse'
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: このカップが準備完了になった時刻。未準備なら null
+        served_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: このカップを提供した時刻。未提供なら null
     # Create用のMenuInfo
     MenuInfoCreate:
       type: object
@@ -750,6 +857,7 @@ components:
         - billing_amount
         - received
         - menus
+        - cups
       properties:
         id:
           type: string
@@ -780,6 +888,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MenuInfo'
+        cups:
+          type: array
+          description: 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
+          items:
+            $ref: '#/components/schemas/OrderCupResponse'
         comments:
           type: array
           items:
