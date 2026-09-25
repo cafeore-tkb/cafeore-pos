@@ -9,6 +9,53 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ColorScreen.
+const (
+	ColorScreenMaster ColorScreen = "master"
+	ColorScreenServe  ColorScreen = "serve"
+)
+
+// Defines values for ColorTargetType.
+const (
+	ColorTargetTypeItem     ColorTargetType = "Item"
+	ColorTargetTypeItemType ColorTargetType = "ItemType"
+)
+
+// ColorScreen 背景色を適用する画面
+type ColorScreen string
+
+// ColorSettingResponse defines model for ColorSettingResponse.
+type ColorSettingResponse struct {
+	Color string             `json:"color"`
+	Id    openapi_types.UUID `json:"id"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorSettingUpsertRequest defines model for ColorSettingUpsertRequest.
+type ColorSettingUpsertRequest struct {
+	Color string `json:"color"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorTargetType 背景色を設定する対象の種類
+type ColorTargetType string
+
 // CommentCreateRequest defines model for CommentCreateRequest.
 type CommentCreateRequest struct {
 	Author string `json:"author"`
@@ -193,6 +240,9 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 }
+
+// UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
+type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest
