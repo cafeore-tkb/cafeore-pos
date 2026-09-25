@@ -9,10 +9,13 @@ const subscribe = (callback: () => void) => {
   };
 };
 
+// 戻り値はオブジェクトにしておく。真偽値を返す形だと、状態を増やしたときに
+// 古い呼び出し側が `if (useOnlineStatus())` のまま常に真になり、型でも気づけない
 export const useOnlineStatus = () => {
-  return useSyncExternalStore(
+  const isOnline = useSyncExternalStore(
     subscribe,
     () => navigator.onLine,
     () => true,
   );
+  return { isOnline };
 };

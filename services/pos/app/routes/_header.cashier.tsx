@@ -26,7 +26,7 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
-  const isNetworkOnline = useOnlineStatus();
+  const { isOnline: isNetworkOnline } = useOnlineStatus();
   const submit = useSubmit();
   const canSubmitOrder = useMemo(
     () => isNetworkOnline && status === "open",
