@@ -3,8 +3,6 @@ package handlers
 import (
 	"cafeore-pos/api/internal/models"
 
-	"log"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -27,41 +25,34 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer func() {
-		h.hub.Unregister(conn)
-		if err := conn.Close(); err != nil {
-    	log.Println("failed to close connection:", err)
-		}
-	}()
 
-	h.hub.Register(conn)
+	client := h.hub.Register(conn)
 
-	// 接続直後に現在のデータを送信
-	h.broadcastOrders()
-	h.broadcastMasterState()
-
-	// 接続維持（クライアントからのメッセージは今は無視）
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			break
-		}
+	// 接続直後に現在のデータをこの接続にだけ送信
+	// （全体へ配り直すと、1台つながるたびに既存の全端末へ全件が流れてしまう）
+	if msg, ok := ordersMessage(h.db); ok {
+		client.Send(msg)
 	}
+	if msg, ok := masterStateMessage(h.db); ok {
+		client.Send(msg)
+	}
+
+	// 切断されるまで接続を維持する
+	client.ReadPump()
 }
 
-func (h *OrderHandler) broadcastMasterState() {
+// 最新のオーダーストップ状態を WSMessage にする。まだ無ければ ok = false
+func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 	var state models.MasterState
 
-	if err := h.db.
+	if err := db.
 		Order("created_at DESC").
 		First(&state).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return
-		}
-		return
+		return WSMessage{}, false
 	}
 
-	h.hub.Broadcast(WSMessage{
+	return WSMessage{
 		Type:        WSMessageTypeMasterState,
 		MasterState: &state,
-	})
+	}, true
 }
