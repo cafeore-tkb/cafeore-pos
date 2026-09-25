@@ -30,20 +30,22 @@ jobs:
           working-directory: api
           version: v2.9.0
 
-  # test:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-go@v5
-  #       with:
-  #         go-version-file: 'api/go.mod'
-  #     - run: go test -v ./...
+  # テストは DB を使わない（GORM の DryRun）ので、DB のサービスは要らない。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'api/go.mod'
+      - run: go test -v ./...
 
-  # build:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-go@v5
-  #       with:
-  #         go-version-file: 'api/go.mod'
-  #     - run: go build -v ./cmd/server
+  # PR では api-build もイメージをビルドするが、merge_group で走るのはこちらだけ。
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'api/go.mod'
+      - run: go build -v ./cmd/server
