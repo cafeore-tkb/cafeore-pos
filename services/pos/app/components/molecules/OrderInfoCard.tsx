@@ -115,7 +115,12 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
               <CupButton
                 key={item.cupId ?? `${idx}-${item.id}`}
                 onClick={
-                  cupAction && item.cupId ? () => changeCup(item) : undefined
+                  // マスター画面で提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
+                  cupAction &&
+                  item.cupId &&
+                  !(cupAction === "master" && item.status === "served")
+                    ? () => changeCup(item)
+                    : undefined
                 }
               >
                 <Card

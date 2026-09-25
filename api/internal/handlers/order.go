@@ -30,8 +30,6 @@ func NewOrderHandler(db *gorm.DB, hub *Hub) *OrderHandler {
 func preloadOrder(db *gorm.DB) *gorm.DB {
 	unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
 	return db.
-		// 行の物理的な並びが変わっても、明細が注文した順（UUIDv7 の ID 順）に並ぶようにする
-		Preload("OrderMenus", func(db *gorm.DB) *gorm.DB { return db.Order("order_menus.id") }).
 		Preload("OrderMenus.Menu", unscoped).
 		Preload("OrderMenus.Menu.MenuItems.Item.ItemType").
 		// カップは注文した順に並べ、後から削除した item・種類も表示できるようにする
@@ -59,8 +57,7 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 	lines := make([]models.OrderMenu, 0, len(requests))
 	for _, request := range requests {
 		menuID := uuid.UUID(request.MenuId)
-		// 時刻順に並ぶ UUIDv7 にして、ID順が注文した順になるようにする
-		line := models.OrderMenu{ID: uuid.Must(uuid.NewV7()), OrderID: orderID, MenuID: menuID, Assignee: request.Assignee}
+		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: request.Assignee}
 		if request.OrderMenuId != nil {
 			old, ok := byID[uuid.UUID(*request.OrderMenuId)]
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {

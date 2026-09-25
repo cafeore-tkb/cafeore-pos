@@ -22,9 +22,6 @@ func TestBuildOrderMenusSnapshotsNewLines(t *testing.T) {
 	if len(lines) != 2 || lines[0].ID == lines[1].ID || lines[0].ID == uuid.Nil {
 		t.Fatalf("distinct order lines required: %+v", lines)
 	}
-	if lines[0].ID.String() >= lines[1].ID.String() {
-		t.Fatalf("line IDs must follow the requested order: %+v", lines)
-	}
 	for _, line := range lines {
 		if line.OrderID != orderID || line.MenuID != menuID || line.MenuName != "セット" || line.UnitPrice != 0 {
 			t.Fatalf("incorrect snapshot: %+v", line)
@@ -113,11 +110,6 @@ func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 	}
 	if _, ok := query.Statement.Preloads["OrderMenus.Menu.MenuItems.Item.ItemType"]; !ok {
 		t.Fatal("must preload menu composition")
-	}
-	lineScope := query.Statement.Preloads["OrderMenus"][0].(func(*gorm.DB) *gorm.DB)
-	var lines []models.OrderMenu
-	if lineSQL := lineScope(db).Find(&lines).Statement.SQL.String(); !strings.Contains(lineSQL, "ORDER BY order_menus.id") {
-		t.Fatalf("lines must be ordered by line ID: %s", lineSQL)
 	}
 	cupScope := query.Statement.Preloads["OrderCups"][0].(func(*gorm.DB) *gorm.DB)
 	var cups []models.OrderCup
