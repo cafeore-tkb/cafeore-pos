@@ -40,7 +40,7 @@ export const orderRepoFactory = (): OrderRepository => {
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to create item");
+      await throwApiError(response, "Failed to create order", error);
     }
 
     const returnedOrder = responseToOrderEntity(data);

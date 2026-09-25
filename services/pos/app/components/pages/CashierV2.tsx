@@ -5,7 +5,7 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
@@ -20,6 +20,10 @@ import {
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
+import {
+  dismissSubmitFailed,
+  notifySubmitFailed,
+} from "../functional/submitFailedToast";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -42,7 +46,8 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
-  submitPayload: (order: OrderEntity) => void;
+  /** 保存に失敗したら reject する */
+  submitPayload: (order: OrderEntity) => Promise<void>;
   syncOrder: (order: OrderEntity) => void;
 };
 
@@ -104,6 +109,10 @@ const CashierV2 = ({
 
   const printer = usePrinter();
 
+  // 保存中の二重送信を防ぐ。ref は同じ描画のうちに Enter が連打された場合のため
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+
   usePreventNumberKeyUpDown();
 
   /**
@@ -120,7 +129,10 @@ const CashierV2 = ({
     renewUISession();
   }, [dispatchOrder, resetStatus, renewUISession]);
 
-  const submitOrder = useCallback(() => {
+  const submitOrder = useCallback(async () => {
+    if (submittingRef.current) {
+      return;
+    }
     if (newOrder.getCharge() < 0) {
       return;
     }
@@ -133,8 +145,23 @@ const CashierV2 = ({
     goodsOnlyServed(submitOne);
     // 備考を追加
     submitOne.addComment("cashier", descComment);
+
+    // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
+    // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await submitPayload(submitOne);
+    } catch (error) {
+      console.error(error);
+      notifySubmitFailed(submitOne.orderId, error);
+      return;
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+    dismissSubmitFailed();
     printer.printOrderLabel(submitOne);
-    submitPayload(submitOne);
 
     // オフライン時（手動番号指定時）は次の番号を自動設定
     if (manualOrderId !== null && wsStatus !== "open") {
@@ -346,11 +373,20 @@ const CashierV2 = ({
               focus={inputStatus === "submit"}
               number={5}
             />
-            <SubmitSection
-              submitOrder={submitOrder}
-              order={newOrder}
-              focus={inputStatus === "submit"}
-            />
+            {/* disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
+            <div
+              aria-busy={submitting}
+              className={cn(submitting && "pointer-events-none opacity-50")}
+            >
+              <SubmitSection
+                submitOrder={submitOrder}
+                order={newOrder}
+                focus={inputStatus === "submit"}
+              />
+              {submitting && (
+                <p className="text-center text-sm text-stone-500">保存中…</p>
+              )}
+            </div>
           </div>
         </div>
         <audio src={bellTwice} ref={soundRef}>
