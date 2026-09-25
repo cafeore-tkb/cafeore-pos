@@ -33,8 +33,18 @@ name: pr / cleanup
 # 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
 # プレビュー URL の配信自体を止めること。
 
+# pull_request ではなく pull_request_target を使う。
+#
+# GitHub はコンフリクトしている PR では pull_request のワークフローを動かさない。
+# そのため、コンフリクトしたまま閉じた PR では片付けが走らず、Neon のブランチや
+# タグが残っていた（#698 の preview/pr-698 など。#740）。pull_request_target は
+# base ブランチ側の定義で動くので、コンフリクトの影響を受けない。
+#
+# pull_request_target は secrets 付きで動くが、この workflow は PR のコードを
+# checkout せず、PR 番号しか使わないので、fork の PR のコードが実行されることはない。
+# それでも fork の PR は下の各 job の if で除外している。
 on:
-  pull_request:
+  pull_request_target:
     types:
       - closed
 
