@@ -92,6 +92,32 @@ func TestOrderResponseIncludesSnapshotsAndDeletedMenu(t *testing.T) {
 	}
 }
 
+func TestHasDrinkJudgesByItemType(t *testing.T) {
+	menu := func(typeNames ...string) models.Menu {
+		m := models.Menu{ID: uuid.New()}
+		for _, name := range typeNames {
+			m.MenuItems = append(m.MenuItems, models.MenuItem{Quantity: 1, Item: models.Item{ItemType: models.ItemType{Name: name}}})
+		}
+		return m
+	}
+	cases := map[string]struct {
+		menus []models.Menu
+		want  bool
+	}{
+		"goods only":     {[]models.Menu{menu("others"), menu("others", "others")}, false},
+		"with drink":     {[]models.Menu{menu("others"), menu("hot")}, true},
+		"set with drink": {[]models.Menu{menu("others", "milk")}, true},
+		"empty":          {nil, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := hasDrink(tc.menus); got != tc.want {
+				t.Fatalf("hasDrink = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=localhost dbname=unused", PreferSimpleProtocol: true}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
 	if err != nil {
