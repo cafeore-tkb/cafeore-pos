@@ -117,8 +117,7 @@ jobs:
       # cleanup 側（pr-cleanup.yml）と**必ず同じ規則**にすること。
       # ずれると PR を閉じてもブランチが消えない。
       NEON_BRANCH_PREFIX: preview/pr-
-      # DB に影響する変更が無い PR が共有で使うブランチ。pr-cleanup は
-      # NEON_BRANCH_PREFIX の付いたブランチしか消さないので、これは残り続ける。
+      # DB に影響する変更が無い PR が共有で使うブランチ（pr-cleanup では消えない）。
       NEON_SHARED_BRANCH: preview/shared
 
     steps:
@@ -182,26 +181,13 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       # PR が DB のスキーマや中身に影響するファイルを変えているかを調べる。
-      #
-      # 専用の Neon ブランチが要るのは、プレビューの DB が main と違う状態になりうる
-      # PR だけ。それ以外の PR の backend は main と同じコードなので、共有ブランチでも
-      # スキーマは食い違わない。PR ごとに作っていた頃は open な PR の数だけブランチが
-      # 溜まり、プランの上限（branches limit exceeded）で新しい PR の build が落ちていた。
-      #
-      # 対象は DB_AFFECTING_PATHS（grep -E）。今は次の 2 つ。
-      #   - api/                             … イメージの中身すべて（モデル、AutoMigrate の
-      #                                        一覧、init の SQL、seed など）
-      #   - .github/workflows/api-build.yml  … Neon ブランチの作り方、拡張の導入、
-      #                                        RUN_MIGRATIONS など DB を触るステップ
-      # **DB のスキーマや中身に影響するファイルを api/ の外に置くときは、ここに足すこと**
-      # （例: ルートに migrations/ を作る、seed を別の場所に置く）。README の
-      # 「PR ごとの Neon ブランチ」も合わせて直す。
-      #
-      # 名前変更したファイルは移動前のパス（previous_filename）も見る。api/ の外へ
-      # 移すだけの PR も api/ を変えているため。
+      # 当たらない PR の backend は main と同じコードなので、共有ブランチで足りる。
+      # **DB に影響するファイルを api/ の外に置くときは DB_AFFECTING_PATHS に足すこと**
+      # （README の「PR ごとの Neon ブランチ」も直す）。
+      # 名前変更は移動前のパスも見る。api/ の外へ移すだけの PR も api/ を変えているため。
       - name: DB に影響する変更があるか調べる
         id: changes
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && vars.NEON_PROJECT_ID != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
@@ -236,10 +222,11 @@ jobs:
         run: |
           set -uo pipefail
 
-          if [ "$DB_AFFECTED" = "true" ]; then
-            branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
-          else
+          # 判定が取れなかったときは専用ブランチ側に倒す
+          if [ "$DB_AFFECTED" = "false" ]; then
             branch="$NEON_SHARED_BRANCH"
+          else
+            branch="$NEON_BRANCH_PREFIX$PR_NUMBER"
           fi
           neon() { npx --yes neonctl@3 "$@" --project-id "$NEON_PROJECT_ID"; }
 
@@ -255,12 +242,11 @@ jobs:
           if [ "$status" -ne 0 ]; then
             if printf '%s\n' "$out" | grep -qiE 'already exists|not unique'; then
               echo "$branch は既にある。作成をスキップする"
-            elif printf '%s\n' "$out" | grep -qi 'limit exceeded'; then
-              echo "$out"
-              echo "::error::Neon のブランチ数が上限に達していて $branch を作れない。Neon のコンソールで、閉じた PR や不要な PR の preview/pr-* ブランチを消してから re-run すること"
-              exit "$status"
             else
               echo "$out"
+              if printf '%s\n' "$out" | grep -qi 'limit exceeded'; then
+                echo "::error::Neon のブランチ数が上限に達していて $branch を作れない。Neon のコンソールで、閉じた PR や不要な PR の preview/pr-* ブランチを消してから re-run すること"
+              fi
               exit "$status"
             fi
           fi

@@ -116,7 +116,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 `NEON_PROJECT_ID` が設定されていれば、PR のプレビュー用に Neon のブランチを
 **0.25〜1 CU** で用意し、その接続文字列をプレビュー用 Cloud Run の
 `DATABASE_URL` に渡す。Cloud Run の環境変数はリビジョン単位なので、
-PR ごとに違う DB を指せる。
+リビジョンごとに違う DB を指せる。
 
 | PR の種類 | 使うブランチ |
 | --- | --- |
@@ -124,17 +124,14 @@ PR ごとに違う DB を指せる。
 | それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
 
 「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
-今は `api/`（イメージの中身すべて）と `.github/workflows/api-build.yml`
-（DB を触るステップ）。名前変更は移動前のパスも見る。**DB のスキーマや中身に
-影響するファイルを `api/` の外に置くときは、`DB_AFFECTING_PATHS` に足すこと**
+今は `api/` と `.github/workflows/api-build.yml`。**DB のスキーマや中身に影響する
+ファイルを `api/` の外に置くときは、`DB_AFFECTING_PATHS` に足すこと**
 （例: ルートに `migrations/` を作る、seed を別の場所に置く）。
 
-それ以外の PR の backend は main と同じコードなので、スキーマが食い違わず
-共有ブランチで足りる。ただし共有ブランチの注文やレジ状態（`cashier_states`）は
-フロントだけの PR 同士で共有される。PR ごとに作っていた頃は、open な PR の数だけブランチが
-溜まってプランの上限（`branches limit exceeded`）に当たり、新しい PR の build が
-落ちていた。上限に当たった場合は、Neon のコンソールで不要な `preview/pr-*` を
-消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
+それ以外の PR の backend は main と同じコードなので、共有ブランチで足りる。
+ただし共有ブランチの注文やレジ状態（`cashier_states`）は、それらの PR 同士で共有される。
+プランの上限（`branches limit exceeded`）に当たった場合は、Neon のコンソールで
+不要な `preview/pr-*` を消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
 
 ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
 モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
@@ -143,7 +140,7 @@ PR ごとに違う DB を指せる。
 `api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
 初期化ディレクトリにマウントしているだけなので Neon には効かない。
 
-プレビューは空の DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
+プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
 渡している（下の[環境変数](#backend-の環境変数)を参照）。
 
 Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
