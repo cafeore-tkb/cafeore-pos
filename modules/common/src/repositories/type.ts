@@ -16,7 +16,10 @@ export type MenuRepository = BaseRepository<MenuEntity>;
 
 export type ItemTypeRepository = BaseRepository<ItemType>;
 
+// 背景色設定は対象と画面の組で一意なので、save は作成・更新を兼ねる
 export type ColorSettingRepository = {
+  save(data: ColorSetting): Promise<WithId<ColorSetting>>;
+  delete(id: string): Promise<void>;
   findAll(): Promise<WithId<ColorSetting>[]>;
 };
 
