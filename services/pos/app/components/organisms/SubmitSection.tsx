@@ -1,5 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
-import { shouldSplitOrder, useMenuMaster } from "@cafeore/common";
+import { shouldSplitOrder } from "@cafeore/common";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "../ui/button";
 
@@ -16,10 +16,9 @@ export const SubmitSection = ({ submitOrder, order, focus }: props) => {
     [order],
   );
 
-  const itemMaster = useMenuMaster().items;
   const needsSplit = useMemo(
-    () => shouldSplitOrder(order.menus, itemMaster),
-    [order.menus, itemMaster],
+    () => shouldSplitOrder(order.menus),
+    [order.menus],
   );
 
   /**
