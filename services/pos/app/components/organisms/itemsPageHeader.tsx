@@ -14,7 +14,6 @@ const navItems: NavItem[] = [
   { label: "アイテム新規作成", to: "/items/new" },
   { label: "タイプ一覧", to: "/item-types", exact: true },
   { label: "タイプ新規作成", to: "/item-types/new" },
-  { label: "背景色設定", to: "/color-settings" },
 ];
 
 export function ItemsPageHeader() {
@@ -32,7 +31,7 @@ export function ItemsPageHeader() {
       <div className="space-y-1">
         <h1 className="font-semibold text-2xl tracking-tight">商品管理</h1>
         <p className="text-muted-foreground text-sm">
-          メニュー、構成アイテム、アイテムタイプ、背景色を管理します
+          メニュー、構成アイテム、アイテムタイプを管理します
         </p>
       </div>
 
