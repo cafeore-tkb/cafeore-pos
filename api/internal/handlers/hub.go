@@ -13,7 +13,7 @@ import (
 const (
 	// 1回の書き込みにかけてよい時間。応答しない端末で送信 goroutine が止まり続けないようにする
 	wsWriteWait = 10 * time.Second
-	// この間に pong（かメッセージ）が来なければ切れたとみなす
+	// pong を受けるたびに読み込み期限をこの分だけ延ばす。この間に pong が来なければ切れたとみなす
 	wsPongWait = 60 * time.Second
 	// ping を送る間隔。wsPongWait より短くする
 	wsPingPeriod = 30 * time.Second

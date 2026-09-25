@@ -9,7 +9,7 @@ describe("[unit] getReconnectDelay", () => {
   test("doubles from base and caps at max", () => {
     const max = () => 1 - Number.EPSILON;
     const delays = [0, 1, 2, 3, 4, 5, 6, 10].map((attempt) =>
-      getReconnectDelay(attempt, { baseMs: 500, maxMs: 15_000, random: max }),
+      getReconnectDelay(attempt, { random: max }),
     );
     expect(delays).toEqual([
       500, 1000, 2000, 4000, 8000, 15_000, 15_000, 15_000,
@@ -17,11 +17,10 @@ describe("[unit] getReconnectDelay", () => {
   });
 
   test("jitter stays between half and full of the ceiling", () => {
-    const opts = { baseMs: 500, maxMs: 15_000 };
-    expect(getReconnectDelay(3, { ...opts, random: () => 0 })).toBe(2000);
-    expect(getReconnectDelay(3, { ...opts, random: () => 0.5 })).toBe(3000);
+    expect(getReconnectDelay(3, { random: () => 0 })).toBe(2000);
+    expect(getReconnectDelay(3, { random: () => 0.5 })).toBe(3000);
     for (let i = 0; i < 100; i++) {
-      const delay = getReconnectDelay(20, opts);
+      const delay = getReconnectDelay(20);
       expect(delay).toBeGreaterThanOrEqual(7500);
       expect(delay).toBeLessThanOrEqual(15_000);
     }
@@ -66,8 +65,6 @@ describe("[unit] createReconnectingWebSocket", () => {
         sockets.push(socket);
         return socket as unknown as WebSocket;
       },
-      baseMs: 500,
-      maxMs: 15_000,
     });
 
   beforeEach(() => {
@@ -158,9 +155,6 @@ describe("[unit] createReconnectingWebSocket", () => {
 
     win.dispatchEvent(new Event("online"));
     expect(sockets).toHaveLength(6);
-    // つながっている（試行中の）ときは何もしない
-    win.dispatchEvent(new Event("online"));
-    expect(sockets).toHaveLength(6);
 
     sockets[5].drop();
     doc.visibilityState = "hidden";
@@ -177,6 +171,97 @@ describe("[unit] createReconnectingWebSocket", () => {
     conn.close();
   });
 
+  test("online replaces a socket that looks open", () => {
+    const conn = create();
+    sockets[0].onopen?.();
+    win.dispatchEvent(new Event("online"));
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+    // 作り直しの間は open のまま
+    sockets[1].onopen?.();
+    expect(statuses).toEqual(["open"]);
+
+    // 古い socket から遅れて届いたイベントは無視する
+    sockets[0].onmessage?.({ data: "stale" } as MessageEvent);
+    sockets[0].drop();
+    expect(messages).toEqual([]);
+    expect(statuses).toEqual(["open"]);
+    vi.advanceTimersByTime(60_000);
+    expect(sockets).toHaveLength(2);
+    conn.close();
+  });
+
+  test("online also replaces a socket that is still connecting", () => {
+    const conn = create();
+    win.dispatchEvent(new Event("online"));
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+    // 古い socket のつなぎに行った時間切れで、新しい socket が捨てられない
+    vi.advanceTimersByTime(9_999);
+    sockets[1].onopen?.();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets[1].closed).toBe(false);
+    expect(sockets).toHaveLength(2);
+    expect(statuses).toEqual(["open"]);
+    conn.close();
+  });
+
+  test("becomes closed when the replacement fails to connect", () => {
+    const conn = create();
+    sockets[0].onopen?.();
+    win.dispatchEvent(new Event("online"));
+    sockets[1].drop();
+    expect(statuses).toEqual(["open", "closed"]);
+    // 古い socket の onclose が遅れて来ても、再接続は1つだけ予約される
+    sockets[0].onclose?.();
+    vi.advanceTimersByTime(499);
+    expect(sockets).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(3);
+    sockets[2].onopen?.();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets).toHaveLength(3);
+    expect(statuses).toEqual(["open", "closed", "open"]);
+    conn.close();
+  });
+
+  test("a short hide does not replace the socket", () => {
+    const conn = create();
+    sockets[0].onopen?.();
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(29_999);
+    doc.visibilityState = "visible";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].closed).toBe(false);
+    conn.close();
+  });
+
+  test("replaces the socket after a long hide", () => {
+    const conn = create();
+    sockets[0].onopen?.();
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(30_000);
+    doc.visibilityState = "visible";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    expect(sockets[0].closed).toBe(true);
+    expect(sockets).toHaveLength(2);
+
+    // 見えている時間は数えない
+    sockets[1].onopen?.();
+    vi.advanceTimersByTime(60_000);
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(1_000);
+    doc.visibilityState = "visible";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    expect(sockets).toHaveLength(2);
+    expect(statuses).toEqual(["open"]);
+    conn.close();
+  });
+
   test("does not reconnect after close", () => {
     const conn = create();
     sockets[0].onopen?.();
@@ -184,6 +269,10 @@ describe("[unit] createReconnectingWebSocket", () => {
     expect(sockets[0].closed).toBe(true);
     sockets[0].onclose?.();
     win.dispatchEvent(new Event("online"));
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(60_000);
+    doc.visibilityState = "visible";
     doc.dispatchEvent(new Event("visibilitychange"));
     vi.advanceTimersByTime(60_000);
     expect(sockets).toHaveLength(1);
