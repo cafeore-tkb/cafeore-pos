@@ -126,18 +126,25 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 
 // ブロードキャスト用のヘルパー
 func (h *OrderHandler) broadcastOrders() {
+	if msg, ok := ordersMessage(h.db); ok {
+		h.hub.Broadcast(msg)
+	}
+}
+
+// 全オーダーを WSMessage にする。取得に失敗したら ok = false
+func ordersMessage(db *gorm.DB) (WSMessage, bool) {
 	var orders []models.Order
-	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
-		return
+	if err := preloadOrder(db).Find(&orders).Error; err != nil {
+		return WSMessage{}, false
 	}
 	responses := make([]models.OrderResponse, len(orders))
 	for i, o := range orders {
 		responses[i] = toOrderResponse(&o)
 	}
-	h.hub.Broadcast(WSMessage{
+	return WSMessage{
 		Type:   WSMessageTypeOrders,
 		Orders: responses,
-	})
+	}, true
 }
 
 // GET /api/orders - オーダー一覧取得
