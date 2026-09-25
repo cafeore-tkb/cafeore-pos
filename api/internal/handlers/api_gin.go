@@ -86,12 +86,12 @@ type ServerInterface interface {
 	// オーダーにコメント追加
 	// (POST /api/orders/{id}/comments)
 	CreateOrderComment(c *gin.Context, id openapi_types.UUID)
-	// 注文明細（カップ）を準備完了にする
-	// (PATCH /api/orders/{id}/menus/{orderMenuId}/ready)
-	MarkOrderMenuReady(c *gin.Context, id openapi_types.UUID, orderMenuId openapi_types.UUID)
-	// 注文明細（カップ）を提供完了にする
-	// (PATCH /api/orders/{id}/menus/{orderMenuId}/served)
-	MarkOrderMenuServe(c *gin.Context, id openapi_types.UUID, orderMenuId openapi_types.UUID)
+	// カップを準備完了にする
+	// (PATCH /api/orders/{id}/cups/{cupId}/ready)
+	MarkOrderCupReady(c *gin.Context, id openapi_types.UUID, cupId openapi_types.UUID)
+	// カップを提供完了にする
+	// (PATCH /api/orders/{id}/cups/{cupId}/served)
+	MarkOrderCupServe(c *gin.Context, id openapi_types.UUID, cupId openapi_types.UUID)
 	// オーダーを準備完了にする
 	// (PATCH /api/orders/{id}/ready)
 	MarkOrderReady(c *gin.Context, id openapi_types.UUID)
@@ -578,8 +578,8 @@ func (siw *ServerInterfaceWrapper) CreateOrderComment(c *gin.Context) {
 	siw.Handler.CreateOrderComment(c, id)
 }
 
-// MarkOrderMenuReady operation middleware
-func (siw *ServerInterfaceWrapper) MarkOrderMenuReady(c *gin.Context) {
+// MarkOrderCupReady operation middleware
+func (siw *ServerInterfaceWrapper) MarkOrderCupReady(c *gin.Context) {
 
 	var err error
 
@@ -592,12 +592,12 @@ func (siw *ServerInterfaceWrapper) MarkOrderMenuReady(c *gin.Context) {
 		return
 	}
 
-	// ------------- Path parameter "orderMenuId" -------------
-	var orderMenuId openapi_types.UUID
+	// ------------- Path parameter "cupId" -------------
+	var cupId openapi_types.UUID
 
-	err = runtime.BindStyledParameterWithOptions("simple", "orderMenuId", c.Param("orderMenuId"), &orderMenuId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "cupId", c.Param("cupId"), &cupId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
 	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter orderMenuId: %w", err), http.StatusBadRequest)
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cupId: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -608,11 +608,11 @@ func (siw *ServerInterfaceWrapper) MarkOrderMenuReady(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.MarkOrderMenuReady(c, id, orderMenuId)
+	siw.Handler.MarkOrderCupReady(c, id, cupId)
 }
 
-// MarkOrderMenuServe operation middleware
-func (siw *ServerInterfaceWrapper) MarkOrderMenuServe(c *gin.Context) {
+// MarkOrderCupServe operation middleware
+func (siw *ServerInterfaceWrapper) MarkOrderCupServe(c *gin.Context) {
 
 	var err error
 
@@ -625,12 +625,12 @@ func (siw *ServerInterfaceWrapper) MarkOrderMenuServe(c *gin.Context) {
 		return
 	}
 
-	// ------------- Path parameter "orderMenuId" -------------
-	var orderMenuId openapi_types.UUID
+	// ------------- Path parameter "cupId" -------------
+	var cupId openapi_types.UUID
 
-	err = runtime.BindStyledParameterWithOptions("simple", "orderMenuId", c.Param("orderMenuId"), &orderMenuId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "cupId", c.Param("cupId"), &cupId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
 	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter orderMenuId: %w", err), http.StatusBadRequest)
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cupId: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -641,7 +641,7 @@ func (siw *ServerInterfaceWrapper) MarkOrderMenuServe(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.MarkOrderMenuServe(c, id, orderMenuId)
+	siw.Handler.MarkOrderCupServe(c, id, cupId)
 }
 
 // MarkOrderReady operation middleware
@@ -756,8 +756,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/orders/:id", wrapper.UpdateOrder)
 	router.GET(options.BaseURL+"/api/orders/:id/comments", wrapper.GetOrderComments)
 	router.POST(options.BaseURL+"/api/orders/:id/comments", wrapper.CreateOrderComment)
-	router.PATCH(options.BaseURL+"/api/orders/:id/menus/:orderMenuId/ready", wrapper.MarkOrderMenuReady)
-	router.PATCH(options.BaseURL+"/api/orders/:id/menus/:orderMenuId/served", wrapper.MarkOrderMenuServe)
+	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/ready", wrapper.MarkOrderCupReady)
+	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)

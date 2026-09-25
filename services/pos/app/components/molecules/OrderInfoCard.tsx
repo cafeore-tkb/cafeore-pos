@@ -1,4 +1,5 @@
 import {
+  type CupStatus,
   type OrderEntity,
   type WithId,
   orderRepository,
@@ -21,17 +22,21 @@ type props = {
   comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
-type CupItem = ReturnType<OrderEntity["getItems"]>[number];
+// マスター・提供画面ではカード1枚がカップ1杯（cupId）にあたる
+type CupItem = ReturnType<OrderEntity["getItems"]>[number] & {
+  cupId?: string;
+  status?: CupStatus;
+};
 
 export function OrderInfoCard({ order, user, timing, comment }: props) {
   const changeReady = () => orderRepository.ready(order.id);
 
   const changeServed = () => orderRepository.serve(order.id);
 
-  const displayOrders =
+  const displayOrders: CupItem[] =
     user === "cashier" || user === "dashboard"
       ? order.getItems()
-      : order.getDrinkCups();
+      : order.getCups();
 
   // 提供画面ではカップを押すと提供済み、マスター画面では準備完了を切り替える
   const cupAction =
@@ -40,14 +45,13 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
       : null;
 
   const changeCup = (item: CupItem) => {
-    const { orderMenuId } = item;
-    if (!orderMenuId) return;
+    const { cupId } = item;
+    if (!cupId) return;
     if (cupAction === "master") {
-      orderRepository.readyMenu(order.id, orderMenuId);
+      orderRepository.readyCup(order.id, cupId);
       return;
     }
-    const changeCupServed = () =>
-      orderRepository.serveMenu(order.id, orderMenuId);
+    const changeCupServed = () => orderRepository.serveCup(order.id, cupId);
     changeCupServed();
     if (item.status !== "served") {
       toast(`提供完了 No.${order.orderId} ${item.abbr}`, {
@@ -94,7 +98,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                 {dayjs(order.createdAt).format("H:mm")}
               </div>
               <CardTitle className="flex h-10 items-end justify-center">
-                <p className="text-5xl">{order.getDrinkCups().length}</p>
+                <p className="text-5xl">{order.getCups().length}</p>
                 <p className="text-sm">杯</p>
               </CardTitle>
             </div>
@@ -109,11 +113,9 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
           >
             {displayOrders.map((item, idx) => (
               <CupButton
-                key={`${idx}-${item.id}`}
+                key={item.cupId ?? `${idx}-${item.id}`}
                 onClick={
-                  cupAction && item.orderMenuId
-                    ? () => changeCup(item)
-                    : undefined
+                  cupAction && item.cupId ? () => changeCup(item) : undefined
                 }
               >
                 <Card

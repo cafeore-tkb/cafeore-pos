@@ -18,8 +18,6 @@ const response: OrderResponse = {
       menu_name: "注文時のセット名",
       unit_price: 500,
       assignee: null,
-      ready_at: null,
-      served_at: null,
       menu: {
         id: "00000000-0000-4000-8000-000000000003",
         name: "変更後のセット名",
@@ -44,7 +42,16 @@ const response: OrderResponse = {
       },
     },
   ],
+  cups: [],
 };
+
+const cup = (id: string): OrderResponse["cups"][number] => ({
+  id,
+  order_menu_id: response.menus[0].id,
+  item: response.menus[0].menu.items[0].item,
+  ready_at: null,
+  served_at: null,
+});
 
 describe("[unit] order snapshot conversion", () => {
   test("uses saved name and price, not the current menu master", () => {
@@ -79,27 +86,63 @@ describe("[unit] order snapshot conversion", () => {
     const servedAt = "2026-09-11T00:06:00Z";
     const order = responseToOrderEntity({
       ...response,
-      menus: [
-        response.menus[0],
-        { ...response.menus[0], ready_at: readyAt },
-        { ...response.menus[0], ready_at: readyAt, served_at: servedAt },
+      cups: [
+        cup("00000000-0000-4000-8000-000000000011"),
+        {
+          ...cup("00000000-0000-4000-8000-000000000012"),
+          ready_at: readyAt,
+          served_at: servedAt,
+        },
       ],
     });
-    expect(order.menus.map((menu) => menu.status)).toEqual([
-      "preparing",
-      "ready",
-      "served",
+    expect(order.cups.map((c) => c.servedAt)).toEqual([
+      null,
+      new Date(servedAt),
     ]);
-    expect(order.menus[2].servedAt).toEqual(new Date(servedAt));
-    expect(order.getItems().map((item) => item.status)).toEqual([
-      "preparing",
-      "preparing",
-      "ready",
-      "ready",
-      "served",
-      "served",
+    // 2杯入りのセットでも、カードは1杯ずつ別の状態を持つ
+    expect(order.getCups()).toEqual([
+      expect.objectContaining({
+        cupId: "00000000-0000-4000-8000-000000000011",
+        abbr: "珈琲",
+        status: "preparing",
+      }),
+      expect.objectContaining({
+        cupId: "00000000-0000-4000-8000-000000000012",
+        abbr: "珈琲",
+        status: "served",
+      }),
     ]);
-    expect(order.clone().menus[2].status).toBe("served");
+    expect(
+      order
+        .clone()
+        .getCups()
+        .map((c) => c.status),
+    ).toEqual(["preparing", "served"]);
+    // レジなどで使う getItems() の展開は変わらない
+    expect(order.getItems().map((item) => item.abbr)).toEqual(["珈琲", "珈琲"]);
+  });
+
+  test("cups follow the server even if the menu composition changed", () => {
+    const order = responseToOrderEntity({
+      ...response,
+      menus: [{ ...response.menus[0], assignee: "担当者" }],
+      cups: [cup("00000000-0000-4000-8000-000000000011")],
+    });
+    expect(order.getDrinkCups()).toHaveLength(2);
+    expect(order.getCups()).toEqual([
+      expect.objectContaining({ abbr: "珈琲", assignee: "担当者" }),
+    ]);
+  });
+
+  test("orders without cups fall back to the drink cups", () => {
+    const order = responseToOrderEntity({
+      ...response,
+      served_at: "2026-09-11T00:06:00Z",
+    });
+    expect(order.getCups()).toEqual([
+      expect.objectContaining({ cupId: undefined, status: "served" }),
+      expect.objectContaining({ cupId: undefined, status: "served" }),
+    ]);
   });
 
   test("zero-price snapshots are not replaced with current prices", () => {

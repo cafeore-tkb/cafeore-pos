@@ -72,19 +72,19 @@ export interface paths {
     /** オーダーを提供完了にする */
     patch: operations["markOrderServe"];
   };
-  "/api/orders/{id}/menus/{orderMenuId}/ready": {
+  "/api/orders/{id}/cups/{cupId}/ready": {
     /**
-     * 注文明細（カップ）を準備完了にする
-     * @description 準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     * カップを準備完了にする
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
      */
-    patch: operations["markOrderMenuReady"];
+    patch: operations["markOrderCupReady"];
   };
-  "/api/orders/{id}/menus/{orderMenuId}/served": {
+  "/api/orders/{id}/cups/{cupId}/served": {
     /**
-     * 注文明細（カップ）を提供完了にする
-     * @description 提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     * カップを提供完了にする
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
      */
-    patch: operations["markOrderMenuServe"];
+    patch: operations["markOrderCupServe"];
   };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
@@ -192,6 +192,16 @@ export interface components {
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
       assignee: string | null;
+    };
+    OrderCupResponse: {
+      /** Format: uuid */
+      id: string;
+      /**
+       * Format: uuid
+       * @description このカップを含む注文明細のID（MenuInfo.id）
+       */
+      order_menu_id: string;
+      item: components["schemas"]["ItemResponse"];
       /**
        * Format: date-time
        * @description このカップが準備完了になった時刻。未準備なら null
@@ -228,6 +238,8 @@ export interface components {
       discount_order_id?: number | null;
       discount_order_cups?: number;
       menus: components["schemas"]["MenuInfo"][];
+      /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
+      cups: components["schemas"]["OrderCupResponse"][];
       comments?: components["schemas"]["CommentResponse"][];
     };
     OrderCreateRequest: {
@@ -679,16 +691,16 @@ export interface operations {
     };
   };
   /**
-   * 注文明細（カップ）を準備完了にする
-   * @description 準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   * カップを準備完了にする
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
    */
-  markOrderMenuReady: {
+  markOrderCupReady: {
     parameters: {
       path: {
         /** @description オーダーID */
         id: string;
-        /** @description 注文明細ID */
-        orderMenuId: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
       };
     };
     responses: {
@@ -698,7 +710,13 @@ export interface operations {
           "application/json": components["schemas"]["OrderResponse"];
         };
       };
-      /** @description オーダーまたは注文明細が見つかりません */
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -707,16 +725,16 @@ export interface operations {
     };
   };
   /**
-   * 注文明細（カップ）を提供完了にする
-   * @description 提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   * カップを提供完了にする
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
    */
-  markOrderMenuServe: {
+  markOrderCupServe: {
     parameters: {
       path: {
         /** @description オーダーID */
         id: string;
-        /** @description 注文明細ID */
-        orderMenuId: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
       };
     };
     responses: {
@@ -726,7 +744,13 @@ export interface operations {
           "application/json": components["schemas"]["OrderResponse"];
         };
       };
-      /** @description オーダーまたは注文明細が見つかりません */
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

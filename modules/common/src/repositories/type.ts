@@ -18,8 +18,8 @@ export type ItemTypeRepository = BaseRepository<ItemType>;
 export type OrderRepository = BaseRepository<OrderEntity> & {
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
-  // カップ（注文明細）単位の準備完了・提供済みの切り替え
-  readyMenu(id: string, orderMenuId: string): Promise<void>;
-  serveMenu(id: string, orderMenuId: string): Promise<void>;
+  // カップ（1杯）単位の準備完了・提供済みの切り替え
+  readyCup(id: string, cupId: string): Promise<void>;
+  serveCup(id: string, cupId: string): Promise<void>;
   addComment(id: string, author: string, text: string): Promise<void>;
 };

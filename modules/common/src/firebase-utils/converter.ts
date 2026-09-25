@@ -222,8 +222,6 @@ export const responseToOrderEntity = (
         name: cur.menu_name,
         price: cur.unit_price,
         assignee: cur.assignee,
-        readyAt: cur.ready_at ? new Date(cur.ready_at) : null,
-        servedAt: cur.served_at ? new Date(cur.served_at) : null,
       });
       acc.push(menu);
       return acc;
@@ -257,6 +255,13 @@ export const responseToOrderEntity = (
       : 0,
     menus,
     comments: comments ? comments : [],
+    cups: response.cups.map((cup) => ({
+      id: cup.id,
+      orderMenuId: cup.order_menu_id,
+      item: responseToItemEntity(cup.item).toItem(),
+      readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
+      servedAt: cup.served_at ? new Date(cup.served_at) : null,
+    })),
   };
   return OrderEntity.fromOrder(order);
 };

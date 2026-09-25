@@ -117,34 +117,39 @@ func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 	lineScope := query.Statement.Preloads["OrderMenus"][0].(func(*gorm.DB) *gorm.DB)
 	var lines []models.OrderMenu
 	if lineSQL := lineScope(db).Find(&lines).Statement.SQL.String(); !strings.Contains(lineSQL, "ORDER BY order_menus.id") {
-		t.Fatalf("cups must be ordered by line ID: %s", lineSQL)
+		t.Fatalf("lines must be ordered by line ID: %s", lineSQL)
+	}
+	cupScope := query.Statement.Preloads["OrderCups"][0].(func(*gorm.DB) *gorm.DB)
+	var cups []models.OrderCup
+	if cupSQL := cupScope(db).Find(&cups).Statement.SQL.String(); !strings.Contains(cupSQL, "ORDER BY order_cups.position") {
+		t.Fatalf("cups must be ordered by position: %s", cupSQL)
+	}
+	itemScope := query.Statement.Preloads["OrderCups.Item"][0].(func(*gorm.DB) *gorm.DB)
+	var items []models.Item
+	if itemSQL := itemScope(db).Find(&items).Statement.SQL.String(); strings.Contains(itemSQL, "IS NULL") {
+		t.Fatalf("cups must show deleted items: %s", itemSQL)
 	}
 }
 
-func TestBuildOrderMenusPreservesCupStatus(t *testing.T) {
-	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
-	ready, served := time.Now(), time.Now().Add(time.Minute)
-	old := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, ReadyAt: &ready, ServedAt: &served}
-	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID}, {MenuId: menuID}}
-	lines, err := buildOrderMenus(orderID, requests, []models.OrderMenu{old}, []models.Menu{{ID: menuID}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !sameTime(lines[0].ReadyAt, &ready) || !sameTime(lines[0].ServedAt, &served) {
-		t.Fatalf("editing an order must keep cup status: %+v", lines[0])
-	}
-	if lines[1].ReadyAt != nil || lines[1].ServedAt != nil {
-		t.Fatalf("new cup must start as preparing: %+v", lines[1])
-	}
-}
-
-func TestOrderResponseIncludesCupStatus(t *testing.T) {
+func TestOrderResponseIncludesCups(t *testing.T) {
 	served := time.Now()
-	response := toOrderResponse(&models.Order{OrderMenus: []models.OrderMenu{{ReadyAt: &served, ServedAt: &served}, {}}})
-	if !sameTime(response.Menus[0].ReadyAt, &served) || !sameTime(response.Menus[0].ServedAt, &served) {
-		t.Fatalf("missing cup status: %+v", response.Menus[0])
+	lineID, cupID := uuid.New(), uuid.New()
+	item := models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemType: models.ItemType{Name: "hot"}}
+	response := toOrderResponse(&models.Order{OrderCups: []models.OrderCup{
+		{ID: cupID, OrderMenuID: lineID, Item: item, ReadyAt: &served, ServedAt: &served},
+		{ID: uuid.New(), OrderMenuID: lineID, Item: item},
+	}})
+	got := response.Cups[0]
+	if got.Id != cupID || got.OrderMenuId != lineID || got.Item.Abbr != "ブ" || got.Item.ItemType.Name != "hot" {
+		t.Fatalf("missing cup fields: %+v", got)
 	}
-	if response.Menus[1].ReadyAt != nil || response.Menus[1].ServedAt != nil {
-		t.Fatalf("preparing cup must have no timestamps: %+v", response.Menus[1])
+	if !sameTime(got.ReadyAt, &served) || !sameTime(got.ServedAt, &served) {
+		t.Fatalf("missing cup status: %+v", got)
+	}
+	if response.Cups[1].ReadyAt != nil || response.Cups[1].ServedAt != nil {
+		t.Fatalf("preparing cup must have no timestamps: %+v", response.Cups[1])
+	}
+	if toOrderResponse(&models.Order{}).Cups == nil {
+		t.Fatal("empty cups must serialize as []")
 	}
 }

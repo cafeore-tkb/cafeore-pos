@@ -88,12 +88,12 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
-    readyMenu: async (id: string, orderMenuId: string): Promise<void> => {
+    readyCup: async (id: string, cupId: string): Promise<void> => {
       const { error, response } = await client.PATCH(
-        "/api/orders/{id}/menus/{orderMenuId}/ready",
+        "/api/orders/{id}/cups/{cupId}/ready",
         {
           params: {
-            path: { id, orderMenuId },
+            path: { id, cupId },
           },
         },
       );
@@ -103,12 +103,12 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
-    serveMenu: async (id: string, orderMenuId: string): Promise<void> => {
+    serveCup: async (id: string, cupId: string): Promise<void> => {
       const { error, response } = await client.PATCH(
-        "/api/orders/{id}/menus/{orderMenuId}/served",
+        "/api/orders/{id}/cups/{cupId}/served",
         {
           params: {
-            path: { id, orderMenuId },
+            path: { id, cupId },
           },
         },
       );
