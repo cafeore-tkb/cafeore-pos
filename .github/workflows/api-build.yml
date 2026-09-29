@@ -35,14 +35,14 @@ name: api / build & deploy
 #
 # ## PR ではフロントの変更でも走らせる
 #
-# pos のプレビューは、ビルド時に backend のタグ URL
+# pos / mobile のプレビューは、ビルド時に backend のタグ URL
 # （https://pr-<番号>---<host>）を VITE_API_BASE_URL へ焼き込む。タグがまだ
 # 無ければサービス URL から組み立てるだけなので、この workflow が走らない
 # PR ではそのリビジョンが永久に生えず、焼き込んだ URL が 404 のままになる。
 #
 # なので **PR のトリガーにはフロント側のパスも入れてある**。フロントだけの
 # 変更でも pr-<番号> のリビジョンが必ず用意され、プレビューが API に届く。
-# 対象は pos の deploy workflow が見ているパスと揃えること。
+# 対象は pos / mobile の deploy workflow が見ているパスと揃えること。
 # ずれると、フロントのプレビューだけ出て backend が出ない PR が復活する。
 #
 # main への push は api/** のままにしてある。本番フロントは固定の
@@ -62,9 +62,12 @@ on:
       - '.github/workflows/api-build.yml'
       # ここから下はフロント側。上の「PR ではフロントの変更でも走らせる」を参照。
       - 'services/pos/**'
+      # mobile は停止中。再開するときは戻す。
+      # - 'services/mobile/**'
       - 'modules/common/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
+      # - '.github/workflows/mobile-deploy-workers.yml'
   workflow_dispatch:
 
 # WIF の OIDC トークン発行に id-token: write が必須。
@@ -77,9 +80,13 @@ permissions:
   # fork からの PR は job の if で除外してある。
   pull-requests: write
 
+# PR は新しい push で古い実行を取り消してよいが、main は取り消さない。
+# 取り消した後に新しい実行が失敗すると、取り消された方のコミットも
+# デプロイされず、本番が 2 つ前の状態のまま残るため。
+# 取り消さない場合も、待機できるのは最新の 1 件だけなので実行は溜まらない。
 concurrency:
   group: api-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

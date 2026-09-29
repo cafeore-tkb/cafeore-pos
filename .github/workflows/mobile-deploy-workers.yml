@@ -1,9 +1,9 @@
-name: pos / deploy (Workers)
+name: mobile / deploy (Workers)
 
-# POS フロントをビルドして Cloudflare Workers へデプロイする。
+# mobile フロントをビルドして Cloudflare Workers へデプロイする。
 #
 # ssr: false の SPA なので、Worker のスクリプトは持たず build/client を
-# 静的アセットとして配信するだけ（設定は services/pos/wrangler.jsonc）。
+# 静的アセットとして配信するだけ（設定は services/mobile/wrangler.jsonc）。
 #
 # main への push と手動実行では本番へ deploy する。
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
@@ -13,21 +13,23 @@ name: pos / deploy (Workers)
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
 # その場合だけ deploy にフォールバックして Worker を作る。
 
+# mobile は停止中なので自動では走らせない。再開するときは下のコメントを戻す。
+# on を丸ごと消すと workflow として不正になるので、手動実行だけ残している。
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'services/pos/**'
-      - 'modules/common/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/pos-deploy-workers.yml'
-  pull_request:
-    paths:
-      - 'services/pos/**'
-      - 'modules/common/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/pos-deploy-workers.yml'
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'services/mobile/**'
+  #     - 'modules/common/**'
+  #     - 'pnpm-lock.yaml'
+  #     - '.github/workflows/mobile-deploy-workers.yml'
+  # pull_request:
+  #   paths:
+  #     - 'services/mobile/**'
+  #     - 'modules/common/**'
+  #     - 'pnpm-lock.yaml'
+  #     - '.github/workflows/mobile-deploy-workers.yml'
   workflow_dispatch:
 
 permissions:
@@ -41,7 +43,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: pos-deploy-workers-${{ github.ref }}
+  group: mobile-deploy-workers-${{ github.ref }}
   # 本番へのデプロイを途中で止めると中途半端な状態になりうるので、
   # 打ち切ってよいのは PR のプレビューだけにする。
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -67,11 +69,11 @@ jobs:
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
       # pos と mobile で別のコメントになるので、互いに上書きし合わない。
-      COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
+      COMMENT_MARKER: '<!-- cafeore-preview: mobile -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
       CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
-      SERVICE_LABEL: 'POS'
+      SERVICE_LABEL: 'mobile'
 
     steps:
       - uses: actions/checkout@v4
@@ -142,11 +144,10 @@ jobs:
           esac
 
       - name: ビルドする
-        working-directory: services/pos
+        working-directory: services/mobile
         run: pnpm run build
         env:
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
-          VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
           # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
           # 順にフォールバックする。
@@ -154,10 +155,11 @@ jobs:
             ${{ (github.event_name == 'pull_request'
                  && (steps.api_url.outputs.url || vars.VITE_API_BASE_URL_PREVIEW))
                 || vars.VITE_API_BASE_URL }}
+          VITE_SOHOSAI_VOTE_URL: ${{ vars.VITE_SOHOSAI_VOTE_URL }}
 
       - name: デプロイする
         id: deploy
-        working-directory: services/pos
+        working-directory: services/mobile
         env:
           # wrangler が読む名前は CLOUDFLARE_* 固定なので、GitHub 側の
           # WORKERS_ 接頭辞つきの名前からここで詰め替える。

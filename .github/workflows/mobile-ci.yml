@@ -1,0 +1,23 @@
+name: mobile
+
+# mobile は停止中なので自動では走らせない。再開するときは下のコメントを戻す。
+# on を丸ごと消すと workflow として不正になるので、手動実行だけ残している。
+on:
+  # pull_request:
+  #   paths:
+  #     - 'services/mobile/**'
+  #     - 'modules/common/**'
+  #     - '.github/workflows/mobile-ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: services/mobile
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run typecheck
