@@ -99,9 +99,14 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
+| `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
+| `INVENTORY_CRON_SECRET` | 任意 | 未設定（リマインド無効） | スケジューラと共有する合言葉 |
+| `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
 
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
