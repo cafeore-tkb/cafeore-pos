@@ -27,7 +27,7 @@ export function OrderList({ orders }: OrderStatusListProps) {
   console.log(detailOrder);
 
   const numOfCups = (order: OrderEntity): number => {
-    return order.items.length;
+    return order.menus.length;
   };
 
   const diffTime = (order: OrderEntity) => {

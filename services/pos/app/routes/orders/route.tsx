@@ -27,7 +27,7 @@ export default function Order() {
             <h2>{order.orderId}</h2>
             <p>{order.id}</p>
             <div>
-              {order.items.map((item) => (
+              {order.menus.map((item) => (
                 <div key={item.id}>
                   <h3>{item.name}</h3>
                   <p>{item.price}</p>

@@ -84,9 +84,11 @@ func initDB() error {
 		if err := db.AutoMigrate(
 			&models.ItemType{},
 			&models.Item{},
+			&models.Menu{},
+			&models.MenuItem{},
 			&models.Order{},
 			&models.Comment{},
-			&models.OrderItem{},
+			&models.OrderMenu{},
 			&models.MasterState{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
@@ -227,6 +229,7 @@ func main() {
 
 	// ハンドラー初期化
 	itemHandler := handlers.NewItemHandler(db)
+	menuHandler := handlers.NewMenuHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
@@ -244,6 +247,12 @@ func main() {
 		api.GET("/items/:id", itemHandler.GetItem)
 		api.PUT("/items/:id", itemHandler.UpdateItem)
 		api.DELETE("/items/:id", itemHandler.DeleteItem)
+
+		api.GET("/menus", menuHandler.GetMenus)
+		api.POST("/menus", menuHandler.CreateMenu)
+		api.GET("/menus/:id", menuHandler.GetMenu)
+		api.PUT("/menus/:id", menuHandler.UpdateMenu)
+		api.DELETE("/menus/:id", menuHandler.DeleteMenu)
 
 		api.GET("/item-types", itemTypeHandler.GetItemTypes)
 		api.POST("/item-types", itemTypeHandler.CreateItemType)

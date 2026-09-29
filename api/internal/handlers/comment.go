@@ -110,15 +110,15 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toCommentResponse(&comment))
 	var orders []models.Order
-	if err := h.db.Preload("OrderItems.Item.ItemType").Preload("Comments").Find(&orders).Error; err != nil {
-			return
+	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
+		return
 	}
 	responses := make([]models.OrderResponse, len(orders))
 	for i, o := range orders {
-			responses[i] = toOrderResponse(&o)
+		responses[i] = toOrderResponse(&o)
 	}
 	h.hub.Broadcast(WSMessage{
-		Type: WSMessageTypeOrders,
+		Type:   WSMessageTypeOrders,
 		Orders: responses,
 	})
 }

@@ -108,6 +108,89 @@ paths:
       responses:
         '204':
           description: 成功
+  /api/menus:
+    get:
+      summary: メニュー一覧取得
+      operationId: getMenus
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuResponse'
+    post:
+      summary: メニュー作成
+      operationId: createMenu
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuCreateRequest'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuResponse'
+  /api/menus/{id}:
+    get:
+      summary: メニュー取得
+      operationId: getMenu
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuResponse'
+    put:
+      summary: メニュー更新
+      operationId: updateMenu
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuResponse'
+    delete:
+      summary: メニュー削除
+      operationId: deleteMenu
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
   /api/item-types:
     get:
       summary: アイテムタイプ一覧取得
@@ -451,8 +534,6 @@ components:
         - id
         - name
         - abbr
-        - price
-        - key
         - item_type
       properties:
         id:
@@ -462,10 +543,6 @@ components:
           type: string
         abbr:
           type: string
-        price:
-          type: integer
-        key:
-          type: string
         item_type:
           $ref: '#/components/schemas/ItemTypeResponse'
     # 作成リクエスト用（IDや自動生成フィールドを除外）
@@ -474,17 +551,11 @@ components:
       required:
         - name
         - abbr
-        - price
-        - key
         - item_type_id
       properties:
         name:
           type: string
         abbr:
-          type: string
-        price:
-          type: integer
-        key:
           type: string
         item_type_id:
           type: string
@@ -496,9 +567,50 @@ components:
         - id
         - name
         - abbr
+        - item_type_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        abbr:
+          type: string
+        item_type_id:
+          type: string
+          format: uuid
+    MenuItemResponse:
+      type: object
+      required:
+        - item
+        - quantity
+      properties:
+        item:
+          $ref: '#/components/schemas/ItemResponse'
+        quantity:
+          type: integer
+          minimum: 1
+    MenuItemRequest:
+      type: object
+      required:
+        - item_id
+        - quantity
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+    MenuResponse:
+      type: object
+      required:
+        - id
+        - name
+        - abbr
         - price
         - key
-        - item_type_id
+        - items
       properties:
         id:
           type: string
@@ -511,9 +623,42 @@ components:
           type: integer
         key:
           type: string
-        item_type_id:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItemResponse'
+    MenuCreateRequest:
+      type: object
+      required:
+        - name
+        - abbr
+        - price
+        - key
+        - items
+      properties:
+        name:
           type: string
-          format: uuid
+        abbr:
+          type: string
+        price:
+          type: integer
+        key:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MenuItemRequest'
+    MenuUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/MenuCreateRequest'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              type: string
+              format: uuid
     ItemTypeResponse:
       type: object
       required:
@@ -553,26 +698,43 @@ components:
           type: string
         display_name:
           type: string
-    # 指名を入れたItem
-    ItemInfo:
+    # 指名を入れたMenu
+    MenuInfo:
       type: object
       required:
-        - item
+        - id
+        - menu_name
+        - unit_price
+        - menu
         - assignee
       properties:
-        item:
-          $ref: '#/components/schemas/ItemResponse'
+        id:
+          type: string
+          format: uuid
+          description: 注文明細ID
+        menu_name:
+          type: string
+          description: 注文時点のメニュー名
+        unit_price:
+          type: integer
+          description: 注文時点のメニュー価格
+        menu:
+          $ref: '#/components/schemas/MenuResponse'
         assignee:
           type: string
           nullable: true
-    # Create用のItemInfo
-    ItemInfoCreate:
+    # Create用のMenuInfo
+    MenuInfoCreate:
       type: object
       required:
-        - item_id
+        - menu_id
         - assignee
       properties:
-        item_id:
+        order_menu_id:
+          type: string
+          format: uuid
+          description: 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
+        menu_id:
           type: string
           format: uuid
         assignee:
@@ -587,7 +749,7 @@ components:
         - created_at
         - billing_amount
         - received
-        - items
+        - menus
       properties:
         id:
           type: string
@@ -614,10 +776,10 @@ components:
           nullable: true
         discount_order_cups:
           type: integer
-        items:
+        menus:
           type: array
           items:
-            $ref: '#/components/schemas/ItemInfo'
+            $ref: '#/components/schemas/MenuInfo'
         comments:
           type: array
           items:
@@ -630,7 +792,7 @@ components:
         - order_id
         - billing_amount
         - received
-        - item_ids
+        - menu_ids
       properties:
         order_id:
           type: integer
@@ -648,10 +810,10 @@ components:
         discount_order_cups:
           type: integer
           default: 0
-        item_ids:
+        menu_ids:
           type: array
           items:
-            $ref: '#/components/schemas/ItemInfoCreate'
+            $ref: '#/components/schemas/MenuInfoCreate'
         comments:
           type: array
           items:
@@ -665,7 +827,7 @@ components:
         - order_id
         - billing_amount
         - received
-        - item_ids
+        - menu_ids
       properties:
         id:
           type: string
@@ -689,10 +851,10 @@ components:
           nullable: true
         discount_order_cups:
           type: integer
-        item_ids:
+        menu_ids:
           type: array
           items:
-            $ref: '#/components/schemas/ItemInfoCreate'
+            $ref: '#/components/schemas/MenuInfoCreate'
 
     # 一覧取得用（軽量版、関連データを含まない場合）
     OrderListItem:

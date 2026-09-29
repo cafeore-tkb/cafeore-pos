@@ -16,10 +16,7 @@ import {
 export type ItemFormValues = {
   name: string;
   abbr: string;
-  price: string;
-  key: string;
   itemTypeId: string;
-  assignee: string;
 };
 
 type Props = {
@@ -43,10 +40,7 @@ export function ItemForm({
   const [values, setValues] = useState<ItemFormValues>({
     name: initialItem?.name ?? "",
     abbr: initialItem?.abbr ?? "",
-    price: initialItem ? String(initialItem.price) : "",
-    key: initialItem?.key ?? "",
     itemTypeId: initialItemTypeId,
-    assignee: initialItem?.assignee ?? "",
   });
 
   const updateField = (key: keyof ItemFormValues, value: string) => {
@@ -87,28 +81,6 @@ export function ItemForm({
               value={values.abbr}
               onChange={(e) => updateField("abbr", e.target.value)}
               placeholder="キリマン"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="price">価格</Label>
-            <Input
-              id="price"
-              type="number"
-              inputMode="numeric"
-              value={values.price}
-              onChange={(e) => updateField("price", e.target.value)}
-              placeholder="500"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="key">キー</Label>
-            <Input
-              id="key"
-              value={values.key}
-              onChange={(e) => updateField("key", e.target.value)}
-              placeholder="-"
             />
           </div>
 

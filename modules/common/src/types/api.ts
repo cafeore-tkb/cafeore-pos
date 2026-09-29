@@ -22,6 +22,20 @@ export interface paths {
     /** アイテム削除 */
     delete: operations["deleteItem"];
   };
+  "/api/menus": {
+    /** メニュー一覧取得 */
+    get: operations["getMenus"];
+    /** メニュー作成 */
+    post: operations["createMenu"];
+  };
+  "/api/menus/{id}": {
+    /** メニュー取得 */
+    get: operations["getMenu"];
+    /** メニュー更新 */
+    put: operations["updateMenu"];
+    /** メニュー削除 */
+    delete: operations["deleteMenu"];
+  };
   "/api/item-types": {
     /** アイテムタイプ一覧取得 */
     get: operations["getItemTypes"];
@@ -91,15 +105,11 @@ export interface components {
       id: string;
       name: string;
       abbr: string;
-      price: number;
-      key: string;
       item_type: components["schemas"]["ItemTypeResponse"];
     };
     ItemCreateRequest: {
       name: string;
       abbr: string;
-      price: number;
-      key: string;
       /** Format: uuid */
       item_type_id: string;
     };
@@ -108,10 +118,37 @@ export interface components {
       id: string;
       name: string;
       abbr: string;
-      price: number;
-      key: string;
       /** Format: uuid */
       item_type_id: string;
+    };
+    MenuItemResponse: {
+      item: components["schemas"]["ItemResponse"];
+      quantity: number;
+    };
+    MenuItemRequest: {
+      /** Format: uuid */
+      item_id: string;
+      quantity: number;
+    };
+    MenuResponse: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      abbr: string;
+      price: number;
+      key: string;
+      items: components["schemas"]["MenuItemResponse"][];
+    };
+    MenuCreateRequest: {
+      name: string;
+      abbr: string;
+      price: number;
+      key: string;
+      items: components["schemas"]["MenuItemRequest"][];
+    };
+    MenuUpdateRequest: components["schemas"]["MenuCreateRequest"] & {
+      /** Format: uuid */
+      id: string;
     };
     ItemTypeResponse: {
       /** Format: uuid */
@@ -129,13 +166,27 @@ export interface components {
       name: string;
       display_name: string;
     };
-    ItemInfo: {
-      item: components["schemas"]["ItemResponse"];
+    MenuInfo: {
+      /**
+       * Format: uuid
+       * @description 注文明細ID
+       */
+      id: string;
+      /** @description 注文時点のメニュー名 */
+      menu_name: string;
+      /** @description 注文時点のメニュー価格 */
+      unit_price: number;
+      menu: components["schemas"]["MenuResponse"];
       assignee: string | null;
     };
-    ItemInfoCreate: {
+    MenuInfoCreate: {
+      /**
+       * Format: uuid
+       * @description 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
+       */
+      order_menu_id?: string;
       /** Format: uuid */
-      item_id: string;
+      menu_id: string;
       assignee: string | null;
     };
     OrderResponse: {
@@ -152,7 +203,7 @@ export interface components {
       received: number;
       discount_order_id?: number | null;
       discount_order_cups?: number;
-      items: components["schemas"]["ItemInfo"][];
+      menus: components["schemas"]["MenuInfo"][];
       comments?: components["schemas"]["CommentResponse"][];
     };
     OrderCreateRequest: {
@@ -168,7 +219,7 @@ export interface components {
       discount_order_id?: number | null;
       /** @default 0 */
       discount_order_cups?: number;
-      item_ids: components["schemas"]["ItemInfoCreate"][];
+      menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
     };
     OrderUpdateRequest: {
@@ -183,7 +234,7 @@ export interface components {
       received: number;
       discount_order_id?: number | null;
       discount_order_cups?: number;
-      item_ids: components["schemas"]["ItemInfoCreate"][];
+      menu_ids: components["schemas"]["MenuInfoCreate"][];
     };
     OrderListItem: {
       /** Format: uuid */
@@ -313,6 +364,84 @@ export interface operations {
   };
   /** アイテム削除 */
   deleteItem: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /** メニュー一覧取得 */
+  getMenus: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MenuResponse"][];
+        };
+      };
+    };
+  };
+  /** メニュー作成 */
+  createMenu: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MenuCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["MenuResponse"];
+        };
+      };
+    };
+  };
+  /** メニュー取得 */
+  getMenu: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MenuResponse"];
+        };
+      };
+    };
+  };
+  /** メニュー更新 */
+  updateMenu: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MenuUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MenuResponse"];
+        };
+      };
+    };
+  };
+  /** メニュー削除 */
+  deleteMenu: {
     parameters: {
       path: {
         id: string;

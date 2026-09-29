@@ -1,10 +1,10 @@
-import type { ItemEntity, WithId } from "@cafeore/common";
+import type { MenuEntity, WithId } from "@cafeore/common";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
 type props = {
-  items: WithId<ItemEntity>[];
-  addItem: (item: WithId<ItemEntity>) => void;
+  items: WithId<MenuEntity>[];
+  addItem: (item: WithId<MenuEntity>) => void;
 };
 
 export const ItemButtons = ({ items, addItem }: props) => {

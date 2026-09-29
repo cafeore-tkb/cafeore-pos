@@ -50,6 +50,21 @@ type ServerInterface interface {
 	// マスターステート更新
 	// (POST /api/master-status)
 	UpdateMasterState(c *gin.Context)
+	// メニュー一覧取得
+	// (GET /api/menus)
+	GetMenus(c *gin.Context)
+	// メニュー作成
+	// (POST /api/menus)
+	CreateMenu(c *gin.Context)
+	// メニュー削除
+	// (DELETE /api/menus/{id})
+	DeleteMenu(c *gin.Context, id openapi_types.UUID)
+	// メニュー取得
+	// (GET /api/menus/{id})
+	GetMenu(c *gin.Context, id openapi_types.UUID)
+	// メニュー更新
+	// (PUT /api/menus/{id})
+	UpdateMenu(c *gin.Context, id openapi_types.UUID)
 	// オーダー一覧取得
 	// (GET /api/orders)
 	GetOrders(c *gin.Context)
@@ -313,6 +328,104 @@ func (siw *ServerInterfaceWrapper) UpdateMasterState(c *gin.Context) {
 	siw.Handler.UpdateMasterState(c)
 }
 
+// GetMenus operation middleware
+func (siw *ServerInterfaceWrapper) GetMenus(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetMenus(c)
+}
+
+// CreateMenu operation middleware
+func (siw *ServerInterfaceWrapper) CreateMenu(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateMenu(c)
+}
+
+// DeleteMenu operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMenu(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteMenu(c, id)
+}
+
+// GetMenu operation middleware
+func (siw *ServerInterfaceWrapper) GetMenu(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetMenu(c, id)
+}
+
+// UpdateMenu operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMenu(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateMenu(c, id)
+}
+
 // GetOrders operation middleware
 func (siw *ServerInterfaceWrapper) GetOrders(c *gin.Context) {
 
@@ -559,6 +672,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/items/:id", wrapper.UpdateItem)
 	router.GET(options.BaseURL+"/api/master-status", wrapper.GetMasterState)
 	router.POST(options.BaseURL+"/api/master-status", wrapper.UpdateMasterState)
+	router.GET(options.BaseURL+"/api/menus", wrapper.GetMenus)
+	router.POST(options.BaseURL+"/api/menus", wrapper.CreateMenu)
+	router.DELETE(options.BaseURL+"/api/menus/:id", wrapper.DeleteMenu)
+	router.GET(options.BaseURL+"/api/menus/:id", wrapper.GetMenu)
+	router.PUT(options.BaseURL+"/api/menus/:id", wrapper.UpdateMenu)
 	router.GET(options.BaseURL+"/api/orders", wrapper.GetOrders)
 	router.POST(options.BaseURL+"/api/orders", wrapper.CreateOrder)
 	router.DELETE(options.BaseURL+"/api/orders/:id", wrapper.DeleteOrder)

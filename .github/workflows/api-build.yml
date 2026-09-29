@@ -79,9 +79,13 @@ permissions:
   # fork からの PR は job の if で除外してある。
   pull-requests: write
 
+# PR は新しい push で古い実行を取り消してよいが、main は取り消さない。
+# 取り消した後に新しい実行が失敗すると、取り消された方のコミットも
+# デプロイされず、本番が 2 つ前の状態のまま残るため。
+# 取り消さない場合も、待機できるのは最新の 1 件だけなので実行は溜まらない。
 concurrency:
   group: api-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

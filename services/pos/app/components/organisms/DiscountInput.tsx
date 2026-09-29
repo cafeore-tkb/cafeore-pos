@@ -139,7 +139,7 @@ const DiscountInput = memo(
                   </p>
                 </div>
                 <ul className="list-disc pl-4">
-                  {discountOrder.items.map((item, idx) => (
+                  {discountOrder.menus.map((item, idx) => (
                     <li
                       key={`${idx}-${item.id}`}
                       className={cn(

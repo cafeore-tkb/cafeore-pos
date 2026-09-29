@@ -1,9 +1,6 @@
-import { login, logout } from "@cafeore/common";
 import { Outlet } from "react-router";
-import { useAuth } from "~/components/functional/AuthProvider";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { useOrderStat } from "~/components/functional/useOrderStat";
-import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
 export default function BaseHeader() {
@@ -23,11 +20,9 @@ export default function BaseHeader() {
         className={cn(
           "sticky top-0 z-10 h-2",
           "flex items-center justify-center",
-          "group overflow-hidden hover:h-14",
           isOnline && "bg-green-600",
           !isOnline && "h-min bg-red-700",
           !isOperational && "h-min bg-violet-600",
-          !user && "h-min bg-yellow-600",
         )}
       >
         {isBackendOnline === false && (
@@ -47,24 +42,6 @@ export default function BaseHeader() {
         )}
         {!isOperational && (
           <div className="p-2 text-center text-white">オーダーストップ中</div>
-        )}
-        {!user && (
-          <div className="flex items-center justify-center">
-            <div className="m-2 text-center text-white">
-              未ログイン状態です。書き込みができません
-            </div>
-            <Button className="m-2 bg-green-700" onClick={login}>
-              ログイン
-            </Button>
-          </div>
-        )}
-        {user && (
-          <Button
-            className="invisible bg-red-600 group-hover:visible"
-            onClick={logout}
-          >
-            ログアウト
-          </Button>
         )}
       </header>
       <Outlet />

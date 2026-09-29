@@ -16,10 +16,7 @@ export function buildUpdatedItemEntity(
     id,
     name: values.name,
     abbr: values.abbr,
-    price: Number(values.price),
-    key: values.key,
     item_type: itemType,
-    assignee: values.assignee || null,
   });
 
   return entity;

@@ -1,5 +1,5 @@
 import type { WithId } from "../lib/typeguard";
-import type { ItemEntity } from "./item";
+import type { MenuEntity } from "./menu";
 
 /**
  * ドリッパーを3人以上確保する注文かどうかを判定する
@@ -12,8 +12,8 @@ import type { ItemEntity } from "./item";
  * @returns 分割が必要かどうかのboolean値
  */
 export function shouldSplitOrder(
-  items: WithId<ItemEntity>[],
-  itemMaster: WithId<ItemEntity>[],
+  items: WithId<MenuEntity>[],
+  itemMaster: WithId<MenuEntity>[],
 ): boolean {
   const yushoId = itemMaster.find((i) => i.name === "縁ブレンド")?.id;
   const toteSetsId = itemMaster.find((i) => i.name === "トートセット")?.id;

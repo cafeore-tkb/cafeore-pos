@@ -1,5 +1,5 @@
 import {
-  type ItemEntity,
+  type MenuEntity,
   type OrderEntity,
   type WithId,
   orderRepository,
@@ -20,7 +20,6 @@ import {
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
-import { transformToteSet } from "../functional/transformToteSet";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -40,7 +39,7 @@ import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
 type props = {
-  items: WithId<ItemEntity>[] | undefined; // itemMasterを渡す
+  items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   submitPayload: (order: OrderEntity) => void;
@@ -125,12 +124,11 @@ const CashierV2 = ({
     if (newOrder.getCharge() < 0) {
       return;
     }
-    if (newOrder.items.length === 0) {
+    if (newOrder.menus.length === 0) {
       return;
     }
-    const toteSetProcessedOrder = transformToteSet(newOrder, items ?? []);
     // 送信する直前に createdAt を更新する
-    const submitOne = toteSetProcessedOrder.clone();
+    const submitOne = newOrder.clone();
     submitOne.nowCreated();
     goodsOnlyServed(submitOne);
     // 備考を追加
@@ -156,7 +154,6 @@ const CashierV2 = ({
     manualOrderId,
     setOrderIdOverride,
     wsStatus,
-    items,
     setServiceActive,
   ]);
 

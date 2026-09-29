@@ -31,7 +31,7 @@ const OrderAlertDialog = forwardRef<
           <AlertDialogDescription>
             以下の内容で提出します
           </AlertDialogDescription>
-          {order.items.map((item, idx) => (
+          {order.menus.map((item, idx) => (
             <AlertDialogDescription key={`${idx}-${item.id}`}>
               {`${idx + 1} ―― ${item.name}  ¥${item.price}  ${item.item_type.display_name}`}
             </AlertDialogDescription>

@@ -1,11 +1,11 @@
 import {
-  type ItemEntity,
+  type MenuEntity,
   OrderEntity,
   type WithId,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { AlertDialogCancel } from "@radix-ui/react-alert-dialog";
@@ -52,7 +52,7 @@ import {
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function Casher() {
-  const items = useItemMaster().items;
+  const items = useMenuMaster().items;
   const { orders } = useOrdersWSContext();
   const curOrderId =
     orders?.reduce((acc, cur) => Math.max(acc, cur.orderId), 0) ?? 0;
@@ -60,8 +60,8 @@ export default function Casher() {
   const submit = useSubmit();
   const order = OrderEntity.createNew({ orderId: nextOrderId });
   const [recieved, setReceived] = useState(0);
-  const [queue, setQueue] = useState<WithId<ItemEntity>[]>([]);
-  order.items = queue;
+  const [queue, setQueue] = useState<WithId<MenuEntity>[]>([]);
+  order.menus = queue;
   const charge = recieved - order.total;
   // const [description, setDescription] = useState("");
   // order.description = description;
