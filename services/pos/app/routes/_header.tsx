@@ -4,7 +4,6 @@ import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
 
 export default function BaseHeader() {
-  const user = useAuth();
   const {
     isOnline,
     isDeviceOnline,
