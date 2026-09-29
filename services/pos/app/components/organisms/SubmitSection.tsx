@@ -78,9 +78,6 @@ export const SubmitSection = ({
         >
           合計どおり受け取ったとき
         </label>
-        <p className="text-sm text-stone-400">
-          上下キーで「送信」と「お釣り 0」を選択
-        </p>
         {needsSplit && (
           <p className="text-center font-bold text-red-500">
             この注文の分割を推奨します
