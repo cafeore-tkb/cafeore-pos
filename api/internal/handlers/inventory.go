@@ -15,6 +15,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
+	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
 )
@@ -34,12 +35,21 @@ const (
 type Inventory struct {
 	db         *gorm.DB
 	slack      *notify.Slack
-	cronSecret string
+	remindAuth RemindAuth
 	posURL     string
 }
 
-func NewInventory(db *gorm.DB, slack *notify.Slack, cronSecret, posURL string) *Inventory {
-	return &Inventory{db: db, slack: slack, cronSecret: cronSecret, posURL: posURL}
+// POST /api/inventory/remind を叩いてよい相手。どちらか一方を満たせば通す。
+// 両方とも未設定ならリマインドは無効（503）。
+type RemindAuth struct {
+	// 本番の Cloud Scheduler 用。Authorization: Bearer の Google ID トークンを検証する
+	Scheduler *auth.GoogleIDTokenVerifier
+	// ローカルや手動実行用。X-Cron-Secret ヘッダーと一致すれば通す
+	CronSecret string
+}
+
+func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string) *Inventory {
+	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL}
 }
 
 // ids が nil なら削除されていない在庫対象すべて。
@@ -533,17 +543,33 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 
 // POST /api/inventory/remind - 残量確認のリマインド（スケジューラから呼ぶ）
 func (h *InventoryHandler) RemindInventory(c *gin.Context) {
-	if h.inv.cronSecret == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "INVENTORY_CRON_SECRET is not set"})
-		return
-	}
-	given := c.GetHeader("X-Cron-Secret")
-	if subtle.ConstantTimeCompare([]byte(given), []byte(h.inv.cronSecret)) != 1 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid cron secret"})
+	ra := h.inv.remindAuth
+	if ra.Scheduler == nil && ra.CronSecret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "inventory reminder is not configured"})
 		return
 	}
 
 	ctx := c.Request.Context()
+
+	authorized := false
+	if ra.CronSecret != "" {
+		given := c.GetHeader("X-Cron-Secret")
+		authorized = subtle.ConstantTimeCompare([]byte(given), []byte(ra.CronSecret)) == 1
+	}
+	if !authorized && ra.Scheduler != nil {
+		if token, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer "); ok {
+			err := ra.Scheduler.Verify(ctx, token)
+			if err != nil && !errors.Is(err, auth.ErrInvalidIDToken) {
+				log.Printf("inventory: failed to verify id token: %v", err)
+			}
+			authorized = err == nil
+		}
+	}
+	if !authorized {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	now := time.Now()
 	skip := func(reason string) {
 		c.JSON(http.StatusOK, models.InventoryRemindResponse{Sent: false, Reason: &reason})

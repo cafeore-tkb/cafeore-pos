@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
@@ -237,11 +238,19 @@ func main() {
 	menuHandler := handlers.NewMenuHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
-	// INVENTORY_CRON_SECRET はスケジューラが残量確認のリマインドを叩くときの合言葉。
+	//
+	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
+	// INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で
+	// 発行した Google ID トークンを持つ相手（本番の Cloud Scheduler）か、
+	// X-Cron-Secret が INVENTORY_CRON_SECRET と一致する相手（ローカル・手動実行）。
+	remindAuth := handlers.RemindAuth{CronSecret: os.Getenv("INVENTORY_CRON_SECRET")}
+	if invoker, audience := os.Getenv("INVENTORY_REMIND_INVOKER"), os.Getenv("INVENTORY_REMIND_AUDIENCE"); invoker != "" && audience != "" {
+		remindAuth.Scheduler = auth.NewGoogleIDTokenVerifier(audience, invoker)
+	}
 	inventory := handlers.NewInventory(
 		db,
 		notify.NewSlack(os.Getenv("SLACK_WEBHOOK_URL")),
-		os.Getenv("INVENTORY_CRON_SECRET"),
+		remindAuth,
 		os.Getenv("POS_BASE_URL"),
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)

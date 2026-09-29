@@ -100,7 +100,8 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
-| `INVENTORY_CRON_SECRET` | 任意 | 未設定（リマインド無効） | スケジューラと共有する合言葉 |
+| `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
+| `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と

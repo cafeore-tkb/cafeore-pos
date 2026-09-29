@@ -119,8 +119,10 @@ export interface paths {
   "/api/inventory/remind": {
     /**
      * 残量確認のリマインドを Slack に送る
-     * @description スケジューラから定期的に叩く。X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致しないと 401。
-     * （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+     *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+     *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+     * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
      * 直近に注文が無い（営業していない）ときは送らない。
      */
     post: operations["remindInventory"];
@@ -1026,8 +1028,10 @@ export interface operations {
   };
   /**
    * 残量確認のリマインドを Slack に送る
-   * @description スケジューラから定期的に叩く。X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致しないと 401。
-   * （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+   *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+   *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+   * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
    * 直近に注文が無い（営業していない）ときは送らない。
    */
   remindInventory: {
@@ -1038,7 +1042,7 @@ export interface operations {
           "application/json": components["schemas"]["InventoryRemindResponse"];
         };
       };
-      /** @description シークレットが一致しない */
+      /** @description ID トークンも合言葉も合わない */
       401: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
