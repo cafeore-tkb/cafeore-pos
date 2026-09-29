@@ -45,16 +45,16 @@ export const useOnlineStatus = () => {
           cache: "no-store",
           signal: currentController.signal,
         });
-        const data = response.ok
-          ? ((await response.json()) as { database?: unknown })
-          : null;
+        if (!response.ok) {
+          throw new Error(`Status check failed: ${response.status}`);
+        }
+        const data = (await response.json()) as { database?: unknown };
 
         if (!disposed && currentRequestId === requestId) {
           setOnlineStatus({
             isDeviceOnline: navigator.onLine,
             isBackendOnline: true,
-            isDatabaseOnline:
-              data === null ? null : data.database === "connected",
+            isDatabaseOnline: data.database === "connected",
           });
         }
       } catch {
