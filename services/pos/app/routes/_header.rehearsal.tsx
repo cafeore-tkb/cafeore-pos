@@ -138,7 +138,8 @@ export default function Rehearsal() {
   }, []);
 
   // 割り当ては端末に覚えておく。初めてなら、名前が去年の商品と同じメニューを去年の割合で入れる。
-  // 覚えている割り当てに無いメニュー（あとから足したもの）は、名前で分類だけ推して割合は 0 にする
+  // 覚えている割り当てに無いメニュー（あとから足したもの）は、名前で分類だけ推して割合は 0 にする。
+  // 今のメニューに無い id（消したメニューや入れ直した DB の古い id）は捨てる
   useEffect(() => {
     if (!params || !menus || plan) return;
     const stored = loadPlan();
@@ -147,11 +148,14 @@ export default function Rehearsal() {
       setPlan(initialPlan(params, planMenus));
       return;
     }
+    const known = new Set(menus.map((m) => m.id));
     const added = menus.filter((m) => !(m.id in stored.menus));
     setPlan({
       ...stored,
       menus: {
-        ...stored.menus,
+        ...Object.fromEntries(
+          Object.entries(stored.menus).filter(([id]) => known.has(id)),
+        ),
         ...Object.fromEntries(
           added.map((m) => [
             m.id,
