@@ -10,7 +10,7 @@
 
 import type { GeneratedOrder, Rng } from "./generator";
 import type { Basket, GeneratorParams, PastItem } from "./params";
-import { GOODS_ROLE } from "./roles";
+import { GOODS_ROLE, PAST_ITEM_GROUPS, PAST_SETS } from "./roles";
 
 /** 画面に並べるドリンクの分類（去年よく出た順） */
 export const DRINK_ROLES = [
@@ -70,31 +70,70 @@ export const pastRoleShares = (params: GeneratorParams, year: string) => {
   ) as Record<string, number>;
 };
 
-/** その年の、分類の中での商品ごとの割合（%）。多い順 */
+/**
+ * 去年の内訳で使う、過去の商品のまとまり。同じ商品とみなすもの（`PAST_ITEM_GROUPS`）は 1 つにし、
+ * セット（`PAST_SETS`）は中のドリンクの分類に入れる。
+ */
+export type PastEntry = { id: string; name: string; role: string };
+
+const entryOf = (params: GeneratorParams, item: PastItem): PastEntry => {
+  const set = PAST_SETS[item.id];
+  if (set) {
+    const drink = params.items.find((i) => i.id === set.drinkId);
+    return { id: item.id, name: item.name, role: drink?.role ?? item.role };
+  }
+  const group = PAST_ITEM_GROUPS[item.id];
+  return group
+    ? { ...group, role: item.role }
+    : { id: item.id, name: item.name, role: item.role };
+};
+
+/** その年の、分類の中でのまとまりごとの割合（%）。多い順 */
 export const pastItemShares = (
   params: GeneratorParams,
   year: string,
   role: string,
 ) => {
-  const rows = params.items
-    .filter((item) => item.role === role && (item.counts[year] ?? 0) > 0)
-    .map((item) => ({ item, count: item.counts[year] ?? 0 }));
-  const total = rows.reduce((sum, row) => sum + row.count, 0);
-  return rows
-    .map(({ item, count }) => ({ item, count, share: (100 * count) / total }))
+  const rows = new Map<string, PastEntry & { count: number }>();
+  for (const item of params.items) {
+    // セットの中のドリンクは、セットのほうで数える
+    let count = item.counts[year] ?? 0;
+    for (const [setId, set] of Object.entries(PAST_SETS)) {
+      if (set.drinkId !== item.id) continue;
+      count -= params.items.find((i) => i.id === setId)?.counts[year] ?? 0;
+    }
+    if (count <= 0) continue;
+    const entry = entryOf(params, item);
+    if (entry.role !== role) continue;
+    const found = rows.get(entry.id);
+    if (found) {
+      found.count += count;
+    } else {
+      rows.set(entry.id, { ...entry, count });
+    }
+  }
+  const total = [...rows.values()].reduce((sum, row) => sum + row.count, 0);
+  return [...rows.values()]
+    .map((row) => ({ ...row, share: (100 * row.count) / total }))
     .sort((a, b) => b.count - a.count);
 };
 
-/** 今年のメニューと名前が同じ過去の商品。いちばん新しい年に出たものを優先する */
+/** 今年のメニューと名前が同じ過去の商品のまとまり。いちばん新しい年に出たものを優先する */
 export const matchPastItem = (
   params: GeneratorParams,
   menuName: string,
-): PastItem | null => {
+): PastEntry | null => {
   const name = normalize(menuName);
-  const hits = params.items.filter((item) => normalize(item.name) === name);
   const newest = (item: PastItem) =>
     Object.keys(item.counts).sort().at(-1) ?? "";
-  return hits.sort((a, b) => newest(b).localeCompare(newest(a)))[0] ?? null;
+  const hit = params.items
+    .map((item) => ({ item, entry: entryOf(params, item) }))
+    .filter(
+      ({ item, entry }) =>
+        normalize(item.name) === name || normalize(entry.name) === name,
+    )
+    .sort((a, b) => newest(b.item).localeCompare(newest(a.item)))[0];
+  return hit?.entry ?? null;
 };
 
 /** 割り当てが無いときの最初の形。名前が去年の商品と同じメニューだけ、その分類に入れる */
@@ -145,8 +184,8 @@ export const lastYearPlan = (
     const past = pastItemShares(params, year, role);
     const matched = new Map<string, number>();
     for (const menu of assigned) {
-      const item = matchPastItem(params, menu.name);
-      const row = past.find((p) => item !== null && p.item.id === item.id);
+      const entry = matchPastItem(params, menu.name);
+      const row = past.find((p) => entry !== null && p.id === entry.id);
       if (row) matched.set(menu.id, row.share);
     }
     const usedIds = new Set(
@@ -155,7 +194,7 @@ export const lastYearPlan = (
         .filter(Boolean),
     );
     const leftover = past
-      .filter((p) => !usedIds.has(p.item.id))
+      .filter((p) => !usedIds.has(p.id))
       .reduce((a, p) => a + p.share, 0);
     const unmatched = assigned.filter((menu) => !matched.has(menu.id));
 
@@ -293,11 +332,15 @@ const pickWeighted = <T>(
 /**
  * 生成した注文の杯・物販を、1 つずつ今年のメニューに置き換える。同じメニューはまとめる。
  * 分類の中のメニューは 1 杯ごとに独立に引く（「シングル × 2」が別の豆になることもある）。
+ *
+ * @param goodsInMenu メニューの id → そのメニューに入っている物販の数。セットを引いたら、
+ *   その数だけ注文の物販を減らす（過去の注文ではセットの物販も物販として数えているため）
  */
 export const planOrder = (
   order: GeneratedOrder,
   plan: MenuPlan,
   rng: Rng,
+  goodsInMenu: Record<string, number> = {},
 ): PlannedLine[] => {
   const byRole = new Map<string, { value: string; weight: number }[]>();
   for (const [id, a] of Object.entries(plan.menus)) {
@@ -320,6 +363,11 @@ export const planOrder = (
   };
   for (const role of Object.keys(order.roles).sort())
     add(role, order.roles[role]);
-  add(GOODS_ROLE, order.goods);
+  const goodsInSets = [...lines.values()].reduce(
+    (sum, line) =>
+      sum + (line.menuId ? (goodsInMenu[line.menuId] ?? 0) * line.count : 0),
+    0,
+  );
+  add(GOODS_ROLE, Math.max(order.goods - goodsInSets, 0));
   return [...lines.values()];
 };

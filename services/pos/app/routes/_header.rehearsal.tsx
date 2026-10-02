@@ -192,10 +192,26 @@ export default function Rehearsal() {
     );
   }, [params, plan, profileKey, durationMin, level, seed]);
 
+  // セットに入っている物販の数。セットを引いた注文は、そのぶん別の物販を引かない
+  const goodsInMenu = useMemo(
+    () =>
+      Object.fromEntries(
+        (menus ?? []).map((menu) => [
+          menu.id,
+          menu.items
+            .filter(({ item }) => item.item_type.name === "others")
+            .reduce((sum, { quantity }) => sum + quantity, 0),
+        ]),
+      ),
+    [menus],
+  );
+
   const planned = useMemo(() => {
     const rng = mulberry32((seed ^ MENU_SEED_SALT) >>> 0);
-    return generated.map((order) => planOrder(order, plan ?? EMPTY_PLAN, rng));
-  }, [generated, plan, seed]);
+    return generated.map((order) =>
+      planOrder(order, plan ?? EMPTY_PLAN, rng, goodsInMenu),
+    );
+  }, [generated, plan, seed, goodsInMenu]);
 
   const menuById = useMemo(
     () => new Map((menus ?? []).map((m) => [m.id, m])),
@@ -318,16 +334,172 @@ export default function Rehearsal() {
       : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 font-sans">
-      <div>
-        <h1 className="font-bold font-noto text-3xl">オペ練：次のお客さん</h1>
-        <p className="mt-1 text-sm text-stone-600">
+    <div className="mx-auto max-w-5xl space-y-4 p-4 font-sans">
+      {/* 練習中に見るものを上に、設定は下にまとめる（iPad で開く想定） */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-bold font-noto text-2xl">オペ練：次のお客さん</h1>
+        <div className="flex items-center gap-2">
+          {params && (
+            <span className="text-sm text-stone-600">
+              × {level.toFixed(1)}・seed {seed}・{generated.length} 人
+            </span>
+          )}
+          <Button
+            size="lg"
+            disabled={!params || elapsedSec >= totalSec}
+            onClick={() => {
+              setStarted(true);
+              setRunning((r) => !r);
+            }}
+          >
+            {running ? "一時停止" : started ? "再開" : "開始"}
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={!started}
+            onClick={reset}
+          >
+            最初から
+          </Button>
+        </div>
+      </div>
+
+      {!params && (
+        <p className="rounded-lg bg-amber-50 p-3 text-amber-900">
+          ページの下の「設定」で rehearsal-params.json を読み込んでください。
+        </p>
+      )}
+
+      {running && !isOperational && (
+        <div className="rounded-lg bg-violet-600 p-3 text-center text-white">
+          マスターがオーダーストップ中なので、客の到着を止めています
+        </div>
+      )}
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border-4 border-amber-900 p-6 md:col-span-2">
+          <h2 className="text-stone-600">次のお客さん</h2>
+          {head ? (
+            <>
+              <ul className="mt-2 space-y-1">
+                {head.map((line) => (
+                  <li
+                    key={line.menuId ?? line.role}
+                    className="font-bold text-4xl text-amber-950"
+                  >
+                    {labelOf(line)} × {line.count}
+                  </li>
+                ))}
+              </ul>
+              <Button
+                size="lg"
+                variant="outline"
+                className="mt-6"
+                onClick={acceptHead}
+              >
+                受付した（手で進める）
+              </Button>
+            </>
+          ) : (
+            <p className="mt-2 text-2xl text-stone-500">
+              {started
+                ? "いま並んでいる人はいません"
+                : "開始を押すと客が来ます"}
+            </p>
+          )}
+        </div>
+
+        <dl className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-1">
+          <div>
+            <dt className="text-sm text-stone-600">並んでいる人数</dt>
+            <dd className="font-bold text-5xl">{queue.length}</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-stone-600">次の客まで</dt>
+            <dd className="font-bold text-2xl">
+              {nextArrival === null ? "—" : `${Math.ceil(nextArrival)} 秒`}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm text-stone-600">経過</dt>
+            <dd className="text-xl">
+              {clock(elapsedSec)} / {clock(totalSec)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm text-stone-600">来た客 / 受付済み</dt>
+            <dd className="text-xl">
+              {arrived} / {accepted}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      {queue.length > 1 && (
+        <section>
+          <h2 className="text-stone-600">その後ろ</h2>
+          <ol className="mt-2 space-y-1">
+            {queue.slice(1, 6).map((index) => (
+              <li key={index} className="text-lg">
+                {planned[index]
+                  .map((line) => `${labelOf(line)} × ${line.count}`)
+                  .join("、")}
+              </li>
+            ))}
+          </ol>
+          {queue.length > 6 && (
+            <p className="text-stone-500">ほか {queue.length - 6} 人</p>
+          )}
+        </section>
+      )}
+
+      <section
+        className={cn(
+          "rounded-lg border p-4",
+          isOrdersLoaded &&
+            adviseStop &&
+            isOperational &&
+            "border-red-600 bg-red-50",
+          isOrdersLoaded &&
+            !adviseStop &&
+            !isOperational &&
+            "border-green-600 bg-green-50",
+        )}
+      >
+        <h2 className="text-stone-600">オーダーストップの目安</h2>
+        {isOrdersLoaded ? (
+          <>
+            <p className="mt-1 font-bold text-2xl">
+              {isOperational
+                ? adviseStop
+                  ? "止める目安を超えています"
+                  : "受付を続けてよい目安です"
+                : adviseStop
+                  ? "まだ止めておく目安です"
+                  : "再開してよい目安です"}
+            </p>
+            <p className="mt-1">
+              提供待ちのドリンク {stack} 杯 → 新しい注文の提供時間の見込み{" "}
+              {serviceEstimate.toFixed(1)} 分
+            </p>
+            <p className="mt-1 text-sm text-stone-600">
+              見込みが {STOP_MIN} 分を超えたら（{stopCups} 杯以上）止め、
+              {RESUME_MIN} 分を下回ったら（{resumeCups}{" "}
+              杯以下）再開する目安です。止めるのはマスターの判断で、この画面は自動では止めません。
+            </p>
+          </>
+        ) : (
+          <p className="mt-1 text-stone-500">注文一覧を読み込んでいます</p>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-lg border p-4">
+        <h2 className="font-bold text-xl">設定</h2>
+        <p className="text-sm text-stone-600">
           過去の祭の注文から、混む時間帯の客の流れを作って出題します。レジ係は出た注文をいつものレジ画面で打ってください。
           注文が確定すると、並んでいる先頭が自動で消えます。この画面は注文を作りません。
         </p>
-      </div>
-
-      <section className="space-y-3 rounded-lg border p-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm">
             パラメータ
@@ -410,25 +582,11 @@ export default function Rehearsal() {
               onChange={(e) => setSeed(Math.trunc(Number(e.target.value) || 0))}
             />
           </label>
-          <div className="flex gap-2">
-            <Button
-              disabled={!params || elapsedSec >= totalSec}
-              onClick={() => {
-                setStarted(true);
-                setRunning((r) => !r);
-              }}
-            >
-              {running ? "一時停止" : started ? "再開" : "開始"}
-            </Button>
-            <Button variant="outline" disabled={!started} onClick={reset}>
-              最初から
-            </Button>
-          </div>
         </div>
         {params && (
           <p className="text-sm text-stone-600">
             この設定で {generated.length} 人の客が来ます。同じ seed
-            なら毎回同じ流れです。
+            なら毎回同じ流れです。開始すると設定は変えられません。
           </p>
         )}
         {menusError && (
@@ -453,129 +611,6 @@ export default function Rehearsal() {
           onChange={changePlan}
           disabled={started}
         />
-      )}
-
-      {running && !isOperational && (
-        <div className="rounded-lg bg-violet-600 p-3 text-center text-white">
-          マスターがオーダーストップ中なので、客の到着を止めています
-        </div>
-      )}
-
-      <section
-        className={cn(
-          "rounded-lg border p-4",
-          isOrdersLoaded &&
-            adviseStop &&
-            isOperational &&
-            "border-red-600 bg-red-50",
-          isOrdersLoaded &&
-            !adviseStop &&
-            !isOperational &&
-            "border-green-600 bg-green-50",
-        )}
-      >
-        <h2 className="text-stone-600">オーダーストップの目安</h2>
-        {isOrdersLoaded ? (
-          <>
-            <p className="mt-1 font-bold text-2xl">
-              {isOperational
-                ? adviseStop
-                  ? "止める目安を超えています"
-                  : "受付を続けてよい目安です"
-                : adviseStop
-                  ? "まだ止めておく目安です"
-                  : "再開してよい目安です"}
-            </p>
-            <p className="mt-1">
-              提供待ちのドリンク {stack} 杯 → 新しい注文の提供時間の見込み{" "}
-              {serviceEstimate.toFixed(1)} 分
-            </p>
-            <p className="mt-1 text-sm text-stone-600">
-              見込みが {STOP_MIN} 分を超えたら（{stopCups} 杯以上）止め、
-              {RESUME_MIN} 分を下回ったら（{resumeCups}{" "}
-              杯以下）再開する目安です。止めるのはマスターの判断で、この画面は自動では止めません。
-            </p>
-          </>
-        ) : (
-          <p className="mt-1 text-stone-500">注文一覧を読み込んでいます</p>
-        )}
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border-4 border-amber-900 p-6 md:col-span-2">
-          <h2 className="text-stone-600">次のお客さん</h2>
-          {head ? (
-            <>
-              <ul className="mt-2 space-y-1">
-                {head.map((line) => (
-                  <li
-                    key={line.menuId ?? line.role}
-                    className="font-bold text-4xl text-amber-950"
-                  >
-                    {labelOf(line)} × {line.count}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                size="lg"
-                variant="outline"
-                className="mt-6"
-                onClick={acceptHead}
-              >
-                受付した（手で進める）
-              </Button>
-            </>
-          ) : (
-            <p className="mt-2 text-2xl text-stone-500">
-              {started
-                ? "いま並んでいる人はいません"
-                : "開始を押すと客が来ます"}
-            </p>
-          )}
-        </div>
-
-        <dl className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-1">
-          <div>
-            <dt className="text-sm text-stone-600">並んでいる人数</dt>
-            <dd className="font-bold text-5xl">{queue.length}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-stone-600">次の客まで</dt>
-            <dd className="font-bold text-2xl">
-              {nextArrival === null ? "—" : `${Math.ceil(nextArrival)} 秒`}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-stone-600">経過</dt>
-            <dd className="text-xl">
-              {clock(elapsedSec)} / {clock(totalSec)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-stone-600">来た客 / 受付済み</dt>
-            <dd className="text-xl">
-              {arrived} / {accepted}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {queue.length > 1 && (
-        <section>
-          <h2 className="text-stone-600">その後ろ</h2>
-          <ol className="mt-2 space-y-1">
-            {queue.slice(1, 6).map((index) => (
-              <li key={index} className="text-lg">
-                {planned[index]
-                  .map((line) => `${labelOf(line)} × ${line.count}`)
-                  .join("、")}
-              </li>
-            ))}
-          </ol>
-          {queue.length > 6 && (
-            <p className="text-stone-500">ほか {queue.length - 6} 人</p>
-          )}
-        </section>
       )}
 
       <p className="text-stone-500 text-xs">

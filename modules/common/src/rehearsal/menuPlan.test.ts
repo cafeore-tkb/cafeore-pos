@@ -6,6 +6,7 @@ import {
   initialPlan,
   lastYearPlan,
   matchPastItem,
+  pastItemShares,
   pastRoleShares,
   planOrder,
   reweightBaskets,
@@ -219,5 +220,120 @@ describe("[unit] rehearsal menu plan", () => {
     }
     expect(a / 5000).toBeGreaterThan(0.77);
     expect(a / 5000).toBeLessThan(0.83);
+  });
+
+  describe("2025: 縁ブレンドとも花も香ブレンド、トートセット", () => {
+    // 2025 年祭の実数。縁ブレンドの 46 杯はトートセットの中の ¥0 のドリンク
+    const festival: GeneratorParams = {
+      ...params,
+      items: [
+        {
+          id: "01_yukari_brend",
+          name: "縁ブレンド",
+          role: "signature_blend",
+          counts: { "2025": 317 },
+        },
+        {
+          id: "08_special_mocha_blend",
+          name: "も花も香ブレンド",
+          role: "signature_blend",
+          counts: { "2025": 85 },
+        },
+        {
+          id: "51_tote_yukari",
+          name: "トートセット",
+          role: "goods",
+          counts: { "2025": 46 },
+        },
+        {
+          id: "50_coaster",
+          name: "コースター",
+          role: "goods",
+          counts: { "2025": 62 },
+        },
+      ],
+    };
+
+    test("the two blends count as one 看板ブレンド and the set is shown in that role", () => {
+      const rows = pastItemShares(festival, "2025", "signature_blend");
+      expect(rows.map((r) => [r.name, r.count])).toEqual([
+        ["縁ブレンド・も花も香ブレンド", 356],
+        ["トートセット", 46],
+      ]);
+      expect(rows[1].share).toBeCloseTo((100 * 46) / 402);
+      // 物販の内訳にはセットを出さない
+      expect(
+        pastItemShares(festival, "2025", "goods").map((r) => r.name),
+      ).toEqual(["コースター"]);
+    });
+
+    test("either blend name matches the merged entry, and the set matches by name", () => {
+      expect(matchPastItem(festival, "縁ブレンド")?.id).toBe("signature_2025");
+      expect(matchPastItem(festival, "も花も香ブレンド")?.id).toBe(
+        "signature_2025",
+      );
+      expect(matchPastItem(festival, "トートセット")?.role).toBe(
+        "signature_blend",
+      );
+    });
+
+    test("same as last year gives a new blend and a new set last year's split", () => {
+      const plan = lastYearPlan(
+        festival,
+        [
+          { id: "blend", name: "新しい看板ブレンド" },
+          { id: "set", name: "新しいトートのセット" },
+        ],
+        {
+          version: 1,
+          roleShares: {},
+          menus: {
+            blend: { role: "signature_blend", weight: 0 },
+            set: { role: "signature_blend", weight: 0 },
+          },
+        },
+      );
+      // 名前が当たらないので等分になる。名前を去年にそろえれば去年の割合が入る
+      expect(plan.menus.blend.weight).toBeCloseTo(50);
+
+      const named = lastYearPlan(
+        festival,
+        [
+          { id: "blend", name: "縁ブレンド" },
+          { id: "set", name: "トートセット" },
+        ],
+        {
+          version: 1,
+          roleShares: {},
+          menus: {
+            blend: { role: "signature_blend", weight: 0 },
+            set: { role: "signature_blend", weight: 0 },
+          },
+        },
+      );
+      expect(named.menus.blend.weight).toBeCloseTo((100 * 356) / 402);
+      expect(named.menus.set.weight).toBeCloseTo((100 * 46) / 402);
+    });
+  });
+
+  test("a set that already holds goods takes them out of the order's goods", () => {
+    const plan: MenuPlan = {
+      version: 1,
+      roleShares: {},
+      menus: {
+        set: { role: "signature_blend", weight: 100 },
+        coaster: { role: "goods", weight: 100 },
+      },
+    };
+    const lines = planOrder(
+      { offsetSec: 0, roles: { signature_blend: 1 }, drinkCups: 1, goods: 2 },
+      plan,
+      mulberry32(1),
+      { set: 1 },
+    );
+    expect(lines).toEqual([
+      { menuId: "set", role: "signature_blend", count: 1 },
+      { menuId: "coaster", role: "goods", count: 1 },
+    ]);
   });
 });

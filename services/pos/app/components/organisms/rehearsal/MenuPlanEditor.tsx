@@ -203,9 +203,7 @@ export const MenuPlanEditor = ({
               <td className="py-1 pl-4 text-stone-600">
                 {year &&
                   pastItemShares(params, year, role)
-                    .map(
-                      ({ item, share }) => `${item.name} ${share.toFixed(0)}%`,
-                    )
+                    .map(({ name, share }) => `${name} ${share.toFixed(0)}%`)
                     .join("、")}
               </td>
             </tr>

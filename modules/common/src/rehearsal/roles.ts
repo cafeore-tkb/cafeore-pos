@@ -55,3 +55,31 @@ export const ROLE_LABELS: Readonly<Record<string, string>> = {
   ice_milk: "アイスミルク",
   [GOODS_ROLE]: "物販",
 };
+
+/**
+ * 去年の内訳で、ひとつの商品として数える過去の商品。
+ *
+ * 2025 年祭は縁ブレンドが切れたあと、も花も香ブレンドを代わりに出していた（バッファ）。
+ * 客から見れば同じ看板ブレンドなので、内訳を分けずに 1 つとして扱う。
+ */
+export const PAST_ITEM_GROUPS: Readonly<
+  Record<string, { id: string; name: string }>
+> = {
+  "01_yukari_brend": {
+    id: "signature_2025",
+    name: "縁ブレンド・も花も香ブレンド",
+  },
+  "08_special_mocha_blend": {
+    id: "signature_2025",
+    name: "縁ブレンド・も花も香ブレンド",
+  },
+};
+
+/**
+ * 過去のセット。セットそのものは物販として記録され、中のドリンクは ¥0 の別の品目
+ * （`drinkId`）として入っている。去年の内訳では、そのドリンクの分類の中にセットとして出し、
+ * ドリンクと物販の数からは除く。
+ */
+export const PAST_SETS: Readonly<Record<string, { drinkId: string }>> = {
+  "51_tote_yukari": { drinkId: "01_yukari_brend" },
+};

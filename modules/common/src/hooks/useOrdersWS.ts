@@ -8,7 +8,7 @@ import type { OrderEntity } from "../models";
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
-  | { type: "orders"; orders: OrderResponse[] }
+  | { type: "orders"; orders?: OrderResponse[] }
   | {
       type: "master_state";
       master_state: { created_at: string; type: string };
@@ -44,7 +44,8 @@ export const useOrdersWS = () => {
 
         switch (data.type) {
           case "orders":
-            setOrders(data.orders.map(responseToOrderEntity));
+            // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
+            setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 
           case "master_state":
