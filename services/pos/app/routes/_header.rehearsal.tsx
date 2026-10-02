@@ -1,11 +1,17 @@
 import {
+  FESTIVAL_STACK_MODEL,
   GOODS_ROLE,
   type GeneratedOrder,
   type GeneratorParams,
+  RESUME_MIN,
   ROLE_LABELS,
+  STOP_MIN,
   flatProfile,
   generateOrders,
   scaleOfLevel,
+  serviceMin,
+  shouldStop,
+  stackAt,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
@@ -208,9 +214,22 @@ export default function Rehearsal() {
     }
   };
 
+  // オーダーストップの目安。まだ提供可能になっていない注文のドリンク杯数から見込みを出す
+  const stack = useMemo(
+    () =>
+      posOrders
+        .filter((order) => order.readyAt === null)
+        .reduce((sum, order) => sum + order.getDrinkCups().length, 0),
+    [posOrders],
+  );
+  const serviceEstimate = serviceMin(FESTIVAL_STACK_MODEL, stack);
+  const adviseStop = shouldStop(FESTIVAL_STACK_MODEL, stack, !isOperational);
+  const stopCups = Math.floor(stackAt(FESTIVAL_STACK_MODEL, STOP_MIN)) + 1;
+  const resumeCups = Math.ceil(stackAt(FESTIVAL_STACK_MODEL, RESUME_MIN)) - 1;
+
   const head = queue.length > 0 ? generated[queue[0]] : null;
   const nextArrival =
-    arrived < generated.length
+    started && arrived < generated.length
       ? generated[arrived].offsetSec - elapsedSec
       : null;
 
@@ -332,9 +351,49 @@ export default function Rehearsal() {
 
       {running && !isOperational && (
         <div className="rounded-lg bg-violet-600 p-3 text-center text-white">
-          オーダーストップ中：客の到着を止めています
+          マスターがオーダーストップ中なので、客の到着を止めています
         </div>
       )}
+
+      <section
+        className={cn(
+          "rounded-lg border p-4",
+          isOrdersLoaded &&
+            adviseStop &&
+            isOperational &&
+            "border-red-600 bg-red-50",
+          isOrdersLoaded &&
+            !adviseStop &&
+            !isOperational &&
+            "border-green-600 bg-green-50",
+        )}
+      >
+        <h2 className="text-stone-600">オーダーストップの目安</h2>
+        {isOrdersLoaded ? (
+          <>
+            <p className="mt-1 font-bold text-2xl">
+              {isOperational
+                ? adviseStop
+                  ? "止める目安を超えています"
+                  : "受付を続けてよい目安です"
+                : adviseStop
+                  ? "まだ止めておく目安です"
+                  : "再開してよい目安です"}
+            </p>
+            <p className="mt-1">
+              提供待ちのドリンク {stack} 杯 → 新しい注文の提供時間の見込み{" "}
+              {serviceEstimate.toFixed(1)} 分
+            </p>
+            <p className="mt-1 text-sm text-stone-600">
+              見込みが {STOP_MIN} 分を超えたら（{stopCups} 杯以上）止め、
+              {RESUME_MIN} 分を下回ったら（{resumeCups}{" "}
+              杯以下）再開する目安です。止めるのはマスターの判断で、この画面は自動では止めません。
+            </p>
+          </>
+        ) : (
+          <p className="mt-1 text-stone-500">注文一覧を読み込んでいます</p>
+        )}
+      </section>
 
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border-4 border-amber-900 p-6 md:col-span-2">
@@ -414,6 +473,8 @@ export default function Rehearsal() {
         注文の中身は役割カテゴリまでです（2026
         年のメニューへの割り当ては未対応）。セット販売の注文は出ません。
         作っているのは過去の体制でさばけた注文の流れで、需要の予測ではありません。
+        オーダーストップの目安は 2024・2025 年祭（抽出 5〜6
+        人）の提供時間から当てはめたもので、今年の体制では外れることがあります。
       </p>
     </div>
   );

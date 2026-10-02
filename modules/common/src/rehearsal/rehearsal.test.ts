@@ -15,6 +15,14 @@ import {
   stratumOf,
   tagDay,
 } from "./params";
+import {
+  FESTIVAL_STACK_MODEL,
+  RESUME_MIN,
+  STOP_MIN,
+  serviceMin,
+  shouldStop,
+  stackAt,
+} from "./stopRule";
 
 // 日本時間 2025-11-02 10:00 を起点に、秒数で注文を置く
 const at = (sec: number) =>
@@ -213,5 +221,32 @@ describe("[unit] rehearsal generator", () => {
     });
     expect(first.drinkCups).toBe(3);
     expect(first.goods).toBe(1);
+  });
+});
+
+describe("[unit] rehearsal stop rule", () => {
+  const model = FESTIVAL_STACK_MODEL;
+
+  test("service time stays at c1 below the break point", () => {
+    expect(serviceMin(model, 0)).toBe(model.c1);
+    expect(serviceMin(model, model.a1)).toBeCloseTo(model.c1);
+    expect(serviceMin(model, model.a1 + 10)).toBeCloseTo(
+      model.c1 + 10 * model.slope,
+    );
+  });
+
+  test("stops above 15 minutes and resumes below 13 minutes", () => {
+    const stopAt = stackAt(model, STOP_MIN);
+    const resumeAt = stackAt(model, RESUME_MIN);
+    // 15 分は 24.7 杯、13 分は 20.4 杯
+    expect(stopAt).toBeCloseTo(24.68, 1);
+    expect(resumeAt).toBeCloseTo(20.4, 1);
+
+    expect(shouldStop(model, 24, false)).toBe(false);
+    expect(shouldStop(model, 25, false)).toBe(true);
+    // 止めたあとは 13 分を下回るまで止めたまま
+    expect(shouldStop(model, 22, true)).toBe(true);
+    expect(shouldStop(model, 21, true)).toBe(true);
+    expect(shouldStop(model, 20, true)).toBe(false);
   });
 });
