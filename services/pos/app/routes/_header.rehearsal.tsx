@@ -1,21 +1,34 @@
 import {
   FESTIVAL_STACK_MODEL,
-  GOODS_ROLE,
-  type GeneratedOrder,
   type GeneratorParams,
+  type MenuEntity,
+  type MenuPlan,
+  type PlannedLine,
   RESUME_MIN,
   ROLE_LABELS,
   STOP_MIN,
+  type WithId,
   flatProfile,
   generateOrders,
+  initialPlan,
+  matchPastItem,
+  menuRepository,
+  mulberry32,
+  planOrder,
+  reweightBaskets,
   scaleOfLevel,
   serviceMin,
   shouldStop,
   stackAt,
+  unassignedRoles,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import {
+  MenuPlanEditor,
+  unitsOf,
+} from "~/components/organisms/rehearsal/MenuPlanEditor";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -26,6 +39,7 @@ export const meta: MetaFunction = () => {
 
 // パラメータは注文間隔そのものを含むのでリポジトリに置かず、端末で読み込んで覚えておく（#748）
 const STORAGE_KEY = "rehearsal-params";
+const PLAN_KEY = "rehearsal-menu-plan";
 const LEVELS = [0.8, 1.0, 1.2, 1.4, 1.6];
 const BUSY = "busy";
 const TICK_MS = 250;
@@ -33,12 +47,13 @@ const TICK_MS = 250;
 const isParams = (value: unknown): value is GeneratorParams => {
   const v = value as GeneratorParams;
   return (
-    v?.version === 1 &&
+    v?.version === 2 &&
     Array.isArray(v.edges) &&
     Array.isArray(v.gapsByStratum) &&
     v.gapsByStratum.every((gaps) => Array.isArray(gaps) && gaps.length > 0) &&
     Array.isArray(v.baskets) &&
-    Array.isArray(v.days)
+    Array.isArray(v.days) &&
+    Array.isArray(v.items)
   );
 };
 
@@ -52,27 +67,35 @@ const loadStored = (): GeneratorParams | null => {
   }
 };
 
-const store = (params: GeneratorParams) => {
+const store = (key: string, value: unknown) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // 覚えておけなくても、このページを開いている間は使える
   }
 };
+
+const loadPlan = (): MenuPlan | null => {
+  try {
+    const raw = localStorage.getItem(PLAN_KEY);
+    const parsed = raw ? (JSON.parse(raw) as MenuPlan) : null;
+    return parsed?.version === 1 && typeof parsed.menus === "object"
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const EMPTY_PLAN: MenuPlan = { version: 1, roleShares: {}, menus: {} };
 
 const clock = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-const contents = (order: GeneratedOrder) => [
-  ...Object.entries(order.roles)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([role, n]) => ({ label: ROLE_LABELS[role] ?? role, n })),
-  ...(order.goods > 0
-    ? [{ label: ROLE_LABELS[GOODS_ROLE], n: order.goods }]
-    : []),
-];
+// 乱数を生成器と分けて、メニューの割り当てを変えても客の流れ（時刻・杯数）は変わらないようにする
+const MENU_SEED_SALT = 0x5bd1e995;
 
 export default function Rehearsal() {
   const [params, setParams] = useState<GeneratorParams | null>(null);
@@ -90,6 +113,10 @@ export default function Rehearsal() {
   const [arrived, setArrived] = useState(0);
   const [accepted, setAccepted] = useState(0);
 
+  const [menus, setMenus] = useState<WithId<MenuEntity>[] | null>(null);
+  const [menusError, setMenusError] = useState(false);
+  const [plan, setPlan] = useState<MenuPlan | null>(null);
+
   const {
     orders: posOrders,
     isOrdersLoaded,
@@ -104,25 +131,82 @@ export default function Rehearsal() {
 
   useEffect(() => {
     setParams(loadStored());
+    menuRepository
+      .findAll()
+      .then(setMenus)
+      .catch(() => setMenusError(true));
   }, []);
+
+  // 割り当ては端末に覚えておく。初めてなら、名前が去年の商品と同じメニューを去年の割合で入れる。
+  // 覚えている割り当てに無いメニュー（あとから足したもの）は、名前で分類だけ推して割合は 0 にする
+  useEffect(() => {
+    if (!params || !menus || plan) return;
+    const stored = loadPlan();
+    const planMenus = menus.map((m) => ({ id: m.id, name: m.name }));
+    if (!stored) {
+      setPlan(initialPlan(params, planMenus));
+      return;
+    }
+    const added = menus.filter((m) => !(m.id in stored.menus));
+    setPlan({
+      ...stored,
+      menus: {
+        ...stored.menus,
+        ...Object.fromEntries(
+          added.map((m) => [
+            m.id,
+            { role: matchPastItem(params, m.name)?.role ?? null, weight: 0 },
+          ]),
+        ),
+      },
+    });
+  }, [params, menus, plan]);
+
+  const changePlan = (next: MenuPlan) => {
+    setPlan(next);
+    store(PLAN_KEY, next);
+  };
 
   const generated = useMemo(() => {
     if (!params) return [];
     const day = params.days.find((d) => d.date === profileKey);
-    return generateOrders(params, {
-      // 混む時間帯は最上位の層のレートをずっと続ける
-      profile: day
-        ? day.binRates
-        : flatProfile(
-            params.edges[params.edges.length - 1],
-            durationMin,
-            params.binMinutes,
-          ),
-      durationMin: day ? day.durationMin : durationMin,
-      scale: scaleOfLevel(level),
-      seed,
-    });
-  }, [params, profileKey, durationMin, level, seed]);
+    // 分類ごとの割合を去年から変えたら、過去の注文の組の重みを付け直してそこに合わせる
+    const baskets = plan
+      ? reweightBaskets(params.baskets, plan.roleShares)
+      : params.baskets;
+    return generateOrders(
+      { ...params, baskets },
+      {
+        // 混む時間帯は最上位の層のレートをずっと続ける
+        profile: day
+          ? day.binRates
+          : flatProfile(
+              params.edges[params.edges.length - 1],
+              durationMin,
+              params.binMinutes,
+            ),
+        durationMin: day ? day.durationMin : durationMin,
+        scale: scaleOfLevel(level),
+        seed,
+      },
+    );
+  }, [params, plan, profileKey, durationMin, level, seed]);
+
+  const planned = useMemo(() => {
+    const rng = mulberry32((seed ^ MENU_SEED_SALT) >>> 0);
+    return generated.map((order) => planOrder(order, plan ?? EMPTY_PLAN, rng));
+  }, [generated, plan, seed]);
+
+  const menuById = useMemo(
+    () => new Map((menus ?? []).map((m) => [m.id, m])),
+    [menus],
+  );
+  const labelOf = (line: PlannedLine) => {
+    const menu = line.menuId ? menuById.get(line.menuId) : undefined;
+    if (!menu) return `${ROLE_LABELS[line.role] ?? line.role}（未割り当て）`;
+    return unitsOf(menu) > 1 ? `${menu.name}（セット）` : menu.name;
+  };
+  const missingRoles = plan ? unassignedRoles(plan) : [];
 
   const totalSec = useMemo(() => {
     const day = params?.days.find((d) => d.date === profileKey);
@@ -205,7 +289,7 @@ export default function Rehearsal() {
         setLoadError("生成器のパラメータの形ではありません");
         return;
       }
-      store(parsed);
+      store(STORAGE_KEY, parsed);
       setParams(parsed);
       setLoadError(null);
       reset();
@@ -227,7 +311,7 @@ export default function Rehearsal() {
   const stopCups = Math.floor(stackAt(FESTIVAL_STACK_MODEL, STOP_MIN)) + 1;
   const resumeCups = Math.ceil(stackAt(FESTIVAL_STACK_MODEL, RESUME_MIN)) - 1;
 
-  const head = queue.length > 0 ? generated[queue[0]] : null;
+  const head = queue.length > 0 ? planned[queue[0]] : null;
   const nextArrival =
     started && arrived < generated.length
       ? generated[arrived].offsetSec - elapsedSec
@@ -347,7 +431,29 @@ export default function Rehearsal() {
             なら毎回同じ流れです。
           </p>
         )}
+        {menusError && (
+          <p className="text-red-700 text-sm">
+            メニューを読み込めませんでした。注文は分類名のまま出ます。
+          </p>
+        )}
+        {missingRoles.length > 0 && (
+          <p className="text-amber-700 text-sm">
+            メニューが割り当たっていない分類があります（
+            {missingRoles.map((role) => ROLE_LABELS[role]).join("、")}
+            ）。この分類の注文は分類名のまま出ます。
+          </p>
+        )}
       </section>
+
+      {params && menus && plan && (
+        <MenuPlanEditor
+          params={params}
+          menus={menus}
+          plan={plan}
+          onChange={changePlan}
+          disabled={started}
+        />
+      )}
 
       {running && !isOperational && (
         <div className="rounded-lg bg-violet-600 p-3 text-center text-white">
@@ -401,9 +507,12 @@ export default function Rehearsal() {
           {head ? (
             <>
               <ul className="mt-2 space-y-1">
-                {contents(head).map(({ label, n }) => (
-                  <li key={label} className="font-bold text-4xl text-amber-950">
-                    {label} × {n}
+                {head.map((line) => (
+                  <li
+                    key={line.menuId ?? line.role}
+                    className="font-bold text-4xl text-amber-950"
+                  >
+                    {labelOf(line)} × {line.count}
                   </li>
                 ))}
               </ul>
@@ -457,8 +566,8 @@ export default function Rehearsal() {
           <ol className="mt-2 space-y-1">
             {queue.slice(1, 6).map((index) => (
               <li key={index} className="text-lg">
-                {contents(generated[index])
-                  .map(({ label, n }) => `${label} × ${n}`)
+                {planned[index]
+                  .map((line) => `${labelOf(line)} × ${line.count}`)
                   .join("、")}
               </li>
             ))}
@@ -470,8 +579,9 @@ export default function Rehearsal() {
       )}
 
       <p className="text-stone-500 text-xs">
-        注文の中身は役割カテゴリまでです（2026
-        年のメニューへの割り当ては未対応）。セット販売の注文は出ません。
+        注文の組（何杯をどの分類で）は過去の祭の注文をそのまま使い、その 1
+        杯ずつを割り当てた今年のメニューに置き換えています。同じ分類の 2
+        杯が別のメニューになることもあります。セットは 1 杯ぶんとして出ます。
         作っているのは過去の体制でさばけた注文の流れで、需要の予測ではありません。
         オーダーストップの目安は 2024・2025 年祭（抽出 5〜6
         人）の提供時間から当てはめたもので、今年の体制では外れることがあります。

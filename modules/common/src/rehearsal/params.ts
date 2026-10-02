@@ -16,7 +16,7 @@ export type RawOrder = {
   orderId: number;
   createdAt: string;
   readyAt?: string | null;
-  items: { id: string }[];
+  items: { id: string; name?: string }[];
 };
 
 /** 注文の組。`weight` は過去にその組が出た回数 */
@@ -40,8 +40,18 @@ export type DayProfile = {
   binRates: number[];
 };
 
+/** 過去の商品 1 つぶんの、年ごとの数。メニューの割り当て画面で「去年の割合」を出すのに使う */
+export type PastItem = {
+  id: string;
+  /** その商品のいちばん新しい名前 */
+  name: string;
+  role: string;
+  /** 年（"2025" など）→ 出た数（杯または個） */
+  counts: Record<string, number>;
+};
+
 export type GeneratorParams = {
-  version: 1;
+  version: 2;
   /** 対象にした開催日と注文の件数 */
   source: { dates: string[]; orders: number };
   binMinutes: number;
@@ -51,6 +61,7 @@ export type GeneratorParams = {
   gapsByStratum: number[][];
   baskets: Basket[];
   days: DayProfile[];
+  items: PastItem[];
 };
 
 /** ビンの幅（分）。sohosai-analysis の T-56a の決定 */
@@ -227,6 +238,23 @@ export const fitParams = (
     }
   }
 
+  // 商品ごとの数を年ごとに数える。受付順に見るので、名前はその商品のいちばん新しいものが残る
+  const items = new Map<string, PastItem>();
+  for (const t of tagged) {
+    const year = jstDate(t.ms).slice(0, 4);
+    for (const item of t.order.items) {
+      const found = items.get(item.id) ?? {
+        id: item.id,
+        name: item.id,
+        role: roleOf(item.id),
+        counts: {},
+      };
+      if (item.name) found.name = item.name;
+      found.counts[year] = (found.counts[year] ?? 0) + 1;
+      items.set(item.id, found);
+    }
+  }
+
   const empty = gapsByStratum.findIndex((gaps) => gaps.length === 0);
   if (empty >= 0) {
     throw new Error(
@@ -235,12 +263,13 @@ export const fitParams = (
   }
 
   return {
-    version: 1,
+    version: 2,
     source: { dates: [...dates].sort(), orders: tagged.length },
     binMinutes: BIN_MINUTES,
     edges,
     gapsByStratum,
     baskets: [...baskets.values()].sort((a, b) => b.weight - a.weight),
     days: days.map((day) => day.profile),
+    items: [...items.values()].sort((a, b) => a.id.localeCompare(b.id)),
   };
 };

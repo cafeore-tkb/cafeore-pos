@@ -36,7 +36,7 @@ const order = (orderId: number, sec: number, items: string[]): RawOrder => ({
 });
 
 const params: GeneratorParams = {
-  version: 1,
+  version: 2,
   source: { dates: ["2025-11-02"], orders: 0 },
   binMinutes: 10,
   edges: [0.8, 1.0, 1.2],
@@ -51,6 +51,7 @@ const params: GeneratorParams = {
     { roles: { ice_ore: 2 }, goods: 0, weight: 1 },
   ],
   days: [],
+  items: [],
 };
 
 describe("[unit] rehearsal params", () => {
@@ -103,6 +104,26 @@ describe("[unit] rehearsal params", () => {
         openAt: "10:00:00",
         durationMin: 40,
         binRates: [0.2, 0.4, 0.6, 0.9],
+      },
+    ]);
+    expect(fitted.items).toEqual([
+      {
+        id: "02_cafeore_brend",
+        name: "02_cafeore_brend",
+        role: "house_blend",
+        counts: { "2025": 14 },
+      },
+      {
+        id: "30_ice_ore",
+        name: "30_ice_ore",
+        role: "ice_ore",
+        counts: { "2025": 7 },
+      },
+      {
+        id: "50_coaster",
+        name: "50_coaster",
+        role: "goods",
+        counts: { "2025": 7 },
       },
     ]);
   });
