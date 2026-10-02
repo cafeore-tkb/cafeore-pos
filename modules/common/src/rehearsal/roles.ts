@@ -42,3 +42,16 @@ export const roleOf = (itemId: string): string => {
   }
   return role;
 };
+
+/** 役割カテゴリの表示名。2026 年のメニューへの割り当てが決まるまでは、これを画面に出す */
+export const ROLE_LABELS: Readonly<Record<string, string>> = {
+  house_blend: "珈琲・俺ブレンド",
+  signature_blend: "看板ブレンド",
+  single_origin: "シングルオリジン",
+  premium: "限定・高級",
+  ice_coffee: "アイスコーヒー",
+  hot_ore: "ホットオレ",
+  ice_ore: "アイスオレ",
+  ice_milk: "アイスミルク",
+  [GOODS_ROLE]: "物販",
+};

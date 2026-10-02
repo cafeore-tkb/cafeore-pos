@@ -233,7 +233,7 @@ func main() {
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db)
+	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
