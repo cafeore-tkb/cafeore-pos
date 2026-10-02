@@ -46,6 +46,7 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
+  canSubmitOrder: boolean;
   /** 保存に失敗したら reject する */
   submitPayload: (order: OrderEntity) => Promise<void>;
   syncOrder: (order: OrderEntity) => void;
@@ -60,6 +61,7 @@ const CashierV2 = ({
   items,
   orders,
   wsStatus,
+  canSubmitOrder,
   submitPayload,
   syncOrder,
 }: props) => {
@@ -79,6 +81,10 @@ const CashierV2 = ({
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
+  const [hasReceivedInput, setHasReceivedInput] = useState(false);
+  const [submitFocusTarget, setSubmitFocusTarget] = useState<
+    "submit" | "exactPayment"
+  >("submit");
   const dispatchOrder = useCallback(
     (action: OrderAction) => {
       applyOrderAction({ action, syncOrder });
@@ -125,74 +131,119 @@ const CashierV2 = ({
 
   const resetAll = useCallback(() => {
     dispatchOrder({ type: "clear" });
+    setHasReceivedInput(false);
     resetStatus();
     renewUISession();
   }, [dispatchOrder, resetStatus, renewUISession]);
 
-  const submitOrder = useCallback(async () => {
-    if (submittingRef.current) {
-      return;
-    }
-    if (newOrder.getCharge() < 0) {
-      return;
-    }
-    if (newOrder.menus.length === 0) {
-      return;
-    }
-    // 送信する直前に createdAt を更新する
-    const submitOne = newOrder.clone();
-    submitOne.nowCreated();
-    goodsOnlyServed(submitOne);
-    // 備考を追加
-    submitOne.addComment("cashier", descComment);
+  const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
+  const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
 
-    // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
-    // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await submitPayload(submitOne);
-    } catch (error) {
-      console.error(error);
-      notifySubmitFailed(submitOne.orderId, error);
+  const proceedStatusGuarded = useCallback(() => {
+    if (inputStatus === "received" && !canEnterSubmit) {
       return;
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
     }
-    dismissSubmitFailed();
-    printer.printOrderLabel(submitOne);
-
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && wsStatus !== "open") {
-      setOrderIdOverride(manualOrderId + 1);
+    if (inputStatus === "received") {
+      setSubmitFocusTarget(billingOk ? "submit" : "exactPayment");
     }
+    proceedStatus();
+  }, [inputStatus, canEnterSubmit, billingOk, proceedStatus]);
 
-    resetAll();
-    setServiceActive(false);
-    playSound();
-  }, [
-    newOrder,
-    resetAll,
-    printer,
-    submitPayload,
-    descComment,
-    playSound,
-    manualOrderId,
-    setOrderIdOverride,
-    wsStatus,
-    setServiceActive,
-  ]);
+  const focusSubmitAction = useCallback(
+    (target: "submit" | "exactPayment") => {
+      if (
+        inputStatus === "submit" &&
+        !(target === "exactPayment" && hasReceivedInput)
+      ) {
+        setSubmitFocusTarget(target);
+      }
+    },
+    [inputStatus, hasReceivedInput],
+  );
+
+  /**
+   * FIXME #412 useEffect内でstateを更新している
+   */
+  useEffect(() => {
+    if (inputStatus === "submit" && !canEnterSubmit) {
+      setInputStatus("received");
+    }
+  }, [inputStatus, canEnterSubmit, setInputStatus]);
+
+  const submitOrder = useCallback(
+    async (exactPayment?: boolean) => {
+      if (submittingRef.current) {
+        return;
+      }
+      if (!canSubmitOrder) {
+        return;
+      }
+      if (!exactPayment && newOrder.getCharge() < 0) {
+        return;
+      }
+      if (newOrder.menus.length === 0) {
+        return;
+      }
+      // 送信する直前に createdAt を更新する
+      const submitOne = newOrder.clone();
+      if (exactPayment) submitOne.received = submitOne.billingAmount;
+      submitOne.nowCreated();
+      goodsOnlyServed(submitOne);
+      // 備考を追加
+      submitOne.addComment("cashier", descComment);
+
+      // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
+      // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await submitPayload(submitOne);
+      } catch (error) {
+        console.error(error);
+        notifySubmitFailed(submitOne.orderId, error);
+        return;
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+      dismissSubmitFailed();
+      printer.printOrderLabel(submitOne);
+
+      // オフライン時（手動番号指定時）は次の番号を自動設定
+      if (manualOrderId !== null && wsStatus !== "open") {
+        setOrderIdOverride(manualOrderId + 1);
+      }
+
+      resetAll();
+      setServiceActive(false);
+      playSound();
+    },
+    [
+      canSubmitOrder,
+      newOrder,
+      resetAll,
+      printer,
+      submitPayload,
+      descComment,
+      playSound,
+      manualOrderId,
+      setOrderIdOverride,
+      wsStatus,
+      setServiceActive,
+    ],
+  );
 
   const keyEventHandlers = useMemo(() => {
     return {
-      ArrowRight: proceedStatus,
+      ArrowRight: proceedStatusGuarded,
       ArrowLeft: previousStatus,
+      ArrowUp: () => focusSubmitAction("submit"),
+      ArrowDown: () => focusSubmitAction("exactPayment"),
       Escape: () => {
         resetAll();
       },
     };
-  }, [proceedStatus, previousStatus, resetAll]);
+  }, [proceedStatusGuarded, previousStatus, focusSubmitAction, resetAll]);
 
   /**
    * OK
@@ -355,8 +406,10 @@ const CashierV2 = ({
               <OrderReceivedInput
                 key={`Received-${UISession.key}`}
                 onTextSet={useCallback(
-                  (received) =>
-                    dispatchOrder({ type: "setReceived", received }),
+                  (received) => {
+                    setHasReceivedInput(received !== "");
+                    dispatchOrder({ type: "setReceived", received });
+                  },
                   [dispatchOrder],
                 )}
                 focus={inputStatus === "received"}
@@ -378,11 +431,21 @@ const CashierV2 = ({
               aria-busy={submitting}
               className={cn(submitting && "pointer-events-none opacity-50")}
             >
-              <SubmitSection
-                submitOrder={submitOrder}
-                order={newOrder}
-                focus={inputStatus === "submit"}
-              />
+              <fieldset
+                disabled={!canEnterSubmit}
+                className="min-w-0 border-0 p-0"
+              >
+                <SubmitSection
+                  submitOrder={submitOrder}
+                  onExactPayment={() => submitOrder(true)}
+                  order={newOrder}
+                  focus={inputStatus === "submit"}
+                  focusTarget={submitFocusTarget}
+                  exactPaymentDisabled={
+                    newOrder.menus.length === 0 || hasReceivedInput
+                  }
+                />
+              </fieldset>
               {submitting && (
                 <p className="text-center text-sm text-stone-500">保存中…</p>
               )}
