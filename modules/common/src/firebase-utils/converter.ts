@@ -255,7 +255,7 @@ export const responseToOrderEntity = (
       : 0,
     menus,
     comments: comments ? comments : [],
-    cups: response.cups.map((cup) => ({
+    cups: (response.cups ?? []).map((cup) => ({
       id: cup.id,
       orderMenuId: cup.order_menu_id,
       item: responseToItemEntity(cup.item).toItem(),
