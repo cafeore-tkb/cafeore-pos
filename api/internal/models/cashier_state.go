@@ -4,7 +4,6 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -42,21 +41,6 @@ func (j *JSONB) Scan(value any) error {
 	default:
 		return fmt.Errorf("unsupported type for JSONB: %T", value)
 	}
-	return nil
-}
-
-func (j JSONB) MarshalJSON() ([]byte, error) {
-	if len(j) == 0 {
-		return []byte("null"), nil
-	}
-	return j, nil
-}
-
-func (j *JSONB) UnmarshalJSON(data []byte) error {
-	if j == nil {
-		return errors.New("JSONB: UnmarshalJSON on nil pointer")
-	}
-	*j = append((*j)[:0], data...)
 	return nil
 }
 
