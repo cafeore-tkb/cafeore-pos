@@ -15,7 +15,8 @@ export type ScreenKind =
   | "serve"
   | "cashier-mini"
   | "callscreen"
-  | "dashboard";
+  | "dashboard"
+  | "inventory";
 
 export function ScreenPreview({ kind }: { kind: ScreenKind }) {
   const Preview = previews[kind];
@@ -35,6 +36,7 @@ const previews: Record<ScreenKind, () => JSX.Element> = {
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
   dashboard: DashboardPreview,
+  inventory: InventoryPreview,
 };
 
 function StatusBar() {
@@ -337,6 +339,48 @@ function DashboardPreview() {
               className="flex-1 rounded-t bg-[hsl(var(--chart-2))] opacity-30"
               style={{ height: `${bar.past}%` }}
             />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InventoryPreview() {
+  const resources = [
+    { kind: "豆", name: "ブラジル", value: "64 杯", level: "ok" },
+    { kind: "豆", name: "エチオピア", value: "18 杯", level: "warning" },
+    { kind: "カップ", name: "ホット用", value: "120 個", level: "ok" },
+    { kind: "カップ", name: "アイス用", value: "9 個", level: "critical" },
+  ] as const;
+  return (
+    <div className="flex h-full flex-col px-[1em] py-[0.8em]">
+      <span className="font-semibold text-[1.2em]">在庫</span>
+      <div className="mt-[0.3em] flex gap-[0.3em] text-[0.6em]">
+        <span className="rounded bg-stone-900 px-[0.6em] py-[0.2em] text-white">
+          残量
+        </span>
+        <span className="rounded border px-[0.6em] py-[0.2em]">設定</span>
+      </div>
+      <div className="mt-[0.6em] grid flex-1 grid-cols-2 gap-[0.5em]">
+        {resources.map((r) => (
+          <div
+            key={r.name}
+            className={cn(
+              "rounded-md border p-[0.5em] shadow-sm",
+              r.level === "warning" && "border-amber-400",
+              r.level === "critical" && "border-red-400",
+            )}
+          >
+            <div className="flex items-center gap-[0.3em] text-[0.7em]">
+              <span className="rounded bg-muted px-[0.3em] text-stone-500">
+                {r.kind}
+              </span>
+              <span className="font-semibold">{r.name}</span>
+            </div>
+            <div className="mt-[0.2em] font-bold text-[1.3em] tabular-nums">
+              {r.value}
+            </div>
           </div>
         ))}
       </div>

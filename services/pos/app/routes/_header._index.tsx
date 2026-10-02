@@ -100,7 +100,7 @@ const sections: Section[] = [
   {
     audience: "admin",
     title: "運営・管理",
-    lead: "売れ行きの確認",
+    lead: "売れ行きや在庫の確認、メニューの設定",
     screens: [
       {
         kind: "dashboard",
@@ -111,6 +111,15 @@ const sections: Section[] = [
         description:
           "商品ごとの杯数（過去データとの比較）、提供時間の推移、注文一覧、オーダーストップ記録。",
       },
+      {
+        kind: "inventory",
+        to: "/inventory",
+        title: "在庫",
+        audience: "admin",
+        where: "棚卸し・入荷のたびに記録",
+        description:
+          "棚卸しの実数と入荷・注文から、豆とカップの残量を推定。棚卸し・入荷の記録もここで。",
+      },
     ],
   },
 ];
@@ -119,6 +128,7 @@ const settingLinks = [
   { to: "/menus", label: "メニュー" },
   { to: "/items", label: "アイテム" },
   { to: "/item-types", label: "アイテムタイプ" },
+  { to: "/inventory/settings", label: "在庫の設定" },
 ];
 
 export default function Index() {
@@ -151,7 +161,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            メニューと商品を編集します
+            メニュー・商品・在庫の通知条件を編集します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (
