@@ -221,7 +221,6 @@ func main() {
 			"Origin",
 			"Content-Type",
 			"Authorization",
-			"X-Cron-Secret",
 		},
 		ExposeHeaders: []string{
 			"Content-Length",

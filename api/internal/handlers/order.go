@@ -229,7 +229,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
 	h.broadcastOrders()
-	h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID))
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -323,7 +323,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
 	h.broadcastOrders()
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も含めてすべて見る。
-	h.inventory.CheckAlerts(nil)
+	go h.inventory.CheckAlerts(nil)
 }
 
 // DELETE /api/orders/:id - オーダー削除
@@ -366,7 +366,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
-	h.inventory.CheckAlerts(nil)
+	go h.inventory.CheckAlerts(nil)
 }
 
 // PATCH /api/orders/:id/ready - オーダーを準備完了にする

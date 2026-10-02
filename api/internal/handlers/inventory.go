@@ -135,7 +135,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
-// 注文の応答を返した後に呼ぶので、失敗してもログに残すだけにする。
+// 注文の応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
 func (inv *Inventory) CheckAlerts(ids []uuid.UUID) {
 	if inv == nil {
 		return

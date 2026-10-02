@@ -131,9 +131,11 @@ function ResourceRow({
   const [form, setForm] = useState<StockResourceInput>(initial);
   const [busy, setBusy] = useState(false);
 
-  // 保存後に一覧が取り直されたら、その値に揃える
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resource が変わったときだけ
-  useEffect(() => setForm(initial()), [resource]);
+  // 保存後に一覧が取り直されたら、その値に揃える。
+  // 一覧は定期的に取り直されるので、保存済みの値が変わったときだけにして編集中の入力を消さない
+  const saved = JSON.stringify(resource ?? null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 保存済みの値が変わったときだけ
+  useEffect(() => setForm(initial()), [saved]);
 
   const set = <K extends keyof StockResourceInput>(
     key: K,
