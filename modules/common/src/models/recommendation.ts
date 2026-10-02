@@ -1,35 +1,23 @@
-import type { WithId } from "../lib/typeguard";
 import type { MenuEntity } from "./menu";
 
 /**
  * ドリッパーを3人以上確保する注文かどうかを判定する
  * 条件：
- * - トートセットは縁ブレンドとして扱う
+ * - メニューの構成品ごとに数える（セットメニューは中のコーヒーで数える）
  * - コーヒーの種類が1種類なら4杯までならtrue、5杯以上ならfalse
  * - コーヒーの種類が2種類なら、1種類につき2杯までならtrue、3杯以上のものが1種類でもあればfalse
- * @param items 注文アイテムの配列
- * @param itemMaster 全アイテムの配列
+ * @param menus 注文メニューの配列
  * @returns 分割が必要かどうかのboolean値
  */
-export function shouldSplitOrder(
-  items: WithId<MenuEntity>[],
-  itemMaster: WithId<MenuEntity>[],
-): boolean {
-  const yushoId = itemMaster.find((i) => i.name === "縁ブレンド")?.id;
-  const toteSetsId = itemMaster.find((i) => i.name === "トートセット")?.id;
-
-  if (!yushoId || !toteSetsId) return false;
-
-  // トートセットを縁ブレンドとして扱い、種類別にカウント
+export function shouldSplitOrder(menus: MenuEntity[]): boolean {
   const coffeeCounts = new Map<string, number>();
 
-  for (const item of items) {
-    if (item.item_type.name !== "milk" && item.item_type.name !== "others") {
-      // 通常のコーヒー
-      coffeeCounts.set(item.id, (coffeeCounts.get(item.id) || 0) + 1);
-    } else if (item.id === toteSetsId) {
-      // トートセットは縁ブレンドとして扱う
-      coffeeCounts.set(yushoId, (coffeeCounts.get(yushoId) || 0) + 1);
+  for (const menu of menus) {
+    for (const { item, quantity } of menu.items) {
+      if (item.item_type.name === "milk" || item.item_type.name === "others") {
+        continue;
+      }
+      coffeeCounts.set(item.id, (coffeeCounts.get(item.id) ?? 0) + quantity);
     }
   }
 

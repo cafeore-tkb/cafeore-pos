@@ -1,10 +1,4 @@
 import { type FirebaseOptions, initializeApp } from "firebase/app";
-import {
-  GoogleAuthProvider,
-  getAuth,
-  signInWithPopup,
-  signOut,
-} from "firebase/auth";
 import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig: FirebaseOptions = {
@@ -23,36 +17,3 @@ initializeFirestore(app, {
 });
 
 export const prodDB = getFirestore(app);
-
-export const auth = getAuth(app);
-
-const provider = new GoogleAuthProvider();
-provider.setCustomParameters({ prompt: "select_account" });
-
-export const login = () => {
-  signInWithPopup(auth, provider)
-    .then((result) => {
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential == null) {
-        console.log("credential is null");
-        return;
-      }
-      const token = credential.accessToken;
-      const user = result.user;
-      console.log("user", user);
-    })
-    .catch((err) => {
-      const errorCode = err.code;
-      const errorMessage = err.message;
-      const email = err.customData.email;
-      const credential = GoogleAuthProvider.credentialFromError(err);
-      console.log("errorCode", errorCode);
-      console.log("errorMessage", errorMessage);
-      console.log("email", email);
-      console.log("credential", credential);
-    });
-};
-
-export const logout = async () => {
-  await signOut(auth);
-};
