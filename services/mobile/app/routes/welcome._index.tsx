@@ -1,12 +1,10 @@
-import { collectionSub, documentSub, orderConverter } from "@cafeore/common";
-import { orderBy } from "firebase/firestore";
+import { useOrdersWS } from "@cafeore/common";
 import { useRef, useState } from "react";
 import {
   isRouteErrorResponse,
   useRouteError,
   useSearchParams,
 } from "react-router";
-import useSWRSubscription from "swr/subscription";
 import bellSound from "~/assets/bell.mp3";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";
 import { Button } from "~/components/ui/button";
@@ -25,15 +23,9 @@ export default function Welcome() {
   const [inputOrderId, setInputOrderId] = useState("");
   const [errorMessage, setErrorMeggage] = useState("");
 
-  const { data: orders } = useSWRSubscription(
-    "orders",
-    collectionSub({ converter: orderConverter }, orderBy("orderId", "desc")),
-  );
-
-  const { data: order } = useSWRSubscription(
-    id !== undefined ? ["orders", id] : null,
-    documentSub({ converter: orderConverter }),
-  );
+  // Firestore の購読をやめ、API の WebSocket で全注文を受け取る
+  const { orders } = useOrdersWS();
+  const order = orders.find((o) => o.id === id);
 
   async function searchDocId(orderId: number): Promise<string | undefined> {
     if (orders) {

@@ -18,6 +18,18 @@ export type CashierStateRepo = {
 // レジの編集中注文と直前に確定した注文 ID。
 // API の単一行 /api/cashier-state に丸ごと置く。購読は useOrdersWS の cashier_state。
 export const cashierStateRepoFactory = (): CashierStateRepo => {
+  // set はキー入力のたびに await されずに呼ばれる。PUT が並行すると後から送った状態が
+  // 先に届いて古い状態で上書きされうるので、前の PUT の完了を待ってから送る
+  let lastSet: Promise<void> = Promise.resolve();
+  const put = async (state: GlobalCashierState) => {
+    const { error, response } = await client.PUT("/api/cashier-state", {
+      body: cashierStateToUpdateRequest(state),
+    });
+    if (error || !response.ok) {
+      await throwApiError(response, "レジ状態の更新に失敗しました");
+    }
+  };
+
   return {
     get: async () => {
       const { data, error, response } = await client.GET(
@@ -32,13 +44,11 @@ export const cashierStateRepoFactory = (): CashierStateRepo => {
       }
       return responseToCashierState(data);
     },
-    set: async (state) => {
-      const { error, response } = await client.PUT("/api/cashier-state", {
-        body: cashierStateToUpdateRequest(state),
-      });
-      if (error || !response.ok) {
-        await throwApiError(response, "レジ状態の更新に失敗しました");
-      }
+    set: (state) => {
+      const result = lastSet.then(() => put(state));
+      // 失敗しても次の PUT は送る
+      lastSet = result.catch(() => {});
+      return result;
     },
   };
 };
