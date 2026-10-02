@@ -132,6 +132,9 @@ PR を閉じると `pr-cleanup` がタグを外す。
 ただし共有ブランチの注文やレジ状態（`cashier_states`）は、それらの PR 同士で共有される。
 プランの上限（`branches limit exceeded`）に当たった場合は、Neon のコンソールで
 不要な `preview/pr-*` を消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
+共有ブランチは作り直されず、`AutoMigrate` は列や制約を足すだけで消さない。main で列の削除や
+名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
+re-run する（次のビルドで空から作り直される）。
 
 ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
 モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
