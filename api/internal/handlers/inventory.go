@@ -400,24 +400,6 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// GET /api/inventory/resources/:id/events - 棚卸し・入荷の履歴
-func (h *InventoryHandler) GetStockEvents(c *gin.Context) {
-	id, ok := parseUUIDParam(c)
-	if !ok {
-		return
-	}
-	var events []models.StockEvent
-	if err := h.inv.db.Where("resource_id = ?", id).Order("created_at DESC").Limit(50).Find(&events).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	responses := make([]models.StockEventResponse, len(events))
-	for i := range events {
-		responses[i] = toStockEventResponse(&events[i])
-	}
-	c.JSON(http.StatusOK, responses)
-}
-
 // POST /api/inventory/resources/:id/events - 棚卸し・入荷・調整の記録
 func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 	id, ok := parseUUIDParam(c)

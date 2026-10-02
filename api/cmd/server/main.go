@@ -301,7 +301,6 @@ func main() {
 		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
 		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
 		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
-		api.GET("/inventory/resources/:id/events", inventoryHandler.GetStockEvents)
 		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
 		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
 		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)

@@ -583,27 +583,6 @@ paths:
         '204':
           description: 成功
   /api/inventory/resources/{id}/events:
-    get:
-      summary: 棚卸し・入荷の履歴
-      operationId: getStockEvents
-      tags:
-        - inventory
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: 新しい順
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StockEventResponse'
     post:
       summary: 棚卸し・入荷・調整の記録
       description: count は実数で残量を置き換える。receipt / adjust は差分として足す（減らすときは負の値）。

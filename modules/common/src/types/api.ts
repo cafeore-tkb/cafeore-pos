@@ -102,8 +102,6 @@ export interface paths {
     delete: operations["deleteStockResource"];
   };
   "/api/inventory/resources/{id}/events": {
-    /** 棚卸し・入荷の履歴 */
-    get: operations["getStockEvents"];
     /**
      * 棚卸し・入荷・調整の記録
      * @description count は実数で残量を置き換える。receipt / adjust は差分として足す（減らすときは負の値）。
@@ -956,22 +954,6 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
-      };
-    };
-  };
-  /** 棚卸し・入荷の履歴 */
-  getStockEvents: {
-    parameters: {
-      path: {
-        id: string;
-      };
-    };
-    responses: {
-      /** @description 新しい順 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockEventResponse"][];
-        };
       };
     };
   };

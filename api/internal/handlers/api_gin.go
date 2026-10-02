@@ -29,9 +29,6 @@ type ServerInterface interface {
 	// 在庫対象の更新
 	// (PUT /api/inventory/resources/{id})
 	UpdateStockResource(c *gin.Context, id openapi_types.UUID)
-	// 棚卸し・入荷の履歴
-	// (GET /api/inventory/resources/{id}/events)
-	GetStockEvents(c *gin.Context, id openapi_types.UUID)
 	// 棚卸し・入荷・調整の記録
 	// (POST /api/inventory/resources/{id}/events)
 	CreateStockEvent(c *gin.Context, id openapi_types.UUID)
@@ -218,30 +215,6 @@ func (siw *ServerInterfaceWrapper) UpdateStockResource(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateStockResource(c, id)
-}
-
-// GetStockEvents operation middleware
-func (siw *ServerInterfaceWrapper) GetStockEvents(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetStockEvents(c, id)
 }
 
 // CreateStockEvent operation middleware
@@ -853,7 +826,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)
 	router.DELETE(options.BaseURL+"/api/inventory/resources/:id", wrapper.DeleteStockResource)
 	router.PUT(options.BaseURL+"/api/inventory/resources/:id", wrapper.UpdateStockResource)
-	router.GET(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.GetStockEvents)
 	router.POST(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.CreateStockEvent)
 	router.GET(options.BaseURL+"/api/inventory/usages", wrapper.GetStockUsages)
 	router.PUT(options.BaseURL+"/api/inventory/usages", wrapper.ReplaceStockUsages)

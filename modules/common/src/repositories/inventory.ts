@@ -9,7 +9,6 @@ export type InventoryLevel = components["schemas"]["InventoryLevel"];
 export type StockResource = components["schemas"]["StockResourceResponse"];
 export type StockResourceInput = components["schemas"]["StockResourceRequest"];
 export type StockResourceKind = components["schemas"]["StockResourceKind"];
-export type StockEvent = components["schemas"]["StockEventResponse"];
 export type StockEventKind = components["schemas"]["StockEventKind"];
 export type StockEventResult =
   components["schemas"]["StockEventCreateResponse"];
@@ -57,17 +56,6 @@ export const inventoryRepository = {
     if (error || !response.ok) {
       await throwApiError(response, "Failed to delete stock resource");
     }
-  },
-
-  getEvents: async (id: string): Promise<StockEvent[]> => {
-    const { data, error, response } = await client.GET(
-      "/api/inventory/resources/{id}/events",
-      { params: { path: { id } } },
-    );
-    if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to fetch stock events");
-    }
-    return data ?? [];
   },
 
   /**
