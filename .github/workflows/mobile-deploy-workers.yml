@@ -13,21 +13,23 @@ name: mobile / deploy (Workers)
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
 # その場合だけ deploy にフォールバックして Worker を作る。
 
+# mobile は停止中なので自動では走らせない。再開するときは下のコメントを戻す。
+# on を丸ごと消すと workflow として不正になるので、手動実行だけ残している。
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'services/mobile/**'
-      - 'modules/common/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/mobile-deploy-workers.yml'
-  pull_request:
-    paths:
-      - 'services/mobile/**'
-      - 'modules/common/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/mobile-deploy-workers.yml'
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'services/mobile/**'
+  #     - 'modules/common/**'
+  #     - 'pnpm-lock.yaml'
+  #     - '.github/workflows/mobile-deploy-workers.yml'
+  # pull_request:
+  #   paths:
+  #     - 'services/mobile/**'
+  #     - 'modules/common/**'
+  #     - 'pnpm-lock.yaml'
+  #     - '.github/workflows/mobile-deploy-workers.yml'
   workflow_dispatch:
 
 permissions:
