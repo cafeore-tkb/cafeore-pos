@@ -9,7 +9,7 @@ Run `pnpm i` to install dependencies.
 |--|--|
 |`pnpm i`| Install dependencies|
 |`pnpm pos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/pos`|
-|`pnpm mobile` (`dev`\|`build`\|`start`\|`typecheck`)| Run commands in `services/mobile`|
+|~~`pnpm mobile`~~ （停止中）| `services/mobile` 用。再開するときは `package.json` の `//mobile` を `mobile` に戻す|
 |`pnpm common` (`typecheck`\|`test:`(`unit`\|`db`)) | Run commands in `modules/common`|
 
 ## CI / CD
@@ -19,10 +19,10 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test |
+| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `mobile-deploy-workers` | `services/mobile` | 同上 |
+| `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
 | `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 

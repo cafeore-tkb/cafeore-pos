@@ -7,13 +7,14 @@ import {
   useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
   useSubmit,
 } from "react-router";
 import { z } from "zod";
+import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -25,7 +26,12 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
+  const { isOnline: isNetworkOnline } = useOnlineStatus();
   const submit = useSubmit();
+  const canSubmitOrder = useMemo(
+    () => isNetworkOnline && status === "open",
+    [isNetworkOnline, status],
+  );
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {
@@ -49,6 +55,7 @@ export default function Cashier() {
       items={items}
       orders={orders}
       wsStatus={status}
+      canSubmitOrder={canSubmitOrder}
       submitPayload={submitPayload}
       syncOrder={syncOrder}
     />
