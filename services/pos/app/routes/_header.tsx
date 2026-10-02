@@ -5,7 +5,7 @@ import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function BaseHeader() {
-  const isOnline = useOnlineStatus();
+  const { isOnline } = useOnlineStatus();
   const isOperational = useOrderStat();
   const { status: wsStatus } = useOrdersWSContext();
   // オフライン時は WebSocket も当然切れるので、オフラインの表示だけにする
