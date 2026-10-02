@@ -4,7 +4,7 @@ import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
 
 export default function BaseHeader() {
-  const isOnline = useOnlineStatus();
+  const { isOnline } = useOnlineStatus();
   const isOperational = useOrderStat();
 
   return (
