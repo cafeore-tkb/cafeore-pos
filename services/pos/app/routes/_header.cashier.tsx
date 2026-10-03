@@ -41,7 +41,7 @@ export default function Cashier() {
       SUBMIT_TIMEOUT_MS,
     );
     // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
-    pendingSubmittedOrderId = savedOrder.id;
+    lastSubmittedOrderId = savedOrder.id;
   }, []);
 
   const syncOrder = useCallback(
@@ -87,8 +87,8 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
   });
 
 // 直前に確定した注文の ID（cashier-mini の「ご注文ありがとうございました」表示用）。
-// 別々に読み書きすると入力を空にする同期と上書きし合うので、その同期で一緒に書き込む
-let pendingSubmittedOrderId: string | null = null;
+// 別々に読み書きすると入力を空にする同期と上書きし合うので、同期で一緒に書き込む
+let lastSubmittedOrderId: string | null = null;
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
@@ -106,15 +106,16 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
 
   const { syncOrder } = submission.value;
 
-  // 保存直後の、入力を空にする同期でだけ載せる
-  const submittedOrderId =
-    syncOrder.menus.length === 0 ? pendingSubmittedOrderId : null;
-  pendingSubmittedOrderId = null;
+  // 次の注文の入力が始まるまでは、どの同期でも載せ続ける。
+  // 1 回だけ載せると、直後の注文番号の更新などの同期で null に上書きされ、表示が出ないことがある
+  if (syncOrder.menus.length > 0) {
+    lastSubmittedOrderId = null;
+  }
 
   cashierRepository.set({
     id: "cashier-state",
     edittingOrder: OrderEntity.fromOrder(syncOrder),
-    submittedOrderId,
+    submittedOrderId: lastSubmittedOrderId,
   });
 
   return new Response("ok");
