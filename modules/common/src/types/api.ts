@@ -53,6 +53,15 @@ export interface paths {
   "/api/color-settings": {
     /** 背景色設定一覧取得 */
     get: operations["getColorSettings"];
+    /**
+     * 背景色設定の作成・更新
+     * @description 対象（target_type, target_id）と画面（screen）の組が既にあれば色を上書きし、無ければ作成する
+     */
+    put: operations["upsertColorSetting"];
+  };
+  "/api/color-settings/{id}": {
+    /** 背景色設定削除 */
+    delete: operations["deleteColorSetting"];
   };
   "/api/orders": {
     /** オーダー一覧取得 */
@@ -287,6 +296,17 @@ export interface components {
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
+      target_type: components["schemas"]["ColorTargetType"];
+      /**
+       * Format: uuid
+       * @description Item または ItemType の ID
+       */
+      target_id: string;
+      screen: components["schemas"]["ColorScreen"];
+      /** @example #bfdbfe */
+      color: string;
+    };
+    ColorSettingUpsertRequest: {
       target_type: components["schemas"]["ColorTargetType"];
       /**
        * Format: uuid
@@ -566,6 +586,51 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["ColorSettingResponse"][];
+        };
+      };
+    };
+  };
+  /**
+   * 背景色設定の作成・更新
+   * @description 対象（target_type, target_id）と画面（screen）の組が既にあれば色を上書きし、無ければ作成する
+   */
+  upsertColorSetting: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ColorSettingUpsertRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ColorSettingResponse"];
+        };
+      };
+      /** @description リクエストが不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** 背景色設定削除 */
+  deleteColorSetting: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      204: {
+        content: never;
+      };
+      /** @description 背景色設定が見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

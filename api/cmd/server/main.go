@@ -278,6 +278,8 @@ func main() {
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
+		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
+		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
 	}
 
 	// サーバー起動

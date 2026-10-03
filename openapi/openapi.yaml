@@ -288,6 +288,49 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ColorSettingResponse'
+    put:
+      summary: 背景色設定の作成・更新
+      description: 対象（target_type, target_id）と画面（screen）の組が既にあれば色を上書きし、無ければ作成する
+      operationId: upsertColorSetting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColorSettingUpsertRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColorSettingResponse'
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/color-settings/{id}:
+    delete:
+      summary: 背景色設定削除
+      operationId: deleteColorSetting
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+        '404':
+          description: 背景色設定が見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -980,6 +1023,26 @@ components:
         id:
           type: string
           format: uuid
+        target_type:
+          $ref: '#/components/schemas/ColorTargetType'
+        target_id:
+          type: string
+          format: uuid
+          description: Item または ItemType の ID
+        screen:
+          $ref: '#/components/schemas/ColorScreen'
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+          example: "#bfdbfe"
+    ColorSettingUpsertRequest:
+      type: object
+      required:
+        - target_type
+        - target_id
+        - screen
+        - color
+      properties:
         target_type:
           $ref: '#/components/schemas/ColorTargetType'
         target_id:
