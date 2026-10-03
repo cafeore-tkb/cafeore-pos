@@ -43,9 +43,14 @@ func preloadMenu(db *gorm.DB) *gorm.DB {
 	return db.Preload("MenuItems.Item.ItemType")
 }
 
+// 構成品の指定がおかしいときのエラー。これだけ 400 で文面を返し、DB のエラーは 500 にする。
+type invalidMenuItemsError struct{ msg string }
+
+func (e *invalidMenuItemsError) Error() string { return e.msg }
+
 func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]models.MenuItem, error) {
 	if len(requests) == 0 {
-		return nil, errors.New("items is required")
+		return nil, &invalidMenuItemsError{"items is required"}
 	}
 
 	menuItems := make([]models.MenuItem, 0, len(requests))
@@ -53,10 +58,10 @@ func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]mode
 	for _, request := range requests {
 		itemID := uuid.UUID(request.ItemId)
 		if request.Quantity < 1 {
-			return nil, errors.New("quantity must be greater than zero")
+			return nil, &invalidMenuItemsError{"quantity must be greater than zero"}
 		}
 		if _, exists := seen[itemID]; exists {
-			return nil, errors.New("duplicate item_id")
+			return nil, &invalidMenuItemsError{"duplicate item_id"}
 		}
 		seen[itemID] = struct{}{}
 		menuItems = append(menuItems, models.MenuItem{
@@ -66,6 +71,34 @@ func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]mode
 		})
 	}
 	return menuItems, nil
+}
+
+// 存在しないアイテムを指していたら invalidMenuItemsError を返す。
+// 確かめずに作ると外部キー違反の DB エラーになり、入力の誤りと見分けられない。
+// 外部キーと同じ基準にするため、論理削除済みのアイテムも存在するものとして数える。
+func ensureItemsExist(tx *gorm.DB, menuItems []models.MenuItem) error {
+	ids := make([]uuid.UUID, 0, len(menuItems))
+	for _, menuItem := range menuItems {
+		ids = append(ids, menuItem.ItemID)
+	}
+	var count int64
+	if err := tx.Unscoped().Model(&models.Item{}).Where("id IN ?", ids).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != int64(len(ids)) {
+		return &invalidMenuItemsError{"item not found"}
+	}
+	return nil
+}
+
+// トランザクションのエラーを、入力の誤りなら 400、それ以外は 500 で返す。
+func respondMenuWriteError(c *gin.Context, err error) {
+	var invalid *invalidMenuItemsError
+	if errors.As(err, &invalid) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": invalid.Error()})
+		return
+	}
+	respondInternalError(c, err)
 }
 
 func (h *MenuHandler) GetMenus(c *gin.Context) {
@@ -117,9 +150,12 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		if err := ensureItemsExist(tx, menuItems); err != nil {
+			return err
+		}
 		return tx.Create(&menuItems).Error
 	}); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondMenuWriteError(c, err)
 		return
 	}
 
@@ -160,6 +196,9 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
+		if err := ensureItemsExist(tx, menuItems); err != nil {
+			return err
+		}
 		if err := tx.Where("menu_id = ?", menuID).Delete(&models.MenuItem{}).Error; err != nil {
 			return err
 		}
@@ -169,7 +208,7 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found"})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondMenuWriteError(c, err)
 		return
 	}
 
