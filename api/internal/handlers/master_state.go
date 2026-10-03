@@ -6,18 +6,20 @@ import (
 	"time"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type MasterStateHandler struct {
-	db *gorm.DB
-	hub *Hub
+	db       *gorm.DB
+	hub      *Hub
+	activity *notify.Activity
 }
 
-func NewMasterStateHandler(db *gorm.DB, hub *Hub) *MasterStateHandler {
-	return &MasterStateHandler{db: db, hub: hub}
+func NewMasterStateHandler(db *gorm.DB, hub *Hub, activity *notify.Activity) *MasterStateHandler {
+	return &MasterStateHandler{db: db, hub: hub, activity: activity}
 }
 
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
@@ -53,6 +55,10 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
+	// 同じ状態を続けて送られたときは通知しない
+	var last models.MasterState
+	_ = h.db.Order("created_at DESC").First(&last).Error
+
 	state := models.MasterState{
 		Type:      req.Type,
 		CreatedAt: time.Now(),
@@ -65,6 +71,9 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, state)
 	h.broadcastMasterState()
+	if last.Type != state.Type {
+		h.activity.Post(masterStateMessage(state.Type))
+	}
 }
 
 func (h *MasterStateHandler) broadcastMasterState() {

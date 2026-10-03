@@ -10,14 +10,16 @@ import (
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type MenuHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewMenuHandler(db *gorm.DB) *MenuHandler {
-	return &MenuHandler{db: db}
+func NewMenuHandler(db *gorm.DB, activity *notify.Activity) *MenuHandler {
+	return &MenuHandler{db: db, activity: activity}
 }
 
 func toMenuResponse(menu *models.Menu) models.MenuResponse {
@@ -128,6 +130,7 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toMenuResponse(&menu))
+	h.activity.Post(menuCreatedMessage(&menu))
 }
 
 func (h *MenuHandler) UpdateMenu(c *gin.Context) {
@@ -148,6 +151,10 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 通知で変更前と比べるために読んでおく
+	var before models.Menu
+	_ = preloadMenu(h.db).First(&before, "id = ?", menuID).Error
 
 	menu := models.Menu{ID: menuID}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -178,6 +185,7 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
+	h.activity.Post(menuUpdatedMessage(&before, &menu))
 }
 
 func (h *MenuHandler) DeleteMenu(c *gin.Context) {
@@ -186,6 +194,10 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
+
+	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	var deleted models.Menu
+	_ = h.db.First(&deleted, "id = ?", menuID).Error
 
 	result := h.db.Delete(&models.Menu{}, "id = ?", menuID)
 	if result.Error != nil {
@@ -197,4 +209,7 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+	if deleted.ID != uuid.Nil {
+		h.activity.Post(menuDeletedMessage(&deleted))
+	}
 }

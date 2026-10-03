@@ -234,9 +234,17 @@ func main() {
 	go hub.Run()
 
 	// ハンドラー初期化
-	itemHandler := handlers.NewItemHandler(db)
-	menuHandler := handlers.NewMenuHandler(db)
-	itemTypeHandler := handlers.NewItemTypeHandler(db)
+	// 商品の登録・変更・削除や入荷・棚卸しの通知先。SLACK_ACTIVITY_WEBHOOK_URL が無ければ
+	// 在庫のアラートと同じ SLACK_WEBHOOK_URL に流す。どちらも無ければログに残すだけ。
+	activityWebhook := os.Getenv("SLACK_ACTIVITY_WEBHOOK_URL")
+	if activityWebhook == "" {
+		activityWebhook = os.Getenv("SLACK_WEBHOOK_URL")
+	}
+	activity := notify.NewActivity(notify.NewSlack(activityWebhook))
+
+	itemHandler := handlers.NewItemHandler(db, activity)
+	menuHandler := handlers.NewMenuHandler(db, activity)
+	itemTypeHandler := handlers.NewItemTypeHandler(db, activity)
 	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
 	//
 	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
@@ -252,12 +260,13 @@ func main() {
 		notify.NewSlack(os.Getenv("SLACK_WEBHOOK_URL")),
 		remindAuth,
 		os.Getenv("POS_BASE_URL"),
+		activity,
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
-	colorSettingHandler := handlers.NewColorSettingHandler(db)
+	masterStateHandler := handlers.NewMasterStateHandler(db, hub, activity)
+	colorSettingHandler := handlers.NewColorSettingHandler(db, activity)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)

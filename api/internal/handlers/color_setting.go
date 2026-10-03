@@ -15,14 +15,32 @@ import (
 	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type ColorSettingHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewColorSettingHandler(db *gorm.DB) *ColorSettingHandler {
-	return &ColorSettingHandler{db: db}
+func NewColorSettingHandler(db *gorm.DB, activity *notify.Activity) *ColorSettingHandler {
+	return &ColorSettingHandler{db: db, activity: activity}
+}
+
+// 通知に出す対象の名前。消えた対象も名前で出したいので論理削除も含めて探す
+func (h *ColorSettingHandler) targetName(setting *models.ColorSetting) string {
+	if setting.TargetType == string(models.ColorTargetTypeItemType) {
+		var itemType models.ItemType
+		if h.db.Unscoped().First(&itemType, "id = ?", setting.TargetID).Error == nil {
+			return itemType.DisplayName
+		}
+	} else {
+		var item models.Item
+		if h.db.Unscoped().First(&item, "id = ?", setting.TargetID).Error == nil {
+			return item.Name
+		}
+	}
+	return setting.TargetID.String()
 }
 
 var colorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -128,6 +146,11 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 
+	// 同じ色で保存し直しただけなら通知しない
+	var before models.ColorSetting
+	_ = h.db.First(&before, "target_type = ? AND target_id = ? AND screen = ?",
+		setting.TargetType, setting.TargetID, setting.Screen).Error
+
 	if err := upsertColorSetting(h.db, &setting).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -141,6 +164,9 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toColorSettingResponse(&saved))
+	if before.Color != saved.Color {
+		h.activity.Post(colorSettingSavedMessage(h.targetName(&saved), &saved))
+	}
 }
 
 // DELETE /api/color-settings/:id - 背景色設定削除
@@ -150,6 +176,10 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
+
+	// 通知に対象を出すために先に読む。読めなくても削除は進める
+	var deleted models.ColorSetting
+	_ = h.db.First(&deleted, "id = ?", settingID).Error
 
 	result := h.db.Delete(&models.ColorSetting{}, "id = ?", settingID)
 	if result.Error != nil {
@@ -161,4 +191,7 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+	if deleted.ID != uuid.Nil {
+		h.activity.Post(colorSettingDeletedMessage(h.targetName(&deleted), &deleted))
+	}
 }

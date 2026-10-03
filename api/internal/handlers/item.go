@@ -10,14 +10,16 @@ import (
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type ItemHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewItemHandler(db *gorm.DB) *ItemHandler {
-	return &ItemHandler{db: db}
+func NewItemHandler(db *gorm.DB, activity *notify.Activity) *ItemHandler {
+	return &ItemHandler{db: db, activity: activity}
 }
 
 // DB models → API models 変換関数
@@ -82,6 +84,7 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemResponse(&item))
+	h.activity.Post(itemCreatedMessage(&item))
 }
 
 // GET /api/items/:id - アイテム取得
@@ -133,6 +136,9 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 通知で変更前と比べるため、タイプ込みで別に読んでおく（Save に関連を渡さないよう item とは分ける）
+	var before models.Item
+	_ = h.db.Preload("ItemType").First(&before, "id = ?", itemID).Error
 
 	// 更新
 	item.Name = req.Name
@@ -159,6 +165,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemResponse(&item))
+	h.activity.Post(itemUpdatedMessage(&before, &item))
 }
 
 // DELETE /api/items/:id - アイテム削除
@@ -170,6 +177,10 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
+
+	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	var deleted models.Item
+	_ = h.db.First(&deleted, "id = ?", itemID).Error
 
 	// 消したアイテムの使用量が残ると、在庫の設定で見えないまま残るので一緒に消す。
 	var affected int64
@@ -192,4 +203,7 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+	if deleted.ID != uuid.Nil {
+		h.activity.Post(itemDeletedMessage(&deleted))
+	}
 }

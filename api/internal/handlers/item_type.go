@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,11 +14,12 @@ import (
 )
 
 type ItemTypeHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
-	return &ItemTypeHandler{db: db}
+func NewItemTypeHandler(db *gorm.DB, activity *notify.Activity) *ItemTypeHandler {
+	return &ItemTypeHandler{db: db, activity: activity}
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
@@ -65,6 +67,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeCreatedMessage(&itemType))
 }
 
 // GET /api/item-types/:id - idからアイテムタイプ取得
@@ -117,6 +120,8 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 		return
 	}
 
+	before := itemType
+
 	// 更新
 	itemType.Name = req.Name
 	itemType.DisplayName = req.DisplayName
@@ -133,6 +138,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeUpdatedMessage(&before, &itemType))
 }
 
 // DELETE /api/item-types/:id - アイテムタイプ削除
@@ -144,6 +150,10 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
+
+	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	var deleted models.ItemType
+	_ = h.db.First(&deleted, "id = ?", itemTypeID).Error
 
 	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
 	if result.Error != nil {
@@ -157,4 +167,7 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+	if deleted.ID != uuid.Nil {
+		h.activity.Post(itemTypeDeletedMessage(&deleted))
+	}
 }
