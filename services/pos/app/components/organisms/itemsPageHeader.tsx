@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { label: "タイプ一覧", to: "/item-types", exact: true },
   { label: "タイプ新規作成", to: "/item-types/new" },
   { label: "背景色設定", to: "/color-settings" },
+  { label: "一括取り込み・書き出し", to: "/master-data" },
 ];
 
 export function ItemsPageHeader() {
