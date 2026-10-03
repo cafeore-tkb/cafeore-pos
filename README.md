@@ -109,6 +109,15 @@ PR を閉じると `pr-cleanup` がタグを外す。
 
 在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
 
+商品マスター（種類・アイテム・メニュー・背景色）は `scripts/seed-master/master.json` を API 経由で入れる。
+形式は `/products` の書き出し（JSON）と同じなので、書き出したファイルを `--data` にそのまま渡せる。
+既定は dry-run で、`--apply` を付けたときだけ書き込む。既にある行は作らず、更新もしない（画面で直した内容を戻さない）。
+`--reset` は既存のマスターを全部消してから入れる（メニューの key は退避してから消す）。
+
+```sh
+node scripts/seed-master/seed.mjs --api <API の URL> [--reset] [--apply]
+```
+
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
 開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
