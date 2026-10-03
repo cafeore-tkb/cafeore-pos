@@ -66,8 +66,11 @@ const isParams = (value: unknown): value is GeneratorParams => {
     isNumbers(v.edges) &&
     v.edges.length > 0 &&
     Array.isArray(v.gapsByStratum) &&
+    // 層は edges の数 + 1 個。足りないと生成器が無い層の間隔を引いて落ちる
+    v.gapsByStratum.length === v.edges.length + 1 &&
     v.gapsByStratum.every((gaps) => isNumbers(gaps) && gaps.length > 0) &&
     Array.isArray(v.baskets) &&
+    v.baskets.length > 0 &&
     v.baskets.every(
       (b) =>
         isCounts(b?.roles) &&
@@ -399,7 +402,10 @@ export default function Rehearsal() {
           )}
           <Button
             size="lg"
-            disabled={!params || elapsedSec >= totalSec}
+            // 割り当てが決まると注文の組の重みが変わって流れが作り直されるので、決まるまで開始させない
+            disabled={
+              !params || (!plan && !menusError) || elapsedSec >= totalSec
+            }
             onClick={() => {
               setStarted(true);
               setRunning((r) => !r);
