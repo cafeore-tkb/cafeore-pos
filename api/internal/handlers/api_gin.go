@@ -14,6 +14,15 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 背景色設定一覧取得
+	// (GET /api/color-settings)
+	GetColorSettings(c *gin.Context)
+	// 背景色設定の作成・更新
+	// (PUT /api/color-settings)
+	UpsertColorSetting(c *gin.Context)
+	// 背景色設定削除
+	// (DELETE /api/color-settings/{id})
+	DeleteColorSetting(c *gin.Context, id openapi_types.UUID)
 	// 在庫の残量一覧
 	// (GET /api/inventory)
 	GetInventory(c *gin.Context)
@@ -129,6 +138,56 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetColorSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetColorSettings(c)
+}
+
+// UpsertColorSetting operation middleware
+func (siw *ServerInterfaceWrapper) UpsertColorSetting(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpsertColorSetting(c)
+}
+
+// DeleteColorSetting operation middleware
+func (siw *ServerInterfaceWrapper) DeleteColorSetting(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteColorSetting(c, id)
+}
 
 // GetInventory operation middleware
 func (siw *ServerInterfaceWrapper) GetInventory(c *gin.Context) {
@@ -821,6 +880,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
+	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
+	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
 	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
 	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)
 	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)

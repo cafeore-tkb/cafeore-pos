@@ -95,6 +95,7 @@ func initDB() error {
 			&models.StockResource{},
 			&models.ItemStockUsage{},
 			&models.StockEvent{},
+			&models.ColorSetting{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
@@ -256,6 +257,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db)
+	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -305,6 +307,9 @@ func main() {
 		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
 		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
 		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
+		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
+		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
+		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
 	}
 
 	// サーバー起動
@@ -318,6 +323,7 @@ func main() {
 	log.Printf("  GET  /health")
 	log.Printf("  GET  /api/items")
 	log.Printf("  GET  /api/item-types")
+	log.Printf("  GET  /api/color-settings")
 	log.Printf("  GET  /api/orders")
 	log.Printf("  GET  /api/orders/:id/comments")
 	log.Printf("  GET  /api/ws/orders")
