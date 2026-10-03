@@ -1,22 +1,24 @@
-import type { OrderEntity, WithId } from "@cafeore/common";
 import { HiBell, HiBellAlert } from "react-icons/hi2";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
 type props = {
-  order: WithId<OrderEntity>;
-  changeReady: (ready: boolean) => void;
+  isReady: boolean;
+  // 応答待ち。押しても無視される
+  busy: boolean;
+  changeReady: () => void;
 };
 
-export const ReadyBell = ({ order, changeReady }: props) => {
-  const isReady = order.readyAt != null;
+export const ReadyBell = ({ isReady, busy, changeReady }: props) => {
   return (
     <Button
       type="button"
-      onClick={() => changeReady(!isReady)}
+      onClick={changeReady}
+      aria-busy={busy}
       className={cn(
-        "items-cente flex h-16 w-20 flex-col hover:bg-orange-200",
+        "hover:-translate-y-0.5 flex h-16 w-20 flex-col items-center transition-all duration-150 hover:bg-orange-200 hover:shadow-md active:translate-y-0 active:scale-95",
         isReady ? "bg-stone-200" : "bg-orange-600",
+        busy && "animate-pulse cursor-wait",
       )}
     >
       {isReady ? (

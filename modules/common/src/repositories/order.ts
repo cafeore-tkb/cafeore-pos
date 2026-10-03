@@ -88,8 +88,8 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
-    readyCup: async (id: string, cupId: string): Promise<void> => {
-      const { error, response } = await client.PATCH(
+    readyCup: async (id: string, cupId: string) => {
+      const { data, error, response } = await client.PATCH(
         "/api/orders/{id}/cups/{cupId}/ready",
         {
           params: {
@@ -98,13 +98,15 @@ export const orderRepoFactory = (): OrderRepository => {
         },
       );
 
-      if (error || !response.ok) {
-        await throwApiError(response, "Failed to mark cup as ready");
+      if (error || !data || !response.ok) {
+        return await throwApiError(response, "Failed to mark cup as ready");
       }
+
+      return responseToOrderEntity(data);
     },
 
-    serveCup: async (id: string, cupId: string): Promise<void> => {
-      const { error, response } = await client.PATCH(
+    serveCup: async (id: string, cupId: string) => {
+      const { data, error, response } = await client.PATCH(
         "/api/orders/{id}/cups/{cupId}/served",
         {
           params: {
@@ -113,9 +115,11 @@ export const orderRepoFactory = (): OrderRepository => {
         },
       );
 
-      if (error || !response.ok) {
-        await throwApiError(response, "Failed to mark cup as served");
+      if (error || !data || !response.ok) {
+        return await throwApiError(response, "Failed to mark cup as served");
       }
+
+      return responseToOrderEntity(data);
     },
 
     addComment: async (
