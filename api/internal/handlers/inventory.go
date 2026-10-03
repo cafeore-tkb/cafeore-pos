@@ -135,7 +135,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
-// 注文の応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
+// Slack への送信で応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
 func (inv *Inventory) CheckAlerts(ids []uuid.UUID) {
 	if inv == nil {
 		return
@@ -427,7 +427,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
-	h.inv.CheckAlerts([]uuid.UUID{resource.ID})
+	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
 }
 
 // DELETE /api/inventory/resources/:id - 在庫対象の削除
@@ -509,7 +509,7 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, resp)
-	h.inv.CheckAlerts([]uuid.UUID{id})
+	go h.inv.CheckAlerts([]uuid.UUID{id})
 }
 
 // 記録の種類と数量の組み合わせを検証し、不正なら 400 で返す文言を返す。
@@ -593,7 +593,7 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
-	h.inv.CheckAlerts(nil)
+	go h.inv.CheckAlerts(nil)
 }
 
 // POST /api/inventory/remind - 残量確認のリマインド（スケジューラから呼ぶ）
