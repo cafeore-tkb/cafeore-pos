@@ -4,22 +4,31 @@ name: Claude Review
 # 1. 実装の要約と重点的に見るべき場所を PR コメントにまとめ（push のたびに同じコメントを更新）
 # 2. 最新のコミット時点で残っている修正点をすべて載せたレビューを毎回投稿する（前回からの未修正も含む）
 # 認証は Claude サブスクの OAuth トークン（secrets.CLAUDE_CODE_OAUTH_TOKEN）
+# 既存の PR は Actions 画面か `gh workflow run claude.yml -f pr_number=<番号>` で手動でも回せる
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: レビューする PR の番号
+        required: true
+        type: number
 
 # 続けて push されたら古いレビューは止めて、サブスクの枠を無駄にしない
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
+  group: claude-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # draft、bot の PR、fork からの PR（Secret が読めない）は対象外
+    # draft、bot の PR、fork からの PR（Secret が読めない）は対象外。手動実行は指定された PR を必ず回す
     if: |
-      !github.event.pull_request.draft &&
-      github.event.pull_request.user.type != 'Bot' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name == 'workflow_dispatch' || (
+        !github.event.pull_request.draft &&
+        github.event.pull_request.user.type != 'Bot' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -27,19 +36,28 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
+      - name: Resolve PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json baseRefOid,headRefOid \
+            --jq '"base_sha=\(.baseRefOid)\nhead_sha=\(.headRefOid)"' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            BASE SHA: ${{ github.event.pull_request.base.sha }}
-            HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            PR NUMBER: ${{ env.PR_NUMBER }}
+            BASE SHA: ${{ steps.pr.outputs.base_sha }}
+            HEAD SHA: ${{ steps.pr.outputs.head_sha }}
 
             この PR について、次の 2 段階を順番に行ってください。コメントはすべて日本語で書きます。
 
@@ -72,6 +90,7 @@ jobs:
               - 修正が必要な点がなければ、その旨を 1 行で書く
             - 今回はじめて見つけた指摘は、`mcp__github_inline_comment__create_inline_comment` で該当行にもインラインコメントする。
               未修正の指摘はインラインでは繰り返さず、レビュー本文にだけ載せる。
+              インラインコメントのツールが使えない場合（手動実行など）は、レビュー本文だけでよい。
             - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
@@ -80,7 +99,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           reviews=$(gh api graphql --paginate \
             -f owner="${REPO%/*}" -f name="${REPO#*/}" -F number="$PR_NUMBER" \
