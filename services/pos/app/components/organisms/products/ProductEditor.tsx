@@ -9,12 +9,16 @@ import {
 } from "@cafeore/common";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ItemForm, type ItemFormValues } from "~/components/organisms/itemForm";
+import {
+  ItemForm,
+  type ItemFormValues,
+  type SameNameMenu,
+} from "~/components/organisms/itemForm";
 import {
   ItemTypeForm,
   type ItemTypeFormValues,
 } from "~/components/organisms/itemTypeForm";
-import { MenuForm } from "~/components/organisms/menuForm";
+import { MenuForm, type MenuFormValues } from "~/components/organisms/menuForm";
 import {
   Sheet,
   SheetContent,
@@ -62,17 +66,27 @@ export function ProductEditor({
   itemTypes,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
+  // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
+  const [menuRetry, setMenuRetry] = useState<MenuFormValues | null>(null);
+  const current: Editing | null = menuRetry
+    ? { kind: "menu", mode: "new" }
+    : editing;
+
+  const close = () => {
+    setMenuRetry(null);
+    onClose();
+  };
 
   const save = async (run: () => Promise<unknown>) => {
-    if (!editing) return;
+    if (!current) return;
     try {
       setSubmitting(true);
       await run();
       await onSaved();
       toast.success(
-        `${kindLabels[editing.kind]}を${editing.mode === "edit" ? "更新" : "追加"}しました`,
+        `${kindLabels[current.kind]}を${current.mode === "edit" ? "更新" : "追加"}しました`,
       );
-      onClose();
+      close();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
@@ -80,8 +94,65 @@ export function ProductEditor({
     }
   };
 
+  // アイテムの編集中にその場でタイプを足す。パネルは閉じない
+  const createItemType = async (values: ItemTypeFormValues) => {
+    try {
+      const created = await itemTypeRepository.save(values);
+      await onSaved();
+      toast.success(`タイプ「${created.display_name}」を追加しました`);
+      return created;
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "タイプの追加に失敗しました",
+      );
+      throw e;
+    }
+  };
+
+  const saveItemWithMenu = async (
+    values: ItemFormValues,
+    menu: SameNameMenu,
+  ) => {
+    setSubmitting(true);
+    try {
+      let item: WithId<ItemEntity>;
+      try {
+        item = await itemRepository.save(
+          toItemEntity(values, itemTypes, undefined),
+        );
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+        return;
+      }
+      const menuValues: MenuFormValues = {
+        name: item.name,
+        abbr: item.abbr,
+        ...menu,
+        items: [{ item, quantity: 1 }],
+      };
+      try {
+        await menuRepository.save(MenuEntity.createNew(menuValues));
+      } catch (e) {
+        // アイテムはもうできているので、同じ入力でやり直すとアイテムが重複する。メニューだけ作り直してもらう
+        toast.error(
+          `アイテムは追加しましたが、メニューの追加に失敗しました: ${
+            e instanceof Error ? e.message : "不明なエラー"
+          }。内容を確かめてもう一度保存してください`,
+        );
+        setMenuRetry(menuValues);
+        await onSaved();
+        return;
+      }
+      toast.success("アイテムとメニューを追加しました");
+      await onSaved();
+      close();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // 編集・複製の元が他の端末で消されていたら何も出さない
-  const form = editing && renderForm(editing);
+  const form = current && renderForm(current);
 
   function renderForm({ kind, mode, id }: Editing) {
     const isEdit = mode === "edit";
@@ -91,9 +162,8 @@ export function ProductEditor({
     if (kind === "menu") {
       const source = menus.find((menu) => menu.id === id);
       if (mode !== "new" && !source) return null;
-      const initialMenu =
-        source &&
-        (isEdit
+      const initialMenu = source
+        ? isEdit
           ? source
           : {
               name: copyName(source.name),
@@ -102,12 +172,17 @@ export function ProductEditor({
               // キーは重複できないので入れ直してもらう
               key: "",
               items: source.items,
-            });
+            }
+        : (menuRetry ?? undefined);
       return (
         <MenuForm
           key={formKey}
           items={items}
           initialMenu={initialMenu}
+          usedKeys={menus
+            .filter((menu) => !(isEdit && menu.id === id))
+            .map((menu) => menu.key)}
+          submitting={submitting}
           onSubmit={(values) =>
             save(() =>
               menuRepository.save(
@@ -139,12 +214,16 @@ export function ProductEditor({
           initialItem={initialItem}
           itemTypes={itemTypes}
           submitting={submitting}
-          onSubmit={(values) =>
-            save(() =>
-              itemRepository.save(
-                toItemEntity(values, itemTypes, isEdit ? id : undefined),
-              ),
-            )
+          onCreateItemType={createItemType}
+          menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
+          onSubmit={(values, menu) =>
+            menu
+              ? saveItemWithMenu(values, menu)
+              : save(() =>
+                  itemRepository.save(
+                    toItemEntity(values, itemTypes, isEdit ? id : undefined),
+                  ),
+                )
           }
         />
       );
@@ -178,7 +257,7 @@ export function ProductEditor({
     <Sheet
       open={form != null}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) close();
       }}
     >
       <SheetContent
@@ -186,10 +265,10 @@ export function ProductEditor({
         // 見出しだけで用が足りるので説明文は置かない
         aria-describedby={undefined}
       >
-        {editing && (
+        {current && (
           <SheetHeader>
             <SheetTitle>
-              {kindLabels[editing.kind]}の{modeLabels[editing.mode]}
+              {kindLabels[current.kind]}の{modeLabels[current.mode]}
             </SheetTitle>
           </SheetHeader>
         )}
