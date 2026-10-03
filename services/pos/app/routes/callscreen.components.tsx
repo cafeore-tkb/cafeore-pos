@@ -60,7 +60,7 @@ export function CallingOrderCard({
           WebkitBackgroundClip: "text",
           backgroundClip: "text",
           backgroundImage:
-            "linear-gradient(135deg, var(--grad-start, #2c5b7f), var(--grad-mid, #1e4160), var(--grad-end, #2c5b7f))",
+            "linear-gradient(135deg, var(--grad-start, var(--color-theme-primary)), var(--grad-mid, var(--color-theme-deep)), var(--grad-end, var(--color-theme-primary)))",
         }}
       >
         {orderId}
@@ -80,11 +80,10 @@ export function PreparingOrderCard({ orderId }: { orderId: number }) {
       }}
     >
       <div
-        className="pointer-events-none bg-clip-text font-bold text-5xl text-transparent"
+        className="pointer-events-none bg-linear-to-br from-theme-primary to-theme-deep bg-clip-text font-bold text-5xl text-transparent"
         style={{
           WebkitBackgroundClip: "text",
           backgroundClip: "text",
-          backgroundImage: "linear-gradient(135deg, #3a6f99, #2c5b7f, #1e4160)",
         }}
       >
         {orderId}

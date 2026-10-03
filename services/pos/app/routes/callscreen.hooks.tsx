@@ -211,10 +211,14 @@ export function useSlideInAnimation(
 
     // テキストのグラデーションカラーアニメーション（オレンジ → テーマカラー）
     // スライドイン完了後に少し待ってから色を切り替える
+    // GSAP は var() のままでは補間できないので、tailwind.css のテーマカラーの実際の値を読む
+    const style = getComputedStyle(textElement);
+    const themePrimary = style.getPropertyValue("--color-theme-primary").trim();
+    const themeDeep = style.getPropertyValue("--color-theme-deep").trim();
     gsap.to(textElement, {
-      "--grad-start": "#2c5b7f", // theme-primary
-      "--grad-mid": "#1e4160", // theme-deep
-      "--grad-end": "#2c5b7f", // theme-primary
+      "--grad-start": themePrimary,
+      "--grad-mid": themeDeep,
+      "--grad-end": themePrimary,
       duration: 1,
       delay: 1.0, // スライドイン完了後、さらに0.5秒待ってから色変更を開始
       ease: "power2.out",

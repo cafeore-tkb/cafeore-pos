@@ -147,10 +147,8 @@ export default function FielsOfCallScreen() {
       {/* 画面下部（30%）：準備中 */}
       <div className="border-t p-4">
         <h1
-          className="mb-2 flex items-center justify-center gap-2 rounded-full py-2 text-center font-bold text-3xl shadow-lg"
+          className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-br from-theme-primary to-theme-deep py-2 text-center font-bold text-3xl shadow-lg"
           style={{
-            backgroundImage:
-              "linear-gradient(135deg, #00524f, #00403e, #002e2d)",
             color: "white",
           }}
         >
