@@ -108,6 +108,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
 在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
+レジ状態のテーブル（`cashier_states`）も同じく `api/sql/2026-10_cashier_state.sql` を手で流す。
 
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
