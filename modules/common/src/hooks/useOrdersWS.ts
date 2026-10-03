@@ -1,6 +1,6 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import type { MasterState } from "../data";
+import { type MasterState, responseToMasterState } from "../data";
 import {
   type OrderResponse,
   responseToCashierState,
@@ -13,8 +13,11 @@ import type { components } from "../types/api";
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
-  | { type: "orders"; orders: OrderResponse[] }
-  | { type: "master_state"; master_state: MasterState }
+  | { type: "orders"; orders?: OrderResponse[] }
+  | {
+      type: "master_state";
+      master_state: { created_at: string; type: string };
+    }
   | {
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
@@ -54,11 +57,12 @@ export const useOrdersWS = () => {
 
         switch (data.type) {
           case "orders":
-            setOrders(data.orders.map(responseToOrderEntity));
+            // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
+            setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 
           case "master_state":
-            setMasterState(data.master_state);
+            setMasterState(responseToMasterState(data.master_state));
             break;
 
           case "cashier_state":
