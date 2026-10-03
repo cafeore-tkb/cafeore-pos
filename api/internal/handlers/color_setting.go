@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,9 @@ func toColorSettingResponse(setting *models.ColorSetting) models.ColorSettingRes
 func (h *ColorSettingHandler) GetColorSettings(c *gin.Context) {
 	var settings []models.ColorSetting
 	if err := h.db.Order("target_type, target_id, screen").Find(&settings).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// DB のエラー文は外に出さず、ログにだけ残す
+		log.Printf("failed to get color settings: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
 
