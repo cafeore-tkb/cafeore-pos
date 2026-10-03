@@ -1,6 +1,8 @@
 name: Claude Review
 
-# PR を開いたときと、コミットが push されるたびに Claude Code がレビューする
+# PR を開いたときと、コミットが push されるたびに Claude Code が
+# 1. 実装の要約と重点的に見るべき場所を PR コメントにまとめ（push のたびに同じコメントを更新）
+# 2. レビューを付ける
 # 認証は Claude サブスクの OAuth トークン（secrets.CLAUDE_CODE_OAUTH_TOKEN）
 on:
   pull_request:
@@ -41,15 +43,29 @@ jobs:
             BEFORE SHA: ${{ github.event.before }}
             HEAD SHA: ${{ github.event.pull_request.head.sha }}
 
-            この PR をレビューしてください。
+            この PR について、次の 2 段階を順番に行ってください。コメントはすべて日本語で書きます。
+
+            ## 1. 実装の要約（PR コメント）
+
+            `gh pr view` と `gh pr diff` で PR 全体を読み、人間のレビュアー向けの案内を書く。
+
+            - 1 行目は必ず `<!-- claude-summary -->` にする
+            - `### 概要`: 何をなぜ変えたかを 2〜4 文で
+            - `### 変更の全体像`: 領域（POS / mobile / api / common など）ごとに、振る舞いの変化を箇条書きで。ファイルを列挙するだけにしない
+            - `### 重点的に見てほしい場所`: 3〜5 個まで。`path/to/file.ts:行` と、なぜそこを見るべきか（データ構造や API の変更、金額・在庫の計算、Firestore のルール、並行処理、エラー処理、既存の振る舞いが変わる箇所など）を 1 行で。リスクの高い順に並べる
+            - 全体で 40 行以内に収める
+
+            `gh pr view --comments` で `<!-- claude-summary -->` を含むコメントがすでにあれば、`gh pr comment --edit-last --body-file <file>` で最新の PR 全体の内容に書き換える。なければ `gh pr comment --body-file <file>` で新しく投稿する。
+            このワークフローは PR へのコメントをこの要約にしか使わないので、`--edit-last` で要約コメントが更新される。
+
+            ## 2. レビュー
 
             - EVENT が synchronize のときは、`git diff BEFORE_SHA HEAD_SHA` で今回 push された差分を中心に見る。
-              BEFORE SHA が履歴にない（force push など）ときは PR 全体の差分を見る。
-            - それ以外のときは `gh pr diff` で PR 全体を見る。
+              BEFORE SHA が履歴にない（force push など）ときは PR 全体の差分を見る。それ以外のときは PR 全体を見る。
             - バグ、壊れるケース、セキュリティの問題を優先して指摘する。好みの問題や細かいスタイルは書かない。
-            - `gh pr view --comments` で既存のコメントを確認し、同じ指摘を繰り返さない。
+            - `gh pr view --comments` と過去のレビューを確認し、同じ指摘を繰り返さない。
             - 具体的な行への指摘は `mcp__github_inline_comment__create_inline_comment` でインラインコメントにする。
-            - 最後に `gh pr comment` で、今回レビューした範囲と指摘の要約を短く 1 件だけ投稿する。問題がなければそう書く。
-            - コメントはすべて日本語で書く。
+            - 最後に `gh pr review --comment --body-file <file>` で、今回レビューした範囲と指摘の要約を短く書く。問題がなければそう書く。
+              `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
