@@ -1,128 +1,265 @@
 {
   "item_types": [
-    { "name": "hot", "display_name": "ホット" },
-    { "name": "ice", "display_name": "アイス" },
-    { "name": "iceOre", "display_name": "アイスオレ" },
-    { "name": "milk", "display_name": "ミルク" },
-    { "name": "others", "display_name": "その他" }
+    {
+      "name": "hot",
+      "display_name": "ホット"
+    },
+    {
+      "name": "ice",
+      "display_name": "アイス"
+    },
+    {
+      "name": "iceOre",
+      "display_name": "アイスオレ"
+    },
+    {
+      "name": "milk",
+      "display_name": "ミルク"
+    },
+    {
+      "name": "others",
+      "display_name": "その他"
+    }
   ],
   "items": [
-    { "name": "縁ブレンド", "abbr": "ゆかり", "item_type": "hot" },
-    { "name": "も花も香ブレンド", "abbr": "もかもか", "item_type": "hot" },
-    { "name": "珈琲・俺ブレンド", "abbr": "俺ブレ", "item_type": "hot" },
-    { "name": "ライチ", "abbr": "ライチ", "item_type": "hot" },
-    { "name": "ブルマン", "abbr": "ブルマン", "item_type": "hot" },
-    { "name": "キリマンジャロ", "abbr": "キリマン", "item_type": "hot" },
-    { "name": "ピンクブルボン", "abbr": "ピンク", "item_type": "hot" },
-    { "name": "トラジャ", "abbr": "トラジャ", "item_type": "hot" },
-    { "name": "アイスコーヒー", "abbr": "氷", "item_type": "ice" },
-    { "name": "アイスオレ", "abbr": "牛", "item_type": "iceOre" },
-    { "name": "アイスミルク", "abbr": "ミルク", "item_type": "milk" },
-    { "name": "コースター", "abbr": "コースター", "item_type": "others" },
-    { "name": "トートセット", "abbr": "セット", "item_type": "others" },
-    { "name": "トートバッグ単体", "abbr": "トート単", "item_type": "others" }
+    {
+      "name": "優勝ブレンド",
+      "abbr": "優ブレ",
+      "item_type": "hot"
+    },
+    {
+      "name": "珈琲・俺ブレンド",
+      "abbr": "俺ブレ",
+      "item_type": "hot"
+    },
+    {
+      "name": "アロマナティーボ",
+      "abbr": "アロマ",
+      "item_type": "hot"
+    },
+    {
+      "name": "限定２",
+      "abbr": "限定２",
+      "item_type": "hot"
+    },
+    {
+      "name": "ケニア",
+      "abbr": "ケニア",
+      "item_type": "hot"
+    },
+    {
+      "name": "タンザニア",
+      "abbr": "タンザニア",
+      "item_type": "hot"
+    },
+    {
+      "name": "ブラジル",
+      "abbr": "ブラジル",
+      "item_type": "hot"
+    },
+    {
+      "name": "アイスコーヒー",
+      "abbr": "氷",
+      "item_type": "ice"
+    },
+    {
+      "name": "アイスオレ",
+      "abbr": "牛",
+      "item_type": "iceOre"
+    },
+    {
+      "name": "アイスミルク",
+      "abbr": "ミルク",
+      "item_type": "milk"
+    },
+    {
+      "name": "コースター",
+      "abbr": "コースター",
+      "item_type": "others"
+    },
+    {
+      "name": "トートバッグ",
+      "abbr": "トート",
+      "item_type": "others"
+    }
   ],
   "menus": [
     {
-      "name": "縁ブレンド",
-      "abbr": "ゆかり",
+      "name": "優勝ブレンド",
+      "abbr": "優ブレ",
       "price": 500,
-      "key": "-",
-      "items": [{ "item": "縁ブレンド", "quantity": 1 }]
-    },
-    {
-      "name": "も花も香ブレンド",
-      "abbr": "もかもか",
-      "price": 500,
-      "key": "+",
-      "items": [{ "item": "も花も香ブレンド", "quantity": 1 }]
+      "key": "-"
     },
     {
       "name": "珈琲・俺ブレンド",
       "abbr": "俺ブレ",
       "price": 300,
-      "key": "^",
-      "items": [{ "item": "珈琲・俺ブレンド", "quantity": 1 }]
+      "key": "^"
     },
     {
-      "name": "ライチ",
-      "abbr": "ライチ",
+      "name": "アロマナティーボ",
+      "abbr": "アロマ",
       "price": 1000,
-      "key": "/",
-      "items": [{ "item": "ライチ", "quantity": 1 }]
+      "key": "/"
     },
     {
-      "name": "ブルマン",
-      "abbr": "ブルマン",
+      "name": "限定２",
+      "abbr": "限定２",
       "price": 1000,
-      "key": "#",
-      "items": [{ "item": "ブルマン", "quantity": 1 }]
+      "key": "#"
     },
     {
-      "name": "キリマンジャロ",
-      "abbr": "キリマン",
+      "name": "ケニア",
+      "abbr": "ケニア",
       "price": 400,
-      "key": ";",
-      "items": [{ "item": "キリマンジャロ", "quantity": 1 }]
+      "key": ";"
     },
     {
-      "name": "ピンクブルボン",
-      "abbr": "ピンク",
+      "name": "タンザニア",
+      "abbr": "タンザニア",
       "price": 400,
-      "key": ":",
-      "items": [{ "item": "ピンクブルボン", "quantity": 1 }]
+      "key": ":"
     },
     {
-      "name": "トラジャ",
-      "abbr": "トラジャ",
+      "name": "ブラジル",
+      "abbr": "ブラジル’",
       "price": 400,
-      "key": "]",
-      "items": [{ "item": "トラジャ", "quantity": 1 }]
+      "key": "]"
     },
     {
       "name": "アイスコーヒー",
       "abbr": "氷",
       "price": 400,
-      "key": "\\",
-      "items": [{ "item": "アイスコーヒー", "quantity": 1 }]
+      "key": "\\"
     },
     {
       "name": "アイスオレ",
       "abbr": "牛",
       "price": 500,
-      "key": "[",
-      "items": [{ "item": "アイスオレ", "quantity": 1 }]
+      "key": "["
     },
     {
       "name": "アイスミルク",
       "abbr": "ミルク",
       "price": 100,
-      "key": ".",
-      "items": [{ "item": "アイスミルク", "quantity": 1 }]
+      "key": "."
     },
     {
       "name": "コースター",
       "abbr": "コースター",
       "price": 100,
-      "key": ",",
-      "items": [{ "item": "コースター", "quantity": 1 }]
+      "key": ","
     },
     {
       "name": "トートセット",
       "abbr": "セット",
       "price": 1000,
-      "key": "@",
-      "items": [{ "item": "トートセット", "quantity": 1 }]
+      "key": "@"
     },
     {
-      "name": "トートバッグ単体",
-      "abbr": "トート単",
+      "name": "トートバッグ",
+      "abbr": "トート",
       "price": 1000,
-      "key": "*",
-      "items": [{ "item": "トートバッグ単体", "quantity": 1 }]
+      "key": "*"
+    }
+  ],
+  "menu_items": [
+    {
+      "menu": "-",
+      "item": "優勝ブレンド",
+      "quantity": 1
+    },
+    {
+      "menu": "^",
+      "item": "珈琲・俺ブレンド",
+      "quantity": 1
+    },
+    {
+      "menu": "/",
+      "item": "アロマナティーボ",
+      "quantity": 1
+    },
+    {
+      "menu": "#",
+      "item": "限定２",
+      "quantity": 1
+    },
+    {
+      "menu": ";",
+      "item": "ケニア",
+      "quantity": 1
+    },
+    {
+      "menu": ":",
+      "item": "タンザニア",
+      "quantity": 1
+    },
+    {
+      "menu": "]",
+      "item": "ブラジル",
+      "quantity": 1
+    },
+    {
+      "menu": "\\",
+      "item": "アイスコーヒー",
+      "quantity": 1
+    },
+    {
+      "menu": "[",
+      "item": "アイスオレ",
+      "quantity": 1
+    },
+    {
+      "menu": ".",
+      "item": "アイスミルク",
+      "quantity": 1
+    },
+    {
+      "menu": ",",
+      "item": "コースター",
+      "quantity": 1
+    },
+    {
+      "menu": "@",
+      "item": "優勝ブレンド",
+      "quantity": 1
+    },
+    {
+      "menu": "@",
+      "item": "トートバッグ",
+      "quantity": 1
+    },
+    {
+      "menu": "*",
+      "item": "トートバッグ",
+      "quantity": 1
     }
   ],
   "color_settings": [
+    {
+      "target_type": "Item",
+      "target": "限定２",
+      "screen": "master",
+      "color": "#7bf1a8"
+    },
+    {
+      "target_type": "Item",
+      "target": "アロマナティーボ",
+      "screen": "master",
+      "color": "#7bf1a8"
+    },
+    {
+      "target_type": "ItemType",
+      "target": "milk",
+      "screen": "master",
+      "color": "#d1d5dc"
+    },
+    {
+      "target_type": "ItemType",
+      "target": "milk",
+      "screen": "serve",
+      "color": "#fff085"
+    },
     {
       "target_type": "ItemType",
       "target": "ice",
@@ -140,30 +277,6 @@
       "target": "iceOre",
       "screen": "serve",
       "color": "#b8e6fe"
-    },
-    {
-      "target_type": "ItemType",
-      "target": "milk",
-      "screen": "master",
-      "color": "#d1d5dc"
-    },
-    {
-      "target_type": "ItemType",
-      "target": "milk",
-      "screen": "serve",
-      "color": "#fff085"
-    },
-    {
-      "target_type": "Item",
-      "target": "ブルマン",
-      "screen": "master",
-      "color": "#7bf1a8"
-    },
-    {
-      "target_type": "Item",
-      "target": "ライチ",
-      "screen": "master",
-      "color": "#7bf1a8"
     }
   ]
 }

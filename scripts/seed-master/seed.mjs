@@ -9,6 +9,9 @@
 //
 // --reset は投入前に既存のマスターを全部消す（いずれも論理削除）。
 // メニューの key は論理削除後も一意制約に残るので、key を退避してから消す。
+//
+// データは /products の「書き出し」の JSON と同じ形（メニューの構成は menu_items に
+// メニューの key で1行ずつ書く）。書き出したファイルを --data にそのまま渡せる。
 
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
@@ -177,7 +180,10 @@ for (const i of seed.items) {
 const menuKeys = uniqueBy(current.menus, "key", "menus");
 for (const m of seed.menus) {
   if (menuKeys.has(m.key)) continue;
-  const items = m.items.map(({ item, quantity }) => {
+  const rows = seed.menu_items.filter((row) => row.menu === m.key);
+  if (rows.length === 0)
+    throw new Error(`メニュー ${m.name} の構成がありません`);
+  const items = rows.map(({ item, quantity }) => {
     const itemId = itemIds.get(item);
     if (!itemId)
       throw new Error(`アイテム ${item} がありません（メニュー ${m.name}）`);
