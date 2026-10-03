@@ -224,7 +224,7 @@ export function ItemForm({
   );
 }
 
-// form の中に form は置けないので、Enter での送信はせずボタンで追加する
+// form の中に form は置けない。入力欄の Enter は親フォームを送信してしまうので止め、タイプの追加にする
 function NewItemType({
   onCreate,
 }: {
@@ -254,6 +254,27 @@ function NewItemType({
   const canCreate =
     values.name.trim() !== "" && values.display_name.trim() !== "";
 
+  const create = async () => {
+    if (!canCreate || creating) return;
+    setCreating(true);
+    try {
+      await onCreate(values);
+      setValues({ name: "", display_name: "" });
+      setOpen(false);
+    } catch {
+      // 失敗は onCreate 側でトーストに出る。入力は残してやり直せるようにする
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // 変換の確定の Enter は親フォームも送信しないので、そのままにする
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    void create();
+  };
+
   return (
     <div className="grid gap-3 rounded-md border bg-muted/40 p-3">
       <div className="grid grid-cols-2 gap-3">
@@ -268,6 +289,7 @@ function NewItemType({
               setValues((prev) => ({ ...prev, display_name: e.target.value }))
             }
             placeholder="ホット"
+            onKeyDown={onKeyDown}
           />
         </div>
         <div className="grid gap-1">
@@ -281,6 +303,7 @@ function NewItemType({
               setValues((prev) => ({ ...prev, name: e.target.value }))
             }
             placeholder="hot"
+            onKeyDown={onKeyDown}
             className="font-mono"
           />
         </div>
@@ -298,16 +321,7 @@ function NewItemType({
           type="button"
           size="sm"
           disabled={!canCreate || creating}
-          onClick={async () => {
-            setCreating(true);
-            try {
-              await onCreate(values);
-              setValues({ name: "", display_name: "" });
-              setOpen(false);
-            } finally {
-              setCreating(false);
-            }
-          }}
+          onClick={create}
         >
           {creating ? "追加中..." : "タイプを追加"}
         </Button>
