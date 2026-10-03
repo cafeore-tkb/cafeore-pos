@@ -346,12 +346,20 @@ export interface components {
     MasterItemType: {
       name: string;
       display_name: string;
+      /** @description マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
+      master_color?: string;
+      /** @description 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
+      serve_color?: string;
     };
     MasterItem: {
       name: string;
       abbr: string;
       /** @description アイテムタイプの name */
       item_type: string;
+      /** @description マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
+      master_color?: string;
+      /** @description 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
+      serve_color?: string;
     };
     MasterMenu: {
       key: string;

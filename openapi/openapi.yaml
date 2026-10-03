@@ -1150,6 +1150,12 @@ components:
           type: string
         display_name:
           type: string
+        master_color:
+          type: string
+          description: マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+        serve_color:
+          type: string
+          description: 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
     MasterItem:
       type: object
       required:
@@ -1164,6 +1170,12 @@ components:
         item_type:
           type: string
           description: アイテムタイプの name
+        master_color:
+          type: string
+          description: マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+        serve_color:
+          type: string
+          description: 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
     MasterMenu:
       type: object
       required:

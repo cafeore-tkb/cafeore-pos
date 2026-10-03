@@ -154,13 +154,25 @@ type MasterItem struct {
 
 	// ItemType アイテムタイプの name
 	ItemType string `json:"item_type"`
-	Name     string `json:"name"`
+
+	// MasterColor マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+	MasterColor *string `json:"master_color,omitempty"`
+	Name        string  `json:"name"`
+
+	// ServeColor 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+	ServeColor *string `json:"serve_color,omitempty"`
 }
 
 // MasterItemType defines model for MasterItemType.
 type MasterItemType struct {
 	DisplayName string `json:"display_name"`
-	Name        string `json:"name"`
+
+	// MasterColor マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+	MasterColor *string `json:"master_color,omitempty"`
+	Name        string  `json:"name"`
+
+	// ServeColor 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
+	ServeColor *string `json:"serve_color,omitempty"`
 }
 
 // MasterMenu defines model for MasterMenu.

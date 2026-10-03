@@ -54,6 +54,30 @@ describe("[unit] parseMasterCsv", () => {
     });
   });
 
+  test("color columns are optional; blank cells mean no color", () => {
+    const withColors = parseMasterCsv(
+      "items.csv",
+      "名前,略称,タイプ,マスター色,提供色\nブレンド,ブ,hot,#F74316,\n",
+    );
+    expect(withColors).toHaveProperty(["data", "items", 0], {
+      name: "ブレンド",
+      abbr: "ブ",
+      item_type: "hot",
+      master_color: "#F74316",
+      serve_color: "",
+    });
+    // 列が無ければ色のキー自体を送らない（サーバー側で「変えない」になる）。
+    const withoutColors = parseMasterCsv(
+      "items.csv",
+      "name,abbr,item_type\nブレンド,ブ,hot\n",
+    );
+    expect(
+      Object.keys(
+        (withoutColors as { data: { items: object[] } }).data.items[0],
+      ),
+    ).toEqual(["name", "abbr", "item_type"]);
+  });
+
   test("accepts Japanese headers and Excel-formatted prices", () => {
     const parsed = parseMasterCsv(
       "menus.csv",
@@ -146,8 +170,23 @@ describe("[unit] parseMasterFiles", () => {
 describe("[unit] masterDataToCsv", () => {
   test("round-trips through parseMasterFiles", () => {
     const data: MasterData = {
-      item_types: [{ name: "hot", display_name: "ホット, 温" }],
-      items: [{ name: 'ブレンド"A"', abbr: "ブ", item_type: "hot" }],
+      item_types: [
+        {
+          name: "hot",
+          display_name: "ホット, 温",
+          master_color: "#f74316",
+          serve_color: "",
+        },
+      ],
+      items: [
+        {
+          name: 'ブレンド"A"',
+          abbr: "ブ",
+          item_type: "hot",
+          master_color: "",
+          serve_color: "#0ebbf0",
+        },
+      ],
       menus: [
         {
           key: "q",

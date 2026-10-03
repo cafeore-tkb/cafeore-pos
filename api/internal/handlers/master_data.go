@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -47,13 +48,35 @@ func (h *MasterDataHandler) ExportMasterData(c *gin.Context) {
 		return
 	}
 
+	var settings []models.ColorSetting
+	if err := h.db.Find(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	colors := indexColorSettings(settings)
+	// 色の無い画面は省く（JSON では省略が「変えない」になる）。
+	colorOf := func(targetType models.ColorTargetType, id uuid.UUID, screen models.ColorScreen) *string {
+		if setting, ok := colors[colorKey{targetType, id, screen}]; ok {
+			return &setting.Color
+		}
+		return nil
+	}
+
 	outTypes := make([]models.MasterItemType, len(itemTypes))
 	for i, t := range itemTypes {
-		outTypes[i] = models.MasterItemType{Name: t.Name, DisplayName: t.DisplayName}
+		outTypes[i] = models.MasterItemType{
+			Name: t.Name, DisplayName: t.DisplayName,
+			MasterColor: colorOf(models.ColorTargetTypeItemType, t.ID, models.ColorScreenMaster),
+			ServeColor:  colorOf(models.ColorTargetTypeItemType, t.ID, models.ColorScreenServe),
+		}
 	}
 	outItems := make([]models.MasterItem, len(items))
 	for i, item := range items {
-		outItems[i] = models.MasterItem{Name: item.Name, Abbr: item.Abbr, ItemType: item.ItemType.Name}
+		outItems[i] = models.MasterItem{
+			Name: item.Name, Abbr: item.Abbr, ItemType: item.ItemType.Name,
+			MasterColor: colorOf(models.ColorTargetTypeItem, item.ID, models.ColorScreenMaster),
+			ServeColor:  colorOf(models.ColorTargetTypeItem, item.ID, models.ColorScreenServe),
+		}
 	}
 	outMenus := make([]models.MasterMenu, len(menus))
 	for i, menu := range menus {
@@ -119,7 +142,8 @@ type masterState struct {
 	itemTypes []models.ItemType
 	items     []models.Item
 	// key には論理削除した行も含めた一意制約があるので、削除済みも持つ。
-	menus []models.Menu
+	menus         []models.Menu
+	colorSettings []models.ColorSetting
 }
 
 func loadMasterState(tx *gorm.DB) (masterState, error) {
@@ -133,6 +157,9 @@ func loadMasterState(tx *gorm.DB) (masterState, error) {
 	if err := tx.Unscoped().Preload("MenuItems").Find(&s.menus).Error; err != nil {
 		return s, err
 	}
+	if err := tx.Find(&s.colorSettings).Error; err != nil {
+		return s, err
+	}
 	return s, nil
 }
 
@@ -144,6 +171,9 @@ type masterImportPlan struct {
 	createMenus     []models.Menu
 	// 論理削除されていたメニューの復元も含む
 	updateMenus []models.Menu
+	// 背景色。アイテムタイプ・アイテムを作ったあとに書く。
+	upsertColors   []models.ColorSetting
+	deleteColorIDs []uuid.UUID
 
 	result   models.MasterImportResult
 	problems []string
@@ -155,6 +185,7 @@ func planMasterImport(data models.MasterData, existing masterState) *masterImpor
 	problemf := func(format string, args ...any) {
 		p.problems = append(p.problems, fmt.Sprintf(format, args...))
 	}
+	existingColors := indexColorSettings(existing.colorSettings)
 
 	// --- アイテムタイプ ---
 	liveTypeIDs := map[string][]uuid.UUID{}
@@ -181,18 +212,31 @@ func planMasterImport(data models.MasterData, existing masterState) *masterImpor
 			problemf("%s: display_name が空です", label)
 			continue
 		}
+		colors, colorProblems := parseRowColors(row.MasterColor, row.ServeColor)
+		if len(colorProblems) > 0 {
+			for _, problem := range colorProblems {
+				problemf("%s: %s", label, problem)
+			}
+			continue
+		}
 
 		switch ids := liveTypeIDs[name]; len(ids) {
 		case 0:
 			t := models.ItemType{ID: uuid.New(), Name: name, DisplayName: displayName}
 			p.createItemTypes = append(p.createItemTypes, t)
+			p.planColors(models.ColorTargetTypeItemType, t.ID, colors, existingColors)
 			p.result.ItemTypes.Created++
 			typeIDByName[name] = t.ID
 		case 1:
 			t := liveTypes[ids[0]]
 			typeIDByName[name] = t.ID
+			colorChanged := p.planColors(models.ColorTargetTypeItemType, t.ID, colors, existingColors)
 			if t.DisplayName == displayName {
-				p.result.ItemTypes.Unchanged++
+				if colorChanged {
+					p.result.ItemTypes.Updated++
+				} else {
+					p.result.ItemTypes.Unchanged++
+				}
 				continue
 			}
 			t.DisplayName = displayName
@@ -246,18 +290,31 @@ func planMasterImport(data models.MasterData, existing masterState) *masterImpor
 			problemf("%s: %s", label, msg)
 			continue
 		}
+		colors, colorProblems := parseRowColors(row.MasterColor, row.ServeColor)
+		if len(colorProblems) > 0 {
+			for _, problem := range colorProblems {
+				problemf("%s: %s", label, problem)
+			}
+			continue
+		}
 
 		switch ids := liveItemIDs[name]; len(ids) {
 		case 0:
 			item := models.Item{ID: uuid.New(), Name: name, Abbr: abbr, ItemTypeID: typeID}
 			p.createItems = append(p.createItems, item)
+			p.planColors(models.ColorTargetTypeItem, item.ID, colors, existingColors)
 			p.result.Items.Created++
 			itemIDByName[name] = item.ID
 		case 1:
 			item := liveItems[ids[0]]
 			itemIDByName[name] = item.ID
+			colorChanged := p.planColors(models.ColorTargetTypeItem, item.ID, colors, existingColors)
 			if item.Abbr == abbr && item.ItemTypeID == typeID {
-				p.result.Items.Unchanged++
+				if colorChanged {
+					p.result.Items.Updated++
+				} else {
+					p.result.Items.Unchanged++
+				}
 				continue
 			}
 			item.Abbr, item.ItemTypeID = abbr, typeID
@@ -386,6 +443,17 @@ func (p *masterImportPlan) apply(tx *gorm.DB) error {
 		}
 	}
 
+	for i := range p.upsertColors {
+		if err := upsertColorSetting(tx, &p.upsertColors[i]).Error; err != nil {
+			return err
+		}
+	}
+	if len(p.deleteColorIDs) > 0 {
+		if err := tx.Delete(&models.ColorSetting{}, "id IN ?", p.deleteColorIDs).Error; err != nil {
+			return err
+		}
+	}
+
 	for _, menu := range p.createMenus {
 		if err := tx.Omit(clause.Associations).Create(&menu).Error; err != nil {
 			return err
@@ -412,6 +480,76 @@ func (p *masterImportPlan) apply(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+type colorKey struct {
+	targetType models.ColorTargetType
+	targetID   uuid.UUID
+	screen     models.ColorScreen
+}
+
+func indexColorSettings(settings []models.ColorSetting) map[colorKey]models.ColorSetting {
+	index := make(map[colorKey]models.ColorSetting, len(settings))
+	for _, s := range settings {
+		index[colorKey{models.ColorTargetType(s.TargetType), s.TargetID, models.ColorScreen(s.Screen)}] = s
+	}
+	return index
+}
+
+// 行の色指定。画面ごとに "" なら色を外し、それ以外は #rrggbb。指定の無い画面は入れない（変えない）。
+type rowColors map[models.ColorScreen]string
+
+var looseColorPattern = regexp.MustCompile(`^#?[0-9a-fA-F]{6}$`)
+
+// Excel で # を付け忘れたり大文字で書いたりしても通るよう、#rrggbb にそろえる。
+func parseRowColors(masterColor, serveColor *string) (rowColors, []string) {
+	colors := rowColors{}
+	var problems []string
+	for _, c := range []struct {
+		screen models.ColorScreen
+		column string
+		value  *string
+	}{
+		{models.ColorScreenMaster, "master_color", masterColor},
+		{models.ColorScreenServe, "serve_color", serveColor},
+	} {
+		if c.value == nil {
+			continue
+		}
+		v := strings.TrimSpace(*c.value)
+		switch {
+		case v == "":
+			colors[c.screen] = ""
+		case looseColorPattern.MatchString(v):
+			colors[c.screen] = "#" + strings.ToLower(strings.TrimPrefix(v, "#"))
+		default:
+			problems = append(problems, fmt.Sprintf("%s「%s」は #RRGGBB（例: #f74316）で書いてください", c.column, v))
+		}
+	}
+	return colors, problems
+}
+
+// 色の指定を作成・更新・削除に振り分ける。何か変わるなら true。
+func (p *masterImportPlan) planColors(targetType models.ColorTargetType, targetID uuid.UUID, colors rowColors, existing map[colorKey]models.ColorSetting) bool {
+	changed := false
+	for _, screen := range []models.ColorScreen{models.ColorScreenMaster, models.ColorScreenServe} {
+		color, specified := colors[screen]
+		if !specified {
+			continue
+		}
+		current, exists := existing[colorKey{targetType, targetID, screen}]
+		switch {
+		case color == "" && exists:
+			p.deleteColorIDs = append(p.deleteColorIDs, current.ID)
+			changed = true
+		case color != "" && (!exists || current.Color != color):
+			p.upsertColors = append(p.upsertColors, models.ColorSetting{
+				TargetType: string(targetType), TargetID: targetID, Screen: string(screen), Color: color,
+			})
+			changed = true
+		}
+	}
+	return changed
 }
 
 func sameMenu(a, b models.Menu) bool {

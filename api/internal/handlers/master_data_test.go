@@ -163,3 +163,65 @@ func TestSameMenuIgnoresItemOrder(t *testing.T) {
 		t.Fatal("quantity difference must matter")
 	}
 }
+
+func TestPlanMasterImportColors(t *testing.T) {
+	hot := models.ItemType{ID: uuid.New(), Name: "hot", DisplayName: "ホット"}
+	blend := models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemTypeID: hot.ID}
+	masterColor := models.ColorSetting{ID: uuid.New(), TargetType: "ItemType", TargetID: hot.ID, Screen: "master", Color: "#f74316"}
+	serveColor := models.ColorSetting{ID: uuid.New(), TargetType: "Item", TargetID: blend.ID, Screen: "serve", Color: "#0ebbf0"}
+	existing := masterState{
+		itemTypes:     []models.ItemType{hot},
+		items:         []models.Item{blend},
+		colorSettings: []models.ColorSetting{masterColor, serveColor},
+	}
+
+	// 大文字や # 抜きでも同じ色なら変更なし。省略した画面には触らない。
+	data := models.MasterData{
+		ItemTypes: ptr([]models.MasterItemType{{Name: "hot", DisplayName: "ホット", MasterColor: ptr("F74316")}}),
+		Items:     ptr([]models.MasterItem{{Name: "ブレンド", Abbr: "ブ", ItemType: "hot"}}),
+	}
+	p := planMasterImport(data, existing)
+	if len(p.problems) > 0 || len(p.upsertColors) > 0 || len(p.deleteColorIDs) > 0 {
+		t.Fatalf("same colors must not change anything: %+v", p)
+	}
+	if p.result.ItemTypes != (models.MasterImportCount{Unchanged: 1}) || p.result.Items != (models.MasterImportCount{Unchanged: 1}) {
+		t.Fatalf("unexpected counts: %+v", p.result)
+	}
+
+	// 色だけ変えても更新になる。空文字は色を外す。
+	data = models.MasterData{
+		ItemTypes: ptr([]models.MasterItemType{{Name: "hot", DisplayName: "ホット", MasterColor: ptr("#000000"), ServeColor: ptr("#ffffff")}}),
+		Items:     ptr([]models.MasterItem{{Name: "ブレンド", Abbr: "ブ", ItemType: "hot", ServeColor: ptr("")}}),
+	}
+	p = planMasterImport(data, existing)
+	if len(p.problems) > 0 {
+		t.Fatal(p.problems)
+	}
+	if len(p.updateItemTypes) != 0 || len(p.updateItems) != 0 {
+		t.Fatal("color-only change must not rewrite the row itself")
+	}
+	if p.result.ItemTypes != (models.MasterImportCount{Updated: 1}) || p.result.Items != (models.MasterImportCount{Updated: 1}) {
+		t.Fatalf("color change must count as updated: %+v", p.result)
+	}
+	if len(p.upsertColors) != 2 || len(p.deleteColorIDs) != 1 || p.deleteColorIDs[0] != serveColor.ID {
+		t.Fatalf("unexpected color plan: %+v / %+v", p.upsertColors, p.deleteColorIDs)
+	}
+}
+
+func TestPlanMasterImportColorsForNewRowsAndBadValues(t *testing.T) {
+	data := models.MasterData{
+		ItemTypes: ptr([]models.MasterItemType{{Name: "hot", DisplayName: "ホット", ServeColor: ptr("#ABCDEF"), MasterColor: ptr("")}}),
+		Items:     ptr([]models.MasterItem{{Name: "a", ItemType: "hot", MasterColor: ptr("red")}}),
+	}
+	p := planMasterImport(data, masterState{})
+	if len(p.problems) != 1 || !strings.Contains(p.problems[0], "アイテム「a」: master_color「red」は #RRGGBB") {
+		t.Fatalf("invalid color must be reported: %v", p.problems)
+	}
+	if len(p.upsertColors) != 1 {
+		t.Fatalf("new item type must get its color: %+v", p.upsertColors)
+	}
+	c := p.upsertColors[0]
+	if c.TargetID != p.createItemTypes[0].ID || c.TargetType != "ItemType" || c.Screen != "serve" || c.Color != "#abcdef" {
+		t.Fatalf("unexpected color setting: %+v", c)
+	}
+}

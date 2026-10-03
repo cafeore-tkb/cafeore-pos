@@ -20,6 +20,9 @@ const COLUMNS = {
   menus: ["key", "name", "abbr", "price", "items"],
 } as const satisfies Record<MasterTable, readonly string[]>;
 
+// アイテムタイプとアイテムに付けられる背景色の列。列が無ければ色は変えない。
+const COLOR_COLUMNS = ["master_color", "serve_color"] as const;
+
 // Excel で日本語の見出しを付けても読めるようにする。
 const HEADER_ALIASES: Record<string, string> = {
   名前: "name",
@@ -34,6 +37,10 @@ const HEADER_ALIASES: Record<string, string> = {
   値段: "price",
   アイテム: "items",
   構成: "items",
+  マスター色: "master_color",
+  マスター背景色: "master_color",
+  提供色: "serve_color",
+  提供背景色: "serve_color",
 };
 
 const HEADER_HELP =
@@ -197,6 +204,7 @@ export const parseMasterCsv = (fileName: string, text: string): ParsedCsv => {
       data.item_types = records.map((r) => ({
         name: r.name,
         display_name: r.display_name,
+        ...pickColors(r),
       }));
       break;
     case "items":
@@ -204,6 +212,7 @@ export const parseMasterCsv = (fileName: string, text: string): ParsedCsv => {
         name: r.name,
         abbr: r.abbr,
         item_type: r.item_type,
+        ...pickColors(r),
       }));
       break;
     case "menus":
@@ -234,6 +243,15 @@ export const parseMasterCsv = (fileName: string, text: string): ParsedCsv => {
   if (problems.length > 0) return { problems };
   return { table, data, rows: records.length };
 };
+
+// 列があればセルの値（空なら「色を外す」）、列が無ければ何も入れない（「変えない」）。
+const pickColors = (record: Record<string, string>) =>
+  Object.fromEntries(
+    COLOR_COLUMNS.filter((column) => column in record).map((column) => [
+      column,
+      record[column],
+    ]),
+  );
 
 const isBlank = (row: string[]) => row.every((cell) => cell.trim() === "");
 
@@ -323,13 +341,25 @@ export const masterDataToCsv = (
   };
 
   return {
+    // 色が無ければ空にする。取り込み直しても「色なし」のまま変わらない。
     item_types: toCsv(
-      COLUMNS.item_types,
-      (data.item_types ?? []).map((t) => [t.name, t.display_name]),
+      [...COLUMNS.item_types, ...COLOR_COLUMNS],
+      (data.item_types ?? []).map((t) => [
+        t.name,
+        t.display_name,
+        t.master_color ?? "",
+        t.serve_color ?? "",
+      ]),
     ),
     items: toCsv(
-      COLUMNS.items,
-      (data.items ?? []).map((i) => [i.name, i.abbr, i.item_type]),
+      [...COLUMNS.items, ...COLOR_COLUMNS],
+      (data.items ?? []).map((i) => [
+        i.name,
+        i.abbr,
+        i.item_type,
+        i.master_color ?? "",
+        i.serve_color ?? "",
+      ]),
     ),
     menus: toCsv(
       COLUMNS.menus,
