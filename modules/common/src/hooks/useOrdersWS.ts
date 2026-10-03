@@ -9,7 +9,7 @@ type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
   // 全注文。接続直後に届く
-  | { type: "orders"; orders: OrderResponse[] }
+  | { type: "orders"; orders?: OrderResponse[] }
   // 作成・変更された1件の注文
   | { type: "order"; order: OrderResponse }
   | { type: "order_deleted"; order_id: string }
@@ -58,7 +58,8 @@ export const useOrdersWS = () => {
 
           switch (data.type) {
             case "orders":
-              setOrders(data.orders.map(responseToOrderEntity));
+              // 0 件のときはサーバーの omitempty で orders が省かれる
+              setOrders((data.orders ?? []).map(responseToOrderEntity));
               break;
 
             case "order": {
