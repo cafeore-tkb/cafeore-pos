@@ -209,12 +209,12 @@ export function useSlideInAnimation(
       ease: "power2.out",
     });
 
-    // テキストのグラデーションカラーアニメーション（オレンジ → テール）
+    // テキストのグラデーションカラーアニメーション（オレンジ → テーマカラー）
     // スライドイン完了後に少し待ってから色を切り替える
     gsap.to(textElement, {
-      "--grad-start": "#14b8a6", // teal-500
-      "--grad-mid": "#0d9488", // teal-600
-      "--grad-end": "#14b8a6", // teal-500
+      "--grad-start": "#2c5b7f", // theme-primary
+      "--grad-mid": "#1e4160", // theme-deep
+      "--grad-end": "#2c5b7f", // theme-primary
       duration: 1,
       delay: 1.0, // スライドイン完了後、さらに0.5秒待ってから色変更を開始
       ease: "power2.out",
