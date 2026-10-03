@@ -48,7 +48,8 @@ func (j *JSONB) Scan(value any) error {
 //
 // cashier-mini（客側の表示）がこれを購読して金額や注文番号を出す。
 // 編集中の注文はフロントの orderSchema の JSON をそのまま持つだけで、
-// サーバー側では中身を解釈しない（orders テーブルとは無関係の一時状態）。
+// サーバー側では上の階層のキーと型を確かめる以外は中身を解釈しない
+// （orders テーブルとは無関係の一時状態）。
 type CashierState struct {
 	ID               string     `gorm:"primary_key;size:64"`
 	EdittingOrder    JSONB      `gorm:"type:jsonb;not null"`

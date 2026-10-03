@@ -4,6 +4,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -42,6 +43,63 @@ func toCashierStateResponse(state *models.CashierState) (models.CashierStateResp
 		SubmittedOrderId: submitted,
 		UpdatedAt:        state.UpdatedAt,
 	}, nil
+}
+
+// editting_order が持つべきキー。フロントの orderSchema のうち optional でないもの。
+// id は保存前の注文には無いので含めない。
+var edittingOrderKeys = []struct {
+	name     string
+	nullable bool
+}{
+	{"orderId", false},
+	{"createdAt", false},
+	{"readyAt", true},
+	{"servedAt", true},
+	{"menus", false},
+	{"total", false},
+	{"comments", false},
+	{"billingAmount", false},
+	{"received", false},
+	{"discountOrderId", true},
+	{"discountOrderCups", false},
+	{"DISCOUNT_PER_CUP", false},
+	{"discount", false},
+	{"estimateTime", false},
+}
+
+// 型を確かめるためだけの受け皿。null は上で弾いているのでポインタにしない
+type edittingOrderShape struct {
+	OrderID           float64           `json:"orderId"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	ReadyAt           *time.Time        `json:"readyAt"`
+	ServedAt          *time.Time        `json:"servedAt"`
+	Menus             []json.RawMessage `json:"menus"`
+	Total             float64           `json:"total"`
+	Comments          []json.RawMessage `json:"comments"`
+	BillingAmount     float64           `json:"billingAmount"`
+	Received          float64           `json:"received"`
+	DiscountOrderID   *float64          `json:"discountOrderId"`
+	DiscountOrderCups float64           `json:"discountOrderCups"`
+	DiscountPerCup    float64           `json:"DISCOUNT_PER_CUP"`
+	Discount          float64           `json:"discount"`
+	EstimateTime      float64           `json:"estimateTime"`
+}
+
+// 認証なしで丸ごと置き換えるので、壊れた形が DB に残ると配信先のフロントが
+// 読めないまま再接続のたびに失敗する。上の階層のキーと型だけ確かめる
+func validateEdittingOrder(order map[string]interface{}, raw []byte) error {
+	for _, key := range edittingOrderKeys {
+		v, ok := order[key.name]
+		if !ok || (v == nil && !key.nullable) {
+			return fmt.Errorf("editting_order.%s is required", key.name)
+		}
+	}
+
+	var shape edittingOrderShape
+	if err := json.Unmarshal(raw, &shape); err != nil {
+		return fmt.Errorf("editting_order is invalid: %w", err)
+	}
+	return nil
 }
 
 func findCashierState(db *gorm.DB) (*models.CashierState, error) {
@@ -92,6 +150,10 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 
 	raw, err := json.Marshal(req.EdittingOrder)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateEdittingOrder(req.EdittingOrder, raw); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -11,7 +11,7 @@ import (
 
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
-	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは中身を解釈しない
+	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
 	EdittingOrder map[string]interface{} `json:"editting_order"`
 
 	// SubmittedOrderId 直前に確定した注文の ID。編集中は null

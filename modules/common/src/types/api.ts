@@ -283,7 +283,7 @@ export interface components {
       type: string;
     };
     CashierStateResponse: {
-      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは中身を解釈しない */
+      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
       editting_order: {
         [key: string]: unknown;
       };
@@ -799,6 +799,12 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description editting_order に必須のキーが無い、または型が違う */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

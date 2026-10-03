@@ -94,14 +94,8 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
 
   const savedOrder = await orderRepository.save(order);
 
-  const cashierState = await cashierRepository.get();
-  if (cashierState == null) {
-    return console.log("cashierState is null");
-  }
-  await cashierRepository.set({
-    ...cashierState,
-    submittedOrderId: savedOrder.id,
-  });
+  // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
+  await cashierRepository.setSubmittedOrder(savedOrder);
 
   return new Response("ok");
 };

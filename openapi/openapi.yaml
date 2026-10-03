@@ -544,6 +544,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CashierStateResponse'
+        '400':
+          description: editting_order に必須のキーが無い、または型が違う
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
@@ -985,7 +991,7 @@ components:
         editting_order:
           type: object
           additionalProperties: true
-          description: レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは中身を解釈しない
+          description: レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
         submitted_order_id:
           type: string
           format: uuid
