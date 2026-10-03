@@ -3,6 +3,7 @@ name: Claude Review
 # PR を開いたときと、コミットが push されるたびに Claude Code が
 # 1. 実装の要約と重点的に見るべき場所を PR コメントにまとめ（push のたびに同じコメントを更新）
 # 2. 最新のコミット時点で残っている修正点をすべて載せたレビューを毎回投稿する（前回からの未修正も含む）
+# 3. 直ったインラインコメントは解決済みにし、古い総評は折りたたむ
 # 認証は Claude サブスクの OAuth トークン（secrets.CLAUDE_CODE_OAUTH_TOKEN）
 # 既存の PR は Actions 画面か `gh workflow run claude.yml -f pr_number=<番号>` で手動でも回せる
 on:
@@ -50,6 +51,34 @@ jobs:
         with:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
+      # Claude が付けた未解決のインラインコメントを一覧にして、直ったかを Claude に判定させる
+      - name: List open Claude threads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p .claude-review
+          gh api graphql --paginate \
+            -f owner="${REPO%/*}" -f name="${REPO#*/}" -F number="$PR_NUMBER" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    reviewThreads(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes {
+                        id isResolved path line originalLine
+                        comments(first: 1) { nodes { author { login } body } }
+                      }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+              | select((.isResolved | not) and (.comments.nodes[0].author.login | test("^claude(\\[bot\\])?$")))
+              | {id, path, line: (.line // .originalLine), body: .comments.nodes[0].body}' \
+            | jq -s . > .claude-review/threads.json
+          echo "open threads: $(jq length .claude-review/threads.json)"
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -91,9 +120,30 @@ jobs:
             - 今回はじめて見つけた指摘は、`mcp__github_inline_comment__create_inline_comment` で該当行にもインラインコメントする。
               未修正の指摘はインラインでは繰り返さず、レビュー本文にだけ載せる。
               インラインコメントのツールが使えない場合（手動実行など）は、レビュー本文だけでよい。
+            - `.claude-review/threads.json` に、過去に付けたインラインコメントのうち未解決のもの（id・path・line・body）が入っている。
+              それぞれ HEAD SHA のコードで直っているかを確かめ、直っているものの id を 1 行に 1 つずつ `.claude-review/resolved.txt` に Write で書く。
+              直っていないものはレビュー本文の「修正が必要な点」に（未修正）として載せる。空の配列なら何もしない。
+              解決済みにする操作はこのあとのステップが行うので、自分ではしない。
             - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment *),Bash(gh pr review * --comment *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment *),Bash(gh pr review * --comment *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Read,Write"
+      # Claude が直ったと判定したインラインコメントに、確認したコミットを返信してから解決済みにする
+      - name: Resolve fixed Claude threads
+        if: hashFiles('.claude-review/resolved.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          grep -oE '[A-Za-z0-9_=-]+' .claude-review/resolved.txt | sort -u | while read -r id; do
+            # threads.json にある（Claude が付けた未解決の）スレッドだけを対象にする
+            jq -e --arg id "$id" 'any(.[]; .id == $id)' .claude-review/threads.json >/dev/null || continue
+            gh api graphql -f id="$id" -f body="${HEAD_SHA:0:7} で修正を確認したので解決済みにします（Claude Review）" -f query='
+              mutation($id: ID!, $body: String!) {
+                addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $id, body: $body }) { comment { id } }
+                resolveReviewThread(input: { threadId: $id }) { thread { isResolved } }
+              }' >/dev/null
+            echo "resolved $id"
+          done
       # 最新以外の Claude の総評を「Outdated」として折りたたむ
       - name: Minimize old Claude reviews
         env:
