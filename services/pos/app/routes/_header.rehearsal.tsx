@@ -13,7 +13,6 @@ import {
   initialPlan,
   matchPastItem,
   menuRepository,
-  mulberry32,
   planOrder,
   reweightBaskets,
   scaleOfLevel,
@@ -21,6 +20,7 @@ import {
   shouldStop,
   stackAt,
   unassignedRoles,
+  xoshiro128ss,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
@@ -263,7 +263,7 @@ export default function Rehearsal() {
   );
 
   const planned = useMemo(() => {
-    const rng = mulberry32((seed ^ MENU_SEED_SALT) >>> 0);
+    const rng = xoshiro128ss((seed ^ MENU_SEED_SALT) >>> 0);
     return generated.map((order) =>
       planOrder(order, plan ?? EMPTY_PLAN, rng, goodsInMenu),
     );

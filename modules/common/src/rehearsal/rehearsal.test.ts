@@ -3,9 +3,9 @@ import {
   flatProfile,
   generateOrders,
   minGapSec,
-  mulberry32,
   sampleBaskets,
   scaleOfLevel,
+  xoshiro128ss,
 } from "./generator";
 import {
   type GeneratorParams,
@@ -223,7 +223,7 @@ describe("[unit] rehearsal generator", () => {
   });
 
   test("baskets are drawn in proportion to their weight", () => {
-    const drawn = sampleBaskets(params, mulberry32(3), 20000);
+    const drawn = sampleBaskets(params, xoshiro128ss(3), 20000);
     const share =
       drawn.filter((b) => b.roles.house_blend === 1).length / drawn.length;
     expect(share).toBeGreaterThan(0.73);

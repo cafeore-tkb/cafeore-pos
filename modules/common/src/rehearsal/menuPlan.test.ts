@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mulberry32 } from "./generator";
+import { xoshiro128ss } from "./generator";
 import {
   type MenuPlan,
   evenPlan,
@@ -190,7 +190,7 @@ describe("[unit] rehearsal menu plan", () => {
         goods: 1,
       },
       plan,
-      mulberry32(1),
+      xoshiro128ss(1),
     );
     expect(lines).toEqual([
       { menuId: "m-house", role: "house_blend", count: 2 },
@@ -208,7 +208,7 @@ describe("[unit] rehearsal menu plan", () => {
         b: { role: "single_origin", weight: 20 },
       },
     };
-    const rng = mulberry32(5);
+    const rng = xoshiro128ss(5);
     let a = 0;
     for (let i = 0; i < 5000; i++) {
       const [line] = planOrder(
@@ -328,7 +328,7 @@ describe("[unit] rehearsal menu plan", () => {
     const lines = planOrder(
       { offsetSec: 0, roles: { signature_blend: 1 }, drinkCups: 1, goods: 2 },
       plan,
-      mulberry32(1),
+      xoshiro128ss(1),
       { set: 1 },
     );
     expect(lines).toEqual([

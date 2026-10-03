@@ -15,15 +15,42 @@ import { stratumOf } from "./params";
 /** 0 以上 1 未満の一様乱数を返す関数 */
 export type Rng = () => number;
 
-/** seed を固定できる小さな乱数（mulberry32） */
-export const mulberry32 = (seed: number): Rng => {
-  let a = seed >>> 0;
+const rotl = (x: number, k: number) => (x << k) | (x >>> (32 - k));
+
+// 32 bit の seed を、xoshiro128** の 128 bit の状態に広げる（splitmix32）
+const splitmix32 = (seed: number) => {
+  let s = seed >>> 0;
   return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    s = (s + 0x9e3779b9) >>> 0;
+    let z = s;
+    z = Math.imul(z ^ (z >>> 16), 0x21f0aaad);
+    z = Math.imul(z ^ (z >>> 15), 0x735a2d97);
+    return (z ^ (z >>> 15)) >>> 0;
+  };
+};
+
+/**
+ * seed を固定できる乱数（xoshiro128**）。
+ * 周期は 2^128 - 1。店舗全体のシミュレーションをモンテカルロで何度も回しても使い切らない。
+ */
+export const xoshiro128ss = (seed: number): Rng => {
+  const next = splitmix32(seed);
+  let a = next();
+  let b = next();
+  let c = next();
+  let d = next();
+  // 状態がすべて 0 だと 0 しか出なくなる
+  if ((a | b | c | d) === 0) a = 1;
+  return () => {
+    const result = Math.imul(rotl(Math.imul(b, 5), 7), 9) >>> 0;
+    const t = b << 9;
+    c ^= a;
+    d ^= b;
+    b ^= c;
+    a ^= d;
+    c ^= t;
+    d = rotl(d, 11);
+    return result / 4294967296;
   };
 };
 
@@ -139,7 +166,7 @@ export const generateOrders = (
   params: GeneratorParams,
   options: OffsetOptions & { seed: number },
 ): GeneratedOrder[] => {
-  const rng = mulberry32(options.seed);
+  const rng = xoshiro128ss(options.seed);
   // Python 版と同じく、時刻を先に全部引いてから中身を引く
   const offsets = sampleOffsets(params, rng, options);
   const baskets = sampleBaskets(params, rng, offsets.length);
