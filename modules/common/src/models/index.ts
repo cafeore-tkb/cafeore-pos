@@ -1,3 +1,4 @@
+export * from "./colorSetting";
 export * from "./global";
 export * from "./item";
 export * from "./menu";
