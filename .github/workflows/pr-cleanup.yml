@@ -37,6 +37,9 @@ name: pr / cleanup
 # pull_request のワークフローが動かず、閉じても片付けが走らないため。
 # PR のコードは checkout せず PR 番号しか使わない。pull_request_target は fork の PR
 # にも secrets と id-token を渡すので、fork は各 job の if で必ず除外すること。
+# OIDC トークンの sub / ref は base ブランチ基準に変わるが、GCP の Workload Identity
+# は repository だけで絞っている（infra の gcp/github_actions.tf）ので認証には影響しない。
+# sub や ref で絞る条件を足すときは、pull_request_target の値も通すこと。
 on:
   pull_request_target:
     types:
