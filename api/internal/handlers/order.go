@@ -96,16 +96,19 @@ func isGoods(item models.Item) bool {
 	return item.ItemType.Name == itemTypeOthers
 }
 
-// 構成品に飲み物（グッズ以外の item）が1つでもあれば true
-func hasDrink(menus []models.Menu) bool {
+// 構成品がグッズだけなら true。構成品が1つも無いときは、提供済みにしてよいか
+// 分からないので false にする。
+func onlyGoods(menus []models.Menu) bool {
+	found := false
 	for _, menu := range menus {
 		for _, menuItem := range menu.MenuItems {
 			if !isGoods(menuItem.Item) {
-				return true
+				return false
 			}
+			found = true
 		}
 	}
-	return false
+	return found
 }
 
 // 明細がグッズだけなら true。クライアントの値は使わず、DB のメニュー構成で判定する。
@@ -121,7 +124,7 @@ func isGoodsOnly(db *gorm.DB, lines []models.OrderMenu) (bool, error) {
 			return false, err
 		}
 	}
-	return !hasDrink(menus), nil
+	return onlyGoods(menus), nil
 }
 
 type servedTimes struct {

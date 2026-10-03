@@ -92,7 +92,7 @@ func TestOrderResponseIncludesSnapshotsAndDeletedMenu(t *testing.T) {
 	}
 }
 
-func TestHasDrinkJudgesByItemType(t *testing.T) {
+func TestOnlyGoodsJudgesByItemType(t *testing.T) {
 	menu := func(typeNames ...string) models.Menu {
 		m := models.Menu{ID: uuid.New()}
 		for _, name := range typeNames {
@@ -104,15 +104,16 @@ func TestHasDrinkJudgesByItemType(t *testing.T) {
 		menus []models.Menu
 		want  bool
 	}{
-		"goods only":     {[]models.Menu{menu("others"), menu("others", "others")}, false},
-		"with drink":     {[]models.Menu{menu("others"), menu("hot")}, true},
-		"set with drink": {[]models.Menu{menu("others", "milk")}, true},
+		"goods only":     {[]models.Menu{menu("others"), menu("others", "others")}, true},
+		"with drink":     {[]models.Menu{menu("others"), menu("hot")}, false},
+		"set with drink": {[]models.Menu{menu("others", "milk")}, false},
 		"empty":          {nil, false},
+		"no items":       {[]models.Menu{menu()}, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if got := hasDrink(tc.menus); got != tc.want {
-				t.Fatalf("hasDrink = %v, want %v", got, tc.want)
+			if got := onlyGoods(tc.menus); got != tc.want {
+				t.Fatalf("onlyGoods = %v, want %v", got, tc.want)
 			}
 		})
 	}
