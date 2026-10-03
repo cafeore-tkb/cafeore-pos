@@ -96,7 +96,6 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
-| `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
@@ -107,15 +106,50 @@ PR を閉じると `pr-cleanup` がタグを外す。
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
-在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
-
-**本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
-無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
-開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
-逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
-
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。
+
+### DB のマイグレーション
+
+DB のテーブルや列は `api/migrations/` の連番の SQL で作る。API は起動時に、
+まだ流していないものだけを番号順に流す（[goose](https://github.com/pressly/goose)）。
+どこまで流したかは DB の `goose_db_version` テーブルに残る。ローカル・プレビュー・本番の
+どれも同じ仕組みなので、**本番に SQL を手で流す必要は無い。**
+
+テーブルや列を変えるときは次の 2 つを同じ PR でやる。
+
+1. `api/internal/models` のモデルを変える（新しいモデルは `models.All()` にも足す）
+2. `api/migrations/` に、最後の番号の次の番号で SQL を足す（例: `00002_add_note_to_orders.sql`）
+
+```sql
+-- +goose Up
+ALTER TABLE orders ADD COLUMN note text NOT NULL DEFAULT '';
+```
+
+**一度マージした SQL は書き換えない。** 本番ではもう流れているので、直すときは
+新しい番号で足す。
+
+CI の `api / test` は、空の Postgres に全部の SQL を流してから GORM の AutoMigrate を
+かけ、何か変更が出たら落ちる。モデルを変えたのに SQL を足し忘れると、足すべき SQL が
+エラーに出る。ただし列を消す・名前を変えるといった変更は AutoMigrate が出さないので、
+検出できない。手元で同じテストを流すときは、捨ててよい DB を `TEST_DATABASE_URL` に渡す
+（public スキーマを丸ごと消して作り直す）。
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:example@localhost:5432/postgres?sslmode=disable go test ./internal/database/
+```
+
+失敗したら API は起動しない。Cloud Run では新しいリビジョンが立ち上がらないだけで、
+今動いているリビジョンはそのまま動き続ける。古いコードが新しいスキーマの上でも動くよう、
+列を消す・名前を変えるときは「コードを直してデプロイ → 次の PR で列を消す」と 2 回に分ける。
+
+Cloud Run が同時に複数のインスタンスを起動しても、`goose_lock` テーブルの行で
+排他するので二重には流れない。並行する PR の番号が前後してマージされた場合
+（`00003` が先に入り、`00002` が後から入る）も、抜けた番号を後から流す。
+
+`00001_baseline.sql` は goose を入れた時点（2026-10）の本番スキーマで、全部
+`IF NOT EXISTS` にしてある。既にテーブルがある本番や Neon の共有ブランチでは
+何も変えずに「流し済み」として記録される。
 
 ### PR ごとの Neon ブランチ
 
@@ -138,22 +172,12 @@ PR を閉じると `pr-cleanup` がタグを外す。
 ただし共有ブランチの注文やレジ状態（`cashier_states`）は、それらの PR 同士で共有される。
 プランの上限（`branches limit exceeded`）に当たった場合は、Neon のコンソールで
 不要な `preview/pr-*` を消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
-共有ブランチは作り直されず、`AutoMigrate` は列や制約を足すだけで消さない。main で列の削除や
-名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
-re-run する（次のビルドで空から作り直される）。
+共有ブランチは作り直されず、main のマイグレーションが積み重なっていく。共有ブランチの
+DB が壊れたら、Neon のコンソールで `preview/shared` を消して re-run する
+（次のビルドで空から作り直される）。
 
-ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
-モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
-`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` がエラーを返して
-コンテナが起動できない。ローカルの compose では
-`api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
-初期化ディレクトリにマウントしているだけなので Neon には効かない。
-
-プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
-渡している（下の[環境変数](#backend-の環境変数)を参照）。
-
-Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
-拡張を持つのでこのステップは保険になる。
+新しく作ったブランチは空なので、API の起動時に `api/migrations/` が最初から流れて
+テーブルができる（`uuid-ossp` 拡張も `00001_baseline.sql` が入れる）。
 
 ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
 PR を閉じると `pr-cleanup` が compute ごと消す。

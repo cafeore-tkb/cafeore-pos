@@ -30,9 +30,25 @@ jobs:
           working-directory: api
           version: v2.9.0
 
-  # テストは DB を使わない（GORM の DryRun）ので、DB のサービスは要らない。
+  # ほとんどのテストは DB を使わない（GORM の DryRun）。internal/database だけが
+  # 本物の Postgres に api/migrations を流し、モデルとずれていないかを確かめる。
+  # 本番（Supabase）に合わせて 17 にしている。
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
