@@ -21,11 +21,13 @@ const (
 )
 
 type WSMessage struct {
-	Type        WSMessageType          `json:"type"`
-	Orders      []models.OrderResponse `json:"orders,omitempty"`
-	Order       *models.OrderResponse  `json:"order,omitempty"`
-	OrderID     *uuid.UUID             `json:"order_id,omitempty"`
-	MasterState *models.MasterState    `json:"master_state,omitempty"`
+	Type    WSMessageType          `json:"type"`
+	Orders  []models.OrderResponse `json:"orders,omitempty"`
+	Order   *models.OrderResponse  `json:"order,omitempty"`
+	OrderID *uuid.UUID             `json:"order_id,omitempty"`
+	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
+	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
+	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -48,7 +50,8 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		}
 		msgs := []WSMessage{{Type: WSMessageTypeOrders, Orders: responses}}
 		if state, ok := latestMasterState(h.db); ok {
-			msgs = append(msgs, WSMessage{Type: WSMessageTypeMasterState, MasterState: &state})
+			response := toMasterStateResponse(&state)
+			msgs = append(msgs, WSMessage{Type: WSMessageTypeMasterState, MasterState: &response})
 		}
 		return msgs, nil
 	}); err != nil {

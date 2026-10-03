@@ -13,3 +13,6 @@ ui-debug.log
 **/build
 
 .env
+
+# オペ練の生成器のパラメータ（注文間隔そのものが入るのでコミットしない）
+rehearsal-params*.json

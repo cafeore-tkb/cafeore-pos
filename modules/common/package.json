@@ -12,6 +12,7 @@
     "build": "tsc -d -p tsconfig.json",
     "dl-store": "tsx src/scripts/download-orders.ts",
     "dl-state": "tsx src/scripts/download-master-state.ts",
+    "rehearsal-params": "tsx src/scripts/rehearsal-params.ts",
     "generate:schemas": "tsx src/scripts/generate-openapi-schemas.ts",
     "test:unit": "vitest test -t unit",
     "test:db": "firebase emulators:exec --only firestore --project demo-firestore 'vitest test -t db'"

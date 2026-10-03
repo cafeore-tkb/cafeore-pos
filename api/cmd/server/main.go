@@ -256,7 +256,7 @@ func main() {
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db)
+	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
