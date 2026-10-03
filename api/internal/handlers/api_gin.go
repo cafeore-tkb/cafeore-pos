@@ -44,6 +44,15 @@ type ServerInterface interface {
 	// アイテム情報更新
 	// (PUT /api/items/{id})
 	UpdateItem(c *gin.Context, id openapi_types.UUID)
+	// アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式）
+	// (GET /api/master-data)
+	ExportMasterData(c *gin.Context)
+	// アイテムタイプ・アイテム・メニューをまとめて取り込む
+	// (POST /api/master-data/import)
+	ImportMasterData(c *gin.Context)
+	// 取り込みの検証と件数の集計だけして、書き込まない
+	// (POST /api/master-data/import/dry-run)
+	ImportMasterDataDryRun(c *gin.Context)
 	// マスターステート取得
 	// (GET /api/master-status)
 	GetMasterState(c *gin.Context)
@@ -300,6 +309,45 @@ func (siw *ServerInterfaceWrapper) UpdateItem(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateItem(c, id)
+}
+
+// ExportMasterData operation middleware
+func (siw *ServerInterfaceWrapper) ExportMasterData(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportMasterData(c)
+}
+
+// ImportMasterData operation middleware
+func (siw *ServerInterfaceWrapper) ImportMasterData(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ImportMasterData(c)
+}
+
+// ImportMasterDataDryRun operation middleware
+func (siw *ServerInterfaceWrapper) ImportMasterDataDryRun(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ImportMasterDataDryRun(c)
 }
 
 // GetMasterState operation middleware
@@ -670,6 +718,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/api/items/:id", wrapper.DeleteItem)
 	router.GET(options.BaseURL+"/api/items/:id", wrapper.GetItem)
 	router.PUT(options.BaseURL+"/api/items/:id", wrapper.UpdateItem)
+	router.GET(options.BaseURL+"/api/master-data", wrapper.ExportMasterData)
+	router.POST(options.BaseURL+"/api/master-data/import", wrapper.ImportMasterData)
+	router.POST(options.BaseURL+"/api/master-data/import/dry-run", wrapper.ImportMasterDataDryRun)
 	router.GET(options.BaseURL+"/api/master-status", wrapper.GetMasterState)
 	router.POST(options.BaseURL+"/api/master-status", wrapper.UpdateMasterState)
 	router.GET(options.BaseURL+"/api/menus", wrapper.GetMenus)

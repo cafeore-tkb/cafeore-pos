@@ -14,6 +14,7 @@ const navItems: NavItem[] = [
   { label: "アイテム新規作成", to: "/items/new" },
   { label: "タイプ一覧", to: "/item-types", exact: true },
   { label: "タイプ新規作成", to: "/item-types/new" },
+  { label: "一括取り込み・書き出し", to: "/master-data" },
 ];
 
 export function ItemsPageHeader() {

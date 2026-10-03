@@ -506,6 +506,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
 
+  /api/master-data:
+    get:
+      summary: アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式）
+      operationId: exportMasterData
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterData'
+  /api/master-data/import:
+    post:
+      summary: アイテムタイプ・アイテム・メニューをまとめて取り込む
+      description: |
+        アイテムタイプは name、アイテムは name、メニューは key で既存の行と突き合わせ、
+        あれば更新し、無ければ作る。ファイルに無い行は消さない。
+        1件でも不正があれば何も書き込まない。
+      operationId: importMasterData
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasterData'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterImportResult'
+        '400':
+          description: 内容に不正がある
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterImportError'
+  /api/master-data/import/dry-run:
+    post:
+      summary: 取り込みの検証と件数の集計だけして、書き込まない
+      operationId: importMasterDataDryRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasterData'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterImportResult'
+        '400':
+          description: 内容に不正がある
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasterImportError'
 components:
   schemas:
     StatusResponse:
@@ -944,3 +1005,118 @@ components:
         error:
           type: string
           example: "Invalid order ID format"
+    # インポート・エクスポートの形式。行どうしの参照は UUID ではなく name / key で書く。
+    MasterData:
+      type: object
+      properties:
+        item_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/MasterItemType'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MasterItem'
+        menus:
+          type: array
+          items:
+            $ref: '#/components/schemas/MasterMenu'
+    MasterItemType:
+      type: object
+      required:
+        - name
+        - display_name
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+    MasterItem:
+      type: object
+      required:
+        - name
+        - abbr
+        - item_type
+      properties:
+        name:
+          type: string
+        abbr:
+          type: string
+        item_type:
+          type: string
+          description: アイテムタイプの name
+    MasterMenu:
+      type: object
+      required:
+        - key
+        - name
+        - abbr
+        - price
+        - items
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        abbr:
+          type: string
+        price:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MasterMenuItem'
+    MasterMenuItem:
+      type: object
+      required:
+        - item
+        - quantity
+      properties:
+        item:
+          type: string
+          description: アイテムの name
+        quantity:
+          type: integer
+          minimum: 1
+    MasterImportCount:
+      type: object
+      required:
+        - created
+        - updated
+        - unchanged
+      properties:
+        created:
+          type: integer
+        updated:
+          type: integer
+        unchanged:
+          type: integer
+    MasterImportResult:
+      type: object
+      required:
+        - dry_run
+        - item_types
+        - items
+        - menus
+      properties:
+        dry_run:
+          type: boolean
+        item_types:
+          $ref: '#/components/schemas/MasterImportCount'
+        items:
+          $ref: '#/components/schemas/MasterImportCount'
+        menus:
+          $ref: '#/components/schemas/MasterImportCount'
+    MasterImportError:
+      type: object
+      required:
+        - error
+        - problems
+      properties:
+        error:
+          type: string
+        problems:
+          type: array
+          description: 見つかった不正をすべて並べる（どの行の何が悪いか）
+          items:
+            type: string

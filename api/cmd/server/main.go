@@ -234,6 +234,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db)
+	masterDataHandler := handlers.NewMasterDataHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -274,6 +275,10 @@ func main() {
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
+
+		api.GET("/master-data", masterDataHandler.ExportMasterData)
+		api.POST("/master-data/import", masterDataHandler.ImportMasterData)
+		api.POST("/master-data/import/dry-run", masterDataHandler.ImportMasterDataDryRun)
 	}
 
 	// サーバー起動

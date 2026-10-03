@@ -84,6 +84,23 @@ export interface paths {
     /** マスターステート更新 */
     post: operations["updateMasterState"];
   };
+  "/api/master-data": {
+    /** アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式） */
+    get: operations["exportMasterData"];
+  };
+  "/api/master-data/import": {
+    /**
+     * アイテムタイプ・アイテム・メニューをまとめて取り込む
+     * @description アイテムタイプは name、アイテムは name、メニューは key で既存の行と突き合わせ、
+     * あれば更新し、無ければ作る。ファイルに無い行は消さない。
+     * 1件でも不正があれば何も書き込まない。
+     */
+    post: operations["importMasterData"];
+  };
+  "/api/master-data/import/dry-run": {
+    /** 取り込みの検証と件数の集計だけして、書き込まない */
+    post: operations["importMasterDataDryRun"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -273,6 +290,49 @@ export interface components {
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
+    };
+    MasterData: {
+      item_types?: components["schemas"]["MasterItemType"][];
+      items?: components["schemas"]["MasterItem"][];
+      menus?: components["schemas"]["MasterMenu"][];
+    };
+    MasterItemType: {
+      name: string;
+      display_name: string;
+    };
+    MasterItem: {
+      name: string;
+      abbr: string;
+      /** @description アイテムタイプの name */
+      item_type: string;
+    };
+    MasterMenu: {
+      key: string;
+      name: string;
+      abbr: string;
+      price: number;
+      items: components["schemas"]["MasterMenuItem"][];
+    };
+    MasterMenuItem: {
+      /** @description アイテムの name */
+      item: string;
+      quantity: number;
+    };
+    MasterImportCount: {
+      created: number;
+      updated: number;
+      unchanged: number;
+    };
+    MasterImportResult: {
+      dry_run: boolean;
+      item_types: components["schemas"]["MasterImportCount"];
+      items: components["schemas"]["MasterImportCount"];
+      menus: components["schemas"]["MasterImportCount"];
+    };
+    MasterImportError: {
+      error: string;
+      /** @description 見つかった不正をすべて並べる（どの行の何が悪いか） */
+      problems: string[];
     };
   };
   responses: never;
@@ -728,6 +788,66 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["MasterStateResponse"];
+        };
+      };
+    };
+  };
+  /** アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式） */
+  exportMasterData: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MasterData"];
+        };
+      };
+    };
+  };
+  /**
+   * アイテムタイプ・アイテム・メニューをまとめて取り込む
+   * @description アイテムタイプは name、アイテムは name、メニューは key で既存の行と突き合わせ、
+   * あれば更新し、無ければ作る。ファイルに無い行は消さない。
+   * 1件でも不正があれば何も書き込まない。
+   */
+  importMasterData: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MasterData"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MasterImportResult"];
+        };
+      };
+      /** @description 内容に不正がある */
+      400: {
+        content: {
+          "application/json": components["schemas"]["MasterImportError"];
+        };
+      };
+    };
+  };
+  /** 取り込みの検証と件数の集計だけして、書き込まない */
+  importMasterDataDryRun: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MasterData"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MasterImportResult"];
+        };
+      };
+      /** @description 内容に不正がある */
+      400: {
+        content: {
+          "application/json": components["schemas"]["MasterImportError"];
         };
       };
     };
