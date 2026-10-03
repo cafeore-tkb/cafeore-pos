@@ -8,7 +8,7 @@ import type { OrderEntity } from "../models";
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
-  | { type: "orders"; orders: OrderResponse[] }
+  | { type: "orders"; orders?: OrderResponse[] }
   | { type: "master_state"; master_state: MasterState };
 
 // orders 未受信時に返す固定の空配列
@@ -41,7 +41,7 @@ export const useOrdersWS = () => {
 
         switch (data.type) {
           case "orders":
-            setOrders(data.orders.map(responseToOrderEntity));
+            setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 
           case "master_state":
