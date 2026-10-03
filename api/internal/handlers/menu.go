@@ -71,7 +71,7 @@ func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]mode
 func (h *MenuHandler) GetMenus(c *gin.Context) {
 	var menus []models.Menu
 	if err := preloadMenu(h.db).Find(&menus).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *MenuHandler) GetMenu(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
@@ -124,7 +124,7 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 	}
 
 	if err := preloadMenu(h.db).First(&menu, "id = ?", menu.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toMenuResponse(&menu))
@@ -174,7 +174,7 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 	}
 
 	if err := preloadMenu(h.db).First(&menu, "id = ?", menuID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
@@ -189,7 +189,7 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 
 	result := h.db.Delete(&models.Menu{}, "id = ?", menuID)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {
