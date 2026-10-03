@@ -47,7 +47,7 @@ func (s *Slack) Send(ctx context.Context, text string) error {
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode >= 300 {
 		return fmt.Errorf("slack: unexpected status %d", res.StatusCode)

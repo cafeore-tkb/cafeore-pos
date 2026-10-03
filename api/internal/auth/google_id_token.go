@@ -56,7 +56,7 @@ func (v *GoogleIDTokenVerifier) Verify(ctx context.Context, token string) error 
 	if err != nil {
 		return fmt.Errorf("tokeninfo: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	// 署名が合わない・期限切れのトークンには 400 が返る
 	if res.StatusCode != http.StatusOK {
