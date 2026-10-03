@@ -6,6 +6,8 @@ on:
       - 'services/pos/**'
       - 'modules/common/**'
       - '.github/workflows/common-ci.yml'
+      - '.github/workflows/pos-ci.yml'
+      - 'biome.json'
       - 'pnpm-lock.yaml'
   merge_group:
 
@@ -20,3 +22,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: './.github/actions/setup-deps'
       - run: pnpm run typecheck
+
+  # api-ci の lint と見分けるため、ジョブ名は biome にしている。
+  # biome.json がリポジトリ直下にあるので、ルートで実行する。
+  biome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run lint
+        working-directory: .
