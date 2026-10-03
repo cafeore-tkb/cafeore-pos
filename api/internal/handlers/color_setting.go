@@ -3,7 +3,6 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -92,8 +91,7 @@ func (h *ColorSettingHandler) GetColorSettings(c *gin.Context) {
 	var settings []models.ColorSetting
 	if err := h.db.Order("target_type, target_id, screen").Find(&settings).Error; err != nil {
 		// DB のエラー文は外に出さず、ログにだけ残す
-		log.Printf("failed to get color settings: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -120,7 +118,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 
 	exists, err := h.targetExists(&setting)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if !exists {
@@ -129,7 +127,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 	}
 
 	if err := upsertColorSetting(h.db, &setting).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -137,7 +135,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 	var saved models.ColorSetting
 	if err := h.db.First(&saved, "target_type = ? AND target_id = ? AND screen = ?",
 		setting.TargetType, setting.TargetID, setting.Screen).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toColorSettingResponse(&saved))
@@ -153,7 +151,7 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 
 	result := h.db.Delete(&models.ColorSetting{}, "id = ?", settingID)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {

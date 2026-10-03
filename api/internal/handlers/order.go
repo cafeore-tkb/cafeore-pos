@@ -144,7 +144,7 @@ func (h *OrderHandler) broadcastOrders() {
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order
 	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -210,11 +210,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		order.OrderMenus = lines
 		return tx.Create(&order).Error
 	}); err != nil {
-		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
-			status = http.StatusBadRequest
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -222,7 +222,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var loaded models.Order
 	if err := preloadOrder(h.db).
 		First(&loaded, "id = ?", order.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -246,7 +246,7 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -276,7 +276,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -305,17 +305,17 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
-			status = http.StatusBadRequest
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	var loaded models.Order
 	if err := preloadOrder(h.db).First(&loaded, "id = ?", order.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
@@ -339,20 +339,20 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	// 注文明細を削除
 	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	// オーダーを削除
 	result := h.db.Delete(&models.Order{}, "id = ?", orderID)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 
@@ -380,7 +380,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if order.ReadyAt == nil {
@@ -391,12 +391,12 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	}
 
 	if err := h.db.Save(&order).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
@@ -419,7 +419,7 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -433,12 +433,12 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 
 	if err := h.db.Save(&order).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
