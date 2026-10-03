@@ -162,6 +162,8 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 		prev, next *int
 	}
 	var claims []claim
+	// 途中で DB エラーが起きても、それまでに記録を進めた分は送るか戻すかしてから返す。
+	var loopErr error
 	for _, s := range snapshots {
 		rs := s.RemainingServings()
 		if rs == nil {
@@ -178,9 +180,8 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 				Where("id = ? AND (last_alert_threshold IS NULL OR last_alert_threshold > ?)", s.Resource.ID, *next).
 				Update("last_alert_threshold", *next)
 			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected == 1 {
+				loopErr = res.Error
+			} else if res.RowsAffected == 1 {
 				messages = append(messages, alertMessage(s))
 				claims = append(claims, claim{id: s.Resource.ID, prev: last, next: next})
 			}
@@ -193,17 +194,20 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 			if err := db.Model(&models.StockResource{}).
 				Where("id = ? AND last_alert_threshold = ?", s.Resource.ID, *last).
 				Update("last_alert_threshold", value).Error; err != nil {
-				return err
+				loopErr = err
 			}
+		}
+		if loopErr != nil {
+			break
 		}
 	}
 
 	if len(messages) == 0 {
-		return nil
+		return loopErr
 	}
 	sendErr := inv.slack.Send(ctx, strings.Join(messages, "\n"))
 	if sendErr == nil {
-		return nil
+		return loopErr
 	}
 
 	// 送信のタイムアウトで ctx が切れていても戻せるよう、別の期限で書き戻す。
@@ -221,7 +225,7 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 			log.Printf("inventory: failed to roll back alert threshold of %s: %v", cl.id, err)
 		}
 	}
-	return sendErr
+	return errors.Join(sendErr, loopErr)
 }
 
 // 注文に含まれるアイテムが使う在庫対象。
@@ -404,8 +408,11 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 
 	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
 	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
+	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
+	columns := []string{"kind", "name", "unit", "per_serving", "notify_from", "notify_step", "buffer"}
 	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
 		resource.LastAlertThreshold = nil
+		columns = append(columns, "last_alert_threshold")
 	}
 	resource.Kind = string(req.Kind)
 	resource.Name = strings.TrimSpace(req.Name)
@@ -414,7 +421,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	resource.NotifyFrom = req.NotifyFrom
 	resource.NotifyStep = req.NotifyStep
 	resource.Buffer = req.Buffer
-	if err := h.inv.db.Save(&resource).Error; err != nil {
+	if err := h.inv.db.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
