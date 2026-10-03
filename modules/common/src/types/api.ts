@@ -97,22 +97,46 @@ export interface paths {
     /** マスターステート更新 */
     post: operations["updateMasterState"];
   };
-  "/api/master-data": {
-    /** アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式） */
-    get: operations["exportMasterData"];
-  };
-  "/api/master-data/import": {
+  "/api/inventory": {
     /**
-     * アイテムタイプ・アイテム・メニューをまとめて取り込む
-     * @description アイテムタイプは name、アイテムは name、メニューは key で既存の行と突き合わせ、
-     * あれば更新し、無ければ作る。ファイルに無い行は消さない。
-     * 1件でも不正があれば何も書き込まない。
+     * 在庫の残量一覧
+     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
      */
-    post: operations["importMasterData"];
+    get: operations["getInventory"];
   };
-  "/api/master-data/import/dry-run": {
-    /** 取り込みの検証と件数の集計だけして、書き込まない */
-    post: operations["importMasterDataDryRun"];
+  "/api/inventory/resources": {
+    /** 在庫対象の作成 */
+    post: operations["createStockResource"];
+  };
+  "/api/inventory/resources/{id}": {
+    /** 在庫対象の更新 */
+    put: operations["updateStockResource"];
+    /** 在庫対象の削除 */
+    delete: operations["deleteStockResource"];
+  };
+  "/api/inventory/resources/{id}/events": {
+    /**
+     * 棚卸し・入荷・調整の記録
+     * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
+     */
+    post: operations["createStockEvent"];
+  };
+  "/api/inventory/usages": {
+    /** アイテム1杯あたりの使用量一覧 */
+    get: operations["getStockUsages"];
+    /** アイテム1杯あたりの使用量をまとめて置き換える */
+    put: operations["replaceStockUsages"];
+  };
+  "/api/inventory/remind": {
+    /**
+     * 残量確認のリマインドを Slack に送る
+     * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+     *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+     *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+     * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     * 直近に注文が無い（営業していない）ときは送らない。
+     */
+    post: operations["remindInventory"];
   };
 }
 
@@ -338,56 +362,124 @@ export interface components {
       /** @example Invalid order ID format */
       error: string;
     };
-    MasterData: {
-      item_types?: components["schemas"]["MasterItemType"][];
-      items?: components["schemas"]["MasterItem"][];
-      menus?: components["schemas"]["MasterMenu"][];
-    };
-    MasterItemType: {
+    /** @enum {string} */
+    StockResourceKind: "cup" | "bean";
+    StockResourceRequest: {
+      kind: components["schemas"]["StockResourceKind"];
+      /** @example ホットカップ */
       name: string;
-      display_name: string;
-      /** @description マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
-      master_color?: string;
-      /** @description 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
-      serve_color?: string;
+      /**
+       * @description 数える単位（個 / g）
+       * @example 個
+       */
+      unit: string;
+      /**
+       * Format: double
+       * @description 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+       * @example 1
+       */
+      per_serving: number;
+      /**
+       * @description 残りがこの杯数を切ったら通知を始める
+       * @example 500
+       */
+      notify_from: number;
+      /**
+       * @description notify_from から何杯減るごとに通知するか
+       * @example 100
+       */
+      notify_step: number;
+      /**
+       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @example 100
+       */
+      buffer: number;
     };
-    MasterItem: {
-      name: string;
-      abbr: string;
-      /** @description アイテムタイプの name */
-      item_type: string;
-      /** @description マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
-      master_color?: string;
-      /** @description 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す */
-      serve_color?: string;
+    StockResourceResponse: components["schemas"]["StockResourceRequest"] & {
+      /** Format: uuid */
+      id: string;
     };
-    MasterMenu: {
-      key: string;
-      name: string;
-      abbr: string;
-      price: number;
-      items: components["schemas"]["MasterMenuItem"][];
+    /**
+     * @description untracked は棚卸し・入荷がまだ一度も無い
+     * @enum {string}
+     */
+    InventoryLevel: "ok" | "warning" | "critical" | "untracked";
+    InventoryStatus: {
+      resource: components["schemas"]["StockResourceResponse"];
+      level: components["schemas"]["InventoryLevel"];
+      /**
+       * Format: date-time
+       * @description 最後の棚卸し。無ければ最初の入荷
+       */
+      counted_at?: string | null;
+      /** Format: double */
+      counted_quantity?: number | null;
+      /**
+       * Format: double
+       * @description counted_at 以降の入荷・調整の合計
+       */
+      received: number;
+      /**
+       * Format: double
+       * @description counted_at 以降の注文での消費量
+       */
+      consumed: number;
+      /** @description counted_at 以降に売れた杯数 */
+      servings: number;
+      /** Format: double */
+      remaining?: number | null;
+      /** Format: double */
+      remaining_servings?: number | null;
+      /** @description 直近1時間に売れた杯数 */
+      servings_last_hour: number;
     };
-    MasterMenuItem: {
-      /** @description アイテムの name */
-      item: string;
+    /** @enum {string} */
+    StockEventKind: "count" | "receipt" | "adjust";
+    StockEventCreateRequest: {
+      kind: components["schemas"]["StockEventKind"];
+      /** Format: double */
       quantity: number;
+      note?: string;
     };
-    MasterImportCount: {
-      created: number;
-      updated: number;
-      unchanged: number;
+    StockEventResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      resource_id: string;
+      kind: components["schemas"]["StockEventKind"];
+      /** Format: double */
+      quantity: number;
+      note?: string;
+      /** Format: date-time */
+      created_at: string;
     };
-    MasterImportResult: {
-      dry_run: boolean;
-      item_types: components["schemas"]["MasterImportCount"];
-      items: components["schemas"]["MasterImportCount"];
-      menus: components["schemas"]["MasterImportCount"];
+    StockEventCreateResponse: {
+      event: components["schemas"]["StockEventResponse"];
+      /**
+       * Format: double
+       * @description 記録する直前の推定残量（count のときの答え合わせ用）
+       */
+      estimated?: number | null;
+      /**
+       * Format: double
+       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       */
+      actual_per_serving?: number | null;
     };
-    MasterImportError: {
-      error: string;
-      /** @description 見つかった不正をすべて並べる（どの行の何が悪いか） */
-      problems: string[];
+    StockUsage: {
+      /** Format: uuid */
+      item_id: string;
+      /** Format: uuid */
+      resource_id: string;
+      /**
+       * Format: double
+       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
+       */
+      amount: number;
+    };
+    InventoryRemindResponse: {
+      sent: boolean;
+      reason?: string;
     };
   };
   responses: never;
@@ -903,62 +995,142 @@ export interface operations {
       };
     };
   };
-  /** アイテムタイプ・アイテム・メニューをまとめて取得（インポートと同じ形式） */
-  exportMasterData: {
+  /**
+   * 在庫の残量一覧
+   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+   */
+  getInventory: {
     responses: {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["MasterData"];
+          "application/json": components["schemas"]["InventoryStatus"][];
+        };
+      };
+    };
+  };
+  /** 在庫対象の作成 */
+  createStockResource: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockResourceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["StockResourceResponse"];
+        };
+      };
+    };
+  };
+  /** 在庫対象の更新 */
+  updateStockResource: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockResourceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockResourceResponse"];
+        };
+      };
+    };
+  };
+  /** 在庫対象の削除 */
+  deleteStockResource: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * 棚卸し・入荷・調整の記録
+   * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
+   */
+  createStockEvent: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockEventCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["StockEventCreateResponse"];
+        };
+      };
+    };
+  };
+  /** アイテム1杯あたりの使用量一覧 */
+  getStockUsages: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockUsage"][];
+        };
+      };
+    };
+  };
+  /** アイテム1杯あたりの使用量をまとめて置き換える */
+  replaceStockUsages: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockUsage"][];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockUsage"][];
         };
       };
     };
   };
   /**
-   * アイテムタイプ・アイテム・メニューをまとめて取り込む
-   * @description アイテムタイプは name、アイテムは name、メニューは key で既存の行と突き合わせ、
-   * あれば更新し、無ければ作る。ファイルに無い行は消さない。
-   * 1件でも不正があれば何も書き込まない。
+   * 残量確認のリマインドを Slack に送る
+   * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+   *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+   *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+   * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   * 直近に注文が無い（営業していない）ときは送らない。
    */
-  importMasterData: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MasterData"];
-      };
-    };
+  remindInventory: {
     responses: {
       /** @description 成功 */
       200: {
         content: {
-          "application/json": components["schemas"]["MasterImportResult"];
+          "application/json": components["schemas"]["InventoryRemindResponse"];
         };
       };
-      /** @description 内容に不正がある */
-      400: {
+      /** @description ID トークンも合言葉も合わない */
+      401: {
         content: {
-          "application/json": components["schemas"]["MasterImportError"];
-        };
-      };
-    };
-  };
-  /** 取り込みの検証と件数の集計だけして、書き込まない */
-  importMasterDataDryRun: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MasterData"];
-      };
-    };
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["MasterImportResult"];
-        };
-      };
-      /** @description 内容に不正がある */
-      400: {
-        content: {
-          "application/json": components["schemas"]["MasterImportError"];
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

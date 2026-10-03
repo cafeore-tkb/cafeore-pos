@@ -99,9 +99,15 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
+| `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
+| `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
+| `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
+| `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
 
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
@@ -193,6 +199,9 @@ fork からの PR は二重に止まる。
 
 デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
 そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
+例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR でも
+走らせるために `pull_request_target` を使っている。こちらは PR のコードを
+checkout せず PR 番号しか使わないので、fork の PR のコードが実行されることはない。
 
 一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
 上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば

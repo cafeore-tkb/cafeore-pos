@@ -79,6 +79,15 @@ export default function Index() {
             ダッシュボード
           </a>
         </li>
+        <li>
+          <a
+            className="font-bold text-4xl text-amber-950"
+            href="/inventory"
+            rel="noreferrer"
+          >
+            在庫
+          </a>
+        </li>
       </ul>
       <h2 className="mt-5 font-bold font-noto text-3xl">
         オーダーデータ書き出し
