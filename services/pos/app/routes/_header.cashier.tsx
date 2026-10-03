@@ -122,11 +122,16 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
 
   const { syncOrder } = submission.value;
 
-  cashierRepository.set({
-    id: "cashier-state",
-    edittingOrder: OrderEntity.fromOrder(syncOrder),
-    submittedOrderId: null,
-  });
+  cashierRepository
+    .set({
+      id: "cashier-state",
+      edittingOrder: OrderEntity.fromOrder(syncOrder),
+      submittedOrderId: null,
+    })
+    .catch((err) => {
+      // キー入力のたびに呼ぶので await しない。失敗はここで拾ってログに残す
+      console.error("レジ状態の同期に失敗しました", err);
+    });
 
   return new Response("ok");
 };

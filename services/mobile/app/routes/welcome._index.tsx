@@ -24,7 +24,7 @@ export default function Welcome() {
   const [errorMessage, setErrorMeggage] = useState("");
 
   // Firestore の購読をやめ、API の WebSocket で全注文を受け取る
-  const { orders } = useOrdersWS();
+  const { orders, isOrdersLoaded } = useOrdersWS();
   const order = orders.find((o) => o.id === id);
 
   async function searchDocId(orderId: number): Promise<string | undefined> {
@@ -123,6 +123,8 @@ export default function Welcome() {
                     onClick={handleSubmit}
                     className=""
                     variant="outline"
+                    // 注文を受信する前に探すと「見つかりません」になるので待つ
+                    disabled={!isOrdersLoaded}
                   >
                     確認
                   </Button>

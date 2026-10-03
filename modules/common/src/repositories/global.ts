@@ -32,6 +32,9 @@ export const cashierStateRepoFactory = (): CashierStateRepo => {
 
   return {
     get: async () => {
+      // 送信待ちの PUT があると、それより古い状態を読んでしまう。
+      // 読んだ状態をもとに set し直すと新しい編集が巻き戻るので、先に送り切る
+      await lastSet;
       const { data, error, response } = await client.GET(
         "/api/cashier-state",
         {},
