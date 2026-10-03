@@ -120,7 +120,7 @@ export default function FielsOfCallScreen() {
 
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
-          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-orange-500 via-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl text-white shadow-lg">
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-theme-sub-deep via-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl text-white shadow-lg">
             <HiBell className="text-3xl" />
             お呼び出し中
             <HiBell className="text-3xl" />

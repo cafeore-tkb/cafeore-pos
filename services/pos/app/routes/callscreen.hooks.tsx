@@ -166,7 +166,7 @@ export function useQueueProcessing(
 
 /**
  * スライドインアニメーション管理フック
- * 右側のカードを左からスライドインさせ、同時にオレンジ色からテール色にグラデーションを変化させるアニメーションを実行します。
+ * 右側のカードを左からスライドインさせ、同時に撫子色からテーマカラーにグラデーションを変化させるアニメーションを実行します。
  */
 export function useSlideInAnimation(
   newlyAddedOrderId: number | null,
@@ -194,11 +194,19 @@ export function useSlideInAnimation(
       opacity: 0,
     });
 
-    // テキストのグラデーション初期色をセット（オレンジ系）
+    // GSAP は var() のままでは補間できないので、tailwind.css のテーマカラーの実際の値を読む
+    const style = getComputedStyle(textElement);
+    const themePrimary = style.getPropertyValue("--color-theme-primary").trim();
+    const themeDeep = style.getPropertyValue("--color-theme-deep").trim();
+    const themeSubDeep = style
+      .getPropertyValue("--color-theme-sub-deep")
+      .trim();
+
+    // テキストのグラデーション初期色をセット（サブカラーの撫子色）
     gsap.set(textElement, {
-      "--grad-start": "#f97316", // orange-500
-      "--grad-mid": "#ea580c", // orange-600
-      "--grad-end": "#ef4444", // red-500
+      "--grad-start": themeSubDeep,
+      "--grad-mid": themeSubDeep,
+      "--grad-end": themeSubDeep,
     } as GsapCSSVars);
 
     // カードのスライドインアニメーション（左から中心へ移動、同時に不透明化）
@@ -209,12 +217,8 @@ export function useSlideInAnimation(
       ease: "power2.out",
     });
 
-    // テキストのグラデーションカラーアニメーション（オレンジ → テーマカラー）
+    // テキストのグラデーションカラーアニメーション（撫子色 → テーマカラー）
     // スライドイン完了後に少し待ってから色を切り替える
-    // GSAP は var() のままでは補間できないので、tailwind.css のテーマカラーの実際の値を読む
-    const style = getComputedStyle(textElement);
-    const themePrimary = style.getPropertyValue("--color-theme-primary").trim();
-    const themeDeep = style.getPropertyValue("--color-theme-deep").trim();
     gsap.to(textElement, {
       "--grad-start": themePrimary,
       "--grad-mid": themeDeep,
