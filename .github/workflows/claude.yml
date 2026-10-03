@@ -39,6 +39,9 @@ jobs:
       id-token: write
     env:
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    outputs:
+      fixed_threads: ${{ steps.fixed.outputs.ids }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
     steps:
       - name: Resolve PR
         id: pr
@@ -127,23 +130,18 @@ jobs:
             - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment *),Bash(gh pr review * --comment *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Read,Write"
-      # Claude が直ったと判定したインラインコメントに、確認したコミットを返信してから解決済みにする
-      - name: Resolve fixed Claude threads
-        if: hashFiles('.claude-review/resolved.txt') != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+      # Claude が直ったと判定したスレッドのうち、threads.json にある（Claude が付けた未解決の）ものだけを次のジョブに渡す
+      - name: Collect fixed Claude threads
+        id: fixed
         run: |
-          grep -oE '[A-Za-z0-9_=-]+' .claude-review/resolved.txt | sort -u | while read -r id; do
-            # threads.json にある（Claude が付けた未解決の）スレッドだけを対象にする
-            jq -e --arg id "$id" 'any(.[]; .id == $id)' .claude-review/threads.json >/dev/null || continue
-            gh api graphql -f id="$id" -f body="${HEAD_SHA:0:7} で修正を確認したので解決済みにします（Claude Review）" -f query='
-              mutation($id: ID!, $body: String!) {
-                addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $id, body: $body }) { comment { id } }
-                resolveReviewThread(input: { threadId: $id }) { thread { isResolved } }
-              }' >/dev/null
-            echo "resolved $id"
-          done
+          ids=""
+          if [ -f .claude-review/resolved.txt ]; then
+            ids=$(grep -oE '[A-Za-z0-9_=-]+' .claude-review/resolved.txt | sort -u | while read -r id; do
+              jq -e --arg id "$id" 'any(.[]; .id == $id)' .claude-review/threads.json >/dev/null && echo "$id"
+            done | tr '\n' ' ')
+          fi
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+          echo "fixed threads: ${ids:-none}"
       # 最新以外の Claude の総評を「Outdated」として折りたたむ
       - name: Minimize old Claude reviews
         env:
@@ -173,4 +171,32 @@ jobs:
               mutation($id: ID!) {
                 minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { minimizedComment { isMinimized } }
               }' >/dev/null
+          done
+
+  # スレッドを解決済みにするには contents: write が要るので、Claude を動かすジョブとは分ける
+  resolve-threads:
+    needs: review
+    if: needs.review.outputs.fixed_threads != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Resolve fixed Claude threads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IDS: ${{ needs.review.outputs.fixed_threads }}
+          HEAD_SHA: ${{ needs.review.outputs.head_sha }}
+        run: |
+          for id in $IDS; do
+            gh api graphql -f id="$id" -f query='
+              mutation($id: ID!) {
+                resolveReviewThread(input: { threadId: $id }) { thread { isResolved } }
+              }' >/dev/null
+            gh api graphql -f id="$id" -f body="${HEAD_SHA:0:7} で修正を確認したので解決済みにしました（Claude Review）" -f query='
+              mutation($id: ID!, $body: String!) {
+                addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $id, body: $body }) { comment { id } }
+              }' >/dev/null
+            echo "resolved $id"
           done
