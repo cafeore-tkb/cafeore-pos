@@ -171,9 +171,10 @@ func healthHandler(c *gin.Context) {
 		Error
 
 	if err != nil {
+		// DB のエラー文は外に出さず、ログにだけ残す
+		log.Printf("health check failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unhealthy",
-			"error":  err.Error(),
 		})
 		return
 	}
