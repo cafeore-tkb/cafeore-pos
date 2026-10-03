@@ -98,11 +98,36 @@ const presentValues = (entries: [string, unknown][]) =>
 
 const isBlank = (row: string[]) => row.every((cell) => cell.trim() === "");
 
-const readCsvRows = (fileName: string, text: string): MasterRow[] => {
+// 見出しやキーの打ち間違いを黙って捨てると、任意の列（背景色など）が「値なし」で登録されてしまう
+const unknownColumnsProblem = (
+  where: string,
+  table: MasterTable,
+  columns: Iterable<string>,
+): string | null => {
+  const unknown = [...new Set(columns)].filter(
+    (column) => !MASTER_COLUMNS[table].includes(column),
+  );
+  if (unknown.length === 0) return null;
+  return `${where}: ${unknown.map((column) => `「${column}」`).join("")}という列はありません（${MASTER_COLUMNS[table].join(" / ")}）`;
+};
+
+const readCsvRows = (
+  fileName: string,
+  table: MasterTable,
+  text: string,
+  problems: string[],
+): MasterRow[] => {
   const lines = parseCsv(text);
   const headerIndex = lines.findIndex((line) => !isBlank(line));
   if (headerIndex < 0) return [];
   const headers = lines[headerIndex].map((header) => header.trim());
+  // Excel が足す見出しの無い列は、値が入っていなければ無視する
+  const problem = unknownColumnsProblem(
+    fileName,
+    table,
+    headers.filter((header) => header !== ""),
+  );
+  if (problem) problems.push(problem);
 
   const rows: MasterRow[] = [];
   for (let i = headerIndex + 1; i < lines.length; i++) {
@@ -118,12 +143,16 @@ const readCsvRows = (fileName: string, text: string): MasterRow[] => {
       ),
     });
   }
+  if (rows.some((row) => "" in row.values)) {
+    problems.push(`${fileName}: 見出しの無い列に値があります`);
+  }
   return rows;
 };
 
 const readJsonRows = (
   fileName: string,
   text: string,
+  problems: string[],
 ): Partial<MasterRows> | string => {
   let json: unknown;
   try {
@@ -141,6 +170,14 @@ const readJsonRows = (
       return `「${table}」という表はありません（${MASTER_TABLES.join(" / ")}）`;
     }
     if (!Array.isArray(rows)) return `${table} は配列にしてください`;
+    const problem = unknownColumnsProblem(
+      `${fileName} ${table}`,
+      table,
+      rows.flatMap((row) =>
+        typeof row === "object" && row !== null ? Object.keys(row) : [],
+      ),
+    );
+    if (problem) problems.push(problem);
     result[table] = rows.map((row, i) => ({
       at: `${fileName} ${table}[${i}]`,
       values:
@@ -167,7 +204,7 @@ export const readMasterFiles = (files: MasterFile[]): ReadMasterFilesResult => {
     const text = decodeText(file.bytes);
     let tables: Partial<MasterRows>;
     if (/\.json$/i.test(file.name)) {
-      const parsed = readJsonRows(file.name, text);
+      const parsed = readJsonRows(file.name, text, result.problems);
       if (typeof parsed === "string") {
         result.problems.push(`${file.name}: ${parsed}`);
         continue;
@@ -181,7 +218,9 @@ export const readMasterFiles = (files: MasterFile[]): ReadMasterFilesResult => {
         );
         continue;
       }
-      tables = { [table]: readCsvRows(file.name, text) };
+      tables = {
+        [table]: readCsvRows(file.name, table, text, result.problems),
+      };
     }
 
     const summary: ReadMasterFilesResult["files"][number] = {
@@ -232,11 +271,17 @@ const PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 const refKey = (table: MasterTable, name: string) => `${table}:${name}`;
 
+// ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 const setAt = (
   target: Record<string, unknown>,
   pointer: JsonPointer,
   value: unknown,
 ) => {
+  if (pointer.some((key) => UNSAFE_KEYS.has(String(key)))) {
+    throw new Error(`${pointer.join("/")} には書き込めません`);
+  }
   let node = target as Record<string | number, unknown>;
   for (const key of pointer.slice(0, -1)) {
     node = node[key] as Record<string | number, unknown>;

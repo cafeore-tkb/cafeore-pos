@@ -105,20 +105,21 @@ export default function MasterDataPage() {
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setStatus({ kind: "checking" });
-    const files = await Promise.all(
-      Array.from(fileList).map(async (file) => ({
-        name: file.name,
-        bytes: await file.arrayBuffer(),
-      })),
-    );
-    const result = readMasterFiles(files);
-    setRead(result);
-    if (result.problems.length > 0) {
-      setStatus({ kind: "problems", problems: result.problems });
-      clearFileInput();
-      return;
-    }
+    // ファイルの読み込みで失敗しても checking のまま止まらないよう、全体を囲む
     try {
+      const files = await Promise.all(
+        Array.from(fileList).map(async (file) => ({
+          name: file.name,
+          bytes: await file.arrayBuffer(),
+        })),
+      );
+      const result = readMasterFiles(files);
+      setRead(result);
+      if (result.problems.length > 0) {
+        setStatus({ kind: "problems", problems: result.problems });
+        clearFileInput();
+        return;
+      }
       const plan = planMasterImport(result.rows, await fetchMasterSnapshot());
       if (plan.problems.length > 0) {
         setStatus({ kind: "problems", problems: plan.problems });

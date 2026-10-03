@@ -126,6 +126,33 @@ describe("[unit] readMasterFiles", () => {
     expect(result.problems[1]).toMatch(/^a\.json: JSON として読めません/);
     expect(result.problems[2]).toMatch(/「foods」という表はありません/);
   });
+
+  test("reports columns and keys that are not in the schema", () => {
+    const result = readMasterFiles([
+      {
+        name: "items.csv",
+        // 見出しの無い列は、Excel が足すことがあるので無視する
+        bytes: utf8("name,abbr,item_type,prise,\nブレンド,ブ,hot,400,\n"),
+      },
+      {
+        name: "master.json",
+        bytes: utf8(
+          JSON.stringify({
+            color_settings: [
+              { target_type: "Item", target: "ミルク", master_colour: "#fff" },
+            ],
+          }),
+        ),
+      },
+    ]);
+    expect(result.problems).toHaveLength(2);
+    expect(result.problems[0]).toMatch(
+      /^items\.csv: 「prise」という列はありません/,
+    );
+    expect(result.problems[1]).toMatch(
+      /^master\.json color_settings: 「master_colour」という列はありません/,
+    );
+  });
 });
 
 describe("[unit] planMasterImport", () => {
