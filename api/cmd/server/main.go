@@ -306,6 +306,7 @@ func main() {
 		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
 		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
 		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
+		api.PUT("/inventory/usages/:id", inventoryHandler.ReplaceItemStockUsages)
 		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)

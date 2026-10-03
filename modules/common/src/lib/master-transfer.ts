@@ -7,7 +7,7 @@ import type { components } from "../types/api";
 import openapiSchemas from "../types/openapi-schemas.json";
 import { decodeText, formatCsv, parseCsv } from "./csv";
 
-// アイテムタイプ・アイテム・メニュー・背景色を、CSV / JSON と既存の API の呼び出しとで相互に変換する。
+// アイテムタイプ・アイテム・メニュー・背景色・在庫対象・使用量を、CSV / JSON と既存の API の呼び出しとで相互に変換する。
 // 列名は OpenAPI のプロパティ名と同じにし、値の検証は openapi.yaml のスキーマに任せる。
 // ここに書くのは、名前と ID の付け替え・送る順番・重複の確認だけ。
 
@@ -20,6 +20,8 @@ export const MASTER_TABLES = [
   "menus",
   "menu_items",
   "color_settings",
+  "stock_resources",
+  "item_stock_usages",
 ] as const;
 export type MasterTable = (typeof MASTER_TABLES)[number];
 
@@ -29,6 +31,8 @@ export const MASTER_TABLE_LABELS: Record<MasterTable, string> = {
   menus: "メニュー",
   menu_items: "メニューの構成",
   color_settings: "背景色",
+  stock_resources: "在庫対象",
+  item_stock_usages: "使用量",
 };
 
 // ID の代わりに名前（メニューはキー）で書く列
@@ -36,6 +40,7 @@ const REF_COLUMNS: Record<string, string> = {
   item_type_id: "item_type",
   item_id: "item",
   target_id: "target",
+  resource_id: "resource",
 };
 
 const propertiesOf = (name: SchemaName): string[] =>
@@ -56,6 +61,9 @@ export const MASTER_COLUMNS: Record<MasterTable, string[]> = {
   menus: columnsOf("MenuCreateRequest", ["items"]),
   menu_items: ["menu", ...columnsOf("MenuItemRequest")],
   color_settings: columnsOf("ColorSettingUpsertRequest"),
+  stock_resources: columnsOf("StockResourceRequest"),
+  // アイテムごとに置き換える API なので、アイテムを1列目に足して1行ずつ書く
+  item_stock_usages: ["item", ...columnsOf("ItemStockUsageRequest")],
 };
 
 // --- ファイルの読み込み ---
@@ -79,6 +87,8 @@ const emptyRows = (): MasterRows => ({
   menus: [],
   menu_items: [],
   color_settings: [],
+  stock_resources: [],
+  item_stock_usages: [],
 });
 
 const isMasterTable = (name: string): name is MasterTable =>
@@ -246,15 +256,30 @@ export type MasterSnapshot = {
   items: Schemas["ItemResponse"][];
   menus: Schemas["MenuResponse"][];
   color_settings: Schemas["ColorSettingResponse"][];
+  stock_resources: Schemas["StockResourceResponse"][];
+  item_stock_usages: Schemas["StockUsage"][];
 };
 
 type JsonPointer = (string | number)[];
 
 /** 既存の API への1回の呼び出し */
 export type MasterCall = {
-  table: "item_types" | "items" | "menus" | "color_settings";
+  table:
+    | "item_types"
+    | "items"
+    | "menus"
+    | "color_settings"
+    | "stock_resources"
+    | "item_stock_usages";
   method: "POST" | "PUT";
-  path: "/api/item-types" | "/api/items" | "/api/menus" | "/api/color-settings";
+  // 使用量はパスにアイテムの ID を入れる。本文の item_id をパスに、usages を本文にして送る
+  path:
+    | "/api/item-types"
+    | "/api/items"
+    | "/api/menus"
+    | "/api/color-settings"
+    | "/api/inventory/resources"
+    | "/api/inventory/usages/{item_id}";
   // 画面に出す名前
   label: string;
   body: Record<string, unknown>;
@@ -366,6 +391,9 @@ const describeError = (error: ErrorObject, value: unknown): string => {
       return `「${value}」が決まった形（${params.pattern}）になっていません`;
     case "format":
       return `「${value}」が ${params.format} の形になっていません`;
+    case "not":
+      // openapi.yaml では「0 より大きい」を minimum: 0 と not: { enum: [0] } で書いている
+      return `${value} は使えません（> 0）`;
     case "enum":
       return `「${value}」は使えません（${(params.allowedValues as unknown[]).join(" / ")} のどれか）`;
     default:
@@ -376,6 +404,7 @@ const describeError = (error: ErrorObject, value: unknown): string => {
 /**
  * 読み込んだ行を、既存の API の呼び出しの列にする。
  * 作成だけを行い、名前（メニューはキー）が既にあればエラーにする。背景色は既存の対象にも付けられる。
+ * 使用量は既存のアイテムにも付けられ、そのアイテムの使用量をファイルの内容に置き換える。
  * problems が空でなければ、何も送ってはいけない。
  */
 export const planMasterImport = (
@@ -399,12 +428,14 @@ export const planMasterImport = (
   const existing = {
     item_types: existingIds(snapshot.item_types),
     items: existingIds(snapshot.items),
+    stock_resources: existingIds(snapshot.stock_resources),
   };
   const existingMenuKeys = new Set(snapshot.menus.map((menu) => menu.key));
   const creating = {
     item_types: new Set<string>(),
     items: new Set<string>(),
     menus: new Map<string, MasterCall>(),
+    stock_resources: new Set<string>(),
   };
 
   // 作る行の名前が、ファイル内や既存と重ならないか
@@ -431,7 +462,7 @@ export const planMasterImport = (
 
   // 名前を ID にする。ファイル内で作るものは、送るときに入れる
   const resolve = (
-    table: "item_types" | "items",
+    table: "item_types" | "items" | "stock_resources",
     row: MasterRow,
     column: string,
     call: MasterCall,
@@ -603,13 +634,106 @@ export const planMasterImport = (
     }
   }
 
-  const SCHEMAS: Record<MasterCall["table"], SchemaName> = {
+  for (const row of rows.stock_resources) {
+    const name = isNew(row, "name", creating.stock_resources, (n) =>
+      existing.stock_resources.has(n),
+    );
+    if (name !== null) creating.stock_resources.add(name);
+    addCall(
+      {
+        table: "stock_resources",
+        method: "POST",
+        path: "/api/inventory/resources",
+        label: String(row.values.name ?? ""),
+        body: bodyOf(row, "StockResourceRequest"),
+        creates: name !== null ? refKey("stock_resources", name) : undefined,
+      },
+      row,
+    );
+  }
+
+  // 使用量はアイテムごとに1回の呼び出しにまとめる
+  const usageCalls = new Map<string, MasterCall>();
+  const usagePairs = new Set<string>();
+  for (const row of rows.item_stock_usages) {
+    const itemName = row.values.item;
+    if (itemName === undefined) {
+      report(row, "item", "値がありません");
+      continue;
+    }
+    let call = usageCalls.get(String(itemName));
+    if (!call) {
+      call = addCall(
+        {
+          table: "item_stock_usages",
+          method: "PUT",
+          path: "/api/inventory/usages/{item_id}",
+          label: String(itemName),
+          body: { item_id: PENDING_ID, usages: [] },
+        },
+        row,
+      );
+      usageCalls.set(String(itemName), call);
+      resolve("items", row, "item", call, ["item_id"]);
+    }
+    const pair = `${itemName}\u0000${row.values.resource}`;
+    if (row.values.resource !== undefined && usagePairs.has(pair)) {
+      report(
+        row,
+        "resource",
+        `「${row.values.resource}」がこのアイテムに重複しています`,
+      );
+    }
+    usagePairs.add(pair);
+
+    const usages = call.body.usages as Record<string, unknown>[];
+    usages.push(bodyOf(row, "ItemStockUsageRequest"));
+    sources.get(call)?.items.push(row);
+    resolve("stock_resources", row, "resource", call, [
+      "usages",
+      usages.length - 1,
+      "resource_id",
+    ]);
+  }
+
+  const SCHEMAS: Record<
+    Exclude<MasterCall["table"], "item_stock_usages">,
+    SchemaName
+  > = {
     item_types: "ItemTypeCreateRequest",
     items: "ItemCreateRequest",
     menus: "MenuCreateRequest",
     color_settings: "ColorSettingUpsertRequest",
+    stock_resources: "StockResourceRequest",
   };
   for (const call of calls) {
+    if (call.table === "item_stock_usages") {
+      // 本文は配列なので1件ずつ当て、エラーはその行で示す
+      const validate = validatorOf("ItemStockUsageRequest");
+      const source = sources.get(call);
+      for (const [i, usage] of (
+        call.body.usages as Record<string, unknown>[]
+      ).entries()) {
+        const row = source?.items[i];
+        if (validate(usage) || !row) continue;
+        for (const error of validate.errors ?? []) {
+          const path = error.instancePath.split("/").slice(1);
+          const property =
+            path[0] ??
+            (error.keyword === "required"
+              ? String(
+                  (error.params as { missingProperty: string }).missingProperty,
+                )
+              : null);
+          report(
+            row,
+            property && (REF_COLUMNS[property] ?? property),
+            describeError(error, getAt(usage, path)),
+          );
+        }
+      }
+      continue;
+    }
     const validate = validatorOf(SCHEMAS[call.table]);
     // coerceTypes で CSV の文字列（"400" など）がスキーマの型に直る
     if (validate(call.body)) continue;
@@ -679,6 +803,9 @@ export const snapshotToTables = (
     Item: new Map(snapshot.items.map((item) => [item.id, item.name])),
     ItemType: new Map(snapshot.item_types.map((type) => [type.id, type.name])),
   };
+  const resourceNames = new Map(
+    snapshot.stock_resources.map((resource) => [resource.id, resource.name]),
+  );
   return {
     item_types: snapshot.item_types.map((type) =>
       pick(type, MASTER_COLUMNS.item_types),
@@ -701,6 +828,22 @@ export const snapshotToTables = (
       return target === undefined
         ? []
         : [pick({ ...setting, target }, MASTER_COLUMNS.color_settings)];
+    }),
+    stock_resources: snapshot.stock_resources.map((resource) =>
+      pick(resource, MASTER_COLUMNS.stock_resources),
+    ),
+    // アイテムか在庫対象が消えている使用量は出さない
+    item_stock_usages: snapshot.item_stock_usages.flatMap((usage) => {
+      const item = names.Item.get(usage.item_id);
+      const resource = resourceNames.get(usage.resource_id);
+      return item === undefined || resource === undefined
+        ? []
+        : [
+            pick(
+              { ...usage, item, resource },
+              MASTER_COLUMNS.item_stock_usages,
+            ),
+          ];
     }),
   };
 };

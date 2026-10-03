@@ -2,7 +2,10 @@ import {
   ItemEntity,
   type ItemType,
   MenuEntity,
+  type StockResource,
+  type StockUsage,
   type WithId,
+  inventoryRepository,
   itemRepository,
   itemTypeRepository,
   menuRepository,
@@ -25,6 +28,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
+import { toUsageInputs, usagesByItem } from "~/lib/stock";
 import { copyName } from "~/lib/utils";
 
 export type ProductKind = "menu" | "item" | "itemType";
@@ -55,6 +59,8 @@ type Props = {
   menus: WithId<MenuEntity>[];
   items: WithId<ItemEntity>[];
   itemTypes: ItemType[];
+  resources: StockResource[];
+  usages: StockUsage[];
 };
 
 export function ProductEditor({
@@ -64,6 +70,8 @@ export function ProductEditor({
   menus,
   items,
   itemTypes,
+  resources,
+  usages,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -109,6 +117,33 @@ export function ProductEditor({
     }
   };
 
+  // 在庫対象の ID → 量（入力の形）。編集・複製の元の使用量を入れる
+  const usageDraftOf = (itemId: string) =>
+    Object.fromEntries(
+      [...(usagesByItem(usages).get(itemId) ?? [])].map(
+        ([resourceId, amount]) => [resourceId, String(amount)],
+      ),
+    );
+
+  // アイテムを保存してから使用量を置き換える。新規で空なら送らない。
+  // 使用量だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
+  const saveItem = async (values: ItemFormValues, id: string | undefined) => {
+    const item = await itemRepository.save(toItemEntity(values, itemTypes, id));
+    const inputs = toUsageInputs(values.usages);
+    if (id || inputs.length > 0) {
+      try {
+        await inventoryRepository.replaceItemUsages(item.id, inputs);
+      } catch (e) {
+        toast.error(
+          `アイテムは保存しましたが、使用量の保存に失敗しました: ${
+            e instanceof Error ? e.message : "不明なエラー"
+          }。編集から直してください`,
+        );
+      }
+    }
+    return item;
+  };
+
   const saveItemWithMenu = async (
     values: ItemFormValues,
     menu: SameNameMenu,
@@ -117,9 +152,7 @@ export function ProductEditor({
     try {
       let item: WithId<ItemEntity>;
       try {
-        item = await itemRepository.save(
-          toItemEntity(values, itemTypes, undefined),
-        );
+        item = await saveItem(values, undefined);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "保存に失敗しました");
         return;
@@ -213,17 +246,15 @@ export function ProductEditor({
           key={formKey}
           initialItem={initialItem}
           itemTypes={itemTypes}
+          resources={resources}
+          initialUsages={source ? usageDraftOf(source.id) : undefined}
           submitting={submitting}
           onCreateItemType={createItemType}
           menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
           onSubmit={(values, menu) =>
             menu
               ? saveItemWithMenu(values, menu)
-              : save(() =>
-                  itemRepository.save(
-                    toItemEntity(values, itemTypes, isEdit ? id : undefined),
-                  ),
-                )
+              : save(() => saveItem(values, isEdit ? id : undefined))
           }
         />
       );

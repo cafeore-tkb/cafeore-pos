@@ -596,6 +596,88 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 	go h.inv.CheckAlerts(nil)
 }
 
+var (
+	errUsageItemNotFound     = errors.New("Item not found")
+	errUsageResourceNotFound = errors.New("resource not found")
+)
+
+// PUT /api/inventory/usages/:id - 1つのアイテムの使用量を置き換える
+// ほかのアイテムの行には触らないので、商品管理で別々のアイテムを同時に直しても上書きしない。
+func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
+	itemID, ok := parseUUIDParam(c)
+	if !ok {
+		return
+	}
+	var req models.ReplaceItemStockUsagesJSONRequestBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	usages, resourceIDs, err := buildItemStockUsages(itemID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
+		var items int64
+		if err := tx.Model(&models.Item{}).Where("id = ?", itemID).Count(&items).Error; err != nil {
+			return err
+		}
+		if items == 0 {
+			return errUsageItemNotFound
+		}
+		if len(resourceIDs) > 0 {
+			var resources int64
+			if err := tx.Model(&models.StockResource{}).Where("id IN ?", resourceIDs).Count(&resources).Error; err != nil {
+				return err
+			}
+			if resources != int64(len(resourceIDs)) {
+				return errUsageResourceNotFound
+			}
+		}
+		if err := tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error; err != nil {
+			return err
+		}
+		if len(usages) == 0 {
+			return nil
+		}
+		return tx.Create(&usages).Error
+	})
+	switch {
+	case errors.Is(err, errUsageItemNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, errUsageResourceNotFound):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, toStockUsageResponses(usages))
+	go h.inv.CheckAlerts(nil)
+}
+
+// 本文を検証して1つのアイテムの使用量の行にする。量は正、在庫対象は重複なし。
+func buildItemStockUsages(itemID uuid.UUID, req []models.ItemStockUsageRequest) ([]models.ItemStockUsage, []uuid.UUID, error) {
+	usages := make([]models.ItemStockUsage, 0, len(req))
+	resourceIDs := make([]uuid.UUID, 0, len(req))
+	seen := make(map[uuid.UUID]bool, len(req))
+	for _, u := range req {
+		resourceID := uuid.UUID(u.ResourceId)
+		if u.Amount <= 0 || seen[resourceID] {
+			return nil, nil, errors.New("amount must be positive and each resource must be unique")
+		}
+		seen[resourceID] = true
+		resourceIDs = append(resourceIDs, resourceID)
+		usages = append(usages, models.ItemStockUsage{ItemID: itemID, ResourceID: resourceID, Amount: u.Amount})
+	}
+	return usages, resourceIDs, nil
+}
+
 // POST /api/inventory/remind - 残量確認のリマインド（スケジューラから呼ぶ）
 func (h *InventoryHandler) RemindInventory(c *gin.Context) {
 	ra := h.inv.remindAuth

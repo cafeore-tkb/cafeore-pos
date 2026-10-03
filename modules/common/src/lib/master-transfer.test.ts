@@ -17,12 +17,26 @@ const utf8 = (text: string) => new TextEncoder().encode(text);
 const TYPE_HOT = "11111111-1111-4111-8111-111111111111";
 const ITEM_MILK = "22222222-2222-4222-8222-222222222222";
 const MENU_OLD = "33333333-3333-4333-8333-333333333333";
+const CUP_HOT = "66666666-6666-4666-8666-666666666666";
+
+const hotCup = {
+  id: CUP_HOT,
+  kind: "cup" as const,
+  name: "ホットカップ",
+  unit: "個",
+  per_serving: 1,
+  notify_from: 500,
+  notify_step: 100,
+  buffer: 100,
+};
 
 const emptySnapshot: MasterSnapshot = {
   item_types: [],
   items: [],
   menus: [],
   color_settings: [],
+  stock_resources: [],
+  item_stock_usages: [],
 };
 
 const snapshot: MasterSnapshot = {
@@ -46,6 +60,8 @@ const snapshot: MasterSnapshot = {
     },
   ],
   color_settings: [],
+  stock_resources: [hotCup],
+  item_stock_usages: [],
 };
 
 // CSV と同じく値は文字列で渡す
@@ -56,6 +72,8 @@ const rowsOf = (tables: Partial<Record<keyof MasterRows, object[]>>) => {
     menus: [],
     menu_items: [],
     color_settings: [],
+    stock_resources: [],
+    item_stock_usages: [],
   };
   for (const [table, list] of Object.entries(tables)) {
     rows[table as keyof MasterRows] = list.map((values, i) => ({
@@ -78,6 +96,16 @@ describe("[unit] openapi-schemas.json", () => {
       menus: ["name", "abbr", "price", "key"],
       menu_items: ["menu", "item", "quantity"],
       color_settings: ["target_type", "target", "screen", "color"],
+      stock_resources: [
+        "kind",
+        "name",
+        "unit",
+        "per_serving",
+        "notify_from",
+        "notify_step",
+        "buffer",
+      ],
+      item_stock_usages: ["item", "resource", "amount"],
     });
   });
 });
@@ -277,6 +305,90 @@ describe("[unit] planMasterImport", () => {
     ]);
   });
 
+  test("creates stock resources and replaces usages per item", () => {
+    const plan = planMasterImport(
+      rowsOf({
+        items: [{ name: "ケニア", abbr: "ケ", item_type: "hot" }],
+        stock_resources: [
+          {
+            kind: "bean",
+            name: "ケニア豆",
+            unit: "g",
+            per_serving: "15",
+            notify_from: "100",
+            notify_step: "20",
+            buffer: "30",
+          },
+        ],
+        item_stock_usages: [
+          { item: "ケニア", resource: "ホットカップ", amount: "1" },
+          { item: "ケニア", resource: "ケニア豆", amount: "15" },
+          // 既存のアイテムにも付けられる
+          { item: "ミルク", resource: "ホットカップ", amount: "1" },
+        ],
+      }),
+      snapshot,
+    );
+    expect(plan.problems).toEqual([]);
+    expect(plan.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /api/items",
+      "POST /api/inventory/resources",
+      "PUT /api/inventory/usages/{item_id}",
+      "PUT /api/inventory/usages/{item_id}",
+    ]);
+    const [, resource, newItemUsage, milkUsage] = plan.calls;
+    expect(resource.body).toMatchObject({ kind: "bean", per_serving: 15 });
+    expect(resource.creates).toBe("stock_resources:ケニア豆");
+    expect(newItemUsage.body.usages).toEqual([
+      { resource_id: CUP_HOT, amount: 1 },
+      { resource_id: expect.any(String), amount: 15 },
+    ]);
+    expect(newItemUsage.refs).toEqual([
+      { pointer: ["item_id"], key: "items:ケニア" },
+      {
+        pointer: ["usages", 1, "resource_id"],
+        key: "stock_resources:ケニア豆",
+      },
+    ]);
+    expect(milkUsage.body).toEqual({
+      item_id: ITEM_MILK,
+      usages: [{ resource_id: CUP_HOT, amount: 1 }],
+    });
+  });
+
+  test("reports problems in stock resources and usages", () => {
+    const plan = planMasterImport(
+      rowsOf({
+        stock_resources: [
+          {
+            kind: "cup",
+            name: "ホットカップ",
+            unit: "個",
+            per_serving: "1",
+            notify_from: "1",
+            notify_step: "1",
+            buffer: "1",
+          },
+        ],
+        item_stock_usages: [
+          { item: "ミルク", resource: "アイスカップ", amount: "1" },
+          { item: "ミルク", resource: "アイスカップ", amount: "1" },
+          { item: "ミルク", resource: "ホットカップ", amount: "0" },
+          { resource: "ホットカップ", amount: "1" },
+        ],
+      }),
+      snapshot,
+    );
+    expect(plan.problems).toEqual([
+      "stock_resources.csv 2行目・name: 「ホットカップ」は既にあります（取り込みは作成のみ）",
+      "item_stock_usages.csv 2行目・resource: 「アイスカップ」という在庫対象がありません",
+      "item_stock_usages.csv 3行目・resource: 「アイスカップ」がこのアイテムに重複しています",
+      "item_stock_usages.csv 3行目・resource: 「アイスカップ」という在庫対象がありません",
+      "item_stock_usages.csv 5行目・item: 値がありません",
+      "item_stock_usages.csv 4行目・amount: 0 は使えません（> 0）",
+    ]);
+  });
+
   test("refuses ambiguous references to existing rows", () => {
     const plan = planMasterImport(
       rowsOf({ items: [{ name: "x", abbr: "x", item_type: "hot" }] }),
@@ -304,6 +416,11 @@ describe("[unit] export", () => {
           items: [{ item: snapshot.items[0], quantity: 2 }],
         },
       ],
+      item_stock_usages: [
+        { item_id: ITEM_MILK, resource_id: CUP_HOT, amount: 1 },
+        // 消えた在庫対象の使用量は出さない
+        { item_id: ITEM_MILK, resource_id: MENU_OLD, amount: 1 },
+      ],
       color_settings: [
         {
           id: MENU_OLD,
@@ -324,6 +441,20 @@ describe("[unit] export", () => {
     });
     expect(tables.menu_items).toEqual([
       { menu: "old", item: "ミルク", quantity: 2 },
+    ]);
+    expect(tables.item_stock_usages).toEqual([
+      { item: "ミルク", resource: "ホットカップ", amount: 1 },
+    ]);
+    expect(tables.stock_resources).toEqual([
+      {
+        kind: "cup",
+        name: "ホットカップ",
+        unit: "個",
+        per_serving: 1,
+        notify_from: 500,
+        notify_step: 100,
+        buffer: 100,
+      },
     ]);
     expect(tables.color_settings).toEqual([
       {
@@ -347,6 +478,8 @@ describe("[unit] export", () => {
       "items",
       "menus",
       "color_settings",
+      "stock_resources",
+      "item_stock_usages",
     ]);
   });
 });

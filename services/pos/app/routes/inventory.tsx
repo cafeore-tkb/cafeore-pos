@@ -3,7 +3,7 @@ import { cn } from "~/lib/utils";
 
 const navItems = [
   { label: "残量", to: "/inventory" },
-  { label: "設定", to: "/inventory/settings" },
+  { label: "設定", to: "/products?tab=stock" },
 ];
 
 export default function InventoryLayout() {

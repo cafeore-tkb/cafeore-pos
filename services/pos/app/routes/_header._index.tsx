@@ -135,7 +135,7 @@ const sections: Section[] = [
 
 const settingLinks = [
   { to: "/products", label: "商品管理" },
-  { to: "/inventory/settings", label: "在庫の設定" },
+  { to: "/products?tab=stock", label: "在庫の設定" },
 ];
 
 export default function Index() {

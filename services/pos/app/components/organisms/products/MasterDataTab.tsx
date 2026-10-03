@@ -38,6 +38,8 @@ const CALL_TABLES: MasterCall["table"][] = [
   "items",
   "menus",
   "color_settings",
+  "stock_resources",
+  "item_stock_usages",
 ];
 
 const getTimestamp = (): string => {
@@ -182,7 +184,7 @@ export function MasterDataTab({
         <h2 className="font-bold text-xl">取り込み</h2>
         <p className="text-muted-foreground text-sm">
           CSV（Excel の「CSV (コンマ区切り)」「CSV UTF-8」どちらでも可）か JSON
-          を選んでください。複数まとめて選べます。新しく作るだけで、既にある名前（メニューはキー）はエラーになります。背景色は既存のアイテムにも付けられます。
+          を選んでください。複数まとめて選べます。新しく作るだけで、既にある名前（メニューはキー）はエラーになります。背景色と使用量は既存のアイテムにも付けられます（使用量はアイテムごとにファイルの内容に置き換わります）。
         </p>
         <details className="rounded-md border p-3 text-sm">
           <summary className="cursor-pointer font-medium">
@@ -203,9 +205,10 @@ export function MasterDataTab({
               ))}
             </ul>
             <p>
-              <code>item_type</code>・<code>item</code>・<code>target</code>{" "}
-              は名前、<code>menu</code> はメニューの <code>key</code>{" "}
-              で書きます。メニューの構成は <code>menu_items</code>{" "}
+              <code>item_type</code>・<code>item</code>・<code>target</code>・
+              <code>resource</code> は名前、<code>menu</code> はメニューの{" "}
+              <code>key</code> で書きます。メニューの構成は{" "}
+              <code>menu_items</code>{" "}
               に1行ずつ書き、同じファイルで作るメニューにだけ付けられます。
             </p>
             <p>

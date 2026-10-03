@@ -2,8 +2,10 @@ import {
   itemRepository,
   itemTypeRepository,
   menuRepository,
+  useInventory,
   useItemMaster,
   useMenuMaster,
+  useStockUsages,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
@@ -23,6 +25,7 @@ import {
   type ProductKind,
 } from "~/components/organisms/products/ProductEditor";
 import type { RowHandlers } from "~/components/organisms/products/RowActions";
+import { StockTab } from "~/components/organisms/products/StockTab";
 import {
   itemTypeUsage,
   itemUsage,
@@ -34,7 +37,13 @@ export const meta: MetaFunction = () => {
   return [{ title: "商品管理 / 珈琲・俺POS" }];
 };
 
-type Tab = "menus" | "items" | "item-types" | "colors" | "master-data";
+type Tab =
+  | "menus"
+  | "items"
+  | "item-types"
+  | "colors"
+  | "stock"
+  | "master-data";
 
 // kind があるタブは追加・編集できる
 const tabs: { value: Tab; label: string; kind?: ProductKind }[] = [
@@ -42,6 +51,7 @@ const tabs: { value: Tab; label: string; kind?: ProductKind }[] = [
   { value: "items", label: "アイテム", kind: "item" },
   { value: "item-types", label: "タイプ", kind: "itemType" },
   { value: "colors", label: "背景色" },
+  { value: "stock", label: "在庫" },
   { value: "master-data", label: "取り込み・書き出し" },
 ];
 
@@ -74,15 +84,25 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
+  const { statuses, mutateInventory } = useInventory();
+  const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
+  const { usages, mutateUsages } = useStockUsages();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const usageOfItems = useMemo(() => itemUsage(menus), [menus]);
   const usageOfItemTypes = useMemo(() => itemTypeUsage(items), [items]);
 
-  // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す
+  // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す。
+  // アイテムを消すと使用量も消え、取り込みでは在庫対象もできるので一緒に取り直す
   const refresh = () =>
-    Promise.all([mutateMenus(), mutateItems(), mutateItemTypes()]);
+    Promise.all([
+      mutateMenus(),
+      mutateItems(),
+      mutateItemTypes(),
+      mutateUsages(),
+      mutateInventory(),
+    ]);
 
   const handlersFor = (kind: ProductKind): RowHandlers => ({
     onEdit: (id) => setEditing({ kind, mode: "edit", id }),
@@ -106,6 +126,9 @@ export default function ProductsPage() {
           name: items.find((item) => item.id === id)?.name ?? "",
           usedByLabel: "メニュー",
           usedBy: usageOfItems.get(id) ?? [],
+          note: usages.some((usage) => usage.item_id === id)
+            ? "在庫の使用量の設定も一緒に消えます。"
+            : undefined,
           run,
         });
       } else {
@@ -127,7 +150,7 @@ export default function ProductsPage() {
       <div className="space-y-1">
         <h1 className="font-semibold text-2xl tracking-tight">商品管理</h1>
         <p className="text-muted-foreground text-sm">
-          メニュー、構成アイテム、アイテムタイプ、背景色を管理します。まとめて取り込み・書き出しもできます
+          メニュー、構成アイテム、アイテムタイプ、背景色、在庫対象と使用量を管理します。まとめて取り込み・書き出しもできます
         </p>
       </div>
 
@@ -167,6 +190,8 @@ export default function ProductsPage() {
               <ItemsTab
                 items={items}
                 usage={usageOfItems}
+                resources={resources}
+                stockUsages={usages}
                 {...handlersFor("item")}
               />
             </TabsContent>
@@ -179,6 +204,17 @@ export default function ProductsPage() {
             </TabsContent>
             <TabsContent value="colors" className="mt-4">
               <ColorSettingsTab />
+            </TabsContent>
+            <TabsContent value="stock" className="mt-4">
+              <StockTab
+                items={items}
+                resources={resources}
+                usages={usages}
+                onResourcesChanged={() =>
+                  void Promise.all([mutateInventory(), mutateUsages()])
+                }
+                onUsagesChanged={mutateUsages}
+              />
             </TabsContent>
             <TabsContent value="master-data" className="mt-4">
               <MasterDataTab onImported={refresh} />
@@ -194,6 +230,8 @@ export default function ProductsPage() {
         menus={menus}
         items={items}
         itemTypes={itemTypes}
+        resources={resources}
+        usages={usages}
       />
       <DeleteDialog
         target={deleteTarget}

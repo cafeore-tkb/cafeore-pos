@@ -1,5 +1,6 @@
-import type { ItemEntity, ItemType } from "@cafeore/common";
-import { useId, useMemo, useState } from "react";
+import type { ItemEntity, ItemType, StockResource } from "@cafeore/common";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Link } from "react-router";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -11,12 +12,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { guessCup, sortResources } from "~/lib/stock";
 import type { ItemTypeFormValues } from "./itemTypeForm";
 
 export type ItemFormValues = {
   name: string;
   abbr: string;
   itemTypeId: string;
+  /** 在庫対象の ID → 1杯あたりの量（入力のまま）。空欄は使わない */
+  usages: Record<string, string>;
 };
 
 /** アイテムと同じ名前・略称で、そのアイテム 1 つだけのメニュー */
@@ -27,6 +31,9 @@ type MenuDraft = { enabled: boolean; price: string; key: string };
 type Props = {
   initialItem?: ItemEntity;
   itemTypes: ItemType[];
+  resources: StockResource[];
+  /** 渡さなければ新規として、タイプからカップを入れる */
+  initialUsages?: Record<string, string>;
   onSubmit: (
     values: ItemFormValues,
     menu: SameNameMenu | null,
@@ -41,6 +48,8 @@ type Props = {
 export function ItemForm({
   initialItem,
   itemTypes,
+  resources,
+  initialUsages,
   onSubmit,
   onCreateItemType,
   menuKeysInUse,
@@ -52,11 +61,24 @@ export function ItemForm({
     return itemTypes[0]?.id ?? "";
   }, [initialItem, itemTypes]);
 
-  const [values, setValues] = useState<ItemFormValues>({
+  const cups = useMemo(
+    () => resources.filter((r) => r.kind === "cup"),
+    [resources],
+  );
+  // 新規はタイプからカップを推測して入れる。使用量を触るまではタイプに合わせて入れ直す
+  const guessUsages = (itemTypeId: string): Record<string, string> => {
+    const typeName = itemTypes.find((t) => t.id === itemTypeId)?.name;
+    const cup = guessCup(typeName, cups);
+    return cup ? { [cup.id]: "1" } : {};
+  };
+  const [usagesTouched, setUsagesTouched] = useState(initialUsages != null);
+
+  const [values, setValues] = useState<ItemFormValues>(() => ({
     name: initialItem?.name ?? "",
     abbr: initialItem?.abbr ?? "",
     itemTypeId: initialItemTypeId,
-  });
+    usages: initialUsages ?? guessUsages(initialItemTypeId),
+  }));
 
   const [menu, setMenu] = useState<MenuDraft>({
     enabled: false,
@@ -67,10 +89,32 @@ export function ItemForm({
   const menuKeyTaken =
     menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
 
-  const updateField = (key: keyof ItemFormValues, value: string) => {
+  // 在庫対象があとから読み込まれたときも、触る前なら推測し直す
+  const cupIds = cups.map((cup) => cup.id).join();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: カップの顔ぶれが変わったときだけ
+  useEffect(() => {
+    if (usagesTouched) return;
+    setValues((prev) => ({ ...prev, usages: guessUsages(prev.itemTypeId) }));
+  }, [cupIds]);
+
+  const updateField = (
+    key: Exclude<keyof ItemFormValues, "usages">,
+    value: string,
+  ) => {
     setValues((prev) => ({
       ...prev,
       [key]: value,
+      ...(key === "itemTypeId" && !usagesTouched
+        ? { usages: guessUsages(value) }
+        : {}),
+    }));
+  };
+
+  const setUsage = (resourceId: string, value: string) => {
+    setUsagesTouched(true);
+    setValues((prev) => ({
+      ...prev,
+      usages: { ...prev.usages, [resourceId]: value },
     }));
   };
 
@@ -145,6 +189,46 @@ export function ItemForm({
             if (created.id) updateField("itemTypeId", created.id);
           }}
         />
+      </div>
+
+      <div className="grid gap-3 rounded-md border p-3">
+        <div className="grid gap-1">
+          <p className="font-medium text-sm">在庫の使用量（1杯あたり）</p>
+          <p className="text-muted-foreground text-xs">
+            注文のたびにこの量を在庫から引きます。グッズなど数えないものは空欄のままにします
+          </p>
+        </div>
+        {resources.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            在庫対象がありません。
+            <Link to="/products?tab=stock" className="underline">
+              在庫タブ
+            </Link>
+            で追加できます
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {sortResources(resources).map((resource) => (
+              <div key={resource.id} className="grid content-start gap-1">
+                <Label
+                  htmlFor={`${id}-usage-${resource.id}`}
+                  className="text-xs"
+                >
+                  {resource.name}（{resource.unit}）
+                </Label>
+                <Input
+                  id={`${id}-usage-${resource.id}`}
+                  type="number"
+                  min={0}
+                  step="any"
+                  placeholder="—"
+                  value={values.usages[resource.id] ?? ""}
+                  onChange={(e) => setUsage(resource.id, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {menuKeysInUse && (
