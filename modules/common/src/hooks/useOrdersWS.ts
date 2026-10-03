@@ -1,6 +1,6 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import type { MasterState } from "../data";
+import { type MasterState, responseToMasterState } from "../data";
 import { type OrderResponse, responseToOrderEntity } from "../firebase-utils";
 import type { WithId } from "../lib";
 import type { OrderEntity } from "../models";
@@ -8,8 +8,11 @@ import type { OrderEntity } from "../models";
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
-  | { type: "orders"; orders: OrderResponse[] }
-  | { type: "master_state"; master_state: MasterState };
+  | { type: "orders"; orders?: OrderResponse[] }
+  | {
+      type: "master_state";
+      master_state: { created_at: string; type: string };
+    };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -41,11 +44,12 @@ export const useOrdersWS = () => {
 
         switch (data.type) {
           case "orders":
-            setOrders(data.orders.map(responseToOrderEntity));
+            // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
+            setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 
           case "master_state":
-            setMasterState(data.master_state);
+            setMasterState(responseToMasterState(data.master_state));
             break;
 
           default:

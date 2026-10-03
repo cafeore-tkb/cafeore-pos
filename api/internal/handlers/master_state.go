@@ -16,8 +16,8 @@ type MasterStateHandler struct {
 	hub *Hub
 }
 
-func NewMasterStateHandler(db *gorm.DB) *MasterStateHandler {
-	return &MasterStateHandler{db: db}
+func NewMasterStateHandler(db *gorm.DB, hub *Hub) *MasterStateHandler {
+	return &MasterStateHandler{db: db, hub: hub}
 }
 
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
@@ -79,8 +79,9 @@ func (h *MasterStateHandler) broadcastMasterState() {
 		return
 	}
 
+	response := toMasterStateResponse(&state)
 	h.hub.Broadcast(WSMessage{
 		Type:        WSMessageTypeMasterState,
-		MasterState: &state,
+		MasterState: &response,
 	})
 }

@@ -100,7 +100,7 @@ const sections: Section[] = [
   {
     audience: "admin",
     title: "運営・管理",
-    lead: "売れ行きや在庫の確認、メニューの設定",
+    lead: "売れ行きや在庫の確認、オペ練、メニューの設定",
     screens: [
       {
         kind: "dashboard",
@@ -119,6 +119,15 @@ const sections: Section[] = [
         where: "棚卸し・入荷のたびに記録",
         description:
           "棚卸しの実数と入荷・注文から、豆とカップの残量を推定。棚卸し・入荷の記録もここで。",
+      },
+      {
+        kind: "rehearsal",
+        to: "/rehearsal",
+        title: "オペ練",
+        audience: "admin",
+        where: "オペ練でレジ係に客役の注文を出す端末",
+        description:
+          "過去の祭の注文の流れから、次のお客さんの注文と並んでいる人数を出題。オーダーストップの目安も表示します。",
       },
     ],
   },

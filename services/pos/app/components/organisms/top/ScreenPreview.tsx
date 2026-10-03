@@ -16,7 +16,8 @@ export type ScreenKind =
   | "cashier-mini"
   | "callscreen"
   | "dashboard"
-  | "inventory";
+  | "inventory"
+  | "rehearsal";
 
 export function ScreenPreview({ kind }: { kind: ScreenKind }) {
   const Preview = previews[kind];
@@ -37,6 +38,7 @@ const previews: Record<ScreenKind, () => JSX.Element> = {
   callscreen: CallscreenPreview,
   dashboard: DashboardPreview,
   inventory: InventoryPreview,
+  rehearsal: RehearsalPreview,
 };
 
 function StatusBar() {
@@ -383,6 +385,37 @@ function InventoryPreview() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function RehearsalPreview() {
+  return (
+    <div className="flex h-full flex-col px-[1em] py-[0.8em]">
+      <span className="font-bold text-[1.2em]">オペ練：次のお客さん</span>
+      <div className="mt-[0.5em] grid flex-1 grid-cols-3 gap-[0.5em]">
+        <div className="col-span-2 rounded-md border-[0.2em] border-amber-900 p-[0.6em]">
+          <div className="text-[0.7em] text-stone-600">次のお客さん</div>
+          <div className="mt-[0.3em] space-y-[0.1em] font-bold text-[1.4em] text-amber-950">
+            <div>ホット × 2</div>
+            <div>アイス × 1</div>
+          </div>
+        </div>
+        <div className="space-y-[0.4em] rounded-md border p-[0.5em]">
+          <div>
+            <div className="text-[0.6em] text-stone-600">並んでいる人数</div>
+            <div className="font-bold text-[1.8em]">4</div>
+          </div>
+          <div>
+            <div className="text-[0.6em] text-stone-600">次の客まで</div>
+            <div className="font-bold text-[1em]">12 秒</div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-[0.5em] rounded-md border border-green-600 bg-green-50 px-[0.6em] py-[0.3em] text-[0.7em]">
+        <span className="font-bold">受付を続けてよい目安です</span>
+        <span className="ml-[0.5em] text-stone-600">提供待ち 8 杯</span>
       </div>
     </div>
   );
