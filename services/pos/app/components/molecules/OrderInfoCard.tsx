@@ -3,6 +3,8 @@ import {
   type OrderEntity,
   type WithId,
   orderRepository,
+  resolveItemColor,
+  useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
 import { LuHourglass } from "react-icons/lu";
@@ -65,6 +67,16 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
         },
       },
     );
+  };
+
+  // 背景色設定はマスター・提供画面だけで使う
+  const colorScreen = user === "master" || user === "serve" ? user : null;
+  const { colorSettings } = useColorSettings(colorScreen !== null);
+
+  // 設定があれば下の className の既定色より優先する。呼び出し中はグレーのまま。
+  const itemBackgroundColor = (item: (typeof displayOrders)[number]) => {
+    if (colorScreen === null || order.status === "calling") return undefined;
+    return resolveItemColor(colorSettings, item, colorScreen);
   };
 
   return (
@@ -150,6 +162,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                       item.item_type.name === "others" &&
                       "bg-green-300",
                   )}
+                  style={{ backgroundColor: itemBackgroundColor(item) }}
                 >
                   <h3 className="text-center font-bold text-3xl">
                     {item.abbr}

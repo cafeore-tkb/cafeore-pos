@@ -17,12 +17,13 @@ import (
 )
 
 type OrderHandler struct {
-	db  *gorm.DB
-	hub *Hub
+	db        *gorm.DB
+	hub       *Hub
+	inventory *Inventory
 }
 
-func NewOrderHandler(db *gorm.DB, hub *Hub) *OrderHandler {
-	return &OrderHandler{db: db, hub: hub}
+func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *OrderHandler {
+	return &OrderHandler{db: db, hub: hub, inventory: inventory}
 }
 
 // 注文履歴では販売終了（論理削除）したメニューも参照する。
@@ -260,6 +261,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -301,6 +303,9 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
+	resourcesBefore := h.inventory.ResourceIDsForOrder(orderID)
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態変更と重なっても、どちらかの変更が消えないようにロックしてから読む
@@ -365,6 +370,9 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	go func() {
+		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(orderID)))
+	}()
 }
 
 // DELETE /api/orders/:id - オーダー削除
@@ -387,6 +395,9 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 明細を消す前に、閾値の記録を戻す対象を取っておく
+	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
 	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
@@ -411,6 +422,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+	go h.inventory.CheckAlerts(resources)
 }
 
 var upgrader = websocket.Upgrader{

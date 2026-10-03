@@ -14,6 +14,39 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 背景色設定一覧取得
+	// (GET /api/color-settings)
+	GetColorSettings(c *gin.Context)
+	// 背景色設定の作成・更新
+	// (PUT /api/color-settings)
+	UpsertColorSetting(c *gin.Context)
+	// 背景色設定削除
+	// (DELETE /api/color-settings/{id})
+	DeleteColorSetting(c *gin.Context, id openapi_types.UUID)
+	// 在庫の残量一覧
+	// (GET /api/inventory)
+	GetInventory(c *gin.Context)
+	// 残量確認のリマインドを Slack に送る
+	// (POST /api/inventory/remind)
+	RemindInventory(c *gin.Context)
+	// 在庫対象の作成
+	// (POST /api/inventory/resources)
+	CreateStockResource(c *gin.Context)
+	// 在庫対象の削除
+	// (DELETE /api/inventory/resources/{id})
+	DeleteStockResource(c *gin.Context, id openapi_types.UUID)
+	// 在庫対象の更新
+	// (PUT /api/inventory/resources/{id})
+	UpdateStockResource(c *gin.Context, id openapi_types.UUID)
+	// 棚卸し・入荷・調整の記録
+	// (POST /api/inventory/resources/{id}/events)
+	CreateStockEvent(c *gin.Context, id openapi_types.UUID)
+	// アイテム1杯あたりの使用量一覧
+	// (GET /api/inventory/usages)
+	GetStockUsages(c *gin.Context)
+	// アイテム1杯あたりの使用量をまとめて置き換える
+	// (PUT /api/inventory/usages)
+	ReplaceStockUsages(c *gin.Context)
 	// アイテムタイプ一覧取得
 	// (GET /api/item-types)
 	GetItemTypes(c *gin.Context)
@@ -111,6 +144,193 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetColorSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetColorSettings(c)
+}
+
+// UpsertColorSetting operation middleware
+func (siw *ServerInterfaceWrapper) UpsertColorSetting(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpsertColorSetting(c)
+}
+
+// DeleteColorSetting operation middleware
+func (siw *ServerInterfaceWrapper) DeleteColorSetting(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteColorSetting(c, id)
+}
+
+// GetInventory operation middleware
+func (siw *ServerInterfaceWrapper) GetInventory(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetInventory(c)
+}
+
+// RemindInventory operation middleware
+func (siw *ServerInterfaceWrapper) RemindInventory(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RemindInventory(c)
+}
+
+// CreateStockResource operation middleware
+func (siw *ServerInterfaceWrapper) CreateStockResource(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateStockResource(c)
+}
+
+// DeleteStockResource operation middleware
+func (siw *ServerInterfaceWrapper) DeleteStockResource(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteStockResource(c, id)
+}
+
+// UpdateStockResource operation middleware
+func (siw *ServerInterfaceWrapper) UpdateStockResource(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateStockResource(c, id)
+}
+
+// CreateStockEvent operation middleware
+func (siw *ServerInterfaceWrapper) CreateStockEvent(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateStockEvent(c, id)
+}
+
+// GetStockUsages operation middleware
+func (siw *ServerInterfaceWrapper) GetStockUsages(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetStockUsages(c)
+}
+
+// ReplaceStockUsages operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceStockUsages(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReplaceStockUsages(c)
+}
 
 // GetItemTypes operation middleware
 func (siw *ServerInterfaceWrapper) GetItemTypes(c *gin.Context) {
@@ -732,6 +952,17 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
+	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
+	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
+	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
+	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)
+	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)
+	router.DELETE(options.BaseURL+"/api/inventory/resources/:id", wrapper.DeleteStockResource)
+	router.PUT(options.BaseURL+"/api/inventory/resources/:id", wrapper.UpdateStockResource)
+	router.POST(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.CreateStockEvent)
+	router.GET(options.BaseURL+"/api/inventory/usages", wrapper.GetStockUsages)
+	router.PUT(options.BaseURL+"/api/inventory/usages", wrapper.ReplaceStockUsages)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.POST(options.BaseURL+"/api/item-types", wrapper.CreateItemType)
 	router.DELETE(options.BaseURL+"/api/item-types/:id", wrapper.DeleteItemType)

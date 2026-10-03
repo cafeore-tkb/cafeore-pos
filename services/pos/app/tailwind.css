@@ -26,9 +26,17 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
-  /* theme colors */
-  --color-theme-primary: #006763;
-  --color-theme-secondary: #0067631a;
+  /* theme colors（雙峰祭2026 のゾーンカラー Steel Blue 系）
+     Steel Blue そのもの(#4682b4)は白文字とのコントラストが 4:1 しかないので、
+     特設サイト sohosai2026-special-web の --steel-blue-deep(7:1)を基調にする */
+  --color-theme-primary: #2c5b7f;
+  --color-theme-secondary: #2c5b7f1a;
+  --color-theme-deep: #1e4160;
+  /* サブカラー（企画書指定の撫子色）。特設サイトと同じく Steel Blue とのグラデーションに使う。
+     撫子色そのもの(#eebbcb)は白文字とのコントラストが 1.6:1 しかないので、
+     白文字が乗る地には特設サイトの --nadeshiko-deep(3.3:1)を使う */
+  --color-theme-sub: #eebbcb;
+  --color-theme-sub-deep: #b6768c;
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
