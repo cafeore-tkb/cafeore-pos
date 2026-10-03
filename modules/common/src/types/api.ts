@@ -104,7 +104,7 @@ export interface paths {
   "/api/inventory/resources/{id}/events": {
     /**
      * 棚卸し・入荷・調整の記録
-     * @description count は実数で残量を置き換える。receipt / adjust は差分として足す（減らすときは負の値）。
+     * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
      */
     post: operations["createStockEvent"];
   };
@@ -959,7 +959,7 @@ export interface operations {
   };
   /**
    * 棚卸し・入荷・調整の記録
-   * @description count は実数で残量を置き換える。receipt / adjust は差分として足す（減らすときは負の値）。
+   * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
    */
   createStockEvent: {
     parameters: {

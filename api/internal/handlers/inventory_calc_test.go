@@ -128,3 +128,29 @@ func TestSnapshotLevel(t *testing.T) {
 		t.Error("untracked")
 	}
 }
+
+func TestValidateStockEvent(t *testing.T) {
+	cases := []struct {
+		kind     models.StockEventKind
+		quantity float64
+		ok       bool
+	}{
+		{models.StockEventKindCount, 0, true},
+		{models.StockEventKindCount, 120, true},
+		{models.StockEventKindCount, -1, false},
+		{models.StockEventKindReceipt, 100, true},
+		{models.StockEventKindReceipt, 0.5, true},
+		{models.StockEventKindReceipt, 0, false},
+		{models.StockEventKindReceipt, -100, false},
+		{models.StockEventKindAdjust, -30, true},
+		{models.StockEventKindAdjust, 30, true},
+		{models.StockEventKindAdjust, 0, false},
+		{models.StockEventKind("other"), 10, false},
+	}
+	for _, c := range cases {
+		msg := validateStockEvent(c.kind, c.quantity)
+		if (msg == "") != c.ok {
+			t.Errorf("validateStockEvent(%q, %v) = %q, want ok=%v", c.kind, c.quantity, msg, c.ok)
+		}
+	}
+}
