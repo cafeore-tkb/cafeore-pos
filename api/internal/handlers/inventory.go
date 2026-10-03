@@ -468,15 +468,8 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	switch req.Kind {
-	case models.StockEventKindCount:
-		if req.Quantity < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "quantity must not be negative"})
-			return
-		}
-	case models.StockEventKindReceipt, models.StockEventKindAdjust:
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kind must be count, receipt or adjust"})
+	if msg := validateStockEvent(req.Kind, req.Quantity); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 
@@ -517,6 +510,29 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, resp)
 	h.inv.CheckAlerts([]uuid.UUID{id})
+}
+
+// 記録の種類と数量の組み合わせを検証し、不正なら 400 で返す文言を返す。
+// count は実数なので 0 以上。receipt は入荷なので正の数に限り、減らすときは adjust を使う。
+// adjust は差分なので負の値も取れるが、0 は何も変えないので受け付けない。
+func validateStockEvent(kind models.StockEventKind, quantity float64) string {
+	switch kind {
+	case models.StockEventKindCount:
+		if quantity < 0 {
+			return "quantity must not be negative"
+		}
+	case models.StockEventKindReceipt:
+		if quantity <= 0 {
+			return "quantity must be positive for receipt (use adjust to decrease)"
+		}
+	case models.StockEventKindAdjust:
+		if quantity == 0 {
+			return "quantity must not be zero for adjust"
+		}
+	default:
+		return "kind must be count, receipt or adjust"
+	}
+	return ""
 }
 
 // GET /api/inventory/usages - アイテムごとの使用量

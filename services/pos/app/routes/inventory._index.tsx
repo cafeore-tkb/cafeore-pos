@@ -102,6 +102,14 @@ function StockCard({
       toast("数量を入力してください");
       return;
     }
+    if (kind === "count" && quantity < 0) {
+      toast("実数は 0 以上で入力してください");
+      return;
+    }
+    if (kind === "receipt" && quantity <= 0) {
+      toast("入荷は 0 より大きい数で入力してください");
+      return;
+    }
     try {
       setSubmitting(true);
       const result = await inventoryRepository.recordEvent(
