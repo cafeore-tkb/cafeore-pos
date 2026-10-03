@@ -14,6 +14,12 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// レジ状態取得
+	// (GET /api/cashier-state)
+	GetCashierState(c *gin.Context)
+	// レジ状態更新
+	// (PUT /api/cashier-state)
+	UpdateCashierState(c *gin.Context)
 	// 背景色設定一覧取得
 	// (GET /api/color-settings)
 	GetColorSettings(c *gin.Context)
@@ -138,6 +144,32 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetCashierState operation middleware
+func (siw *ServerInterfaceWrapper) GetCashierState(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCashierState(c)
+}
+
+// UpdateCashierState operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCashierState(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCashierState(c)
+}
 
 // GetColorSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
@@ -880,6 +912,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
+	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
