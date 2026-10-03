@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { ColorSettingsTab } from "~/components/organisms/products/ColorSettingsTab";
 import { ItemTypesTab } from "~/components/organisms/products/ItemTypesTab";
 import { ItemsTab } from "~/components/organisms/products/ItemsTab";
+import { MasterDataTab } from "~/components/organisms/products/MasterDataTab";
 import { MenusTab } from "~/components/organisms/products/MenusTab";
 import {
   type Editing,
@@ -25,7 +26,7 @@ export const meta: MetaFunction = () => {
   return [{ title: "商品管理 / 珈琲・俺POS" }];
 };
 
-type Tab = "menus" | "items" | "item-types" | "colors";
+type Tab = "menus" | "items" | "item-types" | "colors" | "master-data";
 
 // kind があるタブは追加・編集できる
 const tabs: { value: Tab; label: string; kind?: ProductKind }[] = [
@@ -33,6 +34,7 @@ const tabs: { value: Tab; label: string; kind?: ProductKind }[] = [
   { value: "items", label: "アイテム", kind: "item" },
   { value: "item-types", label: "タイプ", kind: "itemType" },
   { value: "colors", label: "背景色" },
+  { value: "master-data", label: "取り込み・書き出し" },
 ];
 
 const isTab = (value: string | null): value is Tab =>
@@ -92,7 +94,7 @@ export default function ProductsPage() {
       <div className="space-y-1">
         <h1 className="font-semibold text-2xl tracking-tight">商品管理</h1>
         <p className="text-muted-foreground text-sm">
-          メニュー、構成アイテム、アイテムタイプ、背景色を管理します
+          メニュー、構成アイテム、アイテムタイプ、背景色を管理します。まとめて取り込み・書き出しもできます
         </p>
       </div>
 
@@ -139,6 +141,9 @@ export default function ProductsPage() {
             </TabsContent>
             <TabsContent value="colors" className="mt-4">
               <ColorSettingsTab />
+            </TabsContent>
+            <TabsContent value="master-data" className="mt-4">
+              <MasterDataTab onImported={refresh} />
             </TabsContent>
           </>
         )}
