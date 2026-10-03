@@ -9,6 +9,18 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ColorScreen.
+const (
+	ColorScreenMaster ColorScreen = "master"
+	ColorScreenServe  ColorScreen = "serve"
+)
+
+// Defines values for ColorTargetType.
+const (
+	ColorTargetTypeItem     ColorTargetType = "Item"
+	ColorTargetTypeItemType ColorTargetType = "ItemType"
+)
+
 // Defines values for InventoryLevel.
 const (
 	InventoryLevelCritical  InventoryLevel = "critical"
@@ -29,6 +41,41 @@ const (
 	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
 )
+
+// ColorScreen 背景色を適用する画面
+type ColorScreen string
+
+// ColorSettingResponse defines model for ColorSettingResponse.
+type ColorSettingResponse struct {
+	Color string             `json:"color"`
+	Id    openapi_types.UUID `json:"id"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorSettingUpsertRequest defines model for ColorSettingUpsertRequest.
+type ColorSettingUpsertRequest struct {
+	Color string `json:"color"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorTargetType 背景色を設定する対象の種類
+type ColorTargetType string
 
 // CommentCreateRequest defines model for CommentCreateRequest.
 type CommentCreateRequest struct {
@@ -333,6 +380,9 @@ type StockUsage struct {
 
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
+
+// UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
+type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest
 
 // CreateStockResourceJSONRequestBody defines body for CreateStockResource for application/json ContentType.
 type CreateStockResourceJSONRequestBody = StockResourceRequest

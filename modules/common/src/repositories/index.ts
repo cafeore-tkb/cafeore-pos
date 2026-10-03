@@ -5,3 +5,4 @@ export * from "./order";
 export * from "./type";
 export * from "./itemType";
 export * from "./inventory";
+export * from "./colorSetting";
