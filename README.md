@@ -113,10 +113,28 @@ PR を閉じると `pr-cleanup` がタグを外す。
 
 ### PR ごとの Neon ブランチ
 
-`NEON_PROJECT_ID` が設定されていれば、PR ごとに Neon のブランチ
-`preview/pr-<番号>` を **0.25〜1 CU** で作り、その接続文字列を
-プレビュー用 Cloud Run の `DATABASE_URL` に渡す。Cloud Run の環境変数は
-リビジョン単位なので、PR ごとに違う DB を指せる。
+`NEON_PROJECT_ID` が設定されていれば、PR のプレビュー用に Neon のブランチを
+**0.25〜1 CU** で用意し、その接続文字列をプレビュー用 Cloud Run の
+`DATABASE_URL` に渡す。Cloud Run の環境変数はリビジョン単位なので、
+リビジョンごとに違う DB を指せる。
+
+| PR の種類 | 使うブランチ |
+| --- | --- |
+| DB のスキーマや中身に影響するファイルを変えている | その PR 専用の `preview/pr-<番号>` |
+| それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
+
+「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
+今は `api/` と `.github/workflows/api-build.yml`。**DB のスキーマや中身に影響する
+ファイルを `api/` の外に置くときは、`DB_AFFECTING_PATHS` に足すこと**
+（例: ルートに `migrations/` を作る、seed を別の場所に置く）。
+
+それ以外の PR の backend は main と同じコードなので、共有ブランチで足りる。
+ただし共有ブランチの注文やレジ状態（`cashier_states`）は、それらの PR 同士で共有される。
+プランの上限（`branches limit exceeded`）に当たった場合は、Neon のコンソールで
+不要な `preview/pr-*` を消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
+共有ブランチは作り直されず、`AutoMigrate` は列や制約を足すだけで消さない。main で列の削除や
+名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
+re-run する（次のビルドで空から作り直される）。
 
 ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
 モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
@@ -125,7 +143,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 `api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
 初期化ディレクトリにマウントしているだけなので Neon には効かない。
 
-プレビューは空の DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
+プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
 渡している（下の[環境変数](#backend-の環境変数)を参照）。
 
 Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
@@ -175,6 +193,9 @@ fork からの PR は二重に止まる。
 
 デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
 そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
+例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR でも
+走らせるために `pull_request_target` を使っている。こちらは PR のコードを
+checkout せず PR 番号しか使わないので、fork の PR のコードが実行されることはない。
 
 一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
 上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば
