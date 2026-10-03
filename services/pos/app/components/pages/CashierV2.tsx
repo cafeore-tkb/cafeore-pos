@@ -28,6 +28,7 @@ import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
+import { useSubmitKey } from "../functional/useSubmitKey";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -47,8 +48,15 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
-  /** 保存に失敗したら reject する */
-  submitPayload: (order: OrderEntity) => Promise<void>;
+  /**
+   * 保存した注文を返す。失敗したら reject する
+   *
+   * idempotencyKey が同じなら、保存済みでも新しく作らずにその注文を返す
+   */
+  submitPayload: (
+    order: OrderEntity,
+    idempotencyKey: string | undefined,
+  ) => Promise<WithId<OrderEntity>>;
   syncOrder: (order: OrderEntity) => void;
 };
 
@@ -118,6 +126,7 @@ const CashierV2 = ({
   // 保存中の二重送信を防ぐ。ref は同じ描画のうちに Enter が連打された場合のため
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const submitKey = useSubmitKey();
 
   usePreventNumberKeyUpDown();
 
@@ -134,7 +143,9 @@ const CashierV2 = ({
     setHasReceivedInput(false);
     resetStatus();
     renewUISession();
-  }, [dispatchOrder, resetStatus, renewUISession]);
+    // 入力を消したら、同じ内容を打ち直しても別の注文として扱う
+    submitKey.reset();
+  }, [dispatchOrder, resetStatus, renewUISession, submitKey.reset]);
 
   const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
   const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
@@ -196,8 +207,12 @@ const CashierV2 = ({
       // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
       submittingRef.current = true;
       setSubmitting(true);
+      let savedOrder: WithId<OrderEntity>;
       try {
-        await submitPayload(submitOne);
+        savedOrder = await submitPayload(
+          submitOne,
+          submitKey.keyFor(submitOne),
+        );
       } catch (error) {
         console.error(error);
         notifySubmitFailed(submitOne.orderId, error);
@@ -207,6 +222,8 @@ const CashierV2 = ({
         setSubmitting(false);
       }
       dismissSubmitFailed();
+      // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
+      submitOne.orderId = savedOrder.orderId;
       printer.printOrderLabel(submitOne);
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
@@ -230,6 +247,7 @@ const CashierV2 = ({
       setOrderIdOverride,
       wsStatus,
       setServiceActive,
+      submitKey.keyFor,
     ],
   );
 

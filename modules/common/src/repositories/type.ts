@@ -15,7 +15,19 @@ export type MenuRepository = BaseRepository<MenuEntity>;
 
 export type ItemTypeRepository = BaseRepository<ItemType>;
 
-export type OrderRepository = BaseRepository<OrderEntity> & {
+export type SaveOrderOptions = {
+  /**
+   * 新しく作るときの、送り直しで同じ注文を二重に作らないためのキー（UUID）。
+   * サーバーはこれを注文の ID にし、すでにあれば作らずにその注文を返す。送り直しでは同じキーを渡す
+   */
+  idempotencyKey?: string;
+};
+
+export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
+  save(
+    order: OrderEntity,
+    options?: SaveOrderOptions,
+  ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
   addComment(id: string, author: string, text: string): Promise<void>;

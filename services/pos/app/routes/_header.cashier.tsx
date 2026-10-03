@@ -35,14 +35,20 @@ export default function Cashier() {
 
   // 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
   // submit だと直後のレジ状態同期の submit で打ち切られ、失敗しても気づけない (#732)
-  const submitPayload = useCallback(async (newOrder: OrderEntity) => {
-    const savedOrder = await withTimeout(
-      orderRepository.save(newOrder),
-      SUBMIT_TIMEOUT_MS,
-    );
-    // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
-    lastSubmittedOrderId = savedOrder.id;
-  }, []);
+  // 時間切れで打ち切っても通信は止まらず、あとでサーバー側の保存が成功することがある。
+  // 送り直しで二重にできないよう、同じ注文には同じ idempotencyKey を付ける
+  const submitPayload = useCallback(
+    async (newOrder: OrderEntity, idempotencyKey: string | undefined) => {
+      const savedOrder = await withTimeout(
+        orderRepository.save(newOrder, { idempotencyKey }),
+        SUBMIT_TIMEOUT_MS,
+      );
+      // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
+      lastSubmittedOrderId = savedOrder.id;
+      return savedOrder;
+    },
+    [],
+  );
 
   const syncOrder = useCallback(
     (order: OrderEntity) => {
