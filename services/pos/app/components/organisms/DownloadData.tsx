@@ -11,11 +11,19 @@ async function getSortedOrders() {
   return orders.sort((a, b) => a.orderId - b.orderId);
 }
 
+// createdAt が空・不正な記録は末尾に寄せる
+const timeOf = (value: string) => {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+};
+
 async function getSortedMasterStates() {
   const states = await getMasterState();
-  return states.sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
+  return states.sort((a, b) => {
+    const ta = timeOf(a.createdAt);
+    const tb = timeOf(b.createdAt);
+    return ta === tb ? 0 : ta < tb ? -1 : 1;
+  });
 }
 
 // CSV用に文字列をエスケープ
@@ -29,7 +37,7 @@ const escapeCSV = (value: unknown): string => {
 };
 
 const formatDate = (value: Date | null) => {
-  if (!value) return "";
+  if (!value || Number.isNaN(value.getTime())) return "";
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${value.getFullYear()}/${value.getMonth() + 1}/${value.getDate()} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
 };
