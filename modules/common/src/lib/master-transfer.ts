@@ -271,22 +271,25 @@ const PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 const refKey = (table: MasterTable, name: string) => `${table}:${name}`;
 
-// ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
+// ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない。
+// CodeQL がガードと認めるよう、キーごとにその場で比べる
 const setAt = (
   target: Record<string, unknown>,
   pointer: JsonPointer,
   value: unknown,
 ) => {
-  if (pointer.some((key) => UNSAFE_KEYS.has(String(key)))) {
-    throw new Error(`${pointer.join("/")} には書き込めません`);
-  }
   let node = target as Record<string | number, unknown>;
   for (const key of pointer.slice(0, -1)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      throw new Error(`${key} には書き込めません`);
+    }
     node = node[key] as Record<string | number, unknown>;
   }
-  node[pointer[pointer.length - 1]] = value;
+  const last = pointer[pointer.length - 1];
+  if (last === "__proto__" || last === "constructor" || last === "prototype") {
+    throw new Error(`${last} には書き込めません`);
+  }
+  node[last] = value;
 };
 
 const getAt = (target: unknown, pointer: string[]) =>
