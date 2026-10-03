@@ -12,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -90,6 +92,9 @@ func initDB() error {
 			&models.Comment{},
 			&models.OrderMenu{},
 			&models.MasterState{},
+			&models.StockResource{},
+			&models.ItemStockUsage{},
+			&models.StockEvent{},
 			&models.ColorSetting{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
@@ -232,7 +237,24 @@ func main() {
 	itemHandler := handlers.NewItemHandler(db)
 	menuHandler := handlers.NewMenuHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
-	orderHandler := handlers.NewOrderHandler(db, hub)
+	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
+	//
+	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
+	// INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で
+	// 発行した Google ID トークンを持つ相手（本番の Cloud Scheduler）か、
+	// X-Cron-Secret が INVENTORY_CRON_SECRET と一致する相手（ローカル・手動実行）。
+	remindAuth := handlers.RemindAuth{CronSecret: os.Getenv("INVENTORY_CRON_SECRET")}
+	if invoker, audience := os.Getenv("INVENTORY_REMIND_INVOKER"), os.Getenv("INVENTORY_REMIND_AUDIENCE"); invoker != "" && audience != "" {
+		remindAuth.Scheduler = auth.NewGoogleIDTokenVerifier(audience, invoker)
+	}
+	inventory := handlers.NewInventory(
+		db,
+		notify.NewSlack(os.Getenv("SLACK_WEBHOOK_URL")),
+		remindAuth,
+		os.Getenv("POS_BASE_URL"),
+	)
+	inventoryHandler := handlers.NewInventoryHandler(inventory)
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
@@ -277,6 +299,14 @@ func main() {
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 
+		api.GET("/inventory", inventoryHandler.GetInventory)
+		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
+		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
+		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
+		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
+		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
+		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
+		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
