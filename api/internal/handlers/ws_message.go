@@ -12,8 +12,9 @@ import (
 type WSMessageType string
 
 const (
-	WSMessageTypeOrders      WSMessageType = "orders"
-	WSMessageTypeMasterState WSMessageType = "master_state"
+	WSMessageTypeOrders       WSMessageType = "orders"
+	WSMessageTypeMasterState  WSMessageType = "master_state"
+	WSMessageTypeCashierState WSMessageType = "cashier_state"
 )
 
 type WSMessage struct {
@@ -21,7 +22,8 @@ type WSMessage struct {
 	Orders []models.OrderResponse `json:"orders,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
-	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
+	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
+	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -41,6 +43,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	// 接続直後に現在のデータを送信
 	h.broadcastOrders()
 	h.broadcastMasterState()
+	broadcastCashierState(h.db, h.hub)
 
 	// 接続維持（クライアントからのメッセージは今は無視）
 	for {
