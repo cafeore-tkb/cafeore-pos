@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -154,6 +155,40 @@ func TestHubDropsSlowClientWithoutBlockingOthers(t *testing.T) {
 	}
 
 	// 外したあとの Send や Unregister で panic しない
-	slow.Send(WSMessage{Type: WSMessageTypeOrders})
+	slow.SendInitial(WSMessage{Type: WSMessageTypeOrders})
 	hub.Unregister(slow)
+}
+
+func TestHubHoldsBroadcastUntilInitialDataIsSent(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// Register 直後と同じ、初期データを読んでいる途中の端末
+	c := &Client{hub: hub, send: make(chan []byte, wsSendBufferSize), initializing: true}
+	hub.add(c)
+
+	// 初期データを読んでいる間に来た新しい broadcast
+	const marker WSMessageType = "test_marker"
+	hub.Broadcast(WSMessage{Type: marker})
+	waitFor(t, func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return len(c.held) == 1
+	})
+	if len(c.send) != 0 {
+		t.Fatal("broadcast must not be sent before the initial data")
+	}
+
+	c.SendInitial(WSMessage{Type: WSMessageTypeOrders})
+
+	// 古い初期データが先、新しい broadcast があとに届く
+	for _, want := range []WSMessageType{WSMessageTypeOrders, marker} {
+		var msg WSMessage
+		if err := json.Unmarshal(<-c.send, &msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type != want {
+			t.Fatalf("want %s, got %+v", want, msg)
+		}
+	}
 }

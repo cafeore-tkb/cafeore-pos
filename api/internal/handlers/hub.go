@@ -31,6 +31,10 @@ type Client struct {
 	hub  *Hub
 	conn *websocket.Conn
 	send chan []byte
+	// 初期データを積み終えるまで true。その間の broadcast は held にためて、初期データのあとに流す。
+	// どちらも hub.mu で守る
+	initializing bool
+	held         [][]byte
 }
 
 type Hub struct {
@@ -55,16 +59,17 @@ func (h *Hub) Run() {
 		}
 		h.mu.Lock()
 		for c := range h.clients {
-			h.enqueueLocked(c, data)
+			h.deliverLocked(c, data)
 		}
 		h.mu.Unlock()
 	}
 }
 
 // Register は conn を Hub に加え、送信用 goroutine を起動する。
-// 呼んだ側はそのあと ReadPump で切断まで待つ。
+// 呼んだ側は SendInitial で初期データを送るまで broadcast が止まるので、必ず呼ぶ。
+// そのあと ReadPump で切断まで待つ。
 func (h *Hub) Register(conn *websocket.Conn) *Client {
-	c := &Client{hub: h, conn: conn, send: make(chan []byte, wsSendBufferSize)}
+	c := &Client{hub: h, conn: conn, send: make(chan []byte, wsSendBufferSize), initializing: true}
 	h.add(c)
 	go c.writePump()
 	return c
@@ -95,6 +100,23 @@ func (h *Hub) removeLocked(c *Client) {
 	close(c.send)
 }
 
+// 初期データを送る前の端末には、broadcast を送らずにためておく
+func (h *Hub) deliverLocked(c *Client, data []byte) {
+	if !c.initializing {
+		h.enqueueLocked(c, data)
+		return
+	}
+	if _, ok := h.clients[c]; !ok {
+		return
+	}
+	if len(c.held) >= wsSendBufferSize {
+		log.Println("ws client is too slow, disconnecting")
+		h.removeLocked(c)
+		return
+	}
+	c.held = append(c.held, data)
+}
+
 // 送信待ちが溢れている端末は、待たずに切る
 func (h *Hub) enqueueLocked(c *Client, data []byte) {
 	if _, ok := h.clients[c]; !ok {
@@ -108,16 +130,27 @@ func (h *Hub) enqueueLocked(c *Client, data []byte) {
 	}
 }
 
-// Send は msg をこの接続にだけ送る（接続直後の初期データ用）。
-func (c *Client) Send(msg WSMessage) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Println("failed to encode ws message:", err)
-		return
+// SendInitial は接続直後の初期データ msgs をこの接続にだけ順に送り、
+// それまでためていた broadcast をそのあとに流す。
+// 初期データを DB から読んでいる間に来た新しい broadcast が、古い初期データより先に届かないようにするため。
+func (c *Client) SendInitial(msgs ...WSMessage) {
+	initial := make([][]byte, 0, len(msgs))
+	for _, msg := range msgs {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			log.Println("failed to encode ws message:", err)
+			continue
+		}
+		initial = append(initial, data)
 	}
+
 	c.hub.mu.Lock()
-	c.hub.enqueueLocked(c, data)
-	c.hub.mu.Unlock()
+	defer c.hub.mu.Unlock()
+	for _, data := range append(initial, c.held...) {
+		c.hub.enqueueLocked(c, data)
+	}
+	c.held = nil
+	c.initializing = false
 }
 
 // ReadPump は切断されるまで受信を続け、抜けたら Hub から外す。

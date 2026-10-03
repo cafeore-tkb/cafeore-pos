@@ -30,12 +30,14 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 
 	// 接続直後に現在のデータをこの接続にだけ送信
 	// （全体へ配り直すと、1台つながるたびに既存の全端末へ全件が流れてしまう）
+	var initial []WSMessage
 	if msg, ok := ordersMessage(h.db); ok {
-		client.Send(msg)
+		initial = append(initial, msg)
 	}
 	if msg, ok := masterStateMessage(h.db); ok {
-		client.Send(msg)
+		initial = append(initial, msg)
 	}
+	client.SendInitial(initial...)
 
 	// 切断されるまで接続を維持する
 	client.ReadPump()
