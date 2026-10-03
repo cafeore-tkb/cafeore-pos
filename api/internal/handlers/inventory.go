@@ -156,6 +156,12 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 
 	db := inv.db.WithContext(ctx)
 	var messages []string
+	// 通知の記録を進めたもの。送信に失敗したら元に戻して、次の判定で送り直す。
+	type claim struct {
+		id         uuid.UUID
+		prev, next *int
+	}
+	var claims []claim
 	for _, s := range snapshots {
 		rs := s.RemainingServings()
 		if rs == nil {
@@ -176,13 +182,16 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 			}
 			if res.RowsAffected == 1 {
 				messages = append(messages, alertMessage(s))
+				claims = append(claims, claim{id: s.Resource.ID, prev: last, next: next})
 			}
 		case reset:
 			var value any = gorm.Expr("NULL")
 			if next != nil {
 				value = *next
 			}
-			if err := db.Model(&models.StockResource{}).Where("id = ?", s.Resource.ID).
+			// 読んだ後に別の判定が記録を進めていたら、古い残量で戻さない。
+			if err := db.Model(&models.StockResource{}).
+				Where("id = ? AND last_alert_threshold = ?", s.Resource.ID, *last).
 				Update("last_alert_threshold", value).Error; err != nil {
 				return err
 			}
@@ -192,7 +201,27 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 	if len(messages) == 0 {
 		return nil
 	}
-	return inv.slack.Send(ctx, strings.Join(messages, "\n"))
+	sendErr := inv.slack.Send(ctx, strings.Join(messages, "\n"))
+	if sendErr == nil {
+		return nil
+	}
+
+	// 送信のタイムアウトで ctx が切れていても戻せるよう、別の期限で書き戻す。
+	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	rollback := inv.db.WithContext(rollbackCtx)
+	for _, cl := range claims {
+		var value any = gorm.Expr("NULL")
+		if cl.prev != nil {
+			value = *cl.prev
+		}
+		if err := rollback.Model(&models.StockResource{}).
+			Where("id = ? AND last_alert_threshold = ?", cl.id, *cl.next).
+			Update("last_alert_threshold", value).Error; err != nil {
+			log.Printf("inventory: failed to roll back alert threshold of %s: %v", cl.id, err)
+		}
+	}
+	return sendErr
 }
 
 // 注文に含まれるアイテムが使う在庫対象。
@@ -211,6 +240,24 @@ func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
 		return nil
 	}
 	return ids
+}
+
+// 注文の変更前後で使う在庫対象をまとめる。どちらかが取れなかった（nil）ならすべて見る。
+func mergeResourceIDs(a, b []uuid.UUID) []uuid.UUID {
+	if a == nil || b == nil {
+		return nil
+	}
+	seen := make(map[uuid.UUID]bool, len(a)+len(b))
+	merged := make([]uuid.UUID, 0, len(a)+len(b))
+	for _, ids := range [][]uuid.UUID{a, b} {
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				merged = append(merged, id)
+			}
+		}
+	}
+	return merged
 }
 
 // -------------------------------------------------------------------
@@ -355,6 +402,11 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 		return
 	}
 
+	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
+	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
+	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
+		resource.LastAlertThreshold = nil
+	}
 	resource.Kind = string(req.Kind)
 	resource.Name = strings.TrimSpace(req.Name)
 	resource.Unit = req.Unit
@@ -362,8 +414,6 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	resource.NotifyFrom = req.NotifyFrom
 	resource.NotifyStep = req.NotifyStep
 	resource.Buffer = req.Buffer
-	// 閾値が変わると以前の通知記録は意味を失うので、今の残量から数え直す。
-	resource.LastAlertThreshold = nil
 	if err := h.inv.db.Save(&resource).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
