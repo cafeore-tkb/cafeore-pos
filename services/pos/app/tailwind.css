@@ -32,6 +32,11 @@
   --color-theme-primary: #2c5b7f;
   --color-theme-secondary: #2c5b7f1a;
   --color-theme-deep: #1e4160;
+  /* サブカラー（企画書指定の撫子色）。特設サイトと同じく Steel Blue とのグラデーションに使う。
+     撫子色そのもの(#eebbcb)は白文字とのコントラストが 1.6:1 しかないので、
+     白文字が乗る地には特設サイトの --nadeshiko-deep(3.3:1)を使う */
+  --color-theme-sub: #eebbcb;
+  --color-theme-sub-deep: #b6768c;
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
