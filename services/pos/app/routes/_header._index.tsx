@@ -1,6 +1,9 @@
 // import { converter, itemSchema, prodDB } from "@cafeore/common";
 import type { MetaFunction } from "react-router";
-import { DownloadButton } from "~/components/organisms/DownloadData";
+import {
+  DownloadButton,
+  DownloadMasterStateButton,
+} from "~/components/organisms/DownloadData";
 
 export const meta: MetaFunction = () => {
   return [{ title: "Top / 珈琲・俺POS" }];
@@ -84,6 +87,10 @@ export default function Index() {
         オーダーデータ書き出し
       </h2>
       <DownloadButton />
+      <h2 className="mt-5 font-bold font-noto text-3xl">
+        オーダーストップ記録書き出し
+      </h2>
+      <DownloadMasterStateButton />
       {/* <Button className="mt-4 bg-sky-900 text-white">Click me</Button>
       <ul>
         {items.map((item) => (
