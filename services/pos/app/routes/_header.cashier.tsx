@@ -36,9 +36,12 @@ export default function Cashier() {
   // 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
   // submit だと直後のレジ状態同期の submit で打ち切られ、失敗しても気づけない (#732)
   const submitPayload = useCallback(async (newOrder: OrderEntity) => {
-    const savedOrder = await orderRepository.save(newOrder);
-    // レジ状態の更新に失敗しても注文は保存できているので、送信は成功として扱う
-    setSubmittedOrderId(savedOrder.id).catch(console.error);
+    const savedOrder = await withTimeout(
+      orderRepository.save(newOrder),
+      SUBMIT_TIMEOUT_MS,
+    );
+    // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
+    pendingSubmittedOrderId = savedOrder.id;
   }, []);
 
   const syncOrder = useCallback(
@@ -71,17 +74,21 @@ export const clientAction: ClientActionFunction = async (args) => {
   }
 };
 
-// 直前に確定した注文をレジ状態に載せる（cashier-mini の「ご注文ありがとうございました」表示用）
-const setSubmittedOrderId = async (submittedOrderId: string) => {
-  const cashierState = await cashierRepository.get();
-  if (cashierState == null) {
-    return console.log("cashierState is null");
-  }
-  await cashierRepository.set({
-    ...cashierState,
-    submittedOrderId,
+// 応答が返らないままレジが固まらないよう、保存を待つ時間の上限
+const SUBMIT_TIMEOUT_MS = 10_000;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${ms / 1000} 秒待っても応答がありません`)),
+      ms,
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
-};
+
+// 直前に確定した注文の ID（cashier-mini の「ご注文ありがとうございました」表示用）。
+// 別々に読み書きすると入力を空にする同期と上書きし合うので、その同期で一緒に書き込む
+let pendingSubmittedOrderId: string | null = null;
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
@@ -99,10 +106,15 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
 
   const { syncOrder } = submission.value;
 
+  // 保存直後の、入力を空にする同期でだけ載せる
+  const submittedOrderId =
+    syncOrder.menus.length === 0 ? pendingSubmittedOrderId : null;
+  pendingSubmittedOrderId = null;
+
   cashierRepository.set({
     id: "cashier-state",
     edittingOrder: OrderEntity.fromOrder(syncOrder),
-    submittedOrderId: null,
+    submittedOrderId,
   });
 
   return new Response("ok");

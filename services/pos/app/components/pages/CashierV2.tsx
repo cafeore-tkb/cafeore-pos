@@ -250,6 +250,10 @@ const CashierV2 = ({
    */
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      // 保存中に Escape などで入力を消すと、失敗したときに打ち直しになる
+      if (submittingRef.current) {
+        return;
+      }
       const key = event.key;
       for (const [keyName, keyHandler] of Object.entries(keyEventHandlers)) {
         if (key === keyName) {
@@ -303,7 +307,10 @@ const CashierV2 = ({
             />
           </div>
         </div>
-        <div className="flex gap-5 px-2">
+        {/* 保存中は入力を変えられないようにする。失敗したら同じ入力で送り直すため */}
+        <div
+          className={cn("flex gap-5 px-2", submitting && "pointer-events-none")}
+        >
           <div>{menuOpen && itemMenu}</div>
           <div className="flex-1">
             <InputHeader

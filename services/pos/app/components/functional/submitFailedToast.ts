@@ -11,7 +11,7 @@ const notifySubmitFailed = (orderId: number, error: unknown) => {
   const reason = error instanceof Error ? error.message : String(error);
   toast.error(`No.${orderId} の注文を保存できませんでした`, {
     id: SUBMIT_FAILED_TOAST_ID,
-    description: `ラベルは印刷していません。入力はそのまま残っているので、内容を確かめてもう一度送信してください（${reason}）`,
+    description: `ラベルは印刷していません。入力はそのまま残っています。応答が届かなかっただけで保存できている場合もあるので、注文一覧に No.${orderId} が無いことを確かめてから、もう一度送信してください（${reason}）`,
     duration: Number.POSITIVE_INFINITY,
     closeButton: true,
     richColors: true,
