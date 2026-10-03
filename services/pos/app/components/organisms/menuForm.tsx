@@ -1,4 +1,4 @@
-import type { ItemEntity, MenuEntity, WithId } from "@cafeore/common";
+import type { ItemEntity, WithId } from "@cafeore/common";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -18,7 +18,7 @@ export function MenuForm({
   onSubmit,
 }: {
   items: WithId<ItemEntity>[];
-  initialMenu?: WithId<MenuEntity>;
+  initialMenu?: MenuFormValues;
   onSubmit: (values: MenuFormValues) => Promise<void>;
 }) {
   const [name, setName] = useState(initialMenu?.name ?? "");
@@ -36,7 +36,7 @@ export function MenuForm({
 
   return (
     <form
-      className="grid max-w-2xl gap-5"
+      className="grid gap-5"
       onSubmit={(event) => {
         event.preventDefault();
         setValidationError(null);

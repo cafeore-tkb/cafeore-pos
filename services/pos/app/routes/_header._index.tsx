@@ -125,9 +125,7 @@ const sections: Section[] = [
 ];
 
 const settingLinks = [
-  { to: "/menus", label: "メニュー" },
-  { to: "/items", label: "アイテム" },
-  { to: "/item-types", label: "アイテムタイプ" },
+  { to: "/products", label: "商品管理" },
   { to: "/inventory/settings", label: "在庫の設定" },
 ];
 

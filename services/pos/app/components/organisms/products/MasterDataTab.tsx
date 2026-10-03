@@ -14,8 +14,6 @@ import {
   tablesToCsv,
 } from "@cafeore/common";
 import { useRef, useState } from "react";
-import type { MetaFunction } from "react-router";
-import { ItemsPageHeader } from "~/components/organisms/itemsPageHeader";
 import { Button } from "~/components/ui/button";
 import {
   Table,
@@ -25,10 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-
-export const meta: MetaFunction = () => {
-  return [{ title: "一括取り込み・書き出し / 珈琲・俺POS" }];
-};
 
 type Status =
   | { kind: "idle" }
@@ -63,7 +57,11 @@ const downloadBlob = (blob: Blob, filename: string) => {
 const errorText = (e: unknown, fallback: string) =>
   e instanceof Error ? e.message : fallback;
 
-export default function MasterDataPage() {
+export function MasterDataTab({
+  onImported,
+}: {
+  onImported: () => Promise<unknown>;
+}) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [read, setRead] = useState<ReadMasterFilesResult | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -140,6 +138,8 @@ export default function MasterDataPage() {
     );
     setStatus({ kind: "finished", calls, result });
     clearFileInput();
+    // 一部だけ成功していても、他のタブの一覧に反映する
+    await onImported();
   };
 
   const reset = () => {
@@ -149,10 +149,8 @@ export default function MasterDataPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-4">
-      <ItemsPageHeader />
-
-      <section className="flex flex-col gap-3 px-4">
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
         <h2 className="font-bold text-xl">書き出し</h2>
         <p className="text-muted-foreground text-sm">
           今の内容を、取り込みと同じ形で書き出します。別の環境に持っていくときや、ひな形に使えます。
@@ -180,7 +178,7 @@ export default function MasterDataPage() {
         {exportError && <p className="text-destructive">{exportError}</p>}
       </section>
 
-      <section className="flex flex-col gap-3 px-4">
+      <section className="flex flex-col gap-3">
         <h2 className="font-bold text-xl">取り込み</h2>
         <p className="text-muted-foreground text-sm">
           CSV（Excel の「CSV (コンマ区切り)」「CSV UTF-8」どちらでも可）か JSON
