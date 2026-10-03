@@ -118,6 +118,41 @@ func TestHasDrinkJudgesByItemType(t *testing.T) {
 	}
 }
 
+func TestResolveServedTimes(t *testing.T) {
+	now := time.Now()
+	earlier := now.Add(-time.Hour)
+	served := servedTimes{ReadyAt: &earlier, ServedAt: &earlier}
+	nowServed := servedTimes{ReadyAt: &now, ServedAt: &now}
+	cases := map[string]struct {
+		prevGoodsOnly, goodsOnly bool
+		prev, requested, want    servedTimes
+	}{
+		"create goods only":           {false, true, servedTimes{}, servedTimes{}, nowServed},
+		"create with drink":           {false, false, servedTimes{}, servedTimes{}, servedTimes{}},
+		"goods only keeps served":     {true, true, served, servedTimes{}, served},
+		"goods only fills ready":      {true, true, servedTimes{ServedAt: &earlier}, servedTimes{}, served},
+		"becomes goods only":          {false, true, servedTimes{}, servedTimes{}, nowServed},
+		"drink added clears served":   {true, false, served, served, servedTimes{}},
+		"drink order uses request":    {false, false, servedTimes{}, served, served},
+		"drink order can undo served": {false, false, served, servedTimes{}, servedTimes{}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := resolveServedTimes(tc.prevGoodsOnly, tc.goodsOnly, tc.prev, tc.requested, now)
+			if !samePtrTime(got.ReadyAt, tc.want.ReadyAt) || !samePtrTime(got.ServedAt, tc.want.ServedAt) {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func samePtrTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
 func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=localhost dbname=unused", PreferSimpleProtocol: true}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
 	if err != nil {

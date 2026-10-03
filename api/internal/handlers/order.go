@@ -86,14 +86,21 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	return buildOrderMenus(orderID, requests, existing, menus)
 }
 
-// グッズの item_type。フロントの getDrinkCups と同じく名前で判定する
+// グッズの item_type 名。item_type には種別を表すフラグ列が無く、フロント（getDrinkCups など）も
+// 名前で判定しているので、ここでも名前で判定する。判定は isGoods に集約する。
 const itemTypeOthers = "others"
+
+// グッズの構成品なら true。"others" 以外（名前の変更や新しい種別も含む）は飲み物として扱うので、
+// 判定がずれても提供済みにならない側に倒れる。
+func isGoods(item models.Item) bool {
+	return item.ItemType.Name == itemTypeOthers
+}
 
 // 構成品に飲み物（グッズ以外の item）が1つでもあれば true
 func hasDrink(menus []models.Menu) bool {
 	for _, menu := range menus {
 		for _, menuItem := range menu.MenuItems {
-			if menuItem.Item.ItemType.Name != itemTypeOthers {
+			if !isGoods(menuItem.Item) {
 				return true
 			}
 		}
@@ -101,22 +108,43 @@ func hasDrink(menus []models.Menu) bool {
 	return false
 }
 
-// グッズだけの注文は作るカップが無いので、作成時点で提供済みにする。
-// クライアントの値は使わず、DB のメニュー構成で判定する。
-func markGoodsOnlyServed(db *gorm.DB, order *models.Order) error {
-	ids := make([]uuid.UUID, 0, len(order.OrderMenus))
-	for _, line := range order.OrderMenus {
+// 明細がグッズだけなら true。クライアントの値は使わず、DB のメニュー構成で判定する。
+// 既存明細は販売終了したメニューを指すこともあるので、論理削除も含めて読む。
+func isGoodsOnly(db *gorm.DB, lines []models.OrderMenu) (bool, error) {
+	ids := make([]uuid.UUID, 0, len(lines))
+	for _, line := range lines {
 		ids = append(ids, line.MenuID)
 	}
 	var menus []models.Menu
-	if err := preloadMenu(db).Where("id IN ?", ids).Find(&menus).Error; err != nil {
-		return err
+	if len(ids) > 0 {
+		if err := preloadMenu(db.Unscoped()).Where("id IN ?", ids).Find(&menus).Error; err != nil {
+			return false, err
+		}
 	}
-	if !hasDrink(menus) {
-		now := order.CreatedAt
-		order.ReadyAt, order.ServedAt = &now, &now
+	return !hasDrink(menus), nil
+}
+
+type servedTimes struct {
+	ReadyAt, ServedAt *time.Time
+}
+
+// グッズだけの注文は作るカップが無いので、常に提供済みにする（提供済みの時刻があれば残す）。
+// グッズだけの注文に飲み物が加わったら、自動で付けた提供済みを外す。
+// それ以外はクライアントの値をそのまま使う。
+func resolveServedTimes(prevGoodsOnly, goodsOnly bool, prev, requested servedTimes, now time.Time) servedTimes {
+	switch {
+	case goodsOnly && prev.ServedAt != nil:
+		if prev.ReadyAt == nil {
+			prev.ReadyAt = prev.ServedAt
+		}
+		return prev
+	case goodsOnly:
+		return servedTimes{ReadyAt: &now, ServedAt: &now}
+	case prevGoodsOnly:
+		return servedTimes{}
+	default:
+		return requested
 	}
-	return nil
 }
 
 // DB models → API models 変換関数
@@ -241,9 +269,13 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		order.OrderMenus = lines
-		if err := markGoodsOnlyServed(tx, &order); err != nil {
+		goodsOnly, err := isGoodsOnly(tx, lines)
+		if err != nil {
 			return err
 		}
+		// 作成時はクライアントの ready_at / served_at を受け取らない
+		times := resolveServedTimes(false, goodsOnly, servedTimes{}, servedTimes{}, order.CreatedAt)
+		order.ReadyAt, order.ServedAt = times.ReadyAt, times.ServedAt
 		return tx.Create(&order).Error
 	}); err != nil {
 		status := http.StatusInternalServerError
@@ -321,10 +353,21 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		prevGoodsOnly, err := isGoodsOnly(tx, order.OrderMenus)
+		if err != nil {
+			return err
+		}
+		goodsOnly, err := isGoodsOnly(tx, orderMenus)
+		if err != nil {
+			return err
+		}
+		times := resolveServedTimes(prevGoodsOnly, goodsOnly,
+			servedTimes{ReadyAt: order.ReadyAt, ServedAt: order.ServedAt},
+			servedTimes{ReadyAt: req.ReadyAt, ServedAt: req.ServedAt}, time.Now())
 		if err := tx.Model(&order).Updates(map[string]any{
 			"order_id":            req.OrderId,
-			"ready_at":            req.ReadyAt,
-			"served_at":           req.ServedAt,
+			"ready_at":            times.ReadyAt,
+			"served_at":           times.ServedAt,
 			"billing_amount":      req.BillingAmount,
 			"received":            req.Received,
 			"discount_order_id":   req.DiscountOrderId,
