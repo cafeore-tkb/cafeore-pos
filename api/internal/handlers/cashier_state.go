@@ -5,7 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"math"
 	"net/http"
+	"regexp"
+	"slices"
+	"sync"
 	"time"
 
 	"cafeore-pos/api/internal/models"
@@ -26,6 +31,13 @@ func NewCashierStateHandler(db *gorm.DB, hub *Hub) *CashierStateHandler {
 	return &CashierStateHandler{db: db, hub: hub}
 }
 
+// レジ状態の保存と配信を直列化する。
+//
+// Hub は積まれた順に送るので、保存から Broadcast までをこのロックで囲めば
+// クライアントには保存した順に届く。囲まないと、並行する PUT や接続直後の
+// 初期送信が古い状態を後から流し、クライアントが古い状態のまま残りうる。
+var cashierStateMu sync.Mutex
+
 func toCashierStateResponse(state *models.CashierState) (models.CashierStateResponse, error) {
 	var order map[string]interface{}
 	if err := json.Unmarshal(state.EdittingOrder, &order); err != nil {
@@ -45,61 +57,172 @@ func toCashierStateResponse(state *models.CashierState) (models.CashierStateResp
 	}, nil
 }
 
-// editting_order が持つべきキー。フロントの orderSchema のうち optional でないもの。
-// id は保存前の注文には無いので含めない。
-var edittingOrderKeys = []struct {
-	name     string
+// editting_order の各値が満たすべき形。
+type valueKind int
+
+const (
+	kindNumber valueKind = iota
+	kindInt
+	kindPositiveInt
+	kindString
+	kindUUID
+	kindDate
+	kindEnum
+	kindObject
+	kindArray
+)
+
+type valueSpec struct {
+	kind     valueKind
 	nullable bool
-}{
-	{"orderId", false},
-	{"createdAt", false},
-	{"readyAt", true},
-	{"servedAt", true},
-	{"menus", false},
-	{"total", false},
-	{"comments", false},
-	{"billingAmount", false},
-	{"received", false},
-	{"discountOrderId", true},
-	{"discountOrderCups", false},
-	{"DISCOUNT_PER_CUP", false},
-	{"discount", false},
-	{"estimateTime", false},
+	enum     []string    // kindEnum
+	fields   []fieldSpec // kindObject
+	elem     *valueSpec  // kindArray
+	minLen   int         // kindArray
 }
 
-// 型を確かめるためだけの受け皿。null は上で弾いているのでポインタにしない
-type edittingOrderShape struct {
-	OrderID           float64           `json:"orderId"`
-	CreatedAt         time.Time         `json:"createdAt"`
-	ReadyAt           *time.Time        `json:"readyAt"`
-	ServedAt          *time.Time        `json:"servedAt"`
-	Menus             []json.RawMessage `json:"menus"`
-	Total             float64           `json:"total"`
-	Comments          []json.RawMessage `json:"comments"`
-	BillingAmount     float64           `json:"billingAmount"`
-	Received          float64           `json:"received"`
-	DiscountOrderID   *float64          `json:"discountOrderId"`
-	DiscountOrderCups float64           `json:"discountOrderCups"`
-	DiscountPerCup    float64           `json:"DISCOUNT_PER_CUP"`
-	Discount          float64           `json:"discount"`
-	EstimateTime      float64           `json:"estimateTime"`
+type fieldSpec struct {
+	name     string
+	optional bool // キーが無くてもよい
+	spec     valueSpec
+}
+
+// zod の z.string().uuid() と同じ形
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// フロントの cashierStateWireSchema（orderSchema の Date を ISO 文字列にしたもの）と揃える。
+// zod は知らないキーを捨てるだけなので、余分なキーは許す。
+var edittingOrderSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
+	// 保存前の注文には無い
+	{name: "id", optional: true, spec: valueSpec{kind: kindString}},
+	{name: "orderId", spec: valueSpec{kind: kindNumber}},
+	{name: "createdAt", spec: valueSpec{kind: kindDate}},
+	{name: "readyAt", spec: valueSpec{kind: kindDate, nullable: true}},
+	{name: "servedAt", spec: valueSpec{kind: kindDate, nullable: true}},
+	{name: "menus", spec: valueSpec{kind: kindArray, elem: &menuSpec}},
+	{name: "total", spec: valueSpec{kind: kindNumber}},
+	{name: "comments", spec: valueSpec{kind: kindArray, elem: &commentSpec}},
+	{name: "billingAmount", spec: valueSpec{kind: kindNumber}},
+	{name: "received", spec: valueSpec{kind: kindNumber}},
+	{name: "discountOrderId", spec: valueSpec{kind: kindNumber, nullable: true}},
+	{name: "discountOrderCups", spec: valueSpec{kind: kindNumber}},
+	{name: "DISCOUNT_PER_CUP", spec: valueSpec{kind: kindNumber}},
+	{name: "discount", spec: valueSpec{kind: kindNumber}},
+	{name: "estimateTime", spec: valueSpec{kind: kindNumber}},
+}}
+
+// menuSchema.required({ id: true })
+var menuSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
+	{name: "id", spec: valueSpec{kind: kindUUID}},
+	{name: "orderMenuId", optional: true, spec: valueSpec{kind: kindUUID}},
+	{name: "name", spec: valueSpec{kind: kindString}},
+	{name: "abbr", spec: valueSpec{kind: kindString}},
+	{name: "price", spec: valueSpec{kind: kindInt}},
+	{name: "key", spec: valueSpec{kind: kindString}},
+	{name: "items", spec: valueSpec{kind: kindArray, elem: &menuItemSpec, minLen: 1}},
+	{name: "assignee", spec: valueSpec{kind: kindString, nullable: true}},
+}}
+
+// menuItemSchema。item は itemSchema.required() なので id も必須
+var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
+	{name: "item", spec: valueSpec{kind: kindObject, fields: []fieldSpec{
+		{name: "id", spec: valueSpec{kind: kindUUID}},
+		{name: "name", spec: valueSpec{kind: kindString}},
+		{name: "abbr", spec: valueSpec{kind: kindString}},
+		{name: "item_type", spec: valueSpec{kind: kindObject, fields: []fieldSpec{
+			{name: "id", optional: true, spec: valueSpec{kind: kindString}},
+			{name: "name", spec: valueSpec{kind: kindString}},
+			{name: "display_name", spec: valueSpec{kind: kindString}},
+		}}},
+	}}},
+	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},
+}}
+
+// commentSchema
+var commentSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
+	{name: "author", spec: valueSpec{kind: kindEnum, enum: []string{"cashier", "master", "serve", "others"}}},
+	{name: "text", spec: valueSpec{kind: kindString}},
+	{name: "createdAt", spec: valueSpec{kind: kindDate}},
+}}
+
+func validateValue(path string, v interface{}, spec valueSpec) error {
+	if v == nil {
+		if spec.nullable {
+			return nil
+		}
+		return fmt.Errorf("%s must not be null", path)
+	}
+
+	switch spec.kind {
+	case kindNumber, kindInt, kindPositiveInt:
+		n, ok := v.(float64)
+		if !ok {
+			return fmt.Errorf("%s must be a number", path)
+		}
+		if spec.kind != kindNumber && n != math.Trunc(n) {
+			return fmt.Errorf("%s must be an integer", path)
+		}
+		if spec.kind == kindPositiveInt && n <= 0 {
+			return fmt.Errorf("%s must be positive", path)
+		}
+	case kindString, kindUUID, kindDate, kindEnum:
+		str, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("%s must be a string", path)
+		}
+		switch spec.kind {
+		case kindUUID:
+			if !uuidPattern.MatchString(str) {
+				return fmt.Errorf("%s must be a UUID", path)
+			}
+		case kindDate:
+			if _, err := time.Parse(time.RFC3339Nano, str); err != nil {
+				return fmt.Errorf("%s must be an ISO 8601 date-time", path)
+			}
+		case kindEnum:
+			if !slices.Contains(spec.enum, str) {
+				return fmt.Errorf("%s must be one of %v", path, spec.enum)
+			}
+		}
+	case kindObject:
+		obj, ok := v.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("%s must be an object", path)
+		}
+		for _, f := range spec.fields {
+			fv, exists := obj[f.name]
+			if !exists {
+				if f.optional {
+					continue
+				}
+				return fmt.Errorf("%s.%s is required", path, f.name)
+			}
+			if err := validateValue(path+"."+f.name, fv, f.spec); err != nil {
+				return err
+			}
+		}
+	case kindArray:
+		arr, ok := v.([]interface{})
+		if !ok {
+			return fmt.Errorf("%s must be an array", path)
+		}
+		if len(arr) < spec.minLen {
+			return fmt.Errorf("%s must have at least %d elements", path, spec.minLen)
+		}
+		for i, ev := range arr {
+			if err := validateValue(fmt.Sprintf("%s[%d]", path, i), ev, *spec.elem); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // 認証なしで丸ごと置き換えるので、壊れた形が DB に残ると配信先のフロントが
-// 読めないまま再接続のたびに失敗する。上の階層のキーと型だけ確かめる
-func validateEdittingOrder(order map[string]interface{}, raw []byte) error {
-	for _, key := range edittingOrderKeys {
-		v, ok := order[key.name]
-		if !ok || (v == nil && !key.nullable) {
-			return fmt.Errorf("editting_order.%s is required", key.name)
-		}
-	}
-
-	var shape edittingOrderShape
-	if err := json.Unmarshal(raw, &shape); err != nil {
-		return fmt.Errorf("editting_order is invalid: %w", err)
-	}
-	return nil
+// wire スキーマで読めず、再接続のたびに同じ失敗になる。menus や comments の
+// 要素まで、フロントが読める形かを確かめる
+func validateEdittingOrder(order map[string]interface{}) error {
+	return validateValue("editting_order", order, edittingOrderSpec)
 }
 
 func findCashierState(db *gorm.DB) (*models.CashierState, error) {
@@ -153,7 +276,7 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateEdittingOrder(req.EdittingOrder, raw); err != nil {
+	if err := validateEdittingOrder(req.EdittingOrder); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -165,36 +288,59 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		UpdatedAt:        time.Now(),
 	}
 
-	if err := h.db.
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			UpdateAll: true,
-		}).
-		Create(&state).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	resp, err := toCashierStateResponse(&state)
+	resp, err := h.saveAndBroadcast(&state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, resp)
-	broadcastCashierState(h.db, h.hub)
 }
 
-// 現在のレジ状態を WebSocket の全クライアントへ流す。
-// まだ無ければ何も流さない（接続直後の初期送信でも同じ）。
+// upsert して、保存した内容をそのまま配信する。DB から読み直すと並行する PUT の
+// 結果と入れ違いうるので読み直さない
+func (h *CashierStateHandler) saveAndBroadcast(state *models.CashierState) (models.CashierStateResponse, error) {
+	cashierStateMu.Lock()
+	defer cashierStateMu.Unlock()
+
+	if err := h.db.
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
+		}).
+		Create(state).Error; err != nil {
+		return models.CashierStateResponse{}, err
+	}
+
+	resp, err := toCashierStateResponse(state)
+	if err != nil {
+		return models.CashierStateResponse{}, err
+	}
+
+	h.hub.Broadcast(WSMessage{
+		Type:         WSMessageTypeCashierState,
+		CashierState: &resp,
+	})
+	return resp, nil
+}
+
+// 現在のレジ状態を WebSocket の全クライアントへ流す（接続直後の初期送信）。
+// まだ無ければ何も流さない。PUT と入れ違わないよう、同じロックの中で読んで流す。
 func broadcastCashierState(db *gorm.DB, hub *Hub) {
+	cashierStateMu.Lock()
+	defer cashierStateMu.Unlock()
+
 	state, err := findCashierState(db)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Println("failed to load cashier state:", err)
+		}
 		return
 	}
 
 	resp, err := toCashierStateResponse(state)
 	if err != nil {
+		log.Println("failed to convert cashier state:", err)
 		return
 	}
 
