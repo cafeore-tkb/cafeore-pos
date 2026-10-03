@@ -232,7 +232,6 @@ func main() {
 	}))
 
 	hub := handlers.NewHub()
-	go hub.Run()
 
 	// ハンドラー初期化
 	itemHandler := handlers.NewItemHandler(db)

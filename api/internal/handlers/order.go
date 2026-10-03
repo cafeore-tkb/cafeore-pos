@@ -157,22 +157,6 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	return resp
 }
 
-// ブロードキャスト用のヘルパー
-func (h *OrderHandler) broadcastOrders() {
-	var orders []models.Order
-	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
-		return
-	}
-	responses := make([]models.OrderResponse, len(orders))
-	for i, o := range orders {
-		responses[i] = toOrderResponse(&o)
-	}
-	h.hub.Broadcast(WSMessage{
-		Type:   WSMessageTypeOrders,
-		Orders: responses,
-	})
-}
-
 // GET /api/orders - オーダー一覧取得
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order
@@ -251,16 +235,14 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// 関連データをロード
-	var loaded models.Order
-	if err := preloadOrder(h.db).
-		First(&loaded, "id = ?", order.ID).Error; err != nil {
+	// 関連データをロードし、作った注文だけを配信する
+	resp, err := publishOrder(h.db, h.hub, order.ID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
-	h.broadcastOrders()
+	c.JSON(http.StatusCreated, resp)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -363,13 +345,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		return
 	}
 
-	var loaded models.Order
-	if err := preloadOrder(h.db).First(&loaded, "id = ?", orderID).Error; err != nil {
+	resp, err := publishOrder(h.db, h.hub, orderID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, toOrderResponse(&loaded))
-	h.broadcastOrders()
+	c.JSON(http.StatusOK, resp)
 	go func() {
 		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(orderID)))
 	}()
@@ -421,6 +402,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
+	publishOrderDeleted(h.hub, orderID)
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 	go h.inventory.CheckAlerts(resources)
 }

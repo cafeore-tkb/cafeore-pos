@@ -164,14 +164,26 @@ func toggleCupServed(order *models.Order, cup *models.OrderCup, now time.Time) {
 	syncOrderWithCups(order)
 }
 
-func saveOrderStatus(tx *gorm.DB, order *models.Order) error {
-	if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
-		"ready_at":  order.ReadyAt,
-		"served_at": order.ServedAt,
-	}).Error; err != nil {
-		return err
+func timeEqual(a, b *time.Time) bool {
+	return (a == nil && b == nil) || sameTime(a, b)
+}
+
+// 変更前（before）から変わった注文・カップだけを保存する。
+// DB との往復が1回ずつかかるので、1杯の操作で全カップを書き直さないようにする。
+func saveOrderStatus(tx *gorm.DB, before, order *models.Order) error {
+	if !timeEqual(before.ReadyAt, order.ReadyAt) || !timeEqual(before.ServedAt, order.ServedAt) {
+		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
+			"ready_at":  order.ReadyAt,
+			"served_at": order.ServedAt,
+		}).Error; err != nil {
+			return err
+		}
 	}
-	for _, cup := range order.OrderCups {
+	for i, cup := range order.OrderCups {
+		prev := before.OrderCups[i]
+		if timeEqual(prev.ReadyAt, cup.ReadyAt) && timeEqual(prev.ServedAt, cup.ServedAt) {
+			continue
+		}
 		if err := tx.Model(&models.OrderCup{}).Where("id = ?", cup.ID).Updates(map[string]any{
 			"ready_at":  cup.ReadyAt,
 			"served_at": cup.ServedAt,
@@ -185,9 +197,13 @@ func saveOrderStatus(tx *gorm.DB, order *models.Order) error {
 // 注文の行をロックしてから、明細とカップを読む。
 // 同じ注文への操作（状態の変更や編集）が重なっても、片方の変更が消えないようにする。
 func lockOrder(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
+	return lockOrderWith(tx.Preload("OrderMenus"), orderID)
+}
+
+// 状態の変更ではカップしか使わないので、明細は読まない
+func lockOrderWith(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
 	var order models.Order
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Preload("OrderMenus").
 		Preload("OrderCups", func(db *gorm.DB) *gorm.DB { return db.Order("order_cups.position") }).
 		First(&order, "id = ?", orderID).Error
 	return order, err
@@ -202,15 +218,17 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 	}
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		order, err := lockOrder(tx, orderID)
+		order, err := lockOrderWith(tx, orderID)
 		if err != nil {
 			return err
 		}
+		before := order
+		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
 		// DB に保存される精度にそろえておくと、保存前後で時刻を比べられる
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
-		return saveOrderStatus(tx, &order)
+		return saveOrderStatus(tx, &before, &order)
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -224,13 +242,12 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 
-	var order models.Order
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
+	resp, err := publishOrder(h.db, h.hub, orderID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, toOrderResponse(&order))
-	h.broadcastOrders()
+	c.JSON(http.StatusOK, resp)
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。
