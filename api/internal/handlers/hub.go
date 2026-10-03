@@ -21,6 +21,9 @@ const (
 	wsMaxMessageSize = 4096
 	// 接続ごとの送信待ちの上限。溢れたら遅い端末とみなして切る
 	wsSendBufferSize = 32
+	// SendInitial で送る初期データの最大数（orders と master_state）。
+	// 初期データのあとに held（上限 wsSendBufferSize）を流しても溢れないよう、send はこの分だけ大きくとる
+	wsMaxInitialMessages = 2
 )
 
 // Client は WebSocket の1接続。
@@ -69,10 +72,19 @@ func (h *Hub) Run() {
 // 呼んだ側は SendInitial で初期データを送るまで broadcast が止まるので、必ず呼ぶ。
 // そのあと ReadPump で切断まで待つ。
 func (h *Hub) Register(conn *websocket.Conn) *Client {
-	c := &Client{hub: h, conn: conn, send: make(chan []byte, wsSendBufferSize), initializing: true}
+	c := newClient(h, conn)
 	h.add(c)
 	go c.writePump()
 	return c
+}
+
+func newClient(h *Hub, conn *websocket.Conn) *Client {
+	return &Client{
+		hub:          h,
+		conn:         conn,
+		send:         make(chan []byte, wsSendBufferSize+wsMaxInitialMessages),
+		initializing: true,
+	}
 }
 
 func (h *Hub) add(c *Client) {

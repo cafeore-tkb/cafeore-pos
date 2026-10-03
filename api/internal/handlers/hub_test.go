@@ -192,3 +192,34 @@ func TestHubHoldsBroadcastUntilInitialDataIsSent(t *testing.T) {
 		}
 	}
 }
+
+func TestHubKeepsClientWhenHeldBroadcastsFillTheBuffer(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// 送信 goroutine を持たない、初期データを読んでいる途中の端末
+	c := newClient(hub, nil)
+	hub.add(c)
+
+	// 初期データを読んでいる間に、ためられる上限まで broadcast が来る
+	for i := 0; i < wsSendBufferSize; i++ {
+		hub.Broadcast(WSMessage{Type: WSMessageTypeOrders})
+	}
+	waitFor(t, func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return len(c.held) == wsSendBufferSize
+	})
+
+	c.SendInitial(WSMessage{Type: WSMessageTypeOrders}, WSMessage{Type: WSMessageTypeMasterState})
+
+	hub.mu.Lock()
+	_, stillRegistered := hub.clients[c]
+	hub.mu.Unlock()
+	if !stillRegistered {
+		t.Fatal("client must not be dropped by its own initial data")
+	}
+	if got, want := len(c.send), wsSendBufferSize+2; got != want {
+		t.Fatalf("want %d queued messages, got %d", want, got)
+	}
+}
