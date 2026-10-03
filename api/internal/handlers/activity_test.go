@@ -104,3 +104,22 @@ func TestMasterStateMessage(t *testing.T) {
 		t.Fatal("unexpected master state message")
 	}
 }
+
+func TestColorSettingMessages(t *testing.T) {
+	after := models.ColorSetting{Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &models.ColorSetting{}, &after); got != "🆕 背景色を追加: ライチ（マスター）#7bf1a8" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	before := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#bedbff"}
+	if got := colorSettingSavedMessage("ライチ", &before, &after); got != "✏️ 背景色を変更: ライチ（マスター）#bedbff → #7bf1a8" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	same := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &same, &after); got != "" {
+		t.Fatalf("expected no message, got %q", got)
+	}
+	deleted := models.ColorSetting{Screen: "serve", Color: "#fff085"}
+	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: ミルク（提供）#fff085" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cafeore-pos/api/internal/models"
+	"github.com/google/uuid"
 )
 
 // 操作の通知（notify.Activity）に流す文面。DB には触らず、渡された値だけで組み立てる。
@@ -111,12 +112,20 @@ var colorScreenLabels = map[string]string{
 	string(models.ColorScreenServe):  "提供",
 }
 
-func colorSettingSavedMessage(target string, setting *models.ColorSetting) string {
-	return fmt.Sprintf("🎨 背景色を設定: %s（%s）%s", target, colorScreenLabels[setting.Screen], setting.Color)
+// before が無ければ（ID が空なら）追加、あれば色の変更として出す。同じ色なら空
+func colorSettingSavedMessage(target string, before, after *models.ColorSetting) string {
+	screen := colorScreenLabels[after.Screen]
+	if before.ID == uuid.Nil {
+		return fmt.Sprintf("🆕 背景色を追加: %s（%s）%s", target, screen, after.Color)
+	}
+	if before.Color == after.Color {
+		return ""
+	}
+	return fmt.Sprintf("✏️ 背景色を変更: %s（%s）%s → %s", target, screen, before.Color, after.Color)
 }
 
 func colorSettingDeletedMessage(target string, setting *models.ColorSetting) string {
-	return fmt.Sprintf("🎨 背景色を外す: %s（%s）", target, colorScreenLabels[setting.Screen])
+	return fmt.Sprintf("🗑️ 背景色を削除: %s（%s）%s", target, colorScreenLabels[setting.Screen], setting.Color)
 }
 
 // --- 在庫対象 ---

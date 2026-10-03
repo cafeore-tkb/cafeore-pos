@@ -146,7 +146,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 
-	// 同じ色で保存し直しただけなら通知しない
+	// 通知で追加か変更かを分けるために読んでおく
 	var before models.ColorSetting
 	_ = h.db.First(&before, "target_type = ? AND target_id = ? AND screen = ?",
 		setting.TargetType, setting.TargetID, setting.Screen).Error
@@ -164,9 +164,8 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toColorSettingResponse(&saved))
-	if before.Color != saved.Color {
-		h.activity.Post(colorSettingSavedMessage(h.targetName(&saved), &saved))
-	}
+	// 同じ色で保存し直しただけなら文面が空になり、通知しない
+	h.activity.Post(colorSettingSavedMessage(h.targetName(&saved), &before, &saved))
 }
 
 // DELETE /api/color-settings/:id - 背景色設定削除
