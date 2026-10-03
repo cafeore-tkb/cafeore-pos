@@ -18,7 +18,7 @@ export function CurrentOrderCard({
           "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
       }}
     >
-      <div className="bg-linear-to-br from-theme-primary via-theme-deep to-theme-primary bg-clip-text font-extrabold text-7xl text-transparent">
+      <div className="font-extrabold text-7xl text-theme-primary">
         {orderId}
       </div>
     </Card>
@@ -55,13 +55,7 @@ export function CallingOrderCard({
     >
       <div
         ref={onTextRef}
-        className="pointer-events-none bg-clip-text font-bold text-7xl text-transparent"
-        style={{
-          WebkitBackgroundClip: "text",
-          backgroundClip: "text",
-          backgroundImage:
-            "linear-gradient(135deg, var(--grad-start, var(--color-theme-primary)), var(--grad-mid, var(--color-theme-deep)), var(--grad-end, var(--color-theme-primary)))",
-        }}
+        className="pointer-events-none font-bold text-7xl text-theme-primary"
       >
         {orderId}
       </div>
@@ -79,13 +73,7 @@ export function PreparingOrderCard({ orderId }: { orderId: number }) {
           "8px 8px 16px rgba(0, 0, 0, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
       }}
     >
-      <div
-        className="pointer-events-none bg-linear-to-br from-theme-primary to-theme-deep bg-clip-text font-bold text-5xl text-transparent"
-        style={{
-          WebkitBackgroundClip: "text",
-          backgroundClip: "text",
-        }}
-      >
+      <div className="pointer-events-none font-bold text-5xl text-theme-primary">
         {orderId}
       </div>
     </Card>

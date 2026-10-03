@@ -120,10 +120,10 @@ export default function FielsOfCallScreen() {
 
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
-          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-theme-sub-deep via-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl text-white shadow-lg">
-            <HiBell className="text-3xl" />
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-theme-primary py-2 text-center font-bold text-3xl text-white shadow-lg">
+            <HiBell className="text-3xl text-theme-sub" />
             お呼び出し中
-            <HiBell className="text-3xl" />
+            <HiBell className="text-3xl text-theme-sub" />
           </h1>
           <div className="grid grid-cols-3 gap-4">
             {callingOrders.map((order) => (
@@ -146,12 +146,7 @@ export default function FielsOfCallScreen() {
 
       {/* 画面下部（30%）：準備中 */}
       <div className="border-t p-4">
-        <h1
-          className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-br from-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl shadow-lg"
-          style={{
-            color: "white",
-          }}
-        >
+        <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-theme-secondary py-2 text-center font-bold text-3xl text-theme-primary">
           <FaCoffee className="text-3xl" />
           ドリップ中
           <FaSpinner

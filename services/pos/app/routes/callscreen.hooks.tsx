@@ -2,8 +2,6 @@ import type { Order } from "@cafeore/common";
 import { gsap } from "gsap";
 import { useEffect, useRef, useState } from "react";
 
-type GsapCSSVars = Record<string, string | number | (() => void)>;
-
 /**
  * オーダーの状態が変化したかを判定するヘルパー関数
  */
@@ -166,7 +164,7 @@ export function useQueueProcessing(
 
 /**
  * スライドインアニメーション管理フック
- * 右側のカードを左からスライドインさせ、同時に撫子色からテーマカラーにグラデーションを変化させるアニメーションを実行します。
+ * 右側のカードを左からスライドインさせ、同時に文字色を撫子色からテーマカラーに変化させるアニメーションを実行します。
  */
 export function useSlideInAnimation(
   newlyAddedOrderId: number | null,
@@ -197,17 +195,12 @@ export function useSlideInAnimation(
     // GSAP は var() のままでは補間できないので、tailwind.css のテーマカラーの実際の値を読む
     const style = getComputedStyle(textElement);
     const themePrimary = style.getPropertyValue("--color-theme-primary").trim();
-    const themeDeep = style.getPropertyValue("--color-theme-deep").trim();
     const themeSubDeep = style
       .getPropertyValue("--color-theme-sub-deep")
       .trim();
 
-    // テキストのグラデーション初期色をセット（サブカラーの撫子色）
-    gsap.set(textElement, {
-      "--grad-start": themeSubDeep,
-      "--grad-mid": themeSubDeep,
-      "--grad-end": themeSubDeep,
-    } as GsapCSSVars);
+    // 文字色の初期値をセット（サブカラーの撫子色）
+    gsap.set(textElement, { color: themeSubDeep });
 
     // カードのスライドインアニメーション（左から中心へ移動、同時に不透明化）
     gsap.to(cardElement, {
@@ -217,12 +210,10 @@ export function useSlideInAnimation(
       ease: "power2.out",
     });
 
-    // テキストのグラデーションカラーアニメーション（撫子色 → テーマカラー）
+    // 文字色のアニメーション（撫子色 → テーマカラー）
     // スライドイン完了後に少し待ってから色を切り替える
     gsap.to(textElement, {
-      "--grad-start": themePrimary,
-      "--grad-mid": themeDeep,
-      "--grad-end": themePrimary,
+      color: themePrimary,
       duration: 1,
       delay: 1.0, // スライドイン完了後、さらに0.5秒待ってから色変更を開始
       ease: "power2.out",
