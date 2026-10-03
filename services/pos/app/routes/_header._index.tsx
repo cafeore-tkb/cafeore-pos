@@ -121,6 +121,15 @@ const sections: Section[] = [
           "棚卸しの実数と入荷・注文から、豆とカップの残量を推定。棚卸し・入荷の記録もここで。",
       },
       {
+        kind: "products",
+        to: "/products",
+        title: "商品管理",
+        audience: "admin",
+        where: "祭の前の準備・メニューの変更",
+        description:
+          "メニュー・アイテム・タイプ・背景色と、豆やカップの在庫対象・1杯あたりの使用量を編集。CSV / JSON で取り込み・書き出しもできます。",
+      },
+      {
         kind: "rehearsal",
         to: "/rehearsal",
         title: "オペ練",
@@ -131,11 +140,6 @@ const sections: Section[] = [
       },
     ],
   },
-];
-
-const settingLinks = [
-  { to: "/products", label: "商品管理" },
-  { to: "/products?tab=stock", label: "在庫の設定" },
 ];
 
 export default function Index() {
@@ -165,23 +169,6 @@ export default function Index() {
       ))}
 
       <section className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border p-4">
-          <h2 className="font-bold">マスタ設定</h2>
-          <p className="mt-1 text-muted-foreground text-sm">
-            メニュー・商品・在庫の通知条件を編集します
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {settingLinks.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">オーダーデータ書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">

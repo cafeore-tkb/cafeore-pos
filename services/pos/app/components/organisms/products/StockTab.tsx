@@ -8,6 +8,7 @@ import {
   inventoryRepository,
 } from "@cafeore/common";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -68,7 +69,15 @@ function ResourcesSection({
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="font-semibold text-lg">在庫対象</h2>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="font-semibold text-lg">在庫対象</h2>
+          <Link
+            to="/inventory"
+            className="text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
+          >
+            残量・棚卸しを見る →
+          </Link>
+        </div>
         <p className="text-muted-foreground text-sm">
           通知は残りが「通知開始」を切ったときと、そこから「間隔」杯減るごとに
           Slack
