@@ -21,6 +21,8 @@ const ONLINE_STATUS: OnlineStatus = {
   isDatabaseOnline: true,
 };
 
+// 戻り値はオブジェクトにしておく。真偽値を返す形だと、状態を増やしたときに
+// 古い呼び出し側が `if (useOnlineStatus())` のまま常に真になり、型でも気づけない
 export const useOnlineStatus = () => {
   const [onlineStatus, setOnlineStatus] = useState(ONLINE_STATUS);
 
