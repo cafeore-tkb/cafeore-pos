@@ -82,7 +82,7 @@ jobs:
             - バグ、壊れるケース、セキュリティの問題を優先して指摘する。好みの問題や細かいスタイルは書かない。
             - `gh pr view --comments` で過去の Claude のレビュー（`<!-- claude-review -->` を含むもの）を読み、
               そこで指摘した点が HEAD SHA のコードで直っているかを 1 つずつ確かめる。
-            - レビュー本文は `gh pr review --comment --body-file <file>` で投稿し、次の形にする。
+            - レビュー本文は `gh pr review <PR NUMBER> --comment --body-file <file>` で投稿し、次の形にする。
               - 1 行目は `<!-- claude-review -->`、2 行目に `レビュー対象: <HEAD SHA の先頭 7 文字>`
               - `### 修正が必要な点`: 今残っている指摘をすべて、重要な順に番号付きで。各項目は `path/to/file.ts:行`、問題、直し方の方針。
                 前回から残っているものには「（未修正）」、今回はじめて見つけたものには「（新規）」を付ける
@@ -93,7 +93,7 @@ jobs:
               インラインコメントのツールが使えない場合（手動実行など）は、レビュー本文だけでよい。
             - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment *),Bash(gh pr review * --comment *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
       # 最新以外の Claude の総評を「Outdated」として折りたたむ
       - name: Minimize old Claude reviews
         env:
