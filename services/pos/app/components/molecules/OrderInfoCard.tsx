@@ -53,15 +53,18 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     }
     const changeCupServed = () => orderRepository.serveCup(order.id, cupId);
     changeCupServed();
-    if (item.status !== "served") {
-      toast(`提供完了 No.${order.orderId} ${item.abbr}`, {
+    // 誤タップで提供を取り消しても気づけるよう、取り消しにもトーストを出す
+    const serving = item.status !== "served";
+    toast(
+      `${serving ? "提供完了" : "提供取消"} No.${order.orderId} ${item.abbr}`,
+      {
         description: `${dayjs().format("H時m分")}`,
         action: {
-          label: "取消",
+          label: serving ? "取消" : "元に戻す",
           onClick: () => changeCupServed(),
         },
-      });
-    }
+      },
+    );
   };
 
   return (

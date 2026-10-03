@@ -79,10 +79,18 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 
 // 明細とカップを作る。existing は編集前の注文（新規作成では空の注文）。
 func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCreate, existing *models.Order) ([]models.OrderMenu, []models.OrderCup, error) {
-	var ids []uuid.UUID
+	hasCups := make(map[uuid.UUID]bool, len(existing.OrderCups))
+	for _, cup := range existing.OrderCups {
+		hasCups[cup.OrderMenuID] = true
+	}
+	// ids は新しい明細のメニュー、legacyIDs はカップの無い既存の明細のメニュー
+	var ids, legacyIDs []uuid.UUID
 	for _, request := range requests {
-		if request.OrderMenuId == nil {
+		switch {
+		case request.OrderMenuId == nil:
 			ids = append(ids, uuid.UUID(request.MenuId))
+		case !hasCups[uuid.UUID(*request.OrderMenuId)]:
+			legacyIDs = append(legacyIDs, uuid.UUID(request.MenuId))
 		}
 	}
 	var menus []models.Menu
@@ -91,11 +99,19 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 			return nil, nil, err
 		}
 	}
+	// 既存の明細のメニューは販売終了していてもカップに展開する
+	if len(legacyIDs) > 0 {
+		var legacyMenus []models.Menu
+		if err := preloadMenu(db.Unscoped()).Where("id IN ?", legacyIDs).Find(&legacyMenus).Error; err != nil {
+			return nil, nil, err
+		}
+		menus = append(menus, legacyMenus...)
+	}
 	lines, err := buildOrderMenus(orderID, requests, existing.OrderMenus, menus)
 	if err != nil {
 		return nil, nil, err
 	}
-	return lines, buildOrderCups(orderID, lines, existing.OrderMenus, existing.OrderCups, menus), nil
+	return lines, buildOrderCups(orderID, lines, existing, menus), nil
 }
 
 // DB models → API models 変換関数
@@ -296,10 +312,16 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&order).Updates(map[string]any{
+		// カップのある注文の状態はカップから決め直す。リクエストの ready_at / served_at は
+		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
+		// カップの無い注文（グッズだけの注文）だけリクエストの値を使う。
+		order.OrderCups = orderCups
+		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
+		syncOrderWithCups(&order)
+		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
 			"order_id":            req.OrderId,
-			"ready_at":            req.ReadyAt,
-			"served_at":           req.ServedAt,
+			"ready_at":            order.ReadyAt,
+			"served_at":           order.ServedAt,
 			"billing_amount":      req.BillingAmount,
 			"received":            req.Received,
 			"discount_order_id":   req.DiscountOrderId,
@@ -366,24 +388,24 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	// 注文明細とカップを削除
-	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
+	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
+	var rowsAffected int64
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.Order{}, "id = ?", orderID)
+		rowsAffected = result.RowsAffected
+		return result.Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// オーダーを削除
-	result := h.db.Delete(&models.Order{}, "id = ?", orderID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	if result.RowsAffected == 0 {
+	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}

@@ -6,6 +6,7 @@ import (
 
 	"cafeore-pos/api/internal/models"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 func testItem(typeName string) models.Item {
@@ -32,7 +33,7 @@ func newOrderCups(t *testing.T, orderID uuid.UUID, menus ...models.Menu) ([]mode
 	if err != nil {
 		t.Fatal(err)
 	}
-	return lines, buildOrderCups(orderID, lines, nil, nil, menus)
+	return lines, buildOrderCups(orderID, lines, &models.Order{}, menus)
 }
 
 func TestBuildOrderCupsExpandsQuantityAndSkipsGoods(t *testing.T) {
@@ -140,7 +141,7 @@ func TestBuildOrderCupsKeepsCupsOfExistingLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := buildOrderCups(orderID, newLines, lines, cups, []models.Menu{single})
+	got := buildOrderCups(orderID, newLines, &models.Order{OrderMenus: lines, OrderCups: cups}, []models.Menu{single})
 
 	if len(got) != 3 {
 		t.Fatalf("expected the 2 kept cups and 1 new cup, got %+v", got)
@@ -175,8 +176,70 @@ func TestBuildOrderCupsReordersKeptCups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := buildOrderCups(orderID, newLines, lines, cups, nil)
+	got := buildOrderCups(orderID, newLines, &models.Order{OrderMenus: lines, OrderCups: cups}, nil)
 	if len(got) != 2 || got[0].ID != cups[1].ID || got[1].ID != cups[0].ID || got[0].Position != 0 || got[1].Position != 1 {
 		t.Fatalf("cups must follow the line order: %+v", got)
+	}
+}
+
+// カップを持つ前の注文を編集すると、既存の明細もカップに展開し、注文の状態を写す
+func TestBuildOrderCupsExpandsLinesWithoutCups(t *testing.T) {
+	orderID := uuid.New()
+	hot, ice := testItem("hot"), testItem("ice")
+	set := testMenu(models.MenuItem{Item: hot, Quantity: 2})
+	single := testMenu(models.MenuItem{Item: ice, Quantity: 1})
+	lines, _ := newOrderCups(t, orderID, set)
+	served := time.Now()
+	legacy := &models.Order{OrderMenus: lines, ServedAt: &served}
+
+	requests := []models.MenuInfoCreate{
+		{MenuId: set.ID, OrderMenuId: &lines[0].ID},
+		{MenuId: single.ID},
+	}
+	newLines, err := buildOrderMenus(orderID, requests, lines, []models.Menu{set, single})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildOrderCups(orderID, newLines, legacy, []models.Menu{set, single})
+	if len(got) != 3 {
+		t.Fatalf("expected 2 cups for the existing line and 1 for the new line, got %+v", got)
+	}
+	for i := range 2 {
+		if got[i].OrderMenuID != lines[0].ID || got[i].ItemID != hot.ID || got[i].Position != i {
+			t.Fatalf("existing line cup %d: %+v", i, got[i])
+		}
+		if !sameTime(got[i].ServedAt, &served) || !sameTime(got[i].ReadyAt, &served) {
+			t.Fatalf("existing line cup %d must copy the order status: %+v", i, got[i])
+		}
+	}
+	if got[2].OrderMenuID != newLines[1].ID || got[2].ReadyAt != nil || got[2].ServedAt != nil {
+		t.Fatalf("new line must get a preparing cup: %+v", got[2])
+	}
+	order := &models.Order{ServedAt: &served, OrderCups: got}
+	syncOrderWithCups(order)
+	if order.ServedAt != nil {
+		t.Fatalf("the order must not be served while the new cup is preparing: %+v", order)
+	}
+}
+
+func TestIsCupItem(t *testing.T) {
+	deleted := testItem("hot")
+	deleted.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+	deletedGoodsType := testItem("others")
+	deletedGoodsType.ItemType.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+	for _, tc := range []struct {
+		name string
+		item models.Item
+		want bool
+	}{
+		{"drink", testItem("hot"), true},
+		{"goods", testItem("others"), false},
+		{"not loaded", models.Item{}, false},
+		{"deleted item", deleted, false},
+		{"deleted goods type", deletedGoodsType, true},
+	} {
+		if got := isCupItem(tc.item); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
