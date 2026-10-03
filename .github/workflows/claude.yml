@@ -1,0 +1,108 @@
+name: Claude Review
+
+# PR を開いたときと、コミットが push されるたびに Claude Code が
+# 1. 実装の要約と重点的に見るべき場所を PR コメントにまとめ（push のたびに同じコメントを更新）
+# 2. 最新のコミット時点で残っている修正点をすべて載せたレビューを毎回投稿する（前回からの未修正も含む）
+# 認証は Claude サブスクの OAuth トークン（secrets.CLAUDE_CODE_OAUTH_TOKEN）
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# 続けて push されたら古いレビューは止めて、サブスクの枠を無駄にしない
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # draft、bot の PR、fork からの PR（Secret が読めない）は対象外
+    if: |
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            BASE SHA: ${{ github.event.pull_request.base.sha }}
+            HEAD SHA: ${{ github.event.pull_request.head.sha }}
+
+            この PR について、次の 2 段階を順番に行ってください。コメントはすべて日本語で書きます。
+
+            ## 1. 実装の要約（PR コメント）
+
+            `gh pr view` と `gh pr diff` で PR 全体を読み、人間のレビュアー向けの案内を書く。
+
+            - 1 行目は必ず `<!-- claude-summary -->` にする
+            - `### 概要`: 何をなぜ変えたかを 2〜4 文で
+            - `### 変更の全体像`: 領域（POS / mobile / api / common など）ごとに、振る舞いの変化を箇条書きで。ファイルを列挙するだけにしない
+            - `### 重点的に見てほしい場所`: 3〜5 個まで。`path/to/file.ts:行` と、なぜそこを見るべきか（データ構造や API の変更、金額・在庫の計算、Firestore のルール、並行処理、エラー処理、既存の振る舞いが変わる箇所など）を 1 行で。リスクの高い順に並べる
+            - 全体で 40 行以内に収める
+
+            `gh pr view --comments` で `<!-- claude-summary -->` を含むコメントがすでにあれば、`gh pr comment --edit-last --body-file <file>` で最新の PR 全体の内容に書き換える。なければ `gh pr comment --body-file <file>` で新しく投稿する。
+            このワークフローは PR へのコメントをこの要約にしか使わないので、`--edit-last` で要約コメントが更新される。
+
+            ## 2. レビュー
+
+            毎回、HEAD SHA 時点の PR 全体（`gh pr diff`）をレビューし、その時点で残っている修正点を「全部」載せたレビューを新しく投稿する。
+            前回のレビューを読まなくても、最新のレビューだけで今直すべきことが全部わかる状態にする。
+
+            - バグ、壊れるケース、セキュリティの問題を優先して指摘する。好みの問題や細かいスタイルは書かない。
+            - `gh pr view --comments` で過去の Claude のレビュー（`<!-- claude-review -->` を含むもの）を読み、
+              そこで指摘した点が HEAD SHA のコードで直っているかを 1 つずつ確かめる。
+            - レビュー本文は `gh pr review --comment --body-file <file>` で投稿し、次の形にする。
+              - 1 行目は `<!-- claude-review -->`、2 行目に `レビュー対象: <HEAD SHA の先頭 7 文字>`
+              - `### 修正が必要な点`: 今残っている指摘をすべて、重要な順に番号付きで。各項目は `path/to/file.ts:行`、問題、直し方の方針。
+                前回から残っているものには「（未修正）」、今回はじめて見つけたものには「（新規）」を付ける
+              - `### 前回から修正された点`: 前回の指摘のうち直ったものを 1 行ずつ。初回やなければ省く
+              - 修正が必要な点がなければ、その旨を 1 行で書く
+            - 今回はじめて見つけた指摘は、`mcp__github_inline_comment__create_inline_comment` で該当行にもインラインコメントする。
+              未修正の指摘はインラインでは繰り返さず、レビュー本文にだけ載せる。
+            - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
+      # 最新以外の Claude の総評を「Outdated」として折りたたむ
+      - name: Minimize old Claude reviews
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          reviews=$(gh api graphql --paginate \
+            -f owner="${REPO%/*}" -f name="${REPO#*/}" -F number="$PR_NUMBER" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    reviews(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { id body isMinimized author { login } }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.reviews.nodes[]
+              | select((.author.login | test("^claude(\\[bot\\])?$")) and (.body | contains("<!-- claude-review -->")))
+              | [.id, .isMinimized] | @tsv')
+          # 古い順に並んでいるので、最後の 1 件（最新の総評）は残す
+          echo "$reviews" | sed '$d' | while IFS=$'\t' read -r id minimized; do
+            if [ -z "$id" ] || [ "$minimized" = "true" ]; then continue; fi
+            gh api graphql -f id="$id" -f query='
+              mutation($id: ID!) {
+                minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { minimizedComment { isMinimized } }
+              }' >/dev/null
+          done
