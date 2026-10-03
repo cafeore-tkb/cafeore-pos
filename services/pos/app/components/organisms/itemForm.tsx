@@ -2,7 +2,6 @@ import type { ItemEntity, ItemType } from "@cafeore/common";
 import { useMemo, useState } from "react";
 
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import {
@@ -51,65 +50,57 @@ export function ItemForm({
   };
 
   return (
-    <Card className="max-w-2xl">
-      <CardHeader>
-        <CardTitle>{initialItem ? "アイテム編集" : "アイテム作成"}</CardTitle>
-      </CardHeader>
+    <form
+      className="grid gap-6"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await onSubmit(values);
+      }}
+    >
+      <div className="grid gap-2">
+        <Label htmlFor="name">名前</Label>
+        <Input
+          id="name"
+          value={values.name}
+          onChange={(e) => updateField("name", e.target.value)}
+          placeholder="キリマンジャロ"
+        />
+      </div>
 
-      <CardContent>
-        <form
-          className="grid gap-6"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            await onSubmit(values);
-          }}
+      <div className="grid gap-2">
+        <Label htmlFor="abbr">略称</Label>
+        <Input
+          id="abbr"
+          value={values.abbr}
+          onChange={(e) => updateField("abbr", e.target.value)}
+          placeholder="キリマン"
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label>Item Type</Label>
+        <Select
+          value={values.itemTypeId}
+          onValueChange={(value) => updateField("itemTypeId", value)}
         >
-          <div className="grid gap-2">
-            <Label htmlFor="name">名前</Label>
-            <Input
-              id="name"
-              value={values.name}
-              onChange={(e) => updateField("name", e.target.value)}
-              placeholder="キリマンジャロ"
-            />
-          </div>
+          <SelectTrigger>
+            <SelectValue placeholder="Item Type を選択" />
+          </SelectTrigger>
+          <SelectContent>
+            {itemTypes.map((itemType) => (
+              <SelectItem key={itemType.id} value={itemType.id ?? "-"}>
+                {itemType.display_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="abbr">略称</Label>
-            <Input
-              id="abbr"
-              value={values.abbr}
-              onChange={(e) => updateField("abbr", e.target.value)}
-              placeholder="キリマン"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>Item Type</Label>
-            <Select
-              value={values.itemTypeId}
-              onValueChange={(value) => updateField("itemTypeId", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Item Type を選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {itemTypes.map((itemType) => (
-                  <SelectItem key={itemType.id} value={itemType.id ?? "-"}>
-                    {itemType.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "保存中..." : "保存"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="flex justify-end gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "保存中..." : "保存"}
+        </Button>
+      </div>
+    </form>
   );
 }

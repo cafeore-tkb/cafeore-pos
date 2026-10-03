@@ -1,4 +1,3 @@
-// routes/color-settings._index.tsx
 import {
   type ColorScreen,
   colorScreens,
@@ -6,7 +5,6 @@ import {
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
-import type { MetaFunction } from "react-router";
 import { ColorSettingCell } from "~/components/organisms/colorSettingCell";
 import {
   Table,
@@ -17,10 +15,6 @@ import {
   TableRow,
 } from "~/components/ui/table";
 
-export const meta: MetaFunction = () => {
-  return [{ title: "背景色設定 / 珈琲・俺POS" }];
-};
-
 const screenLabels: Record<ColorScreen, string> = {
   master: "マスター",
   serve: "提供",
@@ -29,7 +23,7 @@ const screenLabels: Record<ColorScreen, string> = {
 // others はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので設定対象から外す
 const isShownOnScreens = (itemTypeName: string) => itemTypeName !== "others";
 
-export default function ColorSettingsPage() {
+export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
   const {
     colorSettings,
@@ -45,14 +39,11 @@ export default function ColorSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 p-4">
-      <div className="space-y-1">
-        <h1 className="font-bold text-xl">背景色設定</h1>
-        <p className="text-muted-foreground text-sm">
-          マスター画面・提供画面でのアイテムの背景色です。アイテムの設定 →
-          タイプの設定 → 既定の色 の順に使われます。
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <p className="text-muted-foreground text-sm">
+        マスター画面・提供画面でのアイテムの背景色です。アイテムの設定 →
+        タイプの設定 → 既定の色 の順に使われます。
+      </p>
 
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold text-lg">タイプ</h2>
