@@ -222,7 +222,7 @@ function OrderBoardPreview({ user }: { user: "master" | "serve" }) {
 
 function CashierMiniPreview() {
   return (
-    <div className="relative flex h-full flex-col justify-between bg-linear-to-br from-theme-primary via-teal-600 to-theme-primary p-[1.2em] font-bold text-white">
+    <div className="relative flex h-full flex-col justify-between bg-linear-to-br from-theme-primary via-theme-primary to-theme-sub-deep p-[1.2em] font-bold text-white">
       <img
         src={logoSVG}
         alt=""
@@ -253,13 +253,13 @@ function CallscreenPreview() {
       <div className="flex h-[66%]">
         <div className="flex w-[40%] items-center justify-center border-r">
           <div className="rounded-xl px-[1em] py-[0.4em] shadow-[0.3em_0.3em_0.6em_rgba(0,0,0,0.25)]">
-            <span className="bg-linear-to-br from-theme-primary via-teal-600 to-theme-primary bg-clip-text font-extrabold text-[3em] text-transparent">
+            <span className="font-extrabold text-[3em] text-theme-primary">
               38
             </span>
           </div>
         </div>
         <div className="w-[60%] p-[0.5em]">
-          <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r from-orange-500 via-theme-primary to-teal-500 py-[0.25em] font-bold text-[0.8em] text-white">
+          <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
             <HiBell />
             お呼び出し中
             <HiBell />
@@ -277,7 +277,7 @@ function CallscreenPreview() {
         </div>
       </div>
       <div className="border-t p-[0.5em]">
-        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-br from-[#00524f] to-[#002e2d] py-[0.25em] font-bold text-[0.8em] text-white">
+        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
           <FaCoffee />
           ドリップ中
         </div>
@@ -285,7 +285,7 @@ function CallscreenPreview() {
           {[39, 40, 41, 42, 43].map((n) => (
             <div
               key={n}
-              className="rounded border py-[0.1em] text-center font-bold text-[0.8em] text-stone-600"
+              className="rounded border py-[0.1em] text-center font-bold text-[0.8em] text-theme-primary"
             >
               {n}
             </div>
