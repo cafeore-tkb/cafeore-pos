@@ -44,16 +44,53 @@ const LEVELS = [0.8, 1.0, 1.2, 1.4, 1.6];
 const BUSY = "busy";
 const TICK_MS = 250;
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isNumbers = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.every((n) => typeof n === "number");
+
+const isCounts = (value: unknown): value is Record<string, number> =>
+  isRecord(value) && Object.values(value).every((n) => typeof n === "number");
+
+// localStorage に覚えるので、形が足りないものを通すと描画で落ちて毎回開けなくなる。使う項目は中まで確かめる
 const isParams = (value: unknown): value is GeneratorParams => {
   const v = value as GeneratorParams;
   return (
     v?.version === 2 &&
-    Array.isArray(v.edges) &&
+    isRecord(v.source) &&
+    Array.isArray(v.source.dates) &&
+    v.source.dates.every((d) => typeof d === "string") &&
+    typeof v.source.orders === "number" &&
+    typeof v.binMinutes === "number" &&
+    isNumbers(v.edges) &&
+    v.edges.length > 0 &&
     Array.isArray(v.gapsByStratum) &&
-    v.gapsByStratum.every((gaps) => Array.isArray(gaps) && gaps.length > 0) &&
+    v.gapsByStratum.every((gaps) => isNumbers(gaps) && gaps.length > 0) &&
     Array.isArray(v.baskets) &&
+    v.baskets.every(
+      (b) =>
+        isCounts(b?.roles) &&
+        typeof b.goods === "number" &&
+        typeof b.weight === "number",
+    ) &&
     Array.isArray(v.days) &&
-    Array.isArray(v.items)
+    v.days.every(
+      (d) =>
+        typeof d?.date === "string" &&
+        typeof d.openAt === "string" &&
+        typeof d.durationMin === "number" &&
+        isNumbers(d.binRates) &&
+        d.binRates.length > 0,
+    ) &&
+    Array.isArray(v.items) &&
+    v.items.every(
+      (item) =>
+        typeof item?.id === "string" &&
+        typeof item.name === "string" &&
+        typeof item.role === "string" &&
+        isCounts(item.counts),
+    )
   );
 };
 
@@ -75,13 +112,27 @@ const store = (key: string, value: unknown) => {
   }
 };
 
+const isPlan = (value: unknown): value is MenuPlan => {
+  const v = value as MenuPlan;
+  return (
+    v?.version === 1 &&
+    isCounts(v.roleShares) &&
+    isRecord(v.menus) &&
+    Object.values(v.menus).every(
+      (a) =>
+        isRecord(a) &&
+        (a.role === null || typeof a.role === "string") &&
+        typeof a.weight === "number",
+    )
+  );
+};
+
+// 形が不正なら null を返し、去年の割合から作り直す
 const loadPlan = (): MenuPlan | null => {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
-    const parsed = raw ? (JSON.parse(raw) as MenuPlan) : null;
-    return parsed?.version === 1 && typeof parsed.menus === "object"
-      ? parsed
-      : null;
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return isPlan(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -111,7 +162,8 @@ export default function Rehearsal() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [queue, setQueue] = useState<number[]>([]);
   const [arrived, setArrived] = useState(0);
-  const [accepted, setAccepted] = useState(0);
+  // 列に並んだ客のうち、列から消えた（受け付けた）客の数
+  const accepted = arrived - queue.length;
 
   const [menus, setMenus] = useState<WithId<MenuEntity>[] | null>(null);
   const [menusError, setMenusError] = useState(false);
@@ -280,15 +332,13 @@ export default function Rehearsal() {
     const fresh = ids.filter((id) => !known.has(id));
     if (fresh.length === 0) return;
     for (const id of fresh) known.add(id);
-    const n = Math.min(fresh.length, queue.length);
-    setQueue(queue.slice(n));
-    setAccepted((a) => a + n);
-  }, [posOrders, isOrdersLoaded, started, queue]);
+    // 同じ描画で客が着いても上書きしないよう、更新関数で今の列から消す
+    setQueue((q) => q.slice(Math.min(fresh.length, q.length)));
+  }, [posOrders, isOrdersLoaded, started]);
 
   const acceptHead = () => {
     if (queue.length === 0) return;
     setQueue((q) => q.slice(1));
-    setAccepted((a) => a + 1);
   };
 
   const reset = () => {
@@ -297,7 +347,6 @@ export default function Rehearsal() {
     setElapsedSec(0);
     setQueue([]);
     setArrived(0);
-    setAccepted(0);
     seenIds.current = null;
   };
 
