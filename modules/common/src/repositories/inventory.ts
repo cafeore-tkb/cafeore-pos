@@ -13,6 +13,8 @@ export type StockEventKind = components["schemas"]["StockEventKind"];
 export type StockEventResult =
   components["schemas"]["StockEventCreateResponse"];
 export type StockUsage = components["schemas"]["StockUsage"];
+export type ItemStockUsageInput =
+  components["schemas"]["ItemStockUsageRequest"];
 
 export const inventoryRepository = {
   getStatuses: async (): Promise<InventoryStatus[]> => {
@@ -92,6 +94,21 @@ export const inventoryRepository = {
     );
     if (error || !response.ok || !data) {
       await throwApiError(response, "Failed to save stock usages");
+    }
+    return data ?? [];
+  },
+
+  /** 1つのアイテムの使用量だけを置き換える。空なら使用量を消す */
+  replaceItemUsages: async (
+    itemId: string,
+    usages: ItemStockUsageInput[],
+  ): Promise<StockUsage[]> => {
+    const { data, error, response } = await client.PUT(
+      "/api/inventory/usages/{item_id}",
+      { params: { path: { item_id: itemId } }, body: usages },
+    );
+    if (error || !response.ok || !data) {
+      await throwApiError(response, "Failed to save item stock usages");
     }
     return data ?? [];
   },

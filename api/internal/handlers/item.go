@@ -171,13 +171,22 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.Item{}, "id = ?", itemID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	// 消したアイテムの使用量が残ると、在庫の設定で見えないまま残るので一緒に消す。
+	var affected int64
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.Item{}, "id = ?", itemID)
+		affected = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if result.RowsAffected == 0 {
+	if affected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
 	}

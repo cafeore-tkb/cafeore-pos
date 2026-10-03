@@ -702,6 +702,51 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/StockUsage'
+  /api/inventory/usages/{item_id}:
+    put:
+      summary: 1つのアイテムの使用量を置き換える
+      description: |
+        そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
+        ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+      operationId: replaceItemStockUsages
+      tags:
+        - inventory
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ItemStockUsageRequest'
+      responses:
+        '200':
+          description: 成功（そのアイテムの置き換え後の使用量）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockUsage'
+        '400':
+          description: 量が 0 以下、同じ在庫対象が重複、または在庫対象が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: アイテムが無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/inventory/remind:
     post:
       summary: 残量確認のリマインドを Slack に送る
@@ -1249,6 +1294,7 @@ components:
           $ref: '#/components/schemas/StockResourceKind'
         name:
           type: string
+          minLength: 1
           example: ホットカップ
         unit:
           type: string
@@ -1258,18 +1304,24 @@ components:
           type: number
           format: double
           description: 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+          minimum: 0
+          not:
+            enum: [0]
           example: 1
         notify_from:
           type: integer
           description: 残りがこの杯数を切ったら通知を始める
+          minimum: 0
           example: 500
         notify_step:
           type: integer
           description: notify_from から何杯減るごとに通知するか
+          minimum: 0
           example: 100
         buffer:
           type: integer
           description: 最低限残したい杯数。これを切ると危険扱い
+          minimum: 0
           example: 100
     StockResourceResponse:
       allOf:
@@ -1406,6 +1458,22 @@ components:
         amount:
           type: number
           format: double
+          description: アイテム1杯で使う量（カップ 1、豆 15 など）
+    ItemStockUsageRequest:
+      type: object
+      required:
+        - resource_id
+        - amount
+      properties:
+        resource_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          minimum: 0
+          not:
+            enum: [0]
           description: アイテム1杯で使う量（カップ 1、豆 15 など）
     InventoryRemindResponse:
       type: object

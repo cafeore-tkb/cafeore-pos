@@ -17,13 +17,23 @@ const errorMessage = (error: unknown, response: Response) =>
 
 /** 一括取り込み・書き出しで使う、今の DB の内容 */
 export const fetchMasterSnapshot = async (): Promise<MasterSnapshot> => {
-  const [itemTypes, items, menus, colorSettings] = await Promise.all([
-    client.GET("/api/item-types"),
-    client.GET("/api/items"),
-    client.GET("/api/menus"),
-    client.GET("/api/color-settings"),
-  ]);
-  for (const { error, response } of [itemTypes, items, menus, colorSettings]) {
+  const [itemTypes, items, menus, colorSettings, inventory, usages] =
+    await Promise.all([
+      client.GET("/api/item-types"),
+      client.GET("/api/items"),
+      client.GET("/api/menus"),
+      client.GET("/api/color-settings"),
+      client.GET("/api/inventory"),
+      client.GET("/api/inventory/usages"),
+    ]);
+  for (const { error, response } of [
+    itemTypes,
+    items,
+    menus,
+    colorSettings,
+    inventory,
+    usages,
+  ]) {
     if (error || !response.ok) {
       throw new Error(
         `${response.url} を読めませんでした: ${errorMessage(error, response)}`,
@@ -35,6 +45,8 @@ export const fetchMasterSnapshot = async (): Promise<MasterSnapshot> => {
     items: items.data ?? [],
     menus: menus.data ?? [],
     color_settings: colorSettings.data ?? [],
+    stock_resources: (inventory.data ?? []).map((status) => status.resource),
+    item_stock_usages: usages.data ?? [],
   };
 };
 
@@ -56,6 +68,15 @@ const send = (call: MasterCall, body: Record<string, unknown>) => {
     case "/api/color-settings":
       return client.PUT(call.path, {
         body: body as Schemas["ColorSettingUpsertRequest"],
+      });
+    case "/api/inventory/resources":
+      return client.POST(call.path, {
+        body: body as Schemas["StockResourceRequest"],
+      });
+    case "/api/inventory/usages/{item_id}":
+      return client.PUT(call.path, {
+        params: { path: { item_id: String(body.item_id) } },
+        body: body.usages as Schemas["ItemStockUsageRequest"][],
       });
   }
 };
@@ -87,7 +108,7 @@ export const runMasterImport = async (
           failed: { call, message: errorMessage(error, response) },
         };
       }
-      if (call.creates) ids.set(call.creates, data.id);
+      if (call.creates && "id" in data) ids.set(call.creates, data.id);
     } catch (e) {
       return {
         done: index,
