@@ -75,3 +75,34 @@ jobs:
             - `gh pr comment` はレビューには使わない（要約コメントの `--edit-last` が壊れるため）。
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr review --comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git cat-file:*),Write"
+      # 最新以外の Claude の総評を「Outdated」として折りたたむ
+      - name: Minimize old Claude reviews
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          reviews=$(gh api graphql --paginate \
+            -f owner="${REPO%/*}" -f name="${REPO#*/}" -F number="$PR_NUMBER" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    reviews(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { id body isMinimized author { login } }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.reviews.nodes[]
+              | select((.author.login | test("^claude(\\[bot\\])?$")) and (.body | contains("<!-- claude-review -->")))
+              | [.id, .isMinimized] | @tsv')
+          # 古い順に並んでいるので、最後の 1 件（最新の総評）は残す
+          echo "$reviews" | sed '$d' | while IFS=$'\t' read -r id minimized; do
+            if [ -z "$id" ] || [ "$minimized" = "true" ]; then continue; fi
+            gh api graphql -f id="$id" -f query='
+              mutation($id: ID!) {
+                minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { minimizedComment { isMinimized } }
+              }' >/dev/null
+          done
