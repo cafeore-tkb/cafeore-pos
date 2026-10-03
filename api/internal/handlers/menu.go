@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
@@ -91,11 +92,20 @@ func ensureItemsExist(tx *gorm.DB, menuItems []models.MenuItem) error {
 	return nil
 }
 
+// Postgres の一意制約違反のエラーコード
+const pgUniqueViolation = "23505"
+
 // トランザクションのエラーを、入力の誤りなら 400、それ以外は 500 で返す。
+// key の重複（menus.key の一意制約）も入力の誤りとして 400 にする。
 func respondMenuWriteError(c *gin.Context, err error) {
 	var invalid *invalidMenuItemsError
 	if errors.As(err, &invalid) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": invalid.Error()})
+		return
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key already exists"})
 		return
 	}
 	respondInternalError(c, err)

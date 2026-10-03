@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestRespondMenuWriteErrorHidesDBErrors(t *testing.T) {
@@ -20,6 +21,7 @@ func TestRespondMenuWriteErrorHidesDBErrors(t *testing.T) {
 	}{
 		"invalid items":         {&invalidMenuItemsError{"duplicate item_id"}, http.StatusBadRequest, "duplicate item_id"},
 		"wrapped invalid items": {fmt.Errorf("tx: %w", &invalidMenuItemsError{"item not found"}), http.StatusBadRequest, "item not found"},
+		"duplicate key":         {&pgconn.PgError{Code: "23505", ConstraintName: "idx_menus_key"}, http.StatusBadRequest, "key already exists"},
 		"db error":              {errors.New(`pq: relation "menu_items" does not exist`), http.StatusInternalServerError, "Internal server error"},
 	}
 	for name, tc := range cases {
