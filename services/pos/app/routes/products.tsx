@@ -5,10 +5,14 @@ import {
   useItemMaster,
   useMenuMaster,
 } from "@cafeore/common";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { ColorSettingsTab } from "~/components/organisms/products/ColorSettingsTab";
+import {
+  DeleteDialog,
+  type DeleteTarget,
+} from "~/components/organisms/products/DeleteDialog";
 import { ItemTypesTab } from "~/components/organisms/products/ItemTypesTab";
 import { ItemsTab } from "~/components/organisms/products/ItemsTab";
 import { MasterDataTab } from "~/components/organisms/products/MasterDataTab";
@@ -19,6 +23,10 @@ import {
   type ProductKind,
 } from "~/components/organisms/products/ProductEditor";
 import type { RowHandlers } from "~/components/organisms/products/RowActions";
+import {
+  itemTypeUsage,
+  itemUsage,
+} from "~/components/organisms/products/usage";
 import { Button } from "~/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
@@ -67,6 +75,10 @@ export default function ProductsPage() {
     mutateItemTypes,
   } = useItemMaster();
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
+  const usageOfItems = useMemo(() => itemUsage(menus), [menus]);
+  const usageOfItemTypes = useMemo(() => itemTypeUsage(items), [items]);
 
   // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す
   const refresh = () =>
@@ -75,14 +87,35 @@ export default function ProductsPage() {
   const handlersFor = (kind: ProductKind): RowHandlers => ({
     onEdit: (id) => setEditing({ kind, mode: "edit", id }),
     onCopy: (id) => setEditing({ kind, mode: "copy", id }),
-    onDelete: async (id) => {
-      if (!window.confirm("削除しますか？")) return;
-      try {
-        await repositories[kind].delete(id);
-        await refresh();
-        toast.success("削除しました");
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "削除に失敗しました");
+    onDelete: (id) => {
+      const run = async () => {
+        try {
+          await repositories[kind].delete(id);
+          await refresh();
+          toast.success("削除しました");
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "削除に失敗しました");
+        }
+      };
+      if (kind === "menu") {
+        const name = menus.find((menu) => menu.id === id)?.name ?? "";
+        setDeleteTarget({ label: "メニュー", name, usedBy: [], run });
+      } else if (kind === "item") {
+        setDeleteTarget({
+          label: "アイテム",
+          name: items.find((item) => item.id === id)?.name ?? "",
+          usedByLabel: "メニュー",
+          usedBy: usageOfItems.get(id) ?? [],
+          run,
+        });
+      } else {
+        setDeleteTarget({
+          label: "タイプ",
+          name: itemTypes.find((t) => t.id === id)?.display_name ?? "",
+          usedByLabel: "アイテム",
+          usedBy: usageOfItemTypes.get(id) ?? [],
+          run,
+        });
       }
     },
   });
@@ -128,14 +161,19 @@ export default function ProductsPage() {
         ) : (
           <>
             <TabsContent value="menus" className="mt-4">
-              <MenusTab menus={menus} {...handlersFor("menu")} />
+              <MenusTab menus={menus} items={items} {...handlersFor("menu")} />
             </TabsContent>
             <TabsContent value="items" className="mt-4">
-              <ItemsTab items={items} {...handlersFor("item")} />
+              <ItemsTab
+                items={items}
+                usage={usageOfItems}
+                {...handlersFor("item")}
+              />
             </TabsContent>
             <TabsContent value="item-types" className="mt-4">
               <ItemTypesTab
                 itemTypes={itemTypes}
+                usage={usageOfItemTypes}
                 {...handlersFor("itemType")}
               />
             </TabsContent>
@@ -156,6 +194,10 @@ export default function ProductsPage() {
         menus={menus}
         items={items}
         itemTypes={itemTypes}
+      />
+      <DeleteDialog
+        target={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
       />
     </div>
   );
