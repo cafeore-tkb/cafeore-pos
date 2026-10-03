@@ -58,12 +58,12 @@ func TestHubSendsSnapshotOnlyToNewClientBeforeLaterBroadcasts(t *testing.T) {
 	}
 
 	first := dial()
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 	if got := read(first); got != WSMessageTypeOrders {
 		t.Fatalf("first message must be the snapshot, got %q", got)
 	}
 	second := dial()
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 	if got := read(second); got != WSMessageTypeOrders {
 		t.Fatalf("first message must be the snapshot, got %q", got)
 	}
