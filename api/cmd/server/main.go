@@ -258,7 +258,6 @@ func main() {
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
-	masterDataHandler := handlers.NewMasterDataHandler(db)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -311,9 +310,6 @@ func main() {
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
-		api.GET("/master-data", masterDataHandler.ExportMasterData)
-		api.POST("/master-data/import", masterDataHandler.ImportMasterData)
-		api.POST("/master-data/import/dry-run", masterDataHandler.ImportMasterDataDryRun)
 	}
 
 	// サーバー起動

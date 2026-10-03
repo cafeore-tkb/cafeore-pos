@@ -173,79 +173,6 @@ type ItemUpdateRequest struct {
 	Name       string             `json:"name"`
 }
 
-// MasterData defines model for MasterData.
-type MasterData struct {
-	ItemTypes *[]MasterItemType `json:"item_types,omitempty"`
-	Items     *[]MasterItem     `json:"items,omitempty"`
-	Menus     *[]MasterMenu     `json:"menus,omitempty"`
-}
-
-// MasterImportCount defines model for MasterImportCount.
-type MasterImportCount struct {
-	Created   int `json:"created"`
-	Unchanged int `json:"unchanged"`
-	Updated   int `json:"updated"`
-}
-
-// MasterImportError defines model for MasterImportError.
-type MasterImportError struct {
-	Error string `json:"error"`
-
-	// Problems 見つかった不正をすべて並べる（どの行の何が悪いか）
-	Problems []string `json:"problems"`
-}
-
-// MasterImportResult defines model for MasterImportResult.
-type MasterImportResult struct {
-	DryRun    bool              `json:"dry_run"`
-	ItemTypes MasterImportCount `json:"item_types"`
-	Items     MasterImportCount `json:"items"`
-	Menus     MasterImportCount `json:"menus"`
-}
-
-// MasterItem defines model for MasterItem.
-type MasterItem struct {
-	Abbr string `json:"abbr"`
-
-	// ItemType アイテムタイプの name
-	ItemType string `json:"item_type"`
-
-	// MasterColor マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
-	MasterColor *string `json:"master_color,omitempty"`
-	Name        string  `json:"name"`
-
-	// ServeColor 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
-	ServeColor *string `json:"serve_color,omitempty"`
-}
-
-// MasterItemType defines model for MasterItemType.
-type MasterItemType struct {
-	DisplayName string `json:"display_name"`
-
-	// MasterColor マスター画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
-	MasterColor *string `json:"master_color,omitempty"`
-	Name        string  `json:"name"`
-
-	// ServeColor 提供画面の背景色（#RRGGBB）。省略すると変えない。空文字なら色を外す
-	ServeColor *string `json:"serve_color,omitempty"`
-}
-
-// MasterMenu defines model for MasterMenu.
-type MasterMenu struct {
-	Abbr  string           `json:"abbr"`
-	Items []MasterMenuItem `json:"items"`
-	Key   string           `json:"key"`
-	Name  string           `json:"name"`
-	Price int              `json:"price"`
-}
-
-// MasterMenuItem defines model for MasterMenuItem.
-type MasterMenuItem struct {
-	// Item アイテムの name
-	Item     string `json:"item"`
-	Quantity int    `json:"quantity"`
-}
-
 // MasterStateResponse defines model for MasterStateResponse.
 type MasterStateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -480,12 +407,6 @@ type CreateItemJSONRequestBody = ItemCreateRequest
 
 // UpdateItemJSONRequestBody defines body for UpdateItem for application/json ContentType.
 type UpdateItemJSONRequestBody = ItemUpdateRequest
-
-// ImportMasterDataJSONRequestBody defines body for ImportMasterData for application/json ContentType.
-type ImportMasterDataJSONRequestBody = MasterData
-
-// ImportMasterDataDryRunJSONRequestBody defines body for ImportMasterDataDryRun for application/json ContentType.
-type ImportMasterDataDryRunJSONRequestBody = MasterData
 
 // UpdateMasterStateJSONRequestBody defines body for UpdateMasterState for application/json ContentType.
 type UpdateMasterStateJSONRequestBody = MasterStateUpdateRequest
