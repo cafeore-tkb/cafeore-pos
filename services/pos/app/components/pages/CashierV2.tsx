@@ -20,10 +20,15 @@ import {
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
+import {
+  dismissSubmitFailed,
+  notifySubmitFailed,
+} from "../functional/submitFailedToast";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
+import { useSubmitKey } from "../functional/useSubmitKey";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -43,7 +48,15 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
-  submitPayload: (order: OrderEntity) => void;
+  /**
+   * 保存した注文を返す。失敗したら reject する
+   *
+   * idempotencyKey が同じなら、保存済みでも新しく作らずにその注文を返す
+   */
+  submitPayload: (
+    order: OrderEntity,
+    idempotencyKey: string | undefined,
+  ) => Promise<WithId<OrderEntity>>;
   syncOrder: (order: OrderEntity) => void;
 };
 
@@ -110,6 +123,11 @@ const CashierV2 = ({
 
   const printer = usePrinter();
 
+  // 保存中の二重送信を防ぐ。ref は同じ描画のうちに Enter が連打された場合のため
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const submitKey = useSubmitKey();
+
   usePreventNumberKeyUpDown();
 
   /**
@@ -125,7 +143,9 @@ const CashierV2 = ({
     setHasReceivedInput(false);
     resetStatus();
     renewUISession();
-  }, [dispatchOrder, resetStatus, renewUISession]);
+    // 入力を消したら、同じ内容を打ち直しても別の注文として扱う
+    submitKey.reset();
+  }, [dispatchOrder, resetStatus, renewUISession, submitKey.reset]);
 
   const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
   const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
@@ -162,7 +182,10 @@ const CashierV2 = ({
   }, [inputStatus, canEnterSubmit, setInputStatus]);
 
   const submitOrder = useCallback(
-    (exactPayment?: boolean) => {
+    async (exactPayment?: boolean) => {
+      if (submittingRef.current) {
+        return;
+      }
       if (!canSubmitOrder) {
         return;
       }
@@ -179,8 +202,29 @@ const CashierV2 = ({
       goodsOnlyServed(submitOne);
       // 備考を追加
       submitOne.addComment("cashier", descComment);
+
+      // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
+      // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
+      submittingRef.current = true;
+      setSubmitting(true);
+      let savedOrder: WithId<OrderEntity>;
+      try {
+        savedOrder = await submitPayload(
+          submitOne,
+          submitKey.keyFor(submitOne),
+        );
+      } catch (error) {
+        console.error(error);
+        notifySubmitFailed(submitOne.orderId, error);
+        return;
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+      dismissSubmitFailed();
+      // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
+      submitOne.orderId = savedOrder.orderId;
       printer.printOrderLabel(submitOne);
-      submitPayload(submitOne);
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
       if (manualOrderId !== null && wsStatus !== "open") {
@@ -203,6 +247,7 @@ const CashierV2 = ({
       setOrderIdOverride,
       wsStatus,
       setServiceActive,
+      submitKey.keyFor,
     ],
   );
 
@@ -223,6 +268,10 @@ const CashierV2 = ({
    */
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      // 保存中に Escape などで入力を消すと、失敗したときに打ち直しになる
+      if (submittingRef.current) {
+        return;
+      }
       const key = event.key;
       for (const [keyName, keyHandler] of Object.entries(keyEventHandlers)) {
         if (key === keyName) {
@@ -276,7 +325,10 @@ const CashierV2 = ({
             />
           </div>
         </div>
-        <div className="flex gap-5 px-2">
+        {/* 保存中は入力を変えられないようにする。失敗したら同じ入力で送り直すため */}
+        <div
+          className={cn("flex gap-5 px-2", submitting && "pointer-events-none")}
+        >
           <div>{menuOpen && itemMenu}</div>
           <div className="flex-1">
             <InputHeader
@@ -399,21 +451,30 @@ const CashierV2 = ({
               focus={inputStatus === "submit"}
               number={5}
             />
-            <fieldset
-              disabled={!canEnterSubmit}
-              className="min-w-0 border-0 p-0"
+            {/* disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
+            <div
+              aria-busy={submitting}
+              className={cn(submitting && "pointer-events-none opacity-50")}
             >
-              <SubmitSection
-                submitOrder={submitOrder}
-                onExactPayment={() => submitOrder(true)}
-                order={newOrder}
-                focus={inputStatus === "submit"}
-                focusTarget={submitFocusTarget}
-                exactPaymentDisabled={
-                  newOrder.menus.length === 0 || hasReceivedInput
-                }
-              />
-            </fieldset>
+              <fieldset
+                disabled={!canEnterSubmit}
+                className="min-w-0 border-0 p-0"
+              >
+                <SubmitSection
+                  submitOrder={submitOrder}
+                  onExactPayment={() => submitOrder(true)}
+                  order={newOrder}
+                  focus={inputStatus === "submit"}
+                  focusTarget={submitFocusTarget}
+                  exactPaymentDisabled={
+                    newOrder.menus.length === 0 || hasReceivedInput
+                  }
+                />
+              </fieldset>
+              {submitting && (
+                <p className="text-center text-sm text-stone-500">保存中…</p>
+              )}
+            </div>
           </div>
         </div>
         <audio src={bellTwice} ref={soundRef}>

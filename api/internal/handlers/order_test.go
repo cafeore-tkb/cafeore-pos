@@ -112,3 +112,47 @@ func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 		t.Fatal("must preload menu composition")
 	}
 }
+
+func TestCreateOrderOnceReturnsExistingOrder(t *testing.T) {
+	saved := &models.Order{ID: uuid.New(), OrderId: 7}
+	errCreate := errors.New("duplicate key")
+	cases := []struct {
+		name         string
+		hasKey       bool
+		found        []*models.Order // findExisting が呼ばれるたびに返す注文
+		createErr    error
+		wantExisting *models.Order
+		wantErr      error
+		wantCreates  int
+	}{
+		{name: "キーなしは毎回作る", hasKey: false, wantCreates: 1},
+		{name: "キーなしの作成失敗はそのまま返す", hasKey: false, createErr: errCreate, wantErr: errCreate, wantCreates: 1},
+		{name: "新しいキーなら作る", hasKey: true, found: []*models.Order{nil}, wantCreates: 1},
+		{name: "保存済みのキーなら作らずに返す", hasKey: true, found: []*models.Order{saved}, wantExisting: saved},
+		{name: "同時に作られて重複したら先の注文を返す", hasKey: true, found: []*models.Order{nil, saved}, createErr: errCreate, wantExisting: saved, wantCreates: 1},
+		{name: "作れず既存も無ければ作成のエラーを返す", hasKey: true, found: []*models.Order{nil, nil}, createErr: errInvalidOrderMenus, wantErr: errInvalidOrderMenus, wantCreates: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			finds, creates := 0, 0
+			find := func() (*models.Order, error) {
+				if finds >= len(tc.found) {
+					t.Fatal("findExisting called too many times")
+				}
+				finds++
+				return tc.found[finds-1], nil
+			}
+			create := func() error {
+				creates++
+				return tc.createErr
+			}
+			existing, err := createOrderOnce(tc.hasKey, find, create)
+			if existing != tc.wantExisting || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) {
+				t.Fatalf("got (%v, %v), want (%v, %v)", existing, err, tc.wantExisting, tc.wantErr)
+			}
+			if creates != tc.wantCreates {
+				t.Fatalf("create called %d times, want %d", creates, tc.wantCreates)
+			}
+		})
+	}
+}
