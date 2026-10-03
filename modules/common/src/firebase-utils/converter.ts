@@ -1,76 +1,14 @@
-import {
-  type DocumentData,
-  type FirestoreDataConverter,
-  type QueryDocumentSnapshot,
-  type SnapshotOptions,
-  Timestamp,
-} from "firebase/firestore";
-import _ from "lodash";
-import type { ZodSchema } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
-  MasterStateEntity,
+  type GlobalCashierState,
+  cashierStateWireSchema,
   globalCashierStateSchema,
-  globalMasterStateSchema,
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import { MenuEntity } from "../models/menu";
-import {
-  type Order,
-  type OrderComment,
-  OrderEntity,
-  orderSchema,
-} from "../models/order";
+import { type Order, type OrderComment, OrderEntity } from "../models/order";
 import type { components } from "../types/api";
-
-export const converter = <T>(
-  schema: ZodSchema<T>,
-): FirestoreDataConverter<T> => {
-  return {
-    toFirestore: (data: T) => {
-      // Zod のパースを挟まないと、Entityオブジェクトのgetter/setterは無視され
-      // privateプロパティがFirestoreに保存されてしまう
-      const parsedData = schema.parse(data);
-      // id は ドキュメントには含めない
-      const dataWithoutId = _.omit(parsedData as object, "id");
-      return dataWithoutId;
-    },
-    fromFirestore: (
-      snapshot: QueryDocumentSnapshot,
-      options: SnapshotOptions,
-    ) => {
-      const data = snapshot.data(options);
-      // id は Firestore のドキュメント ID を使う
-      const dataWithId = { ...data, id: snapshot.id };
-      const dateParsedData = parseDateProperty(dataWithId);
-      return schema.parse(dateParsedData);
-    },
-  };
-};
-
-// 通常の Firestore のデータは上記 Zod によってパースできるが
-// Firestore の Timestamp はパースできないため、個別でパースする
-
-// この関数の型注釈は若干嘘
-const parseDateProperty = (data: DocumentData): DocumentData => {
-  const parsedData = _.mapValues(data, (value) =>
-    // firestore 固有の Timestamp 型を Date に変換
-    value instanceof Timestamp ? value.toDate() : value,
-  );
-  const recursivelyParsedData = _.mapValues(parsedData, (value) => {
-    // 再帰的にパースする
-    switch (Object.prototype.toString.call(value)) {
-      case "[object Object]":
-        return parseDateProperty(value);
-      case "[object Array]":
-        return (value as Array<DocumentData>).map((v) => parseDateProperty(v));
-      default:
-        return value;
-    }
-  });
-  return recursivelyParsedData;
-};
 
 /**
  * openapi のデータを ItemEntity に変換する
@@ -155,54 +93,6 @@ export const menuToUpdateRequest = (
   id: menu.id,
   ...menuToCreateRequest(menu),
 });
-
-/**
- * Firestore のデータを OrderEntity に変換する
- */
-export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
-  toFirestore: converter(orderSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ): WithId<OrderEntity> => {
-    const convertedData = converter(orderSchema.required()).fromFirestore(
-      snapshot,
-      options,
-    );
-    return OrderEntity.fromOrder(convertedData);
-  },
-};
-
-export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
-  {
-    toFirestore: converter(globalCashierStateSchema).toFirestore,
-    fromFirestore: (
-      snapshot: QueryDocumentSnapshot,
-      options: SnapshotOptions,
-    ) => {
-      const convertedData = converter(globalCashierStateSchema).fromFirestore(
-        snapshot,
-        options,
-      );
-
-      return CashierStateEntity.fromCashierState(convertedData);
-    },
-  };
-
-export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
-  toFirestore: converter(globalMasterStateSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ) => {
-    const convertedData = converter(globalMasterStateSchema).fromFirestore(
-      snapshot,
-      options,
-    );
-
-    return MasterStateEntity.fromMasterState(convertedData);
-  },
-};
 
 export type OrderResponse = components["schemas"]["OrderResponse"];
 type MenuInfo = components["schemas"]["MenuInfo"];
@@ -314,5 +204,37 @@ export const orderToUpdateRequest = (
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
     menu_ids: menuIds,
+  };
+};
+
+/**
+ * レジ状態（cashier-state）と API の間の変換
+ */
+type CashierStateResponse = components["schemas"]["CashierStateResponse"];
+type CashierStateUpdateRequest =
+  components["schemas"]["CashierStateUpdateRequest"];
+
+// API の JSON では Date が ISO 文字列になっているので、wire スキーマで Date に戻す
+export const responseToCashierState = (
+  response: CashierStateResponse,
+): CashierStateEntity => {
+  const parsed = cashierStateWireSchema.parse({
+    id: "cashier-state",
+    edittingOrder: response.editting_order,
+    submittedOrderId: response.submitted_order_id ?? null,
+  });
+  return CashierStateEntity.fromCashierState(parsed);
+};
+
+export const cashierStateToUpdateRequest = (
+  state: GlobalCashierState,
+): CashierStateUpdateRequest => {
+  // Zod のパースを挟まないと OrderEntity の getter が無視され、
+  // private プロパティがそのまま送られてしまう
+  const parsed = globalCashierStateSchema.parse(state);
+  return {
+    // Date は JSON.stringify で ISO 文字列になる
+    editting_order: parsed.edittingOrder as unknown as Record<string, unknown>,
+    submitted_order_id: parsed.submittedOrderId,
   };
 };

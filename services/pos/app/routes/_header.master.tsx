@@ -1,8 +1,6 @@
 import {
-  MasterStateEntity,
   type OrderEntity,
   type OrderStatType,
-  masterRepository,
   orderRepository,
   orderStatTypes,
   updateMasterStatus,
@@ -149,12 +147,8 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     const { status } = submission.value;
 
-    const masterStats =
-      (await masterRepository.get()) ?? MasterStateEntity.createNew();
-
-    masterStats.addOrderStat(status);
-    await masterRepository.set(masterStats);
-
+    // オーダーストップの状態は API にだけ書く。
+    // 画面側は WebSocket の master_state で追従する（useOrderStat）。
     await updateMasterStatus(status);
 
     return new Response("ok");

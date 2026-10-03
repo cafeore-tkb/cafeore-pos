@@ -1,15 +1,10 @@
-import {
-  cashierStateConverter,
-  documentSub,
-  orderConverter,
-} from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
-import useSWRSubscription from "swr/subscription";
 import logoSVG from "~/assets/cafeore.svg";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
+import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "珈琲・俺 1号店" }];
@@ -20,15 +15,16 @@ export default function CasherMini() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const soundRef1 = useRef<HTMLAudioElement>(null);
   const soundRef2 = useRef<HTMLAudioElement>(null);
-  const { data: orderState } = useSWRSubscription(
-    ["global", "cashier-state"],
-    documentSub({ converter: cashierStateConverter }),
-  );
-  const order = orderState?.edittingOrder;
-  const submittedOrderId = orderState?.submittedOrderId;
-  const { data: preOrder } = useSWRSubscription(
-    ["orders", submittedOrderId ?? "none"],
-    documentSub({ converter: orderConverter }),
+  // レジの編集中注文と確定済み注文は API の WebSocket から受け取る
+  const { cashierState, orders } = useOrdersWSContext();
+  const order = cashierState?.edittingOrder;
+  const submittedOrderId = cashierState?.submittedOrderId;
+  const preOrder = useMemo(
+    () =>
+      submittedOrderId == null
+        ? undefined
+        : orders.find((o) => o.id === submittedOrderId),
+    [orders, submittedOrderId],
   );
   const isOperational = useOrderStat();
 

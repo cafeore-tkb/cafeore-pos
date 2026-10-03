@@ -94,14 +94,8 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
 
   const savedOrder = await orderRepository.save(order);
 
-  const cashierState = await cashierRepository.get();
-  if (cashierState == null) {
-    return console.log("cashierState is null");
-  }
-  await cashierRepository.set({
-    ...cashierState,
-    submittedOrderId: savedOrder.id,
-  });
+  // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
+  await cashierRepository.setSubmittedOrder(savedOrder);
 
   return new Response("ok");
 };
@@ -122,11 +116,16 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
 
   const { syncOrder } = submission.value;
 
-  cashierRepository.set({
-    id: "cashier-state",
-    edittingOrder: OrderEntity.fromOrder(syncOrder),
-    submittedOrderId: null,
-  });
+  cashierRepository
+    .set({
+      id: "cashier-state",
+      edittingOrder: OrderEntity.fromOrder(syncOrder),
+      submittedOrderId: null,
+    })
+    .catch((err) => {
+      // キー入力のたびに呼ぶので await しない。失敗はここで拾ってログに残す
+      console.error("レジ状態の同期に失敗しました", err);
+    });
 
   return new Response("ok");
 };
