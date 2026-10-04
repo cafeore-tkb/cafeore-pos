@@ -96,6 +96,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | 未設定 | `DATABASE_URL` がトランザクションプーラー（ポート 6543）なら、直接接続かセッションプーラーの接続文字列 |
 | `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
@@ -113,6 +114,14 @@ PR を閉じると `pr-cleanup` がタグを外す。
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
 開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
 逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
+
+### 注文の変更の配信（orders_changed）
+
+api は DB の `orders_changed` 通知を LISTEN していて、通知が来るたびに全注文を WebSocket で配り直す（`internal/handlers/order_listener.go`）。API を通さない書き換え、たとえば CaOS が Supabase の RPC で `ready_at` を付けたときも、これで POS の画面に届く。インスタンスが増えても、それぞれが待ち受けて自分につないでいる画面へ配る。
+
+- 通知を送るトリガーは `api/sql/2026-10_orders_notify.sql`。本番は手で流す。流していなくても、API からの書き換えはこれまでどおり配られる。
+- LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる。
+- API 自身の書き換えでも、ハンドラーと通知の両方から配信の依頼が来る。30ms 以内の依頼は 1 回にまとめて送る。
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。

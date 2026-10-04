@@ -19,10 +19,14 @@ type OrderHandler struct {
 	db        *gorm.DB
 	hub       *Hub
 	inventory *Inventory
+	// 全注文の配信の依頼。broadcastOrders を参照
+	broadcastRequests chan struct{}
 }
 
 func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *OrderHandler {
-	return &OrderHandler{db: db, hub: hub, inventory: inventory}
+	h := &OrderHandler{db: db, hub: hub, inventory: inventory, broadcastRequests: make(chan struct{}, 1)}
+	go h.runOrderBroadcaster()
+	return h
 }
 
 // 注文履歴では販売終了（論理削除）したメニューも参照する。
@@ -125,8 +129,34 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	return resp
 }
 
-// ブロードキャスト用のヘルパー
+// 配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。
+//
+// API で注文を書き換えると、ハンドラー自身の依頼と、DB の orders_changed 通知
+// （ListenOrderChanges）の両方から依頼が来る。全注文を毎回送るので、二重に送らないようにしている。
+const orderBroadcastDelay = 30 * time.Millisecond
+
+// broadcastOrders は全注文の配信を依頼する。すぐに戻り、少し待ってから 1 回だけ送る。
 func (h *OrderHandler) broadcastOrders() {
+	select {
+	case h.broadcastRequests <- struct{}{}:
+	default:
+		// 既に依頼が溜まっている。その配信に今の状態も含まれる
+	}
+}
+
+func (h *OrderHandler) runOrderBroadcaster() {
+	for range h.broadcastRequests {
+		time.Sleep(orderBroadcastDelay)
+		select {
+		case <-h.broadcastRequests:
+		default:
+		}
+		h.sendOrders()
+	}
+}
+
+// 全注文を読み直して WebSocket へ送る。
+func (h *OrderHandler) sendOrders() {
 	var orders []models.Order
 	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
 		return
