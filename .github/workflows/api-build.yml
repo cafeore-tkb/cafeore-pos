@@ -96,6 +96,7 @@ jobs:
     # 2つ除外している。
     #
     #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
+    #     （既存の pos-deploy-pull-request.yml と同じ条件）
     #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
     #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
