@@ -205,7 +205,7 @@ func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated,
 		text = fmt.Sprintf("🔧 調整: %s %s%s", r.Name, signed(e.Quantity), r.Unit)
 	}
 	if e.Kind != string(models.StockEventKindCount) && remaining != nil {
-		text += fmt.Sprintf("（残り 約%s%s）", formatNumber(*remaining), r.Unit)
+		text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
 	}
 	if e.Note != "" {
 		text += fmt.Sprintf("「%s」", e.Note)

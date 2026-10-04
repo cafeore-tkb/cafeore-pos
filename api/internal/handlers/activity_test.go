@@ -71,7 +71,7 @@ func TestStockEventMessage(t *testing.T) {
 		{
 			"receipt",
 			models.StockEvent{Kind: "receipt", Quantity: 1000, Note: "追加発注分"},
-			"📦 入荷: ケニア豆 +1000g（残り 約2230g）「追加発注分」",
+			"📦 入荷: ケニア豆 +1000g（残り約2230g）「追加発注分」",
 		},
 		{
 			"count",
@@ -81,7 +81,7 @@ func TestStockEventMessage(t *testing.T) {
 		{
 			"adjust",
 			models.StockEvent{Kind: "adjust", Quantity: -50},
-			"🔧 調整: ケニア豆 -50g（残り 約2230g）",
+			"🔧 調整: ケニア豆 -50g（残り約2230g）",
 		},
 	}
 	for _, tc := range cases {

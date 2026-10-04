@@ -154,3 +154,49 @@ func TestValidateStockEvent(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertMessage(t *testing.T) {
+	counted := 3000.0
+	bean := stockSnapshot{
+		Resource:         models.StockResource{Kind: "bean", Name: "ケニア豆", Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
+		Tracked:          true,
+		CountedQuantity:  &counted,
+		Consumed:         1800, // 残り 1200g = 80 杯
+		ServingsLastHour: 12,
+	}
+	if got, want := alertMessage(bean), "⚠️ *ケニア豆* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+
+	cups := 90.0
+	cup := stockSnapshot{
+		Resource:        models.StockResource{Kind: "cup", Name: "アイスカップ", Unit: "個", PerServing: 1, NotifyFrom: 500, NotifyStep: 100, Buffer: 100},
+		Tracked:         true,
+		CountedQuantity: &cups,
+	}
+	if got, want := alertMessage(cup), "🚨 *アイスカップ* 残り約90個（バッファ100個を切りました）"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestRemindMessage(t *testing.T) {
+	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
+	countedAt := now.Add(-80 * time.Minute)
+	counted := 1200.0
+	snapshots := []stockSnapshot{
+		{
+			Resource:        models.StockResource{Kind: "bean", Name: "ケニア豆", Unit: "g", PerServing: 15},
+			Tracked:         true,
+			BaseAt:          &countedAt,
+			CountedQuantity: &counted,
+		},
+		{Resource: models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}},
+	}
+	want := "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
+		"• ケニア豆: 残り約80杯（1200g）（最終確認 1時間20分前）\n" +
+		"• ホットカップ: 未計測（最終確認 未実施）\n" +
+		"<https://pos.example.com/inventory|在庫ページを開く>"
+	if got := remindMessage(snapshots, now, "https://pos.example.com/"); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
