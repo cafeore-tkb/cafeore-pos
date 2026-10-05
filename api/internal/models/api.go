@@ -9,6 +9,29 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CaosDripStatus.
+const (
+	CaosDripStatusBrewing    CaosDripStatus = "brewing"
+	CaosDripStatusDone       CaosDripStatus = "done"
+	CaosDripStatusQueued     CaosDripStatus = "queued"
+	CaosDripStatusUnassigned CaosDripStatus = "unassigned"
+)
+
+// Defines values for CaosErrorResponseCode.
+const (
+	CaosErrorCodeInvalid CaosErrorResponseCode = "invalid"
+)
+
+// Defines values for CaosOpName.
+const (
+	CaosOpAssign   CaosOpName = "assign"
+	CaosOpMerge    CaosOpName = "merge"
+	CaosOpNext     CaosOpName = "next"
+	CaosOpRebrew   CaosOpName = "rebrew"
+	CaosOpRestore  CaosOpName = "restore"
+	CaosOpUnassign CaosOpName = "unassign"
+)
+
 // Defines values for ColorScreen.
 const (
 	ColorScreenMaster ColorScreen = "master"
@@ -41,6 +64,112 @@ const (
 	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
 )
+
+// CaosBoard defines model for CaosBoard.
+type CaosBoard struct {
+	Day   openapi_types.Date `json:"day"`
+	Drips []CaosDrip         `json:"drips"`
+
+	// V 盤面の版。カードが変わるたびに 1 ずつ増える
+	V int64 `json:"v"`
+}
+
+// CaosDrip 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚
+type CaosDrip struct {
+	CreatedAt  time.Time          `json:"created_at"`
+	Cups       int                `json:"cups"`
+	Dripper    *int               `json:"dripper"`
+	FinishedAt *time.Time         `json:"finished_at"`
+	Id         openapi_types.UUID `json:"id"`
+
+	// Interrupted 入れ直しのために途中でやめた抽出
+	Interrupted bool                 `json:"interrupted"`
+	Lines       []CaosDripLine       `json:"lines"`
+	OrderIds    []openapi_types.UUID `json:"order_ids"`
+
+	// QueuePos 待機列の並び順（ふだんは注文番号）
+	QueuePos float64 `json:"queue_pos"`
+
+	// RebrewOf 入れ直しのカードなら、元のカード
+	RebrewOf  *openapi_types.UUID `json:"rebrew_of"`
+	StartedAt *time.Time          `json:"started_at"`
+
+	// Status unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+	Status CaosDripStatus `json:"status"`
+
+	// UpdatedAt 「1つ戻す」は、この値が操作の結果と同じとき（ほかの端末が触っていないとき）だけ戻す
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名はカードを作った時点のもの
+type CaosDripLine struct {
+	Abbr   string             `json:"abbr"`
+	Cups   int                `json:"cups"`
+	ItemId openapi_types.UUID `json:"item_id"`
+	Name   string             `json:"name"`
+
+	// Nominee POS の指名（前後の空白を落としたもの）
+	Nominee *string            `json:"nominee"`
+	OrderId openapi_types.UUID `json:"order_id"`
+	OrderNo int                `json:"order_no"`
+
+	// Type 商品の種類（item_types.name）
+	Type string `json:"type"`
+}
+
+// CaosDripStatus unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+type CaosDripStatus string
+
+// CaosErrorResponse defines model for CaosErrorResponse.
+type CaosErrorResponse struct {
+	Code  *CaosErrorResponseCode `json:"code,omitempty"`
+	Error string                 `json:"error"`
+}
+
+// CaosErrorResponseCode defines model for CaosErrorResponse.Code.
+type CaosErrorResponseCode string
+
+// CaosOp name ごとに使うフィールド：
+// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
+// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+// restore（before・after・readied）
+type CaosOp struct {
+	// After 操作が返した changed
+	After *[]CaosDrip `json:"after,omitempty"`
+
+	// Before 操作の前の行（結果の changed と deleted のうち、操作の前からあったもの）
+	Before *[]CaosDrip `json:"before,omitempty"`
+
+	// Cups 入れ直す杯数（元のカードの杯数まで）
+	Cups    *int                `json:"cups,omitempty"`
+	DripId  *openapi_types.UUID `json:"drip_id,omitempty"`
+	Dripper *int                `json:"dripper"`
+	FirstId *openapi_types.UUID `json:"first_id,omitempty"`
+
+	// Interrupt 抽出中の元のカードを途中でやめる
+	Interrupt *bool      `json:"interrupt,omitempty"`
+	Name      CaosOpName `json:"name"`
+	QueuePos  *float64   `json:"queue_pos"`
+
+	// Readied 操作が準備完了にした注文（まだ提供していなければ取り消す）
+	Readied  *[]openapi_types.UUID `json:"readied,omitempty"`
+	SecondId *openapi_types.UUID   `json:"second_id,omitempty"`
+	SourceId *openapi_types.UUID   `json:"source_id,omitempty"`
+}
+
+// CaosOpName defines model for CaosOp.Name.
+type CaosOpName string
+
+// CaosOpResult defines model for CaosOpResult.
+type CaosOpResult struct {
+	Changed []CaosDrip           `json:"changed"`
+	Day     openapi_types.Date   `json:"day"`
+	Deleted []openapi_types.UUID `json:"deleted"`
+
+	// Readied この操作で準備完了にした注文
+	Readied []openapi_types.UUID `json:"readied"`
+	V       int64                `json:"v"`
+}
 
 // ColorScreen 背景色を適用する画面
 type ColorScreen string
@@ -380,6 +509,9 @@ type StockUsage struct {
 
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
+
+// ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
+type ApplyCaosOpJSONRequestBody = CaosOp
 
 // UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
 type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest

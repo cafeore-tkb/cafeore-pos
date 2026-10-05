@@ -91,6 +91,23 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/boards/{day}": {
+    /**
+     * CaOS の盤面（その日の全カードと版）
+     * @description 読む前に、その日の注文と照らし合わせてカードをそろえる。CaOS の画面は、つないだとき・
+     * WebSocket の drips_version で手元より新しい版を知ったときに読み直す。
+     */
+    get: operations["getCaosBoard"];
+  };
+  "/api/caos/boards/{day}/ops": {
+    /**
+     * CaOS の盤面への操作
+     * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+     * 注文のカードが全部終わったら、同じトランザクションで注文を準備完了にする（readied）。
+     * 変わったカードは WebSocket（/api/ws/orders）の drips でほかの画面にも届く。
+     */
+    post: operations["applyCaosOp"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -357,6 +374,131 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    /** @description 抽出カードの中身の 1 行。注文番号や商品名はカードを作った時点のもの */
+    CaosDripLine: {
+      /** Format: uuid */
+      order_id: string;
+      order_no: number;
+      /** Format: uuid */
+      item_id: string;
+      name: string;
+      abbr: string;
+      /** @description 商品の種類（item_types.name） */
+      type: string;
+      /** @description POS の指名（前後の空白を落としたもの） */
+      nominee: string | null;
+      cups: number;
+    };
+    /**
+     * @description unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+     * @enum {string}
+     */
+    CaosDripStatus: "unassigned" | "queued" | "brewing" | "done";
+    /** @description 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚 */
+    CaosDrip: {
+      /** Format: uuid */
+      id: string;
+      status: components["schemas"]["CaosDripStatus"];
+      dripper: number | null;
+      /**
+       * Format: double
+       * @description 待機列の並び順（ふだんは注文番号）
+       */
+      queue_pos: number;
+      order_ids: string[];
+      lines: components["schemas"]["CaosDripLine"][];
+      cups: number;
+      /**
+       * Format: uuid
+       * @description 入れ直しのカードなら、元のカード
+       */
+      rebrew_of: string | null;
+      /** @description 入れ直しのために途中でやめた抽出 */
+      interrupted: boolean;
+      /** Format: date-time */
+      started_at: string | null;
+      /** Format: date-time */
+      finished_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /**
+       * Format: date-time
+       * @description 「1つ戻す」は、この値が操作の結果と同じとき（ほかの端末が触っていないとき）だけ戻す
+       */
+      updated_at: string;
+    };
+    CaosBoard: {
+      /** Format: date */
+      day: string;
+      /**
+       * Format: int64
+       * @description 盤面の版。カードが変わるたびに 1 ずつ増える
+       */
+      v: number;
+      drips: components["schemas"]["CaosDrip"][];
+    };
+    /**
+     * @description name ごとに使うフィールド：
+     * assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
+     * rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+     * restore（before・after・readied）
+     */
+    CaosOp: {
+      /** @enum {string} */
+      name: "assign" | "unassign" | "next" | "merge" | "rebrew" | "restore";
+      /** Format: uuid */
+      drip_id?: string;
+      dripper?: number | null;
+      /** Format: uuid */
+      first_id?: string;
+      /** Format: uuid */
+      second_id?: string;
+      /** Format: uuid */
+      source_id?: string;
+      /** @description 入れ直す杯数（元のカードの杯数まで） */
+      cups?: number;
+      /** @description 抽出中の元のカードを途中でやめる */
+      interrupt?: boolean;
+      /** Format: double */
+      queue_pos?: number | null;
+      /** @description 操作の前の行（結果の changed と deleted のうち、操作の前からあったもの） */
+      before?: components["schemas"]["CaosDrip"][];
+      /** @description 操作が返した changed */
+      after?: components["schemas"]["CaosDrip"][];
+      /** @description 操作が準備完了にした注文（まだ提供していなければ取り消す） */
+      readied?: string[];
+    };
+    CaosOpResult: {
+      /** Format: date */
+      day: string;
+      /** Format: int64 */
+      v: number;
+      changed: components["schemas"]["CaosDrip"][];
+      deleted: string[];
+      /** @description この操作で準備完了にした注文 */
+      readied: string[];
+    };
+    CaosErrorResponse: {
+      /** @example ドリッパー 3 は抽出中ではありません */
+      error: string;
+      /** @enum {string} */
+      code?: "invalid";
+    };
+    /**
+     * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
+     * drips：このインスタンスで変わったカード（drips は消えただけのときは省く）と消えたカード。
+     * drips_version：ほかのインスタンスで盤面が変わった。手元の版より新しければ GET /api/caos/boards/{day} で読み直す。
+     */
+    CaosWSMessage: {
+      /** @enum {string} */
+      type: "drips" | "drips_version";
+      /** Format: date */
+      day: string;
+      /** Format: int64 */
+      v: number;
+      drips?: components["schemas"]["CaosDrip"][];
+      deleted?: string[];
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -964,6 +1106,66 @@ export interface operations {
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の盤面（その日の全カードと版）
+   * @description 読む前に、その日の注文と照らし合わせてカードをそろえる。CaOS の画面は、つないだとき・
+   * WebSocket の drips_version で手元より新しい版を知ったときに読み直す。
+   */
+  getCaosBoard: {
+    parameters: {
+      path: {
+        /** @description 営業日（日本時間の日付） */
+        day: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBoard"];
+        };
+      };
+      /** @description 日付の形が違う */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の盤面への操作
+   * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+   * 注文のカードが全部終わったら、同じトランザクションで注文を準備完了にする（readied）。
+   * 変わったカードは WebSocket（/api/ws/orders）の drips でほかの画面にも届く。
+   */
+  applyCaosOp: {
+    parameters: {
+      path: {
+        /** @description 営業日（日本時間の日付） */
+        day: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosOp"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosOpResult"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
         };
       };
     };

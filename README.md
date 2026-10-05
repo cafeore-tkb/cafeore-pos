@@ -109,6 +109,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
 在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
+CaOS の盤面のテーブル（`caos_boards`・`caos_drips`）を本番に足すときは `api/sql/2026-10_caos.sql` を手で流す。
 
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
@@ -122,6 +123,16 @@ api は DB の `orders_changed` 通知を LISTEN していて、通知が来る�
 - 通知を送るトリガーは `api/sql/2026-10_orders_notify.sql`。本番は手で流す。流していなくても、API からの書き換えはこれまでどおり配られる。
 - LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる。
 - API 自身の書き換えでも、ハンドラーと通知の両方から配信の依頼が来る。30ms 以内の依頼は 1 回にまとめて送る。
+
+### CaOS（ドリップ管制）の盤面
+
+CaOS の抽出カード（1 回のドリップ＝1 枚）と、割当・次へ・統合・入れ直し・1つ戻すのルールは `internal/caos` にある。盤面は営業日（日本時間）ごとに 1 つで、`caos_boards` のその日の行をロックして 1 件ずつ順番に処理する。
+
+- **POS の注文との連動：** 注文の作成・編集・削除・準備完了・提供済みのハンドラーが、同じトランザクションの中でその注文のカードをそろえる（作る・消す・抽出終了にする）。DB のトリガーは使わない。CaOS の処理が失敗しても注文の書き込みは止めない（savepoint まで戻してログに残す。カードは次にその日の盤面を読んだときにそろう）。
+- **CaOS からの準備完了：** 「次へ」で注文のカードが全部終わったら、同じトランザクションで注文の `ready_at` を付ける。「1つ戻す」で外す。
+- **API：** `GET /api/caos/boards/{day}`（全カードと版。読む前にその日の注文と照らし合わせる）、`POST /api/caos/boards/{day}/ops`（操作。ルールに合わなければ 422）。
+- **配信：** 変わったカードは、操作したインスタンスから `/api/ws/orders` の `{"type":"drips"}` で配る。ほかのインスタンスには DB の `caos_drips_changed` 通知で版だけが届き、`{"type":"drips_version"}` を配る。画面は手元の版より新しければ読み直す。
+- **テスト：** `go test ./internal/caos` はルールのテスト（DB なし）。本物の Postgres でも確かめるときは、空の DB を渡して `CAOS_TEST_DATABASE_URL=postgres://... go test -p 1 ./internal/caos ./internal/handlers`（表を作り直すので、本番やプレビューの DB は渡さない）。
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。

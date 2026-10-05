@@ -14,6 +14,12 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS の盤面（その日の全カードと版）
+	// (GET /api/caos/boards/{day})
+	GetCaosBoard(c *gin.Context, day openapi_types.Date)
+	// CaOS の盤面への操作
+	// (POST /api/caos/boards/{day}/ops)
+	ApplyCaosOp(c *gin.Context, day openapi_types.Date)
 	// 背景色設定一覧取得
 	// (GET /api/color-settings)
 	GetColorSettings(c *gin.Context)
@@ -138,6 +144,54 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetCaosBoard operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosBoard(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "day" -------------
+	var day openapi_types.Date
+
+	err = runtime.BindStyledParameterWithOptions("simple", "day", c.Param("day"), &day, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter day: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosBoard(c, day)
+}
+
+// ApplyCaosOp operation middleware
+func (siw *ServerInterfaceWrapper) ApplyCaosOp(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "day" -------------
+	var day openapi_types.Date
+
+	err = runtime.BindStyledParameterWithOptions("simple", "day", c.Param("day"), &day, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter day: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApplyCaosOp(c, day)
+}
 
 // GetColorSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
@@ -880,6 +934,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/caos/boards/:day", wrapper.GetCaosBoard)
+	router.POST(options.BaseURL+"/api/caos/boards/:day/ops", wrapper.ApplyCaosOp)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)

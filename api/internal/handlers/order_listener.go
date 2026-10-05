@@ -4,9 +4,13 @@ package handlers
 import (
 	"context"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"cafeore-pos/api/internal/caos"
 )
 
 // DB の orders_changed 通知を待ち受けるチャンネル名。api/sql/2026-10_orders_notify.sql のトリガーが送る。
@@ -52,15 +56,36 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 	if _, err := conn.Exec(ctx, "LISTEN "+ordersChangedChannel); err != nil {
 		return err
 	}
+	// CaOS の盤面の変更（どのインスタンスで操作しても、ここで版を受けて自分につないでいる画面へ知らせる）
+	if _, err := conn.Exec(ctx, "LISTEN "+caos.ChangedChannel); err != nil {
+		return err
+	}
 	onListening()
-	log.Printf("listening for %s", ordersChangedChannel)
+	log.Printf("listening for %s, %s", ordersChangedChannel, caos.ChangedChannel)
 
 	// 待ち受けを始める前の変更を取りこぼさないよう、つないだ時点で一度配る
 	h.broadcastOrders()
 	for {
-		if _, err := conn.WaitForNotification(ctx); err != nil {
+		n, err := conn.WaitForNotification(ctx)
+		if err != nil {
 			return err
+		}
+		if n.Channel == caos.ChangedChannel {
+			h.broadcastDripsVersion(n.Payload)
+			continue
 		}
 		h.broadcastOrders()
 	}
+}
+
+// broadcastDripsVersion は盤面の版（payload は "日付:版"）を画面へ知らせる。
+// 画面は手元の版より新しければ読み直す（操作したインスタンスにつないでいる画面には、変わったカードがもう届いている）。
+func (h *OrderHandler) broadcastDripsVersion(payload string) {
+	day, v, ok := strings.Cut(payload, ":")
+	version, err := strconv.ParseInt(v, 10, 64)
+	if !ok || err != nil {
+		log.Printf("caos: unknown notification payload %q", payload)
+		return
+	}
+	h.hub.Broadcast(WSMessage{Type: WSMessageTypeDripsVersion, Day: day, Version: version})
 }

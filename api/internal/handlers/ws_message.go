@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 
 	"log"
@@ -14,6 +15,10 @@ type WSMessageType string
 const (
 	WSMessageTypeOrders      WSMessageType = "orders"
 	WSMessageTypeMasterState WSMessageType = "master_state"
+	// CaOS の盤面のカードが変わった（変わったカードと消えたカード）。版 v は盤面（日）ごとに 1 ずつ増える
+	WSMessageTypeDrips WSMessageType = "drips"
+	// ほかのインスタンスで盤面が変わった（版だけ）。手元の版より新しければ GET /api/caos/boards/{day} で読み直す
+	WSMessageTypeDripsVersion WSMessageType = "drips_version"
 )
 
 type WSMessage struct {
@@ -22,6 +27,12 @@ type WSMessage struct {
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
+	// drips・drips_version：どの日の盤面か、その版
+	Day     string `json:"day,omitempty"`
+	Version int64  `json:"v,omitempty"`
+	// drips：変わったカード（消えただけのときは省く）と消えたカード
+	Drips   []caos.Drip `json:"drips,omitempty"`
+	Deleted []string    `json:"deleted,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -32,7 +43,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	defer func() {
 		h.hub.Unregister(conn)
 		if err := conn.Close(); err != nil {
-    	log.Println("failed to close connection:", err)
+			log.Println("failed to close connection:", err)
 		}
 	}()
 

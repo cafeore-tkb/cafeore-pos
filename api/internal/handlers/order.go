@@ -12,6 +12,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -19,12 +20,14 @@ type OrderHandler struct {
 	db        *gorm.DB
 	hub       *Hub
 	inventory *Inventory
+	// CaOS の盤面。注文の変更を同じトランザクションでカードに反映する（nil なら連動しない）
+	caos *caos.Store
 	// 全注文の配信の依頼。broadcastOrders を参照
 	broadcastRequests chan struct{}
 }
 
-func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *OrderHandler {
-	h := &OrderHandler{db: db, hub: hub, inventory: inventory, broadcastRequests: make(chan struct{}, 1)}
+func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *caos.Store) *OrderHandler {
+	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore, broadcastRequests: make(chan struct{}, 1)}
 	go h.runOrderBroadcaster()
 	return h
 }
@@ -233,13 +236,18 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		lines, err := loadOrderMenus(tx, order.ID, req.MenuIds, nil)
 		if err != nil {
 			return err
 		}
 		order.OrderMenus = lines
-		return tx.Create(&order).Error
+		if err := tx.Create(&order).Error; err != nil {
+			return err
+		}
+		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
@@ -259,6 +267,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	publishCaos(h.hub, h, applied...)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -315,6 +324,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
 	resourcesBefore := h.inventory.ResourceIDsForOrder(order.ID)
 
+	var applied []*caos.Applied
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		orderMenus, err := loadOrderMenus(tx, order.ID, req.MenuIds, order.OrderMenus)
 		if err != nil {
@@ -335,8 +345,11 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			return err
 		}
 		if len(orderMenus) > 0 {
-			return tx.Create(&orderMenus).Error
+			if err := tx.Create(&orderMenus).Error; err != nil {
+				return err
+			}
 		}
+		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		return nil
 	})
 	if err != nil {
@@ -355,6 +368,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	publishCaos(h.hub, h, applied...)
 	go func() {
 		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(order.ID)))
 	}()
@@ -384,25 +398,32 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
-	// 注文明細を削除
-	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+	// 注文明細とオーダーを削除し、CaOS の盤面からもその注文のカードを片付ける
+	var applied []*caos.Applied
+	var deleted int64
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.Order{}, "id = ?", orderID)
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected
+		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// オーダーを削除
-	result := h.db.Delete(&models.Order{}, "id = ?", orderID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	if result.RowsAffected == 0 {
+	if deleted == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+	publishCaos(h.hub, h, applied...)
 	go h.inventory.CheckAlerts(resources)
 }
 
@@ -432,7 +453,15 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		order.ReadyAt = nil
 	}
 
-	if err := h.db.Save(&order).Error; err != nil {
+	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	var applied []*caos.Applied
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -443,6 +472,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
+	publishCaos(h.hub, h, applied...)
 }
 
 // PATCH /api/orders/:id/served - オーダーを提供済みにする
@@ -474,7 +504,15 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		order.ReadyAt = nil
 	}
 
-	if err := h.db.Save(&order).Error; err != nil {
+	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	var applied []*caos.Applied
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -485,6 +523,7 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
+	publishCaos(h.hub, h, applied...)
 }
 
 var upgrader = websocket.Upgrader{
