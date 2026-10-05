@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,13 @@ const ordersChangedChannel = "orders_changed"
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
+
+// 待ち受けを始めたときに自分宛てに送る、通知が届くかの確認の接頭辞。
+// 注文の通知とは別物なので、受けても配信はしない。
+const listenProbePrefix = "probe "
+
+// 確認の通知がこの時間内に届かなければ、通知が届かない設定だとみなして警告する。
+const listenProbeTimeout = 10 * time.Second
 
 // notifyOrderChanged は、注文が変わったことをほかのインスタンスへ知らせる。
 //
@@ -83,6 +91,28 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 	onListening()
 	log.Printf("listening for %s, %s", ordersChangedChannel, caos.ChangedChannel)
 
+	// トランザクションプーラー（Supabase の 6543 や Neon の -pooler）経由だと、LISTEN は
+	// エラーにならないのに通知だけが届かない。注文の通知と同じ経路（h.db）で自分宛てに
+	// 確認の通知を送り、届かなければ警告して設定ミスに気づけるようにする。
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	probe := listenProbePrefix + instanceID + " " + uuid.NewString()
+	var probed atomic.Bool
+	go func() {
+		select {
+		case <-connCtx.Done():
+		case <-time.After(listenProbeTimeout):
+			if !probed.Load() {
+				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスの注文の変更が配られない。"+
+					"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
+					ordersChangedChannel, listenProbeTimeout)
+			}
+		}
+	}()
+	if err := h.db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, probe).Error; err != nil {
+		log.Printf("failed to send %s probe: %v", ordersChangedChannel, err)
+	}
+
 	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全注文とカードを配り直す
 	h.publishAllOrders()
 	h.broadcastDrips()
@@ -91,11 +121,17 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 		if err != nil {
 			return err
 		}
-		if n.Channel == caos.ChangedChannel {
+		switch {
+		case n.Channel == caos.ChangedChannel:
 			h.handleDripsChanged(n.Payload)
-			continue
+		case n.Payload == probe:
+			probed.Store(true)
+			log.Printf("%s: notifications are delivered", ordersChangedChannel)
+		case strings.HasPrefix(n.Payload, listenProbePrefix):
+			// ほかのインスタンスの確認の通知
+		default:
+			h.handleOrderChanged(n.Payload)
 		}
-		h.handleOrderChanged(n.Payload)
 	}
 }
 
