@@ -23,7 +23,6 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
-| `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
 | `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 
 ### フロントエンド（Cloudflare Workers）
@@ -117,11 +116,13 @@ PR を閉じると `pr-cleanup` がタグを外す。
 
 ### 注文の変更の配信（orders_changed）
 
-api は DB の `orders_changed` 通知を LISTEN していて、通知が来るたびに全注文を WebSocket で配り直す（`internal/handlers/order_listener.go`）。API を通さない書き換え（SQL で直接直したときなど）や、ほかのインスタンスでの書き換えも、これで POS の画面に届く。インスタンスが増えても、それぞれが待ち受けて自分につないでいる画面へ配る。
+api は DB の `orders_changed` 通知を LISTEN していて、通知に載った注文 ID の注文を読み直して WebSocket で配る（`internal/handlers/order_listener.go`）。API を通さない書き換え（SQL で直接直したときなど）や、ほかのインスタンスでの書き換えも、これで POS の画面に届く。インスタンスが増えても、それぞれが待ち受けて自分につないでいる画面へ配る。
 
 - 通知を送るトリガーは `api/sql/2026-10_orders_notify.sql`。本番は手で流す。流していなくても、API からの書き換えはこれまでどおり配られる。
 - LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる。
-- API 自身の書き換えでも、ハンドラーと通知の両方から配信の依頼が来る。30ms 以内の依頼は 1 回にまとめて送る。
+- トリガーは行ごとに注文 ID を載せて通知する。同じトランザクションの同じ注文の通知は Postgres が 1 つにまとめるので、カップを何杯書き換えても 1 件の配信になる。
+- API 自身の書き換えでは、ハンドラーの配信と通知からの配信で同じ注文が 2 回届く。どちらも読み直した最新の注文なので、画面の状態は変わらない。
+- 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文を配り直す。
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。

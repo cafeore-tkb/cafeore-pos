@@ -12,7 +12,11 @@ import type { OrderEntity } from "../models";
 type WsStatus = ReconnectingWebSocketStatus;
 
 type WSMessage =
+  // 全注文。接続直後に届く
   | { type: "orders"; orders?: OrderResponse[] }
+  // 作成・変更された1件の注文
+  | { type: "order"; order: OrderResponse }
+  | { type: "order_deleted"; order_id: string }
   | {
       type: "master_state";
       master_state: { created_at: string; type: string };
@@ -42,6 +46,25 @@ export const useOrdersWS = () => {
         switch (data.type) {
           case "orders":
             setOrders((data.orders ?? []).map(responseToOrderEntity));
+            break;
+
+          case "order": {
+            // 変わった注文だけ作り直し、他の注文はそのまま使う
+            const order = responseToOrderEntity(data.order);
+            setOrders((prev) => {
+              // 全件より先には届かないが、届いても全件を待つ
+              if (prev === undefined) return prev;
+              const index = prev.findIndex((o) => o.id === order.id);
+              if (index === -1) return [...prev, order];
+              const next = [...prev];
+              next[index] = order;
+              return next;
+            });
+            break;
+          }
+
+          case "order_deleted":
+            setOrders((prev) => prev?.filter((o) => o.id !== data.order_id));
             break;
 
           case "master_state":
