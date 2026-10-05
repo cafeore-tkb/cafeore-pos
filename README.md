@@ -23,7 +23,6 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
-| `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
 | `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 
 ### フロントエンド（Cloudflare Workers）
