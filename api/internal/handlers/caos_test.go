@@ -203,6 +203,14 @@ func TestCaosThroughHTTP(t *testing.T) {
 	if e.call(t, http.MethodPatch, "/api/orders/"+o2.Id.String()+"/ready", nil, nil); e.order(t, o2.Id).ReadyAt != nil {
 		t.Fatal("体なしの PATCH は今までどおり切り替える")
 	}
+	// 体なしでも分割送信（ContentLength が -1）なら、同じく切り替える（400 にしない）
+	req := httptest.NewRequest(http.MethodPatch, "/api/orders/"+o2.Id.String()+"/ready", strings.NewReader(""))
+	req.ContentLength = -1
+	w := httptest.NewRecorder()
+	e.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || e.order(t, o2.Id).ReadyAt == nil {
+		t.Fatalf("分割送信の体なしの PATCH も切り替える：%d", w.Code)
+	}
 
 	// 注文を消すと、未割当のカードも消える
 	o3 := e.createOrder(t, 3, 2)

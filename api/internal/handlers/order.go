@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -480,11 +481,10 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	var req struct {
 		Ready *bool `json:"ready"`
 	}
-	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+	// 体が空なら（分割送信で ContentLength が分からないときも）体なしとして扱う
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// 準備完了になったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
