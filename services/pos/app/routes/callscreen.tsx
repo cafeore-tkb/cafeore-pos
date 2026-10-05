@@ -120,7 +120,7 @@ export default function FielsOfCallScreen() {
 
         {/* 右側：お呼び出し中 */}
         <div className="w-[60%] p-4">
-          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-orange-500 via-theme-primary to-teal-500 py-2 text-center font-bold text-3xl text-white shadow-lg">
+          <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl text-white shadow-lg">
             <HiBell className="text-3xl" />
             お呼び出し中
             <HiBell className="text-3xl" />
@@ -146,14 +146,7 @@ export default function FielsOfCallScreen() {
 
       {/* 画面下部（30%）：準備中 */}
       <div className="border-t p-4">
-        <h1
-          className="mb-2 flex items-center justify-center gap-2 rounded-full py-2 text-center font-bold text-3xl shadow-lg"
-          style={{
-            backgroundImage:
-              "linear-gradient(135deg, #00524f, #00403e, #002e2d)",
-            color: "white",
-          }}
-        >
+        <h1 className="mb-2 flex items-center justify-center gap-2 rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-2 text-center font-bold text-3xl text-white shadow-lg">
           <FaCoffee className="text-3xl" />
           ドリップ中
           <FaSpinner

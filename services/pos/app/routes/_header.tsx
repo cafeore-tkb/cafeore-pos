@@ -5,7 +5,13 @@ import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function BaseHeader() {
-  const { isOnline } = useOnlineStatus();
+  const {
+    isOnline,
+    isDeviceOnline,
+    isBackendOnline,
+    isDatabaseOnline,
+    isInternetConnectionRequired,
+  } = useOnlineStatus();
   const isOperational = useOrderStat();
   const { status: wsStatus } = useOrdersWSContext();
   // オフライン時は WebSocket も当然切れるので、オフラインの表示だけにする
@@ -23,9 +29,19 @@ export default function BaseHeader() {
           !isOperational && "h-min bg-violet-600",
         )}
       >
-        {!isOnline && (
+        {isBackendOnline === false && (
           <div className="p-2 text-center text-white">
-            オフラインです。操作は反映されません
+            バックエンドに接続できません。操作は反映されません
+          </div>
+        )}
+        {isBackendOnline && isDatabaseOnline === false && (
+          <div className="p-2 text-center text-white">
+            データベースに接続できません。操作は反映されません
+          </div>
+        )}
+        {isInternetConnectionRequired && !isDeviceOnline && (
+          <div className="p-2 text-center text-white">
+            インターネットに接続されていません。操作は反映されません
           </div>
         )}
         {isWsDisconnected && (

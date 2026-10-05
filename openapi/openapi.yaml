@@ -275,6 +275,62 @@ paths:
       responses:
         '204':
           description: 成功
+  /api/color-settings:
+    get:
+      summary: 背景色設定一覧取得
+      operationId: getColorSettings
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ColorSettingResponse'
+    put:
+      summary: 背景色設定の作成・更新
+      description: 対象（target_type, target_id）と画面（screen）の組が既にあれば色を上書きし、無ければ作成する
+      operationId: upsertColorSetting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColorSettingUpsertRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColorSettingResponse'
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/color-settings/{id}:
+    delete:
+      summary: 背景色設定削除
+      operationId: deleteColorSetting
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+        '404':
+          description: 背景色設定が見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -506,6 +562,172 @@ paths:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
 
+  /api/inventory:
+    get:
+      summary: 在庫の残量一覧
+      description: 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+      operationId: getInventory
+      tags:
+        - inventory
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryStatus'
+  /api/inventory/resources:
+    post:
+      summary: 在庫対象の作成
+      operationId: createStockResource
+      tags:
+        - inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockResourceRequest'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResourceResponse'
+  /api/inventory/resources/{id}:
+    put:
+      summary: 在庫対象の更新
+      operationId: updateStockResource
+      tags:
+        - inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockResourceRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResourceResponse'
+    delete:
+      summary: 在庫対象の削除
+      operationId: deleteStockResource
+      tags:
+        - inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+  /api/inventory/resources/{id}/events:
+    post:
+      summary: 棚卸し・入荷・調整の記録
+      description: count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
+      operationId: createStockEvent
+      tags:
+        - inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockEventCreateRequest'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockEventCreateResponse'
+  /api/inventory/usages:
+    get:
+      summary: アイテム1杯あたりの使用量一覧
+      operationId: getStockUsages
+      tags:
+        - inventory
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockUsage'
+    put:
+      summary: アイテム1杯あたりの使用量をまとめて置き換える
+      operationId: replaceStockUsages
+      tags:
+        - inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/StockUsage'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockUsage'
+  /api/inventory/remind:
+    post:
+      summary: 残量確認のリマインドを Slack に送る
+      description: |
+        スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+          - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+          - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+        （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+        直近に注文が無い（営業していない）ときは送らない。
+      operationId: remindInventory
+      tags:
+        - inventory
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryRemindResponse'
+        '401':
+          description: ID トークンも合言葉も合わない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     StatusResponse:
@@ -642,6 +864,7 @@ components:
           type: string
         price:
           type: integer
+          minimum: 0
         key:
           type: string
         items:
@@ -936,6 +1159,69 @@ components:
       properties:
         type:
           type: string
+    ColorTargetType:
+      type: string
+      description: 背景色を設定する対象の種類
+      enum:
+        - Item
+        - ItemType
+      # 既定の定数名（Item, ItemType）は DB モデルの構造体名と衝突するため明示する
+      x-enum-varnames:
+        - ColorTargetTypeItem
+        - ColorTargetTypeItemType
+    ColorScreen:
+      type: string
+      description: 背景色を適用する画面
+      enum:
+        - master
+        - serve
+      x-enum-varnames:
+        - ColorScreenMaster
+        - ColorScreenServe
+    ColorSettingResponse:
+      type: object
+      required:
+        - id
+        - target_type
+        - target_id
+        - screen
+        - color
+      properties:
+        id:
+          type: string
+          format: uuid
+        target_type:
+          $ref: '#/components/schemas/ColorTargetType'
+        target_id:
+          type: string
+          format: uuid
+          description: Item または ItemType の ID
+        screen:
+          $ref: '#/components/schemas/ColorScreen'
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+          example: "#bfdbfe"
+    ColorSettingUpsertRequest:
+      type: object
+      required:
+        - target_type
+        - target_id
+        - screen
+        - color
+      properties:
+        target_type:
+          $ref: '#/components/schemas/ColorTargetType'
+        target_id:
+          type: string
+          format: uuid
+          description: Item または ItemType の ID
+        screen:
+          $ref: '#/components/schemas/ColorScreen'
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+          example: "#bfdbfe"
     ErrorResponse:
       type: object
       required:
@@ -944,3 +1230,189 @@ components:
         error:
           type: string
           example: "Invalid order ID format"
+    StockResourceKind:
+      type: string
+      enum: [cup, bean]
+      x-enum-varnames: [StockResourceKindCup, StockResourceKindBean]
+    StockResourceRequest:
+      type: object
+      required:
+        - kind
+        - name
+        - unit
+        - per_serving
+        - notify_from
+        - notify_step
+        - buffer
+      properties:
+        kind:
+          $ref: '#/components/schemas/StockResourceKind'
+        name:
+          type: string
+          example: ホットカップ
+        unit:
+          type: string
+          description: 数える単位（個 / g）
+          example: 個
+        per_serving:
+          type: number
+          format: double
+          description: 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+          example: 1
+        notify_from:
+          type: integer
+          description: 残りがこの杯数を切ったら通知を始める
+          example: 500
+        notify_step:
+          type: integer
+          description: notify_from から何杯減るごとに通知するか
+          example: 100
+        buffer:
+          type: integer
+          description: 最低限残したい杯数。これを切ると危険扱い
+          example: 100
+    StockResourceResponse:
+      allOf:
+        - $ref: '#/components/schemas/StockResourceRequest'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              type: string
+              format: uuid
+    InventoryLevel:
+      type: string
+      description: untracked は棚卸し・入荷がまだ一度も無い
+      enum: [ok, warning, critical, untracked]
+      x-enum-varnames: [InventoryLevelOk, InventoryLevelWarning, InventoryLevelCritical, InventoryLevelUntracked]
+    InventoryStatus:
+      type: object
+      required:
+        - resource
+        - level
+        - received
+        - consumed
+        - servings
+        - servings_last_hour
+      properties:
+        resource:
+          $ref: '#/components/schemas/StockResourceResponse'
+        level:
+          $ref: '#/components/schemas/InventoryLevel'
+        counted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 最後の棚卸し。無ければ最初の入荷
+        counted_quantity:
+          type: number
+          format: double
+          nullable: true
+        received:
+          type: number
+          format: double
+          description: counted_at 以降の入荷・調整の合計
+        consumed:
+          type: number
+          format: double
+          description: counted_at 以降の注文での消費量
+        servings:
+          type: integer
+          description: counted_at 以降に売れた杯数
+        remaining:
+          type: number
+          format: double
+          nullable: true
+        remaining_servings:
+          type: number
+          format: double
+          nullable: true
+        servings_last_hour:
+          type: integer
+          description: 直近1時間に売れた杯数
+    StockEventKind:
+      type: string
+      enum: [count, receipt, adjust]
+      x-enum-varnames: [StockEventKindCount, StockEventKindReceipt, StockEventKindAdjust]
+    StockEventCreateRequest:
+      type: object
+      required:
+        - kind
+        - quantity
+      properties:
+        kind:
+          $ref: '#/components/schemas/StockEventKind'
+        quantity:
+          type: number
+          format: double
+        note:
+          type: string
+    StockEventResponse:
+      type: object
+      required:
+        - id
+        - resource_id
+        - kind
+        - quantity
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/StockEventKind'
+        quantity:
+          type: number
+          format: double
+        note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    StockEventCreateResponse:
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          $ref: '#/components/schemas/StockEventResponse'
+        estimated:
+          type: number
+          format: double
+          nullable: true
+          description: 記録する直前の推定残量（count のときの答え合わせ用）
+        actual_per_serving:
+          type: number
+          format: double
+          nullable: true
+          description: 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+    StockUsage:
+      type: object
+      required:
+        - item_id
+        - resource_id
+        - amount
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          description: アイテム1杯で使う量（カップ 1、豆 15 など）
+    InventoryRemindResponse:
+      type: object
+      required:
+        - sent
+      properties:
+        sent:
+          type: boolean
+        reason:
+          type: string
