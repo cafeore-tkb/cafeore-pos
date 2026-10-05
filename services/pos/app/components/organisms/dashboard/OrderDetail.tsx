@@ -21,7 +21,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ order }) => {
             <CardTitle>{`No. ${order.orderId}`}</CardTitle>
             <CardTitle>合計金額: {order.total}円</CardTitle>
             <CardTitle className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-stone-500">
-              {order.items.length}
+              {order.menus.length}
             </CardTitle>
             <div className="grid">
               <div className="px-2 text-right">
@@ -33,7 +33,7 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ order }) => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-1">
-            {order.items.map((item, idx) => (
+            {order.menus.map((item, idx) => (
               <div key={`${idx}-${item.id}`}>
                 <Card
                   className={cn(

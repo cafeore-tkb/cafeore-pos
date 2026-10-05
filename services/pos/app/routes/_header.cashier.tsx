@@ -4,14 +4,17 @@ import {
   orderRepository,
   orderSchema,
   stringToJSONSchema,
-  useItemMaster,
+  useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
 import { useCallback, useMemo } from "react";
-import type { ClientActionFunction, MetaFunction } from "react-router";
+import {
+  type ClientActionFunction,
+  type MetaFunction,
+  useSubmit,
+} from "react-router";
 import { z } from "zod";
-import { useAuth } from "~/components/functional/AuthProvider";
-import { useFlaggedSubmit } from "~/components/functional/useFlaggedSubmit";
+import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -21,11 +24,15 @@ export const meta: MetaFunction = () => {
 
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
-  const user = useAuth();
-  const disableFirebase = useMemo(() => user == null, [user]);
-  const { items } = useItemMaster();
+  const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
-  const submit = useFlaggedSubmit({ disableFirebase });
+  const { isDeviceOnline } = useDeviceOnlineStatus();
+  const submit = useSubmit();
+  // 会計可否は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
+  const canSubmitOrder = useMemo(
+    () => isDeviceOnline && status === "open",
+    [isDeviceOnline, status],
+  );
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {
@@ -49,6 +56,7 @@ export default function Cashier() {
       items={items}
       orders={orders}
       wsStatus={status}
+      canSubmitOrder={canSubmitOrder}
       submitPayload={submitPayload}
       syncOrder={syncOrder}
     />

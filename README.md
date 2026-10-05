@@ -9,7 +9,7 @@ Run `pnpm i` to install dependencies.
 |--|--|
 |`pnpm i`| Install dependencies|
 |`pnpm pos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/pos`|
-|`pnpm mobile` (`dev`\|`build`\|`start`\|`typecheck`)| Run commands in `services/mobile`|
+|~~`pnpm mobile`~~ （停止中）| `services/mobile` 用。再開するときは `package.json` の `//mobile` を `mobile` に戻す|
 |`pnpm common` (`typecheck`\|`test:`(`unit`\|`db`)) | Run commands in `modules/common`|
 
 ## CI / CD
@@ -19,10 +19,10 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test |
+| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `mobile-deploy-workers` | `services/mobile` | 同上 |
+| `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pos-deploy-merge` / `pos-deploy-pull-request` | `services/pos` | Firebase Hosting へデプロイ（**Workers と並行稼働中**） |
 | `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 
@@ -91,19 +91,66 @@ PR を閉じると `pr-cleanup` がタグを外す。
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
 
+### backend の環境変数
+
+| 変数 | ローカル | プレビュー | 本番 |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
+| `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
+| `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
+| `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
+| `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
+| `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
+| `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
+| `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
+
+プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
+`gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
+
+**本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
+無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
+開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
+逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
+
+**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
+フロントのデプロイ先を増やしたら infra 側にも足すこと。
+
 ### PR ごとの Neon ブランチ
 
-`NEON_PROJECT_ID` が設定されていれば、PR ごとに Neon のブランチ
-`preview/pr-<番号>` を **0.25〜1 CU** で作り、その接続文字列を
-プレビュー用 Cloud Run の `DATABASE_URL` に渡す。Cloud Run の環境変数は
-リビジョン単位なので、PR ごとに違う DB を指せる。
+`NEON_PROJECT_ID` が設定されていれば、PR のプレビュー用に Neon のブランチを
+**0.25〜1 CU** で用意し、その接続文字列をプレビュー用 Cloud Run の
+`DATABASE_URL` に渡す。Cloud Run の環境変数はリビジョン単位なので、
+リビジョンごとに違う DB を指せる。
+
+| PR の種類 | 使うブランチ |
+| --- | --- |
+| DB のスキーマや中身に影響するファイルを変えている | その PR 専用の `preview/pr-<番号>` |
+| それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
+
+「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
+今は `api/` と `.github/workflows/api-build.yml`。**DB のスキーマや中身に影響する
+ファイルを `api/` の外に置くときは、`DB_AFFECTING_PATHS` に足すこと**
+（例: ルートに `migrations/` を作る、seed を別の場所に置く）。
+
+それ以外の PR の backend は main と同じコードなので、共有ブランチで足りる。
+ただし共有ブランチの注文やレジ状態（`cashier_states`）は、それらの PR 同士で共有される。
+プランの上限（`branches limit exceeded`）に当たった場合は、Neon のコンソールで
+不要な `preview/pr-*` を消してから re-run する。共有ブランチは `pr-cleanup` の対象外なので消えない。
+共有ブランチは作り直されず、`AutoMigrate` は列や制約を足すだけで消さない。main で列の削除や
+名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
+re-run する（次のビルドで空から作り直される）。
 
 ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
 モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
-`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` が panic して
-コンテナが exit(2) する。ローカルの compose では
+`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` がエラーを返して
+コンテナが起動できない。ローカルの compose では
 `api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
 初期化ディレクトリにマウントしているだけなので Neon には効かない。
+
+プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
+渡している（下の[環境変数](#backend-の環境変数)を参照）。
 
 Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
 拡張を持つのでこのステップは保険になる。
@@ -152,6 +199,9 @@ fork からの PR は二重に止まる。
 
 デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
 そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
+例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR でも
+走らせるために `pull_request_target` を使っている。こちらは PR のコードを
+checkout せず PR 番号しか使わないので、fork の PR のコードが実行されることはない。
 
 一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
 上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば

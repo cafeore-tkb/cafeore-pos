@@ -124,7 +124,7 @@ export default function CasherMini() {
       <div
         className={cn(
           "absolute top-0 left-0 z-0 h-screen w-screen",
-          "bg-linear-to-br from-theme-primary via-teal-600 to-theme-primary",
+          "bg-linear-to-br from-theme-primary via-theme-primary to-theme-sub-deep",
         )}
       >
         <button type="button" className="absolute top-0 left-0 h-24 w-60" />
@@ -142,7 +142,7 @@ export default function CasherMini() {
           </p>
           <div className="flex h-4/5 flex-col justify-between">
             <div className="">
-              {order?.items.map((item, idx) => {
+              {order?.menus.map((item, idx) => {
                 return (
                   <div
                     key={`${idx}-${item.id}`}
