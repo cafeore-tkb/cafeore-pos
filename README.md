@@ -96,7 +96,6 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
 | `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | 未設定 | `DATABASE_URL` がトランザクションプーラー（ポート 6543）なら、直接接続かセッションプーラーの接続文字列 |
-| `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
@@ -107,13 +106,21 @@ PR を閉じると `pr-cleanup` がタグを外す。
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
-在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
-CaOS のテーブル（`caos_drips`・`caos_ops`）を本番に足すときは `api/sql/2026-10_caos.sql` を手で流す（モデルを AutoMigrate したものと同じ表になることをテストで確かめている）。
+**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
+フロントのデプロイ先を増やしたら infra 側にも足すこと。
 
-**本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
-無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
-開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
-逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
+### DB のスキーマ
+
+**スキーマの正本は Go のモデル（`api/internal/models`）だけ。** SQL は書かないし、本番 DB を手で触らない。
+
+- テーブルや列を足すときは、モデルを書き換える。新しいモデルは `models.All()`（`api/internal/models/all.go`）にも足す（`models` を import するパッケージのモデルは `cmd/server` の `schemaModels` に足す）
+- API は起動時に `AutoMigrate` でモデルを DB へ反映する（`api/cmd/server/migrate.go`）。本番・プレビュー・ローカルとも同じ
+- 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
+- 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
+- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+
+`AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
+それが必要になったら、その変更だけ別途やり方を相談すること。
 
 ### 注文の変更の配信（orders_changed）
 
@@ -129,7 +136,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 
 CaOS の抽出カード（1 回のドリップ＝1 枚）と、割当・次へ・統合・入れ直し・1つ戻すのルールは `internal/caos` にある。既存の注文の仕組みをできるだけ使い、新しく足したのは次のものだけ。
 
-- **表：** `caos_drips`（カード）と `caos_ops`（操作の記録。「1つ戻す」に使う）。表の正本は Go のモデル（`caos.DripRow`・`caos.OpRow`。制約もタグに書く）。AutoMigrate を走らせない本番には、同じ表を作る `api/sql/2026-10_caos.sql` を手で流す。DB のトリガーは使わない。カードには注文と商品の参照・指名・杯数・担当・状態・開始と終了の時刻だけを持ち、注文番号や商品名は持たない（画面は既存の `{"type":"orders"}`・`{"type":"order"}` の注文から引く）。作るもの（品物と杯数）は注文のカップ（`order_cups`。注文した時点の品物）から読む。カップを持たない以前の注文は、メニューの構成から読む。
+- **表：** `caos_drips`（カード）と `caos_ops`（操作の記録。「1つ戻す」に使う）。ほかの表と同じく、正本は Go のモデル（`caos.DripRow`・`caos.OpRow`。制約もタグに書く）で、起動時の AutoMigrate で作る（`cmd/server` の `schemaModels`。`caos` は `models` を使うので `models.All()` には入れられず、そこで足している）。カードには注文と商品の参照・指名・杯数・担当・状態・開始と終了の時刻だけを持ち、注文番号や商品名は持たない（画面は既存の `{"type":"orders"}`・`{"type":"order"}` の注文から引く）。作るもの（品物と杯数）は注文のカップ（`order_cups`。注文した時点の品物）から読む。カップを持たない以前の注文は、メニューの構成から読む。
 - **API：** `POST /api/caos/ops`（今日の盤面への操作。ルールに合わなければ 422）。
 - **配信：** `/api/ws/orders` の `{"type":"drips"}`（今日のカードの全部）。注文と同じく、カードを変えたインスタンスが自分の画面へ配り、DB の通知 `caos_drips_changed`（送ったインスタンスの ID を載せる）でほかのインスタンスに知らせる。受けたインスタンスは DB から読み直して自分の画面へ配る。つないだときにも届く。
 
@@ -148,9 +155,6 @@ CaOS の抽出カード（1 回のドリップ＝1 枚）と、割当・次へ�
 - **画面への配信：** 準備完了を付け外しした注文（操作の対象と統合相手）は `{"type":"order"}` で 1 件ずつ配る。カードは `{"type":"drips"}` で今日の分を全部配り、30ms 以内の依頼は 1 回にまとめる。
 - **ロックの順番：** 1 つの営業日への処理は、その日の advisory lock（`caos:YYYY-MM-DD`）で 1 件ずつ順番に行う。どの処理も「盤面 → 注文」の順にロックする。注文を書き換えるハンドラーは、注文の行を書く前に `lockCaos` で盤面をロックする（逆の順番だと、同じ注文を同時に触ったときにデッドロックになる）。取れなければその回の連動は飛ばす。
 - **テスト：** `go test ./internal/caos` はルールのテスト（DB なし）。本物の Postgres でも確かめるときは、空の DB を渡して `CAOS_TEST_DATABASE_URL=postgres://... go test -p 1 ./internal/caos ./internal/handlers`（表を作り直すので、本番やプレビューの DB は渡さない）。注文の通知のテストは `LISTEN_TEST_DATABASE_URL` に別の空の DB を渡す。
-
-**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
-フロントのデプロイ先を増やしたら infra 側にも足すこと。
 
 ### PR ごとの Neon ブランチ
 
@@ -177,18 +181,8 @@ CaOS の抽出カード（1 回のドリップ＝1 枚）と、割当・次へ�
 名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
 re-run する（次のビルドで空から作り直される）。
 
-ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
-モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
-`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` がエラーを返して
-コンテナが起動できない。ローカルの compose では
-`api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
-初期化ディレクトリにマウントしているだけなので Neon には効かない。
-
-プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
-渡している（下の[環境変数](#backend-の環境変数)を参照）。
-
-Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
-拡張を持つのでこのステップは保険になる。
+空のブランチでも、API が起動時に `uuid-ossp` 拡張を入れてからテーブルを作るので、そのまま動く
+（[DB のスキーマ](#db-のスキーマ)を参照）。
 
 ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
 PR を閉じると `pr-cleanup` が compute ごと消す。

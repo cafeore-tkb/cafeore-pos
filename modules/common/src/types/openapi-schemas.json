@@ -822,7 +822,7 @@
   },
   "CaosWSMessage": {
     "type": "object",
-    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
+    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
     "required": ["type"],
     "properties": {
       "type": {
@@ -835,6 +835,42 @@
         "items": {
           "$ref": "#/components/schemas/CaosDrip"
         }
+      }
+    }
+  },
+  "CashierStateResponse": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id", "updated_at"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない"
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "直前に確定した注文の ID。編集中は null"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "CashierStateUpdateRequest": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
       }
     }
   },

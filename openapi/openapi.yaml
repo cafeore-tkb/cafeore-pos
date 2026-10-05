@@ -615,7 +615,7 @@ paths:
         「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
         「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
         記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-        カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
+        カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
       operationId: applyCaosOp
       tags: [caos]
       requestBody:
@@ -832,6 +832,51 @@ paths:
                 $ref: '#/components/schemas/InventoryRemindResponse'
         '401':
           description: ID トークンも合言葉も合わない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/cashier-state:
+    get:
+      summary: レジ状態取得
+      description: レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+      operationId: getCashierState
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierStateResponse'
+        '404':
+          description: まだレジ状態が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: レジ状態更新
+      description: 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+      operationId: updateCashierState
+      tags:
+        - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashierStateUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierStateResponse'
+        '400':
+          description: editting_order に必須のキーが無い、または型が違う
           content:
             application/json:
               schema:
@@ -1528,7 +1573,7 @@ components:
       type: object
       description: |
         WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
-        今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
+        今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
       required: [type]
       properties:
         type:
@@ -1539,6 +1584,38 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CaosDrip'
+    CashierStateResponse:
+      type: object
+      required:
+        - editting_order
+        - submitted_order_id
+        - updated_at
+      properties:
+        editting_order:
+          type: object
+          additionalProperties: true
+          description: レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
+        submitted_order_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 直前に確定した注文の ID。編集中は null
+        updated_at:
+          type: string
+          format: date-time
+    CashierStateUpdateRequest:
+      type: object
+      required:
+        - editting_order
+        - submitted_order_id
+      properties:
+        editting_order:
+          type: object
+          additionalProperties: true
+        submitted_order_id:
+          type: string
+          format: uuid
+          nullable: true
     ErrorResponse:
       type: object
       required:
