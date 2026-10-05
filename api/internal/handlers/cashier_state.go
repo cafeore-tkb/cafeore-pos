@@ -34,8 +34,8 @@ func NewCashierStateHandler(db *gorm.DB, hub *Hub) *CashierStateHandler {
 // レジ状態の保存と配信を直列化する。
 //
 // Hub は積まれた順に送るので、保存から Broadcast までをこのロックで囲めば
-// クライアントには保存した順に届く。囲まないと、並行する PUT や接続直後の
-// 初期送信が古い状態を後から流し、クライアントが古い状態のまま残りうる。
+// クライアントには保存した順に届く。囲まないと、並行する PUT が古い状態を
+// 後から流し、クライアントが古い状態のまま残りうる。
 var cashierStateMu sync.Mutex
 
 func toCashierStateResponse(state *models.CashierState) (models.CashierStateResponse, error) {
@@ -324,28 +324,27 @@ func (h *CashierStateHandler) saveAndBroadcast(state *models.CashierState) (mode
 	return resp, nil
 }
 
-// 現在のレジ状態を WebSocket の全クライアントへ流す（接続直後の初期送信）。
-// まだ無ければ何も流さない。PUT と入れ違わないよう、同じロックの中で読んで流す。
-func broadcastCashierState(db *gorm.DB, hub *Hub) {
-	cashierStateMu.Lock()
-	defer cashierStateMu.Unlock()
-
+// 現在のレジ状態を、接続直後の初期データとして WSMessage にする。まだ無ければ ok = false。
+//
+// 読んでいる間に PUT が来ても、その配信は Client が初期データのあとに流すので、
+// 古い状態のまま残ることはない（hub.go の SendInitial を参照）。
+func cashierStateMessage(db *gorm.DB) (WSMessage, bool) {
 	state, err := findCashierState(db)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Println("failed to load cashier state:", err)
 		}
-		return
+		return WSMessage{}, false
 	}
 
 	resp, err := toCashierStateResponse(state)
 	if err != nil {
 		log.Println("failed to convert cashier state:", err)
-		return
+		return WSMessage{}, false
 	}
 
-	hub.Broadcast(WSMessage{
+	return WSMessage{
 		Type:         WSMessageTypeCashierState,
 		CashierState: &resp,
-	})
+	}, true
 }

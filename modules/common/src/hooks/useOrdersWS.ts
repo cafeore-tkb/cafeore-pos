@@ -7,10 +7,14 @@ import {
   responseToOrderEntity,
 } from "../firebase-utils";
 import type { WithId } from "../lib";
+import {
+  type ReconnectingWebSocketStatus,
+  createReconnectingWebSocket,
+} from "../lib/reconnectingWebSocket";
 import type { CashierStateEntity, OrderEntity } from "../models";
 import type { components } from "../types/api";
 
-type WsStatus = "connecting" | "open" | "closed" | "error";
+type WsStatus = ReconnectingWebSocketStatus;
 
 type WSMessage =
   | { type: "orders"; orders?: OrderResponse[] }
@@ -43,21 +47,13 @@ export const useOrdersWS = () => {
     const wsUrl = apiBaseUrl
       .replace("http://", "ws://")
       .replace("https://", "wss://");
-    const ws = new WebSocket(`${wsUrl}/api/ws/orders`);
 
-    setStatus("connecting");
-
-    ws.onopen = () => {
-      setStatus("open");
-    };
-
-    ws.onmessage = (e) => {
+    const handleMessage = (e: MessageEvent) => {
       try {
         const data: WSMessage = JSON.parse(e.data);
 
         switch (data.type) {
           case "orders":
-            // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
             setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 
@@ -77,16 +73,15 @@ export const useOrdersWS = () => {
       }
     };
 
-    ws.onerror = () => {
-      setStatus("error");
-    };
-
-    ws.onclose = () => {
-      setStatus("closed");
-    };
+    // 切れたら自動でつなぎ直す。サーバーは接続直後に現在の状態を送ってくるので、それで再同期される
+    const connection = createReconnectingWebSocket({
+      url: `${wsUrl}/api/ws/orders`,
+      onMessage: handleMessage,
+      onStatusChange: setStatus,
+    });
 
     return () => {
-      ws.close();
+      connection.close();
     };
   }, []);
 
