@@ -64,5 +64,11 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
-	broadcastMasterState(h.db, h.hub)
+	h.broadcastMasterState()
+}
+
+func (h *MasterStateHandler) broadcastMasterState() {
+	if msg, ok := masterStateMessage(h.db); ok {
+		h.hub.Broadcast(msg)
+	}
 }

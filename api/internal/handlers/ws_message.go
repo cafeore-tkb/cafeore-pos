@@ -3,24 +3,33 @@ package handlers
 import (
 	"cafeore-pos/api/internal/models"
 
-	"log"
-
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type WSMessageType string
 
 const (
-	WSMessageTypeOrders       WSMessageType = "orders"
+	// 全注文。接続直後にその端末にだけ送る
+	WSMessageTypeOrders WSMessageType = "orders"
+	// 作成・変更された1件の注文
+	WSMessageTypeOrder WSMessageType = "order"
+	// 削除された注文の ID
+	WSMessageTypeOrderDeleted WSMessageType = "order_deleted"
 	WSMessageTypeMasterState  WSMessageType = "master_state"
+	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
 )
 
 type WSMessage struct {
-	Type         WSMessageType               `json:"type"`
-	Orders       []models.OrderResponse      `json:"orders,omitempty"`
-	MasterState  *models.MasterStateResponse `json:"master_state,omitempty"`
+	Type    WSMessageType          `json:"type"`
+	Orders  []models.OrderResponse `json:"orders"`
+	Order   *models.OrderResponse  `json:"order,omitempty"`
+	OrderID *uuid.UUID             `json:"order_id,omitempty"`
+	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
+	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
+	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
 	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
 }
 
@@ -29,45 +38,60 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer func() {
-		h.hub.Unregister(conn)
-		if err := conn.Close(); err != nil {
-			log.Println("failed to close connection:", err)
-		}
-	}()
 
-	h.hub.Register(conn)
+	client := h.hub.Register(conn)
 
-	// 接続直後に現在のデータを送信
-	h.broadcastOrders()
-	broadcastMasterState(h.db, h.hub)
-	broadcastCashierState(h.db, h.hub)
-
-	// 接続維持（クライアントからのメッセージは今は無視）
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			break
-		}
+	// 接続直後に現在のデータをこの接続にだけ送信
+	// （全体へ配り直すと、1台つながるたびに既存の全端末へ全件が流れてしまう）
+	var initial []WSMessage
+	if msg, ok := ordersMessage(h.db); ok {
+		initial = append(initial, msg)
 	}
+	if msg, ok := masterStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := cashierStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	client.SendInitial(initial...)
+
+	// 切断されるまで接続を維持する
+	client.ReadPump()
 }
 
-// 最新のオーダーストップ状態を WebSocket の全クライアントへ流す。
-//
-// フロントは MasterStateResponse（created_at / type）の形で受ける。
-// models.MasterState をそのまま流すと json タグが無いので
-// CreatedAt / Type というキーになり、フロントが読めない。
-func broadcastMasterState(db *gorm.DB, hub *Hub) {
+// 最新のオーダーストップ状態を WSMessage にする。まだ無ければ ok = false
+func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 	var state models.MasterState
 
 	if err := db.
 		Order("created_at DESC").
 		First(&state).Error; err != nil {
-		return
+		return WSMessage{}, false
 	}
 
-	resp := toMasterStateResponse(&state)
-	hub.Broadcast(WSMessage{
+	response := toMasterStateResponse(&state)
+	return WSMessage{
 		Type:        WSMessageTypeMasterState,
-		MasterState: &resp,
+		MasterState: &response,
+	}, true
+}
+
+// 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
+func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
+	var resp models.OrderResponse
+	err := hub.Publish(func() (WSMessage, error) {
+		var order models.Order
+		if err := preloadOrder(db).First(&order, "id = ?", orderID).Error; err != nil {
+			return WSMessage{}, err
+		}
+		resp = toOrderResponse(&order)
+		return WSMessage{Type: WSMessageTypeOrder, Order: &resp}, nil
+	})
+	return resp, err
+}
+
+func publishOrderDeleted(hub *Hub, orderID uuid.UUID) {
+	_ = hub.Publish(func() (WSMessage, error) {
+		return WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &orderID}, nil
 	})
 }
