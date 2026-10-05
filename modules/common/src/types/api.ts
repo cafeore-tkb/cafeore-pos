@@ -72,7 +72,14 @@ export interface paths {
   "/api/orders/{id}": {
     /** idからオーダー情報取得 */
     get: operations["getOrder"];
-    /** オーダー情報更新 */
+    /**
+     * オーダー情報更新
+     * @description 注文の中身（明細・金額など）を書き換える。
+     * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+     * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+     * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+     * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+     */
     put: operations["updateOrder"];
     /** オーダー削除 */
     delete: operations["deleteOrder"];
@@ -1019,7 +1026,14 @@ export interface operations {
       };
     };
   };
-  /** オーダー情報更新 */
+  /**
+   * オーダー情報更新
+   * @description 注文の中身（明細・金額など）を書き換える。
+   * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+   * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+   * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+   * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+   */
   updateOrder: {
     parameters: {
       path: {
