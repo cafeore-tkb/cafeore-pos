@@ -553,6 +553,253 @@
       }
     }
   },
+  "CaosDripLine": {
+    "type": "object",
+    "description": "抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）",
+    "required": ["order_id", "item_id", "nominee", "cups"],
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "item_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "nominee": {
+        "type": "string",
+        "nullable": true,
+        "description": "POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける"
+      },
+      "cups": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2
+      }
+    }
+  },
+  "CaosDripStatus": {
+    "type": "string",
+    "enum": ["unassigned", "queued", "brewing", "done"],
+    "x-enum-varnames": [
+      "CaosDripStatusUnassigned",
+      "CaosDripStatusQueued",
+      "CaosDripStatusBrewing",
+      "CaosDripStatusDone"
+    ],
+    "description": "unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了"
+  },
+  "CaosDrip": {
+    "type": "object",
+    "description": "抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの",
+    "required": [
+      "id",
+      "status",
+      "dripper",
+      "queue_pos",
+      "order_ids",
+      "lines",
+      "cups",
+      "rebrew_of",
+      "interrupted",
+      "started_at",
+      "finished_at",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "status": {
+        "$ref": "#/components/schemas/CaosDripStatus"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "queue_pos": {
+        "type": "number",
+        "format": "double",
+        "description": "待機列の並び順（ふだんは注文番号）"
+      },
+      "order_ids": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosDripLine"
+        }
+      },
+      "cups": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2
+      },
+      "rebrew_of": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "入れ直しのカードなら、元のカード"
+      },
+      "interrupted": {
+        "type": "boolean",
+        "description": "入れ直しのために途中でやめた抽出"
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す"
+      }
+    }
+  },
+  "CaosOp": {
+    "type": "object",
+    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nundo（op_id）\n",
+    "required": ["name"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "enum": ["assign", "unassign", "next", "merge", "rebrew", "undo"],
+        "x-enum-varnames": [
+          "CaosOpAssign",
+          "CaosOpUnassign",
+          "CaosOpNext",
+          "CaosOpMerge",
+          "CaosOpRebrew",
+          "CaosOpUndo"
+        ]
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "first_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "second_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "source_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "cups": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2,
+        "description": "入れ直す杯数（元のカードの杯数まで）"
+      },
+      "interrupt": {
+        "type": "boolean",
+        "description": "抽出中の元のカードを途中でやめる"
+      },
+      "queue_pos": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "op_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "undo で戻す操作（操作の結果の op_id）"
+      }
+    }
+  },
+  "CaosOpResult": {
+    "type": "object",
+    "required": ["op_id", "changed", "deleted", "readied"],
+    "properties": {
+      "op_id": {
+        "type": "string",
+        "description": "この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空"
+      },
+      "changed": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosDrip"
+        }
+      },
+      "deleted": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "readied": {
+        "type": "array",
+        "description": "この操作で準備完了にした注文（undo では、準備完了を外した注文）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "CaosErrorResponse": {
+    "type": "object",
+    "required": ["error"],
+    "properties": {
+      "error": {
+        "type": "string",
+        "example": "ドリッパー 3 は抽出中ではありません"
+      },
+      "code": {
+        "type": "string",
+        "enum": ["invalid"],
+        "x-enum-varnames": ["CaosErrorCodeInvalid"]
+      }
+    }
+  },
+  "CaosWSMessage": {
+    "type": "object",
+    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
+    "required": ["type"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": ["drips"],
+        "x-enum-varnames": ["CaosWSMessageDrips"]
+      },
+      "drips": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosDrip"
+        }
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],

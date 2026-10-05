@@ -91,6 +91,18 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/ops": {
+    /**
+     * CaOS の今日の盤面への操作
+     * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+     * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+     * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+     * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+     * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
+     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
+     */
+    post: operations["applyCaosOp"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -357,6 +369,107 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    /** @description 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く） */
+    CaosDripLine: {
+      /** Format: uuid */
+      order_id: string;
+      /** Format: uuid */
+      item_id: string;
+      /** @description POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける */
+      nominee: string | null;
+      cups: number;
+    };
+    /**
+     * @description unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+     * @enum {string}
+     */
+    CaosDripStatus: "unassigned" | "queued" | "brewing" | "done";
+    /** @description 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの */
+    CaosDrip: {
+      /** Format: uuid */
+      id: string;
+      status: components["schemas"]["CaosDripStatus"];
+      dripper: number | null;
+      /**
+       * Format: double
+       * @description 待機列の並び順（ふだんは注文番号）
+       */
+      queue_pos: number;
+      order_ids: string[];
+      lines: components["schemas"]["CaosDripLine"][];
+      cups: number;
+      /**
+       * Format: uuid
+       * @description 入れ直しのカードなら、元のカード
+       */
+      rebrew_of: string | null;
+      /** @description 入れ直しのために途中でやめた抽出 */
+      interrupted: boolean;
+      /** Format: date-time */
+      started_at: string | null;
+      /** Format: date-time */
+      finished_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /**
+       * Format: date-time
+       * @description 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
+       */
+      updated_at: string;
+    };
+    /**
+     * @description name ごとに使うフィールド：
+     * assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
+     * rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+     * undo（op_id）
+     */
+    CaosOp: {
+      /** @enum {string} */
+      name: "assign" | "unassign" | "next" | "merge" | "rebrew" | "undo";
+      /** Format: uuid */
+      drip_id?: string;
+      dripper?: number | null;
+      /** Format: uuid */
+      first_id?: string;
+      /** Format: uuid */
+      second_id?: string;
+      /** Format: uuid */
+      source_id?: string;
+      /** @description 入れ直す杯数（元のカードの杯数まで） */
+      cups?: number;
+      /** @description 抽出中の元のカードを途中でやめる */
+      interrupt?: boolean;
+      /** Format: double */
+      queue_pos?: number | null;
+      /**
+       * Format: uuid
+       * @description undo で戻す操作（操作の結果の op_id）
+       */
+      op_id?: string;
+    };
+    CaosOpResult: {
+      /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
+      op_id: string;
+      changed: components["schemas"]["CaosDrip"][];
+      deleted: string[];
+      /** @description この操作で準備完了にした注文（undo では、準備完了を外した注文） */
+      readied: string[];
+    };
+    CaosErrorResponse: {
+      /** @example ドリッパー 3 は抽出中ではありません */
+      error: string;
+      /** @enum {string} */
+      code?: "invalid";
+    };
+    /**
+     * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
+     * 今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
+     */
+    CaosWSMessage: {
+      /** @enum {string} */
+      type: "drips";
+      drips?: components["schemas"]["CaosDrip"][];
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -964,6 +1077,36 @@ export interface operations {
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今日の盤面への操作
+   * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+   * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+   * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+   * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+   * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
+   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
+   */
+  applyCaosOp: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosOp"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosOpResult"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
         };
       };
     };

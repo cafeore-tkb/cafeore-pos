@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 
 	"log"
@@ -14,6 +15,8 @@ type WSMessageType string
 const (
 	WSMessageTypeOrders      WSMessageType = "orders"
 	WSMessageTypeMasterState WSMessageType = "master_state"
+	// CaOS の今日のカード（全部）。カードが変わるたびと、つないだときに届く
+	WSMessageTypeDrips WSMessageType = "drips"
 )
 
 type WSMessage struct {
@@ -22,6 +25,8 @@ type WSMessage struct {
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
+	// drips：CaOS の今日のカード（0 枚のときは省かれる）
+	Drips []caos.Drip `json:"drips,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -32,7 +37,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	defer func() {
 		h.hub.Unregister(conn)
 		if err := conn.Close(); err != nil {
-    	log.Println("failed to close connection:", err)
+			log.Println("failed to close connection:", err)
 		}
 	}()
 
@@ -41,6 +46,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	// 接続直後に現在のデータを送信
 	h.broadcastOrders()
 	h.broadcastMasterState()
+	h.broadcastDrips()
 
 	// 接続維持（クライアントからのメッセージは今は無視）
 	for {

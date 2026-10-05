@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cafeore-pos/api/internal/auth"
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
@@ -96,6 +97,8 @@ func initDB() error {
 			&models.ItemStockUsage{},
 			&models.StockEvent{},
 			&models.ColorSetting{},
+			&caos.DripRow{},
+			&caos.OpRow{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
@@ -254,7 +257,19 @@ func main() {
 		os.Getenv("POS_BASE_URL"),
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
-	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
+	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
+	caosStore := caos.NewStore(db)
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
+	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
+	// API 以外（CaOS など）からの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
+	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
+	listenCtx, stopListening := context.WithCancel(context.Background())
+	defer stopListening()
+	listenDSN := os.Getenv("DATABASE_LISTEN_URL")
+	if listenDSN == "" {
+		listenDSN = os.Getenv("DATABASE_URL")
+	}
+	go orderHandler.ListenOrderChanges(listenCtx, listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
@@ -295,6 +310,8 @@ func main() {
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
+
+		api.POST("/caos/ops", caosHandler.ApplyOp)
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)

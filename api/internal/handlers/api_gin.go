@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS の今日の盤面への操作
+	// (POST /api/caos/ops)
+	ApplyCaosOp(c *gin.Context)
 	// 背景色設定一覧取得
 	// (GET /api/color-settings)
 	GetColorSettings(c *gin.Context)
@@ -138,6 +141,19 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// ApplyCaosOp operation middleware
+func (siw *ServerInterfaceWrapper) ApplyCaosOp(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApplyCaosOp(c)
+}
 
 // GetColorSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetColorSettings(c *gin.Context) {
@@ -880,6 +896,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/api/caos/ops", wrapper.ApplyCaosOp)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)

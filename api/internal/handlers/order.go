@@ -11,7 +11,9 @@ import (
 	"github.com/gorilla/websocket"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -19,10 +21,20 @@ type OrderHandler struct {
 	db        *gorm.DB
 	hub       *Hub
 	inventory *Inventory
+	// CaOS の盤面。注文の変更を同じトランザクションでカードに反映する（nil なら連動しない）
+	caos *caos.Store
+	// 全注文の配信の依頼。broadcastOrders を参照
+	broadcastRequests chan struct{}
+	// CaOS の今日のカードの配信の依頼。broadcastDrips を参照
+	dripsRequests chan struct{}
 }
 
-func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *OrderHandler {
-	return &OrderHandler{db: db, hub: hub, inventory: inventory}
+func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *caos.Store) *OrderHandler {
+	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore,
+		broadcastRequests: make(chan struct{}, 1), dripsRequests: make(chan struct{}, 1)}
+	go h.runOrderBroadcaster()
+	go h.runDripsBroadcaster()
+	return h
 }
 
 // 注文履歴では販売終了（論理削除）したメニューも参照する。
@@ -125,8 +137,34 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	return resp
 }
 
-// ブロードキャスト用のヘルパー
+// 配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。
+//
+// API で注文を書き換えると、ハンドラー自身の依頼と、DB の orders_changed 通知
+// （ListenOrderChanges）の両方から依頼が来る。全注文を毎回送るので、二重に送らないようにしている。
+const orderBroadcastDelay = 30 * time.Millisecond
+
+// broadcastOrders は全注文の配信を依頼する。すぐに戻り、少し待ってから 1 回だけ送る。
 func (h *OrderHandler) broadcastOrders() {
+	select {
+	case h.broadcastRequests <- struct{}{}:
+	default:
+		// 既に依頼が溜まっている。その配信に今の状態も含まれる
+	}
+}
+
+func (h *OrderHandler) runOrderBroadcaster() {
+	for range h.broadcastRequests {
+		time.Sleep(orderBroadcastDelay)
+		select {
+		case <-h.broadcastRequests:
+		default:
+		}
+		h.sendOrders()
+	}
+}
+
+// 全注文を読み直して WebSocket へ送る。
+func (h *OrderHandler) sendOrders() {
 	var orders []models.Order
 	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
 		return
@@ -204,12 +242,19 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
 		lines, err := loadOrderMenus(tx, order.ID, req.MenuIds, nil)
 		if err != nil {
 			return err
 		}
 		order.OrderMenus = lines
-		return tx.Create(&order).Error
+		if err := tx.Create(&order).Error; err != nil {
+			return err
+		}
+		if locked {
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
@@ -229,6 +274,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	h.broadcastDrips()
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -286,14 +332,28 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	resourcesBefore := h.inventory.ResourceIDsForOrder(order.ID)
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 明細の引き継ぎは、ロックを取ったあとに読み直した注文で行う
+		if err := preloadOrder(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", order.ID).Error; err != nil {
+			return err
+		}
 		orderMenus, err := loadOrderMenus(tx, order.ID, req.MenuIds, order.OrderMenus)
 		if err != nil {
 			return err
 		}
+		// 準備完了・提供済みは、PUT では付けるだけで、外したり付け直したりしない（外すのは PATCH の切り替えで行う）。
+		// 画面が持っている古い注文で編集したときに、CaOS の「次へ」などが付けた ready_at を消さないため
+		readyAt, servedAt := order.ReadyAt, order.ServedAt
+		if readyAt == nil {
+			readyAt = req.ReadyAt
+		}
+		if servedAt == nil {
+			servedAt = req.ServedAt
+		}
 		if err := tx.Model(&order).Updates(map[string]any{
 			"order_id":            req.OrderId,
-			"ready_at":            req.ReadyAt,
-			"served_at":           req.ServedAt,
+			"ready_at":            readyAt,
+			"served_at":           servedAt,
 			"billing_amount":      req.BillingAmount,
 			"received":            req.Received,
 			"discount_order_id":   req.DiscountOrderId,
@@ -305,7 +365,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			return err
 		}
 		if len(orderMenus) > 0 {
-			return tx.Create(&orderMenus).Error
+			if err := tx.Create(&orderMenus).Error; err != nil {
+				return err
+			}
+		}
+		if locked {
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	})
@@ -313,6 +378,11 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
+		}
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -325,6 +395,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
 	h.broadcastOrders()
+	h.broadcastDrips()
 	go func() {
 		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(order.ID)))
 	}()
@@ -354,25 +425,34 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
-	// 注文明細を削除
-	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+	// 注文明細とオーダーを削除し、CaOS の盤面からもその注文のカードを片付ける
+	var deleted int64
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.Order{}, "id = ?", orderID)
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected
+		if locked {
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// オーダーを削除
-	result := h.db.Delete(&models.Order{}, "id = ?", orderID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	if result.RowsAffected == 0 {
+	if deleted == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+	h.broadcastDrips()
 	go h.inventory.CheckAlerts(resources)
 }
 
@@ -395,14 +475,27 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if order.ReadyAt == nil {
-		now := time.Now()
-		order.ReadyAt = &now
-	} else {
-		order.ReadyAt = nil
-	}
-
-	if err := h.db.Save(&order).Error; err != nil {
+	// 準備完了になったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 切り替えは、ロックを取ったあとに読み直した状態で決める（待っている間にほかの端末が ready_at を変えていても、
+		// 古い値で上書きしたり逆に切り替えたりしない）。書くのは ready_at だけ（CaOS と同じ SetOrderReady）
+		if err := lockOrder(tx, &order); err != nil {
+			return err
+		}
+		if _, _, err := caos.SetOrderReady(tx, order.ID, order.ReadyAt == nil, time.Now()); err != nil {
+			return err
+		}
+		if locked {
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
+	}); err != nil {
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -413,6 +506,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
+	h.broadcastDrips()
 }
 
 // PATCH /api/orders/:id/served - オーダーを提供済みにする
@@ -435,16 +529,31 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		return
 	}
 
-	if order.ServedAt == nil {
-		now := time.Now()
-		order.ServedAt = &now
-		order.ReadyAt = &now
-	} else {
-		order.ServedAt = nil
-		order.ReadyAt = nil
-	}
-
-	if err := h.db.Save(&order).Error; err != nil {
+	// 提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 切り替えは、ロックを取ったあとに読み直した状態で決める（MarkOrderReady と同じ）。書くのも served_at と ready_at だけ
+		if err := lockOrder(tx, &order); err != nil {
+			return err
+		}
+		var at *time.Time
+		if order.ServedAt == nil {
+			now := time.Now()
+			at = &now
+		}
+		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{"served_at": at, "ready_at": at}).Error; err != nil {
+			return err
+		}
+		if locked {
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
+	}); err != nil {
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -455,8 +564,14 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
+	h.broadcastDrips()
 }
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// lockOrder は tx の中で注文の行を読み直してロックする（読んでから書くまでに、ほかの処理に変えられないように）。
+func lockOrder(tx *gorm.DB, order *models.Order) error {
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(order, "id = ?", order.ID).Error
 }
