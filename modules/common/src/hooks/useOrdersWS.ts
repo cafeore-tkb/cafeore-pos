@@ -44,7 +44,6 @@ export const useOrdersWS = () => {
 
         switch (data.type) {
           case "orders":
-            // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
             setOrders((data.orders ?? []).map(responseToOrderEntity));
             break;
 

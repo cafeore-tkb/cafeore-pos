@@ -17,8 +17,8 @@ const (
 )
 
 type WSMessage struct {
-	Type   WSMessageType          `json:"type"`
-	Orders []models.OrderResponse `json:"orders,omitempty"`
+	Type        WSMessageType          `json:"type"`
+	Orders      []models.OrderResponse `json:"orders"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
