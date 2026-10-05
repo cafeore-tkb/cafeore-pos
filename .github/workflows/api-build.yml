@@ -260,37 +260,23 @@ jobs:
           # 親ブランチに role / database が複数あると作成レスポンスに
           # 接続文字列が入らないため（既存ブランチを再利用する経路でも同じ）。
           db_url=$(neon connection-string "$branch" --pooled) || exit $?
+          # 注文の変更通知の LISTEN は、pooler（トランザクションモード）経由では
+          # 通知が届かない。待ち受けだけは pooler を通らない接続文字列で張る
+          # （api の DATABASE_LISTEN_URL。README の「注文の変更の配信」を参照）。
+          listen_url=$(neon connection-string "$branch") || exit $?
 
           # **ログに出させない。** 以降このステップの出力や後続ステップのログで
           # マスクされる。GITHUB_OUTPUT 経由で渡す値も同様。
           echo "::add-mask::$db_url"
+          echo "::add-mask::$listen_url"
 
           {
             echo "branch=$branch"
             echo "db_url=$db_url"
+            echo "listen_url=$listen_url"
           } >> "$GITHUB_OUTPUT"
 
           echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
-
-      # 新しく作った Neon ブランチは空なので、AutoMigrate の最初の CREATE TABLE が
-      # uuid_generate_v4() を呼んだ時点で 42883 になり、initDB がエラーを返して
-      # コンテナが起動できない（api/internal/models/*.go の
-      # `default:uuid_generate_v4()` が拡張に依存しているため）。
-      #
-      # ローカルの compose では api/init/00_enable_extension.sql が同じことを
-      # している。あちらは ./api/init を Postgres の初期化ディレクトリに
-      # マウントしているだけなので、Neon には効かない。
-      #
-      # 本番はスキーマが手で作られており、そもそも AutoMigrate を走らせない
-      # （RUN_MIGRATIONS=false）。この拡張が要るのはプレビューだけ。
-      #
-      # IF NOT EXISTS なので毎 push 走っても害はない。親ブランチに拡張が
-      # 入っていれば CoW クローンにも引き継がれるので、その場合は保険になる。
-      - name: Neon ブランチに uuid-ossp を入れる
-        if: ${{ steps.neon.outputs.db_url != '' }}
-        env:
-          DB_URL: ${{ steps.neon.outputs.db_url }}
-        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
       - name: Cloud Run にデプロイする
         id: deploy
@@ -301,6 +287,7 @@ jobs:
           IS_PR: ${{ github.event_name == 'pull_request' }}
           PR_NUMBER: ${{ github.event.number }}
           NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
+          NEON_LISTEN_URL: ${{ steps.neon.outputs.listen_url }}
         run: |
           set -uo pipefail
 
@@ -343,15 +330,14 @@ jobs:
             esac
             env_pairs+=("DATABASE_URL=$NEON_DB_URL")
           fi
-
-          # プレビューは空の状態から作った Neon ブランチを使うので、
-          # AutoMigrate を走らせないとテーブルが無いまま起動してしまう。
-          #
-          # 本番には渡さない。あちらのスキーマは手で作られており、
-          # Terraform が置いた RUN_MIGRATIONS=false をそのまま効かせる
-          # （infra の gcp/cloud_run.tf を参照）。
-          if [ -n "$tag" ]; then
-            env_pairs+=("RUN_MIGRATIONS=true")
+          if [ -n "${NEON_LISTEN_URL:-}" ]; then
+            case "$NEON_LISTEN_URL" in
+              *,*)
+                echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
+                exit 1
+                ;;
+            esac
+            env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
           fi
 
           # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
@@ -413,6 +399,39 @@ jobs:
             echo "image:   $image"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
+      # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
+      # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      - name: DB のスキーマがモデルとずれていないか確かめる
+        if: ${{ steps.deploy.outputs.url != '' }}
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          body=""
+          for i in $(seq 1 10); do
+            if body=$(curl -sf --max-time 30 "$URL/status"); then
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$body" ]; then
+            echo "::error::$URL/status に繋がらなかった"
+            exit 1
+          fi
+          drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
+          if [ -n "$drift" ]; then
+            {
+              echo "### DB のスキーマがモデルとずれている"
+              echo '```'
+              echo "$drift"
+              echo '```'
+              echo "DB を手で触った跡。モデルに足すか、DB から消すこと。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do echo "::error::$line"; done <<<"$drift"
+            exit 1
+          fi
+          echo "DB のスキーマはモデルと一致している"
 
       # デプロイが成功したときだけ走る（既定の if: success()）。
       - name: プレビュー URL を PR にコメントする

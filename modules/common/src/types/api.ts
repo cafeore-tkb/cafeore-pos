@@ -72,7 +72,14 @@ export interface paths {
   "/api/orders/{id}": {
     /** idからオーダー情報取得 */
     get: operations["getOrder"];
-    /** オーダー情報更新 */
+    /**
+     * オーダー情報更新
+     * @description 注文の中身（明細・金額など）を書き換える。
+     * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+     * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+     * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+     * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+     */
     put: operations["updateOrder"];
     /** オーダー削除 */
     delete: operations["deleteOrder"];
@@ -113,7 +120,7 @@ export interface paths {
      * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
      * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
      * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
+     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
      */
     post: operations["applyCaosOp"];
   };
@@ -163,6 +170,18 @@ export interface paths {
      * 直近に注文が無い（営業していない）ときは送らない。
      */
     post: operations["remindInventory"];
+  };
+  "/api/cashier-state": {
+    /**
+     * レジ状態取得
+     * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+     */
+    get: operations["getCashierState"];
+    /**
+     * レジ状態更新
+     * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+     */
+    put: operations["updateCashierState"];
   };
 }
 
@@ -500,12 +519,32 @@ export interface components {
     };
     /**
      * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
-     * 今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
+     * 今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
      */
     CaosWSMessage: {
       /** @enum {string} */
       type: "drips";
       drips?: components["schemas"]["CaosDrip"][];
+    };
+    CashierStateResponse: {
+      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /**
+       * Format: uuid
+       * @description 直前に確定した注文の ID。編集中は null
+       */
+      submitted_order_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CashierStateUpdateRequest: {
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /** Format: uuid */
+      submitted_order_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -987,7 +1026,14 @@ export interface operations {
       };
     };
   };
-  /** オーダー情報更新 */
+  /**
+   * オーダー情報更新
+   * @description 注文の中身（明細・金額など）を書き換える。
+   * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+   * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+   * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+   * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+   */
   updateOrder: {
     parameters: {
       path: {
@@ -1192,7 +1238,7 @@ export interface operations {
    * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
    * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
    * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
+   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
    */
   applyCaosOp: {
     requestBody: {
@@ -1376,6 +1422,51 @@ export interface operations {
       };
       /** @description ID トークンも合言葉も合わない */
       401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態取得
+   * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+   */
+  getCashierState: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description まだレジ状態が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態更新
+   * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+   */
+  updateCashierState: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CashierStateUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description editting_order に必須のキーが無い、または型が違う */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

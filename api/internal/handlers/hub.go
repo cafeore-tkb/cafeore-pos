@@ -21,9 +21,9 @@ const (
 	wsMaxMessageSize = 4096
 	// 接続ごとの送信待ちの上限。溢れたら遅い端末とみなして切る
 	wsSendBufferSize = 32
-	// SendInitial で送る初期データの最大数（orders と master_state と CaOS の drips）。
+	// SendInitial で送る初期データの最大数（orders と master_state と cashier_state と CaOS の drips）。
 	// 初期データのあとに held（上限 wsSendBufferSize）を流しても溢れないよう、send はこの分だけ大きくとる
-	wsMaxInitialMessages = 3
+	wsMaxInitialMessages = 4
 )
 
 // Client は WebSocket の1接続。

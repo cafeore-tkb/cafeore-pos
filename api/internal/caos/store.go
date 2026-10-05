@@ -65,6 +65,9 @@ type OpRow struct {
 
 func (OpRow) TableName() string { return "caos_ops" }
 
+// Models は CaOS の表のモデル。起動時に AutoMigrate で DB へ反映する（cmd/server の schemaModels）。
+func Models() []any { return []any{&DripRow{}, &OpRow{}} }
+
 // ReadyMark は操作で準備完了にした注文。
 type ReadyMark struct {
 	OrderID string    `json:"order_id"`
