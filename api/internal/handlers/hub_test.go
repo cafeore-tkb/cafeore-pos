@@ -2,173 +2,224 @@ package handlers
 
 import (
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-
-	"cafeore-pos/api/internal/models"
 )
 
-// 接続直後の全件が、その後の変更より先に、その端末にだけ届く
-func TestHubSendsSnapshotOnlyToNewClientBeforeLaterBroadcasts(t *testing.T) {
-	hub := NewHub()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer hub.Unregister(conn)
-		if err := hub.RegisterWithSnapshot(conn, func() ([]WSMessage, error) {
-			return []WSMessage{{Type: WSMessageTypeOrders}}, nil
-		}); err != nil {
-			return
-		}
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}))
-	defer server.Close()
-	url := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	dial := func() *websocket.Conn {
-		conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return conn
-	}
-	read := func(conn *websocket.Conn) WSMessageType {
-		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-			t.Fatal(err)
-		}
-		var msg WSMessage
-		if err := conn.ReadJSON(&msg); err != nil {
-			t.Fatal(err)
-		}
-		return msg.Type
-	}
-
-	first := dial()
-	defer func() { _ = first.Close() }()
-	if got := read(first); got != WSMessageTypeOrders {
-		t.Fatalf("first message must be the snapshot, got %q", got)
-	}
-	second := dial()
-	defer func() { _ = second.Close() }()
-	if got := read(second); got != WSMessageTypeOrders {
-		t.Fatalf("first message must be the snapshot, got %q", got)
-	}
-
-	if err := hub.Publish(func() (WSMessage, error) {
-		return WSMessage{Type: WSMessageTypeOrder}, nil
-	}); err != nil {
+func newTestWSServer(t *testing.T) (*Hub, string) {
+	t.Helper()
+	// DryRun なので DB にはつながず、初期データは空のオーダー一覧になる
+	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=localhost dbname=unused", PreferSimpleProtocol: true}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	// 2台目の接続で1台目に全件が送り直されていれば、ここで orders が届く
-	for _, conn := range []*websocket.Conn{first, second} {
-		if got := read(conn); got != WSMessageTypeOrder {
-			t.Fatalf("want the changed order, got %q", got)
+	hub := NewHub()
+	go hub.Run()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/ws", NewOrderHandler(db, hub, nil).WSHandler)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return hub, "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+}
+
+func dialWS(t *testing.T, url string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func readWS(t *testing.T, conn *websocket.Conn) WSMessage {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var msg WSMessage
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+// 接続直後の初期データ（orders, master_state の順）を読み切る。
+// DryRun の DB は空の結果を返すので、どちらも中身は空で届く
+func readInitialWS(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	for _, want := range []WSMessageType{WSMessageTypeOrders, WSMessageTypeMasterState} {
+		if msg := readWS(t, conn); msg.Type != want {
+			t.Fatalf("initial message must be %s: %+v", want, msg)
 		}
 	}
 }
 
-// 送信が詰まった端末があっても、配信は待たずにその端末を外す
-func TestHubDropsClientWithFullQueue(t *testing.T) {
-	hub := NewHub()
-	stuck := &websocket.Conn{}
-	hub.clients[stuck] = &wsClient{conn: stuck, send: make(chan []byte, 1)}
-	hub.clients[stuck].send <- []byte("{}")
+func clientCount(h *Hub) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.clients)
+}
 
-	done := make(chan struct{})
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestWSInitialDataGoesOnlyToNewClient(t *testing.T) {
+	hub, url := newTestWSServer(t)
+
+	first := dialWS(t, url)
+	readInitialWS(t, first)
+	second := dialWS(t, url)
+	readInitialWS(t, second)
+	waitFor(t, func() bool { return clientCount(hub) == 2 })
+
+	// 2台目の接続で1台目へ初期データが配り直されていないこと。
+	// どちらも次に届くのはこの目印のはず
+	const marker WSMessageType = "test_marker"
+	hub.Broadcast(WSMessage{Type: marker})
+	if msg := readWS(t, first); msg.Type != marker {
+		t.Fatalf("existing client got an extra message: %+v", msg)
+	}
+	if msg := readWS(t, second); msg.Type != marker {
+		t.Fatalf("broadcast not delivered: %+v", msg)
+	}
+}
+
+func TestWSDisconnectedClientIsUnregistered(t *testing.T) {
+	hub, url := newTestWSServer(t)
+
+	conn := dialWS(t, url)
+	readInitialWS(t, conn)
+	waitFor(t, func() bool { return clientCount(hub) == 1 })
+
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return clientCount(hub) == 0 })
+}
+
+func TestHubDropsSlowClientWithoutBlockingOthers(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// 送信 goroutine を持たない（= 一切読み出されない）遅い端末
+	slow := &Client{hub: hub, send: make(chan []byte, 1)}
+	hub.add(slow)
+	// 普通に読み出される端末
+	fast := &Client{hub: hub, send: make(chan []byte, 1)}
+	hub.add(fast)
+
+	const n = 5
+	received := make(chan struct{}, n)
 	go func() {
-		hub.Broadcast(WSMessage{Type: WSMessageTypeOrder})
-		close(done)
+		for range fast.send {
+			received <- struct{}{}
+		}
 	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("broadcast must not block on a stuck client")
+
+	for i := 0; i < n; i++ {
+		hub.Broadcast(WSMessage{Type: WSMessageTypeOrders})
+		select {
+		case <-received:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("broadcast %d was blocked by the slow client", i)
+		}
 	}
-	if _, ok := hub.clients[stuck]; ok {
-		t.Fatal("stuck client must be removed")
+
+	hub.mu.Lock()
+	_, stillRegistered := hub.clients[slow]
+	hub.mu.Unlock()
+	if stillRegistered {
+		t.Fatal("slow client must be dropped")
+	}
+	// 外された端末の送信キューは閉じられ、送信 goroutine が終われるようになっている
+	<-slow.send
+	if _, ok := <-slow.send; ok {
+		t.Fatal("send channel of dropped client must be closed")
+	}
+
+	// 外したあとの Send や Unregister で panic しない
+	slow.SendInitial(WSMessage{Type: WSMessageTypeOrders})
+	hub.Unregister(slow)
+}
+
+func TestHubHoldsBroadcastUntilInitialDataIsSent(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// Register 直後と同じ、初期データを読んでいる途中の端末
+	c := &Client{hub: hub, send: make(chan []byte, wsSendBufferSize), initializing: true}
+	hub.add(c)
+
+	// 初期データを読んでいる間に来た新しい broadcast
+	const marker WSMessageType = "test_marker"
+	hub.Broadcast(WSMessage{Type: marker})
+	waitFor(t, func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return len(c.held) == 1
+	})
+	if len(c.send) != 0 {
+		t.Fatal("broadcast must not be sent before the initial data")
+	}
+
+	c.SendInitial(WSMessage{Type: WSMessageTypeOrders})
+
+	// 古い初期データが先、新しい broadcast があとに届く
+	for _, want := range []WSMessageType{WSMessageTypeOrders, marker} {
+		var msg WSMessage
+		if err := json.Unmarshal(<-c.send, &msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type != want {
+			t.Fatalf("want %s, got %+v", want, msg)
+		}
 	}
 }
 
-func TestWSMessageOrderDeletedJSON(t *testing.T) {
-	id := uuid.New()
-	data, err := json.Marshal(WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &id})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatal(err)
-	}
-	if got["type"] != "order_deleted" || got["order_id"] != id.String() {
-		t.Fatalf("unexpected message: %s", data)
-	}
-	if _, ok := got["order"]; ok {
-		t.Fatalf("order must be omitted: %s", data)
-	}
-}
+func TestHubKeepsClientWhenHeldBroadcastsFillTheBuffer(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
 
-// 全注文は 0 件でも orders を空配列で送る
-func TestWSMessageEmptyOrdersJSON(t *testing.T) {
-	data, err := json.Marshal(WSMessage{Type: WSMessageTypeOrders, Orders: []models.OrderResponse{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `"orders":[]`) {
-		t.Fatalf("orders must be an empty array: %s", data)
-	}
-}
+	// 送信 goroutine を持たない、初期データを読んでいる途中の端末
+	c := newClient(hub, nil)
+	hub.add(c)
 
-// 1杯の操作では、そのカップの行だけを書き換える
-func TestSaveOrderStatusWritesOnlyChangedRows(t *testing.T) {
-	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=localhost dbname=unused", PreferSimpleProtocol: true}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
-	if err != nil {
-		t.Fatal(err)
+	// 初期データを読んでいる間に、ためられる上限まで broadcast が来る
+	for i := 0; i < wsSendBufferSize; i++ {
+		hub.Broadcast(WSMessage{Type: WSMessageTypeOrders})
 	}
-	var tables []string
-	if err := db.Callback().Update().After("gorm:update").Register("test:count", func(tx *gorm.DB) {
-		tables = append(tables, tx.Statement.Table)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	waitFor(t, func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return len(c.held) == wsSendBufferSize
+	})
 
-	order := models.Order{ID: uuid.New(), OrderCups: []models.OrderCup{
-		{ID: uuid.New()}, {ID: uuid.New()}, {ID: uuid.New()},
-	}}
-	before := order
-	before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
-	toggleCupReady(&order, &order.OrderCups[1], time.Now())
+	c.SendInitial(WSMessage{Type: WSMessageTypeOrders}, WSMessage{Type: WSMessageTypeMasterState})
 
-	if err := saveOrderStatus(db, &before, &order); err != nil {
-		t.Fatal(err)
+	hub.mu.Lock()
+	_, stillRegistered := hub.clients[c]
+	hub.mu.Unlock()
+	if !stillRegistered {
+		t.Fatal("client must not be dropped by its own initial data")
 	}
-	if len(tables) != 1 || tables[0] != "order_cups" {
-		t.Fatalf("only the toggled cup must be updated, got %v", tables)
-	}
-
-	// 最後の1杯で注文の状態も変わったときは、注文も書き換える
-	tables = nil
-	before = order
-	before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
-	toggleCupReady(&order, &order.OrderCups[0], time.Now())
-	toggleCupReady(&order, &order.OrderCups[2], time.Now())
-	if err := saveOrderStatus(db, &before, &order); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(tables, ",") != "orders,order_cups,order_cups" {
-		t.Fatalf("order and two cups must be updated, got %v", tables)
+	if got, want := len(c.send), wsSendBufferSize+2; got != want {
+		t.Fatalf("want %d queued messages, got %d", want, got)
 	}
 }

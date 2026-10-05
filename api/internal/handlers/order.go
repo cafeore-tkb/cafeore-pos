@@ -157,6 +157,22 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	return resp
 }
 
+// 全オーダーを WSMessage にする。取得に失敗したら ok = false
+func ordersMessage(db *gorm.DB) (WSMessage, bool) {
+	var orders []models.Order
+	if err := preloadOrder(db).Find(&orders).Error; err != nil {
+		return WSMessage{}, false
+	}
+	responses := make([]models.OrderResponse, len(orders))
+	for i, o := range orders {
+		responses[i] = toOrderResponse(&o)
+	}
+	return WSMessage{
+		Type:   WSMessageTypeOrders,
+		Orders: responses,
+	}, true
+}
+
 // GET /api/orders - オーダー一覧取得
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order

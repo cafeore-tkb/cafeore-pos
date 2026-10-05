@@ -35,35 +35,39 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	// 接続は送信側（Hub）が閉じる
-	defer h.hub.Unregister(conn)
 
-	// 接続直後に現在のデータを、この端末にだけ送る
-	if err := h.hub.RegisterWithSnapshot(conn, func() ([]WSMessage, error) {
-		var orders []models.Order
-		if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
-			return nil, err
-		}
-		responses := make([]models.OrderResponse, len(orders))
-		for i := range orders {
-			responses[i] = toOrderResponse(&orders[i])
-		}
-		msgs := []WSMessage{{Type: WSMessageTypeOrders, Orders: responses}}
-		if state, ok := latestMasterState(h.db); ok {
-			response := toMasterStateResponse(&state)
-			msgs = append(msgs, WSMessage{Type: WSMessageTypeMasterState, MasterState: &response})
-		}
-		return msgs, nil
-	}); err != nil {
-		return
+	client := h.hub.Register(conn)
+
+	// 接続直後に現在のデータをこの接続にだけ送信
+	// （全体へ配り直すと、1台つながるたびに既存の全端末へ全件が流れてしまう）
+	var initial []WSMessage
+	if msg, ok := ordersMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := masterStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	client.SendInitial(initial...)
+
+	// 切断されるまで接続を維持する
+	client.ReadPump()
+}
+
+// 最新のオーダーストップ状態を WSMessage にする。まだ無ければ ok = false
+func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
+	var state models.MasterState
+
+	if err := db.
+		Order("created_at DESC").
+		First(&state).Error; err != nil {
+		return WSMessage{}, false
 	}
 
-	// 接続維持（クライアントからのメッセージは今は無視）
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			break
-		}
-	}
+	response := toMasterStateResponse(&state)
+	return WSMessage{
+		Type:        WSMessageTypeMasterState,
+		MasterState: &response,
+	}, true
 }
 
 // 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
@@ -84,12 +88,4 @@ func publishOrderDeleted(hub *Hub, orderID uuid.UUID) {
 	_ = hub.Publish(func() (WSMessage, error) {
 		return WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &orderID}, nil
 	})
-}
-
-func latestMasterState(db *gorm.DB) (models.MasterState, bool) {
-	var state models.MasterState
-	if err := db.Order("created_at DESC").First(&state).Error; err != nil {
-		return state, false
-	}
-	return state, true
 }
