@@ -4,20 +4,29 @@ import (
 	"cafeore-pos/api/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type WSMessageType string
 
 const (
-	WSMessageTypeOrders       WSMessageType = "orders"
+	// 全注文。接続直後にその端末にだけ送る
+	WSMessageTypeOrders WSMessageType = "orders"
+	// 作成・変更された1件の注文
+	WSMessageTypeOrder WSMessageType = "order"
+	// 削除された注文の ID
+	WSMessageTypeOrderDeleted WSMessageType = "order_deleted"
 	WSMessageTypeMasterState  WSMessageType = "master_state"
+	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
 )
 
 type WSMessage struct {
-	Type   WSMessageType          `json:"type"`
-	Orders []models.OrderResponse `json:"orders"`
+	Type    WSMessageType          `json:"type"`
+	Orders  []models.OrderResponse `json:"orders"`
+	Order   *models.OrderResponse  `json:"order,omitempty"`
+	OrderID *uuid.UUID             `json:"order_id,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
@@ -65,4 +74,24 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 		Type:        WSMessageTypeMasterState,
 		MasterState: &response,
 	}, true
+}
+
+// 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
+func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
+	var resp models.OrderResponse
+	err := hub.Publish(func() (WSMessage, error) {
+		var order models.Order
+		if err := preloadOrder(db).First(&order, "id = ?", orderID).Error; err != nil {
+			return WSMessage{}, err
+		}
+		resp = toOrderResponse(&order)
+		return WSMessage{Type: WSMessageTypeOrder, Order: &resp}, nil
+	})
+	return resp, err
+}
+
+func publishOrderDeleted(hub *Hub, orderID uuid.UUID) {
+	_ = hub.Publish(func() (WSMessage, error) {
+		return WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &orderID}, nil
+	})
 }

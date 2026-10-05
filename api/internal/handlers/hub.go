@@ -44,6 +44,10 @@ type Hub struct {
 	clients   map[*Client]struct{}
 	broadcast chan WSMessage
 	mu        sync.Mutex
+
+	// 注文の読み込みから配信までを1つずつ行う（Publish）。
+	// 読んだ順に配信されるので、後から届いた配信が古い状態で上書きすることがない。
+	publishMu sync.Mutex
 }
 
 func NewHub() *Hub {
@@ -102,6 +106,18 @@ func (h *Hub) Unregister(c *Client) {
 
 func (h *Hub) Broadcast(msg WSMessage) {
 	h.broadcast <- msg
+}
+
+// Publish は load で最新の状態を読み、そのまま配信する。読み込みと配信の順番が入れ替わらないよう1つずつ行う。
+func (h *Hub) Publish(load func() (WSMessage, error)) error {
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
+	msg, err := load()
+	if err != nil {
+		return err
+	}
+	h.Broadcast(msg)
+	return nil
 }
 
 func (h *Hub) removeLocked(c *Client) {
