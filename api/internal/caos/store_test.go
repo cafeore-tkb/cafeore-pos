@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -488,5 +489,36 @@ func TestStoreLinesFromCups(t *testing.T) {
 	}
 	if want := fmt.Sprintf("%s×1", champ.ID); cups[legacy.ID.String()] != want {
 		t.Fatalf("カップの無い注文はメニューの構成で作る：%q, want %q", cups[legacy.ID.String()], want)
+	}
+}
+
+// 本番に手で流す api/sql/2026-10_caos.sql は、Go のモデルを AutoMigrate したものと同じ表・索引・制約を作る
+func TestStoreSQLMatchesModels(t *testing.T) {
+	db := testDB(t)
+	schema := func() string {
+		t.Helper()
+		var rows []string
+		must(t, db.Raw(`
+			SELECT table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '')
+			FROM information_schema.columns WHERE table_name IN ('caos_drips', 'caos_ops')
+			UNION ALL SELECT indexdef FROM pg_indexes WHERE tablename IN ('caos_drips', 'caos_ops')
+			UNION ALL SELECT conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint
+				WHERE conrelid IN ('caos_drips'::regclass, 'caos_ops'::regclass)
+			ORDER BY 1`).Scan(&rows).Error)
+		return strings.Join(rows, "\n")
+	}
+	fromModels := schema()
+
+	must(t, db.Exec("DROP TABLE caos_drips, caos_ops").Error)
+	sql, err := os.ReadFile("../../sql/2026-10_caos.sql")
+	must(t, err)
+	must(t, db.Exec(string(sql)).Error)
+	if fromSQL := schema(); fromSQL != fromModels {
+		t.Fatalf("SQL とモデルで表が違う\nSQL:\n%s\nモデル:\n%s", fromSQL, fromModels)
+	}
+	// SQL で作った表に AutoMigrate を走らせても壊れない（本番が AutoMigrate に移ったときのため）
+	must(t, db.AutoMigrate(&DripRow{}, &OpRow{}))
+	if after := schema(); after != fromModels {
+		t.Fatalf("AutoMigrate で表が変わった\n%s", after)
 	}
 }
