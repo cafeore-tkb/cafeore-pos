@@ -81,7 +81,7 @@ func TestStockEventMessage(t *testing.T) {
 		{
 			"adjust",
 			models.StockEvent{Kind: "adjust", Quantity: -50},
-			"📝 ケニア豆 -50g（残り約2230g）",
+			"📝 ケニア豆 -50g（残り約2230g） :e-take-inventory:",
 		},
 	}
 	for _, tc := range cases {

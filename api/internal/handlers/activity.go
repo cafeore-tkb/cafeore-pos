@@ -231,14 +231,11 @@ func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated,
 	if e.Note != "" {
 		text += fmt.Sprintf("「%s」", e.Note)
 	}
-	// 棚卸しと入荷は末尾の絵文字で見分ける。調整は画面から記録しないので付けない
-	switch e.Kind {
-	case string(models.StockEventKindCount):
-		return tagged(text, tagInventory)
-	case string(models.StockEventKindReceipt):
+	// 入荷だけ末尾の絵文字を変えて見分ける
+	if e.Kind == string(models.StockEventKindReceipt) {
 		return tagged(text, tagRestock)
 	}
-	return text
+	return tagged(text, tagInventory)
 }
 
 // --- オーダーストップ ---

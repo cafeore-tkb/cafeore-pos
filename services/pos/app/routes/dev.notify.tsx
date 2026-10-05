@@ -218,7 +218,7 @@ const defaults: NotifyEvent[] = [
   ev(
     "stock.adjust",
     "調整",
-    "📝 {名前} {数量}{単位}[（残り約{残り}{単位}）][「{メモ}」]",
+    "📝 {名前} {数量}{単位}[（残り約{残り}{単位}）][「{メモ}」] :e-take-inventory:",
     { 名前: "ケニア豆", 単位: "g", 数量: "-50", 残り: "2180", メモ: "" },
   ),
   ev("master.stop", "オーダーストップ", "⛔ オーダーストップ :e-stop:", {}),
@@ -284,7 +284,7 @@ const textOf = (e: NotifyEvent) =>
     : "";
 
 // 既定の文面を変えたらキーも変え、古い保存内容を読まないようにする
-const STORAGE_KEY = "dev-notify-v3";
+const STORAGE_KEY = "dev-notify-v4";
 const WEBHOOK_KEY = "dev-notify-webhook";
 
 const load = <T,>(key: string, fallback: T): T => {
