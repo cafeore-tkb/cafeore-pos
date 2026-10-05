@@ -3,9 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,11 +33,21 @@ type caosEnv struct {
 	menu   uuid.UUID
 }
 
-func newCaosEnv(t *testing.T) *caosEnv {
+func newCaosEnv(t *testing.T) *caosEnv { return newCaosEnvWith(t, "") }
+
+// newCaosEnvWith は、接続文字列に Postgres の設定（options）を足して作る。
+func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	t.Helper()
 	dsn := os.Getenv("CAOS_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("CAOS_TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
+	}
+	if options != "" {
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + "options=" + url.QueryEscape(options)
 	}
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
@@ -176,5 +190,94 @@ func TestCaosFailureDoesNotBlockOrders(t *testing.T) {
 	}
 	if code := e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", nil, &got); code != http.StatusOK || got.ReadyAt == nil {
 		t.Fatalf("準備完了も通る：%d", code)
+	}
+}
+
+// syncLog は、テストの間だけ log の出力をためる（CaOS の処理が失敗したかを見る）。
+type syncLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *syncLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+func captureLog(t *testing.T) *syncLog {
+	t.Helper()
+	l := &syncLog{}
+	log.SetOutput(l)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return l
+}
+
+// 同じ注文に「POS で準備完了」と「CaOS で次へ」を同時にぶつけても、デッドロックせず両方とも処理される
+// （ロックの順番を、どちらも 盤面 → 注文 にそろえている）。
+func TestCaosConcurrentReadyAndNextDoNotDeadlock(t *testing.T) {
+	e := newCaosEnv(t)
+	logs := captureLog(t)
+	day := caos.Day(time.Now())
+	for i := range 20 {
+		o := e.createOrder(t, 100+i, 1)
+		var board caos.Snapshot
+		e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board)
+		for _, d := range board.Drips {
+			if d.Status == caos.StatusUnassigned {
+				e.call(t, http.MethodPost, "/api/caos/boards/"+day+"/ops", map[string]any{"name": "assign", "drip_id": d.ID, "dripper": 1}, nil)
+			}
+		}
+		var wg sync.WaitGroup
+		codes := make([]int, 2)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			codes[0] = e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", nil, nil)
+		}()
+		go func() {
+			defer wg.Done()
+			codes[1] = e.call(t, http.MethodPost, "/api/caos/boards/"+day+"/ops", map[string]any{"name": "next", "dripper": 1}, nil)
+		}()
+		wg.Wait()
+		// 次へは、先に POS の準備完了でカードが終わっていれば 422（抽出中ではない）になる
+		if codes[0] != http.StatusOK || (codes[1] != http.StatusOK && codes[1] != http.StatusUnprocessableEntity) {
+			t.Fatalf("同時に処理できない：ready=%d next=%d", codes[0], codes[1])
+		}
+	}
+	if strings.Contains(logs.String(), "caos:") {
+		t.Fatalf("CaOS の処理が失敗した：%s", logs.String())
+	}
+}
+
+// 盤面のロックをほかの処理が持ったままでも、POS の注文は（ロック待ちの打ち切りのあと）通る。
+// 打ち切りは savepoint の中のエラーなので、戻せば注文の tx は続けられる。ロックが外れたら、盤面を読んだときに追いつく。
+func TestCaosLockTimeoutDoesNotBlockOrders(t *testing.T) {
+	e := newCaosEnvWith(t, "-c lock_timeout=300ms")
+	logs := captureLog(t)
+	day := caos.Day(time.Now())
+	mustDo(t, e.db.Exec("INSERT INTO caos_boards (day) VALUES (?) ON CONFLICT DO NOTHING", day).Error)
+
+	holder := e.db.Begin()
+	mustDo(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", day).Error)
+	o := e.createOrder(t, 1, 1)
+	if !strings.Contains(logs.String(), "lock timeout") {
+		t.Fatalf("ロック待ちの打ち切りが起きていない：%s", logs.String())
+	}
+	var got models.OrderResponse
+	if code := e.call(t, http.MethodGet, "/api/orders/"+o.Id.String(), nil, &got); code != http.StatusOK || len(got.Menus) != 1 {
+		t.Fatalf("注文が保存されていない：%d", code)
+	}
+	mustDo(t, holder.Rollback().Error)
+
+	var board caos.Snapshot
+	if e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board); len(board.Drips) != 1 {
+		t.Fatalf("ロックが外れたら、読んだときにカードが追いつく：%+v", board.Drips)
 	}
 }

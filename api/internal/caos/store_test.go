@@ -296,3 +296,32 @@ func TestStoreNotifiesOtherInstances(t *testing.T) {
 		t.Fatalf("日付と版を知らせる：%q", n.Payload)
 	}
 }
+
+// 変わるものがなければ、読むときに盤面のロックを取らない（画面のつなぎ直しで、注文の受付や操作を待たせない）
+func TestStoreLoadDoesNotLockWhenUnchanged(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := NewStore(db)
+	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
+	want := load(t, s)
+
+	holder := db.Begin()
+	must(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", testDay).Error)
+	defer holder.Rollback()
+	done := make(chan *Snapshot, 1)
+	go func() {
+		snap, _, err := s.Load(testDay)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- snap
+	}()
+	select {
+	case snap := <-done:
+		if snap.Version != want.Version || len(snap.Drips) != len(want.Drips) {
+			t.Fatalf("同じ盤面が読める：%+v", snap)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ロックを待ってしまった")
+	}
+}

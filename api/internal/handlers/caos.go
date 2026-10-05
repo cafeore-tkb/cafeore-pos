@@ -4,6 +4,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -80,9 +81,25 @@ func publishCaos(hub *Hub, orders *OrderHandler, applied ...*caos.Applied) {
 	}
 }
 
+// lockCaos は注文を書き込む前に、その注文の日の CaOS の盤面をロックする。注文を書き込む tx の最初に呼ぶ。
+//
+// ロックの順番を CaOS の操作（盤面 → 注文の ready_at）とそろえて、同じ注文を同時に触ったときのデッドロックを防ぐ。
+// 失敗しても（CaOS の表が無いなど）注文の書き込みは止めない。savepoint まで戻すので、取りかけたロックも残らない。
+func (h *OrderHandler) lockCaos(tx *gorm.DB, orderCreatedAt time.Time) {
+	if h.caos == nil {
+		return
+	}
+	if err := tx.Transaction(func(sp *gorm.DB) error { return h.caos.LockBoard(sp, orderCreatedAt) }); err != nil {
+		log.Printf("caos: failed to lock the board (the order is still saved): %v", err)
+	}
+}
+
 // syncCaos は注文の変更を CaOS の盤面に反映する。注文を書き込む tx の中で呼ぶ。
 // CaOS の処理が失敗しても注文の書き込みは止めない（savepoint まで戻してログに残すだけ。
 // カードは次にその日の盤面を読んだときにそろう）。返した変更は、コミットのあとに publishCaos で配る。
+//
+// SQL のエラーだけでなく、ロック待ちの打ち切りやデッドロックの検出も、Postgres ではその savepoint の中のエラーなので
+// 戻せば注文の tx は続けられる（caos_test.go で確かめている）。接続が切れたときは、CaOS と関係なく注文自体も失敗する。
 func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) []*caos.Applied {
 	if h.caos == nil {
 		return nil

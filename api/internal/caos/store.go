@@ -1,6 +1,7 @@
 package caos
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -174,23 +175,38 @@ type OrderRef struct {
 	CreatedAt time.Time
 }
 
-// withBoard はその日の盤面をロックして読み、fn で変えたものを保存する。tx の中で呼ぶこと。
-func (s *Store) withBoard(tx *gorm.DB, day string, fn func(b *Board, cs *Changeset) error) (*Applied, *Board, error) {
-	start, err := ParseDay(day)
-	if err != nil {
-		return nil, nil, err
+// LockBoard は注文を受けた日の盤面をロックする（tx が終わるまで、その日の盤面への処理を止める）。
+//
+// ロックの順番は、どの処理でも「盤面 → 注文」にそろえる。CaOS の操作は盤面をロックしてから注文の ready_at を書くので、
+// 注文を書き換えるハンドラーも、注文の行を書く前にこれを呼ぶ（逆の順番だと、同じ注文を同時に触ったときにデッドロックになる）。
+func (s *Store) LockBoard(tx *gorm.DB, orderCreatedAt time.Time) error {
+	_, err := s.lockBoard(tx, Day(orderCreatedAt))
+	return err
+}
+
+func (s *Store) lockBoard(tx *gorm.DB, day string) (int64, error) {
+	if _, err := ParseDay(day); err != nil {
+		return 0, err
 	}
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&BoardRow{Day: day}).Error; err != nil {
-		return nil, nil, err
+		return 0, err
 	}
 	var board BoardRow
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&board, "day = ?", day).Error; err != nil {
-		return nil, nil, err
+		return 0, err
 	}
+	return board.Version, nil
+}
 
+// readBoard はその日のカードと注文の状態を読む。
+func (s *Store) readBoard(tx *gorm.DB, day string) (*Board, error) {
+	start, err := ParseDay(day)
+	if err != nil {
+		return nil, err
+	}
 	var rows []DripRow
 	if err := tx.Where("day = ?", day).Find(&rows).Error; err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	drips := make([]Drip, len(rows))
 	for i, r := range rows {
@@ -199,19 +215,31 @@ func (s *Store) withBoard(tx *gorm.DB, day string, fn func(b *Board, cs *Changes
 	var orders []models.Order
 	if err := tx.Select("id", "order_id", "created_at", "ready_at", "served_at").
 		Where("created_at >= ? AND created_at < ?", start, start.AddDate(0, 0, 1)).Find(&orders).Error; err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	states := make([]OrderState, len(orders))
 	for i, o := range orders {
 		states[i] = OrderState{ID: o.ID.String(), OrderNo: o.OrderId, CreatedAt: o.CreatedAt, Ready: o.ReadyAt != nil, Served: o.ServedAt != nil}
 	}
+	return NewBoard(drips, states, s.clock, nil), nil
+}
 
-	b := NewBoard(drips, states, s.clock, nil)
-	cs := &Changeset{}
-	if err := fn(b, cs); err != nil {
+// withBoard はその日の盤面をロックして読み、fn で変えたものを保存する。tx の中で呼ぶこと。
+// fn が読むもの（注文の明細など）も、ロックを取ったあとに tx から読むこと。
+func (s *Store) withBoard(tx *gorm.DB, day string, fn func(tx *gorm.DB, b *Board, cs *Changeset) error) (*Applied, *Board, error) {
+	version, err := s.lockBoard(tx, day)
+	if err != nil {
 		return nil, nil, err
 	}
-	applied := &Applied{Day: day, Version: board.Version, Changed: b.Rows(cs.Changed.List()), Deleted: cs.Deleted.List(), Readied: cs.Readied.List(), Unreadied: cs.Unreadied.List()}
+	b, err := s.readBoard(tx, day)
+	if err != nil {
+		return nil, nil, err
+	}
+	cs := &Changeset{}
+	if err := fn(tx, b, cs); err != nil {
+		return nil, nil, err
+	}
+	applied := &Applied{Day: day, Version: version, Changed: b.Rows(cs.Changed.List()), Deleted: cs.Deleted.List(), Readied: cs.Readied.List(), Unreadied: cs.Unreadied.List()}
 	if err := s.persist(tx, day, applied); err != nil {
 		return nil, nil, err
 	}
@@ -264,28 +292,68 @@ func (s *Store) persist(tx *gorm.DB, day string, a *Applied) error {
 func (s *Store) Apply(day string, op Op) (*Applied, error) {
 	var applied *Applied
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		a, _, err := s.withBoard(tx, day, func(b *Board, cs *Changeset) error { return b.Apply(cs, op) })
+		a, _, err := s.withBoard(tx, day, func(_ *gorm.DB, b *Board, cs *Changeset) error { return b.Apply(cs, op) })
 		applied = a
 		return err
 	})
 	return applied, err
 }
 
-// Load はその日の盤面を読む。読む前に、その日の注文と照らし合わせてカードをそろえる（取りこぼしがあっても追いつく）。
-func (s *Store) Load(day string) (*Snapshot, *Applied, error) {
+func dayOrders(tx *gorm.DB, day string) ([]Order, error) {
 	start, err := ParseDay(day)
 	if err != nil {
+		return nil, err
+	}
+	var orders []models.Order
+	if err := preloadOrderLines(tx).Where("created_at >= ? AND created_at < ?", start, start.AddDate(0, 0, 1)).Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return toOrders(orders), nil
+}
+
+// Load はその日の盤面を読む。読む前に、その日の注文と照らし合わせてカードをそろえる（取りこぼしがあっても追いつく）。
+//
+// 画面がつなぐ・読み直すたびに呼ばれるので、まずロックを取らずに読んで照らし合わせ、変わるものがあるときだけ
+// ロックして書く（ふだんは、注文の受付や盤面の操作を待たせない）。
+func (s *Store) Load(day string) (*Snapshot, *Applied, error) {
+	if _, err := ParseDay(day); err != nil {
 		return nil, nil, err
 	}
+	// ロックなし：1 つの時点の中身をそろえて読むため、読み取り専用の REPEATABLE READ で読む
 	var snap *Snapshot
-	var applied *Applied
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		var orders []models.Order
-		if err := preloadOrderLines(tx).Where("created_at >= ? AND created_at < ?", start, start.AddDate(0, 0, 1)).Find(&orders).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var board BoardRow
+		if err := tx.Where("day = ?", day).Limit(1).Find(&board).Error; err != nil {
 			return err
 		}
-		a, b, err := s.withBoard(tx, day, func(b *Board, cs *Changeset) error {
-			b.IngestOrders(cs, toOrders(orders), true)
+		b, err := s.readBoard(tx, day)
+		if err != nil {
+			return err
+		}
+		orders, err := dayOrders(tx, day)
+		if err != nil {
+			return err
+		}
+		cs := &Changeset{}
+		b.IngestOrders(cs, orders, true)
+		if cs.Empty() && cs.Readied.Len() == 0 {
+			snap = &Snapshot{Day: day, Version: board.Version, Drips: b.List()}
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil || snap != nil {
+		return snap, nil, err
+	}
+
+	// 変わるものがある：ロックを取ってから読み直し、照らし合わせて保存する
+	var applied *Applied
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		a, b, err := s.withBoard(tx, day, func(tx *gorm.DB, b *Board, cs *Changeset) error {
+			orders, err := dayOrders(tx, day)
+			if err != nil {
+				return err
+			}
+			b.IngestOrders(cs, orders, true)
 			return nil
 		})
 		if err != nil {
@@ -312,11 +380,12 @@ func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) ([]*Applied, error) 
 	var out []*Applied
 	for _, day := range days {
 		ids := byDay[day]
-		var orders []models.Order
-		if err := preloadOrderLines(tx).Where("id IN ?", ids).Find(&orders).Error; err != nil {
-			return nil, err
-		}
-		a, _, err := s.withBoard(tx, day, func(b *Board, cs *Changeset) error {
+		a, _, err := s.withBoard(tx, day, func(tx *gorm.DB, b *Board, cs *Changeset) error {
+			// 注文はロックを取ったあとに読む（その間に消された・変わった注文で、カードを作り直さないように）
+			var orders []models.Order
+			if err := preloadOrderLines(tx).Where("id IN ?", ids).Find(&orders).Error; err != nil {
+				return err
+			}
 			found := map[string]bool{}
 			for _, o := range orders {
 				found[o.ID.String()] = true

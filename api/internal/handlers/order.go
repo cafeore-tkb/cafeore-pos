@@ -238,6 +238,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		h.lockCaos(tx, order.CreatedAt)
 		lines, err := loadOrderMenus(tx, order.ID, req.MenuIds, nil)
 		if err != nil {
 			return err
@@ -326,6 +327,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 
 	var applied []*caos.Applied
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		h.lockCaos(tx, order.CreatedAt)
 		orderMenus, err := loadOrderMenus(tx, order.ID, req.MenuIds, order.OrderMenus)
 		if err != nil {
 			return err
@@ -402,6 +404,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	var applied []*caos.Applied
 	var deleted int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		h.lockCaos(tx, order.CreatedAt)
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
@@ -456,6 +459,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		h.lockCaos(tx, order.CreatedAt)
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
@@ -507,6 +511,7 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		h.lockCaos(tx, order.CreatedAt)
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
