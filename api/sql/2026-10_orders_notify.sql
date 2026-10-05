@@ -1,8 +1,8 @@
 -- 注文が変わったことを api に知らせるトリガー。
 --
 -- api は orders_changed を LISTEN していて、通知が来るたびに全注文を WebSocket で配り直す
--- （internal/handlers/order_listener.go）。API を通さない書き換え（CaOS が Supabase の RPC で
--- ready_at を付けるなど）も POS の画面に届けるためのもの。
+-- （internal/handlers/order_listener.go）。API を通さない書き換え（SQL で直接直すなど）や、
+-- ほかのインスタンスでの書き換えも POS の画面に届けるためのもの。
 --
 -- 本番は AutoMigrate を走らせない（README の「backend の環境変数」を参照）ので、この SQL を手で流す。
 -- ローカルで流さなくても、API からの書き換えはこれまでどおり配られる。

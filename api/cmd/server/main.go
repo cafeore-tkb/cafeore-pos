@@ -255,7 +255,7 @@ func main() {
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
-	// API 以外（CaOS など）からの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
+	// API 以外（SQL で直接直すなど）やほかのインスタンスでの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	defer stopListening()

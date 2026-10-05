@@ -3,9 +3,13 @@ import { useEffect, useState } from "react";
 import { type MasterState, responseToMasterState } from "../data";
 import { type OrderResponse, responseToOrderEntity } from "../firebase-utils";
 import type { WithId } from "../lib";
+import {
+  type ReconnectingWebSocketStatus,
+  createReconnectingWebSocket,
+} from "../lib/reconnectingWebSocket";
 import type { OrderEntity } from "../models";
 
-type WsStatus = "connecting" | "open" | "closed" | "error";
+type WsStatus = ReconnectingWebSocketStatus;
 
 type WSMessage =
   | { type: "orders"; orders?: OrderResponse[] }
@@ -17,10 +21,6 @@ type WSMessage =
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
 const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
-
-// 切れたときのつなぎ直しの間隔。失敗が続くたびに倍にし、上限で止める
-const RETRY_INITIAL_MS = 1_000;
-const RETRY_MAX_MS = 15_000;
 
 export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
@@ -35,63 +35,36 @@ export const useOrdersWS = () => {
       .replace("http://", "ws://")
       .replace("https://", "wss://");
 
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryDelayMs = RETRY_INITIAL_MS;
-    let disposed = false;
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const data: WSMessage = JSON.parse(e.data);
 
-    const connect = () => {
-      ws = new WebSocket(`${wsUrl}/api/ws/orders`);
-      setStatus("connecting");
+        switch (data.type) {
+          case "orders":
+            setOrders((data.orders ?? []).map(responseToOrderEntity));
+            break;
 
-      ws.onopen = () => {
-        retryDelayMs = RETRY_INITIAL_MS;
-        setStatus("open");
-      };
+          case "master_state":
+            setMasterState(responseToMasterState(data.master_state));
+            break;
 
-      ws.onmessage = (e) => {
-        try {
-          const data: WSMessage = JSON.parse(e.data);
-
-          switch (data.type) {
-            case "orders":
-              // API は注文が 0 件だと orders を省いて送る（omitempty）。空として受け取る
-              setOrders((data.orders ?? []).map(responseToOrderEntity));
-              break;
-
-            case "master_state":
-              setMasterState(responseToMasterState(data.master_state));
-              break;
-
-            default:
-              console.warn("Unknown WS message:", data);
-          }
-        } catch (err) {
-          console.error("Failed to parse WS message:", err);
+          default:
+            console.warn("Unknown WS message:", data);
         }
-      };
-
-      ws.onerror = () => {
-        setStatus("error");
-      };
-
-      // Cloud Run はリクエストの上限時間（300 秒）で WebSocket を切る。
-      // 切れたままだと注文が更新されず会計もできなくなるので、間隔を空けてつなぎ直す。
-      // つなぎ直すとサーバーが全注文を送り直すので、切れていた間の更新も取りこぼさない。
-      ws.onclose = () => {
-        if (disposed) return;
-        setStatus("closed");
-        retryTimer = setTimeout(connect, retryDelayMs);
-        retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
-      };
+      } catch (err) {
+        console.error("Failed to parse WS message:", err);
+      }
     };
 
-    connect();
+    // 切れたら自動でつなぎ直す。サーバーは接続直後に現在の状態を送ってくるので、それで再同期される
+    const connection = createReconnectingWebSocket({
+      url: `${wsUrl}/api/ws/orders`,
+      onMessage: handleMessage,
+      onStatusChange: setStatus,
+    });
 
     return () => {
-      disposed = true;
-      clearTimeout(retryTimer);
-      ws?.close();
+      connection.close();
     };
   }, []);
 

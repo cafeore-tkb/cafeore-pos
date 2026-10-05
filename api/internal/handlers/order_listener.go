@@ -14,7 +14,7 @@ const ordersChangedChannel = "orders_changed"
 
 // ListenOrderChanges は、DB で注文が変わるたびに全注文を配信し直す。
 //
-// 注文は API 以外からも書き換わる（CaOS が Supabase の RPC で ready_at を付けるなど）。
+// 注文は API 以外からも書き換わる（SQL で直接直すなど）し、ほかのインスタンスでも書き換わる。
 // そうした変更も DB のトリガーが通知するので、ここで受けて POS の画面へ届ける。
 // インスタンスが何台あっても、それぞれが待ち受けて自分につないでいる画面へ配る。
 //
