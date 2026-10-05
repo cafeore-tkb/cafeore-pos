@@ -14,7 +14,6 @@ import (
 
 	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/handlers"
-	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-contrib/cors"
@@ -74,39 +73,11 @@ func initDB() error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// AutoMigrate は RUN_MIGRATIONS=true のときだけ走らせる。
-	//
-	// 本番のスキーマは手で作られている。ここで無条件に AutoMigrate を走らせて
-	// 失敗すると、listen は initDB の後なのでコンテナが PORT を開けられず、
-	// Cloud Run のデプロイごと落ちる。
-	//
-	// 逆に PR プレビューは空の Neon ブランチを使うので、走らせないと
-	// テーブルが無いままになる。CI（api-build.yml）が true を渡している。
-	if os.Getenv("RUN_MIGRATIONS") == "true" {
-		if err := db.AutoMigrate(
-			&models.ItemType{},
-			&models.Item{},
-			&models.Menu{},
-			&models.MenuItem{},
-			&models.Order{},
-			&models.Comment{},
-			&models.OrderMenu{},
-			&models.OrderCup{},
-			&models.MasterState{},
-			&models.StockResource{},
-			&models.ItemStockUsage{},
-			&models.StockEvent{},
-			&models.ColorSetting{},
-		); err != nil {
-			return fmt.Errorf("failed to migrate database: %w", err)
-		}
-
-		log.Println("Database migration completed")
-	} else {
-		// 空の DB に対して黙って起動すると、テーブルが無いまま全クエリが
-		// 失敗して原因が分かりにくい。スキップしたことは必ず残す。
-		log.Println("RUN_MIGRATIONS is not \"true\": skipped AutoMigrate")
+	// スキーマはモデルが正本。本番もプレビューもローカルも、起動時に反映する。
+	if err := migrate(db); err != nil {
+		return err
 	}
+	log.Println("Database migration completed")
 
 	log.Println("Database connected successfully")
 	return nil
