@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -61,9 +62,8 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	mustDo(t, db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
 	mustDo(t, db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
 		&models.OrderMenu{}, &models.OrderCup{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
-	sql, err := os.ReadFile("../../sql/2026-10_caos.sql")
-	mustDo(t, err)
-	mustDo(t, db.Exec(string(sql)).Error)
+	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_ops").Error)
+	mustDo(t, db.AutoMigrate(&caos.DripRow{}, &caos.OpRow{}))
 	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
@@ -277,7 +277,7 @@ func TestCaosFailureDoesNotBlockOrders(t *testing.T) {
 }
 
 // 配信は注文と同じく DB の通知から：API を通さずに caos_drips を書き換えても、各インスタンスが DB から読み直して
-// 今日のカードを全部配る。つないだ直後にも届く。
+// 今日のカードを全部配る。つないだ直後と、ほかのインスタンスから通知が来たときに届く。
 func TestCaosDripsAreBroadcastFromDB(t *testing.T) {
 	e := newCaosEnv(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -309,11 +309,28 @@ func TestCaosDripsAreBroadcastFromDB(t *testing.T) {
 	}
 
 	time.Sleep(200 * time.Millisecond) // LISTEN が始まるのを待つ
+	// ほかのインスタンスがカードを変えて知らせてきたら、DB から読み直して配る
 	mustDo(t, e.db.Exec("UPDATE caos_drips SET status = 'queued', dripper = 3").Error)
+	mustDo(t, e.db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, "another-instance").Error)
 	for {
 		if d := nextDrips(); len(d) == 1 && d[0].Status == caos.StatusQueued {
 			break
 		}
+	}
+
+	// CaOS で操作すると、自分の画面へ配ったうえで、ほかのインスタンスへ通知を送る（自分が受けても配り直さない）
+	listen, err := pgx.Connect(context.Background(), e.dsn)
+	mustDo(t, err)
+	defer func() { _ = listen.Close(context.Background()) }()
+	_, err = listen.Exec(context.Background(), "LISTEN "+caos.ChangedChannel)
+	mustDo(t, err)
+	e.op(t, map[string]any{"name": "unassign", "drip_id": e.cards(t)[0].ID}, nil)
+	waitCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	n, err := listen.WaitForNotification(waitCtx)
+	mustDo(t, err)
+	if n.Payload != instanceID {
+		t.Fatalf("通知には送ったインスタンスの ID が載る：%q", n.Payload)
 	}
 }
 

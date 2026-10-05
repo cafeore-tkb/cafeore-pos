@@ -1,7 +1,6 @@
 package caos
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -38,25 +36,18 @@ func testDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{}); err != nil {
+	// CaOS の表は毎回作り直す（スキーマは Go のモデルだけで決まることを確かめるため）
+	if err := db.Exec("DROP TABLE IF EXISTS caos_drips, caos_ops").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(mustRead(t, "../../sql/2026-10_caos.sql")).Error; err != nil {
+	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
+		&DripRow{}, &OpRow{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
-}
-
-func mustRead(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
 }
 
 type catalog struct{ champ, champTote, milk uuid.UUID }
@@ -441,22 +432,23 @@ func TestStoreSerializesConcurrentOps(t *testing.T) {
 	}
 }
 
-// caos_drips が変わると、トリガー（api/sql/2026-10_caos.sql）が通知を送る。各インスタンスはこれを受けて DB から読み直して配る
-func TestStoreTriggerNotifies(t *testing.T) {
+// 表の制約は Go のモデルのタグから作られる：状態とドリッパーの番号の範囲、1 人のドリッパーが同時に抽出できるのは 1 枚だけ
+func TestStoreSchemaConstraints(t *testing.T) {
 	db := testDB(t)
-	cat := seedCatalog(t, db)
-	s := newStore(db)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, err := pgx.Connect(ctx, os.Getenv("CAOS_TEST_DATABASE_URL"))
-	must(t, err)
-	defer func() { _ = conn.Close(context.Background()) }()
-	_, err = conn.Exec(ctx, "LISTEN "+ChangedChannel)
-	must(t, err)
-
-	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
-	if _, err := conn.WaitForNotification(ctx); err != nil {
-		t.Fatalf("カードができたら通知が届く：%v", err)
+	dripper := func(n int) *int { return &n }
+	row := func(status Status, d *int) DripRow {
+		now := time.Now()
+		return DripRow{ID: uuid.New(), Day: testDay, Status: string(status), Dripper: d, Lines: jsonValue[[]DripLine]{[]DripLine{}}, CreatedAt: now, UpdatedAt: now}
+	}
+	must(t, db.Create(&[]DripRow{row(StatusBrewing, dripper(1)), row(StatusBrewing, dripper(2)), row(StatusQueued, dripper(1)), row(StatusDone, dripper(1))}).Error)
+	for name, r := range map[string]DripRow{
+		"同じドリッパーで 2 枚目の抽出中": row(StatusBrewing, dripper(1)),
+		"知らない状態":            row("lost", nil),
+		"ドリッパーの番号が範囲外":      row(StatusQueued, dripper(7)),
+	} {
+		if err := db.Create(&r).Error; err == nil {
+			t.Errorf("%s は DB で止まる", name)
+		}
 	}
 }
 

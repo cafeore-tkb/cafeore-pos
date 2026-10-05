@@ -15,20 +15,26 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// 盤面の保存。新しい表は抽出カードの caos_drips だけ（api/sql/2026-10_caos.sql。本番は手で流す）。
+// 盤面の保存。新しい表は抽出カードの caos_drips と操作の記録の caos_ops だけ。
 // 1 つの営業日への処理は、その日の advisory lock を取って 1 件ずつ順番に行う（ロックのための表は持たない）。
-// 配信は注文と同じく DB の通知から：caos_drips が変わるとトリガーが caos_drips_changed を送り、
-// 各インスタンスが DB から今日のカードを読み直して WebSocket で配る（handlers/order_listener.go）。
+// 配信は注文と同じ：カードを変えたインスタンスが自分の画面へ配り、DB の通知 caos_drips_changed でほかのインスタンスに知らせる。
+// 受けたインスタンスは DB から今日のカードを読み直して、自分の画面へ配る（handlers/caos.go・order_listener.go）。
+// スキーマは Go のモデル（DripRow・OpRow）だけで決める（DB のトリガーや手で流す SQL は使わない）。
 
-// ChangedChannel は caos_drips が変わったことを知らせる DB の通知のチャンネル。
+// ChangedChannel は caos_drips が変わったことをインスタンス同士で知らせる DB の通知のチャンネル。
 const ChangedChannel = "caos_drips_changed"
 
 // DripRow は抽出カードの行。order_ids と杯数は明細（lines）から求めるので持たない。
+//
+// 1 人のドリッパーが同時に抽出できるのは 1 枚だけ（ルールが守っているが、念のため DB でも止める：caos_drips_one_brewing）。
 type DripRow struct {
-	ID          uuid.UUID             `gorm:"type:uuid;primaryKey"`
-	Day         string                `gorm:"type:date;not null;index"`
-	Status      string                `gorm:"not null"`
-	Dripper     *int                  `gorm:"type:smallint"`
+	ID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	// 営業日（日本時間の日付）
+	Day string `gorm:"type:date;not null;index;uniqueIndex:caos_drips_one_brewing,priority:1,where:status = 'brewing'"`
+	// unassigned：未割当 / queued：担当の待機列 / brewing：抽出中 / done：抽出終了
+	Status string `gorm:"not null;check:caos_drips_status_check,status IN ('unassigned', 'queued', 'brewing', 'done')"`
+	// 担当のドリッパー（1〜6）
+	Dripper     *int                  `gorm:"type:smallint;check:caos_drips_dripper_check,dripper BETWEEN 1 AND 6;uniqueIndex:caos_drips_one_brewing,priority:2,where:status = 'brewing'"`
 	QueuePos    float64               `gorm:"type:double precision;not null"`
 	Lines       jsonValue[[]DripLine] `gorm:"type:jsonb;not null"`
 	RebrewOf    *uuid.UUID            `gorm:"type:uuid"`
