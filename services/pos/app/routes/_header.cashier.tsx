@@ -14,7 +14,7 @@ import {
   useSubmit,
 } from "react-router";
 import { z } from "zod";
-import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
+import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -26,11 +26,12 @@ export const meta: MetaFunction = () => {
 export default function Cashier() {
   const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
-  const { isOnline: isNetworkOnline } = useOnlineStatus();
+  const { isDeviceOnline } = useDeviceOnlineStatus();
   const submit = useSubmit();
+  // 会計可否は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
   const canSubmitOrder = useMemo(
-    () => isNetworkOnline && status === "open",
-    [isNetworkOnline, status],
+    () => isDeviceOnline && status === "open",
+    [isDeviceOnline, status],
   );
 
   // 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
@@ -118,11 +119,16 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
     lastSubmittedOrderId = null;
   }
 
-  cashierRepository.set({
-    id: "cashier-state",
-    edittingOrder: OrderEntity.fromOrder(syncOrder),
-    submittedOrderId: lastSubmittedOrderId,
-  });
+  cashierRepository
+    .set({
+      id: "cashier-state",
+      edittingOrder: OrderEntity.fromOrder(syncOrder),
+      submittedOrderId: lastSubmittedOrderId,
+    })
+    .catch((err) => {
+      // キー入力のたびに呼ぶので await しない。失敗はここで拾ってログに残す
+      console.error("レジ状態の同期に失敗しました", err);
+    });
 
   return new Response("ok");
 };

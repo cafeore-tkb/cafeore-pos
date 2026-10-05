@@ -1,0 +1,888 @@
+{
+  "StatusResponse": {
+    "type": "object",
+    "required": ["status", "timestamp", "version", "database"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "example": "ok"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "version": {
+        "type": "string",
+        "example": "1.0.0"
+      },
+      "database": {
+        "type": "string",
+        "example": "connected"
+      }
+    }
+  },
+  "ItemResponse": {
+    "type": "object",
+    "required": ["id", "name", "abbr", "item_type"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "abbr": {
+        "type": "string"
+      },
+      "item_type": {
+        "$ref": "#/components/schemas/ItemTypeResponse"
+      }
+    }
+  },
+  "ItemCreateRequest": {
+    "type": "object",
+    "required": ["name", "abbr", "item_type_id"],
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "abbr": {
+        "type": "string"
+      },
+      "item_type_id": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "ItemUpdateRequest": {
+    "type": "object",
+    "required": ["id", "name", "abbr", "item_type_id"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "abbr": {
+        "type": "string"
+      },
+      "item_type_id": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "MenuItemResponse": {
+    "type": "object",
+    "required": ["item", "quantity"],
+    "properties": {
+      "item": {
+        "$ref": "#/components/schemas/ItemResponse"
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "MenuItemRequest": {
+    "type": "object",
+    "required": ["item_id", "quantity"],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  },
+  "MenuResponse": {
+    "type": "object",
+    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "abbr": {
+        "type": "string"
+      },
+      "price": {
+        "type": "integer"
+      },
+      "key": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MenuItemResponse"
+        }
+      }
+    }
+  },
+  "MenuCreateRequest": {
+    "type": "object",
+    "required": ["name", "abbr", "price", "key", "items"],
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "abbr": {
+        "type": "string"
+      },
+      "price": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "key": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/MenuItemRequest"
+        }
+      }
+    }
+  },
+  "MenuUpdateRequest": {
+    "allOf": [
+      {
+        "$ref": "#/components/schemas/MenuCreateRequest"
+      },
+      {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    ]
+  },
+  "ItemTypeResponse": {
+    "type": "object",
+    "required": ["id", "name", "display_name"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "display_name": {
+        "type": "string"
+      }
+    }
+  },
+  "ItemTypeCreateRequest": {
+    "type": "object",
+    "required": ["name", "display_name"],
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "display_name": {
+        "type": "string"
+      }
+    }
+  },
+  "ItemTypeUpdateRequest": {
+    "type": "object",
+    "required": ["id", "name", "display_name"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "display_name": {
+        "type": "string"
+      }
+    }
+  },
+  "MenuInfo": {
+    "type": "object",
+    "required": ["id", "menu_name", "unit_price", "menu", "assignee"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "注文明細ID"
+      },
+      "menu_name": {
+        "type": "string",
+        "description": "注文時点のメニュー名"
+      },
+      "unit_price": {
+        "type": "integer",
+        "description": "注文時点のメニュー価格"
+      },
+      "menu": {
+        "$ref": "#/components/schemas/MenuResponse"
+      },
+      "assignee": {
+        "type": "string",
+        "nullable": true
+      }
+    }
+  },
+  "OrderCupResponse": {
+    "type": "object",
+    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_menu_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "このカップを含む注文明細のID（MenuInfo.id）"
+      },
+      "item": {
+        "$ref": "#/components/schemas/ItemResponse"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップが準備完了になった時刻。未準備なら null"
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップを提供した時刻。未提供なら null"
+      }
+    }
+  },
+  "MenuInfoCreate": {
+    "type": "object",
+    "required": ["menu_id", "assignee"],
+    "properties": {
+      "order_menu_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。"
+      },
+      "menu_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "assignee": {
+        "type": "string",
+        "nullable": true
+      }
+    }
+  },
+  "OrderResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "order_id",
+      "created_at",
+      "billing_amount",
+      "received",
+      "menus",
+      "cups"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_id": {
+        "type": "integer"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "billing_amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount_order_id": {
+        "type": "integer",
+        "nullable": true
+      },
+      "discount_order_cups": {
+        "type": "integer"
+      },
+      "menus": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MenuInfo"
+        }
+      },
+      "cups": {
+        "type": "array",
+        "description": "注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderCupResponse"
+        }
+      },
+      "comments": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CommentResponse"
+        }
+      }
+    }
+  },
+  "OrderCreateRequest": {
+    "type": "object",
+    "required": ["order_id", "billing_amount", "received", "menu_ids"],
+    "properties": {
+      "order_id": {
+        "type": "integer",
+        "example": 1
+      },
+      "billing_amount": {
+        "type": "integer",
+        "example": 500
+      },
+      "received": {
+        "type": "integer",
+        "example": 500,
+        "default": 0
+      },
+      "discount_order_id": {
+        "type": "integer",
+        "nullable": true
+      },
+      "discount_order_cups": {
+        "type": "integer",
+        "default": 0
+      },
+      "menu_ids": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MenuInfoCreate"
+        }
+      },
+      "comments": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CommentCreateRequest"
+        }
+      },
+      "idempotency_key": {
+        "type": "string",
+        "format": "uuid",
+        "description": "送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る"
+      }
+    }
+  },
+  "OrderUpdateRequest": {
+    "type": "object",
+    "required": ["id", "order_id", "billing_amount", "received", "menu_ids"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_id": {
+        "type": "integer"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "billing_amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount_order_id": {
+        "type": "integer",
+        "nullable": true
+      },
+      "discount_order_cups": {
+        "type": "integer"
+      },
+      "menu_ids": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MenuInfoCreate"
+        }
+      }
+    }
+  },
+  "OrderListItem": {
+    "type": "object",
+    "required": ["id", "order_id", "created_at", "billing_amount"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_id": {
+        "type": "integer"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "billing_amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount_order_cups": {
+        "type": "integer"
+      }
+    }
+  },
+  "CommentCreateRequest": {
+    "type": "object",
+    "required": ["author", "text"],
+    "properties": {
+      "author": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "CommentResponse": {
+    "type": "object",
+    "required": ["order_id", "author", "text", "created_at"],
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "author": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "MasterStateResponse": {
+    "type": "object",
+    "required": ["created_at", "type"],
+    "properties": {
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "type": {
+        "type": "string"
+      }
+    }
+  },
+  "MasterStateUpdateRequest": {
+    "type": "object",
+    "required": ["type"],
+    "properties": {
+      "type": {
+        "type": "string"
+      }
+    }
+  },
+  "ColorTargetType": {
+    "type": "string",
+    "description": "背景色を設定する対象の種類",
+    "enum": ["Item", "ItemType"],
+    "x-enum-varnames": ["ColorTargetTypeItem", "ColorTargetTypeItemType"]
+  },
+  "ColorScreen": {
+    "type": "string",
+    "description": "背景色を適用する画面",
+    "enum": ["master", "serve"],
+    "x-enum-varnames": ["ColorScreenMaster", "ColorScreenServe"]
+  },
+  "ColorSettingResponse": {
+    "type": "object",
+    "required": ["id", "target_type", "target_id", "screen", "color"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "target_type": {
+        "$ref": "#/components/schemas/ColorTargetType"
+      },
+      "target_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Item または ItemType の ID"
+      },
+      "screen": {
+        "$ref": "#/components/schemas/ColorScreen"
+      },
+      "color": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}$",
+        "example": "#bfdbfe"
+      }
+    }
+  },
+  "ColorSettingUpsertRequest": {
+    "type": "object",
+    "required": ["target_type", "target_id", "screen", "color"],
+    "properties": {
+      "target_type": {
+        "$ref": "#/components/schemas/ColorTargetType"
+      },
+      "target_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Item または ItemType の ID"
+      },
+      "screen": {
+        "$ref": "#/components/schemas/ColorScreen"
+      },
+      "color": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}$",
+        "example": "#bfdbfe"
+      }
+    }
+  },
+  "CashierStateResponse": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id", "updated_at"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない"
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "直前に確定した注文の ID。編集中は null"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "CashierStateUpdateRequest": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      }
+    }
+  },
+  "ErrorResponse": {
+    "type": "object",
+    "required": ["error"],
+    "properties": {
+      "error": {
+        "type": "string",
+        "example": "Invalid order ID format"
+      }
+    }
+  },
+  "StockResourceKind": {
+    "type": "string",
+    "enum": ["cup", "bean"],
+    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"]
+  },
+  "StockResourceRequest": {
+    "type": "object",
+    "required": [
+      "kind",
+      "name",
+      "unit",
+      "per_serving",
+      "notify_from",
+      "notify_step",
+      "buffer"
+    ],
+    "properties": {
+      "kind": {
+        "$ref": "#/components/schemas/StockResourceKind"
+      },
+      "name": {
+        "type": "string",
+        "example": "ホットカップ"
+      },
+      "unit": {
+        "type": "string",
+        "description": "数える単位（個 / g）",
+        "example": "個"
+      },
+      "per_serving": {
+        "type": "number",
+        "format": "double",
+        "description": "1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）",
+        "example": 1
+      },
+      "notify_from": {
+        "type": "integer",
+        "description": "残りがこの杯数を切ったら通知を始める",
+        "example": 500
+      },
+      "notify_step": {
+        "type": "integer",
+        "description": "notify_from から何杯減るごとに通知するか",
+        "example": 100
+      },
+      "buffer": {
+        "type": "integer",
+        "description": "最低限残したい杯数。これを切ると危険扱い",
+        "example": 100
+      }
+    }
+  },
+  "StockResourceResponse": {
+    "allOf": [
+      {
+        "$ref": "#/components/schemas/StockResourceRequest"
+      },
+      {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    ]
+  },
+  "InventoryLevel": {
+    "type": "string",
+    "description": "untracked は棚卸し・入荷がまだ一度も無い",
+    "enum": ["ok", "warning", "critical", "untracked"],
+    "x-enum-varnames": [
+      "InventoryLevelOk",
+      "InventoryLevelWarning",
+      "InventoryLevelCritical",
+      "InventoryLevelUntracked"
+    ]
+  },
+  "InventoryStatus": {
+    "type": "object",
+    "required": [
+      "resource",
+      "level",
+      "received",
+      "consumed",
+      "servings",
+      "servings_last_hour"
+    ],
+    "properties": {
+      "resource": {
+        "$ref": "#/components/schemas/StockResourceResponse"
+      },
+      "level": {
+        "$ref": "#/components/schemas/InventoryLevel"
+      },
+      "counted_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後の棚卸し。無ければ最初の入荷"
+      },
+      "counted_quantity": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "received": {
+        "type": "number",
+        "format": "double",
+        "description": "counted_at 以降の入荷・調整の合計"
+      },
+      "consumed": {
+        "type": "number",
+        "format": "double",
+        "description": "counted_at 以降の注文での消費量"
+      },
+      "servings": {
+        "type": "integer",
+        "description": "counted_at 以降に売れた杯数"
+      },
+      "remaining": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "remaining_servings": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "servings_last_hour": {
+        "type": "integer",
+        "description": "直近1時間に売れた杯数"
+      }
+    }
+  },
+  "StockEventKind": {
+    "type": "string",
+    "enum": ["count", "receipt", "adjust"],
+    "x-enum-varnames": [
+      "StockEventKindCount",
+      "StockEventKindReceipt",
+      "StockEventKindAdjust"
+    ]
+  },
+  "StockEventCreateRequest": {
+    "type": "object",
+    "required": ["kind", "quantity"],
+    "properties": {
+      "kind": {
+        "$ref": "#/components/schemas/StockEventKind"
+      },
+      "quantity": {
+        "type": "number",
+        "format": "double"
+      },
+      "note": {
+        "type": "string"
+      }
+    }
+  },
+  "StockEventResponse": {
+    "type": "object",
+    "required": ["id", "resource_id", "kind", "quantity", "created_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "resource_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "kind": {
+        "$ref": "#/components/schemas/StockEventKind"
+      },
+      "quantity": {
+        "type": "number",
+        "format": "double"
+      },
+      "note": {
+        "type": "string"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "StockEventCreateResponse": {
+    "type": "object",
+    "required": ["event"],
+    "properties": {
+      "event": {
+        "$ref": "#/components/schemas/StockEventResponse"
+      },
+      "estimated": {
+        "type": "number",
+        "format": "double",
+        "nullable": true,
+        "description": "記録する直前の推定残量（count のときの答え合わせ用）"
+      },
+      "actual_per_serving": {
+        "type": "number",
+        "format": "double",
+        "nullable": true,
+        "description": "前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）"
+      }
+    }
+  },
+  "StockUsage": {
+    "type": "object",
+    "required": ["item_id", "resource_id", "amount"],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "resource_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "amount": {
+        "type": "number",
+        "format": "double",
+        "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
+      }
+    }
+  },
+  "InventoryRemindResponse": {
+    "type": "object",
+    "required": ["sent"],
+    "properties": {
+      "sent": {
+        "type": "boolean"
+      },
+      "reason": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -9,6 +9,90 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ColorScreen.
+const (
+	ColorScreenMaster ColorScreen = "master"
+	ColorScreenServe  ColorScreen = "serve"
+)
+
+// Defines values for ColorTargetType.
+const (
+	ColorTargetTypeItem     ColorTargetType = "Item"
+	ColorTargetTypeItemType ColorTargetType = "ItemType"
+)
+
+// Defines values for InventoryLevel.
+const (
+	InventoryLevelCritical  InventoryLevel = "critical"
+	InventoryLevelOk        InventoryLevel = "ok"
+	InventoryLevelUntracked InventoryLevel = "untracked"
+	InventoryLevelWarning   InventoryLevel = "warning"
+)
+
+// Defines values for StockEventKind.
+const (
+	StockEventKindAdjust  StockEventKind = "adjust"
+	StockEventKindCount   StockEventKind = "count"
+	StockEventKindReceipt StockEventKind = "receipt"
+)
+
+// Defines values for StockResourceKind.
+const (
+	StockResourceKindBean StockResourceKind = "bean"
+	StockResourceKindCup  StockResourceKind = "cup"
+)
+
+// CashierStateResponse defines model for CashierStateResponse.
+type CashierStateResponse struct {
+	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
+	EdittingOrder map[string]interface{} `json:"editting_order"`
+
+	// SubmittedOrderId 直前に確定した注文の ID。編集中は null
+	SubmittedOrderId *openapi_types.UUID `json:"submitted_order_id"`
+	UpdatedAt        time.Time           `json:"updated_at"`
+}
+
+// CashierStateUpdateRequest defines model for CashierStateUpdateRequest.
+type CashierStateUpdateRequest struct {
+	EdittingOrder    map[string]interface{} `json:"editting_order"`
+	SubmittedOrderId *openapi_types.UUID    `json:"submitted_order_id"`
+}
+
+// ColorScreen 背景色を適用する画面
+type ColorScreen string
+
+// ColorSettingResponse defines model for ColorSettingResponse.
+type ColorSettingResponse struct {
+	Color string             `json:"color"`
+	Id    openapi_types.UUID `json:"id"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorSettingUpsertRequest defines model for ColorSettingUpsertRequest.
+type ColorSettingUpsertRequest struct {
+	Color string `json:"color"`
+
+	// Screen 背景色を適用する画面
+	Screen ColorScreen `json:"screen"`
+
+	// TargetId Item または ItemType の ID
+	TargetId openapi_types.UUID `json:"target_id"`
+
+	// TargetType 背景色を設定する対象の種類
+	TargetType ColorTargetType `json:"target_type"`
+}
+
+// ColorTargetType 背景色を設定する対象の種類
+type ColorTargetType string
+
 // CommentCreateRequest defines model for CommentCreateRequest.
 type CommentCreateRequest struct {
 	Author string `json:"author"`
@@ -26,6 +110,40 @@ type CommentResponse struct {
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// InventoryLevel untracked は棚卸し・入荷がまだ一度も無い
+type InventoryLevel string
+
+// InventoryRemindResponse defines model for InventoryRemindResponse.
+type InventoryRemindResponse struct {
+	Reason *string `json:"reason,omitempty"`
+	Sent   bool    `json:"sent"`
+}
+
+// InventoryStatus defines model for InventoryStatus.
+type InventoryStatus struct {
+	// Consumed counted_at 以降の注文での消費量
+	Consumed float64 `json:"consumed"`
+
+	// CountedAt 最後の棚卸し。無ければ最初の入荷
+	CountedAt       *time.Time `json:"counted_at"`
+	CountedQuantity *float64   `json:"counted_quantity"`
+
+	// Level untracked は棚卸し・入荷がまだ一度も無い
+	Level InventoryLevel `json:"level"`
+
+	// Received counted_at 以降の入荷・調整の合計
+	Received          float64               `json:"received"`
+	Remaining         *float64              `json:"remaining"`
+	RemainingServings *float64              `json:"remaining_servings"`
+	Resource          StockResourceResponse `json:"resource"`
+
+	// Servings counted_at 以降に売れた杯数
+	Servings int `json:"servings"`
+
+	// ServingsLastHour 直近1時間に売れた杯数
+	ServingsLastHour int `json:"servings_last_hour"`
 }
 
 // ItemCreateRequest defines model for ItemCreateRequest.
@@ -161,11 +279,29 @@ type OrderCreateRequest struct {
 	Received       int                 `json:"received"`
 }
 
+// OrderCupResponse defines model for OrderCupResponse.
+type OrderCupResponse struct {
+	Id   openapi_types.UUID `json:"id"`
+	Item ItemResponse       `json:"item"`
+
+	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
+	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
+
+	// ReadyAt このカップが準備完了になった時刻。未準備なら null
+	ReadyAt *time.Time `json:"ready_at"`
+
+	// ServedAt このカップを提供した時刻。未提供なら null
+	ServedAt *time.Time `json:"served_at"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount     int                `json:"billing_amount"`
-	Comments          *[]CommentResponse `json:"comments,omitempty"`
-	CreatedAt         time.Time          `json:"created_at"`
+	BillingAmount int                `json:"billing_amount"`
+	Comments      *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+
+	// Cups 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
+	Cups              []OrderCupResponse `json:"cups"`
 	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int               `json:"discount_order_id"`
 	Id                openapi_types.UUID `json:"id"`
@@ -196,6 +332,109 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 }
+
+// StockEventCreateRequest defines model for StockEventCreateRequest.
+type StockEventCreateRequest struct {
+	Kind     StockEventKind `json:"kind"`
+	Note     *string        `json:"note,omitempty"`
+	Quantity float64        `json:"quantity"`
+}
+
+// StockEventCreateResponse defines model for StockEventCreateResponse.
+type StockEventCreateResponse struct {
+	// ActualPerServing 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+	ActualPerServing *float64 `json:"actual_per_serving"`
+
+	// Estimated 記録する直前の推定残量（count のときの答え合わせ用）
+	Estimated *float64           `json:"estimated"`
+	Event     StockEventResponse `json:"event"`
+}
+
+// StockEventKind defines model for StockEventKind.
+type StockEventKind string
+
+// StockEventResponse defines model for StockEventResponse.
+type StockEventResponse struct {
+	CreatedAt  time.Time          `json:"created_at"`
+	Id         openapi_types.UUID `json:"id"`
+	Kind       StockEventKind     `json:"kind"`
+	Note       *string            `json:"note,omitempty"`
+	Quantity   float64            `json:"quantity"`
+	ResourceId openapi_types.UUID `json:"resource_id"`
+}
+
+// StockResourceKind defines model for StockResourceKind.
+type StockResourceKind string
+
+// StockResourceRequest defines model for StockResourceRequest.
+type StockResourceRequest struct {
+	// Buffer 最低限残したい杯数。これを切ると危険扱い
+	Buffer int               `json:"buffer"`
+	Kind   StockResourceKind `json:"kind"`
+	Name   string            `json:"name"`
+
+	// NotifyFrom 残りがこの杯数を切ったら通知を始める
+	NotifyFrom int `json:"notify_from"`
+
+	// NotifyStep notify_from から何杯減るごとに通知するか
+	NotifyStep int `json:"notify_step"`
+
+	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	PerServing float64 `json:"per_serving"`
+
+	// Unit 数える単位（個 / g）
+	Unit string `json:"unit"`
+}
+
+// StockResourceResponse defines model for StockResourceResponse.
+type StockResourceResponse struct {
+	// Buffer 最低限残したい杯数。これを切ると危険扱い
+	Buffer int                `json:"buffer"`
+	Id     openapi_types.UUID `json:"id"`
+	Kind   StockResourceKind  `json:"kind"`
+	Name   string             `json:"name"`
+
+	// NotifyFrom 残りがこの杯数を切ったら通知を始める
+	NotifyFrom int `json:"notify_from"`
+
+	// NotifyStep notify_from から何杯減るごとに通知するか
+	NotifyStep int `json:"notify_step"`
+
+	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	PerServing float64 `json:"per_serving"`
+
+	// Unit 数える単位（個 / g）
+	Unit string `json:"unit"`
+}
+
+// StockUsage defines model for StockUsage.
+type StockUsage struct {
+	// Amount アイテム1杯で使う量（カップ 1、豆 15 など）
+	Amount     float64            `json:"amount"`
+	ItemId     openapi_types.UUID `json:"item_id"`
+	ResourceId openapi_types.UUID `json:"resource_id"`
+}
+
+// ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
+type ReplaceStockUsagesJSONBody = []StockUsage
+
+// UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
+type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
+
+// UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
+type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest
+
+// CreateStockResourceJSONRequestBody defines body for CreateStockResource for application/json ContentType.
+type CreateStockResourceJSONRequestBody = StockResourceRequest
+
+// UpdateStockResourceJSONRequestBody defines body for UpdateStockResource for application/json ContentType.
+type UpdateStockResourceJSONRequestBody = StockResourceRequest
+
+// CreateStockEventJSONRequestBody defines body for CreateStockEvent for application/json ContentType.
+type CreateStockEventJSONRequestBody = StockEventCreateRequest
+
+// ReplaceStockUsagesJSONRequestBody defines body for ReplaceStockUsages for application/json ContentType.
+type ReplaceStockUsagesJSONRequestBody = ReplaceStockUsagesJSONBody
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest
