@@ -108,10 +108,20 @@ func (h *OrderHandler) runDripsBroadcaster() {
 
 // 今日のカードを DB から読み直して WebSocket へ送る（カードが 0 枚のときは drips が省かれて届く）。
 func (h *OrderHandler) sendDrips() {
+	if msg, ok := h.dripsMessage(); ok {
+		h.hub.Broadcast(msg)
+	}
+}
+
+// 今日のカードを WSMessage にする。CaOS を使っていない・読めなかったら ok = false
+func (h *OrderHandler) dripsMessage() (WSMessage, bool) {
+	if h.caos == nil {
+		return WSMessage{}, false
+	}
 	drips, err := h.caos.Drips(h.caos.Today())
 	if err != nil {
 		log.Printf("caos: failed to read the cards: %v", err)
-		return
+		return WSMessage{}, false
 	}
-	h.hub.Broadcast(WSMessage{Type: WSMessageTypeDrips, Drips: drips})
+	return WSMessage{Type: WSMessageTypeDrips, Drips: drips}, true
 }

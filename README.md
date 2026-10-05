@@ -119,7 +119,7 @@ CaOS のテーブル（`caos_drips`・`caos_ops`）と通知のトリガーを�
 
 ### 注文の変更の配信（orders_changed）
 
-api は DB の `orders_changed` 通知を LISTEN していて、通知が来るたびに全注文を WebSocket で配り直す（`internal/handlers/order_listener.go`）。API を通さない書き換え、たとえば CaOS が Supabase の RPC で `ready_at` を付けたときも、これで POS の画面に届く。インスタンスが増えても、それぞれが待ち受けて自分につないでいる画面へ配る。
+api は DB の `orders_changed` 通知を LISTEN していて、通知が来るたびに全注文を WebSocket で配り直す（`internal/handlers/order_listener.go`）。API を通さない書き換え（SQL で直接直したときなど）や、ほかのインスタンスでの書き換えも、これで POS の画面に届く。インスタンスが増えても、それぞれが待ち受けて自分につないでいる画面へ配る。
 
 - 通知を送るトリガーは `api/sql/2026-10_orders_notify.sql`。本番は手で流す。流していなくても、API からの書き換えはこれまでどおり配られる。
 - LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる。

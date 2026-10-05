@@ -4,8 +4,6 @@ import (
 	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 
-	"log"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -21,7 +19,7 @@ const (
 
 type WSMessage struct {
 	Type   WSMessageType          `json:"type"`
-	Orders []models.OrderResponse `json:"orders,omitempty"`
+	Orders []models.OrderResponse `json:"orders"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
@@ -34,43 +32,40 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer func() {
-		h.hub.Unregister(conn)
-		if err := conn.Close(); err != nil {
-			log.Println("failed to close connection:", err)
-		}
-	}()
 
-	h.hub.Register(conn)
+	client := h.hub.Register(conn)
 
-	// 接続直後に現在のデータを送信
-	h.broadcastOrders()
-	h.broadcastMasterState()
-	h.broadcastDrips()
-
-	// 接続維持（クライアントからのメッセージは今は無視）
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			break
-		}
+	// 接続直後に現在のデータをこの接続にだけ送信
+	// （全体へ配り直すと、1台つながるたびに既存の全端末へ全件が流れてしまう）
+	var initial []WSMessage
+	if msg, ok := ordersMessage(h.db); ok {
+		initial = append(initial, msg)
 	}
+	if msg, ok := masterStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := h.dripsMessage(); ok {
+		initial = append(initial, msg)
+	}
+	client.SendInitial(initial...)
+
+	// 切断されるまで接続を維持する
+	client.ReadPump()
 }
 
-func (h *OrderHandler) broadcastMasterState() {
+// 最新のオーダーストップ状態を WSMessage にする。まだ無ければ ok = false
+func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 	var state models.MasterState
 
-	if err := h.db.
+	if err := db.
 		Order("created_at DESC").
 		First(&state).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return
-		}
-		return
+		return WSMessage{}, false
 	}
 
 	response := toMasterStateResponse(&state)
-	h.hub.Broadcast(WSMessage{
+	return WSMessage{
 		Type:        WSMessageTypeMasterState,
 		MasterState: &response,
-	})
+	}, true
 }
