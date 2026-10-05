@@ -1,4 +1,11 @@
-import type { ItemType, MenuEntity, WithId } from "@cafeore/common";
+import {
+  type ItemType,
+  type MenuEntity,
+  type WithId,
+  readableTextColor,
+  resolveItemColor,
+  useColorSettings,
+} from "@cafeore/common";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
@@ -32,6 +39,18 @@ const groupByItemType = (items: WithId<MenuEntity>[]): ItemTypeGroup[] => {
 
 export const ItemButtons = ({ items, addItem }: props) => {
   const groups = groupByItemType(items);
+  const { colorSettings } = useColorSettings();
+
+  // レジ画面の背景色設定を使う。1 品だけのメニューはアイテムの設定も見る。設定が無ければボタンの既定の色
+  const buttonStyle = (menu: WithId<MenuEntity>) => {
+    const target =
+      menu.items.length === 1
+        ? menu.items[0].item
+        : { item_type: menu.item_type };
+    const backgroundColor = resolveItemColor(colorSettings, target, "cashier");
+    if (backgroundColor === undefined) return undefined;
+    return { backgroundColor, color: readableTextColor(backgroundColor) };
+  };
   return (
     <div className="relative h-screen pr-5 pl-5">
       {groups.map(({ itemType, items }, index) => (
@@ -52,6 +71,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
               <Button
                 key={item.id}
                 className="h-12.5 w-37.5 text-lg hover:ring-4"
+                style={buttonStyle(item)}
                 onClick={() => {
                   addItem(item);
                 }}

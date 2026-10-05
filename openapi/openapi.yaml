@@ -1173,9 +1173,11 @@ components:
       type: string
       description: 背景色を適用する画面
       enum:
+        - cashier
         - master
         - serve
       x-enum-varnames:
+        - ColorScreenCashier
         - ColorScreenMaster
         - ColorScreenServe
     ColorSettingResponse:
