@@ -553,45 +553,32 @@
       }
     }
   },
+  "OrderReadyRequest": {
+    "type": "object",
+    "properties": {
+      "ready": {
+        "type": "boolean",
+        "description": "true で準備完了、false で未完了にする（今の状態と同じなら何もしない）"
+      }
+    }
+  },
   "CaosDripLine": {
     "type": "object",
-    "description": "抽出カードの中身の 1 行。注文番号や商品名はカードを作った時点のもの",
-    "required": [
-      "order_id",
-      "order_no",
-      "item_id",
-      "name",
-      "abbr",
-      "type",
-      "nominee",
-      "cups"
-    ],
+    "description": "抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）",
+    "required": ["order_id", "item_id", "nominee", "cups"],
     "properties": {
       "order_id": {
         "type": "string",
         "format": "uuid"
       },
-      "order_no": {
-        "type": "integer"
-      },
       "item_id": {
         "type": "string",
         "format": "uuid"
       },
-      "name": {
-        "type": "string"
-      },
-      "abbr": {
-        "type": "string"
-      },
-      "type": {
-        "type": "string",
-        "description": "商品の種類（item_types.name）"
-      },
       "nominee": {
         "type": "string",
         "nullable": true,
-        "description": "POS の指名（前後の空白を落としたもの）"
+        "description": "POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける"
       },
       "cups": {
         "type": "integer",
@@ -613,7 +600,7 @@
   },
   "CaosDrip": {
     "type": "object",
-    "description": "抽出カード。1 回のドリップ（最大 2 杯）が 1 枚",
+    "description": "抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの",
     "required": [
       "id",
       "status",
@@ -697,30 +684,9 @@
       }
     }
   },
-  "CaosBoard": {
-    "type": "object",
-    "required": ["day", "v", "drips"],
-    "properties": {
-      "day": {
-        "type": "string",
-        "format": "date"
-      },
-      "v": {
-        "type": "integer",
-        "format": "int64",
-        "description": "盤面の版。カードが変わるたびに 1 ずつ増える"
-      },
-      "drips": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDrip"
-        }
-      }
-    }
-  },
   "CaosOp": {
     "type": "object",
-    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nrestore（before・after・readied）\n",
+    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nrestore（before・after）\n",
     "required": ["name"],
     "properties": {
       "name": {
@@ -785,29 +751,13 @@
         "items": {
           "$ref": "#/components/schemas/CaosDrip"
         }
-      },
-      "readied": {
-        "type": "array",
-        "description": "操作が準備完了にした注文（まだ提供していなければ取り消す）",
-        "items": {
-          "type": "string",
-          "format": "uuid"
-        }
       }
     }
   },
   "CaosOpResult": {
     "type": "object",
-    "required": ["day", "v", "changed", "deleted", "readied"],
+    "required": ["changed", "deleted", "completed"],
     "properties": {
-      "day": {
-        "type": "string",
-        "format": "date"
-      },
-      "v": {
-        "type": "integer",
-        "format": "int64"
-      },
       "changed": {
         "type": "array",
         "items": {
@@ -821,9 +771,9 @@
           "format": "uuid"
         }
       },
-      "readied": {
+      "completed": {
         "type": "array",
-        "description": "この操作で準備完了にした注文",
+        "description": "カードが全部終わった注文。PATCH /api/orders/{id}/ready に {\"ready\": true} を送って準備完了にする",
         "items": {
           "type": "string",
           "format": "uuid"
@@ -848,33 +798,18 @@
   },
   "CaosWSMessage": {
     "type": "object",
-    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\ndrips：このインスタンスで変わったカード（drips は消えただけのときは省く）と消えたカード。\ndrips_version：ほかのインスタンスで盤面が変わった。手元の版より新しければ GET /api/caos/boards/{day} で読み直す。\n",
-    "required": ["type", "day", "v"],
+    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
+    "required": ["type"],
     "properties": {
       "type": {
         "type": "string",
-        "enum": ["drips", "drips_version"],
-        "x-enum-varnames": ["CaosWSMessageDrips", "CaosWSMessageDripsVersion"]
-      },
-      "day": {
-        "type": "string",
-        "format": "date"
-      },
-      "v": {
-        "type": "integer",
-        "format": "int64"
+        "enum": ["drips"],
+        "x-enum-varnames": ["CaosWSMessageDrips"]
       },
       "drips": {
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/CaosDrip"
-        }
-      },
-      "deleted": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "format": "uuid"
         }
       }
     }

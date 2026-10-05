@@ -1,7 +1,8 @@
 // Package caos は CaOS（ドリップ管制）の盤面。抽出カードの保存と、割当・次へ・統合などのルールを持つ。
 //
-// 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のカードが全部終わったら注文を準備完了にする。
-// 書き込みは全部この API を通るので、POS の注文のハンドラーと同じトランザクションの中で連動させる（DB のトリガーは使わない）。
+// 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のハンドラーと同じトランザクションの中で連動させる。
+// カードが全部終わった注文は「次へ」の結果（completed）で返し、準備完了は既存の注文の API（PATCH /api/orders/{id}/ready）で付ける。
+// 配信は注文と同じく DB の通知から（caos_drips のトリガー → 各インスタンスが今日のカードを読み直して配る）。
 package caos
 
 import "time"
@@ -21,14 +22,11 @@ const (
 )
 
 // DripLine は抽出カードの中身の 1 行（どの注文の、どの商品を、何杯）。
-// 注文番号や商品名はカードを作った時点のものを写しておく（画面が注文を引かずに済むように）。
+// 注文番号や商品名は持たない（画面は /api/ws/orders で受け取る注文から引く）。
+// 指名（POS の明細の assignee、前後の空白を落としたもの）は、同じ商品でも指名ごとにカードを分けるので持つ。
 type DripLine struct {
 	OrderID string  `json:"order_id"`
-	OrderNo int     `json:"order_no"`
 	ItemID  string  `json:"item_id"`
-	Name    string  `json:"name"`
-	Abbr    string  `json:"abbr"`
-	Type    string  `json:"type"`
 	Nominee *string `json:"nominee"`
 	Cups    int     `json:"cups"`
 }
@@ -92,17 +90,14 @@ type Op struct {
 	Interrupt bool     `json:"interrupt,omitempty"`
 	QueuePos  *float64 `json:"queue_pos,omitempty"`
 	// restore
-	Before  []Drip   `json:"before,omitempty"`
-	After   []Drip   `json:"after,omitempty"`
-	Readied []string `json:"readied,omitempty"`
+	Before []Drip `json:"before,omitempty"`
+	After  []Drip `json:"after,omitempty"`
 }
 
 // Result は操作の結果。呼んだ画面はこれですぐ反映し、「1つ戻す」に使う。
 type Result struct {
-	Day     string   `json:"day"`
-	Version int64    `json:"v"`
 	Changed []Drip   `json:"changed"`
 	Deleted []string `json:"deleted"`
-	// この操作で準備完了にした注文
-	Readied []string `json:"readied"`
+	// この操作でカードが全部終わった注文。画面は既存の PATCH /api/orders/{id}/ready で準備完了にする
+	Completed []string `json:"completed"`
 }

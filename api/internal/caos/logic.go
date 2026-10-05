@@ -72,10 +72,8 @@ func (s *orderedSet) Len() int { return len(s.keys) }
 type Changeset struct {
 	Changed orderedSet
 	Deleted orderedSet
-	// 盤面が準備完了にした注文
-	Readied orderedSet
-	// 盤面が準備完了を取り消した注文
-	Unreadied orderedSet
+	// カードが全部終わった（準備完了にしてよい）注文
+	Completed orderedSet
 }
 
 func (cs *Changeset) touch(id string) {
@@ -245,7 +243,8 @@ func (b *Board) promote(cs *Changeset, dripper *int) {
 	}
 }
 
-// completeOrders はカードが全部抽出終了になった注文を準備完了にする（入れ直しのカードも終わるまで待つ。既に準備完了ならそのまま）。
+// completeOrders はカードが全部抽出終了になった注文を Completed に入れる（入れ直しのカードも終わるまで待つ。既に準備完了ならそのまま）。
+// 準備完了そのものは盤面では付けない（既存の注文の API が付ける）。
 func (b *Board) completeOrders(cs *Changeset, orderIDs []string) {
 	for _, id := range orderIDs {
 		o, ok := b.Orders[id]
@@ -263,8 +262,7 @@ func (b *Board) completeOrders(cs *Changeset, orderIDs []string) {
 			continue
 		}
 		o.Ready = true
-		cs.Unreadied.remove(id)
-		cs.Readied.add(id)
+		cs.Completed.add(id)
 	}
 }
 
@@ -343,8 +341,7 @@ func (b *Board) syncOrder(cs *Changeset, o Order) {
 		}
 		for remaining := item.Cups - locked; remaining > 0; remaining -= 2 {
 			wanted = append(wanted, DripLine{
-				OrderID: o.ID, OrderNo: o.OrderNo, ItemID: item.ItemID, Name: item.Name, Abbr: item.Abbr,
-				Type: item.Type, Nominee: item.Nominee, Cups: min(2, remaining),
+				OrderID: o.ID, ItemID: item.ItemID, Nominee: item.Nominee, Cups: min(2, remaining),
 			})
 		}
 	}
@@ -417,8 +414,8 @@ func (b *Board) finishOrder(cs *Changeset, orderID string) {
 // IngestOrders は POS の注文を盤面に反映する。何度同じものを受け取っても結果は同じ。
 // full なら orders はその日の注文の全部で、載っていない注文は消えたとみなす。
 func (b *Board) IngestOrders(cs *Changeset, orders []Order, full bool) {
-	// この取り込みの中で盤面が準備完了にした注文（統合相手）は、渡された（古い）状態で上書きしない
-	mine := func(id string) bool { return cs.Readied.contains(id) || cs.Unreadied.contains(id) }
+	// この取り込みの中でカードが全部終わった注文（統合相手）は、渡された（古い）状態で上書きしない
+	mine := func(id string) bool { return cs.Completed.contains(id) }
 	seen := map[string]bool{}
 	for _, o := range orders {
 		seen[o.ID] = true
@@ -493,7 +490,7 @@ func (b *Board) Apply(cs *Changeset, op Op) error {
 	case "rebrew":
 		return b.rebrew(cs, op.SourceID, op.Cups, op.Interrupt, op.Dripper, op.QueuePos)
 	case "restore":
-		return b.restore(cs, op.Before, op.After, op.Readied)
+		return b.restore(cs, op.Before, op.After)
 	default:
 		return invalid("知らない操作です")
 	}
@@ -626,8 +623,8 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 // restore は「1つ戻す」。直前の操作の結果と、その前の行を渡すと元に戻す。
 // before：操作の前の行（結果の changed と deleted のうち、操作の前からあったもの）。
 // after：操作が返した changed。この時点から誰も触っていないときだけ戻す。
-// readied：操作が準備完了にした注文。まだ提供していなければ準備完了を取り消す。
-func (b *Board) restore(cs *Changeset, before, after []Drip, readied []string) error {
+// 操作で準備完了にした注文は、画面が既存の PATCH /api/orders/{id}/ready で外す。
+func (b *Board) restore(cs *Changeset, before, after []Drip) error {
 	for _, a := range after {
 		now, ok := b.Drips[a.ID]
 		if !ok || !now.UpdatedAt.Equal(a.UpdatedAt) {
@@ -650,15 +647,6 @@ func (b *Board) restore(cs *Changeset, before, after []Drip, readied []string) e
 		row.OrderIDs = slices.Clone(d.OrderIDs)
 		b.Drips[row.ID] = &row
 		b.update(cs, &row, func(*Drip) {})
-	}
-	for _, id := range readied {
-		o, ok := b.Orders[id]
-		if !ok || o.Served || !o.Ready {
-			continue
-		}
-		o.Ready = false
-		cs.Readied.remove(id)
-		cs.Unreadied.add(id)
 	}
 	return nil
 }

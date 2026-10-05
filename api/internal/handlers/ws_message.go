@@ -15,10 +15,8 @@ type WSMessageType string
 const (
 	WSMessageTypeOrders      WSMessageType = "orders"
 	WSMessageTypeMasterState WSMessageType = "master_state"
-	// CaOS の盤面のカードが変わった（変わったカードと消えたカード）。版 v は盤面（日）ごとに 1 ずつ増える
+	// CaOS の今日のカード（全部）。カードが変わるたびと、つないだときに届く
 	WSMessageTypeDrips WSMessageType = "drips"
-	// ほかのインスタンスで盤面が変わった（版だけ）。手元の版より新しければ GET /api/caos/boards/{day} で読み直す
-	WSMessageTypeDripsVersion WSMessageType = "drips_version"
 )
 
 type WSMessage struct {
@@ -27,12 +25,8 @@ type WSMessage struct {
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
-	// drips・drips_version：どの日の盤面か、その版
-	Day     string `json:"day,omitempty"`
-	Version int64  `json:"v,omitempty"`
-	// drips：変わったカード（消えただけのときは省く）と消えたカード
-	Drips   []caos.Drip `json:"drips,omitempty"`
-	Deleted []string    `json:"deleted,omitempty"`
+	// drips：CaOS の今日のカード（0 枚のときは省かれる）
+	Drips []caos.Drip `json:"drips,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -52,6 +46,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	// 接続直後に現在のデータを送信
 	h.broadcastOrders()
 	h.broadcastMasterState()
+	h.broadcastDrips()
 
 	// 接続維持（クライアントからのメッセージは今は無視）
 	for {

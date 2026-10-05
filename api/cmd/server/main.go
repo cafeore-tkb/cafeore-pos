@@ -97,7 +97,6 @@ func initDB() error {
 			&models.ItemStockUsage{},
 			&models.StockEvent{},
 			&models.ColorSetting{},
-			&caos.BoardRow{},
 			&caos.DripRow{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
@@ -260,7 +259,7 @@ func main() {
 	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
 	caosStore := caos.NewStore(db)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
-	caosHandler := handlers.NewCaosHandler(caosStore, hub, orderHandler)
+	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
 	// API 以外（CaOS など）からの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
@@ -311,8 +310,7 @@ func main() {
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 
-		api.GET("/caos/boards/:day", caosHandler.GetBoard)
-		api.POST("/caos/boards/:day/ops", caosHandler.ApplyOp)
+		api.POST("/caos/ops", caosHandler.ApplyOp)
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
@@ -345,7 +343,6 @@ func main() {
 	log.Printf("  GET  /api/orders")
 	log.Printf("  GET  /api/orders/:id/comments")
 	log.Printf("  GET  /api/ws/orders")
-	log.Printf("  GET  /api/caos/boards/:day")
 
 	server := &http.Server{
 		Addr:              ":" + port,

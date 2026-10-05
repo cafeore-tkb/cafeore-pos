@@ -42,7 +42,7 @@ func testDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(mustRead(t, "../../sql/2026-10_caos.sql")).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE caos_drips, caos_boards, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
+	if err := db.Exec("TRUNCATE caos_drips, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -107,17 +107,22 @@ func createOrder(t *testing.T, s *Store, db *gorm.DB, no int, at time.Time, menu
 		if err := tx.Create(&o).Error; err != nil {
 			return err
 		}
-		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
-		return err
+		return s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
 	}))
 	return o
 }
 
-func load(t *testing.T, s *Store) *Snapshot {
+func drips(t *testing.T, s *Store) []Drip {
 	t.Helper()
-	snap, _, err := s.Load(testDay)
+	d, err := s.Drips(testDay)
 	must(t, err)
-	return snap
+	return d
+}
+
+func newStore(db *gorm.DB) *Store {
+	s := NewStore(db)
+	s.today = func() string { return testDay }
+	return s
 }
 
 func readyAt(t *testing.T, db *gorm.DB, id uuid.UUID) *time.Time {
@@ -140,68 +145,63 @@ func viaJSON(t *testing.T, drips []Drip) []Drip {
 func TestStoreFlow(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
-	s := NewStore(db)
+	s := newStore(db)
 
-	// 注文：優勝・優勝＋トート・アイスミルク → 優勝 2 杯のカード 1 枚
+	// 注文：優勝・優勝＋トート・アイスミルク → 優勝 2 杯のカード 1 枚（明細は注文と商品の参照だけ）
 	o1 := createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ, cat.champTote, cat.milk)
-	snap := load(t, s)
-	if len(snap.Drips) != 1 || snap.Drips[0].Cups != 2 || snap.Version != 1 {
-		t.Fatalf("注文を作ると同じトランザクションでカードができる：%+v", snap)
+	d := drips(t, s)
+	if len(d) != 1 || d[0].Cups != 2 || d[0].Lines[0].OrderID != o1.ID.String() {
+		t.Fatalf("注文を作ると同じトランザクションでカードができる：%+v", d)
 	}
-	card := snap.Drips[0]
 
-	assigned, err := s.Apply(testDay, Op{Name: "assign", DripID: card.ID, Dripper: ptr(1)})
+	assigned, err := s.Apply(Op{Name: "assign", DripID: d[0].ID, Dripper: ptr(1)})
 	must(t, err)
-	if assigned.Version != 2 || assigned.Changed[0].Status != StatusBrewing {
+	if assigned.Changed[0].Status != StatusBrewing {
 		t.Fatalf("割当：%+v", assigned)
 	}
 	before := viaJSON(t, assigned.Changed)
 
-	done, err := s.Apply(testDay, Op{Name: "next", Dripper: ptr(1)})
+	done, err := s.Apply(Op{Name: "next", Dripper: ptr(1)})
 	must(t, err)
-	if !slices.Equal(done.Readied, []string{o1.ID.String()}) || readyAt(t, db, o1.ID) == nil {
-		t.Fatalf("次へで注文のカードが全部終わると、同じトランザクションで ready_at が付く：%+v", done)
+	if !slices.Equal(done.Completed, []string{o1.ID.String()}) {
+		t.Fatalf("次へで注文のカードが全部終わったと返す：%+v", done)
+	}
+	if readyAt(t, db, o1.ID) != nil {
+		t.Fatal("準備完了は盤面では付けない（画面が既存の API で付ける）")
 	}
 
 	// 1つ戻す（画面が JSON で受け取った結果をそのまま返す）
-	undo, err := s.Apply(testDay, Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed), Readied: done.Readied})
+	undo, err := s.Apply(Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed)})
 	must(t, err)
-	if undo.Changed[0].Status != StatusBrewing || readyAt(t, db, o1.ID) != nil {
-		t.Fatalf("1つ戻すで抽出中に戻り、ready_at が外れる：%+v", undo)
+	if undo.Changed[0].Status != StatusBrewing {
+		t.Fatalf("1つ戻すで抽出中に戻る：%+v", undo)
 	}
-	if _, err := s.Apply(testDay, Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed)}); !IsInvalid(err) {
+	if _, err := s.Apply(Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed)}); !IsInvalid(err) {
 		t.Fatalf("2 回目は断る：%v", err)
 	}
-
-	// ルールに合わない操作は、版も進めずに断る
-	v := load(t, s).Version
-	if _, err := s.Apply(testDay, Op{Name: "next", Dripper: ptr(6)}); !IsInvalid(err) {
+	if _, err := s.Apply(Op{Name: "next", Dripper: ptr(6)}); !IsInvalid(err) {
 		t.Fatalf("invalid のはず：%v", err)
-	}
-	if load(t, s).Version != v {
-		t.Fatal("断った操作で版が進んだ")
 	}
 }
 
 func TestStorePosReadyAndDelete(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
-	s := NewStore(db)
+	s := newStore(db)
 	o1 := createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
 	o2 := createOrder(t, s, db, 2, dayStart.Add(10*time.Hour+time.Minute), cat.champ)
-	snap := load(t, s)
-	_, err := s.Apply(testDay, Op{Name: "merge", FirstID: snap.Drips[0].ID, SecondID: snap.Drips[1].ID})
+	d := drips(t, s)
+	_, err := s.Apply(Op{Name: "merge", FirstID: d[0].ID, SecondID: d[1].ID})
 	must(t, err)
 
-	// POS で #1 を準備完了 → 統合カードが終わり、#2 も準備完了になる
+	// POS で #1 を準備完了 → 統合カードが終わり、#2 も同じ tx で準備完了になる
 	must(t, db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&o1).Update("ready_at", time.Now()).Error; err != nil {
 			return err
 		}
-		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o1.ID, CreatedAt: o1.CreatedAt}})
-		return err
+		return s.OrdersChanged(tx, []OrderRef{{ID: o1.ID, CreatedAt: o1.CreatedAt}})
 	}))
-	if readyAt(t, db, o2.ID) == nil || load(t, s).Drips[0].Status != StatusDone {
+	if readyAt(t, db, o2.ID) == nil || drips(t, s)[0].Status != StatusDone {
 		t.Fatal("POS の準備完了で統合相手も準備完了になる")
 	}
 
@@ -214,49 +214,53 @@ func TestStorePosReadyAndDelete(t *testing.T) {
 		if err := tx.Delete(&models.Order{}, "id = ?", o3.ID).Error; err != nil {
 			return err
 		}
-		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o3.ID, CreatedAt: o3.CreatedAt}})
-		return err
+		return s.OrdersChanged(tx, []OrderRef{{ID: o3.ID, CreatedAt: o3.CreatedAt}})
 	}))
-	for _, d := range load(t, s).Drips {
+	for _, d := range drips(t, s) {
 		if slices.Contains(d.OrderIDs, o3.ID.String()) {
 			t.Fatal("消した注文のカードが残っている")
 		}
 	}
 }
 
-func TestStoreLoadCatchesUpAndSeparatesDays(t *testing.T) {
+func TestStoreApplyCatchesUpAndSeparatesDays(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
-	s := NewStore(db)
-	// 盤面に知らせずに入った注文（この機能より前の注文など）と、前の日・次の日の注文
-	for i, at := range []time.Time{dayStart.Add(9 * time.Hour), dayStart.Add(-time.Minute), dayStart.AddDate(0, 0, 1)} {
-		o := models.Order{ID: uuid.New(), OrderId: i + 1, CreatedAt: at, OrderMenus: []models.OrderMenu{{ID: uuid.New(), MenuID: cat.champ, MenuName: "x"}}}
+	s := newStore(db)
+	synced := createOrder(t, s, db, 1, dayStart.Add(9*time.Hour), cat.champ)
+	// 盤面に知らせずに入った注文（連動が失敗した・この機能より前の注文など）と、前の日・次の日の注文
+	for i, at := range []time.Time{dayStart.Add(9*time.Hour + time.Minute), dayStart.Add(-time.Minute), dayStart.AddDate(0, 0, 1)} {
+		o := models.Order{ID: uuid.New(), OrderId: i + 2, CreatedAt: at, OrderMenus: []models.OrderMenu{{ID: uuid.New(), MenuID: cat.champ, MenuName: "x"}}}
 		must(t, db.Create(&o).Error)
 	}
-	snap := load(t, s)
-	if len(snap.Drips) != 1 || snap.Drips[0].Lines[0].OrderNo != 1 {
-		t.Fatalf("読むときにその日の注文だけと照らし合わせて追いつく：%+v", snap.Drips)
+	if len(drips(t, s)) != 1 {
+		t.Fatal("知らせずに入った注文のカードは、まだない")
 	}
-	if again := load(t, s); again.Version != snap.Version {
-		t.Fatal("変わらなければ版を進めない")
+	_, err := s.Apply(Op{Name: "assign", DripID: drips(t, s)[0].ID, Dripper: ptr(1)})
+	must(t, err)
+	var orders []string
+	for _, d := range drips(t, s) {
+		orders = append(orders, d.OrderIDs...)
+	}
+	if len(orders) != 2 || orders[0] != synced.ID.String() {
+		t.Fatalf("操作のときに、その日の注文だけと照らし合わせて追いつく：%v", orders)
 	}
 }
 
 func TestStoreSerializesConcurrentOps(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
-	s := NewStore(db)
+	s := newStore(db)
 	for i := range 10 {
 		createOrder(t, s, db, i+1, dayStart.Add(10*time.Hour+time.Duration(i)*time.Minute), cat.champ)
 	}
-	snap := load(t, s)
 	var wg sync.WaitGroup
-	errs := make(chan error, len(snap.Drips))
-	for _, d := range snap.Drips {
+	errs := make(chan error, 10)
+	for _, d := range drips(t, s) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := s.Apply(testDay, Op{Name: "assign", DripID: d.ID, Dripper: ptr(1)})
+			_, err := s.Apply(Op{Name: "assign", DripID: d.ID, Dripper: ptr(1)})
 			errs <- err
 		}()
 	}
@@ -265,22 +269,25 @@ func TestStoreSerializesConcurrentOps(t *testing.T) {
 	for err := range errs {
 		must(t, err)
 	}
-	after := load(t, s)
-	brewing := 0
-	for _, d := range after.Drips {
-		if d.Status == StatusBrewing {
+	brewing, queued := 0, 0
+	for _, d := range drips(t, s) {
+		switch d.Status {
+		case StatusBrewing:
 			brewing++
+		case StatusQueued:
+			queued++
 		}
 	}
-	if brewing != 1 || after.Version != snap.Version+int64(len(snap.Drips)) {
-		t.Fatalf("同時に割り当てても 1 件ずつ処理され、抽出中は 1 枚・版は件数分進む：brewing=%d v=%d→%d", brewing, snap.Version, after.Version)
+	if brewing != 1 || queued != 9 {
+		t.Fatalf("同時に割り当てても 1 件ずつ処理され、抽出中は 1 枚：brewing=%d queued=%d", brewing, queued)
 	}
 }
 
-func TestStoreNotifiesOtherInstances(t *testing.T) {
+// caos_drips が変わると、トリガー（api/sql/2026-10_caos.sql）が通知を送る。各インスタンスはこれを受けて DB から読み直して配る
+func TestStoreTriggerNotifies(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
-	s := NewStore(db)
+	s := newStore(db)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, err := pgx.Connect(ctx, os.Getenv("CAOS_TEST_DATABASE_URL"))
@@ -290,38 +297,7 @@ func TestStoreNotifiesOtherInstances(t *testing.T) {
 	must(t, err)
 
 	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
-	n, err := conn.WaitForNotification(ctx)
-	must(t, err)
-	if n.Payload != testDay+":1" {
-		t.Fatalf("日付と版を知らせる：%q", n.Payload)
-	}
-}
-
-// 変わるものがなければ、読むときに盤面のロックを取らない（画面のつなぎ直しで、注文の受付や操作を待たせない）
-func TestStoreLoadDoesNotLockWhenUnchanged(t *testing.T) {
-	db := testDB(t)
-	cat := seedCatalog(t, db)
-	s := NewStore(db)
-	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
-	want := load(t, s)
-
-	holder := db.Begin()
-	must(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", testDay).Error)
-	defer holder.Rollback()
-	done := make(chan *Snapshot, 1)
-	go func() {
-		snap, _, err := s.Load(testDay)
-		if err != nil {
-			t.Error(err)
-		}
-		done <- snap
-	}()
-	select {
-	case snap := <-done:
-		if snap.Version != want.Version || len(snap.Drips) != len(want.Drips) {
-			t.Fatalf("同じ盤面が読める：%+v", snap)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ロックを待ってしまった")
+	if _, err := conn.WaitForNotification(ctx); err != nil {
+		t.Fatalf("カードができたら通知が届く：%v", err)
 	}
 }

@@ -25,11 +25,15 @@ type OrderHandler struct {
 	caos *caos.Store
 	// 全注文の配信の依頼。broadcastOrders を参照
 	broadcastRequests chan struct{}
+	// CaOS の今日のカードの配信の依頼。broadcastDrips を参照
+	dripsRequests chan struct{}
 }
 
 func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *caos.Store) *OrderHandler {
-	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore, broadcastRequests: make(chan struct{}, 1)}
+	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore,
+		broadcastRequests: make(chan struct{}, 1), dripsRequests: make(chan struct{}, 1)}
 	go h.runOrderBroadcaster()
+	go h.runDripsBroadcaster()
 	return h
 }
 
@@ -237,7 +241,6 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
 		lines, err := loadOrderMenus(tx, order.ID, req.MenuIds, nil)
@@ -249,7 +252,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		if locked {
-			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
@@ -271,7 +274,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toOrderResponse(&loaded))
 	h.broadcastOrders()
-	publishCaos(h.hub, h, applied...)
+	h.broadcastDrips()
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -328,7 +331,6 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
 	resourcesBefore := h.inventory.ResourceIDsForOrder(order.ID)
 
-	var applied []*caos.Applied
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
 		// 明細の引き継ぎは、ロックを取ったあとに読み直した注文で行う
@@ -368,7 +370,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			}
 		}
 		if locked {
-			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	})
@@ -393,7 +395,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&loaded))
 	h.broadcastOrders()
-	publishCaos(h.hub, h, applied...)
+	h.broadcastDrips()
 	go func() {
 		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(order.ID)))
 	}()
@@ -424,7 +426,6 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
 	// 注文明細とオーダーを削除し、CaOS の盤面からもその注文のカードを片付ける
-	var applied []*caos.Applied
 	var deleted int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
@@ -437,7 +438,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		}
 		deleted = result.RowsAffected
 		if locked {
-			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
@@ -451,7 +452,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
-	publishCaos(h.hub, h, applied...)
+	h.broadcastDrips()
 	go h.inventory.CheckAlerts(resources)
 }
 
@@ -474,17 +475,35 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 体に {"ready": true|false} があればその状態にする（何度送っても同じ。CaOS の画面が使う）。
+	// 無ければ今までどおり、準備完了と未完了を切り替える
+	var req struct {
+		Ready *bool `json:"ready"`
+	}
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	// 準備完了になったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
-	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
-		// 切り替えは、ロックを取ったあとに読み直した状態で決める（待っている間に CaOS の「次へ」「1つ戻す」が
-		// ready_at を変えていても、古い値で上書きしたり逆に切り替えたりしない）。書くのも ready_at だけ
+		// 切り替えは、ロックを取ったあとに読み直した状態で決める（待っている間にほかの端末が ready_at を変えていても、
+		// 古い値で上書きしたり逆に切り替えたりしない）。書くのも ready_at だけ
 		if err := lockOrder(tx, &order); err != nil {
 			return err
 		}
+		ready := order.ReadyAt == nil
+		if req.Ready != nil {
+			ready = *req.Ready
+		}
+		if ready == (order.ReadyAt != nil) {
+			return nil // もうその状態
+		}
 		var readyAt *time.Time
-		if order.ReadyAt == nil {
+		if ready {
 			now := time.Now()
 			readyAt = &now
 		}
@@ -492,7 +511,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 			return err
 		}
 		if locked {
-			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
@@ -511,7 +530,7 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
-	publishCaos(h.hub, h, applied...)
+	h.broadcastDrips()
 }
 
 // PATCH /api/orders/:id/served - オーダーを提供済みにする
@@ -535,7 +554,6 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 
 	// 提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
-	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
 		// 切り替えは、ロックを取ったあとに読み直した状態で決める（MarkOrderReady と同じ）。書くのも served_at と ready_at だけ
@@ -551,7 +569,7 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 			return err
 		}
 		if locked {
-			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
@@ -570,7 +588,7 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, toOrderResponse(&order))
 	h.broadcastOrders()
-	publishCaos(h.hub, h, applied...)
+	h.broadcastDrips()
 }
 
 var upgrader = websocket.Upgrader{

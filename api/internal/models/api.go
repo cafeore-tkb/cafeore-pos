@@ -65,16 +65,7 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
-// CaosBoard defines model for CaosBoard.
-type CaosBoard struct {
-	Day   openapi_types.Date `json:"day"`
-	Drips []CaosDrip         `json:"drips"`
-
-	// V 盤面の版。カードが変わるたびに 1 ずつ増える
-	V int64 `json:"v"`
-}
-
-// CaosDrip 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚
+// CaosDrip 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの
 type CaosDrip struct {
 	CreatedAt  time.Time          `json:"created_at"`
 	Cups       int                `json:"cups"`
@@ -101,20 +92,14 @@ type CaosDrip struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名はカードを作った時点のもの
+// CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
 type CaosDripLine struct {
-	Abbr   string             `json:"abbr"`
 	Cups   int                `json:"cups"`
 	ItemId openapi_types.UUID `json:"item_id"`
-	Name   string             `json:"name"`
 
-	// Nominee POS の指名（前後の空白を落としたもの）
+	// Nominee POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける
 	Nominee *string            `json:"nominee"`
 	OrderId openapi_types.UUID `json:"order_id"`
-	OrderNo int                `json:"order_no"`
-
-	// Type 商品の種類（item_types.name）
-	Type string `json:"type"`
 }
 
 // CaosDripStatus unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
@@ -132,7 +117,7 @@ type CaosErrorResponseCode string
 // CaosOp name ごとに使うフィールド：
 // assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
 // rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-// restore（before・after・readied）
+// restore（before・after）
 type CaosOp struct {
 	// After 操作が返した changed
 	After *[]CaosDrip `json:"after,omitempty"`
@@ -147,14 +132,11 @@ type CaosOp struct {
 	FirstId *openapi_types.UUID `json:"first_id,omitempty"`
 
 	// Interrupt 抽出中の元のカードを途中でやめる
-	Interrupt *bool      `json:"interrupt,omitempty"`
-	Name      CaosOpName `json:"name"`
-	QueuePos  *float64   `json:"queue_pos"`
-
-	// Readied 操作が準備完了にした注文（まだ提供していなければ取り消す）
-	Readied  *[]openapi_types.UUID `json:"readied,omitempty"`
-	SecondId *openapi_types.UUID   `json:"second_id,omitempty"`
-	SourceId *openapi_types.UUID   `json:"source_id,omitempty"`
+	Interrupt *bool               `json:"interrupt,omitempty"`
+	Name      CaosOpName          `json:"name"`
+	QueuePos  *float64            `json:"queue_pos"`
+	SecondId  *openapi_types.UUID `json:"second_id,omitempty"`
+	SourceId  *openapi_types.UUID `json:"source_id,omitempty"`
 }
 
 // CaosOpName defines model for CaosOp.Name.
@@ -162,13 +144,11 @@ type CaosOpName string
 
 // CaosOpResult defines model for CaosOpResult.
 type CaosOpResult struct {
-	Changed []CaosDrip           `json:"changed"`
-	Day     openapi_types.Date   `json:"day"`
-	Deleted []openapi_types.UUID `json:"deleted"`
+	Changed []CaosDrip `json:"changed"`
 
-	// Readied この操作で準備完了にした注文
-	Readied []openapi_types.UUID `json:"readied"`
-	V       int64                `json:"v"`
+	// Completed カードが全部終わった注文。PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする
+	Completed []openapi_types.UUID `json:"completed"`
+	Deleted   []openapi_types.UUID `json:"deleted"`
 }
 
 // ColorScreen 背景色を適用する画面
@@ -389,6 +369,12 @@ type OrderCreateRequest struct {
 	Received          int                     `json:"received"`
 }
 
+// OrderReadyRequest defines model for OrderReadyRequest.
+type OrderReadyRequest struct {
+	// Ready true で準備完了、false で未完了にする（今の状態と同じなら何もしない）
+	Ready *bool `json:"ready,omitempty"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
 	BillingAmount     int                `json:"billing_amount"`
@@ -557,3 +543,6 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// MarkOrderReadyJSONRequestBody defines body for MarkOrderReady for application/json ContentType.
+type MarkOrderReadyJSONRequestBody = OrderReadyRequest

@@ -30,6 +30,16 @@ type menuLine struct {
 
 func one(it item, qty int) menuLine { return menuLine{items: []item{it}, qty: []int{qty}} }
 
+// abbr は商品の ID から略称を引く（カードには商品名を写さないので、テストでも注文の側から引く）
+func abbr(itemID string) string {
+	for _, it := range []item{champ, ore, ice, milk, tote} {
+		if it.id == itemID {
+			return it.abbr
+		}
+	}
+	return itemID
+}
+
 func orderID(no int) string { return fmt.Sprintf("00000000-0000-0000-0000-%012d", no) }
 
 func order(no int, lines ...menuLine) Order {
@@ -144,7 +154,7 @@ func TestIngestSplitsIntoTwoCupCards(t *testing.T) {
 	b := seeded(t)
 	var got [][2]any
 	for _, d := range cardsOf(b, 1) {
-		got = append(got, [2]any{d.Lines[0].Abbr, d.Cups})
+		got = append(got, [2]any{abbr(d.Lines[0].ItemID), d.Cups})
 		if d.Status != StatusUnassigned || d.QueuePos != 1 {
 			t.Fatalf("未割当・注文番号の位置で作る：%+v", d)
 		}
@@ -162,7 +172,7 @@ func TestIngestSplitsIntoTwoCupCards(t *testing.T) {
 func TestIngestTrimsNominee(t *testing.T) {
 	b := seeded(t)
 	for _, d := range cardsOf(b, 1) {
-		if d.Lines[0].Abbr == "俺ブレ" && (d.Lines[0].Nominee == nil || *d.Lines[0].Nominee != "２") {
+		if d.Lines[0].ItemID == ore.id && (d.Lines[0].Nominee == nil || *d.Lines[0].Nominee != "２") {
 			t.Fatalf("指名は前後の空白を落として写す：%v", d.Lines[0].Nominee)
 		}
 	}
@@ -273,7 +283,7 @@ func TestEditRecreatesOnlyUnassigned(t *testing.T) {
 	var unassigned []string
 	for _, d := range cardsOf(b, 1) {
 		if d.Status == StatusUnassigned {
-			unassigned = append(unassigned, fmt.Sprintf("%s%d", d.Lines[0].Abbr, d.Cups))
+			unassigned = append(unassigned, fmt.Sprintf("%s%d", abbr(d.Lines[0].ItemID), d.Cups))
 		}
 	}
 	if !slices.Equal(unassigned, []string{"俺ブレ2"}) {
@@ -297,8 +307,8 @@ func TestNextReadyAndRestore(t *testing.T) {
 	if got := statuses(b, 1); !slices.Equal(got, []Status{StatusDone, StatusBrewing}) {
 		t.Fatalf("次へで次のカードが始まる：%v", got)
 	}
-	if cs.Readied.Len() != 0 {
-		t.Fatalf("カードが残っている注文は準備完了にしない：%v", cs.Readied.List())
+	if cs.Completed.Len() != 0 {
+		t.Fatalf("カードが残っている注文は終わりにしない：%v", cs.Completed.List())
 	}
 
 	// 俺ブレを 2 へ、次へを 1・2 の順に押すと注文 #1 が準備完了になる
@@ -307,21 +317,18 @@ func TestNextReadyAndRestore(t *testing.T) {
 	before := []Drip{*b.Drips[oreCard.ID]}
 	last := apply(t, b, Op{Name: "next", Dripper: ptr(2)})
 	lastRows := rows(b, last) // 画面が受け取った操作の結果
-	if !slices.Equal(last.Readied.List(), []string{orderID(1)}) || !b.Orders[orderID(1)].Ready {
-		t.Fatalf("最後のカードの次へで注文が準備完了になる：%v", last.Readied.List())
+	if !slices.Equal(last.Completed.List(), []string{orderID(1)}) {
+		t.Fatalf("最後のカードの次へで、注文のカードが全部終わったと返す（準備完了は既存の API で付ける）：%v", last.Completed.List())
 	}
 
-	// 1つ戻す：抽出中に戻り、準備完了を取り消す
-	undo := apply(t, b, Op{Name: "restore", Before: before, After: lastRows, Readied: last.Readied.List()})
-	if b.Drips[oreCard.ID].Status != StatusBrewing || b.Orders[orderID(1)].Ready {
-		t.Fatal("1つ戻すで抽出中に戻り、準備完了が外れる")
-	}
-	if !slices.Equal(undo.Unreadied.List(), []string{orderID(1)}) {
-		t.Fatalf("取り消した注文：%v", undo.Unreadied.List())
+	// 1つ戻す：抽出中に戻る（準備完了は画面が既存の API で外す）
+	apply(t, b, Op{Name: "restore", Before: before, After: lastRows})
+	if b.Drips[oreCard.ID].Status != StatusBrewing {
+		t.Fatal("1つ戻すで抽出中に戻る")
 	}
 
 	// ほかの端末が後から動かしていたら断る
-	isInvalid(t, applyErr(b, Op{Name: "restore", Before: before, After: lastRows, Readied: last.Readied.List()}), "ほかの端末で変更された")
+	isInvalid(t, applyErr(b, Op{Name: "restore", Before: before, After: lastRows}), "ほかの端末で変更された")
 }
 
 func TestNextRejectsIdleDripper(t *testing.T) {
@@ -384,8 +391,8 @@ func TestRebrewMustFinishBeforeReady(t *testing.T) {
 	if b.Orders[orderID(8)].Ready {
 		t.Fatal("入れ直しが終わるまで準備完了にしない")
 	}
-	if cs := apply(t, b, Op{Name: "next", Dripper: ptr(2)}); !slices.Equal(cs.Readied.List(), []string{orderID(8)}) {
-		t.Fatalf("入れ直しが終わったら準備完了：%v", cs.Readied.List())
+	if cs := apply(t, b, Op{Name: "next", Dripper: ptr(2)}); !slices.Equal(cs.Completed.List(), []string{orderID(8)}) {
+		t.Fatalf("入れ直しが終わったら、注文のカードが全部終わる：%v", cs.Completed.List())
 	}
 }
 
@@ -403,8 +410,8 @@ func TestPosReadyFinishesMergedAndPartner(t *testing.T) {
 	if b.Drips[c2.ID].Status != StatusDone {
 		t.Fatal("POS で準備完了にすると抽出終了になる")
 	}
-	if !slices.Equal(cs.Readied.List(), []string{orderID(3)}) || !b.Orders[orderID(3)].Ready {
-		t.Fatalf("統合相手の注文も準備完了になる（同じ一覧の古い状態で上書きしない）：%v", cs.Readied.List())
+	if !slices.Equal(cs.Completed.List(), []string{orderID(3)}) || !b.Orders[orderID(3)].Ready {
+		t.Fatalf("統合相手の注文もカードが全部終わる（同じ一覧の古い状態で上書きしない）：%v", cs.Completed.List())
 	}
 	checkInvariants(t, b)
 }
