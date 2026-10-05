@@ -28,9 +28,15 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 	Database  string    `json:"database"`
+	// DB にあってモデルに無いもの（またはその逆）。手で DB を触った跡。空なら一致している。
+	// デプロイの CI が見て、空でなければ落とす（api-build.yml）。
+	SchemaDrift []string `json:"schema_drift"`
 }
 
 var db *gorm.DB
+
+// 起動時に調べたスキーマのズレ（findSchemaDrift）。
+var schemaDrift = []string{}
 
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
@@ -78,6 +84,16 @@ func initDB() error {
 		return err
 	}
 	log.Println("Database migration completed")
+
+	// ズレがあっても起動は止めない（注文は受けられるので）。/status に出して CI で気づく。
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		drift = []string{fmt.Sprintf("ズレを調べられなかった: %v", err)}
+	}
+	for _, d := range drift {
+		log.Printf("schema drift: %s", d)
+	}
+	schemaDrift = drift
 
 	log.Println("Database connected successfully")
 	return nil
@@ -128,10 +144,11 @@ func statusHandler(c *gin.Context) {
 	}
 
 	response := StatusResponse{
-		Status:    "ok",
-		Timestamp: time.Now(),
-		Version:   "1.0.0",
-		Database:  dbStatus,
+		Status:      "ok",
+		Timestamp:   time.Now(),
+		Version:     "1.0.0",
+		Database:    dbStatus,
+		SchemaDrift: schemaDrift,
 	}
 
 	c.JSON(http.StatusOK, response)

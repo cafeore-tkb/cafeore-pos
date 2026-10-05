@@ -384,6 +384,39 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
+      # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
+      # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      - name: DB のスキーマがモデルとずれていないか確かめる
+        if: ${{ steps.deploy.outputs.url != '' }}
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          body=""
+          for i in $(seq 1 10); do
+            if body=$(curl -sf --max-time 30 "$URL/status"); then
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$body" ]; then
+            echo "::error::$URL/status に繋がらなかった"
+            exit 1
+          fi
+          drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
+          if [ -n "$drift" ]; then
+            {
+              echo "### DB のスキーマがモデルとずれている"
+              echo '```'
+              echo "$drift"
+              echo '```'
+              echo "DB を手で触った跡。モデルに足すか、DB から消すこと。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do echo "::error::$line"; done <<<"$drift"
+            exit 1
+          fi
+          echo "DB のスキーマはモデルと一致している"
+
       # デプロイが成功したときだけ走る（既定の if: success()）。
       - name: プレビュー URL を PR にコメントする
         if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
