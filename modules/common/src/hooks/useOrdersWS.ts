@@ -61,7 +61,6 @@ export const useOrdersWS = () => {
 
           switch (data.type) {
             case "orders":
-              // 0 件のときはサーバーの omitempty で orders が省かれる
               setOrders((data.orders ?? []).map(responseToOrderEntity));
               break;
 

@@ -22,7 +22,7 @@ const (
 
 type WSMessage struct {
 	Type    WSMessageType          `json:"type"`
-	Orders  []models.OrderResponse `json:"orders,omitempty"`
+	Orders  []models.OrderResponse `json:"orders"`
 	Order   *models.OrderResponse  `json:"order,omitempty"`
 	OrderID *uuid.UUID             `json:"order_id,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、

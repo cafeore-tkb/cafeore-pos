@@ -109,8 +109,26 @@ func TestWSMessageOrderDeletedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(data), `{"type":"order_deleted","order_id":"`+id.String()+`"}`; got != want {
-		t.Fatalf("got %s, want %s", got, want)
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["type"] != "order_deleted" || got["order_id"] != id.String() {
+		t.Fatalf("unexpected message: %s", data)
+	}
+	if _, ok := got["order"]; ok {
+		t.Fatalf("order must be omitted: %s", data)
+	}
+}
+
+// 全注文は 0 件でも orders を空配列で送る
+func TestWSMessageEmptyOrdersJSON(t *testing.T) {
+	data, err := json.Marshal(WSMessage{Type: WSMessageTypeOrders, Orders: []models.OrderResponse{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"orders":[]`) {
+		t.Fatalf("orders must be an empty array: %s", data)
 	}
 }
 
