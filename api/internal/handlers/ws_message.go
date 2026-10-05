@@ -18,6 +18,8 @@ const (
 	// 削除された注文の ID
 	WSMessageTypeOrderDeleted WSMessageType = "order_deleted"
 	WSMessageTypeMasterState  WSMessageType = "master_state"
+	// レジが編集中の注文と直前に確定した注文の ID
+	WSMessageTypeCashierState WSMessageType = "cashier_state"
 )
 
 type WSMessage struct {
@@ -27,7 +29,8 @@ type WSMessage struct {
 	OrderID *uuid.UUID             `json:"order_id,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
-	MasterState *models.MasterStateResponse `json:"master_state,omitempty"`
+	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
+	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -45,6 +48,9 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		initial = append(initial, msg)
 	}
 	if msg, ok := masterStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := cashierStateMessage(h.db); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)
