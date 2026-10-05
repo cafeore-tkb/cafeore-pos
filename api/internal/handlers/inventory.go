@@ -623,7 +623,7 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 }
 
 var (
-	errUsageItemNotFound     = errors.New("Item not found")
+	errUsageItemNotFound     = errors.New("item not found")
 	errUsageResourceNotFound = errors.New("resource not found")
 )
 
@@ -673,7 +673,8 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 	})
 	switch {
 	case errors.Is(err, errUsageItemNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		// 応答の文言はほかのアイテムの 404 とそろえる
+		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
 	case errors.Is(err, errUsageResourceNotFound):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
