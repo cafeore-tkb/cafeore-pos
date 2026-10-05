@@ -98,6 +98,7 @@ func initDB() error {
 			&models.StockEvent{},
 			&models.ColorSetting{},
 			&caos.DripRow{},
+			&caos.OpRow{},
 		); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}

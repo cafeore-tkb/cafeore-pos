@@ -28,8 +28,8 @@ const (
 	CaosOpMerge    CaosOpName = "merge"
 	CaosOpNext     CaosOpName = "next"
 	CaosOpRebrew   CaosOpName = "rebrew"
-	CaosOpRestore  CaosOpName = "restore"
 	CaosOpUnassign CaosOpName = "unassign"
+	CaosOpUndo     CaosOpName = "undo"
 )
 
 // Defines values for ColorScreen.
@@ -88,7 +88,7 @@ type CaosDrip struct {
 	// Status unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
 	Status CaosDripStatus `json:"status"`
 
-	// UpdatedAt 「1つ戻す」は、この値が操作の結果と同じとき（ほかの端末が触っていないとき）だけ戻す
+	// UpdatedAt 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -117,14 +117,8 @@ type CaosErrorResponseCode string
 // CaosOp name ごとに使うフィールド：
 // assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
 // rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-// restore（before・after）
+// undo（op_id）
 type CaosOp struct {
-	// After 操作が返した changed
-	After *[]CaosDrip `json:"after,omitempty"`
-
-	// Before 操作の前の行（結果の changed と deleted のうち、操作の前からあったもの）
-	Before *[]CaosDrip `json:"before,omitempty"`
-
 	// Cups 入れ直す杯数（元のカードの杯数まで）
 	Cups    *int                `json:"cups,omitempty"`
 	DripId  *openapi_types.UUID `json:"drip_id,omitempty"`
@@ -132,11 +126,14 @@ type CaosOp struct {
 	FirstId *openapi_types.UUID `json:"first_id,omitempty"`
 
 	// Interrupt 抽出中の元のカードを途中でやめる
-	Interrupt *bool               `json:"interrupt,omitempty"`
-	Name      CaosOpName          `json:"name"`
-	QueuePos  *float64            `json:"queue_pos"`
-	SecondId  *openapi_types.UUID `json:"second_id,omitempty"`
-	SourceId  *openapi_types.UUID `json:"source_id,omitempty"`
+	Interrupt *bool      `json:"interrupt,omitempty"`
+	Name      CaosOpName `json:"name"`
+
+	// OpId undo で戻す操作（操作の結果の op_id）
+	OpId     *openapi_types.UUID `json:"op_id,omitempty"`
+	QueuePos *float64            `json:"queue_pos"`
+	SecondId *openapi_types.UUID `json:"second_id,omitempty"`
+	SourceId *openapi_types.UUID `json:"source_id,omitempty"`
 }
 
 // CaosOpName defines model for CaosOp.Name.
@@ -144,11 +141,14 @@ type CaosOpName string
 
 // CaosOpResult defines model for CaosOpResult.
 type CaosOpResult struct {
-	Changed []CaosDrip `json:"changed"`
+	Changed []CaosDrip           `json:"changed"`
+	Deleted []openapi_types.UUID `json:"deleted"`
 
-	// Completed カードが全部終わった注文。PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする
-	Completed []openapi_types.UUID `json:"completed"`
-	Deleted   []openapi_types.UUID `json:"deleted"`
+	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
+	OpId string `json:"op_id"`
+
+	// Readied この操作で準備完了にした注文（undo では、準備完了を外した注文）
+	Readied []openapi_types.UUID `json:"readied"`
 }
 
 // ColorScreen 背景色を適用する画面
@@ -369,12 +369,6 @@ type OrderCreateRequest struct {
 	Received          int                     `json:"received"`
 }
 
-// OrderReadyRequest defines model for OrderReadyRequest.
-type OrderReadyRequest struct {
-	// Ready true で準備完了、false で未完了にする（今の状態と同じなら何もしない）
-	Ready *bool `json:"ready,omitempty"`
-}
-
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
 	BillingAmount     int                `json:"billing_amount"`
@@ -543,6 +537,3 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
-
-// MarkOrderReadyJSONRequestBody defines body for MarkOrderReady for application/json ContentType.
-type MarkOrderReadyJSONRequestBody = OrderReadyRequest

@@ -418,9 +418,6 @@ paths:
   /api/orders/{id}/ready:
     patch:
       summary: オーダーを準備完了にする
-      description: |
-        体に {"ready": true|false} があればその状態にする（何度送っても同じ。CaOS の画面が使う）。
-        体が無ければ、準備完了と未完了を切り替える（今までどおり）。
       operationId: markOrderReady
       parameters:
         - name: id
@@ -429,12 +426,6 @@ paths:
           schema:
             type: string
             format: uuid
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrderReadyRequest'
       responses:
         '200':
           description: 成功
@@ -542,10 +533,11 @@ paths:
       summary: CaOS の今日の盤面への操作
       description: |
         割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
-        操作の前に今日の注文と照らし合わせてカードをそろえる。
+        操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+        「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+        「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+        記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
         カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
-        completed（カードが全部終わった注文）は、画面が PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする。
-        「1つ戻す」で終わりを取り消したら、{"ready": false} で外す。
       operationId: applyCaosOp
       tags: [caos]
       requestBody:
@@ -1261,12 +1253,6 @@ components:
           type: string
           pattern: '^#[0-9a-fA-F]{6}$'
           example: "#bfdbfe"
-    OrderReadyRequest:
-      type: object
-      properties:
-        ready:
-          type: boolean
-          description: true で準備完了、false で未完了にする（今の状態と同じなら何もしない）
     CaosDripLine:
       type: object
       description: 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
@@ -1345,20 +1331,20 @@ components:
         updated_at:
           type: string
           format: date-time
-          description: 「1つ戻す」は、この値が操作の結果と同じとき（ほかの端末が触っていないとき）だけ戻す
+          description: 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
     CaosOp:
       type: object
       description: |
         name ごとに使うフィールド：
         assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
         rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-        restore（before・after）
+        undo（op_id）
       required: [name]
       properties:
         name:
           type: string
-          enum: [assign, unassign, next, merge, rebrew, restore]
-          x-enum-varnames: [CaosOpAssign, CaosOpUnassign, CaosOpNext, CaosOpMerge, CaosOpRebrew, CaosOpRestore]
+          enum: [assign, unassign, next, merge, rebrew, undo]
+          x-enum-varnames: [CaosOpAssign, CaosOpUnassign, CaosOpNext, CaosOpMerge, CaosOpRebrew, CaosOpUndo]
         drip_id:
           type: string
           format: uuid
@@ -1388,20 +1374,17 @@ components:
           type: number
           format: double
           nullable: true
-        before:
-          type: array
-          description: 操作の前の行（結果の changed と deleted のうち、操作の前からあったもの）
-          items:
-            $ref: '#/components/schemas/CaosDrip'
-        after:
-          type: array
-          description: 操作が返した changed
-          items:
-            $ref: '#/components/schemas/CaosDrip'
+        op_id:
+          type: string
+          format: uuid
+          description: undo で戻す操作（操作の結果の op_id）
     CaosOpResult:
       type: object
-      required: [changed, deleted, completed]
+      required: [op_id, changed, deleted, readied]
       properties:
+        op_id:
+          type: string
+          description: この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
         changed:
           type: array
           items:
@@ -1411,9 +1394,9 @@ components:
           items:
             type: string
             format: uuid
-        completed:
+        readied:
           type: array
-          description: 'カードが全部終わった注文。PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする'
+          description: この操作で準備完了にした注文（undo では、準備完了を外した注文）
           items:
             type: string
             format: uuid

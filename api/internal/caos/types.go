@@ -1,7 +1,8 @@
 // Package caos は CaOS（ドリップ管制）の盤面。抽出カードの保存と、割当・次へ・統合などのルールを持つ。
 //
 // 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のハンドラーと同じトランザクションの中で連動させる。
-// カードが全部終わった注文は「次へ」の結果（completed）で返し、準備完了は既存の注文の API（PATCH /api/orders/{id}/ready）で付ける。
+// カードが全部終わった注文は、既存の準備完了の処理（SetOrderReady）で同じトランザクションの中で準備完了にする。
+// 「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。
 // 配信は注文と同じく DB の通知から（caos_drips のトリガー → 各インスタンスが今日のカードを読み直して配る）。
 package caos
 
@@ -89,15 +90,16 @@ type Op struct {
 	Cups      int      `json:"cups,omitempty"`
 	Interrupt bool     `json:"interrupt,omitempty"`
 	QueuePos  *float64 `json:"queue_pos,omitempty"`
-	// restore
-	Before []Drip `json:"before,omitempty"`
-	After  []Drip `json:"after,omitempty"`
+	// undo（1つ戻す）：戻す操作。操作の結果の op_id
+	OpID string `json:"op_id,omitempty"`
 }
 
-// Result は操作の結果。呼んだ画面はこれですぐ反映し、「1つ戻す」に使う。
+// Result は操作の結果。呼んだ画面はこれですぐ反映する。
 type Result struct {
+	// この操作の記録の ID。「1つ戻す」（undo）で指定する。undo そのものの結果では空
+	OpID    string   `json:"op_id"`
 	Changed []Drip   `json:"changed"`
 	Deleted []string `json:"deleted"`
-	// この操作でカードが全部終わった注文。画面は既存の PATCH /api/orders/{id}/ready で準備完了にする
-	Completed []string `json:"completed"`
+	// この操作で準備完了にした注文（undo では、準備完了を外した注文）
+	Readied []string `json:"readied"`
 }

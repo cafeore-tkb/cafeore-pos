@@ -95,6 +95,15 @@ func apply(t *testing.T, b *Board, op Op) *Changeset {
 
 func applyErr(b *Board, op Op) error { return b.Apply(&Changeset{}, op) }
 
+// restore は記録しておいた操作を取り消す（Store が caos_ops の記録から行うのと同じ）
+func restore(t *testing.T, b *Board, before, after []Drip) {
+	t.Helper()
+	if err := b.Restore(&Changeset{}, before, after); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	checkInvariants(t, b)
+}
+
 func cardsOf(b *Board, no int) []Drip {
 	var out []Drip
 	for _, d := range b.List() {
@@ -322,13 +331,13 @@ func TestNextReadyAndRestore(t *testing.T) {
 	}
 
 	// 1つ戻す：抽出中に戻る（準備完了は画面が既存の API で外す）
-	apply(t, b, Op{Name: "restore", Before: before, After: lastRows})
+	restore(t, b, before, lastRows)
 	if b.Drips[oreCard.ID].Status != StatusBrewing {
 		t.Fatal("1つ戻すで抽出中に戻る")
 	}
 
 	// ほかの端末が後から動かしていたら断る
-	isInvalid(t, applyErr(b, Op{Name: "restore", Before: before, After: lastRows}), "ほかの端末で変更された")
+	isInvalid(t, b.Restore(&Changeset{}, before, lastRows), "ほかの端末で変更された")
 }
 
 func TestNextRejectsIdleDripper(t *testing.T) {
@@ -352,7 +361,7 @@ func TestRebrewMergedAndRestore(t *testing.T) {
 	if made == nil || made.Status != StatusBrewing || *made.Dripper != 4 || made.Cups != 1 || len(made.Lines) != 1 || !slices.Equal(made.OrderIDs, []string{orderID(2)}) {
 		t.Fatalf("1 杯で、空いているドリッパーですぐ始まる：%+v", made)
 	}
-	apply(t, b, Op{Name: "restore", Before: before, After: rows(b, cs)})
+	restore(t, b, before, rows(b, cs))
 	for _, d := range b.Drips {
 		if d.RebrewOf != nil {
 			t.Fatal("入れ直しを取り消すとカードが消える")

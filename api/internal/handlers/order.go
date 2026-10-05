@@ -3,7 +3,6 @@ package handlers
 
 import (
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -476,38 +475,15 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// 体に {"ready": true|false} があればその状態にする（何度送っても同じ。CaOS の画面が使う）。
-	// 無ければ今までどおり、準備完了と未完了を切り替える
-	var req struct {
-		Ready *bool `json:"ready"`
-	}
-	// 体が空なら（分割送信で ContentLength が分からないときも）体なしとして扱う
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	// 準備完了になったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
 		// 切り替えは、ロックを取ったあとに読み直した状態で決める（待っている間にほかの端末が ready_at を変えていても、
-		// 古い値で上書きしたり逆に切り替えたりしない）。書くのも ready_at だけ
+		// 古い値で上書きしたり逆に切り替えたりしない）。書くのは ready_at だけ（CaOS と同じ SetOrderReady）
 		if err := lockOrder(tx, &order); err != nil {
 			return err
 		}
-		ready := order.ReadyAt == nil
-		if req.Ready != nil {
-			ready = *req.Ready
-		}
-		if ready == (order.ReadyAt != nil) {
-			return nil // もうその状態
-		}
-		var readyAt *time.Time
-		if ready {
-			now := time.Now()
-			readyAt = &now
-		}
-		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{"ready_at": readyAt}).Error; err != nil {
+		if _, _, err := caos.SetOrderReady(tx, order.ID, order.ReadyAt == nil, time.Now()); err != nil {
 			return err
 		}
 		if locked {

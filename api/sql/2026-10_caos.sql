@@ -1,14 +1,15 @@
--- CaOS（ドリップ管制）の抽出カードの表と、変わったことを api に知らせるトリガー。
+-- CaOS（ドリップ管制）の抽出カードと操作の記録の表と、カードが変わったことを api に知らせるトリガー。
 --
--- 新しい表はこれだけ。注文の中身（注文番号・商品名など）は持たず、注文と商品の参照と指名・杯数だけを持つ
--- （画面は /api/ws/orders で受け取る注文から引く）。準備完了は既存の注文の API（PATCH /api/orders/{id}/ready）で付ける。
+-- 新しい表はこの 2 つ。カードは注文の中身（注文番号・商品名など）を持たず、注文と商品の参照と指名・杯数だけを持つ
+-- （画面は /api/ws/orders で受け取る注文から引く）。準備完了は既存の準備完了の処理（PATCH /api/orders/{id}/ready と同じ）で、
+-- 操作と同じトランザクションの中で付ける。
 -- 1 つの営業日への処理は、その日の advisory lock で 1 件ずつ順番に行う（ロックのための表は持たない）。
 --
 -- 配信は注文（2026-10_orders_notify.sql）と同じ：caos_drips が変わるとトリガーが caos_drips_changed を送り、
 -- api の各インスタンスが DB から今日のカードを読み直して WebSocket で配る（internal/handlers/order_listener.go）。
 --
 -- 本番は AutoMigrate を走らせない（README の「backend の環境変数」を参照）ので、この SQL を手で流す。
--- 表は internal/caos/store.go の DripRow を AutoMigrate した結果に、制約と 1 人 1 枚の抽出中の索引を足したもの。
+-- 表は internal/caos/store.go の DripRow・OpRow を AutoMigrate した結果に、制約と 1 人 1 枚の抽出中の索引を足したもの。
 -- 何度流しても壊れない。
 
 -- 抽出カード。1 回のドリップ（最大 2 杯）が 1 行
@@ -52,3 +53,24 @@ $$;
 CREATE OR REPLACE TRIGGER caos_drips_notify_changed
 AFTER INSERT OR UPDATE OR DELETE ON caos_drips
 FOR EACH STATEMENT EXECUTE FUNCTION notify_caos_drips_changed();
+
+-- 画面からの操作の記録。「1つ戻す」は、画面から送られた中身ではなく、この記録（サーバーが DB から取ったもの）で戻す。
+-- 戻すときは、記録のあと関係するカード（after の updated_at）と注文（readied の ready_at）が誰にも触られていないかを確かめる。
+CREATE TABLE IF NOT EXISTS caos_ops (
+    id uuid NOT NULL,
+    -- 営業日（日本時間の日付）。戻せるのは今日の操作だけ
+    day date NOT NULL,
+    -- 操作の種類（assign・unassign・next・merge・rebrew）
+    name text NOT NULL,
+    -- 操作で変わった・消えたカードの、操作の前の中身
+    before jsonb NOT NULL,
+    -- 操作で変わった・できたカードの、操作の後の中身
+    after jsonb NOT NULL,
+    -- 操作で準備完了にした注文と、そのとき付けた ready_at：[{order_id, ready_at}]
+    readied jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    -- 戻した時刻。同じ操作は 2 回戻せない
+    undone_at timestamp with time zone,
+    CONSTRAINT caos_ops_pkey PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_caos_ops_day ON caos_ops (day);

@@ -64,7 +64,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	sql, err := os.ReadFile("../../sql/2026-10_caos.sql")
 	mustDo(t, err)
 	mustDo(t, db.Exec(string(sql)).Error)
-	mustDo(t, db.Exec("TRUNCATE caos_drips, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
+	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	mustDo(t, db.Create(&hot).Error)
@@ -171,18 +171,21 @@ func TestCaosThroughHTTP(t *testing.T) {
 	if code := e.op(t, map[string]any{"name": "assign", "drip_id": card.ID, "dripper": 1}, &res); code != http.StatusOK || res.Changed[0].Status != caos.StatusBrewing {
 		t.Fatalf("割当：%d %+v", code, res)
 	}
-	if code := e.op(t, map[string]any{"name": "next", "dripper": 1}, &res); code != http.StatusOK || len(res.Completed) != 1 || res.Completed[0] != o.Id.String() {
-		t.Fatalf("次へで、カードが全部終わった注文を返す：%d %+v", code, res)
+	if code := e.op(t, map[string]any{"name": "next", "dripper": 1}, &res); code != http.StatusOK || len(res.Readied) != 1 || res.Readied[0] != o.Id.String() {
+		t.Fatalf("次へで、カードが全部終わった注文を準備完了にする：%d %+v", code, res)
 	}
-	if e.order(t, o.Id).ReadyAt != nil {
-		t.Fatal("準備完了は CaOS の操作では付けない")
+	if e.order(t, o.Id).ReadyAt == nil {
+		t.Fatal("同じトランザクションで準備完了が付く")
 	}
-	// 画面は既存の API で準備完了にする。何度送っても同じ
-	for range 2 {
-		if code := e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", map[string]any{"ready": true}, nil); code != http.StatusOK || e.order(t, o.Id).ReadyAt == nil {
-			t.Fatalf("{ready: true} で準備完了になる：%d", code)
-		}
+	// 1つ戻す：操作の ID だけを送ると、カードも準備完了もそろって戻る
+	var undo caos.Result
+	if code := e.op(t, map[string]any{"name": "undo", "op_id": res.OpID}, &undo); code != http.StatusOK || undo.Changed[0].Status != caos.StatusBrewing || e.order(t, o.Id).ReadyAt != nil {
+		t.Fatalf("1つ戻す：%d %+v", code, undo)
 	}
+	if code := e.op(t, map[string]any{"name": "undo", "op_id": res.OpID}, nil); code != http.StatusUnprocessableEntity {
+		t.Fatalf("同じ操作は 2 回戻せない（422）：%d", code)
+	}
+	e.op(t, map[string]any{"name": "next", "dripper": 1}, nil)
 	if code := e.op(t, map[string]any{"name": "next", "dripper": 1}, nil); code != http.StatusUnprocessableEntity {
 		t.Fatalf("ルールに合わない操作は 422：%d", code)
 	}
@@ -201,15 +204,7 @@ func TestCaosThroughHTTP(t *testing.T) {
 		}
 	}
 	if e.call(t, http.MethodPatch, "/api/orders/"+o2.Id.String()+"/ready", nil, nil); e.order(t, o2.Id).ReadyAt != nil {
-		t.Fatal("体なしの PATCH は今までどおり切り替える")
-	}
-	// 体なしでも分割送信（ContentLength が -1）なら、同じく切り替える（400 にしない）
-	req := httptest.NewRequest(http.MethodPatch, "/api/orders/"+o2.Id.String()+"/ready", strings.NewReader(""))
-	req.ContentLength = -1
-	w := httptest.NewRecorder()
-	e.router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || e.order(t, o2.Id).ReadyAt == nil {
-		t.Fatalf("分割送信の体なしの PATCH も切り替える：%d", w.Code)
+		t.Fatal("PATCH は今までどおり切り替える")
 	}
 
 	// 注文を消すと、未割当のカードも消える
@@ -292,7 +287,7 @@ func TestCaosConcurrentReadyAndNextDoNotDeadlock(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			codes[0] = e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", map[string]any{"ready": true}, nil)
+			codes[0] = e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", nil, nil)
 		}()
 		go func() {
 			defer wg.Done()
@@ -377,8 +372,7 @@ func TestCaosPutKeepsReady(t *testing.T) {
 	e := newCaosEnv(t)
 	o := e.createOrder(t, 1, 1)
 	e.op(t, map[string]any{"name": "assign", "drip_id": e.cards(t)[0].ID, "dripper": 1}, nil)
-	e.op(t, map[string]any{"name": "next", "dripper": 1}, nil)
-	e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", map[string]any{"ready": true}, nil)
+	e.op(t, map[string]any{"name": "next", "dripper": 1}, nil) // 準備完了になる
 
 	var got models.OrderResponse
 	if code := e.call(t, http.MethodPut, "/api/orders/"+o.Id.String(), putBody(o, nil, nil), &got); code != http.StatusOK || got.ReadyAt == nil {

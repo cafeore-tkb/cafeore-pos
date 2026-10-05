@@ -457,6 +457,18 @@ func (b *Board) IngestOrders(cs *Changeset, orders []Order, full bool) {
 	}
 }
 
+// Snapshot は今のカードの写し（操作の前の中身を記録するのに使う）。
+func (b *Board) Snapshot() map[string]Drip {
+	out := make(map[string]Drip, len(b.Drips))
+	for id, d := range b.Drips {
+		c := *d
+		c.Lines = slices.Clone(d.Lines)
+		c.OrderIDs = slices.Clone(d.OrderIDs)
+		out[id] = c
+	}
+	return out
+}
+
 // RemoveOrder は POS で注文が消えたとき。
 func (b *Board) RemoveOrder(cs *Changeset, orderID string) { b.removeOrder(cs, orderID) }
 
@@ -489,8 +501,6 @@ func (b *Board) Apply(cs *Changeset, op Op) error {
 		return b.merge(cs, op.FirstID, op.SecondID)
 	case "rebrew":
 		return b.rebrew(cs, op.SourceID, op.Cups, op.Interrupt, op.Dripper, op.QueuePos)
-	case "restore":
-		return b.restore(cs, op.Before, op.After)
 	default:
 		return invalid("知らない操作です")
 	}
@@ -620,11 +630,11 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 	return nil
 }
 
-// restore は「1つ戻す」。直前の操作の結果と、その前の行を渡すと元に戻す。
-// before：操作の前の行（結果の changed と deleted のうち、操作の前からあったもの）。
-// after：操作が返した changed。この時点から誰も触っていないときだけ戻す。
-// 操作で準備完了にした注文は、画面が既存の PATCH /api/orders/{id}/ready で外す。
-func (b *Board) restore(cs *Changeset, before, after []Drip) error {
+// Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（Store が caos_ops の記録から呼ぶ）。
+// before：操作の前の行（操作で変わった・消えたカードの、操作の前の中身。サーバーが DB から取ったもの）。
+// after：操作の後の行（操作で変わった・できたカード）。この時点から誰も触っていないときだけ戻す。
+// 確かめてから変えるので、断ったときは何も変わっていない。
+func (b *Board) Restore(cs *Changeset, before, after []Drip) error {
 	for _, a := range after {
 		now, ok := b.Drips[a.ID]
 		if !ok || !now.UpdatedAt.Equal(a.UpdatedAt) {
@@ -641,12 +651,14 @@ func (b *Board) restore(cs *Changeset, before, after []Drip) error {
 			b.delete(cs, a.ID)
 		}
 	}
+	// 操作の前の中身を、updated_at も含めてそのまま書き戻す。戻したあとのカードは「手前の操作の直後」と同じになるので、
+	// 続けて手前の操作も戻せる（その操作の after と同じかで確かめる）
 	for _, d := range before {
 		row := d
 		row.Lines = slices.Clone(d.Lines)
 		row.OrderIDs = slices.Clone(d.OrderIDs)
 		b.Drips[row.ID] = &row
-		b.update(cs, &row, func(*Drip) {})
+		cs.touch(row.ID)
 	}
 	return nil
 }

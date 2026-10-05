@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
 )
@@ -39,6 +40,51 @@ type DripRow struct {
 }
 
 func (DripRow) TableName() string { return "caos_drips" }
+
+// OpRow は画面からの操作の記録。「1つ戻す」は、画面から送られた中身ではなく、この記録（サーバーが DB から取ったもの）で戻す。
+type OpRow struct {
+	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Day  string    `gorm:"type:date;not null;index"`
+	Name string    `gorm:"not null"`
+	// 操作で変わった・消えたカードの、操作の前の中身
+	Before jsonValue[[]Drip] `gorm:"type:jsonb;not null"`
+	// 操作で変わった・できたカードの、操作の後の中身（戻すときに、これから誰も触っていないかを updated_at で確かめる）
+	After jsonValue[[]Drip] `gorm:"type:jsonb;not null"`
+	// 操作で準備完了にした注文と、そのとき付けた ready_at（戻すときに、これから変わっていないかを確かめる）
+	Readied   jsonValue[[]ReadyMark] `gorm:"type:jsonb;not null"`
+	CreatedAt time.Time              `gorm:"not null;autoCreateTime:false"`
+	// 戻した時刻。同じ操作は 2 回戻せない
+	UndoneAt *time.Time
+}
+
+func (OpRow) TableName() string { return "caos_ops" }
+
+// ReadyMark は操作で準備完了にした注文。
+type ReadyMark struct {
+	OrderID string    `json:"order_id"`
+	ReadyAt time.Time `json:"ready_at"`
+}
+
+// SetOrderReady は注文の準備完了を付ける・外す（ready_at だけを書く）。注文の行をロックしてから今の状態を見て、違うときだけ書く。
+// 既存の PATCH /api/orders/{id}/ready と、CaOS の「次へ」「1つ戻す」・統合相手の準備完了が、この同じ処理を使う。
+// 書いたときは、新しい ready_at（外したときは nil）と true を返す。注文が無ければ gorm.ErrRecordNotFound。
+func SetOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
+	var o models.Order
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "ready_at").First(&o, "id = ?", orderID).Error; err != nil {
+		return nil, false, err
+	}
+	if (o.ReadyAt != nil) == ready {
+		return o.ReadyAt, false, nil
+	}
+	var at *time.Time
+	if ready {
+		at = &now
+	}
+	if err := tx.Model(&models.Order{}).Where("id = ?", orderID).Update("ready_at", at).Error; err != nil {
+		return nil, false, err
+	}
+	return at, true, nil
+}
 
 // jsonValue は jsonb の列。
 type jsonValue[T any] struct{ V T }
@@ -240,37 +286,180 @@ func dayOrders(tx *gorm.DB, day string) ([]Order, error) {
 
 // Apply は画面からの操作を今日の盤面に 1 つ行う。ルールに合わなければ ErrInvalid（何も変えない）。
 //
-// 操作の前に今日の注文と照らし合わせてカードをそろえる（注文の連動が失敗していても、ここで追いつく）。
-// カードが全部終わった注文（Completed）の準備完了は、画面が既存の PATCH /api/orders/{id}/ready で付ける。
+// 全部を 1 つのトランザクションで行う（途中で失敗したら、カードも注文も操作の記録も全部取り消される）：
+//  1. 今日の盤面をロックし、今日の注文と照らし合わせてカードをそろえる（注文の連動が失敗していても、ここで追いつく）
+//  2. 操作を行う。カードが全部終わった注文は、既存の準備完了の処理（SetOrderReady）で準備完了にする
+//  3. 操作の記録（caos_ops）を残す。「1つ戻す」（undo）は、この記録で戻す
 func (s *Store) Apply(op Op) (Result, error) {
-	var res Result
 	day := s.today()
+	res := Result{Changed: []Drip{}, Deleted: []string{}, Readied: []string{}}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		b, cs, err := s.withBoard(tx, day, func(tx *gorm.DB, b *Board, cs *Changeset) error {
-			orders, err := dayOrders(tx, day)
-			if err != nil {
-				return err
-			}
-			// 照らし合わせで終わった注文（統合相手など）も Completed に入る。画面はそれも準備完了にする
-			b.IngestOrders(cs, orders, true)
-			return b.Apply(cs, op)
-		})
+		if err := lockDay(tx, day); err != nil {
+			return err
+		}
+		b, err := s.readBoard(tx, day)
 		if err != nil {
 			return err
 		}
-		res = Result{Changed: b.Rows(cs.Changed.List()), Deleted: cs.Deleted.List(), Completed: cs.Completed.List()}
+		orders, err := dayOrders(tx, day)
+		if err != nil {
+			return err
+		}
+		ingest := &Changeset{}
+		b.IngestOrders(ingest, orders, true)
+
+		cs := &Changeset{}
+		var readied []string
+		if op.Name == "undo" {
+			readied, err = s.undo(tx, day, b, cs, op.OpID)
+		} else {
+			res.OpID, readied, err = s.do(tx, day, b, cs, op)
+		}
+		if err != nil {
+			return err
+		}
+		// 照らし合わせでカードが全部終わった注文（統合相手など）も準備完了にする（操作の記録には入れない）
+		if err := s.readyAll(tx, ingest.Completed.List()); err != nil {
+			return err
+		}
+		if err := s.persist(tx, day, b, mergeChanges(b, ingest, cs)); err != nil {
+			return err
+		}
+		res.Changed = b.Rows(cs.Changed.List())
+		res.Deleted = cs.Deleted.List()
+		res.Readied = readied
 		return nil
 	})
-	if res.Changed == nil {
-		res.Changed = []Drip{}
-	}
 	if res.Deleted == nil {
 		res.Deleted = []string{}
 	}
-	if res.Completed == nil {
-		res.Completed = []string{}
+	if res.Readied == nil {
+		res.Readied = []string{}
 	}
 	return res, err
+}
+
+// do は操作を 1 つ行い、記録を残す。
+func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (string, []string, error) {
+	before := b.Snapshot()
+	if err := b.Apply(cs, op); err != nil {
+		return "", nil, err
+	}
+	now := s.clock()
+	var marks []ReadyMark
+	var readied []string
+	for _, id := range cs.Completed.List() {
+		at, changed, err := SetOrderReady(tx, uuid.MustParse(id), true, now)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if changed {
+			marks = append(marks, ReadyMark{OrderID: id, ReadyAt: *at})
+			readied = append(readied, id)
+		}
+	}
+	var beforeRows []Drip
+	for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+		if d, ok := before[id]; ok {
+			beforeRows = append(beforeRows, d)
+		}
+	}
+	rec := OpRow{
+		ID: uuid.New(), Day: day, Name: op.Name, CreatedAt: now,
+		Before: jsonValue[[]Drip]{orEmpty(beforeRows)}, After: jsonValue[[]Drip]{orEmpty(b.Rows(cs.Changed.List()))},
+		Readied: jsonValue[[]ReadyMark]{orEmpty(marks)},
+	}
+	if err := tx.Create(&rec).Error; err != nil {
+		return "", nil, err
+	}
+	return rec.ID.String(), readied, nil
+}
+
+// undo は記録した操作を取り消す（「1つ戻す」）。
+// 操作のあと、関係するカードと注文が誰にも触られていないことを全部確かめてから戻す。1 つでも違えば ErrInvalid（何も変えない）。
+func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID string) ([]string, error) {
+	id, err := uuid.Parse(opID)
+	if err != nil {
+		return nil, invalid("戻す操作が見つかりません")
+	}
+	var rec OpRow
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&rec, "id = ? AND day = ?", id, day).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, invalid("戻す操作が見つかりません")
+		}
+		return nil, err
+	}
+	if rec.UndoneAt != nil {
+		return nil, invalid("この操作はもう元に戻しています")
+	}
+	// この操作で付けた準備完了が、そのまま残っているか（ほかの端末で外した・付け直した・提供済みにした、なら戻さない）
+	for _, m := range rec.Readied.V {
+		var o models.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&o, "id = ?", m.OrderID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, invalid("注文が消されたため、元に戻せません")
+			}
+			return nil, err
+		}
+		if o.ServedAt != nil {
+			return nil, invalid("提供済みの注文があるため、元に戻せません")
+		}
+		if o.ReadyAt == nil || !o.ReadyAt.Equal(m.ReadyAt) {
+			return nil, invalid("ほかの端末で変更されたため、元に戻せません")
+		}
+	}
+	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
+	if err := b.Restore(cs, rec.Before.V, rec.After.V); err != nil {
+		return nil, err
+	}
+	now := s.clock()
+	var unreadied []string
+	for _, m := range rec.Readied.V {
+		if _, _, err := SetOrderReady(tx, uuid.MustParse(m.OrderID), false, now); err != nil {
+			return nil, err
+		}
+		unreadied = append(unreadied, m.OrderID)
+	}
+	if err := tx.Model(&rec).Update("undone_at", now).Error; err != nil {
+		return nil, err
+	}
+	return unreadied, nil
+}
+
+// readyAll は注文をまとめて準備完了にする（消された注文は飛ばす）。
+func (s *Store) readyAll(tx *gorm.DB, ids []string) error {
+	now := s.clock()
+	for _, id := range ids {
+		if _, _, err := SetOrderReady(tx, uuid.MustParse(id), true, now); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// mergeChanges は、照らし合わせと操作の変更を 1 つにまとめる（保存を 1 回で行い、途中の状態で抽出中の索引に引っかからないように）。
+func mergeChanges(b *Board, sets ...*Changeset) *Changeset {
+	out := &Changeset{}
+	for _, cs := range sets {
+		for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+			if _, ok := b.Drips[id]; ok {
+				out.touch(id)
+			} else {
+				out.drop(id)
+			}
+		}
+	}
+	return out
+}
+
+func orEmpty[T any](v []T) []T {
+	if v == nil {
+		return []T{}
+	}
+	return v
 }
 
 // Drips はその日の全カード（配信に使う）。
@@ -314,10 +503,8 @@ func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) error {
 		if err != nil {
 			return err
 		}
-		if completed := cs.Completed.List(); len(completed) > 0 {
-			if err := tx.Model(&models.Order{}).Where("id IN ? AND ready_at IS NULL", completed).Update("ready_at", s.clock()).Error; err != nil {
-				return err
-			}
+		if err := s.readyAll(tx, cs.Completed.List()); err != nil {
+			return err
 		}
 	}
 	return nil

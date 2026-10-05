@@ -42,7 +42,7 @@ func testDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(mustRead(t, "../../sql/2026-10_caos.sql")).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE caos_drips, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
+	if err := db.Exec("TRUNCATE caos_drips, caos_ops, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -156,31 +156,145 @@ func TestStoreFlow(t *testing.T) {
 
 	assigned, err := s.Apply(Op{Name: "assign", DripID: d[0].ID, Dripper: ptr(1)})
 	must(t, err)
-	if assigned.Changed[0].Status != StatusBrewing {
+	if assigned.Changed[0].Status != StatusBrewing || assigned.OpID == "" {
 		t.Fatalf("割当：%+v", assigned)
 	}
-	before := viaJSON(t, assigned.Changed)
 
 	done, err := s.Apply(Op{Name: "next", Dripper: ptr(1)})
 	must(t, err)
-	if !slices.Equal(done.Completed, []string{o1.ID.String()}) {
-		t.Fatalf("次へで注文のカードが全部終わったと返す：%+v", done)
-	}
-	if readyAt(t, db, o1.ID) != nil {
-		t.Fatal("準備完了は盤面では付けない（画面が既存の API で付ける）")
+	if !slices.Equal(done.Readied, []string{o1.ID.String()}) || readyAt(t, db, o1.ID) == nil {
+		t.Fatalf("次へで注文のカードが全部終わると、同じトランザクションで準備完了になる：%+v", done)
 	}
 
-	// 1つ戻す（画面が JSON で受け取った結果をそのまま返す）
-	undo, err := s.Apply(Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed)})
+	// 1つ戻す：操作の ID だけを送る（カードの中身は、サーバーが残した記録で戻す）
+	undo, err := s.Apply(Op{Name: "undo", OpID: done.OpID})
 	must(t, err)
-	if undo.Changed[0].Status != StatusBrewing {
-		t.Fatalf("1つ戻すで抽出中に戻る：%+v", undo)
+	if undo.Changed[0].Status != StatusBrewing || readyAt(t, db, o1.ID) != nil || !slices.Equal(undo.Readied, []string{o1.ID.String()}) {
+		t.Fatalf("1つ戻すで、カードも準備完了もそろって戻る：%+v", undo)
 	}
-	if _, err := s.Apply(Op{Name: "restore", Before: before, After: viaJSON(t, done.Changed)}); !IsInvalid(err) {
-		t.Fatalf("2 回目は断る：%v", err)
+	if _, err := s.Apply(Op{Name: "undo", OpID: done.OpID}); !IsInvalid(err) {
+		t.Fatalf("同じ操作は 2 回戻せない：%v", err)
+	}
+	// 割当も戻せる（抽出中 → 未割当）
+	if _, err := s.Apply(Op{Name: "undo", OpID: assigned.OpID}); err != nil || drips(t, s)[0].Status != StatusUnassigned {
+		t.Fatalf("割当を戻す：%v %+v", err, drips(t, s))
+	}
+	for _, bad := range []string{"", "nope", uuid.NewString()} {
+		if _, err := s.Apply(Op{Name: "undo", OpID: bad}); !IsInvalid(err) {
+			t.Fatalf("知らない操作は戻せない（%q）：%v", bad, err)
+		}
 	}
 	if _, err := s.Apply(Op{Name: "next", Dripper: ptr(6)}); !IsInvalid(err) {
 		t.Fatalf("invalid のはず：%v", err)
+	}
+}
+
+// 状態をまとめて読む（戻すのを断ったときに、何も変わっていないことを比べる）
+func boardState(t *testing.T, db *gorm.DB, s *Store, orderID uuid.UUID) string {
+	t.Helper()
+	var undone int64
+	must(t, db.Model(&OpRow{}).Where("undone_at IS NOT NULL").Count(&undone).Error)
+	b, err := json.Marshal([]any{drips(t, s), readyAt(t, db, orderID), undone})
+	must(t, err)
+	return string(b)
+}
+
+// 記録のあと関係するカードや注文が触られていたら、戻すのを断り、何も変えない
+func TestStoreUndoRejectsWhenTouched(t *testing.T) {
+	cases := map[string]func(t *testing.T, db *gorm.DB, s *Store, o models.Order){
+		"カードが後から触られた": func(t *testing.T, db *gorm.DB, s *Store, o models.Order) {
+			// 別の注文のカードを同じドリッパーに積むと、終わったカードは変わらないが…次の抽出が始まる。ここでは直接カードを書き換える
+			must(t, db.Exec("UPDATE caos_drips SET updated_at = now()").Error)
+		},
+		"注文が提供済みになった": func(t *testing.T, db *gorm.DB, s *Store, o models.Order) {
+			must(t, db.Exec("UPDATE orders SET served_at = now() WHERE id = ?", o.ID).Error)
+		},
+		"準備完了が付け直された": func(t *testing.T, db *gorm.DB, s *Store, o models.Order) {
+			must(t, db.Exec("UPDATE orders SET ready_at = now() + interval '1 second' WHERE id = ?", o.ID).Error)
+		},
+	}
+	for name, touch := range cases {
+		t.Run(name, func(t *testing.T) {
+			db := testDB(t)
+			cat := seedCatalog(t, db)
+			s := newStore(db)
+			o := createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
+			_, err := s.Apply(Op{Name: "assign", DripID: drips(t, s)[0].ID, Dripper: ptr(1)})
+			must(t, err)
+			done, err := s.Apply(Op{Name: "next", Dripper: ptr(1)})
+			must(t, err)
+			touch(t, db, s, o)
+			before := boardState(t, db, s, o.ID)
+			if _, err := s.Apply(Op{Name: "undo", OpID: done.OpID}); !IsInvalid(err) {
+				t.Fatalf("断るはず：%v", err)
+			}
+			if after := boardState(t, db, s, o.ID); after != before {
+				t.Fatalf("断ったのに変わった：\n%s\n%s", before, after)
+			}
+		})
+	}
+}
+
+// 統合で消えたカード・入れ直しで増えたカードも、サーバーの記録だけで戻る（画面からは何も送らない）
+func TestStoreUndoMergeAndRebrewFromRecord(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := newStore(db)
+	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
+	createOrder(t, s, db, 2, dayStart.Add(10*time.Hour+time.Minute), cat.champ)
+	orig := drips(t, s)
+
+	merged, err := s.Apply(Op{Name: "merge", FirstID: orig[0].ID, SecondID: orig[1].ID})
+	must(t, err)
+	_, err = s.Apply(Op{Name: "undo", OpID: merged.OpID})
+	must(t, err)
+	if got := drips(t, s); len(got) != 2 || got[0].Cups != 1 || got[1].ID != orig[1].ID || got[1].Lines[0] != orig[1].Lines[0] {
+		t.Fatalf("統合を戻すと、消えたカードが元の中身で戻る：%+v", got)
+	}
+
+	_, err = s.Apply(Op{Name: "assign", DripID: orig[0].ID, Dripper: ptr(1)})
+	must(t, err)
+	rebrew, err := s.Apply(Op{Name: "rebrew", SourceID: orig[0].ID, Cups: 1, Interrupt: true, Dripper: ptr(2)})
+	must(t, err)
+	if len(drips(t, s)) != 3 {
+		t.Fatal("入れ直しのカードができる")
+	}
+	_, err = s.Apply(Op{Name: "undo", OpID: rebrew.OpID})
+	must(t, err)
+	got := drips(t, s)
+	if len(got) != 2 || got[0].Status != StatusBrewing || got[0].Interrupted {
+		t.Fatalf("入れ直しを戻すと、できたカードが消え、途中でやめた抽出が抽出中に戻る：%+v", got)
+	}
+}
+
+// 戻す途中で失敗したら（ここでは注文のロック待ちの打ち切り）、カードも準備完了も操作の記録も、何も変わらない
+func TestStoreUndoIsAllOrNothing(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := newStore(db)
+	o := createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
+	_, err := s.Apply(Op{Name: "assign", DripID: drips(t, s)[0].ID, Dripper: ptr(1)})
+	must(t, err)
+	done, err := s.Apply(Op{Name: "next", Dripper: ptr(1)})
+	must(t, err)
+
+	short, err := gorm.Open(postgres.New(postgres.Config{DSN: os.Getenv("CAOS_TEST_DATABASE_URL") + "?options=-c%20lock_timeout%3D300ms", PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
+	must(t, err)
+	timeoutStore := newStore(short)
+	holder := db.Begin()
+	must(t, holder.Exec("SELECT * FROM orders WHERE id = ? FOR UPDATE", o.ID).Error)
+	before := boardState(t, db, s, o.ID)
+	_, err = timeoutStore.Apply(Op{Name: "undo", OpID: done.OpID})
+	must(t, holder.Rollback().Error)
+	if err == nil || IsInvalid(err) {
+		t.Fatalf("ロック待ちの打ち切りで失敗するはず：%v", err)
+	}
+	if after := boardState(t, db, s, o.ID); after != before {
+		t.Fatalf("途中で失敗したのに変わった：\n%s\n%s", before, after)
+	}
+	// 失敗のあとでも、もう一度戻せる
+	if _, err := s.Apply(Op{Name: "undo", OpID: done.OpID}); err != nil || readyAt(t, db, o.ID) != nil {
+		t.Fatalf("やり直せば戻る：%v", err)
 	}
 }
 

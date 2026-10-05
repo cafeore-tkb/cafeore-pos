@@ -78,11 +78,7 @@ export interface paths {
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
-    /**
-     * オーダーを準備完了にする
-     * @description 体に {"ready": true|false} があればその状態にする（何度送っても同じ。CaOS の画面が使う）。
-     * 体が無ければ、準備完了と未完了を切り替える（今までどおり）。
-     */
+    /** オーダーを準備完了にする */
     patch: operations["markOrderReady"];
   };
   "/api/orders/{id}/served": {
@@ -99,10 +95,11 @@ export interface paths {
     /**
      * CaOS の今日の盤面への操作
      * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
-     * 操作の前に今日の注文と照らし合わせてカードをそろえる。
+     * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+     * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+     * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+     * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
      * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
-     * completed（カードが全部終わった注文）は、画面が PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする。
-     * 「1つ戻す」で終わりを取り消したら、{"ready": false} で外す。
      */
     post: operations["applyCaosOp"];
   };
@@ -373,10 +370,6 @@ export interface components {
       /** @example #bfdbfe */
       color: string;
     };
-    OrderReadyRequest: {
-      /** @description true で準備完了、false で未完了にする（今の状態と同じなら何もしない） */
-      ready?: boolean;
-    };
     /** @description 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く） */
     CaosDripLine: {
       /** Format: uuid */
@@ -421,7 +414,7 @@ export interface components {
       created_at: string;
       /**
        * Format: date-time
-       * @description 「1つ戻す」は、この値が操作の結果と同じとき（ほかの端末が触っていないとき）だけ戻す
+       * @description 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
        */
       updated_at: string;
     };
@@ -429,11 +422,11 @@ export interface components {
      * @description name ごとに使うフィールド：
      * assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/
      * rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-     * restore（before・after）
+     * undo（op_id）
      */
     CaosOp: {
       /** @enum {string} */
-      name: "assign" | "unassign" | "next" | "merge" | "rebrew" | "restore";
+      name: "assign" | "unassign" | "next" | "merge" | "rebrew" | "undo";
       /** Format: uuid */
       drip_id?: string;
       dripper?: number | null;
@@ -449,16 +442,19 @@ export interface components {
       interrupt?: boolean;
       /** Format: double */
       queue_pos?: number | null;
-      /** @description 操作の前の行（結果の changed と deleted のうち、操作の前からあったもの） */
-      before?: components["schemas"]["CaosDrip"][];
-      /** @description 操作が返した changed */
-      after?: components["schemas"]["CaosDrip"][];
+      /**
+       * Format: uuid
+       * @description undo で戻す操作（操作の結果の op_id）
+       */
+      op_id?: string;
     };
     CaosOpResult: {
+      /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
+      op_id: string;
       changed: components["schemas"]["CaosDrip"][];
       deleted: string[];
-      /** @description カードが全部終わった注文。PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする */
-      completed: string[];
+      /** @description この操作で準備完了にした注文（undo では、準備完了を外した注文） */
+      readied: string[];
     };
     CaosErrorResponse: {
       /** @example ドリッパー 3 は抽出中ではありません */
@@ -990,20 +986,11 @@ export interface operations {
       };
     };
   };
-  /**
-   * オーダーを準備完了にする
-   * @description 体に {"ready": true|false} があればその状態にする（何度送っても同じ。CaOS の画面が使う）。
-   * 体が無ければ、準備完了と未完了を切り替える（今までどおり）。
-   */
+  /** オーダーを準備完了にする */
   markOrderReady: {
     parameters: {
       path: {
         id: string;
-      };
-    };
-    requestBody?: {
-      content: {
-        "application/json": components["schemas"]["OrderReadyRequest"];
       };
     };
     responses: {
@@ -1097,10 +1084,11 @@ export interface operations {
   /**
    * CaOS の今日の盤面への操作
    * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
-   * 操作の前に今日の注文と照らし合わせてカードをそろえる。
+   * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+   * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+   * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+   * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
    * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（DB の caos_drips_changed 通知から、今日のカードを全部）。
-   * completed（カードが全部終わった注文）は、画面が PATCH /api/orders/{id}/ready に {"ready": true} を送って準備完了にする。
-   * 「1つ戻す」で終わりを取り消したら、{"ready": false} で外す。
    */
   applyCaosOp: {
     requestBody: {
