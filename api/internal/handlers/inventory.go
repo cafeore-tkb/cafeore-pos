@@ -522,10 +522,8 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, resp)
 	go h.inv.CheckAlerts([]uuid.UUID{id})
-	// 記録後の残量は応答を待たせないよう裏で数える。調整は画面から記録しないので流さない
-	if req.Kind != models.StockEventKindAdjust {
-		go h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
-	}
+	// 記録後の残量は応答を待たせないよう裏で数える
+	go h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
 }
 
 func (inv *Inventory) postStockEvent(resource models.StockResource, event models.StockEvent, estimated *float64) {

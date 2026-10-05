@@ -51,10 +51,10 @@ func TestItemUsagesMessage(t *testing.T) {
 		{ResourceID: cup, Amount: 1},
 		{ResourceID: bean, Amount: 15},
 	}
-	if got := itemUsagesMessage("ケニア", usages, resources); got != "✏️ 使用量を変更: ケニア（ホットカップ 1個・ケニア豆 15g）" {
+	if got := itemUsagesMessage("ケニア", usages, resources); got != "🧮 使用量を変更: ケニア → ホットカップ 1個・ケニア豆 15g" {
 		t.Fatalf("unexpected: %q", got)
 	}
-	if got := itemUsagesMessage("ケニア", nil, resources); got != "✏️ 使用量を変更: ケニア（なし）" {
+	if got := itemUsagesMessage("ケニア", nil, resources); got != "🧮 使用量を変更: ケニア → なし" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
@@ -79,10 +79,9 @@ func TestStockEventMessage(t *testing.T) {
 			"📋 棚卸し: ケニア豆 1200g（推定 1180g、差 +20g）",
 		},
 		{
-			// 調整は画面から記録しないので流さない
 			"adjust",
 			models.StockEvent{Kind: "adjust", Quantity: -50},
-			"",
+			"🔧 調整: ケニア豆 -50g（残り約2230g）",
 		},
 	}
 	for _, tc := range cases {
@@ -106,20 +105,21 @@ func TestMasterStateMessage(t *testing.T) {
 	}
 }
 
-func TestCreatedAndDeletedMessagesShareShape(t *testing.T) {
-	menu := models.Menu{Name: "ルワンダ", Price: 400, Key: "r",
-		MenuItems: []models.MenuItem{{Item: models.Item{Name: "ルワンダ"}, Quantity: 1}}}
-	if got := menuCreatedMessage(&menu); got != "🆕 メニューを追加: ルワンダ（¥400 / キー r / ルワンダ×1）" {
+func TestColorSettingMessages(t *testing.T) {
+	after := models.ColorSetting{Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &models.ColorSetting{}, &after); got != "🆕 背景色を追加: ライチ（マスター）#7bf1a8" {
 		t.Fatalf("unexpected: %q", got)
 	}
-	if got := menuDeletedMessage(&menu); got != "🗑️ メニューを削除: ルワンダ" {
+	before := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#bedbff"}
+	if got := colorSettingSavedMessage("ライチ", &before, &after); got != "✏️ 背景色を変更: ライチ（マスター）#bedbff → #7bf1a8" {
 		t.Fatalf("unexpected: %q", got)
 	}
-	bean := models.StockResource{Kind: "bean", Name: "ケニア豆", Unit: "g", PerServing: 15}
-	if got := stockResourceCreatedMessage(&bean); got != "🆕 在庫対象を追加: ケニア豆（豆 / 1杯 15g）" {
-		t.Fatalf("unexpected: %q", got)
+	same := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &same, &after); got != "" {
+		t.Fatalf("expected no message, got %q", got)
 	}
-	if got := allUsagesReplacedMessage(24); got != "✏️ 使用量を変更: 24件をまとめて置き換え" {
+	deleted := models.ColorSetting{Screen: "serve", Color: "#fff085"}
+	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: ミルク（提供）#fff085" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }

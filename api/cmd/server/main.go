@@ -244,7 +244,7 @@ func main() {
 
 	itemHandler := handlers.NewItemHandler(db, activity)
 	menuHandler := handlers.NewMenuHandler(db, activity)
-	itemTypeHandler := handlers.NewItemTypeHandler(db)
+	itemTypeHandler := handlers.NewItemTypeHandler(db, activity)
 	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
 	//
 	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
@@ -266,7 +266,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub, activity)
-	colorSettingHandler := handlers.NewColorSettingHandler(db)
+	colorSettingHandler := handlers.NewColorSettingHandler(db, activity)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
