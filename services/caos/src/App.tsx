@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
   AuxiliaryContent,
@@ -19,7 +19,8 @@ import {
   INITIAL_BEANS,
   INITIAL_LEARNING_LOGS,
 } from "./data/initialData";
-import { usePosOrders } from "./hooks/usePosOrders";
+import { postCaosOp, usePosOrders } from "./hooks/usePosOrders";
+import { buildCatalog, dripsToBoard, queuePosAt } from "./live/drips";
 import type {
   Barista,
   BeanCode,
@@ -41,12 +42,7 @@ import {
   splitIntoDripUnits,
   ticketKey,
 } from "./utils/orderQueue";
-import {
-  POS_API_BASE_URL,
-  isPendingPosOrder,
-  posOrderTicketPrefix,
-  posOrderToDripUnits,
-} from "./utils/posOrders";
+import { type CaosOp, POS_API_BASE_URL } from "./utils/posOrders";
 
 type UndoSnapshot = {
   baristas: Barista[];
@@ -233,8 +229,6 @@ export default function App() {
     [],
   );
   // 取り込み済みの cafeore-pos 注文（UUID）。全件が届くたびに、新しい注文だけを未割当へ足すために使う。
-  const posIngestedOrderIds = useRef(new Set<string>());
-  const [posIngestEpoch, setPosIngestEpoch] = useState(0);
   const undoSnapshotRef = useRef<UndoSnapshot | null>(null);
   const arrivalsAfterUndoSnapshotRef = useRef<UnassignedOrder[]>([]);
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
@@ -299,18 +293,57 @@ export default function App() {
     (operationalTime.getTime() - operationalDayStartMs) / 1000,
   );
 
-  // 普段は cafeore-pos と同じ DB の注文で動かす。実データテスト中（終了後の実績表示も含め、リセットするまで）は
-  // DB からの取り込みを止め、テストの注文だけで盤面を動かす。
-  const posActive = !testPlaySession;
-  const { orders: posOrders, status: posStatus } = usePosOrders(
-    posActive,
-    POS_API_BASE_URL,
+  // 普段は cafeore-pos の盤面（抽出カード）で動かす。カードと注文は同じ WebSocket で届き、操作は POST /api/caos/ops。
+  // 実データテスト中（終了後の実績表示も含め、リセットするまで）は盤面を使わず、テストの注文だけで手元の盤面を動かす。
+  const live = !testPlaySession;
+  const {
+    orders: posOrders,
+    drips: liveDrips,
+    status: posStatus,
+  } = usePosOrders(live, POS_API_BASE_URL);
+  const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
+  // 盤面のカードから組み立てた管制盤。ドリッパーの名前と係数は手元の baristas から取る
+  const liveBoard = useMemo(
+    () =>
+      dripsToBoard(
+        liveDrips ?? [],
+        catalog,
+        baristas,
+        realTimeSec,
+        realDayStartMs,
+      ),
+    [liveDrips, catalog, baristas, realTimeSec, realDayStartMs],
   );
-  const baristasRef = useRef(baristas);
-  baristasRef.current = baristas;
+  const boardBaristas = live ? liveBoard.baristas : baristas;
+  const boardUnassignedOrders = live
+    ? liveBoard.unassignedOrders
+    : unassignedOrders;
+  // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
+  const liveUndoRef = useRef<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!liveError) return;
+    const timer = window.setTimeout(() => setLiveError(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [liveError]);
+
+  // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果のカードは WebSocket の drips で届く
+  const runLive = async (label: string | null, op: CaosOp) => {
+    const { result, error } = await postCaosOp(POS_API_BASE_URL, op);
+    if (error || !result) {
+      setLiveError(error || "操作に失敗しました");
+      return;
+    }
+    if (label && result.op_id) {
+      undoSnapshotRef.current = null;
+      liveUndoRef.current = result.op_id;
+      setUndoLabel(label);
+    }
+  };
 
   const findLiveTicket = (key: string) => {
-    for (const bay of baristas) {
+    for (const bay of boardBaristas) {
       const ticket =
         bay.queue.find((item) => ticketKey(item) === key) ||
         bay.pastTickets?.find((item) => ticketKey(item) === key);
@@ -332,7 +365,7 @@ export default function App() {
       setSelectedTicketKey(null);
   }, [selectedTicketKey, selectedTicketStatus]);
 
-  const sortedUnassignedOrders = [...unassignedOrders].sort(
+  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
     (a, b) =>
       Number(Boolean(b.isRebrew)) - Number(Boolean(a.isRebrew)) ||
       orderNumber(a.id) - orderNumber(b.id) ||
@@ -362,48 +395,6 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-
-  // cafeore-pos の注文を取り込む。届いた一覧のうち、当日の未提供・未準備で新しく届いた注文を未割当へ足し、
-  // POS 側で準備完了・提供済み・削除になった注文は、まだ割り当てていない分だけ未割当から外す。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: posIngestEpoch はリセット後に取り込み直すための合図
-  useEffect(() => {
-    if (!posActive || !posOrders) return;
-    const dayStartMs = startOfLocalDay(Date.now());
-    const pending = posOrders.filter(
-      (order) =>
-        isPendingPosOrder(order) &&
-        new Date(order.created_at).getTime() >= dayStartMs,
-    );
-    const pendingIds = new Set(pending.map((order) => order.id));
-    const ingested = posIngestedOrderIds.current;
-    const incoming = pending
-      .filter((order) => !ingested.has(order.id))
-      .sort((a, b) => a.order_id - b.order_id)
-      .flatMap((order) => {
-        ingested.add(order.id);
-        return posOrderToDripUnits(order, baristasRef.current);
-      });
-    const withdrawnPrefixes = [...ingested]
-      .filter((id) => !pendingIds.has(id))
-      .map((id) => posOrderTicketPrefix(id));
-    const isWithdrawn = (order: UnassignedOrder) =>
-      withdrawnPrefixes.some((prefix) =>
-        (order.ticketUid || "").startsWith(prefix),
-      );
-
-    if (incoming.length > 0 && undoSnapshotRef.current) {
-      arrivalsAfterUndoSnapshotRef.current.push(...incoming);
-    }
-    setUnassignedOrders((prev) => {
-      const remaining =
-        withdrawnPrefixes.length > 0
-          ? prev.filter((order) => !isWithdrawn(order))
-          : prev;
-      if (incoming.length === 0 && remaining.length === prev.length)
-        return prev;
-      return [...remaining, ...incoming];
-    });
-  }, [posActive, posOrders, posIngestEpoch]);
 
   useEffect(() => {
     if (testPlayStatus !== "active" || !isRunning) return;
@@ -456,6 +447,7 @@ export default function App() {
   }, [testPlayCurrentMs, testPlayOrders, testPlayStatus]);
 
   const captureUndo = (label: string) => {
+    liveUndoRef.current = null;
     undoSnapshotRef.current = {
       baristas,
       beans,
@@ -468,6 +460,17 @@ export default function App() {
   };
 
   const handleUndo = () => {
+    const liveUndo = liveUndoRef.current;
+    if (live && liveUndo) {
+      liveUndoRef.current = null;
+      setUndoLabel(null);
+      setSelectedOrderId(null);
+      setRebrewSource(null);
+      setSelectedTicketKey(null);
+      void runLive(null, { name: "undo", op_id: liveUndo });
+      soundManager.playDispatch();
+      return;
+    }
     const snapshot = undoSnapshotRef.current;
     if (!snapshot) return;
     const restoredKeys = new Set(
@@ -563,9 +566,10 @@ export default function App() {
   const handleAdvanceBay = (bayId: number) => {
     soundManager.playComplete();
 
-    const targetBarista = baristas.find((b) => b.id === bayId);
+    const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
-    captureUndo(`${targetBarista.bayNumber}の「次へ」`);
+    if (live && targetBarista.queue[0].status !== "brewing") return;
+    if (!live) captureUndo(`${targetBarista.bayNumber}の「次へ」`);
 
     const completedTicket = targetBarista.queue[0];
 
@@ -609,6 +613,14 @@ export default function App() {
       ),
     );
 
+    if (live) {
+      void runLive(`${targetBarista.bayNumber}の「次へ」`, {
+        name: "next",
+        dripper: bayId,
+      });
+      return;
+    }
+
     setBaristas((prev) =>
       prev.map((b) => {
         if (b.id !== bayId) return b;
@@ -647,7 +659,7 @@ export default function App() {
   ) => {
     soundManager.playDispatch();
 
-    const orderToAssign = unassignedOrders.find(
+    const orderToAssign = boardUnassignedOrders.find(
       (o) => o.ticketUid === orderUidOrId || o.id === orderUidOrId,
     );
     if (!orderToAssign) return;
@@ -656,6 +668,14 @@ export default function App() {
       orderToAssign.preferredBaristaId !== targetBayId
     )
       return;
+    if (live) {
+      void runLive(`${orderToAssign.id}の割当`, {
+        name: "assign",
+        drip_id: orderToAssign.ticketUid,
+        dripper: targetBayId,
+      });
+      return;
+    }
     captureUndo(`${orderToAssign.id}の割当`);
 
     // Remove from unassigned
@@ -730,6 +750,16 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
+    if (live) {
+      void runLive(`${ticket.id}の割当変更`, {
+        name: "assign",
+        drip_id: ticket.ticketUid,
+        dripper: targetBayId,
+      });
+      setSelectedOrderId(null);
+      soundManager.playDispatch();
+      return;
+    }
     captureUndo(`${ticket.id}の割当変更`);
     const key = ticketKey(ticket);
     setBaristas((prev) => {
@@ -756,6 +786,7 @@ export default function App() {
       captureUndo("シフト交代");
     } else {
       undoSnapshotRef.current = null;
+      liveUndoRef.current = null;
       arrivalsAfterUndoSnapshotRef.current = [];
       setUndoLabel(null);
     }
@@ -799,6 +830,15 @@ export default function App() {
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
+    if (live) {
+      void runLive(`${ticket.id}を未割当に戻す`, {
+        name: "unassign",
+        drip_id: ticket.ticketUid,
+      });
+      setSelectedOrderId(null);
+      soundManager.playDispatch();
+      return;
+    }
     captureUndo(`${ticket.id}を未割当に戻す`);
     const key = ticketKey(ticket);
     setBaristas((prev) =>
@@ -851,6 +891,30 @@ export default function App() {
     if (!rebrewSource || !rebrewTicket) return;
     const { bayId: sourceBayId } = rebrewSource;
     const ticket = rebrewTicket;
+    if (live) {
+      const targetQueue =
+        boardBaristas.find((barista) => barista.id === decision.targetBayId)
+          ?.queue || [];
+      void runLive(`${ticket.id}の入れ直し`, {
+        name: "rebrew",
+        source_id: ticket.ticketUid,
+        cups: decision.cupCount,
+        interrupt: decision.interruptCurrent,
+        dripper: decision.targetBayId,
+        queue_pos:
+          decision.targetBayId === null
+            ? null
+            : queuePosAt(
+                targetQueue,
+                decision.insertIndex ?? targetQueue.length,
+              ),
+      });
+      setRebrewSource(null);
+      setSelectedTicketKey(null);
+      setSelectedOrderId(ticket.id);
+      soundManager.playDispatch();
+      return;
+    }
     captureUndo(`${ticket.id}の入れ直し`);
     const originalKey = ticketKey(ticket);
     const duration = decision.cupCount > 1 ? 195 : 135;
@@ -991,13 +1055,22 @@ export default function App() {
   };
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
-    const first = unassignedOrders.find(
+    const first = boardUnassignedOrders.find(
       (order) => (order.ticketUid || order.id) === firstUid,
     );
-    const second = unassignedOrders.find(
+    const second = boardUnassignedOrders.find(
       (order) => (order.ticketUid || order.id) === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
+    if (live) {
+      void runLive(`${first.id}と${second.id}の統合`, {
+        name: "merge",
+        first_id: firstUid,
+        second_id: secondUid,
+      });
+      setSelectedOrderId(null);
+      return;
+    }
     captureUndo(`${first.id}と${second.id}の統合`);
     setUnassignedOrders((prev) => {
       const sourceOrderIds = Array.from(
@@ -1049,9 +1122,8 @@ export default function App() {
     setBaristas(makeCleanBaristas());
     setBeans(INITIAL_BEANS);
     setUnassignedOrders([]);
-    posIngestedOrderIds.current.clear();
-    setPosIngestEpoch((epoch) => epoch + 1);
     undoSnapshotRef.current = null;
+    liveUndoRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
     setUndoLabel(null);
     setLearningLogs(INITIAL_LEARNING_LOGS);
@@ -1111,18 +1183,18 @@ export default function App() {
   };
 
   // Live cup totals shown in the header
-  const unassignedCardCups = unassignedOrders.reduce(
+  const unassignedCardCups = boardUnassignedOrders.reduce(
     (acc, cur) => acc + cur.cupCount,
     0,
   );
   const totalUnassignedDisplay = unassignedCardCups;
 
-  const currentBayQueueCups = baristas.reduce(
+  const currentBayQueueCups = boardBaristas.reduce(
     (acc, b) => acc + b.queue.reduce((qAcc, t) => qAcc + t.cupCount, 0),
     0,
   );
   const totalWaitingCupsDisplay = currentBayQueueCups;
-  const nextAvailable = [...baristas]
+  const nextAvailable = [...boardBaristas]
     .map((barista) => ({
       bayNumber: barista.bayNumber,
       seconds: queueWaitSeconds(barista.queue, barista.coefficient),
@@ -1136,7 +1208,7 @@ export default function App() {
       window.localStorage.setItem(
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
-          baristas,
+          baristas: boardBaristas,
           beans,
           learningLogs,
           testPlaySession,
@@ -1153,7 +1225,7 @@ export default function App() {
   const renderAuxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
-      baristas={baristas}
+      baristas={boardBaristas}
       beans={beans}
       learningLogs={learningLogs}
       salesOrders={
@@ -1237,7 +1309,7 @@ export default function App() {
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
           <ControlWorkspace
             mode={controlViewMode}
-            baristas={baristas}
+            baristas={boardBaristas}
             unassignedOrders={sortedUnassignedOrders}
             nextAvailable={nextAvailable}
             selectedOrderId={selectedOrderId}
@@ -1282,7 +1354,7 @@ export default function App() {
         <TicketDetailModal
           ticket={selectedTicket}
           currentBayId={
-            baristas.find((bay) =>
+            boardBaristas.find((bay) =>
               bay.queue.some(
                 (ticket) => ticketKey(ticket) === selectedTicketKey,
               ),
@@ -1302,7 +1374,7 @@ export default function App() {
         <AssignSlotModal
           bayId={assignSlotData.bayId}
           targetOrder={assignSlotData.order}
-          baristas={baristas}
+          baristas={boardBaristas}
           unassignedOrders={sortedUnassignedOrders}
           onClose={() => setAssignSlotData(null)}
           onAssign={handleAssignOrderToBay}
@@ -1313,10 +1385,19 @@ export default function App() {
         <RebrewPanel
           ticket={rebrewTicket}
           sourceBayId={rebrewSource.bayId}
-          baristas={baristas}
+          baristas={boardBaristas}
           onClose={() => setRebrewSource(null)}
           onConfirm={handleConfirmRebrew}
         />
+      )}
+
+      {liveError && (
+        <div
+          role="alert"
+          className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
+        >
+          {liveError}
+        </div>
       )}
 
       {testSetupOpen && (

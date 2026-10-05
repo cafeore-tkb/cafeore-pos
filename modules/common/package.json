@@ -5,6 +5,10 @@
   "exports": {
     ".": {
       "default": "./src/index.ts"
+    },
+    "./api-types": {
+      "types": "./src/types/api.ts",
+      "default": "./src/types/api.ts"
     }
   },
   "scripts": {

@@ -104,6 +104,9 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@cafeore/common':
+        specifier: workspace:*
+        version: link:../../modules/common
       '@tailwindcss/vite':
         specifier: ^4.1.14
         version: 4.2.1(vite@6.4.1(@types/node@22.20.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { type PosOrder, posOrdersSocketUrl } from "../utils/posOrders";
+import {
+  type Drip,
+  type PosOrder,
+  posOrdersSocketUrl,
+} from "../utils/posOrders";
 
 export type PosConnectionStatus =
   | "off"
@@ -9,17 +13,21 @@ export type PosConnectionStatus =
 
 type PosSocketMessage =
   | { type: "orders"; orders?: PosOrder[] }
+  | { type: "drips"; drips?: Drip[] }
   | { type: "master_state" };
 
-// cafeore-pos と同じ DB の注文を WebSocket で受け取る。
-// サーバーは接続直後と注文が変わるたびに全注文を送ってくるので、受け取った一覧で置き換える。
+// cafeore-pos の WebSocket（/api/ws/orders）で、注文と今日の抽出カードを受け取る。
+// サーバーは接続直後と、変わるたびに全部を送ってくる（DB から読み直したもの）ので、受け取った一覧で置き換える。
+// 0 件のときは orders・drips が省かれて届く。
 export const usePosOrders = (enabled: boolean, baseUrl: string) => {
   const [orders, setOrders] = useState<PosOrder[] | null>(null);
+  const [drips, setDrips] = useState<Drip[] | null>(null);
   const [status, setStatus] = useState<PosConnectionStatus>("off");
 
   useEffect(() => {
     if (!enabled) {
       setOrders(null);
+      setDrips(null);
       setStatus("off");
       return;
     }
@@ -37,8 +45,8 @@ export const usePosOrders = (enabled: boolean, baseUrl: string) => {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data) as PosSocketMessage;
-          // 注文が0件だと orders は省かれて届く。
           if (message.type === "orders") setOrders(message.orders ?? []);
+          if (message.type === "drips") setDrips(message.drips ?? []);
         } catch (error) {
           console.error("Failed to parse cafeore-pos message", error);
         }
@@ -61,5 +69,32 @@ export const usePosOrders = (enabled: boolean, baseUrl: string) => {
     };
   }, [enabled, baseUrl]);
 
-  return { orders, status };
+  return { orders, drips, status };
+};
+
+// 抽出カードへの操作（POST /api/caos/ops）。ルールに合わないときは理由（422 の error）を返す。
+export const postCaosOp = async (
+  baseUrl: string,
+  op: import("../utils/posOrders").CaosOp,
+): Promise<
+  | { result: import("../utils/posOrders").CaosOpResult; error?: undefined }
+  | { result?: undefined; error: string }
+> => {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/api/caos/ops`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(op),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok)
+      return {
+        error:
+          (body as { error?: string } | null)?.error ||
+          `操作に失敗しました（${res.status}）`,
+      };
+    return { result: body };
+  } catch {
+    return { error: "cafeore-pos につながりません" };
+  }
 };
