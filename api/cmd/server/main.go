@@ -91,6 +91,7 @@ func initDB() error {
 			&models.Order{},
 			&models.Comment{},
 			&models.OrderMenu{},
+			&models.OrderCup{},
 			&models.MasterState{},
 			&models.StockResource{},
 			&models.ItemStockUsage{},
@@ -292,6 +293,8 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+		api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
+		api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)

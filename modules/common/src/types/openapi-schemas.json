@@ -244,6 +244,36 @@
       }
     }
   },
+  "OrderCupResponse": {
+    "type": "object",
+    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_menu_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "このカップを含む注文明細のID（MenuInfo.id）"
+      },
+      "item": {
+        "$ref": "#/components/schemas/ItemResponse"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップが準備完了になった時刻。未準備なら null"
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップを提供した時刻。未提供なら null"
+      }
+    }
+  },
   "MenuInfoCreate": {
     "type": "object",
     "required": ["menu_id", "assignee"],
@@ -271,7 +301,8 @@
       "created_at",
       "billing_amount",
       "received",
-      "menus"
+      "menus",
+      "cups"
     ],
     "properties": {
       "id": {
@@ -312,6 +343,13 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MenuInfo"
+        }
+      },
+      "cups": {
+        "type": "array",
+        "description": "注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderCupResponse"
         }
       },
       "comments": {
