@@ -7,16 +7,6 @@ type props = {
   addItem: (item: WithId<MenuEntity>) => void;
 };
 
-// 種別ごとのボタンの色。ここに無い種別は既定の色になる
-const bgColor: Record<string, string> = {
-  hot: "bg-theme-primary hover:bg-theme-primary/70",
-  hotOre: "bg-ore hover:bg-ore/70",
-  iceOre: "bg-ore hover:bg-ore/70",
-  ice: "bg-ice hover:bg-ice/70",
-  milk: "bg-ice hover:bg-ice/70",
-  others: "bg-gray-500 hover:bg-gray-500/70",
-};
-
 type ItemTypeGroup = {
   itemType: ItemType;
   items: WithId<MenuEntity>[];
@@ -61,10 +51,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
             {items.map((item) => (
               <Button
                 key={item.id}
-                className={cn(
-                  "h-12.5 w-37.5 text-lg hover:ring-4",
-                  bgColor[itemType.name],
-                )}
+                className="h-12.5 w-37.5 text-lg hover:ring-4"
                 onClick={() => {
                   addItem(item);
                 }}
