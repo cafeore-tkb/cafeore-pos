@@ -135,6 +135,12 @@ func TestListenOrderChangesPublishesOtherInstancesOrders(t *testing.T) {
 		t.Fatalf("broadcast = %+v, want order_deleted %s", msg, orderID)
 	}
 
+	// ほかのインスタンスの確認の通知では何も配らない
+	if err := db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, listenProbePrefix+uuid.NewString()+" x").Error; err != nil {
+		t.Fatal(err)
+	}
+	noBroadcast(t, hub)
+
 	// 形の分からない通知なら全注文を配り直す
 	if err := db.Exec(`SELECT pg_notify('orders_changed', '')`).Error; err != nil {
 		t.Fatal(err)

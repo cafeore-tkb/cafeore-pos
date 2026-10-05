@@ -95,7 +95,7 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
-| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | 未設定 | `DATABASE_URL` がトランザクションプーラー（ポート 6543）なら、直接接続かセッションプーラーの接続文字列 |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（`DATABASE_URL` がセッションプーラーなので不要）。トランザクションプーラー（ポート 6543）に変えたら、直接接続かセッションプーラーの接続文字列 |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
@@ -130,7 +130,8 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 - ほかのインスタンスはそれを受けて注文を読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する
 - API を通さない書き換え（SQL で直接直すなど）は配られない。本番 DB は手で触らない
 - 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文を配り直す
-- LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
+- LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）や Neon の pooler では通知が届かない（エラーにもならない）。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
+- 待ち受けを始めたら自分宛てに確認の通知を送り、10 秒で届かなければ `WARNING: orders_changed の確認の通知が…` をログに出す。届けば `orders_changed: notifications are delivered`
 
 ### PR ごとの Neon ブランチ
 
