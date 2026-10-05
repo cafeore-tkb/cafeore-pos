@@ -285,7 +285,7 @@ func TestStoreNotifiesOtherInstances(t *testing.T) {
 	defer cancel()
 	conn, err := pgx.Connect(ctx, os.Getenv("CAOS_TEST_DATABASE_URL"))
 	must(t, err)
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 	_, err = conn.Exec(ctx, "LISTEN "+ChangedChannel)
 	must(t, err)
 
