@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
@@ -238,7 +239,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		h.lockCaos(tx, order.CreatedAt)
+		locked := h.lockCaos(tx, order.CreatedAt)
 		lines, err := loadOrderMenus(tx, order.ID, req.MenuIds, nil)
 		if err != nil {
 			return err
@@ -247,7 +248,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
-		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		if locked {
+			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
 		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
@@ -327,7 +330,11 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 
 	var applied []*caos.Applied
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		h.lockCaos(tx, order.CreatedAt)
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 明細の引き継ぎは、ロックを取ったあとに読み直した注文で行う
+		if err := preloadOrder(tx).First(&order, "id = ?", order.ID).Error; err != nil {
+			return err
+		}
 		orderMenus, err := loadOrderMenus(tx, order.ID, req.MenuIds, order.OrderMenus)
 		if err != nil {
 			return err
@@ -351,7 +358,9 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 				return err
 			}
 		}
-		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		if locked {
+			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
 		return nil
 	})
 	if err != nil {
@@ -404,7 +413,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	var applied []*caos.Applied
 	var deleted int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		h.lockCaos(tx, order.CreatedAt)
+		locked := h.lockCaos(tx, order.CreatedAt)
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
@@ -413,7 +422,9 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 			return result.Error
 		}
 		deleted = result.RowsAffected
-		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		if locked {
+			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
 		return nil
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -449,21 +460,26 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if order.ReadyAt == nil {
-		now := time.Now()
-		order.ReadyAt = &now
-	} else {
-		order.ReadyAt = nil
-	}
-
-	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	// 準備完了になったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		h.lockCaos(tx, order.CreatedAt)
-		if err := tx.Save(&order).Error; err != nil {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 切り替えは、ロックを取ったあとに読み直した状態で決める（待っている間に CaOS の「次へ」「1つ戻す」が
+		// ready_at を変えていても、古い値で上書きしたり逆に切り替えたりしない）。書くのも ready_at だけ
+		if err := lockOrder(tx, &order); err != nil {
 			return err
 		}
-		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		var readyAt *time.Time
+		if order.ReadyAt == nil {
+			now := time.Now()
+			readyAt = &now
+		}
+		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{"ready_at": readyAt}).Error; err != nil {
+			return err
+		}
+		if locked {
+			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
 		return nil
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -499,23 +515,25 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		return
 	}
 
-	if order.ServedAt == nil {
-		now := time.Now()
-		order.ServedAt = &now
-		order.ReadyAt = &now
-	} else {
-		order.ServedAt = nil
-		order.ReadyAt = nil
-	}
-
-	// 準備完了・提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
+	// 提供済みになったら、同じトランザクションで CaOS のその注文のカードを抽出終了にする
 	var applied []*caos.Applied
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		h.lockCaos(tx, order.CreatedAt)
-		if err := tx.Save(&order).Error; err != nil {
+		locked := h.lockCaos(tx, order.CreatedAt)
+		// 切り替えは、ロックを取ったあとに読み直した状態で決める（MarkOrderReady と同じ）。書くのも served_at と ready_at だけ
+		if err := lockOrder(tx, &order); err != nil {
 			return err
 		}
-		applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		var at *time.Time
+		if order.ServedAt == nil {
+			now := time.Now()
+			at = &now
+		}
+		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{"served_at": at, "ready_at": at}).Error; err != nil {
+			return err
+		}
+		if locked {
+			applied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
 		return nil
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -533,4 +551,9 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// lockOrder は tx の中で注文の行を読み直してロックする（読んでから書くまでに、ほかの処理に変えられないように）。
+func lockOrder(tx *gorm.DB, order *models.Order) error {
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(order, "id = ?", order.ID).Error
 }

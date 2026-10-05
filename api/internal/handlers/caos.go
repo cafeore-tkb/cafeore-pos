@@ -84,14 +84,18 @@ func publishCaos(hub *Hub, orders *OrderHandler, applied ...*caos.Applied) {
 // lockCaos は注文を書き込む前に、その注文の日の CaOS の盤面をロックする。注文を書き込む tx の最初に呼ぶ。
 //
 // ロックの順番を CaOS の操作（盤面 → 注文の ready_at）とそろえて、同じ注文を同時に触ったときのデッドロックを防ぐ。
-// 失敗しても（CaOS の表が無いなど）注文の書き込みは止めない。savepoint まで戻すので、取りかけたロックも残らない。
-func (h *OrderHandler) lockCaos(tx *gorm.DB, orderCreatedAt time.Time) {
+// 失敗しても（CaOS の表が無い・ロック待ちの打ち切りなど）注文の書き込みは止めない。savepoint まで戻すので、取りかけたロックも残らない。
+// 取れたかを返す。取れなかったときは syncCaos を呼ばないこと（注文の行を書いたあとに盤面をロックしに行くと、逆の順番になる）。
+// そのときのカードのずれは、次にその日の盤面を読んだとき（GET /api/caos/boards/{day}）に直る。
+func (h *OrderHandler) lockCaos(tx *gorm.DB, orderCreatedAt time.Time) bool {
 	if h.caos == nil {
-		return
+		return false
 	}
 	if err := tx.Transaction(func(sp *gorm.DB) error { return h.caos.LockBoard(sp, orderCreatedAt) }); err != nil {
-		log.Printf("caos: failed to lock the board (the order is still saved): %v", err)
+		log.Printf("caos: failed to lock the board, skipped syncing the cards (the order is still saved): %v", err)
+		return false
 	}
+	return true
 }
 
 // syncCaos は注文の変更を CaOS の盤面に反映する。注文を書き込む tx の中で呼ぶ。

@@ -267,8 +267,12 @@ func TestCaosLockTimeoutDoesNotBlockOrders(t *testing.T) {
 	holder := e.db.Begin()
 	mustDo(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", day).Error)
 	o := e.createOrder(t, 1, 1)
-	if !strings.Contains(logs.String(), "lock timeout") {
-		t.Fatalf("ロック待ちの打ち切りが起きていない：%s", logs.String())
+	if !strings.Contains(logs.String(), "lock timeout") || !strings.Contains(logs.String(), "skipped syncing") {
+		t.Fatalf("ロック待ちの打ち切りのあと、カードの連動を飛ばしていない：%s", logs.String())
+	}
+	// ロックが取れなかったので、注文の行を書いたあとに盤面をロックしに行かない（逆の順番にしない）
+	if strings.Contains(logs.String(), "failed to sync") {
+		t.Fatalf("ロックが取れないのに連動しようとした：%s", logs.String())
 	}
 	var got models.OrderResponse
 	if code := e.call(t, http.MethodGet, "/api/orders/"+o.Id.String(), nil, &got); code != http.StatusOK || len(got.Menus) != 1 {
@@ -279,5 +283,30 @@ func TestCaosLockTimeoutDoesNotBlockOrders(t *testing.T) {
 	var board caos.Snapshot
 	if e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board); len(board.Drips) != 1 {
 		t.Fatalf("ロックが外れたら、読んだときにカードが追いつく：%+v", board.Drips)
+	}
+}
+
+// POS の「準備完了」は、盤面のロックを取ったあとの注文の状態で切り替える。
+// ロックを待っている間に CaOS（の「次へ」）が準備完了にしていたら、それを古い状態で上書きせず、そこから切り替える。
+func TestCaosReadyToggleUsesStateAfterLock(t *testing.T) {
+	e := newCaosEnv(t)
+	day := caos.Day(time.Now())
+	o := e.createOrder(t, 1, 1)
+
+	holder := e.db.Begin()
+	mustDo(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", day).Error)
+	done := make(chan int, 1)
+	go func() { done <- e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/ready", nil, nil) }()
+	time.Sleep(300 * time.Millisecond) // 準備完了のリクエストが盤面のロックを待っている
+	mustDo(t, holder.Exec("UPDATE orders SET ready_at = now() WHERE id = ?", o.Id).Error)
+	mustDo(t, holder.Commit().Error)
+
+	if code := <-done; code != http.StatusOK {
+		t.Fatalf("準備完了が通らない：%d", code)
+	}
+	var got models.OrderResponse
+	e.call(t, http.MethodGet, "/api/orders/"+o.Id.String(), nil, &got)
+	if got.ReadyAt != nil {
+		t.Fatalf("ロックのあとの状態（準備完了）から切り替わるはず（未完了に戻る）：%v", got.ReadyAt)
 	}
 }
