@@ -373,6 +373,9 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
+	// 通知はまとめるために少し溜めてから送るので、止まる前に送り切る
+	activity.Close(ctx)
+
 	if sqlDB, err := db.DB(); err == nil {
 		if err := sqlDB.Close(); err != nil {
 			log.Printf("Failed to close database: %v", err)

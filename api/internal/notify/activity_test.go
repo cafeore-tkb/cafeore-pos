@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +61,32 @@ func TestActivitySendsWhenBatchIsFull(t *testing.T) {
 	}
 }
 
+func TestActivityCloseSendsPendingLines(t *testing.T) {
+	slack, received := activityServer(t)
+	a := newActivity(slack, time.Hour, 10)
+
+	a.Post("one")
+	a.Post("two")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	a.Close(ctx)
+	if text := receive(t, received); text != "one\ntwo" {
+		t.Fatalf("unexpected message: %q", text)
+	}
+}
+
+func TestActivityEscapesSlackMarkup(t *testing.T) {
+	slack, received := activityServer(t)
+	a := newActivity(slack, 10*time.Millisecond, 10)
+
+	a.Post("🆕 アイテムを追加: <!channel> & <@U123>")
+	if text := receive(t, received); text != "🆕 アイテムを追加: &lt;!channel&gt; &amp; &lt;@U123&gt;" {
+		t.Fatalf("unexpected message: %q", text)
+	}
+}
+
 func TestNilActivityIgnoresPosts(t *testing.T) {
 	var a *Activity
 	a.Post("nothing")
+	a.Close(context.Background())
 }

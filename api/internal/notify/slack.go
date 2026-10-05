@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,14 @@ type Slack struct {
 
 func NewSlack(url string) *Slack {
 	return &Slack{url: url, client: &http.Client{Timeout: 5 * time.Second}}
+}
+
+var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// EscapeText は Slack の文中で特別な意味を持つ & < > を逃がす
+// （<!channel> や <@U…> がメンション、<url|text> がリンクになるのを防ぐ）。
+func EscapeText(text string) string {
+	return slackEscaper.Replace(text)
 }
 
 func (s *Slack) Enabled() bool {
