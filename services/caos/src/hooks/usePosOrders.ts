@@ -13,11 +13,14 @@ export type PosConnectionStatus =
 
 type PosSocketMessage =
   | { type: "orders"; orders?: PosOrder[] }
+  | { type: "order"; order: PosOrder }
+  | { type: "order_deleted"; order_id: string }
   | { type: "drips"; drips?: Drip[] }
   | { type: "master_state" };
 
-// cafeore-pos の WebSocket（/api/ws/orders）で、注文と今日の抽出カードを受け取る。
-// サーバーは接続直後と、変わるたびに全部を送ってくる（DB から読み直したもの）ので、受け取った一覧で置き換える。
+// cafeore-pos の WebSocket（/api/ws/orders）で、注文と今日の抽出カードを受け取る（DB から読み直したもの）。
+// - 注文：つないだ直後に全部（orders）、そのあとは変わった 1 件（order）と消えた注文の ID（order_deleted）が届く
+// - カード：つないだ直後と、変わるたびに今日の分が全部（drips）届くので、受け取った一覧で置き換える
 // 0 件のときは orders・drips が省かれて届く。
 export const usePosOrders = (enabled: boolean, baseUrl: string) => {
   const [orders, setOrders] = useState<PosOrder[] | null>(null);
@@ -46,6 +49,21 @@ export const usePosOrders = (enabled: boolean, baseUrl: string) => {
         try {
           const message = JSON.parse(event.data) as PosSocketMessage;
           if (message.type === "orders") setOrders(message.orders ?? []);
+          if (message.type === "order") {
+            const order = message.order;
+            // 全部が届く前の 1 件は捨てる（全部の中に入っている）
+            setOrders((prev) =>
+              prev === null
+                ? prev
+                : prev.some((o) => o.id === order.id)
+                  ? prev.map((o) => (o.id === order.id ? order : o))
+                  : [...prev, order],
+            );
+          }
+          if (message.type === "order_deleted") {
+            const id = message.order_id;
+            setOrders((prev) => prev?.filter((o) => o.id !== id) ?? prev);
+          }
           if (message.type === "drips") setDrips(message.drips ?? []);
         } catch (error) {
           console.error("Failed to parse cafeore-pos message", error);

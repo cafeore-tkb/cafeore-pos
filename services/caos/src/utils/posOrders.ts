@@ -2,7 +2,7 @@ import type { components } from "@cafeore/common/api-types";
 import type { Barista, BeanCode } from "../types";
 
 // cafeore-pos の API の形（openapi/openapi.yaml から生成した型）。
-// 注文は WebSocket /api/ws/orders の {"type":"orders"}、抽出カードは {"type":"drips"} で届く。
+// 注文は WebSocket /api/ws/orders の {"type":"orders"}（全部）・{"type":"order"}（変わった 1 件）、抽出カードは {"type":"drips"} で届く。
 export type PosOrder = components["schemas"]["OrderResponse"];
 export type Drip = components["schemas"]["CaosDrip"];
 export type CaosOp = components["schemas"]["CaosOp"];
