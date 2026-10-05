@@ -9,6 +9,10 @@ on:
       - 'pnpm-lock.yaml'
   merge_group:
 
+# チェックアウトして検査するだけなので、GITHUB_TOKEN は読み取りだけにする
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: services/caos
