@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
+import { type Cup, type CupStatus, cupSchema, getCupStatus } from "./cup";
 import { MenuEntity, menuSchema } from "./menu";
 
 const AUTHORS = ["cashier", "master", "serve", "others"] as const;
@@ -28,11 +29,19 @@ export const orderSchema = z.object({
   DISCOUNT_PER_CUP: z.number(),
   discount: z.number(), // min(this.getCoffeeCups(), discountOrderCups) * DISCOUNT_PER_CUP
   estimateTime: z.number(), // seconds
+  // サーバーが作った1杯ずつのカップ。保存前の注文には無い
+  cups: z.array(cupSchema).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
 
 type OrderStatus = "preparing" | "calling" | "served";
+
+const ORDER_TO_CUP_STATUS: Record<OrderStatus, CupStatus> = {
+  preparing: "preparing",
+  calling: "ready",
+  served: "served",
+};
 
 export type OrderComment = z.infer<typeof commentSchema>;
 
@@ -85,6 +94,7 @@ export class OrderEntity implements Order {
     private readonly _DISCOUNT_PER_CUP: number,
     private _discount: number,
     private _estimateTime: number,
+    private readonly _cups: Cup[],
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -104,6 +114,7 @@ export class OrderEntity implements Order {
       STATIC_DISCOUNT_PER_CUP,
       0,
       -1,
+      [],
     );
   }
 
@@ -128,6 +139,7 @@ export class OrderEntity implements Order {
       order.DISCOUNT_PER_CUP,
       order.discount,
       order.estimateTime,
+      order.cups ?? [],
     );
   }
 
@@ -215,6 +227,10 @@ export class OrderEntity implements Order {
     this._estimateTime = estimateTime;
   }
 
+  get cups() {
+    return this._cups;
+  }
+
   // --------------------------------------------------
   // methods
   // --------------------------------------------------
@@ -246,6 +262,36 @@ export class OrderEntity implements Order {
 
   getDrinkCups() {
     return this.getItems().filter((item) => item.item_type.name !== "others");
+  }
+
+  /**
+   * マスター・提供画面に出すカップを1杯ずつ取得する
+   * サーバーが作ったカップ（cups）を正とし、カードとカップを1対1に対応させる。
+   * カップが無い注文（保存前など）は getDrinkCups() と同じ展開で、状態は注文単位のものを使う
+   */
+  getCups(): (ReturnType<OrderEntity["getItems"]>[number] & {
+    cupId: string | undefined;
+    status: CupStatus;
+  })[] {
+    if (this._cups.length === 0) {
+      const status = ORDER_TO_CUP_STATUS[this.status];
+      return this.getDrinkCups().map((item) => ({
+        ...item,
+        cupId: undefined,
+        status,
+      }));
+    }
+    return this._cups.map((cup) => ({
+      id: cup.item.id,
+      name: cup.item.name,
+      abbr: cup.item.abbr,
+      item_type: cup.item.item_type,
+      assignee:
+        this.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)
+          ?.assignee ?? null,
+      cupId: cup.id,
+      status: getCupStatus(cup),
+    }));
   }
 
   /**
@@ -374,6 +420,7 @@ export class OrderEntity implements Order {
       DISCOUNT_PER_CUP: this.DISCOUNT_PER_CUP,
       discount: this.discount,
       estimateTime: this.estimateTime,
+      cups: this.cups,
     };
   }
 

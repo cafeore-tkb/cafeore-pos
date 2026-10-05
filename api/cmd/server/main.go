@@ -92,6 +92,7 @@ func initDB() error {
 			&models.Order{},
 			&models.Comment{},
 			&models.OrderMenu{},
+			&models.OrderCup{},
 			&models.MasterState{},
 			&models.StockResource{},
 			&models.ItemStockUsage{},
@@ -258,7 +259,7 @@ func main() {
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
-	caosStore := caos.NewStore(db)
+	caosStore := caos.NewStore(db, handlers.SetOrderReady)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
 	// API 以外（SQL で直接直すなど）やほかのインスタンスでの注文・CaOS のカードの変更も画面へ届けるため、DB の通知を待ち受ける。
@@ -307,6 +308,8 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+		api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
+		api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)

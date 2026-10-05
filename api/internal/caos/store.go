@@ -65,26 +65,13 @@ type ReadyMark struct {
 	ReadyAt time.Time `json:"ready_at"`
 }
 
-// SetOrderReady は注文の準備完了を付ける・外す（ready_at だけを書く）。注文の行をロックしてから今の状態を見て、違うときだけ書く。
-// 既存の PATCH /api/orders/{id}/ready と、CaOS の「次へ」「1つ戻す」・統合相手の準備完了が、この同じ処理を使う。
-// 書いたときは、新しい ready_at（外したときは nil）と true を返す。注文が無ければ gorm.ErrRecordNotFound。
-func SetOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
-	var o models.Order
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "ready_at").First(&o, "id = ?", orderID).Error; err != nil {
-		return nil, false, err
-	}
-	if (o.ReadyAt != nil) == ready {
-		return o.ReadyAt, false, nil
-	}
-	var at *time.Time
-	if ready {
-		at = &now
-	}
-	if err := tx.Model(&models.Order{}).Where("id = ?", orderID).Update("ready_at", at).Error; err != nil {
-		return nil, false, err
-	}
-	return at, true, nil
-}
+// ReadyFunc は注文の準備完了を付ける・外す処理。POS の PATCH /api/orders/{id}/ready と同じ切り替え
+// （注文に付けるとカップにも同じ時刻を付け、外すとその時刻のカップを外す。handlers の setOrderReady）を、
+// 今の状態と違うときだけ行う。注文の行をロックしてから今の状態を見る。
+// 書いたときは、新しい注文の ready_at（外したときは nil）と true を返す。注文が無ければ gorm.ErrRecordNotFound。
+//
+// CaOS の「次へ」「1つ戻す」・統合相手の準備完了は、この処理で付け外しする。
+type ReadyFunc func(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error)
 
 // jsonValue は jsonb の列。
 type jsonValue[T any] struct{ V T }
@@ -166,15 +153,16 @@ func ParseDay(day string) (time.Time, error) {
 
 // Store は盤面の保存と、POS の注文との連動。
 type Store struct {
-	db    *gorm.DB
-	clock func() time.Time
+	db       *gorm.DB
+	setReady ReadyFunc
+	clock    func() time.Time
 	// 画面からの操作をどの日の盤面に行うか（テストで差し替える）
 	today func() string
 }
 
-// NewStore は Store を作る。
-func NewStore(db *gorm.DB) *Store {
-	return &Store{db: db, clock: MonotonicClock(time.Now), today: func() string { return Day(time.Now()) }}
+// NewStore は Store を作る。setReady は POS の準備完了の処理（ReadyFunc）。
+func NewStore(db *gorm.DB, setReady ReadyFunc) *Store {
+	return &Store{db: db, setReady: setReady, clock: MonotonicClock(time.Now), today: func() string { return Day(time.Now()) }}
 }
 
 // OrderRef は変わった注文（どの盤面かは注文を受けた日で決まる）。
@@ -288,7 +276,7 @@ func dayOrders(tx *gorm.DB, day string) ([]Order, error) {
 //
 // 全部を 1 つのトランザクションで行う（途中で失敗したら、カードも注文も操作の記録も全部取り消される）：
 //  1. 今日の盤面をロックし、今日の注文と照らし合わせてカードをそろえる（注文の連動が失敗していても、ここで追いつく）
-//  2. 操作を行う。カードが全部終わった注文は、既存の準備完了の処理（SetOrderReady）で準備完了にする
+//  2. 操作を行う。カードが全部終わった注文は、既存の準備完了の処理（ReadyFunc）で準備完了にする
 //  3. 操作の記録（caos_ops）を残す。「1つ戻す」（undo）は、この記録で戻す
 func (s *Store) Apply(op Op) (Result, error) {
 	day := s.today()
@@ -319,7 +307,8 @@ func (s *Store) Apply(op Op) (Result, error) {
 			return err
 		}
 		// 照らし合わせでカードが全部終わった注文（統合相手など）も準備完了にする（操作の記録には入れない）
-		if err := s.readyAll(tx, ingest.Completed.List()); err != nil {
+		caughtUp, err := s.readyAll(tx, ingest.Completed.List())
+		if err != nil {
 			return err
 		}
 		if err := s.persist(tx, day, b, mergeChanges(b, ingest, cs)); err != nil {
@@ -327,7 +316,7 @@ func (s *Store) Apply(op Op) (Result, error) {
 		}
 		res.Changed = b.Rows(cs.Changed.List())
 		res.Deleted = cs.Deleted.List()
-		res.Readied = readied
+		res.Readied = append(readied, caughtUp...)
 		return nil
 	})
 	if res.Deleted == nil {
@@ -349,7 +338,7 @@ func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (str
 	var marks []ReadyMark
 	var readied []string
 	for _, id := range cs.Completed.List() {
-		at, changed, err := SetOrderReady(tx, uuid.MustParse(id), true, now)
+		at, changed, err := s.setReady(tx, uuid.MustParse(id), true, now)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			continue
 		}
@@ -424,7 +413,7 @@ func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID stri
 	now := s.clock()
 	var unreadied []string
 	for _, m := range rec.Readied.V {
-		if _, _, err := SetOrderReady(tx, uuid.MustParse(m.OrderID), false, now); err != nil {
+		if _, _, err := s.setReady(tx, uuid.MustParse(m.OrderID), false, now); err != nil {
 			return nil, err
 		}
 		unreadied = append(unreadied, m.OrderID)
@@ -435,15 +424,23 @@ func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID stri
 	return unreadied, nil
 }
 
-// readyAll は注文をまとめて準備完了にする（消された注文は飛ばす）。
-func (s *Store) readyAll(tx *gorm.DB, ids []string) error {
+// readyAll は注文をまとめて準備完了にする（消された注文は飛ばす）。準備完了にした注文を返す。
+func (s *Store) readyAll(tx *gorm.DB, ids []string) ([]string, error) {
 	now := s.clock()
+	var readied []string
 	for _, id := range ids {
-		if _, _, err := SetOrderReady(tx, uuid.MustParse(id), true, now); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		_, changed, err := s.setReady(tx, uuid.MustParse(id), true, now)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			readied = append(readied, id)
 		}
 	}
-	return nil
+	return readied, nil
 }
 
 // mergeChanges は、照らし合わせと操作の変更を 1 つにまとめる（保存を 1 回で行い、途中の状態で抽出中の索引に引っかからないように）。
@@ -476,7 +473,8 @@ func (s *Store) Today() string { return s.today() }
 
 // OrdersChanged は POS で注文が作られた・変わった・消えたときに、その注文のカードをそろえる。注文のハンドラーの tx の中で呼ぶ。
 // POS で準備完了にした注文と統合していた相手の注文も、それでカードが全部終わったなら、同じ tx で準備完了にする。
-func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) error {
+// そうして準備完了にした注文を返す（ハンドラーが画面へ配る）。
+func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) ([]uuid.UUID, error) {
 	byDay := map[string][]uuid.UUID{}
 	var days []string
 	for _, r := range refs {
@@ -486,6 +484,7 @@ func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) error {
 		}
 		byDay[day] = append(byDay[day], r.ID)
 	}
+	var readied []uuid.UUID
 	for _, day := range days {
 		ids := byDay[day]
 		_, cs, err := s.withBoard(tx, day, func(tx *gorm.DB, b *Board, cs *Changeset) error {
@@ -507,33 +506,61 @@ func (s *Store) OrdersChanged(tx *gorm.DB, refs []OrderRef) error {
 			return nil
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := s.readyAll(tx, cs.Completed.List()); err != nil {
-			return err
+		done, err := s.readyAll(tx, cs.Completed.List())
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range done {
+			readied = append(readied, uuid.MustParse(id))
 		}
 	}
-	return nil
+	return readied, nil
 }
 
-// 販売終了（論理削除）したメニュー・商品の注文も、カードは作る
+// 作るもの（明細の品物と数）は、注文のカップ（order_cups。注文した時点の品物を 1 杯ずつ持つ）から読む。
+// カップを持つ前の注文は、メニューの構成から読む。販売終了（論理削除）したメニュー・商品の注文も、カードは作る
 func preloadOrderLines(db *gorm.DB) *gorm.DB {
 	unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
 	return db.Preload("OrderMenus.Menu", unscoped).
 		Preload("OrderMenus.Menu.MenuItems").
 		Preload("OrderMenus.Menu.MenuItems.Item", unscoped).
-		Preload("OrderMenus.Menu.MenuItems.Item.ItemType", unscoped)
+		Preload("OrderMenus.Menu.MenuItems.Item.ItemType", unscoped).
+		Preload("OrderCups", func(db *gorm.DB) *gorm.DB { return db.Order("order_cups.position") }).
+		Preload("OrderCups.Item", unscoped).
+		Preload("OrderCups.Item.ItemType", unscoped)
 }
 
 func toOrders(orders []models.Order) []Order {
 	out := make([]Order, 0, len(orders))
 	for _, o := range orders {
 		order := Order{ID: o.ID.String(), OrderNo: o.OrderId, CreatedAt: o.CreatedAt, Ready: o.ReadyAt != nil, Served: o.ServedAt != nil}
+		cups := map[uuid.UUID][]models.OrderCup{}
+		for _, cup := range o.OrderCups {
+			cups[cup.OrderMenuID] = append(cups[cup.OrderMenuID], cup)
+		}
 		for _, line := range o.OrderMenus {
-			for _, mi := range line.Menu.MenuItems {
+			if len(cups[line.ID]) == 0 {
+				for _, mi := range line.Menu.MenuItems {
+					order.Lines = append(order.Lines, OrderLine{
+						Assignee: line.Assignee, ItemID: mi.Item.ID.String(), Name: mi.Item.Name, Abbr: mi.Item.Abbr,
+						Type: mi.Item.ItemType.Name, Quantity: mi.Quantity,
+					})
+				}
+				continue
+			}
+			// 同じ明細の同じ品物のカップは 1 行にまとめる（並びはカップの順）
+			at := map[uuid.UUID]int{}
+			for _, cup := range cups[line.ID] {
+				if i, ok := at[cup.ItemID]; ok {
+					order.Lines[i].Quantity++
+					continue
+				}
+				at[cup.ItemID] = len(order.Lines)
 				order.Lines = append(order.Lines, OrderLine{
-					Assignee: line.Assignee, ItemID: mi.Item.ID.String(), Name: mi.Item.Name, Abbr: mi.Item.Abbr,
-					Type: mi.Item.ItemType.Name, Quantity: mi.Quantity,
+					Assignee: line.Assignee, ItemID: cup.ItemID.String(), Name: cup.Item.Name, Abbr: cup.Item.Abbr,
+					Type: cup.Item.ItemType.Name, Quantity: 1,
 				})
 			}
 		}

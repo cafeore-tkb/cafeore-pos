@@ -111,4 +111,37 @@ func TestPreloadOrderUnscopesOnlyHistoricalMenu(t *testing.T) {
 	if _, ok := query.Statement.Preloads["OrderMenus.Menu.MenuItems.Item.ItemType"]; !ok {
 		t.Fatal("must preload menu composition")
 	}
+	cupScope := query.Statement.Preloads["OrderCups"][0].(func(*gorm.DB) *gorm.DB)
+	var cups []models.OrderCup
+	if cupSQL := cupScope(db).Find(&cups).Statement.SQL.String(); !strings.Contains(cupSQL, "ORDER BY order_cups.position") {
+		t.Fatalf("cups must be ordered by position: %s", cupSQL)
+	}
+	itemScope := query.Statement.Preloads["OrderCups.Item"][0].(func(*gorm.DB) *gorm.DB)
+	var items []models.Item
+	if itemSQL := itemScope(db).Find(&items).Statement.SQL.String(); strings.Contains(itemSQL, "IS NULL") {
+		t.Fatalf("cups must show deleted items: %s", itemSQL)
+	}
+}
+
+func TestOrderResponseIncludesCups(t *testing.T) {
+	served := time.Now()
+	lineID, cupID := uuid.New(), uuid.New()
+	item := models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemType: models.ItemType{Name: "hot"}}
+	response := toOrderResponse(&models.Order{OrderCups: []models.OrderCup{
+		{ID: cupID, OrderMenuID: lineID, Item: item, ReadyAt: &served, ServedAt: &served},
+		{ID: uuid.New(), OrderMenuID: lineID, Item: item},
+	}})
+	got := response.Cups[0]
+	if got.Id != cupID || got.OrderMenuId != lineID || got.Item.Abbr != "ブ" || got.Item.ItemType.Name != "hot" {
+		t.Fatalf("missing cup fields: %+v", got)
+	}
+	if !sameTime(got.ReadyAt, &served) || !sameTime(got.ServedAt, &served) {
+		t.Fatalf("missing cup status: %+v", got)
+	}
+	if response.Cups[1].ReadyAt != nil || response.Cups[1].ServedAt != nil {
+		t.Fatalf("preparing cup must have no timestamps: %+v", response.Cups[1])
+	}
+	if toOrderResponse(&models.Order{}).Cups == nil {
+		t.Fatal("empty cups must serialize as []")
+	}
 }

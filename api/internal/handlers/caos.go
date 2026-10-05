@@ -2,20 +2,24 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/caos"
+	"cafeore-pos/api/internal/models"
 )
 
 // CaosHandler は CaOS（ドリップ管制）の盤面への操作の API。
 //
 // 盤面のカードは、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
-// 注文の中身は既存の {"type":"orders"} から。準備完了は、操作と同じトランザクションで既存の準備完了の処理（SetOrderReady）で付ける。
+// 注文の中身は既存の {"type":"orders"}・{"type":"order"} から。準備完了は、操作と同じトランザクションで
+// 既存の準備完了の処理（SetOrderReady。PATCH /ready と同じ切り替え）で付ける。
 type CaosHandler struct {
 	store  *caos.Store
 	orders *OrderHandler
@@ -47,11 +51,33 @@ func (h *CaosHandler) ApplyOp(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, res)
-	h.orders.broadcastDrips()
-	// 準備完了を付けた・外した注文があれば、POS の画面にも配り直す
-	if len(res.Readied) > 0 {
-		h.orders.broadcastOrders()
+	// 準備完了を付けた・外した注文は、POS の画面にもその注文を配る
+	readied := make([]uuid.UUID, 0, len(res.Readied))
+	for _, id := range res.Readied {
+		readied = append(readied, uuid.MustParse(id))
 	}
+	h.orders.publishCaosChanges(readied)
+}
+
+// SetOrderReady は CaOS が注文の準備完了を付ける・外す処理（caos.ReadyFunc）。
+// PATCH /api/orders/{id}/ready と同じ切り替え（toggleOrderReady）を、今の状態と違うときだけ行う。
+// 付けるとまだのカップにも同じ時刻を付け、外すとその時刻で付いたカップを外す（先に個別に付けたカップは残る）。
+func SetOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
+	order, err := lockOrderWith(tx, orderID)
+	if err != nil {
+		return nil, false, err
+	}
+	if (order.ReadyAt != nil) == ready {
+		return order.ReadyAt, false, nil
+	}
+	before := order
+	before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
+	// DB に保存される精度にそろえておくと、記録した時刻と読み直した時刻を比べられる（「1つ戻す」の確かめ）
+	toggleOrderReady(&order, now.Truncate(time.Microsecond))
+	if err := saveOrderStatus(tx, &before, &order); err != nil {
+		return nil, false, err
+	}
+	return order.ReadyAt, true, nil
 }
 
 // lockCaos は注文を書き込む前に、その注文の日の CaOS の盤面をロックする。注文を書き込む tx の最初に呼ぶ。
@@ -71,19 +97,55 @@ func (h *OrderHandler) lockCaos(tx *gorm.DB, orderCreatedAt time.Time) bool {
 	return true
 }
 
+// lockCaosForOrder は、既にある注文を書き換える前に lockCaos を呼ぶ（注文を受けた日を読んでから）。
+// 注文が無ければ gorm.ErrRecordNotFound。
+func (h *OrderHandler) lockCaosForOrder(tx *gorm.DB, orderID uuid.UUID) (bool, error) {
+	if h.caos == nil {
+		return false, nil
+	}
+	var order models.Order
+	if err := tx.Select("id", "created_at").First(&order, "id = ?", orderID).Error; err != nil {
+		return false, err
+	}
+	return h.lockCaos(tx, order.CreatedAt), nil
+}
+
 // syncCaos は注文の変更を CaOS の盤面に反映する。注文を書き込む tx の中で、lockCaos が取れたときだけ呼ぶ。
+// それで準備完了にした注文（統合していた相手の注文）を返す。
 // CaOS の処理が失敗しても注文の書き込みは止めない（savepoint まで戻してログに残すだけ）。
 //
 // SQL のエラーだけでなく、ロック待ちの打ち切りやデッドロックの検出も、Postgres ではその savepoint の中のエラーなので
 // 戻せば注文の tx は続けられる（caos_test.go で確かめている）。接続が切れたときは、CaOS と関係なく注文自体も失敗する。
-func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) {
-	if err := tx.Transaction(func(sp *gorm.DB) error { return h.caos.OrdersChanged(sp, refs) }); err != nil {
+func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) []uuid.UUID {
+	var readied []uuid.UUID
+	if err := tx.Transaction(func(sp *gorm.DB) error {
+		var err error
+		readied, err = h.caos.OrdersChanged(sp, refs)
+		return err
+	}); err != nil {
 		log.Printf("caos: failed to sync orders (the order itself is saved): %v", err)
+		return nil
+	}
+	return readied
+}
+
+// publishCaosChanges は、注文の変更や CaOS の操作のあとに、今日のカードと、準備完了を付け外しした注文を画面へ配る。
+func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
+	h.broadcastDrips()
+	for _, id := range readied {
+		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("caos: failed to publish order %s: %v", id, err)
+		}
 	}
 }
 
-// broadcastDrips は今日のカードの配信を依頼する。すぐに戻り、少し待ってから 1 回だけ送る（broadcastOrders と同じ）。
-// API で書き換えると、ハンドラー自身と DB の caos_drips_changed 通知（ListenOrderChanges）の両方から依頼が来る。
+// カードの配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。
+//
+// カードは今日の分を全部送るので、API で書き換えたときにハンドラー自身と DB の caos_drips_changed 通知
+// （ListenOrderChanges）の両方から来る依頼を、二重に送らないようにしている。
+const dripsBroadcastDelay = 30 * time.Millisecond
+
+// broadcastDrips は今日のカードの配信を依頼する。すぐに戻り、少し待ってから 1 回だけ送る。
 func (h *OrderHandler) broadcastDrips() {
 	if h.caos == nil {
 		return
@@ -97,7 +159,7 @@ func (h *OrderHandler) broadcastDrips() {
 
 func (h *OrderHandler) runDripsBroadcaster() {
 	for range h.dripsRequests {
-		time.Sleep(orderBroadcastDelay)
+		time.Sleep(dripsBroadcastDelay)
 		select {
 		case <-h.dripsRequests:
 		default:

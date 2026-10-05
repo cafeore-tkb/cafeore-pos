@@ -60,11 +60,11 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	}
 	mustDo(t, db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
 	mustDo(t, db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
-		&models.OrderMenu{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
+		&models.OrderMenu{}, &models.OrderCup{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
 	sql, err := os.ReadFile("../../sql/2026-10_caos.sql")
 	mustDo(t, err)
 	mustDo(t, db.Exec(string(sql)).Error)
-	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
+	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	mustDo(t, db.Create(&hot).Error)
@@ -77,7 +77,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	gin.SetMode(gin.TestMode)
 	hub := NewHub()
 	go hub.Run()
-	store := caos.NewStore(db)
+	store := caos.NewStore(db, SetOrderReady)
 	orders := NewOrderHandler(db, hub, NewInventory(db, notify.NewSlack(""), RemindAuth{}, ""), store)
 	c := NewCaosHandler(store, orders)
 	r := gin.New()
@@ -86,6 +86,8 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	r.GET("/api/orders/:id", orders.GetOrder)
 	r.PUT("/api/orders/:id", orders.UpdateOrder)
 	r.PATCH("/api/orders/:id/ready", orders.MarkOrderReady)
+	r.PATCH("/api/orders/:id/served", orders.MarkOrderServed)
+	r.PATCH("/api/orders/:id/cups/:cupId/ready", orders.MarkOrderCupReady)
 	r.DELETE("/api/orders/:id", orders.DeleteOrder)
 	r.POST("/api/caos/ops", c.ApplyOp)
 	return &caosEnv{db: db, dsn: dsn, router: r, orders: orders, store: store, menu: menu.ID}
@@ -212,6 +214,51 @@ func TestCaosThroughHTTP(t *testing.T) {
 	e.call(t, http.MethodDelete, "/api/orders/"+o3.Id.String(), nil, nil)
 	if d := e.cards(t); len(d) != 2 {
 		t.Fatalf("消した注文のカードが残っている：%+v", d)
+	}
+}
+
+// CaOS の準備完了は、POS の PATCH /ready と同じくカップにも付く。1つ戻すと、その操作で付いたカップだけ外れる
+// （先にカップ単位で付けていた準備完了は残る）。カップ単位で全部付けたときも、カードが終わる。
+func TestCaosReadyFollowsCups(t *testing.T) {
+	e := newCaosEnv(t)
+	o := e.createOrder(t, 1, 2)
+	if len(o.Cups) != 2 {
+		t.Fatalf("2 杯の注文：%+v", o.Cups)
+	}
+	if code := e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/cups/"+o.Cups[0].Id.String()+"/ready", nil, nil); code != http.StatusOK {
+		t.Fatalf("カップの準備完了：%d", code)
+	}
+	early := e.order(t, o.Id).Cups[0].ReadyAt
+	for _, d := range e.cards(t) {
+		e.op(t, map[string]any{"name": "assign", "drip_id": d.ID, "dripper": 1}, nil)
+	}
+	var res caos.Result
+	if code := e.op(t, map[string]any{"name": "next", "dripper": 1}, &res); code != http.StatusOK || len(res.Readied) != 1 {
+		t.Fatalf("次へで準備完了：%d %+v", code, res)
+	}
+	got := e.order(t, o.Id)
+	if got.ReadyAt == nil || !got.Cups[0].ReadyAt.Equal(*early) || !got.Cups[1].ReadyAt.Equal(*got.ReadyAt) {
+		t.Fatalf("まだのカップにだけ同じ時刻が付く：%v %v %v", got.ReadyAt, got.Cups[0].ReadyAt, got.Cups[1].ReadyAt)
+	}
+	if code := e.op(t, map[string]any{"name": "undo", "op_id": res.OpID}, nil); code != http.StatusOK {
+		t.Fatalf("1つ戻す：%d", code)
+	}
+	got = e.order(t, o.Id)
+	if got.ReadyAt != nil || got.Cups[0].ReadyAt == nil || got.Cups[1].ReadyAt != nil {
+		t.Fatalf("その操作で付いたカップだけ外れる：%v %v %v", got.ReadyAt, got.Cups[0].ReadyAt, got.Cups[1].ReadyAt)
+	}
+
+	// 残りのカップも POS でカップ単位に付けると、注文が準備完了になり、カードも終わる
+	if code := e.call(t, http.MethodPatch, "/api/orders/"+o.Id.String()+"/cups/"+o.Cups[1].Id.String()+"/ready", nil, nil); code != http.StatusOK {
+		t.Fatalf("カップの準備完了：%d", code)
+	}
+	if e.order(t, o.Id).ReadyAt == nil {
+		t.Fatal("全カップがそろうと注文も準備完了")
+	}
+	for _, d := range e.cards(t) {
+		if d.Status != caos.StatusDone {
+			t.Fatalf("カップ単位の準備完了でもカードが終わる：%+v", d)
+		}
 	}
 }
 
@@ -366,8 +413,8 @@ func putBody(o models.OrderResponse, readyAt, servedAt *time.Time) map[string]an
 		"ready_at": readyAt, "served_at": servedAt, "menu_ids": menus}
 }
 
-// 古い画面から（未完了のまま）編集しても、付いている準備完了は消えない。
-// PUT で提供済みにする使い方（POS の beServed）は今までどおり動き、カードも終わる。
+// 古い画面から（未完了のまま）編集しても、CaOS が付けた準備完了は消えない（カップのある注文の状態はカップから決まる）。
+// 提供済みにすると（PATCH /served）、カードも終わる。
 func TestCaosPutKeepsReady(t *testing.T) {
 	e := newCaosEnv(t)
 	o := e.createOrder(t, 1, 1)
@@ -378,12 +425,15 @@ func TestCaosPutKeepsReady(t *testing.T) {
 	if code := e.call(t, http.MethodPut, "/api/orders/"+o.Id.String(), putBody(o, nil, nil), &got); code != http.StatusOK || got.ReadyAt == nil {
 		t.Fatalf("古い画面からの編集で準備完了が消えた：%d %v", code, got.ReadyAt)
 	}
-	now := time.Now()
-	if code := e.call(t, http.MethodPut, "/api/orders/"+o.Id.String(), putBody(got, &now, &now), &got); code != http.StatusOK || got.ServedAt == nil {
-		t.Fatalf("PUT で提供済みにできる：%d %v", code, got.ServedAt)
+	for _, cup := range got.Cups {
+		if cup.ReadyAt == nil || !cup.ReadyAt.Equal(*got.ReadyAt) {
+			t.Fatalf("CaOS の準備完了はカップにも同じ時刻で付く：%v %v", cup.ReadyAt, got.ReadyAt)
+		}
 	}
 	o2 := e.createOrder(t, 2, 1)
-	e.call(t, http.MethodPut, "/api/orders/"+o2.Id.String(), putBody(o2, &now, &now), nil)
+	if code := e.call(t, http.MethodPatch, "/api/orders/"+o2.Id.String()+"/served", nil, nil); code != http.StatusOK {
+		t.Fatalf("提供済みにできない：%d", code)
+	}
 	for _, d := range e.cards(t) {
 		if d.Status != caos.StatusDone {
 			t.Fatalf("提供済みにした注文のカードが終わっていない：%+v", d)
@@ -406,6 +456,7 @@ func TestCaosOrderDeletedWhileWaitingIs404(t *testing.T) {
 			}
 		}()
 		time.Sleep(300 * time.Millisecond) // リクエストが盤面のロックを待っている
+		mustDo(t, holder.Exec("DELETE FROM order_cups WHERE order_id = ?", o.Id).Error)
 		mustDo(t, holder.Exec("DELETE FROM order_menus WHERE order_id = ?", o.Id).Error)
 		mustDo(t, holder.Exec("DELETE FROM orders WHERE id = ?", o.Id).Error)
 		mustDo(t, holder.Commit().Error)
