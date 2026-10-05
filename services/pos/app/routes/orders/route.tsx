@@ -49,10 +49,6 @@ export default function Order() {
         <Input type="text" name="id" required placeholder="id" />
         <Button type="submit">削除</Button>
       </Form>
-      <Form method="put">
-        <Input type="text" name="id" required placeholder="id" />
-        <Button type="submit">更新</Button>
-      </Form>
     </div>
   );
 }

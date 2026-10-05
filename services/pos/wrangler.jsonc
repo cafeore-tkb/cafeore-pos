@@ -19,7 +19,6 @@
   "assets": {
     "directory": "./build/client",
     // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
-    // Firebase Hosting 側の rewrites（firebase.json）と同じ挙動。
     "not_found_handling": "single-page-application"
   }
 }

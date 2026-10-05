@@ -3,6 +3,7 @@ package caos
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
 	"cafeore-pos/api/internal/models"
@@ -36,13 +38,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}); err != nil {
+	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(mustRead(t, "../../sql/2026-10_caos.sql")).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE caos_drips, caos_ops, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
+	if err := db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -107,7 +109,8 @@ func createOrder(t *testing.T, s *Store, db *gorm.DB, no int, at time.Time, menu
 		if err := tx.Create(&o).Error; err != nil {
 			return err
 		}
-		return s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
+		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
+		return err
 	}))
 	return o
 }
@@ -119,8 +122,27 @@ func drips(t *testing.T, s *Store) []Drip {
 	return d
 }
 
+// 注文の ready_at だけを付け外しする ReadyFunc。カップも含めた本物（handlers.SetOrderReady）は handlers の caos_test.go で確かめる
+func setReadyAt(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
+	var o models.Order
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "ready_at").First(&o, "id = ?", orderID).Error; err != nil {
+		return nil, false, err
+	}
+	if (o.ReadyAt != nil) == ready {
+		return o.ReadyAt, false, nil
+	}
+	var at *time.Time
+	if ready {
+		at = &now
+	}
+	if err := tx.Model(&models.Order{}).Where("id = ?", orderID).Update("ready_at", at).Error; err != nil {
+		return nil, false, err
+	}
+	return at, true, nil
+}
+
 func newStore(db *gorm.DB) *Store {
-	s := NewStore(db)
+	s := NewStore(db, setReadyAt)
 	s.today = func() string { return testDay }
 	return s
 }
@@ -323,15 +345,21 @@ func TestStorePosReadyAndDelete(t *testing.T) {
 	_, err := s.Apply(Op{Name: "merge", FirstID: d[0].ID, SecondID: d[1].ID})
 	must(t, err)
 
-	// POS で #1 を準備完了 → 統合カードが終わり、#2 も同じ tx で準備完了になる
+	// POS で #1 を準備完了 → 統合カードが終わり、#2 も同じ tx で準備完了になる（ハンドラーが配れるよう #2 を返す）
+	var readied []uuid.UUID
 	must(t, db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&o1).Update("ready_at", time.Now()).Error; err != nil {
 			return err
 		}
-		return s.OrdersChanged(tx, []OrderRef{{ID: o1.ID, CreatedAt: o1.CreatedAt}})
+		var err error
+		readied, err = s.OrdersChanged(tx, []OrderRef{{ID: o1.ID, CreatedAt: o1.CreatedAt}})
+		return err
 	}))
 	if readyAt(t, db, o2.ID) == nil || drips(t, s)[0].Status != StatusDone {
 		t.Fatal("POS の準備完了で統合相手も準備完了になる")
+	}
+	if len(readied) != 1 || readied[0] != o2.ID {
+		t.Fatalf("準備完了にした統合相手を返す：%v", readied)
 	}
 
 	// 注文の削除：未割当のカードが片付く
@@ -343,7 +371,8 @@ func TestStorePosReadyAndDelete(t *testing.T) {
 		if err := tx.Delete(&models.Order{}, "id = ?", o3.ID).Error; err != nil {
 			return err
 		}
-		return s.OrdersChanged(tx, []OrderRef{{ID: o3.ID, CreatedAt: o3.CreatedAt}})
+		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o3.ID, CreatedAt: o3.CreatedAt}})
+		return err
 	}))
 	for _, d := range drips(t, s) {
 		if slices.Contains(d.OrderIDs, o3.ID.String()) {
@@ -428,5 +457,44 @@ func TestStoreTriggerNotifies(t *testing.T) {
 	createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
 	if _, err := conn.WaitForNotification(ctx); err != nil {
 		t.Fatalf("カードができたら通知が届く：%v", err)
+	}
+}
+
+// 作るものは注文のカップ（注文した時点の品物）から読む。後からメニューの構成が変わっても、カードは変わらない。
+// カップを持たない注文（カップを持つ前の注文）は、メニューの構成から読む。
+func TestStoreLinesFromCups(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := newStore(db)
+	var champ models.Item
+	must(t, db.First(&champ, "abbr = ?", "優勝").Error)
+
+	// メニューは今「ミルク」（カードを作らない品物）だが、注文した時点では「優勝」2 杯だった注文
+	o := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: dayStart.Add(10 * time.Hour), BillingAmount: 500, Received: 500}
+	line := models.OrderMenu{ID: uuid.New(), OrderID: o.ID, MenuID: cat.milk, MenuName: "x", UnitPrice: 500}
+	o.OrderMenus = []models.OrderMenu{line}
+	for i := range 2 {
+		o.OrderCups = append(o.OrderCups, models.OrderCup{ID: uuid.New(), OrderID: o.ID, OrderMenuID: line.ID, ItemID: champ.ID, Position: i})
+	}
+	legacy := createOrder(t, s, db, 2, dayStart.Add(11*time.Hour), cat.champ)
+	must(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&o).Error; err != nil {
+			return err
+		}
+		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
+		return err
+	}))
+
+	cups := map[string]string{}
+	for _, d := range drips(t, s) {
+		for _, l := range d.Lines {
+			cups[l.OrderID] += fmt.Sprintf("%s×%d", l.ItemID, l.Cups)
+		}
+	}
+	if want := fmt.Sprintf("%s×2", champ.ID); cups[o.ID.String()] != want {
+		t.Fatalf("カップの品物で作る：%q, want %q", cups[o.ID.String()], want)
+	}
+	if want := fmt.Sprintf("%s×1", champ.ID); cups[legacy.ID.String()] != want {
+		t.Fatalf("カップの無い注文はメニューの構成で作る：%q, want %q", cups[legacy.ID.String()], want)
 	}
 }
