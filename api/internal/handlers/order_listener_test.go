@@ -39,13 +39,6 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 		&models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{}); err != nil {
 		t.Fatal(err)
 	}
-	trigger, err := os.ReadFile("../../sql/2026-10_orders_notify.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(string(trigger)).Error; err != nil {
-		t.Fatal(err)
-	}
 	return db, dsn
 }
 
@@ -69,7 +62,7 @@ func noBroadcast(t *testing.T, h *Hub) {
 	}
 }
 
-func TestListenOrderChangesPublishesChangedOrder(t *testing.T) {
+func TestListenOrderChangesPublishesOtherInstancesOrders(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
 	h := NewOrderHandler(db, hub, nil)
@@ -82,8 +75,6 @@ func TestListenOrderChangesPublishesChangedOrder(t *testing.T) {
 		t.Fatalf("first broadcast = %s, want orders", msg.Type)
 	}
 
-	// API を通さず SQL で書き換えても、変わった注文 1 件が届く。
-	// 同じトランザクションで注文・明細・カップを何行書き換えても、届くのは 1 回
 	itemType := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	item := models.Item{Name: "ブレンド", Abbr: "ブ", ItemType: itemType}
 	menu := models.Menu{Name: "ブレンド", Abbr: "ブ", Price: 500, Key: "blend"}
@@ -94,37 +85,40 @@ func TestListenOrderChangesPublishesChangedOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	orderID, lineID := uuid.New(), uuid.New()
-	args := map[string]any{"order": orderID, "line": lineID, "menu": menu.ID, "item": item.ID}
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		for _, sql := range []string{
-			`INSERT INTO orders (id, order_id, created_at, billing_amount, received) VALUES (@order, 1, now(), 500, 500)`,
-			`INSERT INTO order_menus (id, order_id, menu_id, menu_name, unit_price) VALUES (@line, @order, @menu, 'ブレンド', 500)`,
-			`INSERT INTO order_cups (order_id, order_menu_id, item_id, position) VALUES (@order, @line, @item, 0), (@order, @line, @item, 1)`,
-		} {
-			if err := tx.Exec(sql, args).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	order := models.Order{
+		ID: orderID, OrderId: 1, CreatedAt: time.Now(), BillingAmount: 500, Received: 500,
+		OrderMenus: []models.OrderMenu{{ID: lineID, MenuID: menu.ID, MenuName: "ブレンド", UnitPrice: 500}},
+		OrderCups: []models.OrderCup{
+			{OrderMenuID: lineID, ItemID: item.ID, Position: 0},
+			{OrderMenuID: lineID, ItemID: item.ID, Position: 1},
+		},
+	}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// このインスタンスで書き換えたときは、その場で 1 回だけ配る（自分の通知では配り直さない）
+	if _, err := publishOrder(db, hub, orderID); err != nil {
 		t.Fatal(err)
 	}
 	msg := nextBroadcast(t, hub)
-	if msg.Type != WSMessageTypeOrder || msg.Order == nil || uuid.UUID(msg.Order.Id) != orderID || len(msg.Order.Cups) != 2 {
+	if msg.Type != WSMessageTypeOrder || uuid.UUID(msg.Order.Id) != orderID || len(msg.Order.Cups) != 2 {
 		t.Fatalf("broadcast = %+v, want order %s with 2 cups", msg, orderID)
 	}
 	noBroadcast(t, hub)
 
-	// カップだけの書き換えでも、その注文が届く
+	// ほかのインスタンスで書き換わったら、通知を受けてその注文を読み直して配る
 	if err := db.Exec(`UPDATE order_cups SET ready_at = now() WHERE order_id = ? AND position = 0`, orderID).Error; err != nil {
 		t.Fatal(err)
 	}
+	notifyFromOtherInstance(t, db, orderID.String())
 	msg = nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeOrder || msg.Order.Cups[0].ReadyAt == nil {
 		t.Fatalf("broadcast = %+v, want order with first cup ready", msg)
 	}
+	noBroadcast(t, hub)
 
-	// 消した注文は削除として届く
+	// ほかのインスタンスで消えた注文は削除として届く
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		for _, sql := range []string{`DELETE FROM order_cups WHERE order_id = ?`, `DELETE FROM order_menus WHERE order_id = ?`, `DELETE FROM orders WHERE id = ?`} {
 			if err := tx.Exec(sql, orderID).Error; err != nil {
@@ -135,16 +129,24 @@ func TestListenOrderChangesPublishesChangedOrder(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	notifyFromOtherInstance(t, db, orderID.String())
 	msg = nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeOrderDeleted || msg.OrderID == nil || *msg.OrderID != orderID {
 		t.Fatalf("broadcast = %+v, want order_deleted %s", msg, orderID)
 	}
 
-	// 注文 ID の載っていない通知（以前の版のトリガー）なら全注文を配り直す
+	// 形の分からない通知なら全注文を配り直す
 	if err := db.Exec(`SELECT pg_notify('orders_changed', '')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
 		t.Fatalf("broadcast = %s, want orders", msg.Type)
+	}
+}
+
+func notifyFromOtherInstance(t *testing.T, db *gorm.DB, orderID string) {
+	t.Helper()
+	if err := db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, uuid.NewString()+" "+orderID).Error; err != nil {
+		t.Fatal(err)
 	}
 }

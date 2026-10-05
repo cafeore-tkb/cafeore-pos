@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,16 +13,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// DB の orders_changed 通知を待ち受けるチャンネル名。api/sql/2026-10_orders_notify.sql のトリガーが送る。
+// 注文が変わったことをインスタンス同士で知らせる DB の通知チャンネル。
 const ordersChangedChannel = "orders_changed"
 
-// ListenOrderChanges は、DB で注文が変わるたびに、その注文を読み直して配信する。
+// このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
+var instanceID = uuid.NewString()
+
+// notifyOrderChanged は、注文が変わったことをほかのインスタンスへ知らせる。
 //
-// 注文は API 以外からも書き換わる（SQL で直接直すなど）し、ほかのインスタンスでも書き換わる。
-// そうした変更も DB のトリガーが注文 ID を載せて通知するので、ここで受けて POS の画面へ届ける。
-// インスタンスが何台あっても、それぞれが待ち受けて自分につないでいる画面へ配る。
-// API 自身の書き換えでは、ハンドラーの配信と合わせて同じ注文が 2 回届くが、どちらも読み直した
-// 最新の注文なので、画面は同じ状態のまま変わらない。
+// Cloud Run のインスタンスはそれぞれ自分につないでいる画面にしか配れないので、
+// 注文を書き換えたインスタンスが DB の通知を送り、ほかのインスタンスが
+// ListenOrderChanges で受けて自分の画面へ配る。DB のトリガーは使わない
+// （スキーマは Go のモデルだけで決める。README の「DB のスキーマ」を参照）。
+//
+// 通知に失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
+// ほかのインスタンスの画面は、つなぎ直したときに全注文を受け取って追いつく。
+func notifyOrderChanged(db *gorm.DB, orderID uuid.UUID) {
+	payload := instanceID + " " + orderID.String()
+	if err := db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, payload).Error; err != nil {
+		log.Printf("failed to notify %s for order %s: %v", ordersChangedChannel, orderID, err)
+	}
+}
+
+// ListenOrderChanges は、ほかのインスタンスで注文が変わるたびに、その注文を読み直して配信する。
+//
+// 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
+// このインスタンスの画面へだけ配り、通知を送り返さない。
 //
 // LISTEN はセッションを保ったまま待つので、Supabase のトランザクションプーラー
 // （ポート 6543）経由では通知が届かない。直接接続かセッションプーラーの接続文字列を渡すこと。
@@ -67,22 +84,31 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 		if err != nil {
 			return err
 		}
-		h.publishChangedOrder(n.Payload)
+		h.handleOrderChanged(n.Payload)
 	}
 }
 
-// 通知に載った注文を読み直して配信する。消えていれば削除を配信する。
-func (h *OrderHandler) publishChangedOrder(payload string) {
-	orderID, err := uuid.Parse(payload)
-	if err != nil {
-		// 注文 ID を載せない古いトリガー（2026-10_orders_notify.sql の以前の版）からの通知
+// 通知（"<送ったインスタンスの ID> <注文 ID>"）を受けて、注文を読み直して配信する。
+// 消えていれば削除を配信する。
+func (h *OrderHandler) handleOrderChanged(payload string) {
+	sender, rawOrderID, ok := strings.Cut(payload, " ")
+	if !ok {
+		// 形の分からない通知。何が変わったか分からないので全注文を配り直す
 		h.publishAllOrders()
 		return
 	}
-	_, err = publishOrder(h.db, h.hub, orderID)
+	if sender == instanceID {
+		return
+	}
+	orderID, err := uuid.Parse(rawOrderID)
+	if err != nil {
+		h.publishAllOrders()
+		return
+	}
+	_, err = broadcastOrder(h.db, h.hub, orderID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		publishOrderDeleted(h.hub, orderID)
+		broadcastOrderDeleted(h.hub, orderID)
 	case err != nil:
 		log.Printf("failed to publish order %s: %v", orderID, err)
 	}
