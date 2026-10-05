@@ -1,4 +1,3 @@
-// api/internal/handlers/activity.go
 package handlers
 
 import (
@@ -7,10 +6,34 @@ import (
 	"strings"
 
 	"cafeore-pos/api/internal/models"
-	"github.com/google/uuid"
 )
 
 // 操作の通知（notify.Activity）に流す文面。DB には触らず、渡された値だけで組み立てる。
+//
+// 流すのは次の6種類だけ。タイプ・背景色の編集と在庫の調整は流さない。
+//   - メニュー / アイテム / 在庫の設定（在庫対象・使用量）の追加・変更・削除
+//   - 棚卸し / 入荷
+//   - オーダーストップ・再開
+//
+// 追加・変更・削除はどれも「{印} {対象}を{操作}: {名前}（{詳細}）」の形にそろえる。
+// 文言は POS の /dev/notify で試せる。ここを変えたらそちらの既定値も合わせること。
+
+type operation struct{ mark, label string }
+
+var (
+	opCreated = operation{"🆕", "追加"}
+	opUpdated = operation{"✏️", "変更"}
+	opDeleted = operation{"🗑️", "削除"}
+)
+
+// 詳細が空なら括弧ごと省く
+func changeMessage(op operation, target, name, detail string) string {
+	text := fmt.Sprintf("%s %sを%s: %s", op.mark, target, op.label, name)
+	if detail != "" {
+		text += "（" + detail + "）"
+	}
+	return text
+}
 
 type change struct{ label, before, after string }
 
@@ -25,55 +48,20 @@ func describeChanges(changes ...change) string {
 	return strings.Join(parts, "、")
 }
 
+// 変わった項目が無ければ（保存し直しただけなら）通知しない
+func updatedMessage(target, name, changes string) string {
+	if changes == "" {
+		return ""
+	}
+	return changeMessage(opUpdated, target, name, changes)
+}
+
 func formatNumber(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 func formatYen(v int) string {
 	return "¥" + strconv.Itoa(v)
-}
-
-func updatedMessage(label, name, changes string) string {
-	if changes == "" {
-		return ""
-	}
-	return fmt.Sprintf("✏️ %sを変更: %s（%s）", label, name, changes)
-}
-
-// --- アイテムタイプ ---
-
-func itemTypeCreatedMessage(t *models.ItemType) string {
-	return fmt.Sprintf("🆕 タイプを追加: %s（%s）", t.DisplayName, t.Name)
-}
-
-func itemTypeUpdatedMessage(before, after *models.ItemType) string {
-	return updatedMessage("タイプ", after.DisplayName, describeChanges(
-		change{"表示名", before.DisplayName, after.DisplayName},
-		change{"内部名", before.Name, after.Name},
-	))
-}
-
-func itemTypeDeletedMessage(t *models.ItemType) string {
-	return fmt.Sprintf("🗑️ タイプを削除: %s（%s）", t.DisplayName, t.Name)
-}
-
-// --- アイテム ---
-
-func itemCreatedMessage(item *models.Item) string {
-	return fmt.Sprintf("🆕 アイテムを追加: %s（略称 %s / %s）", item.Name, item.Abbr, item.ItemType.DisplayName)
-}
-
-// before は ItemType を読み込んだもの
-func itemUpdatedMessage(before, after *models.Item) string {
-	return updatedMessage("アイテム", after.Name, describeChanges(
-		change{"名前", before.Name, after.Name},
-		change{"略称", before.Abbr, after.Abbr},
-		change{"タイプ", before.ItemType.DisplayName, after.ItemType.DisplayName},
-	))
-}
-
-func itemDeletedMessage(item *models.Item) string {
-	return fmt.Sprintf("🗑️ アイテムを削除: %s", item.Name)
 }
 
 // --- メニュー ---
@@ -88,7 +76,8 @@ func menuItemsText(menu *models.Menu) string {
 }
 
 func menuCreatedMessage(menu *models.Menu) string {
-	return fmt.Sprintf("🆕 メニューを追加: %s %s（キー %s / %s）", menu.Name, formatYen(menu.Price), menu.Key, menuItemsText(menu))
+	return changeMessage(opCreated, "メニュー", menu.Name,
+		fmt.Sprintf("%s / キー %s / %s", formatYen(menu.Price), menu.Key, menuItemsText(menu)))
 }
 
 func menuUpdatedMessage(before, after *models.Menu) string {
@@ -102,33 +91,30 @@ func menuUpdatedMessage(before, after *models.Menu) string {
 }
 
 func menuDeletedMessage(menu *models.Menu) string {
-	return fmt.Sprintf("🗑️ メニューを削除: %s（キー %s）", menu.Name, menu.Key)
+	return changeMessage(opDeleted, "メニュー", menu.Name, "")
 }
 
-// --- 背景色 ---
+// --- アイテム ---
 
-var colorScreenLabels = map[string]string{
-	string(models.ColorScreenMaster): "マスター",
-	string(models.ColorScreenServe):  "提供",
+func itemCreatedMessage(item *models.Item) string {
+	return changeMessage(opCreated, "アイテム", item.Name,
+		fmt.Sprintf("略称 %s / %s", item.Abbr, item.ItemType.DisplayName))
 }
 
-// before が無ければ（ID が空なら）追加、あれば色の変更として出す。同じ色なら空
-func colorSettingSavedMessage(target string, before, after *models.ColorSetting) string {
-	screen := colorScreenLabels[after.Screen]
-	if before.ID == uuid.Nil {
-		return fmt.Sprintf("🆕 背景色を追加: %s（%s）%s", target, screen, after.Color)
-	}
-	if before.Color == after.Color {
-		return ""
-	}
-	return fmt.Sprintf("✏️ 背景色を変更: %s（%s）%s → %s", target, screen, before.Color, after.Color)
+// before は ItemType を読み込んだもの
+func itemUpdatedMessage(before, after *models.Item) string {
+	return updatedMessage("アイテム", after.Name, describeChanges(
+		change{"名前", before.Name, after.Name},
+		change{"略称", before.Abbr, after.Abbr},
+		change{"タイプ", before.ItemType.DisplayName, after.ItemType.DisplayName},
+	))
 }
 
-func colorSettingDeletedMessage(target string, setting *models.ColorSetting) string {
-	return fmt.Sprintf("🗑️ 背景色を削除: %s（%s）%s", target, colorScreenLabels[setting.Screen], setting.Color)
+func itemDeletedMessage(item *models.Item) string {
+	return changeMessage(opDeleted, "アイテム", item.Name, "")
 }
 
-// --- 在庫対象 ---
+// --- 在庫の設定（在庫対象・使用量） ---
 
 var stockKindLabels = map[string]string{
 	string(models.StockResourceKindCup):  "カップ",
@@ -136,7 +122,8 @@ var stockKindLabels = map[string]string{
 }
 
 func stockResourceCreatedMessage(r *models.StockResource) string {
-	return fmt.Sprintf("🆕 在庫対象を追加: %s（%s / 1杯 %s%s）", r.Name, stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit)
+	return changeMessage(opCreated, "在庫対象", r.Name,
+		fmt.Sprintf("%s / 1杯 %s%s", stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit))
 }
 
 func stockResourceUpdatedMessage(before, after *models.StockResource) string {
@@ -152,10 +139,8 @@ func stockResourceUpdatedMessage(before, after *models.StockResource) string {
 }
 
 func stockResourceDeletedMessage(r *models.StockResource) string {
-	return fmt.Sprintf("🗑️ 在庫対象を削除: %s", r.Name)
+	return changeMessage(opDeleted, "在庫対象", r.Name, "")
 }
-
-// --- 使用量 ---
 
 // 「ホットカップ 1個・ケニア豆 15g」と並べる。resources に無いものは飛ばす
 func usagesText(usages []models.ItemStockUsage, resources map[string]models.StockResource) string {
@@ -174,14 +159,14 @@ func usagesText(usages []models.ItemStockUsage, resources map[string]models.Stoc
 }
 
 func itemUsagesMessage(itemName string, usages []models.ItemStockUsage, resources map[string]models.StockResource) string {
-	return fmt.Sprintf("🧮 使用量を変更: %s → %s", itemName, usagesText(usages, resources))
+	return changeMessage(opUpdated, "使用量", itemName, usagesText(usages, resources))
 }
 
 func allUsagesReplacedMessage(count int) string {
-	return fmt.Sprintf("🧮 使用量をまとめて置き換え（%d件）", count)
+	return changeMessage(opUpdated, "使用量", fmt.Sprintf("%d件をまとめて置き換え", count), "")
 }
 
-// --- 棚卸し・入荷・調整 ---
+// --- 棚卸し・入荷 ---
 
 func signed(v float64) string {
 	if v > 0 {
@@ -190,7 +175,7 @@ func signed(v float64) string {
 	return formatNumber(v)
 }
 
-// remaining は記録したあとの残量（推定）。分からなければ nil
+// 調整は流さないので空を返す。remaining は記録したあとの残量（推定）。分からなければ nil
 func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated, remaining *float64) string {
 	var text string
 	switch e.Kind {
@@ -201,11 +186,11 @@ func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated,
 		}
 	case string(models.StockEventKindReceipt):
 		text = fmt.Sprintf("📦 入荷: %s %s%s", r.Name, signed(e.Quantity), r.Unit)
+		if remaining != nil {
+			text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
+		}
 	default:
-		text = fmt.Sprintf("🔧 調整: %s %s%s", r.Name, signed(e.Quantity), r.Unit)
-	}
-	if e.Kind != string(models.StockEventKindCount) && remaining != nil {
-		text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
+		return ""
 	}
 	if e.Note != "" {
 		text += fmt.Sprintf("「%s」", e.Note)
