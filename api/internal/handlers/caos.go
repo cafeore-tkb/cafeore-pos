@@ -130,8 +130,12 @@ func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) []uuid.UUID 
 }
 
 // publishCaosChanges は、注文の変更や CaOS の操作のあとに、今日のカードと、準備完了を付け外しした注文を画面へ配る。
+// ほかのインスタンスにも DB の通知で知らせる（注文は publishOrder が、カードは notifyDripsChanged が送る）。
 func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
-	h.broadcastDrips()
+	if h.caos != nil {
+		h.broadcastDrips()
+		notifyDripsChanged(h.db)
+	}
 	for _, id := range readied {
 		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("caos: failed to publish order %s: %v", id, err)
@@ -139,10 +143,28 @@ func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
 	}
 }
 
+// notifyDripsChanged は、カードが変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
+// 通知には送ったインスタンスの ID だけを載せる。受けた側は今日のカードを全部読み直して配る。
+// 失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
+func notifyDripsChanged(db *gorm.DB) {
+	if err := db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, instanceID).Error; err != nil {
+		log.Printf("caos: failed to notify %s: %v", caos.ChangedChannel, err)
+	}
+}
+
+// handleDripsChanged は、ほかのインスタンスでカードが変わった通知を受けて、このインスタンスの画面へ配る（通知は送り返さない）。
+// 自分が送った通知は無視する（変えたときに配信済み）。
+func (h *OrderHandler) handleDripsChanged(sender string) {
+	if sender == instanceID {
+		return
+	}
+	h.broadcastDrips()
+}
+
 // カードの配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。
 //
-// カードは今日の分を全部送るので、API で書き換えたときにハンドラー自身と DB の caos_drips_changed 通知
-// （ListenOrderChanges）の両方から来る依頼を、二重に送らないようにしている。
+// カードは今日の分を全部送るので、続けて書き換えたとき（POS の注文の連動と CaOS の操作が続くときや、
+// ほかのインスタンスからの通知が続くとき）の依頼を、まとめて 1 回にしている。
 const dripsBroadcastDelay = 30 * time.Millisecond
 
 // broadcastDrips は今日のカードの配信を依頼する。すぐに戻り、少し待ってから 1 回だけ送る。
