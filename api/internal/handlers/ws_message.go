@@ -18,7 +18,7 @@ const (
 
 type WSMessage struct {
 	Type        WSMessageType          `json:"type"`
-	Orders      []models.OrderResponse `json:"orders,omitempty"`
+	Orders      []models.OrderResponse `json:"orders"`
 	MasterState *models.MasterState    `json:"master_state,omitempty"`
 }
 

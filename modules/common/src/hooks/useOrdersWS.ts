@@ -8,7 +8,7 @@ import type { OrderEntity } from "../models";
 type WsStatus = "connecting" | "open" | "closed" | "error";
 
 type WSMessage =
-  | { type: "orders"; orders?: OrderResponse[] }
+  | { type: "orders"; orders: OrderResponse[] }
   | { type: "master_state"; master_state: MasterState };
 
 export const useOrdersWS = () => {
