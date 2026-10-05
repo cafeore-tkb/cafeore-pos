@@ -108,6 +108,10 @@ PR を閉じると `pr-cleanup` がタグを外す。
 
 在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
 
+**モデルを AutoMigrate に足したら、本番用の SQL も `api/sql/` に足して手で流すこと。**
+プレビューは AutoMigrate でテーブルができるので、忘れても PR の確認では気づけない
+（#729 の `order_cups` で本番の注文が 500 になった。`api/sql/2026-10_order_cups.sql`）。
+
 **本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
 無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
 開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
