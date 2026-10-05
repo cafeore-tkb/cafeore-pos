@@ -633,7 +633,8 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 // Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（Store が caos_ops の記録から呼ぶ）。
 // before：操作の前の行（操作で変わった・消えたカードの、操作の前の中身。サーバーが DB から取ったもの）。
 // after：操作の後の行（操作で変わった・できたカード）。この時点から誰も触っていないときだけ戻す。
-// 確かめてから変えるので、断ったときは何も変わっていない。
+// 確かめてから変えるので、断ったときは何も変わっていない。確かめること：after のカードが触られていない、
+// 戻したあとに抽出中が重ならない、終わっていないカードとして戻す注文が今もあって提供済み・準備完了でない。
 func (b *Board) Restore(cs *Changeset, before, after []Drip) error {
 	for _, a := range after {
 		now, ok := b.Drips[a.ID]
@@ -644,6 +645,44 @@ func (b *Board) Restore(cs *Changeset, before, after []Drip) error {
 	beforeIDs := map[string]bool{}
 	for _, d := range before {
 		beforeIDs[d.ID] = true
+	}
+	afterIDs := map[string]bool{}
+	for _, a := range after {
+		afterIDs[a.ID] = true
+	}
+	// 戻したあとに、1 人のドリッパーの抽出中が重ならないか（ほかの操作でそのドリッパーが次のカードを始めていたら戻さない）
+	brewing := map[int]bool{}
+	for id, d := range b.Drips {
+		if !beforeIDs[id] && !afterIDs[id] && d.Status == StatusBrewing && d.Dripper != nil {
+			brewing[*d.Dripper] = true
+		}
+	}
+	for _, d := range before {
+		if d.Status != StatusBrewing || d.Dripper == nil {
+			continue
+		}
+		if brewing[*d.Dripper] {
+			return invalid("ドリッパー %d がほかのカードを抽出中のため、元に戻せません", *d.Dripper)
+		}
+		brewing[*d.Dripper] = true
+	}
+	// 終わっていないカードとして戻す注文が、今もあって、提供済みでも準備完了でもないか
+	// （その操作で付けた準備完了は、呼ぶ側が先に外した状態にしておく）
+	for _, d := range before {
+		if d.Status == StatusDone {
+			continue
+		}
+		for _, id := range d.OrderIDs {
+			o, ok := b.Orders[id]
+			switch {
+			case !ok:
+				return invalid("注文が消されたため、元に戻せません")
+			case o.Served:
+				return invalid("提供済みの注文があるため、元に戻せません")
+			case o.Ready:
+				return invalid("準備完了になった注文があるため、元に戻せません")
+			}
+		}
 	}
 	// 操作でできたカードは消す（入れ直し）
 	for _, a := range after {

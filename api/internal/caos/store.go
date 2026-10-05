@@ -411,6 +411,12 @@ func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID stri
 			return nil, invalid("ほかの端末で変更されたため、元に戻せません")
 		}
 	}
+	// この操作で付けた準備完了は、このあと外すので、カードを戻すときの確かめでは外した状態として扱う
+	for _, m := range rec.Readied.V {
+		if o, ok := b.Orders[m.OrderID]; ok {
+			o.Ready = false
+		}
+	}
 	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
 	if err := b.Restore(cs, rec.Before.V, rec.After.V); err != nil {
 		return nil, err

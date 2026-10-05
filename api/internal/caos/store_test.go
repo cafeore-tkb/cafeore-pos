@@ -132,16 +132,6 @@ func readyAt(t *testing.T, db *gorm.DB, id uuid.UUID) *time.Time {
 	return o.ReadyAt
 }
 
-// 画面と同じく JSON で受け取ったカードにする（時刻の精度が往復で変わらないことも確かめる）
-func viaJSON(t *testing.T, drips []Drip) []Drip {
-	t.Helper()
-	b, err := json.Marshal(drips)
-	must(t, err)
-	var out []Drip
-	must(t, json.Unmarshal(b, &out))
-	return out
-}
-
 func TestStoreFlow(t *testing.T) {
 	db := testDB(t)
 	cat := seedCatalog(t, db)
@@ -232,6 +222,31 @@ func TestStoreUndoRejectsWhenTouched(t *testing.T) {
 				t.Fatalf("断ったのに変わった：\n%s\n%s", before, after)
 			}
 		})
+	}
+}
+
+// レビューで指摘された順番：A の次へ → 同じドリッパーで B が始まる → A の次へを戻す。
+// 抽出中が重なるので、内部エラー（索引違反）ではなく ErrInvalid で断り、カードも準備完了も記録も何も変えない
+func TestStoreUndoRejectsBrewingConflict(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := newStore(db)
+	o1 := createOrder(t, s, db, 1, dayStart.Add(10*time.Hour), cat.champ)
+	createOrder(t, s, db, 2, dayStart.Add(10*time.Hour+time.Minute), cat.champ)
+	d := drips(t, s)
+	_, err := s.Apply(Op{Name: "assign", DripID: d[0].ID, Dripper: ptr(1)})
+	must(t, err)
+	done, err := s.Apply(Op{Name: "next", Dripper: ptr(1)})
+	must(t, err)
+	_, err = s.Apply(Op{Name: "assign", DripID: d[1].ID, Dripper: ptr(1)})
+	must(t, err)
+
+	before := boardState(t, db, s, o1.ID)
+	if _, err := s.Apply(Op{Name: "undo", OpID: done.OpID}); !IsInvalid(err) {
+		t.Fatalf("422 で断るはず（500 にしない）：%v", err)
+	}
+	if after := boardState(t, db, s, o1.ID); after != before {
+		t.Fatalf("断ったのに変わった：\n%s\n%s", before, after)
 	}
 }
 

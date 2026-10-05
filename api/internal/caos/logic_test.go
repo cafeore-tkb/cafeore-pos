@@ -330,7 +330,10 @@ func TestNextReadyAndRestore(t *testing.T) {
 		t.Fatalf("最後のカードの次へで、注文のカードが全部終わったと返す（準備完了は既存の API で付ける）：%v", last.Completed.List())
 	}
 
-	// 1つ戻す：抽出中に戻る（準備完了は画面が既存の API で外す）
+	// 1つ戻す：抽出中に戻る（Store と同じく、その操作で準備完了にした注文は外してから戻す）
+	for _, id := range last.Completed.List() {
+		b.Orders[id].Ready = false
+	}
 	restore(t, b, before, lastRows)
 	if b.Drips[oreCard.ID].Status != StatusBrewing {
 		t.Fatal("1つ戻すで抽出中に戻る")
@@ -513,5 +516,43 @@ func randomOps(t *testing.T, seed uint64) {
 			t.Fatal(err)
 		}
 		checkInvariants(t, b)
+	}
+}
+
+// 「1つ戻す」は、戻したあとに抽出中が重なるなら断る（A の次へ → 同じドリッパーで B が始まる → A の次へを戻す）
+func TestRestoreRejectsBrewingConflict(t *testing.T) {
+	b := seeded(t)
+	a, c := cardsOf(b, 1)[0], cardsOf(b, 2)[0]
+	apply(t, b, Op{Name: "assign", DripID: a.ID, Dripper: ptr(1)})
+	before := []Drip{*b.Drips[a.ID]}
+	next := apply(t, b, Op{Name: "next", Dripper: ptr(1)})
+	after := rows(b, next)
+	apply(t, b, Op{Name: "assign", DripID: c.ID, Dripper: ptr(1)}) // ドリッパー 1 で B が始まる
+	snapshot := fmt.Sprint(b.List())
+	isInvalid(t, b.Restore(&Changeset{}, before, after), "ほかのカードを抽出中")
+	if fmt.Sprint(b.List()) != snapshot {
+		t.Fatal("断ったのに変わった")
+	}
+}
+
+// 「1つ戻す」は、終わっていないカードとして戻す注文が消された・提供済み・準備完了なら断る
+func TestRestoreRejectsChangedOrders(t *testing.T) {
+	for name, change := range map[string]func(b *Board){
+		"消された": func(b *Board) { delete(b.Orders, orderID(1)) },
+		"提供済み": func(b *Board) { b.Orders[orderID(1)].Served = true },
+		"準備完了": func(b *Board) { b.Orders[orderID(1)].Ready = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := seeded(t)
+			a := cardsOf(b, 1)[0]
+			before := []Drip{*b.Drips[a.ID]}
+			assigned := apply(t, b, Op{Name: "assign", DripID: a.ID, Dripper: ptr(1)})
+			change(b)
+			snapshot := fmt.Sprint(b.List())
+			isInvalid(t, b.Restore(&Changeset{}, before, rows(b, assigned)), "元に戻せません")
+			if fmt.Sprint(b.List()) != snapshot {
+				t.Fatal("断ったのに変わった")
+			}
+		})
 	}
 }
