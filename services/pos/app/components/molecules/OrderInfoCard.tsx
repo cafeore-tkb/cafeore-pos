@@ -7,10 +7,11 @@ import {
   useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
-import { LuCheck, LuHourglass } from "react-icons/lu";
+import { LuCheck, LuHourglass, LuUndo2 } from "react-icons/lu";
 import { toast } from "sonner";
 import { usePendingStatus } from "~/lib/usePendingStatus";
 import { cn } from "~/lib/utils";
+import { PendingSpinner } from "../atoms/PendingSpinner";
 import { ReadyBell } from "../atoms/ReadyBell";
 import { ServeCheck } from "../atoms/ServeCheck";
 import { Button } from "../ui/button";
@@ -106,6 +107,12 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     );
   };
 
+  // 提供画面で、提供可能にしたカップを準備中に戻す（押すと提供済みに進むので、戻すボタンは別に置く）
+  const undoReady = (cupId: string) => {
+    if (cupPending.isBusy(cupId)) return;
+    readyCup(cupId, "preparing");
+  };
+
   // 背景色設定はマスター・提供画面だけで使う
   const colorScreen = user === "master" || user === "serve" ? user : null;
   const { colorSettings } = useColorSettings(colorScreen !== null);
@@ -191,6 +198,11 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                     item.cupId &&
                     !(cupAction === "master" && status === "served")
                       ? () => changeCup(item)
+                      : undefined
+                  }
+                  onUndo={
+                    cupAction === "serve" && item.cupId && status === "ready"
+                      ? () => item.cupId && undoReady(item.cupId)
                       : undefined
                   }
                 >
@@ -349,29 +361,46 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
 
 // 押して状態を切り替えられるカップだけボタンにする。
 // 押せることが分かるよう、ホバーで浮かせて押した瞬間に沈ませる。
+// 応答待ちの間は角に回転アイコンを出す。`onUndo` があれば右上に「戻す」を出す。
 const CupButton = ({
   onClick,
+  onUndo,
   busy,
   children,
 }: {
   onClick: (() => void) | undefined;
+  onUndo?: () => void;
   busy: boolean;
   children: React.ReactNode;
 }) =>
   onClick ? (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-busy={busy}
-      className={cn(
-        "block h-full w-full cursor-pointer select-none rounded-lg text-left transition-transform duration-150 ease-out",
-        "hover:-translate-y-0.5 active:translate-y-0 active:scale-95 hover:[&>*]:shadow-lg",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-theme-primary focus-visible:ring-offset-2",
-        busy && "animate-pulse cursor-wait",
+    <div className="relative h-full">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-busy={busy}
+        className={cn(
+          "block h-full w-full cursor-pointer select-none rounded-lg text-left transition-transform duration-150 ease-out",
+          "hover:-translate-y-0.5 active:translate-y-0 active:scale-95 hover:[&>*]:shadow-lg",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-theme-primary focus-visible:ring-offset-2",
+          busy && "cursor-wait",
+        )}
+      >
+        {children}
+      </button>
+      {busy && <PendingSpinner />}
+      {onUndo && !busy && (
+        <button
+          type="button"
+          onClick={onUndo}
+          aria-label="提供可能を取り消して準備中に戻す"
+          className="fade-in -top-3 -right-2 absolute flex h-7 animate-in select-none items-center gap-0.5 rounded-full border border-gray-300 bg-white px-2 font-bold text-gray-600 text-xs shadow-sm duration-200 hover:bg-gray-100 active:scale-95"
+        >
+          <LuUndo2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+          戻す
+        </button>
       )}
-    >
-      {children}
-    </button>
+    </div>
   ) : (
     <div>{children}</div>
   );
