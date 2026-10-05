@@ -78,6 +78,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	r := gin.New()
 	r.POST("/api/orders", orders.CreateOrder)
 	r.GET("/api/orders/:id", orders.GetOrder)
+	r.PUT("/api/orders/:id", orders.UpdateOrder)
 	r.PATCH("/api/orders/:id/ready", orders.MarkOrderReady)
 	r.DELETE("/api/orders/:id", orders.DeleteOrder)
 	r.GET("/api/caos/boards/:day", c.GetBoard)
@@ -308,5 +309,77 @@ func TestCaosReadyToggleUsesStateAfterLock(t *testing.T) {
 	e.call(t, http.MethodGet, "/api/orders/"+o.Id.String(), nil, &got)
 	if got.ReadyAt != nil {
 		t.Fatalf("ロックのあとの状態（準備完了）から切り替わるはず（未完了に戻る）：%v", got.ReadyAt)
+	}
+}
+
+// PUT の体（POS の画面の orderToUpdateRequest と同じ形）。明細は今のものを引き継ぐ
+func putBody(o models.OrderResponse, readyAt, servedAt *time.Time) map[string]any {
+	menus := make([]map[string]any, len(o.Menus))
+	for i, m := range o.Menus {
+		menus[i] = map[string]any{"menu_id": m.Menu.Id, "order_menu_id": m.Id}
+	}
+	return map[string]any{"order_id": o.OrderId, "billing_amount": o.BillingAmount, "received": o.Received,
+		"ready_at": readyAt, "served_at": servedAt, "menu_ids": menus}
+}
+
+// 古い画面から（未完了のまま）編集しても、CaOS の「次へ」が付けた準備完了は消えない。
+// PUT で提供済みにする使い方（POS の beServed）は今までどおり動く。
+func TestCaosPutKeepsReadyFromCaos(t *testing.T) {
+	e := newCaosEnv(t)
+	day := caos.Day(time.Now())
+	o := e.createOrder(t, 1, 1)
+	var board caos.Snapshot
+	e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board)
+	e.call(t, http.MethodPost, "/api/caos/boards/"+day+"/ops", map[string]any{"name": "assign", "drip_id": board.Drips[0].ID, "dripper": 1}, nil)
+	e.call(t, http.MethodPost, "/api/caos/boards/"+day+"/ops", map[string]any{"name": "next", "dripper": 1}, nil)
+
+	var got models.OrderResponse
+	if code := e.call(t, http.MethodPut, "/api/orders/"+o.Id.String(), putBody(o, nil, nil), &got); code != http.StatusOK || got.ReadyAt == nil {
+		t.Fatalf("古い画面からの編集で準備完了が消えた：%d %v", code, got.ReadyAt)
+	}
+	e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board)
+	if board.Drips[0].Status != caos.StatusDone {
+		t.Fatalf("カードは終わったまま：%+v", board.Drips[0])
+	}
+
+	now := time.Now()
+	if code := e.call(t, http.MethodPut, "/api/orders/"+o.Id.String(), putBody(got, &now, &now), &got); code != http.StatusOK || got.ServedAt == nil {
+		t.Fatalf("PUT で提供済みにできる：%d %v", code, got.ServedAt)
+	}
+
+	// まだ準備完了でない注文を PUT で提供済みにすると、カードも終わる
+	o2 := e.createOrder(t, 2, 1)
+	e.call(t, http.MethodPut, "/api/orders/"+o2.Id.String(), putBody(o2, &now, &now), nil)
+	e.call(t, http.MethodGet, "/api/caos/boards/"+day, nil, &board)
+	for _, d := range board.Drips {
+		if d.Status != caos.StatusDone {
+			t.Fatalf("提供済みにした注文のカードが終わっていない：%+v", d)
+		}
+	}
+}
+
+// 盤面のロックを待っている間に注文が消されたら、準備完了・編集は 404 を返す（500 にしない）。
+func TestCaosOrderDeletedWhileWaitingIs404(t *testing.T) {
+	e := newCaosEnv(t)
+	day := caos.Day(time.Now())
+	for _, method := range []string{http.MethodPatch, http.MethodPut} {
+		o := e.createOrder(t, 1, 1)
+		holder := e.db.Begin()
+		mustDo(t, holder.Exec("SELECT * FROM caos_boards WHERE day = ? FOR UPDATE", day).Error)
+		done := make(chan int, 1)
+		go func() {
+			if method == http.MethodPatch {
+				done <- e.call(t, method, "/api/orders/"+o.Id.String()+"/ready", nil, nil)
+			} else {
+				done <- e.call(t, method, "/api/orders/"+o.Id.String(), putBody(o, nil, nil), nil)
+			}
+		}()
+		time.Sleep(300 * time.Millisecond) // リクエストが盤面のロックを待っている
+		mustDo(t, holder.Exec("DELETE FROM order_menus WHERE order_id = ?", o.Id).Error)
+		mustDo(t, holder.Exec("DELETE FROM orders WHERE id = ?", o.Id).Error)
+		mustDo(t, holder.Commit().Error)
+		if code := <-done; code != http.StatusNotFound {
+			t.Fatalf("%s：ロックを待つ間に消された注文は 404：%d", method, code)
+		}
 	}
 }

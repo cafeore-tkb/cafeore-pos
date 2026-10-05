@@ -332,17 +332,26 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
 		// 明細の引き継ぎは、ロックを取ったあとに読み直した注文で行う
-		if err := preloadOrder(tx).First(&order, "id = ?", order.ID).Error; err != nil {
+		if err := preloadOrder(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", order.ID).Error; err != nil {
 			return err
 		}
 		orderMenus, err := loadOrderMenus(tx, order.ID, req.MenuIds, order.OrderMenus)
 		if err != nil {
 			return err
 		}
+		// 準備完了・提供済みは、PUT では付けるだけで、外したり付け直したりしない（外すのは PATCH の切り替えで行う）。
+		// 画面が持っている古い注文で編集したときに、CaOS の「次へ」などが付けた ready_at を消さないため
+		readyAt, servedAt := order.ReadyAt, order.ServedAt
+		if readyAt == nil {
+			readyAt = req.ReadyAt
+		}
+		if servedAt == nil {
+			servedAt = req.ServedAt
+		}
 		if err := tx.Model(&order).Updates(map[string]any{
 			"order_id":            req.OrderId,
-			"ready_at":            req.ReadyAt,
-			"served_at":           req.ServedAt,
+			"ready_at":            readyAt,
+			"served_at":           servedAt,
 			"billing_amount":      req.BillingAmount,
 			"received":            req.Received,
 			"discount_order_id":   req.DiscountOrderId,
@@ -367,6 +376,11 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
+		}
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -482,6 +496,11 @@ func (h *OrderHandler) MarkOrderReady(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -536,6 +555,11 @@ func (h *OrderHandler) MarkOrderServed(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		// ロックを待っている間に消された
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
