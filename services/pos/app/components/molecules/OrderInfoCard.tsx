@@ -7,7 +7,7 @@ import {
   useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
-import { LuCheck, LuHourglass, LuUndo2 } from "react-icons/lu";
+import { LuCheck, LuHourglass } from "react-icons/lu";
 import { toast } from "sonner";
 import { usePendingStatus } from "~/lib/usePendingStatus";
 import { cn } from "~/lib/utils";
@@ -57,7 +57,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
       ? order.getItems()
       : order.getCups();
 
-  // 提供画面ではカップを押すと 準備中 → 提供可能 → 提供済み と進み、マスター画面では準備完了を切り替える
+  // 提供画面ではカップを押すと 準備中 → 提供可能 → 提供済み → 準備中 と回り、マスター画面では準備完了を切り替える
   const cupAction =
     timing === "present" && (user === "serve" || user === "master")
       ? user
@@ -87,30 +87,27 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
       readyCup(cupId, status === "preparing" ? "ready" : "preparing");
       return;
     }
-    // 提供画面でも、まず提供可能にしてから提供済みにする
+    // 提供画面では 準備中 → 提供可能 → 提供済み → 準備中 と回す
     if (status === "preparing") {
       readyCup(cupId, "ready");
       return;
     }
-    const serving = status !== "served";
-    serveCup(cupId, serving ? "served" : "ready");
-    // 誤タップで提供を取り消しても気づけるよう、取り消しにもトーストを出す
-    toast(
-      `${serving ? "提供完了" : "提供取消"} No.${order.orderId} ${item.abbr}`,
-      {
-        description: `${dayjs().format("H時m分")}`,
-        action: {
-          label: serving ? "取消" : "元に戻す",
-          onClick: () => serveCup(cupId, serving ? "ready" : "served"),
-        },
-      },
-    );
-  };
-
-  // 提供画面で、提供可能にしたカップを準備中に戻す（押すと提供済みに進むので、戻すボタンは別に置く）
-  const undoReady = (cupId: string) => {
-    if (cupPending.isBusy(cupId)) return;
+    const description = dayjs().format("H時m分");
+    if (status === "ready") {
+      serveCup(cupId, "served");
+      toast(`提供完了 No.${order.orderId} ${item.abbr}`, {
+        description,
+        action: { label: "取消", onClick: () => serveCup(cupId, "ready") },
+      });
+      return;
+    }
+    // 提供済みのカップの準備完了を外すと、提供済みも外れて準備中に戻る。
+    // 誤タップで提供を取り消しても気づけるよう、トーストを出す
     readyCup(cupId, "preparing");
+    toast(`提供取消 No.${order.orderId} ${item.abbr}`, {
+      description,
+      action: { label: "元に戻す", onClick: () => serveCup(cupId, "served") },
+    });
   };
 
   // 背景色設定はマスター・提供画面だけで使う
@@ -198,11 +195,6 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                     item.cupId &&
                     !(cupAction === "master" && status === "served")
                       ? () => changeCup(item)
-                      : undefined
-                  }
-                  onUndo={
-                    cupAction === "serve" && item.cupId && status === "ready"
-                      ? () => item.cupId && undoReady(item.cupId)
                       : undefined
                   }
                 >
@@ -361,15 +353,13 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
 
 // 押して状態を切り替えられるカップだけボタンにする。
 // 押せることが分かるよう、ホバーで浮かせて押した瞬間に沈ませる。
-// 応答待ちの間は角に回転アイコンを出す。`onUndo` があれば右上に「戻す」を出す。
+// 応答待ちの間は角に回転アイコンを出す。
 const CupButton = ({
   onClick,
-  onUndo,
   busy,
   children,
 }: {
   onClick: (() => void) | undefined;
-  onUndo?: () => void;
   busy: boolean;
   children: React.ReactNode;
 }) =>
@@ -389,17 +379,6 @@ const CupButton = ({
         {children}
       </button>
       {busy && <PendingSpinner />}
-      {onUndo && !busy && (
-        <button
-          type="button"
-          onClick={onUndo}
-          aria-label="提供可能を取り消して準備中に戻す"
-          className="fade-in -top-3 -right-2 absolute flex h-7 animate-in select-none items-center gap-0.5 rounded-full border border-gray-300 bg-white px-2 font-bold text-gray-600 text-xs shadow-sm duration-200 hover:bg-gray-100 active:scale-95"
-        >
-          <LuUndo2 className="h-3.5 w-3.5" strokeWidth={2.5} />
-          戻す
-        </button>
-      )}
     </div>
   ) : (
     <div>{children}</div>
