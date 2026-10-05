@@ -271,6 +271,7 @@
       "created_at",
       "billing_amount",
       "received",
+      "payment_method",
       "menus"
     ],
     "properties": {
@@ -307,6 +308,9 @@
       },
       "discount_order_cups": {
         "type": "integer"
+      },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
       },
       "menus": {
         "type": "array",
@@ -346,6 +350,15 @@
       "discount_order_cups": {
         "type": "integer",
         "default": 0
+      },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
       },
       "menu_ids": {
         "type": "array",
@@ -803,6 +816,149 @@
       },
       "reason": {
         "type": "string"
+      }
+    }
+  },
+  "PaymentMethod": {
+    "type": "string",
+    "enum": ["cash", "square"],
+    "default": "cash",
+    "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
+  },
+  "SquarePaymentType": {
+    "type": "string",
+    "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
+    "description": "Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）"
+  },
+  "SquareCheckoutOutcome": {
+    "type": "string",
+    "enum": ["pending", "paid", "failed", "attention"],
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: まだ決まっていない。待つ\n  - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい\n  - failed: 取り消された・失敗した。お金は受け取っていない\n  - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある\n"
+  },
+  "SquareStatusResponse": {
+    "type": "object",
+    "required": ["enabled", "environment", "webhook_enabled"],
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "environment": {
+        "type": "string",
+        "description": "production か sandbox"
+      },
+      "webhook_enabled": {
+        "type": "boolean"
+      }
+    }
+  },
+  "SquareCheckoutCreateRequest": {
+    "type": "object",
+    "required": ["idempotency_key", "amount", "payment_type"],
+    "properties": {
+      "idempotency_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "請求額（円）"
+      },
+      "payment_type": {
+        "$ref": "#/components/schemas/SquarePaymentType"
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true,
+        "description": "依頼時点の注文番号（端末のメモと照合の表示に使う）"
+      }
+    }
+  },
+  "SquareCheckoutResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "status",
+      "outcome",
+      "amount",
+      "payment_type",
+      "payment_ids",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "checkout_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の TerminalCheckout の id"
+      },
+      "status": {
+        "type": "string",
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+      },
+      "outcome": {
+        "$ref": "#/components/schemas/SquareCheckoutOutcome"
+      },
+      "cancel_reason": {
+        "type": "string",
+        "nullable": true
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "paid_amount": {
+        "type": "integer",
+        "nullable": true,
+        "description": "完了後に Payments API で確かめた受取額（円）"
+      },
+      "payment_type": {
+        "type": "string"
+      },
+      "payment_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "error_message": {
+        "type": "string",
+        "nullable": true
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "この決済で作った注文。まだ無ければ null"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareCheckoutConflictResponse": {
+    "type": "object",
+    "required": ["error", "checkout"],
+    "properties": {
+      "error": {
+        "type": "string"
+      },
+      "checkout": {
+        "$ref": "#/components/schemas/SquareCheckoutResponse"
       }
     }
   }

@@ -125,6 +125,24 @@ type ServerInterface interface {
 	// オーダーを提供完了にする
 	// (PATCH /api/orders/{id}/served)
 	MarkOrderServe(c *gin.Context, id openapi_types.UUID)
+	// Square Terminal に決済画面を出す
+	// (POST /api/square/checkouts)
+	CreateSquareCheckout(c *gin.Context)
+	// 支払い済みなのに注文と結び付いていない決済依頼
+	// (GET /api/square/checkouts/unlinked)
+	GetUnlinkedSquareCheckouts(c *gin.Context)
+	// 決済依頼の状態を取る
+	// (GET /api/square/checkouts/{id})
+	GetSquareCheckout(c *gin.Context, id openapi_types.UUID)
+	// 決済依頼を取り消す
+	// (POST /api/square/checkouts/{id}/cancel)
+	CancelSquareCheckout(c *gin.Context, id openapi_types.UUID)
+	// Square 連携が使えるか
+	// (GET /api/square/status)
+	GetSquareStatus(c *gin.Context)
+	// Square からの Webhook（terminal.checkout.created / terminal.checkout.updated）
+	// (POST /api/square/webhook)
+	ReceiveSquareWebhook(c *gin.Context)
 	// サーバーステータス取得
 	// (GET /status)
 	GetStatus(c *gin.Context)
@@ -840,6 +858,106 @@ func (siw *ServerInterfaceWrapper) MarkOrderServe(c *gin.Context) {
 	siw.Handler.MarkOrderServe(c, id)
 }
 
+// CreateSquareCheckout operation middleware
+func (siw *ServerInterfaceWrapper) CreateSquareCheckout(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateSquareCheckout(c)
+}
+
+// GetUnlinkedSquareCheckouts operation middleware
+func (siw *ServerInterfaceWrapper) GetUnlinkedSquareCheckouts(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetUnlinkedSquareCheckouts(c)
+}
+
+// GetSquareCheckout operation middleware
+func (siw *ServerInterfaceWrapper) GetSquareCheckout(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSquareCheckout(c, id)
+}
+
+// CancelSquareCheckout operation middleware
+func (siw *ServerInterfaceWrapper) CancelSquareCheckout(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelSquareCheckout(c, id)
+}
+
+// GetSquareStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSquareStatus(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSquareStatus(c)
+}
+
+// ReceiveSquareWebhook operation middleware
+func (siw *ServerInterfaceWrapper) ReceiveSquareWebhook(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReceiveSquareWebhook(c)
+}
+
 // GetStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetStatus(c *gin.Context) {
 
@@ -917,5 +1035,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/orders/:id/comments", wrapper.CreateOrderComment)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
+	router.POST(options.BaseURL+"/api/square/checkouts", wrapper.CreateSquareCheckout)
+	router.GET(options.BaseURL+"/api/square/checkouts/unlinked", wrapper.GetUnlinkedSquareCheckouts)
+	router.GET(options.BaseURL+"/api/square/checkouts/:id", wrapper.GetSquareCheckout)
+	router.POST(options.BaseURL+"/api/square/checkouts/:id/cancel", wrapper.CancelSquareCheckout)
+	router.GET(options.BaseURL+"/api/square/status", wrapper.GetSquareStatus)
+	router.POST(options.BaseURL+"/api/square/webhook", wrapper.ReceiveSquareWebhook)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)
 }

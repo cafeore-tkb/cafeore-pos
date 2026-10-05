@@ -20,6 +20,7 @@ import {
   type Order,
   type OrderComment,
   OrderEntity,
+  type OrderPayment,
   orderSchema,
 } from "../models/order";
 import type { components } from "../types/api";
@@ -276,6 +277,7 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 // OrderEntity を CreateRequest に変換
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
+  payment: OrderPayment = { method: "cash" },
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({ assignee: cur.assignee, menu_id: cur.id });
@@ -287,6 +289,9 @@ export const orderEntityToCreateRequest = (
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
+    payment_method: payment.method,
+    square_checkout_id:
+      payment.method === "square" ? payment.squareCheckoutId : null,
     menu_ids: menuIds,
     comments: order.comments,
   };

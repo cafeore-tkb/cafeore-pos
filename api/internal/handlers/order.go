@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -99,6 +100,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
 		DiscountOrderCups: &order.DiscountOrderCups,
+		PaymentMethod:     orderPaymentMethod(order),
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 	}
 	// Menus変換
@@ -123,6 +125,38 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// 列を足す前の行（payment_method が空）は現金として返す。
+func orderPaymentMethod(order *models.Order) models.PaymentMethod {
+	if order.PaymentMethod == string(models.Square) {
+		return models.Square
+	}
+	return models.Cash
+}
+
+// squareCheckoutIDForOrder は作成リクエストの支払い方法を確かめ、Square の決済依頼の ID を返す。
+// 現金なら nil。
+func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID, error) {
+	method := models.Cash
+	if req.PaymentMethod != nil {
+		method = *req.PaymentMethod
+	}
+	switch method {
+	case models.Cash:
+		if req.SquareCheckoutId != nil {
+			return nil, errors.New("square_checkout_id は payment_method が square のときだけ指定できます")
+		}
+		return nil, nil
+	case models.Square:
+		if req.SquareCheckoutId == nil {
+			return nil, errors.New("payment_method が square のときは square_checkout_id が必要です")
+		}
+		id := uuid.UUID(*req.SquareCheckoutId)
+		return &id, nil
+	default:
+		return nil, fmt.Errorf("payment_method %q には対応していません", method)
+	}
 }
 
 // ブロードキャスト用のヘルパー
@@ -167,6 +201,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	squareCheckoutID, err := squareCheckoutIDForOrder(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// API型 → DB型に変換
 	order := models.Order{
 		ID:                uuid.New(),
@@ -175,6 +215,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
 		DiscountOrderCups: 0,
+		PaymentMethod:     string(models.Cash),
+	}
+	if squareCheckoutID != nil {
+		// 端末で請求額ちょうどを受け取っているので、お預かりは請求額と同じ。
+		order.PaymentMethod = string(models.Square)
+		order.Received = req.BillingAmount
 	}
 
 	if req.DiscountOrderId != nil {
@@ -209,11 +255,20 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		order.OrderMenus = lines
-		return tx.Create(&order).Error
+		if err := tx.Create(&order).Error; err != nil {
+			return err
+		}
+		if squareCheckoutID != nil {
+			return linkSquareCheckout(tx, *squareCheckoutID, &order, time.Now())
+		}
+		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
+		}
+		if errors.Is(err, errSquareCheckoutUnusable) {
+			status = http.StatusConflict
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -356,6 +411,13 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 
 	// 注文明細を削除
 	if err := h.db.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して
+	// 「支払い済みなのに注文が無い」一覧（GET /api/square/checkouts/unlinked）に戻す。
+	if err := h.db.Model(&models.SquareCheckout{}).Where("order_id = ?", order.ID).Update("order_id", nil).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

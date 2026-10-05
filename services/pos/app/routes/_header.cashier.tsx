@@ -1,8 +1,11 @@
 import {
   OrderEntity,
+  type OrderPayment,
   cashierRepository,
+  orderPaymentSchema,
   orderRepository,
   orderSchema,
+  squareRepository,
   stringToJSONSchema,
   useMenuMaster,
 } from "@cafeore/common";
@@ -13,6 +16,7 @@ import {
   type MetaFunction,
   useSubmit,
 } from "react-router";
+import useSWR from "swr";
 import { z } from "zod";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
@@ -34,10 +38,19 @@ export default function Cashier() {
     [isDeviceOnline, status],
   );
 
+  // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
+  const { data: squareStatus } = useSWR(
+    "square-status",
+    squareRepository.getStatus,
+  );
+
   const submitPayload = useCallback(
-    (newOrder: OrderEntity) => {
+    (newOrder: OrderEntity, payment?: OrderPayment) => {
       submit(
-        { newOrder: JSON.stringify(newOrder.toOrder()) },
+        {
+          newOrder: JSON.stringify(newOrder.toOrder()),
+          ...(payment ? { payment: JSON.stringify(payment) } : {}),
+        },
         { method: "POST" },
       );
     },
@@ -57,6 +70,7 @@ export default function Cashier() {
       orders={orders}
       wsStatus={status}
       canSubmitOrder={canSubmitOrder}
+      squareEnabled={squareStatus?.enabled ?? false}
       submitPayload={submitPayload}
       syncOrder={syncOrder}
     />
@@ -81,6 +95,8 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
 
   const schema = z.object({
     newOrder: stringToJSONSchema.pipe(orderSchema),
+    // 省略時は現金。Square のときは決済依頼の ID を一緒に送る。
+    payment: stringToJSONSchema.pipe(orderPaymentSchema).optional(),
   });
   const submission = parseWithZod(formData, {
     schema,
@@ -90,10 +106,10 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
     return submission.reply();
   }
 
-  const { newOrder } = submission.value;
+  const { newOrder, payment } = submission.value;
   const order = OrderEntity.fromOrder(newOrder);
 
-  const savedOrder = await orderRepository.save(order);
+  const savedOrder = await orderRepository.save(order, payment);
 
   const cashierState = await cashierRepository.get();
   if (cashierState == null) {

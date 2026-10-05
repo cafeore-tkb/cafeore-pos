@@ -12,6 +12,7 @@ const response: OrderResponse = {
   created_at: "2026-09-11T00:00:00Z",
   billing_amount: 500,
   received: 1000,
+  payment_method: "cash",
   menus: [
     {
       id: "00000000-0000-4000-8000-000000000002",
@@ -70,6 +71,21 @@ describe("[unit] order snapshot conversion", () => {
     expect(orderEntityToCreateRequest(order).menu_ids[0]).not.toHaveProperty(
       "order_menu_id",
     );
+  });
+
+  test("create request carries the payment method", () => {
+    const order = responseToOrderEntity(response).clone();
+    const cash = orderEntityToCreateRequest(order);
+    expect(cash.payment_method).toBe("cash");
+    expect(cash.square_checkout_id).toBeNull();
+
+    const checkoutId = "00000000-0000-4000-8000-000000000009";
+    const square = orderEntityToCreateRequest(order, {
+      method: "square",
+      squareCheckoutId: checkoutId,
+    });
+    expect(square.payment_method).toBe("square");
+    expect(square.square_checkout_id).toBe(checkoutId);
   });
 
   test("zero-price snapshots are not replaced with current prices", () => {

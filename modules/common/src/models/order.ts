@@ -32,6 +32,22 @@ export const orderSchema = z.object({
 
 export type Order = z.infer<typeof orderSchema>;
 
+/**
+ * 注文の支払い方法
+ *
+ * Square は「決済が先・注文が後」なので、注文を送るときには決済依頼の ID が分かっている。
+ * 注文そのもの（OrderEntity）には持たせず、作成のときだけ一緒に送る。
+ */
+export const orderPaymentSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal("cash") }),
+  z.object({
+    method: z.literal("square"),
+    squareCheckoutId: z.string().uuid(),
+  }),
+]);
+
+export type OrderPayment = z.infer<typeof orderPaymentSchema>;
+
 type OrderStatus = "preparing" | "calling" | "served";
 
 export type OrderComment = z.infer<typeof commentSchema>;
