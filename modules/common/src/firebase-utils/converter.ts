@@ -10,7 +10,9 @@ import type { ZodSchema } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
+  type GlobalCashierState,
   MasterStateEntity,
+  cashierStateWireSchema,
   globalCashierStateSchema,
   globalMasterStateSchema,
 } from "../models/global";
@@ -173,22 +175,6 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
   },
 };
 
-export const cashierStateConverter: FirestoreDataConverter<CashierStateEntity> =
-  {
-    toFirestore: converter(globalCashierStateSchema).toFirestore,
-    fromFirestore: (
-      snapshot: QueryDocumentSnapshot,
-      options: SnapshotOptions,
-    ) => {
-      const convertedData = converter(globalCashierStateSchema).fromFirestore(
-        snapshot,
-        options,
-      );
-
-      return CashierStateEntity.fromCashierState(convertedData);
-    },
-  };
-
 export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
   toFirestore: converter(globalMasterStateSchema).toFirestore,
   fromFirestore: (
@@ -321,5 +307,37 @@ export const orderToUpdateRequest = (
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
     menu_ids: menuIds,
+  };
+};
+
+/**
+ * レジ状態（cashier-state）と API の間の変換
+ */
+type CashierStateResponse = components["schemas"]["CashierStateResponse"];
+type CashierStateUpdateRequest =
+  components["schemas"]["CashierStateUpdateRequest"];
+
+// API の JSON では Date が ISO 文字列になっているので、wire スキーマで Date に戻す
+export const responseToCashierState = (
+  response: CashierStateResponse,
+): CashierStateEntity => {
+  const parsed = cashierStateWireSchema.parse({
+    id: "cashier-state",
+    edittingOrder: response.editting_order,
+    submittedOrderId: response.submitted_order_id ?? null,
+  });
+  return CashierStateEntity.fromCashierState(parsed);
+};
+
+export const cashierStateToUpdateRequest = (
+  state: GlobalCashierState,
+): CashierStateUpdateRequest => {
+  // Zod のパースを挟まないと OrderEntity の getter が無視され、
+  // private プロパティがそのまま送られてしまう
+  const parsed = globalCashierStateSchema.parse(state);
+  return {
+    // Date は JSON.stringify で ISO 文字列になる
+    editting_order: parsed.edittingOrder as unknown as Record<string, unknown>,
+    submitted_order_id: parsed.submittedOrderId,
   };
 };

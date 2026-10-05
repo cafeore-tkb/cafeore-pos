@@ -1,13 +1,18 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
 import { type MasterState, responseToMasterState } from "../data";
-import { type OrderResponse, responseToOrderEntity } from "../firebase-utils";
+import {
+  type OrderResponse,
+  responseToCashierState,
+  responseToOrderEntity,
+} from "../firebase-utils";
 import type { WithId } from "../lib";
 import {
   type ReconnectingWebSocketStatus,
   createReconnectingWebSocket,
 } from "../lib/reconnectingWebSocket";
-import type { OrderEntity } from "../models";
+import type { CashierStateEntity, OrderEntity } from "../models";
+import type { components } from "../types/api";
 
 type WsStatus = ReconnectingWebSocketStatus;
 
@@ -20,6 +25,10 @@ type WSMessage =
   | {
       type: "master_state";
       master_state: { created_at: string; type: string };
+    }
+  | {
+      type: "cashier_state";
+      cashier_state: components["schemas"]["CashierStateResponse"];
     };
 
 // orders 未受信時に返す固定の空配列
@@ -30,6 +39,10 @@ export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
   const [masterState, setMasterState] = useState<MasterState | null>(null);
+  // レジの編集中注文。API にまだ無ければサーバーは何も流さないので null のまま
+  const [cashierState, setCashierState] = useState<CashierStateEntity | null>(
+    null,
+  );
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -71,6 +84,10 @@ export const useOrdersWS = () => {
             setMasterState(responseToMasterState(data.master_state));
             break;
 
+          case "cashier_state":
+            setCashierState(responseToCashierState(data.cashier_state));
+            break;
+
           default:
             console.warn("Unknown WS message:", data);
         }
@@ -96,6 +113,8 @@ export const useOrdersWS = () => {
     /** WebSocket から一度でも orders を受信したか */
     isOrdersLoaded: orders !== undefined,
     masterState,
+    /** レジの編集中注文と直前に確定した注文 ID。未受信なら null */
+    cashierState,
     status,
   };
 };

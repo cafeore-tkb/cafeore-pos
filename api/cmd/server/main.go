@@ -246,6 +246,7 @@ func main() {
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
+	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
@@ -289,6 +290,9 @@ func main() {
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
+
+		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
+		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
 
 		api.GET("/inventory", inventoryHandler.GetInventory)
 		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
