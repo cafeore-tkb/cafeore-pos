@@ -96,7 +96,6 @@ PR を閉じると `pr-cleanup` がタグを外す。
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
 | `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | 未設定 | `DATABASE_URL` がトランザクションプーラー（ポート 6543）なら、直接接続かセッションプーラーの接続文字列 |
-| `RUN_MIGRATIONS` | `true` | CI が `true` を渡す | `false` |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
@@ -107,12 +106,21 @@ PR を閉じると `pr-cleanup` がタグを外す。
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
-在庫機能のテーブル（`stock_resources` など）を本番に足すときは `api/sql/2026-09_inventory.sql` を手で流す。
+**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
+フロントのデプロイ先を増やしたら infra 側にも足すこと。
 
-**本番で `AutoMigrate` を走らせてはいけない。** 本番のスキーマは手で作られており、
-無条件に走らせると失敗する。listen は `initDB` の後なので、コンテナが `PORT` を
-開けられず Cloud Run のデプロイごと落ちる。`RUN_MIGRATIONS` はそのためのガード。
-逆にプレビューとローカルは空の DB を使うので、走らせないとテーブルができない。
+### DB のスキーマ
+
+**スキーマの正本は Go のモデル（`api/internal/models`）だけ。** SQL は書かないし、本番 DB を手で触らない。
+
+- テーブルや列を足すときは、モデルを書き換える。新しいモデルは `models.All()`（`api/internal/models/all.go`）にも足す
+- API は起動時に `AutoMigrate` でモデルを DB へ反映する（`api/cmd/server/migrate.go`）。本番・プレビュー・ローカルとも同じ
+- 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
+- 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
+- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+
+`AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
+それが必要になったら、その変更だけ別途やり方を相談すること。
 
 ### 注文の変更の配信（orders_changed）
 
@@ -123,9 +131,6 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 - API を通さない書き換え（SQL で直接直すなど）は配られない。本番 DB は手で触らない
 - 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文を配り直す
 - LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）では通知が届かない。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
-
-**`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
-フロントのデプロイ先を増やしたら infra 側にも足すこと。
 
 ### PR ごとの Neon ブランチ
 
@@ -152,18 +157,8 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 名前変更があって共有ブランチの DB が壊れたら、Neon のコンソールで `preview/shared` を消して
 re-run する（次のビルドで空から作り直される）。
 
-ブランチを作った直後に `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` を流す。
-モデルが `default:uuid_generate_v4()` を使っているので、拡張の無い空の DB では
-`AutoMigrate` の最初の `CREATE TABLE` が 42883 で落ち、`initDB` がエラーを返して
-コンテナが起動できない。ローカルの compose では
-`api/init/00_enable_extension.sql` が同じことをしているが、あれは Postgres の
-初期化ディレクトリにマウントしているだけなので Neon には効かない。
-
-プレビューは空の状態から作った DB を使うので、deploy のときに `RUN_MIGRATIONS=true` も一緒に
-渡している（下の[環境変数](#backend-の環境変数)を参照）。
-
-Neon の親ブランチに一度手で同じ SQL を流しておくと、CoW クローンが最初から
-拡張を持つのでこのステップは保険になる。
+空のブランチでも、API が起動時に `uuid-ossp` 拡張を入れてからテーブルを作るので、そのまま動く
+（[DB のスキーマ](#db-のスキーマ)を参照）。
 
 ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
 PR を閉じると `pr-cleanup` が compute ごと消す。

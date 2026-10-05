@@ -152,6 +152,18 @@ export interface paths {
      */
     post: operations["remindInventory"];
   };
+  "/api/cashier-state": {
+    /**
+     * レジ状態取得
+     * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+     */
+    get: operations["getCashierState"];
+    /**
+     * レジ状態更新
+     * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+     */
+    put: operations["updateCashierState"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -393,6 +405,26 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    CashierStateResponse: {
+      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /**
+       * Format: uuid
+       * @description 直前に確定した注文の ID。編集中は null
+       */
+      submitted_order_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CashierStateUpdateRequest: {
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /** Format: uuid */
+      submitted_order_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1233,6 +1265,51 @@ export interface operations {
       };
       /** @description ID トークンも合言葉も合わない */
       401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態取得
+   * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+   */
+  getCashierState: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description まだレジ状態が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態更新
+   * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+   */
+  updateCashierState: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CashierStateUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description editting_order に必須のキーが無い、または型が違う */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

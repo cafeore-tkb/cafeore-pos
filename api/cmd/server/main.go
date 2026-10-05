@@ -14,7 +14,6 @@ import (
 
 	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/handlers"
-	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-contrib/cors"
@@ -29,9 +28,15 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 	Database  string    `json:"database"`
+	// DB にあってモデルに無いもの（またはその逆）。手で DB を触った跡。空なら一致している。
+	// デプロイの CI が見て、空でなければ落とす（api-build.yml）。
+	SchemaDrift []string `json:"schema_drift"`
 }
 
 var db *gorm.DB
+
+// 起動時に調べたスキーマのズレ（findSchemaDrift）。
+var schemaDrift = []string{}
 
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
@@ -74,39 +79,21 @@ func initDB() error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// AutoMigrate は RUN_MIGRATIONS=true のときだけ走らせる。
-	//
-	// 本番のスキーマは手で作られている。ここで無条件に AutoMigrate を走らせて
-	// 失敗すると、listen は initDB の後なのでコンテナが PORT を開けられず、
-	// Cloud Run のデプロイごと落ちる。
-	//
-	// 逆に PR プレビューは空の Neon ブランチを使うので、走らせないと
-	// テーブルが無いままになる。CI（api-build.yml）が true を渡している。
-	if os.Getenv("RUN_MIGRATIONS") == "true" {
-		if err := db.AutoMigrate(
-			&models.ItemType{},
-			&models.Item{},
-			&models.Menu{},
-			&models.MenuItem{},
-			&models.Order{},
-			&models.Comment{},
-			&models.OrderMenu{},
-			&models.OrderCup{},
-			&models.MasterState{},
-			&models.StockResource{},
-			&models.ItemStockUsage{},
-			&models.StockEvent{},
-			&models.ColorSetting{},
-		); err != nil {
-			return fmt.Errorf("failed to migrate database: %w", err)
-		}
-
-		log.Println("Database migration completed")
-	} else {
-		// 空の DB に対して黙って起動すると、テーブルが無いまま全クエリが
-		// 失敗して原因が分かりにくい。スキップしたことは必ず残す。
-		log.Println("RUN_MIGRATIONS is not \"true\": skipped AutoMigrate")
+	// スキーマはモデルが正本。本番もプレビューもローカルも、起動時に反映する。
+	if err := migrate(db); err != nil {
+		return err
 	}
+	log.Println("Database migration completed")
+
+	// ズレがあっても起動は止めない（注文は受けられるので）。/status に出して CI で気づく。
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		drift = []string{fmt.Sprintf("ズレを調べられなかった: %v", err)}
+	}
+	for _, d := range drift {
+		log.Printf("schema drift: %s", d)
+	}
+	schemaDrift = drift
 
 	log.Println("Database connected successfully")
 	return nil
@@ -157,10 +144,11 @@ func statusHandler(c *gin.Context) {
 	}
 
 	response := StatusResponse{
-		Status:    "ok",
-		Timestamp: time.Now(),
-		Version:   "1.0.0",
-		Database:  dbStatus,
+		Status:      "ok",
+		Timestamp:   time.Now(),
+		Version:     "1.0.0",
+		Database:    dbStatus,
+		SchemaDrift: schemaDrift,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -267,6 +255,7 @@ func main() {
 	go orderHandler.ListenOrderChanges(listenCtx, listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
+	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
@@ -310,6 +299,9 @@ func main() {
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
+
+		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
+		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
 
 		api.GET("/inventory", inventoryHandler.GetInventory)
 		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
