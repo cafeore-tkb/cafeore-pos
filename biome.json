@@ -5,7 +5,8 @@
       "**/node_modules/**",
       "**/build",
       "**/public/build",
-      "**/epos-2.27.0.js"
+      "**/epos-2.27.0.js",
+      "**/sohosai-2025-day12.json"
     ]
   },
   "formatter": {
@@ -22,5 +23,23 @@
         "useSortedClasses": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["services/caos/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": "off",
+            "useButtonType": "off",
+            "useKeyWithClickEvents": "off",
+            "useSemanticElements": "off"
+          },
+          "complexity": {
+            "noForEach": "off"
+          }
+        }
+      }
+    }
+  ]
 }

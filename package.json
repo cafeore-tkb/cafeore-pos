@@ -8,6 +8,7 @@
     "fmt": "biome check --write",
     "common": "pnpm -F \"common\"",
     "pos": "pnpm -F \"pos\"",
+    "caos": "pnpm -F \"caos\"",
     "//mobile": "停止中。再開するときはキーを mobile に戻す: pnpm -F \"mobile\"",
     "generate:types": "cd openapi && ./generate.sh",
     "generate:ts": "openapi-typescript openapi/openapi.yaml -o modules/common/types/api.ts",

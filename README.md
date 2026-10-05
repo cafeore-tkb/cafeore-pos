@@ -9,6 +9,7 @@ Run `pnpm i` to install dependencies.
 |--|--|
 |`pnpm i`| Install dependencies|
 |`pnpm pos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/pos`|
+|`pnpm caos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/caos`（CaOS：ドリップ管制）|
 |~~`pnpm mobile`~~ （停止中）| `services/mobile` 用。再開するときは `package.json` の `//mobile` を `mobile` に戻す|
 |`pnpm common` (`typecheck`\|`test:`(`unit`\|`db`)) | Run commands in `modules/common`|
 
