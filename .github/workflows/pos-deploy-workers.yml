@@ -307,9 +307,12 @@ jobs:
             "このコメントは push のたびに書き換わる。")
 
           # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
+          # github-actions[bot] が書いたものに限る。目印を本文で引用した他の人や
+          # bot のコメント（Claude の概要など）を上書きしてしまうため。
+          # 消す側の pr-cleanup.yml も同じ条件で探す。
           comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
             --paginate \
-            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
 
           if [ -n "$comment_id" ]; then
             gh api --method PATCH \

@@ -277,8 +277,8 @@ jobs:
         run: |
           set -uo pipefail
 
-          # github-actions[bot] が書いたものだけを消す。人のコメントに
-          # 目印が紛れ込んでいても消さないため。
+          # github-actions[bot] が書いたものだけを消す。目印を本文で引用した
+          # 他の人や bot のコメントは消さないため。pos-deploy-workers.yml も同じ条件で探す。
           # --paginate と --jq はページごとに出力するが、1 行 1 件なのでそのまま並べてよい。
           ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
             --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\"))) | .id") \
