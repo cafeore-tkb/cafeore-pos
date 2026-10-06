@@ -23,7 +23,27 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
-| `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
+| `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
+
+### PR のプレビューは `preview` ラベルで出す
+
+PR のプレビュー（下のフロントエンドと backend）は、**`preview` ラベルが付いた open な PR にだけ**出す。
+ラベルの無い PR では `api-build` / `pos-deploy-workers` の job がスキップされる。
+
+| 操作 | 何が起きるか |
+|--|--|
+| ラベルを付ける | プレビューをデプロイし、URL を PR にコメントする |
+| ラベルが付いている間に push / reopen | デプロイし直す（コメントは書き換わる） |
+| ラベルを外す | `pr-cleanup` が backend を片付ける |
+| PR を閉じる | `pr-cleanup` が backend を片付け、全部成功したらラベルも外す |
+
+- ラベルは「プレビューが出ている」ことを表す。閉じたときの片付けが失敗した場合は外さず、残っているものがあることを示す
+- 閉じたときはラベルの有無にかかわらず片付ける（ラベル運用より前に出したプレビューも回収するため）
+- 各 workflow の `paths` は今までどおり効く。対象のパスを触っていない PR は、ラベルを付けてもその workflow が走らない
+- フロントの Cloudflare Workers 側は、ラベルを外しても消えない（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)を参照）。焼き込んだ backend の URL は外れるので、API には繋がらなくなる
+- デプロイ中にラベルを外すと、片付けはデプロイが終わるのを待ってから走る（`api-build` と `pr-cleanup` が同じ concurrency group `preview-backend-pr-<番号>` に入る）
+- `pr-cleanup` は `pull_request_target` なので、ラベルを外したときの片付けは **main にある定義**で走る。`pull_request` で走るデプロイ側は PR 側の定義で走る
+- ラベルは事前に作っておくこと（無いと付けられない）
 
 ### フロントエンド（Cloudflare Workers）
 
@@ -32,7 +52,7 @@ POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプト�
 （`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
 
-main への push と手動実行では本番へ `wrangler deploy` する。PR では
+main への push と手動実行では本番へ `wrangler deploy` する。PR（`preview` ラベル付きのみ）では
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
 プレビュー URL 付きのバージョンだけ作る。
 
@@ -85,7 +105,7 @@ main への push と手動実行では、続けて Cloud Run サービス `cafeo
 「常に最新リビジョン」から「特定リビジョンへの固定」に変わり、main のデプロイが
 自動で切り替わらなくなるため。プレビュー用サービスの側では**リビジョンタグを使う**
 （PR ごとに URL と `DATABASE_URL` が分かれ、同時に複数の PR が開いても潰し合わない）。
-PR を閉じると `pr-cleanup` がタグを外す。
+PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外す。
 
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
@@ -150,7 +170,7 @@ re-run する（次のビルドで空から作り直される）。
 （[DB のスキーマ](#db-のスキーマ)を参照）。
 
 ブランチは copy-on-write なので作成は即時。アイドル 5 分でゼロに縮む。
-PR を閉じると `pr-cleanup` が compute ごと消す。
+PR を閉じるか `preview` ラベルを外すと `pr-cleanup` が compute ごと消す。
 
 **ブランチ名の規則は `api-build.yml` の `NEON_BRANCH_PREFIX` と
 `pr-cleanup.yml` の同名変数で揃えること。** ずれると閉じても消えず溜まる。
@@ -193,9 +213,10 @@ fork からの PR は二重に止まる。
 
 デプロイ系の workflow は `pull_request_target` を**使っていない**（全て `pull_request`）。
 そのため fork の PR のコードがこのリポジトリの権限で走ることはない。
-例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR でも
+例外は後片付けの `pr-cleanup` だけで、コンフリクトしたまま閉じた PR やラベルを外した PR でも
 走らせるために `pull_request_target` を使っている。こちらは PR のコードを
 checkout せず PR 番号しか使わないので、fork の PR のコードが実行されることはない。
+書き込み権限は `preview` ラベルを外す job に `pull-requests: write` を渡すだけにしている。
 
 一方、**write 権限を持つ人は制限されない。** 同じリポジトリのブランチから PR を出せば
 上の条件を通り、`pull_request` は PR 側の workflow 定義で走るので、workflow を書き換えれば
@@ -215,7 +236,11 @@ Dependabot の PR はデプロイ系 job から除外している（`github.acto
 Dependabot が起点の実行には Actions の secrets が渡らず、権限も read-only なので、
 除外しないと npm 更新のたびに落ちるため。依存更新の妥当性は `*-ci` の typecheck で見る。
 
-### PR を閉じたときの後片付け
+### PR を閉じたとき・ラベルを外したときの後片付け
+
+`pr-cleanup` は PR を閉じたときと `preview` ラベルを外したときに走る。
+閉じたときは、片付けが全部成功したら `preview` ラベルも外す
+（GITHUB_TOKEN で外すので、それによって `pr-cleanup` が走り直すことはない）。
 
 **Artifact Registry** … `pr-cleanup` がその PR の `pr-<番号>` タグを外す。
 タグが外れたイメージは infra 側のクリーンアップポリシーが7日後に消す。

@@ -48,6 +48,16 @@ name: api / build & deploy
 # main への push は api/** のままにしてある。本番フロントは固定の
 # VITE_API_BASE_URL を見るので backend を出し直す理由が無く、同じイメージの
 # リビジョンが本番サービスに積み上がるだけだから。
+#
+# ## PR では preview ラベルが付いているときだけ
+#
+# プレビューは **preview ラベルが付いた open な PR にだけ**出す。ラベルを
+# 付けたとき（labeled）と、付いている間の push や reopen でデプロイする。
+# ラベルを外すと pr-cleanup が片付ける。
+#
+# 片付けと追い越し合わないよう、プレビューを出す実行は pr-cleanup と同じ
+# concurrency group（preview-backend-pr-<番号>）に入れている。デプロイ中に
+# ラベルを外すと、片付けはデプロイが終わるのを待ってから走る。
 
 on:
   push:
@@ -57,6 +67,14 @@ on:
       - 'api/**'
       - '.github/workflows/api-build.yml'
   pull_request:
+    # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
+    # paths は labeled でも PR 全体の差分で判定されるので、下のパスを触っていない
+    # PR はラベルを付けてもデプロイされない。
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     paths:
       - 'api/**'
       - '.github/workflows/api-build.yml'
@@ -84,8 +102,26 @@ permissions:
 # 取り消した後に新しい実行が失敗すると、取り消された方のコミットも
 # デプロイされず、本番が 2 つ前の状態のまま残るため。
 # 取り消さない場合も、待機できるのは最新の 1 件だけなので実行は溜まらない。
+#
+# プレビューを出す PR の実行は pr-cleanup と同じ group に入れる（上の
+# 「PR では preview ラベルが付いているときだけ」を参照）。pr-cleanup 側は
+# cancel-in-progress: false なので、片付けはデプロイを打ち切らずに待つ。
+# 逆に片付け中にラベルを付け直すと、こちらが片付けを取り消してデプロイし直す。
+#
+# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
+# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
+# 走っているデプロイや待っている片付けを取り消してしまう。run_id で group を
+# 分けて逃がす。**条件は job の if と揃えること。**
 concurrency:
-  group: api-build-${{ github.ref }}
+  group: >-
+    ${{ github.event_name != 'pull_request' && format('api-build-{0}', github.ref)
+        || (github.actor != 'dependabot[bot]'
+            && github.event.pull_request.head.repo.full_name == github.repository
+            && github.event.pull_request.state == 'open'
+            && contains(github.event.pull_request.labels.*.name, 'preview')
+            && (github.event.action != 'labeled' || github.event.label.name == 'preview'))
+           && format('preview-backend-pr-{0}', github.event.number)
+        || format('api-build-skip-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -93,7 +129,7 @@ jobs:
     name: Build and push to Artifact Registry
     runs-on: ubuntu-latest
 
-    # 2つ除外している。
+    # 3つ除外している。
     #
     #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
     #     （既存の pos-deploy-pull-request.yml と同じ条件）
@@ -101,10 +137,18 @@ jobs:
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
     #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
     #     やはり認証で落ちる。依存更新の妥当性は *-ci の typecheck で見る
+    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
+    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
+    #     （閉じた PR は片付けが済んでいるので、出すと消されずに残る）
+    #
+    # **PR の条件は上の concurrency と揃えること。**
     if: >-
       ${{ github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
-              || github.event.pull_request.head.repo.full_name == github.repository) }}
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
 
     env:
       # いずれも秘密情報ではない。既定値は infra の `terraform output` の現行値。
