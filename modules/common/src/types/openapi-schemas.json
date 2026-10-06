@@ -244,6 +244,36 @@
       }
     }
   },
+  "OrderCupResponse": {
+    "type": "object",
+    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_menu_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "このカップを含む注文明細のID（MenuInfo.id）"
+      },
+      "item": {
+        "$ref": "#/components/schemas/ItemResponse"
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップが準備完了になった時刻。未準備なら null"
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "このカップを提供した時刻。未提供なら null"
+      }
+    }
+  },
   "MenuInfoCreate": {
     "type": "object",
     "required": ["menu_id", "assignee"],
@@ -272,7 +302,8 @@
       "billing_amount",
       "received",
       "payment_method",
-      "menus"
+      "menus",
+      "cups"
     ],
     "properties": {
       "id": {
@@ -316,6 +347,13 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MenuInfo"
+        }
+      },
+      "cups": {
+        "type": "array",
+        "description": "注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderCupResponse"
         }
       },
       "comments": {
@@ -563,6 +601,42 @@
         "type": "string",
         "pattern": "^#[0-9a-fA-F]{6}$",
         "example": "#bfdbfe"
+      }
+    }
+  },
+  "CashierStateResponse": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id", "updated_at"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない"
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "直前に確定した注文の ID。編集中は null"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "CashierStateUpdateRequest": {
+    "type": "object",
+    "required": ["editting_order", "submitted_order_id"],
+    "properties": {
+      "editting_order": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "submitted_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
       }
     }
   },

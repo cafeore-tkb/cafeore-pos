@@ -2,7 +2,6 @@ import type { ClientActionFunction } from "react-router";
 
 import { createOrder } from "./actions/createOrder";
 import { deleteOrder } from "./actions/deleteOrder";
-import { updateOrder } from "./actions/updateOrder";
 
 export const clientAction: ClientActionFunction = async (args) => {
   const { request } = args;
@@ -11,8 +10,6 @@ export const clientAction: ClientActionFunction = async (args) => {
       return createOrder(args);
     case "DELETE":
       return deleteOrder(args);
-    case "PUT":
-      return updateOrder(args);
     default:
       console.error("Invalid method", request.method);
       return new Response(null, { status: 405 });

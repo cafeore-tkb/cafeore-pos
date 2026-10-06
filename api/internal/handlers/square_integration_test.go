@@ -135,11 +135,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 		t.Fatal(err)
 	}
-	all := []any{
-		&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{},
-		&models.Comment{}, &models.OrderMenu{}, &models.MasterState{}, &models.StockResource{},
-		&models.ItemStockUsage{}, &models.StockEvent{}, &models.ColorSetting{}, &models.SquareCheckout{},
-	}
+	all := models.All()
 	if err := db.Migrator().DropTable(all...); err != nil {
 		t.Fatal(err)
 	}

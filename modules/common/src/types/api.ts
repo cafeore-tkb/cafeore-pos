@@ -85,6 +85,20 @@ export interface paths {
     /** オーダーを提供完了にする */
     patch: operations["markOrderServe"];
   };
+  "/api/orders/{id}/cups/{cupId}/ready": {
+    /**
+     * カップを準備完了にする
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     */
+    patch: operations["markOrderCupReady"];
+  };
+  "/api/orders/{id}/cups/{cupId}/served": {
+    /**
+     * カップを提供完了にする
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     */
+    patch: operations["markOrderCupServe"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -137,6 +151,18 @@ export interface paths {
      * 直近に注文が無い（営業していない）ときは送らない。
      */
     post: operations["remindInventory"];
+  };
+  "/api/cashier-state": {
+    /**
+     * レジ状態取得
+     * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+     */
+    get: operations["getCashierState"];
+    /**
+     * レジ状態更新
+     * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+     */
+    put: operations["updateCashierState"];
   };
   "/api/square/status": {
     /**
@@ -278,6 +304,26 @@ export interface components {
       menu: components["schemas"]["MenuResponse"];
       assignee: string | null;
     };
+    OrderCupResponse: {
+      /** Format: uuid */
+      id: string;
+      /**
+       * Format: uuid
+       * @description このカップを含む注文明細のID（MenuInfo.id）
+       */
+      order_menu_id: string;
+      item: components["schemas"]["ItemResponse"];
+      /**
+       * Format: date-time
+       * @description このカップが準備完了になった時刻。未準備なら null
+       */
+      ready_at: string | null;
+      /**
+       * Format: date-time
+       * @description このカップを提供した時刻。未提供なら null
+       */
+      served_at: string | null;
+    };
     MenuInfoCreate: {
       /**
        * Format: uuid
@@ -304,6 +350,8 @@ export interface components {
       discount_order_cups?: number;
       payment_method: components["schemas"]["PaymentMethod"];
       menus: components["schemas"]["MenuInfo"][];
+      /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
+      cups: components["schemas"]["OrderCupResponse"][];
       comments?: components["schemas"]["CommentResponse"][];
     };
     OrderCreateRequest: {
@@ -409,6 +457,26 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    CashierStateResponse: {
+      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /**
+       * Format: uuid
+       * @description 直前に確定した注文の ID。編集中は null
+       */
+      submitted_order_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CashierStateUpdateRequest: {
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /** Format: uuid */
+      submitted_order_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1035,6 +1103,74 @@ export interface operations {
       };
     };
   };
+  /**
+   * カップを準備完了にする
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   */
+  markOrderCupReady: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * カップを提供完了にする
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   */
+  markOrderCupServe: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /** 特定オーダーのコメント一覧取得 */
   getOrderComments: {
     parameters: {
@@ -1247,6 +1383,51 @@ export interface operations {
       };
       /** @description ID トークンも合言葉も合わない */
       401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態取得
+   * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+   */
+  getCashierState: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description まだレジ状態が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態更新
+   * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+   */
+  updateCashierState: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CashierStateUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description editting_order に必須のキーが無い、または型が違う */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

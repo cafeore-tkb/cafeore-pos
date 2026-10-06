@@ -33,5 +33,8 @@ export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
   ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
+  // カップ（1杯）単位の準備完了・提供済みの切り替え。切り替え後の注文を返す。
+  readyCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
+  serveCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
   addComment(id: string, author: string, text: string): Promise<void>;
 };

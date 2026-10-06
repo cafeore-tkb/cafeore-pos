@@ -22,6 +22,7 @@ type Order struct {
 	PaymentMethod string `gorm:"not null;default:'cash'"`
 
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
+	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`
 	Comments   []Comment   `gorm:"foreignKey:OrderID;references:ID"`
 }
 
