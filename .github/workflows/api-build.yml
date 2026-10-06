@@ -54,6 +54,7 @@ name: api / build & deploy
 # プレビューは **preview ラベルが付いた open な PR にだけ**出す。ラベルを
 # 付けたとき（labeled）と、付いている間の push や reopen でデプロイする。
 # ラベルを外すと pr-cleanup が片付ける。
+# ラベルの無い PR でもイメージが作れるかは api-ci の image job で確かめる。
 #
 # 片付けと追い越し合わないよう、プレビューを出す実行は pr-cleanup と同じ
 # concurrency group（preview-backend-pr-<番号>）に入れている。デプロイ中に

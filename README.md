@@ -19,7 +19,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中） |
+| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中。`api-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
@@ -40,6 +40,7 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 - ラベルは「プレビューが出ている」ことを表す。閉じたときの片付けが失敗した場合は外さず、残っているものがあることを示す
 - 閉じたときはラベルの有無にかかわらず片付ける（ラベル運用より前に出したプレビューも回収するため）
 - 各 workflow の `paths` は今までどおり効く。対象のパスを触っていない PR は、ラベルを付けてもその workflow が走らない
+- ラベルの無い PR でも、Docker イメージが作れるかは `api-ci` で見る。DB のスキーマのずれの検査（`/status` の `schema_drift`）はプレビューを出したときと main へのデプロイ時だけ
 - フロントの Cloudflare Workers 側は、ラベルを外しても消えない（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)を参照）。焼き込んだ backend の URL は外れるので、API には繋がらなくなる
 - デプロイ中にラベルを外すと、片付けはデプロイが終わるのを待ってから走る（`api-build` と `pr-cleanup` が同じ concurrency group `preview-backend-pr-<番号>` に入る）
 - `pr-cleanup` は `pull_request_target` なので、ラベルを外したときの片付けは **main にある定義**で走る。`pull_request` で走るデプロイ側は PR 側の定義で走る
