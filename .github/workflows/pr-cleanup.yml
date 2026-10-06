@@ -1,6 +1,21 @@
 name: pr / cleanup
 
-# PR を閉じた（マージ含む）ときに、その PR がビルドした成果物を片付ける。
+# PR を閉じた（マージ含む）とき、または preview ラベルを外したときに、
+# その PR がビルドした成果物を片付ける。
+#
+# 閉じたときはラベルの有無にかかわらず片付ける。ラベルで出す運用より前に出した
+# プレビューや、ラベルを外したときの片付けが失敗して残ったものもここで回収するため。
+# 対象が無ければ何もしない。
+#
+# ## preview ラベル
+#
+# プレビューは preview ラベルが付いた PR にだけ出る（api-build.yml を参照）。
+# ラベルは「プレビューが出ている」ことを表すので、閉じたときの片付けが
+# **全部成功したら**ラベルも外す（remove-label）。失敗したら外さず、
+# 残っているものがあることを示す。
+#
+# ラベルは GITHUB_TOKEN で外すので、それによる unlabeled ではこの workflow は
+# 走り直さない（GITHUB_TOKEN が起こしたイベントは workflow を起動しない）。
 #
 # ## Artifact Registry
 #
@@ -32,9 +47,12 @@ name: pr / cleanup
 # （wrangler preview delete は private beta）。閉じた PR のプレビュー URL も
 # 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
 # プレビュー URL の配信自体を止めること。
+#
+# ラベルを外した場合も同じで、フロントのプレビュー URL は開ける。ただし
+# 焼き込んだ backend のタグ URL は上で外れるので、API には繋がらなくなる。
 
 # pull_request ではなく pull_request_target を使う。コンフリクトしている PR では
-# pull_request のワークフローが動かず、閉じても片付けが走らないため。
+# pull_request のワークフローが動かず、閉じたりラベルを外したりしても片付けが走らないため。
 # PR のコードは checkout せず PR 番号しか使わない。pull_request_target は fork の PR
 # にも secrets と id-token を渡すので、fork は各 job の if で必ず除外すること。
 # OIDC トークンの sub / ref は base ブランチ基準に変わるが、GCP の Workload Identity
@@ -44,6 +62,9 @@ on:
   pull_request_target:
     types:
       - closed
+      # preview ラベルを外したとき。別のラベルを外したときも起動するが、
+      # job はすべてスキップする。
+      - unlabeled
 
 # paths でのフィルタは付けない。その PR が実際にイメージを作ったかどうかは
 # ここでは分からないので、常に走らせて「無ければ何もしない」で扱う。
@@ -52,8 +73,21 @@ permissions:
   contents: read
   id-token: write
 
+# 片付けを走らせる実行は、api-build のプレビューを出す実行と同じ group に入れる。
+# cancel-in-progress: false なので、デプロイ中に来た片付けはデプロイを打ち切らず、
+# 終わるのを待ってから走る。打ち切ると、送信済みの gcloud の操作がサーバ側で
+# 後から完了し、片付けた後にタグが生え直しうるため。
+# 逆に片付け中にラベルを付け直すと、api-build 側が片付けを取り消してデプロイし直す。
+#
+# 別のラベルを外しただけの実行は job がスキップされるだけだが、同じ group に入ると
+# 待っている実行を取り消してしまうので、run_id で group を分けて逃がす。
+# **group 名は api-build.yml の concurrency と揃えること。**
 concurrency:
-  group: pr-cleanup-${{ github.event.number }}
+  group: >-
+    ${{ (github.event.action == 'closed'
+         || (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
+        && format('preview-backend-pr-{0}', github.event.number)
+        || format('pr-cleanup-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -67,9 +101,12 @@ jobs:
     # Dependabot も除外する。Dependabot は不要になった PR を自分で閉じることが
     # あり、その実行には id-token が渡らないため。人がマージした場合は
     # ここを通るが、イメージが無いので NOT_FOUND 扱いで正常終了する。
+    #
+    # unlabeled は preview ラベルを外したときだけ片付ける。
     if: >-
       ${{ github.actor != 'dependabot[bot]'
-          && github.event.pull_request.head.repo.full_name == github.repository }}
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && (github.event.action == 'closed' || github.event.label.name == 'preview') }}
 
     env:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
@@ -151,6 +188,7 @@ jobs:
     if: >-
       ${{ github.actor != 'dependabot[bot]'
           && github.event.pull_request.head.repo.full_name == github.repository
+          && (github.event.action == 'closed' || github.event.label.name == 'preview')
           && vars.NEON_PROJECT_ID != '' }}
 
     steps:
@@ -188,3 +226,50 @@ jobs:
             echo "branch: $branch"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  remove-label:
+    name: Remove preview label
+    runs-on: ubuntu-latest
+    needs:
+      - artifact-registry
+      - neon-branch
+
+    # 閉じたときの片付けが全部済んだら preview ラベルを外す。
+    # Artifact Registry 側は成功が必須。Neon 側は NEON_PROJECT_ID が未設定なら
+    # スキップされるので、それも済んだ扱いにする。どちらかが失敗・取り消しなら
+    # 外さない（残っているものがあることをラベルで示すため）。
+    # unlabeled で片付けたときは、ラベルはもう外れているので何もしない。
+    if: >-
+      ${{ !cancelled()
+          && github.event.action == 'closed'
+          && contains(github.event.pull_request.labels.*.name, 'preview')
+          && needs.artifact-registry.result == 'success'
+          && (needs.neon-branch.result == 'success' || needs.neon-branch.result == 'skipped') }}
+
+    # ラベルの付け外しに要る権限だけにする。PR のコードは checkout しない。
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: preview ラベルを外す
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          status=0
+          out=$(gh api --method DELETE \
+            "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels/preview" 2>&1) || status=$?
+
+          if [ "$status" -ne 0 ]; then
+            # 誰かが先に外していると 404 になる。外れていればよいので成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'Label does not exist|HTTP 404'; then
+              echo "preview ラベルは既に外れている"
+              exit 0
+            fi
+            echo "$out"
+            exit "$status"
+          fi
+
+          echo "片付けが済んだので preview ラベルを外した" | tee -a "$GITHUB_STEP_SUMMARY"
