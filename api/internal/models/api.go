@@ -11,8 +11,9 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenMaster ColorScreen = "master"
-	ColorScreenServe  ColorScreen = "serve"
+	ColorScreenCashier ColorScreen = "cashier"
+	ColorScreenMaster  ColorScreen = "master"
+	ColorScreenServe   ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.

@@ -31,6 +31,22 @@ func TestBuildColorSettingNormalizesColor(t *testing.T) {
 	}
 }
 
+func TestBuildColorSettingAcceptsEveryScreen(t *testing.T) {
+	for _, screen := range []models.ColorScreen{models.ColorScreenCashier, models.ColorScreenMaster, models.ColorScreenServe} {
+		t.Run(string(screen), func(t *testing.T) {
+			request := validColorSettingRequest()
+			request.Screen = screen
+			setting, err := buildColorSetting(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if setting.Screen != string(screen) {
+				t.Fatalf("incorrect screen: %+v", setting)
+			}
+		})
+	}
+}
+
 func TestBuildColorSettingRejectsInvalidRequests(t *testing.T) {
 	cases := map[string]func(*models.ColorSettingUpsertRequest){
 		"unknown target type": func(r *models.ColorSettingUpsertRequest) { r.TargetType = "Menu" },
