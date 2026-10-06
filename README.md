@@ -24,6 +24,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
+| `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
 ### PR のプレビューは `preview` ラベルで出す
 
@@ -45,6 +46,20 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 - デプロイ中にラベルを外すと、片付けはデプロイが終わるのを待ってから走る（`api-build` と `pr-cleanup` が同じ concurrency group `preview-backend-pr-<番号>` に入る）
 - `pr-cleanup` は `pull_request_target` なので、ラベルを外したときの片付けは **main にある定義**で走る。`pull_request` で走るデプロイ側は PR 側の定義で走る
 - ラベルは事前に作っておくこと（無いと付けられない）
+
+#### ラベル運用より前から立っているプレビュー
+
+ラベルで出す運用より前に出したプレビューは、ラベルが無いまま残る。そのままだと push しても更新されず、
+外すラベルも無いので、PR を閉じるまで片付かない。運用を切り替えた直後に
+`preview-adopt`（Actions の「pr / adopt existing previews」）を**一回だけ手動で流して**、ラベルを付けてそろえる。
+
+1. `dry_run` を `true`（既定）のまま流し、Summary に出る一覧で付ける予定の PR を確かめる
+2. `dry_run` を `false` にしてもう一度流す
+
+- 「立っている」とみなすのは、プレビュー用の Cloud Run サービスに `pr-<番号>` のタグがある PR（コメントは片付けた後も残るので見ない）
+- すでにラベルがある PR、`preview` ラベルを付け外しした履歴がある PR（外したのに片付けが失敗した場合など）、閉じた PR、fork の PR には付けない。閉じた PR のタグは pr-cleanup の取りこぼしとして一覧に出る
+- `GITHUB_TOKEN` で付けるので、デプロイは走らない。プレビューは次の push で最新になる
+- 何度流しても結果は同じ。`workflow_dispatch` だけの workflow は main に入ってからでないと Actions の画面から流せない
 
 ### フロントエンド（Cloudflare Workers）
 
