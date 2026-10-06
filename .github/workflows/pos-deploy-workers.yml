@@ -15,7 +15,8 @@ name: pos / deploy (Workers)
 #
 # PR のプレビューは **preview ラベルが付いた open な PR にだけ**出す
 # （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
-# ラベルを外しても、作ったバージョンは消せないので残る（pr-cleanup.yml を参照）。
+# ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
+# コメントは消す（pr-cleanup.yml を参照）。
 
 on:
   push:
@@ -54,6 +55,9 @@ permissions:
 # 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
 # 走っているプレビューのデプロイを取り消してしまう。run_id で group を
 # 分けて逃がす。**条件は job の if と揃えること。**
+#
+# pr-cleanup.yml のコメントを消す job も PR ではこの group に入り、デプロイが
+# 終わるのを待ってから消す。**group 名を変えるときは pr-cleanup.yml も揃えること。**
 concurrency:
   group: >-
     ${{ (github.event_name != 'pull_request'
@@ -95,6 +99,7 @@ jobs:
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
       # pos と mobile で別のコメントになるので、互いに上書きし合わない。
+      # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
       COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}

@@ -50,6 +50,14 @@ name: pr / cleanup
 #
 # ラベルを外した場合も同じで、フロントのプレビュー URL は開ける。ただし
 # 焼き込んだ backend のタグ URL は上で外れるので、API には繋がらなくなる。
+#
+# ## POS のプレビューのコメント
+#
+# pos-deploy-workers.yml が PR に書いた「POS のプレビュー」コメントを消す。
+# 上のとおり URL 自体は残るが、API に繋がらない URL をプレビューとして
+# 案内し続けないようにするため。mobile と backend のコメントは消していない。
+# コメントは目印で探すので、**pos-deploy-workers.yml の COMMENT_MARKER と
+# 必ず揃えること。** ずれると消えずに残る。
 
 # pull_request ではなく pull_request_target を使う。コンフリクトしている PR では
 # pull_request のワークフローが動かず、閉じたりラベルを外したりしても片付けが走らないため。
@@ -227,16 +235,90 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  pos-preview-comment:
+    name: Delete POS preview comment
+    runs-on: ubuntu-latest
+
+    # Artifact Registry 側と同じ条件。fork と Dependabot の PR には
+    # pos-deploy-workers.yml もコメントを書かない。
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && (github.event.action == 'closed' || github.event.label.name == 'preview') }}
+
+    # POS のプレビューを出す実行と同じ group に入れる。デプロイ中に消すと、
+    # 消した後にデプロイがコメントを書き直してしまうため。
+    # cancel-in-progress: false なので、デプロイが終わるのを待ってから消す。
+    # 逆に消している途中でラベルを付け直すと、デプロイ側がこの job を取り消す。
+    #
+    # PR の github.ref は refs/pull/<番号>/merge なので、それを組み立てている。
+    # 別のラベルを外しただけの実行は、待っているデプロイを取り消さないよう
+    # run_id で group を分けて逃がす（上の concurrency と同じ理由）。
+    # **group 名は pos-deploy-workers.yml の concurrency と揃えること。**
+    concurrency:
+      group: >-
+        ${{ (github.event.action == 'closed'
+             || (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
+            && format('pos-deploy-workers-refs/pull/{0}/merge', github.event.number)
+            || format('pr-cleanup-pos-comment-skip-{0}', github.run_id) }}
+      cancel-in-progress: false
+
+    # コメントを消すのに要る権限だけにする。PR のコードは checkout しない。
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: POS のプレビューのコメントを消す
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          # pos-deploy-workers.yml の COMMENT_MARKER と同じ値にすること。
+          COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
+        run: |
+          set -uo pipefail
+
+          # github-actions[bot] が書いたものだけを消す。人のコメントに
+          # 目印が紛れ込んでいても消さないため。
+          # --paginate と --jq はページごとに出力するが、1 行 1 件なのでそのまま並べてよい。
+          ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\"))) | .id") \
+            || exit $?
+
+          if [ -z "$ids" ]; then
+            echo "POS のプレビューのコメントは無い"
+            exit 0
+          fi
+
+          failed=0
+          for id in $ids; do
+            status=0
+            out=$(gh api --method DELETE \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$id" 2>&1) || status=$?
+
+            if [ "$status" -eq 0 ]; then
+              echo "POS のプレビューのコメント $id を消した" | tee -a "$GITHUB_STEP_SUMMARY"
+            elif printf '%s\n' "$out" | grep -q 'HTTP 404'; then
+              # 誰かが先に消していると 404 になる。消えていればよいので成功扱いにする。
+              echo "コメント $id は既に消えている"
+            else
+              echo "$out"
+              failed=1
+            fi
+          done
+
+          exit "$failed"
+
   remove-label:
     name: Remove preview label
     runs-on: ubuntu-latest
     needs:
       - artifact-registry
       - neon-branch
+      - pos-preview-comment
 
     # 閉じたときの片付けが全部済んだら preview ラベルを外す。
-    # Artifact Registry 側は成功が必須。Neon 側は NEON_PROJECT_ID が未設定なら
-    # スキップされるので、それも済んだ扱いにする。どちらかが失敗・取り消しなら
+    # Artifact Registry 側と POS のコメントは成功が必須。Neon 側は NEON_PROJECT_ID が
+    # 未設定ならスキップされるので、それも済んだ扱いにする。どれかが失敗・取り消しなら
     # 外さない（残っているものがあることをラベルで示すため）。
     # unlabeled で片付けたときは、ラベルはもう外れているので何もしない。
     if: >-
@@ -244,7 +326,8 @@ jobs:
           && github.event.action == 'closed'
           && contains(github.event.pull_request.labels.*.name, 'preview')
           && needs.artifact-registry.result == 'success'
-          && (needs.neon-branch.result == 'success' || needs.neon-branch.result == 'skipped') }}
+          && (needs.neon-branch.result == 'success' || needs.neon-branch.result == 'skipped')
+          && needs.pos-preview-comment.result == 'success' }}
 
     # ラベルの付け外しに要る権限だけにする。PR のコードは checkout しない。
     permissions:
