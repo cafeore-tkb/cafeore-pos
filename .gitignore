@@ -1,11 +1,5 @@
 node_modules
 
-.firebase
-.firebaserc
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
-
 .react-router/
 
 .pnpm-store
