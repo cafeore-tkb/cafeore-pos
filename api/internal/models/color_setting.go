@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ColorSetting はマスター・提供画面でのアイテムの背景色設定。
+// ColorSetting はレジ・マスター・提供画面でのアイテムの背景色設定。
 //
 // 画面ごとに1行持つ。同じ対象・同じ画面に2つの色が付かないよう、
 // (target_type, target_id, screen) に一意制約を張っている。
@@ -17,7 +17,7 @@ type ColorSetting struct {
 	ID         uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
 	TargetType string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // "Item" または "ItemType"
 	TargetID   uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_color_settings_target_screen"`
-	Screen     string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // "master" または "serve"
+	Screen     string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // "cashier"、"master"、"serve" のいずれか
 	Color      string    `gorm:"not null"`                                              // #RRGGBB
 	CreatedAt  time.Time `gorm:"not null"`
 	UpdatedAt  time.Time `gorm:"not null"`

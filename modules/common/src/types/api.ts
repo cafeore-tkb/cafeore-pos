@@ -381,7 +381,7 @@ export interface components {
      * @description 背景色を適用する画面
      * @enum {string}
      */
-    ColorScreen: "master" | "serve";
+    ColorScreen: "cashier" | "master" | "serve";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
