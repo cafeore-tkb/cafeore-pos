@@ -1,8 +1,6 @@
 import {
-  MasterStateEntity,
   type OrderEntity,
   type OrderStatType,
-  masterRepository,
   orderRepository,
   orderStatTypes,
   updateMasterStatus,
@@ -14,6 +12,7 @@ import {
   type MetaFunction,
   useSubmit,
 } from "react-router";
+import { toast } from "sonner";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
@@ -149,13 +148,19 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     const { status } = submission.value;
 
-    const masterStats =
-      (await masterRepository.get()) ?? MasterStateEntity.createNew();
-
-    masterStats.addOrderStat(status);
-    await masterRepository.set(masterStats);
-
-    await updateMasterStatus(status);
+    // 書くのは API だけ。各画面の表示は WebSocket の master_state で切り替わる
+    try {
+      await updateMasterStatus(status);
+    } catch (e) {
+      console.error(e);
+      toast.error(
+        status === "stop"
+          ? "オーダーストップできませんでした"
+          : "オーダーを再開できませんでした",
+      );
+      // エラーの Response を返すとエラー画面に切り替わってしまうので、通知だけにする
+      return null;
+    }
 
     return new Response("ok");
   }
