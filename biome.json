@@ -6,7 +6,7 @@
       "**/build",
       "**/public/build",
       "**/epos-2.27.0.js",
-      "**/sohosai-2025-day12.json"
+      "**/public/caos-practice/**"
     ]
   },
   "formatter": {

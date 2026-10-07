@@ -4,7 +4,8 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "build": "react-router build",
+    "build": "pnpm run practice-data && react-router build",
+    "practice-data": "node ../../scripts/caos-practice-data/build.mjs",
     "dev": "react-router dev",
     "preview": "vite preview",
     "typecheck": "react-router typegen && tsc",
