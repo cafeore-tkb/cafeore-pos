@@ -122,6 +122,15 @@ func TestMasterStatus(t *testing.T) {
 	if len(states) != 2 {
 		t.Fatalf("states: %+v", states)
 	}
+	// 応答の created_at（主キー）は、DB に保存された値と同じ。created_at には既定値があるので、
+	// GORM が INSERT ... RETURNING "created_at" で保存された値（マイクロ秒）を読み戻している
+	var createdAt time.Time
+	if err := createdAt.UnmarshalText([]byte(created["created_at"].(string))); err != nil {
+		t.Fatal(err)
+	}
+	if !states[0].CreatedAt.Equal(createdAt) && !states[1].CreatedAt.Equal(createdAt) {
+		t.Fatalf("created_at %v not saved as is: %+v", createdAt, states)
+	}
 
 	api.do(http.MethodPost, "/api/master-status", `{`).expect(http.StatusBadRequest)
 	api.noBroadcast()
