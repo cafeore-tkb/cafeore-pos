@@ -131,9 +131,6 @@ importers:
       vite:
         specifier: ^6.2.3
         version: 6.4.1(@types/node@22.20.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
-      wrangler:
-        specifier: ^4.123.0
-        version: 4.123.0
 
   services/mobile:
     dependencies:

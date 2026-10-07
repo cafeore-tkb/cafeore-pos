@@ -6,8 +6,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc",
-    "deploy": "wrangler deploy"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "lucide-react": "^0.546.0",
@@ -23,7 +22,6 @@
     "@vitejs/plugin-react": "^5.0.4",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3",
-    "wrangler": "^4.123.0"
+    "vite": "^6.2.3"
   }
 }
