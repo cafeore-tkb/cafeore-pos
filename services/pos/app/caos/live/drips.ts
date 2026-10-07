@@ -1,4 +1,11 @@
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import type {
+  Barista,
+  BeanCode,
+  CardBean,
+  OrderTicket,
+  UnassignedOrder,
+} from "../types";
+import type { BeanIndex } from "../utils/beans";
 import { orderNumber } from "../utils/orderQueue";
 import {
   type Drip,
@@ -80,12 +87,21 @@ const describe = (
   drip: Drip,
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
+  beanIndex: BeanIndex,
 ) => {
   const first = drip.lines[0];
   const itemOf = (orderId: string, itemId: string) =>
     catalog.get(orderId)?.items.get(itemId);
   const firstItem = first ? itemOf(first.order_id, first.item_id) : undefined;
-  const beanCode = posBeanCode(firstItem?.name ?? "", firstItem?.type ?? "");
+  // 区分（氷・牛・限定）は商品の種類から
+  const beanCode = posBeanCode(firstItem?.type ?? "");
+  // 豆は在庫の「商品 → 豆」から引く（カードの商品が使う在庫対象をまとめる）
+  const beans = new Map<string, CardBean>();
+  for (const line of drip.lines) {
+    for (const bean of beanIndex.get(line.item_id) ?? []) {
+      beans.set(bean.id, bean);
+    }
+  }
   const sourceOrderIds = Array.from(
     new Set(
       drip.lines.map((line) =>
@@ -126,6 +142,8 @@ const describe = (
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
     beanName: `${abbrs}${unmatchedNominee}`,
+    itemKey: first?.item_id,
+    beans: Array.from(beans.values()),
     cupCount: drip.cups,
     preferredBaristaId,
     isRebrew: Boolean(drip.rebrew_of) || undefined,
@@ -147,6 +165,8 @@ export const dripsToBoard = (
   baristas: Barista[],
   nowSec: number,
   dayStartMs: number,
+  // 商品 → 豆（POS の在庫の設定）
+  beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
   const drips = allDrips.filter((drip) =>
     drip.lines.every((line) => catalog.has(line.order_id)),
@@ -163,7 +183,7 @@ export const dripsToBoard = (
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
     const totalDurationSec = durationOf(drip.cups);
     return {
-      ...describe(drip, catalog, orderParts),
+      ...describe(drip, catalog, orderParts, beanIndex),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
@@ -229,7 +249,7 @@ export const dripsToBoard = (
     .filter((drip) => drip.status === "unassigned")
     .sort(compareQueue)
     .map((drip): UnassignedOrder => {
-      const card = describe(drip, catalog, orderParts);
+      const card = describe(drip, catalog, orderParts, beanIndex);
       const merged = Boolean(card.sourceOrderIds);
       return {
         ...card,

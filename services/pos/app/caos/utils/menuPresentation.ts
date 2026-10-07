@@ -85,6 +85,15 @@ export const MENU_PRESENTATION: Record<BeanCode, MenuPresentation> = {
     badgeClass: "bg-emerald-200 text-emerald-950",
     accent: "#047857",
   },
+  OTHER: {
+    family: "gourmet",
+    familyLabel: "その他",
+    shortLabel: "その他",
+    processLabel: "通常抽出",
+    cardClass: "bg-white border-slate-300",
+    badgeClass: "bg-slate-900 text-white",
+    accent: "#64748b",
+  },
 };
 
 export const MENU_GROUPS: {

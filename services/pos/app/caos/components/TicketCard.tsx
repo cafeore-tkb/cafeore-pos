@@ -1,11 +1,14 @@
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import type { BeanCode, OrderTicket } from "../types";
+import type { OrderTicket } from "../types";
+import { cardHasBean } from "../utils/beans";
+import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  highlightFilter: BeanCode | null;
+  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
   onOpenDetail: (ticket: OrderTicket) => void;
@@ -38,7 +41,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     null,
   );
   const [dragTargetBay, setDragTargetBay] = useState<number | null>(null);
-  const isMatchFilter = !highlightFilter || highlightFilter === ticket.beanCode;
+  const isMatchFilter =
+    !highlightFilter || cardHasBean(ticket, highlightFilter);
   const isOrderSelected = selectedOrderId === ticket.id;
 
   // Operational color is reserved for drinks that require a special finish/person.
@@ -311,9 +315,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         </div>
 
         {/* Coffee Name */}
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-1.5">
           <span
-            className={`flex-1 truncate font-bold text-[14px] leading-tight tracking-tight ${
+            className={`max-w-[65%] shrink-0 truncate font-bold text-[14px] leading-tight tracking-tight ${
               isOrderSelected
                 ? "font-black text-amber-950"
                 : isCompleted
@@ -324,8 +328,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           >
             {ticket.beanName}
           </span>
+          <BeanBadge beans={ticket.beans} />
           {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
-            <span className="shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
+            <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計
               {ticket.totalOrderCups}杯
             </span>

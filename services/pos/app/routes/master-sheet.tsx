@@ -1,6 +1,7 @@
 import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
 import "~/caos/caos.css";
+import { LimitedLabelProvider } from "~/caos/limitedLabel";
 
 export const meta: MetaFunction = () => {
   return [
@@ -19,7 +20,9 @@ export const meta: MetaFunction = () => {
 export default function MasterSheet() {
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
-      <CaosApp />
+      <LimitedLabelProvider>
+        <CaosApp />
+      </LimitedLabelProvider>
     </div>
   );
 }

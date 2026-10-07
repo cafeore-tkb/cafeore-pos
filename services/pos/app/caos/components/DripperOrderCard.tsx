@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import type React from "react";
 import type { OrderTicket } from "../types";
 import { MENU_PRESENTATION } from "../utils/menuPresentation";
+import { BeanBadge } from "./BeanBadge";
 
 interface DripperOrderCardProps {
   kind: "current" | "waiting";
@@ -69,9 +70,12 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
               {ticket.cupCount}杯
             </span>
           </div>
-          <div className="mt-1 w-full truncate font-bold text-[11px]">
-            {queuePosition ? `${queuePosition}. ` : ""}
-            {ticket.beanName}
+          <div className="mt-1 flex w-full min-w-0 items-center gap-1">
+            <span className="truncate font-bold text-[11px]">
+              {queuePosition ? `${queuePosition}. ` : ""}
+              {ticket.beanName}
+            </span>
+            <BeanBadge beans={ticket.beans} />
           </div>
         </>
       ) : (
