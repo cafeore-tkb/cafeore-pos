@@ -4,9 +4,9 @@
 
 これまでに決定した画面・操作・業務ルールの詳細は、[画面設計・操作要件](./DESIGN_REQUIREMENTS.md)を参照してください。
 
-## プレビュー
+## 公開
 
-[CaOSをGitHub Pagesで開く](https://cafeore-tkb.github.io/digital-master-sheet-pages/)（旧リポジトリ `cafeore-tkb/CaOS` から公開していた版。cafeore-pos からの配信は、続く PR で Cloudflare Workers に用意します）
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -58,7 +58,7 @@
 盤面（抽出カード・割当・抽出の状態）は cafeore-pos の API と DB にあり、複数の iPad で同じ盤面を共有します（API 側の作りは cafeore-pos の README の「CaOS（ドリップ管制）の盤面」）。
 
 - **受け取る：** cafeore-pos の WebSocket（`/api/ws/orders`）1 本で、注文（`{"type":"orders"}`）と今日の抽出カード（`{"type":"drips"}`）を受け取ります。どちらも変わるたびに全部届くので、受け取った一覧で置き換えます。ヘッダーの DB アイコンの点が接続状態で、緑は接続済み、黄は接続中・再接続中です。
-- **表示：** カードは注文と商品の参照しか持たないので、注文番号や商品名は受け取った注文から引きます。待機カードの予定時刻は、抽出中のカードの開始時刻から画面で計算します（`src/live/drips.ts`）。
+- **表示：** カードは注文と商品の参照しか持たないので、注文番号や商品名は受け取った注文から引きます。待機カードの予定時刻は、抽出中のカードの開始時刻から画面で計算します（`live/drips.ts`）。
 - **操作：** 割当・戻す・次へ・統合・入れ直しは、`POST /api/caos/ops` に送ります。結果のカードは WebSocket で全部の画面に届きます。ルールに合わない操作は、理由を画面の下に出します。
 - **準備完了：** 「次へ」で注文のカードが全部終わると、API が同じトランザクションで POS の注文を準備完了にします（画面からは何もしない）。
 - **1つ戻す：** 直前の操作の ID を送ると、API が残した操作の記録で、カードも準備完了もそろえて戻します。ほかの端末が後から触っていたら、何も変えずに断ります。
@@ -66,8 +66,7 @@
 - **実データテスト：** テスト中は盤面を使わず、テストの注文だけで手元の盤面を動かします。終了後の実績表示中もそのままで、リセットすると盤面に戻ります。
 - **豆の判定：** 商品名から豆を判定します（優勝ブレンド→チャンプ、俺ブレ、ケニア、タンザニア、ブラジル、アイスコーヒー→氷、アイスオレ→牛、それ以外のホット→★SP）。アイスミルクとグッズはカードになりません（API が除きます）。
 - **指名：** POS の指名は、`1`〜`6` の番号か現在のドリッパー名に一致したときだけその担当者に固定し、一致しないときはカードに「（指名:名前）」と表示します。
-- **開発：** 開発サーバー（`pnpm caos dev`）では Vite の中継（`/cafeore-pos-api`）を通して本番 API につなぎます。ローカルの API を使うときは `VITE_CAFEORE_API_BASE_URL=http://localhost:8080` を指定します。**本番 API につないで操作すると、本番の盤面と注文の準備完了が変わります。**
-- **公開版：** ブラウザから本番 API へ直接つなぐため、API の `FRONTEND_ORIGINS`（infra リポジトリ）に公開先の origin が入っている必要があります。入っていないと WebSocket の接続が 403 で拒否され、DB アイコンの点が黄色（再接続中）のままになります。
+- **API の URL：** POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。本番 API につないで操作すると、本番の盤面と注文の準備完了が変わります。
 
 ## 実データ・テストプレイ
 
@@ -80,7 +79,7 @@
 
 ## 置き場所
 
-2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポ（`services/caos`）へ移しました（履歴は持ってきていません）。実績データ（2025年の注文）も、このリポジトリにそのまま置いています。
+2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポへ移し、POS の中（`services/pos/app/caos`）に置きました（履歴は持ってきていません）。実績データ（2025年の注文）も、このリポジトリにそのまま置いています。
 
 ## タッチ操作
 
@@ -93,14 +92,6 @@
 
 ## 開発
 
-リポジトリ直下で `pnpm i` を実行してから、次のコマンドを使います。
+POS の一部なので、コマンドも POS と同じです（`pnpm pos dev` で開き、`/master-sheet` に行く）。型チェックとビルドも `pnpm pos typecheck`・`pnpm pos build` に含まれます。
 
-```bash
-pnpm caos dev        # http://localhost:3000
-pnpm caos typecheck
-pnpm caos build      # services/caos/build に出力
-```
-
-lint はリポジトリ直下の `pnpm lint`（biome）です。CaOS の元の lint の方針（タッチ操作向けに切っていた a11y のルールなど）は、`biome.json` の `overrides` で `services/caos` にだけかけています。
-
-本番ビルドは `dist/` に生成され、公開時のベースパスは `/digital-master-sheet-pages/` です。
+CaOS の元の lint の方針（タッチ操作向けに切っていた a11y のルールなど）は、`biome.json` の `overrides` で `services/pos/app/caos` にだけかけています。スタイルは `caos.css` で `.caos-root` の中に閉じ、POS のほかの画面に漏らさないようにしています。

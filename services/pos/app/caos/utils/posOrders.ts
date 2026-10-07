@@ -8,15 +8,9 @@ export type Drip = components["schemas"]["CaosDrip"];
 export type CaosOp = components["schemas"]["CaosOp"];
 export type CaosOpResult = components["schemas"]["CaosOpResult"];
 
-// 公開版は POS の Worker の /master-sheet/ で配り、POS と同じ API へ直接つなぐ（origin も POS と同じ）。
-// POS の build から一緒にビルドされるので、POS と同じ VITE_API_BASE_URL を読む。
-// 開発中は vite.config.ts の中継を通す。ローカルの API を使うときは
-// VITE_CAFEORE_API_BASE_URL=http://localhost:8080 のように上書きする。
-export const POS_API_BASE_URL = import.meta.env.DEV
-  ? `${window.location.origin}/cafeore-pos-api`
-  : import.meta.env.VITE_CAFEORE_API_BASE_URL ||
-    import.meta.env.VITE_API_BASE_URL ||
-    "https://cafeore-pos-git-czojooivca-an.a.run.app";
+// POS と同じ API につなぐ（modules/common と同じく VITE_API_BASE_URL、未設定ならローカルの API）。
+export const POS_API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 export const posOrdersSocketUrl = (baseUrl: string) =>
   `${baseUrl.replace(/\/$/, "").replace(/^http/, "ws")}/api/ws/orders`;
