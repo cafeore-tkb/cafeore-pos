@@ -10,7 +10,6 @@ export const globalCashierStateSchema = z.object({
 export type GlobalCashierState = z.infer<typeof globalCashierStateSchema>;
 
 // API から返ってきた JSON では Date が ISO 文字列になっているので Date に戻す。
-// Firestore 時代は Timestamp → Date の変換を converter がやっていた分に相当する。
 const dateFromWire = z
   .union([z.date(), z.string().datetime({ offset: true })])
   .transform((v) => (v instanceof Date ? v : new Date(v)));
