@@ -30,6 +30,8 @@ interface ControlWorkspaceProps {
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
+  /** 列の「交代」（管制盤 A の各列）。無ければ出さない */
+  onChangeLane?: (bayId: number) => void;
 }
 
 export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
@@ -51,6 +53,7 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
+  onChangeLane,
 }) => {
   if (mode === "new") {
     return (
@@ -131,6 +134,7 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
       onOpenEmptySlot={onOpenEmptySlot}
       onAssignToBay={onAssignToBay}
       onMergeOrders={onMergeOrders}
+      onChangeLane={onChangeLane}
     />
   );
 };

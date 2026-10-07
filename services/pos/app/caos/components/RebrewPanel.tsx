@@ -4,6 +4,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket } from "../types";
+import { isLimitedCard, laneTitle } from "../utils/lanes";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
 export interface RebrewDecision {
@@ -44,7 +45,8 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
           eligible:
             (!ticket.preferredBaristaId ||
               ticket.preferredBaristaId === barista.id) &&
-            (ticket.beanCode !== "SP" || Boolean(barista.canHandleSpecial)),
+            // 限定のカードは上級生の列だけ（入れ直しも同じ）
+            (!isLimitedCard({ beanCode: ticket.beanCode }) || barista.senior),
         }))
         .sort(
           (a, b) =>
@@ -170,8 +172,8 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                 className={`min-h-[66px] touch-manipulation rounded-xl border-2 p-2 text-left disabled:opacity-45 ${targetBayId === barista.id ? "border-red-600 bg-red-50" : "border-slate-200 bg-white hover:border-slate-400"}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-black text-[16px]">
-                    {barista.bayNumber} {barista.name}
+                  <span className="min-w-0 truncate font-black text-[16px]">
+                    {laneTitle(barista)}
                   </span>
                   {fastestId === barista.id && (
                     <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-black text-[10px] text-emerald-800">
@@ -188,7 +190,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                     <span className="ml-auto text-red-700">
                       {ticket.preferredBaristaId
                         ? "指名外"
-                        : `${limitedLabel}は不可`}
+                        : `${limitedLabel || "限定"}は上級生だけ`}
                     </span>
                   )}
                 </div>

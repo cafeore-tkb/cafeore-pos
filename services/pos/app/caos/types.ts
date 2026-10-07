@@ -47,6 +47,8 @@ export interface OrderTicket {
     | string;
   secondaryTag?: string;
   preferredBaristaId?: number; // 指名。必ず1人だけ
+  /** 割り当て・移動できる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
+  allowedBayIds?: number[];
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
@@ -71,11 +73,12 @@ export interface OrderTicket {
 export interface Barista {
   id: number;
   bayNumber: number;
+  /** 列の担当者の名前（サーバーの盤面の caos_lanes）。担当者がいなければ空 */
   name: string;
-  canHandleSpecial?: boolean;
+  /** 担当者が上級生（限定を淹れられる）か。交代したときの sohosai-shift の名簿の判定（サーバーが持つ） */
+  senior: boolean;
   status: "brewing" | "imminent" | "standby" | "ready";
   remainingStr: string; // "01:48 残り"
-  iconType: "cup" | "clock" | "snowflake";
   activeTicketId?: string;
   pastTickets?: OrderTicket[]; // Past completed tickets in this bay
   queue: OrderTicket[];
@@ -103,6 +106,8 @@ export interface UnassignedOrder {
   recommendedBaristas: string;
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
+  /** 割り当てられる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
+  allowedBayIds?: number[];
   isRebrew?: boolean;
   rebrewOfTicketUid?: string;
   cardColor: "blue" | "peach" | "cyan" | "emerald";

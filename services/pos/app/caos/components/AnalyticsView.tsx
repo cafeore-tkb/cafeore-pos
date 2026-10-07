@@ -12,8 +12,9 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
+import { laneTitle } from "../utils/lanes";
+import { SeniorMark } from "./LaneName";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -69,7 +70,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const rebrewSummary = useMemo(() => {
     const history = baristas.flatMap((barista) => barista.pastTickets || []);
     const rebrews = history.filter(
@@ -270,7 +270,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   durations.length,
               )
             : null,
-          special: barista.canHandleSpecial,
+          // 上級生（限定を淹れられる）か。サーバーの列の担当者の判定
+          senior: barista.senior,
         };
       }),
     [baristas],
@@ -654,14 +655,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-black text-slate-950">
-                  #{result.bayNumber} {result.name}
+                <span className="min-w-0 truncate font-black text-slate-950">
+                  {laneTitle(result)}
                 </span>
-                {result.special && limitedLabel && (
-                  <span className="rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-white">
-                    {limitedLabel}
-                  </span>
-                )}
+                {result.senior && <SeniorMark />}
               </div>
               <div className="mt-2 flex items-end gap-3">
                 <span className="font-black font-mono text-[23px]">

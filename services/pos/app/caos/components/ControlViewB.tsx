@@ -8,10 +8,11 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
+import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
+import { SeniorMark } from "./LaneName";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -48,7 +49,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onAssignToBay,
   onRequestRebrew,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
 
@@ -189,18 +189,14 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               >
                 <div className="flex min-h-[32px] items-start justify-between gap-1">
                   <div>
-                    <div className="font-black font-mono text-[11px] text-slate-500 uppercase">
-                      ドリッパー {barista.bayNumber}
+                    <div className="font-black font-mono text-[11px] text-slate-500">
+                      {laneOrdinal(barista.bayNumber)}
                     </div>
                     <div className="font-black text-[15px] text-slate-950 leading-tight">
                       {barista.name}
                     </div>
                   </div>
-                  {barista.canHandleSpecial && limitedLabel && (
-                    <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-1 font-black text-[9px] text-emerald-100 tracking-wide">
-                      {limitedLabel}
-                    </span>
-                  )}
+                  {barista.senior && <SeniorMark />}
                 </div>
 
                 <button

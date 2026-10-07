@@ -16,6 +16,7 @@ import type {
   UnassignedOrder,
 } from "../types";
 import type { BeanIndex } from "../utils/beans";
+import { allowedBayIdsFor, isLimitedCard } from "../utils/lanes";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
 import {
@@ -128,6 +129,11 @@ const describe = (
     : undefined;
   const unmatchedNominee =
     nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
+  // 割り当て・移動できる列（指名の列、限定のカードは上級生の列だけ）
+  const allowedBayIds = allowedBayIdsFor(
+    { beanCode, preferredBaristaId },
+    baristas,
+  );
   const abbrs = Array.from(
     new Set(
       drip.lines.map(
@@ -162,6 +168,7 @@ const describe = (
     beans: Array.from(beans.values()),
     cupCount: drip.cups,
     preferredBaristaId,
+    allowedBayIds,
     isRebrew: Boolean(drip.rebrew_of) || undefined,
     rebrewOfTicketUid: drip.rebrew_of ?? undefined,
   };
@@ -173,6 +180,7 @@ export interface LiveBoard {
 }
 
 // 盤面のカードを、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
+// baristas は列の担当者（サーバーの caos_lanes から作ったもの）。限定のカードを割り当てられる列（上級生の列）もこれで決める。
 // 抽出中・待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
 // 注文がまだ届いていない（カタログに無い）カードは、注文番号が分からないので届くまで出さない。
 export const dripsToBoard = (
@@ -293,10 +301,10 @@ export const dripsToBoard = (
         predictedTimeStr: brewDurationLabel(drip.cups),
         recommendedBaristas: card.preferredBaristaId
           ? `ドリッパー ${card.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: card.preferredBaristaId
-          ? [card.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : isLimitedCard(card)
+            ? "上級生の列"
+            : "全ドリッパー",
+        recommendedBayIds: card.allowedBayIds,
         cardColor: cardColorOf(card.beanCode),
       };
     });

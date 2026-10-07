@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
+import { canPlaceOn } from "../utils/lanes";
 import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
 import { BeanBadge } from "./BeanBadge";
@@ -108,7 +109,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
+    // 指名の列だけ、限定のカードは上級生の列だけ
+    if (!canPlaceOn(order, bayId)) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
     setHoveredBay(null);
@@ -460,10 +462,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
+                          disabled={!canPlaceOn(order, bayId)}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}
@@ -484,10 +483,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
+                          disabled={!canPlaceOn(order, bayId)}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}

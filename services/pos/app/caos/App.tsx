@@ -8,6 +8,7 @@ import {
   formatClockOfDay,
   formatMinSec,
   formatRemainingLabel,
+  isSeniorName,
   postCaosOp,
   startOfJstDay,
   useColorSettings,
@@ -24,17 +25,17 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { LaneChangeDialog } from "./components/LaneChangeDialog";
+import { LaneConfirmDialog } from "./components/LaneConfirmDialog";
 import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
+import { ShiftFeedSettings } from "./components/ShiftFeedSettings";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import {
-  SHIFT_ROSTERS,
-  makeCleanBaristas,
-  placeShiftMembers,
-} from "./data/roster";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
+import { useShiftFeed } from "./hooks/useShiftFeed";
+import { useLimitedLabel } from "./limitedLabel";
 import { buildCatalog, dripsToBoard, queuePosAt } from "./live/drips";
 import type {
   Barista,
@@ -46,6 +47,7 @@ import type {
   UnassignedOrder,
 } from "./types";
 import { soundManager } from "./utils/audio";
+import { isLimitedCard, laneOrdinal, makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
@@ -60,9 +62,11 @@ import type { CaosOp } from "./utils/posOrders";
 type UndoSnapshot = {
   baristas: Barista[];
   unassignedOrders: UnassignedOrder[];
-  shiftRosterIndex: number;
   label: string;
 };
+
+// 交代・入れ替えで、上級生でない人になる列に限定のカードが待っているときの確認
+type LaneConfirm = { messages: string[]; run: () => void };
 
 type PanelSnapshot = {
   baristas: Barista[];
@@ -165,8 +169,9 @@ export default function App() {
     useState<ControlViewMode>("current");
 
   // Core Data
+  // 実データテストの手元の盤面（列の担当者はサーバーのものを重ねて出す）
   const [baristas, setBaristas] = useState<Barista[]>(
-    () => standaloneSnapshot?.baristas || makeCleanBaristas(),
+    () => standaloneSnapshot?.baristas || makeLaneBaristas(null),
   );
   const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
     [],
@@ -175,8 +180,13 @@ export default function App() {
   const undoSnapshotRef = useRef<UndoSnapshot | null>(null);
   const arrivalsAfterUndoSnapshotRef = useRef<UnassignedOrder[]>([]);
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
-  const [shiftRosterIndex, setShiftRosterIndex] = useState(0);
-  const lastAutomaticShiftHour = useRef(new Date().getHours());
+  // 列の「交代」のダイアログ（どの列か）と、限定のカードの確認、設定（合言葉）
+  const [laneDialogBay, setLaneDialogBay] = useState<number | null>(null);
+  const [laneConfirm, setLaneConfirm] = useState<LaneConfirm | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // sohosai-shift の担当者の予定（交代の候補と上級生の判定に使う。合言葉はこの端末の設定）
+  const shiftFeed = useShiftFeed();
+  const limitedLabel = useLimitedLabel() || "限定";
 
   // Filters & Toggles
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -240,8 +250,11 @@ export default function App() {
   const {
     orders: posOrders,
     drips: liveDrips,
+    lanes: liveLanes,
     status: posStatus,
   } = usePosOrders(live);
+  // 列（1st〜6th）とその担当者。サーバーの盤面にあり、全部の iPad でそろう
+  const laneBaristas = useMemo(() => makeLaneBaristas(liveLanes), [liveLanes]);
   const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
   // カードの色をマスターの画面と同じにするための色の設定
   const { colorSettings } = useColorSettings(live);
@@ -252,13 +265,13 @@ export default function App() {
     error: beanError,
     isLoading: beanLoading,
   } = useBeanInventory();
-  // 盤面のカードから組み立てた管制盤。ドリッパーの名前は手元の baristas から取る
+  // 盤面のカードから組み立てた管制盤。列の担当者はサーバーの盤面のもの
   const liveBoard = useMemo(
     () =>
       dripsToBoard(
         liveDrips ?? [],
         catalog,
-        baristas,
+        laneBaristas,
         realTimeSec,
         realDayStartMs,
         colorSettings,
@@ -267,14 +280,23 @@ export default function App() {
     [
       liveDrips,
       catalog,
-      baristas,
+      laneBaristas,
       realTimeSec,
       realDayStartMs,
       colorSettings,
       beanIndex,
     ],
   );
-  const boardBaristas = live ? liveBoard.baristas : baristas;
+  const boardBaristas = live
+    ? liveBoard.baristas
+    : baristas.map((barista) => {
+        const lane = laneBaristas.find((item) => item.id === barista.id);
+        return {
+          ...barista,
+          name: lane?.name ?? "",
+          senior: lane?.senior ?? false,
+        };
+      });
   const boardUnassignedOrders = live
     ? liveBoard.unassignedOrders
     : unassignedOrders;
@@ -417,7 +439,6 @@ export default function App() {
     undoSnapshotRef.current = {
       baristas,
       unassignedOrders,
-      shiftRosterIndex,
       label,
     };
     arrivalsAfterUndoSnapshotRef.current = [];
@@ -459,7 +480,6 @@ export default function App() {
     );
     setBaristas(snapshot.baristas);
     setUnassignedOrders([...snapshot.unassignedOrders, ...arrivals]);
-    setShiftRosterIndex(snapshot.shiftRosterIndex);
     setSelectedOrderId(null);
     setRebrewSource(null);
     setSelectedTicketKey(null);
@@ -535,14 +555,14 @@ export default function App() {
     if (!targetBarista || targetBarista.queue.length === 0) return;
     if (live && targetBarista.queue[0].status !== "brewing") return;
     if (live && pendingNextRef.current.has(bayId)) return;
-    if (!live) captureUndo(`${targetBarista.bayNumber}の「次へ」`);
+    if (!live) captureUndo(`${laneOrdinal(targetBarista.bayNumber)}の「次へ」`);
 
     const completedTicket = targetBarista.queue[0];
 
     if (live) {
       // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）
       pendingNextRef.current.add(bayId);
-      void runLive(`${targetBarista.bayNumber}の「次へ」`, {
+      void runLive(`${laneOrdinal(targetBarista.bayNumber)}の「次へ」`, {
         name: "next",
         dripper: bayId,
         drip_id: completedTicket.ticketUid,
@@ -579,6 +599,15 @@ export default function App() {
     );
   };
 
+  // 限定のカードは上級生の列にしか割り当てられない（入れ直し・移動も同じ）。断るときは理由を出す
+  const isSeniorBay = (bayId: number) =>
+    Boolean(boardBaristas.find((barista) => barista.id === bayId)?.senior);
+  const rejectLimited = (card: { beanCode: BeanCode }, bayId: number) => {
+    if (!isLimitedCard(card) || isSeniorBay(bayId)) return false;
+    setLiveError(`${limitedLabel}のカードは上級生の列にしか割り当てられません`);
+    return true;
+  };
+
   // Assign order to a bay
   const handleAssignOrderToBay = (
     orderUidOrId: string,
@@ -595,6 +624,7 @@ export default function App() {
       orderToAssign.preferredBaristaId !== targetBayId
     )
       return;
+    if (rejectLimited(orderToAssign, targetBayId)) return;
     if (live) {
       void runLive(`${orderToAssign.id}の割当`, {
         name: "assign",
@@ -673,6 +703,7 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
+    if (rejectLimited(ticket, targetBayId)) return;
     if (live) {
       void runLive(`${ticket.id}の割当変更`, {
         name: "assign",
@@ -703,50 +734,96 @@ export default function App() {
     soundManager.playDispatch();
   };
 
-  const changeShift = (allowUndo: boolean) => {
-    if (allowUndo) {
-      captureUndo("シフト交代");
-    } else {
-      undoSnapshotRef.current = null;
-      liveUndoRef.current = null;
-      arrivalsAfterUndoSnapshotRef.current = [];
-      setUndoLabel(null);
-    }
-    const roster = placeShiftMembers(
-      SHIFT_ROSTERS[shiftRosterIndex % SHIFT_ROSTERS.length],
-    );
-    setBaristas((prev) =>
-      [...prev]
-        .sort((a, b) => a.bayNumber - b.bayNumber)
-        .map((barista, index) => {
-          const member = roster[index];
-          return {
-            ...barista,
-            name: member.name,
-            canHandleSpecial: member.canHandleSpecial || undefined,
-          };
-        }),
-    );
-    setShiftRosterIndex((index) => (index + 1) % SHIFT_ROSTERS.length);
-    setSelectedTicketKey(null);
-    setSelectedOrderId(null);
-    soundManager.playDispatch();
+  // ---------------------------------------------------------------- 列の担当者（交代・入れ替え）
+  // 交代は人が押したときにその場で行う（抽出中かどうかは見ない。時刻どおりの自動の交代はしない）。
+  // 担当者はサーバーの盤面に持ち、全部の iPad にすぐ届く。「1つ戻す」で戻せる。
+
+  // 上級生でない人になる列に限定のカードが待っていれば、その知らせ（列ごとに 1 行）
+  const limitedWarnings = (
+    changes: { bay: Barista; name: string; senior: boolean }[],
+    single: boolean,
+  ) =>
+    changes.flatMap(({ bay, name, senior }) => {
+      if (senior) return [];
+      const count = bay.queue.filter((ticket) => isLimitedCard(ticket)).length;
+      if (count === 0) return [];
+      const where = single ? "この列" : `${laneOrdinal(bay.bayNumber)}の列`;
+      const who = name
+        ? `${name}さんは上級生ではありません`
+        : "担当者なしになります";
+      return [
+        `${where}に${limitedLabel}のカードが${count}枚あります（${who}）`,
+      ];
+    });
+
+  const confirmLaneChange = (messages: string[], run: () => void) => {
+    if (messages.length > 0) setLaneConfirm({ messages, run });
+    else run();
   };
 
-  const currentHour = realTime.getHours();
+  const handlePickLanePerson = (bayId: number, name: string) => {
+    const bay = boardBaristas.find((barista) => barista.id === bayId);
+    setLaneDialogBay(null);
+    if (!bay || !live) return;
+    const person = name.trim();
+    // 上級生かは、この時点の sohosai-shift の名簿で決めてサーバーに持つ（名簿を読めない iPad でも同じ表示にする）
+    const senior = isSeniorName(shiftFeed.feed, person);
+    confirmLaneChange(
+      limitedWarnings([{ bay, name: person, senior }], true),
+      () => {
+        void runLive(`${laneOrdinal(bayId)}の交代`, {
+          name: "set_lane",
+          dripper: bayId,
+          person,
+          senior,
+        });
+        soundManager.playDispatch();
+      },
+    );
+  };
 
-  // The shift should run only when the wall-clock hour changes. Including
-  // changeShift would retrigger this effect on every render because it closes
-  // over the current operational state.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: currentHour is the intentional trigger
-  useEffect(() => {
-    if (currentHour === lastAutomaticShiftHour.current) return;
-    lastAutomaticShiftHour.current = currentHour;
-    changeShift(false);
-  }, [currentHour]);
+  const handleSwapLanes = (bayId: number, otherBayId: number) => {
+    const bay = boardBaristas.find((barista) => barista.id === bayId);
+    const other = boardBaristas.find((barista) => barista.id === otherBayId);
+    if (!bay || !other || bay.id === other.id || !live) return;
+    confirmLaneChange(
+      limitedWarnings(
+        [
+          { bay, name: other.name, senior: other.senior },
+          { bay: other, name: bay.name, senior: bay.senior },
+        ],
+        false,
+      ),
+      () => {
+        void runLive(
+          `${laneOrdinal(bayId)}と${laneOrdinal(otherBayId)}の入れ替え`,
+          { name: "swap_lanes", dripper: bayId, other_dripper: otherBayId },
+        );
+        soundManager.playDispatch();
+      },
+    );
+  };
 
-  const nextShiftHour = (realTime.getHours() + 1) % 24;
-  const nextShiftLabel = `${nextShiftHour.toString().padStart(2, "0")}:00`;
+  // 上級生のいる列が無いときは、ヘッダーで知らせる（限定のカードを割り当てられない）
+  const unassignedLimitedCount = boardUnassignedOrders.filter((order) =>
+    isLimitedCard(order),
+  ).length;
+  const laneNotice =
+    live && !boardBaristas.some((barista) => barista.senior)
+      ? {
+          full: `上級生のいる列がありません${unassignedLimitedCount > 0 ? `（${limitedLabel} ${unassignedLimitedCount}枚を割り当てられません）` : ""}`,
+          short: "上級生なし",
+        }
+      : null;
+  const laneDialogBarista =
+    laneDialogBay === null
+      ? null
+      : boardBaristas.find((barista) => barista.id === laneDialogBay) || null;
+  const feedNote = !shiftFeed.feedKey
+    ? "sohosai-shift の合言葉を入れていないので、名前の候補はありません（右上の設定で入れられます）。名前を入れて交代できます"
+    : shiftFeed.error && !shiftFeed.feed
+      ? `sohosai-shift の予定を読めません：${shiftFeed.error}。名前を入れて交代できます`
+      : null;
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
@@ -810,6 +887,11 @@ export default function App() {
     if (!rebrewSource || !rebrewTicket) return;
     const { bayId: sourceBayId } = rebrewSource;
     const ticket = rebrewTicket;
+    if (
+      decision.targetBayId !== null &&
+      rejectLimited(ticket, decision.targetBayId)
+    )
+      return;
     if (live) {
       const targetQueue =
         boardBaristas.find((barista) => barista.id === decision.targetBayId)
@@ -870,13 +952,11 @@ export default function App() {
           cupCount: newTicket.cupCount,
           badgeTag: `${newTicket.cupCount}杯 入れ直し`,
           predictedTimeStr: brewDurationLabel(newTicket.cupCount),
-          recommendedBaristas:
-            newTicket.beanCode === "SP" ? "SP対応ドリッパー" : "全ドリッパー",
-          recommendedBayIds: baristas
-            .filter(
-              (barista) =>
-                newTicket.beanCode !== "SP" || barista.canHandleSpecial,
-            )
+          recommendedBaristas: isLimitedCard(newTicket)
+            ? "上級生の列"
+            : "全ドリッパー",
+          recommendedBayIds: boardBaristas
+            .filter((barista) => !isLimitedCard(newTicket) || barista.senior)
             .map((barista) => barista.id),
           preferredBaristaId: newTicket.preferredBaristaId,
           cardColor: newTicket.beanCode === "SP" ? "emerald" : "blue",
@@ -1000,7 +1080,7 @@ export default function App() {
 
   // Reset to initial screenshot state
   const handleResetData = () => {
-    setBaristas(makeCleanBaristas());
+    setBaristas(makeLaneBaristas(null));
     setUnassignedOrders([]);
     undoSnapshotRef.current = null;
     liveUndoRef.current = null;
@@ -1010,7 +1090,6 @@ export default function App() {
     setSelectedTicketKey(null);
     setAssignSlotData(null);
     setRebrewSource(null);
-    setShiftRosterIndex(0);
     setTestPlaySession(null);
     historicalOrderCursor.current = 0;
     setIsRunning(true);
@@ -1028,7 +1107,7 @@ export default function App() {
         (a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
-    setBaristas(makeCleanBaristas());
+    setBaristas(makeLaneBaristas(null));
     setUnassignedOrders([]);
     setSelectedOrderId(null);
     undoSnapshotRef.current = null;
@@ -1138,8 +1217,8 @@ export default function App() {
           ? Math.min(testPlaySession.currentMs, testPlaySession.endMs)
           : undefined
       }
-      nextShiftLabel={nextShiftLabel}
-      onChangeShift={() => changeShift(true)}
+      onChangeLane={live ? setLaneDialogBay : undefined}
+      onSwapLanes={live ? handleSwapLanes : undefined}
     />
   );
 
@@ -1187,6 +1266,8 @@ export default function App() {
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={handleEndTestPlay}
           posStatus={posStatus}
+          laneNotice={laneNotice}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
 
         {/* Dynamic Tab Body */}
@@ -1219,6 +1300,7 @@ export default function App() {
               handleAssignOrderToBay(order.ticketUid || order.id, bayId)
             }
             onMergeOrders={handleMergeUnassignedOrders}
+            onChangeLane={live ? setLaneDialogBay : undefined}
           />
         </main>
 
@@ -1272,6 +1354,35 @@ export default function App() {
           baristas={boardBaristas}
           onClose={() => setRebrewSource(null)}
           onConfirm={handleConfirmRebrew}
+        />
+      )}
+
+      {laneDialogBarista && (
+        <LaneChangeDialog
+          barista={laneDialogBarista}
+          feed={shiftFeed.feed}
+          feedNote={feedNote}
+          nowMs={realTime.getTime()}
+          onPick={(name) => handlePickLanePerson(laneDialogBarista.id, name)}
+          onClose={() => setLaneDialogBay(null)}
+        />
+      )}
+
+      {laneConfirm && (
+        <LaneConfirmDialog
+          messages={laneConfirm.messages}
+          onCancel={() => setLaneConfirm(null)}
+          onConfirm={() => {
+            setLaneConfirm(null);
+            laneConfirm.run();
+          }}
+        />
+      )}
+
+      {settingsOpen && (
+        <ShiftFeedSettings
+          shiftFeed={shiftFeed}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 

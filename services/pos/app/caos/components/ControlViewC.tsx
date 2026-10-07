@@ -2,9 +2,11 @@ import { formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
+import { LaneName } from "./LaneName";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 export type ControlViewCProps = ControlViewBProps;
@@ -99,12 +101,13 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
               >
                 <div className="flex h-8 shrink-0 items-center justify-between gap-2 overflow-hidden px-0.5">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-950 font-black font-mono text-[16px] text-white">
-                      {barista.bayNumber}
+                    <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[12px] text-white">
+                      {laneOrdinal(barista.bayNumber)}
                     </div>
-                    <div className="min-w-0 truncate font-black text-[15px] text-slate-950">
-                      {barista.name}
-                    </div>
+                    <LaneName
+                      barista={barista}
+                      className="font-black text-[15px] text-slate-950"
+                    />
                   </div>
                   <div
                     className="flex shrink-0 items-center gap-1.5"
@@ -125,11 +128,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                         ))}
                       </div>
                     ))}
-                    {(barista.bayNumber === 1 || barista.bayNumber === 6) && (
-                      <span className="rounded-md border border-fuchsia-300 bg-fuchsia-50 px-1.5 py-0.5 font-black text-[11px] text-fuchsia-800 leading-none">
-                        限定
-                      </span>
-                    )}
                   </div>
                 </div>
 

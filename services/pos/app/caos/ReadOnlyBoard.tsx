@@ -6,14 +6,15 @@ import {
 import { Database, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
-import { makeCleanBaristas } from "./data/roster";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { type PosConnectionStatus, usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard } from "./live/drips";
+import { makeLaneBaristas } from "./utils/lanes";
 import { queueWaitSeconds } from "./utils/orderQueue";
 
 // 閲覧だけの管制盤（/master-sheet/view）。共有の盤面（抽出カードと注文）を POS の共有の WebSocket で受け取り、
 // 管制盤 A のタイムラインに流すだけで、POST /api/caos/ops は送らない。カードを触っても何も起きない。
+// 列の担当者（1st〜6th の名前と上級生の印）も同じメッセージで届く。交代はできない（表示だけ）。
 
 const STATUS_LABEL: Record<PosConnectionStatus, string> = {
   off: "未接続",
@@ -28,14 +29,14 @@ export default function ReadOnlyBoard() {
   const [now, setNow] = useState(() => new Date());
   // 盤面の秒の起点。サーバーの営業日と同じく日本時間の 0:00（端末の時刻帯によらない）
   const [dayStartMs] = useState(() => startOfJstDay(Date.now()));
-  const [baristas] = useState(makeCleanBaristas);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(clock);
   }, []);
 
-  const { orders, drips, status } = usePosOrders(true);
+  const { orders, drips, lanes, status } = usePosOrders(true);
+  const baristas = useMemo(() => makeLaneBaristas(lanes), [lanes]);
   const catalog = useMemo(() => buildCatalog(orders), [orders]);
   // カードの色をマスターの画面と同じにするための色の設定
   const { colorSettings } = useColorSettings();
