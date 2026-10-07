@@ -299,6 +299,10 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// ほかのインスタンスにつないでいる画面（お客さん向けの表示など）にも届くよう、
+	// DB の通知で知らせる（order_listener.go）。受けた側は DB から読み直すので、
+	// cashierStateMu の外で送ってよい
+	notifyCashierStateChanged(h.db)
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -328,6 +332,20 @@ func (h *CashierStateHandler) saveAndBroadcast(state *models.CashierState) (mode
 		CashierState: &resp,
 	})
 	return resp, nil
+}
+
+// レジ状態を DB から読み直して、このインスタンスにつないでいる画面へだけ配る。
+// ほかのインスタンスでの PUT の通知を受けたときに使う。
+//
+// このインスタンスでの PUT（saveAndBroadcast）と入れ違って、読み直した古い状態が
+// 後から届かないよう、読み込みから配信までを cashierStateMu で囲む。
+func broadcastCashierState(db *gorm.DB, hub *Hub) {
+	cashierStateMu.Lock()
+	defer cashierStateMu.Unlock()
+
+	if msg, ok := cashierStateMessage(db); ok {
+		hub.Broadcast(msg)
+	}
 }
 
 // 現在のレジ状態を、接続直後の初期データとして WSMessage にする。まだ無ければ ok = false。

@@ -143,22 +143,11 @@ func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
 	}
 }
 
-// notifyDripsChanged は、カードが変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
-// 通知には送ったインスタンスの ID だけを載せる。受けた側は今日のカードを全部読み直して配る。
+// notifyDripsChanged は、カードか列の担当者が変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
+// 通知には送ったインスタンスの ID だけを載せる。受けた側は ListenChanges で受けて今日のカードと列の担当者を全部読み直して配る。
 // 失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
 func notifyDripsChanged(db *gorm.DB) {
-	if err := db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, instanceID).Error; err != nil {
-		log.Printf("caos: failed to notify %s: %v", caos.ChangedChannel, err)
-	}
-}
-
-// handleDripsChanged は、ほかのインスタンスでカードが変わった通知を受けて、このインスタンスの画面へ配る（通知は送り返さない）。
-// 自分が送った通知は無視する（変えたときに配信済み）。
-func (h *OrderHandler) handleDripsChanged(sender string) {
-	if sender == instanceID {
-		return
-	}
-	h.broadcastDrips()
+	notifyChanged(db, caos.ChangedChannel, instanceID)
 }
 
 // カードの配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。

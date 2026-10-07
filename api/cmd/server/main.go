@@ -250,7 +250,8 @@ func main() {
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
 	// CaOS の練習用の盤面（実データテスト）。本番の盤面とは表も配信も分けてある
 	caosPracticeHandler := handlers.NewCaosPracticeHandler(caos.NewPracticeStore(db))
-	// ほかのインスタンスでの注文・CaOS のカードの変更も画面へ届けるため、DB の通知を待ち受ける。
+	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS のカードの変更も画面へ届けるため、
+	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	defer stopListening()
@@ -258,7 +259,7 @@ func main() {
 	if listenDSN == "" {
 		listenDSN = os.Getenv("DATABASE_URL")
 	}
-	go orderHandler.ListenOrderChanges(listenCtx, listenDSN)
+	go orderHandler.ListenChanges(listenCtx, listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)

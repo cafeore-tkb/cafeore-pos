@@ -288,7 +288,7 @@ func TestCaosDripsAreBroadcastFromDB(t *testing.T) {
 	e := newCaosEnv(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go e.orders.ListenOrderChanges(ctx, e.dsn)
+	go e.orders.ListenChanges(ctx, e.dsn)
 
 	e.createOrder(t, 1, 1)
 	srv := httptest.NewServer(e.router)
