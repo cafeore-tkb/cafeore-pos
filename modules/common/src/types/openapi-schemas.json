@@ -717,20 +717,57 @@
       }
     }
   },
+  "CaosLane": {
+    "type": "object",
+    "description": "列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。\nsenior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。\n",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。担当者がいない列は false"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）"
+      }
+    }
+  },
   "CaosOp": {
     "type": "object",
-    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nundo（op_id）\n",
+    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nset_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/\nundo（op_id）\n",
     "required": ["name"],
     "properties": {
       "name": {
         "type": "string",
-        "enum": ["assign", "unassign", "next", "merge", "rebrew", "undo"],
+        "enum": [
+          "assign",
+          "unassign",
+          "next",
+          "merge",
+          "rebrew",
+          "set_lane",
+          "swap_lanes",
+          "undo"
+        ],
         "x-enum-varnames": [
           "CaosOpAssign",
           "CaosOpUnassign",
           "CaosOpNext",
           "CaosOpMerge",
           "CaosOpRebrew",
+          "CaosOpSetLane",
+          "CaosOpSwapLanes",
           "CaosOpUndo"
         ]
       },
@@ -775,12 +812,27 @@
         "type": "string",
         "format": "uuid",
         "description": "undo で戻す操作（操作の結果の op_id）"
+      },
+      "person": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る"
+      },
+      "other_dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "description": "swap_lanes で dripper の列と担当者を入れ替える列"
       }
     }
   },
   "CaosOpResult": {
     "type": "object",
-    "required": ["op_id", "changed", "deleted", "readied"],
+    "required": ["op_id", "changed", "deleted", "readied", "lanes"],
     "properties": {
       "op_id": {
         "type": "string",
@@ -806,6 +858,13 @@
           "type": "string",
           "format": "uuid"
         }
+      },
+      "lanes": {
+        "type": "array",
+        "description": "この操作で担当者が変わった列（undo では、戻した列）",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
       }
     }
   },
@@ -826,7 +885,7 @@
   },
   "CaosWSMessage": {
     "type": "object",
-    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
+    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。\nカードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。\n",
     "required": ["type"],
     "properties": {
       "type": {
@@ -838,6 +897,12 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/CaosDrip"
+        }
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
         }
       }
     }

@@ -62,9 +62,9 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	mustDo(t, db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
 	mustDo(t, db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
 		&models.OrderMenu{}, &models.OrderCup{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
-	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_ops").Error)
-	mustDo(t, db.AutoMigrate(&caos.DripRow{}, &caos.OpRow{}))
-	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
+	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops").Error)
+	mustDo(t, db.AutoMigrate(caos.Models()...))
+	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	mustDo(t, db.Create(&hot).Error)

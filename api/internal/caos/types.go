@@ -3,7 +3,10 @@
 // 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のハンドラーと同じトランザクションの中で連動させる。
 // カードが全部終わった注文は、既存の準備完了の処理（ReadyFunc。POS の PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
 // 「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。
-// 配信は注文と同じく DB の通知から（caos_drips のトリガー → 各インスタンスが今日のカードを読み直して配る）。
+// 配信は注文と同じく DB の通知から（caos_drips_changed の通知 → 各インスタンスが今日のカードと列の担当者を読み直して配る）。
+//
+// 列（ドリッパー 1〜6）の担当者（名前と、上級生＝限定を淹れられるか）も盤面の一部として営業日ごとに持つ（caos_lanes）。
+// 担当者を替えるのは CaOS の画面からの操作（set_lane・swap_lanes）だけで、カードと同じく「1つ戻す」で戻せる。
 package caos
 
 import "time"
@@ -56,6 +59,19 @@ type Drip struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// Lane は列（ドリッパー 1〜6）の担当者。盤面には 1〜6 の 6 列が必ずあり、担当者がいない列は Name が空。
+// 上級生（限定を淹れられる）かは、交代したときに画面が sohosai-shift の名簿で判定したものをそのまま持つ
+// （名簿を読めない端末でも同じ表示になるように）。
+type Lane struct {
+	Dripper int `json:"dripper"`
+	// 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+	// 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+	// 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
 // Order は盤面が使う注文の中身（POS の orders と明細から作る）。
 type Order struct {
 	ID        string
@@ -93,6 +109,11 @@ type Op struct {
 	QueuePos  *float64 `json:"queue_pos,omitempty"`
 	// undo（1つ戻す）：戻す操作。操作の結果の op_id
 	OpID string `json:"op_id,omitempty"`
+	// set_lane（dripper の列の担当者を替える）：名前（空なら担当者なし）と、上級生か
+	Person string `json:"person,omitempty"`
+	Senior bool   `json:"senior,omitempty"`
+	// swap_lanes（dripper の列と other_dripper の列の担当者を入れ替える）
+	OtherDripper *int `json:"other_dripper,omitempty"`
 }
 
 // Result は操作の結果。呼んだ画面はこれですぐ反映する。
@@ -103,4 +124,6 @@ type Result struct {
 	Deleted []string `json:"deleted"`
 	// この操作で準備完了にした注文（undo では、準備完了を外した注文）
 	Readied []string `json:"readied"`
+	// この操作で変わった列の担当者（undo では、戻した列）
+	Lanes []Lane `json:"lanes"`
 }

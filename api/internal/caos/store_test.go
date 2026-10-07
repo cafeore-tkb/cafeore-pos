@@ -38,14 +38,14 @@ func testDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	// CaOS の表は毎回作り直す（スキーマは Go のモデルだけで決まることを確かめるため）
-	if err := db.Exec("DROP TABLE IF EXISTS caos_drips, caos_ops").Error; err != nil {
+	if err := db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
-		&DripRow{}, &OpRow{}); err != nil {
+		&DripRow{}, &LaneRow{}, &OpRow{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
+	if err := db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db

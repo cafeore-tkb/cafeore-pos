@@ -15,13 +15,14 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// 盤面の保存。新しい表は抽出カードの caos_drips と操作の記録の caos_ops だけ。
+// 盤面の保存。新しい表は抽出カードの caos_drips、列の担当者の caos_lanes、操作の記録の caos_ops だけ。
 // 1 つの営業日への処理は、その日の advisory lock を取って 1 件ずつ順番に行う（ロックのための表は持たない）。
 // 配信は注文と同じ：カードを変えたインスタンスが自分の画面へ配り、DB の通知 caos_drips_changed でほかのインスタンスに知らせる。
-// 受けたインスタンスは DB から今日のカードを読み直して、自分の画面へ配る（handlers/caos.go・order_listener.go）。
-// スキーマは Go のモデル（DripRow・OpRow）だけで決める（DB のトリガーや手で流す SQL は使わない）。
+// 受けたインスタンスは DB から今日のカードと列の担当者を読み直して、自分の画面へ配る（handlers/caos.go・order_listener.go）。
+// 列の担当者を替えたときも同じ通知で知らせる（チャンネルの名前は caos_drips_changed のまま）。
+// スキーマは Go のモデル（DripRow・LaneRow・OpRow）だけで決める（DB のトリガーや手で流す SQL は使わない）。
 
-// ChangedChannel は caos_drips が変わったことをインスタンス同士で知らせる DB の通知のチャンネル。
+// ChangedChannel は caos_drips（と caos_lanes）が変わったことをインスタンス同士で知らせる DB の通知のチャンネル。
 const ChangedChannel = "caos_drips_changed"
 
 // DripRow は抽出カードの行。order_ids と杯数は明細（lines）から求めるので持たない。
@@ -57,16 +58,33 @@ type OpRow struct {
 	// 操作で変わった・できたカードの、操作の後の中身（戻すときに、これから誰も触っていないかを updated_at で確かめる）
 	After jsonValue[[]Drip] `gorm:"type:jsonb;not null"`
 	// 操作で準備完了にした注文と、そのとき付けた ready_at（戻すときに、これから変わっていないかを確かめる）
-	Readied   jsonValue[[]ReadyMark] `gorm:"type:jsonb;not null"`
-	CreatedAt time.Time              `gorm:"not null;autoCreateTime:false"`
+	Readied jsonValue[[]ReadyMark] `gorm:"type:jsonb;not null"`
+	// 操作で担当者が変わった列の、操作の前と後（戻すときに、これから誰も替えていないかを updated_at で確かめる）
+	LanesBefore jsonValue[[]Lane] `gorm:"type:jsonb;not null;default:'[]'"`
+	LanesAfter  jsonValue[[]Lane] `gorm:"type:jsonb;not null;default:'[]'"`
+	CreatedAt   time.Time         `gorm:"not null;autoCreateTime:false"`
 	// 戻した時刻。同じ操作は 2 回戻せない
 	UndoneAt *time.Time
 }
 
 func (OpRow) TableName() string { return "caos_ops" }
 
+// LaneRow は列（ドリッパー 1〜6）の担当者の行。営業日ごと。一度も替えていない列は行が無い（担当者なし）。
+type LaneRow struct {
+	// 営業日（日本時間の日付）
+	Day     string `gorm:"type:date;primaryKey;autoIncrement:false"`
+	Dripper int    `gorm:"type:smallint;primaryKey;autoIncrement:false;check:caos_lanes_dripper_check,dripper BETWEEN 1 AND 6"`
+	// 担当者の名前。空なら担当者なし
+	Name string `gorm:"not null"`
+	// 上級生（限定を淹れられる）か。交代したときの画面の判定（sohosai-shift の名簿）
+	Senior    bool      `gorm:"not null;default:false"`
+	UpdatedAt time.Time `gorm:"not null;autoUpdateTime:false"`
+}
+
+func (LaneRow) TableName() string { return "caos_lanes" }
+
 // Models は CaOS の表のモデル。起動時に AutoMigrate で DB へ反映する（cmd/server の schemaModels）。
-func Models() []any { return []any{&DripRow{}, &OpRow{}} }
+func Models() []any { return []any{&DripRow{}, &LaneRow{}, &OpRow{}} }
 
 // ReadyMark は操作で準備完了にした注文。
 type ReadyMark struct {
@@ -215,7 +233,26 @@ func (s *Store) readBoard(tx *gorm.DB, day string) (*Board, error) {
 	for i, o := range orders {
 		states[i] = OrderState{ID: o.ID.String(), OrderNo: o.OrderId, CreatedAt: o.CreatedAt, Ready: o.ReadyAt != nil, Served: o.ServedAt != nil}
 	}
-	return NewBoard(drips, states, s.clock, nil), nil
+	b := NewBoard(drips, states, s.clock, nil)
+	lanes, err := readLanes(tx, day)
+	if err != nil {
+		return nil, err
+	}
+	b.LoadLanes(lanes)
+	return b, nil
+}
+
+// readLanes はその日の保存してある列の担当者（行の無い列は入らない）。
+func readLanes(tx *gorm.DB, day string) ([]Lane, error) {
+	var rows []LaneRow
+	if err := tx.Where("day = ?", day).Order("dripper").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	lanes := make([]Lane, len(rows))
+	for i, r := range rows {
+		lanes[i] = Lane{Dripper: r.Dripper, Name: r.Name, Senior: r.Senior, UpdatedAt: ptr(r.UpdatedAt.UTC())}
+	}
+	return lanes, nil
 }
 
 func readDrips(tx *gorm.DB, day string) ([]Drip, error) {
@@ -251,6 +288,9 @@ func (s *Store) withBoard(tx *gorm.DB, day string, fn func(tx *gorm.DB, b *Board
 }
 
 func (s *Store) persist(tx *gorm.DB, day string, b *Board, cs *Changeset) error {
+	if err := persistLanes(tx, day, b.LaneRows(cs.Lanes)); err != nil {
+		return err
+	}
 	// 1 人 1 枚の抽出中の索引に、書き換えの途中で引っかからないよう、変わった行はいったん消してから入れ直す
 	ids := append(cs.Deleted.List(), cs.Changed.List()...)
 	if len(ids) == 0 {
@@ -268,6 +308,26 @@ func (s *Store) persist(tx *gorm.DB, day string, b *Board, cs *Changeset) error 
 		rows[i] = toRow(day, d)
 	}
 	return tx.Create(&rows).Error
+}
+
+// persistLanes は変わった列の担当者を書く。一度も替えていない状態に戻した列（「1つ戻す」）は行を消す。
+func persistLanes(tx *gorm.DB, day string, lanes []Lane) error {
+	for _, l := range lanes {
+		if l.UpdatedAt == nil {
+			if err := tx.Where("day = ? AND dripper = ?", day, l.Dripper).Delete(&LaneRow{}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		row := LaneRow{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: *l.UpdatedAt}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "day"}, {Name: "dripper"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "senior", "updated_at"}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func dayOrders(tx *gorm.DB, day string) ([]Order, error) {
@@ -290,7 +350,7 @@ func dayOrders(tx *gorm.DB, day string) ([]Order, error) {
 //  3. 操作の記録（caos_ops）を残す。「1つ戻す」（undo）は、この記録で戻す
 func (s *Store) Apply(op Op) (Result, error) {
 	day := s.today()
-	res := Result{Changed: []Drip{}, Deleted: []string{}, Readied: []string{}}
+	res := Result{Changed: []Drip{}, Deleted: []string{}, Readied: []string{}, Lanes: []Lane{}}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := lockDay(tx, day); err != nil {
 			return err
@@ -327,6 +387,7 @@ func (s *Store) Apply(op Op) (Result, error) {
 		res.Changed = b.Rows(cs.Changed.List())
 		res.Deleted = cs.Deleted.List()
 		res.Readied = append(readied, caughtUp...)
+		res.Lanes = b.LaneRows(cs.Lanes)
 		return nil
 	})
 	if res.Deleted == nil {
@@ -335,12 +396,16 @@ func (s *Store) Apply(op Op) (Result, error) {
 	if res.Readied == nil {
 		res.Readied = []string{}
 	}
+	if err != nil {
+		res.Lanes = []Lane{}
+	}
 	return res, err
 }
 
 // do は操作を 1 つ行い、記録を残す。
 func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (string, []string, error) {
 	before := b.Snapshot()
+	lanesBefore := b.LaneRows([]int{1, 2, 3, 4, 5, 6})
 	if err := b.Apply(cs, op); err != nil {
 		return "", nil, err
 	}
@@ -366,10 +431,17 @@ func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (str
 			beforeRows = append(beforeRows, d)
 		}
 	}
+	var beforeLanes []Lane
+	for _, l := range lanesBefore {
+		if slices.Contains(cs.Lanes, l.Dripper) {
+			beforeLanes = append(beforeLanes, l)
+		}
+	}
 	rec := OpRow{
 		ID: uuid.New(), Day: day, Name: op.Name, CreatedAt: now,
 		Before: jsonValue[[]Drip]{orEmpty(beforeRows)}, After: jsonValue[[]Drip]{orEmpty(b.Rows(cs.Changed.List()))},
-		Readied: jsonValue[[]ReadyMark]{orEmpty(marks)},
+		Readied:     jsonValue[[]ReadyMark]{orEmpty(marks)},
+		LanesBefore: jsonValue[[]Lane]{orEmpty(beforeLanes)}, LanesAfter: jsonValue[[]Lane]{orEmpty(b.LaneRows(cs.Lanes))},
 	}
 	if err := tx.Create(&rec).Error; err != nil {
 		return "", nil, err
@@ -416,8 +488,15 @@ func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID stri
 			o.Ready = false
 		}
 	}
+	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
+	if err := b.checkLanesUntouched(rec.LanesAfter.V); err != nil {
+		return nil, err
+	}
 	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
 	if err := b.Restore(cs, rec.Before.V, rec.After.V); err != nil {
+		return nil, err
+	}
+	if err := b.RestoreLanes(cs, rec.LanesBefore.V, rec.LanesAfter.V); err != nil {
 		return nil, err
 	}
 	now := s.clock()
@@ -457,6 +536,9 @@ func (s *Store) readyAll(tx *gorm.DB, ids []string) ([]string, error) {
 func mergeChanges(b *Board, sets ...*Changeset) *Changeset {
 	out := &Changeset{}
 	for _, cs := range sets {
+		for _, n := range cs.Lanes {
+			out.touchLane(n)
+		}
 		for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
 			if _, ok := b.Drips[id]; ok {
 				out.touch(id)
@@ -477,6 +559,17 @@ func orEmpty[T any](v []T) []T {
 
 // Drips はその日の全カード（配信に使う）。
 func (s *Store) Drips(day string) ([]Drip, error) { return readDrips(s.db, day) }
+
+// Lanes はその日の 1〜6 の全部の列の担当者（配信に使う）。担当者のいない列は名前が空。
+func (s *Store) Lanes(day string) ([]Lane, error) {
+	lanes, err := readLanes(s.db, day)
+	if err != nil {
+		return nil, err
+	}
+	b := NewBoard(nil, nil, nil, nil)
+	b.LoadLanes(lanes)
+	return b.Lanes(), nil
+}
 
 // Today は画面からの操作を行う日（日本時間の今日）。
 func (s *Store) Today() string { return s.today() }
