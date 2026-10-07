@@ -11,6 +11,7 @@ import (
 )
 
 // グッズの種類。グッズは作って出すものではないので、カップを作らない。
+// 在庫の消費（inventory.go の orderItemsSQL）でも、カップにならないものをこれで見分ける。
 const goodsItemTypeName = "others"
 
 // 注文明細からカップ（1杯ずつの行）を作る。
