@@ -1,3 +1,4 @@
+import { readableTextColor } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -54,6 +55,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const isCompleted = ticket.status === "completed";
   const isRebrew = Boolean(ticket.isRebrew);
   const isNamed = Boolean(ticket.preferredBaristaId);
+  // 盤面のカードは、マスターの画面と同じ背景色で塗る（入れ直し・終わった・指名のカードはそれぞれの色を優先）
+  const masterColor =
+    ticket.color && !isRebrew && !isCompleted && !isNamed
+      ? ticket.color
+      : undefined;
+  // 文字色は背景色から決める（POS と共通の readableTextColor）
+  const masterTextColor = masterColor
+    ? readableTextColor(masterColor)
+    : undefined;
   const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
   const isActionOpen =
     ticket.status === "scheduled" && actionTicketKey === ticketKey;
@@ -167,6 +177,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       onPointerCancel={finishDrag}
       id={`ticket-${ticket.ticketUid || ticket.id.replace("#", "")}`}
       style={{
+        ...(masterColor
+          ? { backgroundColor: masterColor, color: masterTextColor }
+          : {}),
         ...(widthPx ? { width: `${widthPx}px` } : {}),
         ...(dragOffset
           ? {
@@ -273,10 +286,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       ? "text-violet-700"
                       : isCompleted
                         ? "text-slate-500"
-                        : ticket.totalItemsInOrder &&
-                            ticket.totalItemsInOrder > 1
-                          ? "text-slate-950"
-                          : "text-slate-600"
+                        : masterColor
+                          ? ""
+                          : ticket.totalItemsInOrder &&
+                              ticket.totalItemsInOrder > 1
+                            ? "text-slate-950"
+                            : "text-slate-600"
               }`}
             >
               {ticket.id}
@@ -322,7 +337,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 ? "font-black text-amber-950"
                 : isCompleted
                   ? "text-slate-600"
-                  : "text-slate-900"
+                  : masterColor
+                    ? ""
+                    : "text-slate-900"
             }`}
             title={ticket.beanName}
           >

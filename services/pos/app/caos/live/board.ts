@@ -1,5 +1,6 @@
 import {
   type CaosCard,
+  type ColorSetting,
   IMMINENT_SEC,
   STANDBY_LABEL,
   brewDurationLabel,
@@ -10,6 +11,7 @@ import {
 } from "@cafeore/common";
 import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
 import type { BeanIndex } from "../utils/beans";
+import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
 import { type PosOrder, nominatedBayId, posBeanCode } from "../utils/posOrders";
 
@@ -25,6 +27,8 @@ export interface LiveCup {
   name: string;
   abbr: string;
   type: string;
+  /** 商品の種類の ID（色の設定を引くのに使う） */
+  typeId?: string;
   assignee: string | null;
 }
 
@@ -43,6 +47,7 @@ export const buildCupCatalog = (orders: PosOrder[] | null): CupCatalog => {
         name: cup.name,
         abbr: cup.abbr,
         type: cup.item_type.name,
+        typeId: cup.item_type.id,
         assignee: cup.assignee,
       });
     }
@@ -78,6 +83,7 @@ const describe = (
   card: CaosCard,
   cups: LiveCup[],
   orderParts: Map<string, CaosCard[]>,
+  colorSettings: ColorSetting[],
   beanIndex: BeanIndex,
 ) => {
   const first = cups[0];
@@ -120,6 +126,13 @@ const describe = (
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
     beanName: `${abbrs}${unmatchedNominee}`,
+    // 色はマスターの画面と同じ（統合カードは先頭のカップの商品の色）
+    color: masterCardColor(colorSettings, {
+      id: first.itemId,
+      name: first.name,
+      typeId: first.typeId,
+      type: first.type,
+    }),
     itemKey: first.itemId,
     beans: Array.from(beans.values()),
     cupCount: card.cups.length,
@@ -145,6 +158,8 @@ export const cardsToBoard = (
   baristas: Barista[],
   nowSec: number,
   dayStartMs: number,
+  // マスターの画面の色の設定（カードの色をマスターと同じにする）
+  colorSettings: ColorSetting[] = [],
   // 商品 → 豆（POS の在庫の設定）
   beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
@@ -173,7 +188,13 @@ export const cardsToBoard = (
   ): OrderTicket => {
     const totalDurationSec = brewDurationSec(card.cups.length);
     return {
-      ...describe(card, cupsOf.get(card) ?? [], orderParts, beanIndex),
+      ...describe(
+        card,
+        cupsOf.get(card) ?? [],
+        orderParts,
+        colorSettings,
+        beanIndex,
+      ),
       tag: card.emergency ? "緊急" : undefined,
       status,
       totalDurationSec,
@@ -240,6 +261,7 @@ export const cardsToBoard = (
         card,
         cupsOf.get(card) ?? [],
         orderParts,
+        colorSettings,
         beanIndex,
       );
       const merged = Boolean(info.sourceOrderIds);
