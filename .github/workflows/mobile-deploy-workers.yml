@@ -12,6 +12,9 @@ name: mobile / deploy (Workers)
 # ただし versions upload は Worker が既にあることが前提なので、まだ無いと
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
 # その場合だけ deploy にフォールバックして Worker を作る。
+#
+# PR のプレビューは **preview ラベルが付いた open な PR にだけ**出す
+# （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
 
 # mobile は停止中なので自動では走らせない。再開するときは下のコメントを戻す。
 # on を丸ごと消すと workflow として不正になるので、手動実行だけ残している。
@@ -25,6 +28,12 @@ on:
   #     - 'pnpm-lock.yaml'
   #     - '.github/workflows/mobile-deploy-workers.yml'
   # pull_request:
+  #   # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
+  #   types:
+  #     - opened
+  #     - synchronize
+  #     - reopened
+  #     - labeled
   #   paths:
   #     - 'services/mobile/**'
   #     - 'modules/common/**'
@@ -42,8 +51,20 @@ permissions:
   # 外部の人のコードがこの権限を使うことはない。
   pull-requests: write
 
+# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
+# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
+# 走っているプレビューのデプロイを取り消してしまう。run_id で group を
+# 分けて逃がす。**条件は job の if と揃えること。**
 concurrency:
-  group: mobile-deploy-workers-${{ github.ref }}
+  group: >-
+    ${{ (github.event_name != 'pull_request'
+         || (github.actor != 'dependabot[bot]'
+             && github.event.pull_request.head.repo.full_name == github.repository
+             && github.event.pull_request.state == 'open'
+             && contains(github.event.pull_request.labels.*.name, 'preview')
+             && (github.event.action != 'labeled' || github.event.label.name == 'preview')))
+        && format('mobile-deploy-workers-{0}', github.ref)
+        || format('mobile-deploy-workers-skip-{0}', github.run_id) }}
   # 本番へのデプロイを途中で止めると中途半端な状態になりうるので、
   # 打ち切ってよいのは PR のプレビューだけにする。
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -53,18 +74,24 @@ jobs:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # 2つ除外している。
+    # 3つ除外している。
     #
     #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
-    #     （既存の pos-deploy-pull-request.yml と同じ条件）
     #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
     #     渡らない（Dependabot 用の別ストアが引かれる）ので、やはり認証で落ちる。
     #     npm の更新は pnpm-lock.yaml を触るため、除外しないと毎週赤くなる
+    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
+    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
+    #
+    # **PR の条件は上の concurrency と揃えること。**
     if: >-
       ${{ github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
-              || github.event.pull_request.head.repo.full_name == github.repository) }}
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
 
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
