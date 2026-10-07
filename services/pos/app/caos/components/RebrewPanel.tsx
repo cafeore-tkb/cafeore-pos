@@ -1,3 +1,4 @@
+import { formatMinSec } from "@cafeore/common";
 import { AlertTriangle, Clock3, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
@@ -19,11 +20,6 @@ interface RebrewPanelProps {
   onClose: () => void;
   onConfirm: (decision: RebrewDecision) => void;
 }
-
-const formatSeconds = (seconds: number) => {
-  const safe = Math.max(0, Math.round(seconds));
-  return `${Math.floor(safe / 60)}:${(safe % 60).toString().padStart(2, "0")}`;
-};
 
 export const RebrewPanel: React.FC<RebrewPanelProps> = ({
   ticket,
@@ -186,7 +182,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                   <Clock3 className="h-3.5 w-3.5" />
                   {barista.queue.length === 0
                     ? "今すぐ"
-                    : `全件後 ${formatSeconds(wait)}`}
+                    : `全件後 ${formatMinSec(wait)}`}
                   {!eligible && (
                     <span className="ml-auto text-red-700">指名外</span>
                   )}

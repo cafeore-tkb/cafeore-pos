@@ -1,4 +1,16 @@
-import { postCaosOp } from "@cafeore/common";
+import {
+  CHANGEOVER_SEC,
+  FIRST_START_DELAY_SEC,
+  IMMINENT_SEC,
+  STANDBY_LABEL,
+  brewDurationLabel,
+  brewDurationSec,
+  formatClockOfDay,
+  formatMinSec,
+  formatRemainingLabel,
+  postCaosOp,
+  startOfJstDay,
+} from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
@@ -62,6 +74,8 @@ const readPanelSnapshot = (): PanelSnapshot | null => {
   }
 };
 
+// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS12（練習用の盤面）で作り直すので、ここは触らない。
+// 普段の盤面（cafeore-pos の盤面）は、サーバーの営業日と同じ日本時間の 0 時を起点にする（startOfJstDay）
 const startOfLocalDay = (ms: number) => {
   const date = new Date(ms);
   return new Date(
@@ -112,7 +126,7 @@ const historicalOrderToDripUnits = (
       beanName: group.names.join("・"),
       cupCount: group.count,
       badgeTag: `${group.count}杯`,
-      predictedTimeStr: group.count > 1 ? "3分15秒" : "2分15秒",
+      predictedTimeStr: brewDurationLabel(group.count),
       recommendedBaristas: "全ドリッパー",
       recommendedBayIds: [1, 2, 3, 4, 5, 6],
       cardColor:
@@ -193,7 +207,8 @@ export default function App() {
   // Linked multi-item order selection (e.g. #152 has items in Bay 1 and Bay 2)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [realTime, setRealTime] = useState(() => new Date());
-  const [realDayStartMs] = useState(() => startOfLocalDay(Date.now()));
+  // 盤面の秒の起点。サーバーの営業日と同じく日本時間の 0:00（端末の時刻帯によらない）
+  const [realDayStartMs] = useState(() => startOfJstDay(Date.now()));
   const testPlayStatus = testPlaySession?.status;
   const testPlayCurrentMs = testPlaySession?.currentMs;
   const testPlayEndMs = testPlaySession?.endMs;
@@ -475,14 +490,10 @@ export default function App() {
             activeTicket.timeRemainingSec = nextSec;
             updatedQueue[0] = activeTicket;
 
-            const m = Math.floor(nextSec / 60);
-            const s = nextSec % 60;
-            const remainingStr = `0${m}:${s < 10 ? "0" : ""}${s} 残り`;
-
             return {
               ...barista,
-              status: nextSec <= 15 ? "imminent" : "brewing",
-              remainingStr,
+              status: nextSec <= IMMINENT_SEC ? "imminent" : "brewing",
+              remainingStr: formatRemainingLabel(nextSec),
               queue: updatedQueue,
             };
           }
@@ -535,7 +546,10 @@ export default function App() {
         return {
           ...b,
           status: nextQueue.length > 0 ? "brewing" : "standby",
-          remainingStr: nextQueue.length > 0 ? "01:50 残り" : "00:00 待機中",
+          remainingStr:
+            nextQueue.length > 0
+              ? formatRemainingLabel(nextQueue[0].totalDurationSec)
+              : STANDBY_LABEL,
           queue: nextQueue,
           pastTickets,
         };
@@ -581,11 +595,11 @@ export default function App() {
     // Calculate dynamic start time based on target bay's queue
     const targetBay = baristas.find((b) => b.id === targetBayId);
     const lastTicket = targetBay?.queue[targetBay.queue.length - 1];
-    const duration = orderToAssign.cupCount > 1 ? 195 : 135;
+    const duration = brewDurationSec(orderToAssign.cupCount);
     const computedStartSec =
       lastTicket?.startTimeSec && lastTicket.totalDurationSec
-        ? lastTicket.startTimeSec + lastTicket.totalDurationSec + 15
-        : realTimeSec + 10;
+        ? lastTicket.startTimeSec + lastTicket.totalDurationSec + CHANGEOVER_SEC
+        : realTimeSec + FIRST_START_DELAY_SEC;
 
     // Convert to OrderTicket
     const newTicket: OrderTicket = {
@@ -613,7 +627,7 @@ export default function App() {
               ? "★SP"
               : undefined,
       status: "scheduled",
-      scheduledTimeStr: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: formatMinSec(duration),
       startTimeSec: computedStartSec,
       totalDurationSec: duration,
     };
@@ -702,7 +716,7 @@ export default function App() {
         beanName: ticket.beanName,
         cupCount: ticket.cupCount,
         badgeTag: `${ticket.cupCount}杯 ${ticket.tag || "HOT"}`,
-        predictedTimeStr: ticket.scheduledTimeStr || "2:15",
+        predictedTimeStr: brewDurationLabel(ticket.cupCount),
         recommendedBaristas: ticket.preferredBaristaId
           ? `ドリッパー ${ticket.preferredBaristaId}`
           : "全ドリッパー",
@@ -755,7 +769,7 @@ export default function App() {
     }
     captureUndo(`${ticket.id}の入れ直し`);
     const originalKey = ticketKey(ticket);
-    const duration = decision.cupCount > 1 ? 195 : 135;
+    const duration = brewDurationSec(decision.cupCount);
     const rebrewUid = `rebrew-${originalKey}-${Date.now()}`;
     const newTicket: OrderTicket = {
       ...ticket,
@@ -763,7 +777,7 @@ export default function App() {
       cupCount: decision.cupCount,
       status: "scheduled",
       totalDurationSec: duration,
-      scheduledTimeStr: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: formatMinSec(duration),
       startTimeSec: undefined,
       endTimeSec: undefined,
       completedAtSec: undefined,
@@ -787,7 +801,7 @@ export default function App() {
           beanName: newTicket.beanName,
           cupCount: newTicket.cupCount,
           badgeTag: `${newTicket.cupCount}杯 入れ直し`,
-          predictedTimeStr: newTicket.scheduledTimeStr || "2:15",
+          predictedTimeStr: brewDurationLabel(newTicket.cupCount),
           // 限定（SP）もどの列でも淹れられる扱い（上級生の判定は、列の担当者をサーバーから出すときに足す）
           recommendedBaristas: "全ドリッパー",
           recommendedBayIds: baristas.map((barista) => barista.id),
@@ -828,7 +842,7 @@ export default function App() {
           queue,
           pastTickets: [...(barista.pastTickets || []), interrupted],
           status: queue.length > 0 ? "brewing" : "standby",
-          remainingStr: queue.length > 0 ? "再計算中" : "00:00 待機中",
+          remainingStr: queue.length > 0 ? "再計算中" : STANDBY_LABEL,
         };
       });
 
@@ -853,7 +867,7 @@ export default function App() {
             queue: arranged,
             status: arranged.length > 0 ? "brewing" : "standby",
             remainingStr:
-              arranged.length > 0 ? barista.remainingStr : "00:00 待機中",
+              arranged.length > 0 ? barista.remainingStr : STANDBY_LABEL,
           };
         });
       }
@@ -1071,7 +1085,7 @@ export default function App() {
           controlViewMode={controlViewMode}
           onSelectTab={setActiveTab}
           onSelectControlViewMode={setControlViewMode}
-          timeStr={`${operationalTime.getHours().toString().padStart(2, "0")}:${operationalTime.getMinutes().toString().padStart(2, "0")}:${operationalTime.getSeconds().toString().padStart(2, "0")}`}
+          timeStr={formatClockOfDay(realTimeSec)}
           unassignedCups={totalUnassignedDisplay}
           totalWaitingCups={totalWaitingCupsDisplay}
           soundEnabled={soundEnabled}

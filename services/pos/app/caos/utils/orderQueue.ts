@@ -1,4 +1,5 @@
-import type { OrderTicket, UnassignedOrder } from "../types";
+import { CHANGEOVER_SEC, FIRST_START_DELAY_SEC } from "@cafeore/common";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
@@ -28,6 +29,8 @@ const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
   (a.itemIndex || 0) - (b.itemIndex || 0) ||
   (a.ticketUid || "").localeCompare(b.ticketUid || "");
 
+// arrangeQueue・reanchorQueueInOrder は実データテスト（手元の盤面）の並べ直し。CaOS12（練習用の盤面）で作り直すので、
+// 定数だけ共通のもの（@cafeore/common の caosTiming）にしてある。普段の盤面の予定時刻は planLane で決める（live/drips.ts）
 export const arrangeQueue = (
   queue: OrderTicket[],
   nowSec: number,
@@ -60,11 +63,12 @@ export const arrangeQueue = (
           nowSec,
           (first.startTimeSec ?? nowSec) + first.totalDurationSec,
         )
-      : (first.startTimeSec ?? nowSec + 10) + first.totalDurationSec;
+      : (first.startTimeSec ?? nowSec + FIRST_START_DELAY_SEC) +
+        first.totalDurationSec;
   let cursor = firstEnd;
 
   for (const ticket of ordered.slice(1)) {
-    const startTimeSec = cursor + 15;
+    const startTimeSec = cursor + CHANGEOVER_SEC;
     result.push({
       ...ticket,
       status: "scheduled",
@@ -93,7 +97,7 @@ export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
     (first.startTimeSec ?? nowSec) + first.totalDurationSec,
   );
   queue.slice(1).forEach((ticket) => {
-    const startTimeSec = cursor + 15;
+    const startTimeSec = cursor + CHANGEOVER_SEC;
     result.push({
       ...ticket,
       status: "scheduled",
@@ -106,16 +110,26 @@ export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
 };
 
 // Seconds until the dripper has finished everything already queued, using the
-// same 15-second changeover gap as the scheduler.
+// same changeover gap as the scheduler.
 export const queueWaitSeconds = (queue: OrderTicket[]) =>
   queue.reduce(
     (sum, ticket, index) =>
       sum +
       (index === 0
         ? (ticket.timeRemainingSec ?? ticket.totalDurationSec)
-        : ticket.totalDurationSec + 15),
+        : ticket.totalDurationSec + CHANGEOVER_SEC),
     0,
   );
+
+// ドリッパーの先頭のカードの残り（秒）。カードが無ければ 0
+export const activeRemainingSec = (barista: Barista, nowSec: number) => {
+  const current = barista.queue[0];
+  if (!current) return 0;
+  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
+  if (current.endTimeSec !== undefined)
+    return Math.max(0, current.endTimeSec - nowSec);
+  return current.totalDurationSec;
+};
 
 export const splitIntoDripUnits = (orders: UnassignedOrder[]) => {
   const totalOrderCups = orders.reduce((sum, order) => sum + order.cupCount, 0);

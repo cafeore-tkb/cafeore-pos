@@ -1,3 +1,4 @@
+import { STANDBY_LABEL } from "@cafeore/common";
 import type { Barista } from "../types";
 
 // 列（ドリッパー 1〜6）。列は「1st」〜「6th」と番号だけで呼ぶ。
@@ -16,7 +17,7 @@ export const makeLaneBaristas = (): Barista[] =>
       id,
       bayNumber: id,
       status: "standby",
-      remainingStr: "00:00 待機中",
+      remainingStr: STANDBY_LABEL,
       queue: [],
       pastTickets: [],
     }),
