@@ -1,4 +1,13 @@
-import type { CaosCard } from "@cafeore/common";
+import {
+  type CaosCard,
+  IMMINENT_SEC,
+  STANDBY_LABEL,
+  brewDurationLabel,
+  brewDurationSec,
+  formatMinSec,
+  formatRemainingLabel,
+  planLane,
+} from "@cafeore/common";
 import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
 import type { BeanIndex } from "../utils/beans";
 import { orderNumber } from "../utils/orderQueue";
@@ -6,10 +15,6 @@ import { type PosOrder, nominatedBayId, posBeanCode } from "../utils/posOrders";
 
 // cafeore-pos の盤面（WebSocket の drips）を、管制盤が使う形（列ごとの待機と未割当）に組み立てる。
 // カードはカップの ID しか持たないので、注文番号・商品・指名は注文（orders）のカップから引く。
-
-const ONE_CUP_SEC = 135;
-const TWO_CUP_SEC = 195;
-const durationOf = (cups: number) => (cups > 1 ? TWO_CUP_SEC : ONE_CUP_SEC);
 
 /** 注文のカップ 1 杯（カードの表示に使う） */
 export interface LiveCup {
@@ -131,7 +136,7 @@ export interface LiveBoard {
 }
 
 // 盤面のカードを、管制盤が使う形（列ごとの待機と未割当）に組み立てる。
-// 待機のカードの予定時刻は、抽出中のカードの開始時刻から毎回計算する。
+// 抽出中・待機のカードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
 // カードの並びはサーバーが決めたまま（未割当は緊急が先、待機は緊急が先で次に列の中の順番）。
 // 注文がまだ届いていないカップのあるカードは、注文番号が分からないので届くまで出さない。
 export const cardsToBoard = (
@@ -166,13 +171,13 @@ export const cardsToBoard = (
     card: CaosCard,
     status: OrderTicket["status"],
   ): OrderTicket => {
-    const totalDurationSec = durationOf(card.cups.length);
+    const totalDurationSec = brewDurationSec(card.cups.length);
     return {
       ...describe(card, cupsOf.get(card) ?? [], orderParts, beanIndex),
       tag: card.emergency ? "緊急" : undefined,
       status,
       totalDurationSec,
-      scheduledTimeStr: `${Math.floor(totalDurationSec / 60)}:${(totalDurationSec % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: formatMinSec(totalDurationSec),
       startTimeSec: toSec(card.started_at, dayStartMs),
       endTimeSec: toSec(card.finished_at, dayStartMs),
       completedAtSec: toSec(card.finished_at, dayStartMs),
@@ -186,40 +191,43 @@ export const cardsToBoard = (
     const queued = mine.filter((card) => card.status === "queued");
     const done = mine.filter((card) => card.status === "done");
 
+    const brewingTicket = brewing ? toTicket(brewing, "brewing") : undefined;
+    const queuedTickets = queued.map((card) => toTicket(card, "scheduled"));
+    const plan = planLane(
+      nowSec,
+      brewingTicket && {
+        startSec: brewingTicket.startTimeSec,
+        durationSec: brewingTicket.totalDurationSec,
+      },
+      queuedTickets.map((ticket) => ticket.totalDurationSec),
+    );
     const queue: OrderTicket[] = [];
-    let cursor = nowSec;
-    let remainingSec: number | undefined;
-    if (brewing) {
-      const ticket = toTicket(brewing, "brewing");
-      const startSec = ticket.startTimeSec ?? nowSec;
-      remainingSec = Math.max(0, ticket.totalDurationSec - (nowSec - startSec));
+    if (brewingTicket && plan.brewing) {
+      queue.push({
+        ...brewingTicket,
+        startTimeSec: plan.brewing.startSec,
+        timeRemainingSec: plan.brewing.remainingSec,
+      });
+    }
+    queuedTickets.forEach((ticket, index) => {
       queue.push({
         ...ticket,
-        startTimeSec: startSec,
-        timeRemainingSec: remainingSec,
+        startTimeSec: plan.queued[index].startSec,
+        timeRemainingSec: undefined,
       });
-      cursor = Math.max(nowSec, startSec + ticket.totalDurationSec);
-    }
-    queued.forEach((card, index) => {
-      const ticket = toTicket(card, "scheduled");
-      // 抽出中が無い（「次へ」で始める）ときは少し先から、あるときは 15 秒の入れ替えを挟む
-      const startTimeSec = !brewing && index === 0 ? nowSec + 10 : cursor + 15;
-      queue.push({ ...ticket, startTimeSec, timeRemainingSec: undefined });
-      cursor = startTimeSec + ticket.totalDurationSec;
     });
 
-    const minutes = Math.floor((remainingSec ?? 0) / 60);
-    const seconds = (remainingSec ?? 0) % 60;
+    const remainingSec = plan.brewing?.remainingSec ?? 0;
     return {
       ...barista,
-      status: brewing
-        ? (remainingSec ?? 0) <= 15
+      status: plan.brewing
+        ? remainingSec <= IMMINENT_SEC
           ? "imminent"
           : "brewing"
         : "standby",
-      remainingStr: brewing
-        ? `0${minutes}:${seconds < 10 ? "0" : ""}${seconds} 残り`
-        : "00:00 待機中",
+      remainingStr: plan.brewing
+        ? formatRemainingLabel(remainingSec)
+        : STANDBY_LABEL,
       queue,
       pastTickets: done.map((card) => toTicket(card, "completed")),
     };
@@ -239,7 +247,7 @@ export const cardsToBoard = (
       return {
         ...info,
         badgeTag: `${cups}杯${card.emergency ? " 緊急" : merged ? " 統合" : ""}`,
-        predictedTimeStr: cups > 1 ? "3分15秒" : "2分15秒",
+        predictedTimeStr: brewDurationLabel(cups),
         recommendedBaristas: info.preferredBaristaId
           ? `ドリッパー ${info.preferredBaristaId}`
           : "全ドリッパー",
