@@ -22,6 +22,7 @@ func All() []any {
 		&StockEvent{},
 		&ColorSetting{},
 		&CaosDripRow{},
+		&CaosLaneRow{},
 		&CaosOpRow{},
 	}
 }

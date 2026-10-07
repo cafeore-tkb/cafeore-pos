@@ -616,12 +616,13 @@ paths:
     post:
       summary: CaOS の今日の盤面への操作
       description: |
-        割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+        割当・戻す・次へ・統合・入れ直し・列の担当者の交代（set_lane）と入れ替え（swap_lanes）・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
         操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
         「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
         「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
         記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-        カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
+        列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+        カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
       operationId: applyCaosOp
       tags: [caos]
       requestBody:
@@ -1516,19 +1517,42 @@ components:
           type: string
           format: date-time
           description: 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
+    CaosLane:
+      type: object
+      description: |
+        列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+        senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+      required: [dripper, name, senior, updated_at]
+      properties:
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+        name:
+          type: string
+          description: 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+        senior:
+          type: boolean
+          description: 上級生（限定を淹れられる）か。担当者がいない列は false
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
     CaosOp:
       type: object
       description: |
         name ごとに使うフィールド：
         assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
         rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+        set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
         undo（op_id）
       required: [name]
       properties:
         name:
           type: string
-          enum: [assign, unassign, next, merge, rebrew, undo]
-          x-enum-varnames: [CaosOpAssign, CaosOpUnassign, CaosOpNext, CaosOpMerge, CaosOpRebrew, CaosOpUndo]
+          enum: [assign, unassign, next, merge, rebrew, set_lane, swap_lanes, undo]
+          x-enum-varnames: [CaosOpAssign, CaosOpUnassign, CaosOpNext, CaosOpMerge, CaosOpRebrew, CaosOpSetLane, CaosOpSwapLanes, CaosOpUndo]
         drip_id:
           type: string
           format: uuid
@@ -1562,9 +1586,21 @@ components:
           type: string
           format: uuid
           description: undo で戻す操作（操作の結果の op_id）
+        person:
+          type: string
+          maxLength: 40
+          description: set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし
+        senior:
+          type: boolean
+          description: set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る
+        other_dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: swap_lanes で dripper の列と担当者を入れ替える列
     CaosOpResult:
       type: object
-      required: [op_id, changed, deleted, readied]
+      required: [op_id, changed, deleted, readied, lanes]
       properties:
         op_id:
           type: string
@@ -1584,6 +1620,11 @@ components:
           items:
             type: string
             format: uuid
+        lanes:
+          type: array
+          description: この操作で担当者が変わった列（undo では、戻した列）
+          items:
+            $ref: '#/components/schemas/CaosLane'
     CaosErrorResponse:
       type: object
       required: [error]
@@ -1599,7 +1640,8 @@ components:
       type: object
       description: |
         WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
-        今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
+        今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。
+        カードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。
       required: [type]
       properties:
         type:
@@ -1610,6 +1652,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CaosDrip'
+        lanes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosLane'
     CashierStateResponse:
       type: object
       required:

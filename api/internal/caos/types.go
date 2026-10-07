@@ -1,13 +1,19 @@
-// Package caos は CaOS（ドリップ管制）の盤面の決まり。抽出カード（Drip）と、割当・次へ・統合・入れ直し・1つ戻すのルール（Board）を持つ。
+// Package caos は CaOS（ドリップ管制）の盤面の決まり。抽出カード（Drip）と列の担当者（Lane）、
+// 割当・次へ・統合・入れ直し・担当者の交代と入れ替え・1つ戻すのルール（Board）を持つ。
 //
 // このパッケージは DB を使わない（メモリ上のカードと注文だけを変える。テストも DB なしで回る）。
 // 保存・API・配信は、POS のほかの機能と同じ置き場所にある：
-//   - 表のモデル：models の CaosDripRow（caos_drips。カード）と CaosOpRow（caos_ops。操作の記録）。ほかの表と同じく models.All() に入れ、起動時の AutoMigrate で作る
+//   - 表のモデル：models の CaosDripRow（caos_drips。カード）、CaosLaneRow（caos_lanes。列の担当者）、CaosOpRow（caos_ops。操作の記録）。
+//     ほかの表と同じく models.All() に入れ、起動時の AutoMigrate で作る
 //   - 保存と POS の注文との連動：handlers/caos_store.go（CaosStore）。盤面は営業日（日本時間）ごとに 1 つで、その日の advisory lock を取って 1 件ずつ順番に処理する。
 //     カードは注文のハンドラーと同じトランザクションの中でそろえ、カードが全部終わった注文は、既存の準備完了の処理（PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
-//     「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す
+//     「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。列の担当者の交代・入れ替えも同じ記録で戻す
 //   - API と配信：handlers/caos.go（POST /api/caos/ops と /api/ws/orders の {"type":"drips"}）。注文と同じく、カードを変えたインスタンスが自分の画面へ配り、
-//     pg_notify（caos_drips_changed）でほかのインスタンスに知らせる。受けたインスタンスは DB から今日のカードを読み直して配る（handlers/order_listener.go）。DB のトリガーは使わない
+//     pg_notify（caos_drips_changed）でほかのインスタンスに知らせる。受けたインスタンスは DB から今日のカードと列の担当者を読み直して配る（handlers/order_listener.go）。DB のトリガーは使わない
+//
+// 列（ドリッパー 1〜6）の担当者（名前と、上級生＝限定を淹れられるか）も盤面の一部として営業日ごとに持つ。
+// 担当者を替えるのは CaOS の画面からの操作（set_lane・swap_lanes）だけで、カードと同じく「1つ戻す」で戻せる。
+// sohosai-shift の予定は画面が交代の候補に出すだけで、サーバーは読まない（自動では替えない）。
 package caos
 
 import "time"
@@ -61,6 +67,19 @@ type Drip struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// Lane は列（ドリッパー 1〜6）の担当者。盤面には 1〜6 の 6 列が必ずあり、担当者がいない列は Name が空。
+// 上級生（限定を淹れられる）かは、交代したときに画面が sohosai-shift の名簿（seniors）で判定したものをそのまま持つ
+// （名簿を読めない端末でも同じ表示になるように）。
+type Lane struct {
+	Dripper int `json:"dripper"`
+	// 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+	// 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+	// 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
 // ReadyMark は操作で準備完了にした注文と、そのとき付けた ready_at（操作の記録 caos_ops に残し、「1つ戻す」で確かめる）。
 type ReadyMark struct {
 	OrderID string    `json:"order_id"`
@@ -105,6 +124,11 @@ type Op struct {
 	QueuePos  *float64 `json:"queue_pos,omitempty"`
 	// undo（1つ戻す）：戻す操作。操作の結果の op_id
 	OpID string `json:"op_id,omitempty"`
+	// set_lane（dripper の列の担当者を替える）：名前（空なら担当者なし）と、上級生か
+	Person string `json:"person,omitempty"`
+	Senior bool   `json:"senior,omitempty"`
+	// swap_lanes（dripper の列と other_dripper の列の担当者を入れ替える）
+	OtherDripper *int `json:"other_dripper,omitempty"`
 }
 
 // Result は操作の結果。呼んだ画面はこれですぐ反映する。
@@ -115,6 +139,8 @@ type Result struct {
 	Deleted []string `json:"deleted"`
 	// この操作で準備完了にした注文（undo では、準備完了を外した注文）
 	Readied []string `json:"readied"`
+	// この操作で担当者が変わった列（undo では、戻した列）
+	Lanes []Lane `json:"lanes"`
 }
 
 var jst = time.FixedZone("JST", 9*60*60)

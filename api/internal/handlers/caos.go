@@ -17,7 +17,7 @@ import (
 
 // CaosHandler は CaOS（ドリップ管制）の盤面への操作の API。
 //
-// 盤面のカードは、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
+// 盤面のカードと列の担当者は、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
 // 注文の中身は既存の {"type":"orders"}・{"type":"order"} から。準備完了は、操作と同じトランザクションで
 // 既存の準備完了の処理（setOrderReady。PATCH /ready と同じ切り替え）で付ける。保存と注文との連動は caos_store.go（CaosStore）。
 type CaosHandler struct {
@@ -29,7 +29,7 @@ func NewCaosHandler(store *CaosStore, orders *OrderHandler) *CaosHandler {
 	return &CaosHandler{store: store, orders: orders}
 }
 
-// POST /api/caos/ops - 今日の盤面への操作（割当・戻す・次へ・統合・入れ直し・1つ戻す）
+// POST /api/caos/ops - 今日の盤面への操作（割当・戻す・次へ・統合・入れ直し・列の担当者の交代と入れ替え・1つ戻す）
 //
 // 「次へ」で注文のカードが全部終わったら、同じトランザクションで準備完了にする（結果の readied）。
 // 「1つ戻す」（undo）は、操作の結果の op_id を指定し、サーバーが残した操作の記録で戻す。
@@ -180,22 +180,28 @@ func (h *OrderHandler) runDripsBroadcaster() {
 	}
 }
 
-// 今日のカードを DB から読み直して WebSocket へ送る（カードが 0 枚のときは drips が省かれて届く）。
+// 今日のカードと列の担当者を DB から読み直して WebSocket へ送る（カードが 0 枚のときは drips が省かれて届く）。
 func (h *OrderHandler) sendDrips() {
 	if msg, ok := h.dripsMessage(); ok {
 		h.hub.Broadcast(msg)
 	}
 }
 
-// 今日のカードを WSMessage にする。CaOS を使っていない・読めなかったら ok = false
+// 今日のカードと列の担当者（1〜6 の全部）を WSMessage にする。CaOS を使っていない・読めなかったら ok = false
 func (h *OrderHandler) dripsMessage() (WSMessage, bool) {
 	if h.caos == nil {
 		return WSMessage{}, false
 	}
-	drips, err := h.caos.Drips(h.caos.Today())
+	day := h.caos.Today()
+	drips, err := h.caos.Drips(day)
 	if err != nil {
 		log.Printf("caos: failed to read the cards: %v", err)
 		return WSMessage{}, false
 	}
-	return WSMessage{Type: WSMessageTypeDrips, Drips: drips}, true
+	lanes, err := h.caos.Lanes(day)
+	if err != nil {
+		log.Printf("caos: failed to read the lanes: %v", err)
+		return WSMessage{}, false
+	}
+	return WSMessage{Type: WSMessageTypeDrips, Drips: drips, Lanes: lanes}, true
 }

@@ -24,12 +24,14 @@ const (
 
 // Defines values for CaosOpName.
 const (
-	CaosOpAssign   CaosOpName = "assign"
-	CaosOpMerge    CaosOpName = "merge"
-	CaosOpNext     CaosOpName = "next"
-	CaosOpRebrew   CaosOpName = "rebrew"
-	CaosOpUnassign CaosOpName = "unassign"
-	CaosOpUndo     CaosOpName = "undo"
+	CaosOpAssign    CaosOpName = "assign"
+	CaosOpMerge     CaosOpName = "merge"
+	CaosOpNext      CaosOpName = "next"
+	CaosOpRebrew    CaosOpName = "rebrew"
+	CaosOpSetLane   CaosOpName = "set_lane"
+	CaosOpSwapLanes CaosOpName = "swap_lanes"
+	CaosOpUnassign  CaosOpName = "unassign"
+	CaosOpUndo      CaosOpName = "undo"
 )
 
 // Defines values for ColorScreen.
@@ -115,9 +117,25 @@ type CaosErrorResponse struct {
 // CaosErrorResponseCode defines model for CaosErrorResponse.Code.
 type CaosErrorResponseCode string
 
+// CaosLane 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+// senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+type CaosLane struct {
+	Dripper int `json:"dripper"`
+
+	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+
+	// UpdatedAt 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
 // CaosOp name ごとに使うフィールド：
 // assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
 // rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
 // undo（op_id）
 type CaosOp struct {
 	// Cups 入れ直す杯数（元のカードの杯数まで）
@@ -131,9 +149,18 @@ type CaosOp struct {
 	Name      CaosOpName `json:"name"`
 
 	// OpId undo で戻す操作（操作の結果の op_id）
-	OpId     *openapi_types.UUID `json:"op_id,omitempty"`
+	OpId *openapi_types.UUID `json:"op_id,omitempty"`
+
+	// OtherDripper swap_lanes で dripper の列と担当者を入れ替える列
+	OtherDripper *int `json:"other_dripper,omitempty"`
+
+	// Person set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし
+	Person   *string             `json:"person,omitempty"`
 	QueuePos *float64            `json:"queue_pos"`
 	SecondId *openapi_types.UUID `json:"second_id,omitempty"`
+
+	// Senior set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る
+	Senior   *bool               `json:"senior,omitempty"`
 	SourceId *openapi_types.UUID `json:"source_id,omitempty"`
 }
 
@@ -144,6 +171,9 @@ type CaosOpName string
 type CaosOpResult struct {
 	Changed []CaosDrip           `json:"changed"`
 	Deleted []openapi_types.UUID `json:"deleted"`
+
+	// Lanes この操作で担当者が変わった列（undo では、戻した列）
+	Lanes []CaosLane `json:"lanes"`
 
 	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
 	OpId string `json:"op_id"`

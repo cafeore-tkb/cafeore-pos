@@ -14,12 +14,14 @@ import (
 )
 
 // CaOS の盤面の保存と、POS の注文との連動。盤面の決まり（割当・次へ・統合など）は caos パッケージ（DB を使わない）にある。
-// 新しい表は抽出カードの caos_drips と操作の記録の caos_ops だけ（models の CaosDripRow・CaosOpRow。ほかの表と同じく models.All() で作る）。
+// 新しい表は抽出カードの caos_drips、列の担当者の caos_lanes、操作の記録の caos_ops だけ
+// （models の CaosDripRow・CaosLaneRow・CaosOpRow。ほかの表と同じく models.All() で作る）。
 // 1 つの営業日への処理は、その日の advisory lock を取って 1 件ずつ順番に行う（ロックのための表は持たない）。
 // 配信は注文と同じ：カードを変えたインスタンスが自分の画面へ配り、DB の通知 caos_drips_changed でほかのインスタンスに知らせる。
-// 受けたインスタンスは DB から今日のカードを読み直して、自分の画面へ配る（caos.go・order_listener.go）。
+// 受けたインスタンスは DB から今日のカードと列の担当者を読み直して、自分の画面へ配る（caos.go・order_listener.go）。
+// 列の担当者を替えたときも同じ通知で知らせる（チャンネルの名前は caos_drips_changed のまま）。
 
-// dripsChangedChannel は caos_drips が変わったことをインスタンス同士で知らせる DB の通知のチャンネル。
+// dripsChangedChannel は caos_drips（と caos_lanes）が変わったことをインスタンス同士で知らせる DB の通知のチャンネル。
 const dripsChangedChannel = "caos_drips_changed"
 
 func toCaosDripRow(day string, d caos.Drip) models.CaosDripRow {
@@ -112,7 +114,47 @@ func (s *CaosStore) readBoard(tx *gorm.DB, day string) (*caos.Board, error) {
 	for i, o := range orders {
 		states[i] = caos.OrderState{ID: o.ID.String(), OrderNo: o.OrderId, CreatedAt: o.CreatedAt, Ready: o.ReadyAt != nil, Served: o.ServedAt != nil}
 	}
-	return caos.NewBoard(drips, states, s.clock, nil), nil
+	b := caos.NewBoard(drips, states, s.clock, nil)
+	lanes, err := readCaosLanes(tx, day)
+	if err != nil {
+		return nil, err
+	}
+	b.LoadLanes(lanes)
+	return b, nil
+}
+
+// readCaosLanes はその日の保存してある列の担当者（一度も替えていない列は入らない）。
+func readCaosLanes(tx *gorm.DB, day string) ([]caos.Lane, error) {
+	var rows []models.CaosLaneRow
+	if err := tx.Where("day = ?", day).Order("dripper").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	lanes := make([]caos.Lane, len(rows))
+	for i, r := range rows {
+		at := r.UpdatedAt.UTC()
+		lanes[i] = caos.Lane{Dripper: r.Dripper, Name: r.Name, Senior: r.Senior, UpdatedAt: &at}
+	}
+	return lanes, nil
+}
+
+// persistCaosLanes は変わった列の担当者を書く。一度も替えていない状態に戻した列（「1つ戻す」）は行を消す。
+func persistCaosLanes(tx *gorm.DB, day string, lanes []caos.Lane) error {
+	for _, l := range lanes {
+		if l.UpdatedAt == nil {
+			if err := tx.Where("day = ? AND dripper = ?", day, l.Dripper).Delete(&models.CaosLaneRow{}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		row := models.CaosLaneRow{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: *l.UpdatedAt}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "day"}, {Name: "dripper"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "senior", "updated_at"}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readCaosDrips(tx *gorm.DB, day string) ([]caos.Drip, error) {
@@ -148,6 +190,9 @@ func (s *CaosStore) withBoard(tx *gorm.DB, day string, fn func(tx *gorm.DB, b *c
 }
 
 func (s *CaosStore) persist(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changeset) error {
+	if err := persistCaosLanes(tx, day, b.LaneRows(cs.Lanes)); err != nil {
+		return err
+	}
 	// 1 人 1 枚の抽出中の索引に、書き換えの途中で引っかからないよう、変わった行はいったん消してから入れ直す
 	ids := append(cs.Deleted.List(), cs.Changed.List()...)
 	if len(ids) == 0 {
@@ -187,7 +232,7 @@ func caosDayOrders(tx *gorm.DB, day string) ([]caos.Order, error) {
 //  3. 操作の記録（caos_ops）を残す。「1つ戻す」（undo）は、この記録で戻す
 func (s *CaosStore) Apply(op caos.Op) (caos.Result, error) {
 	day := s.today()
-	res := caos.Result{Changed: []caos.Drip{}, Deleted: []string{}, Readied: []string{}}
+	res := caos.Result{Changed: []caos.Drip{}, Deleted: []string{}, Readied: []string{}, Lanes: []caos.Lane{}}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := lockCaosDay(tx, day); err != nil {
 			return err
@@ -224,6 +269,7 @@ func (s *CaosStore) Apply(op caos.Op) (caos.Result, error) {
 		res.Changed = b.Rows(cs.Changed.List())
 		res.Deleted = cs.Deleted.List()
 		res.Readied = append(readied, caughtUp...)
+		res.Lanes = b.LaneRows(cs.Lanes)
 		return nil
 	})
 	if res.Deleted == nil {
@@ -232,12 +278,16 @@ func (s *CaosStore) Apply(op caos.Op) (caos.Result, error) {
 	if res.Readied == nil {
 		res.Readied = []string{}
 	}
+	if err != nil {
+		res.Lanes = []caos.Lane{}
+	}
 	return res, err
 }
 
 // do は操作を 1 つ行い、記録を残す。
 func (s *CaosStore) do(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changeset, op caos.Op) (string, []string, error) {
 	before := b.Snapshot()
+	lanesBefore := b.Lanes()
 	if err := b.Apply(cs, op); err != nil {
 		return "", nil, err
 	}
@@ -263,9 +313,16 @@ func (s *CaosStore) do(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changese
 			beforeRows = append(beforeRows, d)
 		}
 	}
+	var beforeLanes []caos.Lane
+	for _, l := range lanesBefore {
+		if slices.Contains(cs.Lanes, l.Dripper) {
+			beforeLanes = append(beforeLanes, l)
+		}
+	}
 	rec := models.CaosOpRow{
 		ID: uuid.New(), Day: day, Name: op.Name, CreatedAt: now,
 		Before: orEmpty(beforeRows), After: orEmpty(b.Rows(cs.Changed.List())), Readied: orEmpty(marks),
+		LanesBefore: orEmpty(beforeLanes), LanesAfter: orEmpty(b.LaneRows(cs.Lanes)),
 	}
 	if err := tx.Create(&rec).Error; err != nil {
 		return "", nil, err
@@ -312,8 +369,15 @@ func (s *CaosStore) undo(tx *gorm.DB, day string, b *caos.Board, cs *caos.Change
 			o.Ready = false
 		}
 	}
+	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
+	if err := b.CheckLanesUntouched(rec.LanesAfter); err != nil {
+		return nil, err
+	}
 	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
 	if err := b.Restore(cs, rec.Before, rec.After); err != nil {
+		return nil, err
+	}
+	if err := b.RestoreLanes(cs, rec.LanesBefore, rec.LanesAfter); err != nil {
 		return nil, err
 	}
 	now := s.clock()
@@ -360,6 +424,17 @@ func orEmpty[T any](v []T) []T {
 
 // Drips はその日の全カード（配信に使う）。
 func (s *CaosStore) Drips(day string) ([]caos.Drip, error) { return readCaosDrips(s.db, day) }
+
+// Lanes はその日の 1〜6 の全部の列の担当者（配信に使う）。担当者のいない列は名前が空。
+func (s *CaosStore) Lanes(day string) ([]caos.Lane, error) {
+	lanes, err := readCaosLanes(s.db, day)
+	if err != nil {
+		return nil, err
+	}
+	b := caos.NewBoard(nil, nil, nil, nil)
+	b.LoadLanes(lanes)
+	return b.Lanes(), nil
+}
 
 // Today は画面からの操作を行う日（日本時間の今日）。
 func (s *CaosStore) Today() string { return s.today() }
