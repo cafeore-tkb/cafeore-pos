@@ -43,6 +43,9 @@ const ItemAssign = memo(
     const [dripper, setDripper] = useState<number | null>(item.dripper);
     const [assignee, setAssignee] = useState(item.assignee ?? "");
     const wasFocused = useRef(focus);
+    // 入力欄を開いてから番号か自由記述を触ったか。触っていなければ閉じても変えない
+    // （番号より前の明細は自由記述だけなので、開いて閉じただけで指名が消えないように）
+    const touched = useRef(false);
 
     const dripperRef = useFocusRef<HTMLSelectElement>(focus);
 
@@ -55,8 +58,9 @@ const ItemAssign = memo(
       if (focus && !wasFocused.current) {
         setDripper(item.dripper);
         setAssignee(item.assignee ?? "");
+        touched.current = false;
       }
-      if (!focus && wasFocused.current) {
+      if (!focus && wasFocused.current && touched.current) {
         mutateItem(idx, (prev) => {
           const copy = prev.clone();
           copy.assign(dripper, assignee);
@@ -104,15 +108,17 @@ const ItemAssign = memo(
                     ref={dripperRef}
                     aria-label="指名する番号"
                     value={dripper ?? ""}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      touched.current = true;
                       setDripper(
                         e.target.value === "" ? null : Number(e.target.value),
-                      )
-                    }
+                      );
+                    }}
                     onKeyDown={(e) => {
                       const next = dripperFromKey(e.key);
                       if (next === undefined) return;
                       e.preventDefault();
+                      touched.current = true;
                       setDripper(next);
                     }}
                     className="h-6 w-2/5 rounded-md border border-stone-300 px-1 text-sm"
@@ -128,7 +134,10 @@ const ItemAssign = memo(
                     aria-label="指名の自由記述"
                     value={dripper === null ? "" : assignee}
                     disabled={dripper === null}
-                    onChange={(e) => setAssignee(e.target.value)}
+                    onChange={(e) => {
+                      touched.current = true;
+                      setAssignee(e.target.value);
+                    }}
                     placeholder={
                       dripper === null
                         ? "番号を選ぶと書ける"
