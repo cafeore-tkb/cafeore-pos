@@ -719,7 +719,7 @@
   },
   "CaosOp": {
     "type": "object",
-    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nundo（op_id）\n",
+    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nundo（op_id）\n",
     "required": ["name"],
     "properties": {
       "name": {
