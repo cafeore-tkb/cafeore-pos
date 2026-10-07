@@ -4,9 +4,9 @@
 
 これまでに決定した画面・操作・業務ルールの詳細は、[画面設計・操作要件](./DESIGN_REQUIREMENTS.md)を参照してください。
 
-## プレビュー
+## 公開
 
-[CaOSをGitHub Pagesで開く](https://cafeore-tkb.github.io/digital-master-sheet-pages/)（旧リポジトリ `cafeore-tkb/CaOS` から公開していた版。cafeore-pos からの配信は、続く PR で Cloudflare Workers に用意します）
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -61,8 +61,7 @@
 - 読み取り専用です。ドリッパーへの割当や `次へ` はCaOSの画面内だけの状態で、DBには書き込みません。
 - メニュー名から豆を判定します（優勝ブレンド→チャンプ、俺ブレ、ケニア、タンザニア、ブラジル、アイスコーヒー→氷、アイスオレ→牛、それ以外のホット→★SP）。アイスミルクとグッズは除外します。
 - POSの指名は、`1`〜`6` の番号か現在のドリッパー名に一致したときだけその担当者に固定し、一致しないときはカードに「（指名:名前）」と表示します。
-- 開発サーバー（`npm run dev`）では Vite の中継（`/cafeore-pos-api`）を通して本番APIにつなぎます。ローカルのAPIを使うときは `VITE_CAFEORE_API_BASE_URL=http://localhost:8080` を指定します。
-- 公開版はブラウザから本番APIへ直接つなぐため、APIの `FRONTEND_ORIGINS`（infraリポジトリの `gcp/cloud_run.tf`）に `https://cafeore-tkb.github.io` が入っている必要があります。入っていないとWebSocketの接続が403で拒否され、DBアイコンの点が黄色（再接続中）のままになります。
+- API の URL は POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 
 ## 実データ・テストプレイ
 
@@ -75,7 +74,7 @@
 
 ## 置き場所
 
-2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポ（`services/caos`）へ移しました（履歴は持ってきていません）。実績データ（2025年の注文）も、このリポジトリにそのまま置いています。
+2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポへ移し、POS の中（`services/pos/app/caos`）に置きました（履歴は持ってきていません）。実績データ（2025年の注文）も、このリポジトリにそのまま置いています。
 
 ## タッチ操作
 
@@ -88,14 +87,6 @@
 
 ## 開発
 
-リポジトリ直下で `pnpm i` を実行してから、次のコマンドを使います。
+POS の一部なので、コマンドも POS と同じです（`pnpm pos dev` で開き、`/master-sheet` に行く）。型チェックとビルドも `pnpm pos typecheck`・`pnpm pos build` に含まれます。
 
-```bash
-pnpm caos dev        # http://localhost:3000
-pnpm caos typecheck
-pnpm caos build      # services/caos/build に出力
-```
-
-lint はリポジトリ直下の `pnpm lint`（biome）です。CaOS の元の lint の方針（タッチ操作向けに切っていた a11y のルールなど）は、`biome.json` の `overrides` で `services/caos` にだけかけています。
-
-本番ビルドは `dist/` に生成され、公開時のベースパスは `/digital-master-sheet-pages/` です。
+CaOS の元の lint の方針（タッチ操作向けに切っていた a11y のルールなど）は、`biome.json` の `overrides` で `services/pos/app/caos` にだけかけています。スタイルは `caos.css` で `.caos-root` の中に閉じ、POS のほかの画面に漏らさないようにしています。

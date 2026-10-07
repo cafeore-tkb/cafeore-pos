@@ -23,13 +23,9 @@ export interface PosOrder {
   }[];
 }
 
-// 公開版は cafeore-pos の本番 API へ直接つなぐ（API の FRONTEND_ORIGINS に公開先の origin が必要）。
-// 開発中は vite.config.ts の中継を通す。ローカルの API を使うときは
-// VITE_CAFEORE_API_BASE_URL=http://localhost:8080 のように上書きする。
-export const POS_API_BASE_URL = import.meta.env.DEV
-  ? `${window.location.origin}/cafeore-pos-api`
-  : import.meta.env.VITE_CAFEORE_API_BASE_URL ||
-    "https://cafeore-pos-git-czojooivca-an.a.run.app";
+// POS と同じ API につなぐ（modules/common と同じく VITE_API_BASE_URL、未設定ならローカルの API）。
+export const POS_API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 export const posOrdersSocketUrl = (baseUrl: string) =>
   `${baseUrl.replace(/\/$/, "").replace(/^http/, "ws")}/api/ws/orders`;
