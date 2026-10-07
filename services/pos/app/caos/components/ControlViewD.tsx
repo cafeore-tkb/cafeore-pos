@@ -94,7 +94,7 @@ const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
   if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
   if (current.endTimeSec !== undefined)
     return Math.max(0, current.endTimeSec - currentTimeSec);
-  return Math.round(current.totalDurationSec * barista.coefficient);
+  return current.totalDurationSec;
 };
 
 const formatRemaining = (seconds: number) => {

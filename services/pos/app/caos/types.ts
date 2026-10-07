@@ -73,8 +73,6 @@ export interface Barista {
   bayNumber: number;
   name: string;
   canHandleSpecial?: boolean;
-  coefficient: number; // initial: SP-capable 0.97, others 1.05
-  coefficientColor: "green" | "orange" | "blue" | "purple";
   status: "brewing" | "imminent" | "standby" | "ready";
   remainingStr: string; // "01:48 残り"
   iconType: "cup" | "clock" | "snowflake";
@@ -108,17 +106,6 @@ export interface UnassignedOrder {
   isRebrew?: boolean;
   rebrewOfTicketUid?: string;
   cardColor: "blue" | "peach" | "cyan" | "emerald";
-}
-
-export interface LearningEngineLog {
-  id: string;
-  baristaKey: string; // "A 佐藤", "B 鈴木", "F 渡辺"
-  recentActual: string; // "2:04"
-  deltaStr: string; // "(-11秒)"
-  deltaType: "faster" | "slower" | "neutral";
-  coefficient: number;
-  coefficientStatus: string; // "係数 0.93 維持" or "最速補正 0.91"
-  timestamp: string;
 }
 
 export interface HistoricalItem {

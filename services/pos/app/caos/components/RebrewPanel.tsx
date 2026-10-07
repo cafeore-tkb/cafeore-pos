@@ -44,7 +44,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
       [...baristas]
         .map((barista) => ({
           barista,
-          wait: queueWaitSeconds(barista.queue, barista.coefficient),
+          wait: queueWaitSeconds(barista.queue),
           eligible:
             (!ticket.preferredBaristaId ||
               ticket.preferredBaristaId === barista.id) &&

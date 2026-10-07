@@ -46,7 +46,7 @@ const getRemainingSeconds = (barista: Barista, simTimeSec: number) => {
   if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
   if (current.endTimeSec !== undefined)
     return Math.max(0, current.endTimeSec - simTimeSec);
-  return Math.round(current.totalDurationSec * barista.coefficient);
+  return current.totalDurationSec;
 };
 
 export const ControlViewB: React.FC<ControlViewBProps> = ({
@@ -110,7 +110,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
       sortedBaristas
         .map((barista) => ({
           bayNumber: barista.bayNumber,
-          seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+          seconds: queueWaitSeconds(barista.queue),
           isStandby: barista.queue.length === 0,
         }))
         .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)

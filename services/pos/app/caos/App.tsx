@@ -15,7 +15,11 @@ import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import { INITIAL_BARISTAS, INITIAL_LEARNING_LOGS } from "./data/initialData";
+import {
+  SHIFT_ROSTERS,
+  makeCleanBaristas,
+  placeShiftMembers,
+} from "./data/roster";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard, queuePosAt } from "./live/drips";
@@ -24,7 +28,6 @@ import type {
   BeanCode,
   HistoricalDataset,
   HistoricalOrder,
-  LearningEngineLog,
   OrderTicket,
   TestPlaySession,
   UnassignedOrder,
@@ -50,7 +53,6 @@ type UndoSnapshot = {
 
 type PanelSnapshot = {
   baristas: Barista[];
-  learningLogs: LearningEngineLog[];
   testPlaySession: TestPlaySession | null;
 };
 
@@ -73,74 +75,6 @@ const startOfLocalDay = (ms: number) => {
     date.getDate(),
   ).getTime();
 };
-
-type ShiftMember = { name: string; canHandleSpecial: boolean };
-
-const SHIFT_ROSTERS: ShiftMember[][] = [
-  [
-    { name: "鈴木", canHandleSpecial: true },
-    { name: "山口", canHandleSpecial: true },
-    { name: "小林", canHandleSpecial: false },
-    { name: "松本", canHandleSpecial: false },
-    { name: "井上", canHandleSpecial: false },
-    { name: "木村", canHandleSpecial: false },
-  ],
-  [
-    { name: "林", canHandleSpecial: true },
-    { name: "中西", canHandleSpecial: true },
-    { name: "近藤", canHandleSpecial: true },
-    { name: "斎藤", canHandleSpecial: false },
-    { name: "清水", canHandleSpecial: false },
-    { name: "山本", canHandleSpecial: false },
-  ],
-  [
-    { name: "森", canHandleSpecial: true },
-    { name: "橋本", canHandleSpecial: false },
-    { name: "阿部", canHandleSpecial: false },
-    { name: "石川", canHandleSpecial: false },
-    { name: "山下", canHandleSpecial: false },
-    { name: "藤田", canHandleSpecial: false },
-  ],
-  [
-    { name: "沼田", canHandleSpecial: true },
-    { name: "佐藤", canHandleSpecial: true },
-    { name: "三田", canHandleSpecial: true },
-    { name: "前田", canHandleSpecial: false },
-    { name: "岡田", canHandleSpecial: false },
-    { name: "石井", canHandleSpecial: false },
-  ],
-  [
-    { name: "瀬邉", canHandleSpecial: true },
-    { name: "菅原", canHandleSpecial: true },
-    { name: "長谷川", canHandleSpecial: false },
-    { name: "村上", canHandleSpecial: false },
-    { name: "坂本", canHandleSpecial: false },
-    { name: "青木", canHandleSpecial: false },
-  ],
-];
-
-const placeShiftMembers = (members: ShiftMember[]) => {
-  const special = members.filter((member) => member.canHandleSpecial);
-  const regular = members.filter((member) => !member.canHandleSpecial);
-  const placed: Array<ShiftMember | undefined> = Array(6).fill(undefined);
-  if (special[0]) placed[0] = special.shift();
-  if (special[0]) placed[5] = special.shift();
-  [...special, ...regular].forEach((member) => {
-    const openIndex = placed.findIndex((placedMember) => !placedMember);
-    if (openIndex >= 0) placed[openIndex] = member;
-  });
-  return placed as ShiftMember[];
-};
-
-const makeCleanBaristas = (): Barista[] =>
-  INITIAL_BARISTAS.map((barista) => ({
-    ...barista,
-    status: "standby",
-    remainingStr: "00:00 待機中",
-    activeTicketId: undefined,
-    queue: [],
-    pastTickets: [],
-  }));
 
 // 実データテスト（2025年の注文。商品 ID が無い）の豆のコード。盤面のカードには使わない。
 // サーバーの練習用の盤面に移したら消す（作業計画 K7）
@@ -228,9 +162,6 @@ export default function App() {
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
   const [shiftRosterIndex, setShiftRosterIndex] = useState(0);
   const lastAutomaticShiftHour = useRef(new Date().getHours());
-  const [learningLogs, setLearningLogs] = useState<LearningEngineLog[]>(
-    () => standaloneSnapshot?.learningLogs || INITIAL_LEARNING_LOGS,
-  );
 
   // Filters & Toggles
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -305,7 +236,7 @@ export default function App() {
     error: beanError,
     isLoading: beanLoading,
   } = useBeanInventory();
-  // 盤面のカードから組み立てた管制盤。ドリッパーの名前と係数は手元の baristas から取る
+  // 盤面のカードから組み立てた管制盤。ドリッパーの名前は手元の baristas から取る
   const liveBoard = useMemo(
     () =>
       dripsToBoard(
@@ -540,14 +471,6 @@ export default function App() {
     setSoundEnabled(nextSoundEnabled);
   };
 
-  // Format digital clock time HH:mm:ss
-  const formatTimeStr = (totalSec: number) => {
-    const hours = Math.floor(totalSec / 3600) % 24;
-    const minutes = Math.floor((totalSec % 3600) / 60);
-    const seconds = totalSec % 60;
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  };
-
   // Simulation timer loop
   useEffect(() => {
     if (!isRunning) return;
@@ -604,51 +527,16 @@ export default function App() {
 
     const completedTicket = targetBarista.queue[0];
 
-    // Compute log outside of state updater to prevent duplicate execution
-    const actualM = Math.floor(completedTicket.totalDurationSec / 60);
-    const actualS = completedTicket.totalDurationSec % 60;
-    const deltaSec = Math.floor(Math.random() * 20 - 10);
-    const deltaStr = deltaSec < 0 ? `(${deltaSec}秒)` : `(+${deltaSec}秒)`;
-
-    const newLog: LearningEngineLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      baristaKey: `${String.fromCharCode(64 + targetBarista.id)} ${targetBarista.name}`,
-      recentActual: `${actualM}:${actualS < 10 ? "0" : ""}${actualS}`,
-      deltaStr,
-      deltaType: deltaSec < 0 ? "faster" : "slower",
-      coefficient: targetBarista.coefficient,
-      coefficientStatus:
-        deltaSec < -15
-          ? `最速補正 ${targetBarista.coefficient.toFixed(2)}`
-          : deltaSec < 0
-            ? `係数 ${targetBarista.coefficient.toFixed(2)} 維持`
-            : `係数 ${targetBarista.coefficient.toFixed(2)} 連動`,
-      timestamp: formatTimeStr(realTimeSec),
-    };
-
-    const addLog = () =>
-      setLearningLogs((prevLogs) => [
-        newLog,
-        ...prevLogs.filter((l) => l.id !== newLog.id).slice(0, 4),
-      ]);
-
     if (live) {
-      // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）。
-      // 学習ログは、サーバーで通ってから更新する
+      // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）
       pendingNextRef.current.add(bayId);
       void runLive(`${targetBarista.bayNumber}の「次へ」`, {
         name: "next",
         dripper: bayId,
         drip_id: completedTicket.ticketUid,
-      })
-        .then((ok) => {
-          if (ok) addLog();
-        })
-        .finally(() => pendingNextRef.current.delete(bayId));
+      }).finally(() => pendingNextRef.current.delete(bayId));
       return;
     }
-
-    addLog();
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -663,12 +551,7 @@ export default function App() {
         const pastTickets = [...(b.pastTickets || []), doneTicket];
         // Re-anchor the entire downstream queue to the actual completion time.
         // This compensates every later card when the active drip ran long or short.
-        const nextQueue = arrangeQueue(
-          b.queue.slice(1),
-          b.coefficient,
-          realTimeSec,
-          true,
-        );
+        const nextQueue = arrangeQueue(b.queue.slice(1), realTimeSec, true);
 
         return {
           ...b,
@@ -762,11 +645,7 @@ export default function App() {
         if (b.id !== targetBayId) return b;
         return {
           ...b,
-          queue: arrangeQueue(
-            [...b.queue, newTicket],
-            b.coefficient,
-            realTimeSec,
-          ),
+          queue: arrangeQueue([...b.queue, newTicket], realTimeSec),
         };
       }),
     );
@@ -801,7 +680,6 @@ export default function App() {
                 { ...ticket, status: "scheduled" as const },
               ]
             : bay.queue.filter((item) => ticketKey(item) !== key),
-          bay.coefficient,
           realTimeSec,
         ),
       }));
@@ -831,8 +709,6 @@ export default function App() {
             ...barista,
             name: member.name,
             canHandleSpecial: member.canHandleSpecial || undefined,
-            coefficient: member.canHandleSpecial ? 0.97 : 1.05,
-            coefficientColor: member.canHandleSpecial ? "green" : "orange",
           };
         }),
     );
@@ -875,7 +751,6 @@ export default function App() {
         ...bay,
         queue: arrangeQueue(
           bay.queue.filter((item) => ticketKey(item) !== key),
-          bay.coefficient,
           realTimeSec,
         ),
       })),
@@ -1019,11 +894,7 @@ export default function App() {
         const remaining = barista.queue.filter(
           (_, index) => index !== sourceIndex,
         );
-        const queue = reanchorQueueInOrder(
-          remaining,
-          barista.coefficient,
-          realTimeSec,
-        );
+        const queue = reanchorQueueInOrder(remaining, realTimeSec);
         return {
           ...barista,
           queue,
@@ -1048,11 +919,7 @@ export default function App() {
             Math.min(decision.insertIndex ?? queue.length, queue.length),
           );
           queue.splice(insertion, 0, newTicket);
-          const arranged = reanchorQueueInOrder(
-            queue,
-            barista.coefficient,
-            realTimeSec,
-          );
+          const arranged = reanchorQueueInOrder(queue, realTimeSec);
           return {
             ...barista,
             queue: arranged,
@@ -1116,24 +983,6 @@ export default function App() {
     setSelectedOrderId(null);
   };
 
-  // Manual trigger for AI recalibration
-  const _handleTriggerRecalibration = () => {
-    soundManager.playDispatch();
-    setBaristas((prev) =>
-      prev.map((b) => {
-        const drift = Math.random() * 0.04 - 0.02;
-        const newCoef = Math.max(
-          0.85,
-          Math.min(1.2, Number((b.coefficient + drift).toFixed(2))),
-        );
-        return {
-          ...b,
-          coefficient: newCoef,
-        };
-      }),
-    );
-  };
-
   // Reset to initial screenshot state
   const handleResetData = () => {
     setBaristas(makeCleanBaristas());
@@ -1142,7 +991,6 @@ export default function App() {
     liveUndoRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
     setUndoLabel(null);
-    setLearningLogs(INITIAL_LEARNING_LOGS);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
@@ -1167,7 +1015,6 @@ export default function App() {
       );
     setBaristas(makeCleanBaristas());
     setUnassignedOrders([]);
-    setLearningLogs(INITIAL_LEARNING_LOGS);
     setSelectedOrderId(null);
     undoSnapshotRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
@@ -1212,7 +1059,7 @@ export default function App() {
   const nextAvailable = [...boardBaristas]
     .map((barista) => ({
       bayNumber: barista.bayNumber,
-      seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+      seconds: queueWaitSeconds(barista.queue),
       isStandby: barista.queue.length === 0,
     }))
     .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
@@ -1243,7 +1090,6 @@ export default function App() {
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
           baristas: boardBaristas,
-          learningLogs,
           testPlaySession,
         } satisfies PanelSnapshot),
       );
@@ -1265,7 +1111,6 @@ export default function App() {
         error: beanError,
       }}
       beanWaitingCups={beanWaitingCups}
-      learningLogs={learningLogs}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>
@@ -1280,14 +1125,6 @@ export default function App() {
       }
       nextShiftLabel={nextShiftLabel}
       onChangeShift={() => changeShift(true)}
-      onUpdateCoefficient={(bayId, coefficient) =>
-        setBaristas((prev) =>
-          prev.map((barista) =>
-            barista.id === bayId ? { ...barista, coefficient } : barista,
-          ),
-        )
-      }
-      onResetLearning={handleResetData}
     />
   );
 

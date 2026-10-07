@@ -232,11 +232,7 @@ export const dripsToBoard = (
     if (brewing) {
       const ticket = toTicket(brewing, "brewing");
       const startSec = ticket.startTimeSec ?? nowSec;
-      remainingSec = Math.max(
-        0,
-        Math.round(ticket.totalDurationSec * barista.coefficient) -
-          (nowSec - startSec),
-      );
+      remainingSec = Math.max(0, ticket.totalDurationSec - (nowSec - startSec));
       queue.push({
         ...ticket,
         startTimeSec: startSec,
