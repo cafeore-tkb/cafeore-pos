@@ -22,8 +22,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 |--|--|--|
 | `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中。`api-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
-| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `caos-deploy-workers` | `services/caos` | 同上（CaOS。`cafeore-caos`） |
+| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ（CaOS も `/master-sheet/` に入れる） |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |

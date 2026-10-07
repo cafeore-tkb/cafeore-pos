@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "build": "react-router build",
+    "build": "react-router build && pnpm --filter caos build && node scripts/copy-caos.mjs",
     "dev": "react-router dev",
     "preview": "vite preview",
     "typecheck": "react-router typegen && tsc",

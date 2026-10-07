@@ -6,11 +6,11 @@
 
 ## 公開
 
-Cloudflare Workers（POS と同じアカウント）で、静的ファイルだけの Worker `cafeore-caos` として配信します（`wrangler.jsonc`）。
+POS の Worker（`cafeore-pos`）の `/master-sheet/` で配信します。公開 URL は <https://cafeore-pos.cafeorepos.workers.dev/master-sheet/> です。CaOS 用の Worker は持ちません。
 
-- `main` に push すると `.github/workflows/caos-deploy-workers.yml` が本番にデプロイします。PR ではプレビュー用の backend につながるプレビュー URL を出し、PR にコメントします（POS と同じ作り）。
-- Worker は `main` への最初のデプロイで作られます。それまでの PR はプレビューを出さずに飛ばします。
-- ブラウザから本番の API につなぐので、API の `FRONTEND_ORIGINS`（infra リポジトリ）に公開 URL の origin が必要です。
+- POS の `build`（`services/pos/package.json`）が CaOS もビルドし、`services/pos/build/client/master-sheet` に置きます（`services/pos/scripts/copy-caos.mjs`）。デプロイは POS と一緒で、`.github/workflows/pos-deploy-workers.yml` が `services/caos` の変更でも走ります。PR では POS のプレビュー URL の `/master-sheet/` で確かめられます。
+- 本番のビルドは base を `/master-sheet/` にしています（`vite.config.ts`。`VITE_BASE_PATH` で上書きできます）。
+- API の URL は POS と同じ `VITE_API_BASE_URL` を読みます（`VITE_CAFEORE_API_BASE_URL` があればそちら）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 - 旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、Workers の版に切り替えたら止めます。
 
 ## 画面
@@ -67,7 +67,7 @@ Cloudflare Workers（POS と同じアカウント）で、静的ファイルだ�
 - メニュー名から豆を判定します（優勝ブレンド→チャンプ、俺ブレ、ケニア、タンザニア、ブラジル、アイスコーヒー→氷、アイスオレ→牛、それ以外のホット→★SP）。アイスミルクとグッズは除外します。
 - POSの指名は、`1`〜`6` の番号か現在のドリッパー名に一致したときだけその担当者に固定し、一致しないときはカードに「（指名:名前）」と表示します。
 - 開発サーバー（`npm run dev`）では Vite の中継（`/cafeore-pos-api`）を通して本番APIにつなぎます。ローカルのAPIを使うときは `VITE_CAFEORE_API_BASE_URL=http://localhost:8080` を指定します。
-- 公開版はブラウザから本番APIへ直接つなぐため、APIの `FRONTEND_ORIGINS`（infraリポジトリの `gcp/cloud_run.tf`）に `https://cafeore-tkb.github.io` が入っている必要があります。入っていないとWebSocketの接続が403で拒否され、DBアイコンの点が黄色（再接続中）のままになります。
+- 公開版はブラウザから本番APIへ直接つなぎます。APIは `FRONTEND_ORIGINS`（infraリポジトリの `gcp/cloud_run.tf`）に無い origin からのWebSocketを403で拒否し、DBアイコンの点が黄色（再接続中）のままになります。POSと同じ origin（`/master-sheet/`）で配るので、POSが入っていれば足ります。
 
 ## 実データ・テストプレイ
 
@@ -103,4 +103,4 @@ pnpm caos build      # services/caos/build に出力
 
 lint はリポジトリ直下の `pnpm lint`（biome）です。CaOS の元の lint の方針（タッチ操作向けに切っていた a11y のルールなど）は、`biome.json` の `overrides` で `services/caos` にだけかけています。
 
-本番ビルドは `dist/` に生成され、公開時のベースパスは `/digital-master-sheet-pages/` です。
+本番ビルドは `build/` に出力し、ベースパスは `/master-sheet/` です（POS の Worker で配るため）。
