@@ -4,7 +4,6 @@ name: pos / deploy (Workers)
 #
 # ssr: false の SPA なので、Worker のスクリプトは持たず build/client を
 # 静的アセットとして配信するだけ（設定は services/pos/wrangler.jsonc）。
-# CaOS（services/caos）も POS の build で一緒にビルドし、/master-sheet/ に置いて配る。
 #
 # main への push と手動実行では本番へ deploy する。
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
@@ -25,7 +24,6 @@ on:
       - main
     paths:
       - 'services/pos/**'
-      - 'services/caos/**'
       - 'modules/common/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
@@ -38,7 +36,6 @@ on:
       - labeled
     paths:
       - 'services/pos/**'
-      - 'services/caos/**'
       - 'modules/common/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
