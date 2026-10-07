@@ -31,9 +31,11 @@ for _ in $(seq 1 10); do
     break
   fi
 
-  changed=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/files" --paginate \
-    --jq '.[] | .filename, (.previous_filename // empty)' \
-    | grep -E "$BACKEND_PATHS" || true)
+  # 取得に失敗したら止める（呼び出し側が自分の番号に倒す）。grep と同じパイプに入れると
+  # `|| true` で失敗が握りつぶされ、backend を変えていないと誤判定してしまう
+  files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/files" --paginate \
+    --jq '.[] | .filename, (.previous_filename // empty)')
+  changed=$(grep -E "$BACKEND_PATHS" <<<"$files" || true)
   if [ -n "$changed" ]; then
     echo "#$pr は backend を変えている。#$pr の backend を使う" >&2
     break
