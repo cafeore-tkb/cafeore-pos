@@ -156,3 +156,40 @@ func notifyFromOtherInstance(t *testing.T, db *gorm.DB, orderID string) {
 		t.Fatal(err)
 	}
 }
+
+func TestOrderChangesCoalesces(t *testing.T) {
+	q := newOrderChanges()
+	a, b := uuid.New(), uuid.New()
+	other := uuid.NewString()
+
+	// 同じ注文の通知が重なったら 1 つにまとめ、自分が送ったものは積まない
+	q.addPayload(other + " " + a.String())
+	q.addPayload(other + " " + a.String())
+	q.addPayload(other + " " + b.String())
+	q.addPayload(instanceID + " " + uuid.NewString())
+	select {
+	case <-q.wake:
+	default:
+		t.Fatal("not woken")
+	}
+	ids, all := q.take()
+	if all || len(ids) != 2 {
+		t.Fatalf("take() = %v, %v; want 2 ids", ids, all)
+	}
+	if got := map[uuid.UUID]bool{ids[0]: true, ids[1]: true}; !got[a] || !got[b] {
+		t.Fatalf("take() = %v, want %s and %s", ids, a, b)
+	}
+
+	// 取り出したら空になる
+	if ids, all := q.take(); all || len(ids) != 0 {
+		t.Fatalf("take() after take = %v, %v; want empty", ids, all)
+	}
+
+	// 形の分からない通知が混ざれば全注文の配り直しだけにする
+	q.addPayload(other + " " + a.String())
+	q.addPayload("")
+	q.addPayload(other + " not-a-uuid")
+	if ids, all := q.take(); !all || len(ids) != 0 {
+		t.Fatalf("take() = %v, %v; want all", ids, all)
+	}
+}
