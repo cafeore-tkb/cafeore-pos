@@ -2,15 +2,15 @@
 import { useEffect, useState } from "react";
 import { apiWebSocketUrl } from "../api/client";
 import {
+  type OrderResponse,
+  responseToCashierState,
+  responseToOrderEntity,
+} from "../api/converter";
+import {
   type MasterState,
   type MasterStateResponse,
   responseToMasterState,
 } from "../data";
-import {
-  type OrderResponse,
-  responseToCashierState,
-  responseToOrderEntity,
-} from "../firebase-utils";
 import type { WithId } from "../lib";
 import {
   type ReconnectingWebSocketStatus,

@@ -1,5 +1,5 @@
 import { apiClient, throwApiError } from "../api/client";
-import { cashierStateToUpdateRequest } from "../firebase-utils/converter";
+import { cashierStateToUpdateRequest } from "../api/converter";
 import type { WithId } from "../lib/typeguard";
 import type { GlobalCashierState } from "../models/global";
 import type { OrderEntity } from "../models/order";

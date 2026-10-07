@@ -3,7 +3,7 @@ import {
   itemToCreateRequest,
   itemToUpdateRequest,
   responseToItemEntity,
-} from "../firebase-utils";
+} from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
 import type { ItemEntity } from "../models/item";
 import type { ItemRepository } from "./type";

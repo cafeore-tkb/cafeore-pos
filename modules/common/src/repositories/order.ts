@@ -3,7 +3,7 @@ import {
   orderEntityToCreateRequest,
   orderToUpdateRequest,
   responseToOrderEntity,
-} from "../firebase-utils/converter";
+} from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
 import type { OrderEntity } from "../models/order";
 import type { OrderRepository } from "./type";

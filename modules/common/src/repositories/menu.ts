@@ -3,7 +3,7 @@ import {
   menuToCreateRequest,
   menuToUpdateRequest,
   responseToMenuEntity,
-} from "../firebase-utils";
+} from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
 import type { MenuEntity } from "../models/menu";
 import type { MenuRepository } from "./type";
