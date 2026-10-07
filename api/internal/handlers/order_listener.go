@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,11 @@ const listenProbePrefix = "probe "
 
 // 確認の通知がこの時間内に届かなければ、通知が届かない設定だとみなして警告する。
 const listenProbeTimeout = 10 * time.Second
+
+// 通知がこの時間来なければ、待ち受けの接続が生きているかを確かめる。
+// Cloud Run は画面がつないでいないインスタンスの CPU を絞るので、その間に接続が
+// 黙って切れていることがある。画面がつないで CPU が戻ったら、この確認で気づいて張り直す。
+const listenPingInterval = 30 * time.Second
 
 // notifyOrderChanged は、注文が変わったことをほかのインスタンスへ知らせる。
 //
@@ -48,13 +54,19 @@ func notifyOrderChanged(db *gorm.DB, orderID uuid.UUID) {
 // 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
 // このインスタンスの画面へだけ配り、通知を送り返さない。
 //
+// 通知の受信と配信は別の goroutine で行う。DB の読み直しが遅くても受信は止めず、
+// 配り終わるまでに同じ注文の通知が重なったら 1 回の読み直しにまとめる。
+//
 // LISTEN はセッションを保ったまま待つので、Supabase のトランザクションプーラー
 // （ポート 6543）経由では通知が届かない。直接接続かセッションプーラーの接続文字列を渡すこと。
 // 切れたら間隔を空けてつなぎ直す。ctx が終わると戻る。
 func (h *OrderHandler) ListenOrderChanges(ctx context.Context, dsn string) {
+	changes := newOrderChanges()
+	go h.publishOrderChanges(ctx, changes)
+
 	retryDelay := time.Second
 	for {
-		err := h.listenOrderChangesOnce(ctx, dsn, func() { retryDelay = time.Second })
+		err := h.listenOrderChangesOnce(ctx, dsn, changes, func() { retryDelay = time.Second })
 		if ctx.Err() != nil {
 			return
 		}
@@ -68,7 +80,7 @@ func (h *OrderHandler) ListenOrderChanges(ctx context.Context, dsn string) {
 	}
 }
 
-func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, onListening func()) error {
+func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, changes *orderChanges, onListening func()) error {
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		return err
@@ -108,11 +120,23 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 	}
 
 	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全注文を配り直す
-	h.publishAllOrders()
+	changes.addAll()
 	for {
-		n, err := conn.WaitForNotification(ctx)
+		waitCtx, cancelWait := context.WithTimeout(ctx, listenPingInterval)
+		n, err := conn.WaitForNotification(waitCtx)
+		cancelWait()
 		if err != nil {
-			return err
+			if ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			// しばらく通知が無い。接続が生きているかを確かめ、切れていれば張り直す
+			pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
+			err = conn.Ping(pingCtx)
+			cancelPing()
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		switch {
 		case n.Payload == probe:
@@ -121,29 +145,93 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 		case strings.HasPrefix(n.Payload, listenProbePrefix):
 			// ほかのインスタンスの確認の通知
 		default:
-			h.handleOrderChanged(n.Payload)
+			changes.addPayload(n.Payload)
 		}
 	}
 }
 
-// 通知（"<送ったインスタンスの ID> <注文 ID>"）を受けて、注文を読み直して配信する。
-// 消えていれば削除を配信する。
-func (h *OrderHandler) handleOrderChanged(payload string) {
+// 受けたけれどまだ配っていない注文の変更。同じ注文の通知が重なれば 1 つにまとめる。
+type orderChanges struct {
+	mu   sync.Mutex
+	ids  map[uuid.UUID]struct{}
+	all  bool
+	wake chan struct{}
+}
+
+func newOrderChanges() *orderChanges {
+	return &orderChanges{ids: map[uuid.UUID]struct{}{}, wake: make(chan struct{}, 1)}
+}
+
+// 通知（"<送ったインスタンスの ID> <注文 ID>"）を積む。自分が送ったものは積まない。
+// 形の分からない通知は、何が変わったか分からないので全注文を配り直す。
+func (q *orderChanges) addPayload(payload string) {
 	sender, rawOrderID, ok := strings.Cut(payload, " ")
-	if !ok {
-		// 形の分からない通知。何が変わったか分からないので全注文を配り直す
-		h.publishAllOrders()
-		return
-	}
-	if sender == instanceID {
+	if ok && sender == instanceID {
 		return
 	}
 	orderID, err := uuid.Parse(rawOrderID)
-	if err != nil {
-		h.publishAllOrders()
+	if !ok || err != nil {
+		q.addAll()
 		return
 	}
-	_, err = broadcastOrder(h.db, h.hub, orderID)
+	q.mu.Lock()
+	q.ids[orderID] = struct{}{}
+	q.mu.Unlock()
+	q.notify()
+}
+
+func (q *orderChanges) addAll() {
+	q.mu.Lock()
+	q.all = true
+	q.mu.Unlock()
+	q.notify()
+}
+
+func (q *orderChanges) notify() {
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
+}
+
+// 積まれた変更を取り出して空にする。all なら全注文を配り直せばよいので、ids は返さない。
+func (q *orderChanges) take() (ids []uuid.UUID, all bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	all = q.all
+	if !all {
+		ids = make([]uuid.UUID, 0, len(q.ids))
+		for id := range q.ids {
+			ids = append(ids, id)
+		}
+	}
+	q.ids = map[uuid.UUID]struct{}{}
+	q.all = false
+	return ids, all
+}
+
+// 積まれた変更を、注文を読み直して配信する。ctx が終わると戻る。
+func (h *OrderHandler) publishOrderChanges(ctx context.Context, changes *orderChanges) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes.wake:
+		}
+		ids, all := changes.take()
+		if all {
+			h.publishAllOrders()
+			continue
+		}
+		for _, id := range ids {
+			h.publishChangedOrder(id)
+		}
+	}
+}
+
+// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。
+func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) {
+	_, err := broadcastOrder(h.db, h.hub, orderID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		broadcastOrderDeleted(h.hub, orderID)
