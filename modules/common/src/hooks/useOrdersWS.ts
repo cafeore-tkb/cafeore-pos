@@ -12,7 +12,7 @@ import {
   createReconnectingWebSocket,
 } from "../lib/reconnectingWebSocket";
 import type { CashierStateEntity, OrderEntity } from "../models";
-import type { CaosDrip } from "../repositories/caos";
+import type { CaosDrip, CaosLane } from "../repositories/caos";
 import type { components } from "../types/api";
 
 type WsStatus = ReconnectingWebSocketStatus;
@@ -31,8 +31,8 @@ type WSMessage =
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
     }
-  // CaOS（ドリップ管制）の今日の抽出カード。変わるたびに全部届く（0 件なら drips は省かれる）
-  | { type: "drips"; drips?: CaosDrip[] };
+  // CaOS（ドリップ管制）の今日の抽出カードと列の担当者（1〜6）。変わるたびに全部届く（カードが 0 件なら drips は省かれる）
+  | { type: "drips"; drips?: CaosDrip[]; lanes?: CaosLane[] };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -48,6 +48,8 @@ export const useOrdersWS = () => {
   );
   // CaOS の画面のためのもの。POS のほかの画面は使わない。未受信は undefined
   const [drips, setDrips] = useState<CaosDrip[]>();
+  // CaOS の列の担当者。未受信は undefined
+  const [lanes, setLanes] = useState<CaosLane[]>();
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export const useOrdersWS = () => {
 
           case "drips":
             setDrips(data.drips ?? []);
+            setLanes(data.lanes ?? []);
             break;
 
           default:
@@ -126,6 +129,8 @@ export const useOrdersWS = () => {
     cashierState,
     /** CaOS の今日の抽出カード。未受信なら null */
     drips: drips ?? null,
+    /** CaOS の今日の列の担当者（1〜6）。未受信なら null */
+    lanes: lanes ?? null,
     status,
   };
 };
