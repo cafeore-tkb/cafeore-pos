@@ -154,3 +154,135 @@ func TestValidateStockEvent(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatQuantity(t *testing.T) {
+	cases := map[float64]string{0: "0", 1500: "1500", 12.34: "12.3", -3: "-3", 0.05: "0.1"}
+	for v, want := range cases {
+		if got := formatQuantity(v); got != want {
+			t.Errorf("formatQuantity(%v) = %q, want %q", v, got, want)
+		}
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0 分"},
+		{59 * time.Minute, "59 分"},
+		{59*time.Minute + 31*time.Second, "1 時間"}, // 分に丸めてから時間にする
+		{90 * time.Minute, "1 時間 30 分"},
+		{9*time.Hour + 59*time.Minute, "9 時間 59 分"},
+		{10 * time.Hour, "10 時間"},
+		{10*time.Hour + 30*time.Minute, "10 時間"}, // 10 時間を超えたら分は出さない
+	}
+	for _, c := range cases {
+		if got := formatDuration(c.d); got != c.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
+// 豆 1000g・1杯 15g を数えた直後の在庫。consumed だけ消費した状態にする
+func beanSnapshot(consumed float64, lastHour int) stockSnapshot {
+	counted := 1000.0
+	return stockSnapshot{
+		Resource:         models.StockResource{Kind: "bean", Name: "ブレンド豆", Unit: "g", PerServing: 15, NotifyFrom: 60, NotifyStep: 20, Buffer: 10},
+		Tracked:          true,
+		CountedQuantity:  &counted,
+		Consumed:         consumed,
+		ServingsLastHour: lastHour,
+	}
+}
+
+func TestDescribeRemaining(t *testing.T) {
+	cups := stockSnapshot{
+		Resource: models.StockResource{Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1},
+		Tracked:  true,
+		Received: 120.6,
+	}
+	cases := []struct {
+		name string
+		s    stockSnapshot
+		want string
+	}{
+		{"untracked", stockSnapshot{Resource: models.StockResource{Kind: "bean", PerServing: 15}}, "未計測"},
+		// 杯数は切り捨てる（66.6 杯 → 66 杯）
+		{"bean", beanSnapshot(0, 0), "残り約 66 杯（1000 g）"},
+		{"bean fraction", beanSnapshot(0.5, 0), "残り約 66 杯（999.5 g）"},
+		// カップは量を出さず個数だけ
+		{"cup", cups, "残り約 120 個"},
+	}
+	for _, c := range cases {
+		if got := describeRemaining(c.s); got != c.want {
+			t.Errorf("%s: describeRemaining = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDescribePace(t *testing.T) {
+	cases := []struct {
+		name string
+		s    stockSnapshot
+		want string
+	}{
+		{"untracked", stockSnapshot{ServingsLastHour: 10}, ""},
+		{"no orders in last hour", beanSnapshot(0, 0), ""},
+		// 残り 30 杯を 1 時間 20 杯で使うと 1.5 時間
+		{"pace", beanSnapshot(550, 20), "直近1時間 20 杯 → 約 1 時間 30 分で切れる見込み"},
+		// 使い切ったあとは見込みを出さない
+		{"empty", beanSnapshot(1000, 20), "直近1時間 20 杯"},
+		{"over", beanSnapshot(1200, 20), "直近1時間 20 杯"},
+	}
+	for _, c := range cases {
+		if got := describePace(c.s); got != c.want {
+			t.Errorf("%s: describePace = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestAlertMessage(t *testing.T) {
+	// 残り 30 杯（warning）。直近の注文が無ければペースの行は付かない
+	if got, want := alertMessage(beanSnapshot(550, 0)), ":warning: *ブレンド豆* 残り約 30 杯（450 g）"; got != want {
+		t.Errorf("warning: got %q, want %q", got, want)
+	}
+	// 残り 10 杯（critical）。バッファを切ったことと、ペースを 2 行目に出す
+	got := alertMessage(beanSnapshot(850, 20))
+	want := ":rotating_light: *ブレンド豆* 残り約 10 杯（150 g）（バッファ 10 杯を切りました）\n" +
+		"　直近1時間 20 杯 → 約 30 分で切れる見込み"
+	if got != want {
+		t.Errorf("critical: got %q, want %q", got, want)
+	}
+}
+
+func TestRemindMessage(t *testing.T) {
+	now := time.Date(2026, 11, 3, 14, 0, 0, 0, time.UTC)
+	counted := beanSnapshot(0, 0)
+	countedAt := now.Add(-2*time.Hour - 15*time.Minute)
+	counted.BaseAt = &countedAt
+	// 入荷だけで棚卸しをしていないもの
+	receivedAt := now.Add(-time.Hour)
+	received := stockSnapshot{
+		Resource: models.StockResource{Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1},
+		Tracked:  true,
+		BaseAt:   &receivedAt,
+		Received: 300,
+	}
+	untracked := stockSnapshot{Resource: models.StockResource{Kind: "bean", Name: "新しい豆", PerServing: 15}}
+
+	got := remindMessage([]stockSnapshot{counted, received, untracked}, now, "https://pos.example.com/")
+	want := ":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
+		"• ブレンド豆: 残り約 66 杯（1000 g）（最終確認 2 時間 15 分前）\n" +
+		"• カップ: 残り約 300 個（最終確認 未実施）\n" +
+		"• 新しい豆: 未計測（最終確認 未実施）\n" +
+		"<https://pos.example.com/inventory|在庫ページを開く>"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+
+	// POS の URL が無ければリンクを付けない
+	if got := remindMessage(nil, now, ""); got != ":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。" {
+		t.Errorf("without url: %q", got)
+	}
+}
