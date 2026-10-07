@@ -328,6 +328,8 @@ export default function App() {
   const liveUndoBeansRef = useRef<BeanUse | null>(null);
   // 「次へ」を送っている途中のドリッパー（応答が盤面に届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
+  // 「1つ戻す」を送っている途中（結果が返るまでの二度押しを止める）
+  const pendingUndoRef = useRef(false);
   const [liveError, setLiveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -487,17 +489,28 @@ export default function App() {
   const handleUndo = () => {
     const liveUndo = liveUndoRef.current;
     if (live && liveUndo) {
+      if (pendingUndoRef.current) return;
       const usedBeans = liveUndoBeansRef.current;
-      liveUndoRef.current = null;
-      liveUndoBeansRef.current = null;
-      setUndoLabel(null);
       setSelectedOrderId(null);
       setRebrewSource(null);
       setSelectedTicketKey(null);
-      // 戻せたら、その操作で引いた豆の在庫も戻す
-      void runLive(null, { name: "undo", op_id: liveUndo }).then((ok) => {
-        if (ok && usedBeans) adjustBeans(usedBeans, 1);
-      });
+      // 戻せたときだけ「1つ戻す」の対象を消し、その操作で引いた豆の在庫も戻す。
+      // 断られたら（ほかの iPad が先に操作した、など）対象を残して、もう一度押せるようにする
+      pendingUndoRef.current = true;
+      void runLive(null, { name: "undo", op_id: liveUndo })
+        .then((ok) => {
+          if (!ok) return;
+          if (usedBeans) adjustBeans(usedBeans, 1);
+          // 送っている間にほかの操作をしていたら、そちらを「1つ戻す」の対象に残す
+          if (liveUndoRef.current === liveUndo) {
+            liveUndoRef.current = null;
+            liveUndoBeansRef.current = null;
+            setUndoLabel(null);
+          }
+        })
+        .finally(() => {
+          pendingUndoRef.current = false;
+        });
       soundManager.playDispatch();
       return;
     }
