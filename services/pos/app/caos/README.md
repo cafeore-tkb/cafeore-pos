@@ -6,7 +6,7 @@
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに注文と抽出がリアルタイムに流れます。操作のボタン（次へ・空きスロット）は出さず、盤面への操作も送りません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
