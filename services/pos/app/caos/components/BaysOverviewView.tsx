@@ -29,7 +29,9 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
               <span>次の交代 {nextShiftLabel}</span>
             </div>
             <div className="mt-1 font-black text-[15px] text-slate-950">
-              6人総入替・{limitedLabel}を淹れられる人 {specialCount}人
+              6人総入替
+              {limitedLabel &&
+                `・${limitedLabel}を淹れられる人 ${specialCount}人`}
             </div>
           </div>
           <button
@@ -96,8 +98,9 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
       </div>
 
       <p className="px-1 text-[11px] text-slate-500 leading-relaxed">
-        毎正時に自動交代します。{limitedLabel}
-        を淹れられる人は1番、次に6番へ優先配置されます。
+        毎正時に自動交代します。
+        {limitedLabel &&
+          `${limitedLabel}を淹れられる人は1番、次に6番へ優先配置されます。`}
       </p>
     </div>
   );

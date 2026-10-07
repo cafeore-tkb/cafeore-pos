@@ -192,7 +192,9 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                     <span className="ml-auto text-red-700">
                       {ticket.preferredBaristaId
                         ? "指名外"
-                        : `${limitedLabel}は不可`}
+                        : limitedLabel
+                          ? `${limitedLabel}は不可`
+                          : "不可"}
                     </span>
                   )}
                 </div>
