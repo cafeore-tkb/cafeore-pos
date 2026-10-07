@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>CaOS コーヒー抽出管制画面</title>
+  <rect width="1200" height="630" fill="#f4f7fb"/>
+  <rect width="1200" height="104" fill="#0f172a"/>
+  <text x="66" y="71" fill="#ffffff" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="52" font-weight="800" letter-spacing="-1">CaOS</text>
+  <text x="224" y="68" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="26" font-weight="600">Cafeore Operating System</text>
+  <text x="1134" y="66" text-anchor="end" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="21" font-weight="700">DRIP CONTROL</text>
+
+  <rect x="52" y="140" width="1096" height="426" rx="24" fill="#ffffff" stroke="#dbe3ee" stroke-width="2"/>
+  <rect x="52" y="140" width="220" height="426" rx="24" fill="#f8fafc"/>
+  <path d="M272 140V566" stroke="#dbe3ee" stroke-width="2"/>
+  <path d="M52 211H1148M52 282H1148M52 353H1148M52 424H1148M52 495H1148" stroke="#e2e8f0" stroke-width="2"/>
+  <path d="M424 140V566M572 140V566M720 140V566M868 140V566M1016 140V566" stroke="#e8edf4" stroke-width="2"/>
+  <path d="M572 140V566" stroke="#cbd5e1" stroke-width="4"/>
+  <path d="M388 128V578" stroke="#ef3340" stroke-width="5"/>
+  <circle cx="388" cy="128" r="9" fill="#ef3340"/>
+  <text x="388" y="117" text-anchor="middle" fill="#ef3340" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="17" font-weight="800">NOW</text>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <g fill="#64748b" font-size="18" font-weight="700">
+      <text x="309" y="166">10:24</text><text x="457" y="166">10:26</text><text x="605" y="166">10:28</text><text x="753" y="166">10:30</text><text x="901" y="166">10:32</text><text x="1049" y="166">10:34</text>
+    </g>
+    <g fill="#0f172a" font-weight="800">
+      <text x="82" y="190" font-size="25">1</text><text x="126" y="190" font-size="25">鈴木</text>
+      <text x="82" y="261" font-size="25">2</text><text x="126" y="261" font-size="25">山口</text>
+      <text x="82" y="332" font-size="25">3</text><text x="126" y="332" font-size="25">林</text>
+      <text x="82" y="403" font-size="25">4</text><text x="126" y="403" font-size="25">中西</text>
+      <text x="82" y="474" font-size="25">5</text><text x="126" y="474" font-size="25">近藤</text>
+      <text x="82" y="545" font-size="25">6</text><text x="126" y="545" font-size="25">森</text>
+    </g>
+  </g>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-weight="800">
+    <g><rect x="340" y="176" width="184" height="52" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/><text x="358" y="210" fill="#0f172a" font-size="23">#042</text><text x="498" y="210" text-anchor="end" fill="#334155" font-size="19">2杯</text></g>
+    <g><rect x="402" y="247" width="232" height="52" rx="12" fill="#eaf3ff" stroke="#7eb6f1" stroke-width="2"/><text x="420" y="281" fill="#155aa8" font-size="23">#043</text><text x="608" y="281" text-anchor="end" fill="#155aa8" font-size="19">氷 1杯</text></g>
+    <g><rect x="388" y="318" width="162" height="52" rx="12" fill="#fff4e8" stroke="#e9a767" stroke-width="2"/><text x="406" y="352" fill="#8a4b13" font-size="23">#044</text><text x="526" y="352" text-anchor="end" fill="#8a4b13" font-size="19">牛 1杯</text></g>
+    <g><rect x="446" y="389" width="258" height="52" rx="12" fill="#e8f7f0" stroke="#5bb58d" stroke-width="2"/><text x="464" y="423" fill="#075c40" font-size="23">#045</text><text x="678" y="423" text-anchor="end" fill="#075c40" font-size="19">★SP 2杯</text></g>
+    <g><rect x="516" y="460" width="198" height="52" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/><text x="534" y="494" fill="#0f172a" font-size="23">#046</text><text x="688" y="494" text-anchor="end" fill="#334155" font-size="19">1杯</text></g>
+    <g><rect x="472" y="531" width="286" height="52" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/><text x="490" y="565" fill="#0f172a" font-size="23">#047</text><text x="732" y="565" text-anchor="end" fill="#334155" font-size="19">2杯</text></g>
+  </g>
+
+  <text x="600" y="612" text-anchor="middle" fill="#475569" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="22" font-weight="700">注文割り当てと抽出進行を、一画面で。</text>
+</svg>
