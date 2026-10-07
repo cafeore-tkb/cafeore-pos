@@ -141,8 +141,18 @@ jobs:
         continue-on-error: true
         env:
           PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -uo pipefail
+
+          # 別の PR の上に積んだ PR で backend を変えていなければ、向き先の PR の backend を使う
+          # （api-build.yml の backend-owner と同じスクリプト）。決められなければ自分の番号。
+          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
+          case "$owner" in
+            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
+          esac
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
 
           # backend は PR ごとに pr-<番号> のリビジョンタグを付けてデプロイされ、
           # そのタグ専用の URL を持つ。まずは実物を引く。
@@ -154,7 +164,7 @@ jobs:
           url=""
           if [ -n "$spec" ]; then
             url=$(printf '%s' "$spec" \
-              | jq -r --arg t "pr-$PR_NUMBER" \
+              | jq -r --arg t "pr-$owner" \
                   'first(.status.traffic[]? | select(.tag == $t) | .url) // empty' \
               2>/dev/null) || url=""
           fi
@@ -165,12 +175,12 @@ jobs:
           if [ -z "$url" ] && [ -n "$spec" ]; then
             base=$(printf '%s' "$spec" | jq -r '.status.url // empty' 2>/dev/null) || base=""
             case "$base" in
-              https://*) url="https://pr-$PR_NUMBER---${base#https://}" ;;
+              https://*) url="https://pr-$owner---${base#https://}" ;;
             esac
           fi
 
           case "$url" in
-            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url を使う" ;;
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url（#$owner の backend）を使う" ;;
             *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
           esac
 
@@ -291,6 +301,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
           MODE: ${{ steps.deploy.outputs.mode }}
+          API_OWNER: ${{ steps.api_url.outputs.owner }}
         run: |
           set -uo pipefail
 
@@ -301,6 +312,7 @@ jobs:
             "| | |" \
             "| --- | --- |" \
             "| URL | $PREVIEW_URL |" \
+            "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
             "| commit | \`$GITHUB_SHA\` |" \
             "| mode | \`$MODE\` |" \
             "" \
