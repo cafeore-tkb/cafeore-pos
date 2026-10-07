@@ -1,5 +1,6 @@
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket } from "../types";
 import { TicketCard } from "./TicketCard";
 
@@ -43,6 +44,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   simTimeSec,
   readOnly = false,
 }) => {
+  const limitedLabel = useLimitedLabel();
   // Determine if active ticket is imminent (<15s or flagged imminent)
   const activeTicket = barista.queue[0];
   const isImminent =
@@ -109,9 +111,9 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
             <span className="truncate font-black text-[#0f172a] text-[15px] tracking-tight">
               {barista.name}
             </span>
-            {barista.canHandleSpecial && (
+            {barista.canHandleSpecial && limitedLabel && (
               <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-emerald-100">
-                ★SP
+                {limitedLabel}
               </span>
             )}
             {activeTicket && (

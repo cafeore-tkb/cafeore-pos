@@ -1,6 +1,7 @@
 import { AlertTriangle, Clock3, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket } from "../types";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
@@ -31,6 +32,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const isBrewing = ticket.status === "brewing";
   const [cupCount, setCupCount] = useState(ticket.cupCount === 1 ? 1 : 1);
   const [interruptCurrent, setInterruptCurrent] = useState(isBrewing);
@@ -188,7 +190,9 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                     : `全件後 ${formatSeconds(wait)}`}
                   {!eligible && (
                     <span className="ml-auto text-red-700">
-                      {ticket.preferredBaristaId ? "指名外" : "SP非対応"}
+                      {ticket.preferredBaristaId
+                        ? "指名外"
+                        : `${limitedLabel}は不可`}
                     </span>
                   )}
                 </div>

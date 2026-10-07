@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
@@ -60,6 +61,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onAssignToBay,
   onRequestRebrew,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
 
@@ -207,9 +209,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                       {barista.name}
                     </div>
                   </div>
-                  {barista.canHandleSpecial && (
+                  {barista.canHandleSpecial && limitedLabel && (
                     <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-1 font-black text-[9px] text-emerald-100 tracking-wide">
-                      ★ SP
+                      {limitedLabel}
                     </span>
                   )}
                 </div>

@@ -36,6 +36,8 @@ interface SheetCup {
   isRebrew?: boolean;
   /** マスターの画面と同じ背景色（盤面のカードだけ） */
   color?: string;
+  /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
+  itemKey?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -127,6 +129,7 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   preferredBaristaId: ticket.preferredBaristaId,
   isRebrew: ticket.isRebrew,
   color: ticket.color,
+  itemKey: ticket.itemKey,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -153,6 +156,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   preferredBaristaId: order.preferredBaristaId,
   isRebrew: order.isRebrew,
   color: order.color,
+  itemKey: order.itemKey,
 });
 
 const CupChip: React.FC<{
@@ -198,7 +202,7 @@ const CupChip: React.FC<{
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
           <span className="truncate font-black text-[14px] text-slate-950 leading-tight">
-            {sheetLabel[cup.beanCode]}
+            {cup.itemKey ? cup.beanName : sheetLabel[cup.beanCode]}
           </span>
           <span className="shrink-0 font-black font-mono text-[11px] text-slate-700">
             ×{cup.cupCount}

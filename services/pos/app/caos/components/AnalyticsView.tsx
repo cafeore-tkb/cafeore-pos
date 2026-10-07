@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
 
 interface AnalyticsViewProps {
@@ -68,6 +69,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const rebrewSummary = useMemo(() => {
     const history = baristas.flatMap((barista) => barista.pastTickets || []);
     const rebrews = history.filter(
@@ -680,9 +682,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 <span className="font-black text-slate-950">
                   #{result.bayNumber} {result.name}
                 </span>
-                {result.special && (
+                {result.special && limitedLabel && (
                   <span className="rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-white">
-                    ★SP
+                    {limitedLabel}
                   </span>
                 )}
               </div>

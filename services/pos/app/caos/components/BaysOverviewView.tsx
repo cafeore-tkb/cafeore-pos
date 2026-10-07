@@ -1,5 +1,6 @@
 import { ArrowRightLeft, Clock3, Star } from "lucide-react";
 import type React from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista } from "../types";
 
 interface BaysOverviewViewProps {
@@ -13,6 +14,7 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
   nextShiftLabel,
   onChangeShift,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const specialCount = baristas.filter(
     (barista) => barista.canHandleSpecial,
   ).length;
@@ -27,7 +29,7 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
               <span>次の交代 {nextShiftLabel}</span>
             </div>
             <div className="mt-1 font-black text-[15px] text-slate-950">
-              6人総入替・SP対応 {specialCount}人
+              6人総入替・{limitedLabel}を淹れられる人 {specialCount}人
             </div>
           </div>
           <button
@@ -62,10 +64,10 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
                       <h3 className="truncate font-black text-[16px] text-slate-950">
                         {barista.name}
                       </h3>
-                      {barista.canHandleSpecial && (
+                      {barista.canHandleSpecial && limitedLabel && (
                         <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[10px] text-emerald-100">
                           <Star className="h-2.5 w-2.5 fill-current" />
-                          SP
+                          {limitedLabel}
                         </span>
                       )}
                     </div>
@@ -94,7 +96,8 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
       </div>
 
       <p className="px-1 text-[11px] text-slate-500 leading-relaxed">
-        毎正時に自動交代します。SP対応者は1番、次に6番へ優先配置されます。
+        毎正時に自動交代します。{limitedLabel}
+        を淹れられる人は1番、次に6番へ優先配置されます。
       </p>
     </div>
   );
