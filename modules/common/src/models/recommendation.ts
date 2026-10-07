@@ -4,6 +4,7 @@ import type { MenuEntity } from "./menu";
  * ドリッパーを3人以上確保する注文かどうかを判定する
  * 条件：
  * - メニューの構成品ごとに数える（セットメニューは中のコーヒーで数える）
+ * - 数えるのは種類の「抽出が要る」が付いたものだけ（ミルクやグッズは数えない）
  * - コーヒーの種類が1種類なら4杯までならtrue、5杯以上ならfalse
  * - コーヒーの種類が2種類なら、1種類につき2杯までならtrue、3杯以上のものが1種類でもあればfalse
  * @param menus 注文メニューの配列
@@ -14,7 +15,7 @@ export function shouldSplitOrder(menus: MenuEntity[]): boolean {
 
   for (const menu of menus) {
     for (const { item, quantity } of menu.items) {
-      if (item.item_type.name === "milk" || item.item_type.name === "others") {
+      if (!item.item_type.needs_brew) {
         continue;
       }
       coffeeCounts.set(item.id, (coffeeCounts.get(item.id) ?? 0) + quantity);

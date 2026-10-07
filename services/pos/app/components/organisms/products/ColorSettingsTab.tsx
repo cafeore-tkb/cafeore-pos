@@ -1,5 +1,6 @@
 import {
   type ColorScreen,
+  type ItemType,
   colorScreens,
   findColorSetting,
   useColorSettings,
@@ -21,9 +22,9 @@ const screenLabels: Record<ColorScreen, string> = {
   serve: "提供",
 };
 
-// others はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、レジだけ設定できる
-const isShownOnScreen = (itemTypeName: string, screen: ColorScreen) =>
-  screen === "cashier" || itemTypeName !== "others";
+// カップを作らない種類（グッズなど）はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、レジだけ設定できる
+const isShownOnScreen = (itemType: ItemType, screen: ColorScreen) =>
+  screen === "cashier" || itemType.makes_cup;
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
@@ -66,7 +67,7 @@ export function ColorSettingsTab() {
                 </TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(itemType.name, screen) ? (
+                    {isShownOnScreen(itemType, screen) ? (
                       <ColorSettingCell
                         targetType="ItemType"
                         targetId={itemType.id}
@@ -109,7 +110,7 @@ export function ColorSettingsTab() {
                 <TableCell>{item.item_type.display_name}</TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(item.item_type.name, screen) ? (
+                    {isShownOnScreen(item.item_type, screen) ? (
                       <ColorSettingCell
                         targetType="Item"
                         targetId={item.id}
