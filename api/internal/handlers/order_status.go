@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -239,7 +238,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		}
 		// 準備完了・提供済みになった注文のカードを、同じトランザクションで抽出終了にする
 		if locked {
-			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	})

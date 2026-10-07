@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -22,12 +21,12 @@ type OrderHandler struct {
 	hub       *Hub
 	inventory *Inventory
 	// CaOS の盤面。注文の変更を同じトランザクションでカードに反映する（nil なら連動しない）
-	caos *caos.Store
+	caos *CaosStore
 	// CaOS の今日のカードの配信の依頼。broadcastDrips を参照
 	dripsRequests chan struct{}
 }
 
-func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *caos.Store) *OrderHandler {
+func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *CaosStore) *OrderHandler {
 	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore, dripsRequests: make(chan struct{}, 1)}
 	go h.runDripsBroadcaster()
 	return h
@@ -254,7 +253,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		if locked {
-			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
@@ -371,7 +370,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			}
 		}
 		if locked {
-			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	})
@@ -441,7 +440,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		}
 		rowsAffected = result.RowsAffected
 		if locked {
-			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	}); err != nil {
