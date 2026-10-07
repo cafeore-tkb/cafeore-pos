@@ -432,10 +432,15 @@ jobs:
       # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
       # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
       # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      #
+      # 落とすのは本番（PR 以外）だけ。PR のプレビューは警告に留める。DB を変えない PR は
+      # PR 間で共有する Neon ブランチ（preview/shared）を使うので、ほかの PR のモデルが
+      # AutoMigrate で作ったテーブルが残っていて、その PR のせいではないズレが出るため。
       - name: DB のスキーマがモデルとずれていないか確かめる
         if: ${{ steps.deploy.outputs.url != '' }}
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          IS_PREVIEW: ${{ github.event_name == 'pull_request' }}
         run: |
           body=""
           for i in $(seq 1 10); do
@@ -450,6 +455,17 @@ jobs:
           fi
           drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
           if [ -n "$drift" ]; then
+            if [ "$IS_PREVIEW" = "true" ]; then
+              {
+                echo "### プレビューの DB のスキーマがモデルとずれている（警告）"
+                echo '```'
+                echo "$drift"
+                echo '```'
+                echo "共有の Neon ブランチなら、ほかの PR が作ったテーブルが残っているだけのことが多い。本番のデプロイでは落ちる。"
+              } >> "$GITHUB_STEP_SUMMARY"
+              while IFS= read -r line; do echo "::warning::$line"; done <<<"$drift"
+              exit 0
+            fi
             {
               echo "### DB のスキーマがモデルとずれている"
               echo '```'
