@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cafeore-pos/api/internal/auth"
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/notify"
 
@@ -243,8 +244,11 @@ func main() {
 		os.Getenv("POS_BASE_URL"),
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
-	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
-	// ほかのインスタンスでの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
+	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
+	caosStore := caos.NewStore(db, handlers.SetOrderReady)
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
+	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
+	// ほかのインスタンスでの注文・CaOS のカードの変更も画面へ届けるため、DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	defer stopListening()
@@ -296,6 +300,8 @@ func main() {
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
+
+		api.POST("/caos/ops", caosHandler.ApplyOp)
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)

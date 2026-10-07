@@ -24,7 +24,7 @@ func newTestWSServer(t *testing.T) (*Hub, string) {
 	go hub.Run()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.GET("/ws", NewOrderHandler(db, hub, nil).WSHandler)
+	r.GET("/ws", NewOrderHandler(db, hub, nil, nil).WSHandler)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return hub, "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,8 @@ const (
 	WSMessageTypeMasterState  WSMessageType = "master_state"
 	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
+	// CaOS の今日のカード（全部）。カードが変わるたびと、つないだときに届く
+	WSMessageTypeDrips WSMessageType = "drips"
 )
 
 type WSMessage struct {
@@ -31,6 +34,8 @@ type WSMessage struct {
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
 	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
+	// drips：CaOS の今日のカード（0 枚のときは省かれる）
+	Drips []caos.Drip `json:"drips,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -51,6 +56,9 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		initial = append(initial, msg)
 	}
 	if msg, ok := cashierStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := h.dripsMessage(); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)

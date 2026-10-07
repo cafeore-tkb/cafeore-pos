@@ -65,7 +65,7 @@ func noBroadcast(t *testing.T, h *Hub) {
 func TestListenOrderChangesPublishesOtherInstancesOrders(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
-	h := NewOrderHandler(db, hub, nil)
+	h := NewOrderHandler(db, hub, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenOrderChanges(ctx, dsn)

@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"gorm.io/gorm"
+
+	"cafeore-pos/api/internal/caos"
 )
 
 // 注文が変わったことをインスタンス同士で知らせる DB の通知チャンネル。
@@ -82,8 +84,12 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 	if _, err := conn.Exec(ctx, "LISTEN "+ordersChangedChannel); err != nil {
 		return err
 	}
+	// CaOS のカードの変更（どのインスタンスで操作しても、ここで受けて DB から読み直し、自分につないでいる画面へ配る）
+	if _, err := conn.Exec(ctx, "LISTEN "+caos.ChangedChannel); err != nil {
+		return err
+	}
 	onListening()
-	log.Printf("listening for %s", ordersChangedChannel)
+	log.Printf("listening for %s, %s", ordersChangedChannel, caos.ChangedChannel)
 
 	// トランザクションプーラー（Supabase の 6543 や Neon の -pooler）経由だと、LISTEN は
 	// エラーにならないのに通知だけが届かない。注文の通知と同じ経路（h.db）で自分宛てに
@@ -107,14 +113,17 @@ func (h *OrderHandler) listenOrderChangesOnce(ctx context.Context, dsn string, o
 		log.Printf("failed to send %s probe: %v", ordersChangedChannel, err)
 	}
 
-	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全注文を配り直す
+	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全注文とカードを配り直す
 	h.publishAllOrders()
+	h.broadcastDrips()
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return err
 		}
 		switch {
+		case n.Channel == caos.ChangedChannel:
+			h.handleDripsChanged(n.Payload)
 		case n.Payload == probe:
 			probed.Store(true)
 			log.Printf("%s: notifications are delivered", ordersChangedChannel)
