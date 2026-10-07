@@ -18,6 +18,8 @@ type Order struct {
 	Received          int `gorm:"not null"`
 	DiscountOrderId   int
 	DiscountOrderCups int
+	// "cash" か "square"。Square の決済は square_checkouts.order_id から引く。
+	PaymentMethod string `gorm:"not null;default:'cash'"`
 
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
 	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`

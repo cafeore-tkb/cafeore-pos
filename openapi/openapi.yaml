@@ -851,6 +851,180 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/square/status:
+    get:
+      summary: Square 連携が使えるか
+      description: SQUARE_ACCESS_TOKEN と SQUARE_DEVICE_ID が揃っていれば enabled。フロントはこれを見て Square の決済ボタンを出す。
+      operationId: getSquareStatus
+      tags:
+        - square
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareStatusResponse'
+  /api/square/checkouts:
+    post:
+      summary: Square Terminal に決済画面を出す
+      description: |
+        決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
+        同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
+        別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+      operationId: createSquareCheckout
+      tags:
+        - square
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SquareCheckoutCreateRequest'
+      responses:
+        '201':
+          description: 作成した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '200':
+          description: 同じ idempotency_key の決済依頼が既にある
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '400':
+          description: 入力が不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 別の決済依頼が進行中
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+        '502':
+          description: Square が依頼を受け付けなかった
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '503':
+          description: Square 連携が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/checkouts/unlinked:
+    get:
+      summary: 支払い済みなのに注文と結び付いていない決済依頼
+      description: 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+      operationId: getUnlinkedSquareCheckouts
+      tags:
+        - square
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SquareCheckoutResponse'
+  /api/square/checkouts/{id}:
+    get:
+      summary: 決済依頼の状態を取る
+      description: 未確定なら Square に問い合わせて最新にしてから返す。レジはこれを数秒おきに呼んで完了を待つ。
+      operationId: getSquareCheckout
+      tags:
+        - square
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '404':
+          description: 見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/checkouts/{id}/cancel:
+    post:
+      summary: 決済依頼を取り消す
+      description: PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
+      operationId: cancelSquareCheckout
+      tags:
+        - square
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 取り消しを依頼した（IN_PROGRESS だったときは CANCEL_REQUESTED を経て CANCELED になる）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '404':
+          description: 見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Square が取り消しを受け付けなかった（既に完了しているなど）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+  /api/square/webhook:
+    post:
+      summary: Square からの Webhook（terminal.checkout.created / terminal.checkout.updated）
+      description: |
+        x-square-hmacsha256-signature ヘッダーの署名が合わなければ 403。
+        （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+      operationId: receiveSquareWebhook
+      tags:
+        - square
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 受け取った
+        '403':
+          description: 署名が合わない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Webhook の署名鍵が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     StatusResponse:
@@ -1124,6 +1298,7 @@ components:
         - created_at
         - billing_amount
         - received
+        - payment_method
         - menus
         - cups
       properties:
@@ -1152,6 +1327,8 @@ components:
           nullable: true
         discount_order_cups:
           type: integer
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
         menus:
           type: array
           items:
@@ -1191,6 +1368,13 @@ components:
         discount_order_cups:
           type: integer
           default: 0
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        square_checkout_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
         menu_ids:
           type: array
           items:
@@ -1608,3 +1792,123 @@ components:
           type: boolean
         reason:
           type: string
+    PaymentMethod:
+      type: string
+      enum: [cash, square]
+      default: cash
+      description: 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+    SquarePaymentType:
+      type: string
+      enum: [CARD_PRESENT, FELICA_ALL, QR_CODE]
+      description: Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
+    SquareCheckoutOutcome:
+      type: string
+      enum: [pending, paid, failed, attention]
+      description: |
+        レジが次に何をすべきかをサーバーが判定したもの。
+          - pending: まだ決まっていない。待つ
+          - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい
+          - failed: 取り消された・失敗した。お金は受け取っていない
+          - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある
+    SquareStatusResponse:
+      type: object
+      required:
+        - enabled
+        - environment
+        - webhook_enabled
+      properties:
+        enabled:
+          type: boolean
+        environment:
+          type: string
+          description: production か sandbox
+        webhook_enabled:
+          type: boolean
+    SquareCheckoutCreateRequest:
+      type: object
+      required:
+        - idempotency_key
+        - amount
+        - payment_type
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする
+        amount:
+          type: integer
+          minimum: 1
+          description: 請求額（円）
+        payment_type:
+          $ref: '#/components/schemas/SquarePaymentType'
+        order_number:
+          type: integer
+          nullable: true
+          description: 依頼時点の注文番号（端末のメモと照合の表示に使う）
+    SquareCheckoutResponse:
+      type: object
+      required:
+        - id
+        - status
+        - outcome
+        - amount
+        - payment_type
+        - payment_ids
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        checkout_id:
+          type: string
+          nullable: true
+          description: Square の TerminalCheckout の id
+        status:
+          type: string
+          description: Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+        outcome:
+          $ref: '#/components/schemas/SquareCheckoutOutcome'
+        cancel_reason:
+          type: string
+          nullable: true
+        amount:
+          type: integer
+        paid_amount:
+          type: integer
+          nullable: true
+          description: 完了後に Payments API で確かめた受取額（円）
+        payment_type:
+          type: string
+        payment_ids:
+          type: array
+          items:
+            type: string
+        error_message:
+          type: string
+          nullable: true
+        order_number:
+          type: integer
+          nullable: true
+        order_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: この決済で作った注文。まだ無ければ null
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SquareCheckoutConflictResponse:
+      type: object
+      required:
+        - error
+        - checkout
+      properties:
+        error:
+          type: string
+        checkout:
+          $ref: '#/components/schemas/SquareCheckoutResponse'

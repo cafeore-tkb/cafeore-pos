@@ -137,9 +137,58 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
 | `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
+| `SQUARE_ACCESS_TOKEN` | 任意（Sandbox のトークン） | 未設定 | Square のアクセストークン（Secret Manager に置く） |
+| `SQUARE_ENVIRONMENT` | `sandbox` | 未設定 | `production` |
+| `SQUARE_DEVICE_ID` | Sandbox のテスト用 device_id | 未設定 | ペアリングで得た端末の device_id |
+| `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
+| `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+### Square Terminal 連携
+
+レジの確定欄から Square Terminal に決済画面（カード・電子マネー・QR コード）を出す。
+**決済が先・注文が後**の順で、端末で支払いが終わってから注文を登録し、ラベルを印刷する。
+`SQUARE_ACCESS_TOKEN` と `SQUARE_DEVICE_ID` が無ければ無効で、レジに Square のボタンは出ない。
+
+- アクセストークンと端末 ID はサーバーだけが持つ。ブラウザから Square の API は呼ばない。
+- 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
+  Webhook（`POST /api/square/webhook`、イベントは `terminal.checkout.created` と `terminal.checkout.updated`）は
+  レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
+- 支払い済みなのに注文が無い決済（決済中にレジが落ちた、注文の送信に失敗した、Square で払った注文を消した）は
+  レジの右上に「未登録の Square 決済」として出る。同じ商品を入力して「この決済で登録」を押すと、二重に決済せずに注文を送れる。
+- 返金は Terminal API ではできない（日本）。Square の管理画面から行う。交通系 IC は返金できない。
+- 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
+
+端末のペアリング（初回に 1 回）:
+
+```sh
+cd api
+SQUARE_ACCESS_TOKEN=... SQUARE_ENVIRONMENT=production go run ./cmd/square-pair -name "レジ1"
+```
+
+表示されたコードを端末のサインイン画面に入力すると、最後に `SQUARE_DEVICE_ID` に入れる値が出る。
+ダッシュボードで発行したコードではペアリングできない。Sandbox では実機とペアリングできないので、
+Sandbox では Square が用意しているテスト用の device_id を使う（[一覧](https://developer.squareup.com/docs/devtools/sandbox/testing#terminal-api-checkouts)）。
+
+| 再現する状況 | device_id |
+| --- | --- |
+| カード決済が成功 | `9fa747a2-25ff-48ee-b078-04381f7c828f` |
+| 電子マネー（FeliCa）が成功 | `19a01fbd-3dcd-4d9f-a499-a641684af745` |
+| QR コード（PayPay）が成功（Sandbox の店舗が日本所在のとき） | `cae0ee02-f83b-11ec-b939-0242ac120002` |
+| お客さんが取り消す | `841100b9-ee60-4537-9bcf-e30b2ba5e215` |
+| 時間切れ | `0a956d49-619a-4530-8e5e-8eac603ffc5e` |
+
+本番の端末では最後に少額（1 円から）で確かめる。
+
+DB と偽の Square サーバーで通しで確かめるテストもある（CI では DB が無いのでスキップされる）:
+
+```sh
+cd api
+SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?sslmode=disable" \
+  go test ./internal/handlers -run Integration -v
+```
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。
