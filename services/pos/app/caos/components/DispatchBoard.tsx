@@ -21,6 +21,8 @@ interface DispatchBoardProps {
   onOpenEmptySlot: (bayId: number) => void;
   simTimeSec: number;
   timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
+  /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
+  readOnly?: boolean;
 }
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -47,6 +49,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   onOpenEmptySlot,
   simTimeSec,
   timelineCommand,
+  readOnly = false,
 }) => {
   // Build a rolling timeline that runs 12 hours ahead of the current hour. It starts
   // one hour back so drips spanning the top of the hour keep their real position.
@@ -318,6 +321,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   onCloseTicketAction={onCloseTicketAction}
                   onRequestRebrew={onRequestRebrew}
                   onOpenEmptySlot={onOpenEmptySlot}
+                  readOnly={readOnly}
                   timelineStartSec={timelineStartSec}
                   pixelsPerSec={PIXELS_PER_SEC}
                   timelineWidthPx={timelineWidthPx}
