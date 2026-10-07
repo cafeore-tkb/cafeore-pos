@@ -1,0 +1,160 @@
+name: pr / adopt existing previews
+
+# preview ラベルで出す運用より前から立っている PR のプレビューに、
+# preview ラベルを付けて「ラベルがある＝プレビューがある」状態にそろえる。
+# 運用を切り替えた直後に**手動で一回流す**ためのもの（何度流しても結果は同じ）。
+#
+# ラベルの無いまま残すと、push しても更新されず、外すラベルも無いので
+# 片付けも走らず、PR を閉じるまで古いプレビューが残り続ける。
+# ラベルを付けておけば、以降は外したときの片付けや閉じたときの
+# ラベル外しにそのまま乗る（api-build.yml / pr-cleanup.yml を参照）。
+#
+# ## 何を「立っている」とみなすか
+#
+# プレビュー用の Cloud Run サービスに pr-<番号> のリビジョンタグがある PR。
+# 片付けの対象（タグ・Artifact Registry・Neon）はこのタグと同じ番号で作られるので、
+# タグを正とする。PR のコメントは片付けた後も残るので見ない。
+#
+# ## ラベルを付けない PR
+#
+#   - すでに preview ラベルが付いている
+#   - preview ラベルを付け外しした履歴がある … 人が外したのに片付けが失敗して
+#     タグが残っている場合など。付け直すと、外した人の意図に反して次の push で
+#     出し直してしまうので、付けずに一覧へ出すだけにする
+#   - 閉じている … pr-cleanup の取りこぼし。一覧へ出すだけにする
+#   - fork からの PR、見つからない PR
+#
+# ## デプロイは走らない
+#
+# ラベルは GITHUB_TOKEN で付けるので、labeled の workflow は起動しない
+# （GITHUB_TOKEN が起こしたイベントは workflow を起動しない）。何件あっても
+# 一斉にデプロイされることはない。プレビューは次の push で最新になる。
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'true のときはラベルを付けず、付ける予定の PR を一覧にするだけ'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # プレビュー用の Cloud Run サービスを読むための WIF。
+  id-token: write
+  # PR の情報とラベルの履歴を読み、ラベルを付けるのに必要。
+  pull-requests: write
+
+concurrency:
+  group: preview-adopt
+  cancel-in-progress: false
+
+jobs:
+  adopt:
+    name: Label PRs that already have a preview
+    runs-on: ubuntu-latest
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+
+    steps:
+      - name: GCP に認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: プレビューが立っている PR に preview ラベルを付ける
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -uo pipefail
+
+          spec=$(gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format=json) || exit $?
+
+          numbers=$(jq -r '.status.traffic[]? | .tag // empty' <<<"$spec" \
+            | sed -n 's/^pr-\([0-9][0-9]*\)$/\1/p' \
+            | sort -n -u)
+
+          rows=()
+          failed=0
+          err=$(mktemp)
+
+          for n in $numbers; do
+            if ! pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$n" 2>"$err"); then
+              if grep -q 'HTTP 404' "$err"; then
+                rows+=("| #$n | - | PR が見つからない |")
+              else
+                cat "$err"
+                rows+=("| #$n | - | PR を読めなかった |")
+                failed=1
+              fi
+              continue
+            fi
+
+            state=$(jq -r '.state' <<<"$pr")
+            labeled=$(jq -r 'any(.labels[]; .name == "preview")' <<<"$pr")
+            same_repo=$(jq -r --arg r "$GITHUB_REPOSITORY" '.head.repo.full_name == $r' <<<"$pr")
+
+            if [ "$state" != "open" ]; then
+              rows+=("| #$n | $state | 閉じているのにタグが残っている（pr-cleanup の取りこぼし） |")
+              continue
+            fi
+            if [ "$same_repo" != "true" ]; then
+              rows+=("| #$n | $state | fork からの PR なので付けない |")
+              continue
+            fi
+            if [ "$labeled" = "true" ]; then
+              rows+=("| #$n | $state | すでにラベルあり |")
+              continue
+            fi
+
+            # preview ラベルを一度でも付け外ししていれば、運用前のプレビューではない。
+            # --paginate と --jq はページごとに数を出すので足し合わせる。
+            if ! touched=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$n/events" \
+                --jq '[.[] | select((.event == "labeled" or .event == "unlabeled") and .label.name == "preview")] | length' \
+                | awk '{ s += $1 } END { print s + 0 }'); then
+              rows+=("| #$n | $state | ラベルの履歴を読めなかった |")
+              failed=1
+              continue
+            fi
+            if [ "$touched" -gt 0 ]; then
+              rows+=("| #$n | $state | ラベルを付け外しした履歴があるので付けない（片付けが失敗している可能性） |")
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              rows+=("| #$n | $state | ラベルを付ける（dry run なので付けていない） |")
+              continue
+            fi
+
+            if gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$n/labels" \
+                -f 'labels[]=preview' > /dev/null; then
+              rows+=("| #$n | $state | ラベルを付けた |")
+            else
+              rows+=("| #$n | $state | ラベルを付けられなかった |")
+              failed=1
+            fi
+          done
+
+          {
+            echo "### プレビューが立っている PR（dry_run: $DRY_RUN）"
+            echo
+            if [ "${#rows[@]}" -eq 0 ]; then
+              echo "\`$CLOUD_RUN_PREVIEW_SERVICE\` に pr-<番号> のタグは無い。"
+            else
+              echo "| PR | 状態 | 結果 |"
+              echo "| --- | --- | --- |"
+              printf '%s\n' "${rows[@]}"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          exit "$failed"

@@ -68,20 +68,7 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 }
 
 func (h *MasterStateHandler) broadcastMasterState() {
-	var state models.MasterState
-
-	if err := h.db.
-		Order("created_at DESC").
-		First(&state).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return
-		}
-		return
+	if msg, ok := masterStateMessage(h.db); ok {
+		h.hub.Broadcast(msg)
 	}
-
-	response := toMasterStateResponse(&state)
-	h.hub.Broadcast(WSMessage{
-		Type:        WSMessageTypeMasterState,
-		MasterState: &response,
-	})
 }

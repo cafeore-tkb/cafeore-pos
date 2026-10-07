@@ -11,8 +11,9 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenMaster ColorScreen = "master"
-	ColorScreenServe  ColorScreen = "serve"
+	ColorScreenCashier ColorScreen = "cashier"
+	ColorScreenMaster  ColorScreen = "master"
+	ColorScreenServe   ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -41,6 +42,22 @@ const (
 	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
 )
+
+// CashierStateResponse defines model for CashierStateResponse.
+type CashierStateResponse struct {
+	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
+	EdittingOrder map[string]interface{} `json:"editting_order"`
+
+	// SubmittedOrderId 直前に確定した注文の ID。編集中は null
+	SubmittedOrderId *openapi_types.UUID `json:"submitted_order_id"`
+	UpdatedAt        time.Time           `json:"updated_at"`
+}
+
+// CashierStateUpdateRequest defines model for CashierStateUpdateRequest.
+type CashierStateUpdateRequest struct {
+	EdittingOrder    map[string]interface{} `json:"editting_order"`
+	SubmittedOrderId *openapi_types.UUID    `json:"submitted_order_id"`
+}
 
 // ColorScreen 背景色を適用する画面
 type ColorScreen string
@@ -260,11 +277,29 @@ type OrderCreateRequest struct {
 	Received          int                     `json:"received"`
 }
 
+// OrderCupResponse defines model for OrderCupResponse.
+type OrderCupResponse struct {
+	Id   openapi_types.UUID `json:"id"`
+	Item ItemResponse       `json:"item"`
+
+	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
+	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
+
+	// ReadyAt このカップが準備完了になった時刻。未準備なら null
+	ReadyAt *time.Time `json:"ready_at"`
+
+	// ServedAt このカップを提供した時刻。未提供なら null
+	ServedAt *time.Time `json:"served_at"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount     int                `json:"billing_amount"`
-	Comments          *[]CommentResponse `json:"comments,omitempty"`
-	CreatedAt         time.Time          `json:"created_at"`
+	BillingAmount int                `json:"billing_amount"`
+	Comments      *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+
+	// Cups 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
+	Cups              []OrderCupResponse `json:"cups"`
 	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int               `json:"discount_order_id"`
 	Id                openapi_types.UUID `json:"id"`
@@ -380,6 +415,9 @@ type StockUsage struct {
 
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
+
+// UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
+type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 
 // UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
 type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest

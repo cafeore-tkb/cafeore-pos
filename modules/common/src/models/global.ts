@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { OrderEntity, orderSchema } from "./order";
+import { OrderEntity, commentSchema, orderSchema } from "./order";
 
 export const globalCashierStateSchema = z.object({
   id: z.literal("cashier-state"),
@@ -8,6 +8,21 @@ export const globalCashierStateSchema = z.object({
 });
 
 export type GlobalCashierState = z.infer<typeof globalCashierStateSchema>;
+
+// API から返ってきた JSON では Date が ISO 文字列になっているので Date に戻す。
+// Firestore 時代は Timestamp → Date の変換を converter がやっていた分に相当する。
+const dateFromWire = z
+  .union([z.date(), z.string().datetime({ offset: true })])
+  .transform((v) => (v instanceof Date ? v : new Date(v)));
+
+export const cashierStateWireSchema = globalCashierStateSchema.extend({
+  edittingOrder: orderSchema.extend({
+    createdAt: dateFromWire,
+    readyAt: dateFromWire.nullable(),
+    servedAt: dateFromWire.nullable(),
+    comments: z.array(commentSchema.extend({ createdAt: dateFromWire })),
+  }),
+});
 
 export class CashierStateEntity implements GlobalCashierState {
   constructor(
