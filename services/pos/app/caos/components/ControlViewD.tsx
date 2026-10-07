@@ -1,4 +1,4 @@
-import { formatMinSec } from "@cafeore/common";
+import { formatMinSec, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -42,6 +42,8 @@ interface SheetCup {
   cupCount: number;
   preferredBaristaId?: number;
   isRebrew?: boolean;
+  /** マスターの画面と同じ背景色（盤面のカードだけ） */
+  color?: string;
   /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
   itemKey?: string;
 }
@@ -126,6 +128,7 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
   isRebrew: ticket.isRebrew,
+  color: ticket.color,
   itemKey: ticket.itemKey,
 });
 
@@ -152,6 +155,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
   isRebrew: order.isRebrew,
+  color: order.color,
   itemKey: order.itemKey,
 });
 
@@ -174,6 +178,10 @@ const CupChip: React.FC<{
 }) => {
   const limitedLabel = useLimitedLabel();
   const stacked = cup.cupCount >= 2;
+  // 盤面のカードはマスターの画面と同じ背景色。文字色は背景色から決める（POS と共通の readableTextColor）
+  const colorStyle = cup.color
+    ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
+    : undefined;
 
   return (
     <div
@@ -183,12 +191,14 @@ const CupChip: React.FC<{
         <div
           aria-hidden
           className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
+          style={colorStyle}
         />
       )}
       <button
         type="button"
         disabled={!onClick}
         onClick={onClick}
+        style={colorStyle}
         className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${
           cup.isRebrew ? "border-2 border-red-600" : "border-slate-500"
         } ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
@@ -196,18 +206,26 @@ const CupChip: React.FC<{
         }`}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
-          <span className="truncate font-black text-[14px] text-slate-950 leading-tight">
+          <span
+            className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
+          >
             {cupLabel(cup, limitedLabel)}
           </span>
-          <span className="shrink-0 font-black font-mono text-[11px] text-slate-700">
+          <span
+            className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             ×{cup.cupCount}
           </span>
         </span>
-        <span className="truncate font-bold font-mono text-[11px] text-slate-600">
+        <span
+          className={`truncate font-bold font-mono text-[11px] ${cup.color ? "opacity-75" : "text-slate-600"}`}
+        >
           No. {cup.id.replaceAll("#", "")}
         </span>
         {(baristaName || note || cup.isRebrew) && (
-          <span className="truncate font-bold text-[10px] text-slate-700">
+          <span
+            className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             {cup.isRebrew ? "入れ直し " : ""}
             {baristaName ? `指名：${baristaName}` : ""}
             {note ? ` ${note}` : ""}

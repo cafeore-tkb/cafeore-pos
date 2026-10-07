@@ -1,4 +1,5 @@
 import {
+  type ColorSetting,
   IMMINENT_SEC,
   STANDBY_LABEL,
   brewDurationLabel,
@@ -15,6 +16,7 @@ import type {
   UnassignedOrder,
 } from "../types";
 import type { BeanIndex } from "../utils/beans";
+import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
 import {
   type Drip,
@@ -27,9 +29,11 @@ import {
 // カードは注文と商品の参照しか持たないので、注文番号や商品名は {"type":"orders"} で届く注文から引く。
 
 interface CatalogItem {
+  id: string;
   name: string;
   abbr: string;
   type: string;
+  typeId?: string;
 }
 
 // 注文 ID → 注文番号と、その注文の商品（商品 ID → 名前・略称・種類）
@@ -46,13 +50,15 @@ export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
       id?: string;
       name: string;
       abbr: string;
-      item_type?: { name: string };
+      item_type?: { id?: string; name: string };
     }) => {
       if (!item.id) return;
       items.set(item.id, {
+        id: item.id,
         name: item.name,
         abbr: item.abbr,
         type: item.item_type?.name ?? "",
+        typeId: item.item_type?.id,
       });
     };
     for (const menu of order.menus) {
@@ -92,6 +98,7 @@ const describe = (
   drip: Drip,
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
+  colorSettings: ColorSetting[],
   beanIndex: BeanIndex,
 ) => {
   const first = drip.lines[0];
@@ -147,6 +154,8 @@ const describe = (
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
     beanName: `${abbrs}${unmatchedNominee}`,
+    // 色はマスターの画面と同じ（統合カードは先頭の商品の色）
+    color: firstItem ? masterCardColor(colorSettings, firstItem) : undefined,
     itemKey: first?.item_id,
     beans: Array.from(beans.values()),
     cupCount: drip.cups,
@@ -170,6 +179,8 @@ export const dripsToBoard = (
   baristas: Barista[],
   nowSec: number,
   dayStartMs: number,
+  // マスターの画面の色の設定（カードの色をマスターと同じにする）
+  colorSettings: ColorSetting[] = [],
   // 商品 → 豆（POS の在庫の設定）
   beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
@@ -188,7 +199,7 @@ export const dripsToBoard = (
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
     const totalDurationSec = brewDurationSec(drip.cups);
     return {
-      ...describe(drip, catalog, orderParts, beanIndex),
+      ...describe(drip, catalog, orderParts, colorSettings, beanIndex),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
@@ -257,7 +268,13 @@ export const dripsToBoard = (
     .filter((drip) => drip.status === "unassigned")
     .sort(compareQueue)
     .map((drip): UnassignedOrder => {
-      const card = describe(drip, catalog, orderParts, beanIndex);
+      const card = describe(
+        drip,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      );
       const merged = Boolean(card.sourceOrderIds);
       return {
         ...card,

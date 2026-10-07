@@ -17,6 +17,8 @@ export interface CardBean {
 }
 
 export interface OrderTicket {
+  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
   /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
@@ -68,6 +70,8 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
+  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
   /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */

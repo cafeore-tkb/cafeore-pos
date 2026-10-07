@@ -10,6 +10,7 @@ import {
   formatRemainingLabel,
   postCaosOp,
   startOfJstDay,
+  useColorSettings,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
@@ -234,6 +235,8 @@ export default function App() {
     status: posStatus,
   } = usePosOrders(live);
   const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
+  // カードの色をマスターの画面と同じにするための色の設定（POS の色の設定の API）
+  const { colorSettings } = useColorSettings(live);
   // 豆の在庫と「商品 → 豆」は POS の在庫（API）をそのまま使う。CaOS では在庫を持たず、減らしもしない
   const {
     beanStatuses,
@@ -250,9 +253,18 @@ export default function App() {
         baristas,
         realTimeSec,
         realDayStartMs,
+        colorSettings,
         beanIndex,
       ),
-    [liveDrips, catalog, baristas, realTimeSec, realDayStartMs, beanIndex],
+    [
+      liveDrips,
+      catalog,
+      baristas,
+      realTimeSec,
+      realDayStartMs,
+      colorSettings,
+      beanIndex,
+    ],
   );
   const boardBaristas = live ? liveBoard.baristas : baristas;
   const boardUnassignedOrders = live
