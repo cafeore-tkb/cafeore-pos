@@ -437,8 +437,8 @@ export interface components {
       order_id: string;
       /** Format: uuid */
       item_id: string;
-      /** @description POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける */
-      nominee: string | null;
+      /** @description 指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別 */
+      dripper: number | null;
       cups: number;
     };
     /**

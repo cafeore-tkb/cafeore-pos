@@ -18,6 +18,7 @@ import {
   orderNumber,
   ticketKey,
 } from "../utils/orderQueue";
+import { nominationText } from "../utils/posOrders";
 import type { ControlViewBProps } from "./ControlViewB";
 
 export interface ControlViewDProps extends ControlViewBProps {
@@ -41,6 +42,8 @@ interface SheetCup {
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
+  /** 指名の表示（盤面のカードだけ。nominationText を参照） */
+  nominee?: string;
   isRebrew?: boolean;
   /** マスターの画面と同じ背景色（盤面のカードだけ） */
   color?: string;
@@ -127,6 +130,7 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
+  nominee: ticket.nominee,
   isRebrew: ticket.isRebrew,
   color: ticket.color,
   itemKey: ticket.itemKey,
@@ -154,6 +158,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   beanName: order.beanName,
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
+  nominee: order.nominee,
   isRebrew: order.isRebrew,
   color: order.color,
   itemKey: order.itemKey,
@@ -161,7 +166,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
 
 const CupChip: React.FC<{
   cup: SheetCup;
-  baristaName?: string;
+  nominee?: string;
   note?: string;
   faded?: boolean;
   selected?: boolean;
@@ -169,7 +174,7 @@ const CupChip: React.FC<{
   onClick?: () => void;
 }> = ({
   cup,
-  baristaName,
+  nominee,
   note,
   faded = false,
   selected = false,
@@ -222,12 +227,12 @@ const CupChip: React.FC<{
         >
           No. {cup.id.replaceAll("#", "")}
         </span>
-        {(baristaName || note || cup.isRebrew) && (
+        {(nominee || note || cup.isRebrew) && (
           <span
             className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
           >
             {cup.isRebrew ? "入れ直し " : ""}
-            {baristaName ? `指名：${baristaName}` : ""}
+            {nominee ? `指名:${nominee}` : ""}
             {note ? ` ${note}` : ""}
           </span>
         )}
@@ -263,17 +268,6 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   const sortedBaristas = useMemo(
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
-  );
-  // 指名の札は列の番号（1st〜6th）で出す
-  const baristaNames = useMemo(
-    () =>
-      new Map(
-        sortedBaristas.map((barista) => [
-          barista.id,
-          laneOrdinal(barista.bayNumber),
-        ]),
-      ),
-    [sortedBaristas],
   );
   const selectedOrder = useMemo(
     () =>
@@ -881,11 +875,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         >
                           <CupChip
                             cup={ticketCup(ticket)}
-                            baristaName={
-                              ticket.preferredBaristaId
-                                ? baristaNames.get(ticket.preferredBaristaId)
-                                : undefined
-                            }
+                            nominee={nominationText(ticket)}
                             note={[
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
@@ -1102,11 +1092,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         >
                           <CupChip
                             cup={unassignedCup(order)}
-                            baristaName={
-                              order.preferredBaristaId
-                                ? baristaNames.get(order.preferredBaristaId)
-                                : undefined
-                            }
+                            nominee={nominationText(order)}
                             selected={selectedUid === uid}
                             onClick={
                               isMergeCandidate
@@ -1162,15 +1148,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
               height: cupDrag.rect.height,
             }}
           >
-            <CupChip
-              cup={dragCup}
-              baristaName={
-                dragCup.preferredBaristaId
-                  ? baristaNames.get(dragCup.preferredBaristaId)
-                  : undefined
-              }
-              lifted
-            />
+            <CupChip cup={dragCup} nominee={nominationText(dragCup)} lifted />
             {hoveredTarget !== null && (
               <div className="-right-1 -top-2 absolute z-[2] whitespace-nowrap rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
                 {hoveredTarget === "unassigned"

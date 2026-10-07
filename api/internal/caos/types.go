@@ -28,12 +28,14 @@ const (
 
 // DripLine は抽出カードの中身の 1 行（どの注文の、どの商品を、何杯）。
 // 注文番号や商品名は持たない（画面は /api/ws/orders で受け取る注文から引く）。
-// 指名（POS の明細の assignee、前後の空白を落としたもの）は、同じ商品でも指名ごとにカードを分けるので持つ。
+// 指名（POS の明細の dripper。指名したドリッパーの番号 1〜6）は、同じ商品でも指名ごとにカードを分けるので持つ。
+// 指名の自由記述（明細の assignee）は持たない（番号の無い自由記述だけの古い明細は、指名なしとして扱う）。
 type DripLine struct {
-	OrderID string  `json:"order_id"`
-	ItemID  string  `json:"item_id"`
-	Nominee *string `json:"nominee"`
-	Cups    int     `json:"cups"`
+	OrderID string `json:"order_id"`
+	ItemID  string `json:"item_id"`
+	// 指名したドリッパーの番号（1〜6）。指名なしは null。担当のドリッパー（Drip.Dripper）とは別
+	Dripper *int `json:"dripper"`
+	Cups    int  `json:"cups"`
 }
 
 // Drip は抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。
@@ -77,7 +79,8 @@ type Order struct {
 
 // OrderLine は注文の明細の中の 1 品（メニューのセットは品ごとに分ける）。
 type OrderLine struct {
-	Assignee *string
+	// 明細の指名の番号（dripper。1〜6、指名なしは nil）
+	Dripper  *int
 	ItemID   string
 	Name     string
 	Abbr     string

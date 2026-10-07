@@ -1,9 +1,10 @@
-import type {
-  CaosDrip,
-  CaosOp,
-  CaosOpResult,
-  OrderEntity,
-  WithId,
+import {
+  type CaosDrip,
+  type CaosOp,
+  type CaosOpResult,
+  type OrderEntity,
+  type WithId,
+  dripperLabel,
 } from "@cafeore/common";
 import type { BeanCode } from "../types";
 
@@ -24,10 +25,15 @@ export const posBeanCode = (type: string): BeanCode => {
   return "OTHER";
 };
 
-// cafeore-pos の指名は自由記述なので、番号（1〜6）のときだけ枠を固定する。
-export const nominatedBayId = (assignee: string) => {
-  const bayNumber = Number(assignee.trim().normalize("NFKC"));
-  if (Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= 6)
-    return bayNumber;
-  return undefined;
-};
+// 指名はレジで選んだドリッパーの番号（明細の dripper。1st〜6th は 1〜6）。カードの lines[].dripper に入って届き、
+// 番号の付いたカードはその番号の列にだけ割り当てられる（preferredBaristaId）。番号の無い自由記述だけの古い明細は指名なし。
+// カードに出す指名の文字は、マスターの画面と同じく assignmentDisplay（@cafeore/common の models/dripper.ts）で作る
+// （番号は「2nd」、番号の無い古い明細は自由記述）。live/drips.ts の describe を参照。
+
+/** カードの指名の表示。盤面のカードは nominee（マスターと同じ表示）、実データテストのカードは番号から作る */
+export const nominationText = (card: {
+  nominee?: string;
+  preferredBaristaId?: number;
+}) =>
+  card.nominee ??
+  (card.preferredBaristaId ? dripperLabel(card.preferredBaristaId) : undefined);

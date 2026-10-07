@@ -3,6 +3,7 @@ import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
+import { nominationText } from "../utils/posOrders";
 
 interface AssignSlotModalProps {
   bayId: number | null;
@@ -109,9 +110,9 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                           <span className="font-bold text-slate-800">
                             {ord.beanName}
                           </span>
-                          {ord.preferredBaristaId && (
-                            <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                              指名 {ord.preferredBaristaId}
+                          {nominationText(ord) && (
+                            <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                              指名:{nominationText(ord)}
                             </span>
                           )}
                           <span className="rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-[10px] text-slate-700">

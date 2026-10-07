@@ -624,6 +624,7 @@ export default function App() {
       orderNotes: orderToAssign.orderNotes,
       sourceOrderIds: orderToAssign.sourceOrderIds,
       preferredBaristaId: orderToAssign.preferredBaristaId,
+      nominee: orderToAssign.nominee,
       isRebrew: orderToAssign.isRebrew,
       rebrewOfTicketUid: orderToAssign.rebrewOfTicketUid,
       beanCode: orderToAssign.beanCode,
@@ -736,6 +737,7 @@ export default function App() {
           ? [ticket.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
         preferredBaristaId: ticket.preferredBaristaId,
+        nominee: ticket.nominee,
         isRebrew: ticket.isRebrew,
         rebrewOfTicketUid: ticket.rebrewOfTicketUid,
         cardColor:
@@ -818,6 +820,7 @@ export default function App() {
           recommendedBaristas: "全ドリッパー",
           recommendedBayIds: baristas.map((barista) => barista.id),
           preferredBaristaId: newTicket.preferredBaristaId,
+          nominee: newTicket.nominee,
           cardColor: newTicket.beanCode === "SP" ? "emerald" : "blue",
           isRebrew: true,
           rebrewOfTicketUid: originalKey,

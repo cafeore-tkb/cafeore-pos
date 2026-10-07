@@ -215,7 +215,7 @@ func isDripper(n int) bool { return n >= 1 && n <= 6 }
 
 func ptr[T any](v T) *T { return &v }
 
-func sameNominee(a, b *string) bool {
+func sameDripper(a, b *int) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
@@ -289,38 +289,39 @@ func (b *Board) completeOrders(cs *Changeset, orderIDs []string) {
 
 type wantedItem struct {
 	ItemID, Name, Abbr, Type string
-	Nominee                  *string
-	Cups                     int
+	// 指名したドリッパーの番号（1〜6）。指名なしは nil
+	Dripper *int
+	Cups    int
 }
 
 // wantedItems は注文の明細から、抽出するもの（商品と指名ごとの杯数）。アイスミルク（milk）とグッズ（others）は抽出しない。
+// 指名は明細の番号（dripper）だけで分ける。番号の無い明細（自由記述だけの古い明細も）は指名なし。
 func wantedItems(o Order) []wantedItem {
 	var items []*wantedItem
 	for _, l := range o.Lines {
 		if l.Type == "others" || l.Type == "milk" || l.Quantity <= 0 {
 			continue
 		}
-		var nominee *string
-		if l.Assignee != nil {
-			if s := strings.TrimSpace(*l.Assignee); s != "" {
-				nominee = &s
-			}
+		var dripper *int
+		if l.Dripper != nil && isDripper(*l.Dripper) {
+			dripper = ptr(*l.Dripper)
 		}
-		i := slices.IndexFunc(items, func(w *wantedItem) bool { return w.ItemID == l.ItemID && sameNominee(w.Nominee, nominee) })
+		i := slices.IndexFunc(items, func(w *wantedItem) bool { return w.ItemID == l.ItemID && sameDripper(w.Dripper, dripper) })
 		if i >= 0 {
 			items[i].Cups += l.Quantity
 			continue
 		}
-		items = append(items, &wantedItem{ItemID: l.ItemID, Name: l.Name, Abbr: l.Abbr, Type: l.Type, Nominee: nominee, Cups: l.Quantity})
+		items = append(items, &wantedItem{ItemID: l.ItemID, Name: l.Name, Abbr: l.Abbr, Type: l.Type, Dripper: dripper, Cups: l.Quantity})
 	}
 	slices.SortStableFunc(items, func(a, c *wantedItem) int {
-		nominee := func(n *string) string {
+		// 指名なしが先、指名は番号の順
+		dripper := func(n *int) int {
 			if n == nil {
-				return ""
+				return 0
 			}
-			return "\x01" + *n
+			return *n
 		}
-		return cmp.Or(strings.Compare(a.Type, c.Type), strings.Compare(a.Name, c.Name), strings.Compare(nominee(a.Nominee), nominee(c.Nominee)))
+		return cmp.Or(strings.Compare(a.Type, c.Type), strings.Compare(a.Name, c.Name), cmp.Compare(dripper(a.Dripper), dripper(c.Dripper)))
 	})
 	out := make([]wantedItem, len(items))
 	for i, w := range items {
@@ -332,7 +333,7 @@ func wantedItems(o Order) []wantedItem {
 func canonicalLines(lines []DripLine) string {
 	keyed := slices.Clone(lines)
 	key := func(l DripLine) string {
-		k, _ := json.Marshal([]any{l.ItemID, l.Nominee, l.Cups})
+		k, _ := json.Marshal([]any{l.ItemID, l.Dripper, l.Cups})
 		return string(k)
 	}
 	slices.SortFunc(keyed, func(a, c DripLine) int { return strings.Compare(key(a), key(c)) })
@@ -355,14 +356,14 @@ func (b *Board) syncOrder(cs *Changeset, o Order) {
 				continue
 			}
 			for _, l := range d.Lines {
-				if l.OrderID == o.ID && l.ItemID == item.ItemID && sameNominee(l.Nominee, item.Nominee) {
+				if l.OrderID == o.ID && l.ItemID == item.ItemID && sameDripper(l.Dripper, item.Dripper) {
 					locked += l.Cups
 				}
 			}
 		}
 		for remaining := item.Cups - locked; remaining > 0; remaining -= 2 {
 			wanted = append(wanted, DripLine{
-				OrderID: o.ID, ItemID: item.ItemID, Nominee: item.Nominee, Cups: min(2, remaining),
+				OrderID: o.ID, ItemID: item.ItemID, Dripper: item.Dripper, Cups: min(2, remaining),
 			})
 		}
 	}
@@ -590,7 +591,7 @@ func (b *Board) merge(cs *Changeset, firstID, secondID string) error {
 		first.RebrewOf != nil || second.RebrewOf != nil ||
 		len(first.Lines) == 0 || len(second.Lines) == 0 ||
 		first.Lines[0].ItemID != second.Lines[0].ItemID ||
-		!sameNominee(first.Lines[0].Nominee, second.Lines[0].Nominee) {
+		!sameDripper(first.Lines[0].Dripper, second.Lines[0].Dripper) {
 		return invalid("このカード同士は統合できません")
 	}
 	b.update(cs, first, func(d *Drip) {

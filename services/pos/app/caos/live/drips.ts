@@ -1,7 +1,9 @@
 import {
   type ColorSetting,
   IMMINENT_SEC,
+  type OrderEntity,
   STANDBY_LABEL,
+  assignmentDisplay,
   brewDurationLabel,
   brewDurationSec,
   formatMinSec,
@@ -18,12 +20,7 @@ import type {
 import type { BeanIndex } from "../utils/beans";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
-import {
-  type Drip,
-  type PosOrder,
-  nominatedBayId,
-  posBeanCode,
-} from "../utils/posOrders";
+import { type Drip, type PosOrder, posBeanCode } from "../utils/posOrders";
 
 // cafeore-pos の盤面（抽出カード）を、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
 // カードは注文と商品の参照しか持たないので、注文番号や商品名は {"type":"orders"} で届く注文から引く。
@@ -36,10 +33,15 @@ interface CatalogItem {
   typeId?: string;
 }
 
-// 注文 ID → 注文番号と、その注文の商品（商品 ID → 名前・略称・種類）
+// 注文 ID → 注文番号と、その注文の商品（商品 ID → 名前・略称・種類）と、
+// カップ（マスターの画面と同じ getCups()。指名の表示に使う）
 export type Catalog = Map<
   string,
-  { orderNo: number; items: Map<string, CatalogItem> }
+  {
+    orderNo: number;
+    items: Map<string, CatalogItem>;
+    cups: ReturnType<OrderEntity["getCups"]>;
+  }
 >;
 
 export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
@@ -66,7 +68,11 @@ export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
     }
     // カードの商品は注文した時点のカップから作るので、カップの商品も引けるようにしておく
     for (const cup of order.cups) add(cup.item);
-    catalog.set(order.id, { orderNo: order.orderId, items });
+    catalog.set(order.id, {
+      orderNo: order.orderId,
+      items,
+      cups: order.getCups(),
+    });
   }
   return catalog;
 };
@@ -122,10 +128,19 @@ const describe = (
     ),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
-  const nominee = first?.nominee ?? undefined;
-  const preferredBaristaId = nominee ? nominatedBayId(nominee) : undefined;
-  const unmatchedNominee =
-    nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
+  // 指名の番号（明細の dripper）のカードは、その番号の列にだけ割り当てられる。統合したカードも同じ番号どうし
+  const preferredBaristaId = first?.dripper ?? undefined;
+  // 指名の表示はマスターの画面と同じ（カードの商品・指名の番号が同じカップの assignmentDisplay）。
+  // 番号は「2nd」、番号の無い自由記述だけの古い明細は自由記述（列には固定しない）
+  const nominees = new Set<string>();
+  for (const line of drip.lines) {
+    for (const cup of catalog.get(line.order_id)?.cups ?? []) {
+      if (cup.id !== line.item_id || cup.dripper !== line.dripper) continue;
+      const text = assignmentDisplay(cup);
+      if (text) nominees.add(text);
+    }
+  }
+  const nominee = Array.from(nominees).join("・") || undefined;
   const abbrs = Array.from(
     new Set(
       drip.lines.map(
@@ -153,7 +168,8 @@ const describe = (
       : undefined,
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
-    beanName: `${abbrs}${unmatchedNominee}`,
+    beanName: abbrs,
+    nominee,
     // 色はマスターの画面と同じ（統合カードは先頭の商品の色）
     color: firstItem ? masterCardColor(colorSettings, firstItem) : undefined,
     itemKey: first?.item_id,
