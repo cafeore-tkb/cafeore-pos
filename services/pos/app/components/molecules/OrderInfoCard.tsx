@@ -110,7 +110,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     });
   };
 
-  // 背景色設定はマスター・提供画面だけで使う
+  // 注文カードの背景色設定はマスター・提供画面だけで使う（レジの設定はメニューのボタン用）
   const colorScreen = user === "master" || user === "serve" ? user : null;
   const { colorSettings } = useColorSettings(colorScreen !== null);
 
