@@ -126,8 +126,108 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PR のプレビューで、どの PR の backend を使うかを決める（.github/scripts/preview-backend-owner.sh）。
+  # 別の PR の上に積んだ PR で、自分では backend（api/ と この workflow）を変えていなければ、
+  # 中の backend は向き先の PR と同じコードなので、自分の backend は立てずに向き先の PR のもの
+  # （pr-<番号> のリビジョンと、その Neon ブランチ）を使う。そのときは build を走らせない。
+  # pos-deploy-workers.yml も同じスクリプトで、画面のプレビューをその backend に向ける。
+  #
+  # **if は build と揃えること。**
+  backend-owner:
+    name: Decide preview backend
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
+    outputs:
+      owner: ${{ steps.owner.outputs.owner }}
+      reuse: ${{ steps.owner.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - name: backend の持ち主を決める
+        id: owner
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 決められなかったときは、今までどおり自分の backend を立てる側に倒す
+          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
+          case "$owner" in
+            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
+          esac
+
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          if [ "$owner" = "$PR_NUMBER" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "この PR の backend を立てる"
+          else
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            echo "#$owner の backend を使う。この PR の backend は立てない"
+          fi
+
+  # 向き先の PR の backend を使うときに、そのことを PR にコメントする（build の代わり）。
+  reused-backend-comment:
+    name: Comment reused preview backend
+    needs: backend-owner
+    if: ${{ needs.backend-owner.outputs.reuse == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      COMMENT_MARKER: '<!-- cafeore-preview: api -->'
+    steps:
+      - name: どの PR の backend を使うかを PR にコメントする
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          OWNER: ${{ needs.backend-owner.outputs.owner }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### backend のプレビュー" \
+            "" \
+            "この PR は backend（\`api/\`）を変えていないので、**#$OWNER の backend**（\`pr-$OWNER\` のリビジョンと、その DB）を使う。この PR の backend は立てない。" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| backend | #$OWNER |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "" \
+            "このコメントは push のたびに書き換わる。")
+
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
+
   build:
     name: Build and push to Artifact Registry
+    needs: backend-owner
     runs-on: ubuntu-latest
 
     # 3つ除外している。
@@ -142,9 +242,12 @@ jobs:
     #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
     #     （閉じた PR は片付けが済んでいるので、出すと消されずに残る）
     #
+    # もう1つ、向き先の PR の backend を使う PR（backend-owner の reuse）も除く。
+    #
     # **PR の条件は上の concurrency と揃えること。**
     if: >-
-      ${{ github.actor != 'dependabot[bot]'
+      ${{ needs.backend-owner.outputs.reuse != 'true'
+          && github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
               || (github.event.pull_request.head.repo.full_name == github.repository
                   && github.event.pull_request.state == 'open'
