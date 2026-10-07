@@ -63,6 +63,7 @@ export interface OrderTicket {
   isRebrew?: boolean; // emergency remake linked to an original cup
   rebrewOfTicketUid?: string;
   isInterrupted?: boolean; // original drip stopped because a remake was required
+  queuePos?: number; // cafeore-pos の盤面での待機列の並び順（入れ直しの差し込み位置に使う）
   imminent?: boolean; // e.g. "残 0:07" or "まもなく完了"
   recipe?: {
     grindSize: string;
