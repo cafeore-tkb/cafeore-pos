@@ -249,63 +249,17 @@ func main() {
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
-	// エンドポイント
-	r.GET("/status", statusHandler)
-	r.GET("/health", healthHandler)
-
-	// API エンドポイント
-	api := r.Group("/api")
-	{
-		api.GET("/items", itemHandler.GetItems)
-		api.POST("/items", itemHandler.CreateItem)
-		api.GET("/items/:id", itemHandler.GetItem)
-		api.PUT("/items/:id", itemHandler.UpdateItem)
-		api.DELETE("/items/:id", itemHandler.DeleteItem)
-
-		api.GET("/menus", menuHandler.GetMenus)
-		api.POST("/menus", menuHandler.CreateMenu)
-		api.GET("/menus/:id", menuHandler.GetMenu)
-		api.PUT("/menus/:id", menuHandler.UpdateMenu)
-		api.DELETE("/menus/:id", menuHandler.DeleteMenu)
-
-		api.GET("/item-types", itemTypeHandler.GetItemTypes)
-		api.POST("/item-types", itemTypeHandler.CreateItemType)
-		api.GET("/item-types/:id", itemTypeHandler.GetItemType)
-		api.PUT("/item-types/:id", itemTypeHandler.UpdateItemType)
-		api.DELETE("/item-types/:id", itemTypeHandler.DeleteItemType)
-
-		api.GET("/orders", orderHandler.GetOrders)
-		api.GET("/ws/orders", orderHandler.WSHandler)
-		api.POST("/orders", orderHandler.CreateOrder)
-		api.GET("/orders/:id", orderHandler.GetOrder)
-		api.PUT("/orders/:id", orderHandler.UpdateOrder)
-		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
-		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
-		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
-		api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
-		api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
-
-		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
-		api.POST("/orders/:id/comments", commentHandler.CreateComment)
-
-		api.GET("/master-status", masterStateHandler.GetMasterStatus)
-		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
-
-		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
-		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
-
-		api.GET("/inventory", inventoryHandler.GetInventory)
-		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
-		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
-		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
-		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
-		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
-		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
-		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
-		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
-		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
-	}
+	registerRoutes(r, routeHandlers{
+		item:         itemHandler,
+		menu:         menuHandler,
+		itemType:     itemTypeHandler,
+		order:        orderHandler,
+		comment:      commentHandler,
+		masterState:  masterStateHandler,
+		cashierState: cashierStateHandler,
+		inventory:    inventoryHandler,
+		colorSetting: colorSettingHandler,
+	})
 
 	// サーバー起動
 	port := os.Getenv("PORT")
