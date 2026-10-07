@@ -1,5 +1,5 @@
 import type { OrderEntity, WithId } from "@cafeore/common";
-import type { Barista, BeanCode, UnassignedOrder } from "../types";
+import type { BeanCode, UnassignedOrder } from "../types";
 import { splitIntoDripUnits } from "./orderQueue";
 
 // cafeore-pos の注文。POS の画面と同じく、共有の WebSocket から届いた OrderEntity を使う。
@@ -21,22 +21,18 @@ const posBeanCode = (name: string, type: string): BeanCode => {
   return "SP";
 };
 
-// cafeore-pos の指名は自由記述なので、番号（1〜6）か現在のドリッパー名に一致したときだけ枠を固定する。
-const nominatedBayId = (assignee: string, baristas: Barista[]) => {
-  const normalized = assignee.trim().normalize("NFKC");
-  const bayNumber = Number(normalized);
+// cafeore-pos の指名は自由記述なので、番号（1〜6）のときだけ枠を固定する。
+const nominatedBayId = (assignee: string) => {
+  const bayNumber = Number(assignee.trim().normalize("NFKC"));
   if (Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= 6)
     return bayNumber;
-  return baristas.find((barista) => barista.name === normalized)?.id;
+  return undefined;
 };
 
 export const posOrderTicketPrefix = (posOrderId: string) =>
   `pos-${posOrderId}-`;
 
-export const posOrderToDripUnits = (
-  order: PosOrder,
-  baristas: Barista[],
-): UnassignedOrder[] => {
+export const posOrderToDripUnits = (order: PosOrder): UnassignedOrder[] => {
   const grouped = new Map<
     string,
     {
@@ -49,9 +45,7 @@ export const posOrderToDripUnits = (
   >();
   order.menus.forEach((line) => {
     const assignee = line.assignee?.trim() || undefined;
-    const preferredBaristaId = assignee
-      ? nominatedBayId(assignee, baristas)
-      : undefined;
+    const preferredBaristaId = assignee ? nominatedBayId(assignee) : undefined;
     line.items.forEach(({ item, quantity }) => {
       const type = item.item_type.name;
       // アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。

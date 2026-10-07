@@ -1,6 +1,7 @@
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import type { Barista, BeanCode, OrderTicket } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
@@ -96,21 +97,13 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     >
       {/* 1. Dripper information - stable locator on the far left */}
       <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-[#e2e8f0] border-r bg-white px-2 py-1.5">
-        {/* The number is a quiet locator; name and active order carry the hierarchy. */}
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 font-bold font-mono text-[18px] text-slate-600">
-          {barista.bayNumber}
+        {/* 列の番号（1st〜6th）。担当者の名前は出さない */}
+        <div className="flex h-9 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 font-bold font-mono text-[13px] text-slate-600">
+          {laneOrdinal(barista.bayNumber)}
         </div>
 
         <div className="flex h-full min-w-0 flex-1 flex-col justify-center">
           <div className="flex min-w-0 items-center gap-1 leading-none">
-            <span className="truncate font-black text-[#0f172a] text-[15px] tracking-tight">
-              {barista.name}
-            </span>
-            {barista.canHandleSpecial && (
-              <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-emerald-100">
-                ★SP
-              </span>
-            )}
             {activeTicket && (
               <span className="ml-auto shrink-0 font-black font-mono text-[16px] text-slate-950">
                 {activeTicket.id}
@@ -157,7 +150,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
           disabled={barista.queue.length === 0}
           onClick={() => onAdvanceBay(barista.id)}
           className={`flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg font-black text-[15px] shadow-xs active:scale-95 ${barista.queue.length === 0 ? "bg-slate-200 text-slate-500" : isImminent ? "bg-amber-500 text-slate-950 ring-2 ring-amber-200" : "bg-[#006c4a] text-white"}`}
-          title={`${barista.name}の現在の抽出を確定して次へ`}
+          title={`${laneOrdinal(barista.bayNumber)}の現在の抽出を確定して次へ`}
         >
           <span>{barista.queue.length === 0 ? "待機" : "次へ"}</span>
           <ArrowRightCircle className="h-5 w-5" />
