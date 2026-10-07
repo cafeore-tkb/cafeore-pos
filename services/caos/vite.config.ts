@@ -6,9 +6,13 @@ import { defineConfig } from "vite";
 const POS_API_DEFAULT_BASE_URL =
   "https://cafeore-pos-git-czojooivca-an.a.run.app";
 
-export default defineConfig(() => {
+// 本番は POS の Worker の /master-sheet/ で配る（services/pos の build が build/client/master-sheet に置く）。
+// 開発サーバーはルートで開く。
+export default defineConfig(({ command }) => {
   return {
-    base: process.env.VITE_BASE_PATH || "/",
+    base:
+      process.env.VITE_BASE_PATH ||
+      (command === "build" ? "/master-sheet/" : "/"),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
