@@ -20,7 +20,7 @@ import (
 //     先に個別で提供したカップは残るので、提供の取消で一部提供の状態に戻る。
 //   - カップ単位の操作では、全カップがそろったら注文にも付け、そろわなくなったら外す。
 //
-// カップが無い注文（グッズだけの注文）は、注文単位の状態だけを持つ。
+// カップが無い注文（グッズだけの注文）は、注文単位の状態だけを持つ。作成・編集のときは提供済みにする（serveCuplessOrder）。
 
 var errOrderCupNotFound = errors.New("order cup not found")
 
@@ -57,6 +57,22 @@ func syncOrderWithCups(order *models.Order) {
 	}
 	order.ReadyAt = allCupsAt(order.OrderCups, cupReadyAt)
 	order.ServedAt = allCupsAt(order.OrderCups, cupServedAt)
+}
+
+// カップが1つもできない注文（構成品の種類の「カップを作る」（makes_cup）が全部 false＝グッズだけの注文）は、
+// マスター・提供画面で作るものが無いので、準備完了・提供済みにする。付いている時刻は残し、無ければ now を付ける。
+// カップのある注文はそのままにする（状態はカップから決まる）。注文の作成・編集のときに呼ぶ。
+func serveCuplessOrder(order *models.Order, now time.Time) {
+	if len(order.OrderCups) > 0 {
+		return
+	}
+	if order.ServedAt == nil {
+		order.ServedAt = &now
+	}
+	if order.ReadyAt == nil {
+		readyAt := *order.ServedAt
+		order.ReadyAt = &readyAt
+	}
 }
 
 // PATCH /api/orders/:id/ready の切り替え

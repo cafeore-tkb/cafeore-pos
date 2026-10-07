@@ -241,6 +241,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		order.OrderMenus, order.OrderCups = lines, cups
+		// グッズだけの注文は作るものが無いので、作った時点で準備完了・提供済みにする
+		// （レジの goodsOnlyServed の値は作成のリクエストに無いので、サーバーで決める）
+		serveCuplessOrder(&order, order.CreatedAt)
 		return tx.Create(&order).Error
 	}); err != nil {
 		status := http.StatusInternalServerError
@@ -317,10 +320,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// カップのある注文の状態はカップから決め直す。リクエストの ready_at / served_at は
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
-		// カップの無い注文（グッズだけの注文）だけリクエストの値を使う。
+		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
+		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
+		serveCuplessOrder(&order, time.Now())
 		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
 			"order_id":            req.OrderId,
 			"ready_at":            order.ReadyAt,
