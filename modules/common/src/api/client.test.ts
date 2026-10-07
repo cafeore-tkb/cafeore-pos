@@ -1,0 +1,68 @@
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { orderRepository } from "../repositories/order";
+import { ApiError, apiWebSocketUrl, throwApiError } from "./client";
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("[unit] throwApiError", () => {
+  const response = new Response(null, {
+    status: 400,
+    statusText: "Bad Request",
+  });
+
+  test("uses the error field of the body", () => {
+    expect(() =>
+      throwApiError(response, { error: "Invalid ID format" }, "Failed"),
+    ).toThrow("Failed: Invalid ID format");
+  });
+
+  test("uses a text body as is", () => {
+    expect(() => throwApiError(response, "boom", "Failed")).toThrow(
+      "Failed: boom",
+    );
+  });
+
+  test("falls back to the status without a body", () => {
+    expect(() => throwApiError(response, undefined, "Failed")).toThrow(
+      "Failed: 400 Bad Request",
+    );
+  });
+
+  test("keeps the status", () => {
+    try {
+      throwApiError(response, undefined, "Failed");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError);
+      expect((e as ApiError).status).toBe(400);
+    }
+    expect.assertions(2);
+  });
+});
+
+describe("[unit] apiClient", () => {
+  test("reads the error the API wrote", async () => {
+    // クライアントは呼ぶたびに fetch を読むので、読み込んだ後に差し替えても届く
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse(404, { error: "Order not found" }),
+    );
+    await expect(
+      orderRepository.delete("00000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow("Failed to delete order: Order not found");
+  });
+});
+
+describe("[unit] apiWebSocketUrl", () => {
+  test("turns the API URL into a WebSocket URL", () => {
+    expect(apiWebSocketUrl("/api/ws/orders")).toMatch(
+      /^wss?:\/\/[^/]+.*\/api\/ws\/orders$/,
+    );
+  });
+});

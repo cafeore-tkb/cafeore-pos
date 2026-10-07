@@ -1,33 +1,27 @@
-import createClient from "openapi-fetch";
+import { apiClient, apiErrorDetail, throwApiError } from "../api/client";
 import {
   type MasterCall,
   type MasterSnapshot,
   resolveCallBody,
 } from "../lib/master-transfer";
-import type { components, paths } from "../types/api";
-import { API_BASE_URL } from "./item";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
+import type { components } from "../types/api";
 
 type Schemas = components["schemas"];
 
 const errorMessage = (error: unknown, response: Response) =>
-  (error as { error?: string } | undefined)?.error ??
-  `${response.status} ${response.statusText}`;
+  apiErrorDetail(error) ?? `${response.status} ${response.statusText}`;
 
 /** 一括取り込み・書き出しで使う、今の DB の内容 */
 export const fetchMasterSnapshot = async (): Promise<MasterSnapshot> => {
   const [itemTypes, items, menus, colorSettings] = await Promise.all([
-    client.GET("/api/item-types"),
-    client.GET("/api/items"),
-    client.GET("/api/menus"),
-    client.GET("/api/color-settings"),
+    apiClient.GET("/api/item-types"),
+    apiClient.GET("/api/items"),
+    apiClient.GET("/api/menus"),
+    apiClient.GET("/api/color-settings"),
   ]);
   for (const { error, response } of [itemTypes, items, menus, colorSettings]) {
     if (error || !response.ok) {
-      throw new Error(
-        `${response.url} を読めませんでした: ${errorMessage(error, response)}`,
-      );
+      throwApiError(response, error, `${response.url} を読めませんでした`);
     }
   }
   return {
@@ -42,19 +36,19 @@ const send = (call: MasterCall, body: Record<string, unknown>) => {
   // 本文は planMasterImport でスキーマに当ててあるので、ここでは型を合わせるだけ
   switch (call.path) {
     case "/api/item-types":
-      return client.POST(call.path, {
+      return apiClient.POST(call.path, {
         body: body as Schemas["ItemTypeCreateRequest"],
       });
     case "/api/items":
-      return client.POST(call.path, {
+      return apiClient.POST(call.path, {
         body: body as Schemas["ItemCreateRequest"],
       });
     case "/api/menus":
-      return client.POST(call.path, {
+      return apiClient.POST(call.path, {
         body: body as Schemas["MenuCreateRequest"],
       });
     case "/api/color-settings":
-      return client.PUT(call.path, {
+      return apiClient.PUT(call.path, {
         body: body as Schemas["ColorSettingUpsertRequest"],
       });
   }
