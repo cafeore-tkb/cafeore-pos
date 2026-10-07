@@ -71,7 +71,7 @@ func noBroadcast(t *testing.T, h *Hub) {
 func TestListenChangesPublishesOtherInstancesOrders(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
-	h := NewOrderHandler(db, hub, nil)
+	h := NewOrderHandler(db, hub, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
@@ -224,7 +224,7 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	other := listenAsOtherInstance(t, dsn, masterStateChangedChannel, cashierStateChangedChannel)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
-	h := NewOrderHandler(db, hub, nil)
+	h := NewOrderHandler(db, hub, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
@@ -298,7 +298,7 @@ func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	}
 
 	hub := NewHub()
-	h := NewOrderHandler(db, hub, nil)
+	h := NewOrderHandler(db, hub, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
@@ -333,13 +333,14 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(ordersChangedChannel, instanceID+" "+uuid.NewString())
 	q.add(masterStateChangedChannel, instanceID)
 	q.add(cashierStateChangedChannel, instanceID)
+	q.add(dripsChangedChannel, instanceID)
 	select {
 	case <-q.wake:
 	default:
 		t.Fatal("not woken")
 	}
 	s := q.take()
-	if s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 2 {
+	if s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 2 {
 		t.Fatalf("take() = %+v; want 2 order ids only", s)
 	}
 	for _, id := range []uuid.UUID{a, b} {
@@ -349,7 +350,7 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	}
 
 	// 取り出したら空になる
-	if s := q.take(); s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
+	if s := q.take(); s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 0 {
 		t.Fatalf("take() after take = %+v; want empty", s)
 	}
 
@@ -357,7 +358,7 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(ordersChangedChannel, other+" "+a.String())
 	q.add(ordersChangedChannel, "")
 	q.add(ordersChangedChannel, other+" not-a-uuid")
-	if s := q.take(); !s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
+	if s := q.take(); !s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want all orders", s)
 	}
 
@@ -366,14 +367,21 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(masterStateChangedChannel, uuid.NewString())
 	q.add(cashierStateChangedChannel, other)
 	q.add(cashierStateChangedChannel, "")
-	if s := q.take(); s.allOrders || !s.masterState || !s.cashierState || len(s.orderIDs) != 0 {
+	if s := q.take(); s.allOrders || !s.masterState || !s.cashierState || s.drips || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want master and cashier states", s)
+	}
+
+	// CaOS の盤面も、ほかのインスタンスからの通知が何度来ても 1 回にまとめる
+	q.add(dripsChangedChannel, other)
+	q.add(dripsChangedChannel, uuid.NewString())
+	if s := q.take(); s.allOrders || s.masterState || s.cashierState || !s.drips || len(s.orderIDs) != 0 {
+		t.Fatalf("take() = %+v; want drips", s)
 	}
 
 	// 待ち受けを始めたときは全部を配り直す
 	q.add(ordersChangedChannel, other+" "+a.String())
 	q.addAll()
-	if s := q.take(); !s.allOrders || !s.masterState || !s.cashierState || len(s.orderIDs) != 0 {
+	if s := q.take(); !s.allOrders || !s.masterState || !s.cashierState || !s.drips || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want everything", s)
 	}
 }

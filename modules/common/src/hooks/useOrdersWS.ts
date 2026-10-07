@@ -29,7 +29,9 @@ type WSMessage =
   | {
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
-    };
+    }
+  // CaOS（ドリップ管制）の抽出カード。POS の画面では使わない
+  | { type: "drips" };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -86,6 +88,10 @@ export const useOrdersWS = () => {
 
           case "cashier_state":
             setCashierState(responseToCashierState(data.cashier_state));
+            break;
+
+          case "drips":
+            // CaOS の画面のためのもの。POS の画面では受け取っても何もしない
             break;
 
           default:
