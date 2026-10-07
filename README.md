@@ -157,6 +157,21 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
 
+### backend のテスト
+
+`api/internal/handlers` の結合テストは Postgres を使う。テストごとに使い捨ての
+schema を作り、起動時と同じくモデルからテーブルを作って、終わったら消す。
+接続先は `TEST_DATABASE_URL` で渡す。無ければ結合テストはスキップされる
+（CI の `api-ci` では Postgres のサービスを立てて渡すので、必ず走る）。
+
+```bash
+docker compose -f api/compose.yaml up -d db
+```
+
+```bash
+cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
+```
+
 ### PR ごとの Neon ブランチ
 
 `NEON_PROJECT_ID` が設定されていれば、PR のプレビュー用に Neon のブランチを
