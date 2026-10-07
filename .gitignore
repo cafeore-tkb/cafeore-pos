@@ -16,7 +16,3 @@ ui-debug.log
 
 # オペ練の生成器のパラメータ（注文間隔そのものが入るのでコミットしない）
 rehearsal-params*.json
-
-# CaOS の実データテストのデータ（ビルドのときに private の sohosai-analysis から作る。scripts/caos-practice-data）
-services/pos/public/caos-practice/
-services/pos/public/caos-practice.tmp/

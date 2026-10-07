@@ -1,12 +1,11 @@
-// node --test scripts/caos-practice-data/normalize.test.mjs
-import assert from "node:assert/strict";
-import { test } from "node:test";
+import { expect, test } from "vitest";
 import {
   assertNoPersonalFields,
-  mergeYear,
+  mergePracticeFiles,
   toPracticeOrder,
-} from "./normalize.mjs";
+} from "./caosPracticeData";
 
+// 作りものの注文（本物のデータは入れない）
 const firestoreOrder = {
   id: "08KglT5FsR3mVzq20x3r",
   orderId: 775,
@@ -36,7 +35,7 @@ const firestoreOrder = {
 };
 
 test("unit: Firestore 版の注文から、許可した項目だけを写す（指名とコメントは落とす）", () => {
-  assert.deepEqual(toPracticeOrder(firestoreOrder), {
+  expect(toPracticeOrder(firestoreOrder)).toStrictEqual({
     orderId: 775,
     createdAt: "2025-11-03T05:16:14.100Z",
     readyAt: "2025-11-03T05:23:28.040Z",
@@ -53,11 +52,12 @@ test("unit: Firestore 版の注文から、許可した項目だけを写す（�
     ],
   });
   const json = JSON.stringify(toPracticeOrder(firestoreOrder));
-  assert.ok(!json.includes("りょん") && !json.includes("ゆかりきてない"));
+  expect(json).not.toContain("りょん");
+  expect(json).not.toContain("ゆかりきてない");
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
-  const item = (id, name, type) => ({
+  const item = (id: string, name: string, type: string) => ({
     id,
     name,
     abbr: name,
@@ -98,7 +98,7 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
     ],
     comments: [{ author: "cashier", text: "山田さん指名" }],
   };
-  assert.deepEqual(toPracticeOrder(order), {
+  expect(toPracticeOrder(order)).toStrictEqual({
     orderId: 12,
     createdAt: "2026-11-01T01:00:00.000Z",
     readyAt: null,
@@ -110,6 +110,10 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
       { id: "tote", name: "トート", price: 400, type: "others" },
     ],
   });
+  // 応答の配列をそのまま保存したファイルも読める
+  const { orders } = mergePracticeFiles([[order]]);
+  expect(orders.map((converted) => converted.orderId)).toStrictEqual([12]);
+  expect(JSON.stringify(orders)).not.toContain("山田");
 });
 
 test("unit: 同じ注文が別のファイルにあっても 1 件にし、作った順に並べる", () => {
@@ -119,15 +123,22 @@ test("unit: 同じ注文が別のファイルにあっても 1 件にし、作�
     orderId: 776,
     createdAt: "2025-11-03T06:00:00.000Z",
   };
-  const { orders, skipped } = mergeYear([
+  const { orders, skipped } = mergePracticeFiles([
     { orders: [later, firestoreOrder] },
     { orders: [firestoreOrder, { id: "c", orderId: 1 }] },
   ]);
-  assert.deepEqual(
-    orders.map((order) => order.orderId),
-    [775, 776],
-  );
-  assert.equal(skipped, 1);
+  expect(orders.map((order) => order.orderId)).toStrictEqual([775, 776]);
+  expect(skipped).toBe(1);
   assertNoPersonalFields(orders);
-  assert.throws(() => assertNoPersonalFields([{ ...orders[0], comments: [] }]));
+  expect(() =>
+    assertNoPersonalFields([{ ...orders[0], comments: [] }]),
+  ).toThrow();
+});
+
+test("unit: 注文の無いファイルや形の違うファイルは 0 件", () => {
+  expect(mergePracticeFiles([{}, null, "x", { orders: "x" }])).toStrictEqual({
+    orders: [],
+    skipped: 0,
+  });
+  expect(toPracticeOrder({ name: "x" })).toBeNull();
 });

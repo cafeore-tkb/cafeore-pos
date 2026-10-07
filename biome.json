@@ -5,8 +5,7 @@
       "**/node_modules/**",
       "**/build",
       "**/public/build",
-      "**/epos-2.27.0.js",
-      "**/public/caos-practice/**"
+      "**/epos-2.27.0.js"
     ]
   },
   "formatter": {

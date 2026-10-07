@@ -25,7 +25,6 @@ on:
     paths:
       - 'services/pos/**'
       - 'modules/common/**'
-      - 'scripts/caos-practice-data/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
   pull_request:
@@ -38,7 +37,6 @@ on:
     paths:
       - 'services/pos/**'
       - 'modules/common/**'
-      - 'scripts/caos-practice-data/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
   workflow_dispatch:
@@ -186,16 +184,10 @@ jobs:
             *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
           esac
 
-      # build は最初に CaOS の実データテストのデータを作る（scripts/caos-practice-data/build.mjs）。
-      # データは private の cafeore-tkb/sohosai-analysis から読み、担当者名・指名・コメントを落としてビルドに入れる
-      # （このリポジトリには入れない）。SOHOSAI_ANALYSIS_TOKEN は sohosai-analysis を読むだけのトークン
-      # （fine-grained PAT の Contents: Read-only など）。無い・読めないときはデータ無しでビルドし、
-      # 画面の「実データテスト」は「データがありません」になる（ビルドは止めない。警告だけ出す）。
       - name: ビルドする
         working-directory: services/pos
         run: pnpm run build
         env:
-          SOHOSAI_ANALYSIS_TOKEN: ${{ secrets.SOHOSAI_ANALYSIS_TOKEN }}
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
