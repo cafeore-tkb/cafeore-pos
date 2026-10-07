@@ -97,11 +97,11 @@ type CaosDrip struct {
 
 // CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
 type CaosDripLine struct {
-	Cups   int                `json:"cups"`
-	ItemId openapi_types.UUID `json:"item_id"`
+	Cups int `json:"cups"`
 
-	// Nominee POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける
-	Nominee *string            `json:"nominee"`
+	// Dripper 指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別
+	Dripper *int               `json:"dripper"`
+	ItemId  openapi_types.UUID `json:"item_id"`
 	OrderId openapi_types.UUID `json:"order_id"`
 }
 

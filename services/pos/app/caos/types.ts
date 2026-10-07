@@ -46,7 +46,9 @@ export interface OrderTicket {
     | "水洗"
     | string;
   secondaryTag?: string;
-  preferredBaristaId?: number; // 指名。必ず1人だけ
+  preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  nominee?: string;
   /** 割り当て・移動できる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
   allowedBayIds?: number[];
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
@@ -105,7 +107,9 @@ export interface UnassignedOrder {
   predictedTimeStr: string;
   recommendedBaristas: string;
   recommendedBayIds: number[];
-  preferredBaristaId?: number; // 指名。必ず1人だけ
+  preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  nominee?: string;
   /** 割り当てられる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
   allowedBayIds?: number[];
   isRebrew?: boolean;

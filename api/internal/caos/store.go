@@ -647,7 +647,7 @@ func toOrders(orders []models.Order) []Order {
 			if len(cups[line.ID]) == 0 {
 				for _, mi := range line.Menu.MenuItems {
 					order.Lines = append(order.Lines, OrderLine{
-						Assignee: line.Assignee, ItemID: mi.Item.ID.String(), Name: mi.Item.Name, Abbr: mi.Item.Abbr,
+						Dripper: line.Dripper, ItemID: mi.Item.ID.String(), Name: mi.Item.Name, Abbr: mi.Item.Abbr,
 						Type: mi.Item.ItemType.Name, Quantity: mi.Quantity,
 					})
 				}
@@ -662,7 +662,7 @@ func toOrders(orders []models.Order) []Order {
 				}
 				at[cup.ItemID] = len(order.Lines)
 				order.Lines = append(order.Lines, OrderLine{
-					Assignee: line.Assignee, ItemID: cup.ItemID.String(), Name: cup.Item.Name, Abbr: cup.Item.Abbr,
+					Dripper: line.Dripper, ItemID: cup.ItemID.String(), Name: cup.Item.Name, Abbr: cup.Item.Abbr,
 					Type: cup.Item.ItemType.Name, Quantity: 1,
 				})
 			}

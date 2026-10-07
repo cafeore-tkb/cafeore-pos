@@ -12,6 +12,7 @@ import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
+import { nominationText } from "../utils/posOrders";
 import { SeniorMark } from "./LaneName";
 
 export interface ControlViewBProps {
@@ -469,9 +470,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                         >
                           {group.id}
                         </div>
-                        {group.items[0].preferredBaristaId && (
+                        {nominationText(group.items[0]) && (
                           <div className="mt-1 inline-flex rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                            指名 {group.items[0].preferredBaristaId}
+                            指名:{nominationText(group.items[0])}
                           </div>
                         )}
                         {group.items[0].totalOrderCups && (
@@ -514,9 +515,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                               </span>
                             )}
                         </div>
-                        {item.preferredBaristaId && (
+                        {nominationText(item) && (
                           <div className="mt-1 font-black text-[10px] text-violet-700">
-                            指名 {item.preferredBaristaId}
+                            指名:{nominationText(item)}
                           </div>
                         )}
                       </button>

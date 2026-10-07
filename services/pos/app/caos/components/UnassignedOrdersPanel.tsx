@@ -7,6 +7,7 @@ import type { UnassignedOrder } from "../types";
 import { canPlaceOn } from "../utils/lanes";
 import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
+import { nominationText } from "../utils/posOrders";
 import { BeanBadge } from "./BeanBadge";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
@@ -289,9 +290,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     beans={order.beans}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
-                  {order.preferredBaristaId && (
+                  {nominationText(order) && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
-                      指名 {order.preferredBaristaId}
+                      指名:{nominationText(order)}
                     </span>
                   )}
                 </div>
