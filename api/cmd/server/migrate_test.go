@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -21,11 +22,20 @@ import (
 //
 // TEST_DATABASE_URL が無ければ飛ばす（CI の api-ci.yml は Postgres を渡している）。
 // **渡した DB の public スキーマは丸ごと消える。** 捨ててよい DB を渡すこと。
+// 本番や Neon を指していたら消す前に止まるよう、手元の Postgres しか受け付けない。
 func openEmptyTestDB(t *testing.T) (*gorm.DB, *ddlRecorder) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("TEST_DATABASE_URL を読めない: %v", err)
+	}
+	if !localHosts[cfg.Host] {
+		// 黙って飛ばすと CI の設定ミスに気づけないので、失敗させる
+		t.Fatalf("TEST_DATABASE_URL のホスト %q は手元の DB ではない。public スキーマを消すので、localhost の捨ててよい DB だけを渡すこと", cfg.Host)
 	}
 
 	rec := &ddlRecorder{}
@@ -86,10 +96,21 @@ func TestMigrateConcurrently(t *testing.T) {
 	}
 	for range instances {
 		if err := <-errs; err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 	}
+
+	// 1 つずつ走っていれば、全部のテーブルがそろい、ズレも無い
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("同時に migrate したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
 }
+
+var localHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 
 var (
 	ddlPattern = regexp.MustCompile(`(?i)^\s*(CREATE|ALTER|DROP)\s`)
