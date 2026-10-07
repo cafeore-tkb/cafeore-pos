@@ -34,6 +34,8 @@ interface SheetCup {
   cupCount: number;
   preferredBaristaId?: number;
   isRebrew?: boolean;
+  /** マスターの画面と同じ背景色（盤面のカードだけ） */
+  color?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -106,6 +108,7 @@ const sheetLabel: Record<BeanCode, string> = {
   ICE: "氷",
   MILK: "牛",
   SP: "限定",
+  OTHER: "その他",
 };
 
 const cupColor = (cup: SheetCup) => {
@@ -123,6 +126,7 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
   isRebrew: ticket.isRebrew,
+  color: ticket.color,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -148,6 +152,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
   isRebrew: order.isRebrew,
+  color: order.color,
 });
 
 const CupChip: React.FC<{
@@ -177,12 +182,14 @@ const CupChip: React.FC<{
         <div
           aria-hidden
           className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
+          style={cup.color ? { backgroundColor: cup.color } : undefined}
         />
       )}
       <button
         type="button"
         disabled={!onClick}
         onClick={onClick}
+        style={cup.color ? { backgroundColor: cup.color } : undefined}
         className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${
           cup.isRebrew ? "border-2 border-red-600" : "border-slate-500"
         } ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${

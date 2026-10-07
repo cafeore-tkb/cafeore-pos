@@ -3,7 +3,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
-import { MENU_PRESENTATION } from "../utils/menuPresentation";
+import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
@@ -202,7 +202,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
           }
         >
           {displayedOrders.map(({ order, gridColumn, gridRow }, orderIndex) => {
-            const menu = MENU_PRESENTATION[order.beanCode];
+            const surface = cardSurface(order);
             const isOrderBoundary =
               !isSidebar &&
               orderIndex > 0 &&
@@ -230,12 +230,17 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
               ? "bg-red-50 border-red-300 text-slate-900"
               : order.preferredBaristaId
                 ? "bg-violet-50 border-violet-300 text-slate-900"
-                : `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`;
+                : surface.className;
+            // 入れ直し・指名の色を優先し、それ以外はマスターの画面と同じ背景色（あれば）
+            const surfaceStyle =
+              order.isRebrew || order.preferredBaristaId
+                ? undefined
+                : surface.style;
             const idColor = order.isRebrew
               ? "text-red-700"
               : order.preferredBaristaId
                 ? "text-violet-700"
-                : menu.family === "premium"
+                : surface.dark
                   ? "text-white"
                   : order.totalItemsInOrder && order.totalItemsInOrder > 1
                     ? "text-slate-950"
@@ -400,6 +405,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   );
                 }}
                 style={{
+                  ...surfaceStyle,
                   ...(isSidebar ? { gridColumn, gridRow } : {}),
                   ...(isInlineDrag && dragVisual
                     ? {
@@ -504,6 +510,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       aria-hidden="true"
                       className={`pointer-events-none fixed z-[1000] flex scale-[1.03] flex-col justify-center rounded-lg border p-4 opacity-90 shadow-2xl ring-2 ring-blue-500 ${cardStyle}`}
                       style={{
+                        ...surfaceStyle,
                         left: dragOriginRect.current.left + dragVisual.x,
                         top: dragOriginRect.current.top + dragVisual.y,
                         width: dragOriginRect.current.width,

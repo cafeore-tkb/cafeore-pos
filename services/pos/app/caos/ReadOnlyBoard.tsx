@@ -1,3 +1,4 @@
+import { useColorSettings } from "@cafeore/common";
 import { Database, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
@@ -47,10 +48,20 @@ export default function ReadOnlyBoard() {
 
   const { orders, drips, status } = usePosOrders(true);
   const catalog = useMemo(() => buildCatalog(orders), [orders]);
+  // カードの色をマスターの画面と同じにするための色の設定
+  const { colorSettings } = useColorSettings();
   const nowSec = Math.floor((now.getTime() - dayStartMs) / 1000);
   const board = useMemo(
-    () => dripsToBoard(drips ?? [], catalog, baristas, nowSec, dayStartMs),
-    [drips, catalog, baristas, nowSec, dayStartMs],
+    () =>
+      dripsToBoard(
+        drips ?? [],
+        catalog,
+        baristas,
+        nowSec,
+        dayStartMs,
+        colorSettings,
+      ),
+    [drips, catalog, baristas, nowSec, dayStartMs, colorSettings],
   );
   const nextAvailable = [...board.baristas]
     .map((barista) => ({

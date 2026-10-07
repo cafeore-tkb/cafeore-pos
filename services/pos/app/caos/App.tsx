@@ -1,4 +1,4 @@
-import { postCaosOp } from "@cafeore/common";
+import { postCaosOp, useColorSettings } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
@@ -306,6 +306,8 @@ export default function App() {
     status: posStatus,
   } = usePosOrders(live);
   const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
+  // カードの色をマスターの画面と同じにするための色の設定
+  const { colorSettings } = useColorSettings(live);
   // 盤面のカードから組み立てた管制盤。ドリッパーの名前と係数は手元の baristas から取る
   const liveBoard = useMemo(
     () =>
@@ -315,8 +317,9 @@ export default function App() {
         baristas,
         realTimeSec,
         realDayStartMs,
+        colorSettings,
       ),
-    [liveDrips, catalog, baristas, realTimeSec, realDayStartMs],
+    [liveDrips, catalog, baristas, realTimeSec, realDayStartMs, colorSettings],
   );
   const boardBaristas = live ? liveBoard.baristas : baristas;
   const boardUnassignedOrders = live

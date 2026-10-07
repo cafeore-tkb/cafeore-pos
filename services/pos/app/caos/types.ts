@@ -6,7 +6,9 @@ export type BeanCode =
   | "BRA"
   | "ICE"
   | "MILK"
-  | "SP";
+  | "SP"
+  // 定番の豆にも限定にも当たらない商品（も花も香ブレンドなど）。SP にはしない
+  | "OTHER";
 
 export interface BeanConfig {
   code: BeanCode;
@@ -29,6 +31,10 @@ export interface BeanItem {
 }
 
 export interface OrderTicket {
+  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
+  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
+  itemKey?: string;
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
   itemIndex?: number; // e.g. 1 (of 2 items in order #152)
@@ -90,6 +96,10 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
+  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
+  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
+  itemKey?: string;
   id: string; // e.g. "#162"
   ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
   itemIndex?: number;

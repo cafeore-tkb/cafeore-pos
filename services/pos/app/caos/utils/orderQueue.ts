@@ -14,6 +14,10 @@ export const canMergeDripUnits = (
   first.cupCount === 1 &&
   second.cupCount === 1 &&
   first.beanCode === second.beanCode &&
+  // 盤面のカードは商品の ID を持つ。API は同じ商品どうししか統合しないので、候補もそれに揃える
+  (first.itemKey === undefined ||
+    second.itemKey === undefined ||
+    first.itemKey === second.itemKey) &&
   first.preferredBaristaId === second.preferredBaristaId;
 
 export const orderNumber = (id: string) =>

@@ -15,7 +15,8 @@ export const BEAN_NAME_MAP: Record<BeanCode, string> = {
   BRA: "ブラジル",
   ICE: "氷",
   MILK: "牛",
-  SP: "★エスメラルダGN",
+  SP: "★限定",
+  OTHER: "その他",
 };
 
 export const BEAN_LEGENDS: BeanConfig[] = [
@@ -85,7 +86,7 @@ export const BEAN_LEGENDS: BeanConfig[] = [
   {
     code: "SP",
     label: "★SP",
-    subLabel: "★エスメラルダGN",
+    subLabel: "★限定",
     badgeBg: "bg-[#064e3b]",
     badgeText: "text-white",
     borderColor: "border-[#047857]",
@@ -159,7 +160,7 @@ export const INITIAL_BEANS: BeanItem[] = [
   },
   {
     code: "SP",
-    name: "★エスメラルダGN",
+    name: "★限定",
     roastProfile: "シナモンロースト (極浅煎り)",
     roastDate: "2026-09-14 (焙煎翌日・最上ロット)",
     flavorNotes: "ジャスミンの花香, ベルガモット, 白桃, 蜂蜜のような甘み",
