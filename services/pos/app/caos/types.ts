@@ -42,6 +42,7 @@ export interface OrderTicket {
   isRebrew?: boolean; // emergency remake linked to an original cup
   rebrewOfTicketUid?: string;
   isInterrupted?: boolean; // original drip stopped because a remake was required
+  queuePos?: number; // cafeore-pos の盤面での待機列の並び順（入れ直しの差し込み位置に使う）
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
