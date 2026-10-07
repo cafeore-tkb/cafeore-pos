@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"os"
 	"regexp"
 	"sort"
@@ -9,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/goccy/go-yaml"
 )
 
 // openapi.yaml に書いていないが登録しているルート。
@@ -17,49 +17,37 @@ var routesOutsideOpenAPI = map[string]bool{
 	"GET /api/ws/orders": true, // WebSocket
 }
 
-var (
-	openAPIPathLine   = regexp.MustCompile(`^  (/\S*):\s*$`)
-	openAPIMethodLine = regexp.MustCompile(`^    (get|post|put|patch|delete|head|options):\s*$`)
-	openAPIPathParam  = regexp.MustCompile(`\{([^}]+)\}`)
-)
+var openAPIPathParam = regexp.MustCompile(`\{([^}]+)\}`)
+
+// paths の下でメソッドとして扱うキー。parameters などはメソッドではない。
+var openAPIMethods = map[string]bool{
+	"get": true, "post": true, "put": true, "patch": true,
+	"delete": true, "head": true, "options": true,
+}
 
 // openapi.yaml の paths にある操作を「METHOD /path/:param」の形で返す。
-// paths の下はキーを2字下げ、メソッドを4字下げで書いている前提で読む。
 func openAPIOperations(t *testing.T) []string {
 	t.Helper()
 
-	f, err := os.Open("../../../openapi/openapi.yaml")
+	b, err := os.ReadFile("../../../openapi/openapi.yaml")
 	if err != nil {
 		t.Fatalf("openapi.yaml を開けない: %v", err)
 	}
-	defer func() { _ = f.Close() }()
+	var doc struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("openapi.yaml を読めない: %v", err)
+	}
 
 	var ops []string
-	inPaths := false
-	path := ""
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
+	for path, item := range doc.Paths {
+		ginPath := openAPIPathParam.ReplaceAllString(path, ":$1")
+		for method := range item {
+			if openAPIMethods[method] {
+				ops = append(ops, strings.ToUpper(method)+" "+ginPath)
+			}
 		}
-		if !strings.HasPrefix(line, " ") {
-			inPaths = strings.HasPrefix(line, "paths:")
-			continue
-		}
-		if !inPaths {
-			continue
-		}
-		if m := openAPIPathLine.FindStringSubmatch(line); m != nil {
-			path = openAPIPathParam.ReplaceAllString(m[1], ":$1")
-			continue
-		}
-		if m := openAPIMethodLine.FindStringSubmatch(line); m != nil && path != "" {
-			ops = append(ops, strings.ToUpper(m[1])+" "+path)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("openapi.yaml を読めない: %v", err)
 	}
 	if len(ops) == 0 {
 		t.Fatal("openapi.yaml から操作を1つも読めなかった")
