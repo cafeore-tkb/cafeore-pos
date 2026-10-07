@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -69,7 +69,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const rebrewSummary = useMemo(() => {
     const history = baristas.flatMap((barista) => barista.pastTickets || []);
     const rebrews = history.filter(
@@ -80,7 +79,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       (sum, ticket) => sum + ticket.cupCount,
       0,
     );
-    // 入れ直しで余分に使った豆は CaOS では数えない（POS の在庫に入れる。作業計画 K3）
+    // 入れ直しで余分に使った豆は CaOS では数えない（豆の在庫は POS の在庫で見る）
     return {
       rebrewCount: rebrews.length,
       rebrewCups,
@@ -261,7 +260,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         );
         return {
           bayNumber: barista.bayNumber,
-          name: barista.name,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
@@ -270,7 +268,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   durations.length,
               )
             : null,
-          special: barista.canHandleSpecial,
         };
       }),
     [baristas],
@@ -655,13 +652,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-950">
-                  #{result.bayNumber} {result.name}
+                  {laneOrdinal(result.bayNumber)}
                 </span>
-                {result.special && limitedLabel && (
-                  <span className="rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-white">
-                    {limitedLabel}
-                  </span>
-                )}
               </div>
               <div className="mt-2 flex items-end gap-3">
                 <span className="font-black font-mono text-[23px]">

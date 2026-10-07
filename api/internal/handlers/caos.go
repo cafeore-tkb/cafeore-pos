@@ -19,13 +19,13 @@ import (
 //
 // 盤面のカードは、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
 // 注文の中身は既存の {"type":"orders"}・{"type":"order"} から。準備完了は、操作と同じトランザクションで
-// 既存の準備完了の処理（SetOrderReady。PATCH /ready と同じ切り替え）で付ける。
+// 既存の準備完了の処理（setOrderReady。PATCH /ready と同じ切り替え）で付ける。保存と注文との連動は caos_store.go（CaosStore）。
 type CaosHandler struct {
-	store  *caos.Store
+	store  *CaosStore
 	orders *OrderHandler
 }
 
-func NewCaosHandler(store *caos.Store, orders *OrderHandler) *CaosHandler {
+func NewCaosHandler(store *CaosStore, orders *OrderHandler) *CaosHandler {
 	return &CaosHandler{store: store, orders: orders}
 }
 
@@ -59,10 +59,11 @@ func (h *CaosHandler) ApplyOp(c *gin.Context) {
 	h.orders.publishCaosChanges(readied)
 }
 
-// SetOrderReady は CaOS が注文の準備完了を付ける・外す処理（caos.ReadyFunc）。
-// PATCH /api/orders/{id}/ready と同じ切り替え（toggleOrderReady）を、今の状態と違うときだけ行う。
+// setOrderReady は CaOS が注文の準備完了を付ける・外す処理（CaOS の「次へ」「1つ戻す」・統合相手の準備完了）。
+// PATCH /api/orders/{id}/ready と同じ切り替え（toggleOrderReady）を、今の状態と違うときだけ行う。注文の行をロックしてから今の状態を見る。
 // 付けるとまだのカップにも同じ時刻を付け、外すとその時刻で付いたカップを外す（先に個別に付けたカップは残る）。
-func SetOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
+// 書いたときは、新しい注文の ready_at（外したときは nil）と true を返す。注文が無ければ gorm.ErrRecordNotFound。
+func setOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
 	order, err := lockOrderWith(tx, orderID)
 	if err != nil {
 		return nil, false, err
@@ -116,7 +117,7 @@ func (h *OrderHandler) lockCaosForOrder(tx *gorm.DB, orderID uuid.UUID) (bool, e
 //
 // SQL のエラーだけでなく、ロック待ちの打ち切りやデッドロックの検出も、Postgres ではその savepoint の中のエラーなので
 // 戻せば注文の tx は続けられる（caos_test.go で確かめている）。接続が切れたときは、CaOS と関係なく注文自体も失敗する。
-func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) []uuid.UUID {
+func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caosOrderRef) []uuid.UUID {
 	var readied []uuid.UUID
 	if err := tx.Transaction(func(sp *gorm.DB) error {
 		var err error
@@ -147,8 +148,8 @@ func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
 // 通知には送ったインスタンスの ID だけを載せる。受けた側は今日のカードを全部読み直して配る。
 // 失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
 func notifyDripsChanged(db *gorm.DB) {
-	if err := db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, instanceID).Error; err != nil {
-		log.Printf("caos: failed to notify %s: %v", caos.ChangedChannel, err)
+	if err := db.Exec("SELECT pg_notify(?, ?)", dripsChangedChannel, instanceID).Error; err != nil {
+		log.Printf("caos: failed to notify %s: %v", dripsChangedChannel, err)
 	}
 }
 

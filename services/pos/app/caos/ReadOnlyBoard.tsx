@@ -2,11 +2,10 @@ import { useColorSettings } from "@cafeore/common";
 import { Database, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
-import { INITIAL_BARISTAS } from "./data/initialData";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { type PosConnectionStatus, usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard } from "./live/drips";
-import type { Barista } from "./types";
+import { makeLaneBaristas } from "./utils/lanes";
 import { queueWaitSeconds } from "./utils/orderQueue";
 
 // 閲覧だけの管制盤（/master-sheet/view）。共有の盤面（抽出カードと注文）を POS の共有の WebSocket で受け取り、
@@ -17,16 +16,6 @@ const startOfLocalDay = (ms: number) => {
   date.setHours(0, 0, 0, 0);
   return date.getTime();
 };
-
-const cleanBaristas = (): Barista[] =>
-  INITIAL_BARISTAS.map((barista) => ({
-    ...barista,
-    status: "standby",
-    remainingStr: "00:00 待機中",
-    activeTicketId: undefined,
-    queue: [],
-    pastTickets: [],
-  }));
 
 const STATUS_LABEL: Record<PosConnectionStatus, string> = {
   off: "未接続",
@@ -40,7 +29,7 @@ const noop = () => {};
 export default function ReadOnlyBoard() {
   const [now, setNow] = useState(() => new Date());
   const [dayStartMs] = useState(() => startOfLocalDay(Date.now()));
-  const [baristas] = useState(cleanBaristas);
+  const [baristas] = useState(makeLaneBaristas);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 1000);
@@ -70,7 +59,7 @@ export default function ReadOnlyBoard() {
   const nextAvailable = [...board.baristas]
     .map((barista) => ({
       bayNumber: barista.bayNumber,
-      seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+      seconds: queueWaitSeconds(barista.queue),
       isStandby: barista.queue.length === 0,
     }))
     .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)

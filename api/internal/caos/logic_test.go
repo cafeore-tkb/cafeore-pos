@@ -95,7 +95,7 @@ func apply(t *testing.T, b *Board, op Op) *Changeset {
 
 func applyErr(b *Board, op Op) error { return b.Apply(&Changeset{}, op) }
 
-// restore は記録しておいた操作を取り消す（Store が caos_ops の記録から行うのと同じ）
+// restore は記録しておいた操作を取り消す（handlers の CaosStore が caos_ops の記録から行うのと同じ）
 func restore(t *testing.T, b *Board, before, after []Drip) {
 	t.Helper()
 	if err := b.Restore(&Changeset{}, before, after); err != nil {
@@ -140,10 +140,10 @@ func checkInvariants(t *testing.T, b *Board) {
 		if (d.Status == StatusUnassigned) != (d.Dripper == nil) && d.Status != StatusDone {
 			t.Fatalf("状態と担当が合わない：%+v", d)
 		}
-		if d.Cups != sumCups(d.Lines) || d.Cups < 1 || d.Cups > 2 {
+		if d.Cups != CupsOf(d.Lines) || d.Cups < 1 || d.Cups > 2 {
 			t.Fatalf("杯数が合わない：%+v", d)
 		}
-		if !slices.Equal(d.OrderIDs, distinctOrders(d.Lines)) {
+		if !slices.Equal(d.OrderIDs, OrderIDsOf(d.Lines)) {
 			t.Fatalf("order_ids が明細と合わない：%+v", d)
 		}
 	}
@@ -330,7 +330,7 @@ func TestNextReadyAndRestore(t *testing.T) {
 		t.Fatalf("最後のカードの次へで、注文のカードが全部終わったと返す（準備完了は既存の API で付ける）：%v", last.Completed.List())
 	}
 
-	// 1つ戻す：抽出中に戻る（Store と同じく、その操作で準備完了にした注文は外してから戻す）
+	// 1つ戻す：抽出中に戻る（CaosStore と同じく、その操作で準備完了にした注文は外してから戻す）
 	for _, id := range last.Completed.List() {
 		b.Orders[id].Ready = false
 	}

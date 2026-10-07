@@ -35,7 +35,7 @@ type caosEnv struct {
 	dsn    string
 	router *gin.Engine
 	orders *OrderHandler
-	store  *caos.Store
+	store  *CaosStore
 	menu   uuid.UUID
 }
 
@@ -63,7 +63,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	mustDo(t, db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
 		&models.OrderMenu{}, &models.OrderCup{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
 	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_ops").Error)
-	mustDo(t, db.AutoMigrate(&caos.DripRow{}, &caos.OpRow{}))
+	mustDo(t, db.AutoMigrate(&models.CaosDripRow{}, &models.CaosOpRow{}))
 	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_ops, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
@@ -77,7 +77,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	gin.SetMode(gin.TestMode)
 	hub := NewHub()
 	go hub.Run()
-	store := caos.NewStore(db, SetOrderReady)
+	store := NewCaosStore(db)
 	orders := NewOrderHandler(db, hub, NewInventory(db, notify.NewSlack(""), RemindAuth{}, ""), store)
 	c := NewCaosHandler(store, orders)
 	r := gin.New()
@@ -311,7 +311,7 @@ func TestCaosDripsAreBroadcastFromDB(t *testing.T) {
 	time.Sleep(200 * time.Millisecond) // LISTEN が始まるのを待つ
 	// ほかのインスタンスがカードを変えて知らせてきたら、DB から読み直して配る
 	mustDo(t, e.db.Exec("UPDATE caos_drips SET status = 'queued', dripper = 3").Error)
-	mustDo(t, e.db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, "another-instance").Error)
+	mustDo(t, e.db.Exec("SELECT pg_notify(?, ?)", dripsChangedChannel, "another-instance").Error)
 	for {
 		if d := nextDrips(); len(d) == 1 && d[0].Status == caos.StatusQueued {
 			break
@@ -322,7 +322,7 @@ func TestCaosDripsAreBroadcastFromDB(t *testing.T) {
 	listen, err := pgx.Connect(context.Background(), e.dsn)
 	mustDo(t, err)
 	defer func() { _ = listen.Close(context.Background()) }()
-	_, err = listen.Exec(context.Background(), "LISTEN "+caos.ChangedChannel)
+	_, err = listen.Exec(context.Background(), "LISTEN "+dripsChangedChannel)
 	mustDo(t, err)
 	e.op(t, map[string]any{"name": "unassign", "drip_id": e.cards(t)[0].ID}, nil)
 	waitCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
