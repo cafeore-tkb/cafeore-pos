@@ -153,16 +153,27 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
 - 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
+  - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
+  - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る
+  - テストごとに使い捨ての database を作って流し、終わったら消す。渡した DB の中身には触らない（手元での流し方は下の「backend のテスト」）
 
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
 
 ### backend のテスト
 
-`api/internal/handlers` の結合テストは Postgres を使う。テストごとに使い捨ての
-schema を作り、起動時と同じくモデルからテーブルを作って、終わったら消す。
-接続先は `TEST_DATABASE_URL` で渡す。無ければ結合テストはスキップされる
-（CI の `api-ci` では Postgres のサービスを立てて渡すので、必ず走る）。
+本物の Postgres を使うテストの接続先は、どれも `TEST_DATABASE_URL` で渡す。
+無ければスキップされる（CI の `api-ci` では Postgres のサービスを 1 つ立てて渡し、
+無ければ落とすので、必ず走る）。`go test ./...` はパッケージを並行で走らせるので、
+渡した DB の既存の schema・データには触らず、使い捨てのものを作って終わったら消す。
+
+- **共通の土台は `newTestDB`（`api/internal/handlers/testdb_test.go`）。** テストごとに使い捨ての
+  schema を作り、起動時と同じくモデル（`models.All()`）からテーブルを作る。`uuid-ossp` は
+  DB の public に 1 度だけ入れ、search_path を `その schema,public` にして使う。
+  本物の DB を使うテストを足すときは、別の環境変数を作らずこれを使う
+- 起動時のマイグレーション（`api/cmd/server/migrate_test.go`）だけは、本番と同じく public
+  スキーマを前提に確かめるので、テストごとに使い捨ての database を作る（ロールに CREATEDB が要る）
 
 ```bash
 docker compose -f api/compose.yaml up -d db
