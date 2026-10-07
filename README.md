@@ -193,6 +193,7 @@ CaOS の抽出カード（1 回のドリップ＝1 枚）と列の担当者、�
 - **編集（PUT）：** カップのある注文の状態はカップから決まるので、古い画面から編集しても CaOS が付けた準備完了は消えない（main の仕組みのまま）。
 - **画面への配信：** 準備完了を付け外しした注文（操作の対象と統合相手）は `{"type":"order"}` で 1 件ずつ配る。カードは `{"type":"drips"}` で今日の分を全部配り、30ms 以内の依頼は 1 回にまとめる。
 - **ロックの順番：** 1 つの営業日への処理は、その日の advisory lock（`caos:YYYY-MM-DD`）で 1 件ずつ順番に行う。どの処理も「盤面 → 注文」の順にロックする。注文を書き換えるハンドラーは、注文の行を書く前に `lockCaos` で盤面をロックする（逆の順番だと、同じ注文を同時に触ったときにデッドロックになる）。取れなければその回の連動は飛ばす。
+- **練習用の盤面（実データテスト）：** `POST /api/caos/practice`（過去の注文と時間帯を送って作る）・`GET`・`DELETE /api/caos/practice/{id}`・`POST /api/caos/practice/{id}/advance`（練習の時計を進め、それまでの注文を入れる）・`POST /api/caos/practice/{id}/ops`（本番と同じ操作）。ルールは本番と同じ `caos.Board` で、盤面は `caos_practices` の 1 行に jsonb で持つ（`caos.PracticeRow`）。本番の `caos_drips`・`caos_lanes`・`caos_ops`・注文・在庫には触らず、`{"type":"drips"}` でも配らない。練習の時計は画面が持ち、操作に練習の時刻（`at`）を付けて送る（カードの開始・終了・準備完了はその時刻）。準備完了と「1つ戻す」は練習の盤面の中で閉じる。放置された練習（最後に触ってから 12 時間）と 200 を超えた古い練習は、練習を作るときに消す。データの道すじは `scripts/caos-practice-data/README.md`。
 - **テスト：** `go test ./internal/caos` はルールのテスト（DB なし）。本物の Postgres でも確かめるときは、空の DB を渡して `CAOS_TEST_DATABASE_URL=postgres://... go test -p 1 ./internal/caos ./internal/handlers`（表を作り直すので、本番やプレビューの DB は渡さない）。注文の通知のテストは `LISTEN_TEST_DATABASE_URL` に別の空の DB を渡す。
 
 ### PR ごとの Neon ブランチ
