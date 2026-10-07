@@ -168,6 +168,7 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | PR の種類 | 使うブランチ |
 | --- | --- |
 | DB のスキーマや中身に影響するファイルを変えている | その PR 専用の `preview/pr-<番号>` |
+| 別の PR の上に積んでいる（向き先が main 以外） | その PR 専用の `preview/pr-<番号>` |
 | それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
 
 「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
