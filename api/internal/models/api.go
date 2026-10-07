@@ -9,6 +9,31 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CaosDripStatus.
+const (
+	CaosDripStatusBrewing    CaosDripStatus = "brewing"
+	CaosDripStatusDone       CaosDripStatus = "done"
+	CaosDripStatusQueued     CaosDripStatus = "queued"
+	CaosDripStatusUnassigned CaosDripStatus = "unassigned"
+)
+
+// Defines values for CaosErrorResponseCode.
+const (
+	CaosErrorCodeInvalid CaosErrorResponseCode = "invalid"
+)
+
+// Defines values for CaosOpName.
+const (
+	CaosOpAssign    CaosOpName = "assign"
+	CaosOpMerge     CaosOpName = "merge"
+	CaosOpNext      CaosOpName = "next"
+	CaosOpRebrew    CaosOpName = "rebrew"
+	CaosOpSetLane   CaosOpName = "set_lane"
+	CaosOpSwapLanes CaosOpName = "swap_lanes"
+	CaosOpUnassign  CaosOpName = "unassign"
+	CaosOpUndo      CaosOpName = "undo"
+)
+
 // Defines values for ColorScreen.
 const (
 	ColorScreenCashier ColorScreen = "cashier"
@@ -42,6 +67,120 @@ const (
 	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
 )
+
+// CaosDrip 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの
+type CaosDrip struct {
+	CreatedAt  time.Time          `json:"created_at"`
+	Cups       int                `json:"cups"`
+	Dripper    *int               `json:"dripper"`
+	FinishedAt *time.Time         `json:"finished_at"`
+	Id         openapi_types.UUID `json:"id"`
+
+	// Interrupted 入れ直しのために途中でやめた抽出
+	Interrupted bool                 `json:"interrupted"`
+	Lines       []CaosDripLine       `json:"lines"`
+	OrderIds    []openapi_types.UUID `json:"order_ids"`
+
+	// QueuePos 待機列の並び順（ふだんは注文番号）
+	QueuePos float64 `json:"queue_pos"`
+
+	// RebrewOf 入れ直しのカードなら、元のカード
+	RebrewOf  *openapi_types.UUID `json:"rebrew_of"`
+	StartedAt *time.Time          `json:"started_at"`
+
+	// Status unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+	Status CaosDripStatus `json:"status"`
+
+	// UpdatedAt 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
+type CaosDripLine struct {
+	Cups   int                `json:"cups"`
+	ItemId openapi_types.UUID `json:"item_id"`
+
+	// Nominee POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける
+	Nominee *string            `json:"nominee"`
+	OrderId openapi_types.UUID `json:"order_id"`
+}
+
+// CaosDripStatus unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+type CaosDripStatus string
+
+// CaosErrorResponse defines model for CaosErrorResponse.
+type CaosErrorResponse struct {
+	Code  *CaosErrorResponseCode `json:"code,omitempty"`
+	Error string                 `json:"error"`
+}
+
+// CaosErrorResponseCode defines model for CaosErrorResponse.Code.
+type CaosErrorResponseCode string
+
+// CaosLane 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+// senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+type CaosLane struct {
+	Dripper int `json:"dripper"`
+
+	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+
+	// UpdatedAt 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// CaosOp name ごとに使うフィールド：
+// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
+// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
+// undo（op_id）
+type CaosOp struct {
+	// Cups 入れ直す杯数（元のカードの杯数まで）
+	Cups    *int                `json:"cups,omitempty"`
+	DripId  *openapi_types.UUID `json:"drip_id,omitempty"`
+	Dripper *int                `json:"dripper"`
+	FirstId *openapi_types.UUID `json:"first_id,omitempty"`
+
+	// Interrupt 抽出中の元のカードを途中でやめる
+	Interrupt *bool      `json:"interrupt,omitempty"`
+	Name      CaosOpName `json:"name"`
+
+	// OpId undo で戻す操作（操作の結果の op_id）
+	OpId *openapi_types.UUID `json:"op_id,omitempty"`
+
+	// OtherDripper swap_lanes で dripper の列と担当者を入れ替える列
+	OtherDripper *int `json:"other_dripper,omitempty"`
+
+	// Person set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし
+	Person   *string             `json:"person,omitempty"`
+	QueuePos *float64            `json:"queue_pos"`
+	SecondId *openapi_types.UUID `json:"second_id,omitempty"`
+
+	// Senior set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る
+	Senior   *bool               `json:"senior,omitempty"`
+	SourceId *openapi_types.UUID `json:"source_id,omitempty"`
+}
+
+// CaosOpName defines model for CaosOp.Name.
+type CaosOpName string
+
+// CaosOpResult defines model for CaosOpResult.
+type CaosOpResult struct {
+	Changed []CaosDrip           `json:"changed"`
+	Deleted []openapi_types.UUID `json:"deleted"`
+
+	// Lanes この操作で担当者が変わった列（undo では、戻した列）
+	Lanes []CaosLane `json:"lanes"`
+
+	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
+	OpId string `json:"op_id"`
+
+	// Readied この操作で準備完了にした注文（undo では、準備完了を外した注文）
+	Readied []openapi_types.UUID `json:"readied"`
+}
 
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
@@ -423,6 +562,9 @@ type StockUsage struct {
 
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
+
+// ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
+type ApplyCaosOpJSONRequestBody = CaosOp
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

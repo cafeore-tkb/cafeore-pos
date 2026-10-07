@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -217,7 +218,12 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 
+	var readied []uuid.UUID
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		locked, err := h.lockCaosForOrder(tx, orderID)
+		if err != nil {
+			return err
+		}
 		order, err := lockOrderWith(tx, orderID)
 		if err != nil {
 			return err
@@ -228,7 +234,14 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
-		return saveOrderStatus(tx, &before, &order)
+		if err := saveOrderStatus(tx, &before, &order); err != nil {
+			return err
+		}
+		// 準備完了・提供済みになった注文のカードを、同じトランザクションで抽出終了にする
+		if locked {
+			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -248,6 +261,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+	h.publishCaosChanges(readied)
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

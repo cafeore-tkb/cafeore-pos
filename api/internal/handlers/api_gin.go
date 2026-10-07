@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS の今日の盤面への操作
+	// (POST /api/caos/ops)
+	ApplyCaosOp(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -150,6 +153,19 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// ApplyCaosOp operation middleware
+func (siw *ServerInterfaceWrapper) ApplyCaosOp(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApplyCaosOp(c)
+}
 
 // GetCashierState operation middleware
 func (siw *ServerInterfaceWrapper) GetCashierState(c *gin.Context) {
@@ -984,6 +1000,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/api/caos/ops", wrapper.ApplyCaosOp)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)

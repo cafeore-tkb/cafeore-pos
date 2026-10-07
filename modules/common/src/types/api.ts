@@ -72,7 +72,14 @@ export interface paths {
   "/api/orders/{id}": {
     /** idからオーダー情報取得 */
     get: operations["getOrder"];
-    /** オーダー情報更新 */
+    /**
+     * オーダー情報更新
+     * @description 注文の中身（明細・金額など）を書き換える。
+     * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+     * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+     * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+     * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+     */
     put: operations["updateOrder"];
     /** オーダー削除 */
     delete: operations["deleteOrder"];
@@ -104,6 +111,19 @@ export interface paths {
     get: operations["getOrderComments"];
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
+  };
+  "/api/caos/ops": {
+    /**
+     * CaOS の今日の盤面への操作
+     * @description 割当・戻す・次へ・統合・入れ直し・列の担当者の交代（set_lane）と入れ替え（swap_lanes）・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+     * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+     * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+     * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+     * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
+     * 列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
+     */
+    post: operations["applyCaosOp"];
   };
   "/api/master-status": {
     /** マスターステート取得 */
@@ -411,6 +431,142 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    /** @description 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く） */
+    CaosDripLine: {
+      /** Format: uuid */
+      order_id: string;
+      /** Format: uuid */
+      item_id: string;
+      /** @description POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける */
+      nominee: string | null;
+      cups: number;
+    };
+    /**
+     * @description unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
+     * @enum {string}
+     */
+    CaosDripStatus: "unassigned" | "queued" | "brewing" | "done";
+    /** @description 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの */
+    CaosDrip: {
+      /** Format: uuid */
+      id: string;
+      status: components["schemas"]["CaosDripStatus"];
+      dripper: number | null;
+      /**
+       * Format: double
+       * @description 待機列の並び順（ふだんは注文番号）
+       */
+      queue_pos: number;
+      order_ids: string[];
+      lines: components["schemas"]["CaosDripLine"][];
+      cups: number;
+      /**
+       * Format: uuid
+       * @description 入れ直しのカードなら、元のカード
+       */
+      rebrew_of: string | null;
+      /** @description 入れ直しのために途中でやめた抽出 */
+      interrupted: boolean;
+      /** Format: date-time */
+      started_at: string | null;
+      /** Format: date-time */
+      finished_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /**
+       * Format: date-time
+       * @description 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
+       */
+      updated_at: string;
+    };
+    /**
+     * @description 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+     * senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+     */
+    CaosLane: {
+      dripper: number;
+      /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
+      name: string;
+      /** @description 上級生（限定を淹れられる）か。担当者がいない列は false */
+      senior: boolean;
+      /**
+       * Format: date-time
+       * @description 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+       */
+      updated_at: string | null;
+    };
+    /**
+     * @description name ごとに使うフィールド：
+     * assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
+     * rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+     * set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
+     * undo（op_id）
+     */
+    CaosOp: {
+      /** @enum {string} */
+      name:
+        | "assign"
+        | "unassign"
+        | "next"
+        | "merge"
+        | "rebrew"
+        | "set_lane"
+        | "swap_lanes"
+        | "undo";
+      /** Format: uuid */
+      drip_id?: string;
+      dripper?: number | null;
+      /** Format: uuid */
+      first_id?: string;
+      /** Format: uuid */
+      second_id?: string;
+      /** Format: uuid */
+      source_id?: string;
+      /** @description 入れ直す杯数（元のカードの杯数まで） */
+      cups?: number;
+      /** @description 抽出中の元のカードを途中でやめる */
+      interrupt?: boolean;
+      /** Format: double */
+      queue_pos?: number | null;
+      /**
+       * Format: uuid
+       * @description undo で戻す操作（操作の結果の op_id）
+       */
+      op_id?: string;
+      /** @description set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし */
+      person?: string;
+      /** @description set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る */
+      senior?: boolean;
+      /** @description swap_lanes で dripper の列と担当者を入れ替える列 */
+      other_dripper?: number;
+    };
+    CaosOpResult: {
+      /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
+      op_id: string;
+      changed: components["schemas"]["CaosDrip"][];
+      deleted: string[];
+      /** @description この操作で準備完了にした注文（undo では、準備完了を外した注文） */
+      readied: string[];
+      /** @description この操作で担当者が変わった列（undo では、戻した列） */
+      lanes: components["schemas"]["CaosLane"][];
+    };
+    CaosErrorResponse: {
+      /** @example ドリッパー 3 は抽出中ではありません */
+      error: string;
+      /** @enum {string} */
+      code?: "invalid";
+    };
+    /**
+     * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
+     * 今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。
+     * カードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。
+     */
+    CaosWSMessage: {
+      /** @enum {string} */
+      type: "drips";
+      drips?: components["schemas"]["CaosDrip"][];
+      lanes?: components["schemas"]["CaosLane"][];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -912,7 +1068,14 @@ export interface operations {
       };
     };
   };
-  /** オーダー情報更新 */
+  /**
+   * オーダー情報更新
+   * @description 注文の中身（明細・金額など）を書き換える。
+   * カップのある注文では、リクエストの ready_at / served_at は使わず、注文の状態をカップの状態から決め直す
+   * （編集画面を開いたあとのカップの操作や、CaOS が付けた準備完了を巻き戻さないため）。
+   * 準備完了・提供済みを付ける・外すのは PATCH（/api/orders/{id}/ready・/served、カップ単位は /cups/{cupId}/ready・/served）で行う。
+   * リクエストの ready_at / served_at がそのまま保存されるのは、カップの無い注文（グッズだけの注文）だけ。
+   */
   updateOrder: {
     parameters: {
       path: {
@@ -1106,6 +1269,37 @@ export interface operations {
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今日の盤面への操作
+   * @description 割当・戻す・次へ・統合・入れ直し・列の担当者の交代（set_lane）と入れ替え（swap_lanes）・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+   * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
+   * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
+   * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
+   * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
+   * 列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
+   */
+  applyCaosOp: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosOp"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosOpResult"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
         };
       };
     };

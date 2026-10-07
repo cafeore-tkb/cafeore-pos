@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
@@ -21,10 +22,16 @@ type OrderHandler struct {
 	db        *gorm.DB
 	hub       *Hub
 	inventory *Inventory
+	// CaOS の盤面。注文の変更を同じトランザクションでカードに反映する（nil なら連動しない）
+	caos *caos.Store
+	// CaOS の今日のカードの配信の依頼。broadcastDrips を参照
+	dripsRequests chan struct{}
 }
 
-func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *OrderHandler {
-	return &OrderHandler{db: db, hub: hub, inventory: inventory}
+func NewOrderHandler(db *gorm.DB, hub *Hub, inventory *Inventory, caosStore *caos.Store) *OrderHandler {
+	h := &OrderHandler{db: db, hub: hub, inventory: inventory, caos: caosStore, dripsRequests: make(chan struct{}, 1)}
+	go h.runDripsBroadcaster()
+	return h
 }
 
 // 注文履歴では販売終了（論理削除）したメニューも参照する。
@@ -281,13 +288,21 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	var readied []uuid.UUID
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
 		lines, cups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &models.Order{})
 		if err != nil {
 			return err
 		}
 		order.OrderMenus, order.OrderCups = lines, cups
-		return tx.Create(&order).Error
+		if err := tx.Create(&order).Error; err != nil {
+			return err
+		}
+		if locked {
+			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
@@ -305,6 +320,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, resp)
+	h.publishCaosChanges(readied)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -351,7 +367,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
 	resourcesBefore := h.inventory.ResourceIDsForOrder(orderID)
 
+	var readied []uuid.UUID
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		locked, err := h.lockCaosForOrder(tx, orderID)
+		if err != nil {
+			return err
+		}
 		// カップの状態変更と重なっても、どちらかの変更が消えないようにロックしてから読む
 		order, err := lockOrder(tx, orderID)
 		if err != nil {
@@ -391,7 +412,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// 引き継いだカップは同じ ID・状態のまま入れ直す
 		if len(orderCups) > 0 {
-			return tx.Omit(clause.Associations).Create(&orderCups).Error
+			if err := tx.Omit(clause.Associations).Create(&orderCups).Error; err != nil {
+				return err
+			}
+		}
+		if locked {
+			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
 		}
 		return nil
 	})
@@ -413,6 +439,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+	h.publishCaosChanges(readied)
 	go func() {
 		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(orderID)))
 	}()
@@ -443,8 +470,11 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
 	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
+	// CaOS の盤面からも、その注文のカードを同じトランザクションで片付ける
 	var rowsAffected int64
+	var readied []uuid.UUID
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		locked := h.lockCaos(tx, order.CreatedAt)
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
@@ -452,8 +482,14 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 			return err
 		}
 		result := tx.Delete(&models.Order{}, "id = ?", orderID)
+		if result.Error != nil {
+			return result.Error
+		}
 		rowsAffected = result.RowsAffected
-		return result.Error
+		if locked {
+			readied = h.syncCaos(tx, caos.OrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
+		}
+		return nil
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -464,8 +500,9 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	publishOrderDeleted(h.hub, orderID)
+	publishOrderDeleted(h.db, h.hub, orderID)
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+	h.publishCaosChanges(readied)
 	go h.inventory.CheckAlerts(resources)
 }
 

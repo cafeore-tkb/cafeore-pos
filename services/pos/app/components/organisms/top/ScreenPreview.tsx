@@ -12,6 +12,8 @@ import { cn } from "~/lib/utils";
 export type ScreenKind =
   | "cashier"
   | "master"
+  | "master-sheet"
+  | "master-sheet-view"
   | "serve"
   | "cashier-mini"
   | "callscreen"
@@ -33,6 +35,8 @@ export function ScreenPreview({ kind }: { kind: ScreenKind }) {
 const previews: Record<ScreenKind, () => JSX.Element> = {
   cashier: CashierPreview,
   master: () => <OrderBoardPreview user="master" />,
+  "master-sheet": () => <CaosPreview />,
+  "master-sheet-view": () => <CaosPreview readOnly />,
   serve: () => <OrderBoardPreview user="serve" />,
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
@@ -416,6 +420,98 @@ function RehearsalPreview() {
       <div className="mt-[0.5em] rounded-md border border-green-600 bg-green-50 px-[0.6em] py-[0.3em] text-[0.7em]">
         <span className="font-bold">受付を続けてよい目安です</span>
         <span className="ml-[0.5em] text-stone-600">提供待ち 8 杯</span>
+      </div>
+    </div>
+  );
+}
+
+// CaOS（ドリップ管制）の管制盤：ドリッパー1〜6の行に抽出カードがタイムラインで並び、下に未割当の注文。
+// readOnly は閲覧だけの画面（/master-sheet/view）。管制盤の切り替えの代わりに「閲覧のみ」を出す。
+function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
+  const lanes: {
+    state: string;
+    cards: { left: number; width: number; tone: string }[];
+  }[] = [
+    {
+      state: "抽出中",
+      cards: [
+        { left: 0, width: 30, tone: "bg-blue-500" },
+        { left: 32, width: 22, tone: "bg-blue-200" },
+      ],
+    },
+    { state: "抽出中", cards: [{ left: 0, width: 22, tone: "bg-cyan-500" }] },
+    { state: "待機", cards: [] },
+    {
+      state: "抽出中",
+      cards: [
+        { left: 0, width: 38, tone: "bg-emerald-500" },
+        { left: 40, width: 22, tone: "bg-emerald-200" },
+      ],
+    },
+    { state: "抽出中", cards: [{ left: 0, width: 16, tone: "bg-orange-400" }] },
+    { state: "待機", cards: [] },
+  ];
+  const unassigned = ["#043", "#044", "#045"];
+  return (
+    <div className="flex h-full flex-col gap-[0.4em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
+      <div className="flex items-center gap-[0.4em]">
+        <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
+          CaOS
+        </span>
+        {readOnly ? (
+          <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
+            閲覧のみ
+          </span>
+        ) : (
+          ["A", "B", "C", "D"].map((v, i) => (
+            <span
+              key={v}
+              className={cn(
+                "flex h-[1.4em] w-[1.4em] items-center justify-center rounded font-bold text-[0.7em]",
+                i === 0 ? "bg-blue-700 text-white" : "bg-white text-slate-500",
+              )}
+            >
+              {v}
+            </span>
+          ))
+        )}
+        <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
+      </div>
+      <div className="relative flex-1 overflow-hidden rounded-md border bg-white">
+        {lanes.map((lane, i) => (
+          <div
+            key={`lane-${i + 1}`}
+            className="flex h-1/6 items-center border-b last:border-b-0"
+          >
+            <div className="flex w-[22%] items-center gap-[0.3em] border-r px-[0.3em]">
+              <span className="flex h-[1.3em] w-[1.3em] items-center justify-center rounded border font-bold text-[0.7em]">
+                {i + 1}
+              </span>
+              <span className="text-[0.6em] text-slate-600">{lane.state}</span>
+            </div>
+            <div className="relative h-[70%] flex-1">
+              {lane.cards.map((card) => (
+                <span
+                  key={card.left}
+                  className={cn("absolute top-0 h-full rounded-sm", card.tone)}
+                  style={{ left: `${card.left + 4}%`, width: `${card.width}%` }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        <span className="absolute top-0 bottom-0 left-[26%] w-[0.12em] bg-red-500" />
+      </div>
+      <div className="flex items-center gap-[0.4em] rounded-md border bg-white px-[0.5em] py-[0.3em]">
+        <span className="font-bold text-[0.7em]">未割当</span>
+        {unassigned.map((id) => (
+          <span
+            key={id}
+            className="rounded border border-blue-300 bg-blue-50 px-[0.4em] py-[0.1em] font-bold font-mono text-[0.6em]"
+          >
+            {id}
+          </span>
+        ))}
       </div>
     </div>
   );
