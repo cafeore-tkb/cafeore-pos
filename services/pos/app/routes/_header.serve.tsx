@@ -4,8 +4,6 @@ import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
-export const BASE_CLIENT_URL = "https://cafeore-2024.pages.dev";
-
 export const meta: MetaFunction = () => {
   return [{ title: "提供 / 珈琲・俺POS" }];
 };
