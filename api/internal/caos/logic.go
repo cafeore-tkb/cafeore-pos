@@ -766,6 +766,55 @@ func (b *Board) CheckLanesUntouched(after []Lane) error {
 	return nil
 }
 
+// OpRecord は操作の前後の中身。「1つ戻す」はこれで戻す
+// （本番の盤面は handlers の CaosStore が caos_ops に、練習用の盤面は PracticeDoc が盤面の中に残す）。
+type OpRecord struct {
+	// 操作で変わった・消えたカードの、操作の前の中身
+	Before []Drip `json:"before"`
+	// 操作で変わった・できたカードの、操作の後の中身（戻すときに、これから誰も触っていないかを updated_at で確かめる）
+	After []Drip `json:"after"`
+	// 操作で担当者が変わった列の、操作の前と後（戻すときに、これから誰も替えていないかを updated_at で確かめる）
+	LanesBefore []Lane `json:"lanes_before"`
+	LanesAfter  []Lane `json:"lanes_after"`
+}
+
+// ApplyRecorded は画面からの操作を 1 つ行い（Apply）、「1つ戻す」のための操作の前後の中身を返す。
+// 準備完了にしてよい注文は cs.Completed に入る（付けるのは呼ぶ側）。断ったときは何も変わっていない。
+func (b *Board) ApplyRecorded(cs *Changeset, op Op) (OpRecord, error) {
+	before := b.Snapshot()
+	lanesBefore := b.Lanes()
+	if err := b.Apply(cs, op); err != nil {
+		return OpRecord{}, err
+	}
+	rec := OpRecord{Before: []Drip{}, After: b.Rows(cs.Changed.List()), LanesBefore: []Lane{}, LanesAfter: b.LaneRows(cs.Lanes)}
+	for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+		if d, ok := before[id]; ok {
+			rec.Before = append(rec.Before, d)
+		}
+	}
+	for _, l := range lanesBefore {
+		if slices.Contains(cs.Lanes, l.Dripper) {
+			rec.LanesBefore = append(rec.LanesBefore, l)
+		}
+	}
+	return rec, nil
+}
+
+// Undo は記録した操作を取り消す（「1つ戻す」）。列の担当者もカードも、記録のあと誰にも触られていないときだけ戻す。
+// 確かめてから変えるので、断ったときは何も変わっていない。
+// その操作で付けた準備完了は、呼ぶ側が先に盤面の注文（Orders）から外しておくこと（Restore の確かめのため）。
+func (b *Board) Undo(cs *Changeset, rec OpRecord) error {
+	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
+	if err := b.CheckLanesUntouched(rec.LanesAfter); err != nil {
+		return err
+	}
+	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
+	if err := b.Restore(cs, rec.Before, rec.After); err != nil {
+		return err
+	}
+	return b.RestoreLanes(cs, rec.LanesBefore, rec.LanesAfter)
+}
+
 // RestoreLanes は「1つ戻す」で、記録しておいた列の担当者を操作の前に戻す（handlers の CaosStore が caos_ops の記録から呼ぶ）。
 // after の列が、その時点から誰にも替えられていないときだけ戻す。断ったときは何も変わっていない。
 // 一度も替えていなかった列は、updated_at も null の「替えていない」状態に戻る。

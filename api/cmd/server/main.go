@@ -247,6 +247,8 @@ func main() {
 	caosStore := handlers.NewCaosStore(db)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
+	// CaOS の練習用の盤面（実データテスト）。本番の盤面とは表も配信も分けてある
+	caosPracticeHandler := handlers.NewCaosPracticeHandler(handlers.NewCaosPracticeStore(db))
 	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面の変更も画面へ届けるため、
 	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
@@ -302,6 +304,11 @@ func main() {
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 
 		api.POST("/caos/ops", caosHandler.ApplyOp)
+		api.POST("/caos/practice", caosPracticeHandler.Create)
+		api.GET("/caos/practice/:id", caosPracticeHandler.Get)
+		api.POST("/caos/practice/:id/advance", caosPracticeHandler.Advance)
+		api.POST("/caos/practice/:id/ops", caosPracticeHandler.ApplyOp)
+		api.DELETE("/caos/practice/:id", caosPracticeHandler.Delete)
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)

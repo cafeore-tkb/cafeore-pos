@@ -24,5 +24,6 @@ func All() []any {
 		&CaosDripRow{},
 		&CaosLaneRow{},
 		&CaosOpRow{},
+		&CaosPracticeRow{},
 	}
 }

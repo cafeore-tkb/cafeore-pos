@@ -8,6 +8,9 @@
 //   - 保存と POS の注文との連動：handlers/caos_store.go（CaosStore）。盤面は営業日（日本時間）ごとに 1 つで、その日の advisory lock を取って 1 件ずつ順番に処理する。
 //     カードは注文のハンドラーと同じトランザクションの中でそろえ、カードが全部終わった注文は、既存の準備完了の処理（PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
 //     「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。列の担当者の交代・入れ替えも同じ記録で戻す
+//   - 練習用の盤面（実データテスト）：決まりは practice.go（PracticeDoc。本番と同じ Board を、練習の時計と練習の注文で動かす）。
+//     表は models の CaosPracticeRow（caos_practices。練習 1 回分を 1 行の jsonb）、保存は handlers/caos_practice_store.go（CaosPracticeStore）、
+//     API は handlers/caos_practice.go（/api/caos/practice）。本番の表・注文・配信には触らない
 //   - API と配信：handlers/caos.go（POST /api/caos/ops と /api/ws/orders の {"type":"drips"}）。注文と同じく、カードを変えたインスタンスが自分の画面へ配り、
 //     pg_notify（caos_drips_changed）でほかのインスタンスに知らせる。受けたインスタンスは DB から今日のカードと列の担当者を読み直して配る（handlers/order_listener.go）。DB のトリガーは使わない
 //

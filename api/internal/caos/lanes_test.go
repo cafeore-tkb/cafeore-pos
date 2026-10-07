@@ -135,3 +135,46 @@ func TestMergeChangesKeepsLanes(t *testing.T) {
 		t.Fatalf("列もカードもまとめる：%+v", merged)
 	}
 }
+
+// ApplyRecorded・Undo（本番の CaosStore と練習用の盤面が同じように使う「1つ戻す」）：
+// 記録には操作で変わったカードと列だけが入り、戻すとカードも列も操作の前に戻る。あとで触られていたら断り、何も変えない
+func TestApplyRecordedAndUndo(t *testing.T) {
+	b := seeded(t)
+	first := cardsOf(b, 2)[0]
+	rec, err := b.ApplyRecorded(&Changeset{}, Op{Name: "assign", DripID: first.ID, Dripper: ptr(3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Before) != 1 || rec.Before[0].Status != StatusUnassigned || len(rec.After) != 1 || rec.After[0].Status != StatusBrewing ||
+		len(rec.LanesBefore) != 0 || len(rec.LanesAfter) != 0 {
+		t.Fatalf("割当の記録：%+v", rec)
+	}
+	laneRec, err := b.ApplyRecorded(&Changeset{}, Op{Name: "set_lane", Dripper: ptr(3), Person: "山田"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(laneRec.Before) != 0 || len(laneRec.LanesBefore) != 1 || laneRec.LanesBefore[0].Name != "" || laneRec.LanesAfter[0].Name != "山田" {
+		t.Fatalf("交代の記録：%+v", laneRec)
+	}
+	if _, err := b.ApplyRecorded(&Changeset{}, Op{Name: "next", Dripper: ptr(5)}); !IsInvalid(err) {
+		t.Fatalf("ルールに合わない操作は断る：%v", err)
+	}
+
+	// 交代のあとにもう一度替えていたら、交代は戻せない（何も変えない）
+	apply(t, b, Op{Name: "set_lane", Dripper: ptr(3), Person: "佐藤"})
+	state := fmt.Sprint(b.List(), b.Lanes())
+	isInvalid(t, b.Undo(&Changeset{}, laneRec), "ほかの端末で担当者を替えたため、元に戻せません")
+	if fmt.Sprint(b.List(), b.Lanes()) != state {
+		t.Fatal("断ったのに変わった")
+	}
+	// 割当は戻せる（カードは未割当に戻る）
+	cs := &Changeset{}
+	if err := b.Undo(cs, rec); err != nil {
+		t.Fatal(err)
+	}
+	checkInvariants(t, b)
+	if d := b.Drips[first.ID]; d.Status != StatusUnassigned || d.Dripper != nil || !slices.Equal(cs.Changed.List(), []string{first.ID}) {
+		t.Fatalf("割当を戻す：%+v %v", d, cs.Changed.List())
+	}
+	isInvalid(t, b.Undo(&Changeset{}, OpRecord{After: rec.After}), "ほかの端末で変更されたため、元に戻せません")
+}

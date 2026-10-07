@@ -16,6 +16,7 @@ import (
 // CaOS の盤面の保存と、POS の注文との連動。盤面の決まり（割当・次へ・統合など）は caos パッケージ（DB を使わない）にある。
 // 新しい表は抽出カードの caos_drips、列の担当者の caos_lanes、操作の記録の caos_ops だけ
 // （models の CaosDripRow・CaosLaneRow・CaosOpRow。ほかの表と同じく models.All() で作る）。
+// 実データテストの練習用の盤面（caos_practices）は別の保存（caos_practice_store.go の CaosPracticeStore）で、ここの表には触らない。
 // 1 つの営業日への処理は、その日の advisory lock を取って 1 件ずつ順番に行う（ロックのための表は持たない）。
 // 配信は注文と同じ：カードを変えたインスタンスが自分の画面へ配り、DB の通知 caos_drips_changed でほかのインスタンスに知らせる。
 // 受けたインスタンスは DB から今日のカードと列の担当者を読み直して、自分の画面へ配る（caos.go・order_listener.go）。
@@ -286,9 +287,8 @@ func (s *CaosStore) Apply(op caos.Op) (caos.Result, error) {
 
 // do は操作を 1 つ行い、記録を残す。
 func (s *CaosStore) do(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changeset, op caos.Op) (string, []string, error) {
-	before := b.Snapshot()
-	lanesBefore := b.Lanes()
-	if err := b.Apply(cs, op); err != nil {
+	record, err := b.ApplyRecorded(cs, op)
+	if err != nil {
 		return "", nil, err
 	}
 	now := s.clock()
@@ -307,22 +307,10 @@ func (s *CaosStore) do(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changese
 			readied = append(readied, id)
 		}
 	}
-	var beforeRows []caos.Drip
-	for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
-		if d, ok := before[id]; ok {
-			beforeRows = append(beforeRows, d)
-		}
-	}
-	var beforeLanes []caos.Lane
-	for _, l := range lanesBefore {
-		if slices.Contains(cs.Lanes, l.Dripper) {
-			beforeLanes = append(beforeLanes, l)
-		}
-	}
 	rec := models.CaosOpRow{
 		ID: uuid.New(), Day: day, Name: op.Name, CreatedAt: now,
-		Before: orEmpty(beforeRows), After: orEmpty(b.Rows(cs.Changed.List())), Readied: orEmpty(marks),
-		LanesBefore: orEmpty(beforeLanes), LanesAfter: orEmpty(b.LaneRows(cs.Lanes)),
+		Before: orEmpty(record.Before), After: orEmpty(record.After), Readied: orEmpty(marks),
+		LanesBefore: orEmpty(record.LanesBefore), LanesAfter: orEmpty(record.LanesAfter),
 	}
 	if err := tx.Create(&rec).Error; err != nil {
 		return "", nil, err
@@ -369,15 +357,8 @@ func (s *CaosStore) undo(tx *gorm.DB, day string, b *caos.Board, cs *caos.Change
 			o.Ready = false
 		}
 	}
-	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
-	if err := b.CheckLanesUntouched(rec.LanesAfter); err != nil {
-		return nil, err
-	}
-	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
-	if err := b.Restore(cs, rec.Before, rec.After); err != nil {
-		return nil, err
-	}
-	if err := b.RestoreLanes(cs, rec.LanesBefore, rec.LanesAfter); err != nil {
+	// 列の担当者とカード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える。練習用の盤面と同じ Board.Undo）
+	if err := b.Undo(cs, caos.OpRecord{Before: rec.Before, After: rec.After, LanesBefore: rec.LanesBefore, LanesAfter: rec.LanesAfter}); err != nil {
 		return nil, err
 	}
 	now := s.clock()
