@@ -284,9 +284,12 @@ jobs:
             "このコメントは push のたびに書き換わる。")
 
           # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
+          # github-actions[bot] が書いたものに限る。目印を本文で引用した他の人や
+          # bot のコメント（Claude の概要など）に当たると、GITHUB_TOKEN では
+          # 書き換えられず PATCH が失敗する（pos-deploy-workers.yml と同じ条件）。
           comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
             --paginate \
-            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
 
           if [ -n "$comment_id" ]; then
             gh api --method PATCH \
