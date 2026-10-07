@@ -53,8 +53,8 @@ export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
   return catalog;
 };
 
-const orderLabel = (orderNo: number | undefined) =>
-  orderNo === undefined ? "#???" : `#${orderNo.toString().padStart(3, "0")}`;
+const orderLabel = (orderNo: number) =>
+  `#${orderNo.toString().padStart(3, "0")}`;
 
 const cardColorOf = (beanCode: BeanCode): UnassignedOrder["cardColor"] =>
   beanCode === "ICE"
@@ -89,7 +89,9 @@ const describe = (
   const beanCode = posBeanCode(firstItem?.name ?? "", firstItem?.type ?? "");
   const sourceOrderIds = Array.from(
     new Set(
-      drip.lines.map((line) => orderLabel(catalog.get(line.order_id)?.orderNo)),
+      drip.lines.map((line) =>
+        orderLabel(catalog.get(line.order_id)?.orderNo ?? 0),
+      ),
     ),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
@@ -141,13 +143,17 @@ export interface LiveBoard {
 
 // 盤面のカードを、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
 // 待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する。
+// 注文がまだ届いていない（カタログに無い）カードは、注文番号が分からないので届くまで出さない。
 export const dripsToBoard = (
-  drips: Drip[],
+  allDrips: Drip[],
   catalog: Catalog,
   baristas: Barista[],
   nowSec: number,
   dayStartMs: number,
 ): LiveBoard => {
+  const drips = allDrips.filter((drip) =>
+    drip.lines.every((line) => catalog.has(line.order_id)),
+  );
   const orderParts = new Map<string, Drip[]>();
   for (const drip of drips
     .filter((drip) => drip.order_ids.length === 1 && !drip.rebrew_of)
