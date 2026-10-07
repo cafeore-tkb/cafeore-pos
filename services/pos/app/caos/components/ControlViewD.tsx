@@ -1,4 +1,4 @@
-import { readableTextColor } from "@cafeore/common";
+import { formatMinSec, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -10,7 +10,12 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
-import { canMergeDripUnits, orderNumber, ticketKey } from "../utils/orderQueue";
+import {
+  activeRemainingSec,
+  canMergeDripUnits,
+  orderNumber,
+  ticketKey,
+} from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 
 export interface ControlViewDProps extends ControlViewBProps {
@@ -87,20 +92,6 @@ interface OrderGroup {
   items: UnassignedOrder[];
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
-
-const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - currentTimeSec);
-  return current.totalDurationSec;
-};
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-};
 
 // 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
 const sheetLabel: Record<BeanCode, string> = {
@@ -437,7 +428,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   const remainingByBay = new Map<number, number>(
     sortedBaristas.map((barista) => [
       barista.id,
-      remainingSeconds(barista, simTimeSec),
+      activeRemainingSec(barista, simTimeSec),
     ]),
   );
 
@@ -756,7 +747,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                 </th>
                 {sortedBaristas.map((barista) => {
                   const current = barista.queue[0];
-                  const seconds = remainingSeconds(barista, simTimeSec);
+                  const seconds = activeRemainingSec(barista, simTimeSec);
                   return (
                     <th
                       key={barista.id}
@@ -786,9 +777,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         {current ? (
                           <>
                             <span className="font-mono">
-                              {seconds === 0
-                                ? "継続"
-                                : formatRemaining(seconds)}
+                              {seconds === 0 ? "継続" : formatMinSec(seconds)}
                             </span>
                             <span>次へ</span>
                             <ArrowRightCircle className="h-3.5 w-3.5" />
@@ -889,7 +878,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
-                                  ? `抽出中 残${formatRemaining(seconds)}`
+                                  ? `抽出中 残${formatMinSec(seconds)}`
                                   : "抽出中"
                                 : ticket.isInterrupted
                                   ? "中断"

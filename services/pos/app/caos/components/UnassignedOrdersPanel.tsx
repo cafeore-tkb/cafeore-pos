@@ -1,3 +1,4 @@
+import { formatMinSec } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -149,8 +150,6 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
 
     return positionedOrders;
   })();
-  const formatRemaining = (seconds: number) =>
-    `${Math.floor(Math.max(0, seconds) / 60)}:${(Math.max(0, seconds) % 60).toString().padStart(2, "0")}`;
 
   return (
     <div
@@ -183,7 +182,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   className={`whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatRemaining(item.seconds)}
+                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
                 </span>
               ))}
             </div>

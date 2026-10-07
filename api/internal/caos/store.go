@@ -147,6 +147,7 @@ func utc(t *time.Time) *time.Time {
 var jst = time.FixedZone("JST", 9*60*60)
 
 // Day は日本時間の日付（YYYY-MM-DD）。
+// 画面（CaOS）も同じ区切りで「当日」を決めている（modules/common/src/lib/jstDay.ts の jstDate・startOfJstDay）。変えるときは両方そろえる。
 func Day(t time.Time) string { return t.In(jst).Format(time.DateOnly) }
 
 // ParseDay は YYYY-MM-DD を確かめ、その日の始まり（日本時間 0:00）を返す。

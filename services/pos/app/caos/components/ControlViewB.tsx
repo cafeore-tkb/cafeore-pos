@@ -1,3 +1,4 @@
+import { formatMinSec } from "@cafeore/common";
 import {
   CheckCircle2,
   ChevronRight,
@@ -10,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
-import { queueWaitSeconds } from "../utils/orderQueue";
+import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -32,22 +33,6 @@ interface OrderGroup {
   id: string;
   items: UnassignedOrder[];
 }
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
-};
-
-const getRemainingSeconds = (barista: Barista, simTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - simTimeSec);
-  return current.totalDurationSec;
-};
 
 export const ControlViewB: React.FC<ControlViewBProps> = ({
   baristas,
@@ -186,7 +171,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
           {sortedBaristas.map((barista) => {
             const current = barista.queue[0];
             const next = barista.queue[1];
-            const remainingSeconds = getRemainingSeconds(barista, simTimeSec);
+            const remainingSeconds = activeRemainingSec(barista, simTimeSec);
             const isImminent = current && remainingSeconds <= 30;
             const isLinked = Boolean(
               selectedOrderId &&
@@ -278,7 +263,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                       >
                         {remainingSeconds === 0
                           ? "継続中"
-                          : formatRemaining(remainingSeconds)}
+                          : formatMinSec(remainingSeconds)}
                       </div>
                     </>
                   ) : (
@@ -373,7 +358,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                   }`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatRemaining(item.seconds)}
+                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
                 </span>
               ))}
             </div>

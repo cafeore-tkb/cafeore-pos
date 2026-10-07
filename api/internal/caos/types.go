@@ -33,7 +33,8 @@ type DripLine struct {
 }
 
 // Drip は抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。
-// 保存するのは事実だけ（どの注文の何杯か、担当、状態、開始・終了時刻）。待機カードの予定時刻は画面で計算する。
+// 保存するのは事実だけ（どの注文の何杯か、担当、状態、開始・終了時刻）。待機カードの予定時刻は画面で計算する
+// （抽出時間 1 杯 135 秒・2 杯 195 秒と予定時刻の決め方は modules/common/src/lib/caosTiming.ts。サーバーは持たない）。
 type Drip struct {
 	ID     string `json:"id"`
 	Status Status `json:"status"`

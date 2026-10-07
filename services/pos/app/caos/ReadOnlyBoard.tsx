@@ -1,4 +1,8 @@
-import { useColorSettings } from "@cafeore/common";
+import {
+  formatClockOfDay,
+  startOfJstDay,
+  useColorSettings,
+} from "@cafeore/common";
 import { Database, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
@@ -11,12 +15,6 @@ import { queueWaitSeconds } from "./utils/orderQueue";
 // 閲覧だけの管制盤（/master-sheet/view）。共有の盤面（抽出カードと注文）を POS の共有の WebSocket で受け取り、
 // 管制盤 A のタイムラインに流すだけで、POST /api/caos/ops は送らない。カードを触っても何も起きない。
 
-const startOfLocalDay = (ms: number) => {
-  const date = new Date(ms);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-};
-
 const STATUS_LABEL: Record<PosConnectionStatus, string> = {
   off: "未接続",
   connecting: "接続中",
@@ -28,7 +26,8 @@ const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const [now, setNow] = useState(() => new Date());
-  const [dayStartMs] = useState(() => startOfLocalDay(Date.now()));
+  // 盤面の秒の起点。サーバーの営業日と同じく日本時間の 0:00（端末の時刻帯によらない）
+  const [dayStartMs] = useState(() => startOfJstDay(Date.now()));
   const [baristas] = useState(makeCleanBaristas);
 
   useEffect(() => {
@@ -80,7 +79,7 @@ export default function ReadOnlyBoard() {
           閲覧のみ
         </span>
         <span className="font-black font-mono text-3xl tabular-nums">
-          {now.toLocaleTimeString("ja-JP", { hour12: false })}
+          {formatClockOfDay(nowSec)}
         </span>
         <span className="ml-auto font-bold text-slate-600 text-sm">
           未割当{" "}

@@ -1,3 +1,4 @@
+import { CHANGEOVER_SEC, IMMINENT_SEC, formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import { useLimitedLabel } from "../limitedLabel";
@@ -52,17 +53,14 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     barista.status === "imminent" ||
     (activeTicket &&
       activeTicket.status === "brewing" &&
-      (activeTicket.timeRemainingSec ?? 999) <= 15);
+      (activeTicket.timeRemainingSec ?? 999) <= IMMINENT_SEC);
   const isOvertime = Boolean(
     activeTicket &&
       activeTicket.status === "brewing" &&
       activeTicket.timeRemainingSec === 0,
   );
-  const formatRemaining = (seconds?: number) => {
-    if (seconds === undefined) return "--:--";
-    const safeSeconds = Math.max(0, seconds);
-    return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-  };
+  const formatRemaining = (seconds?: number) =>
+    seconds === undefined ? "--:--" : formatMinSec(seconds);
 
   // Combine past completed tickets and current queue for full timeline view
   const allTickets: OrderTicket[] = [
@@ -77,7 +75,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   const positionedTickets = allTickets.map((ticket) => {
     let startSec = ticket.startTimeSec ?? timelineStartSec + 855;
     if (queueCursorSec !== null && ticket.status !== "completed")
-      startSec = Math.max(startSec, queueCursorSec + 15);
+      startSec = Math.max(startSec, queueCursorSec + CHANGEOVER_SEC);
     const plannedEndSec = startSec + ticket.totalDurationSec;
     const endSec =
       ticket === activeTicket

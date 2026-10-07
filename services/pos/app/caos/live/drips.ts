@@ -1,4 +1,13 @@
-import type { ColorSetting } from "@cafeore/common";
+import {
+  type ColorSetting,
+  IMMINENT_SEC,
+  STANDBY_LABEL,
+  brewDurationLabel,
+  brewDurationSec,
+  formatMinSec,
+  formatRemainingLabel,
+  planLane,
+} from "@cafeore/common";
 import type {
   Barista,
   BeanCode,
@@ -18,10 +27,6 @@ import {
 
 // cafeore-pos の盤面（抽出カード）を、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
 // カードは注文と商品の参照しか持たないので、注文番号や商品名は {"type":"orders"} で届く注文から引く。
-
-const ONE_CUP_SEC = 135;
-const TWO_CUP_SEC = 195;
-const durationOf = (cups: number) => (cups > 1 ? TWO_CUP_SEC : ONE_CUP_SEC);
 
 interface CatalogItem {
   id: string;
@@ -168,7 +173,7 @@ export interface LiveBoard {
 }
 
 // 盤面のカードを、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
-// 待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する。
+// 抽出中・待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
 // 注文がまだ届いていない（カタログに無い）カードは、注文番号が分からないので届くまで出さない。
 export const dripsToBoard = (
   allDrips: Drip[],
@@ -194,7 +199,7 @@ export const dripsToBoard = (
   }
 
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
-    const totalDurationSec = durationOf(drip.cups);
+    const totalDurationSec = brewDurationSec(drip.cups);
     return {
       ...describe(
         drip,
@@ -207,7 +212,7 @@ export const dripsToBoard = (
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
-      scheduledTimeStr: `${Math.floor(totalDurationSec / 60)}:${(totalDurationSec % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: formatMinSec(totalDurationSec),
       startTimeSec: toSec(drip.started_at, dayStartMs),
       endTimeSec: toSec(drip.finished_at, dayStartMs),
       completedAtSec: toSec(drip.finished_at, dayStartMs),
@@ -226,40 +231,43 @@ export const dripsToBoard = (
       .filter((drip) => drip.status === "done")
       .sort((a, b) => (a.finished_at || "").localeCompare(b.finished_at || ""));
 
+    const brewingTicket = brewing ? toTicket(brewing, "brewing") : undefined;
+    const queuedTickets = queued.map((drip) => toTicket(drip, "scheduled"));
+    const plan = planLane(
+      nowSec,
+      brewingTicket && {
+        startSec: brewingTicket.startTimeSec,
+        durationSec: brewingTicket.totalDurationSec,
+      },
+      queuedTickets.map((ticket) => ticket.totalDurationSec),
+    );
     const queue: OrderTicket[] = [];
-    let cursor = nowSec;
-    let remainingSec: number | undefined;
-    if (brewing) {
-      const ticket = toTicket(brewing, "brewing");
-      const startSec = ticket.startTimeSec ?? nowSec;
-      remainingSec = Math.max(0, ticket.totalDurationSec - (nowSec - startSec));
+    if (brewingTicket && plan.brewing) {
+      queue.push({
+        ...brewingTicket,
+        startTimeSec: plan.brewing.startSec,
+        timeRemainingSec: plan.brewing.remainingSec,
+      });
+    }
+    queuedTickets.forEach((ticket, index) => {
       queue.push({
         ...ticket,
-        startTimeSec: startSec,
-        timeRemainingSec: remainingSec,
+        startTimeSec: plan.queued[index].startSec,
+        timeRemainingSec: undefined,
       });
-      cursor = Math.max(nowSec, startSec + ticket.totalDurationSec);
-    }
-    queued.forEach((drip, index) => {
-      const ticket = toTicket(drip, "scheduled");
-      // 抽出中が無い（始まる直前）ときは少し先から、あるときは 15 秒の入れ替えを挟む
-      const startTimeSec = !brewing && index === 0 ? nowSec + 10 : cursor + 15;
-      queue.push({ ...ticket, startTimeSec, timeRemainingSec: undefined });
-      cursor = startTimeSec + ticket.totalDurationSec;
     });
 
-    const minutes = Math.floor((remainingSec ?? 0) / 60);
-    const seconds = (remainingSec ?? 0) % 60;
+    const remainingSec = plan.brewing?.remainingSec ?? 0;
     return {
       ...barista,
-      status: brewing
-        ? (remainingSec ?? 0) <= 15
+      status: plan.brewing
+        ? remainingSec <= IMMINENT_SEC
           ? "imminent"
           : "brewing"
         : "standby",
-      remainingStr: brewing
-        ? `0${minutes}:${seconds < 10 ? "0" : ""}${seconds} 残り`
-        : "00:00 待機中",
+      remainingStr: plan.brewing
+        ? formatRemainingLabel(remainingSec)
+        : STANDBY_LABEL,
       activeTicketId: brewing?.id,
       queue,
       pastTickets: done.map((drip) => toTicket(drip, "completed")),
@@ -282,7 +290,7 @@ export const dripsToBoard = (
       return {
         ...card,
         badgeTag: `${drip.cups}杯${drip.rebrew_of ? " 入れ直し" : merged ? " 統合" : ""}`,
-        predictedTimeStr: drip.cups > 1 ? "3分15秒" : "2分15秒",
+        predictedTimeStr: brewDurationLabel(drip.cups),
         recommendedBaristas: card.preferredBaristaId
           ? `ドリッパー ${card.preferredBaristaId}`
           : "全ドリッパー",
