@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 type MasterStateHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
 	hub *Hub
 }
 
@@ -23,28 +24,43 @@ func NewMasterStateHandler(db *gorm.DB, hub *Hub) *MasterStateHandler {
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
 	return models.MasterStateResponse{
 		CreatedAt: masterState.CreatedAt,
-		Type:    masterState.Type,
+		Type:      masterState.Type,
 	}
 }
 
-// GET /api/master-status - オーダー状態取得
+// オーダーストップの記録を古い順に読む。並び順を DB 任せにしないため明示する
+func findMasterStates(db *gorm.DB) ([]models.MasterState, error) {
+	var states []models.MasterState
+	err := db.Order("created_at ASC").Find(&states).Error
+	return states, err
+}
+
+// GET /api/master-status - オーダーストップの記録の一覧（古い順）
 func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
-	var masterStatus []models.MasterState
-	if err := h.db.Find(&masterStatus).Error; err != nil {
+	masterStatus, err := findMasterStates(h.db)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// API型に変換
 	responses := make([]models.MasterStateResponse, len(masterStatus))
-	for i, masterState := range masterStatus {
-		responses[i] = toMasterStateResponse(&masterState)
+	for i := range masterStatus {
+		responses[i] = toMasterStateResponse(&masterStatus[i])
 	}
 
 	c.JSON(http.StatusOK, responses)
 }
 
-// POST /api/master-status - オーダー状態更新
+func validateMasterStateType(t models.MasterStateUpdateRequestType) error {
+	switch t {
+	case models.Stop, models.Operational:
+		return nil
+	}
+	return errors.New(`type は "stop" か "operational" にしてください`)
+}
+
+// POST /api/master-status - オーダーストップ・再開
 func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	var req models.MasterStateUpdateRequest
 
@@ -52,9 +68,13 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := validateMasterStateType(req.Type); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	state := models.MasterState{
-		Type:      req.Type,
+		Type:      string(req.Type),
 		CreatedAt: time.Now(),
 	}
 
@@ -63,12 +83,19 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, state)
+	// models.MasterState は json タグが無いので、そのまま返すと "Type" のような大文字のキーになる
+	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
 	h.broadcastMasterState()
 }
 
+// 最新の状態を読み直して配信する。同時に切り替えられても、読み込みと配信を1つずつ行うので
+// 最後に届くのは DB の最新になる
 func (h *MasterStateHandler) broadcastMasterState() {
-	if msg, ok := masterStateMessage(h.db); ok {
-		h.hub.Broadcast(msg)
-	}
+	_ = h.hub.Publish(func() (WSMessage, error) {
+		msg, ok := masterStateMessage(h.db)
+		if !ok {
+			return WSMessage{}, errors.New("master state not found")
+		}
+		return msg, nil
+	})
 }

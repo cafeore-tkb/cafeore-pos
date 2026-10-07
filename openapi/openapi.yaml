@@ -608,7 +608,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/master-status:
     get:
-      summary: マスターステート取得
+      summary: オーダーストップの記録の一覧
+      description: |
+        オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+        今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
       operationId: getMasterState
       tags:
         - system
@@ -621,8 +624,11 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MasterStateResponse'
-    post: 
-      summary: マスターステート更新
+    post:
+      summary: オーダーストップ・再開
+      description: |
+        記録を1件足し、WebSocket の master_state で全端末に配信する。
+        オーダーストップの状態を書くのはここだけ。
       operationId: updateMasterState
       tags:
         - system
@@ -633,12 +639,18 @@ paths:
             schema:
               $ref: '#/components/schemas/MasterStateUpdateRequest'
       responses:
-        '200':
-          description: 成功
+        '201':
+          description: 記録した
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
+        '400':
+          description: type が stop でも operational でもない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/inventory:
     get:
@@ -1317,6 +1329,9 @@ components:
       properties:
         type:
           type: string
+          enum:
+            - stop
+            - operational
     ColorTargetType:
       type: string
       description: 背景色を設定する対象の種類
