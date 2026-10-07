@@ -1,3 +1,4 @@
+import type { CaosLane } from "@cafeore/common";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import type { Drip, PosOrder } from "../utils/posOrders";
 
@@ -11,19 +12,22 @@ export type PosConnectionStatus =
 // CaOS 用に別の接続は張らない。
 // - 注文：つないだ直後に全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある
 // - カード：つないだ直後と、変わるたびに今日の分が全部届く
-// enabled が false（実データテスト中）のときは何も渡さない。
+// - 列の担当者：カードと同じメッセージで、1〜6 の全部が届く
+// enabled が false（実データテスト中）のときは注文とカードを渡さない（列の担当者は人のことなので渡す）。
 export const usePosOrders = (
   enabled: boolean,
 ): {
   orders: PosOrder[] | null;
   drips: Drip[] | null;
+  lanes: CaosLane[] | null;
   status: PosConnectionStatus;
 } => {
-  const { orders, isOrdersLoaded, drips, status } = useOrdersWSContext();
-  if (!enabled) return { orders: null, drips: null, status: "off" };
+  const { orders, isOrdersLoaded, drips, lanes, status } = useOrdersWSContext();
+  if (!enabled) return { orders: null, drips: null, lanes, status: "off" };
   return {
     orders: isOrdersLoaded ? orders : null,
     drips,
+    lanes,
     // 共有の接続は切れると自動でつなぎ直すので、closed は「再接続中」と出す
     status:
       status === "open"

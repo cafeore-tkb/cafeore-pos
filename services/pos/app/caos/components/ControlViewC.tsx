@@ -6,6 +6,7 @@ import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
+import { LaneName } from "./LaneName";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 export type ControlViewCProps = ControlViewBProps;
@@ -103,6 +104,10 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <LaneName
+                      barista={barista}
+                      className="font-black text-[15px] text-slate-950"
+                    />
                   </div>
                   <div
                     className="flex shrink-0 items-center gap-1.5"

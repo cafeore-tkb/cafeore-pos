@@ -2,6 +2,7 @@ import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
+import { canPlaceOn } from "../utils/lanes";
 import { nominationText } from "../utils/posOrders";
 import { BeanBadge } from "./BeanBadge";
 
@@ -70,11 +71,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             <div className="grid grid-cols-3 gap-2">
               {[1, 2, 3, 4, 5, 6].map((bayId) => {
                 const disabled =
-                  bayId === currentBayId ||
-                  Boolean(
-                    ticket.preferredBaristaId &&
-                      ticket.preferredBaristaId !== bayId,
-                  );
+                  bayId === currentBayId || !canPlaceOn(ticket, bayId);
                 return (
                   <button
                     key={bayId}

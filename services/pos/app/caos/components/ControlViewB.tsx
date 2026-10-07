@@ -10,9 +10,10 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
-import { laneOrdinal } from "../utils/lanes";
+import { canPlaceOn, laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import { nominationText } from "../utils/posOrders";
+import { SeniorMark } from "./LaneName";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -71,7 +72,8 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
+    // 指名の列だけ、限定のカードは上級生の列だけ
+    if (!canPlaceOn(order, bayId)) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
   };
@@ -189,13 +191,14 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               >
                 <div className="flex min-h-[32px] items-start justify-between gap-1">
                   <div>
-                    <div className="font-black font-mono text-[11px] text-slate-500 uppercase">
-                      ドリッパー
-                    </div>
-                    <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
+                    <div className="font-black font-mono text-[11px] text-slate-500">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <div className="font-black text-[15px] text-slate-950 leading-tight">
+                      {barista.name}
+                    </div>
                   </div>
+                  {barista.senior && <SeniorMark />}
                 </div>
 
                 <button
@@ -416,10 +419,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={Boolean(
-                                openOrder.preferredBaristaId &&
-                                  openOrder.preferredBaristaId !== bayId,
-                              )}
+                              disabled={!canPlaceOn(openOrder, bayId)}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}
@@ -438,10 +438,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={Boolean(
-                                openOrder.preferredBaristaId &&
-                                  openOrder.preferredBaristaId !== bayId,
-                              )}
+                              disabled={!canPlaceOn(openOrder, bayId)}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}

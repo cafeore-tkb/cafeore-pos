@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { cardHasBean } from "../utils/beans";
+import { canPlaceOn } from "../utils/lanes";
 import { nominationText } from "../utils/posOrders";
 import { BeanBadge } from "./BeanBadge";
 
@@ -165,11 +166,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         finishDrag();
         if (moved) {
           suppressNextClick.current = true;
-          if (
-            targetBay &&
-            (!ticket.preferredBaristaId ||
-              ticket.preferredBaristaId === targetBay)
-          ) {
+          if (targetBay && canPlaceOn(ticket, targetBay)) {
             onMoveTicket(ticket, targetBay);
             onCloseAction();
           }
@@ -211,11 +208,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         <>
           {[1, 2, 3].map((bayId, index) => {
             const disabled =
-              bayId === currentBayId ||
-              Boolean(
-                ticket.preferredBaristaId &&
-                  ticket.preferredBaristaId !== bayId,
-              );
+              bayId === currentBayId || !canPlaceOn(ticket, bayId);
             return (
               <button
                 key={bayId}
@@ -240,11 +233,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           })}
           {[4, 5, 6].map((bayId, index) => {
             const disabled =
-              bayId === currentBayId ||
-              Boolean(
-                ticket.preferredBaristaId &&
-                  ticket.preferredBaristaId !== bayId,
-              );
+              bayId === currentBayId || !canPlaceOn(ticket, bayId);
             return (
               <button
                 key={bayId}

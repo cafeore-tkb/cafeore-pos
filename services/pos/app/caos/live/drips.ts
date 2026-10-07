@@ -18,6 +18,7 @@ import type {
   UnassignedOrder,
 } from "../types";
 import type { BeanIndex } from "../utils/beans";
+import { allowedBayIdsFor, isLimitedCard } from "../utils/lanes";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
 import { type Drip, type PosOrder, posBeanCode } from "../utils/posOrders";
@@ -102,6 +103,7 @@ const compareQueue = (a: Drip, b: Drip) =>
 // カード 1 枚分の表示用の情報。抽出カード（OrderTicket）にも未割当カード（UnassignedOrder）にも使う。
 const describe = (
   drip: Drip,
+  baristas: Barista[],
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
   colorSettings: ColorSetting[],
@@ -141,6 +143,12 @@ const describe = (
     }
   }
   const nominee = Array.from(nominees).join("・") || undefined;
+  // 割り当て・移動できる列（指名の列だけ、限定のカードは上級生の列だけ。
+  // 限定のカードに上級生でない列が指名されていれば、その列を上級生に替えるまでどの列にも割り当てられない）
+  const allowedBayIds = allowedBayIdsFor(
+    { beanCode, preferredBaristaId },
+    baristas,
+  );
   const abbrs = Array.from(
     new Set(
       drip.lines.map(
@@ -176,6 +184,7 @@ const describe = (
     beans: Array.from(beans.values()),
     cupCount: drip.cups,
     preferredBaristaId,
+    allowedBayIds,
     isRebrew: Boolean(drip.rebrew_of) || undefined,
     rebrewOfTicketUid: drip.rebrew_of ?? undefined,
   };
@@ -187,6 +196,7 @@ export interface LiveBoard {
 }
 
 // 盤面のカードを、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
+// baristas は列の担当者（サーバーの caos_lanes から作ったもの）。限定のカードを割り当てられる列（上級生の列）もこれで決める。
 // 抽出中・待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
 // 注文がまだ届いていない（カタログに無い）カードは、注文番号が分からないので届くまで出さない。
 export const dripsToBoard = (
@@ -215,7 +225,14 @@ export const dripsToBoard = (
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
     const totalDurationSec = brewDurationSec(drip.cups);
     return {
-      ...describe(drip, catalog, orderParts, colorSettings, beanIndex),
+      ...describe(
+        drip,
+        baristas,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      ),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
@@ -286,6 +303,7 @@ export const dripsToBoard = (
     .map((drip): UnassignedOrder => {
       const card = describe(
         drip,
+        baristas,
         catalog,
         orderParts,
         colorSettings,
@@ -298,10 +316,10 @@ export const dripsToBoard = (
         predictedTimeStr: brewDurationLabel(drip.cups),
         recommendedBaristas: card.preferredBaristaId
           ? `ドリッパー ${card.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: card.preferredBaristaId
-          ? [card.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : isLimitedCard(card)
+            ? "上級生の列"
+            : "全ドリッパー",
+        recommendedBayIds: card.allowedBayIds,
         cardColor: cardColorOf(card.beanCode),
       };
     });

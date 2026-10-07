@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import { canPlaceOn, laneOrdinal } from "../utils/lanes";
 import {
   activeRemainingSec,
   canMergeDripUnits,
@@ -20,6 +20,7 @@ import {
 } from "../utils/orderQueue";
 import { nominationText } from "../utils/posOrders";
 import type { ControlViewBProps } from "./ControlViewB";
+import { SeniorMark } from "./LaneName";
 
 export interface ControlViewDProps extends ControlViewBProps {
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
@@ -493,12 +494,9 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     0,
   );
 
+  // 指名の列だけ、限定のカードは上級生の列だけ
   const canAssignTo = (barista: Barista) =>
-    Boolean(
-      selectedOrder &&
-        (!selectedOrder.preferredBaristaId ||
-          selectedOrder.preferredBaristaId === barista.id),
-    );
+    Boolean(selectedOrder && canPlaceOn(selectedOrder, barista.id));
 
   const clearSelection = () => {
     setSelectedUid(null);
@@ -569,11 +567,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       .find(Boolean);
     const bayId = Number(target?.dataset.bayTarget);
     if (!bayId) return null;
-    const preferredBaristaId =
-      source.kind === "unassigned"
-        ? source.order.preferredBaristaId
-        : source.ticket.preferredBaristaId;
-    if (preferredBaristaId && preferredBaristaId !== bayId) return null;
+    const card = source.kind === "unassigned" ? source.order : source.ticket;
+    if (!canPlaceOn(card, bayId)) return null;
     if (source.kind === "ticket" && source.fromBayId === bayId) return null;
     return bayId;
   };
@@ -766,9 +761,13 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-center gap-1">
-                        <span className="font-black font-mono text-[18px] leading-none">
+                        <span className="font-black font-mono text-[14px] leading-none">
                           {laneOrdinal(barista.bayNumber)}
                         </span>
+                        <span className="truncate font-black text-[12px]">
+                          {barista.name}
+                        </span>
+                        {barista.senior && <SeniorMark />}
                       </div>
                       <button
                         type="button"

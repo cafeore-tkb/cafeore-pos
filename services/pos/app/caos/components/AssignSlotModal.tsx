@@ -2,8 +2,9 @@ import { ArrowRight, Check, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import { canPlaceOn, laneOrdinal, laneTitle } from "../utils/lanes";
 import { nominationText } from "../utils/posOrders";
+import { LaneName } from "./LaneName";
 
 interface AssignSlotModalProps {
   bayId: number | null;
@@ -34,13 +35,13 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         1),
   );
 
+  const currentBay = baristas.find((b) => b.id === selectedBayId);
   const selectedOrder = unassignedOrders.find(
     (order) => (order.ticketUid || order.id) === selectedOrderUid,
   );
+  // 指名の列だけ、限定のカードは上級生の列だけ
   const canAssign = Boolean(
-    selectedOrder &&
-      (!selectedOrder.preferredBaristaId ||
-        selectedOrder.preferredBaristaId === selectedBayId),
+    selectedOrder && canPlaceOn(selectedOrder, selectedBayId),
   );
 
   return (
@@ -49,8 +50,8 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-slate-200 border-b bg-[#f8fafc] px-5 py-4">
           <h3 className="font-bold text-base text-slate-900">
-            {bayId
-              ? `ドリッパー ${laneOrdinal(bayId)} にオーダー割当`
+            {bayId && currentBay
+              ? `${laneTitle(currentBay)} にオーダー割当`
               : "オーダーの割当"}
           </h3>
           <button
@@ -148,8 +149,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                 <button
                   key={b.id}
                   disabled={Boolean(
-                    selectedOrder?.preferredBaristaId &&
-                      selectedOrder.preferredBaristaId !== b.id,
+                    selectedOrder && !canPlaceOn(selectedOrder, b.id),
                   )}
                   onClick={() => setSelectedBayId(b.id)}
                   className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left transition-all ${
@@ -160,8 +160,11 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold font-mono text-slate-900">
-                      ドリッパー {laneOrdinal(b.bayNumber)}
+                      {laneOrdinal(b.bayNumber)}
                     </span>
+                  </div>
+                  <div className="mt-1 font-bold text-slate-800">
+                    <LaneName barista={b} />
                   </div>
                   <div className="text-[10px] text-slate-500">
                     待機 {b.queue.length}件

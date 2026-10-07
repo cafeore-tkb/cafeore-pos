@@ -48,6 +48,8 @@ export interface OrderTicket {
   preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
   /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
   nominee?: string;
+  /** 割り当て・移動できる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
+  allowedBayIds?: number[];
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
@@ -61,10 +63,14 @@ export interface OrderTicket {
   queuePos?: number; // cafeore-pos の盤面での待機列の並び順（入れ直しの差し込み位置に使う）
 }
 
-// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
+// ドリッパーの列（1st〜6th）と、その担当者（サーバーの盤面の caos_lanes。交代は CaOS の画面から）
 export interface Barista {
   id: number;
   bayNumber: number;
+  /** 列の担当者の名前（サーバーの盤面の caos_lanes）。担当者がいなければ空 */
+  name: string;
+  /** 担当者が上級生（限定を淹れられる）か。交代したときの sohosai-shift の名簿の判定（サーバーが持つ） */
+  senior: boolean;
   status: "brewing" | "imminent" | "standby" | "ready";
   remainingStr: string; // "01:48 残り"
   pastTickets?: OrderTicket[]; // Past completed tickets in this bay
@@ -95,6 +101,8 @@ export interface UnassignedOrder {
   preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
   /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
   nominee?: string;
+  /** 割り当てられる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
+  allowedBayIds?: number[];
   isRebrew?: boolean;
   rebrewOfTicketUid?: string;
   cardColor: "blue" | "peach" | "cyan" | "emerald";

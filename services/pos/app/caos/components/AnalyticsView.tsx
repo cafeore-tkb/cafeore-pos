@@ -13,7 +13,8 @@ import {
 import type React from "react";
 import { useMemo } from "react";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import { laneTitle } from "../utils/lanes";
+import { SeniorMark } from "./LaneName";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -260,6 +261,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         );
         return {
           bayNumber: barista.bayNumber,
+          name: barista.name,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
@@ -268,6 +270,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   durations.length,
               )
             : null,
+          // 上級生（限定を淹れられる）か。サーバーの列の担当者の判定
+          senior: barista.senior,
         };
       }),
     [baristas],
@@ -651,9 +655,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-black text-slate-950">
-                  {laneOrdinal(result.bayNumber)}
+                <span className="min-w-0 truncate font-black text-slate-950">
+                  {laneTitle(result)}
                 </span>
+                {result.senior && <SeniorMark />}
               </div>
               <div className="mt-2 flex items-end gap-3">
                 <span className="font-black font-mono text-[23px]">

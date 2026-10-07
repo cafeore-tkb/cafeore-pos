@@ -2,8 +2,9 @@ import { formatMinSec } from "@cafeore/common";
 import { AlertTriangle, Clock3, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import { isLimitedCard, laneTitle } from "../utils/lanes";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
 export interface RebrewDecision {
@@ -28,6 +29,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const isBrewing = ticket.status === "brewing";
   const [cupCount, setCupCount] = useState(ticket.cupCount === 1 ? 1 : 1);
   const [interruptCurrent, setInterruptCurrent] = useState(isBrewing);
@@ -40,16 +42,18 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
         .map((barista) => ({
           barista,
           wait: queueWaitSeconds(barista.queue),
-          // 指名があればその列だけ。限定（SP）もいまはどの列でも可（上級生の判定はあとで足す）
+          // 指名があればその列だけ
           eligible:
-            !ticket.preferredBaristaId ||
-            ticket.preferredBaristaId === barista.id,
+            (!ticket.preferredBaristaId ||
+              ticket.preferredBaristaId === barista.id) &&
+            // 限定のカードは上級生の列だけ（入れ直しも同じ）
+            (!isLimitedCard({ beanCode: ticket.beanCode }) || barista.senior),
         }))
         .sort(
           (a, b) =>
             a.wait - b.wait || a.barista.bayNumber - b.barista.bayNumber,
         ),
-    [baristas, ticket.preferredBaristaId],
+    [baristas, ticket.preferredBaristaId, ticket.beanCode],
   );
   const fastestId = candidates.find((candidate) => candidate.eligible)?.barista
     .id;
@@ -169,8 +173,8 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                 className={`min-h-[66px] touch-manipulation rounded-xl border-2 p-2 text-left disabled:opacity-45 ${targetBayId === barista.id ? "border-red-600 bg-red-50" : "border-slate-200 bg-white hover:border-slate-400"}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-black text-[16px]">
-                    {laneOrdinal(barista.bayNumber)}
+                  <span className="min-w-0 truncate font-black text-[16px]">
+                    {laneTitle(barista)}
                   </span>
                   {fastestId === barista.id && (
                     <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-black text-[10px] text-emerald-800">
@@ -184,7 +188,12 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                     ? "今すぐ"
                     : `全件後 ${formatMinSec(wait)}`}
                   {!eligible && (
-                    <span className="ml-auto text-red-700">指名外</span>
+                    <span className="ml-auto text-red-700">
+                      {ticket.preferredBaristaId &&
+                      ticket.preferredBaristaId !== barista.id
+                        ? "指名外"
+                        : `${limitedLabel || "限定"}は上級生だけ`}
+                    </span>
                   )}
                 </div>
               </button>
