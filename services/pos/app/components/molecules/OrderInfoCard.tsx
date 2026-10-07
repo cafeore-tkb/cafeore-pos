@@ -2,6 +2,8 @@ import {
   type CupStatus,
   type OrderEntity,
   type WithId,
+  formatElapsedTime,
+  orderElapsedTime,
   orderRepository,
   resolveItemColor,
   useColorSettings,
@@ -149,7 +151,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
               <div
                 className={cn(
                   "rounded-md px-2",
-                  pass15Minutes(order)
+                  orderElapsedTime(order).overdue
                     ? "bg-red-500 text-white"
                     : "bg-slate-100",
                 )}
@@ -393,16 +395,5 @@ const isPartlyServed = (order: OrderEntity, item: CupItem) =>
 
 const diffTime = (order: OrderEntity) => {
   if (order.servedAt == null) return "未提供";
-  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-    "m分ss秒",
-  );
-};
-
-const pass15Minutes = (order: OrderEntity) => {
-  if (order.servedAt === null)
-    return dayjs(dayjs().diff(dayjs(order.createdAt))).minute() >= 15;
-  if (order.servedAt !== null)
-    return (
-      dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
-    );
+  return formatElapsedTime(orderElapsedTime(order), "m分ss秒");
 };
