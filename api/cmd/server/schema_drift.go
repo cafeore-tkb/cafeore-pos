@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sort"
 
+	"cafeore-pos/api/internal/models"
+
 	"gorm.io/gorm"
 )
 
-// findSchemaDrift は、DB の public スキーマにあってモデル（schemaModels）に無いもの、
+// findSchemaDrift は、DB の public スキーマにあってモデル（models.All）に無いもの、
 // またはその逆を、人が読める形で並べて返す。何も無ければ空。
 //
 // スキーマの正本はモデルだけなので、ここで見つかるのは手で DB を触った跡
@@ -17,7 +19,7 @@ import (
 // 見るのはテーブル・列・トリガー・関数。CaOS（caos スキーマ）のものは今は対象外にしている。
 func findSchemaDrift(db *gorm.DB) ([]string, error) {
 	expected := map[string]map[string]bool{}
-	for _, m := range schemaModels() {
+	for _, m := range models.All() {
 		stmt := &gorm.Statement{DB: db}
 		if err := stmt.Parse(m); err != nil {
 			return nil, fmt.Errorf("failed to parse model %T: %w", m, err)

@@ -13,6 +13,7 @@ import {
 import type React from "react";
 import { useMemo } from "react";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -74,31 +75,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       (ticket) => ticket.isRebrew && !ticket.isInterrupted,
     );
     const interrupted = history.filter((ticket) => ticket.isInterrupted);
-    const interruptedKeys = new Set(
-      interrupted.map(
-        (ticket) => ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`,
-      ),
-    );
     const rebrewCups = rebrews.reduce(
       (sum, ticket) => sum + ticket.cupCount,
       0,
     );
-    const interruptedCups = interrupted.reduce(
-      (sum, ticket) => sum + ticket.cupCount,
-      0,
-    );
-    const completedRedoAfterFinished = rebrews
-      .filter(
-        (ticket) =>
-          !ticket.rebrewOfTicketUid ||
-          !interruptedKeys.has(ticket.rebrewOfTicketUid),
-      )
-      .reduce((sum, ticket) => sum + ticket.cupCount, 0);
+    // 入れ直しで余分に使った豆は CaOS では数えない（豆の在庫は POS の在庫で見る）
     return {
       rebrewCount: rebrews.length,
       rebrewCups,
       interruptedCount: interrupted.length,
-      extraBeans: (interruptedCups + completedRedoAfterFinished) * 14,
     };
   }, [baristas]);
   const completedParts = useMemo<CompletedPart[]>(
@@ -275,7 +260,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         );
         return {
           bayNumber: barista.bayNumber,
-          name: barista.name,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
@@ -284,7 +268,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   durations.length,
               )
             : null,
-          special: barista.canHandleSpecial,
         };
       }),
     [baristas],
@@ -479,7 +462,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             <AlertTriangle className="h-4 w-4" />
             緊急入れ直し
           </h3>
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-red-100 bg-white p-2">
               <div className="font-bold text-[10px] text-slate-500">
                 完了した入れ直し
@@ -496,15 +479,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <div className="font-black font-mono text-[22px] text-red-700">
                 {rebrewSummary.interruptedCount}
                 <span className="text-[11px]">件</span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">
-                追加消費豆
-              </div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.extraBeans}
-                <span className="text-[11px]">g</span>
               </div>
             </div>
           </div>
@@ -678,13 +652,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-950">
-                  #{result.bayNumber} {result.name}
+                  {laneOrdinal(result.bayNumber)}
                 </span>
-                {result.special && (
-                  <span className="rounded bg-emerald-950 px-1.5 py-0.5 font-black text-[9px] text-white">
-                    ★SP
-                  </span>
-                )}
               </div>
               <div className="mt-2 flex items-end gap-3">
                 <span className="font-black font-mono text-[23px]">

@@ -15,25 +15,19 @@ import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import {
-  INITIAL_BARISTAS,
-  INITIAL_BEANS,
-  INITIAL_LEARNING_LOGS,
-} from "./data/initialData";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard, queuePosAt } from "./live/drips";
 import type {
   Barista,
   BeanCode,
-  BeanItem,
   HistoricalDataset,
   HistoricalOrder,
-  LearningEngineLog,
   OrderTicket,
   TestPlaySession,
   UnassignedOrder,
 } from "./types";
 import { soundManager } from "./utils/audio";
+import { laneOrdinal, makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
@@ -45,21 +39,14 @@ import {
 } from "./utils/orderQueue";
 import type { CaosOp } from "./utils/posOrders";
 
-// 1 回のドリップで手元の豆の在庫から引く分
-type BeanUse = { code: BeanCode; grams: number };
-
 type UndoSnapshot = {
   baristas: Barista[];
-  beans: BeanItem[];
   unassignedOrders: UnassignedOrder[];
-  shiftRosterIndex: number;
   label: string;
 };
 
 type PanelSnapshot = {
   baristas: Barista[];
-  beans: BeanItem[];
-  learningLogs: LearningEngineLog[];
   testPlaySession: TestPlaySession | null;
 };
 
@@ -82,74 +69,6 @@ const startOfLocalDay = (ms: number) => {
     date.getDate(),
   ).getTime();
 };
-
-type ShiftMember = { name: string; canHandleSpecial: boolean };
-
-const SHIFT_ROSTERS: ShiftMember[][] = [
-  [
-    { name: "鈴木", canHandleSpecial: true },
-    { name: "山口", canHandleSpecial: true },
-    { name: "小林", canHandleSpecial: false },
-    { name: "松本", canHandleSpecial: false },
-    { name: "井上", canHandleSpecial: false },
-    { name: "木村", canHandleSpecial: false },
-  ],
-  [
-    { name: "林", canHandleSpecial: true },
-    { name: "中西", canHandleSpecial: true },
-    { name: "近藤", canHandleSpecial: true },
-    { name: "斎藤", canHandleSpecial: false },
-    { name: "清水", canHandleSpecial: false },
-    { name: "山本", canHandleSpecial: false },
-  ],
-  [
-    { name: "森", canHandleSpecial: true },
-    { name: "橋本", canHandleSpecial: false },
-    { name: "阿部", canHandleSpecial: false },
-    { name: "石川", canHandleSpecial: false },
-    { name: "山下", canHandleSpecial: false },
-    { name: "藤田", canHandleSpecial: false },
-  ],
-  [
-    { name: "沼田", canHandleSpecial: true },
-    { name: "佐藤", canHandleSpecial: true },
-    { name: "三田", canHandleSpecial: true },
-    { name: "前田", canHandleSpecial: false },
-    { name: "岡田", canHandleSpecial: false },
-    { name: "石井", canHandleSpecial: false },
-  ],
-  [
-    { name: "瀬邉", canHandleSpecial: true },
-    { name: "菅原", canHandleSpecial: true },
-    { name: "長谷川", canHandleSpecial: false },
-    { name: "村上", canHandleSpecial: false },
-    { name: "坂本", canHandleSpecial: false },
-    { name: "青木", canHandleSpecial: false },
-  ],
-];
-
-const placeShiftMembers = (members: ShiftMember[]) => {
-  const special = members.filter((member) => member.canHandleSpecial);
-  const regular = members.filter((member) => !member.canHandleSpecial);
-  const placed: Array<ShiftMember | undefined> = Array(6).fill(undefined);
-  if (special[0]) placed[0] = special.shift();
-  if (special[0]) placed[5] = special.shift();
-  [...special, ...regular].forEach((member) => {
-    const openIndex = placed.findIndex((placedMember) => !placedMember);
-    if (openIndex >= 0) placed[openIndex] = member;
-  });
-  return placed as ShiftMember[];
-};
-
-const makeCleanBaristas = (): Barista[] =>
-  INITIAL_BARISTAS.map((barista) => ({
-    ...barista,
-    status: "standby",
-    remainingStr: "00:00 待機中",
-    activeTicketId: undefined,
-    queue: [],
-    pastTickets: [],
-  }));
 
 const historicalBeanCode = (name: string, type: string): BeanCode => {
   if (type === "ice") return "ICE";
@@ -224,10 +143,7 @@ export default function App() {
 
   // Core Data
   const [baristas, setBaristas] = useState<Barista[]>(
-    () => standaloneSnapshot?.baristas || makeCleanBaristas(),
-  );
-  const [beans, setBeans] = useState<BeanItem[]>(
-    () => standaloneSnapshot?.beans || INITIAL_BEANS,
+    () => standaloneSnapshot?.baristas || makeLaneBaristas(),
   );
   const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
     [],
@@ -236,11 +152,6 @@ export default function App() {
   const undoSnapshotRef = useRef<UndoSnapshot | null>(null);
   const arrivalsAfterUndoSnapshotRef = useRef<UnassignedOrder[]>([]);
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
-  const [shiftRosterIndex, setShiftRosterIndex] = useState(0);
-  const lastAutomaticShiftHour = useRef(new Date().getHours());
-  const [learningLogs, setLearningLogs] = useState<LearningEngineLog[]>(
-    () => standaloneSnapshot?.learningLogs || INITIAL_LEARNING_LOGS,
-  );
 
   // Filters & Toggles
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -306,7 +217,7 @@ export default function App() {
     status: posStatus,
   } = usePosOrders(live);
   const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
-  // 盤面のカードから組み立てた管制盤。ドリッパーの名前と係数は手元の baristas から取る
+  // 盤面のカードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
   const liveBoard = useMemo(
     () =>
       dripsToBoard(
@@ -324,8 +235,6 @@ export default function App() {
     : unassignedOrders;
   // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
   const liveUndoRef = useRef<string | null>(null);
-  // その操作で手元の豆の在庫から引いた分（「1つ戻す」が通ったら戻す）。在庫はこの端末だけのもの
-  const liveUndoBeansRef = useRef<BeanUse | null>(null);
   // 「次へ」を送っている途中のドリッパー（応答が盤面に届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   // 「1つ戻す」を送っている途中（結果が返るまでの二度押しを止める）
@@ -338,32 +247,17 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [liveError]);
 
-  const adjustBeans = ({ code, grams }: BeanUse, sign: 1 | -1) =>
-    setBeans((prev) =>
-      prev.map((bean) =>
-        bean.code === code
-          ? { ...bean, stockGrams: Math.max(0, bean.stockGrams + sign * grams) }
-          : bean,
-      ),
-    );
-
   // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果のカードは WebSocket の drips で届く。
-  // usedBeans は、操作が通ったときだけ手元の豆の在庫から引く分（失敗したら在庫は変えない）。通ったら true を返す
-  const runLive = async (
-    label: string | null,
-    op: CaosOp,
-    usedBeans?: BeanUse,
-  ) => {
+  // 通ったら true を返す
+  const runLive = async (label: string | null, op: CaosOp) => {
     const { result, error } = await postCaosOp(op);
     if (error || !result) {
       setLiveError(error || "操作に失敗しました");
       return false;
     }
-    if (usedBeans) adjustBeans(usedBeans, -1);
     if (label && result.op_id) {
       undoSnapshotRef.current = null;
       liveUndoRef.current = result.op_id;
-      liveUndoBeansRef.current = usedBeans ?? null;
       setUndoLabel(label);
     }
     return true;
@@ -477,9 +371,7 @@ export default function App() {
     liveUndoRef.current = null;
     undoSnapshotRef.current = {
       baristas,
-      beans,
       unassignedOrders,
-      shiftRosterIndex,
       label,
     };
     arrivalsAfterUndoSnapshotRef.current = [];
@@ -490,21 +382,18 @@ export default function App() {
     const liveUndo = liveUndoRef.current;
     if (live && liveUndo) {
       if (pendingUndoRef.current) return;
-      const usedBeans = liveUndoBeansRef.current;
       setSelectedOrderId(null);
       setRebrewSource(null);
       setSelectedTicketKey(null);
-      // 戻せたときだけ「1つ戻す」の対象を消し、その操作で引いた豆の在庫も戻す。
+      // 戻せたときだけ「1つ戻す」の対象を消す。
       // 断られたら（ほかの iPad が先に操作した、など）対象を残して、もう一度押せるようにする
       pendingUndoRef.current = true;
       void runLive(null, { name: "undo", op_id: liveUndo })
         .then((ok) => {
           if (!ok) return;
-          if (usedBeans) adjustBeans(usedBeans, 1);
           // 送っている間にほかの操作をしていたら、そちらを「1つ戻す」の対象に残す
           if (liveUndoRef.current === liveUndo) {
             liveUndoRef.current = null;
-            liveUndoBeansRef.current = null;
             setUndoLabel(null);
           }
         })
@@ -523,9 +412,7 @@ export default function App() {
       (order) => !restoredKeys.has(order.ticketUid || order.id),
     );
     setBaristas(snapshot.baristas);
-    setBeans(snapshot.beans);
     setUnassignedOrders([...snapshot.unassignedOrders, ...arrivals]);
-    setShiftRosterIndex(snapshot.shiftRosterIndex);
     setSelectedOrderId(null);
     setRebrewSource(null);
     setSelectedTicketKey(null);
@@ -551,14 +438,6 @@ export default function App() {
     const nextSoundEnabled = !soundEnabled;
     soundManager.enabled = nextSoundEnabled;
     setSoundEnabled(nextSoundEnabled);
-  };
-
-  // Format digital clock time HH:mm:ss
-  const formatTimeStr = (totalSec: number) => {
-    const hours = Math.floor(totalSec / 3600) % 24;
-    const minutes = Math.floor((totalSec % 3600) / 60);
-    const seconds = totalSec % 60;
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   };
 
   // Simulation timer loop
@@ -613,60 +492,20 @@ export default function App() {
     if (!targetBarista || targetBarista.queue.length === 0) return;
     if (live && targetBarista.queue[0].status !== "brewing") return;
     if (live && pendingNextRef.current.has(bayId)) return;
-    if (!live) captureUndo(`${targetBarista.bayNumber}の「次へ」`);
-
-    const completedTicket = targetBarista.queue[0];
-
-    // Compute log outside of state updater to prevent duplicate execution
-    const actualM = Math.floor(completedTicket.totalDurationSec / 60);
-    const actualS = completedTicket.totalDurationSec % 60;
-    const deltaSec = Math.floor(Math.random() * 20 - 10);
-    const deltaStr = deltaSec < 0 ? `(${deltaSec}秒)` : `(+${deltaSec}秒)`;
-
-    const newLog: LearningEngineLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      baristaKey: `${String.fromCharCode(64 + targetBarista.id)} ${targetBarista.name}`,
-      recentActual: `${actualM}:${actualS < 10 ? "0" : ""}${actualS}`,
-      deltaStr,
-      deltaType: deltaSec < 0 ? "faster" : "slower",
-      coefficient: targetBarista.coefficient,
-      coefficientStatus:
-        deltaSec < -15
-          ? `最速補正 ${targetBarista.coefficient.toFixed(2)}`
-          : deltaSec < 0
-            ? `係数 ${targetBarista.coefficient.toFixed(2)} 維持`
-            : `係数 ${targetBarista.coefficient.toFixed(2)} 連動`,
-      timestamp: formatTimeStr(realTimeSec),
-    };
-
-    const usedBeans: BeanUse = {
-      code: completedTicket.beanCode,
-      grams: completedTicket.cupCount * 14,
-    };
-    const addLog = () =>
-      setLearningLogs((prevLogs) => [
-        newLog,
-        ...prevLogs.filter((l) => l.id !== newLog.id).slice(0, 4),
-      ]);
+    const label = `${laneOrdinal(targetBarista.bayNumber)}の「次へ」`;
 
     if (live) {
-      // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）。
-      // 豆の在庫と学習ログは、サーバーで通ってから更新する
+      // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）
       pendingNextRef.current.add(bayId);
-      void runLive(
-        `${targetBarista.bayNumber}の「次へ」`,
-        { name: "next", dripper: bayId, drip_id: completedTicket.ticketUid },
-        usedBeans,
-      )
-        .then((ok) => {
-          if (ok) addLog();
-        })
-        .finally(() => pendingNextRef.current.delete(bayId));
+      void runLive(label, {
+        name: "next",
+        dripper: bayId,
+        drip_id: targetBarista.queue[0].ticketUid,
+      }).finally(() => pendingNextRef.current.delete(bayId));
       return;
     }
 
-    addLog();
-    adjustBeans(usedBeans, -1);
+    captureUndo(label);
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -681,12 +520,7 @@ export default function App() {
         const pastTickets = [...(b.pastTickets || []), doneTicket];
         // Re-anchor the entire downstream queue to the actual completion time.
         // This compensates every later card when the active drip ran long or short.
-        const nextQueue = arrangeQueue(
-          b.queue.slice(1),
-          b.coefficient,
-          realTimeSec,
-          true,
-        );
+        const nextQueue = arrangeQueue(b.queue.slice(1), realTimeSec, true);
 
         return {
           ...b,
@@ -780,11 +614,7 @@ export default function App() {
         if (b.id !== targetBayId) return b;
         return {
           ...b,
-          queue: arrangeQueue(
-            [...b.queue, newTicket],
-            b.coefficient,
-            realTimeSec,
-          ),
+          queue: arrangeQueue([...b.queue, newTicket], realTimeSec),
         };
       }),
     );
@@ -819,7 +649,6 @@ export default function App() {
                 { ...ticket, status: "scheduled" as const },
               ]
             : bay.queue.filter((item) => ticketKey(item) !== key),
-          bay.coefficient,
           realTimeSec,
         ),
       }));
@@ -827,53 +656,6 @@ export default function App() {
     setSelectedOrderId(null);
     soundManager.playDispatch();
   };
-
-  const changeShift = (allowUndo: boolean) => {
-    if (allowUndo) {
-      captureUndo("シフト交代");
-    } else {
-      undoSnapshotRef.current = null;
-      liveUndoRef.current = null;
-      arrivalsAfterUndoSnapshotRef.current = [];
-      setUndoLabel(null);
-    }
-    const roster = placeShiftMembers(
-      SHIFT_ROSTERS[shiftRosterIndex % SHIFT_ROSTERS.length],
-    );
-    setBaristas((prev) =>
-      [...prev]
-        .sort((a, b) => a.bayNumber - b.bayNumber)
-        .map((barista, index) => {
-          const member = roster[index];
-          return {
-            ...barista,
-            name: member.name,
-            canHandleSpecial: member.canHandleSpecial || undefined,
-            coefficient: member.canHandleSpecial ? 0.97 : 1.05,
-            coefficientColor: member.canHandleSpecial ? "green" : "orange",
-          };
-        }),
-    );
-    setShiftRosterIndex((index) => (index + 1) % SHIFT_ROSTERS.length);
-    setSelectedTicketKey(null);
-    setSelectedOrderId(null);
-    soundManager.playDispatch();
-  };
-
-  const currentHour = realTime.getHours();
-
-  // The shift should run only when the wall-clock hour changes. Including
-  // changeShift would retrigger this effect on every render because it closes
-  // over the current operational state.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: currentHour is the intentional trigger
-  useEffect(() => {
-    if (currentHour === lastAutomaticShiftHour.current) return;
-    lastAutomaticShiftHour.current = currentHour;
-    changeShift(false);
-  }, [currentHour]);
-
-  const nextShiftHour = (realTime.getHours() + 1) % 24;
-  const nextShiftLabel = `${nextShiftHour.toString().padStart(2, "0")}:00`;
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
@@ -893,7 +675,6 @@ export default function App() {
         ...bay,
         queue: arrangeQueue(
           bay.queue.filter((item) => ticketKey(item) !== key),
-          bay.coefficient,
           realTimeSec,
         ),
       })),
@@ -942,27 +723,20 @@ export default function App() {
       const targetQueue =
         boardBaristas.find((barista) => barista.id === decision.targetBayId)
           ?.queue || [];
-      void runLive(
-        `${ticket.id}の入れ直し`,
-        {
-          name: "rebrew",
-          source_id: ticket.ticketUid,
-          cups: decision.cupCount,
-          interrupt: decision.interruptCurrent,
-          dripper: decision.targetBayId,
-          queue_pos:
-            decision.targetBayId === null
-              ? null
-              : queuePosAt(
-                  targetQueue,
-                  decision.insertIndex ?? targetQueue.length,
-                ),
-        },
-        // 抽出中を途中でやめたら、その分の豆を使ったことにする（ライブでない盤面と同じ）
-        decision.interruptCurrent && ticket.status === "brewing"
-          ? { code: ticket.beanCode, grams: ticket.cupCount * 14 }
-          : undefined,
-      );
+      void runLive(`${ticket.id}の入れ直し`, {
+        name: "rebrew",
+        source_id: ticket.ticketUid,
+        cups: decision.cupCount,
+        interrupt: decision.interruptCurrent,
+        dripper: decision.targetBayId,
+        queue_pos:
+          decision.targetBayId === null
+            ? null
+            : queuePosAt(
+                targetQueue,
+                decision.insertIndex ?? targetQueue.length,
+              ),
+      });
       setRebrewSource(null);
       setSelectedTicketKey(null);
       setSelectedOrderId(ticket.id);
@@ -989,19 +763,6 @@ export default function App() {
       isInterrupted: false,
     };
 
-    if (decision.interruptCurrent && ticket.status === "brewing") {
-      setBeans((prev) =>
-        prev.map((bean) =>
-          bean.code === ticket.beanCode
-            ? {
-                ...bean,
-                stockGrams: Math.max(0, bean.stockGrams - ticket.cupCount * 14),
-              }
-            : bean,
-        ),
-      );
-    }
-
     if (decision.targetBayId === null) {
       setUnassignedOrders((prev) => [
         {
@@ -1017,14 +778,9 @@ export default function App() {
           cupCount: newTicket.cupCount,
           badgeTag: `${newTicket.cupCount}杯 入れ直し`,
           predictedTimeStr: newTicket.scheduledTimeStr || "2:15",
-          recommendedBaristas:
-            newTicket.beanCode === "SP" ? "SP対応ドリッパー" : "全ドリッパー",
-          recommendedBayIds: baristas
-            .filter(
-              (barista) =>
-                newTicket.beanCode !== "SP" || barista.canHandleSpecial,
-            )
-            .map((barista) => barista.id),
+          // 限定（SP）もどの列でも淹れられる扱い（上級生の判定は、列の担当者をサーバーから出すときに足す）
+          recommendedBaristas: "全ドリッパー",
+          recommendedBayIds: baristas.map((barista) => barista.id),
           preferredBaristaId: newTicket.preferredBaristaId,
           cardColor: newTicket.beanCode === "SP" ? "emerald" : "blue",
           isRebrew: true,
@@ -1056,11 +812,7 @@ export default function App() {
         const remaining = barista.queue.filter(
           (_, index) => index !== sourceIndex,
         );
-        const queue = reanchorQueueInOrder(
-          remaining,
-          barista.coefficient,
-          realTimeSec,
-        );
+        const queue = reanchorQueueInOrder(remaining, realTimeSec);
         return {
           ...barista,
           queue,
@@ -1085,11 +837,7 @@ export default function App() {
             Math.min(decision.insertIndex ?? queue.length, queue.length),
           );
           queue.splice(insertion, 0, newTicket);
-          const arranged = reanchorQueueInOrder(
-            queue,
-            barista.coefficient,
-            realTimeSec,
-          );
+          const arranged = reanchorQueueInOrder(queue, realTimeSec);
           return {
             ...barista,
             queue: arranged,
@@ -1153,39 +901,18 @@ export default function App() {
     setSelectedOrderId(null);
   };
 
-  // Manual trigger for AI recalibration
-  const _handleTriggerRecalibration = () => {
-    soundManager.playDispatch();
-    setBaristas((prev) =>
-      prev.map((b) => {
-        const drift = Math.random() * 0.04 - 0.02;
-        const newCoef = Math.max(
-          0.85,
-          Math.min(1.2, Number((b.coefficient + drift).toFixed(2))),
-        );
-        return {
-          ...b,
-          coefficient: newCoef,
-        };
-      }),
-    );
-  };
-
   // Reset to initial screenshot state
   const handleResetData = () => {
-    setBaristas(makeCleanBaristas());
-    setBeans(INITIAL_BEANS);
+    setBaristas(makeLaneBaristas());
     setUnassignedOrders([]);
     undoSnapshotRef.current = null;
     liveUndoRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
     setUndoLabel(null);
-    setLearningLogs(INITIAL_LEARNING_LOGS);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
     setRebrewSource(null);
-    setShiftRosterIndex(0);
     setTestPlaySession(null);
     historicalOrderCursor.current = 0;
     setIsRunning(true);
@@ -1203,10 +930,8 @@ export default function App() {
         (a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
-    setBaristas(makeCleanBaristas());
-    setBeans(INITIAL_BEANS);
+    setBaristas(makeLaneBaristas());
     setUnassignedOrders([]);
-    setLearningLogs(INITIAL_LEARNING_LOGS);
     setSelectedOrderId(null);
     undoSnapshotRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
@@ -1251,7 +976,7 @@ export default function App() {
   const nextAvailable = [...boardBaristas]
     .map((barista) => ({
       bayNumber: barista.bayNumber,
-      seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+      seconds: queueWaitSeconds(barista.queue),
       isStandby: barista.queue.length === 0,
     }))
     .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
@@ -1263,8 +988,6 @@ export default function App() {
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
           baristas: boardBaristas,
-          beans,
-          learningLogs,
           testPlaySession,
         } satisfies PanelSnapshot),
       );
@@ -1280,8 +1003,6 @@ export default function App() {
     <AuxiliaryContent
       tab={tab}
       baristas={boardBaristas}
-      beans={beans}
-      learningLogs={learningLogs}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>
@@ -1294,22 +1015,6 @@ export default function App() {
           ? Math.min(testPlaySession.currentMs, testPlaySession.endMs)
           : undefined
       }
-      nextShiftLabel={nextShiftLabel}
-      onChangeShift={() => changeShift(true)}
-      onUpdateCoefficient={(bayId, coefficient) =>
-        setBaristas((prev) =>
-          prev.map((barista) =>
-            barista.id === bayId ? { ...barista, coefficient } : barista,
-          ),
-        )
-      }
-      onResetLearning={handleResetData}
-      onUpdateBean={(updated) =>
-        setBeans((prev) =>
-          prev.map((bean) => (bean.code === updated.code ? updated : bean)),
-        )
-      }
-      onAddBean={(newBean) => setBeans((prev) => [newBean, ...prev])}
     />
   );
 

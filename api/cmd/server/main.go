@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"cafeore-pos/api/internal/auth"
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/notify"
 
@@ -245,7 +244,7 @@ func main() {
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
-	caosStore := caos.NewStore(db, handlers.SetOrderReady)
+	caosStore := handlers.NewCaosStore(db)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
 	// ほかのインスタンスでの注文・CaOS のカードの変更も画面へ届けるため、DB の通知を待ち受ける。

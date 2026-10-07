@@ -8,26 +8,6 @@ export type BeanCode =
   | "MILK"
   | "SP";
 
-export interface BeanConfig {
-  code: BeanCode;
-  label: string;
-  subLabel: string;
-  badgeBg: string;
-  badgeText: string;
-  borderColor: string;
-  accentColor: string;
-}
-
-export interface BeanItem {
-  code: BeanCode;
-  name: string;
-  roastProfile: string;
-  roastDate: string;
-  flavorNotes: string;
-  origin: string;
-  stockGrams: number;
-}
-
 export interface OrderTicket {
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
@@ -51,7 +31,6 @@ export interface OrderTicket {
     | "浅煎り"
     | "水洗"
     | string;
-  secondaryTag?: string;
   preferredBaristaId?: number; // 指名。必ず1人だけ
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
@@ -64,27 +43,14 @@ export interface OrderTicket {
   rebrewOfTicketUid?: string;
   isInterrupted?: boolean; // original drip stopped because a remake was required
   queuePos?: number; // cafeore-pos の盤面での待機列の並び順（入れ直しの差し込み位置に使う）
-  imminent?: boolean; // e.g. "残 0:07" or "まもなく完了"
-  recipe?: {
-    grindSize: string;
-    waterTemp: string;
-    ratio: string;
-    targetYield: string;
-    pourSteps: { step: string; amount: string; time: string }[];
-  };
 }
 
+// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
 export interface Barista {
   id: number;
   bayNumber: number;
-  name: string;
-  canHandleSpecial?: boolean;
-  coefficient: number; // initial: SP-capable 0.97, others 1.05
-  coefficientColor: "green" | "orange" | "blue" | "purple";
   status: "brewing" | "imminent" | "standby" | "ready";
   remainingStr: string; // "01:48 残り"
-  iconType: "cup" | "clock" | "snowflake";
-  activeTicketId?: string;
   pastTickets?: OrderTicket[]; // Past completed tickets in this bay
   queue: OrderTicket[];
 }
@@ -108,17 +74,6 @@ export interface UnassignedOrder {
   isRebrew?: boolean;
   rebrewOfTicketUid?: string;
   cardColor: "blue" | "peach" | "cyan" | "emerald";
-}
-
-export interface LearningEngineLog {
-  id: string;
-  baristaKey: string; // "A 佐藤", "B 鈴木", "F 渡辺"
-  recentActual: string; // "2:04"
-  deltaStr: string; // "(-11秒)"
-  deltaType: "faster" | "slower" | "neutral";
-  coefficient: number;
-  coefficientStatus: string; // "係数 0.93 維持" or "最速補正 0.91"
-  timestamp: string;
 }
 
 export interface HistoricalItem {

@@ -1,12 +1,6 @@
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type {
-  Barista,
-  BeanItem,
-  HistoricalOrder,
-  LearningEngineLog,
-} from "../types";
-import { AiConfigView } from "./AiConfigView";
+import type { Barista, HistoricalOrder } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
 import { BeanQueueView } from "./BeanQueueView";
@@ -15,68 +9,26 @@ import type { NavTab } from "./TopHeader";
 export type AuxiliaryTab = Exclude<NavTab, "control">;
 
 export const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
-  tab === "bays"
-    ? "ドリッパー / 補正設定"
-    : tab === "beans"
-      ? "豆キュー"
-      : "実績";
+  tab === "bays" ? "ドリッパー" : tab === "beans" ? "豆キュー" : "実績";
 
 interface AuxiliaryContentProps {
   tab: AuxiliaryTab;
   baristas: Barista[];
-  beans: BeanItem[];
-  learningLogs: LearningEngineLog[];
   salesOrders: HistoricalOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
-  nextShiftLabel: string;
-  onChangeShift: () => void;
-  onUpdateCoefficient: (bayId: number, coefficient: number) => void;
-  onResetLearning: () => void;
-  onUpdateBean: (bean: BeanItem) => void;
-  onAddBean: (bean: BeanItem) => void;
 }
 
 export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   tab,
   baristas,
-  beans,
-  learningLogs,
   salesOrders,
   periodStartMs,
   periodEndMs,
-  nextShiftLabel,
-  onChangeShift,
-  onUpdateCoefficient,
-  onResetLearning,
-  onUpdateBean,
-  onAddBean,
 }) => (
   <>
-    {tab === "bays" && (
-      <div className="space-y-5">
-        <BaysOverviewView
-          baristas={baristas}
-          nextShiftLabel={nextShiftLabel}
-          onChangeShift={onChangeShift}
-        />
-        <div className="border-slate-300 border-t pt-4">
-          <AiConfigView
-            baristas={baristas}
-            logs={learningLogs}
-            onUpdateCoefficient={onUpdateCoefficient}
-            onResetLearning={onResetLearning}
-          />
-        </div>
-      </div>
-    )}
-    {tab === "beans" && (
-      <BeanQueueView
-        beans={beans}
-        onUpdateBean={onUpdateBean}
-        onAddBean={onAddBean}
-      />
-    )}
+    {tab === "bays" && <BaysOverviewView baristas={baristas} />}
+    {tab === "beans" && <BeanQueueView />}
     {tab === "analytics" && (
       <AnalyticsView
         baristas={baristas}
