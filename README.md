@@ -23,6 +23,7 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
+| `caos-deploy-workers` | `services/caos` | 同上（CaOS。`cafeore-caos`） |
 | `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pr-cleanup` | — | PR を閉じたときに Artifact Registry の `pr-<番号>` タグを外す |
 

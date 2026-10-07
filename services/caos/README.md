@@ -4,9 +4,14 @@
 
 これまでに決定した画面・操作・業務ルールの詳細は、[画面設計・操作要件](./DESIGN_REQUIREMENTS.md)を参照してください。
 
-## プレビュー
+## 公開
 
-[CaOSをGitHub Pagesで開く](https://cafeore-tkb.github.io/digital-master-sheet-pages/)（旧リポジトリ `cafeore-tkb/CaOS` から公開していた版。cafeore-pos からの配信は、続く PR で Cloudflare Workers に用意します）
+Cloudflare Workers（POS と同じアカウント）で、静的ファイルだけの Worker `cafeore-caos` として配信します（`wrangler.jsonc`）。
+
+- `main` に push すると `.github/workflows/caos-deploy-workers.yml` が本番にデプロイします。PR ではプレビュー用の backend につながるプレビュー URL を出し、PR にコメントします（POS と同じ作り）。
+- Worker は `main` への最初のデプロイで作られます。それまでの PR はプレビューを出さずに飛ばします。
+- ブラウザから本番の API につなぐので、API の `FRONTEND_ORIGINS`（infra リポジトリ）に公開 URL の origin が必要です。
+- 旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、Workers の版に切り替えたら止めます。
 
 ## 画面
 
