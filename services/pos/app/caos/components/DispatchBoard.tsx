@@ -2,6 +2,7 @@ import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Barista, BeanCode, OrderTicket } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
@@ -178,7 +179,6 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
   // Find all cards matching selectedOrderId to summarize
   const matchingTickets: {
-    baristaName: string;
     beanName: string;
     cupCount: number;
     bayNumber: number;
@@ -188,7 +188,6 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
       [...(b.pastTickets || []), ...b.queue].forEach((t) => {
         if (t.id === selectedOrderId) {
           matchingTickets.push({
-            baristaName: b.name,
             bayNumber: b.bayNumber,
             beanName: t.beanName,
             cupCount: t.cupCount,
@@ -221,7 +220,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                 ? matchingTickets
                     .map(
                       (m) =>
-                        `ドリッパー ${m.bayNumber} ${m.baristaName}: ${m.beanName} ${m.cupCount}杯`,
+                        `ドリッパー ${laneOrdinal(m.bayNumber)}: ${m.beanName} ${m.cupCount}杯`,
                     )
                     .join(" ＋ ")
                 : "オーダー詳細表示"}

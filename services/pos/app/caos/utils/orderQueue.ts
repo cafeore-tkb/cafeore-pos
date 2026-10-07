@@ -26,7 +26,6 @@ const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
 
 export const arrangeQueue = (
   queue: OrderTicket[],
-  coefficient: number,
   nowSec: number,
   activateFirst = false,
 ) => {
@@ -46,7 +45,7 @@ export const arrangeQueue = (
         ...ordered[0],
         status: "brewing" as const,
         startTimeSec: nowSec,
-        timeRemainingSec: Math.round(ordered[0].totalDurationSec * coefficient),
+        timeRemainingSec: ordered[0].totalDurationSec,
       }
     : existingActive;
   if (!first) return [];
@@ -73,11 +72,7 @@ export const arrangeQueue = (
   return result;
 };
 
-export const reanchorQueueInOrder = (
-  queue: OrderTicket[],
-  coefficient: number,
-  nowSec: number,
-) => {
+export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
   if (queue.length === 0) return queue;
   const firstWasBrewing = queue[0].status === "brewing";
   const first: OrderTicket = firstWasBrewing
@@ -86,7 +81,7 @@ export const reanchorQueueInOrder = (
         ...queue[0],
         status: "brewing",
         startTimeSec: nowSec,
-        timeRemainingSec: Math.round(queue[0].totalDurationSec * coefficient),
+        timeRemainingSec: queue[0].totalDurationSec,
       };
   const result = [first];
   let cursor = Math.max(
@@ -108,13 +103,12 @@ export const reanchorQueueInOrder = (
 
 // Seconds until the dripper has finished everything already queued, using the
 // same 15-second changeover gap as the scheduler.
-export const queueWaitSeconds = (queue: OrderTicket[], coefficient: number) =>
+export const queueWaitSeconds = (queue: OrderTicket[]) =>
   queue.reduce(
     (sum, ticket, index) =>
       sum +
       (index === 0
-        ? (ticket.timeRemainingSec ??
-          Math.round(ticket.totalDurationSec * coefficient))
+        ? (ticket.timeRemainingSec ?? ticket.totalDurationSec)
         : ticket.totalDurationSec + 15),
     0,
   );

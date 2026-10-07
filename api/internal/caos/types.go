@@ -1,9 +1,13 @@
-// Package caos は CaOS（ドリップ管制）の盤面。抽出カードの保存と、割当・次へ・統合などのルールを持つ。
+// Package caos は CaOS（ドリップ管制）の盤面の決まり。抽出カード（Drip）と、割当・次へ・統合・入れ直し・1つ戻すのルール（Board）を持つ。
 //
-// 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のハンドラーと同じトランザクションの中で連動させる。
-// カードが全部終わった注文は、既存の準備完了の処理（ReadyFunc。POS の PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
-// 「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。
-// 配信は注文と同じく DB の通知から（caos_drips のトリガー → 各インスタンスが今日のカードを読み直して配る）。
+// このパッケージは DB を使わない（メモリ上のカードと注文だけを変える。テストも DB なしで回る）。
+// 保存・API・配信は、POS のほかの機能と同じ置き場所にある：
+//   - 表のモデル：models の CaosDripRow（caos_drips。カード）と CaosOpRow（caos_ops。操作の記録）。ほかの表と同じく models.All() に入れ、起動時の AutoMigrate で作る
+//   - 保存と POS の注文との連動：handlers/caos_store.go（CaosStore）。盤面は営業日（日本時間）ごとに 1 つで、その日の advisory lock を取って 1 件ずつ順番に処理する。
+//     カードは注文のハンドラーと同じトランザクションの中でそろえ、カードが全部終わった注文は、既存の準備完了の処理（PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
+//     「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す
+//   - API と配信：handlers/caos.go（POST /api/caos/ops と /api/ws/orders の {"type":"drips"}）。注文と同じく、カードを変えたインスタンスが自分の画面へ配り、
+//     pg_notify（caos_drips_changed）でほかのインスタンスに知らせる。受けたインスタンスは DB から今日のカードを読み直して配る（handlers/order_listener.go）。DB のトリガーは使わない
 package caos
 
 import "time"
@@ -55,6 +59,12 @@ type Drip struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// ReadyMark は操作で準備完了にした注文と、そのとき付けた ready_at（操作の記録 caos_ops に残し、「1つ戻す」で確かめる）。
+type ReadyMark struct {
+	OrderID string    `json:"order_id"`
+	ReadyAt time.Time `json:"ready_at"`
+}
+
 // Order は盤面が使う注文の中身（POS の orders と明細から作る）。
 type Order struct {
 	ID        string
@@ -102,4 +112,18 @@ type Result struct {
 	Deleted []string `json:"deleted"`
 	// この操作で準備完了にした注文（undo では、準備完了を外した注文）
 	Readied []string `json:"readied"`
+}
+
+var jst = time.FixedZone("JST", 9*60*60)
+
+// Day は営業日（日本時間の日付。YYYY-MM-DD）。
+func Day(t time.Time) string { return t.In(jst).Format(time.DateOnly) }
+
+// ParseDay は YYYY-MM-DD を確かめ、その日の始まり（日本時間 0:00）を返す。
+func ParseDay(day string) (time.Time, error) {
+	t, err := time.ParseInLocation(time.DateOnly, day, jst)
+	if err != nil || t.Format(time.DateOnly) != day {
+		return time.Time{}, invalid("日付は YYYY-MM-DD です")
+	}
+	return t, nil
 }

@@ -2,6 +2,7 @@ import { ArrowRight, Check, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 
 interface AssignSlotModalProps {
   bayId: number | null;
@@ -32,7 +33,6 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         1),
   );
 
-  const currentBay = baristas.find((b) => b.id === selectedBayId);
   const selectedOrder = unassignedOrders.find(
     (order) => (order.ticketUid || order.id) === selectedOrderUid,
   );
@@ -49,7 +49,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         <div className="flex items-center justify-between border-slate-200 border-b bg-[#f8fafc] px-5 py-4">
           <h3 className="font-bold text-base text-slate-900">
             {bayId
-              ? `ドリッパー ${bayId} (${currentBay?.name}) にオーダー割当`
+              ? `ドリッパー ${laneOrdinal(bayId)} にオーダー割当`
               : "オーダーの割当"}
           </h3>
           <button
@@ -159,10 +159,9 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold font-mono text-slate-900">
-                      ドリッパー {b.id}
+                      ドリッパー {laneOrdinal(b.bayNumber)}
                     </span>
                   </div>
-                  <div className="mt-1 font-bold text-slate-800">{b.name}</div>
                   <div className="text-[10px] text-slate-500">
                     待機 {b.queue.length}件
                   </div>

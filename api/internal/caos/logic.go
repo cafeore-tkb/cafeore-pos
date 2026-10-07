@@ -13,7 +13,7 @@ import (
 )
 
 // 盤面のルール。DB には触らず、メモリ上のカードと注文だけを変える（テストはここに厚く書く）。
-// 1 つの盤面（営業日）への処理は Store が行ロックで 1 件ずつ順番に呼ぶので、ここではロックを考えない。
+// 1 つの盤面（営業日）への処理は、保存する側（handlers の CaosStore）がその日の advisory lock を取って 1 件ずつ順番に呼ぶので、ここではロックを考えない。
 // 操作は「確かめてから変える」順に書く。ErrInvalid のときは何も変わっていない。
 
 // ErrInvalid はルールに合わない操作。画面には理由をそのまま出す。
@@ -24,6 +24,9 @@ type InvalidError struct{ Message string }
 
 func (e *InvalidError) Error() string { return e.Message }
 func (e *InvalidError) Unwrap() error { return ErrInvalid }
+
+// IsInvalid はルールに合わない操作のエラーか。
+func IsInvalid(err error) bool { return errors.Is(err, ErrInvalid) }
 
 func invalid(format string, args ...any) error {
 	return &InvalidError{Message: fmt.Sprintf(format, args...)}
@@ -84,6 +87,22 @@ func (cs *Changeset) touch(id string) {
 func (cs *Changeset) drop(id string) {
 	cs.Changed.remove(id)
 	cs.Deleted.add(id)
+}
+
+// MergeChanges は、いくつかの処理の変更を 1 つにまとめる（今の盤面にあるカードは変わった、無いカードは消えた、とする）。
+// 保存を 1 回で行い、途中の状態で抽出中の索引（caos_drips_one_brewing）に引っかからないようにするため。
+func (b *Board) MergeChanges(sets ...*Changeset) *Changeset {
+	out := &Changeset{}
+	for _, cs := range sets {
+		for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+			if _, ok := b.Drips[id]; ok {
+				out.touch(id)
+			} else {
+				out.drop(id)
+			}
+		}
+	}
+	return out
 }
 
 // Empty はカードが何も変わっていないこと。
@@ -203,7 +222,8 @@ func sameNominee(a, b *string) bool {
 	return *a == *b
 }
 
-func distinctOrders(lines []DripLine) []string {
+// OrderIDsOf は明細に出てくる注文（出てきた順）。カードの order_ids は明細から求める（保存するのは明細だけ）。
+func OrderIDsOf(lines []DripLine) []string {
 	var out []string
 	for _, l := range lines {
 		if !slices.Contains(out, l.OrderID) {
@@ -213,7 +233,8 @@ func distinctOrders(lines []DripLine) []string {
 	return out
 }
 
-func sumCups(lines []DripLine) int {
+// CupsOf は明細の杯数の合計（カードの杯数）。
+func CupsOf(lines []DripLine) int {
 	n := 0
 	for _, l := range lines {
 		n += l.Cups
@@ -375,7 +396,7 @@ func (b *Board) removeOrder(cs *Changeset, orderID string) {
 		b.update(cs, d, func(d *Drip) {
 			d.Lines = slices.DeleteFunc(slices.Clone(d.Lines), func(l DripLine) bool { return l.OrderID == orderID })
 			d.OrderIDs = slices.DeleteFunc(slices.Clone(d.OrderIDs), func(id string) bool { return id == orderID })
-			d.Cups = sumCups(d.Lines)
+			d.Cups = CupsOf(d.Lines)
 		})
 	}
 	delete(b.Orders, orderID)
@@ -574,7 +595,7 @@ func (b *Board) merge(cs *Changeset, firstID, secondID string) error {
 	}
 	b.update(cs, first, func(d *Drip) {
 		d.Lines = append(slices.Clone(first.Lines), second.Lines...)
-		d.OrderIDs = distinctOrders(d.Lines)
+		d.OrderIDs = OrderIDsOf(d.Lines)
 		d.Cups = 2
 		d.QueuePos = min(first.QueuePos, second.QueuePos)
 	})
@@ -628,7 +649,7 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 		pos = *queuePos
 	}
 	b.insert(cs, Drip{
-		Status: status, Dripper: dripper, QueuePos: pos, OrderIDs: distinctOrders(lines),
+		Status: status, Dripper: dripper, QueuePos: pos, OrderIDs: OrderIDsOf(lines),
 		Lines: lines, Cups: cups, RebrewOf: ptr(src.ID),
 	})
 	b.promote(cs, src.Dripper)
@@ -636,7 +657,7 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 	return nil
 }
 
-// Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（Store が caos_ops の記録から呼ぶ）。
+// Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（handlers の CaosStore が caos_ops の記録から呼ぶ）。
 // before：操作の前の行（操作で変わった・消えたカードの、操作の前の中身。サーバーが DB から取ったもの）。
 // after：操作の後の行（操作で変わった・できたカード）。この時点から誰も触っていないときだけ戻す。
 // 確かめてから変えるので、断ったときは何も変わっていない。確かめること：after のカードが触られていない、

@@ -78,7 +78,6 @@ const compareQueue = (a: Drip, b: Drip) =>
 // カード 1 枚分の表示用の情報。抽出カード（OrderTicket）にも未割当カード（UnassignedOrder）にも使う。
 const describe = (
   drip: Drip,
-  baristas: Barista[],
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
 ) => {
@@ -96,9 +95,7 @@ const describe = (
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
   const nominee = first?.nominee ?? undefined;
-  const preferredBaristaId = nominee
-    ? nominatedBayId(nominee, baristas)
-    : undefined;
+  const preferredBaristaId = nominee ? nominatedBayId(nominee) : undefined;
   const unmatchedNominee =
     nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
   const abbrs = Array.from(
@@ -166,7 +163,7 @@ export const dripsToBoard = (
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
     const totalDurationSec = durationOf(drip.cups);
     return {
-      ...describe(drip, baristas, catalog, orderParts),
+      ...describe(drip, catalog, orderParts),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
@@ -195,11 +192,7 @@ export const dripsToBoard = (
     if (brewing) {
       const ticket = toTicket(brewing, "brewing");
       const startSec = ticket.startTimeSec ?? nowSec;
-      remainingSec = Math.max(
-        0,
-        Math.round(ticket.totalDurationSec * barista.coefficient) -
-          (nowSec - startSec),
-      );
+      remainingSec = Math.max(0, ticket.totalDurationSec - (nowSec - startSec));
       queue.push({
         ...ticket,
         startTimeSec: startSec,
@@ -227,7 +220,6 @@ export const dripsToBoard = (
       remainingStr: brewing
         ? `0${minutes}:${seconds < 10 ? "0" : ""}${seconds} 残り`
         : "00:00 待機中",
-      activeTicketId: brewing?.id,
       queue,
       pastTickets: done.map((drip) => toTicket(drip, "completed")),
     };
@@ -237,7 +229,7 @@ export const dripsToBoard = (
     .filter((drip) => drip.status === "unassigned")
     .sort(compareQueue)
     .map((drip): UnassignedOrder => {
-      const card = describe(drip, baristas, catalog, orderParts);
+      const card = describe(drip, catalog, orderParts);
       const merged = Boolean(card.sourceOrderIds);
       return {
         ...card,
