@@ -44,6 +44,9 @@ import {
 } from "./utils/orderQueue";
 import { type CaosOp, POS_API_BASE_URL } from "./utils/posOrders";
 
+// 1 回のドリップで手元の豆の在庫から引く分
+type BeanUse = { code: BeanCode; grams: number };
+
 type UndoSnapshot = {
   baristas: Barista[];
   beans: BeanItem[];
@@ -320,6 +323,10 @@ export default function App() {
     : unassignedOrders;
   // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
   const liveUndoRef = useRef<string | null>(null);
+  // その操作で手元の豆の在庫から引いた分（「1つ戻す」が通ったら戻す）。在庫はこの端末だけのもの
+  const liveUndoBeansRef = useRef<BeanUse | null>(null);
+  // 「次へ」を送っている途中のドリッパー（応答が盤面に届く前の二度押しを止める）
+  const pendingNextRef = useRef(new Set<number>());
   const [liveError, setLiveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -328,18 +335,35 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [liveError]);
 
-  // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果のカードは WebSocket の drips で届く
-  const runLive = async (label: string | null, op: CaosOp) => {
+  const adjustBeans = ({ code, grams }: BeanUse, sign: 1 | -1) =>
+    setBeans((prev) =>
+      prev.map((bean) =>
+        bean.code === code
+          ? { ...bean, stockGrams: Math.max(0, bean.stockGrams + sign * grams) }
+          : bean,
+      ),
+    );
+
+  // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果のカードは WebSocket の drips で届く。
+  // usedBeans は、操作が通ったときだけ手元の豆の在庫から引く分（失敗したら在庫は変えない）。通ったら true を返す
+  const runLive = async (
+    label: string | null,
+    op: CaosOp,
+    usedBeans?: BeanUse,
+  ) => {
     const { result, error } = await postCaosOp(POS_API_BASE_URL, op);
     if (error || !result) {
       setLiveError(error || "操作に失敗しました");
-      return;
+      return false;
     }
+    if (usedBeans) adjustBeans(usedBeans, -1);
     if (label && result.op_id) {
       undoSnapshotRef.current = null;
       liveUndoRef.current = result.op_id;
+      liveUndoBeansRef.current = usedBeans ?? null;
       setUndoLabel(label);
     }
+    return true;
   };
 
   const findLiveTicket = (key: string) => {
@@ -462,12 +486,17 @@ export default function App() {
   const handleUndo = () => {
     const liveUndo = liveUndoRef.current;
     if (live && liveUndo) {
+      const usedBeans = liveUndoBeansRef.current;
       liveUndoRef.current = null;
+      liveUndoBeansRef.current = null;
       setUndoLabel(null);
       setSelectedOrderId(null);
       setRebrewSource(null);
       setSelectedTicketKey(null);
-      void runLive(null, { name: "undo", op_id: liveUndo });
+      // 戻せたら、その操作で引いた豆の在庫も戻す
+      void runLive(null, { name: "undo", op_id: liveUndo }).then((ok) => {
+        if (ok && usedBeans) adjustBeans(usedBeans, 1);
+      });
       soundManager.playDispatch();
       return;
     }
@@ -569,6 +598,7 @@ export default function App() {
     const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
     if (live && targetBarista.queue[0].status !== "brewing") return;
+    if (live && pendingNextRef.current.has(bayId)) return;
     if (!live) captureUndo(`${targetBarista.bayNumber}の「次へ」`);
 
     const completedTicket = targetBarista.queue[0];
@@ -595,31 +625,34 @@ export default function App() {
       timestamp: formatTimeStr(realTimeSec),
     };
 
-    setLearningLogs((prevLogs) => [
-      newLog,
-      ...prevLogs.filter((l) => l.id !== newLog.id).slice(0, 4),
-    ]);
-    setBeans((prev) =>
-      prev.map((bean) =>
-        bean.code === completedTicket.beanCode
-          ? {
-              ...bean,
-              stockGrams: Math.max(
-                0,
-                bean.stockGrams - completedTicket.cupCount * 14,
-              ),
-            }
-          : bean,
-      ),
-    );
+    const usedBeans: BeanUse = {
+      code: completedTicket.beanCode,
+      grams: completedTicket.cupCount * 14,
+    };
+    const addLog = () =>
+      setLearningLogs((prevLogs) => [
+        newLog,
+        ...prevLogs.filter((l) => l.id !== newLog.id).slice(0, 4),
+      ]);
 
     if (live) {
-      void runLive(`${targetBarista.bayNumber}の「次へ」`, {
-        name: "next",
-        dripper: bayId,
-      });
+      // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）。
+      // 豆の在庫と学習ログは、サーバーで通ってから更新する
+      pendingNextRef.current.add(bayId);
+      void runLive(
+        `${targetBarista.bayNumber}の「次へ」`,
+        { name: "next", dripper: bayId, drip_id: completedTicket.ticketUid },
+        usedBeans,
+      )
+        .then((ok) => {
+          if (ok) addLog();
+        })
+        .finally(() => pendingNextRef.current.delete(bayId));
       return;
     }
+
+    addLog();
+    adjustBeans(usedBeans, -1);
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -895,20 +928,27 @@ export default function App() {
       const targetQueue =
         boardBaristas.find((barista) => barista.id === decision.targetBayId)
           ?.queue || [];
-      void runLive(`${ticket.id}の入れ直し`, {
-        name: "rebrew",
-        source_id: ticket.ticketUid,
-        cups: decision.cupCount,
-        interrupt: decision.interruptCurrent,
-        dripper: decision.targetBayId,
-        queue_pos:
-          decision.targetBayId === null
-            ? null
-            : queuePosAt(
-                targetQueue,
-                decision.insertIndex ?? targetQueue.length,
-              ),
-      });
+      void runLive(
+        `${ticket.id}の入れ直し`,
+        {
+          name: "rebrew",
+          source_id: ticket.ticketUid,
+          cups: decision.cupCount,
+          interrupt: decision.interruptCurrent,
+          dripper: decision.targetBayId,
+          queue_pos:
+            decision.targetBayId === null
+              ? null
+              : queuePosAt(
+                  targetQueue,
+                  decision.insertIndex ?? targetQueue.length,
+                ),
+        },
+        // 抽出中を途中でやめたら、その分の豆を使ったことにする（ライブでない盤面と同じ）
+        decision.interruptCurrent && ticket.status === "brewing"
+          ? { code: ticket.beanCode, grams: ticket.cupCount * 14 }
+          : undefined,
+      );
       setRebrewSource(null);
       setSelectedTicketKey(null);
       setSelectedOrderId(ticket.id);
