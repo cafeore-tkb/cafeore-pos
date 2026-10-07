@@ -9,6 +9,7 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 import { canMergeDripUnits, orderNumber, ticketKey } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 
@@ -93,7 +94,7 @@ const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
   if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
   if (current.endTimeSec !== undefined)
     return Math.max(0, current.endTimeSec - currentTimeSec);
-  return Math.round(current.totalDurationSec * barista.coefficient);
+  return current.totalDurationSec;
 };
 
 const formatRemaining = (seconds: number) => {
@@ -251,8 +252,15 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 指名の札は列の番号（1st〜6th）で出す
   const baristaNames = useMemo(
-    () => new Map(sortedBaristas.map((barista) => [barista.id, barista.name])),
+    () =>
+      new Map(
+        sortedBaristas.map((barista) => [
+          barista.id,
+          laneOrdinal(barista.bayNumber),
+        ]),
+      ),
     [sortedBaristas],
   );
   const selectedOrder = useMemo(
@@ -752,11 +760,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-center gap-1">
-                        <span className="font-black font-mono text-[20px] leading-none">
-                          {barista.bayNumber}
-                        </span>
-                        <span className="truncate font-black text-[12px]">
-                          {barista.name}
+                        <span className="font-black font-mono text-[18px] leading-none">
+                          {laneOrdinal(barista.bayNumber)}
                         </span>
                       </div>
                       <button

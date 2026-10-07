@@ -7,8 +7,8 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
 export interface ControlViewBProps {
@@ -44,7 +44,7 @@ const getRemainingSeconds = (barista: Barista, simTimeSec: number) => {
   if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
   if (current.endTimeSec !== undefined)
     return Math.max(0, current.endTimeSec - simTimeSec);
-  return Math.round(current.totalDurationSec * barista.coefficient);
+  return current.totalDurationSec;
 };
 
 export const ControlViewB: React.FC<ControlViewBProps> = ({
@@ -61,7 +61,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onAssignToBay,
   onRequestRebrew,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
 
@@ -108,7 +107,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
       sortedBaristas
         .map((barista) => ({
           bayNumber: barista.bayNumber,
-          seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+          seconds: queueWaitSeconds(barista.queue),
           isStandby: barista.queue.length === 0,
         }))
         .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
@@ -203,17 +202,12 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                 <div className="flex min-h-[32px] items-start justify-between gap-1">
                   <div>
                     <div className="font-black font-mono text-[11px] text-slate-500 uppercase">
-                      ドリッパー {barista.bayNumber}
+                      ドリッパー
                     </div>
-                    <div className="font-black text-[15px] text-slate-950 leading-tight">
-                      {barista.name}
+                    <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
+                      {laneOrdinal(barista.bayNumber)}
                     </div>
                   </div>
-                  {barista.canHandleSpecial && limitedLabel && (
-                    <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-1 font-black text-[9px] text-emerald-100 tracking-wide">
-                      {limitedLabel}
-                    </span>
-                  )}
                 </div>
 
                 <button

@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 
+	"cafeore-pos/api/internal/models"
+
 	"gorm.io/gorm"
 )
 
@@ -10,7 +12,7 @@ import (
 // 値に意味は無く、他で同じキーを使わなければよい。
 const migrateLockKey = 7_204_215_001
 
-// migrate は Go のモデル（schemaModels）を DB のスキーマに反映する。
+// migrate は Go のモデル（models.All）を DB のスキーマに反映する。
 //
 // スキーマの正本はモデルだけで、本番・プレビュー・ローカルのどれも起動時に
 // これを通る。SQL を手で流す運用はしない。
@@ -40,7 +42,7 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
-		if err := tx.AutoMigrate(schemaModels()...); err != nil {
+		if err := tx.AutoMigrate(models.All()...); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
 		return nil
