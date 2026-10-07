@@ -27,7 +27,11 @@ import {
 } from "./components/ControlWorkspace";
 import { LaneChangeDialog } from "./components/LaneChangeDialog";
 import { LaneConfirmDialog } from "./components/LaneConfirmDialog";
-import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
+import {
+  type RebrewDecision,
+  RebrewPanel,
+  rebrewTargetQueue,
+} from "./components/RebrewPanel";
 import { ShiftFeedSettings } from "./components/ShiftFeedSettings";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
@@ -893,9 +897,13 @@ export default function App() {
     )
       return;
     if (live) {
-      const targetQueue =
+      // 差し込み位置はパネルと同じ並び（中断するなら元のカードを除いた並び）で数える
+      const targetQueue = rebrewTargetQueue(
         boardBaristas.find((barista) => barista.id === decision.targetBayId)
-          ?.queue || [];
+          ?.queue || [],
+        ticket,
+        decision.interruptCurrent,
+      );
       // 入れ直しで余分に使った豆は、POS の在庫の計算に入れる（作業計画 K3。P4 のあと）
       void runLive(`${ticket.id}の入れ直し`, {
         name: "rebrew",
@@ -1349,6 +1357,8 @@ export default function App() {
 
       {rebrewSource && rebrewTicket && (
         <RebrewPanel
+          // 別のカードを開き直したら、選んでいた杯数・列・位置を持ち越さない
+          key={rebrewSource.ticketKey}
           ticket={rebrewTicket}
           sourceBayId={rebrewSource.bayId}
           baristas={boardBaristas}

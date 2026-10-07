@@ -1,18 +1,34 @@
 import { formatMinSec } from "@cafeore/common";
 import { AlertTriangle, Clock3, X } from "lucide-react";
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, OrderTicket } from "../types";
 import { isLimitedCard, laneTitle } from "../utils/lanes";
-import { queueWaitSeconds } from "../utils/orderQueue";
+import { queueWaitSeconds, ticketKey } from "../utils/orderQueue";
 
 export interface RebrewDecision {
   cupCount: number;
   interruptCurrent: boolean;
   targetBayId: number | null;
+  // 差し込み位置。rebrewTargetQueue の並びで数える（0 なら先頭、i なら i 枚目の次）
   insertIndex: number | null;
 }
+
+// 差し込み位置を数える列の並び。今の抽出を中断するときは、中断するカード（元のカード）を除く。
+// パネルの選択肢も、確定したときに送る queue_pos も、この並びで数える（片方だけ除くと 1 つずれる）。
+export const rebrewTargetQueue = (
+  queue: OrderTicket[],
+  source: OrderTicket,
+  interrupt: boolean,
+) =>
+  interrupt && source.status === "brewing"
+    ? queue.filter((item) => ticketKey(item) !== ticketKey(source))
+    : queue;
+
+// 列を選んだとき（と、中断／継続を切り替えたとき）の差し込み位置。中断するなら先頭、続けるなら今の抽出の次
+const defaultInsertIndex = (queue: OrderTicket[]) =>
+  queue.length > 0 && queue[0].status === "brewing" ? 1 : 0;
 
 interface RebrewPanelProps {
   ticket: OrderTicket;
@@ -36,41 +52,51 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
   const [targetBayId, setTargetBayId] = useState<number | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
 
-  const candidates = useMemo(
-    () =>
-      [...baristas]
-        .map((barista) => ({
-          barista,
-          wait: queueWaitSeconds(barista.queue),
-          eligible:
-            (!ticket.preferredBaristaId ||
-              ticket.preferredBaristaId === barista.id) &&
-            // 限定のカードは上級生の列だけ（入れ直しも同じ）
-            (!isLimitedCard({ beanCode: ticket.beanCode }) || barista.senior),
-        }))
-        .sort(
-          (a, b) =>
-            a.wait - b.wait || a.barista.bayNumber - b.barista.bayNumber,
-        ),
-    [baristas, ticket.beanCode, ticket.preferredBaristaId],
-  );
+  // 差し込み位置を数える列の並び（中断するなら元のカードを除く）
+  const queueOf = (barista: Barista) =>
+    rebrewTargetQueue(barista.queue, ticket, interruptCurrent);
+
+  const candidates = [...baristas]
+    .map((barista) => ({
+      barista,
+      queue: queueOf(barista),
+      eligible:
+        (!ticket.preferredBaristaId ||
+          ticket.preferredBaristaId === barista.id) &&
+        // 限定のカードは上級生の列だけ（入れ直しも同じ）
+        (!isLimitedCard({ beanCode: ticket.beanCode }) || barista.senior),
+    }))
+    .map((candidate) => ({
+      ...candidate,
+      wait: queueWaitSeconds(candidate.queue),
+    }))
+    .sort(
+      (a, b) => a.wait - b.wait || a.barista.bayNumber - b.barista.bayNumber,
+    );
   const fastestId = candidates.find((candidate) => candidate.eligible)?.barista
     .id;
   const selectedBay =
     baristas.find((barista) => barista.id === targetBayId) || null;
-  const selectedQueue = selectedBay
-    ? interruptCurrent && isBrewing && selectedBay.id === sourceBayId
-      ? selectedBay.queue.slice(1)
-      : selectedBay.queue
-    : [];
-  // Position 0 is offered only for an empty queue or when replacing the drip being
-  // interrupted; a stale 0 (e.g. the drip finished while this panel was open) must be re-picked.
-  const canInsertAtFront =
-    selectedQueue.length === 0 ||
-    (interruptCurrent && isBrewing && selectedBay?.id === sourceBayId);
+  const selectedQueue = selectedBay ? queueOf(selectedBay) : [];
+  // 抽出中のカードより前には入れられない。先頭（0）は、列が空か、中断して先頭が空くときだけ。
+  // 開いている間に抽出が終わるなどして先頭に入れられなくなった 0 は、選び直してもらう
+  const canInsertAtFront = selectedQueue[0]?.status !== "brewing";
+  const replacingInterrupted =
+    interruptCurrent && isBrewing && selectedBay?.id === sourceBayId;
   const canConfirm =
     targetBayId === null ||
     (insertIndex !== null && (insertIndex > 0 || canInsertAtFront));
+
+  // 中断／継続を切り替えると数える並びが変わるので、選んでいた列の差し込み位置を選び直す
+  const changeInterrupt = (interrupt: boolean) => {
+    setInterruptCurrent(interrupt);
+    if (selectedBay)
+      setInsertIndex(
+        defaultInsertIndex(
+          rebrewTargetQueue(selectedBay.queue, ticket, interrupt),
+        ),
+      );
+  };
 
   return (
     <aside
@@ -113,14 +139,14 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setInterruptCurrent(true)}
+                onClick={() => changeInterrupt(true)}
                 className={`min-h-[52px] touch-manipulation rounded-xl border-2 font-black text-[14px] ${interruptCurrent ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-700"}`}
               >
                 今すぐ中断
               </button>
               <button
                 type="button"
-                onClick={() => setInterruptCurrent(false)}
+                onClick={() => changeInterrupt(false)}
                 className={`min-h-[52px] touch-manipulation rounded-xl border-2 font-black text-[14px] ${!interruptCurrent ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-700"}`}
               >
                 抽出は続ける
@@ -154,20 +180,14 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
             担当ドリッパーを選択
           </h3>
           <div className="grid grid-cols-2 gap-2">
-            {candidates.map(({ barista, wait, eligible }) => (
+            {candidates.map(({ barista, queue, wait, eligible }) => (
               <button
                 key={barista.id}
                 type="button"
                 disabled={!eligible}
                 onClick={() => {
                   setTargetBayId(barista.id);
-                  setInsertIndex(
-                    interruptCurrent && isBrewing && barista.id === sourceBayId
-                      ? 0
-                      : barista.queue.length === 0
-                        ? 0
-                        : 1,
-                  );
+                  setInsertIndex(defaultInsertIndex(queue));
                 }}
                 className={`min-h-[66px] touch-manipulation rounded-xl border-2 p-2 text-left disabled:opacity-45 ${targetBayId === barista.id ? "border-red-600 bg-red-50" : "border-slate-200 bg-white hover:border-slate-400"}`}
               >
@@ -183,7 +203,7 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                 </div>
                 <div className="mt-1 flex items-center gap-1 font-bold text-[12px] text-slate-500">
                   <Clock3 className="h-3.5 w-3.5" />
-                  {barista.queue.length === 0
+                  {queue.length === 0
                     ? "今すぐ"
                     : `全件後 ${formatMinSec(wait)}`}
                   {!eligible && (
@@ -225,26 +245,21 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                 </button>
               ) : (
                 <>
-                  {interruptCurrent &&
-                    isBrewing &&
-                    selectedBay.id === sourceBayId && (
-                      <button
-                        type="button"
-                        onClick={() => setInsertIndex(0)}
-                        className={`min-h-[46px] w-full touch-manipulation rounded-xl border-2 px-3 text-left font-black text-[13px] ${insertIndex === 0 ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}
-                      >
-                        中断後、今すぐ開始
-                      </button>
-                    )}
+                  {canInsertAtFront && (
+                    <button
+                      type="button"
+                      onClick={() => setInsertIndex(0)}
+                      className={`min-h-[46px] w-full touch-manipulation rounded-xl border-2 px-3 text-left font-black text-[13px] ${insertIndex === 0 ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 bg-white"}`}
+                    >
+                      {replacingInterrupted
+                        ? "中断後、今すぐ開始"
+                        : `${selectedQueue[0].id} ${selectedQueue[0].beanName} の前`}
+                    </button>
+                  )}
                   {selectedQueue.map((previous, offset) => {
                     const index = offset + 1;
                     const label =
-                      index === 1 &&
-                      !(
-                        interruptCurrent &&
-                        isBrewing &&
-                        selectedBay.id === sourceBayId
-                      )
+                      previous.status === "brewing"
                         ? "現在の抽出の次"
                         : `${previous.id} ${previous.beanName} の次`;
                     return (
