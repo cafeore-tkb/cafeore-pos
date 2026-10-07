@@ -471,7 +471,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                           {group.id}
                         </div>
                         {nominationText(group.items[0]) && (
-                          <div className="mt-1 inline-flex rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                          <div className="mt-1 inline-flex whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
                             指名:{nominationText(group.items[0])}
                           </div>
                         )}

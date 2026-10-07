@@ -112,7 +112,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                             {ord.beanName}
                           </span>
                           {nominationText(ord) && (
-                            <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                            <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
                               指名:{nominationText(ord)}
                             </span>
                           )}
