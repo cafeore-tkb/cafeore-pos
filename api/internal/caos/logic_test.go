@@ -343,6 +343,22 @@ func TestNextReadyAndRestore(t *testing.T) {
 	isInvalid(t, b.Restore(&Changeset{}, before, lastRows), "ほかの端末で変更された")
 }
 
+// 「次へ」に終わらせるカードを付けると、二度押し（2 回目は次のカードが抽出中）を断る
+func TestNextWithDripIDRejectsDoublePress(t *testing.T) {
+	b := seeded(t)
+	cards := cardsOf(b, 1)
+	a, c := cards[0], cards[1]
+	apply(t, b, Op{Name: "assign", DripID: a.ID, Dripper: ptr(1)})
+	apply(t, b, Op{Name: "assign", DripID: c.ID, Dripper: ptr(1)})
+	apply(t, b, Op{Name: "next", Dripper: ptr(1), DripID: a.ID})
+	isInvalid(t, applyErr(b, Op{Name: "next", Dripper: ptr(1), DripID: a.ID}), "もう終わっています")
+	if got := statuses(b, 1); !slices.Equal(got, []Status{StatusDone, StatusBrewing}) {
+		t.Fatalf("2 回目は何も変えない：%v", got)
+	}
+	apply(t, b, Op{Name: "next", Dripper: ptr(1), DripID: c.ID})
+	checkInvariants(t, b)
+}
+
 func TestNextRejectsIdleDripper(t *testing.T) {
 	isInvalid(t, applyErr(seeded(t), Op{Name: "next", Dripper: ptr(4)}), "抽出中ではありません")
 }

@@ -78,7 +78,7 @@ type OrderLine struct {
 // Op は画面からの操作。Name で種類を分け、使うフィールドだけを埋める。
 type Op struct {
 	Name string `json:"name"`
-	// assign・unassign
+	// assign・unassign。next では任意で、終わらせるカード（今抽出中のカードと違えば断る）
 	DripID string `json:"drip_id,omitempty"`
 	// assign・next・rebrew（rebrew は null なら未割当に置く）
 	Dripper *int `json:"dripper,omitempty"`
