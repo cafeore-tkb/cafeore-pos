@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
 import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
+import { BeanBadge } from "./BeanBadge";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 25.04 19.03" aria-hidden="true">
@@ -240,11 +241,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
               ? "text-red-700"
               : order.preferredBaristaId
                 ? "text-violet-700"
-                : surface.dark
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+                : surface.colored
+                  ? ""
+                  : surface.dark
+                    ? "text-white"
+                    : order.totalItemsInOrder && order.totalItemsInOrder > 1
+                      ? "text-slate-950"
+                      : "text-slate-600";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -281,6 +284,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   >
                     {order.beanName} ×{order.cupCount}
                   </h3>
+                  <BeanBadge
+                    beans={order.beans}
+                    className={isSidebar ? "text-[12px]" : ""}
+                  />
                   {order.preferredBaristaId && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
                       指名 {order.preferredBaristaId}

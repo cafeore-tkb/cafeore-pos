@@ -13,19 +13,14 @@ export type PosOrder = WithId<OrderEntity>;
 export type Drip = CaosDrip;
 export type { CaosOp, CaosOpResult };
 
-// 豆は DB の商品の種類（item_type）を先に見て決める。名前で決めるのは定番の豆だけ。
+// 盤面のカードの区分は、DB の商品の種類（item_type）だけで決める。
 // - 限定（limited）は SP。SP を淹れられるドリッパーにだけ回す
-// - どれにも当たらない商品（も花も香ブレンドなど）は「その他」。黙って SP にはしない
-export const posBeanCode = (name: string, type: string): BeanCode => {
+// - 氷（ice）・牛（iceOre）は仕上げが違うので分ける
+// どの豆かは名前では決めず、在庫の「商品 → 豆」（item_stock_usages）から引く（utils/beans.ts）
+export const posBeanCode = (type: string): BeanCode => {
   if (type === "ice") return "ICE";
   if (type === "iceOre") return "MILK";
   if (type === "limited") return "SP";
-  if (name.includes("俺")) return "ORE";
-  if (name.includes("優勝") || name.includes("縁")) return "CHAMP";
-  if (name.includes("タンザニア") || name.includes("キリマンジャロ"))
-    return "TNZ";
-  if (name.includes("ケニア")) return "KEN";
-  if (name.includes("ブラジル")) return "BRA";
   return "OTHER";
 };
 

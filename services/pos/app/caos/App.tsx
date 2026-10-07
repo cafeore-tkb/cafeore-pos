@@ -15,17 +15,13 @@ import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import {
-  INITIAL_BARISTAS,
-  INITIAL_BEANS,
-  INITIAL_LEARNING_LOGS,
-} from "./data/initialData";
+import { INITIAL_BARISTAS, INITIAL_LEARNING_LOGS } from "./data/initialData";
+import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard, queuePosAt } from "./live/drips";
 import type {
   Barista,
   BeanCode,
-  BeanItem,
   HistoricalDataset,
   HistoricalOrder,
   LearningEngineLog,
@@ -45,12 +41,8 @@ import {
 } from "./utils/orderQueue";
 import type { CaosOp } from "./utils/posOrders";
 
-// 1 回のドリップで手元の豆の在庫から引く分
-type BeanUse = { code: BeanCode; grams: number };
-
 type UndoSnapshot = {
   baristas: Barista[];
-  beans: BeanItem[];
   unassignedOrders: UnassignedOrder[];
   shiftRosterIndex: number;
   label: string;
@@ -58,7 +50,6 @@ type UndoSnapshot = {
 
 type PanelSnapshot = {
   baristas: Barista[];
-  beans: BeanItem[];
   learningLogs: LearningEngineLog[];
   testPlaySession: TestPlaySession | null;
 };
@@ -151,6 +142,8 @@ const makeCleanBaristas = (): Barista[] =>
     pastTickets: [],
   }));
 
+// 実データテスト（2025年の注文。商品 ID が無い）の豆のコード。盤面のカードには使わない。
+// サーバーの練習用の盤面に移したら消す（作業計画 K7）
 const historicalBeanCode = (name: string, type: string): BeanCode => {
   if (type === "ice") return "ICE";
   if (type === "iceOre" || type === "milk") return "MILK";
@@ -225,9 +218,6 @@ export default function App() {
   // Core Data
   const [baristas, setBaristas] = useState<Barista[]>(
     () => standaloneSnapshot?.baristas || makeCleanBaristas(),
-  );
-  const [beans, setBeans] = useState<BeanItem[]>(
-    () => standaloneSnapshot?.beans || INITIAL_BEANS,
   );
   const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
     [],
@@ -308,6 +298,13 @@ export default function App() {
   const catalog = useMemo(() => buildCatalog(posOrders), [posOrders]);
   // カードの色をマスターの画面と同じにするための色の設定
   const { colorSettings } = useColorSettings(live);
+  // 豆の在庫と「商品 → 豆」は POS の在庫（API）をそのまま使う。CaOS では在庫を持たず、減らしもしない
+  const {
+    beanStatuses,
+    beanIndex,
+    error: beanError,
+    isLoading: beanLoading,
+  } = useBeanInventory();
   // 盤面のカードから組み立てた管制盤。ドリッパーの名前と係数は手元の baristas から取る
   const liveBoard = useMemo(
     () =>
@@ -318,8 +315,17 @@ export default function App() {
         realTimeSec,
         realDayStartMs,
         colorSettings,
+        beanIndex,
       ),
-    [liveDrips, catalog, baristas, realTimeSec, realDayStartMs, colorSettings],
+    [
+      liveDrips,
+      catalog,
+      baristas,
+      realTimeSec,
+      realDayStartMs,
+      colorSettings,
+      beanIndex,
+    ],
   );
   const boardBaristas = live ? liveBoard.baristas : baristas;
   const boardUnassignedOrders = live
@@ -327,8 +333,6 @@ export default function App() {
     : unassignedOrders;
   // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
   const liveUndoRef = useRef<string | null>(null);
-  // その操作で手元の豆の在庫から引いた分（「1つ戻す」が通ったら戻す）。在庫はこの端末だけのもの
-  const liveUndoBeansRef = useRef<BeanUse | null>(null);
   // 「次へ」を送っている途中のドリッパー（応答が盤面に届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   // 「1つ戻す」を送っている途中（結果が返るまでの二度押しを止める）
@@ -341,32 +345,17 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [liveError]);
 
-  const adjustBeans = ({ code, grams }: BeanUse, sign: 1 | -1) =>
-    setBeans((prev) =>
-      prev.map((bean) =>
-        bean.code === code
-          ? { ...bean, stockGrams: Math.max(0, bean.stockGrams + sign * grams) }
-          : bean,
-      ),
-    );
-
   // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果のカードは WebSocket の drips で届く。
-  // usedBeans は、操作が通ったときだけ手元の豆の在庫から引く分（失敗したら在庫は変えない）。通ったら true を返す
-  const runLive = async (
-    label: string | null,
-    op: CaosOp,
-    usedBeans?: BeanUse,
-  ) => {
+  // 通ったら true を返す。豆の在庫は POS の在庫（注文から数える）なので、ここでは減らさない
+  const runLive = async (label: string | null, op: CaosOp) => {
     const { result, error } = await postCaosOp(op);
     if (error || !result) {
       setLiveError(error || "操作に失敗しました");
       return false;
     }
-    if (usedBeans) adjustBeans(usedBeans, -1);
     if (label && result.op_id) {
       undoSnapshotRef.current = null;
       liveUndoRef.current = result.op_id;
-      liveUndoBeansRef.current = usedBeans ?? null;
       setUndoLabel(label);
     }
     return true;
@@ -480,7 +469,6 @@ export default function App() {
     liveUndoRef.current = null;
     undoSnapshotRef.current = {
       baristas,
-      beans,
       unassignedOrders,
       shiftRosterIndex,
       label,
@@ -493,21 +481,18 @@ export default function App() {
     const liveUndo = liveUndoRef.current;
     if (live && liveUndo) {
       if (pendingUndoRef.current) return;
-      const usedBeans = liveUndoBeansRef.current;
       setSelectedOrderId(null);
       setRebrewSource(null);
       setSelectedTicketKey(null);
-      // 戻せたときだけ「1つ戻す」の対象を消し、その操作で引いた豆の在庫も戻す。
+      // 戻せたときだけ「1つ戻す」の対象を消す。
       // 断られたら（ほかの iPad が先に操作した、など）対象を残して、もう一度押せるようにする
       pendingUndoRef.current = true;
       void runLive(null, { name: "undo", op_id: liveUndo })
         .then((ok) => {
           if (!ok) return;
-          if (usedBeans) adjustBeans(usedBeans, 1);
           // 送っている間にほかの操作をしていたら、そちらを「1つ戻す」の対象に残す
           if (liveUndoRef.current === liveUndo) {
             liveUndoRef.current = null;
-            liveUndoBeansRef.current = null;
             setUndoLabel(null);
           }
         })
@@ -526,7 +511,6 @@ export default function App() {
       (order) => !restoredKeys.has(order.ticketUid || order.id),
     );
     setBaristas(snapshot.baristas);
-    setBeans(snapshot.beans);
     setUnassignedOrders([...snapshot.unassignedOrders, ...arrivals]);
     setShiftRosterIndex(snapshot.shiftRosterIndex);
     setSelectedOrderId(null);
@@ -642,10 +626,6 @@ export default function App() {
       timestamp: formatTimeStr(realTimeSec),
     };
 
-    const usedBeans: BeanUse = {
-      code: completedTicket.beanCode,
-      grams: completedTicket.cupCount * 14,
-    };
     const addLog = () =>
       setLearningLogs((prevLogs) => [
         newLog,
@@ -654,13 +634,13 @@ export default function App() {
 
     if (live) {
       // 見ていたカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが 422 で断る）。
-      // 豆の在庫と学習ログは、サーバーで通ってから更新する
+      // 学習ログは、サーバーで通ってから更新する
       pendingNextRef.current.add(bayId);
-      void runLive(
-        `${targetBarista.bayNumber}の「次へ」`,
-        { name: "next", dripper: bayId, drip_id: completedTicket.ticketUid },
-        usedBeans,
-      )
+      void runLive(`${targetBarista.bayNumber}の「次へ」`, {
+        name: "next",
+        dripper: bayId,
+        drip_id: completedTicket.ticketUid,
+      })
         .then((ok) => {
           if (ok) addLog();
         })
@@ -669,7 +649,6 @@ export default function App() {
     }
 
     addLog();
-    adjustBeans(usedBeans, -1);
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -945,27 +924,21 @@ export default function App() {
       const targetQueue =
         boardBaristas.find((barista) => barista.id === decision.targetBayId)
           ?.queue || [];
-      void runLive(
-        `${ticket.id}の入れ直し`,
-        {
-          name: "rebrew",
-          source_id: ticket.ticketUid,
-          cups: decision.cupCount,
-          interrupt: decision.interruptCurrent,
-          dripper: decision.targetBayId,
-          queue_pos:
-            decision.targetBayId === null
-              ? null
-              : queuePosAt(
-                  targetQueue,
-                  decision.insertIndex ?? targetQueue.length,
-                ),
-        },
-        // 抽出中を途中でやめたら、その分の豆を使ったことにする（ライブでない盤面と同じ）
-        decision.interruptCurrent && ticket.status === "brewing"
-          ? { code: ticket.beanCode, grams: ticket.cupCount * 14 }
-          : undefined,
-      );
+      // 入れ直しで余分に使った豆は、POS の在庫の計算に入れる（作業計画 K3。P4 のあと）
+      void runLive(`${ticket.id}の入れ直し`, {
+        name: "rebrew",
+        source_id: ticket.ticketUid,
+        cups: decision.cupCount,
+        interrupt: decision.interruptCurrent,
+        dripper: decision.targetBayId,
+        queue_pos:
+          decision.targetBayId === null
+            ? null
+            : queuePosAt(
+                targetQueue,
+                decision.insertIndex ?? targetQueue.length,
+              ),
+      });
       setRebrewSource(null);
       setSelectedTicketKey(null);
       setSelectedOrderId(ticket.id);
@@ -991,19 +964,6 @@ export default function App() {
       rebrewOfTicketUid: originalKey,
       isInterrupted: false,
     };
-
-    if (decision.interruptCurrent && ticket.status === "brewing") {
-      setBeans((prev) =>
-        prev.map((bean) =>
-          bean.code === ticket.beanCode
-            ? {
-                ...bean,
-                stockGrams: Math.max(0, bean.stockGrams - ticket.cupCount * 14),
-              }
-            : bean,
-        ),
-      );
-    }
 
     if (decision.targetBayId === null) {
       setUnassignedOrders((prev) => [
@@ -1177,7 +1137,6 @@ export default function App() {
   // Reset to initial screenshot state
   const handleResetData = () => {
     setBaristas(makeCleanBaristas());
-    setBeans(INITIAL_BEANS);
     setUnassignedOrders([]);
     undoSnapshotRef.current = null;
     liveUndoRef.current = null;
@@ -1207,7 +1166,6 @@ export default function App() {
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
     setBaristas(makeCleanBaristas());
-    setBeans(INITIAL_BEANS);
     setUnassignedOrders([]);
     setLearningLogs(INITIAL_LEARNING_LOGS);
     setSelectedOrderId(null);
@@ -1260,13 +1218,31 @@ export default function App() {
     .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
     .slice(0, 3);
 
+  // 盤面にある（未割当・待機・抽出中の）杯数（豆＝在庫対象の ID ごと）。豆のパネルに出す。実データテスト中は出さない
+  const beanWaitingCups = useMemo(() => {
+    if (!live) return undefined;
+    const cups = new Map<string, number>();
+    const waiting = [
+      ...boardUnassignedOrders,
+      ...boardBaristas.flatMap((barista) => barista.queue),
+    ];
+    for (const card of waiting) {
+      for (const bean of card.beans ?? []) {
+        cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
+      }
+    }
+    for (const status of beanStatuses) {
+      if (!cups.has(status.resource.id)) cups.set(status.resource.id, 0);
+    }
+    return cups;
+  }, [live, boardUnassignedOrders, boardBaristas, beanStatuses]);
+
   const openAuxiliaryTab = (tab: AuxiliaryTab) => {
     try {
       window.localStorage.setItem(
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
           baristas: boardBaristas,
-          beans,
           learningLogs,
           testPlaySession,
         } satisfies PanelSnapshot),
@@ -1283,7 +1259,12 @@ export default function App() {
     <AuxiliaryContent
       tab={tab}
       baristas={boardBaristas}
-      beans={beans}
+      beanInventory={{
+        statuses: beanStatuses,
+        isLoading: beanLoading,
+        error: beanError,
+      }}
+      beanWaitingCups={beanWaitingCups}
       learningLogs={learningLogs}
       salesOrders={
         testPlaySession?.orders.filter(
@@ -1307,12 +1288,6 @@ export default function App() {
         )
       }
       onResetLearning={handleResetData}
-      onUpdateBean={(updated) =>
-        setBeans((prev) =>
-          prev.map((bean) => (bean.code === updated.code ? updated : bean)),
-        )
-      }
-      onAddBean={(newBean) => setBeans((prev) => [newBean, ...prev])}
     />
   );
 

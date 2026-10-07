@@ -8,7 +8,8 @@ import {
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useLimitedLabel } from "../limitedLabel";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import { cardHasBean } from "../utils/beans";
 import { queueWaitSeconds } from "../utils/orderQueue";
 
 export interface ControlViewBProps {
@@ -16,7 +17,8 @@ export interface ControlViewBProps {
   unassignedOrders: UnassignedOrder[];
   simTimeSec: number;
   selectedOrderId: string | null;
-  highlightFilter: BeanCode | null;
+  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  highlightFilter: string | null;
   onSelectOrder: (orderId: string) => void;
   onSelectQueueOrder: (order: UnassignedOrder) => void;
   onAdvanceBay: (bayId: number) => void;
@@ -384,7 +386,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               const isSelected = selectedOrderId === group.id;
               const matchesHeaderFilter = Boolean(
                 highlightFilter &&
-                  group.items.some((item) => item.beanCode === highlightFilter),
+                  group.items.some((item) =>
+                    cardHasBean(item, highlightFilter),
+                  ),
               );
               const assignedRoutes = sortedBaristas.flatMap((barista) =>
                 barista.queue

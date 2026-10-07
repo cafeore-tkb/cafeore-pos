@@ -1,3 +1,4 @@
+import { readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -101,6 +102,7 @@ const formatRemaining = (seconds: number) => {
   return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
 };
 
+// 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
 const sheetLabel: Record<BeanCode, string> = {
   CHAMP: "チャンプ",
   ORE: "俺ブレ",
@@ -177,6 +179,10 @@ const CupChip: React.FC<{
   onClick,
 }) => {
   const stacked = cup.cupCount >= 2;
+  // 盤面のカードはマスターの画面と同じ背景色。文字色は背景色から決める（POS と共通の readableTextColor）
+  const colorStyle = cup.color
+    ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
+    : undefined;
 
   return (
     <div
@@ -186,14 +192,14 @@ const CupChip: React.FC<{
         <div
           aria-hidden
           className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
-          style={cup.color ? { backgroundColor: cup.color } : undefined}
+          style={colorStyle}
         />
       )}
       <button
         type="button"
         disabled={!onClick}
         onClick={onClick}
-        style={cup.color ? { backgroundColor: cup.color } : undefined}
+        style={colorStyle}
         className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${
           cup.isRebrew ? "border-2 border-red-600" : "border-slate-500"
         } ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
@@ -201,18 +207,26 @@ const CupChip: React.FC<{
         }`}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
-          <span className="truncate font-black text-[14px] text-slate-950 leading-tight">
+          <span
+            className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
+          >
             {cup.itemKey ? cup.beanName : sheetLabel[cup.beanCode]}
           </span>
-          <span className="shrink-0 font-black font-mono text-[11px] text-slate-700">
+          <span
+            className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             ×{cup.cupCount}
           </span>
         </span>
-        <span className="truncate font-bold font-mono text-[11px] text-slate-600">
+        <span
+          className={`truncate font-bold font-mono text-[11px] ${cup.color ? "opacity-75" : "text-slate-600"}`}
+        >
           No. {cup.id.replaceAll("#", "")}
         </span>
         {(baristaName || note || cup.isRebrew) && (
-          <span className="truncate font-bold text-[10px] text-slate-700">
+          <span
+            className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             {cup.isRebrew ? "入れ直し " : ""}
             {baristaName ? `指名：${baristaName}` : ""}
             {note ? ` ${note}` : ""}

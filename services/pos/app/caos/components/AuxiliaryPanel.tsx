@@ -1,11 +1,7 @@
+import type { InventoryStatus } from "@cafeore/common";
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type {
-  Barista,
-  BeanItem,
-  HistoricalOrder,
-  LearningEngineLog,
-} from "../types";
+import type { Barista, HistoricalOrder, LearningEngineLog } from "../types";
 import { AiConfigView } from "./AiConfigView";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
@@ -24,7 +20,13 @@ export const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
 interface AuxiliaryContentProps {
   tab: AuxiliaryTab;
   baristas: Barista[];
-  beans: BeanItem[];
+  // 豆のパネルに出す POS の在庫（豆だけ）と、盤面にある杯数（在庫対象の ID ごと）
+  beanInventory: {
+    statuses: InventoryStatus[];
+    isLoading: boolean;
+    error: unknown;
+  };
+  beanWaitingCups?: Map<string, number>;
   learningLogs: LearningEngineLog[];
   salesOrders: HistoricalOrder[];
   periodStartMs?: number;
@@ -33,14 +35,13 @@ interface AuxiliaryContentProps {
   onChangeShift: () => void;
   onUpdateCoefficient: (bayId: number, coefficient: number) => void;
   onResetLearning: () => void;
-  onUpdateBean: (bean: BeanItem) => void;
-  onAddBean: (bean: BeanItem) => void;
 }
 
 export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   tab,
   baristas,
-  beans,
+  beanInventory,
+  beanWaitingCups,
   learningLogs,
   salesOrders,
   periodStartMs,
@@ -49,8 +50,6 @@ export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   onChangeShift,
   onUpdateCoefficient,
   onResetLearning,
-  onUpdateBean,
-  onAddBean,
 }) => (
   <>
     {tab === "bays" && (
@@ -72,9 +71,10 @@ export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
     )}
     {tab === "beans" && (
       <BeanQueueView
-        beans={beans}
-        onUpdateBean={onUpdateBean}
-        onAddBean={onAddBean}
+        statuses={beanInventory.statuses}
+        isLoading={beanInventory.isLoading}
+        error={beanInventory.error}
+        waitingCups={beanWaitingCups}
       />
     )}
     {tab === "analytics" && (

@@ -59,6 +59,31 @@ export const resolveItemColor = (
   return undefined;
 };
 
+// マスターの画面の既定の背景色（Tailwind v4 の色を #RRGGBB にしたもの）。
+// 色の設定が無いときに使う。POS のマスターの画面と CaOS のカードで同じ色にする。
+const MASTER_DEFAULT_TYPE_COLORS: Record<string, string> = {
+  ice: "#bedbff", // blue-200
+  iceOre: "#b8e6fe", // sky-200
+  milk: "#d1d5dc", // gray-300
+};
+// 名前を決め打ちして緑（green-300）にしている商品（以前からのマスターの画面の見た目）
+const MASTER_DEFAULT_NAMED_COLOR = "#7bf1a8";
+const MASTER_DEFAULT_NAMED_ITEMS = ["ブルマン", "ライチ"];
+
+/**
+ * マスターの画面の既定の背景色
+ * 色の設定（resolveItemColor）が無いときに使う。種類ごとの色 > 名前で決め打ちした色の順で、
+ * どちらにも当たらなければ undefined（カードのいつもの色）。
+ */
+export const masterDefaultColor = (item: {
+  name: string;
+  item_type: { name: string };
+}): string | undefined =>
+  MASTER_DEFAULT_TYPE_COLORS[item.item_type.name] ??
+  (MASTER_DEFAULT_NAMED_ITEMS.includes(item.name)
+    ? MASTER_DEFAULT_NAMED_COLOR
+    : undefined);
+
 /**
  * 背景色の上で読みやすい文字色を返す
  * 背景の相対輝度が高ければ黒、低ければ白にする。

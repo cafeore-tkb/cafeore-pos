@@ -76,31 +76,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       (ticket) => ticket.isRebrew && !ticket.isInterrupted,
     );
     const interrupted = history.filter((ticket) => ticket.isInterrupted);
-    const interruptedKeys = new Set(
-      interrupted.map(
-        (ticket) => ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`,
-      ),
-    );
     const rebrewCups = rebrews.reduce(
       (sum, ticket) => sum + ticket.cupCount,
       0,
     );
-    const interruptedCups = interrupted.reduce(
-      (sum, ticket) => sum + ticket.cupCount,
-      0,
-    );
-    const completedRedoAfterFinished = rebrews
-      .filter(
-        (ticket) =>
-          !ticket.rebrewOfTicketUid ||
-          !interruptedKeys.has(ticket.rebrewOfTicketUid),
-      )
-      .reduce((sum, ticket) => sum + ticket.cupCount, 0);
+    // 入れ直しで余分に使った豆は CaOS では数えない（POS の在庫に入れる。作業計画 K3）
     return {
       rebrewCount: rebrews.length,
       rebrewCups,
       interruptedCount: interrupted.length,
-      extraBeans: (interruptedCups + completedRedoAfterFinished) * 14,
     };
   }, [baristas]);
   const completedParts = useMemo<CompletedPart[]>(
@@ -481,7 +465,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             <AlertTriangle className="h-4 w-4" />
             緊急入れ直し
           </h3>
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-red-100 bg-white p-2">
               <div className="font-bold text-[10px] text-slate-500">
                 完了した入れ直し
@@ -498,15 +482,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <div className="font-black font-mono text-[22px] text-red-700">
                 {rebrewSummary.interruptedCount}
                 <span className="text-[11px]">件</span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">
-                追加消費豆
-              </div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.extraBeans}
-                <span className="text-[11px]">g</span>
               </div>
             </div>
           </div>

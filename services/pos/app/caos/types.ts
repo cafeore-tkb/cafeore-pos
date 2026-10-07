@@ -7,27 +7,13 @@ export type BeanCode =
   | "ICE"
   | "MILK"
   | "SP"
-  // 定番の豆にも限定にも当たらない商品（も花も香ブレンドなど）。SP にはしない
+  // 盤面のカードで、氷・牛・限定のどれでもない商品（どの豆かは beans で見分ける）
   | "OTHER";
 
-export interface BeanConfig {
-  code: BeanCode;
-  label: string;
-  subLabel: string;
-  badgeBg: string;
-  badgeText: string;
-  borderColor: string;
-  accentColor: string;
-}
-
-export interface BeanItem {
-  code: BeanCode;
+// カードの豆。POS の在庫対象（kind が bean）の ID と名前をそのまま持つ
+export interface CardBean {
+  id: string;
   name: string;
-  roastProfile: string;
-  roastDate: string;
-  flavorNotes: string;
-  origin: string;
-  stockGrams: number;
 }
 
 export interface OrderTicket {
@@ -35,6 +21,8 @@ export interface OrderTicket {
   color?: string;
   /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
   itemKey?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  beans?: CardBean[];
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
   itemIndex?: number; // e.g. 1 (of 2 items in order #152)
@@ -100,6 +88,8 @@ export interface UnassignedOrder {
   color?: string;
   /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
   itemKey?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  beans?: CardBean[];
   id: string; // e.g. "#162"
   ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
   itemIndex?: number;

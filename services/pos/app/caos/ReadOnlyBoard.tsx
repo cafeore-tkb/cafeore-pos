@@ -3,6 +3,7 @@ import { Database, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
 import { INITIAL_BARISTAS } from "./data/initialData";
+import { useBeanInventory } from "./hooks/useBeanInventory";
 import { type PosConnectionStatus, usePosOrders } from "./hooks/usePosOrders";
 import { buildCatalog, dripsToBoard } from "./live/drips";
 import type { Barista } from "./types";
@@ -50,6 +51,8 @@ export default function ReadOnlyBoard() {
   const catalog = useMemo(() => buildCatalog(orders), [orders]);
   // カードの色をマスターの画面と同じにするための色の設定
   const { colorSettings } = useColorSettings();
+  // カードの豆（在庫の「商品 → 豆」）
+  const { beanIndex } = useBeanInventory();
   const nowSec = Math.floor((now.getTime() - dayStartMs) / 1000);
   const board = useMemo(
     () =>
@@ -60,8 +63,9 @@ export default function ReadOnlyBoard() {
         nowSec,
         dayStartMs,
         colorSettings,
+        beanIndex,
       ),
-    [drips, catalog, baristas, nowSec, dayStartMs, colorSettings],
+    [drips, catalog, baristas, nowSec, dayStartMs, colorSettings, beanIndex],
   );
   const nextAvailable = [...board.baristas]
     .map((barista) => ({

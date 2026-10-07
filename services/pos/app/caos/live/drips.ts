@@ -1,5 +1,12 @@
 import type { ColorSetting } from "@cafeore/common";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import type {
+  Barista,
+  BeanCode,
+  CardBean,
+  OrderTicket,
+  UnassignedOrder,
+} from "../types";
+import type { BeanIndex } from "../utils/beans";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
 import {
@@ -88,12 +95,20 @@ const describe = (
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
   colorSettings: ColorSetting[],
+  beanIndex: BeanIndex,
 ) => {
   const first = drip.lines[0];
   const itemOf = (orderId: string, itemId: string) =>
     catalog.get(orderId)?.items.get(itemId);
   const firstItem = first ? itemOf(first.order_id, first.item_id) : undefined;
-  const beanCode = posBeanCode(firstItem?.name ?? "", firstItem?.type ?? "");
+  const beanCode = posBeanCode(firstItem?.type ?? "");
+  // 豆は在庫の「商品 → 豆」から引く（カードの商品が使う在庫対象をまとめる）
+  const beans = new Map<string, CardBean>();
+  for (const line of drip.lines) {
+    for (const bean of beanIndex.get(line.item_id) ?? []) {
+      beans.set(bean.id, bean);
+    }
+  }
   const sourceOrderIds = Array.from(
     new Set(
       drip.lines.map((line) =>
@@ -139,6 +154,7 @@ const describe = (
     // 色はマスターの画面と同じ（統合カードは先頭の商品の色）
     color: firstItem ? masterCardColor(colorSettings, firstItem) : undefined,
     itemKey: first?.item_id,
+    beans: Array.from(beans.values()),
     cupCount: drip.cups,
     preferredBaristaId,
     isRebrew: Boolean(drip.rebrew_of) || undefined,
@@ -162,6 +178,8 @@ export const dripsToBoard = (
   dayStartMs: number,
   // マスターの画面の色の設定（カードの色をマスターと同じにする）
   colorSettings: ColorSetting[] = [],
+  // 商品 → 豆（POS の在庫の設定）
+  beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
   const drips = allDrips.filter((drip) =>
     drip.lines.every((line) => catalog.has(line.order_id)),
@@ -178,7 +196,14 @@ export const dripsToBoard = (
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
     const totalDurationSec = durationOf(drip.cups);
     return {
-      ...describe(drip, baristas, catalog, orderParts, colorSettings),
+      ...describe(
+        drip,
+        baristas,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      ),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
@@ -249,7 +274,14 @@ export const dripsToBoard = (
     .filter((drip) => drip.status === "unassigned")
     .sort(compareQueue)
     .map((drip): UnassignedOrder => {
-      const card = describe(drip, baristas, catalog, orderParts, colorSettings);
+      const card = describe(
+        drip,
+        baristas,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      );
       const merged = Boolean(card.sourceOrderIds);
       return {
         ...card,
