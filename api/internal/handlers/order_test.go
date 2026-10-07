@@ -112,6 +112,15 @@ func TestBuildOrderMenusRejectsInvalidAssignment(t *testing.T) {
 			t.Fatalf("legacy line must be editable: %+v, %v", request, err)
 		}
 	}
+	// 番号の付いた明細から番号だけを外して、自由記述を残すことはできない
+	numberedID, third, named := uuid.New(), 3, "山田"
+	numbered := models.OrderMenu{ID: numberedID, OrderID: orderID, MenuID: menuID, Dripper: &third, Assignee: &named, MenuName: "ブレンド", UnitPrice: 500}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID, Assignee: &named}}, []models.OrderMenu{numbered}, master); !errors.Is(err, errInvalidOrderMenus) {
+		t.Fatalf("free text must not stay without its number, got %v", err)
+	}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID}}, []models.OrderMenu{numbered}, master); err != nil {
+		t.Fatalf("numbered line must be unassignable: %v", err)
+	}
 }
 
 func TestBuildOrderMenusRejectsInvalidReferences(t *testing.T) {

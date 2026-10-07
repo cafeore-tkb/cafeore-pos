@@ -66,7 +66,8 @@ func sameAssignee(a, b *string) bool {
 }
 
 // 指名はドリッパーの番号が必須で、自由記述は番号に添えるだけ。
-// 番号より前の注文の明細（自由記述だけの指名）は、変えずに残すときだけ通す。
+// 番号より前の注文の明細（番号が無く自由記述だけの指名）は、変えずに残すときだけ通す。
+// 番号の付いた明細から番号だけを外して自由記述を残すことはできない。
 func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) error {
 	if dripper != nil {
 		if *dripper < 1 || *dripper > maxDripper {
@@ -74,7 +75,7 @@ func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) e
 		}
 		return nil
 	}
-	if assignee != nil && (old == nil || !sameAssignee(assignee, normalizeAssignee(old.Assignee))) {
+	if assignee != nil && (old == nil || old.Dripper != nil || !sameAssignee(assignee, normalizeAssignee(old.Assignee))) {
 		return errInvalidOrderMenus
 	}
 	return nil
