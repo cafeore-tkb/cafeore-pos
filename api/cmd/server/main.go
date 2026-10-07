@@ -244,6 +244,15 @@ func main() {
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
+	// ほかのインスタンスでの注文の変更も POS の画面へ届けるため、DB の通知を待ち受ける。
+	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
+	listenCtx, stopListening := context.WithCancel(context.Background())
+	defer stopListening()
+	listenDSN := os.Getenv("DATABASE_LISTEN_URL")
+	if listenDSN == "" {
+		listenDSN = os.Getenv("DATABASE_URL")
+	}
+	go orderHandler.ListenOrderChanges(listenCtx, listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
