@@ -4,7 +4,12 @@ import { API_BASE_URL } from "./item";
 
 /** CaOS（ドリップ管制）の抽出カード。WebSocket の {"type":"drips"} で今日の分が全部届く */
 export type CaosDrip = components["schemas"]["CaosDrip"];
-/** 盤面への操作（割当・戻す・次へ・統合・入れ直し・1つ戻す） */
+/**
+ * 列（ドリッパー 1〜6）の担当者。WebSocket の {"type":"drips"} で 6 列が全部届く（担当者がいない列は name が空）。
+ * senior は交代したときに CaOS の画面が sohosai-shift の名簿で判定したもの
+ */
+export type CaosLane = components["schemas"]["CaosLane"];
+/** 盤面への操作（割当・戻す・次へ・統合・入れ直し・列の担当者の交代と入れ替え・1つ戻す） */
 export type CaosOp = components["schemas"]["CaosOp"];
 export type CaosOpResult = components["schemas"]["CaosOpResult"];
 
