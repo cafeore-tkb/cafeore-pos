@@ -1,5 +1,6 @@
 import type { CaosCard } from "@cafeore/common";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
+import type { BeanIndex } from "../utils/beans";
 import { orderNumber } from "../utils/orderQueue";
 import { type PosOrder, nominatedBayId, posBeanCode } from "../utils/posOrders";
 
@@ -14,6 +15,8 @@ const durationOf = (cups: number) => (cups > 1 ? TWO_CUP_SEC : ONE_CUP_SEC);
 export interface LiveCup {
   orderId: string;
   orderNo: number;
+  /** 商品の ID（在庫の「商品 → 豆」を引く・統合の候補を絞るのに使う） */
+  itemId: string;
   name: string;
   abbr: string;
   type: string;
@@ -31,6 +34,7 @@ export const buildCupCatalog = (orders: PosOrder[] | null): CupCatalog => {
       catalog.set(cup.cupId, {
         orderId: order.id,
         orderNo: order.orderId,
+        itemId: cup.id,
         name: cup.name,
         abbr: cup.abbr,
         type: cup.item_type.name,
@@ -69,9 +73,18 @@ const describe = (
   card: CaosCard,
   cups: LiveCup[],
   orderParts: Map<string, CaosCard[]>,
+  beanIndex: BeanIndex,
 ) => {
   const first = cups[0];
-  const beanCode = posBeanCode(first.name, first.type);
+  // 区分（氷・牛・限定）は商品の種類から
+  const beanCode = posBeanCode(first.type);
+  // 豆は在庫の「商品 → 豆」から引く（カードの商品が使う在庫対象をまとめる）
+  const beans = new Map<string, CardBean>();
+  for (const cup of cups) {
+    for (const bean of beanIndex.get(cup.itemId) ?? []) {
+      beans.set(bean.id, bean);
+    }
+  }
   const sourceOrderIds = Array.from(
     new Set(cups.map((cup) => orderLabel(cup.orderNo))),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
@@ -102,6 +115,8 @@ const describe = (
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
     beanName: `${abbrs}${unmatchedNominee}`,
+    itemKey: first.itemId,
+    beans: Array.from(beans.values()),
     cupCount: card.cups.length,
     preferredBaristaId,
     isRebrew: card.emergency || undefined,
@@ -125,6 +140,8 @@ export const cardsToBoard = (
   baristas: Barista[],
   nowSec: number,
   dayStartMs: number,
+  // 商品 → 豆（POS の在庫の設定）
+  beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
   const cupsOf = new Map<CaosCard, LiveCup[]>();
   for (const card of allCards) {
@@ -151,7 +168,7 @@ export const cardsToBoard = (
   ): OrderTicket => {
     const totalDurationSec = durationOf(card.cups.length);
     return {
-      ...describe(card, cupsOf.get(card) ?? [], orderParts),
+      ...describe(card, cupsOf.get(card) ?? [], orderParts, beanIndex),
       tag: card.emergency ? "緊急" : undefined,
       status,
       totalDurationSec,
@@ -211,7 +228,12 @@ export const cardsToBoard = (
   const unassignedOrders = cards
     .filter((card) => card.status === "unassigned")
     .map((card): UnassignedOrder => {
-      const info = describe(card, cupsOf.get(card) ?? [], orderParts);
+      const info = describe(
+        card,
+        cupsOf.get(card) ?? [],
+        orderParts,
+        beanIndex,
+      );
       const merged = Boolean(info.sourceOrderIds);
       const cups = card.cups.length;
       return {

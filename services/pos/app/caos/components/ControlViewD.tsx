@@ -8,6 +8,7 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import { canMergeDripUnits, orderNumber, ticketKey } from "../utils/orderQueue";
@@ -35,6 +36,8 @@ interface SheetCup {
   cupCount: number;
   preferredBaristaId?: number;
   isRebrew?: boolean;
+  /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
+  itemKey?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -98,7 +101,8 @@ const formatRemaining = (seconds: number) => {
   return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
 };
 
-const sheetLabel: Record<BeanCode, string> = {
+// 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
+const sheetLabel: Partial<Record<BeanCode, string>> = {
   CHAMP: "チャンプ",
   ORE: "俺ブレ",
   TNZ: "タンザ",
@@ -106,7 +110,13 @@ const sheetLabel: Record<BeanCode, string> = {
   BRA: "ブラジル",
   ICE: "氷",
   MILK: "牛",
-  SP: "限定",
+};
+
+// カップの名前。盤面のカードは商品の略称、実データテストの限定は商品の種類 limited の表示名（無ければ商品名）
+const cupLabel = (cup: SheetCup, limitedLabel: string) => {
+  if (cup.itemKey) return cup.beanName;
+  if (cup.beanCode === "SP") return limitedLabel || cup.beanName;
+  return sheetLabel[cup.beanCode] ?? cup.beanName;
 };
 
 const cupColor = (cup: SheetCup) => {
@@ -124,6 +134,7 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
   isRebrew: ticket.isRebrew,
+  itemKey: ticket.itemKey,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -149,6 +160,7 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
   isRebrew: order.isRebrew,
+  itemKey: order.itemKey,
 });
 
 const CupChip: React.FC<{
@@ -168,6 +180,7 @@ const CupChip: React.FC<{
   lifted = false,
   onClick,
 }) => {
+  const limitedLabel = useLimitedLabel();
   const stacked = cup.cupCount >= 2;
 
   return (
@@ -192,7 +205,7 @@ const CupChip: React.FC<{
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
           <span className="truncate font-black text-[14px] text-slate-950 leading-tight">
-            {sheetLabel[cup.beanCode]}
+            {cupLabel(cup, limitedLabel)}
           </span>
           <span className="shrink-0 font-black font-mono text-[11px] text-slate-700">
             ×{cup.cupCount}

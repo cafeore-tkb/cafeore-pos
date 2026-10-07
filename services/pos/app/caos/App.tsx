@@ -19,6 +19,7 @@ import {
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
+import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { buildCupCatalog, cardsToBoard, cupChoices } from "./live/board";
 import type {
@@ -73,6 +74,8 @@ const startOfLocalDay = (ms: number) => {
   ).getTime();
 };
 
+// 実データテスト（2025年の注文。商品 ID が無い）の豆のコード。盤面のカードには使わない。
+// サーバーの練習用の盤面に移したら消す
 const historicalBeanCode = (name: string, type: string): BeanCode => {
   if (type === "ice") return "ICE";
   if (type === "iceOre" || type === "milk") return "MILK";
@@ -220,6 +223,13 @@ export default function App() {
     status: posStatus,
   } = usePosOrders(live);
   const cupCatalog = useMemo(() => buildCupCatalog(posOrders), [posOrders]);
+  // 豆の在庫と「商品 → 豆」は POS の在庫（API）をそのまま使う。CaOS では在庫を持たず、減らしもしない
+  const {
+    beanStatuses,
+    beanIndex,
+    error: beanError,
+    isLoading: beanLoading,
+  } = useBeanInventory();
   // 盤面のカードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
   const liveBoard = useMemo(
     () =>
@@ -229,8 +239,9 @@ export default function App() {
         baristas,
         realTimeSec,
         realDayStartMs,
+        beanIndex,
       ),
-    [liveCards, cupCatalog, baristas, realTimeSec, realDayStartMs],
+    [liveCards, cupCatalog, baristas, realTimeSec, realDayStartMs, beanIndex],
   );
   const boardBaristas = live ? liveBoard.baristas : baristas;
   const boardUnassignedOrders = live
@@ -251,7 +262,7 @@ export default function App() {
   }, [liveError]);
 
   // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果の盤面は WebSocket の drips で届く。
-  // 通ったら true を返す
+  // 通ったら true を返す。豆の在庫は POS の在庫（注文から数える）なので、ここでは減らさない
   const runLive = async (label: string | null, op: CaosOp) => {
     const { result, error } = await postCaosOp(op);
     if (error || !result) {
@@ -941,6 +952,25 @@ export default function App() {
     .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
     .slice(0, 3);
 
+  // 盤面にある（未割当・待機・抽出中の）杯数（豆＝在庫対象の ID ごと）。豆のパネルに出す。実データテスト中は出さない
+  const beanWaitingCups = useMemo(() => {
+    if (!live) return undefined;
+    const cups = new Map<string, number>();
+    const waiting = [
+      ...boardUnassignedOrders,
+      ...boardBaristas.flatMap((barista) => barista.queue),
+    ];
+    for (const card of waiting) {
+      for (const bean of card.beans ?? []) {
+        cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
+      }
+    }
+    for (const status of beanStatuses) {
+      if (!cups.has(status.resource.id)) cups.set(status.resource.id, 0);
+    }
+    return cups;
+  }, [live, boardUnassignedOrders, boardBaristas, beanStatuses]);
+
   const openAuxiliaryTab = (tab: AuxiliaryTab) => {
     try {
       window.localStorage.setItem(
@@ -962,6 +992,12 @@ export default function App() {
     <AuxiliaryContent
       tab={tab}
       baristas={boardBaristas}
+      beanInventory={{
+        statuses: beanStatuses,
+        isLoading: beanLoading,
+        error: beanError,
+      }}
+      beanWaitingCups={beanWaitingCups}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>

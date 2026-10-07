@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
 import { MENU_PRESENTATION } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
+import { BeanBadge } from "./BeanBadge";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 25.04 19.03" aria-hidden="true">
@@ -276,6 +277,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   >
                     {order.beanName} ×{order.cupCount}
                   </h3>
+                  <BeanBadge
+                    beans={order.beans}
+                    className={isSidebar ? "text-[12px]" : ""}
+                  />
                   {order.preferredBaristaId && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
                       指名 {order.preferredBaristaId}

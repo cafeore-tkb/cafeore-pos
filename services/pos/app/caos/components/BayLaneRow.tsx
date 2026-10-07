@@ -1,12 +1,13 @@
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
-import type { Barista, BeanCode, OrderTicket } from "../types";
+import type { Barista, OrderTicket } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
   barista: Barista;
-  highlightFilter: BeanCode | null;
+  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
