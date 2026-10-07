@@ -182,6 +182,128 @@ type CaosOpResult struct {
 	Readied []openapi_types.UUID `json:"readied"`
 }
 
+// CaosPracticeAdvanceRequest defines model for CaosPracticeAdvanceRequest.
+type CaosPracticeAdvanceRequest struct {
+	// At 練習の時刻
+	At time.Time `json:"at"`
+}
+
+// CaosPracticeCreateRequest defines model for CaosPracticeCreateRequest.
+type CaosPracticeCreateRequest struct {
+	// EndsAt 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
+	EndsAt time.Time `json:"ends_at"`
+
+	// Lanes 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない
+	Lanes  *[]CaosPracticeLaneInput `json:"lanes,omitempty"`
+	Orders []CaosPracticeOrderInput `json:"orders"`
+
+	// StartsAt 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
+	StartsAt time.Time `json:"starts_at"`
+}
+
+// CaosPracticeItem 練習の盤面の商品。カードの明細の item_id はこの id
+type CaosPracticeItem struct {
+	Id   openapi_types.UUID `json:"id"`
+	Key  string             `json:"key"`
+	Name string             `json:"name"`
+	Type string             `json:"type"`
+}
+
+// CaosPracticeLaneInput defines model for CaosPracticeLaneInput.
+type CaosPracticeLaneInput struct {
+	Dripper int    `json:"dripper"`
+	Name    string `json:"name"`
+	Senior  bool   `json:"senior"`
+}
+
+// CaosPracticeLineInput 練習に送る注文の明細の 1 行（同じ商品が何杯か）
+type CaosPracticeLineInput struct {
+	// ItemKey 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）
+	ItemKey  *string `json:"item_key,omitempty"`
+	Name     string  `json:"name"`
+	Price    int     `json:"price"`
+	Quantity int     `json:"quantity"`
+
+	// Type 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない
+	Type string `json:"type"`
+}
+
+// CaosPracticeOpRequest defines model for CaosPracticeOpRequest.
+type CaosPracticeOpRequest struct {
+	// At 練習の時刻（操作の前に、ここまで時計を進める）
+	At time.Time `json:"at"`
+
+	// Op name ごとに使うフィールド：
+	// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
+	// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+	// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
+	// undo（op_id）
+	Op CaosOp `json:"op"`
+}
+
+// CaosPracticeOpResult defines model for CaosPracticeOpResult.
+type CaosPracticeOpResult struct {
+	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
+	OpId string `json:"op_id"`
+
+	// State 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
+	State CaosPracticeState `json:"state"`
+}
+
+// CaosPracticeOrder defines model for CaosPracticeOrder.
+type CaosPracticeOrder struct {
+	BillingAmount int                     `json:"billing_amount"`
+	CreatedAt     time.Time               `json:"created_at"`
+	Id            openapi_types.UUID      `json:"id"`
+	Lines         []CaosPracticeOrderLine `json:"lines"`
+	OrderNo       int                     `json:"order_no"`
+
+	// ReadyAt 練習の中で準備完了になった時刻（練習の時計）。まだなら null
+	ReadyAt *time.Time `json:"ready_at"`
+}
+
+// CaosPracticeOrderInput defines model for CaosPracticeOrderInput.
+type CaosPracticeOrderInput struct {
+	BillingAmount int `json:"billing_amount"`
+
+	// CreatedAt 注文の時刻（練習の時間帯の中）
+	CreatedAt time.Time               `json:"created_at"`
+	Lines     []CaosPracticeLineInput `json:"lines"`
+	OrderNo   int                     `json:"order_no"`
+}
+
+// CaosPracticeOrderLine defines model for CaosPracticeOrderLine.
+type CaosPracticeOrderLine struct {
+	ItemId   openapi_types.UUID `json:"item_id"`
+	Price    int                `json:"price"`
+	Quantity int                `json:"quantity"`
+}
+
+// CaosPracticeState 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
+type CaosPracticeState struct {
+	Drips  []CaosDrip         `json:"drips"`
+	EndsAt time.Time          `json:"ends_at"`
+	Id     openapi_types.UUID `json:"id"`
+	Items  []CaosPracticeItem `json:"items"`
+	Lanes  []CaosLane         `json:"lanes"`
+
+	// NextArrivalAt 次に届く注文の時刻。もう無ければ null
+	NextArrivalAt *time.Time `json:"next_arrival_at"`
+
+	// Now 練習の時計（最後に画面から受け取った時刻）
+	Now time.Time `json:"now"`
+
+	// Orders もう届いた注文（作った順）
+	Orders   []CaosPracticeOrder `json:"orders"`
+	StartsAt time.Time           `json:"starts_at"`
+
+	// TotalOrders 練習の注文の全部の数
+	TotalOrders int `json:"total_orders"`
+
+	// Version 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）
+	Version int `json:"version"`
+}
+
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -557,6 +679,15 @@ type ReplaceStockUsagesJSONBody = []StockUsage
 
 // ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
 type ApplyCaosOpJSONRequestBody = CaosOp
+
+// CreateCaosPracticeJSONRequestBody defines body for CreateCaosPractice for application/json ContentType.
+type CreateCaosPracticeJSONRequestBody = CaosPracticeCreateRequest
+
+// AdvanceCaosPracticeJSONRequestBody defines body for AdvanceCaosPractice for application/json ContentType.
+type AdvanceCaosPracticeJSONRequestBody = CaosPracticeAdvanceRequest
+
+// ApplyCaosPracticeOpJSONRequestBody defines body for ApplyCaosPracticeOp for application/json ContentType.
+type ApplyCaosPracticeOpJSONRequestBody = CaosPracticeOpRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

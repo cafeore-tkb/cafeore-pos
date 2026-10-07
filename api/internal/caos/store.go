@@ -83,8 +83,8 @@ type LaneRow struct {
 
 func (LaneRow) TableName() string { return "caos_lanes" }
 
-// Models は CaOS の表のモデル。起動時に AutoMigrate で DB へ反映する（cmd/server の schemaModels）。
-func Models() []any { return []any{&DripRow{}, &LaneRow{}, &OpRow{}} }
+// Models は CaOS の表のモデル（練習用の盤面の caos_practices も入る）。起動時に AutoMigrate で DB へ反映する（cmd/server の schemaModels）。
+func Models() []any { return []any{&DripRow{}, &LaneRow{}, &OpRow{}, &PracticeRow{}} }
 
 // ReadyMark は操作で準備完了にした注文。
 type ReadyMark struct {
@@ -404,9 +404,8 @@ func (s *Store) Apply(op Op) (Result, error) {
 
 // do は操作を 1 つ行い、記録を残す。
 func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (string, []string, error) {
-	before := b.Snapshot()
-	lanesBefore := b.LaneRows([]int{1, 2, 3, 4, 5, 6})
-	if err := b.Apply(cs, op); err != nil {
+	record, err := b.ApplyRecorded(cs, op)
+	if err != nil {
 		return "", nil, err
 	}
 	now := s.clock()
@@ -425,23 +424,11 @@ func (s *Store) do(tx *gorm.DB, day string, b *Board, cs *Changeset, op Op) (str
 			readied = append(readied, id)
 		}
 	}
-	var beforeRows []Drip
-	for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
-		if d, ok := before[id]; ok {
-			beforeRows = append(beforeRows, d)
-		}
-	}
-	var beforeLanes []Lane
-	for _, l := range lanesBefore {
-		if slices.Contains(cs.Lanes, l.Dripper) {
-			beforeLanes = append(beforeLanes, l)
-		}
-	}
 	rec := OpRow{
 		ID: uuid.New(), Day: day, Name: op.Name, CreatedAt: now,
-		Before: jsonValue[[]Drip]{orEmpty(beforeRows)}, After: jsonValue[[]Drip]{orEmpty(b.Rows(cs.Changed.List()))},
+		Before: jsonValue[[]Drip]{orEmpty(record.Before)}, After: jsonValue[[]Drip]{orEmpty(record.After)},
 		Readied:     jsonValue[[]ReadyMark]{orEmpty(marks)},
-		LanesBefore: jsonValue[[]Lane]{orEmpty(beforeLanes)}, LanesAfter: jsonValue[[]Lane]{orEmpty(b.LaneRows(cs.Lanes))},
+		LanesBefore: jsonValue[[]Lane]{orEmpty(record.LanesBefore)}, LanesAfter: jsonValue[[]Lane]{orEmpty(record.LanesAfter)},
 	}
 	if err := tx.Create(&rec).Error; err != nil {
 		return "", nil, err
@@ -488,15 +475,8 @@ func (s *Store) undo(tx *gorm.DB, day string, b *Board, cs *Changeset, opID stri
 			o.Ready = false
 		}
 	}
-	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
-	if err := b.checkLanesUntouched(rec.LanesAfter.V); err != nil {
-		return nil, err
-	}
-	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
-	if err := b.Restore(cs, rec.Before.V, rec.After.V); err != nil {
-		return nil, err
-	}
-	if err := b.RestoreLanes(cs, rec.LanesBefore.V, rec.LanesAfter.V); err != nil {
+	// 列の担当者とカード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
+	if err := b.Undo(cs, OpRecord{Before: rec.Before.V, After: rec.After.V, LanesBefore: rec.LanesBefore.V, LanesAfter: rec.LanesAfter.V}); err != nil {
 		return nil, err
 	}
 	now := s.clock()

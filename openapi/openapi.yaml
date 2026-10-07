@@ -644,6 +644,147 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaosErrorResponse'
+  /api/caos/practice:
+    post:
+      summary: CaOS の練習用の盤面を作る（実データテスト）
+      description: |
+        本番の盤面と同じルールで動く、本番とは別の練習用の盤面を作る。過去の注文（画面がビルドに入っている実績データから選んだ時間帯の分）を送る。
+        練習用の盤面は本番の盤面（caos_drips・caos_lanes・caos_ops）・注文・在庫・統計に混ざらず、WebSocket でも配らない（練習している画面が応答の盤面をそのまま使う）。
+        端末（練習 1 回）ごとに 1 つ。最後に触ってから 12 時間たった練習の盤面と、200 を超えた古い練習の盤面は、ここで片付ける。
+      operationId: createCaosPractice
+      tags: [caos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosPracticeCreateRequest'
+      responses:
+        '201':
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosPracticeState'
+        '422':
+          description: 送ったものが正しくない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosErrorResponse'
+  /api/caos/practice/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: CaOS の練習用の盤面を読む（時計は進めない）
+      operationId: getCaosPractice
+      tags: [caos]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosPracticeState'
+        '404':
+          description: 練習用の盤面が無い（消した・片付けられた）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204）
+      operationId: deleteCaosPractice
+      tags: [caos]
+      responses:
+        '204':
+          description: 消した
+  /api/caos/practice/{id}/advance:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: 練習の時計を進める
+      description: |
+        練習の時計は画面が持つ（一時停止・倍速は画面だけで決まる）。at（練習の時刻）までに来た注文を盤面に入れる。
+        時刻は戻らない（今より前の at は今のまま）。画面は時計が next_arrival_at を過ぎたときに送ればよい。
+      operationId: advanceCaosPractice
+      tags: [caos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosPracticeAdvanceRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosPracticeState'
+        '404':
+          description: 練習用の盤面が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 練習の時刻が時間帯の外
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosErrorResponse'
+  /api/caos/practice/{id}/ops:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: CaOS の練習用の盤面への操作
+      description: |
+        at まで時計を進めてから（advance と同じ）、本番の POST /api/caos/ops と同じ操作を 1 つ行う。ルールも本番と同じ。
+        カードの開始・終了と注文の準備完了の時刻は練習の時刻で付ける。準備完了は練習の盤面の中だけで、本番の注文には触らない。
+        「1つ戻す」（undo）は、練習の盤面に残した操作の記録（新しいものから 30 件）で戻す。
+      operationId: applyCaosPracticeOp
+      tags: [caos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosPracticeOpRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosPracticeOpResult'
+        '404':
+          description: 練習用の盤面が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: ルールに合わない操作（何も変えない。時計も進めない）。error を画面にそのまま出す
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosErrorResponse'
   /api/master-status:
     get:
       summary: マスターステート取得
@@ -1618,6 +1759,202 @@ components:
           type: string
           enum: [invalid]
           x-enum-varnames: [CaosErrorCodeInvalid]
+    CaosPracticeLineInput:
+      type: object
+      description: 練習に送る注文の明細の 1 行（同じ商品が何杯か）
+      required: [name, type, price, quantity]
+      properties:
+        item_key:
+          type: string
+          maxLength: 100
+          description: 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）
+        name:
+          type: string
+          maxLength: 100
+        type:
+          type: string
+          maxLength: 100
+          description: 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない
+        price:
+          type: integer
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+    CaosPracticeOrderInput:
+      type: object
+      required: [order_no, created_at, billing_amount, lines]
+      properties:
+        order_no:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          description: 注文の時刻（練習の時間帯の中）
+        billing_amount:
+          type: integer
+        lines:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CaosPracticeLineInput'
+    CaosPracticeLaneInput:
+      type: object
+      required: [dripper, name, senior]
+      properties:
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+        name:
+          type: string
+          maxLength: 40
+        senior:
+          type: boolean
+    CaosPracticeCreateRequest:
+      type: object
+      required: [starts_at, ends_at, orders]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+          description: 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
+        ends_at:
+          type: string
+          format: date-time
+          description: 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
+        orders:
+          type: array
+          maxItems: 3000
+          items:
+            $ref: '#/components/schemas/CaosPracticeOrderInput'
+        lanes:
+          type: array
+          description: 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない
+          items:
+            $ref: '#/components/schemas/CaosPracticeLaneInput'
+    CaosPracticeItem:
+      type: object
+      description: 練習の盤面の商品。カードの明細の item_id はこの id
+      required: [id, key, name, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+    CaosPracticeOrderLine:
+      type: object
+      required: [item_id, price, quantity]
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        price:
+          type: integer
+        quantity:
+          type: integer
+    CaosPracticeOrder:
+      type: object
+      required: [id, order_no, created_at, billing_amount, lines, ready_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_no:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        billing_amount:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosPracticeOrderLine'
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 練習の中で準備完了になった時刻（練習の時計）。まだなら null
+    CaosPracticeState:
+      type: object
+      description: 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
+      required: [id, starts_at, ends_at, now, version, drips, lanes, items, orders, total_orders, next_arrival_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        now:
+          type: string
+          format: date-time
+          description: 練習の時計（最後に画面から受け取った時刻）
+        version:
+          type: integer
+          description: 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）
+        drips:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosDrip'
+        lanes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosLane'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosPracticeItem'
+        orders:
+          type: array
+          description: もう届いた注文（作った順）
+          items:
+            $ref: '#/components/schemas/CaosPracticeOrder'
+        total_orders:
+          type: integer
+          description: 練習の注文の全部の数
+        next_arrival_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 次に届く注文の時刻。もう無ければ null
+    CaosPracticeAdvanceRequest:
+      type: object
+      required: [at]
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: 練習の時刻
+    CaosPracticeOpRequest:
+      type: object
+      required: [at, op]
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: 練習の時刻（操作の前に、ここまで時計を進める）
+        op:
+          $ref: '#/components/schemas/CaosOp'
+    CaosPracticeOpResult:
+      type: object
+      required: [op_id, state]
+      properties:
+        op_id:
+          type: string
+          description: この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
+        state:
+          $ref: '#/components/schemas/CaosPracticeState'
     CaosWSMessage:
       type: object
       description: |

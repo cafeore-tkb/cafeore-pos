@@ -125,6 +125,53 @@ export interface paths {
      */
     post: operations["applyCaosOp"];
   };
+  "/api/caos/practice": {
+    /**
+     * CaOS の練習用の盤面を作る（実データテスト）
+     * @description 本番の盤面と同じルールで動く、本番とは別の練習用の盤面を作る。過去の注文（画面がビルドに入っている実績データから選んだ時間帯の分）を送る。
+     * 練習用の盤面は本番の盤面（caos_drips・caos_lanes・caos_ops）・注文・在庫・統計に混ざらず、WebSocket でも配らない（練習している画面が応答の盤面をそのまま使う）。
+     * 端末（練習 1 回）ごとに 1 つ。最後に触ってから 12 時間たった練習の盤面と、200 を超えた古い練習の盤面は、ここで片付ける。
+     */
+    post: operations["createCaosPractice"];
+  };
+  "/api/caos/practice/{id}": {
+    /** CaOS の練習用の盤面を読む（時計は進めない） */
+    get: operations["getCaosPractice"];
+    /** CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204） */
+    delete: operations["deleteCaosPractice"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+  };
+  "/api/caos/practice/{id}/advance": {
+    /**
+     * 練習の時計を進める
+     * @description 練習の時計は画面が持つ（一時停止・倍速は画面だけで決まる）。at（練習の時刻）までに来た注文を盤面に入れる。
+     * 時刻は戻らない（今より前の at は今のまま）。画面は時計が next_arrival_at を過ぎたときに送ればよい。
+     */
+    post: operations["advanceCaosPractice"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+  };
+  "/api/caos/practice/{id}/ops": {
+    /**
+     * CaOS の練習用の盤面への操作
+     * @description at まで時計を進めてから（advance と同じ）、本番の POST /api/caos/ops と同じ操作を 1 つ行う。ルールも本番と同じ。
+     * カードの開始・終了と注文の準備完了の時刻は練習の時刻で付ける。準備完了は練習の盤面の中だけで、本番の注文には触らない。
+     * 「1つ戻す」（undo）は、練習の盤面に残した操作の記録（新しいものから 30 件）で戻す。
+     */
+    post: operations["applyCaosPracticeOp"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -550,6 +597,122 @@ export interface components {
       error: string;
       /** @enum {string} */
       code?: "invalid";
+    };
+    /** @description 練習に送る注文の明細の 1 行（同じ商品が何杯か） */
+    CaosPracticeLineInput: {
+      /** @description 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし） */
+      item_key?: string;
+      name: string;
+      /** @description 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない */
+      type: string;
+      price: number;
+      quantity: number;
+    };
+    CaosPracticeOrderInput: {
+      order_no: number;
+      /**
+       * Format: date-time
+       * @description 注文の時刻（練習の時間帯の中）
+       */
+      created_at: string;
+      billing_amount: number;
+      lines: components["schemas"]["CaosPracticeLineInput"][];
+    };
+    CaosPracticeLaneInput: {
+      dripper: number;
+      name: string;
+      senior: boolean;
+    };
+    CaosPracticeCreateRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
+       */
+      starts_at: string;
+      /**
+       * Format: date-time
+       * @description 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
+       */
+      ends_at: string;
+      orders: components["schemas"]["CaosPracticeOrderInput"][];
+      /** @description 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない */
+      lanes?: components["schemas"]["CaosPracticeLaneInput"][];
+    };
+    /** @description 練習の盤面の商品。カードの明細の item_id はこの id */
+    CaosPracticeItem: {
+      /** Format: uuid */
+      id: string;
+      key: string;
+      name: string;
+      type: string;
+    };
+    CaosPracticeOrderLine: {
+      /** Format: uuid */
+      item_id: string;
+      price: number;
+      quantity: number;
+    };
+    CaosPracticeOrder: {
+      /** Format: uuid */
+      id: string;
+      order_no: number;
+      /** Format: date-time */
+      created_at: string;
+      billing_amount: number;
+      lines: components["schemas"]["CaosPracticeOrderLine"][];
+      /**
+       * Format: date-time
+       * @description 練習の中で準備完了になった時刻（練習の時計）。まだなら null
+       */
+      ready_at: string | null;
+    };
+    /** @description 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane） */
+    CaosPracticeState: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      starts_at: string;
+      /** Format: date-time */
+      ends_at: string;
+      /**
+       * Format: date-time
+       * @description 練習の時計（最後に画面から受け取った時刻）
+       */
+      now: string;
+      /** @description 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため） */
+      version: number;
+      drips: components["schemas"]["CaosDrip"][];
+      lanes: components["schemas"]["CaosLane"][];
+      items: components["schemas"]["CaosPracticeItem"][];
+      /** @description もう届いた注文（作った順） */
+      orders: components["schemas"]["CaosPracticeOrder"][];
+      /** @description 練習の注文の全部の数 */
+      total_orders: number;
+      /**
+       * Format: date-time
+       * @description 次に届く注文の時刻。もう無ければ null
+       */
+      next_arrival_at: string | null;
+    };
+    CaosPracticeAdvanceRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時刻
+       */
+      at: string;
+    };
+    CaosPracticeOpRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時刻（操作の前に、ここまで時計を進める）
+       */
+      at: string;
+      op: components["schemas"]["CaosOp"];
+    };
+    CaosPracticeOpResult: {
+      /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
+      op_id: string;
+      state: components["schemas"]["CaosPracticeState"];
     };
     /**
      * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
@@ -1291,6 +1454,144 @@ export interface operations {
         };
       };
       /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の練習用の盤面を作る（実データテスト）
+   * @description 本番の盤面と同じルールで動く、本番とは別の練習用の盤面を作る。過去の注文（画面がビルドに入っている実績データから選んだ時間帯の分）を送る。
+   * 練習用の盤面は本番の盤面（caos_drips・caos_lanes・caos_ops）・注文・在庫・統計に混ざらず、WebSocket でも配らない（練習している画面が応答の盤面をそのまま使う）。
+   * 端末（練習 1 回）ごとに 1 つ。最後に触ってから 12 時間たった練習の盤面と、200 を超えた古い練習の盤面は、ここで片付ける。
+   */
+  createCaosPractice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 作成成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 送ったものが正しくない */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /** CaOS の練習用の盤面を読む（時計は進めない） */
+  getCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 練習用の盤面が無い（消した・片付けられた） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204） */
+  deleteCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 消した */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * 練習の時計を進める
+   * @description 練習の時計は画面が持つ（一時停止・倍速は画面だけで決まる）。at（練習の時刻）までに来た注文を盤面に入れる。
+   * 時刻は戻らない（今より前の at は今のまま）。画面は時計が next_arrival_at を過ぎたときに送ればよい。
+   */
+  advanceCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeAdvanceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 練習用の盤面が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 練習の時刻が時間帯の外 */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の練習用の盤面への操作
+   * @description at まで時計を進めてから（advance と同じ）、本番の POST /api/caos/ops と同じ操作を 1 つ行う。ルールも本番と同じ。
+   * カードの開始・終了と注文の準備完了の時刻は練習の時刻で付ける。準備完了は練習の盤面の中だけで、本番の注文には触らない。
+   * 「1つ戻す」（undo）は、練習の盤面に残した操作の記録（新しいものから 30 件）で戻す。
+   */
+  applyCaosPracticeOp: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeOpRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeOpResult"];
+        };
+      };
+      /** @description 練習用の盤面が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない。時計も進めない）。error を画面にそのまま出す */
       422: {
         content: {
           "application/json": components["schemas"]["CaosErrorResponse"];

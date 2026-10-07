@@ -17,6 +17,21 @@ type ServerInterface interface {
 	// CaOS の今日の盤面への操作
 	// (POST /api/caos/ops)
 	ApplyCaosOp(c *gin.Context)
+	// CaOS の練習用の盤面を作る（実データテスト）
+	// (POST /api/caos/practice)
+	CreateCaosPractice(c *gin.Context)
+	// CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204）
+	// (DELETE /api/caos/practice/{id})
+	DeleteCaosPractice(c *gin.Context, id openapi_types.UUID)
+	// CaOS の練習用の盤面を読む（時計は進めない）
+	// (GET /api/caos/practice/{id})
+	GetCaosPractice(c *gin.Context, id openapi_types.UUID)
+	// 練習の時計を進める
+	// (POST /api/caos/practice/{id}/advance)
+	AdvanceCaosPractice(c *gin.Context, id openapi_types.UUID)
+	// CaOS の練習用の盤面への操作
+	// (POST /api/caos/practice/{id}/ops)
+	ApplyCaosPracticeOp(c *gin.Context, id openapi_types.UUID)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -165,6 +180,115 @@ func (siw *ServerInterfaceWrapper) ApplyCaosOp(c *gin.Context) {
 	}
 
 	siw.Handler.ApplyCaosOp(c)
+}
+
+// CreateCaosPractice operation middleware
+func (siw *ServerInterfaceWrapper) CreateCaosPractice(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCaosPractice(c)
+}
+
+// DeleteCaosPractice operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCaosPractice(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCaosPractice(c, id)
+}
+
+// GetCaosPractice operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosPractice(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosPractice(c, id)
+}
+
+// AdvanceCaosPractice operation middleware
+func (siw *ServerInterfaceWrapper) AdvanceCaosPractice(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdvanceCaosPractice(c, id)
+}
+
+// ApplyCaosPracticeOp operation middleware
+func (siw *ServerInterfaceWrapper) ApplyCaosPracticeOp(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApplyCaosPracticeOp(c, id)
 }
 
 // GetCashierState operation middleware
@@ -1001,6 +1125,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.POST(options.BaseURL+"/api/caos/ops", wrapper.ApplyCaosOp)
+	router.POST(options.BaseURL+"/api/caos/practice", wrapper.CreateCaosPractice)
+	router.DELETE(options.BaseURL+"/api/caos/practice/:id", wrapper.DeleteCaosPractice)
+	router.GET(options.BaseURL+"/api/caos/practice/:id", wrapper.GetCaosPractice)
+	router.POST(options.BaseURL+"/api/caos/practice/:id/advance", wrapper.AdvanceCaosPractice)
+	router.POST(options.BaseURL+"/api/caos/practice/:id/ops", wrapper.ApplyCaosPracticeOp)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
