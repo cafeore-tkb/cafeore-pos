@@ -496,7 +496,7 @@ func (b *Board) Apply(cs *Changeset, op Op) error {
 		if err != nil {
 			return err
 		}
-		return b.next(cs, n)
+		return b.next(cs, n, op.DripID)
 	case "merge":
 		return b.merge(cs, op.FirstID, op.SecondID)
 	case "rebrew":
@@ -534,7 +534,10 @@ func (b *Board) unassign(cs *Changeset, dripID string) error {
 }
 
 // next は「次へ」。抽出中のカードを終わらせ、待機列の次を始める。注文のカードが全部終わったら、その注文を準備完了にする。
-func (b *Board) next(cs *Changeset, dripper int) error {
+//
+// dripID を付けると、それが今そのドリッパーで抽出中のカードのときだけ終わらせる（違えば ErrInvalid）。
+// 画面が見ていたカードを送るので、二度押しやほかの端末と同時に押したときに、次のカードまで終わらせない。
+func (b *Board) next(cs *Changeset, dripper int, dripID string) error {
 	var brewing *Drip
 	for _, d := range b.Drips {
 		if d.Dripper != nil && *d.Dripper == dripper && d.Status == StatusBrewing {
@@ -543,6 +546,9 @@ func (b *Board) next(cs *Changeset, dripper int) error {
 	}
 	if brewing == nil {
 		return invalid("ドリッパー %d は抽出中ではありません", dripper)
+	}
+	if dripID != "" && brewing.ID != dripID {
+		return invalid("このカードはもう終わっています（ほかの端末で「次へ」を押したかもしれません）")
 	}
 	b.update(cs, brewing, func(d *Drip) {
 		d.Status = StatusDone

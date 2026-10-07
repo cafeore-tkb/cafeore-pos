@@ -235,15 +235,25 @@ jobs:
       # **DB に影響するファイルを api/ の外に置くときは DB_AFFECTING_PATHS に足すこと**
       # （README の「PR ごとの Neon ブランチ」も直す）。
       # 名前変更は移動前のパスも見る。api/ の外へ移すだけの PR も api/ を変えているため。
+      # 別の PR の上に積んだ PR（向き先が main 以外）は、差分に出ない下の PR の DB の変更を
+      # 含みうるので、差分を見ずに専用ブランチを使う。共有ブランチに main に無い表を作らないため。
       - name: DB に影響する変更があるか調べる
         id: changes
         if: ${{ github.event_name == 'pull_request' && vars.NEON_PROJECT_ID != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           DB_AFFECTING_PATHS: '^(api/|\.github/workflows/api-build\.yml$)'
         run: |
           set -euo pipefail
+
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "db=true" >> "$GITHUB_OUTPUT"
+            echo "向き先が $DEFAULT_BRANCH ではなく $BASE_REF（積んだ PR）。下の PR の DB の変更を含みうるので、この PR 専用の Neon ブランチを使う"
+            exit 0
+          fi
 
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
             --paginate --jq '.[] | .filename, (.previous_filename // empty)')
@@ -448,10 +458,15 @@ jobs:
       # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
       # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
       # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      #
+      # 落とすのは本番（PR 以外）だけ。PR のプレビューは警告に留める。DB を変えない PR は
+      # PR 間で共有する Neon ブランチ（preview/shared）を使うので、ほかの PR のモデルが
+      # AutoMigrate で作ったテーブルが残っていて、その PR のせいではないズレが出るため。
       - name: DB のスキーマがモデルとずれていないか確かめる
         if: ${{ steps.deploy.outputs.url != '' }}
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          IS_PREVIEW: ${{ github.event_name == 'pull_request' }}
         run: |
           body=""
           for i in $(seq 1 10); do
@@ -466,6 +481,17 @@ jobs:
           fi
           drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
           if [ -n "$drift" ]; then
+            if [ "$IS_PREVIEW" = "true" ]; then
+              {
+                echo "### プレビューの DB のスキーマがモデルとずれている（警告）"
+                echo '```'
+                echo "$drift"
+                echo '```'
+                echo "共有の Neon ブランチなら、ほかの PR が作ったテーブルが残っているだけのことが多い。本番のデプロイでは落ちる。"
+              } >> "$GITHUB_STEP_SUMMARY"
+              while IFS= read -r line; do echo "::warning::$line"; done <<<"$drift"
+              exit 0
+            fi
             {
               echo "### DB のスキーマがモデルとずれている"
               echo '```'
