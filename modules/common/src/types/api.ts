@@ -257,7 +257,10 @@ export interface components {
       /** @description 注文時点のメニュー価格 */
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
+      /** @description 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderCupResponse: {
       /** Format: uuid */
@@ -287,7 +290,10 @@ export interface components {
       order_menu_id?: string;
       /** Format: uuid */
       menu_id: string;
+      /** @description 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderResponse: {
       /** Format: uuid */

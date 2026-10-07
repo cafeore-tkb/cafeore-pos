@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import { type OrderEntity, assignmentLabelText } from "@cafeore/common";
 import { useRawPrinter } from "./printer";
 
 type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
@@ -16,8 +16,9 @@ export const usePrinter = () => {
     rawPrinter.addHeader(orderId, null);
     rawPrinter.addLine(item.name, [1, 2]);
     rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    if (item.assignee) {
-      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
+    const assignment = assignmentLabelText(item);
+    if (assignment) {
+      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }
@@ -28,15 +29,17 @@ export const usePrinter = () => {
   const printOrderSummaryLabel = (order: OrderEntity) => {
     rawPrinter.addHeader(order.orderId, order.total);
 
-    const assignedMenus = order.menus.filter((menu) => menu.assignee !== null);
+    const assignedMenus = order.menus.filter(
+      (menu) => assignmentLabelText(menu) !== null,
+    );
     const unassignedMenus = order.menus.filter(
-      (menu) => menu.assignee === null,
+      (menu) => assignmentLabelText(menu) === null,
     );
 
-    assignedMenus.map((menu) => {
+    for (const menu of assignedMenus) {
       rawPrinter.addLine(menu.name, [1, 1]);
-      rawPrinter.addLine(`  指名：${menu.assignee}`, [1, 1]);
-    });
+      rawPrinter.addLine(`  指名：${assignmentLabelText(menu)}`, [1, 1]);
+    }
 
     for (let i = 0; i < unassignedMenus.length; i += 2) {
       // アイテム名が8文字以上のときは6文字だけ取り出す
@@ -80,8 +83,9 @@ export const usePrinter = () => {
     rawPrinter.addPagePosition(0, 156);
     rawPrinter.addLine(`${index}/${total}`, [2, 1]);
     rawPrinter.addPagePosition(0, 204);
-    if (item.assignee) {
-      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
+    const assignment = assignmentLabelText(item);
+    if (assignment) {
+      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }

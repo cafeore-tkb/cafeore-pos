@@ -4,6 +4,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,7 +43,44 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 
 var errInvalidOrderMenus = errors.New("invalid order menus")
 
-// 既存明細はIDで識別し、担当者以外の保存値は引き継ぐ。
+// ドリッパーの番号は 1st〜6th の 1〜6
+const maxDripper = 6
+
+// 空白だけの自由記述は指名なしとして扱う
+func normalizeAssignee(assignee *string) *string {
+	if assignee == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*assignee)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func sameAssignee(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// 指名はドリッパーの番号が必須で、自由記述は番号に添えるだけ。
+// 番号より前の注文の明細（自由記述だけの指名）は、変えずに残すときだけ通す。
+func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) error {
+	if dripper != nil {
+		if *dripper < 1 || *dripper > maxDripper {
+			return errInvalidOrderMenus
+		}
+		return nil
+	}
+	if assignee != nil && (old == nil || !sameAssignee(assignee, normalizeAssignee(old.Assignee))) {
+		return errInvalidOrderMenus
+	}
+	return nil
+}
+
+// 既存明細はIDで識別し、指名以外の保存値は引き継ぐ。
 // 新規明細だけ販売中のマスターから価格・名称をスナップショットする。
 func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existing []models.OrderMenu, menus []models.Menu) ([]models.OrderMenu, error) {
 	byID := make(map[uuid.UUID]models.OrderMenu, len(existing))
@@ -58,15 +96,22 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 	lines := make([]models.OrderMenu, 0, len(requests))
 	for _, request := range requests {
 		menuID := uuid.UUID(request.MenuId)
-		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: request.Assignee}
+		assignee := normalizeAssignee(request.Assignee)
+		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: assignee, Dripper: request.Dripper}
 		if request.OrderMenuId != nil {
 			old, ok := byID[uuid.UUID(*request.OrderMenuId)]
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
+			if err := validateAssignment(request.Dripper, assignee, &old); err != nil {
+				return nil, err
+			}
 			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
+			if err := validateAssignment(request.Dripper, assignee, nil); err != nil {
+				return nil, err
+			}
 			menu, ok := masters[menuID]
 			if !ok {
 				return nil, errInvalidOrderMenus
@@ -139,7 +184,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		for _, oi := range order.OrderMenus {
 			menuInfo := models.MenuInfo{
 				Id: openapi_types.UUID(oi.ID), MenuName: oi.MenuName, UnitPrice: oi.UnitPrice,
-				Assignee: oi.Assignee, Menu: toMenuResponse(&oi.Menu),
+				Assignee: oi.Assignee, Dripper: oi.Dripper, Menu: toMenuResponse(&oi.Menu),
 			}
 			menus = append(menus, menuInfo)
 		}
