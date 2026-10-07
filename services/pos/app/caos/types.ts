@@ -108,32 +108,18 @@ export interface UnassignedOrder {
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 
-export interface HistoricalItem {
+/** 実績（売上・注文→完成）に出す注文。実データテストの練習用の盤面の注文から作る（practice/board.ts） */
+export interface SalesOrderItem {
   name: string;
   price: number;
   type: "hot" | "iceOre" | "ice" | "milk" | "others" | string;
 }
 
-export interface HistoricalOrder {
+export interface SalesOrder {
   orderId: number;
   createdAt: string;
+  /** 練習の中で準備完了になった時刻。まだなら null */
   readyAt: string | null;
-  servedAt: string | null;
-  total: number;
   billingAmount: number;
-  items: HistoricalItem[];
-}
-
-export interface HistoricalDataset {
-  source: string;
-  orders: HistoricalOrder[];
-}
-
-export interface TestPlaySession {
-  status: "active" | "finished";
-  startMs: number;
-  endMs: number;
-  currentMs: number;
-  durationMinutes: 30 | 60;
-  orders: HistoricalOrder[];
+  items: SalesOrderItem[];
 }

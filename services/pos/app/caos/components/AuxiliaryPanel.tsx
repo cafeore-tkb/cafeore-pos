@@ -1,7 +1,7 @@
 import type { InventoryStatus } from "@cafeore/common";
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type { Barista, HistoricalOrder } from "../types";
+import type { Barista, SalesOrder } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
 import { BeanQueueView } from "./BeanQueueView";
@@ -22,10 +22,10 @@ interface AuxiliaryContentProps {
     error: unknown;
   };
   beanWaitingCups?: Map<string, number>;
-  salesOrders: HistoricalOrder[];
+  salesOrders: SalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
-  /** 列の「交代」と「入れ替え」。無ければ（実データテスト中）出さない */
+  /** 列の「交代」と「入れ替え」。無ければ出さない */
   onChangeLane?: (bayId: number) => void;
   onSwapLanes?: (bayId: number, otherBayId: number) => void;
 }

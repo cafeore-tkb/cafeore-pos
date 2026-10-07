@@ -50,8 +50,8 @@ export const allowedBayIdsFor = (
   );
 
 /**
- * そのカードをその列へ割り当て・移動できるか。盤面のカードは allowedBayIds（指名と上級生）で、
- * 実データテストのカード（allowedBayIds が無い）は指名だけで決める
+ * そのカードをその列へ割り当て・移動できるか。盤面のカード（本番・練習用とも）は allowedBayIds（指名と上級生）で、
+ * allowedBayIds が無いカードは指名だけで決める
  */
 export const canPlaceOn = (
   card: { preferredBaristaId?: number; allowedBayIds?: number[] },

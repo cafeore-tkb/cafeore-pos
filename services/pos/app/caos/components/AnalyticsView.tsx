@@ -12,13 +12,14 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import type { Barista, HistoricalOrder, OrderTicket } from "../types";
+import type { Barista, OrderTicket, SalesOrder } from "../types";
 import { laneTitle } from "../utils/lanes";
 import { SeniorMark } from "./LaneName";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
-  salesOrders?: HistoricalOrder[];
+  /** 実データテストの練習の注文（準備完了は練習の中で付いた時刻） */
+  salesOrders?: SalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
 }
@@ -287,8 +288,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           : type === "milk"
             ? "ミルク"
             : type;
+  // 時刻は日本時間で出す（端末の時刻帯によらない。盤面の時計と同じ）
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -318,7 +321,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 {periodStartMs && periodEndMs && (
                   <p className="mt-0.5 font-bold text-[11px] text-slate-500">
                     {formatBucket(periodStartMs)}〜{formatBucket(periodEndMs)}{" "}
-                    の実績データ
+                    の実績データ（完成は練習の結果）
                   </p>
                 )}
               </div>
