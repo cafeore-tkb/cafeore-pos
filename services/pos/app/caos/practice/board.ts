@@ -16,7 +16,8 @@ export const practiceCatalog = (state: CaosPracticeState | null): Catalog => {
     ]),
   );
   for (const order of state.orders) {
-    catalog.set(order.id, { orderNo: order.order_no, items });
+    // 練習の注文には指名を写さない（caosPracticeData.ts）ので、指名の表示に使うカップは無い
+    catalog.set(order.id, { orderNo: order.order_no, items, cups: [] });
   }
   return catalog;
 };

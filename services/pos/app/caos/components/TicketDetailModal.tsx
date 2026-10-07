@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
 import { canPlaceOn } from "../utils/lanes";
+import { nominationText } from "../utils/posOrders";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketDetailModalProps {
@@ -89,7 +90,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
             {ticket.preferredBaristaId && (
               <p className="mt-2 font-bold text-[13px] text-violet-700">
-                指名オーダー：ドリッパー {ticket.preferredBaristaId} のみ
+                指名オーダー：{nominationText(ticket)}の列のみ
               </p>
             )}
           </section>

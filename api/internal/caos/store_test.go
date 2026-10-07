@@ -497,3 +497,70 @@ func TestStoreLinesFromCups(t *testing.T) {
 		t.Fatalf("カップの無い注文はメニューの構成で作る：%q, want %q", cups[legacy.ID.String()], want)
 	}
 }
+
+// 明細の指名は番号（dripper）だけを写す。自由記述（assignee）だけの古い明細は指名なし。カップから読むときも、メニューの構成から読むときも同じ
+func TestToOrdersCopiesNominatedDripper(t *testing.T) {
+	hot := models.ItemType{Name: "hot"}
+	champ := models.Item{ID: uuid.New(), Name: "優勝ブレンド", Abbr: "優勝", ItemType: hot}
+	menu := models.Menu{MenuItems: []models.MenuItem{{ItemID: champ.ID, Item: champ, Quantity: 1}}}
+	free, legacy := "山田", "1st"
+	o := models.Order{ID: uuid.New(), OrderId: 1}
+	o.OrderMenus = []models.OrderMenu{
+		{ID: uuid.New(), Menu: menu, Dripper: ptr(3), Assignee: &free},
+		{ID: uuid.New(), Menu: menu, Assignee: &legacy},
+		{ID: uuid.New(), Menu: menu},
+		{ID: uuid.New(), Menu: menu, Dripper: ptr(5)},
+	}
+	// 先頭の 3 明細はカップから、最後の明細はメニューの構成から読む
+	for _, line := range o.OrderMenus[:3] {
+		o.OrderCups = append(o.OrderCups, models.OrderCup{ID: uuid.New(), OrderMenuID: line.ID, ItemID: champ.ID, Item: champ})
+	}
+	var got []string
+	for _, l := range toOrders([]models.Order{o})[0].Lines {
+		n := "なし"
+		if l.Dripper != nil {
+			n = fmt.Sprint(*l.Dripper)
+		}
+		got = append(got, n)
+	}
+	if want := []string{"3", "なし", "なし", "5"}; !slices.Equal(got, want) {
+		t.Fatalf("明細の番号だけを写す：%v, want %v", got, want)
+	}
+}
+
+// 指名の番号は jsonb のカードの中身に入り、読み直しても同じ
+func TestStoreKeepsNominatedDripper(t *testing.T) {
+	db := testDB(t)
+	cat := seedCatalog(t, db)
+	s := newStore(db)
+	o := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: dayStart.Add(10 * time.Hour), BillingAmount: 500, Received: 500}
+	free := "山田"
+	o.OrderMenus = []models.OrderMenu{
+		{ID: uuid.New(), OrderID: o.ID, MenuID: cat.champ, MenuName: "x", UnitPrice: 500, Dripper: ptr(4), Assignee: &free},
+		{ID: uuid.New(), OrderID: o.ID, MenuID: cat.champ, MenuName: "x", UnitPrice: 500},
+	}
+	must(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&o).Error; err != nil {
+			return err
+		}
+		_, err := s.OrdersChanged(tx, []OrderRef{{ID: o.ID, CreatedAt: o.CreatedAt}})
+		return err
+	}))
+	var got []string
+	for _, d := range drips(t, s) {
+		n := "なし"
+		if d.Lines[0].Dripper != nil {
+			n = fmt.Sprint(*d.Lines[0].Dripper)
+		}
+		got = append(got, fmt.Sprintf("%s×%d", n, d.Cups))
+	}
+	slices.Sort(got)
+	if want := []string{"4×1", "なし×1"}; !slices.Equal(got, want) {
+		t.Fatalf("指名の番号ごとにカードを作り、保存しても番号が残る：%v", got)
+	}
+	var raw string
+	must(t, db.Raw(`SELECT lines::text FROM caos_drips WHERE lines @> '[{"dripper":4}]'`).Scan(&raw).Error)
+	if !strings.Contains(raw, `"dripper": 4`) || strings.Contains(raw, "nominee") {
+		t.Fatalf("jsonb には dripper で入る：%s", raw)
+	}
+}

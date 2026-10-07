@@ -79,6 +79,7 @@ type valueSpec struct {
 	fields   []fieldSpec // kindObject
 	elem     *valueSpec  // kindArray
 	minLen   int         // kindArray
+	max      int         // kindPositiveInt。0 なら上限なし
 }
 
 type fieldSpec struct {
@@ -121,6 +122,8 @@ var menuSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 	{name: "key", spec: valueSpec{kind: kindString}},
 	{name: "items", spec: valueSpec{kind: kindArray, elem: &menuItemSpec, minLen: 1}},
 	{name: "assignee", spec: valueSpec{kind: kindString, nullable: true}},
+	// 番号より前の画面が送る状態には無い（zod は無ければ null にする）
+	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: maxDripper}},
 }}
 
 // menuItemSchema。item は itemSchema.required() なので id も必須
@@ -164,6 +167,9 @@ func validateValue(path string, v interface{}, spec valueSpec) error {
 		}
 		if spec.kind == kindPositiveInt && n <= 0 {
 			return fmt.Errorf("%s must be positive", path)
+		}
+		if spec.max > 0 && n > float64(spec.max) {
+			return fmt.Errorf("%s must be at most %d", path, spec.max)
 		}
 	case kindString, kindUUID, kindDate, kindEnum:
 		str, ok := v.(string)

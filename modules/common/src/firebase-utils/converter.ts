@@ -6,7 +6,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import _ from "lodash";
-import type { ZodSchema } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
@@ -26,8 +26,9 @@ import {
 } from "../models/order";
 import type { components } from "../types/api";
 
+// 入力の型は出力と違ってよい（既定値で埋める項目など）
 export const converter = <T>(
-  schema: ZodSchema<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
 ): FirestoreDataConverter<T> => {
   return {
     toFirestore: (data: T) => {
@@ -138,6 +139,7 @@ export const responseToMenuEntity = (
       quantity,
     })),
     assignee: null,
+    dripper: null,
   });
 
 const menuItemsToRequest = (menu: MenuEntity) =>
@@ -208,6 +210,7 @@ export const responseToOrderEntity = (
         name: cur.menu_name,
         price: cur.unit_price,
         assignee: cur.assignee,
+        dripper: cur.dripper ?? null,
       });
       acc.push(menu);
       return acc;
@@ -271,7 +274,11 @@ export const orderEntityToCreateRequest = (
   order: OrderEntity,
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
-    acc.push({ assignee: cur.assignee, menu_id: cur.id });
+    acc.push({
+      assignee: cur.assignee,
+      dripper: cur.dripper,
+      menu_id: cur.id,
+    });
     return acc;
   }, []);
   return {
@@ -292,6 +299,7 @@ export const orderToUpdateRequest = (
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({
       assignee: cur.assignee,
+      dripper: cur.dripper,
       menu_id: cur.id,
       order_menu_id: cur.orderMenuId,
     });

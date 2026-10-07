@@ -188,7 +188,8 @@ export const RebrewPanel: React.FC<RebrewPanelProps> = ({
                     : `全件後 ${formatMinSec(wait)}`}
                   {!eligible && (
                     <span className="ml-auto text-red-700">
-                      {ticket.preferredBaristaId
+                      {ticket.preferredBaristaId &&
+                      ticket.preferredBaristaId !== barista.id
                         ? "指名外"
                         : `${limitedLabel || "限定"}は上級生だけ`}
                     </span>
