@@ -66,6 +66,12 @@ func TestValidateEdittingOrderAcceptsOptionalKeys(t *testing.T) {
 	order := parseEdittingOrder(t)
 	order["id"] = "00000000-0000-4000-8000-000000000003"
 	firstMenu(order)["orderMenuId"] = "00000000-0000-4000-8000-000000000004"
+	firstMenu(order)["dripper"] = float64(6)
+	firstMenu(order)["assignee"] = "山田"
+	if err := validateEdittingOrder(order); err != nil {
+		t.Fatal(err)
+	}
+	firstMenu(order)["dripper"] = nil
 	if err := validateEdittingOrder(order); err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +89,10 @@ func TestValidateEdittingOrderRejectsBrokenShape(t *testing.T) {
 		"menu id not uuid":    func(o map[string]interface{}) { firstMenu(o)["id"] = "blend" },
 		"menu price fraction": func(o map[string]interface{}) { firstMenu(o)["price"] = 1.5 },
 		"menu without items":  func(o map[string]interface{}) { firstMenu(o)["items"] = []interface{}{} },
+		"dripper zero":        func(o map[string]interface{}) { firstMenu(o)["dripper"] = float64(0) },
+		"dripper over 6th":    func(o map[string]interface{}) { firstMenu(o)["dripper"] = float64(7) },
+		"dripper fraction":    func(o map[string]interface{}) { firstMenu(o)["dripper"] = 1.5 },
+		"dripper not number":  func(o map[string]interface{}) { firstMenu(o)["dripper"] = "1st" },
 		"menu item zero qty": func(o map[string]interface{}) {
 			firstMenu(o)["items"].([]interface{})[0].(map[string]interface{})["quantity"] = 0
 		},
