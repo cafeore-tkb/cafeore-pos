@@ -239,7 +239,7 @@ export interface components {
       makes_cup: boolean;
       /** @description この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false */
       needs_brew: boolean;
-      /** @description この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false */
+      /** @description この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false */
       senior_only: boolean;
       /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
       iced_brew: boolean;
