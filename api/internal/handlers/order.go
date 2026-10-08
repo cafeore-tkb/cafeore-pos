@@ -418,7 +418,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	publishOrderDeleted(h.hub, orderID)
+	publishOrderDeleted(h.db, h.hub, orderID)
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 	go h.inventory.CheckAlerts(resources)
 }
