@@ -480,23 +480,19 @@ jobs:
           # 黙って壊れるより止める。
           env_pairs=()
           if [ -n "${NEON_DB_URL:-}" ]; then
-            case "$NEON_DB_URL" in
-              *,*)
-                echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
-                exit 1
-                ;;
-            esac
             env_pairs+=("DATABASE_URL=$NEON_DB_URL")
           fi
           if [ -n "${NEON_LISTEN_URL:-}" ]; then
-            case "$NEON_LISTEN_URL" in
+            env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
+          fi
+          for pair in "${env_pairs[@]}"; do
+            case "$pair" in
               *,*)
                 echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
                 exit 1
                 ;;
             esac
-            env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
-          fi
+          done
 
           # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
           # 1回にまとめてカンマで並べる。

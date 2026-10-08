@@ -43,7 +43,7 @@ const listenProbeTimeout = 10 * time.Second
 const listenPingInterval = 30 * time.Second
 
 // 注文の読み直しに失敗したら、この時間をおいて積み直す（DB が一時的に落ちても、ほかのインスタンスの画面を古いままにしない）。
-var publishRetryDelay = time.Second
+const publishRetryDelay = time.Second
 
 // notifyChanged は、channel のものが変わったことをほかのインスタンスへ知らせる。
 //
