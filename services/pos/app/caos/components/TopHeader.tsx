@@ -41,6 +41,8 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** 「1つ戻す」のボタン（UndoButton）。実データテストの右に出す */
+  undoButton?: React.ReactNode;
 }
 
 const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
@@ -72,6 +74,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  undoButton,
 }) => {
   const navItems = [
     { id: "control" as const, label: "CaOS", icon: null },
@@ -281,6 +284,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               : "実データテスト"}
           </span>
         </button>
+        {undoButton}
         {/* Sound toggle */}
         <button
           id="btn-toggle-sound"

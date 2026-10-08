@@ -155,6 +155,40 @@ type CaosNextResult struct {
 	StartedDripId *openapi_types.UUID `json:"started_drip_id"`
 }
 
+// CaosUndoCup 1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる）
+type CaosUndoCup struct {
+	CupId openapi_types.UUID `json:"cup_id"`
+
+	// Current 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+	// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
+	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+	Current CaosUndoCupState `json:"current"`
+
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+	// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
+	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+	Restore CaosUndoCupState `json:"restore"`
+}
+
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
+// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+type CaosUndoCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
+	EmergencyAt     *time.Time          `json:"emergency_at"`
+	ReadyAt         *time.Time          `json:"ready_at"`
+	ServedAt        *time.Time          `json:"served_at"`
+}
+
+// CaosUndoRequest defines model for CaosUndoRequest.
+type CaosUndoRequest struct {
+	Cups []CaosUndoCup `json:"cups"`
+}
+
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -636,6 +670,9 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
+
+// UndoCaosCupsJSONRequestBody defines body for UndoCaosCups for application/json ContentType.
+type UndoCaosCupsJSONRequestBody = CaosUndoRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

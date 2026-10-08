@@ -36,18 +36,26 @@ export const putCaosCups = async (
 
 /**
  * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
- * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる
+ * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる。
+ * 通ったら、終えたカードと始めたカード（「1つ戻す」で使う）を返す
  */
 export const nextCaosDripper = async (
   dripper: number,
   dripId: string | null,
-): Promise<CaosResult> => {
+): Promise<
+  CaosResult & { finishedDripId?: string | null; startedDripId?: string | null }
+> => {
   try {
-    const { error, response } = await client.POST(
+    const { data, error, response } = await client.POST(
       "/api/caos/drippers/{dripper}/next",
       { params: { path: { dripper } }, body: { drip_id: dripId } },
     );
-    return response.ok ? {} : failed(response.status, error);
+    return response.ok
+      ? {
+          finishedDripId: data?.finished_drip_id ?? null,
+          startedDripId: data?.started_drip_id ?? null,
+        }
+      : failed(response.status, error);
   } catch {
     return { error: "cafeore-pos につながりません" };
   }

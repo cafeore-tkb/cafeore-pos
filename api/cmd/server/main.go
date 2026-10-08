@@ -319,6 +319,7 @@ func main() {
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
+		api.POST("/caos/undo", caosHandler.UndoCaosCups)
 		// 緊急（入れ直し）と緊急のシール
 		api.POST("/caos/emergency", caosHandler.MarkCaosEmergency)
 		api.POST("/orders/:id/cups/:cupId/emergency-label/claim", caosHandler.ClaimEmergencyLabel)

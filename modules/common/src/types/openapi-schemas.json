@@ -1073,6 +1073,93 @@
       }
     }
   },
+  "CaosUndoCupState": {
+    "type": "object",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",
+    "required": [
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at",
+      "ready_at",
+      "served_at",
+      "emergency_at"
+    ],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "emergency_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
+  "CaosUndoCup": {
+    "type": "object",
+    "description": "1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる）",
+    "required": ["cup_id", "current", "restore"],
+    "properties": {
+      "cup_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "current": {
+        "$ref": "#/components/schemas/CaosUndoCupState"
+      },
+      "restore": {
+        "$ref": "#/components/schemas/CaosUndoCupState"
+      }
+    }
+  },
+  "CaosUndoRequest": {
+    "type": "object",
+    "required": ["cups"],
+    "properties": {
+      "cups": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/CaosUndoCup"
+        }
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],

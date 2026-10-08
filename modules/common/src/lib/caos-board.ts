@@ -119,7 +119,7 @@ export const cupNeedsBrew = (cup: Pick<Cup, "item">) =>
   cup.item.item_type.needs_brew !== false;
 
 /** カップの CaOS のカードの値（緊急のカップは入れ直しの列。サーバーの cupCaosState と同じ） */
-const cupState = (cup: Cup): CaosCupState =>
+export const cupCaosState = (cup: Cup): CaosCupState =>
   (cup.emergencyAt ?? null) !== null
     ? {
         dripper: cup.emergencyDripper ?? null,
@@ -268,7 +268,7 @@ export const buildCaosCards = (
         readyAt: cup.readyAt,
         servedAt: cup.servedAt,
         emergencyAt: cup.emergencyAt ?? null,
-        state: cupState(cup),
+        state: cupCaosState(cup),
       };
       const emergency = boardCup.emergencyAt !== null;
       // 緊急のカップは準備完了・提供済みでも入れ直す

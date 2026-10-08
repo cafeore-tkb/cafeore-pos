@@ -1,9 +1,11 @@
 import {
   type CaosLane,
+  type CaosUndoKind,
   type CaosWritesResult,
   assignWrites,
   buildCaosCards,
   caosDay,
+  caosUndoLabel,
   formatClockOfDay,
   markCaosEmergency,
   mergeWrites,
@@ -12,6 +14,8 @@ import {
   seniorOnlyBlock,
   startOfJstDay,
   unassignWrites,
+  undoOfNext,
+  undoOfWrites,
   useColorSettings,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,7 +39,9 @@ import {
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
+import { UndoButton } from "./components/UndoButton";
 import { useBeanInventory } from "./hooks/useBeanInventory";
+import { useCaosUndo } from "./hooks/useCaosUndo";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { PracticeLanesScope, useCaosLanes } from "./lanes/CaosLanesContext";
 import { cardsToBoard, rebrewCups } from "./live/board";
@@ -190,6 +196,13 @@ export default function App() {
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   const [liveError, setLiveError] = useState<string | null>(null);
+  // 「1つ戻す」：この画面が最後にした本番の操作だけを覚える（練習の盤面の操作は覚えず、練習中はボタンを出さない）
+  const undo = useCaosUndo(live ? posOrders : null);
+  const handleUndo = () => {
+    void undo.undo().then((error) => {
+      if (error) setLiveError(error);
+    });
+  };
 
   useEffect(() => {
     if (!liveError) return;
@@ -199,8 +212,13 @@ export default function App() {
 
   // カップへの書き込みを送る。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を出す。
   // 結果は書いた注文の配信で届く。豆の在庫は POS の在庫（注文から数える）なので、ここでは減らさない。
-  // 練習中はサーバーに送らず、練習の盤面に同じ決まりで当てる
-  const runWrites = async (result: CaosWritesResult) => {
+  // 練習中はサーバーに送らず、練習の盤面に同じ決まりで当てる（「1つ戻す」には覚えない）。
+  // 本番で書けたら「1つ戻す」で戻せるよう、書いたカップの前の値と書いた値を覚える（kind は操作の種類、detail は画面に出す説明）
+  const runWrites = async (
+    result: CaosWritesResult,
+    kind: CaosUndoKind,
+    detail: string,
+  ) => {
     if ("error" in result) {
       setLiveError(result.error);
       return;
@@ -210,8 +228,16 @@ export default function App() {
       if (error) setLiveError(error);
       return;
     }
+    if (result.writes.length === 0) return;
+    const cards = liveCards;
     const { error } = await putCaosCups(result.writes);
-    if (error) setLiveError(error);
+    if (error) {
+      setLiveError(error);
+      return;
+    }
+    undo.rememberCups(
+      undoOfWrites(kind, caosUndoLabel(kind, detail), cards, result.writes),
+    );
   };
   // 画面のカード（ticketUid）から、組み立てたカードを引く
   const liveCard = (ticketUid: string) => liveBoard.cards.get(ticketUid);
@@ -302,9 +328,22 @@ export default function App() {
       const card =
         current.status === "brewing" ? liveCard(current.ticketUid) : undefined;
       pendingNextRef.current.add(bayId);
+      const cards = liveCards;
       void nextCaosDripper(bayId, card?.dripId ?? null)
-        .then(({ error }) => {
-          if (error) setLiveError(error);
+        .then((result) => {
+          if (result.error) {
+            setLiveError(result.error);
+            return;
+          }
+          // 終えた・始めたカードを覚える（「1つ戻す」で抽出中・待機に戻し、この「次へ」で付けた準備完了を外す）
+          undo.rememberCups(
+            undoOfNext(
+              caosUndoLabel("next", `${bayId}番`),
+              cards,
+              result.finishedDripId ?? null,
+              result.startedDripId ?? null,
+            ),
+          );
         })
         .finally(() => pendingNextRef.current.delete(bayId));
       return;
@@ -340,6 +379,8 @@ export default function App() {
     }
     void runWrites(
       assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
+      "assign",
+      `#${card.orderNo} → ${targetBayId}番`,
     );
   };
 
@@ -359,11 +400,14 @@ export default function App() {
       setLiveError(blocked);
       return;
     }
+    const front = toFront && card.dripper === targetBayId;
     void runWrites(
       assignWrites(liveCards, card, targetBayId, {
         index: toFront ? 0 : undefined,
         newId: newDripId,
       }),
+      front ? "front" : "move",
+      front ? `#${card.orderNo}` : `#${card.orderNo} → ${targetBayId}番`,
     );
     setSelectedOrderId(null);
     soundManager.playDispatch();
@@ -373,7 +417,7 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     const card = liveCard(ticket.ticketUid);
     if (!card) return;
-    void runWrites(unassignWrites(card));
+    void runWrites(unassignWrites(card), "unassign", `#${card.orderNo}`);
     setSelectedOrderId(null);
     soundManager.playDispatch();
   };
@@ -400,7 +444,11 @@ export default function App() {
     const card = liveCard(firstUid);
     const withCard = liveCard(secondUid);
     if (!card || !withCard) return;
-    void runWrites(mergeWrites(card, withCard, newDripId));
+    void runWrites(
+      mergeWrites(card, withCard, newDripId),
+      "merge",
+      `#${card.orderNo}・#${withCard.orderNo}`,
+    );
     setSelectedOrderId(null);
   };
 
@@ -574,6 +622,15 @@ export default function App() {
             onOpenTestPlay={() => setTestSetupOpen(true)}
             onEndTestPlay={handleEndTestPlay}
             posStatus={posStatus}
+            undoButton={
+              live ? (
+                <UndoButton
+                  label={undo.label}
+                  pending={undo.pending}
+                  onUndo={handleUndo}
+                />
+              ) : undefined
+            }
           />
 
           {/* Dynamic Tab Body */}
