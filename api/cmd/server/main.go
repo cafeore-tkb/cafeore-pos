@@ -258,9 +258,8 @@ func main() {
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
-	// CaOS（ドリップ管制）の盤面。操作のたびと、注文が変わったときに今日の盤面を配り直す
+	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caosHandler := handlers.NewCaosHandler(db, hub)
-	go hub.RunBoard(caosHandler.BoardMessage)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -318,7 +317,8 @@ func main() {
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
-		api.POST("/caos/ops", caosHandler.ApplyCaosOp)
+		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
+		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
 	}
 
 	// サーバー起動

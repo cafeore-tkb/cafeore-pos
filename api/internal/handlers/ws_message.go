@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -21,8 +20,6 @@ const (
 	WSMessageTypeMasterState  WSMessageType = "master_state"
 	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
-	// CaOS（ドリップ管制）の今日の盤面。接続したときと、変わるたびに全部を送る
-	WSMessageTypeDrips WSMessageType = "drips"
 )
 
 type WSMessage struct {
@@ -34,8 +31,6 @@ type WSMessage struct {
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
 	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
-	// CaOS の盤面のカード（openapi の CaosCard の形）。0 枚なら省く
-	Drips []caos.Card `json:"drips,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -56,9 +51,6 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		initial = append(initial, msg)
 	}
 	if msg, ok := cashierStateMessage(h.db); ok {
-		initial = append(initial, msg)
-	}
-	if msg, ok := h.hub.boardMessage(); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)
@@ -88,19 +80,16 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 // ほかのインスタンスにも DB の通知で知らせる（order_listener.go）。
 // 通知は自分の配信の成否に関わらず送る。DB にはもう書けていて、受けた側は注文 ID から読み直すだけなので、
 // ここでの読み直しが一時的に失敗しても、ほかのインスタンスの画面は新しい状態になる。
-// CaOS の盤面は注文のカップから組み立てるので、盤面も配り直す。
 func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
 	resp, err := broadcastOrder(db, hub, orderID)
 	notifyOrderChanged(db, orderID)
-	hub.RequestBoard()
 	return resp, err
 }
 
-// 注文の削除を配信し、ほかのインスタンスにも知らせる。CaOS の盤面も配り直す。
+// 注文の削除を配信し、ほかのインスタンスにも知らせる。
 func publishOrderDeleted(db *gorm.DB, hub *Hub, orderID uuid.UUID) {
 	broadcastOrderDeleted(hub, orderID)
 	notifyOrderChanged(db, orderID)
-	hub.RequestBoard()
 }
 
 // 注文を読み直して、このインスタンスにつないでいる画面へだけ配る。

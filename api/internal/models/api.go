@@ -9,15 +9,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for CaosOpName.
-const (
-	CaosOpNameAssign   CaosOpName = "assign"
-	CaosOpNameMerge    CaosOpName = "merge"
-	CaosOpNameNext     CaosOpName = "next"
-	CaosOpNameUnassign CaosOpName = "unassign"
-	CaosOpNameUndo     CaosOpName = "undo"
-)
-
 // Defines values for ColorScreen.
 const (
 	ColorScreenCashier ColorScreen = "cashier"
@@ -52,37 +43,43 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
-// CaosCardRef カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
-type CaosCardRef struct {
-	CupIds *[]openapi_types.UUID `json:"cup_ids,omitempty"`
-	Id     *openapi_types.UUID   `json:"id"`
+// CaosCupState CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
+type CaosCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
 }
 
-// CaosOp 盤面への操作。name で選び、使うものだけを送る。
-// - assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり）。無ければ注文番号の順。列が空いていればそのまま抽出を始める
-// - unassign：待機の card を未割当に戻す
-// - next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる
-// - merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる
-// - undo：op_id の操作を 1 つ戻す
-type CaosOp struct {
-	// Card カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
-	Card  *CaosCardRef        `json:"card,omitempty"`
-	Index *int                `json:"index,omitempty"`
-	Lane  *int                `json:"lane,omitempty"`
-	Name  CaosOpName          `json:"name"`
-	OpId  *openapi_types.UUID `json:"op_id,omitempty"`
+// CaosCupsWrite カップの組を before から after にする。時刻はミリ秒までで比べる
+type CaosCupsWrite struct {
+	// After CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
+	After CaosCupState `json:"after"`
 
-	// With カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
-	With *CaosCardRef `json:"with,omitempty"`
+	// Before CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
 }
 
-// CaosOpName defines model for CaosOpName.
-type CaosOpName string
+// CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
+type CaosCupsWriteRequest struct {
+	Writes []CaosCupsWrite `json:"writes"`
+}
 
-// CaosOpResult defines model for CaosOpResult.
-type CaosOpResult struct {
-	// OpId この操作の記録の ID（「1つ戻す」で送る）。何も変わらなかった操作と undo では null
-	OpId *openapi_types.UUID `json:"op_id"`
+// CaosNextRequest defines model for CaosNextRequest.
+type CaosNextRequest struct {
+	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+	DripId *openapi_types.UUID `json:"drip_id"`
+}
+
+// CaosNextResult defines model for CaosNextResult.
+type CaosNextResult struct {
+	// FinishedDripId 終えたカード。無ければ null
+	FinishedDripId *openapi_types.UUID `json:"finished_drip_id"`
+
+	// StartedDripId 始めたカード。待機が無ければ null
+	StartedDripId *openapi_types.UUID `json:"started_drip_id"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -348,8 +345,22 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	Id   openapi_types.UUID `json:"id"`
-	Item ItemResponse       `json:"item"`
+	// BrewFinishedAt CaOS で抽出を終えた時刻
+	BrewFinishedAt *time.Time `json:"brew_finished_at"`
+
+	// BrewStartedAt CaOS で抽出を始めた時刻
+	BrewStartedAt *time.Time `json:"brew_started_at"`
+
+	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+	DripId *openapi_types.UUID `json:"drip_id"`
+
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	Dripper *int `json:"dripper"`
+
+	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）
+	DripperPosition *float64           `json:"dripper_position"`
+	Id              openapi_types.UUID `json:"id"`
+	Item            ItemResponse       `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -485,8 +496,11 @@ type StockUsage struct {
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
 
-// ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
-type ApplyCaosOpJSONRequestBody = CaosOp
+// WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
+type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
+type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

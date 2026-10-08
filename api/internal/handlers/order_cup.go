@@ -88,5 +88,11 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 		Item:        toItemResponse(&cup.Item),
 		ReadyAt:     cup.ReadyAt,
 		ServedAt:    cup.ServedAt,
+
+		Dripper:         cup.Dripper,
+		DripperPosition: cup.DripperPosition,
+		DripId:          apiUUID(cup.DripID),
+		BrewStartedAt:   cup.BrewStartedAt,
+		BrewFinishedAt:  cup.BrewFinishedAt,
 	}
 }
