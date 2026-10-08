@@ -264,7 +264,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
-              : "2025年の実データでテストプレイ"
+              : "過去の祭の実データ（手元の JSON）でテストプレイ"
           }
         >
           {testPlaying ? (

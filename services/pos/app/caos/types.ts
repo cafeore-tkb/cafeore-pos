@@ -93,32 +93,22 @@ export interface UnassignedOrder {
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 
-export interface HistoricalItem {
-  name: string;
-  price: number;
-  type: "hot" | "iceOre" | "ice" | "milk" | "others" | string;
-}
-
-export interface HistoricalOrder {
+// 実データテスト（練習）の実績に出す注文。読み込んだ実データの注文に、練習の結果（提供時間）と品物の種類を足したもの
+export interface PracticeSalesOrder {
   orderId: number;
   createdAt: string;
+  /** 練習で、抽出の要るカップが全部準備完了になった時刻。まだ・抽出の要るカップが無い注文は null */
   readyAt: string | null;
-  servedAt: string | null;
-  total: number;
   billingAmount: number;
-  items: HistoricalItem[];
+  items: PracticeSalesItem[];
 }
 
-export interface HistoricalDataset {
-  source: string;
-  orders: HistoricalOrder[];
-}
-
-export interface TestPlaySession {
-  status: "active" | "finished";
-  startMs: number;
-  endMs: number;
-  currentMs: number;
-  durationMinutes: 30 | 60;
-  orders: HistoricalOrder[];
+export interface PracticeSalesItem {
+  name: string;
+  price: number;
+  /** 商品の種類の名前と表示名（DB の今の種類から。決め方は @cafeore/common の practiceItemType） */
+  type: string;
+  typeLabel: string;
+  /** カップを作る品物か（グッズは false。杯数・商品構成に数えない） */
+  makesCup: boolean;
 }

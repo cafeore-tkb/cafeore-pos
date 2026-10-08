@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import type { Barista, HistoricalOrder, OrderTicket } from "../types";
+import type { Barista, OrderTicket, PracticeSalesOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
-  salesOrders?: HistoricalOrder[];
+  salesOrders?: PracticeSalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
 }
@@ -168,7 +168,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const salesAnalysis = useMemo(() => {
     if (salesOrders.length === 0) return null;
     const menuMap = new Map<string, { cups: number; sales: number }>();
-    const typeMap = new Map<string, number>();
+    const typeMap = new Map<string, { label: string; count: number }>();
     const bucketMap = new Map<
       number,
       { orders: number; sales: number; cups: number }
@@ -186,14 +186,20 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       bucketValue.orders += 1;
       bucketValue.sales += order.billingAmount;
       order.items.forEach((item) => {
-        if (item.type === "others") return;
+        // グッズ（カップを作らない品物）は売上だけに数える
+        if (!item.makesCup) return;
         cups += 1;
         bucketValue.cups += 1;
         const menu = menuMap.get(item.name) || { cups: 0, sales: 0 };
         menu.cups += 1;
         menu.sales += item.price;
         menuMap.set(item.name, menu);
-        typeMap.set(item.type, (typeMap.get(item.type) || 0) + 1);
+        const typeCount = typeMap.get(item.type) || {
+          label: item.typeLabel,
+          count: 0,
+        };
+        typeCount.count += 1;
+        typeMap.set(item.type, typeCount);
       });
       bucketMap.set(bucket, bucketValue);
       if (order.readyAt)
@@ -222,9 +228,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       menuRanking: Array.from(menuMap, ([name, value]) => ({ name, ...value }))
         .sort((a, b) => b.cups - a.cups)
         .slice(0, 8),
-      typeMix: Array.from(typeMap, ([type, count]) => ({ type, count })).sort(
-        (a, b) => b.count - a.count,
-      ),
+      typeMix: Array.from(typeMap, ([type, value]) => ({
+        type,
+        ...value,
+      })).sort((a, b) => b.count - a.count),
       buckets,
       peak,
     };
@@ -254,18 +261,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     [baristas],
   );
 
-  const typeLabel = (type: string) =>
-    type === "hot"
-      ? "ホット"
-      : type === "iceOre"
-        ? "アイスオレ"
-        : type === "ice"
-          ? "アイス"
-          : type === "milk"
-            ? "ミルク"
-            : type;
+  // 時刻は日本時間（盤面の時計と同じ。端末の時刻帯によらない）
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -409,7 +408,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   {salesAnalysis.typeMix.map((item) => (
                     <div key={item.type}>
                       <div className="flex justify-between font-bold text-[11px]">
-                        <span>{typeLabel(item.type)}</span>
+                        <span>{item.label}</span>
                         <span>{item.count}杯</span>
                       </div>
                       <div className="mt-0.5 h-2 overflow-hidden rounded-full bg-slate-100">
