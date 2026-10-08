@@ -11,8 +11,10 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenMaster ColorScreen = "master"
-	ColorScreenServe  ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -58,7 +60,9 @@ type CashierStateUpdateRequest struct {
 	SubmittedOrderId *openapi_types.UUID    `json:"submitted_order_id"`
 }
 
-// ColorScreen 背景色を適用する画面
+// ColorScreen 背景色を適用する画面。
+// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+// master・serve はマスター・提供画面のカップ
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -66,7 +70,9 @@ type ColorSettingResponse struct {
 	Color string             `json:"color"`
 	Id    openapi_types.UUID `json:"id"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -80,7 +86,9 @@ type ColorSettingResponse struct {
 type ColorSettingUpsertRequest struct {
 	Color string `json:"color"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID

@@ -1,0 +1,28 @@
+/* CaOS（/master-sheet）だけに効くスタイル。POS のほかの画面に漏らさないよう .caos-root の中に閉じる。 */
+
+/* iPad でのバウンスを止める。CaOS を開いているときだけ */
+body:has(.caos-root) {
+  overscroll-behavior: none;
+}
+
+@layer base {
+  .caos-root button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Custom scrollbars for high density operational screens */
+.caos-root ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.caos-root ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.caos-root ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.caos-root ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

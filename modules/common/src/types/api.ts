@@ -383,10 +383,13 @@ export interface components {
      */
     ColorTargetType: "Item" | "ItemType";
     /**
-     * @description 背景色を適用する画面
+     * @description 背景色を適用する画面。
+     * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+     * master・serve はマスター・提供画面のカップ
+     *
      * @enum {string}
      */
-    ColorScreen: "master" | "serve";
+    ColorScreen: "cashier" | "cashier_order" | "master" | "serve";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
