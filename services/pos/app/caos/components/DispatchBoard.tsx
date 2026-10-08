@@ -178,7 +178,7 @@ export const DispatchBoard: React.FC<
           {/* 6 列 */}
           <div className="relative divide-y divide-slate-200">
             {baristas.map((barista) => {
-              const lane = laneStatus(barista, currentTimeSec);
+              const lane = laneStatus(barista);
               const { positioned, freeFromSec } = positionTickets(
                 barista,
                 currentTimeSec,

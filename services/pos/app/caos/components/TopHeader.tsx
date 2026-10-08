@@ -105,7 +105,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   return (
     <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
-      {/* Left side: Clock and Top Metrics */}
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
@@ -117,7 +116,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             return (
               <button
                 key={item.id}
-                id={`nav-tab-${item.id}`}
                 type="button"
                 onClick={() => onSelectTab(item.id)}
                 aria-pressed={active}
@@ -155,16 +153,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           )}
         </nav>
 
-        {/* Large Digital Clock */}
         <div className="flex items-center gap-2">
           <div className="font-bold font-mono text-[#0f172a] text-[28px] leading-none tracking-tight">
             {timeStr}
           </div>
-          {/* Quick Sim Controls */}
           <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
             <button
               type="button"
-              id="sim-play-pause-btn"
               onClick={onTogglePlay}
               title={isRunning ? "一時停止" : "タイマー再開"}
               className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
@@ -177,7 +172,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </button>
             <button
               type="button"
-              id="sim-speed-btn"
               onClick={onCycleSpeed}
               title="シミュレーション速度切替"
               className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
@@ -186,7 +180,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </button>
             <button
               type="button"
-              id="sim-reset-btn"
               onClick={onResetData}
               title="初期状態にリセット"
               className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
@@ -227,7 +220,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </div>
         </div>
 
-        {/* Metric 1: 未割当オーダー (Unassigned Orders) */}
         <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             未割当オーダー
@@ -242,7 +234,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </div>
         </div>
 
-        {/* Metric 2: 全ベイ待機杯数 (Total Queued Cups in Bays) */}
         <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             全ドリッパー待機杯数
@@ -258,7 +249,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right side: only persistent operational controls */}
       <div className="flex items-center gap-2">
         <output
           aria-label={`cafeore-pos ${POS_STATUS[posStatus].label}`}
@@ -293,7 +283,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </button>
         {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
         <button
-          id="btn-undo"
           type="button"
           disabled
           title="1つ戻すは準備中です"
@@ -303,10 +292,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <span>1つ戻す</span>
         </button>
 
-        {/* Sound toggle */}
         <button
           type="button"
-          id="btn-toggle-sound"
           onClick={onToggleSound}
           title={soundEnabled ? "通知音 ON" : "通知音 消音"}
           className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border text-xs transition-colors ${

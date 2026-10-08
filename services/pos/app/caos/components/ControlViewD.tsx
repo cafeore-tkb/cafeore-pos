@@ -72,7 +72,6 @@ const dropLabel = (target: DropTarget | null) => {
 export const ControlViewD: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
-  currentTimeSec,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -109,10 +108,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const targetRowId = selectedOrder?.orderNos[0] ?? null;
   // 列ごとの今（抽出中のカード・残り・まもなく）
   const lanes = new Map(
-    baristas.map((barista) => [
-      barista.id,
-      laneStatus(barista, currentTimeSec),
-    ]),
+    baristas.map((barista) => [barista.id, laneStatus(barista)]),
   );
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 

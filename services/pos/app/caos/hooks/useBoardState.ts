@@ -29,7 +29,7 @@ export const useBoardState = ({
       () =>
         commit({
           ...boardRef.current,
-          baristas: tickBrewing(boardRef.current.baristas, 1),
+          baristas: tickBrewing(boardRef.current.baristas),
         }),
       1000 / simSpeed,
     );

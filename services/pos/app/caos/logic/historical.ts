@@ -75,7 +75,7 @@ export const testPlayAnalytics = (session: TestPlaySession | null) => ({
     ? session.orders.filter((order) => createdMs(order) <= session.currentMs)
     : [],
   periodStartMs: session?.startMs,
-  periodEndMs: session ? Math.min(session.currentMs, session.endMs) : undefined,
+  periodEndMs: session?.currentMs,
 });
 
 /** テストの残り（「12分」） */

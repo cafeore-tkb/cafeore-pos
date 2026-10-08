@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -80,12 +81,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
   const typeLabel = (type: string) => typeNames.get(type) ?? type;
-  const formatBucket = (timestamp: number) =>
-    new Intl.DateTimeFormat("ja-JP", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(timestamp));
+  const formatBucket = (timestamp: number) => dayjs(timestamp).format("HH:mm");
 
   return (
     <div className="space-y-3">
@@ -152,12 +148,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             <div className="mt-3">
               <div className="mb-2 flex items-center justify-between font-bold text-[11px] text-slate-600">
                 <span>10分ごとの注文数</span>
-                {salesAnalysis.peak && (
-                  <span>
-                    ピーク {formatBucket(salesAnalysis.peak.time)}・
-                    {salesAnalysis.peak.orders}件
-                  </span>
-                )}
+                <span>
+                  ピーク {formatBucket(salesAnalysis.peak.time)}・
+                  {salesAnalysis.peak.orders}件
+                </span>
               </div>
               <div className="flex h-[92px] items-end gap-1 rounded-lg bg-slate-50 p-2">
                 {salesAnalysis.buckets.map((bucket) => {

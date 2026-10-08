@@ -73,21 +73,15 @@ export const nextAvailableBays = (baristas: Barista[]) =>
     .slice(0, 3);
 export type NextAvailable = ReturnType<typeof nextAvailableBays>;
 
-// 先頭のカードの残り（秒）
-const remainingOf = (ticket: OrderTicket, nowSec: number) => {
-  if (ticket.timeRemainingSec !== undefined) return ticket.timeRemainingSec;
-  if (ticket.endTimeSec !== undefined)
-    return Math.max(0, ticket.endTimeSec - nowSec);
-  return ticket.totalDurationSec;
-};
-
 // 列の今（抽出中のカード・待機のカード・残りの秒・まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中）
-export const laneStatus = (barista: Barista, nowSec: number) => {
+export const laneStatus = (barista: Barista) => {
   const [current, ...waiting] = barista.queue as [
     OrderTicket | undefined,
     ...OrderTicket[],
   ];
-  const remainingSec = current ? remainingOf(current, nowSec) : 0;
+  const remainingSec = current
+    ? (current.timeRemainingSec ?? current.totalDurationSec)
+    : 0;
   const brewing = current?.status === "brewing";
   return {
     current,
@@ -98,8 +92,8 @@ export const laneStatus = (barista: Barista, nowSec: number) => {
   };
 };
 
-// 抽出中のカードの残りを stepSec 減らす（0 で止める。「次へ」を押すまで終わらない）
-export const tickBrewing = (baristas: Barista[], stepSec: number) =>
+// 抽出中のカードの残りを 1 秒減らす（0 で止める。「次へ」を押すまで終わらない）
+export const tickBrewing = (baristas: Barista[]) =>
   baristas.map((barista) => {
     const [head, ...rest] = barista.queue;
     if (head?.status !== "brewing" || head.timeRemainingSec === undefined)
@@ -109,7 +103,7 @@ export const tickBrewing = (baristas: Barista[], stepSec: number) =>
       queue: [
         {
           ...head,
-          timeRemainingSec: Math.max(0, head.timeRemainingSec - stepSec),
+          timeRemainingSec: Math.max(0, head.timeRemainingSec - 1),
         },
         ...rest,
       ],
