@@ -16,7 +16,6 @@ import {
   useSubmit,
 } from "react-router";
 import { z } from "zod";
-import { useCupActions } from "~/components/functional/useCupActions";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { InputComment } from "~/components/molecules/InputComment";
 import {
@@ -95,9 +94,8 @@ export default function FielsOfMaster() {
   );
 }
 
-// マスター画面の注文カード。カップを1杯ずつ出し、押すと準備完了を切り替える
+// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）
 const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
-  const { cups, press, readyCup } = useCupActions(order);
   const calling = order.status === "calling";
   return (
     <OrderInfoCard
@@ -105,21 +103,10 @@ const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
       timing="present"
       colorScreen="master"
       grayed={calling}
-      cups={cups.map((cup) => ({
+      cups={order.getCups().map((cup) => ({
         ...cup,
         // 呼び出し中の注文のカップと、準備完了・提供済みのカップは灰色にする
-        gray: calling || cup.shown !== "preparing",
-        served: cup.shown === "served" && cup.partlyServed,
-        // 提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
-        onClick:
-          cup.shown === "served"
-            ? undefined
-            : press(cup.cupId, (cupId) =>
-                readyCup(
-                  cupId,
-                  cup.shown === "preparing" ? "ready" : "preparing",
-                ),
-              ),
+        gray: calling || cup.status !== "preparing",
       }))}
     >
       <InputComment
