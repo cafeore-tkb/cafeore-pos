@@ -55,9 +55,10 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	// 同じ状態を続けて送られたときは通知しない
+	// 同じ状態を続けて送られたときは通知しない。初めてなら無いのが普通なので、
+	// First で「record not found」をログに出さないよう Find で読む
 	var last models.MasterState
-	_ = h.db.Order("created_at DESC").First(&last).Error
+	_ = h.db.Order("created_at DESC").Limit(1).Find(&last).Error
 
 	state := models.MasterState{
 		Type:      req.Type,

@@ -640,10 +640,11 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return
 	}
 
+	// 名前は通知に使う
+	var item models.Item
 	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
 		// 同じアイテムの置き換えやアイテムの削除と重ならないよう、アイテムの行を押さえる
-		var item models.Item
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&item, "id = ?", itemID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "name").First(&item, "id = ?", itemID).Error; err != nil {
 			return err
 		}
 		resourceIDs := make([]uuid.UUID, len(usages))
@@ -680,25 +681,20 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
 	go h.inv.CheckAlerts(nil)
-	go h.inv.postItemUsages(itemID, usages)
+	go h.inv.postItemUsages(item.Name, usages)
 }
 
-func (inv *Inventory) postItemUsages(itemID uuid.UUID, usages []models.ItemStockUsage) {
-	var item models.Item
-	if err := inv.db.Unscoped().First(&item, "id = ?", itemID).Error; err != nil {
-		log.Printf("activity: failed to load item %s: %v", itemID, err)
-		return
-	}
+func (inv *Inventory) postItemUsages(itemName string, usages []models.ItemStockUsage) {
 	var list []models.StockResource
 	if err := inv.db.Unscoped().Find(&list).Error; err != nil {
 		log.Printf("activity: failed to load stock resources: %v", err)
 		return
 	}
-	resources := make(map[string]models.StockResource, len(list))
+	resources := make(map[uuid.UUID]models.StockResource, len(list))
 	for _, r := range list {
-		resources[r.ID.String()] = r
+		resources[r.ID] = r
 	}
-	inv.activity.Post(itemUsagesMessage(item.Name, usages, resources))
+	inv.activity.Post(itemUsagesMessage(itemName, usages, resources))
 }
 
 // 本文を検証して1つのアイテムの使用量の行にする。量は正、在庫対象は重複なし。

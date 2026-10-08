@@ -43,9 +43,9 @@ func TestMenuUpdatedMessage(t *testing.T) {
 
 func TestItemUsagesMessage(t *testing.T) {
 	cup, bean := uuid.New(), uuid.New()
-	resources := map[string]models.StockResource{
-		cup.String():  {Name: "ホットカップ", Unit: "個"},
-		bean.String(): {Name: "ケニア豆", Unit: "g"},
+	resources := map[uuid.UUID]models.StockResource{
+		cup:  {Name: "ホットカップ", Unit: "個"},
+		bean: {Name: "ケニア豆", Unit: "g"},
 	}
 	usages := []models.ItemStockUsage{
 		{ResourceID: cup, Amount: 1},

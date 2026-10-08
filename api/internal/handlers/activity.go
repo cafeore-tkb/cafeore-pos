@@ -188,10 +188,10 @@ func stockResourceDeletedMessage(r *models.StockResource) string {
 // --- 使用量 ---
 
 // 「ホットカップ 1個・ケニア豆 15g」と並べる。resources に無いものは飛ばす
-func usagesText(usages []models.ItemStockUsage, resources map[string]models.StockResource) string {
+func usagesText(usages []models.ItemStockUsage, resources map[uuid.UUID]models.StockResource) string {
 	parts := make([]string, 0, len(usages))
 	for _, u := range usages {
-		r, ok := resources[u.ResourceID.String()]
+		r, ok := resources[u.ResourceID]
 		if !ok {
 			continue
 		}
@@ -203,7 +203,7 @@ func usagesText(usages []models.ItemStockUsage, resources map[string]models.Stoc
 	return strings.Join(parts, "・")
 }
 
-func itemUsagesMessage(itemName string, usages []models.ItemStockUsage, resources map[string]models.StockResource) string {
+func itemUsagesMessage(itemName string, usages []models.ItemStockUsage, resources map[uuid.UUID]models.StockResource) string {
 	return tagged(fmt.Sprintf("✏️ 使用量を変更: %s → %s", itemName, usagesText(usages, resources)), tagInventory)
 }
 
