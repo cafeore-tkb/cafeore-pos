@@ -93,7 +93,8 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
   const { newOrder } = submission.value;
   const order = OrderEntity.fromOrder(newOrder);
 
-  const savedOrder = await orderRepository.save(order);
+  // 会計のラベル（カップごとのシールと引換券に貼るシール）の印刷も、注文と同じトランザクションで印刷キューに積む
+  const savedOrder = await orderRepository.createWithLabels(order);
 
   // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
   await cashierRepository.setSubmittedOrder(savedOrder);

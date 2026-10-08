@@ -8,3 +8,4 @@ export * from "./inventory";
 export * from "./colorSetting";
 export * from "./masterTransfer";
 export * from "./caos";
+export * from "./printJob";

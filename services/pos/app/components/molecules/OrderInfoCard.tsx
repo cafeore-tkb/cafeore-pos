@@ -4,6 +4,7 @@ import {
   type WithId,
   assignmentDisplay,
   masterDefaultColor,
+  orderCupLabels,
   orderRepository,
   resolveItemColor,
   useColorSettings,
@@ -18,6 +19,7 @@ import { ReadyBell } from "../atoms/ReadyBell";
 import { ServeCheck } from "../atoms/ServeCheck";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { EmergencyPrintButton } from "./EmergencyPrintButton";
 import { InputComment } from "./InputComment";
 import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 
@@ -58,6 +60,16 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     user === "cashier" || user === "dashboard"
       ? order.getItems()
       : order.getCups();
+
+  // マスター画面の緊急ボタン。押したカップの、レジで印刷したのと同じシールを印刷し直す
+  const emergencyEnabled = user === "master" && timing === "present";
+  const labelByCup = new Map(
+    emergencyEnabled
+      ? orderCupLabels(order).flatMap((label) =>
+          label.cupId ? [[label.cupId, label] as const] : [],
+        )
+      : [],
+  );
 
   // 提供画面ではカップを押すと 準備中 → 提供可能 → 提供済み → 準備中 と回り、マスター画面では準備完了を切り替える
   const cupAction =
@@ -189,85 +201,104 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                 status === "served" &&
                 (isPartlyServed(order, item) ||
                   (user === "serve" && timing === "present"));
+              // マスター画面では、シールのあるカップに緊急ボタンを出す（そのカップの本物と同じシールを印刷し直す）
+              const emergencyLabel =
+                emergencyEnabled && item.cupId
+                  ? labelByCup.get(item.cupId)
+                  : undefined;
               return (
-                <CupButton
+                <div
                   key={item.cupId ?? `${idx}-${item.id}`}
-                  busy={
-                    item.cupId !== undefined && cupPending.isBusy(item.cupId)
-                  }
-                  onClick={
-                    // マスター画面で提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
-                    cupAction &&
-                    item.cupId &&
-                    !(cupAction === "master" && status === "served")
-                      ? () => changeCup(item)
-                      : undefined
-                  }
+                  className="relative h-full"
                 >
-                  <Card
-                    className={cn(
-                      "h-full p-3 transition-all duration-200",
-                      // マスター画面の既定の色は itemBackgroundColor で付ける
-                      user === "serve"
-                        ? item.item_type.name === "milk" && "bg-yellow-200"
-                        : user !== "master" &&
-                            item.item_type.name === "milk" &&
-                            "bg-gray-300",
-                      // (user === "master" ||
-                      //   user === "serve") &&
-                      //   item.item_type.name === "hotOre" &&
-                      //   "bg-orange-300",
-                      user === "master" &&
-                        (order.status === "calling" ||
-                          status !== "preparing") &&
-                        "bg-gray-200 text-gray-500",
-                      user === "serve" &&
-                        ((status === "served" && "bg-gray-200 text-gray-500") ||
-                          (item.item_type.name === "iceOre" && "bg-sky-200")),
-                      servable &&
-                        "shadow-md ring-4 ring-green-500 ring-offset-2",
-                      served && "opacity-50",
-                      user === "cashier" &&
-                        item.item_type.name === "others" &&
-                        "bg-green-300",
-                    )}
-                    style={{ backgroundColor: itemBackgroundColor(item) }}
+                  {emergencyLabel && item.cupId && (
+                    <EmergencyPrintButton
+                      orderId={order.id}
+                      orderNo={order.orderId}
+                      cupId={item.cupId}
+                      cupLabel={`${emergencyLabel.name} ${emergencyLabel.index}/${emergencyLabel.total}`}
+                      className="-top-2 -right-2 absolute z-10"
+                    />
+                  )}
+                  <CupButton
+                    busy={
+                      item.cupId !== undefined && cupPending.isBusy(item.cupId)
+                    }
+                    onClick={
+                      // マスター画面で提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
+                      cupAction &&
+                      item.cupId &&
+                      !(cupAction === "master" && status === "served")
+                        ? () => changeCup(item)
+                        : undefined
+                    }
                   >
-                    <h3 className="text-center font-bold text-3xl">
-                      {item.abbr}
-                    </h3>
-                    {servable && (
-                      <p
-                        key="servable"
-                        className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
-                      >
-                        <LuCheck
-                          className="h-3.5 w-3.5 shrink-0"
-                          strokeWidth={3}
-                        />
-                        提供可能
-                      </p>
-                    )}
-                    {served && (
-                      <p
-                        key="served"
-                        className="fade-in animate-in text-center font-bold text-xs duration-200"
-                      >
-                        提供済
-                      </p>
-                    )}
-                    {assignmentDisplay(item) && (
-                      <p
-                        className={cn(
-                          order.status === "preparing" && "text-red-500",
-                          "font-bold text-sm",
-                        )}
-                      >
-                        指名:{assignmentDisplay(item)}
-                      </p>
-                    )}
-                  </Card>
-                </CupButton>
+                    <Card
+                      className={cn(
+                        "h-full p-3 transition-all duration-200",
+                        // マスター画面の既定の色は itemBackgroundColor で付ける
+                        user === "serve"
+                          ? item.item_type.name === "milk" && "bg-yellow-200"
+                          : user !== "master" &&
+                              item.item_type.name === "milk" &&
+                              "bg-gray-300",
+                        // (user === "master" ||
+                        //   user === "serve") &&
+                        //   item.item_type.name === "hotOre" &&
+                        //   "bg-orange-300",
+                        user === "master" &&
+                          (order.status === "calling" ||
+                            status !== "preparing") &&
+                          "bg-gray-200 text-gray-500",
+                        user === "serve" &&
+                          ((status === "served" &&
+                            "bg-gray-200 text-gray-500") ||
+                            (item.item_type.name === "iceOre" && "bg-sky-200")),
+                        servable &&
+                          "shadow-md ring-4 ring-green-500 ring-offset-2",
+                        served && "opacity-50",
+                        user === "cashier" &&
+                          item.item_type.name === "others" &&
+                          "bg-green-300",
+                      )}
+                      style={{ backgroundColor: itemBackgroundColor(item) }}
+                    >
+                      <h3 className="text-center font-bold text-3xl">
+                        {item.abbr}
+                      </h3>
+                      {servable && (
+                        <p
+                          key="servable"
+                          className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
+                        >
+                          <LuCheck
+                            className="h-3.5 w-3.5 shrink-0"
+                            strokeWidth={3}
+                          />
+                          提供可能
+                        </p>
+                      )}
+                      {served && (
+                        <p
+                          key="served"
+                          className="fade-in animate-in text-center font-bold text-xs duration-200"
+                        >
+                          提供済
+                        </p>
+                      )}
+                      {assignmentDisplay(item) && (
+                        <p
+                          className={cn(
+                            order.status === "preparing" && "text-red-500",
+                            "font-bold text-sm",
+                          )}
+                        >
+                          指名:{assignmentDisplay(item)}
+                        </p>
+                      )}
+                    </Card>
+                  </CupButton>
+                </div>
               );
             })}
           </div>

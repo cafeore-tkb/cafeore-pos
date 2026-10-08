@@ -3,15 +3,17 @@ import { useEffect, useState } from "react";
 import { type MasterState, responseToMasterState } from "../data";
 import {
   type OrderResponse,
+  type PrintJobResponse,
   responseToCashierState,
   responseToOrderEntity,
+  responseToPrintJob,
 } from "../firebase-utils";
 import type { WithId } from "../lib";
 import {
   type ReconnectingWebSocketStatus,
   createReconnectingWebSocket,
 } from "../lib/reconnectingWebSocket";
-import type { CashierStateEntity, OrderEntity } from "../models";
+import type { CashierStateEntity, OrderEntity, PrintJob } from "../models";
 import type { CaosDrip, CaosLane } from "../repositories/caos";
 import type { components } from "../types/api";
 
@@ -32,7 +34,9 @@ type WSMessage =
       cashier_state: components["schemas"]["CashierStateResponse"];
     }
   // CaOS（ドリップ管制）の今日の抽出カードと列の担当者（1〜6）。変わるたびに全部届く（カードが 0 件なら drips は省かれる）
-  | { type: "drips"; drips?: CaosDrip[]; lanes?: CaosLane[] };
+  | { type: "drips"; drips?: CaosDrip[]; lanes?: CaosLane[] }
+  // 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）の全部。変わるたびと、つないだときに届く（0 件なら print_jobs は省かれる）
+  | { type: "print_jobs"; print_jobs?: PrintJobResponse[] };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -50,6 +54,8 @@ export const useOrdersWS = () => {
   const [drips, setDrips] = useState<CaosDrip[]>();
   // CaOS の列の担当者。未受信は undefined
   const [lanes, setLanes] = useState<CaosLane[]>();
+  // 印刷キューの、まだ終わっていない仕事。未受信は undefined
+  const [printJobs, setPrintJobs] = useState<PrintJob[]>();
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -100,6 +106,10 @@ export const useOrdersWS = () => {
             setLanes(data.lanes ?? []);
             break;
 
+          case "print_jobs":
+            setPrintJobs((data.print_jobs ?? []).map(responseToPrintJob));
+            break;
+
           default:
             console.warn("Unknown WS message:", data);
         }
@@ -131,6 +141,8 @@ export const useOrdersWS = () => {
     drips: drips ?? null,
     /** CaOS の今日の列の担当者（1〜6）。未受信なら null */
     lanes: lanes ?? null,
+    /** 印刷キューの、まだ終わっていない仕事（積んだ順）。未受信なら null */
+    printJobs: printJobs ?? null,
     status,
   };
 };
