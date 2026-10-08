@@ -15,7 +15,7 @@ import (
 
 // グッズだけの注文（カップが1つもできない注文）を、作成・編集のときに提供済みにする（Issue #733）。
 // POST / PUT /api/orders を本物の Postgres で通す。DB は在庫の消費のテスト（inventory_consumption_test.go）と
-// 同じものを使う：INVENTORY_TEST_DATABASE_URL を渡したときだけ動く。
+// 同じものを使う：TEST_DATABASE_URL を渡したときだけ動く。
 
 func (e *inventoryEnv) orderAPI() *gin.Engine {
 	e.t.Helper()
