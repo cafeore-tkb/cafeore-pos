@@ -9,9 +9,8 @@ import { usePendingStatus } from "~/lib/usePendingStatus";
 /**
  * マスター・提供画面で、注文のカップを1杯ずつ出して、押して状態を切り替える。
  * 押してから配信が届くまでの間も、押した後の状態（shown）を出す。
- * `enabled` が false（過去の注文）なら押せない。
  */
-export const useCupActions = (order: WithId<OrderEntity>, enabled: boolean) => {
+export const useCupActions = (order: WithId<OrderEntity>) => {
   const pending = usePendingStatus<CupStatus>(order);
 
   const send =
@@ -35,7 +34,7 @@ export const useCupActions = (order: WithId<OrderEntity>, enabled: boolean) => {
     cupId: string | undefined,
     action: (cupId: string) => void,
   ) => {
-    if (!enabled || !cupId) return undefined;
+    if (!cupId) return undefined;
     return () => {
       if (!pending.isBusy(cupId)) action(cupId);
     };

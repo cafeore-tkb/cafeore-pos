@@ -13,7 +13,6 @@ import { useCupActions } from "~/components/functional/useCupActions";
 import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
-import { Button } from "~/components/ui/button";
 import { usePendingStatus } from "~/lib/usePendingStatus";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -39,9 +38,10 @@ export default function Serve() {
         <h1 className="text-3xl">提供</h1>
         <p>提供待ちオーダー数：{unserved}</p>
         <PastOrderSideSheet
-          orders={orders}
-          cardTiming={"past"}
-          renderCard={(order) => <ServeOrderCard order={order} timing="past" />}
+          orders={orders?.filter((order) => order.servedAt !== null)}
+          author="serve"
+          gray
+          cancellable
         />
       </div>
 
@@ -51,7 +51,7 @@ export default function Serve() {
           .map((order) => {
             return (
               order.servedAt === null && (
-                <ServeOrderCard key={order.id} order={order} timing="present" />
+                <ServeOrderCard key={order.id} order={order} />
               )
             );
           })}
@@ -61,12 +61,8 @@ export default function Serve() {
 }
 
 // 提供画面の注文カード。カップを1杯ずつ出し、押すと 準備中 → 提供可能 → 提供済み → 準備中 と回す
-const ServeOrderCard = ({
-  order,
-  timing,
-}: { order: WithId<OrderEntity>; timing: "present" | "past" }) => {
-  const present = timing === "present";
-  const { cups, press, readyCup, serveCup } = useCupActions(order, present);
+const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+  const { cups, press, readyCup, serveCup } = useCupActions(order);
 
   // 注文単位の呼び出し・提供も、押してから配信が届くまでの間は押した後の状態を表示する
   const orderPending = usePendingStatus<boolean>(order);
@@ -108,7 +104,7 @@ const ServeOrderCard = ({
   return (
     <OrderInfoCard
       order={order}
-      timing={timing}
+      timing="present"
       colorScreen="serve"
       grayed={order.status === "calling"}
       cups={cups.map((cup) => ({
@@ -116,7 +112,7 @@ const ServeOrderCard = ({
         // 提供済みのカップは灰色にし、提供可能になったカップは目立たせる
         gray: cup.shown === "served",
         servable: cup.shown === "ready",
-        served: cup.shown === "served" && (cup.partlyServed || present),
+        served: cup.shown === "served",
         onClick: press(cup.cupId, (cupId) =>
           changeCup(cupId, cup.abbr, cup.shown),
         ),
@@ -128,37 +124,26 @@ const ServeOrderCard = ({
           orderRepository.addComment(order.id, "serve", descComment)
         }
       />
-      {present ? (
-        <div className="mt-4 flex items-center justify-between">
-          <ReadyBell
-            isReady={isReady}
-            busy={orderPending.isBusy("ready")}
-            changeReady={changeReady}
-          />
-          <ServeCheck
-            order={order}
-            busy={orderPending.isBusy("served")}
-            onServe={(order) => {
-              // 応答待ちの間にもう一度押すと提供が取り消されてしまうので無視する
-              if (orderPending.isBusy("served")) return;
-              changeServed();
-              toast(`提供完了 No.${order.orderId}`, {
-                description: dayjs().format("H時m分"),
-                action: { label: "取消", onClick: changeServed },
-              });
-            }}
-          />
-        </div>
-      ) : (
-        <div className="mt-2 flex items-center justify-between">
-          <Button
-            onClick={changeServed}
-            className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
-          >
-            提供取消
-          </Button>
-        </div>
-      )}
+      <div className="mt-4 flex items-center justify-between">
+        <ReadyBell
+          isReady={isReady}
+          busy={orderPending.isBusy("ready")}
+          changeReady={changeReady}
+        />
+        <ServeCheck
+          order={order}
+          busy={orderPending.isBusy("served")}
+          onServe={(order) => {
+            // 応答待ちの間にもう一度押すと提供が取り消されてしまうので無視する
+            if (orderPending.isBusy("served")) return;
+            changeServed();
+            toast(`提供完了 No.${order.orderId}`, {
+              description: dayjs().format("H時m分"),
+              action: { label: "取消", onClick: changeServed },
+            });
+          }}
+        />
+      </div>
     </OrderInfoCard>
   );
 };

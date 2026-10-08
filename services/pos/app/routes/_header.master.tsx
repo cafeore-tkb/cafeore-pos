@@ -75,11 +75,9 @@ export default function FielsOfMaster() {
         <div className="flex w-1/3 items-center justify-end gap-3">
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
-            orders={orders}
-            cardTiming={"past"}
-            renderCard={(order) => (
-              <MasterOrderCard order={order} timing="past" />
-            )}
+            orders={orders?.filter((order) => order.servedAt !== null)}
+            author="master"
+            gray
           />
         </div>
       </div>
@@ -88,7 +86,7 @@ export default function FielsOfMaster() {
         {orders?.map((order) => {
           return (
             order.servedAt === null && (
-              <MasterOrderCard key={order.id} order={order} timing="present" />
+              <MasterOrderCard key={order.id} order={order} />
             )
           );
         })}
@@ -98,17 +96,13 @@ export default function FielsOfMaster() {
 }
 
 // マスター画面の注文カード。カップを1杯ずつ出し、押すと準備完了を切り替える
-const MasterOrderCard = ({
-  order,
-  timing,
-}: { order: WithId<OrderEntity>; timing: "present" | "past" }) => {
-  const submit = useSubmit();
-  const { cups, press, readyCup } = useCupActions(order, timing === "present");
+const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+  const { cups, press, readyCup } = useCupActions(order);
   const calling = order.status === "calling";
   return (
     <OrderInfoCard
       order={order}
-      timing={timing}
+      timing="present"
       colorScreen="master"
       grayed={calling}
       cups={cups.map((cup) => ({
@@ -130,11 +124,8 @@ const MasterOrderCard = ({
     >
       <InputComment
         order={order}
-        addComment={(order, descComment) =>
-          submit(
-            { intent: "addComment", servedOrderId: order.id, descComment },
-            { method: "POST" },
-          )
+        addComment={(order, text) =>
+          orderRepository.addComment(order.id, "master", text)
         }
       />
       <WaitingLabel order={order} />
@@ -145,27 +136,6 @@ const MasterOrderCard = ({
 export const clientAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
-
-  if (intent === "addComment") {
-    const schema = z.object({
-      intent: z.literal("addComment"),
-      servedOrderId: z.string().min(1),
-      descComment: z.string(),
-    });
-
-    const submission = parseWithZod(formData, { schema });
-
-    if (submission.status !== "success") {
-      console.error(submission.error);
-      return submission.reply();
-    }
-
-    const { servedOrderId, descComment } = submission.value;
-
-    await orderRepository.addComment(servedOrderId, "master", descComment);
-
-    return new Response("ok");
-  }
 
   if (intent === "changeOrderStat") {
     const schema = z.object({

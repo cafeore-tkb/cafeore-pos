@@ -1,9 +1,4 @@
-import {
-  type MenuEntity,
-  type OrderEntity,
-  type WithId,
-  orderRepository,
-} from "@cafeore/common";
+import type { MenuEntity, OrderEntity, WithId } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
@@ -26,10 +21,8 @@ import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
-import { InputComment } from "../molecules/InputComment";
 import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
-import { OrderInfoCard, WaitingLabel } from "../molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
 import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
@@ -88,23 +81,6 @@ const CashierV2 = ({
     },
     [applyOrderAction, syncOrder],
   );
-
-  // 過去の注文を取得（全注文）
-  const servedOrders = useMemo(
-    () =>
-      orders
-        ? orders
-            .slice()
-            .sort((a, b) => b.orderId - a.orderId) // 注文番号の降順（新しい順）
-        : [],
-    [orders],
-  );
-
-  // 過去の注文からのコメント追加機能
-  const addComment = async (servedOrder: OrderEntity, descComment: string) => {
-    if (servedOrder.id)
-      orderRepository.addComment(servedOrder.id, "cashier", descComment);
-  };
 
   const playSound = useCallback(() => {
     soundRef.current?.play();
@@ -270,21 +246,7 @@ const CashierV2 = ({
           </div>
           <div className="flex items-center space-x-2">
             <PrinterStatus status={printer.status} />
-            <PastOrderSideSheet
-              orders={servedOrders}
-              cardTiming={"all"}
-              renderCard={(order) => (
-                <OrderInfoCard
-                  order={order}
-                  timing="all"
-                  cups={order.getItems()}
-                  colorScreen="cashier_order"
-                >
-                  <InputComment order={order} addComment={addComment} />
-                  <WaitingLabel order={order} />
-                </OrderInfoCard>
-              )}
-            />
+            <PastOrderSideSheet orders={orders} author="cashier" withGoods />
           </div>
         </div>
         <div className="flex gap-5 px-2">
