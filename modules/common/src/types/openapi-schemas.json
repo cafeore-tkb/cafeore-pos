@@ -598,10 +598,11 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面",
-    "enum": ["cashier", "master", "serve"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ\n",
+    "enum": ["cashier", "cashier_order", "master", "serve"],
     "x-enum-varnames": [
       "ColorScreenCashier",
+      "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe"
     ]
