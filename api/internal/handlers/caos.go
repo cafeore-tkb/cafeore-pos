@@ -167,7 +167,7 @@ func (s caosState) updates() map[string]any {
 
 // nominatedDripper は明細の指名（assignee）が 1〜6 の数字ならその番号。画面の nominatedDripper と同じ読み方
 // （前後の空白を落として NFKC で正規化し、数字だけのとき）。
-// CaOS6 で明細にドリッパーの番号（dripper）を足したら、そちらに替える。
+// CaOS7 で明細にドリッパーの番号（dripper）を足したら、そちらに替える。
 func nominatedDripper(assignee *string) (int, bool) {
 	if assignee == nil {
 		return 0, false
