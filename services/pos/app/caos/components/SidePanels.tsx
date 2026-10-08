@@ -36,7 +36,7 @@ export const SidePanel: React.FC<{
   return (
     <aside
       ref={panelRef}
-      className="context-sheet fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl"
+      className="fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>

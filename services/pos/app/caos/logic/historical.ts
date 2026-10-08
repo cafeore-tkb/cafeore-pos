@@ -89,7 +89,7 @@ export const testPlayAnalytics = (
 ) => ({
   salesOrders: session ? salesOrders : [],
   periodStartMs: session?.startMs,
-  periodEndMs: session ? Math.min(session.currentMs, session.endMs) : undefined,
+  periodEndMs: session?.currentMs,
 });
 
 /** テストの残り（「12分」） */

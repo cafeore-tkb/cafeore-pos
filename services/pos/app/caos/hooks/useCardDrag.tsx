@@ -220,7 +220,7 @@ export const useCardDrag = <S, T>(handlers: {
             placeGhost();
           }}
           aria-hidden="true"
-          className="caos-root pointer-events-none fixed z-[1000] scale-[1.03] opacity-90 [&>:first-child]:h-full [&>:first-child]:ring-2 [&>:first-child]:ring-blue-500"
+          className="caos-root pointer-events-none fixed z-[1000] scale-[1.03] font-sans opacity-90 [&>:first-child]:h-full [&>:first-child]:ring-2 [&>:first-child]:ring-blue-500"
           style={{
             left: drag.rect.left,
             top: drag.rect.top,

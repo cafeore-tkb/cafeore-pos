@@ -25,7 +25,6 @@ export interface TestPlaySession {
   startMs: number;
   endMs: number;
   currentMs: number;
-  durationMinutes: 30 | 60;
   orders: PracticeDataOrder[];
 }
 
@@ -165,7 +164,6 @@ export const useTestPlay = ({
         startMs: sessionStartMs,
         endMs: sessionEndMs,
         currentMs: sessionStartMs,
-        durationMinutes,
         orders: inPeriod,
       });
     },
