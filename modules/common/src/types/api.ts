@@ -105,6 +105,43 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/cups": {
+    /**
+     * CaOS が決めたことを注文のカップに書く
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+     * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+     * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+     *
+     * 順番（dripper_position。整数）はサーバーが決める。画面は after の before（どのカードの前に入れるか）だけを送る：
+     * - before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+     * - before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+     * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（before は null）
+     * - 列から抜けたカードの番号は空いたまま（詰めない）
+     *
+     * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+     * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+     *
+     * 確かめること：
+     * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+     * - after の before のカードが、そのドリッパーの待機に無ければ 409
+     * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
+     * - 今日（日本時間）の注文のカップだけ書ける
+     * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
+     * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+     */
+    put: operations["writeCaosCups"];
+  };
+  "/api/caos/drippers/{dripper}/next": {
+    /**
+     * CaOS の「次へ」
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+     * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+     * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+     * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+     */
+    post: operations["advanceCaosDripper"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -311,6 +348,25 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない */
+      dripper: number | null;
+      /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
+      dripper_position: number | null;
+      /**
+       * Format: uuid
+       * @description CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+       */
+      drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を始めた時刻
+       */
+      brew_started_at: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を終えた時刻
+       */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -461,6 +517,54 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
+    CaosCupState: {
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
+    };
+    /**
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが before から決め、開始・終了の時刻はサーバーの今で付ける）。
+     * start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+     * dripper・drip_id・before が全部 null で start_brew が false なら未割当
+     */
+    CaosCupAfter: {
+      dripper: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /**
+       * Format: uuid
+       * @description dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
+       * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+       */
+      before: string | null;
+      /** @description 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今 */
+      start_brew: boolean;
+    };
+    /**
+     * @description カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+     * 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+     */
+    CaosCupsWrite: {
+      cup_ids: string[];
+      before: components["schemas"]["CaosCupState"];
+      after: components["schemas"]["CaosCupAfter"];
+    };
+    CaosCupsWriteRequest: {
+      writes: components["schemas"]["CaosCupsWrite"][];
+    };
+    CaosNextRequest: {
+      /**
+       * Format: uuid
+       * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+       */
+      drip_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1134,6 +1238,99 @@ export interface operations {
       };
       /** @description オーダーが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS が決めたことを注文のカップに書く
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+   * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+   * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+   *
+   * 順番（dripper_position。整数）はサーバーが決める。画面は after の before（どのカードの前に入れるか）だけを送る：
+   * - before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+   * - before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+   * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（before は null）
+   * - 列から抜けたカードの番号は空いたまま（詰めない）
+   *
+   * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+   * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+   *
+   * 確かめること：
+   * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+   * - after の before のカードが、そのドリッパーの待機に無ければ 409
+   * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
+   * - 今日（日本時間）の注文のカップだけ書ける
+   * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
+   * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+   */
+  writeCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosCupsWriteRequest"];
+      };
+    };
+    responses: {
+      /** @description 書いた */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description before が今の値と違う（何も書かない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 決まりに合わない（何も書かない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の「次へ」
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+   * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+   * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+   * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+   */
+  advanceCaosDripper: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosNextRequest"];
+      };
+    };
+    responses: {
+      /** @description 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る） */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

@@ -22,12 +22,21 @@ interface ControlWorkspaceProps {
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
+  onMoveTicket: (
+    ticket: OrderTicket,
+    targetBayId: number,
+    toFront?: boolean,
+    beforeTicketUid?: string,
+  ) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
-  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
+  /** beforeTicketUid があれば、その待機のカードの前へ（ドラッグで途中に落としたとき） */
+  onAssignToBay: (
+    order: UnassignedOrder,
+    bayId: number,
+    beforeTicketUid?: string,
+  ) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
 }
 
@@ -46,7 +55,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
@@ -64,7 +72,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         onOpenTicketDetail={onOpenTicketDetail}
         onOpenEmptySlot={onOpenEmptySlot}
         onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
         onMoveTicket={onMoveTicket}
         onReturnToUnassigned={onReturnToUnassigned}
         onMergeOrders={onMergeOrders}
@@ -85,7 +92,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         onOpenTicketDetail={onOpenTicketDetail}
         onOpenEmptySlot={onOpenEmptySlot}
         onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
       />
     );
   }
@@ -105,7 +111,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onCloseTicketAction={onCloseTicketAction}
-      onRequestRebrew={onRequestRebrew}
       onOpenEmptySlot={onOpenEmptySlot}
       onAssignToBay={onAssignToBay}
       onMergeOrders={onMergeOrders}

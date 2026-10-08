@@ -9,7 +9,6 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Undo2,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -36,9 +35,6 @@ interface TopHeaderProps {
   onResetData: () => void;
   showTimelineControls: boolean;
   onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
-  canUndo: boolean;
-  undoLabel: string | null;
-  onUndo: () => void;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
@@ -70,9 +66,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onResetData,
   showTimelineControls,
   onTimelineNavigate,
-  canUndo,
-  undoLabel,
-  onUndo,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
@@ -282,20 +275,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               : "実データテスト"}
           </span>
         </button>
-        <button
-          id="btn-undo"
-          type="button"
-          disabled={!canUndo}
-          onClick={onUndo}
-          title={
-            undoLabel ? `${undoLabel}を元に戻す` : "元に戻せる操作はありません"
-          }
-          className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          <Undo2 className="h-4 w-4" />
-          <span>1つ戻す</span>
-        </button>
-
         {/* Sound toggle */}
         <button
           type="button"

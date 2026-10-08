@@ -69,31 +69,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
-  const rebrewSummary = useMemo(() => {
-    const history = baristas.flatMap((barista) => barista.pastTickets || []);
-    const rebrews = history.filter(
-      (ticket) => ticket.isRebrew && !ticket.isInterrupted,
-    );
-    const interrupted = history.filter((ticket) => ticket.isInterrupted);
-    const rebrewCups = rebrews.reduce(
-      (sum, ticket) => sum + ticket.cupCount,
-      0,
-    );
-    // 入れ直しで余分に使った豆は CaOS では数えない（豆の在庫は POS の在庫で見る）
-    return {
-      rebrewCount: rebrews.length,
-      rebrewCups,
-      interruptedCount: interrupted.length,
-    };
-  }, [baristas]);
   const completedParts = useMemo<CompletedPart[]>(
     () =>
       baristas.flatMap((barista) =>
         (barista.pastTickets || []).flatMap((ticket) => {
           const finishedAt = ticket.completedAtSec ?? ticket.endTimeSec;
-          return !ticket.isInterrupted &&
-            !ticket.isRebrew &&
-            ticket.totalItemsInOrder &&
+          return ticket.totalItemsInOrder &&
             ticket.totalItemsInOrder > 1 &&
             finishedAt !== undefined
             ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
@@ -454,36 +435,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </div>
           </section>
         </>
-      )}
-
-      {(rebrewSummary.rebrewCount > 0 ||
-        rebrewSummary.interruptedCount > 0) && (
-        <section className="rounded-xl border border-red-200 bg-red-50 p-3 shadow-xs">
-          <h3 className="flex items-center gap-2 font-black text-[15px] text-red-900">
-            <AlertTriangle className="h-4 w-4" />
-            緊急入れ直し
-          </h3>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">
-                完了した入れ直し
-              </div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.rebrewCount}
-                <span className="text-[11px]">
-                  件 / {rebrewSummary.rebrewCups}杯
-                </span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">中断</div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.interruptedCount}
-                <span className="text-[11px]">件</span>
-              </div>
-            </div>
-          </div>
-        </section>
       )}
 
       <div className="grid grid-cols-2 gap-2">

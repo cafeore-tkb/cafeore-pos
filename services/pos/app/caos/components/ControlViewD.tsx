@@ -34,7 +34,6 @@ interface SheetCup {
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
-  isRebrew?: boolean;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -123,7 +122,6 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
-  isRebrew: ticket.isRebrew,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -148,7 +146,6 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   beanName: order.beanName,
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
-  isRebrew: order.isRebrew,
 });
 
 const CupChip: React.FC<{
@@ -184,9 +181,7 @@ const CupChip: React.FC<{
         type="button"
         disabled={!onClick}
         onClick={onClick}
-        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${
-          cup.isRebrew ? "border-2 border-red-600" : "border-slate-500"
-        } ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
+        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
           lifted ? "shadow-2xl" : ""
         }`}
       >
@@ -201,9 +196,8 @@ const CupChip: React.FC<{
         <span className="truncate font-bold font-mono text-[11px] text-slate-600">
           No. {cup.id.replaceAll("#", "")}
         </span>
-        {(baristaName || note || cup.isRebrew) && (
+        {(baristaName || note) && (
           <span className="truncate font-bold text-[10px] text-slate-700">
-            {cup.isRebrew ? "入れ直し " : ""}
             {baristaName ? `指名：${baristaName}` : ""}
             {note ? ` ${note}` : ""}
           </span>
@@ -223,7 +217,6 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
   onMoveTicket,
   onReturnToUnassigned,
   onMergeOrders,
@@ -871,23 +864,19 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                                 ? seconds > 0
                                   ? `抽出中 残${formatRemaining(seconds)}`
                                   : "抽出中"
-                                : ticket.isInterrupted
-                                  ? "中断"
-                                  : "",
+                                : "",
                             ]
                               .filter(Boolean)
                               .join(" ")}
                             faded={state === "past"}
                             onClick={
-                              state === "past"
-                                ? undefined
-                                : state === "current"
-                                  ? () => onRequestRebrew(ticket, barista.id)
-                                  : () => {
-                                      if (selectedOrderId !== ticket.id)
-                                        onSelectOrder(ticket.id);
-                                      onOpenTicketDetail(ticket);
-                                    }
+                              state === "waiting"
+                                ? () => {
+                                    if (selectedOrderId !== ticket.id)
+                                      onSelectOrder(ticket.id);
+                                    onOpenTicketDetail(ticket);
+                                  }
+                                : undefined
                             }
                           />
                         </div>
