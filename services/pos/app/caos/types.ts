@@ -69,7 +69,7 @@ export interface UnassignedOrder {
   nominee?: string;
   seniorOnly?: boolean; // 限定（種類の senior_only）
   isRebrew?: boolean; // 緊急（入れ直し）のカード。未割当のいちばん上に出る
-  /** 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる（@cafeore/common の canMergeCards と同じ決まり） */
+  /** 統合できる相手を決めるキー（商品と指名、緊急か）。同じキーの 1 杯どうしだけ統合できる（@cafeore/common の canMergeCards と同じ決まり） */
   mergeKey: string;
 }
 

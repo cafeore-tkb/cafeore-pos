@@ -1,7 +1,7 @@
 import { CHANGEOVER_SEC } from "@cafeore/common";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 
-// 統合の候補：同じ商品・同じ指名（mergeKey）の 1 杯どうし。
+// 統合の候補：同じ商品・同じ指名で、緊急かどうかも同じ（mergeKey）の 1 杯どうし。
 // 書き込みは mergeWrites が @cafeore/common の canMergeCards で確かめる（サーバーも同じ決まり）ので、ここは候補を出すだけ。
 export const canMergeDripUnits = (
   first: UnassignedOrder,

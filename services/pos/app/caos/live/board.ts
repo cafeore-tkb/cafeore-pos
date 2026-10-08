@@ -194,8 +194,8 @@ export const cardsToBoard = (
         // 未割当で dripId のあるカードは統合したもの
         badgeTag: `${cups}杯${card.emergency ? " 緊急" : card.dripId ? " 統合" : ""}`,
         predictedTimeStr: brewDurationLabel(cups),
-        // 統合できる相手（@cafeore/common の canMergeCards と同じく、商品と指名の番号）
-        mergeKey: `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.nominatedDripper ?? ""}`,
+        // 統合できる相手（@cafeore/common の canMergeCards と同じく、商品と指名の番号。緊急のカードは緊急どうしだけ）
+        mergeKey: `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.nominatedDripper ?? ""}\u0000${card.emergency ? "emergency" : ""}`,
       };
     });
 
