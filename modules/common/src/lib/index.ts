@@ -6,5 +6,7 @@ export * from "./master-transfer";
 export * from "./jstDay";
 export * from "./caosTiming";
 export * from "./caos-board";
+export * from "./caosLanes";
+export * from "./caosShiftFeed";
 export * from "./caosPracticeData";
 export * from "./caosPractice";

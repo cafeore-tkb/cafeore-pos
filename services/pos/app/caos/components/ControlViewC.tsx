@@ -2,6 +2,7 @@ import { formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
@@ -102,6 +103,11 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <LaneName
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
+                    />
+                    <LaneChangeButton dripper={barista.bayNumber} />
                   </div>
                   <div
                     className="flex shrink-0 items-center gap-1.5"

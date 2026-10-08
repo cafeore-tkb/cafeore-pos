@@ -1,4 +1,5 @@
 import {
+  type CaosLane,
   type CaosWritesResult,
   assignWrites,
   buildCaosCards,
@@ -7,6 +8,7 @@ import {
   mergeWrites,
   nextCaosDripper,
   putCaosCups,
+  seniorOnlyBlock,
   startOfJstDay,
   unassignWrites,
   useColorSettings,
@@ -28,6 +30,7 @@ import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
+import { PracticeLanesScope, useCaosLanes } from "./lanes/CaosLanesContext";
 import { cardsToBoard } from "./live/board";
 import {
   type PracticeStart,
@@ -48,9 +51,11 @@ import {
   ticketKey,
 } from "./utils/orderQueue";
 
-// 別のタブで開いたパネルに渡す、その時点の盤面と実績（実データテストの実績は練習の結果）
+// 別のタブで開いたパネルに渡す、その時点の盤面と実績（実データテストの実績は練習の結果）。
+// 練習中は練習の担当者（始めたときの本番の担当者の写し）も渡す
 type PanelSnapshot = {
   baristas: Barista[];
+  lanes?: CaosLane[];
   analytics: {
     salesOrders: PracticeSalesOrder[];
     periodStartMs?: number;
@@ -176,6 +181,10 @@ export default function App() {
   );
   const boardBaristas = liveBoard.baristas;
   const boardUnassignedOrders = liveBoard.unassignedOrders;
+  // ドリッパーの担当者。限定のカードは上級生のドリッパーにしか置けない（サーバーも確かめる）。
+  // 練習中は、始めたときの本番の担当者の写し（練習の盤面も同じ決まりで確かめる。交代はできない）
+  const { lanes: liveLanes } = useCaosLanes();
+  const lanes = testPlaySession?.lanes ?? liveLanes;
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -316,6 +325,11 @@ export default function App() {
       return;
     const card = liveCard(orderToAssign.ticketUid);
     if (!card) return;
+    const blocked = seniorOnlyBlock(card, targetBayId, lanes);
+    if (blocked) {
+      setLiveError(blocked);
+      return;
+    }
     void runWrites(
       assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
     );
@@ -332,6 +346,11 @@ export default function App() {
       return;
     const card = liveCard(ticket.ticketUid);
     if (!card) return;
+    const blocked = seniorOnlyBlock(card, targetBayId, lanes);
+    if (blocked) {
+      setLiveError(blocked);
+      return;
+    }
     void runWrites(
       assignWrites(liveCards, card, targetBayId, {
         index: toFront ? 0 : undefined,
@@ -380,7 +399,8 @@ export default function App() {
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
-    practice.start(start);
+    // 練習の担当者は、始めたときの本番の担当者の写し
+    practice.start(start, liveLanes);
     setIsRunning(true);
     setActiveTab("control");
     setTestSetupOpen(false);
@@ -447,6 +467,7 @@ export default function App() {
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
           baristas: boardBaristas,
+          lanes: testPlaySession?.lanes,
           analytics: testPlaySession ? analytics : null,
         } satisfies PanelSnapshot),
       );
@@ -484,134 +505,145 @@ export default function App() {
 
   if (standaloneTab) {
     return (
-      <StandaloneAuxiliaryPanel tab={standaloneTab}>
-        {renderAuxiliaryView(standaloneTab)}
-      </StandaloneAuxiliaryPanel>
+      <PracticeLanesScope
+        lanes={
+          standaloneSnapshot?.analytics
+            ? (standaloneSnapshot.lanes ?? null)
+            : null
+        }
+      >
+        <StandaloneAuxiliaryPanel tab={standaloneTab}>
+          {renderAuxiliaryView(standaloneTab)}
+        </StandaloneAuxiliaryPanel>
+      </PracticeLanesScope>
     );
   }
 
+  // 練習中は、見出し・ヘッダーの担当者を練習の担当者（写し）にし、交代は出さない
   return (
-    <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
-      {/* Main Workstation Area */}
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Top Header */}
-        <TopHeader
-          activeTab={activeTab}
-          controlViewMode={controlViewMode}
-          onSelectTab={setActiveTab}
-          onSelectControlViewMode={setControlViewMode}
-          timeStr={formatClockOfDay(realTimeSec)}
-          unassignedCups={totalUnassignedDisplay}
-          totalWaitingCups={totalWaitingCupsDisplay}
-          soundEnabled={soundEnabled}
-          onToggleSound={handleToggleSound}
-          isRunning={isRunning}
-          onTogglePlay={() => setIsRunning(!isRunning)}
-          simSpeed={simSpeed}
-          onChangeSpeed={setSimSpeed}
-          onResetData={handleResetData}
-          showTimelineControls={controlViewMode === "current"}
-          onTimelineNavigate={(direction) =>
-            setTimelineCommand({ direction, id: Date.now() })
-          }
-          testPlaying={testPlaySession?.status === "active"}
-          testProgressLabel={
-            testPlaySession
-              ? `${Math.max(0, Math.ceil((testPlaySession.endMs - testPlaySession.currentMs) / 60_000))}分`
-              : null
-          }
-          onOpenTestPlay={() => setTestSetupOpen(true)}
-          onEndTestPlay={handleEndTestPlay}
-          posStatus={posStatus}
-        />
-
-        {/* Dynamic Tab Body */}
-        <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
-          <ControlWorkspace
-            mode={controlViewMode}
-            baristas={boardBaristas}
-            unassignedOrders={sortedUnassignedOrders}
-            nextAvailable={nextAvailable}
-            selectedOrderId={selectedOrderId}
-            actionTicketKey={selectedTicket ? selectedTicketKey : null}
-            currentTimeSec={realTimeSec}
-            timelineCommand={timelineCommand}
-            onSelectOrder={handleToggleOrderSelection}
-            onAdvanceBay={handleAdvanceBay}
-            onOpenTicketDetail={(ticket) =>
-              setSelectedTicketKey(ticketKey(ticket))
+    <PracticeLanesScope lanes={testPlaySession?.lanes ?? null}>
+      <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
+        {/* Main Workstation Area */}
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Top Header */}
+          <TopHeader
+            activeTab={activeTab}
+            controlViewMode={controlViewMode}
+            onSelectTab={setActiveTab}
+            onSelectControlViewMode={setControlViewMode}
+            timeStr={formatClockOfDay(realTimeSec)}
+            unassignedCups={totalUnassignedDisplay}
+            totalWaitingCups={totalWaitingCupsDisplay}
+            soundEnabled={soundEnabled}
+            onToggleSound={handleToggleSound}
+            isRunning={isRunning}
+            onTogglePlay={() => setIsRunning(!isRunning)}
+            simSpeed={simSpeed}
+            onChangeSpeed={setSimSpeed}
+            onResetData={handleResetData}
+            showTimelineControls={controlViewMode === "current"}
+            onTimelineNavigate={(direction) =>
+              setTimelineCommand({ direction, id: Date.now() })
             }
+            testPlaying={testPlaySession?.status === "active"}
+            testProgressLabel={
+              testPlaySession
+                ? `${Math.max(0, Math.ceil((testPlaySession.endMs - testPlaySession.currentMs) / 60_000))}分`
+                : null
+            }
+            onOpenTestPlay={() => setTestSetupOpen(true)}
+            onEndTestPlay={handleEndTestPlay}
+            posStatus={posStatus}
+          />
+
+          {/* Dynamic Tab Body */}
+          <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
+            <ControlWorkspace
+              mode={controlViewMode}
+              baristas={boardBaristas}
+              unassignedOrders={sortedUnassignedOrders}
+              nextAvailable={nextAvailable}
+              selectedOrderId={selectedOrderId}
+              actionTicketKey={selectedTicket ? selectedTicketKey : null}
+              currentTimeSec={realTimeSec}
+              timelineCommand={timelineCommand}
+              onSelectOrder={handleToggleOrderSelection}
+              onAdvanceBay={handleAdvanceBay}
+              onOpenTicketDetail={(ticket) =>
+                setSelectedTicketKey(ticketKey(ticket))
+              }
+              onMoveTicket={handleMoveScheduledTicket}
+              onReturnToUnassigned={handleReturnScheduledTicket}
+              onCloseTicketAction={() => setSelectedTicketKey(null)}
+              onOpenEmptySlot={(bayId) =>
+                setAssignSlotData({ bayId, order: null })
+              }
+              onAssignToBay={(order, bayId) =>
+                handleAssignOrderToBay(order.ticketUid || order.id, bayId)
+              }
+              onMergeOrders={handleMergeUnassignedOrders}
+            />
+          </main>
+
+          {activeTab !== "control" && (
+            <AuxiliarySheet
+              tab={activeTab}
+              onOpenInNewTab={() => openAuxiliaryTab(activeTab)}
+              onClose={() => setActiveTab("control")}
+            >
+              {renderAuxiliaryView(activeTab)}
+            </AuxiliarySheet>
+          )}
+        </div>
+
+        {/* Ticket Detail Recipe Modal */}
+        {selectedTicket && controlViewMode !== "current" && (
+          <TicketDetailModal
+            ticket={selectedTicket}
+            currentBayId={
+              boardBaristas.find((bay) =>
+                bay.queue.some(
+                  (ticket) => ticketKey(ticket) === selectedTicketKey,
+                ),
+              )?.id || null
+            }
+            onClose={() => {
+              setSelectedTicketKey(null);
+              setSelectedOrderId(null);
+            }}
             onMoveTicket={handleMoveScheduledTicket}
             onReturnToUnassigned={handleReturnScheduledTicket}
-            onCloseTicketAction={() => setSelectedTicketKey(null)}
-            onOpenEmptySlot={(bayId) =>
-              setAssignSlotData({ bayId, order: null })
-            }
-            onAssignToBay={(order, bayId) =>
-              handleAssignOrderToBay(order.ticketUid || order.id, bayId)
-            }
-            onMergeOrders={handleMergeUnassignedOrders}
           />
-        </main>
+        )}
 
-        {activeTab !== "control" && (
-          <AuxiliarySheet
-            tab={activeTab}
-            onOpenInNewTab={() => openAuxiliaryTab(activeTab)}
-            onClose={() => setActiveTab("control")}
+        {/* Assign Slot Modal */}
+        {assignSlotData && (
+          <AssignSlotModal
+            bayId={assignSlotData.bayId}
+            targetOrder={assignSlotData.order}
+            baristas={boardBaristas}
+            unassignedOrders={sortedUnassignedOrders}
+            onClose={() => setAssignSlotData(null)}
+            onAssign={handleAssignOrderToBay}
+          />
+        )}
+
+        {liveError && (
+          <div
+            role="alert"
+            className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
           >
-            {renderAuxiliaryView(activeTab)}
-          </AuxiliarySheet>
+            {liveError}
+          </div>
+        )}
+
+        {testSetupOpen && (
+          <TestPlaySetup
+            onClose={() => setTestSetupOpen(false)}
+            onStart={handleStartTestPlay}
+          />
         )}
       </div>
-
-      {/* Ticket Detail Recipe Modal */}
-      {selectedTicket && controlViewMode !== "current" && (
-        <TicketDetailModal
-          ticket={selectedTicket}
-          currentBayId={
-            boardBaristas.find((bay) =>
-              bay.queue.some(
-                (ticket) => ticketKey(ticket) === selectedTicketKey,
-              ),
-            )?.id || null
-          }
-          onClose={() => {
-            setSelectedTicketKey(null);
-            setSelectedOrderId(null);
-          }}
-          onMoveTicket={handleMoveScheduledTicket}
-          onReturnToUnassigned={handleReturnScheduledTicket}
-        />
-      )}
-
-      {/* Assign Slot Modal */}
-      {assignSlotData && (
-        <AssignSlotModal
-          bayId={assignSlotData.bayId}
-          targetOrder={assignSlotData.order}
-          baristas={boardBaristas}
-          unassignedOrders={sortedUnassignedOrders}
-          onClose={() => setAssignSlotData(null)}
-          onAssign={handleAssignOrderToBay}
-        />
-      )}
-
-      {liveError && (
-        <div
-          role="alert"
-          className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
-        >
-          {liveError}
-        </div>
-      )}
-
-      {testSetupOpen && (
-        <TestPlaySetup
-          onClose={() => setTestSetupOpen(false)}
-          onStart={handleStartTestPlay}
-        />
-      )}
-    </div>
+    </PracticeLanesScope>
   );
 }

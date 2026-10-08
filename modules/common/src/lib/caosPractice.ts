@@ -6,8 +6,8 @@ import {
   type CaosCupsWrite,
   type CaosOrderInput,
   cupNeedsBrew,
-  nominatedDripper,
 } from "./caos-board";
+import { type CaosLane, isSeniorLane } from "./caosLanes";
 import type { PracticeDataItem, PracticeDataOrder } from "./caosPracticeData";
 
 // CaOS の実データテスト（練習）の盤面。ブラウザの中だけで動かし、サーバー・本番の盤面・注文・在庫には触らない。
@@ -16,7 +16,10 @@ import type { PracticeDataItem, PracticeDataOrder } from "./caosPracticeData";
 // brewStartedAt・brewFinishedAt を持つ）で持つ。カードの組み立て（buildCaosCards）と、割当・移動・未割当に戻す・統合の
 // 書き込み（assignWrites・unassignWrites・mergeWrites）は本番と同じ ./caos-board の関数を使い、
 // 本番ならサーバーがする「書き込みを当てる」と「次へ」だけをここで同じ決まりで行う
-// （api/internal/handlers/caos.go の writeCups・advance と同じ確かめ方・同じ理由の文）。
+// （api/internal/handlers/caos.go の writeCups・advance と caos_lanes.go の限定の確かめと、同じ確かめ方・同じ理由の文）。
+//   - 指名は明細のドリッパーの番号（menus の dripper）。番号のあるカップはその番号のドリッパーにしか置けない
+//   - 限定（種類の senior_only）のカップは、担当者が上級生のドリッパーにしか置けない。担当者は練習を始めたときの
+//     本番の担当者の写し（lanes）。指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
 
 /** 練習の盤面の注文（本番の注文と同じく、カップに CaOS の値を持つ） */
@@ -74,7 +77,7 @@ export const practiceItemType = (
 
 /**
  * 実データの注文を、練習の盤面の注文にする。カップを作る品物（種類の makes_cup）を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
- * 指名は実データから落としてあるので、どのカップも指名なし。ID は練習の中だけのもの
+ * 指名は実データから落としてあるので、どのカップも指名なし（明細の dripper も assignee も null）。ID は練習の中だけのもの
  */
 export const toCaosPracticeOrder = (
   order: PracticeDataOrder,
@@ -112,6 +115,7 @@ export const toCaosPracticeOrder = (
     createdAt: new Date(order.createdAt),
     menus: cups.map((cup) => ({
       orderMenuId: cup.orderMenuId,
+      dripper: null,
       assignee: null,
     })),
     cups,
@@ -171,9 +175,19 @@ const findCup = (orders: CaosPracticeOrder[], cupId: string) => {
   return null;
 };
 
-const assigneeOf = (order: CaosPracticeOrder, cup: Cup) =>
-  order.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)?.assignee ??
+// カップを含む明細の指名のドリッパーの番号（無指名は null。サーバーの menuDripper）
+const menuDripperOf = (order: CaosPracticeOrder, cup: Cup) =>
+  order.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)?.dripper ??
   null;
+
+// 限定のカップか（抽出が要り、種類の senior_only。サーバーの models.ItemType.SeniorOnlyBrew と同じ）
+const seniorOnlyCup = (cup: Cup) =>
+  cupNeedsBrew(cup) && cup.item.item_type.senior_only === true;
+
+// カップをほかのドリッパーへ置く（未割当から置く・ドリッパーを移す）書き込みか（サーバーの caosMovesTo）。
+// 同じドリッパーの中の順番の入れ替えは含めない
+const movesTo = (write: CaosCupsWrite) =>
+  write.after.dripper !== null && write.before.dripper !== write.after.dripper;
 
 const isReady = (cup: Cup) => cup.readyAt !== null || cup.servedAt !== null;
 
@@ -200,12 +214,13 @@ const countBrewing = (orders: CaosPracticeOrder[], dripper: number) => {
 
 /**
  * 書き込み（assignWrites・unassignWrites・mergeWrites が作ったもの）を練習の盤面に当てる。全部当てるか、何も変えないか。
- * 抽出を始める書き込みの開始の時刻は now（練習の時計の今）
+ * 抽出を始める書き込みの開始の時刻は now（練習の時計の今）。lanes は練習の担当者（限定のカップを置けるドリッパーを決める）
  */
 export const applyCaosPracticeWrites = (
   orders: readonly CaosPracticeOrder[],
   writes: readonly CaosCupsWrite[],
   now: Date,
+  lanes: readonly CaosLane[],
 ): CaosPracticeResult => {
   if (writes.length === 0) return { orders: [...orders] };
   const seen = new Set<string>();
@@ -247,12 +262,22 @@ export const applyCaosPracticeWrites = (
           error: `抽出の要らないカップ（${cup.item.name}）はドリッパーに置けません`,
         };
       if (write.after.dripper !== null) {
-        const n = nominatedDripper(assigneeOf(order, cup));
-        if (n !== undefined && n !== write.after.dripper)
+        // 指名は明細のドリッパーの番号（dripper）。自由記述（assignee）だけの古い明細は指名なし
+        const n = menuDripperOf(order, cup);
+        if (n !== null && n !== write.after.dripper)
           return {
             error: `指名のあるカップは ${n} 番のドリッパーにしか置けません`,
           };
       }
+      if (
+        write.after.dripper !== null &&
+        movesTo(write) &&
+        seniorOnlyCup(cup) &&
+        !isSeniorLane(lanes, write.after.dripper)
+      )
+        return {
+          error: `限定のカップ（${cup.item.name}）は上級生のドリッパーにしか置けません（${write.after.dripper} 番のドリッパーの担当者は上級生ではありません）`,
+        };
     }
     for (const hit of found) {
       if (!hit) continue;
@@ -267,15 +292,21 @@ export const applyCaosPracticeWrites = (
       brewing.add(write.after.dripper);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯で、指名がそろっているか
   for (const dripId of touched) {
-    const cups = next.flatMap((order) =>
-      order.cups.filter((cup) => cup.dripId === dripId),
+    const members = next.flatMap((order) =>
+      order.cups
+        .filter((cup) => cup.dripId === dripId)
+        .map((cup) => ({ cup, nominated: menuDripperOf(order, cup) })),
     );
+    const cups = members.map((member) => member.cup);
     if (cups.length > CAOS_MAX_CUPS)
       return { error: `1 枚のカードは ${CAOS_MAX_CUPS} 杯までです` };
     if (cups.some((cup) => !sameState(cup, cups[0])))
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
+    // 指名の違うカップ（無指名も 1 つの値）を同じカードにすると、どのドリッパーにも置けないカードになる（サーバーの checkCaosCardNomination）
+    if (new Set(members.map((member) => member.nominated ?? 0)).size > 1)
+      return { error: "指名の違うカップは同じカードにできません" };
   }
   for (const dripper of brewing) {
     if (countBrewing(next, dripper) > 1)

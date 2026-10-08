@@ -1,4 +1,5 @@
 import type React from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 
@@ -27,6 +28,14 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
                 <div className="flex h-8 min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
                   {laneOrdinal(barista.bayNumber)}
                 </div>
+                <LaneName
+                  dripper={barista.bayNumber}
+                  className="font-black text-[14px] text-slate-950"
+                />
+                <LaneChangeButton
+                  dripper={barista.bayNumber}
+                  className="ml-auto"
+                />
               </div>
               <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
                 {current ? (

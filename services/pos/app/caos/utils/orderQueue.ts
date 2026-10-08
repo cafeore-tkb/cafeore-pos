@@ -4,8 +4,9 @@ import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
-// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
-// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）で比べる。
+// 同じ商品・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
+// 商品は itemKey（盤面のカードは商品の ID）で比べる。
+// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）でも比べる。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
@@ -13,7 +14,7 @@ export const canMergeDripUnits = (
   (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.beanCode === second.beanCode &&
+  first.itemKey === second.itemKey &&
   first.preferredBaristaId === second.preferredBaristaId &&
   // 盤面のカードは統合できる相手のキー（商品と指名）を持つ。API は同じ商品・同じ指名の 1 杯どうししか統合しないので、候補もそれに揃える
   first.mergeKey === second.mergeKey;

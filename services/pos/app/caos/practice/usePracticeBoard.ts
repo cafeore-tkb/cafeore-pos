@@ -1,5 +1,6 @@
 import {
   type CaosCupsWrite,
+  type CaosLane,
   type CaosPracticeOrder,
   type ItemType,
   type PracticeDataOrder,
@@ -17,7 +18,8 @@ import type { PracticeSalesOrder } from "../types";
 // 盤面はブラウザの中だけで持ち（本番と同じ形の注文とカップ）、カードの組み立てと割当・移動・統合の書き込みは
 // 本番と同じ @cafeore/common の関数（buildCaosCards・assignWrites など）、書き込みを当てるのと「次へ」は
 // 本番のサーバーと同じ決まりの applyCaosPracticeWrites・advanceCaosPracticeDripper で行う。
-// サーバー・本番の盤面・注文・在庫には何も送らない。
+// ドリッパーの担当者（限定のカップを置けるか）は、始めたときの本番の担当者の写しを使い、練習の中では替えない。
+// サーバー・本番の盤面・注文・在庫・担当者には何も送らない。
 
 export interface PracticeStart {
   /** どのデータか（例「2025年の実績」） */
@@ -43,6 +45,8 @@ export interface PracticeSession {
   board: CaosPracticeOrder[];
   /** 実績に使う品物の種類（data の注文ごと・品物ごと） */
   itemTypes: ItemType[][];
+  /** 練習の担当者。始めたときの本番の担当者の写し（練習の中では替えない） */
+  lanes: CaosLane[];
 }
 
 const createdMs = (order: PracticeDataOrder) => Date.parse(order.createdAt);
@@ -124,13 +128,11 @@ export const usePracticeBoard = ({
     });
   }, [data, board, itemTypes, arrivedCount]);
 
-  const start = ({
-    label,
-    orders,
-    startMs,
-    endMs,
-    itemTypes,
-  }: PracticeStart) => {
+  /** 練習を始める。lanes は今の本番の担当者（写しを練習の担当者にする） */
+  const start = (
+    { label, orders, startMs, endMs, itemTypes }: PracticeStart,
+    lanes: readonly CaosLane[],
+  ) => {
     const inWindow = orders
       .filter(
         (order) => createdMs(order) >= startMs && createdMs(order) < endMs,
@@ -149,6 +151,7 @@ export const usePracticeBoard = ({
       itemTypes: inWindow.map((order) =>
         order.items.map((item) => practiceItemType(item, itemTypes).itemType),
       ),
+      lanes: lanes.map((lane) => ({ ...lane })),
     });
   };
 
@@ -167,6 +170,7 @@ export const usePracticeBoard = ({
       current.board,
       writes,
       new Date(current.currentMs),
+      current.lanes,
     );
     if (result.error !== undefined) return result.error;
     commit(result.orders);
