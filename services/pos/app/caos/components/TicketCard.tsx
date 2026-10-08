@@ -1,13 +1,11 @@
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import type { BeanCode, OrderTicket } from "../types";
+import type { OrderTicket } from "../types";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  highlightFilter: BeanCode | null;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onOpenDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
   currentBayId: number;
@@ -20,7 +18,6 @@ interface TicketCardProps {
 
 export const TicketCard: React.FC<TicketCardProps> = ({
   ticket,
-  highlightFilter,
   selectedOrderId,
   onOpenDetail,
   actionTicketKey,
@@ -38,7 +35,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     null,
   );
   const [dragTargetBay, setDragTargetBay] = useState<number | null>(null);
-  const isMatchFilter = !highlightFilter || highlightFilter === ticket.beanCode;
   const isOrderSelected = selectedOrderId === ticket.id;
 
   // Operational color is reserved for drinks that require a special finish/person.
@@ -182,7 +178,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""}`}
+      }`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">

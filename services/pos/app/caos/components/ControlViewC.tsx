@@ -144,13 +144,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                   <DripperOrderCard
                     kind="current"
                     ticket={current}
-                    remainingLabel={
-                      current
-                        ? seconds === 0
-                          ? "継続"
-                          : formatRemaining(seconds)
-                        : undefined
-                    }
                     isImminent={isImminent}
                     emptyLabel="待機中"
                     onClick={
@@ -167,7 +160,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                           key={ticket.ticketUid || `${ticket.id}-${index}`}
                           kind="waiting"
                           ticket={ticket}
-                          queueCount={waitingQueue.length}
                           queuePosition={index + 1}
                           emptyLabel="待ちへ割当"
                           onClick={() => {
@@ -180,7 +172,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     ) : (
                       <DripperOrderCard
                         kind="waiting"
-                        queueCount={0}
                         emptyLabel="待ちへ割当"
                         onClick={() => onOpenEmptySlot(barista.id)}
                       />

@@ -1,14 +1,12 @@
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
-import type { Barista, BeanCode, OrderTicket } from "../types";
+import type { Barista, OrderTicket } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
   barista: Barista;
-  highlightFilter: BeanCode | null;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
@@ -25,9 +23,7 @@ interface BayLaneRowProps {
 
 export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   barista,
-  highlightFilter,
   selectedOrderId,
-  onSelectOrder,
   onAdvanceBay,
   onOpenTicketDetail,
   actionTicketKey,
@@ -182,9 +178,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
             >
               <TicketCard
                 ticket={ticket}
-                highlightFilter={highlightFilter}
                 selectedOrderId={selectedOrderId}
-                onSelectOrder={onSelectOrder}
                 onOpenDetail={onOpenTicketDetail}
                 actionTicketKey={actionTicketKey}
                 currentBayId={barista.id}

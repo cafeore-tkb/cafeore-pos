@@ -59,7 +59,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         unassignedOrders={unassignedOrders}
         simTimeSec={currentTimeSec}
         selectedOrderId={selectedOrderId}
-        highlightFilter={null}
         onSelectOrder={onSelectOrder}
         onSelectQueueOrder={(order) => onSelectOrder(order.id)}
         onAdvanceBay={onAdvanceBay}
@@ -78,7 +77,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         unassignedOrders={unassignedOrders}
         simTimeSec={currentTimeSec}
         selectedOrderId={selectedOrderId}
-        highlightFilter={null}
         onSelectOrder={onSelectOrder}
         onSelectQueueOrder={(order) => onSelectOrder(order.id)}
         onAdvanceBay={onAdvanceBay}
@@ -100,7 +98,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         unassignedOrders={unassignedOrders}
         simTimeSec={currentTimeSec}
         selectedOrderId={selectedOrderId}
-        highlightFilter={null}
         onSelectOrder={onSelectOrder}
         onSelectQueueOrder={(order) => onSelectOrder(order.id)}
         onAdvanceBay={onAdvanceBay}
