@@ -128,6 +128,10 @@ const compareCups = (a: CaosBoardCup, b: CaosBoardCup) =>
 const nomineeKey = (nominee: string | null) =>
   nominee === null ? "" : `\u0001${nominee}`;
 
+// 準備完了（提供済みも）のカップ
+const isReady = (cup: Pick<Cup, "readyAt" | "servedAt">) =>
+  cup.readyAt !== null || cup.servedAt !== null;
+
 const latest = (dates: (Date | null)[]) =>
   dates.reduce<Date | null>(
     (out, d) => (d && (!out || d > out) ? d : out),
@@ -239,7 +243,7 @@ export const buildCaosCards = (
         servedAt: cup.servedAt,
         state: cupState(cup),
       };
-      const ready = cup.readyAt !== null || cup.servedAt !== null;
+      const ready = isReady(cup);
       const { dripId, dripper } = boardCup.state;
       if (dripId && (dripper !== null || !ready)) {
         byDrip.set(dripId, [...(byDrip.get(dripId) ?? []), boardCup]);
@@ -256,9 +260,7 @@ export const buildCaosCards = (
   const cards: CaosCard[] = [];
   for (const cups of byDrip.values()) {
     const state = cups[0].state;
-    const allReady = cups.every(
-      (cup) => cup.readyAt !== null || cup.servedAt !== null,
-    );
+    const allReady = cups.every(isReady);
     const status: CaosCardStatus =
       state.dripper === null
         ? "unassigned"
