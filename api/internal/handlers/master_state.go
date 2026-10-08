@@ -29,17 +29,10 @@ func toMasterStateResponse(masterState *models.MasterState) models.MasterStateRe
 	}
 }
 
-// オーダーストップの記録を古い順に読む。並び順を DB 任せにしないため明示する
-func findMasterStates(db *gorm.DB) ([]models.MasterState, error) {
-	var states []models.MasterState
-	err := db.Order("created_at ASC").Find(&states).Error
-	return states, err
-}
-
 // GET /api/master-status - オーダーストップの記録の一覧（古い順）
 func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
-	masterStatus, err := findMasterStates(h.db)
-	if err != nil {
+	var masterStatus []models.MasterState
+	if err := h.db.Order("created_at ASC").Find(&masterStatus).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -53,14 +46,6 @@ func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
-func validateMasterStateType(t models.MasterStateUpdateRequestType) error {
-	switch t {
-	case models.Stop, models.Operational:
-		return nil
-	}
-	return errors.New(`type は "stop" か "operational" にしてください`)
-}
-
 // POST /api/master-status - オーダーストップ・再開
 func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	var req models.MasterStateUpdateRequest
@@ -69,8 +54,8 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateMasterStateType(req.Type); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if req.Type != models.Stop && req.Type != models.Operational {
+		c.JSON(http.StatusBadRequest, gin.H{"error": `type は "stop" か "operational" にしてください`})
 		return
 	}
 
@@ -84,7 +69,6 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	// models.MasterState は json タグが無いので、そのまま返すと "Type" のような大文字のキーになる
 	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
 	h.broadcastMasterState()
 }
