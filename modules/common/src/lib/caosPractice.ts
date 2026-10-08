@@ -190,18 +190,17 @@ const placeCups = (
       position: Math.max(0, ...lane.map((cup) => cup.dripperPosition ?? 0)) + 1,
     };
 
-  const target = lane.find(
+  const p = lane.find(
     (cup) =>
       cup.dripId === write.after.insert_before &&
       cup.brewStartedAt === null &&
       cup.dripperPosition !== null,
-  );
-  if (!target || target.dripperPosition === null)
+  )?.dripperPosition;
+  if (p == null)
     return {
       error:
         "前に入れるカードが、そのドリッパーの待機にありません（ほかの端末で動いたかもしれません）",
     };
-  const p = target.dripperPosition;
   for (const cup of lane) {
     if (cup.dripperPosition !== null && cup.dripperPosition >= p)
       cup.dripperPosition += 1;
