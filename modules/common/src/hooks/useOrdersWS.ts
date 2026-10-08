@@ -6,11 +6,7 @@ import {
   responseToCashierState,
   responseToOrderEntity,
 } from "../api/converter";
-import {
-  type MasterState,
-  type MasterStateResponse,
-  responseToMasterState,
-} from "../data";
+import { type MasterState, responseToMasterState } from "../data";
 import type { WithId } from "../lib";
 import {
   type ReconnectingWebSocketStatus,
@@ -27,8 +23,11 @@ type WSMessage =
   // 作成・変更された1件の注文
   | { type: "order"; order: OrderResponse }
   | { type: "order_deleted"; order_id: string }
-  // 最新のオーダーストップの状態。接続直後と切り替えのたびに届く（記録が無ければ届かない）
-  | { type: "master_state"; master_state: MasterStateResponse }
+  // 最新のオーダーストップの状態。接続直後と切り替えのたびに届く
+  | {
+      type: "master_state";
+      master_state: components["schemas"]["MasterStateResponse"];
+    }
   | {
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
@@ -41,8 +40,7 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
-  // オーダーストップの状態。読むのはここだけにして、どの画面も同じ値を見る（useOrderStat）。
-  // 記録がまだ無ければサーバーは何も流さないので null のまま
+  // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま
   const [masterState, setMasterState] = useState<MasterState | null>(null);
   // レジの編集中注文。API にまだ無ければサーバーは何も流さないので null のまま
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(

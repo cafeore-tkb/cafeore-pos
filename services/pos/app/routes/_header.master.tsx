@@ -138,7 +138,6 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     const { status } = submission.value;
 
-    // 書くのは API だけ。各画面の表示は WebSocket の master_state で切り替わる
     try {
       await updateMasterStatus(status);
     } catch (e) {
