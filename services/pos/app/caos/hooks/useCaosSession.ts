@@ -1,7 +1,9 @@
-import { useColorSettings } from "@cafeore/common";
+import { type PracticeDataOrder, useColorSettings } from "@cafeore/common";
+import dayjs from "dayjs";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import {
+  type Board,
   advanceBay,
   assignCard,
   mergeUnassigned,
@@ -10,20 +12,19 @@ import {
   returnTicket,
 } from "../logic/board";
 import { compareUnassigned, totalCups } from "../logic/cards";
-import { startOfLocalDay, timeOfDayLabel } from "../logic/format";
+import { timeOfDayLabel } from "../logic/format";
 import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
 import { nextAvailableBays } from "../logic/queue";
 import type { RebrewDecision } from "../logic/rebrew";
-import type { Board, HistoricalOrder, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
 import { usePracticeData } from "./usePracticeData";
-import { useTestPlay } from "./useTestPlay";
+import { type TestPlaySession, useTestPlay } from "./useTestPlay";
 
 // 実データを読み込んでいないとき
-const NO_ORDERS: HistoricalOrder[] = [];
+const NO_ORDERS: PracticeDataOrder[] = [];
 
 // タイマーの速さ（ヘッダーで押すたびに次へ）
 const SIM_SPEEDS = [1, 2, 5, 10];
@@ -61,10 +62,10 @@ export const useCaosSession = (initial?: {
 
   // 盤面の秒。その日の 0 時から数える（テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const realTime = useCurrentTime(1000);
-  const [realDayStartMs] = useState(() => startOfLocalDay(Date.now()));
+  const [realDayStartMs] = useState(() => dayjs().startOf("day").valueOf());
   const nowMs = test.session?.currentMs ?? realTime.getTime();
   const dayStartMs = test.session
-    ? startOfLocalDay(test.session.startMs)
+    ? dayjs(test.session.startMs).startOf("day").valueOf()
     : realDayStartMs;
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 

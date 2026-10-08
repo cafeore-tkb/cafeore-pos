@@ -1,8 +1,30 @@
-import type { Barista, Board, DripCard, OrderTicket } from "../types";
-import { canMergeDripUnits, mergeCards, toCard, toTicket } from "./cards";
+import {
+  type DripCard,
+  type OrderTicket,
+  canMergeDripUnits,
+  mergeCards,
+  toCard,
+  toTicket,
+} from "./cards";
 import { canPlaceOn, makeLaneBaristas } from "./lanes";
 import { arrangeQueue, scheduleQueue } from "./queue";
 import { type RebrewDecision, rebrewSlots } from "./rebrew";
+
+// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
+export interface Barista {
+  /** ドリッパーの番号（1〜6） */
+  id: number;
+  /** 終わったカード */
+  pastTickets: OrderTicket[];
+  /** 抽出中（先頭）と待機のカード */
+  queue: OrderTicket[];
+}
+
+// 盤面（6 列のドリッパーと未割当のカード）
+export interface Board {
+  baristas: Barista[];
+  unassigned: DripCard[];
+}
 
 // 盤面の操作。どれも今の盤面から次の盤面を返す（できない操作は null）。
 

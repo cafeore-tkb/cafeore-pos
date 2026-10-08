@@ -3,10 +3,15 @@ import type React from "react";
 import { useRef, useState } from "react";
 import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import { useOutsidePress } from "../hooks/useOutsidePress";
-import { brewSec, orderLabel } from "../logic/cards";
+import type { Barista } from "../logic/board";
+import {
+  type DripCard,
+  type OrderTicket,
+  brewSec,
+  orderLabel,
+} from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { canPlaceOn, laneOrdinal, moveTargets } from "../logic/lanes";
-import type { Barista, DripCard, OrderTicket } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
@@ -41,7 +46,7 @@ export const SidePanel: React.FC<{
   return (
     <aside
       ref={panelRef}
-      className={`context-sheet fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] select-none flex-col border-l bg-white text-slate-950 shadow-2xl ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
+      className={`fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
     >
       <header
         className={`flex min-h-[52px] shrink-0 items-center gap-1 border-b px-4 ${tone === "alert" ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}

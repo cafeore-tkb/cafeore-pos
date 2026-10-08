@@ -4,13 +4,13 @@ import { useState } from "react";
 import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
+  type DripCard,
   canMergeDripUnits,
   orderLabel,
   placeByOrder,
   totalCups,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import type { DripCard } from "../types";
 import { NextAvailableChips, PanelHeader } from "./BoardParts";
 import { BayPad, MergeOverlay, OrderCard } from "./OrderCard";
 

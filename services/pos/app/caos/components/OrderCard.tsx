@@ -1,9 +1,8 @@
 import { readableTextColor } from "@cafeore/common";
 import { Check } from "lucide-react";
 import type React from "react";
-import { orderLabel } from "../logic/cards";
+import { type DripCard, orderLabel } from "../logic/cards";
 import { laneOrdinal, moveTargets } from "../logic/lanes";
-import type { DripCard } from "../types";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // 置き場所ごとの違いは、文字の大きさ（size）と、終わり（done）・選択中（selected）・添え書き（note）だけ。
