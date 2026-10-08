@@ -1,10 +1,11 @@
 import type { Cup } from "../models/cup";
 import type { components } from "../types/api";
-import type {
-  CaosCard,
-  CaosCupState,
-  CaosCupsWrite,
-  CaosOrderInput,
+import {
+  type CaosCard,
+  type CaosCupState,
+  type CaosCupsWrite,
+  type CaosOrderInput,
+  caosCardId,
 } from "./caos-board";
 
 // CaOS の「1つ戻す」。DB や画面を使わない純粋な関数だけを置く（書き戻すのは POST /api/caos/undo）。
@@ -17,19 +18,23 @@ import type {
 // サーバーは今の値が current のときだけ書き戻すので、ほかの画面（ほかの iPad・マスター・提供）があとで変えていたら断られる。
 //
 // 操作の種類ごとに、覚える値を作る関数（undoOf*）を足す。担当者の交代・緊急などカップを書かない操作は、
-// 画面の側（caos/hooks/useCaosUndo）で、その操作を戻す処理をそのまま覚える。
+// 画面の側（caos/hooks/useCaosUndo）で、その操作を戻す処理をそのまま覚える（今は入れていない）。
+//
+// カップの dripId は CaosCupState と同じく CaOS のカード（緊急のカップは入れ直しのカード emergencyDripId。caosCardId）。
+// 提供済み（servedAt）と緊急（emergencyAt）は比べるだけで書き戻さない（あとで変わっていればサーバーが断る）。
 
-/** 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と、準備完了・提供済み） */
+/** 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と、準備完了・提供済み・緊急） */
 export interface CaosUndoCupState extends CaosCupState {
   readyAt: Date | null;
   servedAt: Date | null;
+  emergencyAt: Date | null;
 }
 
 /** サーバーが付けた時刻（操作のときのサーバーの今）の印。戻すときに、届いた注文の値で埋める */
 export const CAOS_SERVER_NOW = "serverNow";
 type Stamp = Date | null | typeof CAOS_SERVER_NOW;
 
-/** その操作で自分が書いた値（時刻はサーバーの今の印のことがある。提供済みは書かない） */
+/** その操作で自分が書いた値（時刻はサーバーの今の印のことがある。提供済み・緊急は書かない） */
 export interface CaosWrittenCupState {
   dripper: number | null;
   dripperPosition: number | null;
@@ -38,6 +43,7 @@ export interface CaosWrittenCupState {
   brewFinishedAt: Stamp;
   readyAt: Stamp;
   servedAt: Date | null;
+  emergencyAt: Date | null;
 }
 
 export interface CaosUndoCup {
@@ -85,10 +91,12 @@ const undoStateOf = (cup: {
   state: CaosCupState;
   readyAt: Date | null;
   servedAt: Date | null;
+  emergencyAt: Date | null;
 }): CaosUndoCupState => ({
   ...cup.state,
   readyAt: cup.readyAt,
   servedAt: cup.servedAt,
+  emergencyAt: cup.emergencyAt,
 });
 
 /**
@@ -120,6 +128,7 @@ export const undoOfWrites = (
           brewFinishedAt: null,
           readyAt: restore.readyAt,
           servedAt: restore.servedAt,
+          emergencyAt: restore.emergencyAt,
         },
       });
     }
@@ -167,7 +176,7 @@ export const undoOfNext = (
   return cups.length > 0 ? { kind: "next", label, cups } : null;
 };
 
-/** 届いている注文の、カップの今の値（ID ごと） */
+/** 届いている注文の、カップの今の値（ID ごと。dripId は CaOS のカード＝緊急のカップは入れ直しのカード） */
 export const caosObservedCups = (
   orders: readonly Pick<CaosOrderInput, "cups">[],
 ): Map<string, CaosUndoCupState> =>
@@ -178,11 +187,12 @@ export const caosObservedCups = (
         {
           dripper: cup.dripper ?? null,
           dripperPosition: cup.dripperPosition ?? null,
-          dripId: cup.dripId ?? null,
+          dripId: caosCardId(cup),
           brewStartedAt: cup.brewStartedAt ?? null,
           brewFinishedAt: cup.brewFinishedAt ?? null,
           readyAt: cup.readyAt,
           servedAt: cup.servedAt,
+          emergencyAt: cup.emergencyAt ?? null,
         },
       ]),
     ),
@@ -202,6 +212,7 @@ const stateJSON = (
   brew_finished_at: iso(state.brewFinishedAt),
   ready_at: iso(state.readyAt),
   served_at: iso(state.servedAt),
+  emergency_at: iso(state.emergencyAt),
 });
 
 export type CaosUndoResolved = { cups: CaosUndoCupJSON[] } | { error: string };

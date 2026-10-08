@@ -18,6 +18,7 @@ const response: OrderResponse = {
       menu_name: "注文時のセット名",
       unit_price: 500,
       assignee: null,
+      dripper: null,
       menu: {
         id: "00000000-0000-4000-8000-000000000003",
         name: "変更後のセット名",
@@ -59,6 +60,9 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   drip_id: null,
   brew_started_at: null,
   brew_finished_at: null,
+  emergency_at: null,
+  emergency_drip_id: null,
+  emergency_printed_at: null,
 });
 
 describe("[unit] order snapshot conversion", () => {
@@ -73,7 +77,7 @@ describe("[unit] order snapshot conversion", () => {
 
   test("preserves the line ID and snapshot through cloning and editing", () => {
     const order = responseToOrderEntity(response).clone();
-    order.menus[0].assignee = "担当者";
+    order.menus[0].assign(2, "担当者");
     const request = orderToUpdateRequest(order);
     expect(order.menus[0].name).toBe("注文時のセット名");
     expect(request.billing_amount).toBe(500);
@@ -82,8 +86,13 @@ describe("[unit] order snapshot conversion", () => {
         menu_id: response.menus[0].menu.id,
         order_menu_id: response.menus[0].id,
         assignee: "担当者",
+        dripper: 2,
       },
     ]);
+    expect(orderEntityToCreateRequest(order).menu_ids[0]).toMatchObject({
+      assignee: "担当者",
+      dripper: 2,
+    });
     expect(orderEntityToCreateRequest(order).menu_ids[0]).not.toHaveProperty(
       "order_menu_id",
     );
@@ -133,12 +142,12 @@ describe("[unit] order snapshot conversion", () => {
   test("cups follow the server even if the menu composition changed", () => {
     const order = responseToOrderEntity({
       ...response,
-      menus: [{ ...response.menus[0], assignee: "担当者" }],
+      menus: [{ ...response.menus[0], assignee: "担当者", dripper: 4 }],
       cups: [cup("00000000-0000-4000-8000-000000000011")],
     });
     expect(order.getDrinkCups()).toHaveLength(2);
     expect(order.getCups()).toEqual([
-      expect.objectContaining({ abbr: "珈琲", assignee: "担当者" }),
+      expect.objectContaining({ abbr: "珈琲", assignee: "担当者", dripper: 4 }),
     ]);
   });
 

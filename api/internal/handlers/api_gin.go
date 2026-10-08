@@ -20,6 +20,18 @@ type ServerInterface interface {
 	// CaOS の「次へ」
 	// (POST /api/caos/drippers/{dripper}/next)
 	AdvanceCaosDripper(c *gin.Context, dripper int)
+	// カップを緊急（入れ直し）にする
+	// (POST /api/caos/emergency)
+	MarkCaosEmergency(c *gin.Context)
+	// CaOS の今日のドリッパーの担当者
+	// (GET /api/caos/lanes)
+	GetCaosLanes(c *gin.Context)
+	// CaOS の 2 つのドリッパーの担当者を入れ替える
+	// (POST /api/caos/lanes/swap)
+	SwapCaosLanes(c *gin.Context)
+	// CaOS のドリッパーの担当者を替える（交代）
+	// (PUT /api/caos/lanes/{dripper})
+	PutCaosLane(c *gin.Context, dripper int)
 	// CaOS の「1つ戻す」
 	// (POST /api/caos/undo)
 	UndoCaosCups(c *gin.Context)
@@ -134,6 +146,12 @@ type ServerInterface interface {
 	// オーダーにコメント追加
 	// (POST /api/orders/{id}/comments)
 	CreateOrderComment(c *gin.Context, id openapi_types.UUID)
+	// 緊急のシールを印刷する役を取る
+	// (POST /api/orders/{id}/cups/{cupId}/emergency-label/claim)
+	ClaimEmergencyLabel(c *gin.Context, id openapi_types.UUID, cupId openapi_types.UUID)
+	// 緊急のシールの印刷に失敗したので、印刷した時刻を空に戻す
+	// (POST /api/orders/{id}/cups/{cupId}/emergency-label/release)
+	ReleaseEmergencyLabel(c *gin.Context, id openapi_types.UUID, cupId openapi_types.UUID)
 	// カップを準備完了にする
 	// (PATCH /api/orders/{id}/cups/{cupId}/ready)
 	MarkOrderCupReady(c *gin.Context, id openapi_types.UUID, cupId openapi_types.UUID)
@@ -195,6 +213,69 @@ func (siw *ServerInterfaceWrapper) AdvanceCaosDripper(c *gin.Context) {
 	}
 
 	siw.Handler.AdvanceCaosDripper(c, dripper)
+}
+
+// MarkCaosEmergency operation middleware
+func (siw *ServerInterfaceWrapper) MarkCaosEmergency(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MarkCaosEmergency(c)
+}
+
+// GetCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosLanes(c)
+}
+
+// SwapCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) SwapCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SwapCaosLanes(c)
+}
+
+// PutCaosLane operation middleware
+func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCaosLane(c, dripper)
 }
 
 // UndoCaosCups operation middleware
@@ -889,6 +970,72 @@ func (siw *ServerInterfaceWrapper) CreateOrderComment(c *gin.Context) {
 	siw.Handler.CreateOrderComment(c, id)
 }
 
+// ClaimEmergencyLabel operation middleware
+func (siw *ServerInterfaceWrapper) ClaimEmergencyLabel(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "cupId" -------------
+	var cupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cupId", c.Param("cupId"), &cupId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cupId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ClaimEmergencyLabel(c, id, cupId)
+}
+
+// ReleaseEmergencyLabel operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseEmergencyLabel(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "cupId" -------------
+	var cupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cupId", c.Param("cupId"), &cupId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cupId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReleaseEmergencyLabel(c, id, cupId)
+}
+
 // MarkOrderCupReady operation middleware
 func (siw *ServerInterfaceWrapper) MarkOrderCupReady(c *gin.Context) {
 
@@ -1045,6 +1192,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
+	router.POST(options.BaseURL+"/api/caos/emergency", wrapper.MarkCaosEmergency)
+	router.GET(options.BaseURL+"/api/caos/lanes", wrapper.GetCaosLanes)
+	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
+	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
 	router.POST(options.BaseURL+"/api/caos/undo", wrapper.UndoCaosCups)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
@@ -1083,6 +1234,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/orders/:id", wrapper.UpdateOrder)
 	router.GET(options.BaseURL+"/api/orders/:id/comments", wrapper.GetOrderComments)
 	router.POST(options.BaseURL+"/api/orders/:id/comments", wrapper.CreateOrderComment)
+	router.POST(options.BaseURL+"/api/orders/:id/cups/:cupId/emergency-label/claim", wrapper.ClaimEmergencyLabel)
+	router.POST(options.BaseURL+"/api/orders/:id/cups/:cupId/emergency-label/release", wrapper.ReleaseEmergencyLabel)
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/ready", wrapper.MarkOrderCupReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)

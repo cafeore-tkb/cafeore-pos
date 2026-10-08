@@ -320,6 +320,13 @@ func main() {
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
 		api.POST("/caos/undo", caosHandler.UndoCaosCups)
+		// 緊急（入れ直し）と緊急のシール
+		api.POST("/caos/emergency", caosHandler.MarkCaosEmergency)
+		api.POST("/orders/:id/cups/:cupId/emergency-label/claim", caosHandler.ClaimEmergencyLabel)
+		api.POST("/orders/:id/cups/:cupId/emergency-label/release", caosHandler.ReleaseEmergencyLabel)
+		api.GET("/caos/lanes", caosHandler.GetCaosLanes)
+		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
+		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
 	}
 
 	// サーバー起動

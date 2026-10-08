@@ -94,5 +94,9 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 		DripId:          apiUUID(cup.DripID),
 		BrewStartedAt:   cup.BrewStartedAt,
 		BrewFinishedAt:  cup.BrewFinishedAt,
+
+		EmergencyAt:        cup.EmergencyAt,
+		EmergencyDripId:    apiUUID(cup.EmergencyDripID),
+		EmergencyPrintedAt: cup.EmergencyPrintedAt,
 	}
 }

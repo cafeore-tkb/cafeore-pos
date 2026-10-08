@@ -8,10 +8,13 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
 import { laneOrdinal } from "../utils/lanes";
+import { nominationText } from "../utils/nomination";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
+import { RebrewButton } from "./RebrewPanel";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -107,7 +110,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
         .filter((ticket) => ticket.id === selectedOrderId)
         .map((ticket) => ({
           uid:
-            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.beanCode}`,
+            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.itemKey}`,
           beanName: ticket.beanName,
           bayNumber: barista.bayNumber,
         })),
@@ -192,7 +195,12 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <LaneName
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
+                    />
                   </div>
+                  <LaneChangeButton dripper={barista.bayNumber} />
                 </div>
 
                 <div
@@ -243,6 +251,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                           ? "継続中"
                           : formatMinSec(remainingSeconds)}
                       </div>
+                      <RebrewButton ticket={current} className="mt-1.5" />
                     </>
                   ) : (
                     <div className="flex h-[62px] items-center justify-center font-bold text-[14px]">
@@ -451,9 +460,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                         >
                           {group.id}
                         </div>
-                        {group.items[0].preferredBaristaId && (
-                          <div className="mt-1 inline-flex rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                            指名 {group.items[0].preferredBaristaId}
+                        {nominationText(group.items[0]) && (
+                          <div className="mt-1 inline-flex whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                            指名:{nominationText(group.items[0])}
                           </div>
                         )}
                         {group.items[0].totalOrderCups && (
@@ -469,7 +478,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     {group.items.map((item) => (
                       <button
                         type="button"
-                        key={item.ticketUid || `${item.id}-${item.beanCode}`}
+                        key={item.ticketUid || `${item.id}-${item.itemKey}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           openAssignmentPad(item);
@@ -491,9 +500,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                               </span>
                             )}
                         </div>
-                        {item.preferredBaristaId && (
+                        {nominationText(item) && (
                           <div className="mt-1 font-black text-[10px] text-violet-700">
-                            指名 {item.preferredBaristaId}
+                            指名:{nominationText(item)}
                           </div>
                         )}
                       </button>

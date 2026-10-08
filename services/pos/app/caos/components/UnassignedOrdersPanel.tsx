@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
 import { cardSurface } from "../utils/menuPresentation";
+import { nominationText } from "../utils/nomination";
 import { canMergeDripUnits } from "../utils/orderQueue";
 import { BeanBadge } from "./BeanBadge";
 
@@ -226,22 +227,28 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     transform: `translate3d(${-dragVisual.x}px, ${-dragVisual.y}px, 0)`,
                   }
                 : undefined;
-            const cardStyle = order.preferredBaristaId
-              ? "bg-violet-50 border-violet-300 text-slate-900"
-              : surface.className;
+            // 緊急（入れ直し）は赤、指名は紫、それ以外はマスターの画面と同じ背景色（あれば）
+            const cardStyle = order.isRebrew
+              ? "bg-red-50 border-red-500 text-slate-900"
+              : order.preferredBaristaId
+                ? "bg-violet-50 border-violet-300 text-slate-900"
+                : surface.className;
             // 指名の色を優先し、それ以外はマスターの画面と同じ背景色（あれば）
-            const surfaceStyle = order.preferredBaristaId
-              ? undefined
-              : surface.style;
-            const idColor = order.preferredBaristaId
-              ? "text-violet-700"
-              : surface.colored
-                ? ""
-                : surface.dark
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+            const surfaceStyle =
+              order.isRebrew || order.preferredBaristaId
+                ? undefined
+                : surface.style;
+            const idColor = order.isRebrew
+              ? "text-red-700"
+              : order.preferredBaristaId
+                ? "text-violet-700"
+                : surface.colored
+                  ? ""
+                  : surface.dark
+                    ? "text-white"
+                    : order.totalItemsInOrder && order.totalItemsInOrder > 1
+                      ? "text-slate-950"
+                      : "text-slate-600";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -251,6 +258,11 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     >
                       {order.id}
                     </span>
+                    {order.isRebrew && (
+                      <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[11px] text-white">
+                        緊急
+                      </span>
+                    )}
                     {order.totalItemsInOrder && order.totalItemsInOrder > 1 && (
                       <span className="whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[11px] text-slate-700">
                         {order.itemIndex}/{order.totalItemsInOrder}・計
@@ -275,11 +287,12 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   </h3>
                   <BeanBadge
                     beans={order.beans}
+                    typeName={order.typeName}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
-                  {order.preferredBaristaId && (
+                  {nominationText(order) && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
-                      指名 {order.preferredBaristaId}
+                      指名:{nominationText(order)}
                     </span>
                   )}
                 </div>

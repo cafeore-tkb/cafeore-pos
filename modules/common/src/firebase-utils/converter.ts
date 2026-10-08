@@ -139,6 +139,7 @@ export const responseToMenuEntity = (
       quantity,
     })),
     assignee: null,
+    dripper: null,
   });
 
 const menuItemsToRequest = (menu: MenuEntity) =>
@@ -209,6 +210,7 @@ export const responseToOrderEntity = (
         name: cur.menu_name,
         price: cur.unit_price,
         assignee: cur.assignee,
+        dripper: cur.dripper ?? null,
       });
       acc.push(menu);
       return acc;
@@ -255,6 +257,11 @@ export const responseToOrderEntity = (
       brewFinishedAt: cup.brew_finished_at
         ? new Date(cup.brew_finished_at)
         : null,
+      emergencyAt: cup.emergency_at ? new Date(cup.emergency_at) : null,
+      emergencyDripId: cup.emergency_drip_id ?? null,
+      emergencyPrintedAt: cup.emergency_printed_at
+        ? new Date(cup.emergency_printed_at)
+        : null,
     })),
   };
   return OrderEntity.fromOrder(order);
@@ -279,7 +286,11 @@ export const orderEntityToCreateRequest = (
   order: OrderEntity,
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
-    acc.push({ assignee: cur.assignee, menu_id: cur.id });
+    acc.push({
+      assignee: cur.assignee,
+      dripper: cur.dripper,
+      menu_id: cur.id,
+    });
     return acc;
   }, []);
   return {
@@ -300,6 +311,7 @@ export const orderToUpdateRequest = (
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({
       assignee: cur.assignee,
+      dripper: cur.dripper,
       menu_id: cur.id,
       order_menu_id: cur.orderMenuId,
     });

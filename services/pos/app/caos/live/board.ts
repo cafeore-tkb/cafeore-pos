@@ -14,7 +14,6 @@ import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
 import type { BeanIndex } from "../utils/beans";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
-import { posBeanCode } from "../utils/posOrders";
 
 // 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards）を、管制盤が使う形（列ごとの待機と未割当）にする。
 // カードは注文のカップ（商品・種類・指名）をそのまま持つので、表示の情報はカードのカップから取る。
@@ -22,17 +21,6 @@ import { posBeanCode } from "../utils/posOrders";
 
 const orderLabel = (orderNo: number) =>
   `#${orderNo.toString().padStart(3, "0")}`;
-
-const cardColorOf = (
-  beanCode: UnassignedOrder["beanCode"],
-): UnassignedOrder["cardColor"] =>
-  beanCode === "ICE"
-    ? "cyan"
-    : beanCode === "SP"
-      ? "emerald"
-      : beanCode === "KEN"
-        ? "peach"
-        : "blue";
 
 // 盤面の秒（その日の始まりからの秒）。抽出の開始・終了の時刻はサーバーが付けた時刻
 const toSec = (date: Date | null, dayStartMs: number) =>
@@ -46,8 +34,7 @@ const describe = (
   beanIndex: BeanIndex,
 ) => {
   const first = card.cups[0];
-  // 区分（氷・牛・限定）は商品の種類から
-  const beanCode = posBeanCode(first.item.item_type.name);
+  const itemType = first.item.item_type;
   // 豆は在庫の「商品 → 豆」から引く（カードの商品が使う在庫対象をまとめる）
   const beans = new Map<string, CardBean>();
   for (const cup of card.cups) {
@@ -60,18 +47,27 @@ const describe = (
     new Set(card.cups.map((cup) => orderLabel(cup.orderNo))),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
-  const nominee = first.nominee ?? undefined;
+  // 指名の番号（明細の dripper）のカードは、その番号のドリッパーにだけ置ける。統合したカードも同じ番号どうし。
+  // 指名の表示はマスターの画面と同じ assignmentDisplay（buildCaosCards がカップの nominee に入れる）。
+  // 番号は「2nd」、番号の無い自由記述だけの古い明細は自由記述（ドリッパーには固定しない）
   const preferredBaristaId = card.nominatedDripper;
-  const unmatchedNominee =
-    nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
-  // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ
-  const limited = card.seniorOnly ? "（限定）" : "";
+  const nominee =
+    Array.from(
+      new Set(card.cups.flatMap((cup) => (cup.nominee ? [cup.nominee] : []))),
+    ).join("・") || undefined;
+  // 限定（種類の senior_only）の印。呼び方はその種類の表示名（display_name）をそのまま。
+  // 置けるのは担当者が上級生のドリッパーだけ（App と サーバーが確かめる。@cafeore/common の seniorOnlyBlock）。
+  // 指名の番号のある限定のカードは、指名のドリッパーの担当者が上級生のときだけ置ける
+  const limited = card.seniorOnly ? `（${itemType.display_name}）` : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
     "・",
   );
 
-  // 分割の表示（1/3・計4杯）は、1 注文だけのカードに付ける
-  const parts = !merged ? orderParts.get(first.orderId) || [card] : [card];
+  // 分割の表示（1/3・計4杯）は、1 注文だけのふつうのカードに付ける（入れ直しのカードには付けない）
+  const parts =
+    !merged && !card.emergency
+      ? orderParts.get(first.orderId) || [card]
+      : [card];
   const itemIndex = parts.findIndex((part) => part.key === card.key) + 1;
   const totalOrderCups = parts.reduce((sum, part) => sum + part.cups.length, 0);
 
@@ -85,20 +81,22 @@ const describe = (
       ? `${sourceOrderIds.join(" + ")} 同時ドリップ`
       : undefined,
     sourceOrderIds: merged ? sourceOrderIds : undefined,
-    beanCode,
-    beanName: `${abbrs}${unmatchedNominee}${limited}`,
-    // 色はマスターの画面と同じ（統合カードは先頭のカップの商品の色）
+    // 名前は商品の略称（abbr）をそのまま
+    beanName: `${abbrs}${limited}`,
+    // 区分は商品の種類の表示名をそのまま
+    typeName: itemType.display_name,
+    // 色はマスターの画面の色の設定（統合カードは先頭のカップの商品の色）。設定が無ければ付けない
     color: masterCardColor(colorSettings, {
       id: first.item.id,
-      name: first.item.name,
-      typeId: first.item.item_type.id,
-      type: first.item.item_type.name,
+      typeId: itemType.id,
     }),
     itemKey: first.item.id ?? first.item.name,
     beans: Array.from(beans.values()),
     cupCount: card.cups.length,
     preferredBaristaId,
+    nominee,
     seniorOnly: card.seniorOnly,
+    isRebrew: card.emergency || undefined,
   };
 };
 
@@ -126,7 +124,8 @@ export const cardsToBoard = (
   // 1 注文だけのカードを、注文ごとに並べる（「1/3」の表示に使う）
   const orderParts = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (new Set(card.cups.map((cup) => cup.orderId)).size > 1) continue;
+    if (card.emergency || new Set(card.cups.map((cup) => cup.orderId)).size > 1)
+      continue;
     const parts = orderParts.get(card.cups[0].orderId) || [];
     parts.push(card);
     orderParts.set(card.cups[0].orderId, parts);
@@ -201,7 +200,7 @@ export const cardsToBoard = (
       return {
         ...info,
         // 未割当で dripId のあるカードは統合したもの
-        badgeTag: `${cups}杯${card.dripId ? " 統合" : ""}`,
+        badgeTag: `${cups}杯${card.emergency ? " 緊急" : card.dripId ? " 統合" : ""}`,
         predictedTimeStr: brewDurationLabel(cups),
         recommendedBaristas: info.preferredBaristaId
           ? `ドリッパー ${info.preferredBaristaId}`
@@ -209,8 +208,7 @@ export const cardsToBoard = (
         recommendedBayIds: info.preferredBaristaId
           ? [info.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
-        cardColor: cardColorOf(info.beanCode),
-        mergeKey: `${card.cups[0].item.id}\u0000${card.cups[0].nominee ?? ""}`,
+        mergeKey: `${card.cups[0].item.id}\u0000${card.nominatedDripper ?? ""}`,
       };
     });
 
@@ -220,3 +218,11 @@ export const cardsToBoard = (
     cards: new Map(cards.map((card) => [card.key, card])),
   };
 };
+
+/** 入れ直しのパネルに出すカップ（注文番号と略称）。もう緊急にしたカップは選べない */
+export const rebrewCups = (card: CaosCard) =>
+  card.cups.map((cup) => ({
+    id: cup.id,
+    label: `${orderLabel(cup.orderNo)} ${cup.item.abbr}`,
+    disabled: cup.emergencyAt !== null,
+  }));

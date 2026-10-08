@@ -1,7 +1,7 @@
 import type { InventoryStatus } from "@cafeore/common";
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type { Barista, HistoricalOrder } from "../types";
+import type { Barista, PracticeSalesOrder } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
 import { BeanQueueView } from "./BeanQueueView";
@@ -22,7 +22,7 @@ interface AuxiliaryContentProps {
     error: unknown;
   };
   beanWaitingCups?: Map<string, number>;
-  salesOrders: HistoricalOrder[];
+  salesOrders: PracticeSalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
 }

@@ -47,6 +47,9 @@ const cup = (init: Partial<Cup> = {}): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  emergencyAt: null,
+  emergencyDripId: null,
+  emergencyPrintedAt: null,
   ...init,
 });
 
@@ -54,14 +57,14 @@ const order = (no: number, cups: Cup[]): CaosOrderInput => ({
   id: `order-${no}`,
   orderId: no,
   createdAt: NOW,
-  menus: [{ orderMenuId: "line-1", assignee: null }],
+  menus: [{ orderMenuId: "line-1", dripper: null, assignee: null }],
   cups,
 });
 
 let idSeq = 0;
 const newId = () => `drip-${++idSeq}`;
 
-// サーバーの PUT /api/caos/cups と同じに書く（始める印には SERVER の時刻を付ける）
+// サーバーの PUT /api/caos/cups と同じに書く（始める印には SERVER の時刻を付ける。緊急のカップのカードは emergencyDripId）
 const applyWrites = (
   orders: CaosOrderInput[],
   writes: readonly CaosCupsWrite[],
@@ -71,11 +74,15 @@ const applyWrites = (
     cups: o.cups.map((c) => {
       const w = writes.find((w) => w.cup_ids.includes(c.id));
       if (!w) return c;
+      const card =
+        c.emergencyAt !== null
+          ? { emergencyDripId: w.after.drip_id }
+          : { dripId: w.after.drip_id };
       return {
         ...c,
+        ...card,
         dripper: w.after.dripper,
         dripperPosition: w.after.dripper_position,
-        dripId: w.after.drip_id,
         brewStartedAt: w.after.start_brew ? SERVER : null,
         brewFinishedAt: null,
       };
@@ -121,6 +128,7 @@ describe("[unit] CaOS の「1つ戻す」", () => {
         brew_finished_at: null,
         ready_at: null,
         served_at: null,
+        emergency_at: null,
       });
       expect(c.restore).toEqual({
         dripper: null,
@@ -130,6 +138,7 @@ describe("[unit] CaOS の「1つ戻す」", () => {
         brew_finished_at: null,
         ready_at: null,
         served_at: null,
+        emergency_at: null,
       });
     }
   });
@@ -255,5 +264,35 @@ describe("[unit] CaOS の「1つ戻す」", () => {
     });
     // 見ていないカップを書いた書き込みは覚えない
     expect(undoOfWrites("assign", "割当", [], result.writes)).toBeNull();
+  });
+
+  test("緊急（入れ直し）のカード：drip_id は入れ直しのカード（emergencyDripId）、emergency_at は比べるだけで戻さない", () => {
+    const emergencyAt = new Date(NOW.getTime() - 60_000);
+    const rebrew = cup({
+      dripId: "first", // 最初に淹れたカード
+      readyAt: NOW,
+      emergencyAt,
+    });
+    const orders = [order(1, [rebrew])];
+    const cards = buildCaosCards(orders, DAY);
+    expect(cards[0].emergency).toBe(true);
+    const result = assignWrites(cards, cards[0], 4, { newId });
+    if ("error" in result) throw new Error(result.error);
+    const entry = undoOfWrites("assign", "割当", cards, result.writes);
+    if (!entry) throw new Error("no entry");
+    const after = applyWrites(orders, result.writes);
+    expect(after[0].cups[0].dripId).toBe("first");
+    const [back] = resolved(resolveUndo(entry, caosObservedCups(after)));
+    expect(back.current).toMatchObject({
+      dripper: 4,
+      drip_id: result.writes[0].after.drip_id,
+      ready_at: NOW.toISOString(),
+      emergency_at: emergencyAt.toISOString(),
+    });
+    expect(back.restore).toMatchObject({
+      dripper: null,
+      drip_id: null,
+      emergency_at: emergencyAt.toISOString(),
+    });
   });
 });

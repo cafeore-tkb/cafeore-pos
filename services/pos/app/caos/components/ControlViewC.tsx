@@ -2,10 +2,12 @@ import { formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
+import { useRebrew } from "./RebrewPanel";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 export type ControlViewCProps = ControlViewBProps;
@@ -39,6 +41,8 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 抽出中のカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew();
   const nextAvailable = useMemo(
     () =>
       sortedBaristas
@@ -102,6 +106,11 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <LaneName
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
+                    />
+                    <LaneChangeButton dripper={barista.bayNumber} />
                   </div>
                   <div
                     className="flex shrink-0 items-center gap-1.5"
@@ -138,6 +147,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     }
                     isImminent={isImminent}
                     emptyLabel="待機中"
+                    onClick={rebrew(current)}
                   />
 
                   <div className="flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

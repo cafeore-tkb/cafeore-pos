@@ -265,7 +265,14 @@
   },
   "MenuInfo": {
     "type": "object",
-    "required": ["id", "menu_name", "unit_price", "menu", "assignee"],
+    "required": [
+      "id",
+      "menu_name",
+      "unit_price",
+      "menu",
+      "assignee",
+      "dripper"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -285,7 +292,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null"
       }
     }
   },
@@ -301,7 +316,10 @@
       "dripper_position",
       "drip_id",
       "brew_started_at",
-      "brew_finished_at"
+      "brew_finished_at",
+      "emergency_at",
+      "emergency_drip_id",
+      "emergency_printed_at"
     ],
     "properties": {
       "id": {
@@ -358,12 +376,30 @@
         "format": "date-time",
         "nullable": true,
         "description": "CaOS で抽出を終えた時刻"
+      },
+      "emergency_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。\n緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）\n"
+      },
+      "emergency_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード"
+      },
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する\n（POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）\n"
       }
     }
   },
   "MenuInfoCreate": {
     "type": "object",
-    "required": ["menu_id", "assignee"],
+    "required": ["menu_id", "assignee", "dripper"],
     "properties": {
       "order_menu_id": {
         "type": "string",
@@ -376,7 +412,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1〜6）。指名しない明細は null"
       }
     }
   },
@@ -626,10 +670,11 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面",
-    "enum": ["cashier", "master", "serve"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ\n",
+    "enum": ["cashier", "cashier_order", "master", "serve"],
     "x-enum-varnames": [
       "ColorScreenCashier",
+      "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe"
     ]
@@ -720,7 +765,7 @@
   },
   "CaosCupState": {
     "type": "object",
-    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当",
     "required": [
       "dripper",
       "dripper_position",
@@ -848,9 +893,160 @@
       }
     }
   },
+  "CaosEmergencyRequest": {
+    "type": "object",
+    "required": ["cup_ids", "interrupt"],
+    "properties": {
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "description": "緊急にするカップ",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "interrupt": {
+        "type": "boolean",
+        "description": "カップの抽出中のカードを中断する（そのカードのカップを全部緊急にし、ドリッパーの待機の先頭を始める）"
+      }
+    }
+  },
+  "CaosEmergencyResult": {
+    "type": "object",
+    "required": ["marked_cup_ids", "interrupted_drip_ids", "started_drip_ids"],
+    "properties": {
+      "marked_cup_ids": {
+        "type": "array",
+        "description": "緊急にしたカップ（もう緊急だったカップは含まない）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "interrupted_drip_ids": {
+        "type": "array",
+        "description": "中断した抽出中のカード",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "started_drip_ids": {
+        "type": "array",
+        "description": "中断のあとに始めた待機の先頭のカード",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "EmergencyLabelClaim": {
+    "type": "object",
+    "required": ["claimed", "emergency_printed_at"],
+    "properties": {
+      "claimed": {
+        "type": "boolean",
+        "description": "true なら、このレジが緊急のシールを印刷する"
+      },
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "今の印刷した時刻（claimed が true なら付けた時刻。release に送る）"
+      }
+    }
+  },
+  "EmergencyLabelRelease": {
+    "type": "object",
+    "required": ["emergency_printed_at"],
+    "properties": {
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "claim で付けた時刻"
+      }
+    }
+  },
+  "CaosLane": {
+    "type": "object",
+    "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた時刻。今日まだ替えていなければ null"
+      }
+    }
+  },
+  "CaosLanes": {
+    "type": "object",
+    "description": "今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ",
+    "required": ["day", "lanes"],
+    "properties": {
+      "day": {
+        "type": "string",
+        "description": "日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う",
+        "example": "2026-11-03"
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
+      }
+    }
+  },
+  "CaosLaneUpdateRequest": {
+    "type": "object",
+    "required": ["name", "senior"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false"
+      }
+    }
+  },
+  "CaosLaneSwapRequest": {
+    "type": "object",
+    "required": ["first", "second"],
+    "properties": {
+      "first": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "second": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      }
+    }
+  },
   "CaosUndoCupState": {
     "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）の時刻を足したもの。\nserved_at は比べるだけで書かない（restore の served_at は current と同じにする）\n",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndrip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",
     "required": [
       "dripper",
       "dripper_position",
@@ -858,7 +1054,8 @@
       "brew_started_at",
       "brew_finished_at",
       "ready_at",
-      "served_at"
+      "served_at",
+      "emergency_at"
     ],
     "properties": {
       "dripper": {
@@ -893,6 +1090,11 @@
         "nullable": true
       },
       "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "emergency_at": {
         "type": "string",
         "format": "date-time",
         "nullable": true

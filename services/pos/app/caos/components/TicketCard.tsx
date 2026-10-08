@@ -4,11 +4,13 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { cardHasBean } from "../utils/beans";
+import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
+import { useRebrew } from "./RebrewPanel";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  // 豆で絞り込む（在庫対象の ID）
   highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
@@ -44,14 +46,14 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     !highlightFilter || cardHasBean(ticket, highlightFilter);
   const isOrderSelected = selectedOrderId === ticket.id;
 
-  // Operational color is reserved for drinks that require a special finish/person.
-  let leftBorderColor = "border-l-slate-400";
-  if (ticket.beanCode === "SP") leftBorderColor = "border-l-[#059669]";
-  if (ticket.beanCode === "ICE") leftBorderColor = "border-l-[#06b6d4]";
-  if (ticket.beanCode === "MILK") leftBorderColor = "border-l-[#8b5cf6]";
+  // 左の線は、マスターの画面の色の設定の色（終わった・指名で背景を塗らないカードでも商品が分かるように）。
+  // 設定が無ければ灰色。商品の種類で色を決め打ちしない
+  const leftBorderColor = ticket.color ? "" : "border-l-slate-400";
 
   const isCompleted = ticket.status === "completed";
   const isNamed = Boolean(ticket.preferredBaristaId);
+  // 抽出中・終わったカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew()(ticket);
   // 盤面のカードは、マスターの画面と同じ背景色で塗る（終わった・指名のカードはそれぞれの色を優先）
   const masterColor =
     ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
@@ -113,7 +115,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           suppressNextClick.current = false;
           return;
         }
-        if (ticket.status !== "scheduled") return;
+        if (ticket.status !== "scheduled") {
+          rebrew?.();
+          return;
+        }
         if (isActionOpen) {
           onReturnToUnassigned(ticket);
           onCloseAction();
@@ -173,6 +178,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         ...(masterColor
           ? { backgroundColor: masterColor, color: masterTextColor }
           : {}),
+        ...(ticket.color ? { borderLeftColor: ticket.color } : {}),
         ...(widthPx ? { width: `${widthPx}px` } : {}),
         ...(dragOffset
           ? {
@@ -190,7 +196,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""}`}
+      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""} ${ticket.isRebrew ? "ring-2 ring-red-500" : ""}`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
@@ -287,9 +293,14 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               {ticket.cupCount}杯
             </span>
 
-            {ticket.preferredBaristaId && (
-              <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                指名
+            {nominationText(ticket) && (
+              <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                指名:{nominationText(ticket)}
+              </span>
+            )}
+            {ticket.isRebrew && (
+              <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[11px] text-white">
+                {ticket.status === "brewing" ? "入れ直し中" : "入れ直し"}
               </span>
             )}
           </div>
@@ -320,7 +331,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           >
             {ticket.beanName}
           </span>
-          <BeanBadge beans={ticket.beans} />
+          <BeanBadge beans={ticket.beans} typeName={ticket.typeName} />
           {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
             <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計
