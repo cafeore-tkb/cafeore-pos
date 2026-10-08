@@ -18,6 +18,9 @@ const responseToItemType = (response: ItemTypeResponse): WithId<ItemType> => {
     id: response.id,
     name: response.name,
     display_name: response.display_name,
+    makes_cup: response.makes_cup,
+    needs_brew: response.needs_brew,
+    senior_only: response.senior_only,
   };
 };
 // ItemType を CreateRequest に変換
@@ -25,6 +28,9 @@ const itemTypeToCreateRequest = (itemType: ItemType): ItemTypeCreateRequest => {
   return {
     name: itemType.name,
     display_name: itemType.display_name,
+    makes_cup: itemType.makes_cup,
+    needs_brew: itemType.needs_brew,
+    senior_only: itemType.senior_only,
   };
 };
 
@@ -36,6 +42,9 @@ const itemTypeToUpdateRequest = (
     id: itemType.id,
     name: itemType.name,
     display_name: itemType.display_name,
+    makes_cup: itemType.makes_cup,
+    needs_brew: itemType.needs_brew,
+    senior_only: itemType.senior_only,
   };
 };
 
