@@ -18,7 +18,6 @@ import { usePosOrders } from "./hooks/usePosOrders";
 import type {
   Barista,
   BeanCode,
-  HistoricalDataset,
   HistoricalOrder,
   OrderTicket,
   TestPlaySession,
@@ -181,10 +180,8 @@ export default function App() {
     direction: "back" | "now" | "forward";
     id: number;
   } | null>(null);
-  const [historicalOrders, setHistoricalOrders] = useState<HistoricalOrder[]>(
-    [],
-  );
-  const [testDataLoading, setTestDataLoading] = useState(true);
+  // 実データテストの注文。過去の注文データは同梱しない（あとで画面から読み込む形にする）ので、今は空。
+  const historicalOrders: HistoricalOrder[] = [];
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const [testPlaySession, setTestPlaySession] =
     useState<TestPlaySession | null>(
@@ -250,25 +247,6 @@ export default function App() {
   useEffect(() => {
     const clock = window.setInterval(() => setRealTime(new Date()), 1000);
     return () => window.clearInterval(clock);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setTestDataLoading(true);
-    import("./data/sohosai-2025-day12.json")
-      .then((module) => {
-        const dataset = module.default as HistoricalDataset;
-        if (!cancelled) setHistoricalOrders(dataset.orders);
-      })
-      .catch(() => {
-        if (!cancelled) setHistoricalOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTestDataLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   // cafeore-pos の注文を取り込む。届いた一覧のうち、当日の未提供・未準備で新しく届いた注文を未割当へ足し、
@@ -1049,7 +1027,6 @@ export default function App() {
       {testSetupOpen && (
         <TestPlaySetup
           orders={historicalOrders}
-          loading={testDataLoading}
           onClose={() => setTestSetupOpen(false)}
           onStart={handleStartTestPlay}
         />
