@@ -42,8 +42,8 @@ var (
 // setItemTypeFlags はリクエストの makes_cup / needs_brew / senior_only / iced_brew を種類に入れる。
 // 省略した値は今の値のまま（新規は makes_cup・needs_brew が true、senior_only・iced_brew が false）。
 // ただし、上の項目を false にして下の項目を省略したら、下も false にする
-// （カップを作らない → 抽出しない → 限定でもアイスでもない）。
-// カップを作らないのに抽出が要る、抽出しないのに限定・アイス、という組み合わせは受け付けない。
+// （カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
+// カップを作らないのに抽出が要る、抽出しないのに上級生のみ・アイス、という組み合わせは受け付けない。
 func setItemTypeFlags(itemType *models.ItemType, makesCup, needsBrew, seniorOnly, icedBrew *bool) error {
 	cup := itemType.CreatesCup()
 	if makesCup != nil {

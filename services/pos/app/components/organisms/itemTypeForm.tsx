@@ -42,8 +42,8 @@ const FLAG_FIELDS: {
   },
   {
     key: "senior_only",
-    label: "上級生だけが淹れる（限定）",
-    description: "限定のコーヒーなど、上級生のドリッパーに割り振ります",
+    label: "上級生のみ",
+    description: "上級生のドリッパーにだけ割り振ります",
   },
   {
     key: "iced_brew",
@@ -54,7 +54,7 @@ const FLAG_FIELDS: {
 ];
 
 /**
- * 上の項目を外したら下の項目も外す（カップを作らない → 抽出しない → 限定でもアイスでもない）。API も同じ組み合わせしか受け付けない
+ * 上の項目を外したら下の項目も外す（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。API も同じ組み合わせしか受け付けない
  */
 export const setItemTypeFlag = (
   flags: ItemTypeFlags,
@@ -75,7 +75,7 @@ const isFlagEnabled = (flags: ItemTypeFlags, key: keyof ItemTypeFlags) =>
   (key === "needs_brew" && flags.makes_cup) ||
   ((key === "senior_only" || key === "iced_brew") && flags.needs_brew);
 
-/** 種類の「カップを作る」「抽出が要る」「限定」「アイス」の切り替え。判定はこの値をそのまま使う */
+/** 種類の「カップを作る」「抽出が要る」「上級生のみ」「アイス」の切り替え。判定はこの値をそのまま使う */
 export function ItemTypeFlagFields({
   value,
   onChange,

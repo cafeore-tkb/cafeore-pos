@@ -249,7 +249,7 @@ type ItemTypeResponse struct {
 	// NeedsBrew この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false
 	NeedsBrew bool `json:"needs_brew"`
 
-	// SeniorOnly この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false
+	// SeniorOnly この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false
 	SeniorOnly bool `json:"senior_only"`
 }
 
