@@ -1,231 +1,111 @@
-import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
+import { CircleDot } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
-import { queueWaitSeconds } from "../utils/orderQueue";
-import { DripperOrderCard } from "./DripperOrderCard";
+import { orderLabel } from "../logic/cards";
+import { laneStatus } from "../logic/queue";
+import {
+  EmptySlotButton,
+  LaneBadge,
+  NextAvailableChips,
+  NextButton,
+  PanelHeader,
+} from "./BoardParts";
+import type { ControlViewProps } from "./ControlWorkspace";
+import { OrderCard } from "./OrderCard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
-export interface ControlViewCProps {
-  baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
-  simTimeSec: number;
-  selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
-  onSelectQueueOrder: (order: UnassignedOrder) => void;
-  onAdvanceBay: (bayId: number) => void;
-  onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onOpenEmptySlot: (bayId: number) => void;
-  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
-}
-
-const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - currentTimeSec);
-  return current.totalDurationSec;
-};
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-};
-
-const dripperLabelGroups = [
-  {
-    group: "H",
-    labels: ["H2", "H1"],
-    className: "border-orange-300 bg-orange-50 text-orange-800",
-  },
-  {
-    group: "I",
-    labels: ["I2", "I1"],
-    className: "border-sky-300 bg-sky-50 text-sky-800",
-  },
-] as const;
-
-export const ControlViewC: React.FC<ControlViewCProps> = ({
+// 管制盤 C：左にドリッパーの行（抽出中・待機・次へ）、右に未割当の縦リスト。
+// 待機のカードはタップで詳細、抽出中のカードはタップで緊急の入れ直し
+export const ControlViewC: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
-  simTimeSec,
+  nextAvailable,
   selectedOrderId,
   onSelectOrder,
-  onSelectQueueOrder,
   onAdvanceBay,
   onOpenTicketDetail,
+  onRequestRebrew,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
-}) => {
-  const sortedBaristas = useMemo(
-    () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
-    [baristas],
-  );
-  const nextAvailable = useMemo(
-    () =>
-      sortedBaristas
-        .map((barista) => ({
-          bayNumber: barista.bayNumber,
-          seconds: queueWaitSeconds(barista.queue),
-          isStandby: barista.queue.length === 0,
-        }))
-        .sort(
-          (left, right) =>
-            left.seconds - right.seconds || left.bayNumber - right.bayNumber,
-        )
-        .slice(0, 3),
-    [sortedBaristas],
-  );
+}) => (
+  <section
+    className="grid h-full min-h-0 grid-cols-2 gap-2"
+    aria-label="Cコントロール画面"
+  >
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+      <PanelHeader icon={CircleDot} title="ドリッパー">
+        <NextAvailableChips nextAvailable={nextAvailable} />
+      </PanelHeader>
 
-  return (
-    <section
-      className="grid h-full min-h-0 grid-cols-2 gap-2"
-      aria-label="Cコントロール画面"
-    >
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-3">
-          <CircleDot className="h-4 w-4 text-emerald-600" />
-          <h2 className="shrink-0 font-black text-[15px] text-slate-950">
-            ドリッパー
-          </h2>
-          <div className="ml-1 flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500">
-            <span className="shrink-0">次に空く:</span>
-            {nextAvailable.map((item, index) => (
-              <span
-                key={item.bayNumber}
-                className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
-              >
-                #{item.bayNumber}{" "}
-                {item.isStandby ? "待機" : formatRemaining(item.seconds)}
-              </span>
-            ))}
-          </div>
-        </header>
-
-        <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
-          {sortedBaristas.map((barista) => {
-            const current = barista.queue[0];
-            const waitingQueue = barista.queue.slice(1);
-            const seconds = remainingSeconds(barista, simTimeSec);
-            const isImminent = Boolean(current && seconds <= 30);
-            const isLinked = Boolean(
-              selectedOrderId &&
-                barista.queue.some((ticket) => ticket.id === selectedOrderId),
-            );
-
-            return (
-              <article
-                key={barista.id}
-                data-bay-target={barista.id}
-                className={`relative isolate flex min-h-0 flex-col gap-1 overflow-hidden p-1.5 transition-colors ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
-              >
-                <div className="flex h-8 shrink-0 items-center justify-between gap-2 overflow-hidden px-0.5">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
-                      {laneOrdinal(barista.bayNumber)}
-                    </div>
-                  </div>
-                  <div
-                    className="flex shrink-0 items-center gap-1.5"
-                    aria-label="ドリッパーラベル"
-                  >
-                    {dripperLabelGroups.map((group) => (
-                      <div
-                        key={group.group}
-                        className="flex items-center gap-1"
-                      >
-                        {group.labels.map((label) => (
-                          <span
-                            key={label}
-                            className={`rounded-md border px-1.5 py-0.5 font-black font-mono text-[11px] leading-none ${group.className}`}
-                          >
-                            {label}
-                          </span>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid min-h-0 flex-1 grid-cols-[180px_minmax(0,1fr)_52px] items-stretch gap-1.5">
-                  <DripperOrderCard
-                    kind="current"
-                    ticket={current}
-                    isImminent={isImminent}
-                    emptyLabel="待機中"
-                    onClick={
-                      current
-                        ? () => onRequestRebrew(current, barista.id)
-                        : undefined
-                    }
+      <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
+        {baristas.map((barista) => {
+          const lane = laneStatus(barista);
+          const { current } = lane;
+          const isLinked = barista.queue.some(
+            (ticket) => orderLabel(ticket) === selectedOrderId,
+          );
+          return (
+            <article
+              key={barista.id}
+              data-bay-target={barista.id}
+              className={`relative isolate flex min-h-0 flex-col gap-1 overflow-hidden p-1.5 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
+            >
+              <LaneBadge bayId={barista.id} />
+              <div className="grid min-h-0 flex-1 grid-cols-[180px_minmax(0,1fr)_52px] items-stretch gap-1.5">
+                {current ? (
+                  <OrderCard
+                    card={current}
+                    size="sm"
+                    brewing
+                    onClick={() => onRequestRebrew(current)}
+                    className={`cursor-pointer hover:ring-2 hover:ring-blue-400 ${lane.soon ? "ring-2 ring-red-400 ring-inset" : ""}`}
                   />
+                ) : (
+                  <span className="flex items-center justify-center rounded-lg border border-slate-300 border-dashed font-bold text-[12px] text-slate-400">
+                    待機中
+                  </span>
+                )}
 
-                  <div className="flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {waitingQueue.length > 0 ? (
-                      waitingQueue.map((ticket, index) => (
-                        <DripperOrderCard
-                          key={ticket.ticketUid || `${ticket.id}-${index}`}
-                          kind="waiting"
-                          ticket={ticket}
-                          queuePosition={index + 1}
-                          emptyLabel="待ちへ割当"
-                          onClick={() => {
-                            if (selectedOrderId !== ticket.id)
-                              onSelectOrder(ticket.id);
-                            onOpenTicketDetail(ticket);
-                          }}
-                        />
-                      ))
-                    ) : (
-                      <DripperOrderCard
-                        kind="waiting"
-                        emptyLabel="待ちへ割当"
-                        onClick={() => onOpenEmptySlot(barista.id)}
-                      />
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={!current}
-                    onClick={() => onAdvanceBay(barista.id)}
-                    className={`flex min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-lg font-black text-[12px] ${current ? "bg-emerald-700 text-white" : "bg-slate-200 text-slate-500"}`}
-                  >
-                    {current ? (
-                      <>
-                        <span>次へ</span>
-                        <ArrowRightCircle className="h-4 w-4" />
-                      </>
-                    ) : (
-                      <>
-                        <span>待機</span>
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </button>
+                <div className="flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {lane.waiting.map((ticket) => (
+                    <OrderCard
+                      key={ticket.ticketUid}
+                      card={ticket}
+                      size="sm"
+                      onClick={() => onOpenTicketDetail(ticket)}
+                      className="min-w-[180px] flex-1 cursor-pointer border-l-4 border-l-blue-500 hover:ring-2 hover:ring-blue-400"
+                    />
+                  ))}
+                  {lane.waiting.length === 0 && (
+                    <EmptySlotButton
+                      onClick={() => onOpenEmptySlot(barista.id)}
+                      className="flex-1"
+                    />
+                  )}
                 </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
 
-      <aside className="min-h-0 min-w-0">
-        <UnassignedOrdersPanel
-          layout="sidebar"
-          orders={unassignedOrders}
-          nextAvailable={nextAvailable}
-          selectedOrderId={selectedOrderId}
-          onSelectOrder={onSelectOrder}
-          onSelectQueueOrder={onSelectQueueOrder}
-          onClearSelection={() => onSelectOrder("")}
-          onAssignToBay={onAssignToBay}
-        />
-      </aside>
+                <NextButton
+                  bayId={barista.id}
+                  active={Boolean(current)}
+                  soon={lane.soon}
+                  onAdvance={onAdvanceBay}
+                  className="min-w-0 overflow-hidden text-[12px]"
+                />
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </section>
-  );
-};
+
+    <aside className="min-h-0 min-w-0">
+      <UnassignedOrdersPanel
+        layout="sidebar"
+        orders={unassignedOrders}
+        nextAvailable={nextAvailable}
+        selectedOrderId={selectedOrderId}
+        onSelectOrder={onSelectOrder}
+        onAssignToBay={onAssignToBay}
+      />
+    </aside>
+  </section>
+);
