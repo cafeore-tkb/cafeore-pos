@@ -108,13 +108,12 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。
 	err := db.Raw(`
 		SELECT
-			COALESCE(SUM(mi.quantity * u.amount) FILTER (WHERE `+consumedAfter+`), 0) AS consumed,
-			COALESCE(SUM(mi.quantity) FILTER (WHERE `+consumedAfter+`), 0) AS servings,
-			COALESCE(SUM(mi.quantity) FILTER (WHERE o.created_at > @hour_ago), 0) AS servings_last_hour
+			COALESCE(SUM(x.quantity * u.amount) FILTER (WHERE `+consumedAfter+`), 0) AS consumed,
+			COALESCE(SUM(x.quantity) FILTER (WHERE `+consumedAfter+`), 0) AS servings,
+			COALESCE(SUM(x.quantity) FILTER (WHERE o.created_at > @hour_ago), 0) AS servings_last_hour
 		FROM orders o
-		JOIN order_menus om ON om.order_id = o.id
-		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
+		JOIN `+orderItemsSQL+` x ON x.order_id = o.id
+		JOIN item_stock_usages u ON u.item_id = x.item_id
 		WHERE u.resource_id = @resource_id
 			AND o.created_at > @scan_from`,
 		map[string]any{
@@ -133,6 +132,30 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 }
 
 const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
+
+// 注文で使ったアイテムと数（order_id, item_id, quantity）。
+//
+// 注文した時点の構成で数えるので、祭の途中でメニューの構成を直しても過去の消費は変わらない。
+//   - カップのある明細は、カップ（注文のときに作った1杯。その時点のアイテムを持つ）を1つずつ数える
+//   - カップの無い明細（カップを持つ前の注文・グッズだけの明細）は、今のメニューの構成から数える
+//   - カップのある明細のグッズ（カップを作らない種類＝item_types.makes_cup が false）はカップにならないので、
+//     今のメニューの構成から足す。ただし、その明細のカップにあるアイテムは二重に数えない
+//     （後から種類をカップを作らないものに変えた場合）。削除済みの種類はカップを作るとみなす（order_cup.go の isCupItem と同じ）
+const orderItemsSQL = `(
+	SELECT c.order_id, c.item_id, 1 AS quantity
+	FROM order_cups c
+	UNION ALL
+	SELECT om.order_id, mi.item_id, mi.quantity
+	FROM order_menus om
+	JOIN menu_items mi ON mi.menu_id = om.menu_id
+	WHERE NOT EXISTS (SELECT 1 FROM order_cups c WHERE c.order_menu_id = om.id)
+		OR (
+			EXISTS (
+				SELECT 1 FROM items i
+				JOIN item_types it ON it.id = i.item_type_id
+				WHERE i.id = mi.item_id AND NOT it.makes_cup AND it.deleted_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM order_cups c WHERE c.order_menu_id = om.id AND c.item_id = mi.item_id))
+)`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
 // Slack への送信で応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
@@ -228,7 +251,7 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 	return errors.Join(sendErr, loopErr)
 }
 
-// 注文に含まれるアイテムが使う在庫対象。
+// 注文に含まれるアイテムが使う在庫対象。消費と同じく注文した時点の構成で見る。
 func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
 	if inv == nil {
 		return nil
@@ -236,10 +259,9 @@ func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
 	ids := []uuid.UUID{}
 	if err := inv.db.Raw(`
 		SELECT DISTINCT u.resource_id
-		FROM order_menus om
-		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
-		WHERE om.order_id = ?`, orderID).Scan(&ids).Error; err != nil {
+		FROM `+orderItemsSQL+` x
+		JOIN item_stock_usages u ON u.item_id = x.item_id
+		WHERE x.order_id = ?`, orderID).Scan(&ids).Error; err != nil {
 		log.Printf("inventory: failed to load resources for order %s: %v", orderID, err)
 		return nil
 	}

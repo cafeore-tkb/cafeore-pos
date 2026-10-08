@@ -251,14 +251,14 @@ export default function Rehearsal() {
     );
   }, [params, plan, profileKey, durationMin, level, seed]);
 
-  // セットに入っている物販の数。セットを引いた注文は、そのぶん別の物販を引かない
+  // セットに入っている物販（種類の「カップを作る」が無いもの）の数。セットを引いた注文は、そのぶん別の物販を引かない
   const goodsInMenu = useMemo(
     () =>
       Object.fromEntries(
         (menus ?? []).map((menu) => [
           menu.id,
           menu.items
-            .filter(({ item }) => item.item_type.name === "others")
+            .filter(({ item }) => !item.item_type.makes_cup)
             .reduce((sum, { quantity }) => sum + quantity, 0),
         ]),
       ),
