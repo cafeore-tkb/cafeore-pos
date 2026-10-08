@@ -1,3 +1,4 @@
+import type { PracticeDataOrder } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -12,259 +13,78 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import type { Barista, HistoricalOrder, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import {
+  type DeltaGrade,
+  analyticsReport,
+  deltaGrade,
+} from "../logic/analytics";
+import type { CardLooks } from "../logic/cards";
+import { timeOfDayLabel } from "../logic/format";
+import { type Lane, laneOrdinal } from "../logic/lanes";
+
+// 実績（補助のタブ）。集計は logic/analytics.ts
 
 interface AnalyticsViewProps {
-  baristas: Barista[];
-  salesOrders?: HistoricalOrder[];
+  lanes: Lane[];
+  looks: CardLooks;
+  /** 盤面の秒の起点（その日の 0 時） */
+  dayStartMs: number;
+  /** 実データテストの、今までに届いた注文（テストをしていなければ空） */
+  salesOrders: PracticeDataOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
+  /** 商品の種類の表示名（種類の name → display_name。POS の商品の種類から） */
+  typeNames: ReadonlyMap<string, string>;
 }
 
-interface CompletedPart {
-  ticket: OrderTicket;
-  bayNumber: number;
-  finishedAt: number;
-}
-
-interface SplitResult {
-  orderId: string;
-  expectedParts: number;
-  totalCups: number;
-  deltaSec: number;
-  firstFinishedAt: number;
-  lastFinishedAt: number;
-  bayNumbers: number[];
-}
-
-const formatClock = (seconds: number) => {
-  const normalized = ((seconds % 86400) + 86400) % 86400;
-  const hours = Math.floor(normalized / 3600);
-  const minutes = Math.floor((normalized % 3600) / 60);
-  const secs = Math.floor(normalized % 60);
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
-
-const deltaStatus = (deltaSec: number) => {
-  if (deltaSec <= 15)
-    return {
-      label: "良好",
-      className: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    };
-  if (deltaSec <= 30)
-    return {
-      label: "許容",
-      className: "bg-amber-100 text-amber-900 border-amber-300",
-    };
-  return {
+// 仕上がりの差の評価の見せ方
+const GRADE_STYLE: Record<
+  DeltaGrade,
+  { label: string; badge: string; bar: string }
+> = {
+  good: {
+    label: "良好",
+    badge: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    bar: "bg-emerald-600",
+  },
+  ok: {
+    label: "許容",
+    badge: "bg-amber-100 text-amber-900 border-amber-300",
+    bar: "bg-amber-500",
+  },
+  bad: {
     label: "要確認",
-    className: "bg-red-100 text-red-800 border-red-300",
-  };
+    badge: "bg-red-100 text-red-800 border-red-300",
+    bar: "bg-red-600",
+  },
 };
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
-  baristas,
-  salesOrders = [],
+  lanes,
+  looks,
+  dayStartMs,
+  salesOrders,
   periodStartMs,
   periodEndMs,
+  typeNames,
 }) => {
-  const completedParts = useMemo<CompletedPart[]>(
-    () =>
-      baristas.flatMap((barista) =>
-        (barista.pastTickets || []).flatMap((ticket) => {
-          const finishedAt = ticket.completedAtSec ?? ticket.endTimeSec;
-          return ticket.totalItemsInOrder &&
-            ticket.totalItemsInOrder > 1 &&
-            finishedAt !== undefined
-            ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
-            : [];
-        }),
-      ),
-    [baristas],
+  const report = useMemo(
+    () => analyticsReport(lanes, looks, salesOrders, dayStartMs),
+    [lanes, looks, salesOrders, dayStartMs],
   );
+  const {
+    sales: salesAnalysis,
+    splits: splitResults,
+    averageDelta,
+    within15Rate,
+    maxDelta,
+    sameLaneCount,
+    baristas: baristaResults,
+    pendingSplits: pendingSplitOrders,
+  } = report;
 
-  const splitResults = useMemo<SplitResult[]>(() => {
-    const groups = new Map<string, CompletedPart[]>();
-    for (const part of completedParts) {
-      const current = groups.get(part.ticket.id) || [];
-      current.push(part);
-      groups.set(part.ticket.id, current);
-    }
-
-    return Array.from(groups, ([orderId, parts]) => {
-      const expectedParts = Math.max(
-        ...parts.map((part) => part.ticket.totalItemsInOrder || 1),
-      );
-      if (parts.length < expectedParts) return null;
-      const sorted = [...parts].sort((a, b) => a.finishedAt - b.finishedAt);
-      const firstFinishedAt = sorted[0].finishedAt;
-      const lastFinishedAt = sorted[sorted.length - 1].finishedAt;
-      return {
-        orderId,
-        expectedParts,
-        totalCups: Math.max(
-          ...parts.map(
-            (part) => part.ticket.totalOrderCups || part.ticket.cupCount,
-          ),
-        ),
-        deltaSec: lastFinishedAt - firstFinishedAt,
-        firstFinishedAt,
-        lastFinishedAt,
-        bayNumbers: [...new Set(parts.map((part) => part.bayNumber))].sort(
-          (a, b) => a - b,
-        ),
-      };
-    })
-      .filter((result): result is SplitResult => result !== null)
-      .sort((a, b) => b.lastFinishedAt - a.lastFinishedAt);
-  }, [completedParts]);
-
-  const pendingSplitOrders = useMemo(() => {
-    const groups = new Map<
-      string,
-      { expected: number; assigned: number; bays: Set<number> }
-    >();
-    for (const barista of baristas) {
-      for (const ticket of barista.queue) {
-        if (!ticket.totalItemsInOrder || ticket.totalItemsInOrder <= 1)
-          continue;
-        const current = groups.get(ticket.id) || {
-          expected: ticket.totalItemsInOrder,
-          assigned: 0,
-          bays: new Set<number>(),
-        };
-        current.expected = Math.max(current.expected, ticket.totalItemsInOrder);
-        current.assigned += 1;
-        current.bays.add(barista.bayNumber);
-        groups.set(ticket.id, current);
-      }
-    }
-    return Array.from(groups, ([orderId, value]) => ({
-      orderId,
-      ...value,
-      bays: [...value.bays].sort((a, b) => a - b),
-    }));
-  }, [baristas]);
-
-  const averageDelta = splitResults.length
-    ? Math.round(
-        splitResults.reduce((sum, result) => sum + result.deltaSec, 0) /
-          splitResults.length,
-      )
-    : null;
-  const within15Count = splitResults.filter(
-    (result) => result.deltaSec <= 15,
-  ).length;
-  const within15Rate = splitResults.length
-    ? Math.round((within15Count / splitResults.length) * 100)
-    : null;
-  const maxDelta = splitResults.length
-    ? Math.max(...splitResults.map((result) => result.deltaSec))
-    : null;
-  const sameLaneCount = splitResults.filter(
-    (result) => result.bayNumbers.length === 1,
-  ).length;
-
-  const salesAnalysis = useMemo(() => {
-    if (salesOrders.length === 0) return null;
-    const menuMap = new Map<string, { cups: number; sales: number }>();
-    const typeMap = new Map<string, number>();
-    const bucketMap = new Map<
-      number,
-      { orders: number; sales: number; cups: number }
-    >();
-    const leadTimes: number[] = [];
-    let cups = 0;
-    for (const order of salesOrders) {
-      const createdMs = new Date(order.createdAt).getTime();
-      const bucket = Math.floor(createdMs / 600_000) * 600_000;
-      const bucketValue = bucketMap.get(bucket) || {
-        orders: 0,
-        sales: 0,
-        cups: 0,
-      };
-      bucketValue.orders += 1;
-      bucketValue.sales += order.billingAmount;
-      for (const item of order.items) {
-        if (item.type === "others") continue;
-        cups += 1;
-        bucketValue.cups += 1;
-        const menu = menuMap.get(item.name) || { cups: 0, sales: 0 };
-        menu.cups += 1;
-        menu.sales += item.price;
-        menuMap.set(item.name, menu);
-        typeMap.set(item.type, (typeMap.get(item.type) || 0) + 1);
-      }
-      bucketMap.set(bucket, bucketValue);
-      if (order.readyAt)
-        leadTimes.push(
-          (new Date(order.readyAt).getTime() - createdMs) / 60_000,
-        );
-    }
-    const buckets = Array.from(bucketMap, ([time, value]) => ({
-      time,
-      ...value,
-    })).sort((a, b) => a.time - b.time);
-    const peak = [...buckets].sort(
-      (a, b) => b.orders - a.orders || b.sales - a.sales,
-    )[0];
-    return {
-      revenue: salesOrders.reduce((sum, order) => sum + order.billingAmount, 0),
-      orderCount: salesOrders.length,
-      cups,
-      averageOrder: Math.round(
-        salesOrders.reduce((sum, order) => sum + order.billingAmount, 0) /
-          salesOrders.length,
-      ),
-      averageLeadMinutes: leadTimes.length
-        ? leadTimes.reduce((sum, value) => sum + value, 0) / leadTimes.length
-        : null,
-      menuRanking: Array.from(menuMap, ([name, value]) => ({ name, ...value }))
-        .sort((a, b) => b.cups - a.cups)
-        .slice(0, 8),
-      typeMix: Array.from(typeMap, ([type, count]) => ({ type, count })).sort(
-        (a, b) => b.count - a.count,
-      ),
-      buckets,
-      peak,
-    };
-  }, [salesOrders]);
-
-  const baristaResults = useMemo(
-    () =>
-      baristas.map((barista) => {
-        const completed = barista.pastTickets || [];
-        const durations = completed.flatMap((ticket) =>
-          ticket.startTimeSec !== undefined && ticket.endTimeSec !== undefined
-            ? [Math.max(0, ticket.endTimeSec - ticket.startTimeSec)]
-            : [],
-        );
-        return {
-          bayNumber: barista.bayNumber,
-          cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
-          drips: completed.length,
-          averageSec: durations.length
-            ? Math.round(
-                durations.reduce((sum, duration) => sum + duration, 0) /
-                  durations.length,
-              )
-            : null,
-        };
-      }),
-    [baristas],
-  );
-
-  const typeLabel = (type: string) =>
-    type === "hot"
-      ? "ホット"
-      : type === "iceOre"
-        ? "アイスオレ"
-        : type === "ice"
-          ? "アイス"
-          : type === "milk"
-            ? "ミルク"
-            : type;
+  // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
+  const typeLabel = (type: string) => typeNames.get(type) ?? type;
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
       hour: "2-digit",
@@ -346,10 +166,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
               <div className="flex h-[92px] items-end gap-1 rounded-lg bg-slate-50 p-2">
                 {salesAnalysis.buckets.map((bucket) => {
-                  const maxOrders = Math.max(
-                    ...salesAnalysis.buckets.map((item) => item.orders),
-                    1,
-                  );
                   return (
                     <div
                       key={bucket.time}
@@ -358,7 +174,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       <div
                         className="w-full rounded-t bg-blue-600"
                         style={{
-                          height: `${Math.max(5, (bucket.orders / maxOrders) * 64)}px`,
+                          height: `${Math.max(5, (bucket.orders / salesAnalysis.maxBucketOrders) * 64)}px`,
                         }}
                         title={`${formatBucket(bucket.time)} ${bucket.orders}件 / ¥${bucket.sales.toLocaleString()}`}
                       />
@@ -495,7 +311,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         {splitResults.length > 0 ? (
           <div className="mt-2 space-y-2">
             {splitResults.slice(0, 12).map((result) => {
-              const status = deltaStatus(result.deltaSec);
+              const status = GRADE_STYLE[deltaGrade(result.deltaSec)];
               return (
                 <article
                   key={result.orderId}
@@ -509,7 +325,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       計{result.totalCups}杯・{result.expectedParts}分割
                     </span>
                     <span
-                      className={`ml-auto rounded border px-2 py-0.5 font-black text-[11px] ${status.className}`}
+                      className={`ml-auto rounded border px-2 py-0.5 font-black text-[11px] ${status.badge}`}
                     >
                       {status.label}
                     </span>
@@ -519,7 +335,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
                     <div
-                      className={`h-full rounded-full ${result.deltaSec <= 15 ? "bg-emerald-600" : result.deltaSec <= 30 ? "bg-amber-500" : "bg-red-600"}`}
+                      className={`h-full rounded-full ${status.bar}`}
                       style={{
                         width: `${Math.min(100, Math.max(5, (result.deltaSec / 60) * 100))}%`,
                       }}
@@ -527,12 +343,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2 font-bold text-[11px] text-slate-600">
                     <span>
-                      レーン{" "}
-                      {result.bayNumbers.map((bay) => `#${bay}`).join(" + ")}
+                      レーン {result.bayIds.map((bay) => `#${bay}`).join(" + ")}
                     </span>
                     <span className="font-mono">
-                      {formatClock(result.firstFinishedAt)} →{" "}
-                      {formatClock(result.lastFinishedAt)}
+                      {timeOfDayLabel(result.firstFinishedAt)} →{" "}
+                      {timeOfDayLabel(result.lastFinishedAt)}
                     </span>
                   </div>
                 </article>
@@ -599,12 +414,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         <div className="mt-2 grid grid-cols-2 gap-2">
           {baristaResults.map((result) => (
             <div
-              key={result.bayNumber}
+              key={result.bayId}
               className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-950">
-                  {laneOrdinal(result.bayNumber)}
+                  {laneOrdinal(result.bayId)}
                 </span>
               </div>
               <div className="mt-2 flex items-end gap-3">

@@ -1,85 +1,21 @@
 import type React from "react";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import type { ControlViewProps } from "./ControlWorkspace";
 import { DispatchBoard } from "./DispatchBoard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
-interface ControlViewAProps {
-  baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
-  nextAvailable: Array<{
-    bayNumber: number;
-    seconds: number;
-    isStandby: boolean;
-  }>;
-  selectedOrderId: string | null;
-  actionTicketKey: string | null;
-  currentTimeSec: number;
-  timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
-  onSelectOrder: (orderId: string) => void;
-  onAdvanceBay: (bayId: number) => void;
-  onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (
-    ticket: OrderTicket,
-    targetBayId: number,
-    toFront?: boolean,
-    beforeTicketUid?: string,
-  ) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
-  onCloseTicketAction: () => void;
-  onOpenEmptySlot: (bayId: number) => void;
-  /** beforeTicketUid があれば、その待機のカードの前へ（ドラッグで途中に落としたとき） */
-  onAssignToBay: (
-    order: UnassignedOrder,
-    bayId: number,
-    beforeTicketUid?: string,
-  ) => void;
-  onMergeOrders: (firstUid: string, secondUid: string) => void;
-}
-
-export const ControlViewA: React.FC<ControlViewAProps> = ({
-  baristas,
-  unassignedOrders,
-  nextAvailable,
-  selectedOrderId,
-  actionTicketKey,
-  currentTimeSec,
-  timelineCommand,
-  onSelectOrder,
-  onAdvanceBay,
-  onOpenTicketDetail,
-  onMoveTicket,
-  onReturnToUnassigned,
-  onCloseTicketAction,
-  onOpenEmptySlot,
-  onAssignToBay,
-  onMergeOrders,
-}) => (
+// 管制盤 A：上にタイムライン、下に未割当の横帯
+export const ControlViewA: React.FC<ControlViewProps> = (props) => (
   <div className="flex h-full min-h-0 flex-col gap-2">
-    <DispatchBoard
-      baristas={baristas}
-      selectedOrderId={selectedOrderId}
-      onSelectOrder={onSelectOrder}
-      onAdvanceBay={onAdvanceBay}
-      onOpenTicketDetail={onOpenTicketDetail}
-      actionTicketKey={actionTicketKey}
-      onMoveTicket={onMoveTicket}
-      onReturnToUnassigned={onReturnToUnassigned}
-      onCloseTicketAction={onCloseTicketAction}
-      onOpenEmptySlot={onOpenEmptySlot}
-      simTimeSec={currentTimeSec}
-      timelineCommand={timelineCommand}
-    />
-
+    <DispatchBoard {...props} />
     <div className="relative z-[70] h-[196px] min-h-0 overflow-visible">
       <UnassignedOrdersPanel
-        orders={unassignedOrders}
-        nextAvailable={nextAvailable}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onClearSelection={() => onSelectOrder("")}
-        onAssignToBay={onAssignToBay}
-        onMergeOrders={onMergeOrders}
+        orders={props.unassignedOrders}
+        looks={props.looks}
+        nextAvailable={props.nextAvailable}
+        selectedOrderId={props.selectedOrderId}
+        onSelectOrder={props.onSelectOrder}
+        onAssignToBay={props.onAssignToBay}
+        onMergeOrders={props.onMergeOrders}
       />
     </div>
   </div>
