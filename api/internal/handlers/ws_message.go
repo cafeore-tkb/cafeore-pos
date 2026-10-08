@@ -78,11 +78,11 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 
 // 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
 // ほかのインスタンスにも DB の通知で知らせる（order_listener.go）。
+// 通知は自分の配信の成否に関わらず送る。DB にはもう書けていて、受けた側は注文 ID から読み直すだけなので、
+// ここでの読み直しが一時的に失敗しても、ほかのインスタンスの画面は新しい状態になる。
 func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
 	resp, err := broadcastOrder(db, hub, orderID)
-	if err == nil {
-		notifyOrderChanged(db, orderID)
-	}
+	notifyOrderChanged(db, orderID)
 	return resp, err
 }
 
