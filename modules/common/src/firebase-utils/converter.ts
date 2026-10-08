@@ -258,7 +258,15 @@ export const responseToOrderEntity = (
         ? new Date(cup.brew_finished_at)
         : null,
       emergencyAt: cup.emergency_at ? new Date(cup.emergency_at) : null,
+      emergencyDripper: cup.emergency_dripper ?? null,
+      emergencyDripperPosition: cup.emergency_dripper_position ?? null,
       emergencyDripId: cup.emergency_drip_id ?? null,
+      emergencyBrewStartedAt: cup.emergency_brew_started_at
+        ? new Date(cup.emergency_brew_started_at)
+        : null,
+      emergencyBrewFinishedAt: cup.emergency_brew_finished_at
+        ? new Date(cup.emergency_brew_finished_at)
+        : null,
       emergencyPrintedAt: cup.emergency_printed_at
         ? new Date(cup.emergency_printed_at)
         : null,

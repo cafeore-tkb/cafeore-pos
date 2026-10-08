@@ -99,9 +99,9 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 緊急は、カップに印を付けるだけです（`order_cups` の `emergency_at`）。付けるのは 2 か所で、どちらも `POST /api/caos/emergency` を使います。
   - マスター（`/master`）の緊急ボタン：カップの下の「緊急」を押し、「緊急にする」をもう一度押す（`components/molecules/EmergencyCupButton.tsx`）
   - CaOS の入れ直しのパネル：抽出中・終わったカードを押して開く（B 案は NOW の「入れ直し」、`components/RebrewPanel.tsx`）。選ぶのは「どのカップか（杯数）」と「抽出中のカードを中断するか」だけです
-- 同じカップは 2 回緊急にしません（もう印があれば何もしません）。緊急にしたカップは、CaOS の列（`dripper`・`dripper_position`・`brew_started_at`・`brew_finished_at`）が空に戻り、最初に淹れたカード（`drip_id`）は残ります。カップの準備完了・提供済みは変えません。
+- 同じカップは 2 回緊急にしません（もう印があれば何もしません）。緊急にしても、最初の抽出の列（`dripper`・`dripper_position`・`drip_id`・`brew_started_at`・`brew_finished_at`）はそのまま残ります（抽出の統計で最初の抽出も数えるため。中断したカードのカップは始めた時刻だけが残り、中断せずにカードの残りのカップを淹れ続けたときは、そのカードの「次へ」で終えた時刻も付きます）。カップの準備完了・提供済みは変えません。
 - 中断すると、抽出中のカードのカップを全部緊急にし、カードを終わらせて、そのドリッパーの待機の先頭を始めます（中断を選ばなくても、抽出中のカードのカップが全部緊急になれば同じです）。
-- `emergency_at` があって入れ直しのカード（`emergency_drip_id`）がまだ無いカップは、未割当のいちばん上に緊急のカードとして出ます（準備完了・提供済みのカップでも出ます）。割当・「次へ」はふつうのカードと同じで、入れ直しのカードは `emergency_drip_id` で持ちます（`PUT /api/caos/cups` の `drip_id` は、緊急のカップでは `emergency_drip_id` を指します）。入れ直しのカードはふつうのカードと統合できません。
+- `emergency_at` があって入れ直しのカード（`emergency_drip_id`）がまだ無いカップは、未割当のいちばん上に緊急のカードとして出ます（準備完了・提供済みのカップでも出ます）。割当・「次へ」はふつうのカードと同じで、入れ直しのカードは別の列（`emergency_dripper`・`emergency_dripper_position`・`emergency_drip_id`・`emergency_brew_started_at`・`emergency_brew_finished_at`）で持ちます（`PUT /api/caos/cups` の `before`・`after` は、緊急のカップではこの列を指します）。入れ直しのカードはふつうのカードと統合できません。
 - 入れ直しのカードは準備完了でも終わりにせず、`次へ` で終えます。`次へ` で、カップがまだ準備完了でなければ準備完了にします。
 - 緊急のシールは、プリンターにつないだレジの iPad（レジの画面 `/cashier`、`label/useEmergencyLabels.ts`）が印刷します。
   - 共有の WebSocket で受けた注文の中に、`emergency_at` があって `emergency_printed_at` が空のカップを見つけたら、先に `POST /api/orders/{id}/cups/{cupId}/emergency-label/claim` で `emergency_printed_at` を「まだ空なら付ける」で付け、付けられたときだけ印刷します。レジやタブが 2 つあっても、付けられるのは 1 つだけなので 2 重に印刷しません。つなぎ直したときも全部の注文を受け直すので取りこぼしません（印刷したカップは印があるので印刷しません）。
