@@ -17,29 +17,22 @@ const errorMessage = (error: unknown, response: Response) =>
 
 /** 一括取り込み・書き出しで使う、今の DB の内容 */
 export const fetchMasterSnapshot = async (): Promise<MasterSnapshot> => {
-  const [itemTypes, items, menus, colorSettings, inventory, usages] =
-    await Promise.all([
-      client.GET("/api/item-types"),
-      client.GET("/api/items"),
-      client.GET("/api/menus"),
-      client.GET("/api/color-settings"),
-      client.GET("/api/inventory"),
-      client.GET("/api/inventory/usages"),
-    ]);
-  for (const { error, response } of [
-    itemTypes,
-    items,
-    menus,
-    colorSettings,
-    inventory,
-    usages,
-  ]) {
+  const results = await Promise.all([
+    client.GET("/api/item-types"),
+    client.GET("/api/items"),
+    client.GET("/api/menus"),
+    client.GET("/api/color-settings"),
+    client.GET("/api/inventory"),
+    client.GET("/api/inventory/usages"),
+  ]);
+  for (const { error, response } of results) {
     if (error || !response.ok) {
       throw new Error(
         `${response.url} を読めませんでした: ${errorMessage(error, response)}`,
       );
     }
   }
+  const [itemTypes, items, menus, colorSettings, inventory, usages] = results;
   return {
     item_types: itemTypes.data ?? [],
     items: items.data ?? [],
