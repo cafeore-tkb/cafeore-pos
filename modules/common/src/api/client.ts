@@ -20,34 +20,21 @@ export const apiClient = createClient<paths>({
   fetch: (request) => globalThis.fetch(request),
 });
 
-/** API がエラーを返したときに投げる。status は HTTP のステータス */
-export class ApiError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
-
 /**
- * エラーの本文から、API が書いた理由を取り出す。
+ * API の呼び出しが失敗した理由。取れなければ HTTP のステータス。
  *
  * API は `{"error": "..."}` を返す。openapi-fetch は本文を読んで error に入れる
  * （JSON でなければ文字列のまま）ので、response.json() はもう読めない。
  */
-export const apiErrorDetail = (error: unknown): string | undefined => {
-  if (typeof error === "string") return error.trim() || undefined;
-  if (error && typeof error === "object" && "error" in error) {
-    const detail = (error as { error: unknown }).error;
-    if (typeof detail === "string" && detail) return detail;
-  }
-  return undefined;
+export const apiErrorReason = (response: Response, error: unknown): string => {
+  if (typeof error === "string" && error.trim()) return error.trim();
+  const detail = (error as { error?: unknown } | null | undefined)?.error;
+  if (typeof detail === "string" && detail) return detail;
+  return `${response.status} ${response.statusText}`.trim();
 };
 
 /**
- * API の呼び出しが失敗したときに投げる。理由が取れればメッセージの後ろに付ける。
+ * API の呼び出しが失敗したときに、何に失敗したかと理由を付けて投げる。
  *
  * @param response openapi-fetch が返した response
  * @param error openapi-fetch が返した error（エラーの本文）
@@ -58,7 +45,5 @@ export function throwApiError(
   error: unknown,
   message: string,
 ): never {
-  const detail =
-    apiErrorDetail(error) ?? `${response.status} ${response.statusText}`.trim();
-  throw new ApiError(`${message}: ${detail}`, response.status);
+  throw new Error(`${message}: ${apiErrorReason(response, error)}`);
 }

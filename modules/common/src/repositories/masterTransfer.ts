@@ -1,4 +1,4 @@
-import { apiClient, apiErrorDetail, throwApiError } from "../api/client";
+import { apiClient, apiErrorReason, throwApiError } from "../api/client";
 import {
   type MasterCall,
   type MasterSnapshot,
@@ -7,9 +7,6 @@ import {
 import type { components } from "../types/api";
 
 type Schemas = components["schemas"];
-
-const errorMessage = (error: unknown, response: Response) =>
-  apiErrorDetail(error) ?? `${response.status} ${response.statusText}`;
 
 /** 一括取り込み・書き出しで使う、今の DB の内容 */
 export const fetchMasterSnapshot = async (): Promise<MasterSnapshot> => {
@@ -78,7 +75,7 @@ export const runMasterImport = async (
       if (error || !response.ok || !data) {
         return {
           done: index,
-          failed: { call, message: errorMessage(error, response) },
+          failed: { call, message: apiErrorReason(response, error) },
         };
       }
       if (call.creates) ids.set(call.creates, data.id);

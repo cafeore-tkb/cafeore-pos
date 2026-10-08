@@ -26,7 +26,7 @@ var openAPIMethods = map[string]bool{
 }
 
 // openapi.yaml の paths にある操作を「METHOD /path/:param」の形で返す。
-func openAPIOperations(t *testing.T) []string {
+func openAPIOperations(t *testing.T) map[string]bool {
 	t.Helper()
 
 	b, err := os.ReadFile("../../../openapi/openapi.yaml")
@@ -40,12 +40,12 @@ func openAPIOperations(t *testing.T) []string {
 		t.Fatalf("openapi.yaml を読めない: %v", err)
 	}
 
-	var ops []string
+	ops := map[string]bool{}
 	for path, item := range doc.Paths {
 		ginPath := openAPIPathParam.ReplaceAllString(path, ":$1")
 		for method := range item {
 			if openAPIMethods[method] {
-				ops = append(ops, strings.ToUpper(method)+" "+ginPath)
+				ops[strings.ToUpper(method)+" "+ginPath] = true
 			}
 		}
 	}
@@ -60,16 +60,16 @@ func openAPIOperations(t *testing.T) []string {
 func TestRegisterRoutesMatchesOpenAPI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	// ハンドラーは登録するだけで呼ばないので、nil のままでよい
-	registerRoutes(r, routeHandlers{})
+	// ハンドラーは登録するだけで呼ばないので、DB などは nil のままでよい
+	registerRoutes(r, nil, nil, nil)
 
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {
 		registered[route.Method+" "+route.Path] = true
 	}
 
-	documented := map[string]bool{}
-	for _, op := range openAPIOperations(t) {
+	documented := openAPIOperations(t)
+	for op := range routesOutsideOpenAPI {
 		documented[op] = true
 	}
 
@@ -80,13 +80,8 @@ func TestRegisterRoutesMatchesOpenAPI(t *testing.T) {
 		}
 	}
 	for op := range registered {
-		if !documented[op] && !routesOutsideOpenAPI[op] {
+		if !documented[op] {
 			undocumented = append(undocumented, op)
-		}
-	}
-	for op := range routesOutsideOpenAPI {
-		if !registered[op] {
-			missing = append(missing, op)
 		}
 	}
 	sort.Strings(missing)

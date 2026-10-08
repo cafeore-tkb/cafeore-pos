@@ -222,10 +222,6 @@ func main() {
 	hub := handlers.NewHub()
 	go hub.Run()
 
-	// ハンドラー初期化
-	itemHandler := handlers.NewItemHandler(db)
-	menuHandler := handlers.NewMenuHandler(db)
-	itemTypeHandler := handlers.NewItemTypeHandler(db)
 	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
 	//
 	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
@@ -242,24 +238,7 @@ func main() {
 		remindAuth,
 		os.Getenv("POS_BASE_URL"),
 	)
-	inventoryHandler := handlers.NewInventoryHandler(inventory)
-	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
-	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
-	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
-	colorSettingHandler := handlers.NewColorSettingHandler(db)
-
-	registerRoutes(r, routeHandlers{
-		item:         itemHandler,
-		menu:         menuHandler,
-		itemType:     itemTypeHandler,
-		order:        orderHandler,
-		comment:      commentHandler,
-		masterState:  masterStateHandler,
-		cashierState: cashierStateHandler,
-		inventory:    inventoryHandler,
-		colorSetting: colorSettingHandler,
-	})
+	registerRoutes(r, db, hub, inventory)
 
 	// サーバー起動
 	port := os.Getenv("PORT")

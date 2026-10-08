@@ -95,7 +95,7 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !data || !response.ok) {
-        return throwApiError(response, error, "Failed to mark cup as ready");
+        throwApiError(response, error, "Failed to mark cup as ready");
       }
 
       return responseToOrderEntity(data);
@@ -112,7 +112,7 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !data || !response.ok) {
-        return throwApiError(response, error, "Failed to mark cup as served");
+        throwApiError(response, error, "Failed to mark cup as served");
       }
 
       return responseToOrderEntity(data);

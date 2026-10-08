@@ -1,6 +1,7 @@
 import {
   type OrderEntity,
   type OrderStatType,
+  type WithId,
   orderRepository,
   orderStatTypes,
   updateMasterStatus,
@@ -15,7 +16,11 @@ import {
 import { toast } from "sonner";
 import { z } from "zod";
 import { useOrderStat } from "~/components/functional/useOrderStat";
-import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import { InputComment } from "~/components/molecules/InputComment";
+import {
+  OrderInfoCard,
+  WaitingLabel,
+} from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
@@ -29,19 +34,6 @@ export default function FielsOfMaster() {
   const { orders } = useOrdersWSContext();
   const submit = useSubmit();
   const isOperational = useOrderStat();
-
-  const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
-    if (!servedOrder.id) return;
-
-    submit(
-      {
-        intent: "addComment",
-        servedOrderId: servedOrder.id,
-        descComment,
-      },
-      { method: "POST" },
-    );
-  };
 
   const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
@@ -81,10 +73,9 @@ export default function FielsOfMaster() {
         <div className="flex w-1/3 items-center justify-end gap-3">
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
-            orders={orders}
-            cardUser={"master"}
-            cardTiming={"past"}
-            comment={mutateOrder}
+            orders={orders?.filter((order) => order.servedAt !== null)}
+            author="master"
+            gray
           />
         </div>
       </div>
@@ -93,13 +84,7 @@ export default function FielsOfMaster() {
         {orders?.map((order) => {
           return (
             order.servedAt === null && (
-              <OrderInfoCard
-                key={order.id}
-                order={order}
-                timing={"present"}
-                user={"master"}
-                comment={mutateOrder}
-              />
+              <MasterOrderCard key={order.id} order={order} />
             )
           );
         })}
@@ -108,30 +93,35 @@ export default function FielsOfMaster() {
   );
 }
 
+// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）
+const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+  const calling = order.status === "calling";
+  return (
+    <OrderInfoCard
+      order={order}
+      timing="present"
+      colorScreen="master"
+      grayed={calling}
+      cups={order.getCups().map((cup) => ({
+        ...cup,
+        // 呼び出し中の注文のカップと、準備完了・提供済みのカップは灰色にする
+        gray: calling || cup.status !== "preparing",
+      }))}
+    >
+      <InputComment
+        order={order}
+        addComment={(order, text) =>
+          orderRepository.addComment(order.id, "master", text)
+        }
+      />
+      <WaitingLabel order={order} />
+    </OrderInfoCard>
+  );
+};
+
 export const clientAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
-
-  if (intent === "addComment") {
-    const schema = z.object({
-      intent: z.literal("addComment"),
-      servedOrderId: z.string().min(1),
-      descComment: z.string(),
-    });
-
-    const submission = parseWithZod(formData, { schema });
-
-    if (submission.status !== "success") {
-      console.error(submission.error);
-      return submission.reply();
-    }
-
-    const { servedOrderId, descComment } = submission.value;
-
-    await orderRepository.addComment(servedOrderId, "master", descComment);
-
-    return new Response("ok");
-  }
 
   if (intent === "changeOrderStat") {
     const schema = z.object({
@@ -148,7 +138,6 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     const { status } = submission.value;
 
-    // 書くのは API だけ。各画面の表示は WebSocket の master_state で切り替わる
     try {
       await updateMasterStatus(status);
     } catch (e) {
