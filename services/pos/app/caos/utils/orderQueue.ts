@@ -4,6 +4,7 @@ export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
 // 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
+// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）で比べる。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
@@ -12,7 +13,8 @@ export const canMergeDripUnits = (
   first.cupCount === 1 &&
   second.cupCount === 1 &&
   first.beanCode === second.beanCode &&
-  first.preferredBaristaId === second.preferredBaristaId;
+  first.preferredBaristaId === second.preferredBaristaId &&
+  first.mergeKey === second.mergeKey;
 
 export const orderNumber = (id: string) =>
   Number(id.match(/\d+/)?.[0]) || Number.MAX_SAFE_INTEGER;

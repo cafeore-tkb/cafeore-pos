@@ -167,6 +167,7 @@ export const cardsToBoard = (
           ? [info.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
         cardColor: cardColorOf(info.beanCode),
+        mergeKey: `${card.cups[0].item.id}\u0000${card.cups[0].nominee ?? ""}`,
       };
     });
 
