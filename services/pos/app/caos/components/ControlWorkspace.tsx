@@ -1,5 +1,5 @@
 import type React from "react";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, DripCard, OrderTicket } from "../types";
 import type { NextAvailable } from "../utils/orderQueue";
 import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
@@ -10,7 +10,7 @@ export type ControlViewMode = "current" | "c" | "d";
 // 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
 export interface ControlViewProps {
   baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
+  unassignedOrders: DripCard[];
   nextAvailable: NextAvailable;
   /** 選んだ注文（orderLabel） */
   selectedOrderId: string | null;
@@ -28,7 +28,7 @@ export interface ControlViewProps {
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
   onOpenEmptySlot: (bayId: number) => void;
-  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
+  onAssignToBay: (order: DripCard, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
 }
 

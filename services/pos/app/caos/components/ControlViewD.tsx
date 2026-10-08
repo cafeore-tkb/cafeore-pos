@@ -1,44 +1,38 @@
 import { caosClockLabel } from "@cafeore/common";
-import {
-  ArrowRightCircle,
-  ClipboardList,
-  Combine,
-  Table2,
-  X,
-} from "lucide-react";
+import { ClipboardList, Table2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import type { Barista, DripCard, OrderTicket, UnassignedOrder } from "../types";
-import { cardSurface } from "../utils/cardSurface";
+import { useCardDrag } from "../hooks/useCardDrag";
+import type { Barista, DripCard, OrderTicket } from "../types";
 import { bayTargetAt, laneOrdinal } from "../utils/lanes";
 import {
   activeRemainingSec,
   canMergeDripUnits,
   groupByOrder,
   orderLabel,
+  totalCups,
 } from "../utils/orderQueue";
+import {
+  EmptySlotButton,
+  LaneBadge,
+  NextButton,
+  PanelHeader,
+} from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { MergeOverlay, OrderCard } from "./OrderCard";
 
 // 紙のマスターシートと同じく、行は注文番号ごと。割り当てた注文は下へ積むだけで、
 // 淹れ終わっても行は動かさず薄く残す。
 const MIN_ROWS = 8;
 // 開いたときは、まだ淹れ終わっていない最初の注文の1つ上から見せる。
 const HISTORY_ROWS_ON_OPEN = 1;
-// C/Aの未割当カードと同じく、12px動くまではタップとして扱う。
-const DRAG_THRESHOLD_PX = 12;
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
 type DragSource =
-  | { kind: "unassigned"; order: UnassignedOrder }
+  | { kind: "unassigned"; order: DripCard }
   | { kind: "ticket"; ticket: OrderTicket; fromBayId: number };
 
 type DropTarget = number | "unassigned";
-
-interface CupDrag {
-  source: DragSource;
-  rect: DOMRect;
-}
 
 type CellState = "past" | "current" | "waiting";
 
@@ -57,91 +51,13 @@ interface SheetCell {
   mergedStubs: SheetEntry[];
 }
 
-interface SheetLayout {
-  rows: Array<{
-    orderNo: number;
-    isLive: boolean;
-    isPast: boolean;
-    cups: number;
-    orderCups?: number;
-  }>;
-  cells: Map<string, SheetCell>;
-  targetRowId: number | null;
-}
-
-interface OrderGroup {
-  key: string;
-  items: UnassignedOrder[];
-  assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
-}
-
 const cellKey = (orderNo: number, bayId: number) => `${orderNo}@${bayId}`;
 
 const sourceCard = (source: DragSource): DripCard =>
   source.kind === "unassigned" ? source.order : source.ticket;
 
-const CupChip: React.FC<{
-  cup: DripCard;
-  baristaName?: string;
-  note?: string;
-  faded?: boolean;
-  selected?: boolean;
-  lifted?: boolean;
-  onClick?: () => void;
-}> = ({
-  cup,
-  baristaName,
-  note,
-  faded = false,
-  selected = false,
-  lifted = false,
-  onClick,
-}) => {
-  const stacked = cup.cupCount >= 2;
-  // カードの色（cardSurface。管制盤 A・C と同じ）
-  const surface = cardSurface(cup);
-
-  return (
-    <div
-      className={`relative h-full min-w-0 ${stacked ? "mr-1.5 mb-1.5" : ""} ${faded ? "opacity-45" : ""}`}
-    >
-      {stacked && (
-        <div
-          aria-hidden
-          className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border shadow-xs ${surface.className}`}
-          style={surface.style}
-        />
-      )}
-      <button
-        type="button"
-        disabled={!onClick}
-        onClick={onClick}
-        style={surface.style}
-        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${surface.className} ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
-          lifted ? "shadow-2xl" : ""
-        }`}
-      >
-        <span className="flex min-w-0 items-baseline justify-between gap-1">
-          <span className="truncate font-black text-[14px] leading-tight">
-            {cup.beanName}
-          </span>
-          <span className="shrink-0 font-black font-mono text-[11px] opacity-80">
-            ×{cup.cupCount}
-          </span>
-        </span>
-        <span className="truncate font-bold font-mono text-[11px] opacity-75">
-          No. {cup.orderNos.join("+")}
-        </span>
-        {(baristaName || note) && (
-          <span className="truncate font-bold text-[10px] opacity-80">
-            {baristaName ? `指名：${baristaName}` : ""}
-            {note ? ` ${note}` : ""}
-          </span>
-        )}
-      </button>
-    </div>
-  );
-};
+// 表の線（紙のマスターシートと同じく太い線）
+const LINE = "border-slate-900";
 
 export const ControlViewD: React.FC<ControlViewProps> = ({
   baristas,
@@ -158,29 +74,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onMergeOrders,
 }) => {
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
-  const [cupDrag, setCupDrag] = useState<CupDrag | null>(null);
-  const [hoveredTarget, setHoveredTarget] = useState<DropTarget | null>(null);
   // Order numbers of a merge waiting for App to hand back the combined card.
   const [mergingNos, setMergingNos] = useState<number[] | null>(null);
-  const suppressNextClick = useRef(false);
-  const endPress = useRef<(() => void) | null>(null);
-  const ghostRef = useRef<HTMLDivElement | null>(null);
-  const ghostOffset = useRef({ x: 0, y: 0 });
-  const sortedBaristas = useMemo(
-    () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
-    [baristas],
-  );
-  // 指名の札は列の番号（1st〜6th）で出す
-  const baristaNames = useMemo(
-    () =>
-      new Map(
-        sortedBaristas.map((barista) => [
-          barista.id,
-          laneOrdinal(barista.bayNumber),
-        ]),
-      ),
-    [sortedBaristas],
-  );
   const selectedOrder = useMemo(
     () =>
       unassignedOrders.find((order) => order.ticketUid === selectedUid) ?? null,
@@ -198,11 +93,9 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       setSelectedUid(null);
   }, [selectedOrder, selectedOrderId]);
 
-  useEffect(() => () => endPress.current?.(), []);
-
-  const sheet = useMemo<SheetLayout>(() => {
+  const sheet = useMemo(() => {
     const entriesByBay = new Map<number, SheetEntry[]>();
-    for (const barista of sortedBaristas) {
+    for (const barista of baristas) {
       entriesByBay.set(barista.id, [
         ...(barista.pastTickets || []).map((ticket) => ({
           ticket,
@@ -327,19 +220,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         orderCups: stat?.orderCups,
       };
     });
-    return {
-      rows,
-      cells,
-      targetRowId: selectedOrder ? selectedOrder.orderNos[0] : null,
-    };
-  }, [selectedOrder, sortedBaristas, unassignedOrders]);
+    return { rows, cells };
+  }, [baristas, unassignedOrders]);
+  const targetRowId = selectedOrder?.orderNos[0] ?? null;
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
-  const remainingByBay = new Map<number, number>(
-    sortedBaristas.map((barista) => [
-      barista.id,
-      activeRemainingSec(barista, currentTimeSec),
-    ]),
-  );
 
   const sheetScrollRef = useRef<HTMLDivElement>(null);
   // Scroll to the live rows only when the sheet opens; afterwards the user owns the scroll.
@@ -366,20 +250,20 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   }, []);
 
   // 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカードを薄く添える
-  const orderGroups = useMemo<OrderGroup[]>(
+  const orderGroups = useMemo(
     () =>
       Array.from(groupByOrder(unassignedOrders), ([key, items]) => ({
         key,
         items,
-        assigned: sortedBaristas.flatMap((barista) =>
+        assigned: baristas.flatMap((barista) =>
           barista.queue
             .filter((ticket) => orderLabel(ticket) === key)
-            .map((ticket) => ({ ticket, bayNumber: barista.bayNumber })),
+            .map((ticket) => ({ ticket, bayId: barista.id })),
         ),
       })).sort(
         (left, right) => left.items[0].orderNos[0] - right.items[0].orderNos[0],
       ),
-    [sortedBaristas, unassignedOrders],
+    [baristas, unassignedOrders],
   );
 
   // 選んだ注文の行（統合したカードは元の注文すべての行）
@@ -388,7 +272,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       new Set(
         [
           ...unassignedOrders,
-          ...sortedBaristas.flatMap((barista) => [
+          ...baristas.flatMap((barista) => [
             ...(barista.pastTickets ?? []),
             ...barista.queue,
           ]),
@@ -396,12 +280,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           .filter((card) => orderLabel(card) === selectedOrderId)
           .flatMap((card) => card.orderNos),
       ),
-    [selectedOrderId, sortedBaristas, unassignedOrders],
-  );
-
-  const totalUnassignedCups = unassignedOrders.reduce(
-    (sum, order) => sum + order.cupCount,
-    0,
+    [selectedOrderId, baristas, unassignedOrders],
   );
 
   const canAssignTo = (barista: Barista) =>
@@ -416,7 +295,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     onSelectOrder("");
   };
 
-  const mergeWithSelected = (order: UnassignedOrder) => {
+  const mergeWithSelected = (order: DripCard) => {
     if (!selectedOrder || !canMergeDripUnits(selectedOrder, order)) return;
     onMergeOrders(selectedOrder.ticketUid, order.ticketUid);
     setMergingNos([...selectedOrder.orderNos, ...order.orderNos]);
@@ -444,7 +323,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     });
   }, [mergingNos, unassignedOrders, onSelectOrder]);
 
-  const toggleSelection = (order: UnassignedOrder) => {
+  const toggleSelection = (order: DripCard) => {
     const uid = order.ticketUid;
     if (selectedUid === uid) {
       clearSelection();
@@ -462,172 +341,73 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
 
   // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。
   // 表のカードは右の注文内容へ落とすと未割当に戻る。
-  const dropTargetAt = (
-    source: DragSource,
-    clientX: number,
-    clientY: number,
-  ): DropTarget | null => {
-    if (
-      source.kind === "ticket" &&
-      document
-        .elementsFromPoint(clientX, clientY)
-        .some((element) => element.closest("[data-return-target]"))
-    ) {
-      return "unassigned";
-    }
-    return bayTargetAt(clientX, clientY, {
-      from: source.kind === "ticket" ? source.fromBayId : undefined,
-      preferred: sourceCard(source).preferredBaristaId,
-    });
-  };
-
-  const drop = (source: DragSource, target: DropTarget) => {
-    if (source.kind === "unassigned") {
-      if (target === "unassigned") return;
-      onAssignToBay(source.order, target);
-      clearSelection();
-      return;
-    }
-    // The card may have started brewing or been moved while it was held.
-    const key = source.ticket.ticketUid;
-    const latest = baristas
-      .flatMap((barista) => barista.queue)
-      .find(
-        (ticket) => ticket.ticketUid === key && ticket.status === "scheduled",
-      );
-    if (!latest) return;
-    if (target === "unassigned") onReturnToUnassigned(latest);
-    else onMoveTicket(latest, target);
-  };
-
-  const beginDrag = (source: DragSource) => {
-    if (source.kind === "unassigned") {
-      setSelectedUid(source.order.ticketUid);
-      if (selectedOrderId !== orderLabel(source.order))
-        onSelectOrder(orderLabel(source.order));
-    } else if (selectedUid) {
-      // Moving a placed card: hide the "ここに配置" slots of a pending selection.
-      clearSelection();
-    }
-  };
-
-  // The window listeners outlive the render that started the press, so they call the
-  // latest handlers; otherwise a drop would run App callbacks over stale queues.
-  const latestHandlers = useRef({ beginDrag, drop });
-  useLayoutEffect(() => {
-    latestHandlers.current = { beginDrag, drop };
-  });
-
-  const placeGhost = () => {
-    const { x, y } = ghostOffset.current;
-    if (ghostRef.current)
-      ghostRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-  };
-
-  const startPress = (
-    source: DragSource,
-    event: React.PointerEvent<HTMLElement>,
-    anyDirection: boolean,
-  ) => {
-    // A touch drag ends without a click, so drop any suppression left by it.
-    suppressNextClick.current = false;
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    endPress.current?.();
-
-    const pointerId = event.pointerId;
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const rect = event.currentTarget.getBoundingClientRect();
-    let dragging = false;
-
-    const onMove = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
-      // The button was released outside the window, so no pointerup will arrive.
-      if (moveEvent.pointerType === "mouse" && moveEvent.buttons === 0) {
-        finish(moveEvent, false);
+  const drag = useCardDrag<DragSource, DropTarget>({
+    targetAt: (source, clientX, clientY) => {
+      if (
+        source.kind === "ticket" &&
+        document
+          .elementsFromPoint(clientX, clientY)
+          .some((element) => element.closest("[data-return-target]"))
+      ) {
+        return "unassigned";
+      }
+      return bayTargetAt(clientX, clientY, {
+        from: source.kind === "ticket" ? source.fromBayId : undefined,
+        preferred: sourceCard(source).preferredBaristaId,
+      });
+    },
+    onBegin: (source) => {
+      if (source.kind === "unassigned") {
+        setSelectedUid(source.order.ticketUid);
+        if (selectedOrderId !== orderLabel(source.order))
+          onSelectOrder(orderLabel(source.order));
+      } else if (selectedUid) {
+        // Moving a placed card: hide the "ここに配置" slots of a pending selection.
+        clearSelection();
+      }
+    },
+    onDrop: (source, target) => {
+      if (source.kind === "unassigned") {
+        if (target === "unassigned") return;
+        onAssignToBay(source.order, target);
+        clearSelection();
         return;
       }
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      if (!dragging) {
-        if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-        // Cards with touch-action pan-y leave vertical movement to scrolling.
-        if (!anyDirection && Math.abs(dy) > Math.abs(dx)) return;
-        dragging = true;
-        latestHandlers.current.beginDrag(source);
-        setCupDrag({ source, rect });
-      }
-      // Move the ghost directly; the sheet re-renders only when the drop target changes.
-      ghostOffset.current = { x: dx, y: dy };
-      placeGhost();
-      setHoveredTarget(
-        dropTargetAt(source, moveEvent.clientX, moveEvent.clientY),
-      );
-    };
+      // The card may have started brewing or been moved while it was held.
+      const key = source.ticket.ticketUid;
+      const latest = baristas
+        .flatMap((barista) => barista.queue)
+        .find(
+          (ticket) => ticket.ticketUid === key && ticket.status === "scheduled",
+        );
+      if (!latest) return;
+      if (target === "unassigned") onReturnToUnassigned(latest);
+      else onMoveTicket(latest, target);
+    },
+  });
 
-    const finish = (upEvent: PointerEvent, dropped: boolean) => {
-      if (upEvent.pointerId !== pointerId) return;
-      cleanup();
-      if (!dragging) return;
-      setCupDrag(null);
-      setHoveredTarget(null);
-      suppressNextClick.current = true;
-      const target = dropped
-        ? dropTargetAt(source, upEvent.clientX, upEvent.clientY)
-        : null;
-      if (target !== null) latestHandlers.current.drop(source, target);
-    };
-    const onUp = (upEvent: PointerEvent) => finish(upEvent, true);
-    const onCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, false);
-
-    const cleanup = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-      endPress.current = null;
-    };
-    endPress.current = () => {
-      cleanup();
-      setCupDrag(null);
-      setHoveredTarget(null);
-    };
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
-  };
-
-  const suppressClickAfterDrag = (event: React.MouseEvent) => {
-    if (!suppressNextClick.current) return;
-    suppressNextClick.current = false;
-    event.stopPropagation();
-  };
-
-  const dragSource = cupDrag?.source ?? null;
+  const dragSource = drag.source;
   const dragCup = dragSource ? sourceCard(dragSource) : null;
-  const draggedKey = dragCup?.ticketUid ?? null;
-  const isTicketDrag = dragSource?.kind === "ticket";
-  const hoveredBayNumber =
-    typeof hoveredTarget === "number"
-      ? sortedBaristas.find((barista) => barista.id === hoveredTarget)
-          ?.bayNumber
-      : undefined;
+  const hoveredTarget = drag.target;
 
   return (
     <section
       className="grid h-full min-h-0 grid-cols-[minmax(0,2.2fr)_minmax(280px,1fr)] gap-2"
       aria-label="Dコントロール画面"
     >
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border-2 border-slate-900 bg-white shadow-xs">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-slate-900 border-b-2 bg-slate-50 px-3">
-          <Table2 className="h-4 w-4 text-slate-700" />
-          <h2 className="shrink-0 font-black text-[15px] text-slate-950">
-            マスターシート
-          </h2>
+      <section
+        className={`flex min-h-0 flex-col overflow-hidden rounded-lg border-2 bg-white shadow-xs ${LINE}`}
+      >
+        <PanelHeader
+          icon={Table2}
+          title="マスターシート"
+          className={`border-b-2 ${LINE}`}
+        >
           <p className="min-w-0 truncate font-bold text-[11px] text-slate-500">
             {dragSource?.kind === "ticket"
               ? `${orderLabel(dragSource.ticket)} ${dragSource.ticket.beanName} ${dragSource.ticket.cupCount}杯 → 移す担当者の列で離す／右の注文内容で離すと未割当に戻す`
               : selectedOrder
-                ? cupDrag
+                ? dragSource
                   ? `${orderLabel(selectedOrder)} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 担当者の列で離すと配置`
                   : `${orderLabel(selectedOrder)} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 配置する枠を選択`
                 : "右の注文カードを選んで表の枠をタップするか、列へドラッグして割り振ります"}
@@ -642,72 +422,54 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
               解除
             </button>
           )}
-        </header>
+        </PanelHeader>
 
         <div ref={sheetScrollRef} className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[720px] table-fixed border-collapse">
             <colgroup>
               <col className="w-[76px]" />
-              {sortedBaristas.map((barista) => (
+              {baristas.map((barista) => (
                 <col key={barista.id} />
               ))}
               <col className="w-[52px]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-100">
               <tr>
-                <th className="border-slate-900 border-r-4 border-b-4 px-1 font-black text-[13px]">
+                <th
+                  className={`border-r-4 border-b-4 px-1 font-black text-[13px] ${LINE}`}
+                >
                   注文 No.
                 </th>
-                {sortedBaristas.map((barista) => {
-                  const current = barista.queue[0];
-                  const seconds = activeRemainingSec(barista, currentTimeSec);
-                  return (
-                    <th
-                      key={barista.id}
-                      data-bay-target={barista.id}
-                      className={`border-slate-900 border-r-2 border-b-4 p-1 align-top ${
-                        hoveredTarget === barista.id ? "bg-blue-100" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="font-black font-mono text-[18px] leading-none">
-                          {laneOrdinal(barista.bayNumber)}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={!current}
-                        onClick={() => onAdvanceBay(barista.id)}
-                        className={`mt-1 flex h-8 w-full touch-manipulation items-center justify-center gap-1 rounded-md font-black text-[11px] ${
-                          current
-                            ? "bg-emerald-700 text-white"
-                            : "bg-slate-200 text-slate-500"
-                        }`}
-                      >
-                        {current ? (
-                          <>
-                            <span className="font-mono">
-                              {seconds === 0 ? "継続" : caosClockLabel(seconds)}
-                            </span>
-                            <span>次へ</span>
-                            <ArrowRightCircle className="h-3.5 w-3.5" />
-                          </>
-                        ) : (
-                          "待機"
-                        )}
-                      </button>
-                    </th>
-                  );
-                })}
-                <th className="border-slate-900 border-b-4 border-l-4 px-1 font-black text-[12px]">
+                {baristas.map((barista) => (
+                  <th
+                    key={barista.id}
+                    data-bay-target={barista.id}
+                    className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
+                      hoveredTarget === barista.id ? "bg-blue-100" : ""
+                    }`}
+                  >
+                    <div className="flex justify-center">
+                      <LaneBadge bayId={barista.id} />
+                    </div>
+                    <NextButton
+                      barista={barista}
+                      nowSec={currentTimeSec}
+                      onAdvance={onAdvanceBay}
+                      showTime
+                      className="mt-1 h-8 w-full text-[11px]"
+                    />
+                  </th>
+                ))}
+                <th
+                  className={`border-b-4 border-l-4 px-1 font-black text-[12px] ${LINE}`}
+                >
                   総杯数
                 </th>
               </tr>
             </thead>
             <tbody>
               {sheet.rows.map((row) => {
-                const isRowPast = row.isPast;
-                const isTargetRow = sheet.targetRowId === row.orderNo;
+                const isTargetRow = targetRowId === row.orderNo;
                 const isRowLinked = linkedRows.has(row.orderNo);
                 const rowCups = Math.round(row.cups * 10) / 10;
 
@@ -716,10 +478,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     key={row.orderNo}
                     data-sheet-row={row.orderNo}
                     data-live={row.isLive}
-                    className={`h-[72px] ${isRowPast ? "bg-slate-50" : isTargetRow ? "bg-blue-50/40" : ""}`}
+                    className={`h-[72px] ${row.isPast ? "bg-slate-50" : isTargetRow ? "bg-blue-50/40" : ""}`}
                   >
                     <th
-                      className={`border-slate-900 border-r-4 border-b-2 px-1 text-center ${
+                      className={`border-r-4 border-b-2 px-1 text-center ${LINE} ${
                         isRowLinked ? "bg-amber-50" : ""
                       }`}
                     >
@@ -731,27 +493,41 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         {row.orderNo}
                       </span>
                     </th>
-                    {sortedBaristas.map((barista) => {
+                    {baristas.map((barista) => {
                       const cell = sheet.cells.get(
                         cellKey(row.orderNo, barista.id),
                       );
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries || [];
-                      const isTarget = isTargetRow && canAssignTo(barista);
                       const isDropColumn = hoveredTarget === barista.id;
-                      const isMergedBox = (cell?.rowSpan ?? 1) > 1;
-                      const seconds = remainingByBay.get(barista.id) ?? 0;
+                      const seconds = activeRemainingSec(
+                        barista,
+                        currentTimeSec,
+                      );
                       const renderEntry = ({
                         ticket,
                         state,
                         rowIds,
                       }: SheetEntry) => (
-                        <div
+                        <OrderCard
                           key={ticket.ticketUid}
+                          card={ticket}
+                          size="sm"
+                          done={state === "past"}
+                          note={[
+                            rowIds.length > 1 ? "統合" : "",
+                            state === "current"
+                              ? seconds > 0
+                                ? `抽出中 残${caosClockLabel(seconds)}`
+                                : "抽出中"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                           onPointerDown={
                             state === "waiting"
                               ? (event) =>
-                                  startPress(
+                                  drag.press(
                                     {
                                       kind: "ticket",
                                       ticket,
@@ -762,48 +538,23 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   )
                               : undefined
                           }
-                          onClickCapture={
+                          onClickCapture={drag.suppressClick}
+                          onClick={
                             state === "waiting"
-                              ? suppressClickAfterDrag
+                              ? () => {
+                                  if (selectedOrderId !== orderLabel(ticket))
+                                    onSelectOrder(orderLabel(ticket));
+                                  onOpenTicketDetail(ticket);
+                                }
                               : undefined
                           }
-                          className={`h-[64px] shrink-0 rounded-lg ${
+                          className={`h-[64px] shrink-0 ${
                             state === "waiting"
-                              ? "cursor-grab touch-pan-y select-none active:cursor-grabbing"
+                              ? "cursor-grab touch-pan-y hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
                               : ""
-                          } ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""} ${
-                            draggedKey === ticket.ticketUid ? "opacity-30" : ""
-                          }`}
-                        >
-                          <CupChip
-                            cup={ticket}
-                            baristaName={
-                              ticket.preferredBaristaId
-                                ? baristaNames.get(ticket.preferredBaristaId)
-                                : undefined
-                            }
-                            note={[
-                              rowIds.length > 1 ? "統合" : "",
-                              state === "current"
-                                ? seconds > 0
-                                  ? `抽出中 残${caosClockLabel(seconds)}`
-                                  : "抽出中"
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            faded={state === "past"}
-                            onClick={
-                              state === "waiting"
-                                ? () => {
-                                    if (selectedOrderId !== orderLabel(ticket))
-                                      onSelectOrder(orderLabel(ticket));
-                                    onOpenTicketDetail(ticket);
-                                  }
-                                : undefined
-                            }
-                          />
-                        </div>
+                          } ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+                          dragging={dragCup?.ticketUid === ticket.ticketUid}
+                        />
                       );
 
                       return (
@@ -811,7 +562,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                           key={barista.id}
                           rowSpan={cell?.rowSpan ?? 1}
                           data-bay-target={barista.id}
-                          className={`relative border-slate-900 border-r-2 border-b-2 p-1 align-top ${
+                          className={`relative border-r-2 border-b-2 p-1 align-top ${LINE} ${
                             isDropColumn
                               ? "bg-blue-50"
                               : isRowLinked && cellEntries.length > 0
@@ -819,8 +570,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                 : ""
                           }`}
                         >
-                          {isMergedBox ? (
-                            <div className="absolute inset-1 flex flex-col rounded-xl border-4 border-slate-900 bg-white/60 p-1">
+                          {(cell?.rowSpan ?? 1) > 1 ? (
+                            <div
+                              className={`absolute inset-1 flex flex-col rounded-xl border-4 bg-white/60 p-1 ${LINE}`}
+                            >
                               {cellEntries.map(renderEntry)}
                             </div>
                           ) : (
@@ -829,15 +582,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                               {cell?.mergedStubs.map(({ ticket, rowIds }) => (
                                 <div
                                   key={ticket.ticketUid}
-                                  className="flex h-[40px] items-center justify-center rounded-lg border-4 border-slate-900 font-black text-[11px] text-slate-700"
+                                  className={`flex h-[40px] items-center justify-center rounded-lg border-4 font-black text-[11px] text-slate-700 ${LINE}`}
                                 >
                                   {rowIds.join("+")} 統合
                                 </div>
                               ))}
-                              {isTarget && (
+                              {isTargetRow && canAssignTo(barista) && (
                                 <button
                                   type="button"
-                                  aria-label={`ドリッパー${barista.bayNumber}に配置`}
+                                  aria-label={`ドリッパー${laneOrdinal(barista.id)}に配置`}
                                   onClick={() => assignSelected(barista)}
                                   className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
                                     isDropColumn
@@ -853,9 +606,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         </td>
                       );
                     })}
-                    <td className="border-slate-900 border-b-2 border-l-4 px-1 text-center font-black font-mono">
+                    <td
+                      className={`border-b-2 border-l-4 px-1 text-center font-black font-mono ${LINE}`}
+                    >
                       <span
-                        className={`text-[20px] ${isRowPast ? "text-slate-400" : ""}`}
+                        className={`text-[20px] ${row.isPast ? "text-slate-400" : ""}`}
                       >
                         {rowCups || (row.orderCups ? 0 : "")}
                       </span>
@@ -869,45 +624,32 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                   </tr>
                 );
               })}
-              <tr className="h-[72px]">
-                <th className="border-slate-900 border-r-4 border-b-2 px-1 text-center text-[20px] text-slate-300">
-                  —
-                </th>
-                {sortedBaristas.map((barista) => (
-                  <td
-                    key={barista.id}
-                    data-bay-target={barista.id}
-                    className={`border-slate-900 border-r-2 border-b-2 p-1 ${
-                      hoveredTarget === barista.id ? "bg-blue-50" : ""
-                    }`}
-                  >
-                    {!selectedOrder && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenEmptySlot(barista.id)}
-                        className="h-[64px] w-full touch-manipulation rounded border border-slate-300 border-dashed font-bold text-[10px] text-slate-400"
-                      >
-                        枠を選択
-                      </button>
-                    )}
-                  </td>
-                ))}
-                <td className="border-slate-900 border-b-2 border-l-4" />
-              </tr>
-              {Array.from({ length: fillerRowCount }, (_, index) => (
+              {/* 最後の行は空きスロット、その下は空の行（表の高さをそろえる） */}
+              {Array.from({ length: fillerRowCount + 1 }, (_, index) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: filler rows have no identity
                 <tr key={index} className="h-[72px]">
-                  <th className="border-slate-900 border-r-4 border-b-2" />
-                  {sortedBaristas.map((barista) => (
+                  <th
+                    className={`border-r-4 border-b-2 px-1 text-center text-[20px] text-slate-300 ${LINE}`}
+                  >
+                    {index === 0 && "—"}
+                  </th>
+                  {baristas.map((barista) => (
                     <td
                       key={barista.id}
                       data-bay-target={barista.id}
-                      className={`border-slate-900 border-r-2 border-b-2 ${
+                      className={`border-r-2 border-b-2 p-1 ${LINE} ${
                         hoveredTarget === barista.id ? "bg-blue-50" : ""
                       }`}
-                    />
+                    >
+                      {index === 0 && !selectedOrder && (
+                        <EmptySlotButton
+                          onClick={() => onOpenEmptySlot(barista.id)}
+                          className="h-[64px] w-full"
+                        />
+                      )}
+                    </td>
                   ))}
-                  <td className="border-slate-900 border-b-2 border-l-4" />
+                  <td className={`border-b-2 border-l-4 ${LINE}`} />
                 </tr>
               ))}
             </tbody>
@@ -917,9 +659,9 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
 
       <aside
         data-return-target
-        className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 border-slate-900 bg-white shadow-xs"
+        className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 bg-white shadow-xs ${LINE}`}
       >
-        {isTicketDrag && (
+        {dragSource?.kind === "ticket" && (
           <div
             className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-md border-4 border-dashed p-4 text-center font-black text-[15px] ${
               hoveredTarget === "unassigned"
@@ -930,15 +672,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             ここで離すと未割当に戻す
           </div>
         )}
-        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-slate-900 border-b-2 bg-slate-50 px-3">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-slate-700" />
-            <h2 className="font-black text-[15px] text-slate-950">注文内容</h2>
-          </div>
-          <span className="font-black text-[12px] text-slate-700">
-            未割り振り {totalUnassignedCups}杯
+        <PanelHeader
+          icon={ClipboardList}
+          title="注文内容"
+          className={`border-b-2 ${LINE}`}
+        >
+          <span className="ml-auto font-black text-[12px] text-slate-700">
+            未割り振り {totalCups(unassignedOrders)}杯
           </span>
-        </header>
+        </PanelHeader>
 
         {orderGroups.length === 0 ? (
           <p className="flex-1 py-8 text-center font-bold text-[13px] text-slate-400">
@@ -946,115 +688,81 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           </p>
         ) : (
           <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto p-2">
-            {orderGroups.map((group) => {
-              return (
-                <article
-                  key={group.key}
-                  className="overflow-hidden rounded-md border-2 border-slate-900"
+            {orderGroups.map((group) => (
+              <article
+                key={group.key}
+                className={`overflow-hidden rounded-md border-2 ${LINE}`}
+              >
+                <div
+                  className={`flex items-center justify-between gap-2 border-b-2 bg-slate-100 px-2 py-1 ${LINE}`}
                 >
-                  <div className="flex items-center justify-between gap-2 border-slate-900 border-b-2 bg-slate-100 px-2 py-1">
-                    <h3 className="font-black font-mono text-[17px]">
-                      注文 No. {group.items[0].orderNos.join("+")}
-                    </h3>
-                    <span className="font-black text-[13px]">
-                      {group.items[0].totalOrderCups}杯
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5 p-2">
-                    {group.items.map((order) => {
-                      const uid = order.ticketUid;
-                      const isMergeCandidate = Boolean(
-                        selectedOrder &&
-                          canMergeDripUnits(selectedOrder, order),
-                      );
-                      return (
-                        <div
-                          key={uid}
-                          data-sheet-cup={uid}
-                          // A selected card has touch-action none, so it can be dragged in any direction.
-                          onPointerDown={(event) =>
-                            startPress(
-                              { kind: "unassigned", order },
-                              event,
-                              selectedUid === uid,
-                            )
-                          }
-                          onClickCapture={suppressClickAfterDrag}
-                          className={`relative h-[60px] cursor-grab select-none active:cursor-grabbing ${
-                            selectedUid === uid ? "touch-none" : "touch-pan-y"
-                          } ${draggedKey === uid ? "opacity-30" : ""}`}
-                        >
-                          <CupChip
-                            cup={order}
-                            baristaName={
-                              order.preferredBaristaId
-                                ? baristaNames.get(order.preferredBaristaId)
-                                : undefined
-                            }
-                            selected={selectedUid === uid}
-                            onClick={
-                              isMergeCandidate
-                                ? () => mergeWithSelected(order)
-                                : () => toggleSelection(order)
-                            }
-                          />
-                          {isMergeCandidate && (
-                            <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center gap-1 rounded-lg border-2 border-blue-600 bg-blue-50/90 font-black text-[13px] text-blue-800">
-                              <Combine className="h-4 w-4" />
-                              統合する
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {group.assigned.map(({ ticket, bayNumber }) => (
-                      <div key={ticket.ticketUid} className="h-[60px]">
-                        <CupChip cup={ticket} note={`→ ${bayNumber}`} faded />
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
+                  <h3 className="font-black font-mono text-[17px]">
+                    注文 {group.key}
+                  </h3>
+                  <span className="font-black text-[13px]">
+                    {group.items[0].totalOrderCups}杯
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-2">
+                  {group.items.map((order) => {
+                    const uid = order.ticketUid;
+                    const isMergeCandidate = Boolean(
+                      selectedOrder && canMergeDripUnits(selectedOrder, order),
+                    );
+                    return (
+                      <OrderCard
+                        key={uid}
+                        card={order}
+                        size="sm"
+                        selected={selectedUid === uid}
+                        data-sheet-cup={uid}
+                        // A selected card has touch-action none, so it can be dragged in any direction.
+                        onPointerDown={(event) =>
+                          drag.press(
+                            { kind: "unassigned", order },
+                            event,
+                            selectedUid === uid,
+                          )
+                        }
+                        onClickCapture={drag.suppressClick}
+                        onClick={() =>
+                          isMergeCandidate
+                            ? mergeWithSelected(order)
+                            : toggleSelection(order)
+                        }
+                        className={`h-[64px] cursor-grab hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${
+                          selectedUid === uid ? "touch-none" : "touch-pan-y"
+                        }`}
+                        dragging={dragCup?.ticketUid === uid}
+                      >
+                        {isMergeCandidate && <MergeOverlay />}
+                      </OrderCard>
+                    );
+                  })}
+                  {group.assigned.map(({ ticket, bayId }) => (
+                    <OrderCard
+                      key={ticket.ticketUid}
+                      card={ticket}
+                      size="sm"
+                      note={`→ ${laneOrdinal(bayId)}`}
+                      className="h-[64px] opacity-50"
+                    />
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </aside>
 
-      {cupDrag &&
-        dragCup &&
-        createPortal(
-          <div
-            ref={(element) => {
-              ghostRef.current = element;
-              placeGhost();
-            }}
-            aria-hidden="true"
-            className="pointer-events-none fixed z-[1000] scale-[1.03] opacity-90"
-            style={{
-              left: cupDrag.rect.left,
-              top: cupDrag.rect.top,
-              width: cupDrag.rect.width,
-              height: cupDrag.rect.height,
-            }}
-          >
-            <CupChip
-              cup={dragCup}
-              baristaName={
-                dragCup.preferredBaristaId
-                  ? baristaNames.get(dragCup.preferredBaristaId)
-                  : undefined
-              }
-              lifted
-            />
-            {hoveredTarget !== null && (
-              <div className="-right-1 -top-2 absolute z-[2] whitespace-nowrap rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
-                {hoveredTarget === "unassigned"
-                  ? "未割当へ"
-                  : `→ ${hoveredBayNumber}`}
-              </div>
-            )}
-          </div>,
-          document.body,
+      {dragCup &&
+        drag.ghost(
+          <OrderCard card={dragCup} size="sm" />,
+          hoveredTarget === null
+            ? null
+            : hoveredTarget === "unassigned"
+              ? "未割当へ"
+              : `→ ${hoveredTarget}`,
         )}
     </section>
   );

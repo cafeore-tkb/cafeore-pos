@@ -2,20 +2,13 @@ import { caosTimeOfDayLabel, jstDayStart } from "@cafeore/common";
 import { Database, Eye } from "lucide-react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { ControlViewA } from "./components/ControlViewA";
-import type { PosConnectionStatus } from "./hooks/usePosOrders";
+import { POS_STATUS_LABEL } from "./hooks/usePosOrders";
 import { useLiveCaosBoard } from "./live/useLiveCaosBoard";
 import { makeLaneBaristas } from "./utils/lanes";
 import { nextAvailableBays, totalCups } from "./utils/orderQueue";
 
 // 閲覧だけの管制盤（/master-sheet/view）。盤面は操作の画面（App.tsx）と同じ useLiveCaosBoard で組み立て、
 // 管制盤 A のタイムラインに流すだけ。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
-
-const STATUS_LABEL: Record<PosConnectionStatus, string> = {
-  off: "未接続",
-  connecting: "接続中",
-  open: "接続済み",
-  reconnecting: "再接続中",
-};
 
 const noop = () => {};
 // 列（1st〜6th）。閲覧だけの画面は列を変えない
@@ -55,11 +48,11 @@ export default function ReadOnlyBoard() {
           杯
         </span>
         <span
-          title={`cafeore-pos の盤面: ${STATUS_LABEL[status]}`}
+          title={`cafeore-pos の盤面: ${POS_STATUS_LABEL[status]}`}
           className={`flex items-center gap-1 rounded-lg border px-2 py-1 font-black text-xs ${status === "open" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-800"}`}
         >
           <Database className="h-4 w-4" />
-          {STATUS_LABEL[status]}
+          {POS_STATUS_LABEL[status]}
         </span>
       </header>
       <div className="min-h-0 flex-1">

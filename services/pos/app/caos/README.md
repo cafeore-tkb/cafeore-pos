@@ -31,7 +31,9 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 | 割当操作 | タップで1〜6ボタン／なぞり／ドラッグ | タップで1〜6ボタン／なぞり／ドラッグ | カードを選んで表の「ここに配置」をタップ／列へドラッグ |
 | 割当後の移動・戻し | レーン間ドラッグ、タップで1〜6／×で戻す | 詳細モーダル | 列間ドラッグ、右の注文内容へドラッグで戻す、詳細モーダル |
 | 1杯カードの統合 | あり | なし | あり（統合した2注文の行を、間の行ごと大きな枠で囲む） |
-| 主な実装 | `DispatchBoard` + `UnassignedOrdersPanel` | `ControlViewC` + `DripperOrderCard` | `ControlViewD` |
+| 主な実装 | `DispatchBoard` + `UnassignedOrdersPanel` | `ControlViewC` + `UnassignedOrdersPanel` | `ControlViewD` |
+
+カードは3案とも同じ部品（`components/OrderCard.tsx` の `OrderCard`。置き場所ごとに文字の大きさだけ変える）で、ドラッグは `hooks/useCardDrag.tsx`、見出し・列の番号・`次へ`・空きスロットは `components/BoardParts.tsx`、右のパネル（割当・詳細・補助のタブ）は `components/SidePanels.tsx`（POS の `Sheet`）を共有します。
 
 - **A：タイムライン**　時間の流れを最も正確に表す基準案です。待ち時間の偏りや「誰がいつ空くか」が位置で読めて、ドラッグで再配置できます。代わりに情報量が多く、横スクロールやカードの小ささで一覧性が落ちやすくなります。
 - **C：ドリッパー行**　担当者を行にして、現在の抽出と待機列を横に並べる案です。未割当を右半分に全件並べます。待機列が長くなると行内の横スクロールになります。

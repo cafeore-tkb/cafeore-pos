@@ -1,28 +1,17 @@
-import { caosTimeOfDayLabel } from "@cafeore/common";
+import { caosClockLabel, caosTimeOfDayLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Barista, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
-import { orderLabel } from "../utils/orderQueue";
-import { BayLaneRow } from "./BayLaneRow";
+import { useCardDrag } from "../hooks/useCardDrag";
+import type { OrderTicket } from "../types";
+import { bayTargetAt, laneOrdinal } from "../utils/lanes";
+import { isSoon, orderLabel } from "../utils/orderQueue";
+import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
+import type { ControlViewProps } from "./ControlWorkspace";
+import { BayPad, OrderCard } from "./OrderCard";
 
-interface DispatchBoardProps {
-  baristas: Barista[];
-  selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
-  onAdvanceBay: (bayId: number) => void;
-  onOpenTicketDetail: (ticket: OrderTicket) => void;
-  actionTicketKey?: string | null;
-  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
-  onCloseTicketAction: () => void;
-  onOpenEmptySlot: (bayId: number) => void;
-  simTimeSec: number;
-  timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
-  /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
-  readOnly?: boolean;
-}
+// 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
+// 待機のカードはタップで 1〜6 のボタン（もう一度タップで未割当に戻す）、列へのドラッグで移す。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 const STICKY_LEFT_WIDTH = 290; // 195px barista + 95px action
@@ -33,7 +22,15 @@ const FOLLOW_TOLERANCE_PX = 24;
 // Scrolled this far behind NOW, the board shows the past-history banner.
 const PAST_VIEW_THRESHOLD_PX = 600;
 
-export const DispatchBoard: React.FC<DispatchBoardProps> = ({
+export const DispatchBoard: React.FC<
+  Omit<
+    ControlViewProps,
+    "unassignedOrders" | "nextAvailable" | "onAssignToBay" | "onMergeOrders"
+  > & {
+    /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
+    readOnly?: boolean;
+  }
+> = ({
   baristas,
   selectedOrderId,
   onSelectOrder,
@@ -44,13 +41,13 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   onReturnToUnassigned,
   onCloseTicketAction,
   onOpenEmptySlot,
-  simTimeSec,
+  currentTimeSec,
   timelineCommand,
   readOnly = false,
 }) => {
   // Build a rolling timeline that runs 12 hours ahead of the current hour. It starts
   // one hour back so drips spanning the top of the hour keep their real position.
-  const timelineStartSec = Math.floor(simTimeSec / 3600) * 3600 - 3600;
+  const timelineStartSec = Math.floor(currentTimeSec / 3600) * 3600 - 3600;
   const timelineEndSec = timelineStartSec + 13 * 3600;
   const timelineWidthPx = (timelineEndSec - timelineStartSec) * PIXELS_PER_SEC;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -60,7 +57,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   const [isScrolledToPast, setIsScrolledToPast] = useState(false);
 
   // Position of current NOW cursor along timeline
-  const nowX = (simTimeSec - timelineStartSec) * PIXELS_PER_SEC;
+  const nowX = (currentTimeSec - timelineStartSec) * PIXELS_PER_SEC;
   const followLeftPx = Math.max(0, nowX - NOW_VIEWPORT_OFFSET);
   const isPastView = !isFollowingNow && isScrolledToPast;
   const followLeftRef = useRef(followLeftPx);
@@ -149,46 +146,57 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
   }, [timelineCommand]);
 
+  // 待機のカードを別の列へ（今の列と、指名以外の列には置けない）
+  const drag = useCardDrag<{ ticket: OrderTicket; bayId: number }, number>({
+    targetAt: ({ ticket, bayId }, x, y) =>
+      bayTargetAt(x, y, { from: bayId, preferred: ticket.preferredBaristaId }),
+    onDrop: ({ ticket }, bayId) => {
+      onMoveTicket(ticket, bayId);
+      onCloseTicketAction();
+    },
+  });
+
+  // 1〜6 のボタンを開いたカードの外を押すと閉じる
+  useEffect(() => {
+    if (!actionTicketKey) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const card = (event.target as HTMLElement).closest<HTMLElement>(
+        "[data-ticket-uid]",
+      );
+      if (card?.dataset.ticketUid !== actionTicketKey) onCloseTicketAction();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+  }, [actionTicketKey, onCloseTicketAction]);
+
   // Generate timeline markers every 1 minute, with major labels every 5 minutes
   const timeMarkers = [];
   for (let sec = timelineStartSec; sec <= timelineEndSec; sec += 60) {
     const timeStr = caosTimeOfDayLabel(sec).slice(0, 5); // 「10:05」
     const m = Number(timeStr.slice(3));
-    const isMajor = m % 5 === 0;
-    const left = (sec - timelineStartSec) * PIXELS_PER_SEC;
-
     timeMarkers.push({
       sec,
       timeStr,
       minuteStr: timeStr.slice(2),
-      isMajor,
+      isMajor: m % 5 === 0,
       isHour: m === 0,
-      left,
+      left: (sec - timelineStartSec) * PIXELS_PER_SEC,
     });
   }
 
-  // Find all cards matching selectedOrderId to summarize
-  const matchingTickets: {
-    beanName: string;
-    cupCount: number;
-    bayNumber: number;
-  }[] = [];
-  if (selectedOrderId) {
-    baristas.forEach((b) => {
-      [...(b.pastTickets || []), ...b.queue].forEach((t) => {
-        if (orderLabel(t) === selectedOrderId) {
-          matchingTickets.push({
-            bayNumber: b.bayNumber,
-            beanName: t.beanName,
-            cupCount: t.cupCount,
-          });
-        }
-      });
-    });
-  }
+  // 選んだ注文のカード（列ごと）
+  const matchingTickets = baristas.flatMap((barista) =>
+    [...(barista.pastTickets ?? []), ...barista.queue]
+      .filter((ticket) => orderLabel(ticket) === selectedOrderId)
+      .map(
+        (ticket) =>
+          `ドリッパー ${laneOrdinal(barista.id)}: ${ticket.beanName} ${ticket.cupCount}杯`,
+      ),
+  );
 
   return (
-    <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-[#cbd5e1] bg-white shadow-xs">
+    <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       {isPastView && (
         <div className="flex h-[28px] items-center gap-1 border-amber-200 border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
           <RotateCcw className="h-3 w-3" />
@@ -206,14 +214,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
             </span>
             <span>連動:</span>
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
-              {matchingTickets.length > 0
-                ? matchingTickets
-                    .map(
-                      (m) =>
-                        `ドリッパー ${laneOrdinal(m.bayNumber)}: ${m.beanName} ${m.cupCount}杯`,
-                    )
-                    .join(" ＋ ")
-                : "オーダー詳細表示"}
+              {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
             </span>
           </div>
 
@@ -239,9 +240,9 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
           style={{ width: `${STICKY_LEFT_WIDTH + timelineWidthPx}px` }}
         >
           {/* 3A. Synchronized Timeline Scale Header */}
-          <div className="relative flex h-[30px] items-center border-[#e2e8f0] border-b bg-[#f8fafc] font-medium font-mono text-[11px] text-slate-500">
+          <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
             {/* Sticky Left Header Cell (290px = 95px Action + 195px Barista) */}
-            <div className="sticky left-0 isolate z-[60] flex h-full w-[290px] shrink-0 items-center border-[#cbd5e1] border-r bg-[#f8fafc] font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
+            <div className="sticky left-0 isolate z-[60] flex h-full w-[290px] shrink-0 items-center border-slate-300 border-r bg-slate-50 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
               <span className="w-[95px] px-3 text-center">操作</span>
               <span className="w-[195px] border-slate-200 border-l px-3">
                 ドリッパー / 抽出担当
@@ -253,67 +254,227 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
               className="relative h-full"
               style={{ width: `${timelineWidthPx}px` }}
             >
-              {timeMarkers.map((marker) => (
-                <div
-                  key={marker.sec}
-                  className="absolute top-0 bottom-0 flex flex-col justify-between"
-                  style={{ left: `${marker.left}px` }}
-                >
+              {timeMarkers.map((marker) => {
+                const tick = (
                   <div
-                    className={`h-[7px] ${
+                    className={
                       marker.isHour
                         ? "h-[12px] w-[2px] bg-slate-700"
                         : marker.isMajor
                           ? "h-[10px] w-[1px] bg-slate-400"
-                          : "w-[1px] bg-slate-300"
-                    }`}
+                          : "h-[7px] w-[1px] bg-slate-300"
+                    }
                   />
-                  {marker.isMajor ? (
-                    <span className="-translate-x-1/2 font-bold text-[11px] text-slate-800">
-                      {marker.timeStr}
-                    </span>
-                  ) : (
-                    <span className="-translate-x-1/2 text-[9px] text-slate-400">
-                      {marker.minuteStr}
-                    </span>
-                  )}
+                );
+                return (
                   <div
-                    className={`h-[7px] ${
-                      marker.isHour
-                        ? "h-[12px] w-[2px] bg-slate-700"
-                        : marker.isMajor
-                          ? "h-[10px] w-[1px] bg-slate-400"
-                          : "w-[1px] bg-slate-300"
-                    }`}
-                  />
-                </div>
-              ))}
+                    key={marker.sec}
+                    className="absolute top-0 bottom-0 flex flex-col justify-between"
+                    style={{ left: `${marker.left}px` }}
+                  >
+                    {tick}
+                    {marker.isMajor ? (
+                      <span className="-translate-x-1/2 font-bold text-[11px] text-slate-800">
+                        {marker.timeStr}
+                      </span>
+                    ) : (
+                      <span className="-translate-x-1/2 text-[9px] text-slate-400">
+                        {marker.minuteStr}
+                      </span>
+                    )}
+                    {tick}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* 3B. Synchronized Bay Rows Container */}
-          <div className="relative divide-y divide-[#e2e8f0]">
-            {[...baristas]
-              .sort((a, b) => a.bayNumber - b.bayNumber)
-              .map((barista) => (
-                <BayLaneRow
+          <div className="relative divide-y divide-slate-200">
+            {baristas.map((barista) => {
+              const activeTicket = barista.queue[0];
+              const isOvertime =
+                activeTicket?.status === "brewing" &&
+                activeTicket.timeRemainingSec === 0;
+              // 開始・終了は盤面で決めた時刻をそのまま使う（cafeore-pos の盤面は live/board.ts の planCaosLane）。
+              // 終了が無いカードは開始から抽出時間、開始が無いカード（準備完了で終わったカード）は終了から抽出時間を引く
+              const positioned = [
+                ...(barista.pastTickets ?? []).map((ticket) => ({
+                  ...ticket,
+                  status: "completed" as const,
+                })),
+                ...barista.queue,
+              ].map((ticket) => {
+                const startSec =
+                  ticket.startTimeSec ??
+                  (ticket.endTimeSec ?? currentTimeSec) -
+                    ticket.totalDurationSec;
+                const endSec =
+                  ticket.endTimeSec ?? startSec + ticket.totalDurationSec;
+                return { ticket, startSec, endSec };
+              });
+              // Place the Empty Slot button after the last ticket, but never behind NOW where
+              // it would scroll out of view on an idle lane.
+              const lastEndSec = positioned.at(-1)?.endSec ?? currentTimeSec;
+
+              return (
+                <div
                   key={barista.id}
-                  barista={barista}
-                  selectedOrderId={selectedOrderId}
-                  onAdvanceBay={onAdvanceBay}
-                  onOpenTicketDetail={onOpenTicketDetail}
-                  actionTicketKey={actionTicketKey}
-                  onMoveTicket={onMoveTicket}
-                  onReturnToUnassigned={onReturnToUnassigned}
-                  onCloseTicketAction={onCloseTicketAction}
-                  onOpenEmptySlot={onOpenEmptySlot}
-                  readOnly={readOnly}
-                  timelineStartSec={timelineStartSec}
-                  pixelsPerSec={PIXELS_PER_SEC}
-                  timelineWidthPx={timelineWidthPx}
-                  simTimeSec={simTimeSec}
-                />
-              ))}
+                  data-bay-target={barista.id}
+                  className="relative flex h-[72px] touch-manipulation items-center bg-white"
+                >
+                  {/* 1. Dripper information - stable locator on the far left */}
+                  <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-slate-200 border-r bg-white px-2 py-1.5">
+                    <LaneBadge bayId={barista.id} />
+                    <div className="flex h-full min-w-0 flex-1 flex-col justify-center leading-none">
+                      {activeTicket && (
+                        <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
+                          {orderLabel(activeTicket)}
+                        </span>
+                      )}
+                      <div className="mt-1 flex min-w-0 items-center gap-1">
+                        <span
+                          className="truncate font-bold text-[13px] text-slate-800"
+                          title={activeTicket?.beanName}
+                        >
+                          {activeTicket?.beanName || "待機中"}
+                        </span>
+                        {activeTicket && (
+                          <span className="shrink-0 rounded bg-slate-950 px-1.5 py-0.5 font-black font-mono text-[12px] text-white">
+                            {activeTicket.cupCount}杯
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className={`mt-1 flex items-baseline gap-1 font-black font-mono ${isSoon(barista, currentTimeSec) ? "text-red-600" : "text-slate-950"}`}
+                      >
+                        {activeTicket && !isOvertime && (
+                          <span className="font-sans text-[9px] tracking-wide">
+                            残り
+                          </span>
+                        )}
+                        <span
+                          className={isOvertime ? "text-[17px]" : "text-[21px]"}
+                        >
+                          {isOvertime
+                            ? "継続中"
+                            : activeTicket?.timeRemainingSec === undefined
+                              ? "--:--"
+                              : caosClockLabel(activeTicket.timeRemainingSec)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Operation - immediately to the right of the dripper */}
+                  <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
+                    {!readOnly && (
+                      <NextButton
+                        barista={barista}
+                        nowSec={currentTimeSec}
+                        onAdvance={onAdvanceBay}
+                        className="min-h-[48px] w-full text-[15px]"
+                      />
+                    )}
+                  </div>
+
+                  {/* 3. Timeline Track with Ticket Queue scaled by duration */}
+                  <div
+                    className="relative h-[72px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
+                    style={{ width: `${timelineWidthPx}px` }}
+                  >
+                    {positioned.map(({ ticket, startSec, endSec }) => {
+                      // Drips that ended before the track starts would otherwise pile up at its left edge.
+                      if (endSec <= timelineStartSec) return null;
+                      const isScheduled = ticket.status === "scheduled";
+                      const isActionOpen =
+                        isScheduled && actionTicketKey === ticket.ticketUid;
+                      return (
+                        <div
+                          key={ticket.ticketUid}
+                          className={isActionOpen ? "z-[80]" : undefined}
+                          style={{
+                            left: Math.max(
+                              10,
+                              (startSec - timelineStartSec) * PIXELS_PER_SEC,
+                            ),
+                            width: Math.max(
+                              130,
+                              (endSec - startSec) * PIXELS_PER_SEC,
+                            ),
+                          }}
+                        >
+                          <OrderCard
+                            card={ticket}
+                            done={ticket.status === "completed"}
+                            selected={selectedOrderId === orderLabel(ticket)}
+                            data-ticket-uid={ticket.ticketUid}
+                            onPointerDown={
+                              isScheduled
+                                ? (event) =>
+                                    drag.press(
+                                      { ticket, bayId: barista.id },
+                                      event,
+                                    )
+                                : undefined
+                            }
+                            onClickCapture={drag.suppressClick}
+                            onClick={() => {
+                              if (!isScheduled) return;
+                              if (!isActionOpen) {
+                                onOpenTicketDetail(ticket);
+                                return;
+                              }
+                              onReturnToUnassigned(ticket);
+                              onCloseTicketAction();
+                            }}
+                            className={`h-full border-l-[5px] border-l-slate-400 hover:shadow-md ${isScheduled ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            dragging={
+                              drag.source?.ticket.ticketUid === ticket.ticketUid
+                            }
+                          >
+                            {isActionOpen && (
+                              <>
+                                <BayPad
+                                  preferredBaristaId={ticket.preferredBaristaId}
+                                  currentBayId={barista.id}
+                                  hoveredBay={drag.target}
+                                  onPick={(bayId, toFront) => {
+                                    onMoveTicket(ticket, bayId, toFront);
+                                    onCloseTicketAction();
+                                  }}
+                                />
+                                <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
+                                  <X className="h-10 w-10 stroke-[3] text-red-600/35" />
+                                </div>
+                              </>
+                            )}
+                          </OrderCard>
+                        </div>
+                      );
+                    })}
+
+                    {/* Empty Slot Button positioned after the last scheduled ticket */}
+                    {!readOnly && (
+                      <div
+                        style={{
+                          left:
+                            (Math.max(lastEndSec, currentTimeSec) -
+                              timelineStartSec) *
+                              PIXELS_PER_SEC +
+                            16,
+                        }}
+                      >
+                        <EmptySlotButton
+                          onClick={() => onOpenEmptySlot(barista.id)}
+                          className="h-full min-w-[130px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           {timeMarkers
             .filter((marker) => marker.isHour)
@@ -337,6 +498,14 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
           </div>
         </div>
       </div>
+      {drag.source &&
+        drag.ghost(
+          <OrderCard
+            card={drag.source.ticket}
+            className="border-l-[5px] border-l-slate-400"
+          />,
+          drag.target ? `→ ${drag.target}` : null,
+        )}
     </div>
   );
 };

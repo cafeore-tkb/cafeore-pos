@@ -7,27 +7,27 @@ import {
 } from "@cafeore/common";
 import { useEffect, useRef, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
-import { AssignSlotModal } from "./components/AssignSlotModal";
-import {
-  AuxiliaryContent,
-  AuxiliarySheet,
-  type AuxiliaryTab,
-  StandaloneAuxiliaryPanel,
-} from "./components/AuxiliaryPanel";
 import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import {
+  AssignPanel,
+  AuxiliaryContent,
+  AuxiliarySheet,
+  type AuxiliaryTab,
+  StandaloneAuxiliaryPanel,
+  TicketDetailPanel,
+} from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
-import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useLiveCaosBoard } from "./live/useLiveCaosBoard";
 import type {
   Barista,
+  DripCard,
   HistoricalOrder,
   OrderTicket,
   TestPlaySession,
-  UnassignedOrder,
 } from "./types";
 import { soundManager } from "./utils/audio";
 import { makeLaneBaristas } from "./utils/lanes";
@@ -78,9 +78,7 @@ const historicalGroupOf = (name: string, type: string): HistoricalGroup => {
   return "SP";
 };
 
-const historicalOrderToDripUnits = (
-  order: HistoricalOrder,
-): UnassignedOrder[] => {
+const historicalOrderToDripUnits = (order: HistoricalOrder): DripCard[] => {
   // Plain iced milk is served without dripping, so it never enters CaOS's drip queue.
   const drinks = order.items.filter(
     (item) =>
@@ -130,9 +128,7 @@ export default function App() {
   const [baristas, setBaristas] = useState<Barista[]>(
     () => standaloneSnapshot?.baristas || makeLaneBaristas(),
   );
-  const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
-    [],
-  );
+  const [unassignedOrders, setUnassignedOrders] = useState<DripCard[]>([]);
 
   // Filters & Toggles
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -255,7 +251,7 @@ export default function App() {
       !testPlayOrders
     )
       return;
-    const incoming: UnassignedOrder[] = [];
+    const incoming: DripCard[] = [];
     while (historicalOrderCursor.current < testPlayOrders.length) {
       const order = testPlayOrders[historicalOrderCursor.current];
       if (new Date(order.createdAt).getTime() > testPlayCurrentMs) break;
@@ -484,7 +480,7 @@ export default function App() {
       return;
     }
     setUnassignedOrders((prev) => {
-      const merged: UnassignedOrder = {
+      const merged: DripCard = {
         ...first,
         ticketUid: `merged-${[firstUid, secondUid].sort().join("-")}`,
         orderNos: Array.from(
@@ -686,29 +682,30 @@ export default function App() {
         )}
       </div>
 
-      {/* Ticket Detail Recipe Modal */}
-      {selectedTicket && controlViewMode !== "current" && (
-        <TicketDetailModal
-          ticket={selectedTicket}
-          currentBayId={
-            boardBaristas.find((bay) =>
-              bay.queue.some(
-                (ticket) => ticket.ticketUid === selectedTicketKey,
-              ),
-            )?.id || null
-          }
-          onClose={() => {
-            setSelectedTicketKey(null);
-            setSelectedOrderId(null);
-          }}
-          onMoveTicket={handleMoveScheduledTicket}
-          onReturnToUnassigned={handleReturnScheduledTicket}
-        />
-      )}
+      {/* 待機のカードの詳細（管制盤 C・D。A はカードの上の 1〜6 のボタン） */}
+      {selectedTicket?.status === "scheduled" &&
+        controlViewMode !== "current" && (
+          <TicketDetailPanel
+            ticket={selectedTicket}
+            currentBayId={
+              boardBaristas.find((bay) =>
+                bay.queue.some(
+                  (ticket) => ticket.ticketUid === selectedTicketKey,
+                ),
+              )?.id || null
+            }
+            onClose={() => {
+              setSelectedTicketKey(null);
+              setSelectedOrderId(null);
+            }}
+            onMoveTicket={handleMoveScheduledTicket}
+            onReturnToUnassigned={handleReturnScheduledTicket}
+          />
+        )}
 
-      {/* Assign Slot Modal */}
+      {/* 空きスロットからの割当 */}
       {assignSlotBayId !== null && (
-        <AssignSlotModal
+        <AssignPanel
           bayId={assignSlotBayId}
           baristas={boardBaristas}
           unassignedOrders={sortedUnassignedOrders}

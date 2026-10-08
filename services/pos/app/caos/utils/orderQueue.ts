@@ -2,8 +2,9 @@ import {
   CAOS_CHANGEOVER_SEC,
   CAOS_FIRST_START_DELAY_SEC,
   CAOS_MAX_CUPS,
+  CAOS_SOON_SEC,
 } from "@cafeore/common";
-import type { Barista, DripCard, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, DripCard, OrderTicket } from "../types";
 
 /** 注文番号の表示（「#152」、統合したカードは「#152+#160」）。選んだ注文を指すキーにも使う（読み戻さない） */
 export const orderLabel = (card: { orderNos: readonly number[] }) =>
@@ -27,10 +28,7 @@ export const compareCards = (a: DripCard, b: DripCard) =>
 
 // 1杯同士で、統合の相手を決めるキー（mergeKey）が同じものだけを、2杯の同時抽出へ統合できる。
 // 注文から組み立てたカードの mergeKey は @cafeore/common の caosMergeKey（canMergeCards が比べるもの。商品と指名）。
-export const canMergeDripUnits = (
-  first: UnassignedOrder,
-  second: UnassignedOrder,
-) =>
+export const canMergeDripUnits = (first: DripCard, second: DripCard) =>
   first.ticketUid !== second.ticketUid &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
@@ -102,11 +100,11 @@ const queueWaitSeconds = (queue: OrderTicket[]) =>
 export const nextAvailableBays = (baristas: Barista[]) =>
   baristas
     .map((barista) => ({
-      bayNumber: barista.bayNumber,
+      bayId: barista.id,
       seconds: queueWaitSeconds(barista.queue),
       isStandby: barista.queue.length === 0,
     }))
-    .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
+    .sort((a, b) => a.seconds - b.seconds || a.bayId - b.bayId)
     .slice(0, 3);
 export type NextAvailable = ReturnType<typeof nextAvailableBays>;
 
@@ -124,14 +122,17 @@ export const activeRemainingSec = (barista: Barista, nowSec: number) => {
   return current.totalDurationSec;
 };
 
+// 抽出中のカードの残りが CAOS_SOON_SEC 以下（「まもなく」）
+export const isSoon = (barista: Barista, nowSec: number) =>
+  barista.queue[0]?.status === "brewing" &&
+  activeRemainingSec(barista, nowSec) <= CAOS_SOON_SEC;
+
 // 注文のカードを最大杯数（CAOS_MAX_CUPS）ずつに分け、注文の中の並び・カードの数・注文の杯数を付ける（実データテスト）
 type UnsplitOrder = Omit<
-  UnassignedOrder,
+  DripCard,
   "itemIndex" | "totalItemsInOrder" | "totalOrderCups"
 >;
-export const splitIntoDripUnits = (
-  orders: UnsplitOrder[],
-): UnassignedOrder[] => {
+export const splitIntoDripUnits = (orders: UnsplitOrder[]): DripCard[] => {
   const totalOrderCups = totalCups(orders);
   const units = orders.flatMap((order) => {
     const parts: UnsplitOrder[] = [];

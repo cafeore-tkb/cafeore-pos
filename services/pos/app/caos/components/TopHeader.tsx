@@ -13,7 +13,10 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
-import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import {
+  POS_STATUS_LABEL,
+  type PosConnectionStatus,
+} from "../hooks/usePosOrders";
 import type { ControlViewMode } from "./ControlWorkspace";
 
 export type NavTab = "control" | "bays" | "beans" | "analytics";
@@ -41,13 +44,6 @@ interface TopHeaderProps {
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
 }
-
-const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
-  off: "実データテスト中は停止",
-  connecting: "接続中",
-  open: "接続済み",
-  reconnecting: "再接続中",
-};
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,

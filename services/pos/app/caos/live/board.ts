@@ -7,7 +7,7 @@ import {
   planCaosLane,
   resolveItemColor,
 } from "@cafeore/common";
-import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, CardBean, DripCard, OrderTicket } from "../types";
 import type { BeanIndex } from "../utils/beans";
 
 // 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards）を、管制盤が使う形（列ごとの待機と未割当）にする。
@@ -16,7 +16,7 @@ import type { BeanIndex } from "../utils/beans";
 const toSec = (date: Date | null, dayStartMs: number) =>
   date === null ? undefined : Math.floor((date.getTime() - dayStartMs) / 1000);
 
-// カード 1 枚分の表示用の情報。抽出カード（OrderTicket）にも未割当カード（UnassignedOrder）にも使う。
+// カード 1 枚分の表示用の情報。抽出カード（OrderTicket）にも未割当カード（DripCard）にも使う。
 const describe = (
   card: CaosCard,
   orderParts: Map<string, CaosCard[]>,
@@ -68,7 +68,7 @@ const describe = (
 
 interface LiveBoard {
   baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
+  unassignedOrders: DripCard[];
   /** ticketUid（カードの key）→ カード（操作の書き込みを作るときに使う） */
   cards: Map<string, CaosCard>;
 }
@@ -151,8 +151,7 @@ export const cardsToBoard = (
   const unassignedOrders = cards
     .filter((card) => card.status === "unassigned")
     .map(
-      (card): UnassignedOrder =>
-        describe(card, orderParts, colorSettings, beanIndex),
+      (card): DripCard => describe(card, orderParts, colorSettings, beanIndex),
     );
 
   return {

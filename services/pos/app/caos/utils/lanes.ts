@@ -16,7 +16,6 @@ export const makeLaneBaristas = (): Barista[] =>
   CAOS_DRIPPER_IDS.map(
     (id): Barista => ({
       id,
-      bayNumber: id,
       queue: [],
       pastTickets: [],
     }),

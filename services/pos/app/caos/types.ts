@@ -33,9 +33,6 @@ export interface DripCard {
   mergeKey: string;
 }
 
-// 未割当のカード
-export type UnassignedOrder = DripCard;
-
 // ドリッパーのカード（抽出中・待機・終わり）
 export interface OrderTicket extends DripCard {
   status: "brewing" | "scheduled" | "completed";
@@ -49,8 +46,8 @@ export interface OrderTicket extends DripCard {
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
 export interface Barista {
+  /** ドリッパーの番号（1〜6） */
   id: number;
-  bayNumber: number;
   /** 終わったカード */
   pastTickets?: OrderTicket[];
   /** 抽出中（先頭）と待機のカード */

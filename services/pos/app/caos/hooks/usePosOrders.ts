@@ -7,6 +7,13 @@ export type PosConnectionStatus =
   | "open"
   | "reconnecting";
 
+export const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
+  off: "実データテスト中は停止",
+  connecting: "接続中",
+  open: "接続済み",
+  reconnecting: "再接続中",
+};
+
 // 注文は、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から受け取る。CaOS 用に別の接続は張らない。
 // つないだ直後に全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある。
 // CaOS の盤面は注文のカップの列で持つので、カードはこの注文から組み立てる（@cafeore/common の buildCaosCards）。

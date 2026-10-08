@@ -71,7 +71,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         (barista.pastTickets || []).flatMap((ticket) => {
           const finishedAt = ticket.endTimeSec;
           return ticket.totalItemsInOrder > 1 && finishedAt !== undefined
-            ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
+            ? [{ ticket, bayNumber: barista.id, finishedAt }]
             : [];
         }),
       ),
@@ -125,7 +125,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         };
         current.expected = Math.max(current.expected, ticket.totalItemsInOrder);
         current.assigned += 1;
-        current.bays.add(barista.bayNumber);
+        current.bays.add(barista.id);
         groups.set(orderLabel(ticket), current);
       });
     });
@@ -233,7 +233,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             : [],
         );
         return {
-          bayNumber: barista.bayNumber,
+          bayNumber: barista.id,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
