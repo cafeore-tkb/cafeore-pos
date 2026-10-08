@@ -23,7 +23,8 @@ import (
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップ（order_cups）の列で持つ（models.OrderCup の Dripper・DripperPosition・
 // DripID・BrewStartedAt・BrewFinishedAt）。カードの表は持たず、画面は注文の一覧からカードを組み立てる。
 //
-//   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409
+//   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
+//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。抽出中のカードを作る書き込みは、
@@ -65,7 +66,7 @@ func caosConflict(message string) error { return &caosConflictError{message: mes
 type CaosHandler struct {
 	db  *gorm.DB
 	hub *Hub
-	// 今の時刻（テストで差し替える）。今日の範囲と「次へ」の時刻に使う
+	// 今の時刻（テストで差し替える）。今日の範囲と、抽出の開始・終了の時刻に使う（iPad の時計は使わない）
 	now func() time.Time
 }
 
@@ -82,7 +83,7 @@ func caosToday(now time.Time) (time.Time, time.Time) {
 
 // ---------------------------------------------------------------- カップの値
 
-// caosState は CaOS がカップに書く値。
+// caosState は CaOS がカップに書く値（カップの今の値）。
 type caosState struct {
 	Dripper         *int
 	DripperPosition *float64
@@ -96,12 +97,20 @@ func cupCaosState(c *models.OrderCup) caosState {
 }
 
 func apiCaosState(s models.CaosCupState) caosState {
-	var id *uuid.UUID
-	if s.DripId != nil {
-		v := uuid.UUID(*s.DripId)
-		id = &v
+	return caosState{s.Dripper, s.DripperPosition, apiDripID(s.DripId), msTime(s.BrewStartedAt), msTime(s.BrewFinishedAt)}
+}
+
+// apiCaosAfter は書く値（時刻は無い。始めるときの時刻は書くときにサーバーの今を入れる）。
+func apiCaosAfter(s models.CaosCupAfter) caosState {
+	return caosState{Dripper: s.Dripper, DripperPosition: s.DripperPosition, DripID: apiDripID(s.DripId)}
+}
+
+func apiDripID(id *openapi_types.UUID) *uuid.UUID {
+	if id == nil {
+		return nil
 	}
-	return caosState{s.Dripper, s.DripperPosition, id, msTime(s.BrewStartedAt), msTime(s.BrewFinishedAt)}
+	v := uuid.UUID(*id)
+	return &v
 }
 
 // 時刻はミリ秒までにそろえる（画面の Date はミリ秒までしか持たないので、送り返された before と比べられるように）
@@ -126,14 +135,14 @@ func (s caosState) equal(o caosState) bool {
 		ptrEqual(s.DripID, o.DripID) && msEqual(s.BrewStartedAt, o.BrewStartedAt) && msEqual(s.BrewFinishedAt, o.BrewFinishedAt)
 }
 
-// 抽出中（始めていて、まだ終えていない）の値か。カップが全部準備完了かは別に見る
-func (s caosState) brewing() bool { return s.BrewStartedAt != nil && s.BrewFinishedAt == nil }
+// 抽出を始めた（抽出中か終わり）値か
+func (s caosState) started() bool { return s.BrewStartedAt != nil || s.BrewFinishedAt != nil }
 
-// validate は書く値の形を確かめる（400）。
-func (s caosState) validate() error {
+// validate は書く値の形を確かめる（400）。start は抽出を始めるか（after の start_brew）。
+func (s caosState) validate(start bool) error {
 	if s.Dripper == nil {
-		if s.DripperPosition != nil || s.BrewStartedAt != nil || s.BrewFinishedAt != nil {
-			return errors.New("ドリッパーの無いカップに順番・時刻は書けません")
+		if s.DripperPosition != nil || start {
+			return errors.New("ドリッパーの無いカップに順番は書けず、抽出も始められません")
 		}
 		return nil
 	}
@@ -142,9 +151,6 @@ func (s caosState) validate() error {
 	}
 	if s.DripID == nil || s.DripperPosition == nil {
 		return errors.New("ドリッパーに置くカップには drip_id と dripper_position が要ります")
-	}
-	if s.BrewFinishedAt != nil && s.BrewStartedAt == nil {
-		return errors.New("始めていないカップは終えられません")
 	}
 	return nil
 }
@@ -235,6 +241,8 @@ func countBrewing(tx *gorm.DB, dripper int, start, end time.Time) (int64, error)
 type caosWrite struct {
 	cups          []uuid.UUID
 	before, after caosState
+	// 抽出を始める（after の brew_started_at に、書くときのサーバーの今を入れる）
+	start bool
 }
 
 func toCaosWrites(req models.CaosCupsWriteRequest) ([]caosWrite, error) {
@@ -247,8 +255,8 @@ func toCaosWrites(req models.CaosCupsWriteRequest) ([]caosWrite, error) {
 		if len(w.CupIds) == 0 {
 			return nil, errors.New("cup_ids が空です")
 		}
-		out := caosWrite{before: apiCaosState(w.Before), after: apiCaosState(w.After)}
-		if err := out.after.validate(); err != nil {
+		out := caosWrite{before: apiCaosState(w.Before), after: apiCaosAfter(w.After), start: w.After.StartBrew}
+		if err := out.after.validate(out.start); err != nil {
 			return nil, err
 		}
 		for _, id := range w.CupIds {
@@ -264,13 +272,16 @@ func toCaosWrites(req models.CaosCupsWriteRequest) ([]caosWrite, error) {
 }
 
 // writeCups は writes を 1 つのトランザクションで書く。書いた注文の ID を返す。
+// 抽出を始める書き込みの brew_started_at は、サーバーの今（ミリ秒まで）。
 func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
-	start, end := caosToday(h.now())
+	now := h.now().Truncate(time.Millisecond)
+	start, end := caosToday(now)
 	var cupIDs []uuid.UUID
 	var brewing []int
-	for _, w := range writes {
+	for i, w := range writes {
 		cupIDs = append(cupIDs, w.cups...)
-		if w.after.brewing() {
+		if w.start {
+			writes[i].after.BrewStartedAt = &now
 			brewing = append(brewing, *w.after.Dripper)
 		}
 	}
@@ -320,6 +331,10 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 				}
 				if !cupCaosState(cup).equal(w.before) {
 					return caosConflict("ほかの端末で先に変わりました。もう一度操作してください")
+				}
+				// 抽出中・終わりのカードは動かさない（時刻はサーバーが付けるので、書き直すと時刻が消える。終えるのは「次へ」）
+				if w.before.started() {
+					return caosRule("抽出中・終わりのカードは動かせません")
 				}
 				if (w.after.Dripper != nil || w.after.DripID != nil) && !needsBrew[id] {
 					return caosRule("抽出の要らないカップ（%s）はドリッパーに置けません", cupItemName(tx, cup))

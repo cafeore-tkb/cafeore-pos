@@ -473,10 +473,7 @@ export default function App() {
       const card = liveCard(orderToAssign.ticketUid);
       if (!card) return;
       void runWrites(
-        assignWrites(liveCards, card, targetBayId, {
-          now: new Date(),
-          newId: newDripId,
-        }),
+        assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
       );
       return;
     }
@@ -555,7 +552,6 @@ export default function App() {
       void runWrites(
         assignWrites(liveCards, card, targetBayId, {
           index: toFront ? 0 : undefined,
-          now: new Date(),
           newId: newDripId,
         }),
       );

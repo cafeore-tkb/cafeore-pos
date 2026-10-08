@@ -720,7 +720,7 @@
   },
   "CaosCupState": {
     "type": "object",
-    "description": "CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当",
     "required": [
       "dripper",
       "dripper_position",
@@ -757,9 +757,36 @@
       }
     }
   },
+  "CaosCupAfter": {
+    "type": "object",
+    "description": "CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。\nstart_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。\ndripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当\n",
+    "required": ["dripper", "dripper_position", "drip_id", "start_brew"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "start_brew": {
+        "type": "boolean",
+        "description": "抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今"
+      }
+    }
+  },
   "CaosCupsWrite": {
     "type": "object",
-    "description": "カップの組を before から after にする。時刻はミリ秒までで比べる",
+    "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）\n",
     "required": ["cup_ids", "before", "after"],
     "properties": {
       "cup_ids": {
@@ -774,7 +801,7 @@
         "$ref": "#/components/schemas/CaosCupState"
       },
       "after": {
-        "$ref": "#/components/schemas/CaosCupState"
+        "$ref": "#/components/schemas/CaosCupAfter"
       }
     }
   },

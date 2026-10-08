@@ -107,11 +107,15 @@ func stateJSON(s caosState) map[string]any {
 		"brew_started_at": s.BrewStartedAt, "brew_finished_at": s.BrewFinishedAt}
 }
 
-var unassigned = map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}
+// unassigned は未割当のカップの今の値（before）、toUnassigned は未割当に戻す書く値（after）
+var (
+	unassigned   = map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}
+	toUnassigned = map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": nil, "start_brew": false}
+)
 
-// placed はドリッパーに置いた値。start が nil なら待機
-func placed(dripper int, position float64, dripID uuid.UUID, start *time.Time) map[string]any {
-	return map[string]any{"dripper": dripper, "dripper_position": position, "drip_id": dripID, "brew_started_at": start, "brew_finished_at": nil}
+// placed はドリッパーに置く書く値（after）。start なら抽出を始める（時刻はサーバーが付ける）、でなければ待機
+func placed(dripper int, position float64, dripID uuid.UUID, start bool) map[string]any {
+	return map[string]any{"dripper": dripper, "dripper_position": position, "drip_id": dripID, "start_brew": start}
 }
 
 func write(cups []uuid.UUID, before, after map[string]any) map[string]any {
@@ -177,16 +181,26 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{f.blend}, assignee: strPtr(" ２ ")})
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1 := uuid.New()
-	start := time.Now().Add(-time.Minute)
+	// サーバーの今。iPad の時計とずれていてもこちらで付ける
+	serverNow := time.Now().Add(-37*time.Second - 123456*time.Microsecond)
+	f.caos.now = func() time.Time { return serverNow }
 
-	// 割当：2 杯を 1 枚のカードで、空いているドリッパー 1 で始める
-	f.mustPut(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(1, 1, card1, &start)))
+	// 割当：2 杯を 1 枚のカードで、空いているドリッパー 1 で始める。開始の時刻はサーバーの今（ミリ秒まで）。
+	// after に時刻を送っても使わない（iPad の時計で付けない）
+	ipadTime := time.Now().Add(time.Hour)
+	after := placed(1, 1, card1, true)
+	after["brew_started_at"] = ipadTime
+	f.mustPut(t, write(ids(o1.OrderCups[:2]...), unassigned, after))
 	for _, c := range o1.OrderCups[:2] {
 		cup := f.cup(t, c.ID)
 		if cup.Dripper == nil || *cup.Dripper != 1 || cup.DripID == nil || *cup.DripID != card1 || cup.BrewStartedAt == nil {
 			t.Fatalf("cup = %+v", cup)
 		}
+		if !cup.BrewStartedAt.Equal(serverNow.Truncate(time.Millisecond)) || cup.BrewFinishedAt != nil {
+			t.Fatalf("brew_started_at = %v, want the server's now %v", cup.BrewStartedAt, serverNow.Truncate(time.Millisecond))
+		}
 	}
+	f.caos.now = time.Now
 	// 注文の応答に載る
 	var order models.Order
 	if err := preloadOrder(db).First(&order, "id = ?", o1.ID).Error; err != nil {
@@ -197,47 +211,59 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	}
 
 	// 楽観ロック：書く前の値が今と違えば 409（ほかの端末が先に書いた）
-	if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(2, 1, card1, nil))); code != http.StatusConflict {
+	if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(2, 1, card1, false))); code != http.StatusConflict {
 		t.Fatalf("stale before = %d, want 409", code)
 	}
-	// 時刻はミリ秒までで比べる（画面の Date はミリ秒まで）
+	// 抽出中のカードは動かせない（書き直すとサーバーの付けた時刻が消える）。before の時刻はミリ秒までで比べる
+	// （画面の Date はミリ秒まで）ので、ミリ秒より細かい違いは 409 でなく、抽出中だから断る 422
 	before := f.state(t, o1.OrderCups[0].ID)
 	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(500 * time.Microsecond)
-	f.mustPut(t, write(ids(o1.OrderCups[:2]...), before, placed(1, 1, card1, &start)))
+	for name, after := range map[string]map[string]any{"move": placed(2, 1, card1, false), "restart": placed(1, 1, card1, true), "unassign": toUnassigned} {
+		if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), before, after)); code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s a brewing card = %d, want 422", name, code)
+		}
+	}
+	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(time.Millisecond)
+	if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), before, placed(2, 1, card1, false))); code != http.StatusConflict {
+		t.Fatalf("before 1ms off = %d, want 409", code)
+	}
 
 	// 抽出が要らないカップはドリッパーにもカードにも入れられない
-	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, placed(3, 1, uuid.New(), nil))); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, placed(3, 1, uuid.New(), false))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("milk on a dripper = %d, want 422", code)
 	}
-	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": uuid.New(), "brew_started_at": nil, "brew_finished_at": nil})); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": uuid.New(), "start_brew": false})); code != http.StatusUnprocessableEntity {
 		t.Fatalf("milk in a card = %d, want 422", code)
 	}
 
 	// 指名の番号のあるカップは、その番号のドリッパーにしか置けない
-	if code, _ := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, uuid.New(), nil))); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, uuid.New(), false))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("nominated cup on another dripper = %d, want 422", code)
 	}
-	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), nil)))
+	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), false)))
 
 	// 1 つのドリッパーで抽出中は 1 枚だけ。待機なら置ける
 	card3 := uuid.New()
-	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, 3, card3, &start))); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, 3, card3, true))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("second brewing card = %d, want 422", code)
 	}
-	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, 3, card3, nil)))
+	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, 3, card3, false)))
 
 	// 1 枚のカードは 2 杯まで。同じカードのカップは全部いっしょに動かす
-	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), placed(1, 1, card1, &start))); code != http.StatusUnprocessableEntity {
+	queued2 := f.createOrder(t, 4, line(f.blend, f.blend))
+	card4 := uuid.New()
+	f.mustPut(t, write(ids(queued2.OrderCups...), unassigned, placed(5, 4, card4, false)))
+	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), placed(5, 4, card4, false))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("third cup in a card = %d, want 422", code)
 	}
-	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), placed(1, 1, card1, nil))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("third cup in a card = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(queued2.OrderCups[0]), f.state(t, queued2.OrderCups[0].ID), placed(6, 4, card4, false))); code != http.StatusUnprocessableEntity {
+		t.Fatalf("a part of a card = %d, want 422", code)
 	}
 
 	// まとめた書き込みは、どれか 1 つが通らなければ何も書かない
 	if code, _ := f.put(t,
 		write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), unassigned),
-		write(ids(o1.OrderCups[2]), unassigned, placed(4, 1, uuid.New(), nil)),
+		write(ids(o1.OrderCups[2]), unassigned, placed(4, 1, uuid.New(), false)),
 	); code != http.StatusUnprocessableEntity {
 		t.Fatalf("partly invalid writes = %d, want 422", code)
 	}
@@ -246,7 +272,7 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	}
 
 	// 未割当に戻す
-	f.mustPut(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), unassigned))
+	f.mustPut(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), toUnassigned))
 	if cup := f.cup(t, o3.OrderCups[0].ID); cup.Dripper != nil || cup.DripID != nil {
 		t.Fatalf("cup = %+v, want unassigned", cup)
 	}
@@ -265,19 +291,18 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 
 	// 前の日の注文のカップは書けない
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
-	if code, _ := f.put(t, write(ids(old.OrderCups[0]), unassigned, placed(5, 1, uuid.New(), nil))); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(old.OrderCups[0]), unassigned, placed(5, 1, uuid.New(), false))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("yesterday's cup = %d, want 422", code)
 	}
 
 	// 消えたカップは 409、形の違うリクエストは 400
-	if code, _ := f.put(t, write([]uuid.UUID{uuid.New()}, unassigned, placed(5, 1, uuid.New(), nil))); code != http.StatusConflict {
+	if code, _ := f.put(t, write([]uuid.UUID{uuid.New()}, unassigned, placed(5, 1, uuid.New(), false))); code != http.StatusConflict {
 		t.Fatalf("missing cup = %d, want 409", code)
 	}
 	for name, after := range map[string]map[string]any{
-		"dripper 7":       placed(7, 1, uuid.New(), nil),
-		"no drip_id":      {"dripper": 1, "dripper_position": 1, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil},
-		"finished only":   {"dripper": 1, "dripper_position": 1, "drip_id": uuid.New(), "brew_started_at": nil, "brew_finished_at": time.Now()},
-		"time unassigned": {"dripper": nil, "dripper_position": nil, "drip_id": nil, "brew_started_at": time.Now(), "brew_finished_at": nil},
+		"dripper 7":        placed(7, 1, uuid.New(), false),
+		"no drip_id":       {"dripper": 1, "dripper_position": 1, "drip_id": nil, "start_brew": false},
+		"start unassigned": {"dripper": nil, "dripper_position": nil, "drip_id": uuid.New(), "start_brew": true},
 	} {
 		if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, after)); code != http.StatusBadRequest {
 			t.Fatalf("%s = %d, want 400", name, code)
@@ -295,12 +320,11 @@ func TestCaosNextOnDB(t *testing.T) {
 	o2 := f.createOrder(t, 2, line(f.blend))
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1, card2, card3 := uuid.New(), uuid.New(), uuid.New()
-	start := time.Now().Add(-time.Minute)
 	f.mustPut(t,
-		write(ids(o1.OrderCups[:2]...), unassigned, placed(1, 1, card1, &start)),
-		write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, nil)),
+		write(ids(o1.OrderCups[:2]...), unassigned, placed(1, 1, card1, true)),
+		write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, false)),
 		// 間に入れた順番（注文番号より前）
-		write(ids(o3.OrderCups[0]), unassigned, placed(1, 1.5, card3, nil)),
+		write(ids(o3.OrderCups[0]), unassigned, placed(1, 1.5, card3, false)),
 	)
 
 	// 次へ：抽出中のカードを終え、そのカップだけ準備完了にし、待機の先頭（順番の小さいもの）を始める
@@ -341,12 +365,16 @@ func TestCaosNextOnDB(t *testing.T) {
 	if code != http.StatusOK || res.FinishedDripId != nil || res.StartedDripId == nil || uuid.UUID(*res.StartedDripId) != card2 {
 		t.Fatalf("next after the master = %d %+v", code, res)
 	}
-	// 抽出中のカードを準備完了にしたカードの列に、抽出中のカードを置ける（終わりとみなす）
-	f.mustPut(t, write(ids(o2.OrderCups[0]), f.state(t, o2.OrderCups[0].ID), unassigned))
-	if code, body := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, &start))); code != http.StatusNoContent {
+	// 抽出中のカードを準備完了にしたら、その列に抽出中のカードを置ける（終わりとみなす）
+	o4 := f.createOrder(t, 4, line(f.blend))
+	if w := callWithParams(t, f.orders.MarkOrderCupReady, http.MethodPatch, "", gin.Params{{Key: "id", Value: o2.ID.String()}, {Key: "cupId", Value: o2.OrderCups[0].ID.String()}}); w.Code != http.StatusOK {
+		t.Fatalf("PATCH cup ready = %d", w.Code)
+	}
+	card4 := uuid.New()
+	if code, body := f.put(t, write(ids(o4.OrderCups[0]), unassigned, placed(1, 4, card4, true))); code != http.StatusNoContent {
 		t.Fatalf("brewing after the master = %d: %s", code, body)
 	}
-	if code, _ := f.next(t, 1, &card2); code != http.StatusOK {
+	if code, _ := f.next(t, 1, &card4); code != http.StatusOK {
 		t.Fatalf("next = %d", code)
 	}
 	// 何も無いドリッパー・形の違う番号
@@ -358,6 +386,7 @@ func TestCaosNextOnDB(t *testing.T) {
 	}
 
 	// 前の日の注文のカップは見ない（終わっていない抽出中が残っていても、今日の盤面は空）
+	start := time.Now().Add(-time.Minute)
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
 	if err := db.Model(&models.OrderCup{}).Where("id = ?", old.OrderCups[0].ID).
 		Updates(placedState(2, uuid.New(), &start).updates()).Error; err != nil {
@@ -366,7 +395,7 @@ func TestCaosNextOnDB(t *testing.T) {
 	if code, _ := f.next(t, 2, nil); code != http.StatusConflict {
 		t.Fatalf("next with yesterday's card = %d, want 409", code)
 	}
-	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, unassigned)) // 何も変えない書き込みも通る
+	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, toUnassigned)) // 何も変えない書き込みも通る
 }
 
 func placedState(dripper int, id uuid.UUID, start *time.Time) caosState {
@@ -390,7 +419,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			codes[i], _ = f.put(t, write(ids(o.OrderCups[0]), unassigned, placed(2, float64(i), uuid.New(), &start)))
+			codes[i], _ = f.put(t, write(ids(o.OrderCups[0]), unassigned, placed(2, float64(i), uuid.New(), true)))
 		}()
 	}
 	wg.Wait()
@@ -424,7 +453,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			codes[i], _ = f.put(t, write([]uuid.UUID{target}, unassigned, placed(3+i%3, 1, uuid.New(), nil)))
+			codes[i], _ = f.put(t, write([]uuid.UUID{target}, unassigned, placed(3+i%3, 1, uuid.New(), false)))
 		}()
 	}
 	wg.Wait()
@@ -444,7 +473,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 
 	// 残りを待機に入れ、5 台が同時に同じカードの「次へ」：通るのは 1 回だけ
 	for i, o := range rest[1:] {
-		f.mustPut(t, write(ids(o.OrderCups[0]), unassigned, placed(2, float64(10+i), uuid.New(), nil)))
+		f.mustPut(t, write(ids(o.OrderCups[0]), unassigned, placed(2, float64(10+i), uuid.New(), false)))
 	}
 	codes = make([]int, 5)
 	for i := range codes {
@@ -491,9 +520,9 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := range 15 {
-			after := unassigned
+			after := toUnassigned
 			if i%2 == 0 {
-				after = placed(4, 7, card, nil)
+				after = placed(4, 7, card, false)
 			}
 			if code, body := f.put(t, write(ids(o.OrderCups...), f.state(t, o.OrderCups[0].ID), after)); code != http.StatusNoContent {
 				t.Errorf("PUT caos %d = %d: %s", i, code, body)
@@ -520,7 +549,7 @@ func TestCaosWriteReachesOtherInstances(t *testing.T) {
 
 	// 書いた注文をこのインスタンスの画面へ配り（カップに CaOS の列が載る）、ほかのインスタンスへ orders_changed で知らせる
 	card := uuid.New()
-	f.mustPut(t, write(ids(o.OrderCups[0]), unassigned, placed(3, 1, card, nil)))
+	f.mustPut(t, write(ids(o.OrderCups[0]), unassigned, placed(3, 1, card, false)))
 	msg := nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeOrder || msg.Order == nil || msg.Order.Cups[0].DripId == nil || uuid.UUID(*msg.Order.Cups[0].DripId) != card {
 		t.Fatalf("broadcast = %+v", msg)

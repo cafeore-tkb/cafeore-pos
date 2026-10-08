@@ -7,12 +7,13 @@ import type { components } from "../types/api";
 //   - dripper：ドリッパーの番号（1〜6）。指名の番号と同じもの
 //   - dripperPosition：ドリッパーの中の順番（小さいほど先）
 //   - dripId：同じカードで淹れるカップの印（統合したら同じ値）
-//   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻
+//   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻。どちらもサーバーの時刻で、サーバーが付ける（画面からは送らない）
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
 // カップが全部準備完了（マスターで準備完了にした）のカードも終わりとみなす。
 //
 // CaOS の画面は、注文の一覧（共有の WebSocket の orders）から buildCaosCards でカードを組み立て、
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
+// 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
 // 練習用の盤面も同じ関数を使う。
 
 /** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
@@ -22,7 +23,7 @@ export const CAOS_MAX_CUPS = 2;
 
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 
-/** CaOS がカップに書く値 */
+/** カップの今の CaOS の値 */
 export interface CaosCupState {
   dripper: number | null;
   dripperPosition: number | null;
@@ -293,7 +294,22 @@ export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
 
 // ---------------------------------------------------------------- 書き込み
 
-const toJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
+/** カードに書く値。抽出の時刻は持たず、始めるかどうか（start）だけ。始めた時刻はサーバーが付ける */
+export interface CaosCupAfter {
+  dripper: number | null;
+  dripperPosition: number | null;
+  dripId: string | null;
+  start: boolean;
+}
+
+const UNASSIGNED_AFTER: CaosCupAfter = {
+  dripper: null,
+  dripperPosition: null,
+  dripId: null,
+  start: false,
+};
+
+const beforeJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
   dripper: state.dripper,
   dripper_position: state.dripperPosition,
   drip_id: state.dripId,
@@ -301,10 +317,17 @@ const toJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
   brew_finished_at: state.brewFinishedAt?.toISOString() ?? null,
 });
 
-const writeOf = (card: CaosCard, after: CaosCupState): CaosCupsWrite => ({
+const afterJSON = (after: CaosCupAfter): CaosCupsWrite["after"] => ({
+  dripper: after.dripper,
+  dripper_position: after.dripperPosition,
+  drip_id: after.dripId,
+  start_brew: after.start,
+});
+
+const writeOf = (card: CaosCard, after: CaosCupAfter): CaosCupsWrite => ({
   cup_ids: card.cups.map((cup) => cup.id),
-  before: toJSON(card.state),
-  after: toJSON(after),
+  before: beforeJSON(card.state),
+  after: afterJSON(after),
 });
 
 /** 書き込みを作れなかった理由（画面にそのまま出す） */
@@ -313,21 +336,19 @@ export type CaosWritesResult = { writes: CaosCupsWrite[] } | { error: string };
 export interface CaosAssignOptions {
   /** ドリッパーの待機の中の位置（0 始まり）。無ければ注文番号の順 */
   index?: number;
-  /** 置いたドリッパーが空いていればそのまま始める。その時刻 */
-  now: Date;
   /** 新しいカードの dripId を作る */
   newId: () => string;
 }
 
 /**
  * 割当・ドリッパーの移動・順番の入れ替え。未割当・待機のカードを dripper の待機に入れる。
- * ドリッパーに抽出中も待機も無ければ、そのまま抽出を始める。
+ * ドリッパーに抽出中も待機も無ければ、そのまま抽出を始める（「始める」の印を送り、開始の時刻はサーバーが付ける）。
  */
 export const assignWrites = (
   cards: readonly CaosCard[],
   card: CaosCard,
   dripper: number,
-  { index, now, newId }: CaosAssignOptions,
+  { index, newId }: CaosAssignOptions,
 ): CaosWritesResult => {
   if (!Number.isInteger(dripper) || dripper < 1 || dripper > CAOS_DRIPPERS)
     return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
@@ -356,15 +377,13 @@ export const assignWrites = (
           ? positions[positions.length - 1] + 1
           : (positions[i - 1] + positions[i]) / 2;
   }
-  const start = !lane.brewing && others.length === 0;
   return {
     writes: [
       writeOf(card, {
         dripper,
         dripperPosition: position,
         dripId: card.dripId ?? newId(),
-        brewStartedAt: start ? now : null,
-        brewFinishedAt: null,
+        start: !lane.brewing && others.length === 0,
       }),
     ],
   };
@@ -374,7 +393,7 @@ export const assignWrites = (
 export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   if (card.status !== "queued")
     return { error: "待機のカードだけ未割当に戻せます" };
-  return { writes: [writeOf(card, UNASSIGNED_STATE)] };
+  return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
 /** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名 */
@@ -401,10 +420,15 @@ export const mergeWrites = (
   if (!canMergeCards(card, withCard))
     return { error: "このカード同士は統合できません" };
   if (card.status === "unassigned") {
-    const after = { ...UNASSIGNED_STATE, dripId: newId() };
+    const after = { ...UNASSIGNED_AFTER, dripId: newId() };
     return { writes: [writeOf(card, after), writeOf(withCard, after)] };
   }
-  return {
-    writes: [writeOf(card, card.state), writeOf(withCard, card.state)],
+  // 待機どうし（まだ始めていない）なので、始めない
+  const after: CaosCupAfter = {
+    dripper: card.state.dripper,
+    dripperPosition: card.state.dripperPosition,
+    dripId: card.state.dripId,
+    start: false,
   };
+  return { writes: [writeOf(card, after), writeOf(withCard, after)] };
 };

@@ -246,10 +246,10 @@ describe("[unit] CaOS の書き込み", () => {
     return card;
   };
 
-  test("割当：未割当を待機に入れる（注文番号の順）。空いているドリッパーならそのまま始める", () => {
+  test("割当：未割当を待機に入れる（注文番号の順）。空いているドリッパーならそのまま始める（時刻はサーバーが付ける）", () => {
     const cards = board();
     const card = find(cards, (c) => c.orderNo === 5);
-    expect(assignWrites(cards, card, 1, { now: NOW, newId })).toEqual({
+    expect(assignWrites(cards, card, 1, { newId })).toEqual({
       writes: [
         {
           cup_ids: ids(card),
@@ -264,22 +264,27 @@ describe("[unit] CaOS の書き込み", () => {
             dripper: 1,
             dripper_position: 5,
             drip_id: expect.stringMatching(/^drip-/),
-            brew_started_at: null,
-            brew_finished_at: null,
+            start_brew: false,
           },
         },
       ],
     });
-    const idle = assignWrites(cards, card, 3, { now: NOW, newId });
-    expect("writes" in idle && idle.writes[0].after.brew_started_at).toBe(
-      NOW.toISOString(),
-    );
+    // 空いているドリッパー：時刻の代わりに「始める」の印を送る（iPad の時計の時刻は送らない）
+    const idle = assignWrites(cards, card, 3, { newId });
+    if (!("writes" in idle)) throw new Error(idle.error);
+    expect(idle.writes[0].after).toEqual({
+      dripper: 3,
+      dripper_position: 5,
+      drip_id: expect.stringMatching(/^drip-/),
+      start_brew: true,
+    });
+    expect(idle.writes[0].after).not.toHaveProperty("brew_started_at");
   });
 
   test("順番：待機の index 番目に入るよう前後の間の値にする。同じドリッパーで index が無ければ何もしない", () => {
     const cards = board();
     const q3 = find(cards, (c) => c.dripId === "q3");
-    const front = assignWrites(cards, q3, 1, { index: 0, now: NOW, newId });
+    const front = assignWrites(cards, q3, 1, { index: 0, newId });
     expect("writes" in front && front.writes[0].after).toMatchObject({
       dripper: 1,
       dripper_position: 1,
@@ -291,11 +296,11 @@ describe("[unit] CaOS の書き込み", () => {
       drip_id: "q3",
     });
     const card = find(cards, (c) => c.orderNo === 5);
-    const middle = assignWrites(cards, card, 1, { index: 1, now: NOW, newId });
+    const middle = assignWrites(cards, card, 1, { index: 1, newId });
     expect("writes" in middle && middle.writes[0].after.dripper_position).toBe(
       2.5,
     );
-    expect(assignWrites(cards, q3, 1, { now: NOW, newId })).toEqual({
+    expect(assignWrites(cards, q3, 1, { newId })).toEqual({
       writes: [],
     });
   });
@@ -303,18 +308,14 @@ describe("[unit] CaOS の書き込み", () => {
   test("指名のあるカードはその番号のドリッパーだけ。抽出中は動かせない", () => {
     const cards = board();
     const named = find(cards, (c) => c.nominatedDripper === 4);
-    expect(assignWrites(cards, named, 1, { now: NOW, newId })).toHaveProperty(
-      "error",
-    );
-    expect(assignWrites(cards, named, 4, { now: NOW, newId })).toHaveProperty(
-      "writes",
-    );
+    expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("error");
+    expect(assignWrites(cards, named, 4, { newId })).toHaveProperty("writes");
     expect(
       assignWrites(
         cards,
         find(cards, (c) => c.dripId === "brewing"),
         2,
-        { now: NOW, newId },
+        { newId },
       ),
     ).toHaveProperty("error");
   });
@@ -327,8 +328,7 @@ describe("[unit] CaOS の書き込み", () => {
       dripper: null,
       dripper_position: null,
       drip_id: null,
-      brew_started_at: null,
-      brew_finished_at: null,
+      start_brew: false,
     });
     expect(
       unassignWrites(find(cards, (c) => c.dripId === "brewing")),
@@ -356,16 +356,28 @@ describe("[unit] CaOS の書き込み", () => {
     const q3 = find(cards, (c) => c.dripId === "q3");
     const queued = mergeWrites(q2, q3, newId);
     if (!("writes" in queued)) throw new Error(queued.error);
+    const q2After = {
+      dripper: q2.dripper,
+      dripper_position: q2.dripperPosition,
+      drip_id: "q2",
+      start_brew: false,
+    };
     expect(queued.writes).toEqual([
       {
         cup_ids: ids(q2),
-        before: queued.writes[0].after,
-        after: queued.writes[0].after,
+        before: {
+          dripper: q2.dripper,
+          dripper_position: q2.dripperPosition,
+          drip_id: "q2",
+          brew_started_at: null,
+          brew_finished_at: null,
+        },
+        after: q2After,
       },
       {
         cup_ids: ids(q3),
         before: expect.objectContaining({ drip_id: "q3" }),
-        after: queued.writes[0].after,
+        after: q2After,
       },
     ]);
     expect(mergeWrites(q2, o5, newId)).toHaveProperty("error"); // 待機と未割当

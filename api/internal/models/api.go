@@ -43,7 +43,19 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
-// CaosCupState CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
+// CaosCupAfter CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
+// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
+type CaosCupAfter struct {
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
+
+	// StartBrew 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今
+	StartBrew bool `json:"start_brew"`
+}
+
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 type CaosCupState struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
@@ -52,12 +64,15 @@ type CaosCupState struct {
 	DripperPosition *float64            `json:"dripper_position"`
 }
 
-// CaosCupsWrite カップの組を before から after にする。時刻はミリ秒までで比べる
+// CaosCupsWrite カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+// 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
 type CaosCupsWrite struct {
-	// After CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
-	After CaosCupState `json:"after"`
+	// After CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
+	// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+	// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
+	After CaosCupAfter `json:"after"`
 
-	// Before CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
 }

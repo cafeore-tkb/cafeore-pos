@@ -113,8 +113,12 @@ export interface paths {
      * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
      * 書いたカップの注文は /api/ws/orders の {"type":"order"} で全部の画面に配り、ほかのインスタンスへは DB の通知（orders_changed）で知らせる。
      *
+     * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+     * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+     *
      * 確かめること：
-     * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+     * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+     * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
@@ -499,7 +503,7 @@ export interface components {
       /** Format: uuid */
       submitted_order_id: string | null;
     };
-    /** @description CaOS がカップに書く値（OrderCupResponse の同じ名前の列）。全部 null なら未割当 */
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
     CaosCupState: {
       dripper: number | null;
       /** Format: double */
@@ -511,11 +515,28 @@ export interface components {
       /** Format: date-time */
       brew_finished_at: string | null;
     };
-    /** @description カップの組を before から after にする。時刻はミリ秒までで比べる */
+    /**
+     * @description CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
+     * start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+     * dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
+     */
+    CaosCupAfter: {
+      dripper: number | null;
+      /** Format: double */
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** @description 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今 */
+      start_brew: boolean;
+    };
+    /**
+     * @description カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+     * 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+     */
     CaosCupsWrite: {
       cup_ids: string[];
       before: components["schemas"]["CaosCupState"];
-      after: components["schemas"]["CaosCupState"];
+      after: components["schemas"]["CaosCupAfter"];
     };
     CaosCupsWriteRequest: {
       writes: components["schemas"]["CaosCupsWrite"][];
@@ -1224,8 +1245,12 @@ export interface operations {
    * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
    * 書いたカップの注文は /api/ws/orders の {"type":"order"} で全部の画面に配り、ほかのインスタンスへは DB の通知（orders_changed）で知らせる。
    *
+   * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+   * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+   *
    * 確かめること：
-   * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+   * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+   * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
