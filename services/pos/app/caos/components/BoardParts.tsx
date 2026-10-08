@@ -34,6 +34,13 @@ export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
   </span>
 );
 
+// 「次へ」の色（待機は灰、まもなく終わる列は黄、ほかは緑）
+const nextTone = (active: boolean, soon: boolean) => {
+  if (!active) return "bg-slate-200 text-slate-500";
+  if (soon) return "bg-amber-500 text-slate-950 ring-2 ring-amber-200";
+  return "bg-emerald-700 text-white";
+};
+
 /** 「次へ」（抽出中のカードを終えて待機の先頭を始める）。まもなく終わる列は黄色。remainingSec を渡すと残り時間も出す */
 export const NextButton: React.FC<{
   bayId: number;
@@ -50,7 +57,7 @@ export const NextButton: React.FC<{
     disabled={!active}
     onClick={() => onAdvance(bayId)}
     title={`${laneOrdinal(bayId)}の現在の抽出を確定して次へ`}
-    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${!active ? "bg-slate-200 text-slate-500" : soon ? "bg-amber-500 text-slate-950 ring-2 ring-amber-200" : "bg-emerald-700 text-white"} ${className}`}
+    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${nextTone(active, soon)} ${className}`}
   >
     {active && remainingSec !== undefined && (
       <span className="font-mono">

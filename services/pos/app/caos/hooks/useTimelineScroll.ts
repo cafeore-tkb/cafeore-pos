@@ -34,7 +34,9 @@ export const useTimelineScroll = ({
   const [isFollowingNow, setIsFollowingNow] = useState(true);
   const [isScrolledToPast, setIsScrolledToPast] = useState(false);
   const followLeftRef = useRef(followLeftPx);
-  followLeftRef.current = followLeftPx;
+  useLayoutEffect(() => {
+    followLeftRef.current = followLeftPx;
+  }, [followLeftPx]);
 
   // When the hour rolls over the track origin moves; shift the scroll by the same
   // amount before paint so whatever is on screen stays put.

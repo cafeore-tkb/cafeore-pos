@@ -20,16 +20,43 @@ export const emptyBoard = (): Board => ({
   unassigned: [],
 });
 
-/** ドリッパーのカード（抽出中・待機・終わり）と、そのドリッパー */
-export const findTicket = (baristas: Barista[], key: string) => {
-  for (const barista of baristas) {
-    const ticket =
-      barista.queue.find((item) => item.ticketUid === key) ??
-      barista.pastTickets.find((item) => item.ticketUid === key);
-    if (ticket) return { ticket, bayId: barista.id };
-  }
-  return null;
+/** 届いたカードを未割当に足し、取り下げられたカード（isWithdrawn）を未割当から外す。変わらなければ同じ盤面 */
+export const receiveCards = (
+  board: Board,
+  incoming: DripCard[],
+  isWithdrawn?: (card: DripCard) => boolean,
+): Board => {
+  const remaining = isWithdrawn
+    ? board.unassigned.filter((card) => !isWithdrawn(card))
+    : board.unassigned;
+  if (incoming.length === 0 && remaining.length === board.unassigned.length)
+    return board;
+  return { ...board, unassigned: [...remaining, ...incoming] };
 };
+
+/** 1つ戻す。戻し先の盤面に、そのあとに届いたカード（arrivals）を足す（戻しても届いた注文は消さない） */
+export const restoreBoard = (snapshot: Board, arrivals: DripCard[]): Board => {
+  const restored = new Set(snapshot.unassigned.map((card) => card.ticketUid));
+  return receiveCards(
+    snapshot,
+    arrivals.filter((card) => !restored.has(card.ticketUid)),
+  );
+};
+
+/** ドリッパーのカード（抽出中・待機・終わり）と、そのドリッパー */
+export const findTicket = (baristas: Barista[], key: string) =>
+  ticketsWhere(baristas, (ticket) => ticket.ticketUid === key)[0] ?? null;
+
+/** 条件に合うドリッパーのカード（終わり・抽出中・待機）と、そのドリッパー */
+export const ticketsWhere = (
+  baristas: Barista[],
+  predicate: (ticket: OrderTicket) => boolean,
+) =>
+  baristas.flatMap((barista) =>
+    [...barista.pastTickets, ...barista.queue]
+      .filter(predicate)
+      .map((ticket) => ({ ticket, bayId: barista.id })),
+  );
 
 const findUnassigned = (board: Board, uid: string) =>
   board.unassigned.find((card) => card.ticketUid === uid);

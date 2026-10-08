@@ -17,8 +17,17 @@ import type React from "react";
 import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { AUXILIARY_TITLES } from "./SidePanels";
 
 export type NavTab = "control" | AuxiliaryTab;
+
+// 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
+const NAV_ITEMS = [
+  { id: "control", label: "CaOS", icon: null },
+  { id: "bays", label: AUXILIARY_TITLES.bays, icon: LayoutGrid },
+  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Coffee },
+  { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
+] as const;
 
 interface TopHeaderProps {
   activeTab: NavTab;
@@ -99,13 +108,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onEndTestPlay,
   posStatus,
 }) => {
-  const navItems = [
-    { id: "control" as const, label: "CaOS", icon: null },
-    { id: "bays" as const, label: "ドリッパー", icon: LayoutGrid },
-    { id: "beans" as const, label: "豆キュー", icon: Coffee },
-    { id: "analytics" as const, label: "実績", icon: BarChart3 },
-  ];
-
   return (
     <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* Left side: Clock and Top Metrics */}
@@ -114,7 +116,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
           aria-label="画面切替"
         >
-          {navItems.map((item) => {
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
             return (

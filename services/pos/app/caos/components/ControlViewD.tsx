@@ -48,6 +48,27 @@ const sourceCard = (source: DragSource): DripCard =>
 // 表の線（紙のマスターシートと同じく太い線）
 const LINE = "border-slate-900";
 
+// 行の背景（淹れ終わった行は灰色、選んだカードを置く行は薄い青）
+const rowTone = (isPast: boolean, isTarget: boolean) => {
+  if (isPast) return "bg-slate-50";
+  if (isTarget) return "bg-blue-50/40";
+  return "";
+};
+
+// 枠の背景（ドラッグで指の下の列は青、選んだ注文のカードがある枠は黄）
+const cellTone = (isDropColumn: boolean, isLinked: boolean) => {
+  if (isDropColumn) return "bg-blue-50";
+  if (isLinked) return "bg-amber-50";
+  return "";
+};
+
+// 運んでいるカードの札（置き先）
+const dropLabel = (target: DropTarget | null) => {
+  if (target === null) return null;
+  if (target === "unassigned") return "未割当へ";
+  return `→ ${target}`;
+};
+
 export const ControlViewD: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
@@ -276,7 +297,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     key={row.orderNo}
                     data-sheet-row={row.orderNo}
                     data-live={row.isLive}
-                    className={`h-[72px] ${row.isPast ? "bg-slate-50" : isTargetRow ? "bg-blue-50/40" : ""}`}
+                    className={`h-[72px] ${rowTone(row.isPast, isTargetRow)}`}
                   >
                     <th
                       className={`border-r-4 border-b-2 px-1 text-center ${LINE} ${
@@ -310,13 +331,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                           key={barista.id}
                           rowSpan={cell?.rowSpan ?? 1}
                           data-bay-target={barista.id}
-                          className={`relative border-r-2 border-b-2 p-1 align-top ${LINE} ${
-                            isDropColumn
-                              ? "bg-blue-50"
-                              : isRowLinked && cellEntries.length > 0
-                                ? "bg-amber-50"
-                                : ""
-                          }`}
+                          className={`relative border-r-2 border-b-2 p-1 align-top ${LINE} ${cellTone(
+                            isDropColumn,
+                            isRowLinked && cellEntries.length > 0,
+                          )}`}
                         >
                           {(cell?.rowSpan ?? 1) > 1 ? (
                             <div
@@ -505,11 +523,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       {dragCup &&
         drag.ghost(
           <OrderCard card={dragCup} size="sm" />,
-          hoveredTarget === null
-            ? null
-            : hoveredTarget === "unassigned"
-              ? "未割当へ"
-              : `→ ${hoveredTarget}`,
+          dropLabel(hoveredTarget),
         )}
     </section>
   );

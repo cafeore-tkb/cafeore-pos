@@ -93,6 +93,6 @@ lint は POS と同じ決まりです（`biome.json` に CaOS だけの除外は
 
 ## コードの分け方
 
-- `components/`：部品（表示だけ）。受け取った値を出し、押されたら受け取った関数を呼ぶ。カードは `OrderCard` 1 つで、管制盤 A・C・D と右のパネルで共通。
-- `logic/`：盤面の決まり（純粋な関数）。カードの組み立て（`posOrders`）・統合（`cards`）・割当や移動や「次へ」（`board`）・並びと予定時刻（`queue`）・D の表（`sheet`）・A の目盛り（`timeline`）・入れ直しの選び方（`rebrew`）。
-- `hooks/`：状態と副作用。盤面の状態とタイマー（`useBoardState`）、注文の取り込み（`usePosIngest`）、実データテスト（`useTestPlay`）、それらをまとめる `useCaosSession`、ドラッグ（`useCardDrag`）など。`App.tsx` はフックを呼んで部品に渡すだけ。
+- `components/`：部品（表示だけ）。受け取った値を出し、押されたら受け取った関数を呼ぶ。カードは `OrderCard` 1 つで、管制盤 A・C・D と右のパネルで共通。見出し・列の番号・「次へ」・空きスロットは `BoardParts`、右のパネル（割当・詳細・入れ直し・補助のタブ）は `SidePanels` の `SidePanel`。
+- `logic/`：盤面の決まり（純粋な関数）。カードの組み立て（`posOrders`）・統合と並び（`cards`）・割当や移動や「次へ」や入れ直し（`board`）・列の予定時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・入れ直しの選び方（`rebrew`）・実績の集計（`analytics`）・実データテスト（`historical`）。
+- `hooks/`：状態と副作用。盤面の状態とタイマー（`useBoardState`）、注文の取り込み（`usePosIngest`）、実データテスト（`useTestPlay`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグ（`useCardDrag`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。

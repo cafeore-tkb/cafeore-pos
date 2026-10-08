@@ -97,11 +97,13 @@ export const toTicket = (card: DripCard): OrderTicket => ({
   totalDurationSec: brewSec(card.cupCount),
 });
 
-// 注文のカードを最大杯数（MAX_CUPS）ずつに分け、注文の中の並び・カードの数・注文の杯数を付ける
-type UnsplitCard = Omit<
+/** 分ける前のカード（注文の中の並び・カードの数・注文の杯数がまだ無い） */
+export type UnsplitCard = Omit<
   DripCard,
   "itemIndex" | "totalItemsInOrder" | "totalOrderCups"
 >;
+
+// 注文のカードを最大杯数（MAX_CUPS）ずつに分け、注文の中の並び・カードの数・注文の杯数を付ける
 export const splitIntoDripUnits = (cards: UnsplitCard[]): DripCard[] => {
   const totalOrderCups = totalCups(cards);
   const units = cards.flatMap((card) =>

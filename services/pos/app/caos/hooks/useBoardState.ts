@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type BoardChange, emptyBoard } from "../logic/board";
+import {
+  type BoardChange,
+  emptyBoard,
+  receiveCards,
+  restoreBoard,
+} from "../logic/board";
 import { tickBrewing } from "../logic/queue";
 import type { Board, DripCard } from "../types";
 
@@ -51,18 +56,8 @@ export const useBoardState = ({
   /** 届いたカードを未割当に足し、取り下げられたカード（isWithdrawn）を未割当から外す */
   const receive = useCallback(
     (incoming: DripCard[], isWithdrawn?: (card: DripCard) => boolean) => {
-      if (incoming.length > 0) undoRef.current?.arrivals.push(...incoming);
-      setBoard((prev) => {
-        const remaining = isWithdrawn
-          ? prev.unassigned.filter((card) => !isWithdrawn(card))
-          : prev.unassigned;
-        if (
-          incoming.length === 0 &&
-          remaining.length === prev.unassigned.length
-        )
-          return prev;
-        return { ...prev, unassigned: [...remaining, ...incoming] };
-      });
+      undoRef.current?.arrivals.push(...incoming);
+      setBoard((prev) => receiveCards(prev, incoming, isWithdrawn));
     },
     [],
   );
@@ -71,16 +66,7 @@ export const useBoardState = ({
   const undo = () => {
     const snapshot = undoRef.current;
     if (!snapshot) return false;
-    const restored = new Set(
-      snapshot.board.unassigned.map((card) => card.ticketUid),
-    );
-    setBoard({
-      ...snapshot.board,
-      unassigned: [
-        ...snapshot.board.unassigned,
-        ...snapshot.arrivals.filter((card) => !restored.has(card.ticketUid)),
-      ],
-    });
+    setBoard(restoreBoard(snapshot.board, snapshot.arrivals));
     undoRef.current = null;
     setUndoLabel(null);
     return true;

@@ -5,7 +5,7 @@ import {
   resolveItemColor,
 } from "@cafeore/common";
 import type { Board, DripCard } from "../types";
-import { splitIntoDripUnits } from "./cards";
+import { type UnsplitCard, splitIntoDripUnits } from "./cards";
 import { isBayId } from "./lanes";
 
 // cafeore-pos の注文。POS の画面と同じく、共有の WebSocket から届いた OrderEntity を使う。
@@ -26,10 +26,7 @@ const posOrderTicketPrefix = (posOrderId: string) => `pos-${posOrderId}-`;
 // 注文をカードにする。同じ商品・同じ指名の杯をまとめ、最大 2 杯ずつに分ける。
 // 名前は商品の略称（abbr）、区分は商品の種類の表示名（display_name）をそのまま出す。
 const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
-  const grouped = new Map<
-    string,
-    Omit<DripCard, "itemIndex" | "totalItemsInOrder" | "totalOrderCups">
-  >();
+  const grouped = new Map<string, UnsplitCard>();
   for (const line of order.menus) {
     const assignee = line.assignee?.trim() || undefined;
     const preferredBaristaId = assignee ? nominatedBayId(assignee) : undefined;

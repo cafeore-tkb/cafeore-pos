@@ -87,7 +87,7 @@ export const AssignPanel: React.FC<{
   baristas: Barista[];
   unassignedOrders: DripCard[];
   onClose: () => void;
-  onAssign: (orderId: string, targetBayId: number) => void;
+  onAssign: (card: DripCard, targetBayId: number) => void;
 }> = ({ bayId, baristas, unassignedOrders, onClose, onAssign }) => {
   const [selectedOrderUid, setSelectedOrderUid] = useState(
     unassignedOrders[0]?.ticketUid ?? "",
@@ -110,7 +110,7 @@ export const AssignPanel: React.FC<{
             type="button"
             disabled={!canAssign}
             onClick={() => {
-              onAssign(selectedOrderUid, selectedBayId);
+              if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
             }}
             className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg bg-emerald-700 px-4 font-bold text-white text-xs shadow-xs hover:bg-emerald-800 disabled:opacity-50"
@@ -240,7 +240,7 @@ export const TicketDetailPanel: React.FC<{
 );
 
 // 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルか、新しいブラウザタブ（?panel=）で開く
-const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
+export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
   bays: "ドリッパー",
   beans: "豆キュー",
   analytics: "実績",

@@ -1,4 +1,5 @@
 import type { Barista, DripCard, OrderTicket } from "../types";
+import { ticketsWhere } from "./board";
 import { groupByOrder, orderLabel } from "./cards";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
@@ -92,13 +93,11 @@ export const buildSheet = (baristas: Barista[], unassigned: DripCard[]) => {
 
   // Like the printed sheet, every order number gets a row, including ones with nothing to drip.
   const numbers = Array.from(stats.keys());
-  const orderedIds =
-    numbers.length > 0
-      ? Array.from(
-          { length: Math.max(...numbers) - Math.min(...numbers) + 1 },
-          (_, index) => Math.min(...numbers) + index,
-        )
-      : [];
+  const firstNo = Math.min(...numbers);
+  const orderedIds = Array.from(
+    { length: numbers.length > 0 ? Math.max(...numbers) - firstNo + 1 : 0 },
+    (_, index) => firstNo + index,
+  );
   const rowIndex = new Map(orderedIds.map((id, index) => [id, index]));
 
   const cells = new Map<string, SheetCell>();
@@ -176,10 +175,7 @@ export const linkedOrderNos = (
   new Set(
     [
       ...unassigned,
-      ...baristas.flatMap((barista) => [
-        ...barista.pastTickets,
-        ...barista.queue,
-      ]),
+      ...ticketsWhere(baristas, () => true).map(({ ticket }) => ticket),
     ]
       .filter((card) => orderLabel(card) === selectedOrderId)
       .flatMap((card) => card.orderNos),

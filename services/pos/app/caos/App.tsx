@@ -153,7 +153,7 @@ export default function App() {
           baristas={board.baristas}
           unassignedOrders={session.unassigned}
           onClose={selection.closeAssignSlot}
-          onAssign={session.assign}
+          onAssign={selection.assign}
         />
       )}
 

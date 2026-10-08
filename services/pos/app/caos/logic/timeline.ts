@@ -1,4 +1,4 @@
-import type { Barista, OrderTicket } from "../types";
+import type { Barista } from "../types";
 import { timeOfDayLabel } from "./format";
 import { CHANGEOVER_SEC } from "./queue";
 
@@ -26,26 +26,29 @@ export const timeMarkers = (startSec: number, endSec: number) =>
   });
 
 /**
- * 列のカード（終わり・抽出中・待機）を置く時刻。
+ * 列のカード（終わり・抽出中・待機）を置く時刻と、空きスロットを置く時刻（最後のカードの後ろ。今より前には置かない）。
  * 待機のカードは前のカードの終わりから入れ替えの時間を空けて置き、抽出中のカードは「次へ」を押すまで今まで伸ばす。
  */
 export const positionTickets = (barista: Barista, nowSec: number) => {
   const activeTicket = barista.queue[0];
   let cursorSec: number | null = null;
-  return [
-    ...barista.pastTickets.map((ticket) => ({
-      ...ticket,
-      status: "completed" as const,
-    })),
-    ...barista.queue,
-  ].map((ticket: OrderTicket) => {
-    let startSec = ticket.startTimeSec ?? nowSec;
-    if (cursorSec !== null && ticket.status !== "completed")
-      startSec = Math.max(startSec, cursorSec + CHANGEOVER_SEC);
-    const plannedEndSec = startSec + ticket.totalDurationSec;
-    const endSec =
-      ticket === activeTicket ? Math.max(plannedEndSec, nowSec) : plannedEndSec;
-    if (ticket.status !== "completed") cursorSec = endSec;
-    return { ticket, startSec, endSec };
-  });
+  const positioned = [...barista.pastTickets, ...barista.queue].map(
+    (ticket) => {
+      const isDone = ticket.status === "completed";
+      let startSec = ticket.startTimeSec ?? nowSec;
+      if (cursorSec !== null && !isDone)
+        startSec = Math.max(startSec, cursorSec + CHANGEOVER_SEC);
+      const plannedEndSec = startSec + ticket.totalDurationSec;
+      const endSec =
+        ticket === activeTicket
+          ? Math.max(plannedEndSec, nowSec)
+          : plannedEndSec;
+      if (!isDone) cursorSec = endSec;
+      return { ticket, startSec, endSec };
+    },
+  );
+  return {
+    positioned,
+    freeFromSec: Math.max(positioned.at(-1)?.endSec ?? nowSec, nowSec),
+  };
 };

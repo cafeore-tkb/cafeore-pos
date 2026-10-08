@@ -3,6 +3,7 @@ import type React from "react";
 import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
+import { ticketsWhere } from "../logic/board";
 import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
@@ -21,6 +22,13 @@ const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 const STICKY_LEFT_WIDTH = 290; // 195px barista + 95px action
 // 90 seconds of past context remains visible to the left of NOW.
 const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
+
+// 列の残り時間（カードが無ければ「--:--」、予定を過ぎたら「継続中」）
+const remainingText = (lane: ReturnType<typeof laneStatus>) => {
+  if (!lane.current) return "--:--";
+  if (lane.overtime) return "継続中";
+  return clockLabel(lane.remainingSec);
+};
 
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
@@ -81,13 +89,12 @@ export const DispatchBoard: React.FC<
   );
 
   // 選んだ注文のカード（列ごと）
-  const matchingTickets = baristas.flatMap((barista) =>
-    [...barista.pastTickets, ...barista.queue]
-      .filter((ticket) => orderLabel(ticket) === selectedOrderId)
-      .map(
-        (ticket) =>
-          `ドリッパー ${laneOrdinal(barista.id)}: ${ticket.beanName} ${ticket.cupCount}杯`,
-      ),
+  const matchingTickets = ticketsWhere(
+    baristas,
+    (ticket) => orderLabel(ticket) === selectedOrderId,
+  ).map(
+    ({ ticket, bayId }) =>
+      `ドリッパー ${laneOrdinal(bayId)}: ${ticket.beanName} ${ticket.cupCount}杯`,
   );
 
   return (
@@ -172,10 +179,10 @@ export const DispatchBoard: React.FC<
           <div className="relative divide-y divide-slate-200">
             {baristas.map((barista) => {
               const lane = laneStatus(barista, currentTimeSec);
-              const positioned = positionTickets(barista, currentTimeSec);
-              // Place the Empty Slot button after the last ticket, but never behind NOW where
-              // it would scroll out of view on an idle lane.
-              const lastEndSec = positioned.at(-1)?.endSec ?? currentTimeSec;
+              const { positioned, freeFromSec } = positionTickets(
+                barista,
+                currentTimeSec,
+              );
 
               return (
                 <div
@@ -218,11 +225,7 @@ export const DispatchBoard: React.FC<
                             lane.overtime ? "text-[17px]" : "text-[21px]"
                           }
                         >
-                          {lane.overtime
-                            ? "継続中"
-                            : lane.current?.timeRemainingSec === undefined
-                              ? "--:--"
-                              : clockLabel(lane.current.timeRemainingSec)}
+                          {remainingText(lane)}
                         </span>
                       </div>
                     </div>
@@ -316,7 +319,7 @@ export const DispatchBoard: React.FC<
                     {/* 空きスロット（最後のカードの後ろ。NOW より前には置かない） */}
                     <div
                       style={{
-                        left: toX(Math.max(lastEndSec, currentTimeSec)) + 16,
+                        left: toX(freeFromSec) + 16,
                       }}
                     >
                       <EmptySlotButton

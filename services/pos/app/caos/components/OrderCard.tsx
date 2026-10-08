@@ -189,6 +189,14 @@ export const OrderCard: React.FC<
   );
 };
 
+// 1〜6 のボタンの色（ドラッグで指の下は青、指名のドリッパーは紫）
+const padTone = (bayId: number, hoveredBay: number | null, card: DripCard) => {
+  if (hoveredBay === bayId) return "border-white bg-blue-500 text-white";
+  if (card.preferredBaristaId === bayId)
+    return "border-violet-300 bg-violet-600 text-white";
+  return "border-slate-300 bg-white text-slate-950";
+};
+
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
 // 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが押せない。
 // 指名のあるカードは指名のドリッパーだけ押せる。ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
@@ -217,7 +225,7 @@ export const BayPad: React.FC<{
             event.stopPropagation();
             onPick(bayId);
           }}
-          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : card.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
+          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${padTone(bayId, hoveredBay, card)}`}
         >
           {bayId}
         </button>
