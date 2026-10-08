@@ -2,15 +2,13 @@ import {
   type ColorScreen,
   type OrderEntity,
   type WithId,
-  isOverdue,
-  orderElapsedSeconds,
+  orderElapsedTime,
   readableTextColor,
   resolveItemColor,
   useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
 import { LuCheck, LuHourglass } from "react-icons/lu";
-import { minSec } from "~/lib/minSec";
 import { cn } from "~/lib/utils";
 import { PendingSpinner } from "../atoms/PendingSpinner";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -197,13 +195,12 @@ const CupButton = ({
 
 // 受け付けてから提供まで（まだなら今まで）の時間。15分以上で赤くする
 const ServedTime = ({ order }: { order: OrderEntity }) => {
-  const seconds = orderElapsedSeconds(order);
-  const { m, ss } = minSec(seconds);
+  const { m, ss, overdue } = orderElapsedTime(order);
   return (
     <div
       className={cn(
         "rounded-md px-2",
-        isOverdue(seconds) ? "bg-red-500 text-white" : "bg-slate-100",
+        overdue ? "bg-red-500 text-white" : "bg-slate-100",
       )}
     >
       <div>{order.servedAt == null ? "未提供" : `${m}分${ss}秒`}</div>
