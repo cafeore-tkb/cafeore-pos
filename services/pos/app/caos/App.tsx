@@ -15,6 +15,7 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { usePosOrders } from "./hooks/usePosOrders";
+import { usePracticeData } from "./hooks/usePracticeData";
 import type {
   Barista,
   BeanCode,
@@ -180,8 +181,11 @@ export default function App() {
     direction: "back" | "now" | "forward";
     id: number;
   } | null>(null);
-  // 実データテストの注文。過去の注文データは同梱しない（あとで画面から読み込む形にする）ので、今は空。
-  const historicalOrders: HistoricalOrder[] = [];
+  // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
+  // （ブラウザの中で名前とコメントを落とす。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
+  const practiceData = usePracticeData();
+  const historicalOrders: HistoricalOrder[] =
+    practiceData.dataset?.orders ?? [];
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const [testPlaySession, setTestPlaySession] =
     useState<TestPlaySession | null>(
@@ -1026,7 +1030,11 @@ export default function App() {
 
       {testSetupOpen && (
         <TestPlaySetup
-          orders={historicalOrders}
+          dataset={practiceData.dataset}
+          loading={practiceData.loading}
+          problems={practiceData.problems}
+          onSelectFiles={(files) => void practiceData.readFiles(files)}
+          onClearData={practiceData.clear}
           onClose={() => setTestSetupOpen(false)}
           onStart={handleStartTestPlay}
         />
