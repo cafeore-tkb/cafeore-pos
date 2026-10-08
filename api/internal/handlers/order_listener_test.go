@@ -377,3 +377,24 @@ func TestPendingChangesCoalesces(t *testing.T) {
 		t.Fatalf("take() = %+v; want everything", s)
 	}
 }
+
+func TestPendingChangesRequeue(t *testing.T) {
+	q := newPendingChanges()
+	a, b := uuid.New(), uuid.New()
+	other := uuid.NewString()
+
+	// 失敗した注文を積み直すと、その間に届いた通知とまとめて取り出せる
+	q.add(ordersChangedChannel, other+" "+a.String())
+	q.requeue(changeSet{orderIDs: map[uuid.UUID]struct{}{a: {}, b: {}}})
+	<-q.wake
+	s := q.take()
+	if s.allOrders || len(s.orderIDs) != 2 {
+		t.Fatalf("take() = %+v; want orders a and b", s)
+	}
+
+	// 全注文の読み直しに失敗したら、全注文を配り直すよう積み直す
+	q.requeue(changeSet{allOrders: true})
+	if s := q.take(); !s.allOrders || s.masterState || s.cashierState {
+		t.Fatalf("take() = %+v; want all orders only", s)
+	}
+}

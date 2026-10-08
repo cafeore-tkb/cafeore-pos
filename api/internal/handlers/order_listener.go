@@ -43,6 +43,9 @@ const listenProbeTimeout = 10 * time.Second
 // 黙って切れていることがある。画面がつないで CPU が戻ったら、この確認で気づいて張り直す。
 const listenPingInterval = 30 * time.Second
 
+// 注文の読み直しに失敗したら、この時間をおいて積み直す（DB が一時的に落ちても、ほかのインスタンスの画面を古いままにしない）。
+var publishRetryDelay = time.Second
+
 // notifyChanged は、channel のものが変わったことをほかのインスタンスへ知らせる。
 //
 // Cloud Run のインスタンスはそれぞれ自分につないでいる画面にしか配れないので、
@@ -255,7 +258,17 @@ func (q *pendingChanges) take() changeSet {
 	return s
 }
 
-// 積まれた変更を、DB から読み直して配信する。ctx が終わると戻る。
+// 失敗した変更を積み直す。
+func (q *pendingChanges) requeue(failed changeSet) {
+	q.update(func(s *changeSet) {
+		s.allOrders = s.allOrders || failed.allOrders
+		for id := range failed.orderIDs {
+			s.orderIDs[id] = struct{}{}
+		}
+	})
+}
+
+// 積まれた変更を、DB から読み直して配信する。注文の読み直しに失敗したら、少しおいて積み直す。ctx が終わると戻る。
 func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChanges) {
 	for {
 		select {
@@ -264,38 +277,57 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		case <-changes.wake:
 		}
 		s := changes.take()
-		if s.allOrders {
-			h.publishAllOrders()
+		failed := changeSet{orderIDs: map[uuid.UUID]struct{}{}}
+		if s.allOrders && !h.publishAllOrders() {
+			failed.allOrders = true
 		}
 		for id := range s.orderIDs {
-			h.publishChangedOrder(id)
+			if !h.publishChangedOrder(id) {
+				failed.orderIDs[id] = struct{}{}
+			}
 		}
+		// オーダーストップ・レジの状態は、まだ記録が無いときも読めない（ok = false）ので積み直さない
 		if s.masterState {
 			broadcastMasterState(h.db, h.hub)
 		}
 		if s.cashierState {
 			broadcastCashierState(h.db, h.hub)
 		}
+		if failed.allOrders || len(failed.orderIDs) > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(publishRetryDelay):
+			}
+			changes.requeue(failed)
+		}
 	}
 }
 
-// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。
-func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) {
+// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) bool {
 	_, err := broadcastOrder(h.db, h.hub, orderID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		broadcastOrderDeleted(h.hub, orderID)
 	case err != nil:
 		log.Printf("failed to publish order %s: %v", orderID, err)
+		return false
 	}
+	return true
 }
 
-func (h *OrderHandler) publishAllOrders() {
-	_ = h.hub.Publish(func() (WSMessage, error) {
+// 全注文を読み直して配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishAllOrders() bool {
+	err := h.hub.Publish(func() (WSMessage, error) {
 		msg, ok := ordersMessage(h.db)
 		if !ok {
 			return WSMessage{}, errors.New("failed to load orders")
 		}
 		return msg, nil
 	})
+	if err != nil {
+		log.Printf("failed to publish all orders: %v", err)
+	}
+	return err == nil
 }
