@@ -5,8 +5,7 @@
       "**/node_modules/**",
       "**/build",
       "**/public/build",
-      "**/epos-2.27.0.js",
-      "**/sohosai-2025-day12.json"
+      "**/epos-2.27.0.js"
     ]
   },
   "formatter": {

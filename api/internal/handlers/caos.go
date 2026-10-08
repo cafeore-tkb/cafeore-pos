@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
@@ -24,7 +23,8 @@ import (
 // DripID・BrewStartedAt・BrewFinishedAt）。カードの表は持たず、画面は注文の一覧からカードを組み立てる。
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
-//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる
+//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
+//     限定のカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。抽出中のカードを作る書き込みは、
@@ -166,24 +166,6 @@ func (s caosState) updates() map[string]any {
 	}
 }
 
-// nominatedDripper は明細の指名（assignee）が 1〜6 の数字ならその番号。画面の nominatedDripper と同じ読み方
-// （前後の空白を落として NFKC で正規化し、数字だけのとき）。
-// CaOS6 で明細にドリッパーの番号（dripper）を足したら、そちらに替える。
-func nominatedDripper(assignee *string) (int, bool) {
-	if assignee == nil {
-		return 0, false
-	}
-	s := norm.NFKC.String(strings.TrimSpace(*assignee))
-	if s == "" || strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' }) {
-		return 0, false
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 1 || n > caosDrippers {
-		return 0, false
-	}
-	return n, true
-}
-
 // lockCaosDrippers は抽出中を作るドリッパーの advisory lock を番号の順に取る（注文の行より先に取る）。
 func lockCaosDrippers(tx *gorm.DB, drippers []int) error {
 	for _, d := range uniqueInts(drippers) {
@@ -297,9 +279,12 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 			ID      uuid.UUID
 			OrderID uuid.UUID
 			Brew    bool
+			// 限定（種類の senior_only）。抽出が要るときだけ（models.ItemType.SeniorOnlyBrew と同じ）
+			Senior bool
 		}
 		if err := tx.Raw(`
-			SELECT c.id, c.order_id, COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew
+			SELECT c.id, c.order_id, COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew,
+				COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AND COALESCE(t.senior_only, false) AS senior
 			FROM order_cups c
 			LEFT JOIN items i ON i.id = c.item_id
 			LEFT JOIN item_types t ON t.id = i.item_type_id
@@ -310,10 +295,17 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 			return caosConflict("カップが消えました（注文が編集・削除されたかもしれません）")
 		}
 		needsBrew := make(map[uuid.UUID]bool, len(rows))
+		seniorOnly := make(map[uuid.UUID]bool, len(rows))
 		orderIDs = orderIDs[:0]
 		for _, r := range rows {
 			needsBrew[r.ID] = r.Brew
+			seniorOnly[r.ID] = r.Senior
 			orderIDs = append(orderIDs, r.OrderID)
+		}
+		// 限定のカップを置くなら、今日の担当者が上級生のドリッパー（caos_lanes.go）
+		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
+		if err != nil {
+			return err
 		}
 		orders, err := lockCaosOrders(tx, orderIDs, start, end)
 		if err != nil {
@@ -342,9 +334,13 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 					return caosRule("抽出の要らないカップ（%s）はドリッパーに置けません", cupItemName(tx, cup))
 				}
 				if w.after.Dripper != nil {
-					if n, ok := nominatedDripper(menuAssignee(order, cup.OrderMenuID)); ok && n != *w.after.Dripper {
-						return caosRule("指名のあるカップは %d 番のドリッパーにしか置けません", n)
+					// 指名は明細のドリッパーの番号（dripper）。自由記述（assignee）だけの古い明細は指名なし
+					if n := menuDripper(order, cup.OrderMenuID); n != nil && *n != *w.after.Dripper {
+						return caosRule("指名のあるカップは %d 番のドリッパーにしか置けません", *n)
 					}
+				}
+				if err := checkSeniorOnly(tx, w, cup, seniorOnly[id], seniors); err != nil {
+					return err
 				}
 			}
 			if err := updateCaosCups(tx, w.cups, w.after); err != nil {
@@ -372,6 +368,9 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 					return caosRule("入れ直しのカードはほかのカードと統合できません")
 				}
 			}
+			if err := checkCaosCardNomination(tx, id); err != nil {
+				return err
+			}
 		}
 		for _, d := range uniqueInts(brewing) {
 			n, err := countBrewing(tx, d, start, end)
@@ -396,10 +395,29 @@ func findCaosCup(orders map[uuid.UUID]*models.Order, cupID uuid.UUID) (*models.O
 	return nil, nil
 }
 
-func menuAssignee(order *models.Order, orderMenuID uuid.UUID) *string {
+// checkCaosCardNomination は 1 枚のカードのカップの指名（明細のドリッパーの番号。無指名も 1 つの値）がそろっているかを確かめる。
+// 指名の違うカップを統合すると、どのドリッパーにも置けないカードになるので断る。
+// カードは caosCardSQL で見る（入れ直しのカードは emergency_drip_id。最初に淹れたカードの drip_id は見ない）
+func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
+	var nominations int64
+	if err := tx.Raw(`
+		SELECT COUNT(DISTINCT COALESCE(m.dripper, 0))
+		FROM order_cups c
+		JOIN order_menus m ON m.id = c.order_menu_id
+		WHERE `+caosCardSQL("c")+` = ?`, dripID).Scan(&nominations).Error; err != nil {
+		return err
+	}
+	if nominations > 1 {
+		return caosRule("指名の違うカップは同じカードにできません")
+	}
+	return nil
+}
+
+// menuDripper はカップを含む明細の指名のドリッパーの番号（無指名は nil）
+func menuDripper(order *models.Order, orderMenuID uuid.UUID) *int {
 	for _, line := range order.OrderMenus {
 		if line.ID == orderMenuID {
-			return line.Assignee
+			return line.Dripper
 		}
 	}
 	return nil

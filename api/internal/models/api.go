@@ -11,9 +11,10 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenCashier ColorScreen = "cashier"
-	ColorScreenMaster  ColorScreen = "master"
-	ColorScreenServe   ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -103,6 +104,42 @@ type CaosEmergencyResult struct {
 	StartedDripIds []openapi_types.UUID `json:"started_drip_ids"`
 }
 
+// CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
+type CaosLane struct {
+	Dripper int `json:"dripper"`
+
+	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値
+	Senior bool `json:"senior"`
+
+	// UpdatedAt 最後に替えた時刻。今日まだ替えていなければ null
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// CaosLaneSwapRequest defines model for CaosLaneSwapRequest.
+type CaosLaneSwapRequest struct {
+	First  int `json:"first"`
+	Second int `json:"second"`
+}
+
+// CaosLaneUpdateRequest defines model for CaosLaneUpdateRequest.
+type CaosLaneUpdateRequest struct {
+	// Name 担当者の名前（前後の空白は落とす）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false
+	Senior bool `json:"senior"`
+}
+
+// CaosLanes 今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ
+type CaosLanes struct {
+	// Day 日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う
+	Day   string     `json:"day"`
+	Lanes []CaosLane `json:"lanes"`
+}
+
 // CaosNextRequest defines model for CaosNextRequest.
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
@@ -134,7 +171,9 @@ type CashierStateUpdateRequest struct {
 	SubmittedOrderId *openapi_types.UUID    `json:"submitted_order_id"`
 }
 
-// ColorScreen 背景色を適用する画面
+// ColorScreen 背景色を適用する画面。
+// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+// master・serve はマスター・提供画面のカップ
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -142,7 +181,9 @@ type ColorSettingResponse struct {
 	Color string             `json:"color"`
 	Id    openapi_types.UUID `json:"id"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -156,7 +197,9 @@ type ColorSettingResponse struct {
 type ColorSettingUpsertRequest struct {
 	Color string `json:"color"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -329,7 +372,11 @@ type MenuCreateRequest struct {
 
 // MenuInfo defines model for MenuInfo.
 type MenuInfo struct {
+	// Assignee 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある
 	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null
+	Dripper *int `json:"dripper"`
 
 	// Id 注文明細ID
 	Id   openapi_types.UUID `json:"id"`
@@ -344,8 +391,12 @@ type MenuInfo struct {
 
 // MenuInfoCreate defines model for MenuInfoCreate.
 type MenuInfoCreate struct {
-	Assignee *string            `json:"assignee"`
-	MenuId   openapi_types.UUID `json:"menu_id"`
+	// Assignee 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う
+	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1〜6）。指名しない明細は null
+	Dripper *int               `json:"dripper"`
+	MenuId  openapi_types.UUID `json:"menu_id"`
 
 	// OrderMenuId 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
 	OrderMenuId *openapi_types.UUID `json:"order_menu_id,omitempty"`
@@ -566,6 +617,12 @@ type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
 
 // MarkCaosEmergencyJSONRequestBody defines body for MarkCaosEmergency for application/json ContentType.
 type MarkCaosEmergencyJSONRequestBody = CaosEmergencyRequest
+
+// SwapCaosLanesJSONRequestBody defines body for SwapCaosLanes for application/json ContentType.
+type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
+
+// PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
+type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

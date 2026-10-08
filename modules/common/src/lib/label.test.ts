@@ -56,7 +56,7 @@ const cashierOrder = () => {
     700,
   );
   const named = menu("ケニア", [{ item: kenya, quantity: 1 }], 600);
-  named.assignee = "たくみ";
+  named.assign(2, "たくみ");
   order.menus = [
     set,
     named,
@@ -180,6 +180,21 @@ describe("[unit] ラベルの中身", () => {
     // シールの無いカップ（アイスミルク）・無いカップ
     expect(emergencyLabels(order, "cup-3")).toBeNull();
     expect(emergencyLabels(order, "nope")).toBeNull();
+  });
+
+  test("指名は自由記述があればその文、無ければドリッパーの番号（1st〜6th）を印刷する", () => {
+    const order = cashierOrder();
+    order.menus[1].assign(3, null);
+    const kenya = orderCupLabels(order)[2];
+    expect(kenya.name).toBe("ケニア");
+    expect(kenya.assignee).toBe("3rd");
+    expect(orderSummaryLabel(order).assigned).toEqual([
+      { name: "ケニア", assignee: "3rd" },
+    ]);
+    // 保存した注文（サーバーのカップ）でも同じ
+    const draft = savedOrder();
+    draft.menus[1].assign(3, null);
+    expect(orderCupLabels(draft)[2].assignee).toBe("3rd");
   });
 
   test("印刷していない緊急のカップを見つける", () => {

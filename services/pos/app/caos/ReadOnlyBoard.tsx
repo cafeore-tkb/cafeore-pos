@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { type PosConnectionStatus, usePosOrders } from "./hooks/usePosOrders";
+import { LaneHeaderStatus } from "./lanes/LaneHeaderStatus";
 import { cardsToBoard } from "./live/board";
 import { makeLaneBaristas } from "./utils/lanes";
 import { queueWaitSeconds } from "./utils/orderQueue";
@@ -97,6 +98,8 @@ export default function ReadOnlyBoard() {
           </span>{" "}
           杯
         </span>
+        {/* 上級生のドリッパーが無いときの知らせ（担当者は表示だけ） */}
+        <LaneHeaderStatus />
         <span
           title={`cafeore-pos の盤面: ${STATUS_LABEL[status]}`}
           className={`flex items-center gap-1 rounded-lg border px-2 py-1 font-black text-xs ${status === "open" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-800"}`}

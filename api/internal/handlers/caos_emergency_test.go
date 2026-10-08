@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -222,6 +223,58 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 	cups := buildOrderCups(o1.ID, edited.OrderMenus, &edited, nil)
 	if !timeEqual(cups[0].EmergencyAt, saved.EmergencyAt) || !ptrEqual(cups[0].EmergencyDripID, saved.EmergencyDripID) {
 		t.Fatalf("edited cup = %+v, want the emergency kept", cups[0])
+	}
+}
+
+// 入れ直しのカードを置くときも、指名（明細の dripper）と限定（上級生のドリッパーだけ）の決まりはふつうのカードと同じ
+func TestCaosEmergencyCardRulesOnDB(t *testing.T) {
+	db, _ := openListenTestDB(t)
+	f := newCaosFixture(t, db)
+	special := models.ItemType{Name: "special-" + uuid.NewString(), DisplayName: "特別", SeniorOnly: true}
+	geisha := models.Item{Name: "ゲイシャ", Abbr: "ゲ", ItemType: special}
+	if err := db.Create(&geisha).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.mustPutLane(t, 2, "高橋", false)
+	f.mustPutLane(t, 3, "山田", true)
+	f.mustPutLane(t, 4, "佐藤", false)
+	// 指名（2nd）のカップと、限定のカップと、指名なしのカップを淹れ終える
+	nominated := f.createOrder(t, 1, caosLine{items: []models.Item{f.blend}, dripper: intPtr(2)})
+	limited := f.createOrder(t, 2, line(geisha))
+	plain := f.createOrder(t, 3, line(f.blend))
+	card1, card2, card3 := uuid.New(), uuid.New(), uuid.New()
+	f.mustPut(t,
+		write(ids(nominated.OrderCups[0]), unassigned, placed(2, 1, card1, true)),
+		write(ids(limited.OrderCups[0]), unassigned, placed(3, 2, card2, true)),
+		write(ids(plain.OrderCups[0]), unassigned, placed(4, 3, card3, true)),
+	)
+	// 中断は 1 枚ずつ（1 枚の抽出中のカードのカップだけ）
+	for _, o := range []models.Order{nominated, limited, plain} {
+		f.mustEmergency(t, true, o.OrderCups[0].ID)
+	}
+
+	// 指名の入れ直しのカードは、指名のドリッパーにしか置けない
+	rebrew1 := uuid.New()
+	if code, body := f.put(t, write(ids(nominated.OrderCups[0]), unassigned, placed(3, 1, rebrew1, false))); code != http.StatusUnprocessableEntity || !strings.Contains(body, "指名のあるカップは 2 番") {
+		t.Fatalf("nominated rebrew card to 3 = %d: %s", code, body)
+	}
+	// 指名の違う入れ直しのカップは同じカードにできない（カードは emergency_drip_id で見る）
+	if code, body := f.put(t,
+		write(ids(nominated.OrderCups[0]), unassigned, placed(2, 1, rebrew1, false)),
+		write(ids(plain.OrderCups[0]), unassigned, placed(2, 1, rebrew1, false)),
+	); code != http.StatusUnprocessableEntity || !strings.Contains(body, "指名の違うカップ") {
+		t.Fatalf("rebrew card with different nominations = %d: %s", code, body)
+	}
+	f.mustPut(t, write(ids(nominated.OrderCups[0]), unassigned, placed(2, 1, rebrew1, false)))
+
+	// 限定の入れ直しのカードは、担当者が上級生のドリッパーにしか置けない
+	rebrew2 := uuid.New()
+	if code, body := f.put(t, write(ids(limited.OrderCups[0]), unassigned, placed(4, 2, rebrew2, false))); code != http.StatusUnprocessableEntity || !strings.Contains(body, "上級生") {
+		t.Fatalf("limited rebrew card to a non-senior = %d: %s", code, body)
+	}
+	f.mustPut(t, write(ids(limited.OrderCups[0]), unassigned, placed(3, 2, rebrew2, false)))
+	if c := f.cup(t, limited.OrderCups[0].ID); c.EmergencyDripID == nil || *c.EmergencyDripID != rebrew2 || *c.DripID != card2 {
+		t.Fatalf("limited rebrew cup = %+v", c)
 	}
 }
 

@@ -1,6 +1,12 @@
-import type { MenuEntity, WithId } from "@cafeore/common";
+import {
+  DRIPPER_NUMBERS,
+  type MenuEntity,
+  type WithId,
+  assignmentDisplay,
+  dripperLabel,
+} from "@cafeore/common";
 import { Cross2Icon, Pencil2Icon } from "@radix-ui/react-icons";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { useFocusRef } from "../functional/useFocusRef";
 import { Input } from "../ui/input";
@@ -19,37 +25,67 @@ type props = {
 };
 
 /**
- * Enterでアサイン入力欄を開けて、アイテムのアサインを変更できるコンポーネント
+ * 番号のキー（1〜6）で指名、0 で指名なし
+ */
+const dripperFromKey = (key: string): number | null | undefined => {
+  if (key === "0") return null;
+  const n = Number(key);
+  return DRIPPER_NUMBERS.find((d) => d === n);
+};
+
+/**
+ * Enterで指名の入力欄を開けて、アイテムの指名を変更できるコンポーネント
+ *
+ * 指名はドリッパーの番号（1st〜6th）が必須で、自由記述（ラベルに印刷する文）は番号に添えるだけ
  */
 const ItemAssign = memo(
   ({ item, idx, mutateItem, focus, highlight, onClick, removeItem }: props) => {
-    const [assignee, setAssinee] = useState<string | null>(null);
+    const [dripper, setDripper] = useState<number | null>(item.dripper);
+    const [assignee, setAssignee] = useState(item.assignee ?? "");
+    const wasFocused = useRef(focus);
+    // 入力欄を開いてから番号か自由記述を触ったか。触っていなければ閉じても変えない
+    // （番号より前の明細は自由記述だけなので、開いて閉じただけで指名が消えないように）
+    const touched = useRef(false);
 
-    const assignInputRef = useFocusRef<HTMLInputElement>(focus);
+    const dripperRef = useFocusRef<HTMLSelectElement>(focus);
 
-    const saveAssignInput = useCallback(() => {
-      mutateItem(idx, (prev) => {
-        const copy = prev.clone();
-        copy.assignee = assignee;
-        return copy;
-      });
-    }, [assignee, idx, mutateItem]);
-
-    // アサイン入力欄を閉じるときに保存
+    // 入力欄を開いたときは今の指名から始め、閉じたときに保存する
     /**
      * FIXME #412 useEffect内でstateを更新している
      * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
      */
     useEffect(() => {
-      if (!focus) {
-        saveAssignInput();
+      if (focus && !wasFocused.current) {
+        setDripper(item.dripper);
+        setAssignee(item.assignee ?? "");
+        touched.current = false;
       }
-    }, [focus, saveAssignInput]);
+      if (!focus && wasFocused.current && touched.current) {
+        mutateItem(idx, (prev) => {
+          const copy = prev.clone();
+          copy.assign(dripper, assignee);
+          if (
+            copy.dripper === prev.dripper &&
+            copy.assignee === prev.assignee
+          ) {
+            return prev;
+          }
+          return copy;
+        });
+      }
+      wasFocused.current = focus;
+    }, [focus, item, dripper, assignee, idx, mutateItem]);
 
     const assignView = useMemo(() => {
-      if (item.assignee) return item.assignee;
+      const display = assignmentDisplay(item);
+      if (display) {
+        // 内部の表示は番号で、自由記述はラベルに印刷する文として添える
+        return item.dripper !== null && item.assignee
+          ? `${display}（${item.assignee}）`
+          : display;
+      }
       return highlight ? "Enterで入力" : "　　指名　　";
-    }, [highlight, item.assignee]);
+    }, [highlight, item]);
 
     return (
       <div
@@ -67,13 +103,49 @@ const ItemAssign = memo(
             </p>
             <div className="flex justify-end">
               {focus ? (
-                <Input
-                  ref={assignInputRef}
-                  value={assignee ?? ""}
-                  onChange={(e) => setAssinee(e.target.value)}
-                  placeholder="指名"
-                  className="h-6 w-1/2 border-stone-300 border-b-2 text-sm"
-                />
+                <div className="flex w-3/4 gap-1">
+                  <select
+                    ref={dripperRef}
+                    aria-label="指名する番号"
+                    value={dripper ?? ""}
+                    onChange={(e) => {
+                      touched.current = true;
+                      setDripper(
+                        e.target.value === "" ? null : Number(e.target.value),
+                      );
+                    }}
+                    onKeyDown={(e) => {
+                      const next = dripperFromKey(e.key);
+                      if (next === undefined) return;
+                      e.preventDefault();
+                      touched.current = true;
+                      setDripper(next);
+                    }}
+                    className="h-6 w-2/5 rounded-md border border-stone-300 px-1 text-sm"
+                  >
+                    <option value="">指名なし</option>
+                    {DRIPPER_NUMBERS.map((d) => (
+                      <option key={d} value={d}>
+                        {dripperLabel(d)}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    aria-label="指名の自由記述"
+                    value={dripper === null ? "" : assignee}
+                    disabled={dripper === null}
+                    onChange={(e) => {
+                      touched.current = true;
+                      setAssignee(e.target.value);
+                    }}
+                    placeholder={
+                      dripper === null
+                        ? "番号を選ぶと書ける"
+                        : `ラベルの文（空なら${dripperLabel(dripper)}）`
+                    }
+                    className="h-6 w-3/5 border-stone-300 border-b-2 text-sm"
+                  />
+                </div>
               ) : (
                 <div
                   className={cn(
@@ -85,7 +157,7 @@ const ItemAssign = memo(
                     <Pencil2Icon className="w-1/6 stroke-stone-400 pr-1" />
                   )}
                   <button type="button" onClick={onClick} className="w-5/6">
-                    <p className="flex-none text-sm text-stone-400">
+                    <p className="flex-none truncate text-sm text-stone-400">
                       {assignView}
                     </p>
                   </button>

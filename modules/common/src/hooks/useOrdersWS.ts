@@ -7,6 +7,7 @@ import {
   responseToOrderEntity,
 } from "../firebase-utils";
 import type { WithId } from "../lib";
+import type { CaosLanes } from "../lib/caosLanes";
 import {
   type ReconnectingWebSocketStatus,
   createReconnectingWebSocket,
@@ -29,7 +30,9 @@ type WSMessage =
   | {
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
-    };
+    }
+  // CaOS のドリッパーの担当者（今日の 6 つ全部）。変わるたびと、つないだとき（今日の担当者があれば）に届く
+  | { type: "caos_lanes"; caos_lanes: CaosLanes };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -43,6 +46,8 @@ export const useOrdersWS = () => {
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(
     null,
   );
+  // CaOS のドリッパーの担当者。まだ届いていなければ null（担当者なし）
+  const [caosLanes, setCaosLanes] = useState<CaosLanes | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -88,6 +93,10 @@ export const useOrdersWS = () => {
             setCashierState(responseToCashierState(data.cashier_state));
             break;
 
+          case "caos_lanes":
+            setCaosLanes(data.caos_lanes);
+            break;
+
           default:
             console.warn("Unknown WS message:", data);
         }
@@ -115,6 +124,8 @@ export const useOrdersWS = () => {
     masterState,
     /** レジの編集中注文と直前に確定した注文 ID。未受信なら null */
     cashierState,
+    /** CaOS のドリッパーの担当者（日付つき）。未受信なら null */
+    caosLanes,
     status,
   };
 };

@@ -1,3 +1,4 @@
+import { assignmentLabelText } from "../models/dripper";
 import type { OrderEntity } from "../models/order";
 
 // ラベル（シール）の中身を作る。レジの会計のラベルも、緊急のシールも、ここで作ったものを印刷する
@@ -15,7 +16,7 @@ export type CupLabel = {
   index: number;
   /** シールのあるカップが全部で何杯か */
   total: number;
-  /** 明細の指名（自由記述）。無ければ null */
+  /** ラベルに印刷する指名（assignmentLabelText：自由記述があればその文、無ければドリッパーの番号）。無ければ null */
   assignee: string | null;
 };
 
@@ -46,16 +47,18 @@ export const orderCupLabels = (order: OrderEntity): CupLabel[] => {
       ? order.getCoffeeCups().map((item) => ({
           cupId: undefined,
           name: item.name,
-          assignee: item.assignee,
+          assignee: assignmentLabelText(item),
         }))
       : order.cups
           .filter((cup) => cup.item.item_type.needs_brew)
           .map((cup) => ({
             cupId: cup.id,
             name: cup.item.name,
-            assignee:
-              order.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)
-                ?.assignee ?? null,
+            assignee: assignmentLabelText(
+              order.menus.find(
+                (menu) => menu.orderMenuId === cup.orderMenuId,
+              ) ?? { dripper: null, assignee: null },
+            ),
           }));
   return cups.map((cup, i) => ({
     type: "cup",
@@ -72,12 +75,13 @@ const shortName = (name: string) => (name.length < 8 ? name : name.slice(0, 6));
 
 /** 引換券に貼るシール */
 export const orderSummaryLabel = (order: OrderEntity): OrderSummaryLabel => {
-  const assigned = order.menus.flatMap((menu) =>
-    menu.assignee === null
-      ? []
-      : [{ name: menu.name, assignee: menu.assignee }],
+  const assigned = order.menus.flatMap((menu) => {
+    const assignee = assignmentLabelText(menu);
+    return assignee === null ? [] : [{ name: menu.name, assignee }];
+  });
+  const unassigned = order.menus.filter(
+    (menu) => assignmentLabelText(menu) === null,
   );
-  const unassigned = order.menus.filter((menu) => menu.assignee === null);
   const lines: string[] = [];
   for (let i = 0; i < unassigned.length; i += 2) {
     const item1 = shortName(unassigned[i].name);

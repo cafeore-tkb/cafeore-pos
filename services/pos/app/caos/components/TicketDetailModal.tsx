@@ -2,6 +2,7 @@ import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
+import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketDetailModalProps {
@@ -46,7 +47,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {ticket.id}
               </span>
               <span className="font-bold text-[18px]">{ticket.beanName}</span>
-              <BeanBadge beans={ticket.beans} className="text-[12px]" />
+              <BeanBadge
+                beans={ticket.beans}
+                typeName={ticket.typeName}
+                className="text-[12px]"
+              />
               <span className="rounded-md bg-slate-950 px-2.5 py-1 font-black font-mono text-[17px] text-white">
                 {ticket.cupCount}杯
               </span>
@@ -91,7 +96,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
             {ticket.preferredBaristaId && (
               <p className="mt-2 font-bold text-[13px] text-violet-700">
-                指名オーダー：ドリッパー {ticket.preferredBaristaId} のみ
+                指名オーダー：{nominationText(ticket)}のドリッパーのみ
               </p>
             )}
           </section>

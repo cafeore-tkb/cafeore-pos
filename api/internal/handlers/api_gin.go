@@ -23,6 +23,15 @@ type ServerInterface interface {
 	// カップを緊急（入れ直し）にする
 	// (POST /api/caos/emergency)
 	MarkCaosEmergency(c *gin.Context)
+	// CaOS の今日のドリッパーの担当者
+	// (GET /api/caos/lanes)
+	GetCaosLanes(c *gin.Context)
+	// CaOS の 2 つのドリッパーの担当者を入れ替える
+	// (POST /api/caos/lanes/swap)
+	SwapCaosLanes(c *gin.Context)
+	// CaOS のドリッパーの担当者を替える（交代）
+	// (PUT /api/caos/lanes/{dripper})
+	PutCaosLane(c *gin.Context, dripper int)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -214,6 +223,56 @@ func (siw *ServerInterfaceWrapper) MarkCaosEmergency(c *gin.Context) {
 	}
 
 	siw.Handler.MarkCaosEmergency(c)
+}
+
+// GetCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosLanes(c)
+}
+
+// SwapCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) SwapCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SwapCaosLanes(c)
+}
+
+// PutCaosLane operation middleware
+func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCaosLane(c, dripper)
 }
 
 // GetCashierState operation middleware
@@ -1118,6 +1177,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
 	router.POST(options.BaseURL+"/api/caos/emergency", wrapper.MarkCaosEmergency)
+	router.GET(options.BaseURL+"/api/caos/lanes", wrapper.GetCaosLanes)
+	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
+	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
