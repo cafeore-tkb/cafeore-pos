@@ -22,14 +22,16 @@ func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
+	// 抽出しない種類は上級生のみにもアイスにもならない
+	brew := itemType.BrewRequired()
 	return models.ItemTypeResponse{
 		Id:          openapi_types.UUID(itemType.ID),
 		Name:        itemType.Name,
 		DisplayName: itemType.DisplayName,
 		MakesCup:    itemType.CreatesCup(),
-		NeedsBrew:   itemType.BrewRequired(),
-		SeniorOnly:  itemType.SeniorOnlyBrew(),
-		IcedBrew:    itemType.BrewsIced(),
+		NeedsBrew:   brew,
+		SeniorOnly:  brew && itemType.SeniorOnly,
+		IcedBrew:    brew && itemType.IcedBrew,
 	}
 }
 
@@ -41,39 +43,26 @@ var (
 
 // setItemTypeFlags はリクエストの makes_cup / needs_brew / senior_only / iced_brew を種類に入れる。
 // 省略した値は今の値のまま（新規は makes_cup・needs_brew が true、senior_only・iced_brew が false）。
-// ただし、上の項目を false にして下の項目を省略したら、下も false にする
+// ただし、上の項目が false になるなら、省略した下の項目も false にする
 // （カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
 // カップを作らないのに抽出が要る、抽出しないのに上級生のみ・アイス、という組み合わせは受け付けない。
 func setItemTypeFlags(itemType *models.ItemType, makesCup, needsBrew, seniorOnly, icedBrew *bool) error {
-	cup := itemType.CreatesCup()
-	if makesCup != nil {
-		cup = *makesCup
+	orCurrent := func(req *bool, current bool) bool {
+		if req != nil {
+			return *req
+		}
+		return current
 	}
-	brew := itemType.NeedsBrew == nil || *itemType.NeedsBrew
-	if needsBrew != nil {
-		brew = *needsBrew
-	} else if !cup {
-		brew = false
-	}
-	if brew && !cup {
+	cup := orCurrent(makesCup, itemType.CreatesCup())
+	brew := orCurrent(needsBrew, cup && itemType.BrewRequired())
+	senior := orCurrent(seniorOnly, brew && itemType.SeniorOnly)
+	iced := orCurrent(icedBrew, brew && itemType.IcedBrew)
+	switch {
+	case brew && !cup:
 		return errBrewWithoutCup
-	}
-	senior := itemType.SeniorOnly
-	if seniorOnly != nil {
-		senior = *seniorOnly
-	} else if !brew {
-		senior = false
-	}
-	if senior && !brew {
+	case senior && !brew:
 		return errSeniorWithoutBrew
-	}
-	iced := itemType.IcedBrew
-	if icedBrew != nil {
-		iced = *icedBrew
-	} else if !brew {
-		iced = false
-	}
-	if iced && !brew {
+	case iced && !brew:
 		return errIcedWithoutBrew
 	}
 	itemType.MakesCup, itemType.NeedsBrew, itemType.SeniorOnly, itemType.IcedBrew = &cup, &brew, senior, iced
@@ -126,7 +115,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 // GET /api/item-types/:id - idからアイテムタイプ取得
 func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -149,7 +138,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 // PUT /api/item-types/:id - アイテムタイプ更新
 func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -198,7 +187,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 // DELETE /api/item-types/:id - アイテムタイプ削除
 func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})

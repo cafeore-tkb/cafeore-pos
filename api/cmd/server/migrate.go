@@ -42,72 +42,48 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
-		pending := pendingBackfills(tx)
+		// AutoMigrate は足した列の全行に列の既定値を入れるだけなので、種類ごとに違う最初の値は
+		// 列を足した直後に入れる。列がもう DB にあれば走らない（あとで画面や API で変えた値を戻さない）。
+		// 表が無い（空の DB）ときは行も無いので要らない。
+		itemType := &models.ItemType{}
+		m := tx.Migrator()
+		var backfills []itemTypeBackfill
+		if m.HasTable(itemType) {
+			for _, b := range itemTypeBackfills {
+				if !m.HasColumn(itemType, b.column) {
+					backfills = append(backfills, b)
+				}
+			}
+		}
 
 		if err := tx.AutoMigrate(models.All()...); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
 
-		for _, b := range pending {
-			if err := b.fill(tx); err != nil {
-				return fmt.Errorf("failed to backfill %s: %w", b.column, err)
+		for _, b := range backfills {
+			if err := tx.Unscoped().Model(itemType).Where("name IN ?", b.names).Update(b.column, b.value).Error; err != nil {
+				return fmt.Errorf("failed to backfill item_types.%s: %w", b.column, err)
 			}
 		}
 		return nil
 	})
 }
 
-// backfill は、既存の行に入れる値が列の既定値では決まらない列の、最初の値の入れ方。
-//
-// AutoMigrate は列を足すときに全行へ列の既定値を入れるだけなので、行ごとに違う値が要るときは
-// ここに書く。その列がまだ DB に無いとき（＝今回の起動で足すとき）だけ、足した直後に同じ
-// トランザクションの中で 1 回だけ走る。そのあと値を変えるのは画面や API の仕事で、ここは二度と走らない。
-type backfill struct {
-	model  any
+type itemTypeBackfill struct {
 	column string
-	fill   func(tx *gorm.DB) error
+	value  bool
+	names  []string
 }
 
-var backfills = []backfill{
-	// 商品の種類の「カップを作る」「抽出が要る」（2026-10）。それまでは種類の名前で決め打ちしていたので、
-	// 既存の種類はそれと同じ結果になる値にする：グッズ（others）はカップを作らない、
-	// ミルク（milk）とグッズは抽出しない。ほかは列の既定値（true）のまま。削除済みの種類も同じ。
-	{model: &models.ItemType{}, column: "makes_cup", fill: func(tx *gorm.DB) error {
-		return tx.Unscoped().Model(&models.ItemType{}).
-			Where("name = ?", "others").
-			Update("makes_cup", false).Error
-	}},
-	{model: &models.ItemType{}, column: "needs_brew", fill: func(tx *gorm.DB) error {
-		return tx.Unscoped().Model(&models.ItemType{}).
-			Where("name IN ?", []string{"milk", "others"}).
-			Update("needs_brew", false).Error
-	}},
-	// 「上級生だけが淹れる」（2026-10）。CaOS が種類の名前 limited を限定（SP）として扱っていたのと
-	// 同じ結果にする：limited だけ true、ほかは列の既定値（false）のまま。
-	{model: &models.ItemType{}, column: "senior_only", fill: func(tx *gorm.DB) error {
-		return tx.Unscoped().Model(&models.ItemType{}).
-			Where("name = ?", "limited").
-			Update("senior_only", true).Error
-	}},
-	// 「アイスで淹れる」（2026-10）。CaOS がアイスに対応していないドリッパーを灰色にするのに使う。
-	// 一度だけの最初の値で、今の種類のうちアイス（ice）とアイスオレ（iceOre）を true にする。ほかは列の既定値（false）のまま。
-	// これ以降は商品管理で設定した値だけを使い、種類の名前では判断しない。
-	{model: &models.ItemType{}, column: "iced_brew", fill: func(tx *gorm.DB) error {
-		return tx.Unscoped().Model(&models.ItemType{}).
-			Where("name IN ?", []string{"ice", "iceOre"}).
-			Update("iced_brew", true).Error
-	}},
-}
-
-// pendingBackfills は、表はあるのに列がまだ無い backfill を返す。
-// 表が無い（空の DB）ときは行も無いので要らない。
-func pendingBackfills(tx *gorm.DB) []backfill {
-	var pending []backfill
-	for _, b := range backfills {
-		m := tx.Migrator()
-		if m.HasTable(b.model) && !m.HasColumn(b.model, b.column) {
-			pending = append(pending, b)
-		}
-	}
-	return pending
+// 商品の種類の項目（2026-10）を足したときの、既存の種類の最初の値。それまで種類の名前で決め打ちしていたのと
+// 同じ結果になるよう、列の既定値と違う値になる種類だけを書く（削除済みの種類も同じ）。一度だけの移行で、
+// これ以降は商品管理で設定した値だけを使う。
+//   - グッズ（others）はカップを作らない。ミルク（milk）とグッズは抽出しない
+//   - CaOS が限定（SP）として扱っていた limited だけ上級生のみ
+//   - アイス（ice）とアイスオレ（iceOre）だけアイスで淹れる
+var itemTypeBackfills = []itemTypeBackfill{
+	{column: "makes_cup", value: false, names: []string{"others"}},
+	{column: "needs_brew", value: false, names: []string{"milk", "others"}},
+	{column: "senior_only", value: true, names: []string{"limited"}},
+	{column: "iced_brew", value: true, names: []string{"ice", "iceOre"}},
 }

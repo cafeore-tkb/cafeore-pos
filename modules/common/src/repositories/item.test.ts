@@ -3,7 +3,7 @@ import type { Firestore } from "firebase/firestore";
 import { beforeAll, describe, expect, test } from "vitest";
 import firebasejson from "../../firebase.json";
 import type { WithId } from "../lib/typeguard";
-import { ItemEntity } from "../models/item";
+import { ItemEntity, itemTypeSchema } from "../models/item";
 
 import { itemRepoFactory } from "./item";
 import type { ItemRepository } from "./type";
@@ -36,15 +36,11 @@ describe("[db] itemRepository", async () => {
     const item = ItemEntity.createNew({
       name: "hoge",
       abbr: "h",
-      item_type: {
+      item_type: itemTypeSchema.parse({
         id: "1",
         name: "hot",
         display_name: "ホット",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
-        iced_brew: false,
-      },
+      }),
     });
     savedItemHoge = await itemRepository.save(item);
     expect(savedItemHoge.id).toBeDefined();
@@ -60,15 +56,12 @@ describe("[db] itemRepository", async () => {
     const item = ItemEntity.createNew({
       name: "fuga",
       abbr: "f",
-      item_type: {
+      item_type: itemTypeSchema.parse({
         id: "2",
         name: "ice",
         display_name: "アイス",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
         iced_brew: true,
-      },
+      }),
     });
     const savedItem = await itemRepository.save(item);
     const foundItem = await itemRepository.findById(savedItem.id);
@@ -79,15 +72,11 @@ describe("[db] itemRepository", async () => {
     const item = ItemEntity.createNew({
       name: "foo",
       abbr: "f",
-      item_type: {
+      item_type: itemTypeSchema.parse({
         id: "3",
         name: "ore",
         display_name: "オレ",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
-        iced_brew: false,
-      },
+      }),
     });
     const savedItem = await itemRepository.save(item);
     const items = await itemRepository.findAll();
@@ -98,15 +87,12 @@ describe("[db] itemRepository", async () => {
     const item = ItemEntity.createNew({
       name: "bar",
       abbr: "b",
-      item_type: {
+      item_type: itemTypeSchema.parse({
         id: "4",
         name: "milk",
         display_name: "ミルク",
-        makes_cup: true,
         needs_brew: false,
-        senior_only: false,
-        iced_brew: false,
-      },
+      }),
     });
     const savedItem = await itemRepository.save(item);
     await itemRepository.delete(savedItem.id);

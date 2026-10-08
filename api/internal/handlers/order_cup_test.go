@@ -16,8 +16,7 @@ func testItem(typeName string) models.Item {
 // カップを作らない種類（商品管理で「カップを作る」を外したもの）の item。名前は判定に使わない
 func testGoodsItem() models.Item {
 	item := testItem("goods")
-	noCup := false
-	item.ItemType.MakesCup, item.ItemType.NeedsBrew = &noCup, &noCup
+	item.ItemType.MakesCup, item.ItemType.NeedsBrew = boolPtr(false), boolPtr(false)
 	return item
 }
 
@@ -238,9 +237,8 @@ func TestIsCupItem(t *testing.T) {
 	// 削除済みの種類は Preload で読み込まれず、ゼロ値になる
 	typeNotLoaded := testItem("hot")
 	typeNotLoaded.ItemType = models.ItemType{}
-	yes := true
 	namedOthers := testItem("others")
-	namedOthers.ItemType.MakesCup = &yes
+	namedOthers.ItemType.MakesCup = boolPtr(true)
 	for _, tc := range []struct {
 		name string
 		item models.Item
