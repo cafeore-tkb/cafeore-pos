@@ -44,7 +44,7 @@ func preloadMenu(db *gorm.DB) *gorm.DB {
 	return db.Preload("MenuItems.Item.ItemType")
 }
 
-// 構成品の指定がおかしいときのエラー。これだけ 400 で文面を返し、DB のエラーは 500 にする。
+// 構成品の指定がおかしいときのエラー。DB のエラー（500）と分けて、文面のまま 400 で返す。
 type invalidMenuItemsError struct{ msg string }
 
 func (e *invalidMenuItemsError) Error() string { return e.msg }
