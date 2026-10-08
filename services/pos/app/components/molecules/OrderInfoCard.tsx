@@ -1,5 +1,4 @@
 import {
-  type ColorScreen,
   type CupStatus,
   type OrderEntity,
   type WithId,
@@ -113,7 +112,13 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
   };
 
   // アイテムの背景色は、その画面の色の設定（アイテム → 種別の順）から引く。設定の無いアイテムは色を付けない。
-  const colorScreen = cardColorScreens[user];
+  // レジは過去の注文のカード用の設定（メニューのボタンの cashier とは別）。ダッシュボードには色の設定が無い
+  const colorScreen =
+    user === "cashier"
+      ? "cashier_order"
+      : user === "master" || user === "serve"
+        ? user
+        : null;
   const { colorSettings } = useColorSettings(colorScreen !== null);
 
   // マスター画面では準備完了・呼び出し中、提供画面では提供済みのカップをグレーのままにする。
@@ -337,14 +342,6 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     </div>
   );
 }
-
-// 注文カードを出す画面ごとの色の設定の画面（ダッシュボードには色の設定が無い）
-const cardColorScreens: Record<props["user"], ColorScreen | null> = {
-  cashier: "cashier_order",
-  master: "master",
-  serve: "serve",
-  dashboard: null,
-};
 
 // 押して状態を切り替えられるカップだけボタンにする。
 // 押せることが分かるよう、ホバーで浮かせて押した瞬間に沈ませる。
