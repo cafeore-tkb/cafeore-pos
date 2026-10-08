@@ -55,21 +55,14 @@ func TestItemTypeCRUD(t *testing.T) {
 		t.Fatalf("must be soft deleted: %+v %v", row, err)
 	}
 
-	for _, path := range []string{"/api/item-types/abc", "/api/item-types/" + uuid.NewString(), "/api/item-types/" + ice.Id.String()} {
-		want := http.StatusNotFound
-		if path == "/api/item-types/abc" {
-			want = http.StatusBadRequest
-		}
-		if res := api.do(http.MethodGet, path, nil); res.Code != want {
-			t.Errorf("GET %s: status = %d, want %d", path, res.Code, want)
-		}
-		if res := api.do(http.MethodPut, path, models.ItemTypeUpdateRequest{Name: "x", DisplayName: "x"}); res.Code != want {
-			t.Errorf("PUT %s: status = %d, want %d", path, res.Code, want)
-		}
-		if res := api.do(http.MethodDelete, path, nil); res.Code != want {
-			t.Errorf("DELETE %s: status = %d, want %d", path, res.Code, want)
-		}
+	for _, path := range []string{"/api/item-types/" + uuid.NewString(), "/api/item-types/" + ice.Id.String()} {
+		api.do(http.MethodGet, path, nil).expect(http.StatusNotFound)
+		api.do(http.MethodPut, path, models.ItemTypeUpdateRequest{Name: "x", DisplayName: "x"}).expect(http.StatusNotFound)
+		api.do(http.MethodDelete, path, nil).expect(http.StatusNotFound)
 	}
+	api.do(http.MethodGet, "/api/item-types/abc", nil).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/item-types/abc", models.ItemTypeUpdateRequest{Name: "x", DisplayName: "x"}).expect(http.StatusBadRequest)
+	api.do(http.MethodDelete, "/api/item-types/abc", nil).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, "/api/item-types/"+hot.Id.String(), `{`).expect(http.StatusBadRequest)
 }
 

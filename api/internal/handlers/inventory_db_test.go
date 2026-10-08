@@ -464,7 +464,9 @@ func TestRemindInventoryRequiresConfiguration(t *testing.T) {
 }
 
 func TestRemindInventory(t *testing.T) {
-	api := newTestAPI(t, withCronSecret("s3cret"), withPOSURL("https://pos.example.com"))
+	api := newTestAPI(t)
+	api.inv.remindAuth.CronSecret = "s3cret"
+	api.inv.posURL = "https://pos.example.com"
 	m := api.seedMaster()
 	beans := api.seedBeans(m)
 	remind := func(headers ...string) testResponse {

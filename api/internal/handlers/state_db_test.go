@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -175,7 +176,7 @@ func TestConcurrentCashierStateBroadcastsMatchSavedOrder(t *testing.T) {
 	api := newTestAPI(t)
 
 	const n = 10
-	done := make(chan struct{}, n)
+	var wg sync.WaitGroup
 	for i := range n {
 		req := cashierStateRequest(t, nil)
 		req.EdittingOrder["orderId"] = float64(i)
@@ -183,18 +184,13 @@ func TestConcurrentCashierStateBroadcastsMatchSavedOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		wg.Add(1)
 		go func() {
-			defer func() { done <- struct{}{} }()
+			defer wg.Done()
 			api.do(http.MethodPut, "/api/cashier-state", string(data))
 		}()
 	}
-	for range n {
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("requests did not finish")
-		}
-	}
+	wg.Wait()
 
 	var last WSMessage
 	for range n {

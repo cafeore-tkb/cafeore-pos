@@ -223,9 +223,6 @@ func TestUpdateOrderUsesRequestStatusWithoutCups(t *testing.T) {
 	api := newTestAPI(t)
 	m := api.seedMaster()
 	goodsMenu := api.seedMenu("ステッカー", "sticker", 200, models.MenuItem{ItemID: m.sticker.ID, Quantity: 1})
-	items := goodsMenu.MenuItems
-	goodsMenu.MenuItems = nil
-	api.create(&goodsMenu, &items)
 
 	created := api.createOrder(1, goodsMenu)
 	if len(created.Cups) != 0 {

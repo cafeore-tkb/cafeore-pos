@@ -27,7 +27,6 @@ import (
 type testAPI struct {
 	t      *testing.T
 	db     *gorm.DB
-	hub    *Hub
 	router *gin.Engine
 	slack  *fakeSlack
 	inv    *Inventory
@@ -35,18 +34,7 @@ type testAPI struct {
 	ws *Client
 }
 
-type testAPIOption func(*RemindAuth, *string)
-
-// 残量確認のリマインドを X-Cron-Secret で叩けるようにする
-func withCronSecret(secret string) testAPIOption {
-	return func(ra *RemindAuth, _ *string) { ra.CronSecret = secret }
-}
-
-func withPOSURL(url string) testAPIOption {
-	return func(_ *RemindAuth, posURL *string) { *posURL = url }
-}
-
-func newTestAPI(t *testing.T, opts ...testAPIOption) *testAPI {
+func newTestAPI(t *testing.T) *testAPI {
 	t.Helper()
 	// TEST_DATABASE_URL の Postgres に使い捨ての schema を作り、モデルからテーブルを作る
 	// （無ければスキップ、CI では落とす）。決まりは testdb にまとめてある
@@ -58,18 +46,13 @@ func newTestAPI(t *testing.T, opts ...testAPIOption) *testAPI {
 	hub.add(ws)
 
 	slack := newFakeSlack(t)
-	var remindAuth RemindAuth
-	var posURL string
-	for _, opt := range opts {
-		opt(&remindAuth, &posURL)
-	}
-	inv := NewInventory(db, notify.NewSlack(slack.url), remindAuth, posURL)
+	inv := NewInventory(db, notify.NewSlack(slack.url), RemindAuth{}, "")
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	registerTestRoutes(r, db, hub, inv)
 
-	api := &testAPI{t: t, db: db, hub: hub, router: r, slack: slack, inv: inv, ws: ws}
+	api := &testAPI{t: t, db: db, router: r, slack: slack, inv: inv, ws: ws}
 	// 注文の作成などは、応答のあとに goroutine で在庫の通知を判定する。
 	// schema を消す前に終わらせておかないと、消えたテーブルを読んでログが汚れる
 	t.Cleanup(api.waitBackground)
@@ -320,29 +303,25 @@ func (a *testAPI) seedMaster() testMaster {
 	m.blend = models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemTypeID: m.hotType.ID}
 	m.iced = models.Item{ID: uuid.New(), Name: "アイスコーヒー", Abbr: "ア", ItemTypeID: m.iceType.ID}
 	m.sticker = models.Item{ID: uuid.New(), Name: "ステッカー", Abbr: "ス", ItemTypeID: m.goodsType.ID}
+	a.create(&m.hotType, &m.iceType, &m.goodsType, &m.blend, &m.iced, &m.sticker)
+
 	m.blendMenu = a.seedMenu("ブレンド", "blend", 400, models.MenuItem{ItemID: m.blend.ID, Quantity: 1})
 	m.pairMenu = a.seedMenu("ペアセット", "pair", 900,
 		models.MenuItem{ItemID: m.blend.ID, Quantity: 2},
 		models.MenuItem{ItemID: m.sticker.ID, Quantity: 1})
 	m.iceMenu = a.seedMenu("アイスコーヒー", "ice", 450, models.MenuItem{ItemID: m.iced.ID, Quantity: 1})
-
-	a.create(&m.hotType, &m.iceType, &m.goodsType, &m.blend, &m.iced, &m.sticker)
-	for _, menu := range []*models.Menu{&m.blendMenu, &m.pairMenu, &m.iceMenu} {
-		items := menu.MenuItems
-		menu.MenuItems = nil
-		a.create(menu, &items)
-		menu.MenuItems = items
-	}
 	return m
 }
 
-// まだ DB には入れない。seedMaster がアイテムのあとに入れる
+// メニューと構成品を DB に入れる。アイテムは先に入れておくこと
 func (a *testAPI) seedMenu(name, key string, price int, items ...models.MenuItem) models.Menu {
+	a.t.Helper()
 	menu := models.Menu{ID: uuid.New(), Name: name, Abbr: key, Key: key, Price: price}
-	for _, item := range items {
-		item.MenuID = menu.ID
-		menu.MenuItems = append(menu.MenuItems, item)
+	for i := range items {
+		items[i].MenuID = menu.ID
 	}
+	a.create(&menu, &items)
+	menu.MenuItems = items
 	return menu
 }
 
