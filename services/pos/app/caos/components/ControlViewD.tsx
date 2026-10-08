@@ -9,6 +9,7 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
@@ -768,6 +769,13 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         <span className="font-black font-mono text-[18px] leading-none">
                           {laneOrdinal(barista.bayNumber)}
                         </span>
+                        <LaneName
+                          dripper={barista.bayNumber}
+                          className="font-black text-[13px]"
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-center">
+                        <LaneChangeButton dripper={barista.bayNumber} />
                       </div>
                       <button
                         type="button"

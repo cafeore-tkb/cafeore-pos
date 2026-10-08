@@ -15,6 +15,7 @@ import {
   mergeWrites,
   nextCaosDripper,
   putCaosCups,
+  seniorOnlyBlock,
   startOfJstDay,
   unassignWrites,
   useColorSettings,
@@ -36,6 +37,7 @@ import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
+import { useCaosLanes } from "./lanes/CaosLanesContext";
 import { cardsToBoard } from "./live/board";
 import type {
   Barista,
@@ -261,6 +263,8 @@ export default function App() {
   const boardUnassignedOrders = live
     ? liveBoard.unassignedOrders
     : unassignedOrders;
+  // ドリッパーの担当者（サーバーの今日の担当者）。限定のカードは上級生のドリッパーにしか置けない（サーバーも確かめる）
+  const { lanes } = useCaosLanes();
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -512,6 +516,11 @@ export default function App() {
     if (live) {
       const card = liveCard(orderToAssign.ticketUid);
       if (!card) return;
+      const blocked = seniorOnlyBlock(card, targetBayId, lanes);
+      if (blocked) {
+        setLiveError(blocked);
+        return;
+      }
       void runWrites(
         assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
       );
@@ -589,6 +598,11 @@ export default function App() {
     if (live) {
       const card = liveCard(ticket.ticketUid);
       if (!card) return;
+      const blocked = seniorOnlyBlock(card, targetBayId, lanes);
+      if (blocked) {
+        setLiveError(blocked);
+        return;
+      }
       void runWrites(
         assignWrites(liveCards, card, targetBayId, {
           index: toFront ? 0 : undefined,

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
 import { laneOrdinal } from "../utils/lanes";
@@ -192,7 +193,12 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
+                    <LaneName
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
+                    />
                   </div>
+                  <LaneChangeButton dripper={barista.bayNumber} />
                 </div>
 
                 <div

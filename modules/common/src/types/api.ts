@@ -122,6 +122,10 @@ export interface paths {
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
+     * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（GET /api/caos/lanes の senior）にしか置けない。
+     *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
+     *   （担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
+     *   指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
      * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
      */
     put: operations["writeCaosCups"];
@@ -135,6 +139,31 @@ export interface paths {
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
+  };
+  "/api/caos/lanes": {
+    /**
+     * CaOS の今日のドリッパーの担当者
+     * @description 今日（日本時間）のドリッパー 1〜6 の担当者（名前と、交代した時点で上級生だったか）。6 つ全部を番号の順に返す。担当者のいないドリッパーは name が空。
+     * 担当者が変わるたびに /api/ws/orders の {"type":"caos_lanes"} でも全部の画面に届く（つないだときにも、今日の担当者があれば届く）。
+     */
+    get: operations["getCaosLanes"];
+  };
+  "/api/caos/lanes/{dripper}": {
+    /**
+     * CaOS のドリッパーの担当者を替える（交代）
+     * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
+     * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
+     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる。
+     */
+    put: operations["putCaosLane"];
+  };
+  "/api/caos/lanes/swap": {
+    /**
+     * CaOS の 2 つのドリッパーの担当者を入れ替える
+     * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
+     * 配信は PUT /api/caos/lanes/{dripper} と同じ。
+     */
+    post: operations["swapCaosLanes"];
   };
   "/api/master-status": {
     /** マスターステート取得 */
@@ -559,6 +588,38 @@ export interface components {
        * @description 始めたカード。待機が無ければ null
        */
       started_drip_id: string | null;
+    };
+    /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
+    CaosLane: {
+      dripper: number;
+      /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
+      name: string;
+      /** @description 上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値 */
+      senior: boolean;
+      /**
+       * Format: date-time
+       * @description 最後に替えた時刻。今日まだ替えていなければ null
+       */
+      updated_at: string | null;
+    };
+    /** @description 今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ */
+    CaosLanes: {
+      /**
+       * @description 日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う
+       * @example 2026-11-03
+       */
+      day: string;
+      lanes: components["schemas"]["CaosLane"][];
+    };
+    CaosLaneUpdateRequest: {
+      /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
+      name: string;
+      /** @description 上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */
+      senior: boolean;
+    };
+    CaosLaneSwapRequest: {
+      first: number;
+      second: number;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1254,6 +1315,10 @@ export interface operations {
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
+   * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（GET /api/caos/lanes の senior）にしか置けない。
+   *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
+   *   （担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
+   *   指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
    * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
    */
   writeCaosCups: {
@@ -1321,6 +1386,80 @@ export interface operations {
       };
       /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
       409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今日のドリッパーの担当者
+   * @description 今日（日本時間）のドリッパー 1〜6 の担当者（名前と、交代した時点で上級生だったか）。6 つ全部を番号の順に返す。担当者のいないドリッパーは name が空。
+   * 担当者が変わるたびに /api/ws/orders の {"type":"caos_lanes"} でも全部の画面に届く（つないだときにも、今日の担当者があれば届く）。
+   */
+  getCaosLanes: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS のドリッパーの担当者を替える（交代）
+   * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
+   * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
+   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる。
+   */
+  putCaosLane: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 替えた。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の 2 つのドリッパーの担当者を入れ替える
+   * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
+   * 配信は PUT /api/caos/lanes/{dripper} と同じ。
+   */
+  swapCaosLanes: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneSwapRequest"];
+      };
+    };
+    responses: {
+      /** @description 入れ替えた。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト（同じドリッパーどうし、など） */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

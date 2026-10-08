@@ -64,7 +64,7 @@ const describe = (
   const preferredBaristaId = card.nominatedDripper;
   const unmatchedNominee =
     nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
-  // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ
+  // 限定（種類の senior_only）。置けるのは担当者が上級生のドリッパーだけ（App と サーバーが確かめる。@cafeore/common の seniorOnlyBlock）
   const limited = card.seniorOnly ? "（限定）" : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
     "・",

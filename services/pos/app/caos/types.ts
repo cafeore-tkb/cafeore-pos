@@ -56,7 +56,7 @@ export interface OrderTicket {
   seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
 }
 
-// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
+// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）はここでは持たず、サーバーの担当者から出す（lanes/）
 export interface Barista {
   id: number;
   bayNumber: number;

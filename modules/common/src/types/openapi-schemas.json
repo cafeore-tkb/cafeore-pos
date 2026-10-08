@@ -848,6 +848,81 @@
       }
     }
   },
+  "CaosLane": {
+    "type": "object",
+    "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた時刻。今日まだ替えていなければ null"
+      }
+    }
+  },
+  "CaosLanes": {
+    "type": "object",
+    "description": "今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ",
+    "required": ["day", "lanes"],
+    "properties": {
+      "day": {
+        "type": "string",
+        "description": "日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う",
+        "example": "2026-11-03"
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
+      }
+    }
+  },
+  "CaosLaneUpdateRequest": {
+    "type": "object",
+    "required": ["name", "senior"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false"
+      }
+    }
+  },
+  "CaosLaneSwapRequest": {
+    "type": "object",
+    "required": ["first", "second"],
+    "properties": {
+      "first": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "second": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],

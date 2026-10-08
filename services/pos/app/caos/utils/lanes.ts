@@ -1,8 +1,8 @@
 import { STANDBY_LABEL } from "@cafeore/common";
 import type { Barista } from "../types";
 
-// 列（ドリッパー 1〜6）。列は「1st」〜「6th」と番号だけで呼ぶ。
-// 担当者（名前・限定を淹れられる上級生か）は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
+// 列（ドリッパー 1〜6）。列は「1st」〜「6th」と番号で呼ぶ。
+// 担当者（名前・限定を淹れられる上級生か）はサーバーが持ち、見出しの番号の横に出す（lanes/ の CaosLanesProvider と LaneName）。
 
 export const BAY_IDS = [1, 2, 3, 4, 5, 6] as const;
 

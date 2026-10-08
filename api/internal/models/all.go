@@ -21,5 +21,6 @@ func All() []any {
 		&ItemStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
+		&CaosLaneRow{},
 	}
 }
