@@ -17,7 +17,7 @@ type Activity struct {
 	lines chan string
 	quiet time.Duration
 	// 1通にまとめる行数の上限。超えたら待たずに送る
-	max int
+	maxLines int
 	// Close から、溜まっている分を送り終えたら閉じるチャネルを受け取る
 	flushNow chan chan struct{}
 }
@@ -26,12 +26,12 @@ func NewActivity(slack *Slack) *Activity {
 	return newActivity(slack, 2*time.Second, 30)
 }
 
-func newActivity(slack *Slack, quiet time.Duration, max int) *Activity {
+func newActivity(slack *Slack, quiet time.Duration, maxLines int) *Activity {
 	a := &Activity{
 		slack:    slack,
 		lines:    make(chan string, 256),
 		quiet:    quiet,
-		max:      max,
+		maxLines: maxLines,
 		flushNow: make(chan chan struct{}),
 	}
 	go a.run()
@@ -96,7 +96,7 @@ func (a *Activity) run() {
 		select {
 		case line := <-a.lines:
 			pending = append(pending, line)
-			if closed || len(pending) >= a.max {
+			if closed || len(pending) >= a.maxLines {
 				timer.Stop()
 				flush()
 				continue
