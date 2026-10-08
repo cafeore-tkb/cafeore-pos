@@ -75,7 +75,7 @@ func TestTwoCupSetTogglesEachCup(t *testing.T) {
 		t.Fatalf("serving one cup of a set must not serve the other: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[1], t2)
-	if cupStates(order) != "ss" || !sameTime(order.ServedAt, &t2) {
+	if cupStates(order) != "ss" || !timeEqual(order.ServedAt, &t2) {
 		t.Fatalf("the order must be served with both cups: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[1], t2)
@@ -94,11 +94,11 @@ func TestSetWithGoodsIsServedWhenAllVisibleCupsAreServed(t *testing.T) {
 		t.Fatalf("goods must not be cups: %+v", cups)
 	}
 	toggleCupReady(order, &order.OrderCups[0], now)
-	if !sameTime(order.ReadyAt, &now) {
+	if !timeEqual(order.ReadyAt, &now) {
 		t.Fatalf("the order must be ready once its only cup is ready: %+v", order)
 	}
 	toggleCupServed(order, &order.OrderCups[0], now)
-	if !sameTime(order.ServedAt, &now) {
+	if !timeEqual(order.ServedAt, &now) {
 		t.Fatalf("the order must be served once its only cup is served: %+v", order)
 	}
 }
@@ -115,7 +115,7 @@ func TestGoodsOnlyOrderHasNoCups(t *testing.T) {
 	}
 	now := time.Now()
 	toggleOrderServed(order, now)
-	if !sameTime(order.ServedAt, &now) {
+	if !timeEqual(order.ServedAt, &now) {
 		t.Fatalf("goods-only order is served by the order-level operation: %+v", order)
 	}
 }
@@ -154,7 +154,7 @@ func TestBuildOrderCupsKeepsCupsOfExistingLines(t *testing.T) {
 			t.Fatalf("kept cup %d must not carry the loaded item: %+v", i, got[i])
 		}
 	}
-	if got[0].ReadyAt != nil || !sameTime(got[1].ServedAt, &t1) || !sameTime(got[1].ReadyAt, &t1) {
+	if got[0].ReadyAt != nil || !timeEqual(got[1].ServedAt, &t1) || !timeEqual(got[1].ReadyAt, &t1) {
 		t.Fatalf("kept cups must keep their status: %+v", got[:2])
 	}
 	// 削除した明細のカップは消え、追加した明細のカップは準備中で作られる
@@ -208,7 +208,7 @@ func TestBuildOrderCupsExpandsLinesWithoutCups(t *testing.T) {
 		if got[i].OrderMenuID != lines[0].ID || got[i].ItemID != hot.ID || got[i].Position != i {
 			t.Fatalf("existing line cup %d: %+v", i, got[i])
 		}
-		if !sameTime(got[i].ServedAt, &served) || !sameTime(got[i].ReadyAt, &served) {
+		if !timeEqual(got[i].ServedAt, &served) || !timeEqual(got[i].ReadyAt, &served) {
 			t.Fatalf("existing line cup %d must copy the order status: %+v", i, got[i])
 		}
 	}

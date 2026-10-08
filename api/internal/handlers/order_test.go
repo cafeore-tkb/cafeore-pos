@@ -135,7 +135,7 @@ func TestOrderResponseIncludesCups(t *testing.T) {
 	if got.Id != cupID || got.OrderMenuId != lineID || got.Item.Abbr != "ブ" || got.Item.ItemType.Name != "hot" {
 		t.Fatalf("missing cup fields: %+v", got)
 	}
-	if !sameTime(got.ReadyAt, &served) || !sameTime(got.ServedAt, &served) {
+	if !timeEqual(got.ReadyAt, &served) || !timeEqual(got.ServedAt, &served) {
 		t.Fatalf("missing cup status: %+v", got)
 	}
 	if response.Cups[1].ReadyAt != nil || response.Cups[1].ServedAt != nil {
