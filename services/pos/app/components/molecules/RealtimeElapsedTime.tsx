@@ -1,4 +1,8 @@
-import { type OrderEntity, type WithId, elapsedTime } from "@cafeore/common";
+import {
+  type OrderEntity,
+  type WithId,
+  orderElapsedTime,
+} from "@cafeore/common";
 import { cn } from "~/lib/utils";
 import { useCurrentTime } from "../functional/useCurrentTime";
 
@@ -6,7 +10,7 @@ export const RealtimeElapsedTime = ({
   order,
 }: { order: WithId<OrderEntity> }) => {
   const currentTime = useCurrentTime(1000);
-  const elapsed = elapsedTime(order.createdAt, currentTime);
+  const elapsed = orderElapsedTime(order, currentTime);
 
   return (
     <div

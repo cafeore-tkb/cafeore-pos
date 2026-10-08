@@ -13,7 +13,7 @@ export type ElapsedTime = {
 };
 
 /** from から to までの経過時間（秒は切り捨て。to が from より前なら 0） */
-export const elapsedTime = (from: Date, to: Date): ElapsedTime => {
+const elapsedTime = (from: Date, to: Date): ElapsedTime => {
   const seconds = Math.max(
     0,
     Math.floor((to.getTime() - from.getTime()) / 1000),
