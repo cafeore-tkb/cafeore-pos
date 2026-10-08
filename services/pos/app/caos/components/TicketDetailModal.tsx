@@ -46,7 +46,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {ticket.id}
               </span>
               <span className="font-bold text-[18px]">{ticket.beanName}</span>
-              <BeanBadge beans={ticket.beans} className="text-[12px]" />
+              <BeanBadge
+                beans={ticket.beans}
+                typeName={ticket.typeName}
+                className="text-[12px]"
+              />
               <span className="rounded-md bg-slate-950 px-2.5 py-1 font-black font-mono text-[17px] text-white">
                 {ticket.cupCount}杯
               </span>

@@ -107,7 +107,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
         .filter((ticket) => ticket.id === selectedOrderId)
         .map((ticket) => ({
           uid:
-            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.beanCode}`,
+            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.itemKey}`,
           beanName: ticket.beanName,
           bayNumber: barista.bayNumber,
         })),
@@ -469,7 +469,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     {group.items.map((item) => (
                       <button
                         type="button"
-                        key={item.ticketUid || `${item.id}-${item.beanCode}`}
+                        key={item.ticketUid || `${item.id}-${item.itemKey}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           openAssignmentPad(item);

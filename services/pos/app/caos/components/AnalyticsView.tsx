@@ -1,3 +1,4 @@
+import { useItemMaster } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -69,6 +70,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
+  // 商品の種類の表示名・カップを作るかは、POS の商品の種類（名前で引く）をそのまま使う
+  const { itemTypes } = useItemMaster();
   const completedParts = useMemo<CompletedPart[]>(
     () =>
       baristas.flatMap((barista) =>
@@ -167,6 +170,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   const salesAnalysis = useMemo(() => {
     if (salesOrders.length === 0) return null;
+    // カップを作らない種類（グッズなど）は杯数に数えない。POS に無い種類は数える
+    const makesCup = (type: string) =>
+      itemTypes.find((itemType) => itemType.name === type)?.makes_cup ?? true;
     const menuMap = new Map<string, { cups: number; sales: number }>();
     const typeMap = new Map<string, number>();
     const bucketMap = new Map<
@@ -186,7 +192,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       bucketValue.orders += 1;
       bucketValue.sales += order.billingAmount;
       order.items.forEach((item) => {
-        if (item.type === "others") return;
+        if (!makesCup(item.type)) return;
         cups += 1;
         bucketValue.cups += 1;
         const menu = menuMap.get(item.name) || { cups: 0, sales: 0 };
@@ -228,7 +234,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       buckets,
       peak,
     };
-  }, [salesOrders]);
+  }, [salesOrders, itemTypes]);
 
   const baristaResults = useMemo(
     () =>
@@ -254,16 +260,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     [baristas],
   );
 
+  // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
   const typeLabel = (type: string) =>
-    type === "hot"
-      ? "ホット"
-      : type === "iceOre"
-        ? "アイスオレ"
-        : type === "ice"
-          ? "アイス"
-          : type === "milk"
-            ? "ミルク"
-            : type;
+    itemTypes.find((itemType) => itemType.name === type)?.display_name ?? type;
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
       hour: "2-digit",

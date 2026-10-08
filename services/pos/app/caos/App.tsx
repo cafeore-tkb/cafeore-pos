@@ -39,7 +39,6 @@ import { usePosOrders } from "./hooks/usePosOrders";
 import { cardsToBoard } from "./live/board";
 import type {
   Barista,
-  BeanCode,
   HistoricalDataset,
   HistoricalOrder,
   OrderTicket,
@@ -84,9 +83,18 @@ const startOfLocalDay = (ms: number) => {
   ).getTime();
 };
 
-// 実データテスト（2025年の注文。商品 ID が無い）の豆のコード。盤面のカードには使わない。
-// サーバーの練習用の盤面に移したら消す
-const historicalBeanCode = (name: string, type: string): BeanCode => {
+// 実データテスト（2025年の注文。商品 ID が無い）のカードのまとめ方。盤面のカードには使わない。
+// サーバーの練習用の盤面（CaOS9）で作り直すので、それまでここだけに残す
+type HistoricalGroup =
+  | "CHAMP"
+  | "ORE"
+  | "TNZ"
+  | "KEN"
+  | "BRA"
+  | "ICE"
+  | "MILK"
+  | "SP";
+const historicalBeanCode = (name: string, type: string): HistoricalGroup => {
   if (type === "ice") return "ICE";
   if (type === "iceOre" || type === "milk") return "MILK";
   if (name.includes("俺")) return "ORE";
@@ -107,7 +115,10 @@ const historicalOrderToDripUnits = (
       item.type !== "milk" &&
       !item.name.includes("アイスミルク"),
   );
-  const grouped = new Map<BeanCode, { names: string[]; count: number }>();
+  const grouped = new Map<
+    HistoricalGroup,
+    { names: string[]; count: number }
+  >();
   drinks.forEach((item) => {
     const code = historicalBeanCode(item.name, item.type);
     const current = grouped.get(code) || { names: [], count: 0 };
@@ -118,24 +129,16 @@ const historicalOrderToDripUnits = (
   const id = `#${order.orderId.toString().padStart(3, "0")}`;
   const source = Array.from(
     grouped,
-    ([beanCode, group], index): UnassignedOrder => ({
+    ([groupKey, group], index): UnassignedOrder => ({
       id,
-      ticketUid: `history-${order.orderId}-${beanCode}-${index}`,
-      beanCode,
+      ticketUid: `history-${order.orderId}-${groupKey}-${index}`,
+      itemKey: `history-${groupKey}`,
       beanName: group.names.join("・"),
       cupCount: group.count,
       badgeTag: `${group.count}杯`,
       predictedTimeStr: brewDurationLabel(group.count),
       recommendedBaristas: "全ドリッパー",
       recommendedBayIds: [1, 2, 3, 4, 5, 6],
-      cardColor:
-        beanCode === "ICE"
-          ? "cyan"
-          : beanCode === "SP"
-            ? "emerald"
-            : beanCode === "KEN"
-              ? "peach"
-              : "blue",
     }),
   );
   return splitIntoDripUnits(source);
@@ -547,18 +550,9 @@ export default function App() {
       orderNotes: orderToAssign.orderNotes,
       sourceOrderIds: orderToAssign.sourceOrderIds,
       preferredBaristaId: orderToAssign.preferredBaristaId,
-      beanCode: orderToAssign.beanCode,
+      itemKey: orderToAssign.itemKey,
       beanName: orderToAssign.beanName,
       cupCount: orderToAssign.cupCount,
-      tag: orderToAssign.badgeTag.includes("HOT")
-        ? "HOT"
-        : orderToAssign.badgeTag.includes("ICE")
-          ? "ICE"
-          : orderToAssign.badgeTag.includes("BATCH")
-            ? "BATCH"
-            : orderToAssign.badgeTag.includes("SP")
-              ? "★SP"
-              : undefined,
       status: "scheduled",
       scheduledTimeStr: formatMinSec(duration),
       startTimeSec: computedStartSec,
@@ -649,10 +643,10 @@ export default function App() {
         totalOrderCups: ticket.totalOrderCups,
         orderNotes: ticket.orderNotes,
         sourceOrderIds: ticket.sourceOrderIds,
-        beanCode: ticket.beanCode,
+        itemKey: ticket.itemKey,
         beanName: ticket.beanName,
         cupCount: ticket.cupCount,
-        badgeTag: `${ticket.cupCount}杯 ${ticket.tag || "HOT"}`,
+        badgeTag: `${ticket.cupCount}杯`,
         predictedTimeStr: brewDurationLabel(ticket.cupCount),
         recommendedBaristas: ticket.preferredBaristaId
           ? `ドリッパー ${ticket.preferredBaristaId}`
@@ -661,12 +655,6 @@ export default function App() {
           ? [ticket.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
         preferredBaristaId: ticket.preferredBaristaId,
-        cardColor:
-          ticket.beanCode === "ICE"
-            ? "cyan"
-            : ticket.beanCode === "SP"
-              ? "emerald"
-              : "blue",
       },
       ...prev,
     ]);
