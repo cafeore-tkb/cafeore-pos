@@ -17,7 +17,7 @@ type ColorSetting struct {
 	ID         uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
 	TargetType string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // "Item" または "ItemType"
 	TargetID   uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_color_settings_target_screen"`
-	Screen     string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // "cashier"、"master"、"serve" のいずれか
+	Screen     string    `gorm:"not null;uniqueIndex:idx_color_settings_target_screen"` // ColorScreen（openapi.yaml）のいずれか
 	Color      string    `gorm:"not null"`                                              // #RRGGBB
 	CreatedAt  time.Time `gorm:"not null"`
 	UpdatedAt  time.Time `gorm:"not null"`
