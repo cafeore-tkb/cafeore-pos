@@ -20,7 +20,7 @@ import (
 )
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップ（order_cups）の列で持つ（models.OrderCup の Dripper・DripperPosition・
-// DripID・BrewStartedAt・BrewFinishedAt）。カードの表は持たず、画面は注文の一覧からカードを組み立てる。
+// DripID・BrewStartedAt・BrewFinishedAt）。画面は注文の一覧からカードを組み立てる。
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
@@ -30,6 +30,9 @@ import (
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。抽出中のカードを作る書き込みは、
 // そのドリッパーの advisory lock を注文の行より先に取り、1 つのドリッパーで抽出中が 1 枚かを順番に確かめる。
 // 書いたカップの注文は今の注文の配信（1 件ずつ）で全部の画面へ、ほかのインスタンスへは orders_changed で届く（publishOrder）。
+//
+// 練習（実データテスト）はブラウザの中だけで動かし、writeCups・advance と caos_lanes.go の限定の確かめと同じ決まり・同じ理由の文を
+// modules/common/src/lib/caosPractice.ts が持つ（わざと 2 か所にある）。決まりや文を変えるときは両方そろえること。
 
 const (
 	// ドリッパーの数。番号は 1〜caosDrippers

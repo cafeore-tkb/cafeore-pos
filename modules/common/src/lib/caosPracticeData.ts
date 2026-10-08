@@ -210,7 +210,7 @@ export const toPracticeOrder = (order: unknown): PracticeDataOrder | null => {
 };
 
 /** 注文 JSON（{ orders: [...] } か配列）から注文の配列を取り出す */
-export const practiceOrdersOf = (json: unknown): unknown[] =>
+const practiceOrdersOf = (json: unknown): unknown[] =>
   Array.isArray(json) ? json : asArray(field(json, "orders"));
 
 /** 重ならないように見分けるキー（day12 と day1・day2 のように、同じ注文が別のファイルにもある） */

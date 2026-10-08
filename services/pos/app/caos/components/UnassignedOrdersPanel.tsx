@@ -1,4 +1,4 @@
-import { formatMinSec } from "@cafeore/common";
+import { CAOS_DRIPPERS, formatMinSec } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -95,17 +95,17 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, [openPadUid, onClearSelection, isSidebar]);
 
-  const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
+  const orderUid = (order: UnassignedOrder) => order.ticketUid;
   const bayAtPoint = (clientX: number, clientY: number) => {
     const target = document
       .elementsFromPoint(clientX, clientY)
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6;
+        return element && bayId >= 1 && bayId <= CAOS_DRIPPERS;
       });
     const bayId = Number(target?.dataset.bayTarget);
-    return bayId >= 1 && bayId <= 6 ? bayId : null;
+    return bayId >= 1 && bayId <= CAOS_DRIPPERS ? bayId : null;
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
@@ -301,8 +301,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
 
             return (
               <div
-                key={order.ticketUid || order.id}
-                id={`unassigned-${(order.ticketUid || order.id).replace("#", "")}`}
+                key={order.ticketUid}
+                id={`unassigned-${order.ticketUid}`}
                 data-unassigned-uid={orderUid(order)}
                 data-merge-candidate={isMergeCandidate ? "true" : undefined}
                 onClick={() => {
