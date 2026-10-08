@@ -18,3 +18,23 @@ type CaosLaneRow struct {
 }
 
 func (CaosLaneRow) TableName() string { return "caos_lanes" }
+
+// CaosLaneChangeRow は担当者の交代の記録（caos_lane_changes）。書くのは handlers/caos_lanes.go だけで、
+// 担当者（caos_lanes）を書くのと同じトランザクションで足す（交代で 1 行、入れ替えで 2 行。名前が変わらなくても足す）。
+// 抽出の統計で「抽出を始めた時刻に、そのドリッパーにいた人」を出すためのもので、画面には出さず、配信もしない。
+type CaosLaneChangeRow struct {
+	ID int64 `gorm:"primaryKey"`
+	// 替えた時刻（サーバーの時刻。caos_lanes の updated_at と同じ値）
+	ChangedAt time.Time `gorm:"not null"`
+	// 日本時間の日付（YYYY-MM-DD）。caos_lanes の day と同じ
+	Day     string `gorm:"type:date;not null;index"`
+	Dripper int    `gorm:"type:smallint;not null;check:caos_lane_changes_dripper_check,dripper BETWEEN 1 AND 6"`
+	// 替える前の名前。空なら担当者なし（その日に初めて替えたときも空）
+	PrevName string `gorm:"not null"`
+	// 替えたあとの名前。空なら担当者なし
+	Name string `gorm:"not null"`
+	// 替えたあとの人が上級生か（caos_lanes の senior と同じ値）
+	Senior bool `gorm:"not null;default:false"`
+}
+
+func (CaosLaneChangeRow) TableName() string { return "caos_lane_changes" }

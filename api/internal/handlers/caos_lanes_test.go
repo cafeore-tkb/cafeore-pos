@@ -17,13 +17,32 @@ import (
 
 // CaOS のドリッパーの担当者の DB のテスト。注文の DB と同じく LISTEN_TEST_DATABASE_URL を渡したときだけ走る（openListenTestDB）。
 
+// getLanes は今日の担当者を DB から読む（画面は配信で受け取るので、読むだけの API は無い）。
 func (f *caosFixture) getLanes(t *testing.T) models.CaosLanes {
 	t.Helper()
-	w := callHandler(t, f.caos.GetCaosLanes, http.MethodGet, "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("GET /api/caos/lanes = %d: %s", w.Code, w.Body)
+	lanes, _, err := loadCaosLanes(f.db, caosDayString(time.Now()))
+	if err != nil {
+		t.Fatal(err)
 	}
-	return decodeLanes(t, w.Body.Bytes())
+	return lanes
+}
+
+// laneChanges は今日の交代の記録を足した順に「ドリッパー:前→後」（上級生なら後ろに *）で並べる。
+func (f *caosFixture) laneChanges(t *testing.T) string {
+	t.Helper()
+	var rows []models.CaosLaneChangeRow
+	if err := f.db.Where("day = ?", caosDayString(time.Now())).Order("id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, r := range rows {
+		mark := ""
+		if r.Senior {
+			mark = "*"
+		}
+		out = append(out, fmt.Sprintf("%d:%s→%s%s", r.Dripper, r.PrevName, r.Name, mark))
+	}
+	return strings.Join(out, " ")
 }
 
 func decodeLanes(t *testing.T, body []byte) models.CaosLanes {
@@ -130,6 +149,21 @@ func TestCaosLanesOnDB(t *testing.T) {
 		t.Fatalf("caos_lanes message = %+v, %v", msg, ok)
 	}
 
+	// 交代の記録：替えるたびに 1 行、入れ替えは 2 行（first・second の順）。前の名前は替える前の担当者（その日に初めてなら空）。
+	// 前の日の行（直に入れた「昨日」）は記録に無い
+	const changes = "1:→山田* 2:→佐藤 2:佐藤→鈴木 1:山田→鈴木 2:鈴木→山田* 2:山田→ 6:→山田* 6:山田→"
+	if got := f.laneChanges(t); got != changes {
+		t.Fatalf("lane changes = %s, want %s", got, changes)
+	}
+	// 時刻は担当者の updated_at と同じ（サーバーの時刻）
+	var last models.CaosLaneChangeRow
+	if err := db.Order("id DESC").First(&last).Error; err != nil {
+		t.Fatal(err)
+	}
+	if lane := f.getLanes(t).Lanes[5]; lane.UpdatedAt == nil || !last.ChangedAt.Equal(*lane.UpdatedAt) || !strings.HasPrefix(last.Day, today) {
+		t.Fatalf("last change = %+v, lane = %+v", last, lane)
+	}
+
 	// 形の違うリクエストは 400 で、何も変えない
 	if code, _ := f.putLane(t, 7, "山田", false); code != http.StatusBadRequest {
 		t.Fatalf("dripper 7 = %d, want 400", code)
@@ -147,6 +181,10 @@ func TestCaosLanesOnDB(t *testing.T) {
 		}
 	}
 	noBroadcast(t, hub)
+	// 断ったリクエストは記録しない
+	if got, want := f.laneChanges(t), changes+" 1:鈴木→"+strings.Repeat("あ", caosMaxLaneName); got != want {
+		t.Fatalf("lane changes after bad requests = %s, want %s", got, want)
+	}
 }
 
 func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
