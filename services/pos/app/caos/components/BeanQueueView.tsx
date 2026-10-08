@@ -9,7 +9,7 @@ interface BeanQueueViewProps {
   statuses: InventoryStatus[];
   isLoading: boolean;
   error: unknown;
-  /** 盤面で待っている（未割当・待機・抽出中の）杯数（在庫対象の ID ごと。logic/beans.ts の waitingCupsByBean）。実データテスト中は出さない */
+  /** 盤面で待っている（未割当・待機・抽出中の）杯数（在庫対象の ID ごと。logic/beans.ts の waitingCupsByBean。無い豆は 0 杯）。実データテスト中は出さない */
   waitingCups?: Map<string, number>;
 }
 
@@ -55,7 +55,9 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
           <BeanStockCard
             key={status.resource.id}
             status={status}
-            waitingCups={waitingCups?.get(status.resource.id)}
+            waitingCups={
+              waitingCups && (waitingCups.get(status.resource.id) ?? 0)
+            }
           />
         ))}
       </div>

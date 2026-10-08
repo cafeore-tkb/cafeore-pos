@@ -52,7 +52,7 @@ export const useCaosSession = () => {
   });
   const pos = usePosIngest({ enabled: !test.session, receive: state.receive });
   const { colorSettings } = useColorSettings();
-  const { beanStatuses, beanIndex, ...beanState } = useBeanInventory();
+  const { beanIndex, ...beanStock } = useBeanInventory();
 
   // 盤面の秒。その日の 0 時から数える（テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const realTime = useCurrentTime(1000);
@@ -69,14 +69,8 @@ export const useCaosSession = () => {
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
-    () =>
-      test.session
-        ? undefined
-        : waitingCupsByBean(
-            board,
-            beanStatuses.map((status) => status.resource.id),
-          ),
-    [board, beanStatuses, test.session],
+    () => (test.session ? undefined : waitingCupsByBean(board)),
+    [board, test.session],
   );
 
   // できた操作だけ音を鳴らす
@@ -96,11 +90,7 @@ export const useCaosSession = () => {
       waiting: totalCups(board.baristas.flatMap((barista) => barista.queue)),
     },
     /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
-    beans: {
-      statuses: beanStatuses,
-      waitingCups: beanWaitingCups,
-      ...beanState,
-    },
+    beans: { ...beanStock, waitingCups: beanWaitingCups },
     nowSec,
     timeLabel: timeOfDayLabel(nowSec),
     isRunning,
