@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { canMergeDripUnits, orderLabel } from "../logic/cards";
+import { type DripCard, canMergeDripUnits, orderLabel } from "../logic/cards";
 import { canPlaceOn } from "../logic/lanes";
-import type { DripCard } from "../types";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。

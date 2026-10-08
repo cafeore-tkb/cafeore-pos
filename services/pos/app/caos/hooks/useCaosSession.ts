@@ -1,8 +1,9 @@
-import { useColorSettings } from "@cafeore/common";
+import { type PracticeDataOrder, useColorSettings } from "@cafeore/common";
 import dayjs from "dayjs";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import {
+  type Board,
   advanceBay,
   assignCard,
   mergeUnassigned,
@@ -16,15 +17,14 @@ import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
 import { nextAvailableBays } from "../logic/queue";
 import type { RebrewDecision } from "../logic/rebrew";
-import type { Board, HistoricalOrder, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
 import { usePracticeData } from "./usePracticeData";
-import { useTestPlay } from "./useTestPlay";
+import { type TestPlaySession, useTestPlay } from "./useTestPlay";
 
 // 実データを読み込んでいないとき
-const NO_ORDERS: HistoricalOrder[] = [];
+const NO_ORDERS: PracticeDataOrder[] = [];
 
 // タイマーの速さ（ヘッダーで押すたびに次へ）
 const SIM_SPEEDS = [1, 2, 5, 10];

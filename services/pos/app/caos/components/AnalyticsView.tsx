@@ -1,3 +1,4 @@
+import type { PracticeDataOrder } from "@cafeore/common";
 import dayjs from "dayjs";
 import {
   AlertTriangle,
@@ -18,16 +19,16 @@ import {
   analyticsReport,
   deltaGrade,
 } from "../logic/analytics";
+import type { Barista } from "../logic/board";
 import { timeOfDayLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
-import type { Barista, HistoricalOrder } from "../types";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
 interface AnalyticsViewProps {
   baristas: Barista[];
   /** 実データテストの、今までに届いた注文（テストをしていなければ空） */
-  salesOrders: HistoricalOrder[];
+  salesOrders: PracticeDataOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
   /** 商品の種類の表示名（種類の name → display_name。POS の商品の種類から） */

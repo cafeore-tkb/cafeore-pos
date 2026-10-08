@@ -3,10 +3,15 @@ import type React from "react";
 import { useRef, useState } from "react";
 import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import { useOutsidePress } from "../hooks/useOutsidePress";
-import { brewSec, orderLabel } from "../logic/cards";
+import type { Barista } from "../logic/board";
+import {
+  type DripCard,
+  type OrderTicket,
+  brewSec,
+  orderLabel,
+} from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { canPlaceOn, laneOrdinal, moveTargets } from "../logic/lanes";
-import type { Barista, DripCard, OrderTicket } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";

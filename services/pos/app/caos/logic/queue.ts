@@ -1,5 +1,5 @@
-import type { Barista, OrderTicket } from "../types";
-import { compareCards } from "./cards";
+import type { Barista } from "./board";
+import { type OrderTicket, compareCards } from "./cards";
 
 // ドリッパーの列の並びと予定時刻
 

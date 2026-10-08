@@ -6,7 +6,13 @@ import {
   useScrollToFirstLive,
   useSheetSelection,
 } from "../hooks/useSheetSelection";
-import { orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import {
+  type DripCard,
+  type OrderTicket,
+  orderLabel,
+  orderNoLabel,
+  totalCups,
+} from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
@@ -17,7 +23,6 @@ import {
   cellKey,
   linkedOrderNos,
 } from "../logic/sheet";
-import type { DripCard, OrderTicket } from "../types";
 import {
   EmptySlotButton,
   LaneBadge,

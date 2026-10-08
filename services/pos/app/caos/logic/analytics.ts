@@ -1,5 +1,6 @@
-import type { Barista, HistoricalOrder, OrderTicket } from "../types";
-import { orderLabel, totalCups } from "./cards";
+import type { PracticeDataOrder } from "@cafeore/common";
+import type { Barista } from "./board";
+import { type OrderTicket, orderLabel, totalCups } from "./cards";
 
 // 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・入れ直し・ドリッパーごとの量・実データテストの売上
 
@@ -127,7 +128,7 @@ const baristaResults = (baristas: Barista[]) =>
 
 // 実データテストの売上（10 分ごとの注文・商品の順位・種類の内訳・注文から準備完了までの平均）
 const BUCKET_MS = 600_000;
-const salesAnalysis = (orders: HistoricalOrder[]) => {
+const salesAnalysis = (orders: PracticeDataOrder[]) => {
   if (orders.length === 0) return null;
   const menuMap = new Map<string, number>();
   const typeMap = new Map<string, number>();
@@ -178,7 +179,7 @@ const salesAnalysis = (orders: HistoricalOrder[]) => {
 /** 実績のパネルに出すもの */
 export const analyticsReport = (
   baristas: Barista[],
-  salesOrders: HistoricalOrder[],
+  salesOrders: PracticeDataOrder[],
 ) => {
   const splits = splitResults(baristas);
   const averageDelta = average(splits.map((result) => result.deltaSec));

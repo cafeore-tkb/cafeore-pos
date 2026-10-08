@@ -1,5 +1,6 @@
-import type { DripCard, HistoricalOrder, TestPlaySession } from "../types";
-import { splitIntoDripUnits } from "./cards";
+import type { PracticeDataOrder } from "@cafeore/common";
+import type { TestPlaySession } from "../hooks/useTestPlay";
+import { type DripCard, splitIntoDripUnits } from "./cards";
 
 // 実データテスト（2025年の注文。商品 ID が無い）のカード。cafeore-pos の注文のカードには使わない。
 // 過去の注文には商品 ID が無いので、商品の名前でまとめ方（統合できる相手）を決める。
@@ -15,7 +16,7 @@ const historicalGroupOf = (name: string, type: string) => {
   return "SP";
 };
 
-const historicalOrderToDripUnits = (order: HistoricalOrder): DripCard[] => {
+const historicalOrderToDripUnits = (order: PracticeDataOrder): DripCard[] => {
   const grouped = new Map<string, { names: string[]; count: number }>();
   for (const item of order.items) {
     // Plain iced milk is served without dripping, so it never enters CaOS's drip queue.
@@ -42,12 +43,12 @@ const historicalOrderToDripUnits = (order: HistoricalOrder): DripCard[] => {
   );
 };
 
-const createdMs = (order: HistoricalOrder) =>
+const createdMs = (order: PracticeDataOrder) =>
   new Date(order.createdAt).getTime();
 
 /** 時刻（nowMs）までに届いた注文（cursor から先）のカードと、次の cursor。orders は時刻の順 */
 export const historicalArrivals = (
-  orders: HistoricalOrder[],
+  orders: PracticeDataOrder[],
   cursor: number,
   nowMs: number,
 ) => {
@@ -61,7 +62,7 @@ export const historicalArrivals = (
 
 /** startMs から endMs までの注文を時刻の順に */
 export const ordersInPeriod = (
-  orders: HistoricalOrder[],
+  orders: PracticeDataOrder[],
   startMs: number,
   endMs: number,
 ) =>
@@ -89,7 +90,7 @@ const SLOT_MS = 30 * 60_000;
  * 時間帯（durationMinutes 分）に注文がある時刻だけ
  */
 export const testPlaySlots = (
-  orders: HistoricalOrder[],
+  orders: PracticeDataOrder[],
   durationMinutes: number,
 ) => {
   const durationMs = durationMinutes * 60_000;

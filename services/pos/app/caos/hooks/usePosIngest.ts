@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { useEffect, useRef, useState } from "react";
+import type { DripCard } from "../logic/cards";
 import { ingestPosOrders } from "../logic/posOrders";
-import type { DripCard } from "../types";
 import { usePosOrders } from "./usePosOrders";
 
 // cafeore-pos の注文を盤面に取り込む（共有の WebSocket から届くたびに、新しい注文を足し、取り下げを外す）。
