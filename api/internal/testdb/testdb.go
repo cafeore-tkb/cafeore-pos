@@ -8,12 +8,7 @@
 //
 // go test ./... はパッケージを並行で走らせ、どのパッケージのテストも同じ DB を共有する。
 // そのため渡した DB の既存の schema・データには触らず、テストごとに使い捨ての schema（New）か
-// database（NewDatabase）を作り、終わったら消す。
-//
-// 手元では api/compose.yaml の Postgres を使える:
-//
-//	docker compose -f api/compose.yaml up -d db
-//	TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
+// database（NewDatabase）を作り、終わったら消す。手元での流し方は README の「backend のテスト」。
 package testdb
 
 import (
@@ -37,8 +32,9 @@ const EnvURL = "TEST_DATABASE_URL"
 // uuid-ossp を入れるときに取る advisory lock の番号。値に意味はなく、ほかと重ならなければよい。
 const extensionLockKey = 0x7465737464627831
 
-// Config は TEST_DATABASE_URL を読んで返す。無ければスキップし、CI では落とす。
-func Config(t testing.TB) pgx.ConnConfig {
+// TEST_DATABASE_URL を読んで返す。無ければスキップし、CI では落とす。
+// 呼ぶたびに読み直すので、返した RuntimeParams を書き換えてもほかの接続に響かない。
+func connConfig(t testing.TB) pgx.ConnConfig {
 	t.Helper()
 	dsn := os.Getenv(EnvURL)
 	if dsn == "" {
@@ -60,9 +56,7 @@ func Config(t testing.TB) pgx.ConnConfig {
 // uuid_generate_v4() は DB の public に入れ、search_path を「その schema,public」にして使う。
 func New(t testing.TB) *gorm.DB {
 	t.Helper()
-	config := Config(t)
-
-	admin := Open(t, config, nil)
+	admin := open(t, connConfig(t), nil)
 	ensureUUIDExtension(t, admin)
 
 	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -76,9 +70,9 @@ func New(t testing.TB) *gorm.DB {
 		}
 	})
 
-	// Config はその都度読み直すので、RuntimeParams を書き換えてもほかに響かない
-	config.RuntimeParams["search_path"] = schema + ",public"
-	db := Open(t, config, nil)
+	schemaConfig := connConfig(t)
+	schemaConfig.RuntimeParams["search_path"] = schema + ",public"
+	db := open(t, schemaConfig, nil)
 	// スキーマの正本はモデル。本番の起動時（cmd/server/migrate.go）と同じく AutoMigrate で作る
 	if err := db.AutoMigrate(models.All()...); err != nil {
 		t.Fatal(err)
@@ -93,9 +87,9 @@ func New(t testing.TB) *gorm.DB {
 // log が nil なら SQL のログは出さない。
 func NewDatabase(t testing.TB, log logger.Interface) *gorm.DB {
 	t.Helper()
-	config := Config(t)
+	config := connConfig(t)
 
-	admin := Open(t, config, nil)
+	admin := open(t, config, nil)
 	name := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := admin.Exec("CREATE DATABASE " + name).Error; err != nil {
 		t.Fatal(err)
@@ -109,13 +103,13 @@ func NewDatabase(t testing.TB, log logger.Interface) *gorm.DB {
 	})
 
 	config.Database = name
-	return Open(t, config, log)
+	return open(t, config, log)
 }
 
-// Open は本番（cmd/server の initDB）と同じ設定（simple protocol・外部キーを作らない）で開き、
+// 本番（cmd/server の initDB）と同じ設定（simple protocol・外部キーを作らない）で開き、
 // テストが終わったら閉じる。log が nil なら SQL のログは出さない
 // （見つからないこと（404）を確かめるテストも多いので）。
-func Open(t testing.TB, config pgx.ConnConfig, log logger.Interface) *gorm.DB {
+func open(t testing.TB, config pgx.ConnConfig, log logger.Interface) *gorm.DB {
 	t.Helper()
 	if log == nil {
 		log = logger.Default.LogMode(logger.Silent)

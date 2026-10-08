@@ -30,16 +30,8 @@ jobs:
           working-directory: api
           version: v2.9.0
 
-  # 本物の Postgres を使うテストは、この 1 つの Postgres を TEST_DATABASE_URL で共有する。
-  # DB の準備（TEST_DATABASE_URL を読む・使い捨ての schema / database を作って消す）は
-  # api/internal/testdb にまとめてあり、どのテストもそれを使う（別の環境変数は作らない）。
-  # go test ./... はパッケージを並行で走らせるので、どのテストも既存の schema・データを壊さない。
-  #   - ハンドラの結合テストなど: テストごとに使い捨ての schema を作り、モデルからテーブルを作って
-  #     終わったら消す（testdb.New）
-  #   - 起動時のマイグレーション（cmd/server）: public スキーマ前提なので、テストごとに使い捨ての
-  #     database を作って流す（testdb.NewDatabase。ロールに CREATEDB が要る）。プレビューは preview
-  #     ラベルの PR にしか出ないので、ラベルの無い PR でも AutoMigrate が通るか・反映後にズレが無いかをここで見る
-  # CI では TEST_DATABASE_URL が無いと落ちるので、これらのテストが黙って飛ばされることはない。
+  # 本物の Postgres を使うテストは、この 1 つの Postgres を TEST_DATABASE_URL で共有する
+  # （準備と後始末は api/internal/testdb。CI では TEST_DATABASE_URL が無いと落ちる）。
   # 本番（Supabase）に合わせて 17。
   test:
     runs-on: ubuntu-latest
