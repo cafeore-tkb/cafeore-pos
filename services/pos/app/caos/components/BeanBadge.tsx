@@ -10,11 +10,12 @@ export const BeanBadge: React.FC<{
   className?: string;
 }> = ({ beans, typeName, className = "" }) => {
   const names = beanNamesOf({ beans });
-  const label = [typeName, names].filter(Boolean).join(" / ");
+  // 狭いカードでは後ろが切れるので、豆を先に出す
+  const label = [names, typeName].filter(Boolean).join(" / ");
   if (!label) return null;
   return (
     <span
-      title={[typeName && `区分：${typeName}`, names && `豆：${names}`]
+      title={[names && `豆：${names}`, typeName && `区分：${typeName}`]
         .filter(Boolean)
         .join("　")}
       className={`min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none ${className}`}
