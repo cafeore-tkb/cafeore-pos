@@ -69,7 +69,7 @@ export interface UnassignedOrder {
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
   seniorOnly?: boolean; // 限定（種類の senior_only）
-  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
+  mergeKey?: string; // 統合できる相手を決めるキー（注文のカードは商品と指名、実データテストは豆）。同じキーの 1 杯どうしだけ統合できる
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 

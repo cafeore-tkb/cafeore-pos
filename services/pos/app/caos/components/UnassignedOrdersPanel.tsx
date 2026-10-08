@@ -1,8 +1,10 @@
+import { CAOS_DRIPPER_IDS } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
+import { isLaneId } from "../utils/lanes";
 import { MENU_PRESENTATION } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
 
@@ -99,10 +101,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6;
+        return element && isLaneId(bayId);
       });
     const bayId = Number(target?.dataset.bayTarget);
-    return bayId >= 1 && bayId <= 6 ? bayId : null;
+    return isLaneId(bayId) ? bayId : null;
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
@@ -430,7 +432,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 1から3`}
                     >
-                      {[1, 2, 3].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(0, 3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"
@@ -454,7 +456,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 4から6`}
                     >
-                      {[4, 5, 6].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"

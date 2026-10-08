@@ -831,24 +831,6 @@
       }
     }
   },
-  "CaosNextResult": {
-    "type": "object",
-    "required": ["finished_drip_id", "started_drip_id"],
-    "properties": {
-      "finished_drip_id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "終えたカード。無ければ null"
-      },
-      "started_drip_id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "始めたカード。待機が無ければ null"
-      }
-    }
-  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],

@@ -1,14 +1,11 @@
 import {
-  type CaosWritesResult,
-  assignWrites,
-  buildCaosCards,
-  caosDay,
-  mergeWrites,
-  nextCaosDripper,
-  putCaosCups,
-  unassignWrites,
+  CAOS_DRIPPER_IDS,
+  caosBrewSec,
+  caosClockLabel,
+  caosDurationLabel,
+  jstDayStart,
 } from "@cafeore/common";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
   AuxiliaryContent,
@@ -23,8 +20,7 @@ import {
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import { usePosOrders } from "./hooks/usePosOrders";
-import { cardsToBoard } from "./live/board";
+import { useLiveCaosBoard } from "./live/useLiveCaosBoard";
 import type {
   Barista,
   BeanCode,
@@ -58,15 +54,6 @@ const readPanelSnapshot = (): PanelSnapshot | null => {
   } catch {
     return null;
   }
-};
-
-const startOfLocalDay = (ms: number) => {
-  const date = new Date(ms);
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  ).getTime();
 };
 
 const historicalBeanCode = (name: string, type: string): BeanCode => {
@@ -108,9 +95,11 @@ const historicalOrderToDripUnits = (
       beanName: group.names.join("・"),
       cupCount: group.count,
       badgeTag: `${group.count}杯`,
-      predictedTimeStr: group.count > 1 ? "3分15秒" : "2分15秒",
+      predictedTimeStr: caosDurationLabel(caosBrewSec(group.count)),
       recommendedBaristas: "全ドリッパー",
-      recommendedBayIds: [1, 2, 3, 4, 5, 6],
+      recommendedBayIds: [...CAOS_DRIPPER_IDS],
+      // 実データテストの盤面は、同じ豆の 1 杯どうしを統合できる
+      mergeKey: beanCode,
       cardColor:
         beanCode === "ICE"
           ? "cyan"
@@ -180,7 +169,8 @@ export default function App() {
   // Linked multi-item order selection (e.g. #152 has items in Bay 1 and Bay 2)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [realTime, setRealTime] = useState(() => new Date());
-  const [realDayStartMs] = useState(() => startOfLocalDay(Date.now()));
+  // 秒は日本時間の 0 時から数える（盤面の「今日」と同じ区切り）
+  const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
   const testPlayStatus = testPlaySession?.status;
   const testPlayCurrentMs = testPlaySession?.currentMs;
   const testPlayEndMs = testPlaySession?.endMs;
@@ -191,56 +181,26 @@ export default function App() {
   // Seconds are counted from the session's first midnight so the clock keeps
   // increasing past 24:00 instead of wrapping and scrambling every queue.
   const operationalDayStartMs = testPlaySession
-    ? startOfLocalDay(testPlaySession.startMs)
+    ? jstDayStart(testPlaySession.startMs)
     : realDayStartMs;
   const realTimeSec = Math.floor(
     (operationalTime.getTime() - operationalDayStartMs) / 1000,
   );
 
-  // 普段は cafeore-pos の注文で動かす。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
-  // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる。操作はカップに書く（PUT /api/caos/cups・「次へ」）。
-  // 書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。
+  // 普段は cafeore-pos の注文で動かす（useLiveCaosBoard）。
   // 実データテスト中（終了後の実績表示も含め、リセットするまで）は注文を使わず、テストの注文だけで手元の盤面を動かす。
-  const live = !testPlaySession;
-  const { orders: posOrders, status: posStatus } = usePosOrders(live);
-  const today = caosDay(realTime);
-  const liveCards = useMemo(
-    () => buildCaosCards(posOrders ?? [], today),
-    [posOrders, today],
-  );
-  // カードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
-  const liveBoard = useMemo(
-    () => cardsToBoard(liveCards, baristas, realTimeSec, realDayStartMs),
-    [liveCards, baristas, realTimeSec, realDayStartMs],
-  );
-  const boardBaristas = live ? liveBoard.baristas : baristas;
-  const boardUnassignedOrders = live
-    ? liveBoard.unassignedOrders
+  const isLive = !testPlaySession;
+  const live = useLiveCaosBoard({
+    enabled: isLive,
+    baristas,
+    now: realTime,
+    nowSec: realTimeSec,
+    dayStartMs: realDayStartMs,
+  });
+  const boardBaristas = isLive ? live.board.baristas : baristas;
+  const boardUnassignedOrders = isLive
+    ? live.board.unassignedOrders
     : unassignedOrders;
-  // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
-  const pendingNextRef = useRef(new Set<number>());
-  const [liveError, setLiveError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!liveError) return;
-    const timer = window.setTimeout(() => setLiveError(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [liveError]);
-
-  // カップへの書き込みを送る。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を出す。
-  // 結果は書いた注文の配信で届く
-  const runWrites = async (result: CaosWritesResult) => {
-    if ("error" in result) {
-      setLiveError(result.error);
-      return;
-    }
-    const { error } = await putCaosCups(result.writes);
-    if (error) setLiveError(error);
-  };
-  // 画面のカード（ticketUid）から、組み立てたカードを引く
-  const liveCard = (ticketUid: string | undefined) =>
-    ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
-  const newDripId = () => crypto.randomUUID();
 
   const findLiveTicket = (key: string) => {
     for (const bay of boardBaristas) {
@@ -363,14 +323,10 @@ export default function App() {
             activeTicket.timeRemainingSec = nextSec;
             updatedQueue[0] = activeTicket;
 
-            const m = Math.floor(nextSec / 60);
-            const s = nextSec % 60;
-            const remainingStr = `0${m}:${s < 10 ? "0" : ""}${s} 残り`;
-
             return {
               ...barista,
               status: nextSec <= 15 ? "imminent" : "brewing",
-              remainingStr,
+              remainingStr: `${caosClockLabel(nextSec)} 残り`,
               queue: updatedQueue,
             };
           }
@@ -389,19 +345,8 @@ export default function App() {
     const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
 
-    if (live) {
-      if (pendingNextRef.current.has(bayId)) return;
-      // 抽出中のカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが断る）。
-      // 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始める
-      const current = targetBarista.queue[0];
-      const card =
-        current.status === "brewing" ? liveCard(current.ticketUid) : undefined;
-      pendingNextRef.current.add(bayId);
-      void nextCaosDripper(bayId, card?.dripId ?? null)
-        .then(({ error }) => {
-          if (error) setLiveError(error);
-        })
-        .finally(() => pendingNextRef.current.delete(bayId));
+    if (isLive) {
+      live.next(bayId, targetBarista.queue[0]);
       return;
     }
 
@@ -423,7 +368,10 @@ export default function App() {
         return {
           ...b,
           status: nextQueue.length > 0 ? "brewing" : "standby",
-          remainingStr: nextQueue.length > 0 ? "01:50 残り" : "00:00 待機中",
+          remainingStr:
+            nextQueue.length > 0
+              ? `${caosClockLabel(nextQueue[0].totalDurationSec)} 残り`
+              : "00:00 待機中",
           queue: nextQueue,
           pastTickets,
         };
@@ -447,12 +395,8 @@ export default function App() {
       orderToAssign.preferredBaristaId !== targetBayId
     )
       return;
-    if (live) {
-      const card = liveCard(orderToAssign.ticketUid);
-      if (!card) return;
-      void runWrites(
-        assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
-      );
+    if (isLive) {
+      live.assign(orderToAssign.ticketUid, targetBayId);
       return;
     }
 
@@ -468,7 +412,7 @@ export default function App() {
     // Calculate dynamic start time based on target bay's queue
     const targetBay = baristas.find((b) => b.id === targetBayId);
     const lastTicket = targetBay?.queue[targetBay.queue.length - 1];
-    const duration = orderToAssign.cupCount > 1 ? 195 : 135;
+    const duration = caosBrewSec(orderToAssign.cupCount);
     const computedStartSec =
       lastTicket?.startTimeSec && lastTicket.totalDurationSec
         ? lastTicket.startTimeSec + lastTicket.totalDurationSec + 15
@@ -498,7 +442,7 @@ export default function App() {
               ? "★SP"
               : undefined,
       status: "scheduled",
-      scheduledTimeStr: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: caosDurationLabel(duration),
       startTimeSec: computedStartSec,
       totalDurationSec: duration,
     };
@@ -524,15 +468,8 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
-    if (live) {
-      const card = liveCard(ticket.ticketUid);
-      if (!card) return;
-      void runWrites(
-        assignWrites(liveCards, card, targetBayId, {
-          index: toFront ? 0 : undefined,
-          newId: newDripId,
-        }),
-      );
+    if (isLive) {
+      live.assign(ticket.ticketUid, targetBayId, toFront);
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
@@ -560,10 +497,8 @@ export default function App() {
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
-    if (live) {
-      const card = liveCard(ticket.ticketUid);
-      if (!card) return;
-      void runWrites(unassignWrites(card));
+    if (isLive) {
+      live.unassign(ticket.ticketUid);
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
@@ -591,13 +526,14 @@ export default function App() {
         beanName: ticket.beanName,
         cupCount: ticket.cupCount,
         badgeTag: `${ticket.cupCount}杯 ${ticket.tag || "HOT"}`,
-        predictedTimeStr: ticket.scheduledTimeStr || "2:15",
+        predictedTimeStr: caosDurationLabel(caosBrewSec(ticket.cupCount)),
         recommendedBaristas: ticket.preferredBaristaId
           ? `ドリッパー ${ticket.preferredBaristaId}`
           : "全ドリッパー",
         recommendedBayIds: ticket.preferredBaristaId
           ? [ticket.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : [...CAOS_DRIPPER_IDS],
+        mergeKey: ticket.beanCode,
         preferredBaristaId: ticket.preferredBaristaId,
         cardColor:
           ticket.beanCode === "ICE"
@@ -620,11 +556,8 @@ export default function App() {
       (order) => (order.ticketUid || order.id) === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
-    if (live) {
-      const card = liveCard(firstUid);
-      const withCard = liveCard(secondUid);
-      if (!card || !withCard) return;
-      void runWrites(mergeWrites(card, withCard, newDripId));
+    if (isLive) {
+      live.merge(firstUid, secondUid);
       setSelectedOrderId(null);
       return;
     }
@@ -803,7 +736,7 @@ export default function App() {
           }
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={handleEndTestPlay}
-          posStatus={posStatus}
+          posStatus={live.status}
         />
 
         {/* Dynamic Tab Body */}
@@ -878,12 +811,12 @@ export default function App() {
         />
       )}
 
-      {liveError && (
+      {live.error && (
         <div
           role="alert"
           className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
         >
-          {liveError}
+          {live.error}
         </div>
       )}
 

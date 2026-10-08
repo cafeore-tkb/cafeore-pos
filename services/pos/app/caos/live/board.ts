@@ -1,13 +1,17 @@
-import { type CaosCard, caosLane } from "@cafeore/common";
+import {
+  CAOS_DRIPPER_IDS,
+  type CaosCard,
+  caosBrewSec,
+  caosClockLabel,
+  caosDurationLabel,
+  caosLane,
+  caosMergeKey,
+} from "@cafeore/common";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { orderNumber } from "../utils/orderQueue";
 import { posBeanCode } from "../utils/posOrders";
 
 // 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards）を、管制盤が使う形（列ごとの待機と未割当）にする。
-
-const ONE_CUP_SEC = 135;
-const TWO_CUP_SEC = 195;
-const durationOf = (cups: number) => (cups > 1 ? TWO_CUP_SEC : ONE_CUP_SEC);
 
 const orderLabel = (orderNo: number) =>
   `#${orderNo.toString().padStart(3, "0")}`;
@@ -34,10 +38,8 @@ const describe = (card: CaosCard, orderParts: Map<string, CaosCard[]>) => {
     new Set(card.cups.map((cup) => orderLabel(cup.orderNo))),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
-  const nominee = first.nominee ?? undefined;
-  const preferredBaristaId = card.nominatedDripper;
-  const unmatchedNominee =
-    nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
+  // 指名は自由記述のまま出す（ドリッパーの指名は CaOS6 で明細の dripper から入れる）
+  const nominee = first.nominee ? `（指名:${first.nominee}）` : "";
   // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS8）。今は印だけ
   const limited = card.seniorOnly ? "（限定）" : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
@@ -60,9 +62,8 @@ const describe = (card: CaosCard, orderParts: Map<string, CaosCard[]>) => {
       : undefined,
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
-    beanName: `${abbrs}${unmatchedNominee}${limited}`,
+    beanName: `${abbrs}${nominee}${limited}`,
     cupCount: card.cups.length,
-    preferredBaristaId,
     seniorOnly: card.seniorOnly,
   };
 };
@@ -96,12 +97,12 @@ export const cardsToBoard = (
     card: CaosCard,
     status: OrderTicket["status"],
   ): OrderTicket => {
-    const totalDurationSec = durationOf(card.cups.length);
+    const totalDurationSec = caosBrewSec(card.cups.length);
     return {
       ...describe(card, orderParts),
       status,
       totalDurationSec,
-      scheduledTimeStr: `${Math.floor(totalDurationSec / 60)}:${(totalDurationSec % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: caosDurationLabel(totalDurationSec),
       startTimeSec: toSec(card.startedAt, dayStartMs),
       endTimeSec: toSec(card.finishedAt, dayStartMs),
       completedAtSec: toSec(card.finishedAt, dayStartMs),
@@ -113,7 +114,7 @@ export const cardsToBoard = (
 
     const queue: OrderTicket[] = [];
     let cursor = nowSec;
-    let remainingSec: number | undefined;
+    let remainingSec = 0;
     if (brewing) {
       const ticket = toTicket(brewing, "brewing");
       const startSec = ticket.startTimeSec ?? nowSec;
@@ -133,17 +134,15 @@ export const cardsToBoard = (
       cursor = startTimeSec + ticket.totalDurationSec;
     });
 
-    const minutes = Math.floor((remainingSec ?? 0) / 60);
-    const seconds = (remainingSec ?? 0) % 60;
     return {
       ...barista,
       status: brewing
-        ? (remainingSec ?? 0) <= 15
+        ? remainingSec <= 15
           ? "imminent"
           : "brewing"
         : "standby",
       remainingStr: brewing
-        ? `0${minutes}:${seconds < 10 ? "0" : ""}${seconds} 残り`
+        ? `${caosClockLabel(remainingSec)} 残り`
         : "00:00 待機中",
       queue,
       pastTickets: done.map((card) => toTicket(card, "completed")),
@@ -159,15 +158,11 @@ export const cardsToBoard = (
         ...info,
         // 未割当で dripId のあるカードは統合したもの
         badgeTag: `${cups}杯${card.dripId ? " 統合" : ""}`,
-        predictedTimeStr: cups > 1 ? "3分15秒" : "2分15秒",
-        recommendedBaristas: info.preferredBaristaId
-          ? `ドリッパー ${info.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: info.preferredBaristaId
-          ? [info.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+        predictedTimeStr: caosDurationLabel(caosBrewSec(cups)),
+        recommendedBaristas: "全ドリッパー",
+        recommendedBayIds: [...CAOS_DRIPPER_IDS],
         cardColor: cardColorOf(info.beanCode),
-        mergeKey: `${card.cups[0].item.id}\u0000${card.cups[0].nominee ?? ""}`,
+        mergeKey: caosMergeKey(card),
       };
     });
 

@@ -89,15 +89,6 @@ type CaosNextRequest struct {
 	DripId *openapi_types.UUID `json:"drip_id"`
 }
 
-// CaosNextResult defines model for CaosNextResult.
-type CaosNextResult struct {
-	// FinishedDripId 終えたカード。無ければ null
-	FinishedDripId *openapi_types.UUID `json:"finished_drip_id"`
-
-	// StartedDripId 始めたカード。待機が無ければ null
-	StartedDripId *openapi_types.UUID `json:"started_drip_id"`
-}
-
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
