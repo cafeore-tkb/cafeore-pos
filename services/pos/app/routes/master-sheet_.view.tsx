@@ -1,6 +1,7 @@
 import type { MetaFunction } from "react-router";
 import ReadOnlyBoard from "~/caos/ReadOnlyBoard";
 import "~/caos/caos.css";
+import { CaosLanesProvider } from "~/caos/lanes/CaosLanesContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "CaOS（閲覧のみ）" }];
@@ -11,7 +12,10 @@ export const meta: MetaFunction = () => {
 export default function MasterSheetView() {
   return (
     <div className="caos-root antialiased">
-      <ReadOnlyBoard />
+      {/* ドリッパーの担当者は表示だけ（交代はしない） */}
+      <CaosLanesProvider>
+        <ReadOnlyBoard />
+      </CaosLanesProvider>
     </div>
   );
 }

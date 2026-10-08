@@ -9,6 +9,7 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { nominationText } from "../utils/nomination";
 import {
@@ -728,6 +729,13 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         <span className="font-black font-mono text-[18px] leading-none">
                           {dripperLabel(barista.bayNumber)}
                         </span>
+                        <LaneName
+                          dripper={barista.bayNumber}
+                          className="font-black text-[13px]"
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-center">
+                        <LaneChangeButton dripper={barista.bayNumber} />
                       </div>
                       <button
                         type="button"

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import { LaneHeaderStatus } from "../lanes/LaneHeaderStatus";
 import type { ControlViewMode } from "./ControlWorkspace";
 
 export type NavTab = "control" | "bays" | "beans" | "analytics";
@@ -246,6 +247,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Right side: only persistent operational controls */}
       <div className="flex items-center gap-2">
+        {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
+        <LaneHeaderStatus />
         <div
           role="status"
           aria-label={`cafeore-pos ${POS_STATUS_LABEL[posStatus]}`}

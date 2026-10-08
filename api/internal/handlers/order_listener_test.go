@@ -34,7 +34,7 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	}
 	for _, sql := range []string{
 		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`,
-		`DROP TABLE IF EXISTS order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, master_states, cashier_states CASCADE`,
+		`DROP TABLE IF EXISTS order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, master_states, cashier_states, caos_lanes, caos_lane_changes CASCADE`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
 			t.Fatal(err)
@@ -42,7 +42,7 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	}
 	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{},
 		&models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
-		&models.MasterState{}, &models.CashierState{}); err != nil {
+		&models.MasterState{}, &models.CashierState{}, &models.CaosLaneRow{}, &models.CaosLaneChangeRow{}); err != nil {
 		t.Fatal(err)
 	}
 	return db, dsn

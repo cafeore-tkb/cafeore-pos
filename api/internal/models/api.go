@@ -83,6 +83,42 @@ type CaosCupsWriteRequest struct {
 	Writes []CaosCupsWrite `json:"writes"`
 }
 
+// CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
+type CaosLane struct {
+	Dripper int `json:"dripper"`
+
+	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値
+	Senior bool `json:"senior"`
+
+	// UpdatedAt 最後に替えた時刻。今日まだ替えていなければ null
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// CaosLaneSwapRequest defines model for CaosLaneSwapRequest.
+type CaosLaneSwapRequest struct {
+	First  int `json:"first"`
+	Second int `json:"second"`
+}
+
+// CaosLaneUpdateRequest defines model for CaosLaneUpdateRequest.
+type CaosLaneUpdateRequest struct {
+	// Name 担当者の名前（前後の空白は落とす）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false
+	Senior bool `json:"senior"`
+}
+
+// CaosLanes 今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ
+type CaosLanes struct {
+	// Day 日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う
+	Day   string     `json:"day"`
+	Lanes []CaosLane `json:"lanes"`
+}
+
 // CaosNextRequest defines model for CaosNextRequest.
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
@@ -531,6 +567,12 @@ type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
 
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
+
+// SwapCaosLanesJSONRequestBody defines body for SwapCaosLanes for application/json ContentType.
+type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
+
+// PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
+type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

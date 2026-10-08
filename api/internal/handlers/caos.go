@@ -23,7 +23,8 @@ import (
 // DripID・BrewStartedAt・BrewFinishedAt）。画面は注文の一覧からカードを組み立てる。
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
-//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる
+//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
+//     限定のカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。抽出中のカードを作る書き込みは、
@@ -276,9 +277,12 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 			ID      uuid.UUID
 			OrderID uuid.UUID
 			Brew    bool
+			// 限定（種類の senior_only）。抽出が要るときだけ（models.ItemType.SeniorOnlyBrew と同じ）
+			Senior bool
 		}
 		if err := tx.Raw(`
-			SELECT c.id, c.order_id, COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew
+			SELECT c.id, c.order_id, COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew,
+				COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AND COALESCE(t.senior_only, false) AS senior
 			FROM order_cups c
 			LEFT JOIN items i ON i.id = c.item_id
 			LEFT JOIN item_types t ON t.id = i.item_type_id
@@ -289,10 +293,17 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 			return caosConflict("カップが消えました（注文が編集・削除されたかもしれません）")
 		}
 		needsBrew := make(map[uuid.UUID]bool, len(rows))
+		seniorOnly := make(map[uuid.UUID]bool, len(rows))
 		orderIDs = orderIDs[:0]
 		for _, r := range rows {
 			needsBrew[r.ID] = r.Brew
+			seniorOnly[r.ID] = r.Senior
 			orderIDs = append(orderIDs, r.OrderID)
+		}
+		// 限定のカップを置くなら、今日の担当者が上級生のドリッパー（caos_lanes.go）
+		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
+		if err != nil {
+			return err
 		}
 		orders, err := lockCaosOrders(tx, orderIDs, start, end)
 		if err != nil {
@@ -325,6 +336,9 @@ func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
 					if n := menuDripper(order, cup.OrderMenuID); n != nil && *n != *w.after.Dripper {
 						return caosRule("指名のあるカップは %d 番のドリッパーにしか置けません", *n)
 					}
+				}
+				if err := checkSeniorOnly(tx, w, cup, seniorOnly[id], seniors); err != nil {
+					return err
 				}
 			}
 			if err := tx.Model(&models.OrderCup{}).Where("id IN ?", w.cups).Updates(w.after.updates()).Error; err != nil {

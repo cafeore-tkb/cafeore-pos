@@ -57,7 +57,8 @@ const describe = (
       new Set(card.cups.flatMap((cup) => (cup.nominee ? [cup.nominee] : []))),
     ).join("・") || undefined;
   // 限定（種類の senior_only）の印。呼び方はその種類の表示名（display_name）をそのまま。
-  // 上級生の列だけにするのは列の担当者を持ってから（CaOS8）。今は印だけ
+  // 置けるのは担当者が上級生のドリッパーだけ（App と サーバーが確かめる。@cafeore/common の seniorOnlyBlock）。
+  // 指名の番号のある限定のカードは、指名のドリッパーの担当者が上級生のときだけ置ける
   const limited = card.seniorOnly ? `（${itemType.display_name}）` : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
     "・",

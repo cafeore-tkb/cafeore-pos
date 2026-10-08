@@ -6,6 +6,7 @@ import {
 } from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista, OrderTicket } from "../types";
 import { TicketCard } from "./TicketCard";
 
@@ -103,6 +104,16 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
 
         <div className="flex h-full min-w-0 flex-1 flex-col justify-center">
           <div className="flex min-w-0 items-center gap-1 leading-none">
+            {/* 担当者の名前と上級生の印（「1st 山田★」）、交代 */}
+            <LaneName
+              dripper={barista.bayNumber}
+              className="font-black text-[12px] text-slate-950"
+            />
+            <LaneChangeButton
+              dripper={barista.bayNumber}
+              compact
+              className="h-6"
+            />
             {activeTicket && (
               <span className="ml-auto shrink-0 font-black font-mono text-[16px] text-slate-950">
                 {activeTicket.id}
