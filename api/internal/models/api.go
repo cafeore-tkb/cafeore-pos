@@ -173,6 +173,9 @@ type ItemResponse struct {
 type ItemTypeCreateRequest struct {
 	DisplayName string `json:"display_name"`
 
+	// IcedBrew 省略したら false。needs_brew が false のときに true は 400
+	IcedBrew *bool `json:"iced_brew,omitempty"`
+
 	// MakesCup 省略したら true
 	MakesCup *bool  `json:"makes_cup,omitempty"`
 	Name     string `json:"name"`
@@ -186,8 +189,11 @@ type ItemTypeCreateRequest struct {
 
 // ItemTypeResponse defines model for ItemTypeResponse.
 type ItemTypeResponse struct {
-	DisplayName string             `json:"display_name"`
-	Id          openapi_types.UUID `json:"id"`
+	DisplayName string `json:"display_name"`
+
+	// IcedBrew この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false
+	IcedBrew bool               `json:"iced_brew"`
+	Id       openapi_types.UUID `json:"id"`
 
 	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
 	MakesCup bool   `json:"makes_cup"`
@@ -202,8 +208,11 @@ type ItemTypeResponse struct {
 
 // ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
 type ItemTypeUpdateRequest struct {
-	DisplayName string             `json:"display_name"`
-	Id          openapi_types.UUID `json:"id"`
+	DisplayName string `json:"display_name"`
+
+	// IcedBrew 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	IcedBrew *bool              `json:"iced_brew,omitempty"`
+	Id       openapi_types.UUID `json:"id"`
 
 	// MakesCup 省略したら今の値のまま
 	MakesCup *bool  `json:"makes_cup,omitempty"`
