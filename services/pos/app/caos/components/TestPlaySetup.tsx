@@ -1,10 +1,20 @@
-import { CalendarClock, Play, X } from "lucide-react";
+import type { PracticeDataset } from "@cafeore/common";
+import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
-import { useMemo, useState } from "react";
-import type { HistoricalOrder } from "../types";
+import { useMemo, useRef, useState } from "react";
+
+// 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
+// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）。
 
 interface TestPlaySetupProps {
-  orders: HistoricalOrder[];
+  /** 読み込んだ実データ。まだ無ければ null */
+  dataset: PracticeDataset | null;
+  /** ファイルを読んでいる間 */
+  loading: boolean;
+  /** 読めなかったファイル */
+  problems: string[];
+  onSelectFiles: (files: FileList | null) => void;
+  onClearData: () => void;
   onClose: () => void;
   onStart: (startMs: number, durationMinutes: 30 | 60) => void;
 }
@@ -20,10 +30,17 @@ const formatSlot = (timestamp: number) =>
   }).format(new Date(timestamp));
 
 export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
-  orders,
+  dataset,
+  loading,
+  problems,
+  onSelectFiles,
+  onClearData,
   onClose,
   onStart,
 }) => {
+  const orders = dataset?.orders ?? [];
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
   const slots = useMemo(() => {
     if (orders.length === 0) return [];
@@ -84,10 +101,10 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <div>
             <h2 className="flex items-center gap-2 font-black text-[20px] text-slate-950">
               <CalendarClock className="h-5 w-5 text-blue-700" />
-              2025実績でテストプレイ
+              実績でテストプレイ
             </h2>
             <p className="mt-1 font-medium text-[12px] text-slate-500">
-              実際の注文を選択した速度で再生します（1xは実時間と同じ）
+              過去の祭の実際の注文を、選択した速度で再生します（1xは実時間と同じ）。本番の盤面・注文・在庫には混ざりません
             </p>
           </div>
           <button
@@ -98,6 +115,99 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           >
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        <div
+          className={`mt-5 rounded-xl border-2 border-dashed p-3 ${dragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50"}`}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            onSelectFiles(event.dataTransfer.files);
+          }}
+        >
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".json,application/json"
+            multiple
+            className="hidden"
+            aria-label="実績の JSON ファイル"
+            onChange={(event) => {
+              onSelectFiles(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
+          />
+          <div className="mb-2 font-black text-[13px] text-slate-700">
+            データ
+          </div>
+          {dataset ? (
+            <div className="font-bold text-[13px] text-slate-800">
+              <span className="font-black text-[15px] text-slate-950">
+                {dataset.label}
+              </span>{" "}
+              {dataset.orders.length.toLocaleString()}件
+              {dataset.files.length > 0 && (
+                <span className="text-slate-500">
+                  （{dataset.files.join("・")}）
+                </span>
+              )}
+              {dataset.skipped > 0 && (
+                <span className="text-slate-500">
+                  ・読めなかった注文 {dataset.skipped}件
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="font-bold text-[13px] text-amber-950">
+              データがありません。sohosai-analysis の{" "}
+              <code className="font-mono">YYYY/data/day*.json</code>
+              （または cafeore-pos の注文の
+              JSON）を選んでください。day1・day2・day12
+              のように複数を選ぶと、重なる注文は 1 件にまとめます。
+            </p>
+          )}
+          <p className="mt-1 font-medium text-[11px] text-slate-500">
+            担当者名・指名・コメントは読み込むときに落とします。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
+          </p>
+          {problems.length > 0 && (
+            <p role="alert" className="mt-2 font-bold text-[12px] text-red-700">
+              読めなかったファイル：{problems.join("、")}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => fileInput.current?.click()}
+              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 font-black text-[14px] text-slate-800 disabled:text-slate-400"
+            >
+              <FileJson className="h-4 w-4" />
+              {loading
+                ? "読み込み中…"
+                : dataset
+                  ? "ファイルを選び直す"
+                  : "JSON ファイルを選ぶ"}
+            </button>
+            {dataset && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={onClearData}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 font-black text-[14px] text-red-700 disabled:text-slate-400"
+              >
+                <Trash2 className="h-4 w-4" />
+                読み込んだデータを消す
+              </button>
+            )}
+          </div>
+          <p className="mt-2 font-medium text-[11px] text-slate-500">
+            ここにファイルをドラッグしても読み込めます。選び直すと入れ替わります。
+          </p>
         </div>
 
         <div className="mt-5">
@@ -127,7 +237,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           </span>
           <select
             value={effectiveStart || ""}
-            disabled={slots.length === 0}
+            disabled={loading || slots.length === 0}
             onChange={(event) => setSelectedStart(Number(event.target.value))}
             className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-3 font-black text-[16px] text-slate-900"
           >
@@ -159,7 +269,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
 
         <button
           type="button"
-          disabled={effectiveStart === null}
+          disabled={effectiveStart === null || loading}
           onClick={() =>
             effectiveStart !== null && onStart(effectiveStart, duration)
           }
