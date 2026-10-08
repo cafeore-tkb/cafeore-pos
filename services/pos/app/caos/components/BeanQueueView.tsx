@@ -43,6 +43,12 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
       </a>
     </div>
 
+    {/* 在庫は取れて使用量だけ読めないときも、カードの豆が空になるので必ず出す */}
+    {error ? (
+      <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-bold text-red-800 text-xs">
+        在庫を読み込めませんでした（{String(error)}）
+      </p>
+    ) : null}
     {statuses.length > 0 ? (
       <div className="grid grid-cols-1 gap-2">
         {statuses.map((status) => (
@@ -54,25 +60,16 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
         ))}
       </div>
     ) : (
-      <EmptyState isLoading={isLoading} error={error} />
+      !error && <EmptyState isLoading={isLoading} />
     )}
   </div>
 );
 
-// 豆が 1 つも出せないとき（読み込み中・読み込めない・豆の在庫対象が無い）
-const EmptyState: React.FC<{ isLoading: boolean; error: unknown }> = ({
-  isLoading,
-  error,
-}) => {
+// 豆が 1 つも出せないとき（読み込み中・豆の在庫対象が無い）
+const EmptyState: React.FC<{ isLoading: boolean }> = ({ isLoading }) => {
   if (isLoading)
     return (
       <p className="py-8 text-center text-slate-500 text-xs">読み込み中…</p>
-    );
-  if (error)
-    return (
-      <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-bold text-red-800 text-xs">
-        在庫を読み込めませんでした（{String(error)}）
-      </p>
     );
   return (
     <p className="rounded-xl border border-dashed bg-slate-50 py-10 text-center text-slate-500 text-xs">
