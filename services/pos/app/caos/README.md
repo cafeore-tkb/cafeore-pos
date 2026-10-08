@@ -76,13 +76,11 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - ヘッダーの「実データテスト」から、2025年の実注文を使ったテストプレイを開始できます。
 - 開始前に時間帯と30分／1時間を選択します。ヘッダーの `1x / 2x / 5x / 10x` に合わせて、時計・タイムライン・注文到着・抽出時間が実時間基準で一緒に進みます。
 - 「終了・実績」を押すと、売上、商品構成、ピーク、提供時間、担当量、分割注文の仕上がりΔを表示します。
-- 指定された `2025/data/day1.json` は空ファイルだったため、同じリポジトリにあるダミー除去済み `2025/data/day12.json` を軽量化して同梱しています。
-- 実績データはビルド時に遅延読込用JavaScriptへ内包し、公開サイトに生JSONのURLを作りません。
-- データ出典: [cafeore-tkb/sohosai-analysis](https://github.com/cafeore-tkb/sohosai-analysis/tree/main/2025/data)
+- 過去の注文データ（[cafeore-tkb/sohosai-analysis](https://github.com/cafeore-tkb/sohosai-analysis/tree/main/2025/data) の `day12.json` など）は同梱していません。いまは時間帯の欄が「データがありません」になり、テストプレイは始められません（データは画面から読み込む形にする予定です）。
 
 ## 置き場所
 
-2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポへ移し、POS の中（`services/pos/app/caos`）に置きました（履歴は持ってきていません）。実績データ（2025年の注文）も、このリポジトリにそのまま置いています。
+2026-10 に `cafeore-tkb/CaOS` から cafeore-pos のモノリポへ移し、POS の中（`services/pos/app/caos`）に置きました（履歴は持ってきていません）。実績データ（2025年の注文）は持ってきていません。
 
 ## タッチ操作
 
