@@ -17,7 +17,6 @@ interface BayLaneRowProps {
   onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   timelineStartSec: number;
   pixelsPerSec: number;
@@ -38,7 +37,6 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   timelineStartSec,
   pixelsPerSec,
@@ -195,9 +193,6 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
                 onMoveTicket={onMoveTicket}
                 onReturnToUnassigned={onReturnToUnassigned}
                 onCloseAction={onCloseTicketAction}
-                onRequestRebrew={(selected) =>
-                  onRequestRebrew(selected, barista.id)
-                }
                 widthPx={widthPx}
               />
             </div>

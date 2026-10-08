@@ -12,12 +12,11 @@ import (
 
 // 操作の名前。
 const (
-	OpAssign    = "assign"
-	OpUnassign  = "unassign"
-	OpNext      = "next"
-	OpMerge     = "merge"
-	OpEmergency = "emergency"
-	OpUndo      = "undo"
+	OpAssign   = "assign"
+	OpUnassign = "unassign"
+	OpNext     = "next"
+	OpMerge    = "merge"
+	OpUndo     = "undo"
 )
 
 // CardRef はカードの指し方。保存したカード（と統合した未割当のカード）は ID、
@@ -36,12 +35,8 @@ type Op struct {
 	With *CardRef
 	// assign・next の列（1〜6）
 	Lane int
-	// assign：列の待機の中の位置（0 始まり。緊急とふつうのカードはそれぞれの中で数える）。nil なら注文番号の順
+	// assign：列の待機の中の位置（0 始まり）。nil なら注文番号の順
 	Index *int
-	// emergency：緊急にするカップ
-	CupIDs []uuid.UUID
-	// emergency：抽出中なら中断する（そのカードのカップを全部緊急にする）
-	Interrupt bool
 }
 
 // Apply は操作を 1 つ行う。now は操作の時刻、newID は新しいカードの ID を作る。
@@ -55,8 +50,6 @@ func (b *Board) Apply(op Op, now time.Time, newID func() uuid.UUID) error {
 		return b.next(op.Lane, op.Card, now)
 	case OpMerge:
 		return b.merge(op.Card, op.With, newID)
-	case OpEmergency:
-		return b.emergency(op.CupIDs, op.Interrupt, now)
 	default:
 		return invalid("知らない操作です")
 	}
@@ -125,14 +118,14 @@ func (b *Board) brewing(lane int) int {
 }
 
 // 列の待機に入れるときの順番。index が nil なら注文番号。
-// index があれば、同じ種類（緊急・ふつう）の待機の index 番目に入るよう、前後のカードの間の値にする。
-func (b *Board) queuePosition(lane int, self uuid.UUID, emergency bool, orderNo int, index *int) float64 {
+// index があれば、待機の index 番目に入るよう、前後のカードの間の値にする。
+func (b *Board) queuePosition(lane int, self uuid.UUID, orderNo int, index *int) float64 {
 	if index == nil {
 		return float64(orderNo)
 	}
 	var ps []float64
 	for _, i := range b.queued(lane) {
-		if d := b.Drips[i]; d.ID != self && d.Emergency == emergency {
+		if d := b.Drips[i]; d.ID != self {
 			ps = append(ps, d.Position)
 		}
 	}
@@ -161,19 +154,15 @@ func (b *Board) promote(lane int, now time.Time) {
 	}
 }
 
-// setCupsDrip はカードのカップにカードの ID を入れる（緊急のカードなら EmergencyDripID）。id が nil なら外す。
-func (b *Board) setCupsDrip(cups []int, emergency bool, id *uuid.UUID) {
+// setCupsDrip はカードのカップにカードの ID を入れる。id が nil なら外す。
+func (b *Board) setCupsDrip(cups []int, id *uuid.UUID) {
 	for _, i := range cups {
 		var v *uuid.UUID
 		if id != nil {
 			x := *id
 			v = &x
 		}
-		if emergency {
-			b.Cups[i].EmergencyDripID = v
-		} else {
-			b.Cups[i].DripID = v
-		}
+		b.Cups[i].DripID = v
 	}
 }
 
@@ -193,17 +182,17 @@ func (b *Board) assign(ref *CardRef, lane int, index *int, now time.Time, newID 
 		if c.ID != nil {
 			id = *c.ID // 統合した未割当のカードは、カップに入っている ID のまま保存する
 		}
-		b.setCupsDrip(c.cups, c.Emergency, &id)
+		b.setCupsDrip(c.cups, &id)
 		b.Drips = append(b.Drips, Drip{
-			ID: id, Lane: lane, Status: StatusQueued, Emergency: c.Emergency, CreatedAt: now,
-			Position: b.queuePosition(lane, id, c.Emergency, b.orderNo(c), index),
+			ID: id, Lane: lane, Status: StatusQueued, CreatedAt: now,
+			Position: b.queuePosition(lane, id, b.orderNo(c), index),
 		})
 	case StatusQueued:
 		d := &b.Drips[c.drip]
 		if d.Lane == lane && index == nil {
 			return nil
 		}
-		d.Position = b.queuePosition(lane, d.ID, d.Emergency, b.orderNo(c), index)
+		d.Position = b.queuePosition(lane, d.ID, b.orderNo(c), index)
 		d.Lane = lane
 	default:
 		return invalid("抽出中・終了のカードは動かせません")
@@ -221,15 +210,13 @@ func (b *Board) unassign(ref *CardRef) error {
 	if c.Status != StatusQueued {
 		return invalid("待機のカードだけ未割当に戻せます")
 	}
-	b.setCupsDrip(c.cups, c.Emergency, nil)
+	b.setCupsDrip(c.cups, nil)
 	b.Drips = slices.Delete(b.Drips, c.drip, c.drip+1)
 	return nil
 }
 
 // next は「次へ」。列の抽出中のカードを終わらせ、そのカードのカップだけを準備完了にして、待機の次を始める。
-//   - ふつうのカード：まだ準備完了でないカップを準備完了にする。緊急の印のあるカップは、入れ直しのカードで準備完了にするので触らない
-//   - 緊急のカード：まだ準備完了でないカップを準備完了にする（もう準備完了・提供済みならそのまま）
-//
+// まだ準備完了でないカップを準備完了にする（もう準備完了・提供済みならそのまま）。
 // 注文の準備完了は、カップから決まる今の仕組み（保存する側）に任せる。
 // 抽出中が無ければ（マスターで準備完了にして終わり扱いになった、など）待機の先頭を始めるだけ。
 // ref を付けると、それが今の抽出中のときだけ終わらせる（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -251,9 +238,8 @@ func (b *Board) next(lane int, ref *CardRef, now time.Time) error {
 	d := &b.Drips[i]
 	d.Status = StatusDone
 	d.FinishedAt = &now
-	for _, ci := range b.cupsOf(d.ID, d.Emergency) {
-		c := &b.Cups[ci]
-		if c.ReadyAt == nil && (d.Emergency || c.EmergencyAt == nil) {
+	for _, ci := range b.cupsOf(d.ID) {
+		if c := &b.Cups[ci]; c.ReadyAt == nil {
 			c.ReadyAt = &now
 		}
 	}
@@ -261,7 +247,7 @@ func (b *Board) next(lane int, ref *CardRef, now time.Time) error {
 	return nil
 }
 
-// merge は 1 杯のカード同士を 2 杯の同時抽出にまとめる（#795 と同じく、同じ商品・同じ指名で、緊急でないもの）。
+// merge は 1 杯のカード同士を 2 杯の同時抽出にまとめる（#795 と同じく、同じ商品・同じ指名のもの）。
 //   - 未割当どうし：両方のカップに新しい同じ ID を入れる（カードの行はまだ作らない。割り当てたときに作る）
 //   - 待機どうし：相手のカップに、こちらのカードの ID を入れ、相手のカードの行を消す（こちらの列・順番のまま）
 func (b *Board) merge(first, second *CardRef, newID func() uuid.UUID) error {
@@ -275,59 +261,19 @@ func (b *Board) merge(first, second *CardRef, newID func() uuid.UUID) error {
 	}
 	if a.Status == StatusUnassigned {
 		id := newID()
-		b.setCupsDrip(append(slices.Clone(a.cups), c.cups...), false, &id)
+		b.setCupsDrip(append(slices.Clone(a.cups), c.cups...), &id)
 		return nil
 	}
-	b.setCupsDrip(c.cups, false, a.ID)
+	b.setCupsDrip(c.cups, a.ID)
 	b.Drips = slices.Delete(b.Drips, c.drip, c.drip+1)
 	return nil
 }
 
 func canMerge(b *Board, a, c card) bool {
 	if a.Status != c.Status || (a.Status != StatusUnassigned && a.Status != StatusQueued) ||
-		a.Emergency || c.Emergency || len(a.cups) != 1 || len(c.cups) != 1 || a.cups[0] == c.cups[0] {
+		len(a.cups) != 1 || len(c.cups) != 1 || a.cups[0] == c.cups[0] {
 		return false
 	}
 	x, y := b.Cups[a.cups[0]], b.Cups[c.cups[0]]
 	return x.ItemID == y.ItemID && nomineeKey(x.Nominee) == nomineeKey(y.Nominee)
-}
-
-// emergency は緊急（入れ直し）。カップに緊急の印（EmergencyAt）を付けるだけで、入れ直しのカードは未割当にカップから組み立てる。
-// カップは、抽出中か終了のカードに入っている、同じカードのものだけ。もう印のあるカップは何もしない（2 回は緊急にしない）。
-// interrupt で、抽出中のカードを中断にして終わらせ、そのカードのカップを全部緊急にする（列は次を始める）。
-func (b *Board) emergency(cupIDs []uuid.UUID, interrupt bool, now time.Time) error {
-	if len(cupIDs) == 0 {
-		return invalid("緊急にするカップを選んでください")
-	}
-	drip := -1
-	var targets []int
-	for _, id := range cupIDs {
-		ci := b.cupIndex(id)
-		if ci < 0 || b.Cups[ci].DripID == nil {
-			return invalid("このカップは緊急にできません（割り当てたカードのカップだけです）")
-		}
-		di := b.dripIndex(*b.Cups[ci].DripID)
-		if di < 0 || (drip >= 0 && di != drip) {
-			return invalid("緊急にするカップは同じカードのものだけです")
-		}
-		drip = di
-		targets = append(targets, ci)
-	}
-	d := &b.Drips[drip]
-	if d.Status != StatusBrewing && d.Status != StatusDone {
-		return invalid("抽出中か終了のカードだけ緊急にできます")
-	}
-	if interrupt && d.Status == StatusBrewing {
-		d.Status = StatusDone
-		d.Interrupted = true
-		d.FinishedAt = &now
-		targets = b.cupsOf(d.ID, false)
-		defer b.promote(d.Lane, now)
-	}
-	for _, ci := range targets {
-		if b.Cups[ci].EmergencyAt == nil {
-			b.Cups[ci].EmergencyAt = &now
-		}
-	}
-	return nil
 }

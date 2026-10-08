@@ -26,17 +26,12 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
-import {
-  type RebrewCup,
-  type RebrewDecision,
-  RebrewPanel,
-} from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
-import { buildCupCatalog, cardsToBoard, cupChoices } from "./live/board";
+import { buildCupCatalog, cardsToBoard } from "./live/board";
 import type {
   Barista,
   BeanCode,
@@ -53,7 +48,6 @@ import {
   canMergeDripUnits,
   orderNumber,
   queueWaitSeconds,
-  reanchorQueueInOrder,
   splitIntoDripUnits,
   ticketKey,
 } from "./utils/orderQueue";
@@ -188,10 +182,6 @@ export default function App() {
     bayId: number | null;
     order: UnassignedOrder | null;
   } | null>(null);
-  const [rebrewSource, setRebrewSource] = useState<{
-    ticketKey: string;
-    bayId: number;
-  } | null>(null);
 
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [simSpeed, setSimSpeed] = useState<number>(1);
@@ -324,9 +314,6 @@ export default function App() {
     ? findLiveTicket(selectedTicketKey)
     : null;
   const selectedTicketStatus = selectedTicket?.status;
-  const rebrewTicket = rebrewSource
-    ? findLiveTicket(rebrewSource.ticketKey)
-    : null;
 
   // Only drips that have not started can be moved, so close the move UI once it starts.
   useEffect(() => {
@@ -336,7 +323,6 @@ export default function App() {
 
   const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
     (a, b) =>
-      Number(Boolean(b.isRebrew)) - Number(Boolean(a.isRebrew)) ||
       orderNumber(a.id) - orderNumber(b.id) ||
       (a.itemIndex || 0) - (b.itemIndex || 0),
   );
@@ -431,7 +417,6 @@ export default function App() {
     if (live && liveUndo) {
       if (pendingUndoRef.current) return;
       setSelectedOrderId(null);
-      setRebrewSource(null);
       setSelectedTicketKey(null);
       // 戻せたときだけ「1つ戻す」の対象を消す。
       // 断られたら（ほかの iPad が先に操作した、など）理由を出し、対象は残す
@@ -462,7 +447,6 @@ export default function App() {
     setBaristas(snapshot.baristas);
     setUnassignedOrders([...snapshot.unassignedOrders, ...arrivals]);
     setSelectedOrderId(null);
-    setRebrewSource(null);
     setSelectedTicketKey(null);
     undoSnapshotRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
@@ -636,8 +620,6 @@ export default function App() {
       orderNotes: orderToAssign.orderNotes,
       sourceOrderIds: orderToAssign.sourceOrderIds,
       preferredBaristaId: orderToAssign.preferredBaristaId,
-      isRebrew: orderToAssign.isRebrew,
-      rebrewOfTicketUid: orderToAssign.rebrewOfTicketUid,
       beanCode: orderToAssign.beanCode,
       beanName: orderToAssign.beanName,
       cupCount: orderToAssign.cupCount,
@@ -748,8 +730,6 @@ export default function App() {
           ? [ticket.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
         preferredBaristaId: ticket.preferredBaristaId,
-        isRebrew: ticket.isRebrew,
-        rebrewOfTicketUid: ticket.rebrewOfTicketUid,
         cardColor:
           ticket.beanCode === "ICE"
             ? "cyan"
@@ -761,97 +741,6 @@ export default function App() {
     ]);
     setSelectedOrderId(null);
     soundManager.playDispatch();
-  };
-
-  // 入れ直しのパネルに出すカップ。盤面ではカードのカップ、実データテストでは杯の番号
-  const rebrewCups: RebrewCup[] = (() => {
-    if (!rebrewTicket) return [];
-    const card = live
-      ? liveBoard.cards.get(rebrewTicket.ticketUid ?? "")
-      : undefined;
-    if (card) return cupChoices(card, cupCatalog);
-    return Array.from({ length: rebrewTicket.cupCount }, (_, index) => ({
-      id: String(index),
-      label: `${index + 1}杯目`,
-      disabled: false,
-    }));
-  })();
-
-  // 緊急（入れ直し）。盤面では、選んだカップに緊急の印を付けるだけ（入れ直しのカードは未割当のいちばん上に出る）。
-  // 中断なら、抽出中のカードを中断にして終わらせ、列は次を始める
-  const handleConfirmRebrew = (decision: RebrewDecision) => {
-    if (!rebrewSource || !rebrewTicket) return;
-    const { bayId: sourceBayId } = rebrewSource;
-    const ticket = rebrewTicket;
-    setRebrewSource(null);
-    setSelectedTicketKey(null);
-    setSelectedOrderId(ticket.id);
-    soundManager.playDispatch();
-    if (live) {
-      void runLive(`${ticket.id}の緊急`, {
-        name: "emergency",
-        cup_ids: decision.cupIds,
-        interrupt: decision.interruptCurrent,
-      });
-      return;
-    }
-
-    // 実データテスト：手元の未割当のいちばん上に、入れ直しのカードを置く
-    captureUndo(`${ticket.id}の緊急`);
-    const originalKey = ticketKey(ticket);
-    const cupCount = decision.cupIds.length;
-    setUnassignedOrders((prev) => [
-      {
-        id: ticket.id,
-        ticketUid: `rebrew-${originalKey}-${Date.now()}`,
-        itemIndex: ticket.itemIndex,
-        totalItemsInOrder: ticket.totalItemsInOrder,
-        totalOrderCups: ticket.totalOrderCups,
-        orderNotes: ticket.orderNotes,
-        sourceOrderIds: ticket.sourceOrderIds,
-        beanCode: ticket.beanCode,
-        beanName: ticket.beanName,
-        cupCount,
-        badgeTag: `${cupCount}杯 緊急`,
-        predictedTimeStr: brewDurationLabel(cupCount),
-        // 限定（SP）もどの列でも淹れられる扱い（上級生の判定は、列の担当者をサーバーから出すときに足す）
-        recommendedBaristas: "全ドリッパー",
-        recommendedBayIds: baristas.map((barista) => barista.id),
-        preferredBaristaId: ticket.preferredBaristaId,
-        cardColor: ticket.beanCode === "SP" ? "emerald" : "blue",
-        isRebrew: true,
-        rebrewOfTicketUid: originalKey,
-      },
-      ...prev,
-    ]);
-    if (!decision.interruptCurrent || ticket.status !== "brewing") return;
-    setBaristas((prev) =>
-      prev.map((barista): Barista => {
-        if (barista.id !== sourceBayId) return barista;
-        const sourceIndex = barista.queue.findIndex(
-          (item) => ticketKey(item) === originalKey,
-        );
-        if (sourceIndex < 0) return barista;
-        const interrupted: OrderTicket = {
-          ...barista.queue[sourceIndex],
-          status: "completed",
-          endTimeSec: realTimeSec,
-          completedAtSec: realTimeSec,
-          isInterrupted: true,
-        };
-        const queue = reanchorQueueInOrder(
-          barista.queue.filter((_, index) => index !== sourceIndex),
-          realTimeSec,
-        );
-        return {
-          ...barista,
-          queue,
-          pastTickets: [...(barista.pastTickets || []), interrupted],
-          status: queue.length > 0 ? "brewing" : "standby",
-          remainingStr: queue.length > 0 ? "再計算中" : STANDBY_LABEL,
-        };
-      }),
-    );
   };
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
@@ -910,7 +799,6 @@ export default function App() {
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
-    setRebrewSource(null);
     setTestPlaySession(null);
     historicalOrderCursor.current = 0;
     setIsRunning(true);
@@ -936,7 +824,6 @@ export default function App() {
     setUndoLabel(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
-    setRebrewSource(null);
     historicalOrderCursor.current = 0;
     setTestPlaySession({
       status: "active",
@@ -1106,10 +993,6 @@ export default function App() {
             onMoveTicket={handleMoveScheduledTicket}
             onReturnToUnassigned={handleReturnScheduledTicket}
             onCloseTicketAction={() => setSelectedTicketKey(null)}
-            onRequestRebrew={(ticket, bayId) => {
-              setSelectedTicketKey(null);
-              setRebrewSource({ ticketKey: ticketKey(ticket), bayId });
-            }}
             onOpenEmptySlot={(bayId) =>
               setAssignSlotData({ bayId, order: null })
             }
@@ -1160,16 +1043,6 @@ export default function App() {
           unassignedOrders={sortedUnassignedOrders}
           onClose={() => setAssignSlotData(null)}
           onAssign={handleAssignOrderToBay}
-        />
-      )}
-
-      {rebrewSource && rebrewTicket && (
-        <RebrewPanel
-          key={rebrewSource.ticketKey}
-          ticket={rebrewTicket}
-          cups={rebrewCups}
-          onClose={() => setRebrewSource(null)}
-          onConfirm={handleConfirmRebrew}
         />
       )}
 

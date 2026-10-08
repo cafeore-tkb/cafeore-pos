@@ -20,7 +20,7 @@ import (
 // CaOS（ドリップ管制）の盤面の読み書き・API・配信。盤面の決まり（組み立て・操作）は caos パッケージ（DB を使わない）にある。
 //
 //   - 表：caos_drips（カードの情報だけ。models.CaosDrip）と caos_ops（操作の記録。models.CaosOpRecord）。
-//     カードの中身はカップ（order_cups の drip_id・emergency_at・emergency_drip_id）が持つ
+//     カードの中身はカップ（order_cups の drip_id）が持つ
 //   - 注文の作成・編集・削除では CaOS のために何も書かない。盤面は読むたびに今のカップから組み立てる（caos.Board.Normalize・Cards）
 //   - 操作（POST /api/caos/ops）は、その日の advisory lock で 1 件ずつ行い、カップを書くときは注文の行をロックしてから
 //     （注文の編集・カップの準備完了と同じ順番）、読んだときから変わっていないかを確かめる。変わっていたら最初からやり直す
@@ -51,19 +51,17 @@ func NewCaosHandler(db *gorm.DB, hub *Hub) *CaosHandler {
 
 // 盤面のカップ 1 杯（注文番号・商品・指名と一緒に読む）。
 type caosCupRow struct {
-	ID              uuid.UUID
-	OrderID         uuid.UUID
-	OrderNo         int
-	Position        int
-	ItemID          uuid.UUID
-	ItemName        string
-	ItemType        string
-	Assignee        *string
-	ReadyAt         *time.Time
-	ServedAt        *time.Time
-	DripID          *uuid.UUID
-	EmergencyAt     *time.Time
-	EmergencyDripID *uuid.UUID
+	ID       uuid.UUID
+	OrderID  uuid.UUID
+	OrderNo  int
+	Position int
+	ItemID   uuid.UUID
+	ItemName string
+	ItemType string
+	Assignee *string
+	ReadyAt  *time.Time
+	ServedAt *time.Time
+	DripID   *uuid.UUID
 }
 
 // loadCaosBoard はその日の盤面（保存したカードと、その日の注文のカップ）を読む。
@@ -77,7 +75,7 @@ func loadCaosBoard(tx *gorm.DB, day string) (caos.Board, error) {
 	if err := tx.Raw(`
 		SELECT c.id, c.order_id, o.order_id AS order_no, c.position, c.item_id,
 			COALESCE(i.name, '') AS item_name, COALESCE(t.name, '') AS item_type, m.assignee,
-			c.ready_at, c.served_at, c.drip_id, c.emergency_at, c.emergency_drip_id
+			c.ready_at, c.served_at, c.drip_id
 		FROM order_cups c
 		JOIN orders o ON o.id = c.order_id
 		LEFT JOIN order_menus m ON m.id = c.order_menu_id
@@ -102,13 +100,13 @@ func loadCaosBoard(tx *gorm.DB, day string) (caos.Board, error) {
 			ID: r.ID, OrderID: r.OrderID, OrderNo: r.OrderNo, Position: r.Position,
 			ItemID: r.ItemID, ItemName: r.ItemName, ItemType: r.ItemType, Nominee: nominee,
 			ReadyAt: r.ReadyAt, ServedAt: r.ServedAt,
-			DripID: r.DripID, EmergencyAt: r.EmergencyAt, EmergencyDripID: r.EmergencyDripID,
+			DripID: r.DripID,
 		}
 	}
 	for i, d := range drips {
 		b.Drips[i] = caos.Drip{
-			ID: d.ID, Lane: d.Lane, Position: d.Position, Status: d.Status, Emergency: d.Emergency,
-			Interrupted: d.Interrupted, StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
+			ID: d.ID, Lane: d.Lane, Position: d.Position, Status: d.Status,
+			StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
 		}
 	}
 	return b, nil
@@ -139,8 +137,8 @@ func saveCaosChange(tx *gorm.DB, day string, ch caos.Change) ([]uuid.UUID, error
 			ids[i] = dc.ID
 			if d := dc.After; d != nil {
 				rows = append(rows, models.CaosDrip{
-					ID: d.ID, Day: day, Lane: d.Lane, Position: d.Position, Status: d.Status, Emergency: d.Emergency,
-					Interrupted: d.Interrupted, StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
+					ID: d.ID, Day: day, Lane: d.Lane, Position: d.Position, Status: d.Status,
+					StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
 				})
 			}
 		}
@@ -182,14 +180,11 @@ func saveCaosChange(tx *gorm.DB, day string, ch caos.Change) ([]uuid.UUID, error
 				return nil, errCaosConflict
 			}
 			readyChanged = readyChanged || !timeEqual(cc.Before.ReadyAt, cc.After.ReadyAt)
-			cup.DripID, cup.EmergencyAt, cup.EmergencyDripID = cc.After.DripID, cc.After.EmergencyAt, cc.After.EmergencyDripID
-			cup.ReadyAt, cup.ServedAt = cc.After.ReadyAt, cc.After.ServedAt
+			cup.DripID, cup.ReadyAt, cup.ServedAt = cc.After.DripID, cc.After.ReadyAt, cc.After.ServedAt
 			if err := tx.Model(&models.OrderCup{}).Where("id = ?", cup.ID).Updates(map[string]any{
-				"drip_id":           cup.DripID,
-				"emergency_at":      cup.EmergencyAt,
-				"emergency_drip_id": cup.EmergencyDripID,
-				"ready_at":          cup.ReadyAt,
-				"served_at":         cup.ServedAt,
+				"drip_id":   cup.DripID,
+				"ready_at":  cup.ReadyAt,
+				"served_at": cup.ServedAt,
 			}).Error; err != nil {
 				return nil, err
 			}
@@ -209,7 +204,7 @@ func saveCaosChange(tx *gorm.DB, day string, ch caos.Change) ([]uuid.UUID, error
 }
 
 func cupMarks(c *models.OrderCup) caos.CupMarks {
-	return caos.CupMarks{DripID: c.DripID, EmergencyAt: c.EmergencyAt, EmergencyDripID: c.EmergencyDripID, ReadyAt: c.ReadyAt, ServedAt: c.ServedAt}
+	return caos.CupMarks{DripID: c.DripID, ReadyAt: c.ReadyAt, ServedAt: c.ServedAt}
 }
 
 // ---------------------------------------------------------------- 操作
@@ -292,7 +287,7 @@ func (h *CaosHandler) apply(op caos.Op, undoID uuid.UUID) (caosApplied, error) {
 	return res, err
 }
 
-// POST /api/caos/ops - 今日の盤面への操作（割当・未割当に戻す・次へ・統合・緊急・1つ戻す）
+// POST /api/caos/ops - 今日の盤面への操作（割当・未割当に戻す・次へ・統合・1つ戻す）
 func (h *CaosHandler) ApplyCaosOp(c *gin.Context) {
 	var req models.CaosOp
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -350,14 +345,6 @@ func toCaosOp(req models.CaosOp) (caos.Op, uuid.UUID, error) {
 	op := caos.Op{Name: string(req.Name), Card: toCardRef(req.Card), With: toCardRef(req.With), Index: req.Index}
 	if req.Lane != nil {
 		op.Lane = *req.Lane
-	}
-	if req.CupIds != nil {
-		for _, id := range *req.CupIds {
-			op.CupIDs = append(op.CupIDs, uuid.UUID(id))
-		}
-	}
-	if req.Interrupt != nil {
-		op.Interrupt = *req.Interrupt
 	}
 	if op.Name == caos.OpUndo {
 		if req.OpId == nil {

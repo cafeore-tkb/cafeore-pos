@@ -21,7 +21,6 @@ interface ControlViewAProps {
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
@@ -43,7 +42,6 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
@@ -61,7 +59,6 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onCloseTicketAction={onCloseTicketAction}
-      onRequestRebrew={onRequestRebrew}
       onOpenEmptySlot={onOpenEmptySlot}
       simTimeSec={currentTimeSec}
       timelineCommand={timelineCommand}

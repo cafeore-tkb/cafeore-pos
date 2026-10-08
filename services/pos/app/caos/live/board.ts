@@ -106,11 +106,8 @@ const describe = (
     nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
   const abbrs = Array.from(new Set(cups.map((cup) => cup.abbr))).join("・");
 
-  // 分割の表示（1/3・計4杯）は、1 注文だけのふつうのカードに付ける
-  const parts =
-    !merged && !card.emergency
-      ? orderParts.get(first.orderId) || [card]
-      : [card];
+  // 分割の表示（1/3・計4杯）は、1 注文だけのカードに付ける
+  const parts = !merged ? orderParts.get(first.orderId) || [card] : [card];
   const itemIndex = parts.findIndex((part) => part === card) + 1;
   const totalOrderCups = parts.reduce((sum, part) => sum + part.cups.length, 0);
 
@@ -137,7 +134,6 @@ const describe = (
     beans: Array.from(beans.values()),
     cupCount: card.cups.length,
     preferredBaristaId,
-    isRebrew: card.emergency || undefined,
   };
 };
 
@@ -150,7 +146,7 @@ export interface LiveBoard {
 
 // 盤面のカードを、管制盤が使う形（列ごとの待機と未割当）に組み立てる。
 // 抽出中・待機のカードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
-// カードの並びはサーバーが決めたまま（未割当は緊急が先、待機は緊急が先で次に列の中の順番）。
+// カードの並びはサーバーが決めたまま（未割当は注文番号の順、待機は列の中の順番）。
 // 注文がまだ届いていないカップのあるカードは、注文番号が分からないので届くまで出さない。
 export const cardsToBoard = (
   allCards: CaosCard[],
@@ -171,12 +167,11 @@ export const cardsToBoard = (
   }
   const cards = allCards.filter((card) => cupsOf.has(card));
 
-  // 1 注文だけのふつうのカードを、注文ごとに並べる（「1/3」の表示に使う）
+  // 1 注文だけのカードを、注文ごとに並べる（「1/3」の表示に使う）
   const orderParts = new Map<string, CaosCard[]>();
   for (const card of cards) {
     const cups = cupsOf.get(card) ?? [];
-    if (card.emergency || new Set(cups.map((cup) => cup.orderId)).size > 1)
-      continue;
+    if (new Set(cups.map((cup) => cup.orderId)).size > 1) continue;
     const parts = orderParts.get(cups[0].orderId) || [];
     parts.push(card);
     orderParts.set(cups[0].orderId, parts);
@@ -195,14 +190,12 @@ export const cardsToBoard = (
         colorSettings,
         beanIndex,
       ),
-      tag: card.emergency ? "緊急" : undefined,
       status,
       totalDurationSec,
       scheduledTimeStr: formatMinSec(totalDurationSec),
       startTimeSec: toSec(card.started_at, dayStartMs),
       endTimeSec: toSec(card.finished_at, dayStartMs),
       completedAtSec: toSec(card.finished_at, dayStartMs),
-      isInterrupted: card.interrupted || undefined,
     };
   };
 
@@ -268,7 +261,7 @@ export const cardsToBoard = (
       const cups = card.cups.length;
       return {
         ...info,
-        badgeTag: `${cups}杯${card.emergency ? " 緊急" : merged ? " 統合" : ""}`,
+        badgeTag: `${cups}杯${merged ? " 統合" : ""}`,
         predictedTimeStr: brewDurationLabel(cups),
         recommendedBaristas: info.preferredBaristaId
           ? `ドリッパー ${info.preferredBaristaId}`
@@ -286,16 +279,3 @@ export const cardsToBoard = (
     cards: new Map(cards.map((card) => [cardKey(card), card])),
   };
 };
-
-/** 緊急にするカップの選択肢（入れ直しのパネルに出す）。もう緊急にしたカップは選べない */
-export const cupChoices = (card: CaosCard, catalog: CupCatalog) =>
-  card.cups.map((cup, index) => {
-    const info = catalog.get(cup.id);
-    return {
-      id: cup.id,
-      label: info
-        ? `${orderLabel(info.orderNo)} ${info.abbr}`
-        : `${index + 1}杯目`,
-      disabled: cup.emergency_at !== null,
-    };
-  });

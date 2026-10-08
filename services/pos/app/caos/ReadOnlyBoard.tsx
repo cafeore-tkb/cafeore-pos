@@ -114,7 +114,6 @@ export default function ReadOnlyBoard() {
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
           onCloseTicketAction={noop}
-          onRequestRebrew={noop}
           onOpenEmptySlot={noop}
           onAssignToBay={noop}
           onMergeOrders={noop}

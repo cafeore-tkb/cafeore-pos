@@ -307,99 +307,6 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestEmergency(t *testing.T) {
-	o1 := order(1, itemBlend, itemBlend)
-	o2 := order(2, itemKenya, itemKenya)
-	o3 := order(3, itemBlend)
-	b := board(o1, o2, o3)
-	b.Normalize()
-	newID := ids()
-	cards := b.Cards()
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(cards[0]), Lane: 1}, at(1), newID) // id1 抽出中
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(cards[1]), Lane: 1}, at(1), newID) // id2 待機
-	mustApply(t, b, Op{Name: OpNext, Lane: 1}, at(2), newID)                          // id1 終了、id2 抽出中
-
-	// 待機・未割当のカップは緊急にできない。違うカードのカップを混ぜても断る
-	if err := b.Apply(Op{Name: OpEmergency, CupIDs: []uuid.UUID{o3[0].ID}}, at(3), newID); !IsInvalid(err) {
-		t.Fatalf("emergency on an unassigned cup = %v, want invalid", err)
-	}
-	if err := b.Apply(Op{Name: OpEmergency, CupIDs: []uuid.UUID{o1[0].ID, o2[0].ID}}, at(3), newID); !IsInvalid(err) {
-		t.Fatalf("emergency on cups of two cards = %v, want invalid", err)
-	}
-
-	// 終わったカードの 1 杯を緊急に：印を付けるだけ。未割当のいちばん上に出る
-	mustApply(t, b, Op{Name: OpEmergency, CupIDs: []uuid.UUID{o1[1].ID}}, at(4), newID)
-	un := cardsWith(b, StatusUnassigned)
-	if len(un) != 2 || !un[0].Emergency || len(un[0].Cups) != 1 || un[0].Cups[0].ID != o1[1].ID || un[0].Cups[0].EmergencyAt == nil {
-		t.Fatalf("unassigned = %+v, want the emergency card first", un)
-	}
-	if c := cardByID(t, b, id(1)); c.Status != StatusDone || c.Interrupted {
-		t.Fatalf("source card = %+v, want done", c)
-	}
-	// 2 回は緊急にしない（もう印があれば何もしない）
-	before := b.Clone()
-	mustApply(t, b, Op{Name: OpEmergency, CupIDs: []uuid.UUID{o1[1].ID}}, at(5), newID)
-	if ch := Diff(&before, b); !ch.Empty() {
-		t.Fatalf("second emergency changed %+v", ch)
-	}
-
-	// 抽出中を中断：カードを中断で終わらせ、そのカードのカップを全部緊急にし、列は次を始める
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(un[1]), Lane: 1}, at(6), newID) // id3（注文 3）待機
-	mustApply(t, b, Op{Name: OpEmergency, CupIDs: []uuid.UUID{o2[0].ID}, Interrupt: true}, at(7), newID)
-	if c := cardByID(t, b, id(2)); c.Status != StatusDone || !c.Interrupted || !c.FinishedAt.Equal(at(7)) {
-		t.Fatalf("interrupted card = %+v", c)
-	}
-	if b.Cups[2].EmergencyAt == nil || b.Cups[3].EmergencyAt == nil {
-		t.Fatalf("interrupted cups are not emergency: %+v", b.Cups[2:4])
-	}
-	if c := cardByID(t, b, id(3)); c.Status != StatusBrewing {
-		t.Fatalf("next card = %+v, want brewing", c)
-	}
-	un = cardsWith(b, StatusUnassigned)
-	if len(un) != 2 || !un[0].Emergency || !un[1].Emergency || un[0].Cups[0].ID != o1[1].ID || len(un[1].Cups) != 2 {
-		t.Fatalf("unassigned = %+v, want two emergency cards in marked order", un)
-	}
-
-	// 緊急のカードは待機でも先に並ぶ
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(un[1]), Lane: 1}, at(8), newID) // id4
-	if q := cardsWith(b, StatusQueued); len(q) != 1 || !q[0].Emergency {
-		t.Fatalf("queue = %+v", q)
-	}
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(un[0]), Lane: 2}, at(8), newID) // id5 すぐ抽出
-	if b.Cups[1].EmergencyDripID == nil || *b.Cups[1].EmergencyDripID != id(5) || *b.Cups[1].DripID != id(1) {
-		t.Fatalf("emergency cup = %+v", b.Cups[1])
-	}
-	// 緊急のカードは、カップがもう準備完了でも「次へ」まで終わらない。「次へ」では準備完了のカップはそのまま
-	readyAt := *b.Cups[1].ReadyAt
-	mustApply(t, b, Op{Name: OpNext, Lane: 2}, at(9), newID)
-	if c := cardByID(t, b, id(5)); c.Status != StatusDone || !b.Cups[1].ReadyAt.Equal(readyAt) {
-		t.Fatalf("emergency card = %+v, ready_at = %v", c, b.Cups[1].ReadyAt)
-	}
-	// 中断したカードのカップは、入れ直しのカードの「次へ」で準備完了になる
-	mustApply(t, b, Op{Name: OpNext, Lane: 1}, at(10), newID) // id3 終了 → id4 抽出
-	if b.Cups[2].ReadyAt != nil {
-		t.Fatalf("interrupted cup got ready before the rebrew")
-	}
-	mustApply(t, b, Op{Name: OpNext, Lane: 1}, at(11), newID)
-	if b.Cups[2].ReadyAt == nil || b.Cups[3].ReadyAt == nil || !b.Cups[2].ReadyAt.Equal(at(11)) {
-		t.Fatalf("rebrewed cups are not ready: %+v", b.Cups[2:4])
-	}
-}
-
-func TestEmergencyCupsStayUntilRebrewed(t *testing.T) {
-	// 抽出中のまま緊急にしたカップは、元のカードの「次へ」では準備完了にしない
-	o1 := order(1, itemBlend, itemBlend)
-	b := board(o1)
-	b.Normalize()
-	newID := ids()
-	mustApply(t, b, Op{Name: OpAssign, Card: refOf(b.Cards()[0]), Lane: 1}, at(1), newID)
-	mustApply(t, b, Op{Name: OpEmergency, CupIDs: []uuid.UUID{o1[0].ID}}, at(2), newID)
-	mustApply(t, b, Op{Name: OpNext, Lane: 1}, at(3), newID)
-	if b.Cups[0].ReadyAt != nil || b.Cups[1].ReadyAt == nil {
-		t.Fatalf("ready = %v %v, want only the cup that is not emergency", b.Cups[0].ReadyAt, b.Cups[1].ReadyAt)
-	}
-}
-
 func TestOrderChangesAndMasterReady(t *testing.T) {
 	o1 := order(1, itemBlend, itemBlend, itemBlend)
 	o2 := order(2, itemKenya)
@@ -514,16 +421,6 @@ func TestUndo(t *testing.T) {
 	_ = b.Revert(next)
 	if ch := Diff(&kept, b); !ch.Empty() || len(kept.Drips) != len(b.Drips) {
 		t.Fatalf("failed revert changed %+v", ch)
-	}
-
-	// 緊急も印を外して戻せる
-	*b = snapshot.Clone()
-	emergency := do(Op{Name: OpEmergency, CupIDs: []uuid.UUID{o1[0].ID}}, at(5))
-	if err := b.Revert(emergency); err != nil {
-		t.Fatal(err)
-	}
-	if b.Cups[0].EmergencyAt != nil {
-		t.Fatalf("emergency is not reverted")
 	}
 }
 

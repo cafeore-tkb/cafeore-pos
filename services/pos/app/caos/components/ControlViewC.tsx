@@ -34,7 +34,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
 }) => {
   const sortedBaristas = useMemo(
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
@@ -139,11 +138,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     }
                     isImminent={isImminent}
                     emptyLabel="待機中"
-                    onClick={
-                      current
-                        ? () => onRequestRebrew(current, barista.id)
-                        : undefined
-                    }
                   />
 
                   <div className="flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

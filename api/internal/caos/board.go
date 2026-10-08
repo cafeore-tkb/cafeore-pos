@@ -1,11 +1,9 @@
 // Package caos は CaOS（ドリップ管制）の盤面の決まり。DB を使わない純粋な関数だけを置く。
 //
 // 盤面はカップ中心で、注文のカップ（order_cups）を正とする。CaOS が決めたことだけをカップに足す：
-//   - Cup.DripID：最初に淹れたカード
-//   - Cup.EmergencyAt：緊急（入れ直し）にした時刻
-//   - Cup.EmergencyDripID：入れ直しで淹れたカード
+//   - Cup.DripID：淹れたカード
 //
-// カード（Drip）が持つのは、担当の列・列の中の順番・状態・時刻・中断・緊急のカードかだけで、
+// カード（Drip）が持つのは、担当の列・列の中の順番・状態・時刻だけで、
 // 中身（どのカップを淹れるか）はカップから引く。未割当のカードは保存せず、読むたびにカップから組み立てる（Cards）。
 //
 // 置き場所：表のモデルは models の CaosDrip（caos_drips）・CaosOpRecord（caos_ops）、
@@ -61,23 +59,19 @@ type Cup struct {
 	ReadyAt  *time.Time
 	ServedAt *time.Time
 
-	DripID          *uuid.UUID
-	EmergencyAt     *time.Time
-	EmergencyDripID *uuid.UUID
+	DripID *uuid.UUID
 }
 
 // Drip は保存するカード（caos_drips の 1 行）。中身はカップから引く。
 type Drip struct {
 	ID   uuid.UUID `json:"id"`
 	Lane int       `json:"lane"`
-	// 列の中の順番（小さいほど先）。ふつうは注文番号。緊急のカードは順番にかかわらず先に並ぶ
-	Position    float64    `json:"position"`
-	Status      Status     `json:"status"`
-	Emergency   bool       `json:"emergency"`
-	Interrupted bool       `json:"interrupted"`
-	StartedAt   *time.Time `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// 列の中の順番（小さいほど先）。ふつうは注文番号
+	Position   float64    `json:"position"`
+	Status     Status     `json:"status"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // Board は 1 つの営業日の盤面（保存したカードと、その日の注文のカップ）。
@@ -140,15 +134,11 @@ func (b *Board) cupIndex(id uuid.UUID) int {
 	return slices.IndexFunc(b.Cups, func(c Cup) bool { return c.ID == id })
 }
 
-// カードの中のカップ（緊急のカードは EmergencyDripID、ふつうのカードは DripID で指す）。並びは注文番号・注文の中の順。
-func (b *Board) cupsOf(id uuid.UUID, emergency bool) []int {
+// カードの中のカップ（カップの DripID で指す）。並びは注文番号・注文の中の順。
+func (b *Board) cupsOf(id uuid.UUID) []int {
 	var out []int
 	for i := range b.Cups {
-		ref := b.Cups[i].DripID
-		if emergency {
-			ref = b.Cups[i].EmergencyDripID
-		}
-		if ref != nil && *ref == id {
+		if ref := b.Cups[i].DripID; ref != nil && *ref == id {
 			out = append(out, i)
 		}
 	}
@@ -176,16 +166,16 @@ func latest(times ...*time.Time) *time.Time {
 
 // Normalize は、注文の側で変わったことをカードに写す。読むたび（配信）と操作の前に呼ぶ。
 //   - カップが 1 つも無くなったカード（注文の編集・削除で消えた）は除く
-//   - ふつうのカードで、カップが全部準備完了になったもの（マスターで準備完了にした）は終わり扱いにする。
-//     終わった時刻はカップの準備完了のいちばん遅い時刻。緊急のカードは「次へ」でだけ終わる（カップがもう準備完了のことが多いので）
+//   - カップが全部準備完了になったカード（マスターで準備完了にした）は終わり扱いにする。
+//     終わった時刻はカップの準備完了のいちばん遅い時刻
 func (b *Board) Normalize() {
 	kept := b.Drips[:0:0]
 	for _, d := range b.Drips {
-		cups := b.cupsOf(d.ID, d.Emergency)
+		cups := b.cupsOf(d.ID)
 		if len(cups) == 0 {
 			continue
 		}
-		if !d.Emergency && d.Status != StatusDone {
+		if d.Status != StatusDone {
 			var at []*time.Time
 			for _, i := range cups {
 				at = append(at, b.Cups[i].ReadyAt)
@@ -204,23 +194,20 @@ func (b *Board) Normalize() {
 
 // CardCup はカードの中の 1 杯。
 type CardCup struct {
-	ID          uuid.UUID  `json:"id"`
-	EmergencyAt *time.Time `json:"emergency_at"`
+	ID uuid.UUID `json:"id"`
 }
 
 // Card は画面に配るカード。保存したカードと、カップから組み立てた未割当のカード。
 type Card struct {
 	// 保存したカードの ID。未割当のカードは null（中のカップの ID で指す）。
 	// ただし統合した未割当のカードは、カップに入れた ID を持つ
-	ID          *uuid.UUID `json:"id"`
-	Status      Status     `json:"status"`
-	Lane        *int       `json:"lane"`
-	Position    float64    `json:"position"`
-	Emergency   bool       `json:"emergency"`
-	Interrupted bool       `json:"interrupted"`
-	StartedAt   *time.Time `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at"`
-	Cups        []CardCup  `json:"cups"`
+	ID         *uuid.UUID `json:"id"`
+	Status     Status     `json:"status"`
+	Lane       *int       `json:"lane"`
+	Position   float64    `json:"position"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	Cups       []CardCup  `json:"cups"`
 }
 
 // 盤面の中のカード。cups は Board.Cups の添字、drip は Board.Drips の添字（未割当は -1）。
@@ -234,12 +221,12 @@ func (b *Board) toCard(c card) Card {
 	out := c.Card
 	out.Cups = make([]CardCup, len(c.cups))
 	for i, ci := range c.cups {
-		out.Cups[i] = CardCup{ID: b.Cups[ci].ID, EmergencyAt: b.Cups[ci].EmergencyAt}
+		out.Cups[i] = CardCup{ID: b.Cups[ci].ID}
 	}
 	return out
 }
 
-// Cards は盤面の全部のカード。未割当（緊急がいちばん上、次に注文番号の順）、そのあと保存したカード（列・順番の順）。
+// Cards は盤面の全部のカード。未割当（注文番号の順）、そのあと保存したカード（列・順番の順）。
 // Normalize のあとに呼ぶこと。
 func (b *Board) Cards() []Card {
 	cards := b.cards()
@@ -258,10 +245,10 @@ func (b *Board) cards() []card {
 		lane := d.Lane
 		out = append(out, card{
 			Card: Card{
-				ID: &d.ID, Status: d.Status, Lane: &lane, Position: d.Position, Emergency: d.Emergency,
-				Interrupted: d.Interrupted, StartedAt: d.StartedAt, FinishedAt: d.FinishedAt,
+				ID: &d.ID, Status: d.Status, Lane: &lane, Position: d.Position,
+				StartedAt: d.StartedAt, FinishedAt: d.FinishedAt,
 			},
-			cups: b.cupsOf(d.ID, d.Emergency),
+			cups: b.cupsOf(d.ID),
 			drip: i,
 		})
 	}
@@ -295,30 +282,21 @@ func timeKey(t *time.Time) int64 {
 	return t.UnixMicro()
 }
 
-// 待機の並び：緊急が先、次に順番、作った順。
+// 待機の並び：順番、作った順。
 func compareQueued(a, c *Drip) int {
 	return cmp.Or(
-		-cmp.Compare(boolInt(a.Emergency), boolInt(c.Emergency)),
 		cmp.Compare(a.Position, c.Position),
 		a.CreatedAt.Compare(c.CreatedAt),
 		strings.Compare(a.ID.String(), c.ID.String()),
 	)
 }
 
-func boolInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}
-
 // 未割当のカードを組み立てる（#795 の分け方と同じ）。
 //   - ふつう：抽出が要り、まだ準備完了でなく、まだカードに入っていないカップ。注文ごと・商品ごと・指名ごとに分け、1 枚は最大 2 杯
 //     （並びは種類・商品名・指名の順。指名の無いものが先）
 //   - 統合した未割当：カップに入った ID のカードがまだ保存されていない（統合しただけで、まだ割り当てていない）もの。その ID ごとに 1 枚
-//   - 緊急：緊急の印があり、まだ入れ直しのカードに入っていないカップ。分け方はふつうと同じ
 //
-// 並びは、緊急がいちばん上（印を付けた順）、そのあと注文番号の順。
+// 並びは注文番号の順。
 func (b *Board) unassigned() []card {
 	saved := map[uuid.UUID]bool{}
 	for _, d := range b.Drips {
@@ -331,13 +309,11 @@ func (b *Board) unassigned() []card {
 	b.sortCups(idx)
 
 	type groupKey struct {
-		order     uuid.UUID
-		item      uuid.UUID
-		nominee   string
-		emergency bool
+		order   uuid.UUID
+		item    uuid.UUID
+		nominee string
 	}
 	type group struct {
-		key     groupKey
 		id      *uuid.UUID
 		cups    []int
 		keyCups int // 並べるときに見るカップ
@@ -348,7 +324,7 @@ func (b *Board) unassigned() []card {
 	add := func(k groupKey, i int) {
 		g, ok := byKey[k]
 		if !ok {
-			g = &group{key: k, keyCups: i}
+			g = &group{keyCups: i}
 			byKey[k] = g
 			groups = append(groups, g)
 		}
@@ -356,18 +332,15 @@ func (b *Board) unassigned() []card {
 	}
 	for _, i := range idx {
 		c := &b.Cups[i]
-		nominee := ""
-		if c.Nominee != nil {
-			nominee = *c.Nominee
-		}
-		if c.EmergencyAt != nil && (c.EmergencyDripID == nil || !saved[*c.EmergencyDripID]) {
-			add(groupKey{order: c.OrderID, item: c.ItemID, nominee: nominee, emergency: true}, i)
-		}
 		if !NeedsDrip(c.ItemType) || c.ReadyAt != nil {
 			continue
 		}
 		switch {
 		case c.DripID == nil:
+			nominee := ""
+			if c.Nominee != nil {
+				nominee = *c.Nominee
+			}
 			add(groupKey{order: c.OrderID, item: c.ItemID, nominee: nominee}, i)
 		case !saved[*c.DripID]:
 			g, ok := byDrip[*c.DripID]
@@ -383,8 +356,7 @@ func (b *Board) unassigned() []card {
 
 	type unit struct {
 		card
-		sortCup   int
-		emergency *time.Time
+		sortCup int
 	}
 	var units []unit
 	for _, g := range groups {
@@ -394,20 +366,12 @@ func (b *Board) unassigned() []card {
 		}
 		for start := 0; start < len(g.cups); start += MaxCups {
 			cups := g.cups[start:min(start+MaxCups, len(g.cups))]
-			u := unit{card: card{Card: Card{Emergency: g.key.emergency}, cups: slices.Clone(cups), drip: -1}, sortCup: g.keyCups}
-			if g.key.emergency {
-				for _, i := range cups {
-					u.emergency = latest(u.emergency, b.Cups[i].EmergencyAt)
-				}
-			}
-			units = append(units, u)
+			units = append(units, unit{card: card{cups: slices.Clone(cups), drip: -1}, sortCup: g.keyCups})
 		}
 	}
 	slices.SortStableFunc(units, func(x, y unit) int {
 		a, c := &b.Cups[x.sortCup], &b.Cups[y.sortCup]
 		return cmp.Or(
-			-cmp.Compare(boolInt(x.Emergency), boolInt(y.Emergency)),
-			cmp.Compare(timeKey(x.emergency), timeKey(y.emergency)),
 			cmp.Compare(a.OrderNo, c.OrderNo),
 			strings.Compare(a.OrderID.String(), c.OrderID.String()),
 			strings.Compare(a.ItemType, c.ItemType),

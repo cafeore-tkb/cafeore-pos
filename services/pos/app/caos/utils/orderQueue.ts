@@ -4,14 +4,12 @@ import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
-// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる（入れ直しは除く）。
+// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
 ) =>
   (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
-  !first.isRebrew &&
-  !second.isRebrew &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
   first.beanCode === second.beanCode &&
@@ -29,7 +27,7 @@ const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
   (a.itemIndex || 0) - (b.itemIndex || 0) ||
   (a.ticketUid || "").localeCompare(b.ticketUid || "");
 
-// arrangeQueue・reanchorQueueInOrder は実データテスト（手元の盤面）の並べ直し。CaOS8（練習用の盤面）で作り直すので、
+// arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS8（練習用の盤面）で作り直すので、
 // 定数だけ共通のもの（@cafeore/common の caosTiming）にしてある。普段の盤面の予定時刻は planLane で決める（live/board.ts）
 export const arrangeQueue = (
   queue: OrderTicket[],
@@ -77,35 +75,6 @@ export const arrangeQueue = (
     });
     cursor = startTimeSec + ticket.totalDurationSec;
   }
-  return result;
-};
-
-export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
-  if (queue.length === 0) return queue;
-  const firstWasBrewing = queue[0].status === "brewing";
-  const first: OrderTicket = firstWasBrewing
-    ? { ...queue[0] }
-    : {
-        ...queue[0],
-        status: "brewing",
-        startTimeSec: nowSec,
-        timeRemainingSec: queue[0].totalDurationSec,
-      };
-  const result = [first];
-  let cursor = Math.max(
-    nowSec,
-    (first.startTimeSec ?? nowSec) + first.totalDurationSec,
-  );
-  queue.slice(1).forEach((ticket) => {
-    const startTimeSec = cursor + CHANGEOVER_SEC;
-    result.push({
-      ...ticket,
-      status: "scheduled",
-      startTimeSec,
-      timeRemainingSec: undefined,
-    });
-    cursor = startTimeSec + ticket.totalDurationSec;
-  });
   return result;
 };
 
