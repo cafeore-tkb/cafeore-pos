@@ -67,7 +67,7 @@ func TestValidateEdittingOrderAcceptsOptionalKeys(t *testing.T) {
 	order["id"] = "00000000-0000-4000-8000-000000000003"
 	firstMenu(order)["orderMenuId"] = "00000000-0000-4000-8000-000000000004"
 	itemType := firstMenu(order)["items"].([]interface{})[0].(map[string]interface{})["item"].(map[string]interface{})["item_type"].(map[string]interface{})
-	itemType["makes_cup"], itemType["needs_brew"], itemType["senior_only"] = true, true, false
+	itemType["makes_cup"], itemType["needs_brew"], itemType["senior_only"], itemType["iced_brew"] = true, true, false, true
 	if err := validateEdittingOrder(order); err != nil {
 		t.Fatal(err)
 	}
