@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+// プリンターの返事を待つ長さ。これを過ぎたら印刷できなかったとみなす
+const PRINT_TIMEOUT_MS = 60_000;
+
 /**
  * jsでしか書けない部分を書くフック
  * @returns {printer}
@@ -259,18 +262,39 @@ export const useRawPrinter = () => {
   };
 
   /**
-   *
-   * @returns {void}
+   * ためた命令をプリンターに送る。プリンターの返事（onreceive）で、印刷できたかを返す。
+   * 返事が来ない・エラー（onerror）なら false（PRINT_TIMEOUT_MS で諦める）。
+   * 送るのは 1 件ずつ（print-util.ts の待ち行列が、前の返事を待ってから次を送る）
+   * @returns {Promise<boolean>}
    */
   const print = () => {
     const prn = printerRef.current;
     if (!prn) {
       setStatus("disconnected");
       console.error("Printer not connected");
-      return;
+      return Promise.resolve(false);
     }
 
-    prn.send();
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        prn.onreceive = null;
+        prn.onerror = null;
+        resolve(ok);
+      };
+      const timer = setTimeout(() => done(false), PRINT_TIMEOUT_MS);
+      prn.onreceive = (res) => done(Boolean(res?.success));
+      prn.onerror = () => done(false);
+      try {
+        prn.send();
+      } catch (e) {
+        console.error(e);
+        done(false);
+      }
+    });
   };
 
   const printer = {

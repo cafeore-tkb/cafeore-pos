@@ -12,6 +12,7 @@ import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
+import { RebrewButton } from "./RebrewPanel";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -243,6 +244,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                           ? "継続中"
                           : formatMinSec(remainingSeconds)}
                       </div>
+                      <RebrewButton ticket={current} className="mt-1.5" />
                     </>
                   ) : (
                     <div className="flex h-[62px] items-center justify-center font-bold text-[14px]">

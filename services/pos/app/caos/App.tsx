@@ -12,6 +12,7 @@ import {
   formatClockOfDay,
   formatMinSec,
   formatRemainingLabel,
+  markCaosEmergency,
   mergeWrites,
   nextCaosDripper,
   putCaosCups,
@@ -31,12 +32,18 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import {
+  type RebrewDecision,
+  RebrewPanel,
+  canRebrew,
+  useProvideRebrew,
+} from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
-import { cardsToBoard } from "./live/board";
+import { cardsToBoard, rebrewCups } from "./live/board";
 import type {
   Barista,
   BeanCode,
@@ -299,6 +306,22 @@ export default function App() {
     ? findLiveTicket(selectedTicketKey)
     : null;
   const selectedTicketStatus = selectedTicket?.status;
+  // 入れ直しのパネルを開いているカード（盤面のカードだけ。カードが動いたら届いた盤面から引き直す）
+  const [rebrewKey, setRebrewKey] = useState<string | null>(null);
+  const rebrewTicket = rebrewKey ? findLiveTicket(rebrewKey) : null;
+  const rebrewCard = rebrewTicket
+    ? liveCard(rebrewTicket.ticketUid)
+    : undefined;
+  // 抽出中・終わったカードから入れ直しのパネルを開けるようにする（盤面のときだけ）
+  useProvideRebrew(
+    live
+      ? (ticket) => {
+          if (!canRebrew(ticket)) return;
+          setSelectedTicketKey(null);
+          setRebrewKey(ticketKey(ticket));
+        }
+      : null,
+  );
 
   // Only drips that have not started can be moved, so close the move UI once it starts.
   useEffect(() => {
@@ -308,6 +331,8 @@ export default function App() {
 
   const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
     (a, b) =>
+      // 緊急（入れ直し）のカードがいちばん上
+      Number(Boolean(b.isRebrew)) - Number(Boolean(a.isRebrew)) ||
       orderNumber(a.id) - orderNumber(b.id) ||
       (a.itemIndex || 0) - (b.itemIndex || 0),
   );
@@ -674,6 +699,15 @@ export default function App() {
     soundManager.playDispatch();
   };
 
+  // 緊急（入れ直し）。選んだカップに緊急の印を付けるだけ（入れ直しのカードは未割当のいちばん上に出る）。
+  // 中断なら、抽出中のカードを終わらせ、ドリッパーは待機の先頭を始める（サーバーが決める）
+  const handleConfirmRebrew = async ({ cupIds, interrupt }: RebrewDecision) => {
+    setRebrewKey(null);
+    soundManager.playDispatch();
+    const { error } = await markCaosEmergency(cupIds, interrupt);
+    if (error) setLiveError(error);
+  };
+
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
     const first = boardUnassignedOrders.find(
       (order) => (order.ticketUid || order.id) === firstUid,
@@ -962,6 +996,16 @@ export default function App() {
           unassignedOrders={sortedUnassignedOrders}
           onClose={() => setAssignSlotData(null)}
           onAssign={handleAssignOrderToBay}
+        />
+      )}
+
+      {live && rebrewTicket && rebrewCard && (
+        <RebrewPanel
+          key={rebrewKey}
+          ticket={rebrewTicket}
+          cups={rebrewCups(rebrewCard)}
+          onClose={() => setRebrewKey(null)}
+          onConfirm={handleConfirmRebrew}
         />
       )}
 
