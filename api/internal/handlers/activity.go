@@ -128,13 +128,23 @@ func menuDeletedMessage(menu *models.Menu) string {
 // --- 背景色 ---
 
 var colorScreenLabels = map[string]string{
-	string(models.ColorScreenMaster): "マスター",
-	string(models.ColorScreenServe):  "提供",
+	string(models.ColorScreenCashier):      "レジのボタン",
+	string(models.ColorScreenCashierOrder): "レジの過去の注文",
+	string(models.ColorScreenMaster):       "マスター",
+	string(models.ColorScreenServe):        "提供",
+}
+
+// 画面の名前。知らない画面はそのままの値で出す
+func colorScreenLabel(screen string) string {
+	if label, ok := colorScreenLabels[screen]; ok {
+		return label
+	}
+	return screen
 }
 
 // before が無ければ（ID が空なら）追加、あれば色の変更として出す。同じ色なら空
 func colorSettingSavedMessage(target string, before, after *models.ColorSetting) string {
-	screen := colorScreenLabels[after.Screen]
+	screen := colorScreenLabel(after.Screen)
 	if before.ID == uuid.Nil {
 		return tagged(fmt.Sprintf("🆕 背景色を追加: %s（%s）%s", target, screen, after.Color), tagAdd)
 	}
@@ -145,7 +155,7 @@ func colorSettingSavedMessage(target string, before, after *models.ColorSetting)
 }
 
 func colorSettingDeletedMessage(target string, setting *models.ColorSetting) string {
-	return tagged(fmt.Sprintf("🗑️ 背景色を削除: %s（%s）%s", target, colorScreenLabels[setting.Screen], setting.Color), tagDelete)
+	return tagged(fmt.Sprintf("🗑️ 背景色を削除: %s（%s）%s", target, colorScreenLabel(setting.Screen), setting.Color), tagDelete)
 }
 
 // --- 在庫対象 ---

@@ -122,4 +122,8 @@ func TestColorSettingMessages(t *testing.T) {
 	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: ミルク（提供）#fff085 :e-delete:" {
 		t.Fatalf("unexpected: %q", got)
 	}
+	cashier := models.ColorSetting{Screen: "cashier_order", Color: "#fff085"}
+	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: ミルク（レジの過去の注文）#fff085 :e-add:" {
+		t.Fatalf("unexpected: %q", got)
+	}
 }

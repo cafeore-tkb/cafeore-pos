@@ -146,9 +146,10 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 
-	// 通知で追加か変更かを分けるために読んでおく
+	// 通知で追加か変更かを分けるために読んでおく。追加なら無いのが普通なので、
+	// First で「record not found」をログに出さないよう Find で読む
 	var before models.ColorSetting
-	_ = h.db.First(&before, "target_type = ? AND target_id = ? AND screen = ?",
+	_ = h.db.Limit(1).Find(&before, "target_type = ? AND target_id = ? AND screen = ?",
 		setting.TargetType, setting.TargetID, setting.Screen).Error
 
 	if err := upsertColorSetting(h.db, &setting).Error; err != nil {
