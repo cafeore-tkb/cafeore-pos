@@ -2,7 +2,6 @@ import {
   type ColorScreen,
   type OrderEntity,
   type WithId,
-  formatElapsedTime,
   orderElapsedTime,
   readableTextColor,
   resolveItemColor,
@@ -207,7 +206,7 @@ const ServedTime = ({ order }: { order: OrderEntity }) => {
       <div>
         {order.servedAt == null
           ? "未提供"
-          : formatElapsedTime(elapsed, "m分ss秒")}
+          : `${elapsed.minutes}分${elapsed.ss}秒`}
       </div>
     </div>
   );

@@ -1,9 +1,4 @@
-import {
-  type OrderEntity,
-  type WithId,
-  elapsedTime,
-  formatElapsedTime,
-} from "@cafeore/common";
+import { type OrderEntity, type WithId, elapsedTime } from "@cafeore/common";
 import { cn } from "~/lib/utils";
 import { useCurrentTime } from "../functional/useCurrentTime";
 
@@ -21,9 +16,7 @@ export const RealtimeElapsedTime = ({
       )}
     >
       <div className="text-sm">経過時間</div>
-      <div className="font-bold text-3xl">
-        {formatElapsedTime(elapsed, "m分")}
-      </div>
+      <div className="font-bold text-3xl">{elapsed.minutes}分</div>
     </div>
   );
 };

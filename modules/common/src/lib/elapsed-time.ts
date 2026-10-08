@@ -11,6 +11,8 @@ export type ElapsedTime = {
   minutes: number;
   /** 秒（0〜59） */
   seconds: number;
+  /** 秒を2桁にした文字列（"07"）。「92:07」「92分07秒」のように出すとき用 */
+  ss: string;
   /** OVERDUE_MINUTES 分以上たったか */
   overdue: boolean;
 };
@@ -22,6 +24,7 @@ export const elapsedTime = (from: Date, to: Date): ElapsedTime => {
     totalSeconds,
     minutes: Math.floor(totalSeconds / 60),
     seconds: totalSeconds % 60,
+    ss: String(totalSeconds % 60).padStart(2, "0"),
     overdue: ms >= OVERDUE_MINUTES * 60 * 1000,
   };
 };
@@ -33,20 +36,3 @@ export const orderElapsedTime = (
   order: { createdAt: Date; servedAt: Date | null },
   now: Date = new Date(),
 ): ElapsedTime => elapsedTime(order.createdAt, order.servedAt ?? now);
-
-export type ElapsedTimeFormat = "m:ss" | "m分ss秒" | "m分";
-
-export const formatElapsedTime = (
-  { minutes, seconds }: ElapsedTime,
-  format: ElapsedTimeFormat,
-): string => {
-  const ss = String(seconds).padStart(2, "0");
-  switch (format) {
-    case "m:ss":
-      return `${minutes}:${ss}`;
-    case "m分ss秒":
-      return `${minutes}分${ss}秒`;
-    case "m分":
-      return `${minutes}分`;
-  }
-};

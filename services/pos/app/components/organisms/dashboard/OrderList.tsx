@@ -1,7 +1,6 @@
 import {
   type OrderEntity,
   type WithId,
-  formatElapsedTime,
   orderElapsedTime,
 } from "@cafeore/common";
 import { useState } from "react";
@@ -37,7 +36,8 @@ export function OrderList({ orders }: OrderStatusListProps) {
 
   const diffTime = (order: OrderEntity) => {
     if (order.servedAt == null) return "未提供";
-    return formatElapsedTime(orderElapsedTime(order), "m:ss");
+    const { minutes, ss } = orderElapsedTime(order);
+    return `${minutes}:${ss}`;
   };
 
   return (

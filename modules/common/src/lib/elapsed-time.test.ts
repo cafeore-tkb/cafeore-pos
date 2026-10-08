@@ -1,9 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  elapsedTime,
-  formatElapsedTime,
-  orderElapsedTime,
-} from "./elapsed-time";
+import { elapsedTime, orderElapsedTime } from "./elapsed-time";
 
 const at = (iso: string) => new Date(iso);
 const START = at("2026-11-07T10:00:00+09:00");
@@ -14,6 +10,7 @@ describe("[unit] elapsedTime", () => {
       totalSeconds: 185,
       minutes: 3,
       seconds: 5,
+      ss: "05",
       overdue: false,
     });
   });
@@ -65,6 +62,7 @@ describe("[unit] elapsedTime", () => {
       totalSeconds: 0,
       minutes: 0,
       seconds: 0,
+      ss: "00",
       overdue: false,
     });
   });
@@ -90,18 +88,10 @@ describe("[unit] orderElapsedTime", () => {
   });
 });
 
-describe("[unit] formatElapsedTime", () => {
-  const e = elapsedTime(START, at("2026-11-07T11:32:07+09:00"));
-
-  test("m:ss", () => {
-    expect(formatElapsedTime(e, "m:ss")).toBe("92:07");
-  });
-
-  test("m分ss秒", () => {
-    expect(formatElapsedTime(e, "m分ss秒")).toBe("92分07秒");
-  });
-
-  test("m分", () => {
-    expect(formatElapsedTime(e, "m分")).toBe("92分");
+describe("[unit] elapsedTime の ss", () => {
+  test("秒を2桁にする", () => {
+    const e = elapsedTime(START, at("2026-11-07T11:32:07+09:00"));
+    expect(`${e.minutes}:${e.ss}`).toBe("92:07");
+    expect(elapsedTime(START, at("2026-11-07T10:00:42+09:00")).ss).toBe("42");
   });
 });
