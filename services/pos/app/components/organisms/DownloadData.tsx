@@ -1,9 +1,11 @@
 import {
   type MasterState,
   type OrderEntity,
+  formatCsv,
   getMasterState,
   orderRepository,
 } from "@cafeore/common";
+import dayjs from "dayjs";
 import { Button } from "../ui/button";
 
 async function getSortedOrders() {
@@ -26,45 +28,25 @@ async function getSortedMasterStates() {
   });
 }
 
-// CSV用に文字列をエスケープ
-const escapeCSV = (value: unknown): string => {
-  if (value == null) return "";
-  const str = String(value);
-  if (/[",\r\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-};
-
-const formatDate = (value: Date | null) => {
-  if (!value || Number.isNaN(value.getTime())) return "";
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${value.getFullYear()}/${value.getMonth() + 1}/${value.getDate()} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+const formatDate = (value: Date | string | null) => {
+  const date = dayjs(value);
+  return date.isValid() ? date.format("YYYY/M/D HH:mm:ss") : "";
 };
 
 // 日付＋時刻をファイル名に使う
-const getTimestamp = (): string => {
-  const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-  return `${date}_${time}`;
-};
+const getTimestamp = () => dayjs().format("YYYY-MM-DD_HH-mm-ss");
 
 type CsvColumns<T> = [string, (row: T) => unknown][];
 
-// Excel で開いたときに日本語が化けないよう BOM を付ける
-const BOM = "\uFEFF";
-
 const downloadCsv = <T,>(columns: CsvColumns<T>, rows: T[], name: string) => {
-  const header = columns.map(([column]) => column).join(",");
-  const lines = rows.map((row) =>
-    columns.map(([, get]) => escapeCSV(get(row))).join(","),
+  const csv = formatCsv(
+    columns.map(([column]) => column),
+    rows.map((row) =>
+      Object.fromEntries(columns.map(([column, get]) => [column, get(row)])),
+    ),
   );
   downloadBlob(
-    new Blob([BOM + [header, ...lines].join("\r\n")], {
-      type: "text/csv;charset=utf-8;",
-    }),
+    new Blob([csv], { type: "text/csv;charset=utf-8;" }),
     `${name}-${getTimestamp()}.csv`,
   );
 };
@@ -116,7 +98,7 @@ const MASTER_STATE_LABELS: Record<string, string> = {
 
 // オーダーストップ・再開の切り替えを 1 回 1 行で書き出す
 const MASTER_STATE_CSV_COLUMNS: CsvColumns<MasterState> = [
-  ["createdAt", (s) => formatDate(new Date(s.createdAt))],
+  ["createdAt", (s) => formatDate(s.createdAt)],
   ["type", (s) => s.type],
   ["label", (s) => MASTER_STATE_LABELS[s.type] ?? ""],
 ];
