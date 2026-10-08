@@ -1,20 +1,20 @@
+import { CAOS_MAX_CUPS } from "@cafeore/common";
 import type { OrderTicket, UnassignedOrder } from "../types";
 
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
-// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる（入れ直しは除く）。
+// 1杯同士で、統合の相手を決めるキー（mergeKey）が同じものだけを、2杯の同時抽出へ統合できる。
+// 注文から組み立てたカードの mergeKey は @cafeore/common の caosMergeKey（canMergeCards が比べるもの。商品と指名）。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
 ) =>
   (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
-  !first.isRebrew &&
-  !second.isRebrew &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.beanCode === second.beanCode &&
-  first.preferredBaristaId === second.preferredBaristaId;
+  first.mergeKey !== undefined &&
+  first.mergeKey === second.mergeKey;
 
 export const orderNumber = (id: string) =>
   Number(id.match(/\d+/)?.[0]) || Number.MAX_SAFE_INTEGER;
@@ -72,35 +72,6 @@ export const arrangeQueue = (
   return result;
 };
 
-export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
-  if (queue.length === 0) return queue;
-  const firstWasBrewing = queue[0].status === "brewing";
-  const first: OrderTicket = firstWasBrewing
-    ? { ...queue[0] }
-    : {
-        ...queue[0],
-        status: "brewing",
-        startTimeSec: nowSec,
-        timeRemainingSec: queue[0].totalDurationSec,
-      };
-  const result = [first];
-  let cursor = Math.max(
-    nowSec,
-    (first.startTimeSec ?? nowSec) + first.totalDurationSec,
-  );
-  for (const ticket of queue.slice(1)) {
-    const startTimeSec = cursor + 15;
-    result.push({
-      ...ticket,
-      status: "scheduled",
-      startTimeSec,
-      timeRemainingSec: undefined,
-    });
-    cursor = startTimeSec + ticket.totalDurationSec;
-  }
-  return result;
-};
-
 // Seconds until the dripper has finished everything already queued, using the
 // same 15-second changeover gap as the scheduler.
 export const queueWaitSeconds = (queue: OrderTicket[]) =>
@@ -120,7 +91,7 @@ export const splitIntoDripUnits = (orders: UnassignedOrder[]) => {
     let remaining = order.cupCount;
     let part = 1;
     while (remaining > 0) {
-      const cups = Math.min(2, remaining);
+      const cups = Math.min(CAOS_MAX_CUPS, remaining);
       parts.push({
         ...order,
         ticketUid: `${order.ticketUid || order.id.replace("#", "")}-part${part}`,

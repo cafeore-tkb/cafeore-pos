@@ -1,8 +1,15 @@
+import { CAOS_DRIPPER_IDS } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
+import {
+  type DropTarget,
+  dropTargetLabel,
+  queuedTicketAt,
+} from "../utils/dropTarget";
+import { isLaneId } from "../utils/lanes";
 import { MENU_PRESENTATION } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
 
@@ -43,7 +50,12 @@ interface UnassignedOrdersPanelProps {
   onSelectOrder?: (orderId: string) => void;
   onSelectQueueOrder?: (order: UnassignedOrder) => void;
   onClearSelection?: () => void;
-  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
+  /** beforeTicketUid があれば、その待機のカードの前へ（ドラッグで途中に落としたとき） */
+  onAssignToBay: (
+    order: UnassignedOrder,
+    bayId: number,
+    beforeTicketUid?: string,
+  ) => void;
   onMergeOrders?: (firstUid: string, secondUid: string) => void;
 }
 
@@ -65,6 +77,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
   const isSidebar = layout === "sidebar";
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const [hoveredBay, setHoveredBay] = useState<number | null>(null);
+  // ドラッグで落とす先（待機のカードの上なら、その前）
+  const [dragTarget, setDragTarget] = useState<DropTarget | null>(null);
   const [dragVisual, setDragVisual] = useState<{
     uid: string;
     x: number;
@@ -99,15 +113,29 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6;
+        return element && isLaneId(bayId);
       });
     const bayId = Number(target?.dataset.bayTarget);
-    return bayId >= 1 && bayId <= 6 ? bayId : null;
+    return isLaneId(bayId) ? bayId : null;
+  };
+  // 落とす先：待機のカードの上なら、その前。でなければ列（最後）
+  const targetAtPoint = (
+    clientX: number,
+    clientY: number,
+  ): DropTarget | null => {
+    const onTicket = queuedTicketAt(clientX, clientY);
+    if (onTicket) return onTicket;
+    const bayId = bayAtPoint(clientX, clientY);
+    return bayId ? { bayId } : null;
   };
 
-  const assignToBay = (order: UnassignedOrder, bayId: number) => {
+  const assignToBay = (
+    order: UnassignedOrder,
+    bayId: number,
+    beforeTicketUid?: string,
+  ) => {
     if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
-    onAssignToBay(order, bayId);
+    onAssignToBay(order, bayId, beforeTicketUid);
     setOpenPadUid(null);
     setHoveredBay(null);
   };
@@ -136,13 +164,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       gridRow: number;
     }> = [];
     for (const group of groups.values()) {
-      group.forEach((order, index) => {
+      for (const [index, order] of group.entries()) {
         positionedOrders.push({
           order,
           gridColumn: (index % 3) + 1,
           gridRow: nextRow + Math.floor(index / 3),
         });
-      });
+      }
       nextRow += Math.max(1, Math.ceil(group.length / 3));
     }
 
@@ -226,20 +254,16 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     transform: `translate3d(${-dragVisual.x}px, ${-dragVisual.y}px, 0)`,
                   }
                 : undefined;
-            const cardStyle = order.isRebrew
-              ? "bg-red-50 border-red-300 text-slate-900"
-              : order.preferredBaristaId
-                ? "bg-violet-50 border-violet-300 text-slate-900"
-                : `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`;
-            const idColor = order.isRebrew
-              ? "text-red-700"
-              : order.preferredBaristaId
-                ? "text-violet-700"
-                : menu.family === "premium"
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+            const cardStyle = order.preferredBaristaId
+              ? "bg-violet-50 border-violet-300 text-slate-900"
+              : `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`;
+            const idColor = order.preferredBaristaId
+              ? "text-violet-700"
+              : menu.family === "premium"
+                ? "text-white"
+                : order.totalItemsInOrder && order.totalItemsInOrder > 1
+                  ? "text-slate-950"
+                  : "text-slate-600";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -249,11 +273,6 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     >
                       {order.id}
                     </span>
-                    {order.isRebrew && (
-                      <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-                        入れ直し
-                      </span>
-                    )}
                     {order.totalItemsInOrder && order.totalItemsInOrder > 1 && (
                       <span className="whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[11px] text-slate-700">
                         {order.itemIndex}/{order.totalItemsInOrder}・計
@@ -359,8 +378,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     if (openPadUid) onClearSelection?.();
                     setOpenPadUid(orderUid(order));
                   }
-                  const bayId = bayAtPoint(event.clientX, event.clientY);
-                  setHoveredBay(bayId);
+                  const target = targetAtPoint(event.clientX, event.clientY);
+                  setHoveredBay(target?.bayId ?? null);
+                  setDragTarget(target);
                   setDragVisual({
                     uid: orderUid(order),
                     x: event.clientX - start.x,
@@ -378,19 +398,21 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                         event.clientY - start.y,
                       ) >= 12
                     : false;
-                  const bayId = moved
-                    ? bayAtPoint(event.clientX, event.clientY)
+                  const target = moved
+                    ? targetAtPoint(event.clientX, event.clientY)
                     : null;
                   dragStart.current = null;
                   setDragVisual(null);
-                  if (bayId) {
+                  setDragTarget(null);
+                  if (target) {
                     suppressNextClick.current = true;
-                    assignToBay(order, bayId);
+                    assignToBay(order, target.bayId, target.beforeTicketUid);
                   }
                 }}
                 onPointerCancel={() => {
                   dragStart.current = null;
                   setDragVisual(null);
+                  setDragTarget(null);
                   setHoveredBay(null);
                   // The browser took the gesture as a scroll. The sidebar left the previous pad and
                   // selection alone, so restore it; the strip already cleared both on press.
@@ -416,7 +438,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
               >
                 {isInlineDrag && hoveredBay && (
                   <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
-                    → {hoveredBay}
+                    {dragTarget
+                      ? dropTargetLabel(dragTarget)
+                      : `→ ${hoveredBay}`}
                   </div>
                 )}
                 {isOrderBoundary && (
@@ -440,7 +464,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 1から3`}
                     >
-                      {[1, 2, 3].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(0, 3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"
@@ -464,7 +488,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 4から6`}
                     >
-                      {[4, 5, 6].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"
@@ -513,7 +537,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     >
                       {hoveredBay && (
                         <div className="absolute top-1 right-1 rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
-                          → {hoveredBay}
+                          {dragTarget
+                            ? dropTargetLabel(dragTarget)
+                            : `→ ${hoveredBay}`}
                         </div>
                       )}
                       {cardBody}
