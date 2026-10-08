@@ -1,0 +1,241 @@
+import type { Barista, Board, DripCard, OrderTicket } from "../types";
+import {
+  canMergeDripUnits,
+  mergeCards,
+  orderLabel,
+  toCard,
+  toTicket,
+} from "./cards";
+import { canPlaceOn, laneOrdinal, makeLaneBaristas } from "./lanes";
+import { arrangeQueue, scheduleQueue } from "./queue";
+
+// 盤面の操作。どれも今の盤面から次の盤面を返す（できない操作は null）。
+// label は「1つ戻す」に出す操作の名前。
+
+export type BoardChange = { board: Board; label: string } | null;
+
+export const emptyBoard = (): Board => ({
+  baristas: makeLaneBaristas(),
+  unassigned: [],
+});
+
+/** ドリッパーのカード（抽出中・待機・終わり）と、そのドリッパー */
+export const findTicket = (baristas: Barista[], key: string) => {
+  for (const barista of baristas) {
+    const ticket =
+      barista.queue.find((item) => item.ticketUid === key) ??
+      barista.pastTickets.find((item) => item.ticketUid === key);
+    if (ticket) return { ticket, bayId: barista.id };
+  }
+  return null;
+};
+
+const findUnassigned = (board: Board, uid: string) =>
+  board.unassigned.find((card) => card.ticketUid === uid);
+
+const withoutUnassigned = (board: Board, uids: string[]) =>
+  board.unassigned.filter((card) => !uids.includes(card.ticketUid));
+
+// 待機のカード（まだ始めていないカード）。抽出中・終わりのカードは動かせない
+const findScheduled = (board: Board, key: string) => {
+  const found = findTicket(board.baristas, key);
+  return found?.ticket.status === "scheduled" ? found.ticket : null;
+};
+
+// 列ごとに、待機の並べ直し（arrangeQueue）をする
+const rearrange = (
+  baristas: Barista[],
+  nowSec: number,
+  queueOf: (barista: Barista) => OrderTicket[],
+) =>
+  baristas.map((barista) => ({
+    ...barista,
+    queue: arrangeQueue(queueOf(barista), nowSec),
+  }));
+
+/** 未割当のカードをドリッパーへ */
+export const assignCard = (
+  board: Board,
+  uid: string,
+  bayId: number,
+  nowSec: number,
+): BoardChange => {
+  const card = findUnassigned(board, uid);
+  if (!card || !canPlaceOn(card, bayId)) return null;
+  return {
+    label: `${orderLabel(card)}の割当`,
+    board: {
+      unassigned: withoutUnassigned(board, [uid]),
+      baristas: rearrange(board.baristas, nowSec, (barista) =>
+        barista.id === bayId
+          ? [...barista.queue, toTicket(card)]
+          : barista.queue,
+      ),
+    },
+  };
+};
+
+/** 待機のカードを別のドリッパーへ */
+export const moveTicket = (
+  board: Board,
+  key: string,
+  bayId: number,
+  nowSec: number,
+): BoardChange => {
+  const ticket = findScheduled(board, key);
+  if (!ticket || !canPlaceOn(ticket, bayId)) return null;
+  return {
+    label: `${orderLabel(ticket)}の割当変更`,
+    board: {
+      ...board,
+      baristas: rearrange(board.baristas, nowSec, (barista) => {
+        const queue = barista.queue.filter((item) => item.ticketUid !== key);
+        return barista.id === bayId ? [...queue, ticket] : queue;
+      }),
+    },
+  };
+};
+
+/** 待機のカードを未割当に戻す */
+export const returnTicket = (
+  board: Board,
+  key: string,
+  nowSec: number,
+): BoardChange => {
+  const ticket = findScheduled(board, key);
+  if (!ticket) return null;
+  return {
+    label: `${orderLabel(ticket)}を未割当に戻す`,
+    board: {
+      unassigned: [toCard(ticket), ...board.unassigned],
+      baristas: rearrange(board.baristas, nowSec, (barista) =>
+        barista.queue.filter((item) => item.ticketUid !== key),
+      ),
+    },
+  };
+};
+
+/** 「次へ」。抽出中のカードを終え、待機を注文番号の順に並べ直して先頭を今から始める */
+export const advanceBay = (
+  board: Board,
+  bayId: number,
+  nowSec: number,
+): BoardChange => {
+  const barista = board.baristas.find((item) => item.id === bayId);
+  const [head, ...rest] = barista?.queue ?? [];
+  if (!head) return null;
+  return {
+    label: `${laneOrdinal(bayId)}の「次へ」`,
+    board: {
+      ...board,
+      baristas: board.baristas.map((item) =>
+        item.id === bayId
+          ? {
+              ...item,
+              // Re-anchor the entire downstream queue to the actual completion time.
+              queue: arrangeQueue(rest, nowSec, true),
+              pastTickets: [
+                ...item.pastTickets,
+                { ...head, status: "completed", endTimeSec: nowSec },
+              ],
+            }
+          : item,
+      ),
+    },
+  };
+};
+
+/** 未割当の 1 杯どうしを、2 杯の同時抽出へ統合する */
+export const mergeUnassigned = (
+  board: Board,
+  firstUid: string,
+  secondUid: string,
+): BoardChange => {
+  const first = findUnassigned(board, firstUid);
+  const second = findUnassigned(board, secondUid);
+  if (!first || !second || !canMergeDripUnits(first, second)) return null;
+  return {
+    label: `${orderLabel(first)}と${orderLabel(second)}の統合`,
+    board: {
+      ...board,
+      unassigned: [
+        ...withoutUnassigned(board, [firstUid, secondUid]),
+        mergeCards(first, second),
+      ],
+    },
+  };
+};
+
+export interface RebrewDecision {
+  cupCount: number;
+  /** 抽出中のカードを今止める */
+  interruptCurrent: boolean;
+  /** 入れ直しを置くドリッパー（null なら未割当） */
+  targetBayId: number | null;
+  /** 置くドリッパーの列の中の位置 */
+  insertIndex: number | null;
+}
+
+/** 緊急の入れ直し。抽出中・終わったカードから、同じ中身のカードを作り直す */
+export const rebrew = (
+  board: Board,
+  key: string,
+  decision: RebrewDecision,
+  nowSec: number,
+  uid: string,
+): BoardChange => {
+  const found = findTicket(board.baristas, key);
+  if (!found || found.ticket.status === "scheduled") return null;
+  const { ticket, bayId: sourceBayId } = found;
+  const card: DripCard = {
+    ...toCard(ticket),
+    ticketUid: uid,
+    cupCount: decision.cupCount,
+    isRebrew: true,
+  };
+  const interrupt = decision.interruptCurrent && ticket.status === "brewing";
+
+  const baristas = board.baristas.map((barista): Barista => {
+    let queue = barista.queue;
+    let pastTickets = barista.pastTickets;
+    if (interrupt && barista.id === sourceBayId) {
+      queue = queue.filter((item) => item.ticketUid !== key);
+      pastTickets = [
+        ...pastTickets,
+        {
+          ...ticket,
+          status: "completed",
+          endTimeSec: nowSec,
+          isInterrupted: true,
+        },
+      ];
+    }
+    if (barista.id === decision.targetBayId) {
+      // 抽出中のカードの前には入れない（止めたカードの代わりに今から始めるときだけ先頭に入れる）
+      const minimumIndex =
+        queue.length > 0 && !(interrupt && barista.id === sourceBayId) ? 1 : 0;
+      const insertion = Math.max(
+        minimumIndex,
+        Math.min(decision.insertIndex ?? queue.length, queue.length),
+      );
+      queue = [
+        ...queue.slice(0, insertion),
+        toTicket(card),
+        ...queue.slice(insertion),
+      ];
+    }
+    if (queue === barista.queue) return barista;
+    return { ...barista, queue: scheduleQueue(queue, nowSec), pastTickets };
+  });
+
+  return {
+    label: `${orderLabel(ticket)}の入れ直し`,
+    board: {
+      baristas,
+      unassigned:
+        decision.targetBayId === null
+          ? [card, ...board.unassigned]
+          : board.unassigned,
+    },
+  };
+};

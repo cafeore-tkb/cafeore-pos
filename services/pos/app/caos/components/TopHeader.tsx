@@ -14,10 +14,11 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import type { ControlViewMode } from "./ControlWorkspace";
 
-export type NavTab = "control" | "bays" | "beans" | "analytics";
+export type NavTab = "control" | AuxiliaryTab;
 
 interface TopHeaderProps {
   activeTab: NavTab;

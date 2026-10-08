@@ -12,14 +12,18 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { orderLabel } from "../logic/cards";
+import { timeOfDayLabel } from "../logic/format";
+import { laneOrdinal } from "../logic/lanes";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
   salesOrders?: HistoricalOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
+  /** 商品の種類の表示名（種類の name → display_name。POS の商品の種類から） */
+  typeNames: ReadonlyMap<string, string>;
 }
 
 interface CompletedPart {
@@ -37,14 +41,6 @@ interface SplitResult {
   lastFinishedAt: number;
   bayNumbers: number[];
 }
-
-const formatClock = (seconds: number) => {
-  const normalized = ((seconds % 86400) + 86400) % 86400;
-  const hours = Math.floor(normalized / 3600);
-  const minutes = Math.floor((normalized % 3600) / 60);
-  const secs = Math.floor(normalized % 60);
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
 
 const deltaStatus = (deltaSec: number) => {
   if (deltaSec <= 15)
@@ -68,6 +64,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   salesOrders = [],
   periodStartMs,
   periodEndMs,
+  typeNames,
 }) => {
   const rebrewSummary = useMemo(() => {
     const history = baristas.flatMap((barista) => barista.pastTickets || []);
@@ -89,14 +86,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const completedParts = useMemo<CompletedPart[]>(
     () =>
       baristas.flatMap((barista) =>
-        (barista.pastTickets || []).flatMap((ticket) => {
-          const finishedAt = ticket.completedAtSec ?? ticket.endTimeSec;
+        barista.pastTickets.flatMap((ticket) => {
+          const finishedAt = ticket.endTimeSec;
           return !ticket.isInterrupted &&
             !ticket.isRebrew &&
-            ticket.totalItemsInOrder &&
             ticket.totalItemsInOrder > 1 &&
             finishedAt !== undefined
-            ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
+            ? [{ ticket, bayNumber: barista.id, finishedAt }]
             : [];
         }),
       ),
@@ -106,14 +102,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const splitResults = useMemo<SplitResult[]>(() => {
     const groups = new Map<string, CompletedPart[]>();
     for (const part of completedParts) {
-      const current = groups.get(part.ticket.id) || [];
-      current.push(part);
-      groups.set(part.ticket.id, current);
+      const key = orderLabel(part.ticket);
+      groups.set(key, [...(groups.get(key) ?? []), part]);
     }
 
     return Array.from(groups, ([orderId, parts]) => {
       const expectedParts = Math.max(
-        ...parts.map((part) => part.ticket.totalItemsInOrder || 1),
+        ...parts.map((part) => part.ticket.totalItemsInOrder),
       );
       if (parts.length < expectedParts) return null;
       const sorted = [...parts].sort((a, b) => a.finishedAt - b.finishedAt);
@@ -122,11 +117,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       return {
         orderId,
         expectedParts,
-        totalCups: Math.max(
-          ...parts.map(
-            (part) => part.ticket.totalOrderCups || part.ticket.cupCount,
-          ),
-        ),
+        totalCups: Math.max(...parts.map((part) => part.ticket.totalOrderCups)),
         deltaSec: lastFinishedAt - firstFinishedAt,
         firstFinishedAt,
         lastFinishedAt,
@@ -146,17 +137,17 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     >();
     for (const barista of baristas) {
       for (const ticket of barista.queue) {
-        if (!ticket.totalItemsInOrder || ticket.totalItemsInOrder <= 1)
-          continue;
-        const current = groups.get(ticket.id) || {
+        if (ticket.totalItemsInOrder <= 1) continue;
+        const key = orderLabel(ticket);
+        const current = groups.get(key) || {
           expected: ticket.totalItemsInOrder,
           assigned: 0,
           bays: new Set<number>(),
         };
         current.expected = Math.max(current.expected, ticket.totalItemsInOrder);
         current.assigned += 1;
-        current.bays.add(barista.bayNumber);
-        groups.set(ticket.id, current);
+        current.bays.add(barista.id);
+        groups.set(key, current);
       }
     }
     return Array.from(groups, ([orderId, value]) => ({
@@ -253,14 +244,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const baristaResults = useMemo(
     () =>
       baristas.map((barista) => {
-        const completed = barista.pastTickets || [];
+        const completed = barista.pastTickets;
         const durations = completed.flatMap((ticket) =>
           ticket.startTimeSec !== undefined && ticket.endTimeSec !== undefined
             ? [Math.max(0, ticket.endTimeSec - ticket.startTimeSec)]
             : [],
         );
         return {
-          bayNumber: barista.bayNumber,
+          bayNumber: barista.id,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
@@ -274,16 +265,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     [baristas],
   );
 
-  const typeLabel = (type: string) =>
-    type === "hot"
-      ? "ホット"
-      : type === "iceOre"
-        ? "アイスオレ"
-        : type === "ice"
-          ? "アイス"
-          : type === "milk"
-            ? "ミルク"
-            : type;
+  // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
+  const typeLabel = (type: string) => typeNames.get(type) ?? type;
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
       hour: "2-digit",
@@ -580,8 +563,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       {result.bayNumbers.map((bay) => `#${bay}`).join(" + ")}
                     </span>
                     <span className="font-mono">
-                      {formatClock(result.firstFinishedAt)} →{" "}
-                      {formatClock(result.lastFinishedAt)}
+                      {timeOfDayLabel(result.firstFinishedAt)} →{" "}
+                      {timeOfDayLabel(result.lastFinishedAt)}
                     </span>
                   </div>
                 </article>

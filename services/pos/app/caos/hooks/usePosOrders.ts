@@ -1,5 +1,5 @@
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import type { PosOrder } from "../utils/posOrders";
+import type { PosOrder } from "../logic/posOrders";
 
 export type PosConnectionStatus =
   | "off"

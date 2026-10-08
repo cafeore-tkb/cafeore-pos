@@ -1,84 +1,65 @@
-export type BeanCode =
-  | "CHAMP"
-  | "ORE"
-  | "TNZ"
-  | "KEN"
-  | "BRA"
-  | "ICE"
-  | "MILK"
-  | "SP";
-
-export interface OrderTicket {
-  id: string; // e.g. "#152"
-  ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
-  itemIndex?: number; // e.g. 1 (of 2 items in order #152)
-  totalItemsInOrder?: number; // e.g. 2
-  totalOrderCups?: number; // e.g. 3 (total cups in entire order #152)
-  orderNotes?: string; // e.g. "チャンプ 2杯 + 俺ブレ 1杯"
-  sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
+// カード（1 回のドリップ。最大 2 杯）。未割当のカードも、ドリッパーのカードも同じ形。
+// cafeore-pos の注文から組み立てる（logic/posOrders.ts）。実データテストのカードは logic/historical.ts。
+export interface DripCard {
+  /** 画面の中でカードを指すキー */
+  ticketUid: string;
+  /** 注文番号。統合したカードは元の注文すべて（小さい順）。表示は orderLabel で整える */
+  orderNos: number[];
+  /** 同じ注文の中のカードの並び（1 始まり）・カードの数・注文の杯数。統合したカードは 1・1・2 */
+  itemIndex: number;
+  totalItemsInOrder: number;
+  totalOrderCups: number;
+  /** カードの名前。cafeore-pos の注文のカードは商品の略称（abbr）をそのまま */
   beanName: string;
   cupCount: number;
-  tag?:
-    | "HOT"
-    | "ICE"
-    | "BATCH"
-    | "牛"
-    | "牛オレ"
-    | "氷"
-    | "★SP"
-    | "定番"
-    | "浅煎り"
-    | "水洗"
-    | string;
-  preferredBaristaId?: number; // 指名。必ず1人だけ
-  status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
-  timeRemainingSec?: number; // for brewing
+  /** 色の設定を引く商品（cafeore-pos の注文のカードにだけ付く） */
+  item?: { id?: string; item_type: { id?: string } };
+  /** 背景色（#RRGGBB）。item から色の設定（画面 master）を引いて付ける（logic/posOrders.ts の paintBoard） */
+  color?: string;
+  /** 区分。商品の種類の表示名（display_name）をそのまま（cafeore-pos の注文のカードにだけ付く） */
+  typeName?: string;
+  /** 指名のドリッパー（1〜6） */
+  preferredBaristaId?: number;
+  /** 統合できる相手を決めるキー。同じキーの 1 杯どうしだけ統合できる（注文のカードは商品と指名） */
+  mergeKey: string;
+  /** 緊急の入れ直し */
+  isRebrew?: boolean;
+}
+
+// ドリッパーのカード（抽出中・待機・終わり）
+export interface OrderTicket extends DripCard {
+  status: "brewing" | "scheduled" | "completed";
+  /** 抽出中のカードの残り（秒） */
+  timeRemainingSec?: number;
   totalDurationSec: number;
-  scheduledTimeStr?: string; // e.g. "2:05"
-  startTimeSec?: number; // sim time in seconds when this drip starts
-  endTimeSec?: number; // sim time in seconds when this drip ends
-  completedAtSec?: number; // for historical completed drip
-  isRebrew?: boolean; // emergency remake linked to an original cup
-  rebrewOfTicketUid?: string;
-  isInterrupted?: boolean; // original drip stopped because a remake was required
+  /** 抽出の開始・終了（盤面の秒。その日の 0:00 からの秒）。終わったカードの終了は終えた時刻 */
+  startTimeSec?: number;
+  endTimeSec?: number;
+  /** 入れ直しのために途中で止めた */
+  isInterrupted?: boolean;
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
 export interface Barista {
+  /** ドリッパーの番号（1〜6） */
   id: number;
-  bayNumber: number;
-  status: "brewing" | "imminent" | "standby" | "ready";
-  remainingStr: string; // "01:48 残り"
-  pastTickets?: OrderTicket[]; // Past completed tickets in this bay
+  /** 終わったカード */
+  pastTickets: OrderTicket[];
+  /** 抽出中（先頭）と待機のカード */
   queue: OrderTicket[];
 }
 
-export interface UnassignedOrder {
-  id: string; // e.g. "#162"
-  ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
-  itemIndex?: number;
-  totalItemsInOrder?: number;
-  totalOrderCups?: number;
-  orderNotes?: string;
-  sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
-  beanName: string;
-  cupCount: number;
-  badgeTag: string;
-  predictedTimeStr: string;
-  recommendedBaristas: string;
-  recommendedBayIds: number[];
-  preferredBaristaId?: number; // 指名。必ず1人だけ
-  isRebrew?: boolean;
-  rebrewOfTicketUid?: string;
-  cardColor: "blue" | "peach" | "cyan" | "emerald";
+// 盤面（6 列のドリッパーと未割当のカード）
+export interface Board {
+  baristas: Barista[];
+  unassigned: DripCard[];
 }
 
-export interface HistoricalItem {
+interface HistoricalItem {
   name: string;
   price: number;
-  type: "hot" | "iceOre" | "ice" | "milk" | "others" | string;
+  /** 商品の種類の名前（POS の商品の種類の name）。表示名は POS の種類から引く */
+  type: string;
 }
 
 export interface HistoricalOrder {
@@ -89,11 +70,6 @@ export interface HistoricalOrder {
   total: number;
   billingAmount: number;
   items: HistoricalItem[];
-}
-
-export interface HistoricalDataset {
-  source: string;
-  orders: HistoricalOrder[];
 }
 
 export interface TestPlaySession {
