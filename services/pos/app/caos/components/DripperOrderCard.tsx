@@ -6,8 +6,6 @@ import { MENU_PRESENTATION } from "../utils/menuPresentation";
 interface DripperOrderCardProps {
   kind: "current" | "waiting";
   ticket?: OrderTicket;
-  remainingLabel?: string;
-  queueCount?: number;
   queuePosition?: number;
   isImminent?: boolean;
   emptyLabel: string;
@@ -31,8 +29,6 @@ const cardTheme = (ticket: OrderTicket) => {
 export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
   kind,
   ticket,
-  remainingLabel,
-  queueCount = 0,
   queuePosition,
   isImminent = false,
   emptyLabel,

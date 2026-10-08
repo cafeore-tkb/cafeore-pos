@@ -51,7 +51,6 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
   <div className="flex h-full min-h-0 flex-col gap-2">
     <DispatchBoard
       baristas={baristas}
-      highlightFilter={null}
       selectedOrderId={selectedOrderId}
       onSelectOrder={onSelectOrder}
       onAdvanceBay={onAdvanceBay}
