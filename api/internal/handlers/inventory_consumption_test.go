@@ -121,8 +121,7 @@ func (e *inventoryEnv) itemType(name string) models.ItemType {
 // カップを作らない種類（グッズ）。種類の名前ではなく makes_cup で見分けるので、名前は others でなくてよい。
 func (e *inventoryEnv) goodsType(name string) models.ItemType {
 	e.t.Helper()
-	no := false
-	it := models.ItemType{Name: name, DisplayName: name, MakesCup: &no, NeedsBrew: &no}
+	it := models.ItemType{Name: name, DisplayName: name, MakesCup: boolPtr(false), NeedsBrew: boolPtr(false)}
 	e.must(e.db.Create(&it).Error)
 	return it
 }

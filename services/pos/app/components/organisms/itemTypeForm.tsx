@@ -1,30 +1,28 @@
-import type { ItemType } from "@cafeore/common";
+import { type ItemType, itemTypeSchema } from "@cafeore/common";
 import { useId, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Switch } from "~/components/ui/switch";
 
-export type ItemTypeFormValues = {
-  name: string;
-  display_name: string;
-} & ItemTypeFlags;
+export type ItemTypeFormValues = Omit<ItemType, "id">;
 
-export type ItemTypeFlags = Pick<
+type ItemTypeFlags = Pick<
   ItemType,
   "makes_cup" | "needs_brew" | "senior_only" | "iced_brew"
 >;
 
-// 新しい種類の既定値（API の列の既定値と同じ）
-export const DEFAULT_ITEM_TYPE_FLAGS: ItemTypeFlags = {
-  makes_cup: true,
-  needs_brew: true,
-  senior_only: false,
-  iced_brew: false,
-};
+// 新しい種類の入力の初め（項目は API の列の既定値と同じ zod の既定値）
+export const EMPTY_ITEM_TYPE: ItemTypeFormValues = itemTypeSchema.parse({
+  name: "",
+  display_name: "",
+});
 
+// parent が外れているあいだは押せず、外すとこちらも外れる（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
+// API も同じ組み合わせしか受け付けない
 const FLAG_FIELDS: {
   key: keyof ItemTypeFlags;
+  parent?: keyof ItemTypeFlags;
   label: string;
   description: string;
 }[] = [
@@ -36,44 +34,38 @@ const FLAG_FIELDS: {
   },
   {
     key: "needs_brew",
+    parent: "makes_cup",
     label: "抽出が要る",
     description:
       "割引の対象の杯数やドリッパーの割り振りに数えます。ミルクなどは外します",
   },
   {
     key: "senior_only",
+    parent: "needs_brew",
     label: "上級生のみ",
     description: "上級生のドリッパーにだけ割り振ります",
   },
   {
     key: "iced_brew",
+    parent: "needs_brew",
     label: "アイスで淹れる",
     description:
       "アイスコーヒーなど。アイスに対応していないドリッパーには割り振りません",
   },
 ];
 
-/**
- * 上の項目を外したら下の項目も外す（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。API も同じ組み合わせしか受け付けない
- */
-export const setItemTypeFlag = (
+const setItemTypeFlag = (
   flags: ItemTypeFlags,
   key: keyof ItemTypeFlags,
   value: boolean,
 ): ItemTypeFlags => {
   const next = { ...flags, [key]: value };
-  if (!next.makes_cup) next.needs_brew = false;
-  if (!next.needs_brew) {
-    next.senior_only = false;
-    next.iced_brew = false;
+  // 親から順に並んでいるので、1回なめれば孫まで外れる
+  for (const field of FLAG_FIELDS) {
+    if (field.parent && !next[field.parent]) next[field.key] = false;
   }
   return next;
 };
-
-const isFlagEnabled = (flags: ItemTypeFlags, key: keyof ItemTypeFlags) =>
-  key === "makes_cup" ||
-  (key === "needs_brew" && flags.makes_cup) ||
-  ((key === "senior_only" || key === "iced_brew") && flags.needs_brew);
 
 /** 種類の「カップを作る」「抽出が要る」「上級生のみ」「アイス」の切り替え。判定はこの値をそのまま使う */
 export function ItemTypeFlagFields({
@@ -88,12 +80,12 @@ export function ItemTypeFlagFields({
   const id = useId();
   return (
     <div className={compact ? "grid gap-2" : "grid gap-4"}>
-      {FLAG_FIELDS.map(({ key, label, description }) => (
+      {FLAG_FIELDS.map(({ key, parent, label, description }) => (
         <div key={key} className="flex items-start gap-3">
           <Switch
             id={`${id}-${key}`}
             checked={value[key]}
-            disabled={!isFlagEnabled(value, key)}
+            disabled={parent !== undefined && !value[parent]}
             onCheckedChange={(checked) =>
               onChange(setItemTypeFlag(value, key, checked))
             }
@@ -127,15 +119,9 @@ export function ItemTypeForm({
   submitting = false,
 }: Props) {
   const id = useId();
-  const [values, setValues] = useState<ItemTypeFormValues>({
-    name: initialValue?.name ?? "",
-    display_name: initialValue?.display_name ?? "",
-    makes_cup: initialValue?.makes_cup ?? DEFAULT_ITEM_TYPE_FLAGS.makes_cup,
-    needs_brew: initialValue?.needs_brew ?? DEFAULT_ITEM_TYPE_FLAGS.needs_brew,
-    senior_only:
-      initialValue?.senior_only ?? DEFAULT_ITEM_TYPE_FLAGS.senior_only,
-    iced_brew: initialValue?.iced_brew ?? DEFAULT_ITEM_TYPE_FLAGS.iced_brew,
-  });
+  const [values, setValues] = useState<ItemTypeFormValues>(
+    initialValue ?? EMPTY_ITEM_TYPE,
+  );
 
   const updateField = (key: "name" | "display_name", value: string) => {
     setValues((prev) => ({
@@ -174,7 +160,7 @@ export function ItemTypeForm({
           required
         />
         <p className="text-muted-foreground text-xs">
-          マスター画面の既定の色分けに使う英字の名前です（hot / ice / milk
+          英字の名前です（hot / ice / milk
           など）。カップや抽出の扱いは名前ではなく下の項目で決まります
         </p>
       </div>
