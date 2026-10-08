@@ -70,6 +70,15 @@ const sections: Section[] = [
         description:
           "できあがったらベルで呼び出し、手渡したらチェックで提供済みに。呼び出し画面にすぐ反映されます。",
       },
+      {
+        kind: "master-sheet",
+        to: "/master-sheet",
+        title: "CaOS",
+        audience: "staff",
+        where: "ドリップの割り振り担当（iPad 横向き）",
+        description:
+          "未割当の注文をドリッパー1〜6に割り当て、抽出の進み具合をタイムラインで管理。過去の祭の注文でテストプレイもできます。",
+      },
     ],
   },
   {
