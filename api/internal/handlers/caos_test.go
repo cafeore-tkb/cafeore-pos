@@ -121,17 +121,17 @@ func (f *caosFixture) state(t *testing.T, id uuid.UUID) map[string]any {
 // unassigned は未割当のカップの今の値（before）、toUnassigned は未割当に戻す書く値（after）
 var (
 	unassigned   = map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}
-	toUnassigned = map[string]any{"dripper": nil, "drip_id": nil, "before": nil, "start_brew": false}
+	toUnassigned = map[string]any{"dripper": nil, "drip_id": nil, "insert_before": nil, "start_brew": false}
 )
 
 // placed はドリッパーの最後に置く書く値（after）。start なら抽出を始める（時刻はサーバーが付ける）、でなければ待機
 func placed(dripper int, dripID uuid.UUID, start bool) map[string]any {
-	return map[string]any{"dripper": dripper, "drip_id": dripID, "before": nil, "start_brew": start}
+	return map[string]any{"dripper": dripper, "drip_id": dripID, "insert_before": nil, "start_brew": start}
 }
 
 // placedBefore はドリッパーの待機の、before のカードの前に入れる書く値（after）
 func placedBefore(dripper int, dripID, before uuid.UUID) map[string]any {
-	return map[string]any{"dripper": dripper, "drip_id": dripID, "before": before, "start_brew": false}
+	return map[string]any{"dripper": dripper, "drip_id": dripID, "insert_before": before, "start_brew": false}
 }
 
 func write(cups []uuid.UUID, before, after map[string]any) map[string]any {
@@ -256,7 +256,7 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, placed(3, uuid.New(), false))); code != http.StatusUnprocessableEntity {
 		t.Fatalf("milk on a dripper = %d, want 422", code)
 	}
-	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "drip_id": uuid.New(), "before": nil, "start_brew": false})); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "drip_id": uuid.New(), "insert_before": nil, "start_brew": false})); code != http.StatusUnprocessableEntity {
 		t.Fatalf("milk in a card = %d, want 422", code)
 	}
 
@@ -321,11 +321,11 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	}
 	for name, after := range map[string]map[string]any{
 		"dripper 7":         placed(7, uuid.New(), false),
-		"no drip_id":        {"dripper": 1, "drip_id": nil, "before": nil, "start_brew": false},
-		"start unassigned":  {"dripper": nil, "drip_id": uuid.New(), "before": nil, "start_brew": true},
-		"before unassigned": {"dripper": nil, "drip_id": uuid.New(), "before": uuid.New(), "start_brew": false},
-		"start before":      {"dripper": 1, "drip_id": uuid.New(), "before": uuid.New(), "start_brew": true},
-		"before itself":     {"dripper": 1, "drip_id": card1, "before": card1, "start_brew": false},
+		"no drip_id":        {"dripper": 1, "drip_id": nil, "insert_before": nil, "start_brew": false},
+		"start unassigned":  {"dripper": nil, "drip_id": uuid.New(), "insert_before": nil, "start_brew": true},
+		"before unassigned": {"dripper": nil, "drip_id": uuid.New(), "insert_before": uuid.New(), "start_brew": false},
+		"start before":      {"dripper": 1, "drip_id": uuid.New(), "insert_before": uuid.New(), "start_brew": true},
+		"before itself":     {"dripper": 1, "drip_id": card1, "insert_before": card1, "start_brew": false},
 	} {
 		if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, after)); code != http.StatusBadRequest {
 			t.Fatalf("%s = %d, want 400", name, code)
@@ -756,7 +756,7 @@ func TestCaosMergeQueuedOnDB(t *testing.T) {
 	)
 
 	// 待機どうしの統合：c3 のカップが c1 のカードに入る（番号は c1 と同じ。ずらさない）。c1 も同じ値で書いて確かめる
-	join := map[string]any{"dripper": 5, "drip_id": c1, "before": nil, "start_brew": false}
+	join := map[string]any{"dripper": 5, "drip_id": c1, "insert_before": nil, "start_brew": false}
 	f.mustPut(t,
 		write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), join),
 		write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), join),
@@ -769,7 +769,7 @@ func TestCaosMergeQueuedOnDB(t *testing.T) {
 	}
 	// ほかのカードに入るときに前のカードは決められない
 	o4 := f.createOrder(t, 4, line(f.blend))
-	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, map[string]any{"dripper": 5, "drip_id": c2, "before": c1, "start_brew": false})); code != http.StatusUnprocessableEntity {
+	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, map[string]any{"dripper": 5, "drip_id": c2, "insert_before": c1, "start_brew": false})); code != http.StatusUnprocessableEntity {
 		t.Fatalf("join with before = %d, want 422", code)
 	}
 }

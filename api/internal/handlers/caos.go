@@ -112,7 +112,7 @@ func ptrEqual[T comparable](a, b *T) bool {
 // validateCaosAfter は書く値の形を確かめる（400）。
 func validateCaosAfter(a models.CaosCupAfter) error {
 	if a.Dripper == nil {
-		if a.Before != nil || a.StartBrew {
+		if a.InsertBefore != nil || a.StartBrew {
 			return errors.New("ドリッパーの無いカップは、前に入れるカードを決められず、抽出も始められません")
 		}
 		return nil
@@ -123,10 +123,10 @@ func validateCaosAfter(a models.CaosCupAfter) error {
 	if a.DripId == nil {
 		return errors.New("ドリッパーに置くカップには drip_id が要ります")
 	}
-	if a.Before != nil && *a.Before == *a.DripId {
+	if a.InsertBefore != nil && *a.InsertBefore == *a.DripId {
 		return errors.New("自分のカードの前には入れられません")
 	}
-	if a.Before != nil && a.StartBrew {
+	if a.InsertBefore != nil && a.StartBrew {
 		return errors.New("抽出を始めるのは空いているドリッパーだけなので、前に入れるカードは決められません")
 	}
 	return nil
@@ -300,7 +300,7 @@ func placeCaosCups(tx *gorm.DB, w models.CaosCupsWrite, start, end time.Time) (i
 		return 0, nil, err
 	}
 	if len(joined) > 0 {
-		if w.After.Before != nil {
+		if w.After.InsertBefore != nil {
 			return 0, nil, caosRule("ほかのカードに入れるときは、前に入れるカードは決められません")
 		}
 		if joined[0].DripperPosition == nil {
@@ -309,7 +309,7 @@ func placeCaosCups(tx *gorm.DB, w models.CaosCupsWrite, start, end time.Time) (i
 		return *joined[0].DripperPosition, nil, nil
 	}
 
-	if w.After.Before == nil {
+	if w.After.InsertBefore == nil {
 		var last int
 		err := tx.Raw("SELECT COALESCE(MAX(c.dripper_position), 0) + 1 FROM order_cups c, orders o WHERE "+caosLaneWhere,
 			start, end, dripper, w.CupIds).Scan(&last).Error
@@ -319,7 +319,7 @@ func placeCaosCups(tx *gorm.DB, w models.CaosCupsWrite, start, end time.Time) (i
 	var found []int
 	if err := tx.Raw("SELECT c.dripper_position FROM order_cups c, orders o WHERE "+caosLaneWhere+
 		" AND c.drip_id = ? AND c.brew_started_at IS NULL AND c.dripper_position IS NOT NULL LIMIT 1",
-		start, end, dripper, w.CupIds, *w.After.Before).Scan(&found).Error; err != nil {
+		start, end, dripper, w.CupIds, *w.After.InsertBefore).Scan(&found).Error; err != nil {
 		return 0, nil, err
 	}
 	if len(found) == 0 {
@@ -371,7 +371,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		if w.After.Dripper != nil {
 			placing = append(placing, *w.After.Dripper)
 		}
-		if w.After.Before != nil {
+		if w.After.InsertBefore != nil {
 			inserting = append(inserting, *w.After.Dripper)
 		}
 		if w.After.StartBrew {

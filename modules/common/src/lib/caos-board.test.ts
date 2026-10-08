@@ -283,7 +283,7 @@ describe("[unit] CaOS の書き込み", () => {
     return card;
   };
 
-  test("割当：未割当を待機の最後に入れる（before は null。番号はサーバーが決める）。空いているドリッパーならそのまま始める（時刻はサーバーが付ける）", () => {
+  test("割当：未割当を待機の最後に入れる（insert_before は null。番号はサーバーが決める）。空いているドリッパーならそのまま始める（時刻はサーバーが付ける）", () => {
     const cards = board();
     const card = find(cards, (c) => c.orderNo === 5);
     expect(assignWrites(cards, card, 1, { newId })).toEqual({
@@ -300,7 +300,7 @@ describe("[unit] CaOS の書き込み", () => {
           after: {
             dripper: 1,
             drip_id: expect.stringMatching(/^drip-/),
-            before: null,
+            insert_before: null,
             start_brew: false,
           },
         },
@@ -312,7 +312,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(idle.writes[0].after).toEqual({
       dripper: 3,
       drip_id: expect.stringMatching(/^drip-/),
-      before: null,
+      insert_before: null,
       start_brew: true,
     });
     expect(idle.writes[0].after).not.toHaveProperty("brew_started_at");
@@ -320,7 +320,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(idle.writes[0].after).not.toHaveProperty("dripper_position");
   });
 
-  test("順番：どのカードの前に入れるか（before）だけを送る。先頭は先頭のカードの前、途中はそのカードの前、無ければ最後", () => {
+  test("順番：どのカードの前に入れるか（insert_before）だけを送る。先頭は先頭のカードの前、途中はそのカードの前、無ければ最後", () => {
     const cards = board();
     const q2 = find(cards, (c) => c.dripId === "q2");
     const q3 = find(cards, (c) => c.dripId === "q3");
@@ -333,7 +333,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(afterOf(front)).toEqual({
       dripper: 1,
       drip_id: "q3",
-      before: "q2",
+      insert_before: "q2",
       start_brew: false,
     });
     expect("writes" in front && front.writes[0].before).toMatchObject({
@@ -347,17 +347,22 @@ describe("[unit] CaOS の書き込み", () => {
       afterOf(
         assignWrites(cards, card, 1, { place: { beforeKey: "q3" }, newId }),
       ),
-    ).toMatchObject({ dripper: 1, before: "q3", start_brew: false });
-    // 最後：before は null（同じドリッパーの中でも）
+    ).toMatchObject({ dripper: 1, insert_before: "q3", start_brew: false });
+    // 最後：insert_before は null（同じドリッパーの中でも）
     expect(afterOf(assignWrites(cards, q2, 1, { newId }))).toMatchObject({
       dripper: 1,
       drip_id: "q2",
-      before: null,
+      insert_before: null,
     });
     // 別のドリッパーの先頭：待機が無ければ最後と同じ（空いていれば始める）
     expect(
       afterOf(assignWrites(cards, q2, 2, { place: "front", newId })),
-    ).toEqual({ dripper: 2, drip_id: "q2", before: null, start_brew: true });
+    ).toEqual({
+      dripper: 2,
+      drip_id: "q2",
+      insert_before: null,
+      start_brew: true,
+    });
     // 今と同じ場所なら何も書かない（最後のカードを最後へ・すぐ後ろのカードの前へ・先頭のカードを先頭へ）
     expect(assignWrites(cards, q3, 1, { newId })).toEqual({ writes: [] });
     expect(
@@ -397,7 +402,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect("writes" in result && result.writes[0].after).toEqual({
       dripper: null,
       drip_id: null,
-      before: null,
+      insert_before: null,
       start_brew: false,
     });
     expect(
@@ -430,7 +435,7 @@ describe("[unit] CaOS の書き込み", () => {
     const q2After = {
       dripper: q2.dripper,
       drip_id: "q2",
-      before: null,
+      insert_before: null,
       start_brew: false,
     };
     expect(queued.writes).toEqual([

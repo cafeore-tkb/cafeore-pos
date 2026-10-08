@@ -530,9 +530,9 @@ export interface components {
       brew_finished_at: string | null;
     };
     /**
-     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが before から決め、開始・終了の時刻はサーバーの今で付ける）。
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
      * start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
-     * dripper・drip_id・before が全部 null で start_brew が false なら未割当
+     * dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当
      */
     CaosCupAfter: {
       dripper: number | null;
@@ -543,7 +543,7 @@ export interface components {
        * @description dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
        * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
        */
-      before: string | null;
+      insert_before: string | null;
       /** @description 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今 */
       start_brew: boolean;
     };

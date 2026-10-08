@@ -14,7 +14,7 @@ import { jstDate } from "./jst";
 //
 // CaOS の画面は、注文の一覧（共有の WebSocket の orders）から buildCaosCards でカードを組み立て、
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
-// 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は順番の数の代わりに「どのカードの前に入れるか」（before）、
+// 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は順番の数の代わりに「どのカードの前に入れるか」（insert_before）、
 // 時刻の代わりに「始める」の印（start_brew）を持つ。
 
 /** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
@@ -291,13 +291,13 @@ export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
 
 // ---------------------------------------------------------------- 書き込み
 //
-// 順番の数（dripper_position）は画面では決めない。送るのは「どのドリッパーの、どのカードの前に入れるか」（after の before）だけで、
-// 番号はサーバーが決める（前に入るカードの番号にし、それより後ろを +1 する。before が null なら最後）。
+// 順番の数（dripper_position）は画面では決めない。送るのは「どのドリッパーの、どのカードの前に入れるか」（after の insert_before）だけで、
+// 番号はサーバーが決める（前に入るカードの番号にし、それより後ろを +1 する。insert_before が null なら最後）。
 
 const UNASSIGNED_AFTER: CaosCupAfter = {
   dripper: null,
   drip_id: null,
-  before: null,
+  insert_before: null,
   start_brew: false,
 };
 
@@ -361,7 +361,7 @@ export const assignWrites = (
       writeOf(card, {
         dripper,
         drip_id: card.dripId ?? newId(),
-        before: beforeCard?.dripId ?? null,
+        insert_before: beforeCard?.dripId ?? null,
         start_brew: !lane.brewing && others.length === 0,
       }),
     ],
@@ -409,7 +409,7 @@ export const mergeWrites = (
   const after: CaosCupAfter = {
     dripper: card.state.dripper,
     drip_id: card.state.dripId,
-    before: null,
+    insert_before: null,
     start_brew: false,
   };
   return { writes: [writeOf(withCard, after), writeOf(card, after)] };
