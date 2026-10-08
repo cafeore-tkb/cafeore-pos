@@ -283,8 +283,8 @@ func (s *fakeSlack) sent() []string {
 
 // ホット・アイス・グッズの種類、それぞれのアイテム、メニューをひととおり入れたもの
 type testMaster struct {
-	hotType, iceType, goodsType models.ItemType
-	blend, iced, sticker        models.Item
+	hotType              models.ItemType
+	blend, iced, sticker models.Item
 	// ブレンド 1 杯（400 円）
 	blendMenu models.Menu
 	// ブレンド 2 杯とステッカー（ブレンドのセット、900 円）
@@ -295,15 +295,13 @@ type testMaster struct {
 
 func (a *testAPI) seedMaster() testMaster {
 	a.t.Helper()
-	m := testMaster{
-		hotType:   models.ItemType{ID: uuid.New(), Name: "hot", DisplayName: "ホット"},
-		iceType:   models.ItemType{ID: uuid.New(), Name: "ice", DisplayName: "アイス"},
-		goodsType: models.ItemType{ID: uuid.New(), Name: goodsItemTypeName, DisplayName: "グッズ"},
-	}
+	m := testMaster{hotType: models.ItemType{ID: uuid.New(), Name: "hot", DisplayName: "ホット"}}
+	iceType := models.ItemType{ID: uuid.New(), Name: "ice", DisplayName: "アイス"}
+	goodsType := models.ItemType{ID: uuid.New(), Name: goodsItemTypeName, DisplayName: "グッズ"}
 	m.blend = models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemTypeID: m.hotType.ID}
-	m.iced = models.Item{ID: uuid.New(), Name: "アイスコーヒー", Abbr: "ア", ItemTypeID: m.iceType.ID}
-	m.sticker = models.Item{ID: uuid.New(), Name: "ステッカー", Abbr: "ス", ItemTypeID: m.goodsType.ID}
-	a.create(&m.hotType, &m.iceType, &m.goodsType, &m.blend, &m.iced, &m.sticker)
+	m.iced = models.Item{ID: uuid.New(), Name: "アイスコーヒー", Abbr: "ア", ItemTypeID: iceType.ID}
+	m.sticker = models.Item{ID: uuid.New(), Name: "ステッカー", Abbr: "ス", ItemTypeID: goodsType.ID}
+	a.create(&m.hotType, &iceType, &goodsType, &m.blend, &m.iced, &m.sticker)
 
 	m.blendMenu = a.seedMenu("ブレンド", "blend", 400, models.MenuItem{ItemID: m.blend.ID, Quantity: 1})
 	m.pairMenu = a.seedMenu("ペアセット", "pair", 900,

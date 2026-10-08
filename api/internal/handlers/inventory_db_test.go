@@ -280,20 +280,21 @@ func TestReplaceStockUsages(t *testing.T) {
 // 通知
 
 // 1000g 入荷したあと、ペアセット 4 つ（8 杯 = 120g）で残り 58.7 杯。60 杯の閾値を切っている
-func seedBeansBelowThreshold(api *testAPI) (testMaster, models.StockResource) {
-	m := api.seedMaster()
-	beans := api.seedBeans(m)
+func (a *testAPI) seedBeansBelowThreshold() (testMaster, models.StockResource) {
+	a.t.Helper()
+	m := a.seedMaster()
+	beans := a.seedBeans(m)
 	now := time.Now()
-	api.seedStockEvent(beans, models.StockEventKindReceipt, 1000, now.Add(-time.Hour))
+	a.seedStockEvent(beans, models.StockEventKindReceipt, 1000, now.Add(-time.Hour))
 	for range 4 {
-		api.seedOrder(m.pairMenu, now.Add(-30*time.Minute), nil)
+		a.seedOrder(m.pairMenu, now.Add(-30*time.Minute), nil)
 	}
 	return m, beans
 }
 
 func TestCheckAlertsNotifiesOncePerThreshold(t *testing.T) {
 	api := newTestAPI(t)
-	m, beans := seedBeansBelowThreshold(api)
+	m, beans := api.seedBeansBelowThreshold()
 	ctx := context.Background()
 
 	if err := api.inv.checkAlerts(ctx, nil); err != nil {
@@ -367,7 +368,7 @@ func interleaveAlertClaim(t *testing.T, api *testAPI, resource models.StockResou
 // 先に記録を進めた方だけが送り、遅れた方は送らない
 func TestCheckAlertsDoesNotNotifyWhenAnotherCheckClaimed(t *testing.T) {
 	api := newTestAPI(t)
-	_, beans := seedBeansBelowThreshold(api)
+	_, beans := api.seedBeansBelowThreshold()
 	interleaveAlertClaim(t, api, beans, 60)
 
 	if err := api.inv.checkAlerts(context.Background(), nil); err != nil {
@@ -384,7 +385,7 @@ func TestCheckAlertsDoesNotNotifyWhenAnotherCheckClaimed(t *testing.T) {
 // 残量が戻って記録を戻すときも、読んだ後に別の判定が記録を進めていたら古い残量で戻さない
 func TestCheckAlertsDoesNotResetWhenAnotherCheckClaimed(t *testing.T) {
 	api := newTestAPI(t)
-	_, beans := seedBeansBelowThreshold(api)
+	_, beans := api.seedBeansBelowThreshold()
 	// 前は 40 杯で通知していたが、今は 58 杯（60 杯の閾値）に戻っている
 	threshold := 40
 	api.setLastAlertThreshold(beans, &threshold)
@@ -404,7 +405,7 @@ func TestCheckAlertsDoesNotResetWhenAnotherCheckClaimed(t *testing.T) {
 // Slack に送れなかったら記録を戻し、次の判定で送り直す
 func TestCheckAlertsRollsBackWhenSlackFails(t *testing.T) {
 	api := newTestAPI(t)
-	_, beans := seedBeansBelowThreshold(api)
+	_, beans := api.seedBeansBelowThreshold()
 	ctx := context.Background()
 
 	api.slack.fail(http.StatusInternalServerError)
@@ -430,7 +431,7 @@ func TestCheckAlertsRollsBackWhenSlackFails(t *testing.T) {
 // 注文を作ると、その注文が使う在庫だけを判定して通知する
 func TestCreateOrderTriggersStockAlert(t *testing.T) {
 	api := newTestAPI(t)
-	m, beans := seedBeansBelowThreshold(api)
+	m, beans := api.seedBeansBelowThreshold()
 	// 別の在庫対象（この注文では使わない）も閾値を切っている
 	cups := models.StockResource{ID: uuid.New(), Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1, NotifyFrom: 100, NotifyStep: 50}
 	api.create(&cups, &models.ItemStockUsage{ItemID: m.iced.ID, ResourceID: cups.ID, Amount: 1})
