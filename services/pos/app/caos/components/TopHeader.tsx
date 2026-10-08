@@ -14,10 +14,20 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import type { ControlViewMode } from "./ControlWorkspace";
+import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { AUXILIARY_TITLES } from "./SidePanels";
 
-export type NavTab = "control" | "bays" | "beans" | "analytics";
+export type NavTab = "control" | AuxiliaryTab;
+
+// 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
+const NAV_ITEMS = [
+  { id: "control", label: "CaOS", icon: null },
+  { id: "bays", label: AUXILIARY_TITLES.bays, icon: LayoutGrid },
+  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Coffee },
+  { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
+] as const;
 
 interface TopHeaderProps {
   activeTab: NavTab;
@@ -32,13 +42,10 @@ interface TopHeaderProps {
   isRunning: boolean;
   onTogglePlay: () => void;
   simSpeed: number;
-  onChangeSpeed: (speed: number) => void;
+  onCycleSpeed: () => void;
   onResetData: () => void;
   showTimelineControls: boolean;
   onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
-  canUndo: boolean;
-  undoLabel: string | null;
-  onUndo: () => void;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
@@ -46,11 +53,31 @@ interface TopHeaderProps {
   posStatus: PosConnectionStatus;
 }
 
-const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
-  off: "実データテスト中は停止",
-  connecting: "接続中",
-  open: "接続済み",
-  reconnecting: "再接続中",
+// 注文の接続の札（文字・枠・点の色）
+const POS_STATUS: Record<
+  PosConnectionStatus,
+  { label: string; box: string; dot: string }
+> = {
+  off: {
+    label: "実データテスト中は停止",
+    box: "border-slate-200 bg-slate-100 text-slate-400",
+    dot: "bg-slate-300",
+  },
+  connecting: {
+    label: "接続中",
+    box: "border-amber-300 bg-amber-50 text-amber-800",
+    dot: "bg-amber-400",
+  },
+  open: {
+    label: "接続済み",
+    box: "border-emerald-300 bg-emerald-50 text-emerald-800",
+    dot: "bg-emerald-500",
+  },
+  reconnecting: {
+    label: "再接続中",
+    box: "border-amber-300 bg-amber-50 text-amber-800",
+    dot: "bg-amber-400",
+  },
 };
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -66,26 +93,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   isRunning,
   onTogglePlay,
   simSpeed,
-  onChangeSpeed,
+  onCycleSpeed,
   onResetData,
   showTimelineControls,
   onTimelineNavigate,
-  canUndo,
-  undoLabel,
-  onUndo,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
 }) => {
-  const navItems = [
-    { id: "control" as const, label: "CaOS", icon: null },
-    { id: "bays" as const, label: "ドリッパー", icon: LayoutGrid },
-    { id: "beans" as const, label: "豆キュー", icon: Coffee },
-    { id: "analytics" as const, label: "実績", icon: BarChart3 },
-  ];
-
   return (
     <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* Left side: Clock and Top Metrics */}
@@ -94,7 +111,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
           aria-label="画面切替"
         >
-          {navItems.map((item) => {
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
             return (
@@ -121,15 +138,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               className="ml-0.5 flex min-w-0 items-center gap-0.5 border-slate-300 border-l pl-1"
               aria-label="管制盤の表示切替"
             >
-              {(["current", "c", "d"] as const).map((mode) => (
+              {Object.entries(CONTROL_VIEWS).map(([mode, view]) => (
                 <button
                   key={mode}
                   type="button"
                   aria-pressed={controlViewMode === mode}
-                  onClick={() => onSelectControlViewMode(mode)}
+                  onClick={() =>
+                    onSelectControlViewMode(mode as ControlViewMode)
+                  }
                   className={`h-10 min-w-9 touch-manipulation rounded-md font-black text-[12px] ${controlViewMode === mode ? "bg-blue-700 text-white" : "bg-white text-slate-600"}`}
                 >
-                  {mode === "current" ? "A" : mode.toUpperCase()}
+                  {view.label}
                 </button>
               ))}
             </fieldset>
@@ -159,17 +178,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               type="button"
               id="sim-speed-btn"
-              onClick={() =>
-                onChangeSpeed(
-                  simSpeed === 1
-                    ? 2
-                    : simSpeed === 2
-                      ? 5
-                      : simSpeed === 5
-                        ? 10
-                        : 1,
-                )
-              }
+              onClick={onCycleSpeed}
               title="シミュレーション速度切替"
               className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
             >
@@ -252,13 +261,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       {/* Right side: only persistent operational controls */}
       <div className="flex items-center gap-2">
         <output
-          aria-label={`cafeore-pos ${POS_STATUS_LABEL[posStatus]}`}
-          title={`cafeore-posの注文: ${POS_STATUS_LABEL[posStatus]}`}
-          className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${posStatus === "open" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : posStatus === "off" ? "border-slate-200 bg-slate-100 text-slate-400" : "border-amber-300 bg-amber-50 text-amber-800"}`}
+          aria-label={`cafeore-pos ${POS_STATUS[posStatus].label}`}
+          title={`cafeore-posの注文: ${POS_STATUS[posStatus].label}`}
+          className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${POS_STATUS[posStatus].box}`}
         >
           <Database className="h-4 w-4" />
           <span
-            className={`h-2 w-2 rounded-full ${posStatus === "open" ? "bg-emerald-500" : posStatus === "off" ? "bg-slate-300" : "bg-amber-400"}`}
+            className={`h-2 w-2 rounded-full ${POS_STATUS[posStatus].dot}`}
           />
         </output>
         <button
@@ -282,14 +291,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               : "実データテスト"}
           </span>
         </button>
+        {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
         <button
           id="btn-undo"
           type="button"
-          disabled={!canUndo}
-          onClick={onUndo}
-          title={
-            undoLabel ? `${undoLabel}を元に戻す` : "元に戻せる操作はありません"
-          }
+          disabled
+          title="1つ戻すは準備中です"
           className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Undo2 className="h-4 w-4" />
