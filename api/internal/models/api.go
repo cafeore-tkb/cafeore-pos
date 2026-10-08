@@ -44,6 +44,52 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
+// CaosBrewStats defines model for CaosBrewStats.
+type CaosBrewStats struct {
+	// Brews 抽出時間のまとめに入れたカードの数（抽出が終わったカード。入れ直しのカードは除く）
+	Brews     int                   `json:"brews"`
+	ByDripper []CaosDripperBrewStat `json:"by_dripper"`
+	ByPerson  []CaosPersonBrewStat  `json:"by_person"`
+	BySlot    []CaosSlotBrewStat    `json:"by_slot"`
+
+	// PersonSkipped 担当者ごとのまとめに入れなかったカードの数
+	PersonSkipped struct {
+		// NoPerson 抽出を始めたとき、そのドリッパーに担当者がいなかった（その日の行が無い・名前が空）
+		NoPerson int `json:"no_person"`
+
+		// Unknown 抽出を始めたあとに、そのドリッパーの担当者を替えている（交代の記録が無いので、始めたときの担当者が分からない）
+		Unknown int `json:"unknown"`
+	} `json:"person_skipped"`
+	Rebrews []CaosRebrewStat `json:"rebrews"`
+
+	// Standard 係数の分母にした標準の抽出時間（秒）
+	Standard struct {
+		OneCupSec int `json:"one_cup_sec"`
+		TwoCupSec int `json:"two_cup_sec"`
+	} `json:"standard"`
+
+	// UncountedOriginalBrews 緊急で最初の抽出の時刻が上書きされて数えられなかったカードの数（カードのカップが全部緊急になったもの）
+	UncountedOriginalBrews int `json:"uncounted_original_brews"`
+}
+
+// CaosBrewSummary 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める
+type CaosBrewSummary struct {
+	// AvgSec 抽出時間の平均（秒）
+	AvgSec float32 `json:"avg_sec"`
+
+	// Brews 件数
+	Brews int `json:"brews"`
+
+	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
+	Coefficient float32 `json:"coefficient"`
+
+	// MedianSec 抽出時間の中央値（秒）
+	MedianSec float32 `json:"median_sec"`
+
+	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
+	StddevSec float32 `json:"stddev_sec"`
+}
+
 // CaosCupAfter CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
 // start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
 // dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
@@ -81,6 +127,29 @@ type CaosCupsWrite struct {
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
 type CaosCupsWriteRequest struct {
 	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosDripperBrewStat defines model for CaosDripperBrewStat.
+type CaosDripperBrewStat struct {
+	// AvgSec 抽出時間の平均（秒）
+	AvgSec float32 `json:"avg_sec"`
+
+	// Brews 件数
+	Brews int `json:"brews"`
+
+	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
+	Coefficient float32 `json:"coefficient"`
+	Cups        int     `json:"cups"`
+
+	// Day 注文を作った日（日本時間の YYYY-MM-DD）
+	Day     string `json:"day"`
+	Dripper int    `json:"dripper"`
+
+	// MedianSec 抽出時間の中央値（秒）
+	MedianSec float32 `json:"median_sec"`
+
+	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
+	StddevSec float32 `json:"stddev_sec"`
 }
 
 // CaosEmergencyRequest defines model for CaosEmergencyRequest.
@@ -153,6 +222,66 @@ type CaosNextResult struct {
 
 	// StartedDripId 始めたカード。待機が無ければ null
 	StartedDripId *openapi_types.UUID `json:"started_drip_id"`
+}
+
+// CaosPersonBrewStat defines model for CaosPersonBrewStat.
+type CaosPersonBrewStat struct {
+	// AvgSec 抽出時間の平均（秒）
+	AvgSec float32 `json:"avg_sec"`
+
+	// Brews 件数
+	Brews int `json:"brews"`
+
+	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
+	Coefficient float32 `json:"coefficient"`
+	Cups        int     `json:"cups"`
+
+	// MedianSec 抽出時間の中央値（秒）
+	MedianSec float32 `json:"median_sec"`
+
+	// Name 抽出を始めたときに、そのドリッパーにいた担当者の名前（caos_lanes）
+	Name string `json:"name"`
+
+	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
+	StddevSec float32 `json:"stddev_sec"`
+}
+
+// CaosRebrewStat 日・ドリッパー（入れ直しを淹れたドリッパー）ごとの、抽出が終わった入れ直しのカードの数
+type CaosRebrewStat struct {
+	// Day 注文を作った日（日本時間の YYYY-MM-DD）
+	Day     string `json:"day"`
+	Dripper int    `json:"dripper"`
+
+	// ExtraCups 入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計）
+	ExtraCups int `json:"extra_cups"`
+
+	// Rebrews 抽出が終わった入れ直しのカード（emergency_drip_id）の数
+	Rebrews int `json:"rebrews"`
+}
+
+// CaosSlotBrewStat defines model for CaosSlotBrewStat.
+type CaosSlotBrewStat struct {
+	// AvgSec 抽出時間の平均（秒）
+	AvgSec float32 `json:"avg_sec"`
+
+	// Brews 件数
+	Brews int `json:"brews"`
+
+	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
+	Coefficient float32 `json:"coefficient"`
+	Cups        int     `json:"cups"`
+
+	// Day 注文を作った日（日本時間の YYYY-MM-DD）
+	Day string `json:"day"`
+
+	// MedianSec 抽出時間の中央値（秒）
+	MedianSec float32 `json:"median_sec"`
+
+	// Slot 枠の始まり（日本時間の HH:MM）
+	Slot string `json:"slot"`
+
+	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
+	StddevSec float32 `json:"stddev_sec"`
 }
 
 // CaosUndoCup 1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる）

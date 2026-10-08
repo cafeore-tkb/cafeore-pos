@@ -2,7 +2,9 @@
 //
 // 抽出時間は全ドリッパー同じで、ドリッパーごとの補正はしない（services/pos/app/caos/DESIGN_REQUIREMENTS.md）。
 // サーバーは抽出時間も予定時刻も持たず、カードの開始・終了の時刻だけを持つ（注文のカップの brew_started_at・brew_finished_at。
-// どちらもサーバーの時刻で、サーバーが付ける）。なので Go 側に同じ値は無い。
+// どちらもサーバーの時刻で、サーバーが付ける）。
+// ただし 1 杯・2 杯の標準の抽出時間（ONE_CUP_BREW_SEC・TWO_CUP_BREW_SEC）だけは、本番の抽出時間の集計（GET /api/caos/brew-stats）の
+// 係数の分母として Go 側にも同じ値がある（api/internal/caosstats/brew_stats.go の OneCupBrewSec・TwoCupBrewSec）。変えるときは両方そろえること。
 //
 // 時刻（〜Sec）は盤面の秒。その日の始まり（日本時間 0:00。./jstDay の startOfJstDay）からの秒で数える。
 
