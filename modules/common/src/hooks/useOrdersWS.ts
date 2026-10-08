@@ -1,10 +1,6 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import {
-  type MasterState,
-  type MasterStateResponse,
-  responseToMasterState,
-} from "../data";
+import { type MasterState, responseToMasterState } from "../data";
 import {
   type OrderResponse,
   responseToCashierState,
@@ -27,7 +23,10 @@ type WSMessage =
   | { type: "order"; order: OrderResponse }
   | { type: "order_deleted"; order_id: string }
   // 最新のオーダーストップの状態。接続直後と切り替えのたびに届く（記録が無ければ届かない）
-  | { type: "master_state"; master_state: MasterStateResponse }
+  | {
+      type: "master_state";
+      master_state: components["schemas"]["MasterStateResponse"];
+    }
   | {
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];

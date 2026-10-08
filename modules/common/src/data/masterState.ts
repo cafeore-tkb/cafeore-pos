@@ -6,15 +6,13 @@ import type { components, paths } from "../types/api";
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
-export type MasterStateResponse = components["schemas"]["MasterStateResponse"];
-
 export type MasterState = {
   createdAt: string;
   type: string;
 };
 
 export const responseToMasterState = (
-  res: MasterStateResponse,
+  res: components["schemas"]["MasterStateResponse"],
 ): MasterState => {
   return {
     createdAt: res.created_at,
