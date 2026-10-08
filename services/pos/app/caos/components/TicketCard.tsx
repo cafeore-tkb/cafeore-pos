@@ -51,9 +51,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const masterTextColor = masterColor
     ? readableTextColor(masterColor)
     : undefined;
-  const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
   const isActionOpen =
-    ticket.status === "scheduled" && actionTicketKey === ticketKey;
+    ticket.status === "scheduled" && actionTicketKey === ticket.ticketUid;
   // While dragging, cancel the card's offset on the pad so the finger can slide onto 1-6.
   const padDragStyle = dragOffset
     ? { transform: `translate3d(${-dragOffset.x}px, ${-dragOffset.y}px, 0)` }
@@ -167,7 +166,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         }
       }}
       onPointerCancel={finishDrag}
-      id={`ticket-${ticket.ticketUid || ticket.id.replace("#", "")}`}
+      id={`ticket-${ticket.ticketUid}`}
       style={{
         ...(masterColor
           ? { backgroundColor: masterColor, color: masterTextColor }

@@ -16,7 +16,6 @@ import {
   activeRemainingSec,
   canMergeDripUnits,
   orderNumber,
-  ticketKey,
 } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 
@@ -95,7 +94,7 @@ interface OrderGroup {
 }
 
 const ticketCup = (ticket: OrderTicket): SheetCup => ({
-  key: ticketKey(ticket),
+  key: ticket.ticketUid,
   id: ticket.id,
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
@@ -120,7 +119,7 @@ const sourceCup = (source: DragSource) =>
     : ticketCup(source.ticket);
 
 const unassignedCup = (order: UnassignedOrder): SheetCup => ({
-  key: order.ticketUid || order.id,
+  key: order.ticketUid,
   id: order.id,
   beanName: order.beanName,
   cupCount: order.cupCount,
@@ -231,9 +230,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   );
   const selectedOrder = useMemo(
     () =>
-      unassignedOrders.find(
-        (order) => (order.ticketUid || order.id) === selectedUid,
-      ) ?? null,
+      unassignedOrders.find((order) => order.ticketUid === selectedUid) ?? null,
     [selectedUid, unassignedOrders],
   );
 
@@ -467,10 +464,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
 
   const mergeWithSelected = (order: UnassignedOrder) => {
     if (!selectedOrder || !canMergeDripUnits(selectedOrder, order)) return;
-    onMergeOrders(
-      selectedOrder.ticketUid || selectedOrder.id,
-      order.ticketUid || order.id,
-    );
+    onMergeOrders(selectedOrder.ticketUid, order.ticketUid);
     setMergingIds([...rowIdsOf(selectedOrder), ...rowIdsOf(order)]);
     clearSelection();
   };
@@ -484,7 +478,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     );
     if (!merged) return;
     setMergingIds(null);
-    const uid = merged.ticketUid || merged.id;
+    const uid = merged.ticketUid;
     setSelectedUid(uid);
     onSelectOrder(merged.id);
     requestAnimationFrame(() => {
@@ -495,7 +489,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   }, [mergingIds, unassignedOrders, onSelectOrder]);
 
   const toggleSelection = (order: UnassignedOrder) => {
-    const uid = order.ticketUid || order.id;
+    const uid = order.ticketUid;
     if (selectedUid === uid) {
       clearSelection();
       return;
@@ -546,11 +540,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       return;
     }
     // The card may have started brewing or been moved while it was held.
-    const key = ticketKey(source.ticket);
+    const key = source.ticket.ticketUid;
     const latest = baristas
       .flatMap((barista) => barista.queue)
       .find(
-        (ticket) => ticketKey(ticket) === key && ticket.status === "scheduled",
+        (ticket) => ticket.ticketUid === key && ticket.status === "scheduled",
       );
     if (!latest) return;
     if (target === "unassigned") onReturnToUnassigned(latest);
@@ -559,7 +553,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
 
   const beginDrag = (source: DragSource) => {
     if (source.kind === "unassigned") {
-      setSelectedUid(source.order.ticketUid || source.order.id);
+      setSelectedUid(source.order.ticketUid);
       if (selectedOrderId !== source.order.id) onSelectOrder(source.order.id);
     } else if (selectedUid) {
       // Moving a placed card: hide the "ここに配置" slots of a pending selection.
@@ -812,7 +806,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         rowIds,
                       }: SheetEntry) => (
                         <div
-                          key={ticketKey(ticket)}
+                          key={ticket.ticketUid}
                           onPointerDown={
                             state === "waiting"
                               ? (event) =>
@@ -837,7 +831,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               ? "cursor-grab touch-pan-y select-none active:cursor-grabbing"
                               : ""
                           } ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""} ${
-                            draggedKey === ticketKey(ticket) ? "opacity-30" : ""
+                            draggedKey === ticket.ticketUid ? "opacity-30" : ""
                           }`}
                         >
                           <CupChip
@@ -889,7 +883,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               {cellEntries.map(renderEntry)}
                               {cell?.mergedStubs.map(({ ticket, rowIds }) => (
                                 <div
-                                  key={ticketKey(ticket)}
+                                  key={ticket.ticketUid}
                                   className="flex h-[40px] items-center justify-center rounded-lg border-4 border-slate-900 font-black text-[11px] text-slate-700"
                                 >
                                   {shortIds(rowIds)} 統合
@@ -1031,7 +1025,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 p-2">
                     {group.items.map((order) => {
-                      const uid = order.ticketUid || order.id;
+                      const uid = order.ticketUid;
                       const isMergeCandidate = Boolean(
                         selectedOrder &&
                           canMergeDripUnits(selectedOrder, order),

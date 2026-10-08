@@ -142,7 +142,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     {waitingQueue.length > 0 ? (
                       waitingQueue.map((ticket, index) => (
                         <DripperOrderCard
-                          key={ticket.ticketUid || `${ticket.id}-${index}`}
+                          key={ticket.ticketUid}
                           kind="waiting"
                           ticket={ticket}
                           queuePosition={index + 1}

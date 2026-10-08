@@ -1,22 +1,15 @@
 import { CHANGEOVER_SEC } from "@cafeore/common";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 
-export const ticketKey = (ticket: OrderTicket) =>
-  ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
-
-// 同じ商品・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
-// 商品は itemKey（盤面のカードは商品の ID）で比べる。
-// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）でも比べる。
+// 統合の候補：同じ商品・同じ指名（mergeKey）の 1 杯どうし。
+// 書き込みは mergeWrites が @cafeore/common の canMergeCards で確かめる（サーバーも同じ決まり）ので、ここは候補を出すだけ。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
 ) =>
-  (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
+  first.ticketUid !== second.ticketUid &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.itemKey === second.itemKey &&
-  first.preferredBaristaId === second.preferredBaristaId &&
-  // 盤面のカードは統合できる相手のキー（商品と指名）を持つ。API は同じ商品・同じ指名の 1 杯どうししか統合しないので、候補もそれに揃える
   first.mergeKey === second.mergeKey;
 
 export const orderNumber = (id: string) =>

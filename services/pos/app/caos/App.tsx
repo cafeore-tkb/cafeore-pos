@@ -44,12 +44,7 @@ import type {
 } from "./types";
 import { soundManager } from "./utils/audio";
 import { makeLaneBaristas } from "./utils/lanes";
-import {
-  canMergeDripUnits,
-  orderNumber,
-  queueWaitSeconds,
-  ticketKey,
-} from "./utils/orderQueue";
+import { canMergeDripUnits, queueWaitSeconds } from "./utils/orderQueue";
 
 // 別のタブで開いたパネルに渡す、その時点の盤面と実績（実データテストの実績は練習の結果）。
 // 練習中は練習の担当者（始めたときの本番の担当者の写し）も渡す
@@ -212,15 +207,14 @@ export default function App() {
     if (error) setLiveError(error);
   };
   // 画面のカード（ticketUid）から、組み立てたカードを引く
-  const liveCard = (ticketUid: string | undefined) =>
-    ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
+  const liveCard = (ticketUid: string) => liveBoard.cards.get(ticketUid);
   const newDripId = () => crypto.randomUUID();
 
   const findLiveTicket = (key: string) => {
     for (const bay of boardBaristas) {
       const ticket =
-        bay.queue.find((item) => ticketKey(item) === key) ||
-        bay.pastTickets?.find((item) => ticketKey(item) === key);
+        bay.queue.find((item) => item.ticketUid === key) ||
+        bay.pastTickets?.find((item) => item.ticketUid === key);
       if (ticket) return ticket;
     }
     return null;
@@ -235,12 +229,6 @@ export default function App() {
     if (selectedTicketKey && selectedTicketStatus !== "scheduled")
       setSelectedTicketKey(null);
   }, [selectedTicketKey, selectedTicketStatus]);
-
-  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
-    (a, b) =>
-      orderNumber(a.id) - orderNumber(b.id) ||
-      (a.itemIndex || 0) - (b.itemIndex || 0),
-  );
 
   useEffect(() => {
     const clock = window.setInterval(() => setRealTime(new Date()), 1000);
@@ -308,14 +296,11 @@ export default function App() {
   };
 
   // Assign order to a bay
-  const handleAssignOrderToBay = (
-    orderUidOrId: string,
-    targetBayId: number,
-  ) => {
+  const handleAssignOrderToBay = (orderUid: string, targetBayId: number) => {
     soundManager.playDispatch();
 
     const orderToAssign = boardUnassignedOrders.find(
-      (o) => o.ticketUid === orderUidOrId || o.id === orderUidOrId,
+      (o) => o.ticketUid === orderUid,
     );
     if (!orderToAssign) return;
     if (
@@ -372,10 +357,10 @@ export default function App() {
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
     const first = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === firstUid,
+      (order) => order.ticketUid === firstUid,
     );
     const second = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === secondUid,
+      (order) => order.ticketUid === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
     const card = liveCard(firstUid);
@@ -561,7 +546,7 @@ export default function App() {
             <ControlWorkspace
               mode={controlViewMode}
               baristas={boardBaristas}
-              unassignedOrders={sortedUnassignedOrders}
+              unassignedOrders={boardUnassignedOrders}
               nextAvailable={nextAvailable}
               selectedOrderId={selectedOrderId}
               actionTicketKey={selectedTicket ? selectedTicketKey : null}
@@ -570,7 +555,7 @@ export default function App() {
               onSelectOrder={handleToggleOrderSelection}
               onAdvanceBay={handleAdvanceBay}
               onOpenTicketDetail={(ticket) =>
-                setSelectedTicketKey(ticketKey(ticket))
+                setSelectedTicketKey(ticket.ticketUid)
               }
               onMoveTicket={handleMoveScheduledTicket}
               onReturnToUnassigned={handleReturnScheduledTicket}
@@ -579,7 +564,7 @@ export default function App() {
                 setAssignSlotData({ bayId, order: null })
               }
               onAssignToBay={(order, bayId) =>
-                handleAssignOrderToBay(order.ticketUid || order.id, bayId)
+                handleAssignOrderToBay(order.ticketUid, bayId)
               }
               onMergeOrders={handleMergeUnassignedOrders}
             />
@@ -603,7 +588,7 @@ export default function App() {
             currentBayId={
               boardBaristas.find((bay) =>
                 bay.queue.some(
-                  (ticket) => ticketKey(ticket) === selectedTicketKey,
+                  (ticket) => ticket.ticketUid === selectedTicketKey,
                 ),
               )?.id || null
             }
@@ -622,7 +607,7 @@ export default function App() {
             bayId={assignSlotData.bayId}
             targetOrder={assignSlotData.order}
             baristas={boardBaristas}
-            unassignedOrders={sortedUnassignedOrders}
+            unassignedOrders={boardUnassignedOrders}
             onClose={() => setAssignSlotData(null)}
             onAssign={handleAssignOrderToBay}
           />

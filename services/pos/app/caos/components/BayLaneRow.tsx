@@ -185,7 +185,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
 
           return (
             <div
-              key={ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`}
+              key={ticket.ticketUid}
               className="absolute top-1.5 bottom-1.5"
               style={{
                 left: `${leftPx}px`,

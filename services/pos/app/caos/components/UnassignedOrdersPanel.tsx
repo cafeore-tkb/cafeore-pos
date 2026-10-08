@@ -95,7 +95,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, [openPadUid, onClearSelection, isSidebar]);
 
-  const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
+  const orderUid = (order: UnassignedOrder) => order.ticketUid;
   const bayAtPoint = (clientX: number, clientY: number) => {
     const target = document
       .elementsFromPoint(clientX, clientY)
@@ -290,8 +290,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
 
             return (
               <div
-                key={order.ticketUid || order.id}
-                id={`unassigned-${(order.ticketUid || order.id).replace("#", "")}`}
+                key={order.ticketUid}
+                id={`unassigned-${order.ticketUid}`}
                 data-unassigned-uid={orderUid(order)}
                 data-merge-candidate={isMergeCandidate ? "true" : undefined}
                 onClick={() => {

@@ -7,14 +7,13 @@ export interface CardBean {
 export interface OrderTicket {
   /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品には付かない */
   color?: string;
-  /** 商品を見分けるキー。商品の ID（実データテストで商品の ID の無いデータは「name:商品名」） */
-  itemKey: string;
   /** 区分。商品の種類の表示名（display_name）をそのまま */
   typeName?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（商品の ID で引く） */
   beans?: CardBean[];
   id: string; // e.g. "#152"
-  ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
+  /** カードのキー（@cafeore/common の CaosCard の key）。画面の key と、カードを引くのに使う */
+  ticketUid: string;
   itemIndex?: number; // e.g. 1 (of 2 items in order #152)
   totalItemsInOrder?: number; // e.g. 2
   totalOrderCups?: number; // e.g. 3 (total cups in entire order #152)
@@ -29,7 +28,6 @@ export interface OrderTicket {
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
-  scheduledTimeStr?: string; // e.g. "2:05"
   startTimeSec?: number; // 抽出の開始（盤面の秒。その日の 0:00 からの秒）
   endTimeSec?: number; // 抽出の終了（盤面の秒）
   completedAtSec?: number; // for historical completed drip
@@ -41,7 +39,6 @@ export interface Barista {
   id: number;
   bayNumber: number;
   status: "brewing" | "imminent" | "standby" | "ready";
-  remainingStr: string; // "01:48 残り"
   pastTickets?: OrderTicket[]; // Past completed tickets in this bay
   queue: OrderTicket[];
 }
@@ -49,14 +46,13 @@ export interface Barista {
 export interface UnassignedOrder {
   /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品には付かない */
   color?: string;
-  /** 商品を見分けるキー。商品の ID（実データテストで商品の ID の無いデータは「name:商品名」） */
-  itemKey: string;
   /** 区分。商品の種類の表示名（display_name）をそのまま */
   typeName?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（商品の ID で引く） */
   beans?: CardBean[];
   id: string; // e.g. "#162"
-  ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
+  /** カードのキー（@cafeore/common の CaosCard の key） */
+  ticketUid: string;
   itemIndex?: number;
   totalItemsInOrder?: number;
   totalOrderCups?: number;
@@ -67,13 +63,12 @@ export interface UnassignedOrder {
   cupCount: number;
   badgeTag: string;
   predictedTimeStr: string;
-  recommendedBaristas: string;
-  recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
   /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。指名なしは付かない */
   nominee?: string;
   seniorOnly?: boolean; // 限定（種類の senior_only）
-  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
+  /** 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる（@cafeore/common の canMergeCards と同じ決まり） */
+  mergeKey: string;
 }
 
 // 実データテスト（練習）の実績に出す注文。読み込んだ実データの注文に、練習の結果（提供時間）と品物の種類を足したもの

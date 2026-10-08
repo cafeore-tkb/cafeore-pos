@@ -24,18 +24,15 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
 }) => {
   const [selectedOrderUid, setSelectedOrderUid] = useState<string>(
     targetOrder
-      ? targetOrder.ticketUid || targetOrder.id
-      : unassignedOrders[0]?.ticketUid || unassignedOrders[0]?.id || "",
+      ? targetOrder.ticketUid
+      : (unassignedOrders[0]?.ticketUid ?? ""),
   );
   const [selectedBayId, setSelectedBayId] = useState<number>(
-    bayId ??
-      (targetOrder?.preferredBaristaId ||
-        targetOrder?.recommendedBayIds[0] ||
-        1),
+    bayId ?? targetOrder?.preferredBaristaId ?? 1,
   );
 
   const selectedOrder = unassignedOrders.find(
-    (order) => (order.ticketUid || order.id) === selectedOrderUid,
+    (order) => order.ticketUid === selectedOrderUid,
   );
   const canAssign = Boolean(
     selectedOrder &&
@@ -75,7 +72,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
             ) : (
               <div className="max-h-[160px] space-y-1.5 overflow-y-auto">
                 {unassignedOrders.map((ord) => {
-                  const uid = ord.ticketUid || ord.id;
+                  const uid = ord.ticketUid;
                   const isSelected = selectedOrderUid === uid;
                   return (
                     <div

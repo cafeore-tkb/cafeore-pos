@@ -1,4 +1,4 @@
-import { DRIPPER_NUMBERS, STANDBY_LABEL } from "@cafeore/common";
+import { DRIPPER_NUMBERS } from "@cafeore/common";
 import type { Barista } from "../types";
 
 // 列（ドリッパー 1〜6。番号は @cafeore/common の DRIPPER_NUMBERS）。列は「1st」〜「6th」と番号で呼ぶ（dripperLabel）。
@@ -11,7 +11,6 @@ export const makeLaneBaristas = (): Barista[] =>
       id,
       bayNumber: id,
       status: "standby",
-      remainingStr: STANDBY_LABEL,
       queue: [],
       pastTickets: [],
     }),

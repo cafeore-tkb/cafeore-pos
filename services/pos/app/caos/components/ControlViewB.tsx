@@ -44,7 +44,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onAssignToBay,
 }) => {
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
-  const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
+  const orderUid = (order: UnassignedOrder) => order.ticketUid;
 
   useEffect(() => {
     if (!openPadUid) return;
@@ -103,8 +103,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
       barista.queue
         .filter((ticket) => ticket.id === selectedOrderId)
         .map((ticket) => ({
-          uid:
-            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.itemKey}`,
+          uid: ticket.ticketUid,
           beanName: ticket.beanName,
           bayNumber: barista.bayNumber,
         })),
@@ -463,7 +462,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     {group.items.map((item) => (
                       <button
                         type="button"
-                        key={item.ticketUid || `${item.id}-${item.itemKey}`}
+                        key={item.ticketUid}
                         onClick={(event) => {
                           event.stopPropagation();
                           openAssignmentPad(item);
