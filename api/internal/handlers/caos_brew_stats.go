@@ -37,33 +37,37 @@ func (h *CaosHandler) GetCaosBrewStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// readCaosBrewStats は CaOS のカードに入ったカップ（drip_id か emergency_drip_id のあるカップ）と、その日の担当者を読んで集計する。
-// from・to があれば、その間に作った注文だけ（CaOS の盤面の「今日」と同じく、注文を作った日で区切る）。
+// readCaosBrewStats は CaOS のカードに入ったカップ（drip_id か emergency_drip_id のあるカップ）と、担当者の交代の記録を読んで集計する。
+// from・to があれば、その間に作った注文と、その日の交代の記録だけ（CaOS の盤面の「今日」と同じく、注文を作った日で区切る）。
 func readCaosBrewStats(db *gorm.DB, from, to *time.Time) (caosstats.BrewStats, error) {
 	var rows []struct {
-		CreatedAt       time.Time
-		DripID          *uuid.UUID
-		Dripper         *int
-		BrewStartedAt   *time.Time
-		BrewFinishedAt  *time.Time
-		EmergencyAt     *time.Time
-		EmergencyDripID *uuid.UUID
+		CreatedAt               time.Time
+		DripID                  *uuid.UUID
+		Dripper                 *int
+		BrewStartedAt           *time.Time
+		BrewFinishedAt          *time.Time
+		EmergencyAt             *time.Time
+		EmergencyDripID         *uuid.UUID
+		EmergencyDripper        *int
+		EmergencyBrewStartedAt  *time.Time
+		EmergencyBrewFinishedAt *time.Time
 	}
 	q := db.Model(&models.OrderCup{}).
 		Select("orders.created_at, order_cups.drip_id, order_cups.dripper, order_cups.brew_started_at, order_cups.brew_finished_at, " +
-			"order_cups.emergency_at, order_cups.emergency_drip_id").
+			"order_cups.emergency_at, order_cups.emergency_drip_id, order_cups.emergency_dripper, " +
+			"order_cups.emergency_brew_started_at, order_cups.emergency_brew_finished_at").
 		Joins("JOIN orders ON orders.id = order_cups.order_id").
 		Where("order_cups.drip_id IS NOT NULL OR order_cups.emergency_drip_id IS NOT NULL")
-	lanes := db.Model(&models.CaosLaneRow{}).Select("day", "dripper", "name", "updated_at")
+	changes := db.Model(&models.CaosLaneChangeRow{}).Select("day", "dripper", "changed_at", "name")
 	if from != nil && to != nil {
 		q = q.Where("orders.created_at >= ? AND orders.created_at < ?", *from, *to)
-		lanes = lanes.Where("day = ?", caosstats.Day(*from))
+		changes = changes.Where("day = ?", caosstats.Day(*from))
 	}
 	if err := q.Order("orders.created_at, order_cups.position").Scan(&rows).Error; err != nil {
 		return caosstats.BrewStats{}, err
 	}
-	var laneRows []models.CaosLaneRow
-	if err := lanes.Find(&laneRows).Error; err != nil {
+	var changeRows []models.CaosLaneChangeRow
+	if err := changes.Order("changed_at, id").Find(&changeRows).Error; err != nil {
 		return caosstats.BrewStats{}, err
 	}
 
@@ -72,14 +76,15 @@ func readCaosBrewStats(db *gorm.DB, from, to *time.Time) (caosstats.BrewStats, e
 		cups[i] = caosstats.Cup{
 			Day: caosstats.Day(r.CreatedAt), DripID: r.DripID, Dripper: r.Dripper,
 			BrewStartedAt: r.BrewStartedAt, BrewFinishedAt: r.BrewFinishedAt,
-			EmergencyAt: r.EmergencyAt, EmergencyDripID: r.EmergencyDripID,
+			EmergencyAt: r.EmergencyAt, EmergencyDripID: r.EmergencyDripID, EmergencyDripper: r.EmergencyDripper,
+			EmergencyBrewStartedAt: r.EmergencyBrewStartedAt, EmergencyBrewFinishedAt: r.EmergencyBrewFinishedAt,
 		}
 	}
-	lanesIn := make([]caosstats.Lane, len(laneRows))
-	for i, l := range laneRows {
-		lanesIn[i] = caosstats.Lane{Day: dateOnly(l.Day), Dripper: l.Dripper, Name: l.Name, UpdatedAt: l.UpdatedAt}
+	changesIn := make([]caosstats.LaneChange, len(changeRows))
+	for i, ch := range changeRows {
+		changesIn[i] = caosstats.LaneChange{Day: dateOnly(ch.Day), Dripper: ch.Dripper, ChangedAt: ch.ChangedAt, Name: ch.Name}
 	}
-	return caosstats.Build(cups, lanesIn), nil
+	return caosstats.Build(cups, changesIn), nil
 }
 
 // dateOnly は date の列を string で読んだ値（ドライバーによって "2026-11-01T00:00:00Z" になる）を YYYY-MM-DD にそろえる。

@@ -1165,7 +1165,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "抽出を始めたときに、そのドリッパーにいた担当者の名前（caos_lanes）"
+            "description": "抽出を始めたときに、そのドリッパーにいた担当者の名前（交代の記録 caos_lane_changes から）"
           },
           "cups": {
             "type": "integer",
@@ -1213,7 +1213,7 @@
       "by_person",
       "person_skipped",
       "rebrews",
-      "uncounted_original_brews"
+      "interrupted_brews"
     ],
     "properties": {
       "standard": {
@@ -1233,7 +1233,7 @@
       },
       "brews": {
         "type": "integer",
-        "description": "抽出時間のまとめに入れたカードの数（抽出が終わったカード。入れ直しのカードは除く）"
+        "description": "抽出時間のまとめに入れたカードの数（抽出が終わった最初の抽出のカード。入れ直しのカードは除く）"
       },
       "by_dripper": {
         "type": "array",
@@ -1256,15 +1256,11 @@
       "person_skipped": {
         "type": "object",
         "description": "担当者ごとのまとめに入れなかったカードの数",
-        "required": ["no_person", "unknown"],
+        "required": ["no_person"],
         "properties": {
           "no_person": {
             "type": "integer",
-            "description": "抽出を始めたとき、そのドリッパーに担当者がいなかった（その日の行が無い・名前が空）"
-          },
-          "unknown": {
-            "type": "integer",
-            "description": "抽出を始めたあとに、そのドリッパーの担当者を替えている（交代の記録が無いので、始めたときの担当者が分からない）"
+            "description": "抽出を始めたとき、そのドリッパーに担当者がいなかった（その日のそれより前の交代の記録が無い・名前が空）"
           }
         }
       },
@@ -1274,9 +1270,9 @@
           "$ref": "#/components/schemas/CaosRebrewStat"
         }
       },
-      "uncounted_original_brews": {
+      "interrupted_brews": {
         "type": "integer",
-        "description": "緊急で最初の抽出の時刻が上書きされて数えられなかったカードの数（カードのカップが全部緊急になったもの）"
+        "description": "抽出を始めたが終える前に中断した（カードのカップを全部緊急にした）最初の抽出のカードの数。抽出時間のまとめには入れない"
       }
     }
   },

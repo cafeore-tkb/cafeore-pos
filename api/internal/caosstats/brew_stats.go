@@ -1,15 +1,8 @@
 // Package caosstats は CaOS の本番の抽出時間の集計（Issue #803）。DB を使わない純粋な関数だけを置く。
 //
-// 材料は注文のカップの CaOS の列（order_cups の drip_id・dripper・brew_started_at・brew_finished_at・
-// emergency_at・emergency_drip_id）と、その日のドリッパーの担当者（caos_lanes）。読むのは handlers/caos_brew_stats.go（GORM）で、
-// API は GET /api/caos/brew-stats。
-//
-// 今の設計で分からないこと（TODO。集計の結果にも数を出す）：
-//   - 緊急（CaOS10）にしたカップは、最初の抽出の dripper・brew_started_at・brew_finished_at が空に戻り、入れ直しの値で上書きされる
-//     （drip_id だけ残る）。なので、カードのカップが全部緊急になった最初の抽出は数えられない（uncounted_original_brews）。
-//     中断（抽出中に緊急にした）と、終わってから緊急にした、も区別できない
-//   - 担当者（caos_lanes）は日・ドリッパーごとに今の 1 行（name と、最後に替えた updated_at）しか無く、交代の記録が無い。
-//     抽出を始めたあとに替わったドリッパーの抽出は、誰が淹れたか分からない（person_skipped.unknown）。今の担当者を当てはめることはしない
+// 材料は注文のカップの CaOS の列（order_cups の最初の抽出の drip_id・dripper・brew_started_at・brew_finished_at と、
+// 緊急（入れ直し）の emergency_at・emergency_drip_id・emergency_dripper・emergency_brew_started_at・emergency_brew_finished_at）と、
+// ドリッパーの担当者の交代の記録（caos_lane_changes）。読むのは handlers/caos_brew_stats.go（GORM）で、API は GET /api/caos/brew-stats。
 package caosstats
 
 import (
@@ -45,24 +38,27 @@ const SlotMinutes = 30
 type Cup struct {
 	// 営業日（注文を作った日。日本時間の YYYY-MM-DD。CaOS の盤面の「今日」と同じ区切り）
 	Day string
-	// カード（同じ値のカップが 1 枚のカード）。緊急のカップでも、最初に淹れたカードとして残る
+	// 最初の抽出（同じ drip_id のカップが 1 枚のカード）。緊急にしても残る
 	DripID         *uuid.UUID
 	Dripper        *int
 	BrewStartedAt  *time.Time
 	BrewFinishedAt *time.Time
-	// 緊急（入れ直し）。緊急のカップの CaOS の列（dripper・時刻）は入れ直しのカード（EmergencyDripID）の値
-	EmergencyAt     *time.Time
-	EmergencyDripID *uuid.UUID
+	// 緊急（入れ直し）。入れ直しのカード（同じ emergency_drip_id のカップ）の列
+	EmergencyAt             *time.Time
+	EmergencyDripID         *uuid.UUID
+	EmergencyDripper        *int
+	EmergencyBrewStartedAt  *time.Time
+	EmergencyBrewFinishedAt *time.Time
 }
 
-// Lane はその日のそのドリッパーの担当者（caos_lanes の 1 行）。行が無いドリッパーは、その日ずっと担当者なし。
-type Lane struct {
+// LaneChange は担当者の交代の記録（caos_lane_changes の 1 行）。入れ替えはドリッパーごとに 1 行ずつ。
+type LaneChange struct {
 	Day     string
 	Dripper int
-	// 担当者の名前（空なら担当者なし）
+	// 替えた時刻（サーバーの時刻）
+	ChangedAt time.Time
+	// 替えたあとの担当者の名前（空なら担当者なし）
 	Name string
-	// 最後に替えた時刻。これより前の担当者は分からない
-	UpdatedAt time.Time
 }
 
 // Summary は抽出時間のまとめ。
@@ -105,10 +101,8 @@ type PersonStat struct {
 
 // PersonSkipped は担当者ごとのまとめに入れなかった抽出の数。
 type PersonSkipped struct {
-	// 抽出を始めたとき、そのドリッパーに担当者がいなかった
+	// 抽出を始めたとき、そのドリッパーに担当者がいなかった（その日のそれより前の交代の記録が無い・名前が空）
 	NoPerson int `json:"no_person"`
-	// 抽出を始めたあとに、そのドリッパーの担当者を替えている（交代の記録が無いので、始めたときの担当者が分からない）
-	Unknown int `json:"unknown"`
 }
 
 // RebrewStat は日・ドリッパー（入れ直しを淹れたドリッパー）ごとの、抽出が終わった入れ直しのカードの数。
@@ -130,7 +124,7 @@ type Standard struct {
 // BrewStats は抽出時間の集計の結果。
 type BrewStats struct {
 	Standard Standard `json:"standard"`
-	// 抽出時間のまとめに入れたカードの数（抽出が終わったカード。入れ直しのカードは除く）
+	// 抽出時間のまとめに入れたカードの数（抽出が終わった最初の抽出のカード。入れ直しのカードは除く）
 	Brews     int           `json:"brews"`
 	ByDripper []DripperStat `json:"by_dripper"`
 	BySlot    []SlotStat    `json:"by_slot"`
@@ -138,11 +132,11 @@ type BrewStats struct {
 	// 担当者ごとのまとめに入れなかったカード
 	PersonSkipped PersonSkipped `json:"person_skipped"`
 	Rebrews       []RebrewStat  `json:"rebrews"`
-	// 緊急で最初の抽出の時刻が上書きされて数えられなかったカードの数（カードのカップが全部緊急になったもの）
-	UncountedOriginalBrews int `json:"uncounted_original_brews"`
+	// 抽出を始めたが終える前に中断した（カードのカップを全部緊急にした）最初の抽出のカードの数。抽出時間のまとめには入れない
+	InterruptedBrews int `json:"interrupted_brews"`
 }
 
-// card は 1 枚のカード（同じ drip_id、緊急のカップは同じ emergency_drip_id のカップ）。
+// card は 1 枚のカード（最初の抽出は同じ drip_id、入れ直しは同じ emergency_drip_id のカップ）。
 type card struct {
 	day     string
 	dripper int
@@ -161,22 +155,56 @@ type sample struct {
 	ratio   float64
 }
 
-// finishedCard はカードの最初のカップ（同じカードのカップは同じ値）から、抽出が終わったカードを作る。終わっていなければ false
-func finishedCard(c Cup, cups int) (card, bool) {
-	if c.Dripper == nil || c.BrewStartedAt == nil || c.BrewFinishedAt == nil {
+// firstBrew は同じ drip_id のカップから、最初の抽出のカードを作る。淹れた杯数は抽出を始めたカップの数
+// （待機のうちに緊急にしたカップは始めていないので入れない）。抽出を始めていなければ ok = false。
+// 終えていなければ finished = false（抽出中か、中断した）。
+func firstBrew(cups []Cup) (c card, ok, finished bool) {
+	for _, cup := range cups {
+		if cup.Dripper == nil || cup.BrewStartedAt == nil {
+			continue
+		}
+		if !ok {
+			c = card{day: cup.Day, dripper: *cup.Dripper, start: *cup.BrewStartedAt}
+			if cup.BrewFinishedAt != nil {
+				c.finish, finished = *cup.BrewFinishedAt, true
+			}
+			ok = true
+		}
+		c.cups++
+	}
+	return c, ok, finished
+}
+
+// rebrewOf は同じ emergency_drip_id のカップから、抽出が終わった入れ直しのカードを作る。終わっていなければ false
+func rebrewOf(cups []Cup) (card, bool) {
+	c := cups[0]
+	if c.EmergencyDripper == nil || c.EmergencyBrewStartedAt == nil || c.EmergencyBrewFinishedAt == nil {
 		return card{}, false
 	}
-	return card{day: c.Day, dripper: *c.Dripper, cups: cups, start: *c.BrewStartedAt, finish: *c.BrewFinishedAt}, true
+	return card{day: c.Day, dripper: *c.EmergencyDripper, cups: len(cups), start: *c.EmergencyBrewStartedAt, finish: *c.EmergencyBrewFinishedAt}, true
+}
+
+// personAt は day の dripper の、at の時点の担当者（at までの最後の交代のあとの名前）。交代の記録が無ければ空（担当者なし）。
+// changes は替えた順（同じ時刻なら記録した順）。
+func personAt(changes []LaneChange, day string, dripper int, at time.Time) string {
+	name := ""
+	for _, ch := range changes {
+		if ch.Day == day && ch.Dripper == dripper && !ch.ChangedAt.After(at) {
+			name = ch.Name
+		}
+	}
+	return name
 }
 
 // Build は抽出時間を集計する。
 //
-//   - 抽出時間のまとめ（by_dripper・by_slot・by_person）：抽出が終わったふつうのカード（緊急でないカップの drip_id ごと）の
-//     brew_finished_at - brew_started_at。杯数は、その drip_id のカップの数（あとで緊急にしたカップも、最初の抽出で淹れたので数える）
-//   - 入れ直し（緊急のカップの emergency_drip_id ごと）は、まとめから除いて rebrews に数える（入れ直しを淹れたドリッパーに数える）
-//   - 担当者は、その日のそのドリッパーの担当者が、抽出を始めた時刻より前に替えたきりなら、その人。
-//     行が無い・名前が空なら担当者なし、始めたあとに替えていれば分からない（person_skipped）
-func Build(cups []Cup, lanes []Lane) BrewStats {
+//   - 抽出時間のまとめ（by_dripper・by_slot・by_person）：抽出が終わった最初の抽出のカード（drip_id ごと）の
+//     brew_finished_at - brew_started_at。杯数は、そのカードで抽出を始めたカップの数（あとで緊急にしたカップも、最初の抽出で淹れたので数える）。
+//     抽出を始めたが終えずに中断したカード（カップが全部緊急）は interrupted_brews に数える
+//   - 入れ直し（緊急のカップの emergency_drip_id ごと。emergency_dripper・emergency_brew_*）は、まとめから除いて rebrews に数える
+//     （入れ直しを淹れたドリッパーに数える）
+//   - 担当者は交代の記録（changes。替えた順）から、抽出を始めた時刻にそのドリッパーにいた人。記録が無い・名前が空なら担当者なし（person_skipped）
+func Build(cups []Cup, changes []LaneChange) BrewStats {
 	type dripperKey struct {
 		day           string
 		dripper, cups int
@@ -193,38 +221,24 @@ func Build(cups []Cup, lanes []Lane) BrewStats {
 		day     string
 		dripper int
 	}
-	type laneKey struct {
-		day     string
-		dripper int
-	}
 
-	// カードごとのカップ（ふつうのカードは drip_id、入れ直しのカードは emergency_drip_id）
-	var normalIDs, rebrewIDs []uuid.UUID
-	normal := map[uuid.UUID][]Cup{}
+	// カードごとのカップ（最初の抽出は drip_id、入れ直しは emergency_drip_id）
+	var firstIDs, rebrewIDs []uuid.UUID
+	first := map[uuid.UUID][]Cup{}
 	rebrew := map[uuid.UUID][]Cup{}
-	// drip_id ごとのカップの数（緊急にしたカップも含める＝最初の抽出の杯数）
-	original := map[uuid.UUID]int{}
 	for _, c := range cups {
 		if c.DripID != nil {
-			original[*c.DripID]++
-		}
-		switch {
-		case c.EmergencyAt == nil && c.DripID != nil:
-			if _, ok := normal[*c.DripID]; !ok {
-				normalIDs = append(normalIDs, *c.DripID)
+			if _, ok := first[*c.DripID]; !ok {
+				firstIDs = append(firstIDs, *c.DripID)
 			}
-			normal[*c.DripID] = append(normal[*c.DripID], c)
-		case c.EmergencyAt != nil && c.EmergencyDripID != nil:
+			first[*c.DripID] = append(first[*c.DripID], c)
+		}
+		if c.EmergencyAt != nil && c.EmergencyDripID != nil {
 			if _, ok := rebrew[*c.EmergencyDripID]; !ok {
 				rebrewIDs = append(rebrewIDs, *c.EmergencyDripID)
 			}
 			rebrew[*c.EmergencyDripID] = append(rebrew[*c.EmergencyDripID], c)
 		}
-	}
-
-	laneOf := map[laneKey]Lane{}
-	for _, l := range lanes {
-		laneOf[laneKey{l.Day, l.Dripper}] = l
 	}
 
 	stats := BrewStats{Standard: Standard{OneCupSec: OneCupBrewSec, TwoCupSec: TwoCupBrewSec}}
@@ -233,9 +247,16 @@ func Build(cups []Cup, lanes []Lane) BrewStats {
 	byPerson := map[personKey][]sample{}
 	rebrews := map[rebrewKey]*RebrewStat{}
 
-	for _, id := range normalIDs {
-		c, ok := finishedCard(normal[id][0], original[id])
+	for _, id := range firstIDs {
+		c, ok, finished := firstBrew(first[id])
 		if !ok {
+			continue
+		}
+		if !finished {
+			// 中断：抽出を始めたカップが全部緊急（緊急でないカップが残っていれば、まだ抽出中）
+			if !slices.ContainsFunc(first[id], func(cup Cup) bool { return cup.BrewStartedAt != nil && cup.EmergencyAt == nil }) {
+				stats.InterruptedBrews++
+			}
 			continue
 		}
 		s := c.sample()
@@ -244,22 +265,16 @@ func Build(cups []Cup, lanes []Lane) BrewStats {
 		byDripper[dk] = append(byDripper[dk], s)
 		sk := slotKey{c.day, Slot(c.start), c.cups}
 		bySlot[sk] = append(bySlot[sk], s)
-		lane, ok := laneOf[laneKey{c.day, c.dripper}]
-		switch {
-		case !ok:
+		if name := personAt(changes, c.day, c.dripper, c.start); name == "" {
 			stats.PersonSkipped.NoPerson++
-		case lane.UpdatedAt.After(c.start):
-			stats.PersonSkipped.Unknown++
-		case lane.Name == "":
-			stats.PersonSkipped.NoPerson++
-		default:
-			pk := personKey{lane.Name, c.cups}
+		} else {
+			pk := personKey{name, c.cups}
 			byPerson[pk] = append(byPerson[pk], s)
 		}
 	}
 
 	for _, id := range rebrewIDs {
-		c, ok := finishedCard(rebrew[id][0], len(rebrew[id]))
+		c, ok := rebrewOf(rebrew[id])
 		if !ok {
 			continue
 		}
@@ -272,15 +287,6 @@ func Build(cups []Cup, lanes []Lane) BrewStats {
 		r.Rebrews++
 		r.ExtraCups += c.cups
 	}
-
-	// 最初の抽出が数えられないカード：緊急のカップの drip_id で、緊急でないカップが 1 杯も残っていないもの
-	lost := map[uuid.UUID]bool{}
-	for _, c := range cups {
-		if c.EmergencyAt != nil && c.DripID != nil && len(normal[*c.DripID]) == 0 {
-			lost[*c.DripID] = true
-		}
-	}
-	stats.UncountedOriginalBrews = len(lost)
 
 	stats.ByDripper = make([]DripperStat, 0, len(byDripper))
 	for k, s := range byDripper {

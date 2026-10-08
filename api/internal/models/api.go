@@ -46,19 +46,19 @@ const (
 
 // CaosBrewStats defines model for CaosBrewStats.
 type CaosBrewStats struct {
-	// Brews 抽出時間のまとめに入れたカードの数（抽出が終わったカード。入れ直しのカードは除く）
+	// Brews 抽出時間のまとめに入れたカードの数（抽出が終わった最初の抽出のカード。入れ直しのカードは除く）
 	Brews     int                   `json:"brews"`
 	ByDripper []CaosDripperBrewStat `json:"by_dripper"`
 	ByPerson  []CaosPersonBrewStat  `json:"by_person"`
 	BySlot    []CaosSlotBrewStat    `json:"by_slot"`
 
+	// InterruptedBrews 抽出を始めたが終える前に中断した（カードのカップを全部緊急にした）最初の抽出のカードの数。抽出時間のまとめには入れない
+	InterruptedBrews int `json:"interrupted_brews"`
+
 	// PersonSkipped 担当者ごとのまとめに入れなかったカードの数
 	PersonSkipped struct {
-		// NoPerson 抽出を始めたとき、そのドリッパーに担当者がいなかった（その日の行が無い・名前が空）
+		// NoPerson 抽出を始めたとき、そのドリッパーに担当者がいなかった（その日のそれより前の交代の記録が無い・名前が空）
 		NoPerson int `json:"no_person"`
-
-		// Unknown 抽出を始めたあとに、そのドリッパーの担当者を替えている（交代の記録が無いので、始めたときの担当者が分からない）
-		Unknown int `json:"unknown"`
 	} `json:"person_skipped"`
 	Rebrews []CaosRebrewStat `json:"rebrews"`
 
@@ -67,9 +67,6 @@ type CaosBrewStats struct {
 		OneCupSec int `json:"one_cup_sec"`
 		TwoCupSec int `json:"two_cup_sec"`
 	} `json:"standard"`
-
-	// UncountedOriginalBrews 緊急で最初の抽出の時刻が上書きされて数えられなかったカードの数（カードのカップが全部緊急になったもの）
-	UncountedOriginalBrews int `json:"uncounted_original_brews"`
 }
 
 // CaosBrewSummary 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める
@@ -239,7 +236,7 @@ type CaosPersonBrewStat struct {
 	// MedianSec 抽出時間の中央値（秒）
 	MedianSec float32 `json:"median_sec"`
 
-	// Name 抽出を始めたときに、そのドリッパーにいた担当者の名前（caos_lanes）
+	// Name 抽出を始めたときに、そのドリッパーにいた担当者の名前（交代の記録 caos_lane_changes から）
 	Name string `json:"name"`
 
 	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
