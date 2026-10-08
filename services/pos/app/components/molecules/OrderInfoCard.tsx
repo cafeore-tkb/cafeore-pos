@@ -1,63 +1,140 @@
 import {
-  type ColorScreen,
+  type CupStatus,
   type OrderEntity,
   type WithId,
-  readableTextColor,
+  orderRepository,
   resolveItemColor,
   useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
 import { LuCheck, LuHourglass } from "react-icons/lu";
+import { toast } from "sonner";
+import { usePendingStatus } from "~/lib/usePendingStatus";
 import { cn } from "~/lib/utils";
 import { PendingSpinner } from "../atoms/PendingSpinner";
+import { ReadyBell } from "../atoms/ReadyBell";
+import { ServeCheck } from "../atoms/ServeCheck";
+import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { InputComment } from "./InputComment";
 import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
-
-// カードに並べるアイテム、またはカップ1杯。見せ方は呼ぶ側の画面が決める
-export type CupView = ReturnType<OrderEntity["getItems"]>[number] & {
-  cupId?: string;
-  gray?: boolean; // 灰色にして、色の設定の色を付けない
-  servable?: boolean; // 提供可能。緑の枠で目立たせる
-  served?: boolean; // 提供済。薄くする
-  busy?: boolean; // 応答待ち
-  onClick?: () => void; // 押せるカップだけ
-};
 
 type props = {
   order: WithId<OrderEntity>;
+  user: "cashier" | "master" | "serve" | "dashboard";
   timing: "past" | "present" | "all"; // どの注文を表示するか
-  cups: CupView[];
-  colorScreen?: ColorScreen; // アイテムの背景色を引く色の設定の画面。無ければ色を付けない
-  grayed?: boolean; // カードごと灰色にする
-  children?: React.ReactNode; // コメントの一覧の下に出す部品
+  comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
-/**
- * 注文カードの共通の枠（番号・時刻・杯数・経過時間・カップ・コメントの一覧）。
- * カップの見せ方・押したときの動き・下に出す部品は、呼ぶ側の画面が組み立てて渡す
- */
-export function OrderInfoCard({
-  order,
-  timing,
-  cups,
-  colorScreen,
-  grayed,
-  children,
-}: props) {
-  // アイテムの背景色は、その画面の色の設定（アイテム → 種別の順）から引く。設定の無いアイテムは色を付けない
-  const { colorSettings } = useColorSettings(colorScreen !== undefined);
-  const cupStyle = (cup: CupView) => {
-    if (colorScreen === undefined || cup.gray) return undefined;
-    const backgroundColor = resolveItemColor(colorSettings, cup, colorScreen);
-    if (backgroundColor === undefined) return undefined;
-    return { backgroundColor, color: readableTextColor(backgroundColor) };
+// マスター・提供画面ではカード1枚がカップ1杯（cupId）にあたる
+type CupItem = ReturnType<OrderEntity["getItems"]>[number] & {
+  cupId?: string;
+  status?: CupStatus;
+};
+
+export function OrderInfoCard({ order, user, timing, comment }: props) {
+  // 押してから配信が届くまでの間も、押した後の状態を表示する
+  const cupPending = usePendingStatus<CupStatus>(order);
+  const orderPending = usePendingStatus<boolean>(order);
+
+  const isReady = orderPending.statusOf("ready", order.readyAt !== null);
+  const changeReady = () => {
+    if (orderPending.isBusy("ready")) return;
+    orderPending.run("ready", !isReady, async () => {
+      await orderRepository.ready(order.id);
+      return undefined;
+    });
+  };
+
+  const changeServed = () =>
+    orderPending.run("served", order.servedAt === null, async () => {
+      await orderRepository.serve(order.id);
+      return undefined;
+    });
+
+  const displayOrders: CupItem[] =
+    user === "cashier" || user === "dashboard"
+      ? order.getItems()
+      : order.getCups();
+
+  // 提供画面ではカップを押すと 準備中 → 提供可能 → 提供済み → 準備中 と回り、マスター画面では準備完了を切り替える
+  const cupAction =
+    timing === "present" && (user === "serve" || user === "master")
+      ? user
+      : null;
+
+  const cupStatus = (item: CupItem) =>
+    item.cupId && item.status
+      ? cupPending.statusOf(item.cupId, item.status)
+      : item.status;
+
+  const readyCup = (cupId: string, next: CupStatus) =>
+    cupPending.run(cupId, next, async () =>
+      cupStatusOf(await orderRepository.readyCup(order.id, cupId), cupId),
+    );
+
+  const serveCup = (cupId: string, next: CupStatus) =>
+    cupPending.run(cupId, next, async () =>
+      cupStatusOf(await orderRepository.serveCup(order.id, cupId), cupId),
+    );
+
+  const changeCup = (item: CupItem) => {
+    const { cupId } = item;
+    // 応答待ちの間は押せなくして、ダブルタップで2回進むのを防ぐ
+    if (!cupId || cupPending.isBusy(cupId)) return;
+    const status = cupStatus(item);
+    if (cupAction === "master") {
+      readyCup(cupId, status === "preparing" ? "ready" : "preparing");
+      return;
+    }
+    // 提供画面では 準備中 → 提供可能 → 提供済み → 準備中 と回す
+    if (status === "preparing") {
+      readyCup(cupId, "ready");
+      return;
+    }
+    const description = dayjs().format("H時m分");
+    if (status === "ready") {
+      serveCup(cupId, "served");
+      toast(`提供完了 No.${order.orderId} ${item.abbr}`, {
+        description,
+        action: { label: "取消", onClick: () => serveCup(cupId, "ready") },
+      });
+      return;
+    }
+    // 提供済みのカップの準備完了を外すと、提供済みも外れて準備中に戻る。
+    // 誤タップで提供を取り消しても気づけるよう、トーストを出す
+    readyCup(cupId, "preparing");
+    toast(`提供取消 No.${order.orderId} ${item.abbr}`, {
+      description,
+      action: { label: "元に戻す", onClick: () => serveCup(cupId, "served") },
+    });
+  };
+
+  // 注文カードの背景色設定はマスター・提供画面だけで使う（レジの設定はメニューのボタン用）
+  const colorScreen = user === "master" || user === "serve" ? user : null;
+  const { colorSettings } = useColorSettings(colorScreen !== null);
+
+  // 設定があれば下の className の既定色より優先する。
+  // マスター画面では準備完了・呼び出し中、提供画面では提供済みのカップをグレーのままにする。
+  const itemBackgroundColor = (item: (typeof displayOrders)[number]) => {
+    if (colorScreen === null) return undefined;
+    const status = cupStatus(item);
+    if (
+      colorScreen === "master"
+        ? order.status === "calling" || status !== "preparing"
+        : status === "served"
+    )
+      return undefined;
+    return resolveItemColor(colorSettings, item, colorScreen);
   };
 
   return (
     <div key={order.id}>
       <Card
         className={cn(
-          grayed && "bg-gray-300 text-gray-500",
+          (user === "master" || user === "serve") &&
+            order.status === "calling" &&
+            "bg-gray-300 text-gray-500",
           order.status === "served" && "transition-all duration-200",
         )}
       >
@@ -67,10 +144,18 @@ export function OrderInfoCard({
               <div className="font-black text-sm">No.</div>
               <div className="font-black text-6xl">{order.orderId}</div>
             </CardTitle>
-            {timing === "present" ? (
-              <RealtimeElapsedTime order={order} />
-            ) : (
-              <ServedTime order={order} />
+            {timing === "present" && <RealtimeElapsedTime order={order} />}
+            {(timing === "past" || timing === "all") && (
+              <div
+                className={cn(
+                  "rounded-md px-2",
+                  pass15Minutes(order)
+                    ? "bg-red-500 text-white"
+                    : "bg-slate-100",
+                )}
+              >
+                <div>{diffTime(order)}</div>
+              </div>
             )}
             <div className="grid">
               <div className="px-2 text-right">
@@ -90,74 +175,181 @@ export function OrderInfoCard({
               "grid grid-cols-2 gap-2",
             )}
           >
-            {cups.map((cup, idx) => (
-              <CupButton
-                key={cup.cupId ?? `${idx}-${cup.id}`}
-                busy={!!cup.busy}
-                onClick={cup.onClick}
-              >
-                <Card
-                  className={cn(
-                    "h-full p-3 transition-all duration-200",
-                    cup.gray && "bg-gray-200 text-gray-500",
-                    cup.servable &&
-                      "shadow-md ring-4 ring-green-500 ring-offset-2",
-                    cup.served && "opacity-50",
-                  )}
-                  style={cupStyle(cup)}
+            {displayOrders.map((item, idx) => {
+              const status = cupStatus(item);
+              // 提供画面で、提供可能になったカップを目立たせる
+              const servable = user === "serve" && status === "ready";
+              const served =
+                status === "served" &&
+                (isPartlyServed(order, item) ||
+                  (user === "serve" && timing === "present"));
+              return (
+                <CupButton
+                  key={item.cupId ?? `${idx}-${item.id}`}
+                  busy={
+                    item.cupId !== undefined && cupPending.isBusy(item.cupId)
+                  }
+                  onClick={
+                    // マスター画面で提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
+                    cupAction &&
+                    item.cupId &&
+                    !(cupAction === "master" && status === "served")
+                      ? () => changeCup(item)
+                      : undefined
+                  }
                 >
-                  <h3 className="text-center font-bold text-3xl">{cup.abbr}</h3>
-                  {cup.servable && (
-                    <p
-                      key="servable"
-                      className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
-                    >
-                      <LuCheck
-                        className="h-3.5 w-3.5 shrink-0"
-                        strokeWidth={3}
-                      />
-                      提供可能
-                    </p>
-                  )}
-                  {cup.served && (
-                    <p
-                      key="served"
-                      className="fade-in animate-in text-center font-bold text-xs duration-200"
-                    >
-                      提供済
-                    </p>
-                  )}
-                  {cup.assignee && (
-                    <p
-                      className={cn(
-                        order.status === "preparing" && "text-red-500",
-                        "font-bold text-sm",
-                      )}
-                    >
-                      指名:{cup.assignee}
-                    </p>
-                  )}
-                </Card>
-              </CupButton>
-            ))}
+                  <Card
+                    className={cn(
+                      "h-full p-3 transition-all duration-200",
+                      user === "master" &&
+                        ((item.item_type.name === "ice" && "bg-blue-200") ||
+                          ((item.name === "ブルマン" ||
+                            item.name === "ライチ") &&
+                            "bg-green-300")),
+                      user === "serve"
+                        ? item.item_type.name === "milk" && "bg-yellow-200"
+                        : item.item_type.name === "milk" && "bg-gray-300",
+                      // (user === "master" ||
+                      //   user === "serve") &&
+                      //   item.item_type.name === "hotOre" &&
+                      //   "bg-orange-300",
+                      user === "master" &&
+                        (((order.status === "calling" ||
+                          status !== "preparing") &&
+                          "bg-gray-200 text-gray-500") ||
+                          (item.item_type.name === "iceOre" && "bg-sky-200")),
+                      user === "serve" &&
+                        ((status === "served" && "bg-gray-200 text-gray-500") ||
+                          (item.item_type.name === "iceOre" && "bg-sky-200")),
+                      servable &&
+                        "shadow-md ring-4 ring-green-500 ring-offset-2",
+                      served && "opacity-50",
+                      user === "cashier" &&
+                        item.item_type.name === "others" &&
+                        "bg-green-300",
+                    )}
+                    style={{ backgroundColor: itemBackgroundColor(item) }}
+                  >
+                    <h3 className="text-center font-bold text-3xl">
+                      {item.abbr}
+                    </h3>
+                    {servable && (
+                      <p
+                        key="servable"
+                        className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
+                      >
+                        <LuCheck
+                          className="h-3.5 w-3.5 shrink-0"
+                          strokeWidth={3}
+                        />
+                        提供可能
+                      </p>
+                    )}
+                    {served && (
+                      <p
+                        key="served"
+                        className="fade-in animate-in text-center font-bold text-xs duration-200"
+                      >
+                        提供済
+                      </p>
+                    )}
+                    {item.assignee && (
+                      <p
+                        className={cn(
+                          order.status === "preparing" && "text-red-500",
+                          "font-bold text-sm",
+                        )}
+                      >
+                        指名:{item.assignee}
+                      </p>
+                    )}
+                  </Card>
+                </CupButton>
+              );
+            })}
           </div>
-          <CommentList order={order} />
-          {children}
+
+          {order?.comments.length !== 0 && (
+            <div>
+              {order.comments.map((comment, index) => (
+                <div
+                  key={`${index}-${comment.author}`}
+                  className={cn(
+                    order.status === "calling" && "bg-gray-400",
+                    "my-2",
+                    "flex",
+                    "gap-2",
+                    "rounded-md",
+                    "bg-gray-200",
+                    "px-2",
+                    "py-1",
+                  )}
+                >
+                  <div className="flex-none font-bold">
+                    {(comment.author === "cashier" && "レ") ||
+                      (comment.author === "master" && "マ") ||
+                      (comment.author === "serve" && "提") ||
+                      (comment.author === "others" && "他")}
+                  </div>
+                  <div>{comment.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {user !== "dashboard" && (
+            <InputComment order={order} addComment={comment} />
+          )}
+          {(user === "cashier" || user === "master" || user === "dashboard") &&
+            order.status === "calling" &&
+            !order.servedAt && (
+              <div className="mt-5 flex items-center">
+                <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
+                <p className="text-yellow-700">提供待ち</p>
+              </div>
+            )}
+          {user === "serve" && timing === "present" && (
+            <div className="mt-4 flex items-center justify-between">
+              <ReadyBell
+                isReady={isReady}
+                busy={orderPending.isBusy("ready")}
+                changeReady={changeReady}
+              />
+              <ServeCheck
+                order={order}
+                busy={orderPending.isBusy("served")}
+                onServe={(order) => {
+                  // 応答待ちの間にもう一度押すと提供が取り消されてしまうので無視する
+                  if (orderPending.isBusy("served")) return;
+                  const now = new Date();
+                  changeServed();
+                  toast(`提供完了 No.${order.orderId}`, {
+                    description: `${dayjs(now).format("H時m分")}`,
+                    action: {
+                      label: "取消",
+                      onClick: () => changeServed(),
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+          {user === "serve" && timing === "past" && (
+            <div className="mt-2 flex items-center justify-between">
+              <Button
+                onClick={() => {
+                  changeServed();
+                }}
+                className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
+              >
+                提供取消
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-// 呼び出し中で、まだ提供していない注文に出す
-export const WaitingLabel = ({ order }: { order: OrderEntity }) =>
-  order.status === "calling" &&
-  !order.servedAt && (
-    <div className="mt-5 flex items-center">
-      <LuHourglass className="mr-1 h-5 w-5 stroke-yellow-600" />
-      <p className="text-yellow-700">提供待ち</p>
-    </div>
-  );
 
 // 押して状態を切り替えられるカップだけボタンにする。
 // 押せることが分かるよう、ホバーで浮かせて押した瞬間に沈ませる。
@@ -192,39 +384,25 @@ const CupButton = ({
     <div>{children}</div>
   );
 
-// 受け付けてから提供まで（まだなら今まで）の時間。15分を超えたら赤くする
-const ServedTime = ({ order }: { order: OrderEntity }) => {
-  const elapsed = dayjs(
-    dayjs(order.servedAt ?? undefined).diff(order.createdAt),
-  );
-  return (
-    <div
-      className={cn(
-        "rounded-md px-2",
-        elapsed.minute() >= 15 ? "bg-red-500 text-white" : "bg-slate-100",
-      )}
-    >
-      <div>{order.servedAt == null ? "未提供" : elapsed.format("m分ss秒")}</div>
-    </div>
+const cupStatusOf = (order: OrderEntity, cupId: string) =>
+  order.getCups().find((cup) => cup.cupId === cupId)?.status;
+
+// 一部だけ提供済みの注文で、提供済みのカップを見分けられるようにする
+const isPartlyServed = (order: OrderEntity, item: CupItem) =>
+  order.status !== "served" && item.status === "served";
+
+const diffTime = (order: OrderEntity) => {
+  if (order.servedAt == null) return "未提供";
+  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
+    "m分ss秒",
   );
 };
 
-// コメントの書き手を1文字で出す
-const AUTHOR_MARKS = { cashier: "レ", master: "マ", serve: "提", others: "他" };
-
-const CommentList = ({ order }: { order: OrderEntity }) =>
-  order.comments.length > 0 && (
-    <div>
-      {order.comments.map((comment, index) => (
-        <div
-          key={`${index}-${comment.author}`}
-          className="my-2 flex gap-2 rounded-md bg-gray-200 px-2 py-1"
-        >
-          <div className="flex-none font-bold">
-            {AUTHOR_MARKS[comment.author]}
-          </div>
-          <div>{comment.text}</div>
-        </div>
-      ))}
-    </div>
-  );
+const pass15Minutes = (order: OrderEntity) => {
+  if (order.servedAt === null)
+    return dayjs(dayjs().diff(dayjs(order.createdAt))).minute() >= 15;
+  if (order.servedAt !== null)
+    return (
+      dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
+    );
+};

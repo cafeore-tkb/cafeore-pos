@@ -32,7 +32,7 @@ func TestBuildColorSettingNormalizesColor(t *testing.T) {
 }
 
 func TestBuildColorSettingAcceptsEveryScreen(t *testing.T) {
-	for _, screen := range []models.ColorScreen{models.ColorScreenCashier, models.ColorScreenCashierOrder, models.ColorScreenMaster, models.ColorScreenServe} {
+	for _, screen := range []models.ColorScreen{models.ColorScreenCashier, models.ColorScreenMaster, models.ColorScreenServe} {
 		t.Run(string(screen), func(t *testing.T) {
 			request := validColorSettingRequest()
 			request.Screen = screen

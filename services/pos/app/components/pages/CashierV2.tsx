@@ -1,4 +1,9 @@
-import type { MenuEntity, OrderEntity, WithId } from "@cafeore/common";
+import {
+  type MenuEntity,
+  type OrderEntity,
+  type WithId,
+  orderRepository,
+} from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
@@ -81,6 +86,23 @@ const CashierV2 = ({
     },
     [applyOrderAction, syncOrder],
   );
+
+  // 過去の注文を取得（全注文）
+  const servedOrders = useMemo(
+    () =>
+      orders
+        ? orders
+            .slice()
+            .sort((a, b) => b.orderId - a.orderId) // 注文番号の降順（新しい順）
+        : [],
+    [orders],
+  );
+
+  // 過去の注文からのコメント追加機能
+  const addComment = async (servedOrder: OrderEntity, descComment: string) => {
+    if (servedOrder.id)
+      orderRepository.addComment(servedOrder.id, "cashier", descComment);
+  };
 
   const playSound = useCallback(() => {
     soundRef.current?.play();
@@ -246,7 +268,12 @@ const CashierV2 = ({
           </div>
           <div className="flex items-center space-x-2">
             <PrinterStatus status={printer.status} />
-            <PastOrderSideSheet orders={orders} author="cashier" withGoods />
+            <PastOrderSideSheet
+              orders={servedOrders}
+              cardUser={"cashier"}
+              cardTiming={"all"}
+              comment={addComment}
+            />
           </div>
         </div>
         <div className="flex gap-5 px-2">

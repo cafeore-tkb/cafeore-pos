@@ -1,8 +1,4 @@
-import {
-  type OrderEntity,
-  type WithId,
-  orderRepository,
-} from "@cafeore/common";
+import type { OrderEntity, WithId } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import {
@@ -14,33 +10,40 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../ui/sheet";
-import { InputComment } from "./InputComment";
-import { OrderInfoCard, WaitingLabel } from "./OrderInfoCard";
+import { OrderInfoCard } from "./OrderInfoCard";
 
-type CardOptions = {
-  author: "cashier" | "master" | "serve"; // コメントの書き手
-  withGoods?: boolean; // カップを作らない商品（グッズなど）も出す
-  gray?: boolean; // カップを灰色にする。灰色でなければ過去の注文のカードの色の設定（cashier_order）で色を付ける
-  cancellable?: boolean; // 提供取消のボタンを出す
+type props = {
+  orders: WithId<OrderEntity>[] | undefined;
+  cardUser: "cashier" | "master" | "serve";
+  cardTiming: "present" | "past" | "all";
+  comment: (servedOrder: OrderEntity, descComment: string) => void;
 };
 
-type props = CardOptions & {
-  orders: WithId<OrderEntity>[] | undefined; // 出す注文。新しい順に並べる
-};
-
-const ITEMS_PER_PAGE = 20;
-
-export function PastOrderSideSheet({ orders, ...options }: props) {
+export function PastOrderSideSheet({
+  orders,
+  cardUser,
+  cardTiming,
+  comment,
+}: props) {
+  const ITEMS_PER_PAGE = 20;
   const [page, setPage] = useState(0);
-  const sortedOrders = useMemo(
-    () => (orders ?? []).slice().sort((a, b) => b.orderId - a.orderId),
+  const totalPages = Math.ceil((orders ? orders.length : 0) / ITEMS_PER_PAGE);
+
+  const servedOrders = useMemo(
+    () =>
+      orders
+        ? orders
+            .filter((order) => order.servedAt !== null)
+            .slice()
+            .sort((a, b) => b.orderId - a.orderId)
+        : [],
     [orders],
   );
-  const totalPages = Math.ceil(sortedOrders.length / ITEMS_PER_PAGE);
-  const currentPageOrders = sortedOrders.slice(
-    page * ITEMS_PER_PAGE,
-    (page + 1) * ITEMS_PER_PAGE,
-  );
+
+  const currentPageOrders =
+    cardTiming === "past"
+      ? servedOrders?.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
+      : orders?.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
 
   return (
     <Sheet>
@@ -59,9 +62,17 @@ export function PastOrderSideSheet({ orders, ...options }: props) {
         </SheetHeader>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
-          {currentPageOrders.map((order) => (
-            <PastOrderCard key={order.id} order={order} {...options} />
-          ))}
+          {currentPageOrders?.map((order) => {
+            return (
+              <OrderInfoCard
+                key={order.id}
+                order={order}
+                timing={cardTiming}
+                user={cardUser}
+                comment={comment}
+              />
+            );
+          })}
         </div>
 
         {/* ページネーション */}
@@ -96,40 +107,3 @@ export function PastOrderSideSheet({ orders, ...options }: props) {
     </Sheet>
   );
 }
-
-// 過去の注文のカード。押して状態を変えるカップは無い
-const PastOrderCard = ({
-  order,
-  author,
-  withGoods,
-  gray,
-  cancellable,
-}: CardOptions & { order: WithId<OrderEntity> }) => (
-  <OrderInfoCard
-    order={order}
-    timing="past"
-    cups={(withGoods ? order.getItems() : order.getCups()).map((cup) => ({
-      ...cup,
-      gray,
-    }))}
-    colorScreen={gray ? undefined : "cashier_order"}
-  >
-    <InputComment
-      order={order}
-      addComment={(order, text) =>
-        orderRepository.addComment(order.id, author, text)
-      }
-    />
-    <WaitingLabel order={order} />
-    {cancellable && (
-      <div className="mt-2 flex items-center justify-between">
-        <Button
-          onClick={() => orderRepository.serve(order.id)}
-          className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
-        >
-          提供取消
-        </Button>
-      </div>
-    )}
-  </OrderInfoCard>
-);

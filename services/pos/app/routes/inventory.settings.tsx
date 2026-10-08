@@ -47,6 +47,15 @@ const defaults: Record<StockResourceKind, Omit<StockResourceInput, "name">> = {
   },
 };
 
+// アイテムタイプからカップを推測する。一括設定の初期値にだけ使う。
+const guessCupName: Record<string, string> = {
+  hot: "ホット",
+  hotOre: "ホット",
+  ice: "アイス",
+  milk: "アイス",
+  iceOre: "オレ",
+};
+
 export default function InventorySettingsPage() {
   const { statuses, mutateInventory } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
@@ -245,7 +254,7 @@ const usageKey = (itemId: string, resourceId: string) =>
 
 function UsagesSection({ resources }: { resources: StockResource[] }) {
   const { items } = useItemMaster();
-  const { usages, isLoading: usagesLoading, mutateUsages } = useStockUsages();
+  const { usages, mutateUsages } = useStockUsages();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -295,29 +304,23 @@ function UsagesSection({ resources }: { resources: StockResource[] }) {
     return [...seen.values()];
   }, [sortedItems]);
 
-  // アイテムタイプ → カップ の一括設定。
-  // 初期値は、その種別のアイテムに今設定してあるカップ（無ければ「カップなし」）
+  // アイテムタイプ → カップ の一括設定
   const [cupByType, setCupByType] = useState<Record<string, string>>({});
   useEffect(() => {
-    // カップと使用量を読み込む前に決めると全部「なし」で確定してしまう
-    if (cups.length === 0 || usagesLoading) return;
+    // カップを読み込む前に推測すると全部「なし」で確定してしまう
+    if (cups.length === 0) return;
     setCupByType((prev) => {
       const missing = itemTypes.filter((t) => prev[t.name] === undefined);
       if (missing.length === 0) return prev;
       const next = { ...prev };
       for (const t of missing) {
-        const used = usages.find(
-          (u) =>
-            cups.some((c) => c.id === u.resource_id) &&
-            sortedItems.some(
-              (item) => item.id === u.item_id && item.item_type.name === t.name,
-            ),
-        );
-        next[t.name] = used?.resource_id ?? "";
+        const hint = guessCupName[t.name];
+        next[t.name] =
+          (hint && cups.find((c) => c.name.includes(hint))?.id) || "";
       }
       return next;
     });
-  }, [itemTypes, cups, usages, usagesLoading, sortedItems]);
+  }, [itemTypes, cups]);
 
   const applyCups = () => {
     setDraft((prev) => {

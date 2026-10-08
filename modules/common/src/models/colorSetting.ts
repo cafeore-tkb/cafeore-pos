@@ -1,18 +1,7 @@
 import { z } from "zod";
 
 export const colorTargetTypes = ["Item", "ItemType"] as const;
-/**
- * 色の設定を使う画面
- * - cashier: レジのメニューのボタン
- * - cashier_order: レジの過去の注文のカード
- * - master・serve: マスター・提供画面のカップ
- */
-export const colorScreens = [
-  "cashier",
-  "cashier_order",
-  "master",
-  "serve",
-] as const;
+export const colorScreens = ["cashier", "master", "serve"] as const;
 
 export const colorSettingSchema = z.object({
   id: z.string().uuid().optional(),
@@ -47,7 +36,7 @@ export const findColorSetting = <T extends ColorSetting>(
 /**
  * アイテムの背景色を設定から引く
  * item の設定 > item_type の設定の順で探し、どちらも無ければ undefined を返す。
- * undefined のときは色を付けない（商品の種類や名前で既定の色を決め打ちしない）。
+ * undefined のときは呼び出し側の既定の色を使う。
  */
 export const resolveItemColor = (
   settings: ColorSetting[],
