@@ -90,6 +90,7 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	r.PATCH("/api/orders/:id/cups/:cupId/ready", orders.MarkOrderCupReady)
 	r.DELETE("/api/orders/:id", orders.DeleteOrder)
 	r.POST("/api/caos/ops", c.ApplyOp)
+	r.GET("/api/caos/brew-stats", c.BrewStats)
 	p := NewCaosPracticeHandler(NewCaosPracticeStore(db))
 	r.POST("/api/caos/practice", p.Create)
 	r.GET("/api/caos/practice/:id", p.Get)

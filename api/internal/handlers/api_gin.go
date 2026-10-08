@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+	// (GET /api/caos/brew-stats)
+	GetCaosBrewStats(c *gin.Context)
 	// CaOS の今日の盤面への操作
 	// (POST /api/caos/ops)
 	ApplyCaosOp(c *gin.Context)
@@ -168,6 +171,19 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetCaosBrewStats operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosBrewStats(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosBrewStats(c)
+}
 
 // ApplyCaosOp operation middleware
 func (siw *ServerInterfaceWrapper) ApplyCaosOp(c *gin.Context) {
@@ -1124,6 +1140,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/api/caos/brew-stats", wrapper.GetCaosBrewStats)
 	router.POST(options.BaseURL+"/api/caos/ops", wrapper.ApplyCaosOp)
 	router.POST(options.BaseURL+"/api/caos/practice", wrapper.CreateCaosPractice)
 	router.DELETE(options.BaseURL+"/api/caos/practice/:id", wrapper.DeleteCaosPractice)

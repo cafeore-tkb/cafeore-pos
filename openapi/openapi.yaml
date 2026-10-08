@@ -644,6 +644,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaosErrorResponse'
+  /api/caos/brew-stats:
+    get:
+      summary: CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+      description: |
+        抽出が終わったカード（caos_drips の status が done で、started_at と finished_at があるもの）の抽出時間（finished_at - started_at）を集計する。読み取りだけ。
+        係数は 1 件ごとの「実際の抽出時間 ÷ 標準の抽出時間（1 杯 135 秒・2 杯 195 秒。画面の caosTiming.ts と同じ）」の平均（1 より大きいほど遅い）。
+        抽出時間のまとめ（by_dripper・by_slot・by_person）からは入れ直しと中断を除き、rebrews に別に数える。
+        担当者は、抽出を始めたときにその列にいた人（caos_ops の列の担当者の交代の記録から出す。「1つ戻す」で戻した交代は戻した時刻に戻る）。
+        抽出の途中で担当者が替わったカードと、担当者がいなかったカードは person_skipped に数える。
+        クエリの day（営業日。日本時間の YYYY-MM-DD）でその日だけにする。省くと全部の日（担当者ごとのまとめは日をまたいで合わせる）。
+        （クエリをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+      operationId: getCaosBrewStats
+      tags: [caos]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosBrewStats'
+        '400':
+          description: day が YYYY-MM-DD でない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/caos/practice:
     post:
       summary: CaOS の練習用の盤面を作る（実データテスト）
@@ -1777,6 +1803,144 @@ components:
           type: string
           enum: [invalid]
           x-enum-varnames: [CaosErrorCodeInvalid]
+    CaosBrewSummary:
+      type: object
+      description: 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める
+      required: [brews, avg_sec, median_sec, stddev_sec, coefficient]
+      properties:
+        brews:
+          type: integer
+          description: 件数
+        avg_sec:
+          type: number
+          description: 抽出時間の平均（秒）
+        median_sec:
+          type: number
+          description: 抽出時間の中央値（秒）
+        stddev_sec:
+          type: number
+          description: 抽出時間の標準偏差（秒。標本。1 件なら 0）
+        coefficient:
+          type: number
+          description: 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
+    CaosDripperBrewStat:
+      description: 日・ドリッパー（列の番号）・杯数ごとのまとめ
+      allOf:
+        - type: object
+          required: [day, dripper, cups]
+          properties:
+            day:
+              type: string
+              format: date
+            dripper:
+              type: integer
+              minimum: 1
+              maximum: 6
+            cups:
+              type: integer
+              minimum: 1
+              maximum: 2
+        - $ref: '#/components/schemas/CaosBrewSummary'
+    CaosSlotBrewStat:
+      description: 日・時間帯（日本時間の 30 分ごと。抽出を始めた時刻で分ける）・杯数ごとのまとめ（全部のドリッパーを合わせる）
+      allOf:
+        - type: object
+          required: [day, slot, cups]
+          properties:
+            day:
+              type: string
+              format: date
+            slot:
+              type: string
+              description: 枠の始まり（日本時間の HH:MM）
+              example: "10:30"
+            cups:
+              type: integer
+              minimum: 1
+              maximum: 2
+        - $ref: '#/components/schemas/CaosBrewSummary'
+    CaosPersonBrewStat:
+      description: 担当者・杯数ごとのまとめ（集計した全部の日を合わせる）
+      allOf:
+        - type: object
+          required: [name, cups]
+          properties:
+            name:
+              type: string
+              description: 抽出を始めたときに、その列にいた担当者の名前
+            cups:
+              type: integer
+              minimum: 1
+              maximum: 2
+        - $ref: '#/components/schemas/CaosBrewSummary'
+    CaosRebrewStat:
+      type: object
+      description: 日・ドリッパーごとの、入れ直しと中断の数
+      required: [day, dripper, rebrews, interrupted, extra_cups]
+      properties:
+        day:
+          type: string
+          format: date
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+          description: 入れ直しは元のカードを淹れたドリッパー、中断はそのカードのドリッパー。元のカードが終わっていない・見つからないときは null
+        rebrews:
+          type: integer
+          description: 抽出が終わった入れ直しのカードの数
+        interrupted:
+          type: integer
+          description: 途中でやめた抽出の数
+        extra_cups:
+          type: integer
+          description: 入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計）
+    CaosBrewStats:
+      type: object
+      required: [standard, brews, by_dripper, by_slot, by_person, person_skipped, rebrews]
+      properties:
+        standard:
+          type: object
+          description: 係数の分母にした標準の抽出時間（秒）
+          required: [one_cup_sec, two_cup_sec]
+          properties:
+            one_cup_sec:
+              type: integer
+              example: 135
+            two_cup_sec:
+              type: integer
+              example: 195
+        brews:
+          type: integer
+          description: 抽出時間のまとめに入れたカードの数（抽出が終わったカードから、入れ直しと中断を除いたもの）
+        by_dripper:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosDripperBrewStat'
+        by_slot:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosSlotBrewStat'
+        by_person:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosPersonBrewStat'
+        person_skipped:
+          type: object
+          description: 担当者ごとのまとめに入れなかったカードの数
+          required: [no_person, handover]
+          properties:
+            no_person:
+              type: integer
+              description: 抽出を始めたとき、その列に担当者がいなかった
+            handover:
+              type: integer
+              description: 抽出の途中で、その列の担当者が替わった
+        rebrews:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosRebrewStat'
     CaosPracticeLineInput:
       type: object
       description: 練習に送る注文の明細の 1 行（同じ商品が何杯か）

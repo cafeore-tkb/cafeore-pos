@@ -304,6 +304,7 @@ func main() {
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 
 		api.POST("/caos/ops", caosHandler.ApplyOp)
+		api.GET("/caos/brew-stats", caosHandler.BrewStats)
 		api.POST("/caos/practice", caosPracticeHandler.Create)
 		api.GET("/caos/practice/:id", caosPracticeHandler.Get)
 		api.POST("/caos/practice/:id/advance", caosPracticeHandler.Advance)

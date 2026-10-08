@@ -125,6 +125,19 @@ export interface paths {
      */
     post: operations["applyCaosOp"];
   };
+  "/api/caos/brew-stats": {
+    /**
+     * CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+     * @description 抽出が終わったカード（caos_drips の status が done で、started_at と finished_at があるもの）の抽出時間（finished_at - started_at）を集計する。読み取りだけ。
+     * 係数は 1 件ごとの「実際の抽出時間 ÷ 標準の抽出時間（1 杯 135 秒・2 杯 195 秒。画面の caosTiming.ts と同じ）」の平均（1 より大きいほど遅い）。
+     * 抽出時間のまとめ（by_dripper・by_slot・by_person）からは入れ直しと中断を除き、rebrews に別に数える。
+     * 担当者は、抽出を始めたときにその列にいた人（caos_ops の列の担当者の交代の記録から出す。「1つ戻す」で戻した交代は戻した時刻に戻る）。
+     * 抽出の途中で担当者が替わったカードと、担当者がいなかったカードは person_skipped に数える。
+     * クエリの day（営業日。日本時間の YYYY-MM-DD）でその日だけにする。省くと全部の日（担当者ごとのまとめは日をまたいで合わせる）。
+     * （クエリをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     */
+    get: operations["getCaosBrewStats"];
+  };
   "/api/caos/practice": {
     /**
      * CaOS の練習用の盤面を作る（実データテスト）
@@ -603,6 +616,78 @@ export interface components {
       error: string;
       /** @enum {string} */
       code?: "invalid";
+    };
+    /** @description 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める */
+    CaosBrewSummary: {
+      /** @description 件数 */
+      brews: number;
+      /** @description 抽出時間の平均（秒） */
+      avg_sec: number;
+      /** @description 抽出時間の中央値（秒） */
+      median_sec: number;
+      /** @description 抽出時間の標準偏差（秒。標本。1 件なら 0） */
+      stddev_sec: number;
+      /** @description 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い */
+      coefficient: number;
+    };
+    /** @description 日・ドリッパー（列の番号）・杯数ごとのまとめ */
+    CaosDripperBrewStat: {
+      /** Format: date */
+      day: string;
+      dripper: number;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 日・時間帯（日本時間の 30 分ごと。抽出を始めた時刻で分ける）・杯数ごとのまとめ（全部のドリッパーを合わせる） */
+    CaosSlotBrewStat: {
+      /** Format: date */
+      day: string;
+      /**
+       * @description 枠の始まり（日本時間の HH:MM）
+       * @example 10:30
+       */
+      slot: string;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 担当者・杯数ごとのまとめ（集計した全部の日を合わせる） */
+    CaosPersonBrewStat: {
+      /** @description 抽出を始めたときに、その列にいた担当者の名前 */
+      name: string;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 日・ドリッパーごとの、入れ直しと中断の数 */
+    CaosRebrewStat: {
+      /** Format: date */
+      day: string;
+      /** @description 入れ直しは元のカードを淹れたドリッパー、中断はそのカードのドリッパー。元のカードが終わっていない・見つからないときは null */
+      dripper: number | null;
+      /** @description 抽出が終わった入れ直しのカードの数 */
+      rebrews: number;
+      /** @description 途中でやめた抽出の数 */
+      interrupted: number;
+      /** @description 入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計） */
+      extra_cups: number;
+    };
+    CaosBrewStats: {
+      /** @description 係数の分母にした標準の抽出時間（秒） */
+      standard: {
+        /** @example 135 */
+        one_cup_sec: number;
+        /** @example 195 */
+        two_cup_sec: number;
+      };
+      /** @description 抽出時間のまとめに入れたカードの数（抽出が終わったカードから、入れ直しと中断を除いたもの） */
+      brews: number;
+      by_dripper: components["schemas"]["CaosDripperBrewStat"][];
+      by_slot: components["schemas"]["CaosSlotBrewStat"][];
+      by_person: components["schemas"]["CaosPersonBrewStat"][];
+      /** @description 担当者ごとのまとめに入れなかったカードの数 */
+      person_skipped: {
+        /** @description 抽出を始めたとき、その列に担当者がいなかった */
+        no_person: number;
+        /** @description 抽出の途中で、その列の担当者が替わった */
+        handover: number;
+      };
+      rebrews: components["schemas"]["CaosRebrewStat"][];
     };
     /** @description 練習に送る注文の明細の 1 行（同じ商品が何杯か） */
     CaosPracticeLineInput: {
@@ -1463,6 +1548,32 @@ export interface operations {
       422: {
         content: {
           "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+   * @description 抽出が終わったカード（caos_drips の status が done で、started_at と finished_at があるもの）の抽出時間（finished_at - started_at）を集計する。読み取りだけ。
+   * 係数は 1 件ごとの「実際の抽出時間 ÷ 標準の抽出時間（1 杯 135 秒・2 杯 195 秒。画面の caosTiming.ts と同じ）」の平均（1 より大きいほど遅い）。
+   * 抽出時間のまとめ（by_dripper・by_slot・by_person）からは入れ直しと中断を除き、rebrews に別に数える。
+   * 担当者は、抽出を始めたときにその列にいた人（caos_ops の列の担当者の交代の記録から出す。「1つ戻す」で戻した交代は戻した時刻に戻る）。
+   * 抽出の途中で担当者が替わったカードと、担当者がいなかったカードは person_skipped に数える。
+   * クエリの day（営業日。日本時間の YYYY-MM-DD）でその日だけにする。省くと全部の日（担当者ごとのまとめは日をまたいで合わせる）。
+   * （クエリをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   */
+  getCaosBrewStats: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewStats"];
+        };
+      };
+      /** @description day が YYYY-MM-DD でない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
