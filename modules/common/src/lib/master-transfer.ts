@@ -401,6 +401,13 @@ const describeError = (error: ErrorObject, value: unknown): string => {
   }
 };
 
+// エラーの出た列。足りない列は instancePath に出ないので params から取る
+const propertyOf = (error: ErrorObject, path: string[]): string | null =>
+  path[0] ??
+  (error.keyword === "required"
+    ? String((error.params as { missingProperty: string }).missingProperty)
+    : null);
+
 /**
  * 読み込んだ行を、既存の API の呼び出しの列にする。
  * 作成だけを行い、名前（メニューはキー）が既にあればエラーにする。背景色は既存の対象にも付けられる。
@@ -718,13 +725,7 @@ export const planMasterImport = (
         if (validate(usage) || !row) continue;
         for (const error of validate.errors ?? []) {
           const path = error.instancePath.split("/").slice(1);
-          const property =
-            path[0] ??
-            (error.keyword === "required"
-              ? String(
-                  (error.params as { missingProperty: string }).missingProperty,
-                )
-              : null);
+          const property = propertyOf(error, path);
           report(
             row,
             property && (REF_COLUMNS[property] ?? property),
@@ -749,13 +750,7 @@ export const planMasterImport = (
         row = source.items[Number(path[1])] ?? row;
         rest = path.slice(2);
       }
-      const property =
-        rest[0] ??
-        (error.keyword === "required"
-          ? String(
-              (error.params as { missingProperty: string }).missingProperty,
-            )
-          : null);
+      const property = propertyOf(error, rest);
       const column =
         call.table === "menus" && property === "items" && rest.length <= 1
           ? "menu_items"

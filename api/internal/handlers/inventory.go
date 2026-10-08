@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/models"
@@ -596,10 +597,7 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 	go h.inv.CheckAlerts(nil)
 }
 
-var (
-	errUsageItemNotFound     = errors.New("item not found")
-	errUsageResourceNotFound = errors.New("resource not found")
-)
+var errUsageResourceNotFound = errors.New("resource not found")
 
 // PUT /api/inventory/usages/:id - 1つのアイテムの使用量を置き換える
 // ほかのアイテムの行には触らないので、商品管理で別々のアイテムを同時に直しても上書きしない。
@@ -621,12 +619,10 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 	}
 
 	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
-		var items int64
-		if err := tx.Model(&models.Item{}).Where("id = ?", itemID).Count(&items).Error; err != nil {
+		// 同じアイテムの置き換えやアイテムの削除と重ならないよう、アイテムの行を押さえる
+		var item models.Item
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&item, "id = ?", itemID).Error; err != nil {
 			return err
-		}
-		if items == 0 {
-			return errUsageItemNotFound
 		}
 		if len(resourceIDs) > 0 {
 			var resources int64
@@ -646,7 +642,7 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return tx.Create(&usages).Error
 	})
 	switch {
-	case errors.Is(err, errUsageItemNotFound):
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		// 応答の文言はほかのアイテムの 404 とそろえる
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return

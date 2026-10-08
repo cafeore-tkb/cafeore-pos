@@ -172,14 +172,15 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	}
 
 	// 消したアイテムの使用量が残ると、在庫の設定で見えないまま残るので一緒に消す。
+	// 先にアイテムを消して行を押さえ、同時の使用量の置き換え（ReplaceItemStockUsages）と重ならないようにする
 	var affected int64
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error; err != nil {
-			return err
-		}
 		result := tx.Delete(&models.Item{}, "id = ?", itemID)
+		if result.Error != nil {
+			return result.Error
+		}
 		affected = result.RowsAffected
-		return result.Error
+		return tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

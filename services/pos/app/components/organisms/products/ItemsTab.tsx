@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { sortResources, usagesByItem } from "~/lib/stock";
+import { sortResources, usageDrafts } from "~/lib/stock";
 import { RowActions, type RowHandlers } from "./RowActions";
 import type { Usage } from "./usage";
 
@@ -31,15 +31,14 @@ export function ItemsTab({
 }) {
   // 「ホットカップ 1・ケニア豆 15g」のように並べる
   const stockOf = useMemo(() => {
-    const byItem = usagesByItem(stockUsages);
+    const drafts = usageDrafts(stockUsages);
     const sorted = sortResources(resources);
     return (itemId: string) => {
-      const amounts = byItem.get(itemId);
+      const amounts = drafts[itemId] ?? {};
       return sorted
-        .filter((r) => amounts?.has(r.id))
+        .filter((r) => amounts[r.id] !== undefined)
         .map(
-          (r) =>
-            `${r.name} ${amounts?.get(r.id)}${r.kind === "bean" ? r.unit : ""}`,
+          (r) => `${r.name} ${amounts[r.id]}${r.kind === "bean" ? r.unit : ""}`,
         )
         .join("・");
     };

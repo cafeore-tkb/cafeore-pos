@@ -1,5 +1,5 @@
 import type { ItemEntity, ItemType, StockResource } from "@cafeore/common";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { Button } from "~/components/ui/button";
@@ -35,7 +35,7 @@ type Props = {
   /** 渡さなければ新規として、タイプからカップを入れる */
   initialUsages?: Record<string, string>;
   /** タイプの ID → そのタイプのアイテムに入っているカップの ID。新規の初期値に使う */
-  cupByType?: Map<string, string>;
+  cupByType: Map<string, string>;
   onSubmit: (
     values: ItemFormValues,
     menu: SameNameMenu | null,
@@ -66,7 +66,7 @@ export function ItemForm({
 
   // 新規は同じタイプのアイテムに入っているカップを入れる。使用量を触るまではタイプに合わせて入れ直す
   const guessUsages = (itemTypeId: string): Record<string, string> => {
-    const cupId = cupByType?.get(itemTypeId);
+    const cupId = cupByType.get(itemTypeId);
     return cupId ? { [cupId]: "1" } : {};
   };
   const [usagesTouched, setUsagesTouched] = useState(initialUsages != null);
@@ -86,14 +86,6 @@ export function ItemForm({
   const [menuError, setMenuError] = useState<string | null>(null);
   const menuKeyTaken =
     menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
-
-  // 在庫対象や使用量があとから読み込まれたときも、触る前なら入れ直す
-  const cupByTypeKey = JSON.stringify([...(cupByType ?? [])]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: タイプとカップの組が変わったときだけ
-  useEffect(() => {
-    if (usagesTouched) return;
-    setValues((prev) => ({ ...prev, usages: guessUsages(prev.itemTypeId) }));
-  }, [cupByTypeKey]);
 
   const updateField = (
     key: Exclude<keyof ItemFormValues, "usages">,

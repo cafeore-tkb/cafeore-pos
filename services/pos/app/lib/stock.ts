@@ -1,31 +1,4 @@
-import type {
-  StockResource,
-  StockResourceInput,
-  StockResourceKind,
-  StockUsage,
-} from "@cafeore/common";
-
-export const stockResourceDefaults: Record<
-  StockResourceKind,
-  Omit<StockResourceInput, "name">
-> = {
-  cup: {
-    kind: "cup",
-    unit: "個",
-    per_serving: 1,
-    notify_from: 500,
-    notify_step: 100,
-    buffer: 100,
-  },
-  bean: {
-    kind: "bean",
-    unit: "g",
-    per_serving: 15,
-    notify_from: 100,
-    notify_step: 20,
-    buffer: 30,
-  },
-};
+import type { StockResource, StockUsage } from "@cafeore/common";
 
 /**
  * タイプ（ID）ごとに、そのタイプのアイテムにいちばん多く入っているカップ（ID）。
@@ -35,8 +8,9 @@ export const stockResourceDefaults: Record<
 export const cupByItemType = (
   items: { id?: string; item_type: { id?: string } }[],
   usages: { item_id: string; resource_id: string }[],
-  cups: StockResource[],
+  resources: StockResource[],
 ): Map<string, string> => {
+  const cups = resources.filter((r) => r.kind === "cup");
   const typeOf = new Map(items.map((item) => [item.id, item.item_type.id]));
   const counts = new Map<string, Map<string, number>>();
   for (const { item_id, resource_id } of usages) {
@@ -62,15 +36,13 @@ export const sortResources = (resources: StockResource[]) => [
   ...resources.filter((r) => r.kind === "bean"),
 ];
 
-/** アイテムごとの使用量（在庫対象の ID → 量） */
-export const usagesByItem = (usages: StockUsage[]) => {
-  const byItem = new Map<string, Map<string, number>>();
+/** アイテムの ID → 在庫対象の ID → 量（入力の形） */
+export const usageDrafts = (usages: StockUsage[]) => {
+  const drafts: Record<string, Record<string, string>> = {};
   for (const { item_id, resource_id, amount } of usages) {
-    const amounts = byItem.get(item_id) ?? new Map<string, number>();
-    amounts.set(resource_id, amount);
-    byItem.set(item_id, amounts);
+    drafts[item_id] = { ...drafts[item_id], [resource_id]: String(amount) };
   }
-  return byItem;
+  return drafts;
 };
 
 /** 入力中の量（在庫対象の ID → 文字列）を API の形にする。空欄と 0 以下は使わない扱い */
