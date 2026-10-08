@@ -3,7 +3,6 @@ import dayjs from "dayjs";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import {
-  type Board,
   advanceBay,
   assignCard,
   mergeUnassigned,
@@ -21,7 +20,7 @@ import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
 import { usePracticeData } from "./usePracticeData";
-import { type TestPlaySession, useTestPlay } from "./useTestPlay";
+import { useTestPlay } from "./useTestPlay";
 
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
@@ -32,26 +31,18 @@ const SIM_SPEEDS = [1, 2, 5, 10];
 // CaOS の盤面・時刻・注文の取り込み・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
 // 普段は cafeore-pos と同じ DB の注文で動かす。実データテスト中（終了後の実績表示も含め、リセットするまで）は
 // DB からの取り込みを止め、テストの注文だけで盤面を動かす。
-export const useCaosSession = (initial?: {
-  board: Board;
-  testPlaySession: TestPlaySession | null;
-}) => {
+export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
-  const state = useBoardState({
-    initial: initial?.board,
-    isRunning,
-    simSpeed,
-  });
+  const state = useBoardState({ isRunning, simSpeed });
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
   // （ブラウザの中で名前とコメントを落とす。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
   const practiceData = usePracticeData();
   const test = useTestPlay({
     historicalOrders: practiceData.dataset?.orders ?? NO_ORDERS,
-    initial: initial?.testPlaySession ?? null,
     isRunning,
     simSpeed,
     receive: state.receive,

@@ -16,20 +16,18 @@ export interface TestPlaySession {
 // 終わりの時刻に着いたら onTimeUp（タイマーを止める）。historicalOrders は読み込んだ実データの注文（usePracticeData）。
 export const useTestPlay = ({
   historicalOrders,
-  initial,
   isRunning,
   simSpeed,
   receive,
   onTimeUp,
 }: {
   historicalOrders: PracticeDataOrder[];
-  initial: TestPlaySession | null;
   isRunning: boolean;
   simSpeed: number;
   receive: (incoming: DripCard[]) => void;
   onTimeUp: () => void;
 }) => {
-  const [session, setSession] = useState<TestPlaySession | null>(initial);
+  const [session, setSession] = useState<TestPlaySession | null>(null);
   const cursor = useRef(0);
   const status = session?.status;
   const currentMs = session?.currentMs;

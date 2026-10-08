@@ -12,15 +12,13 @@ import { tickBrewing } from "../logic/queue";
 // 盤面は ref でも持ち、どの変更も ref の最新の盤面から次の盤面を作る（同じ描画のうちに操作が 2 つ来ても、
 // 2 つ目は 1 つ目のあとの盤面に当たり、できたかどうか（音を鳴らすか）もその盤面で決まる）。
 export const useBoardState = ({
-  initial,
   isRunning,
   simSpeed,
 }: {
-  initial?: Board;
   isRunning: boolean;
   simSpeed: number;
 }) => {
-  const [board, setBoard] = useState<Board>(() => initial ?? emptyBoard());
+  const [board, setBoard] = useState<Board>(emptyBoard);
   const boardRef = useRef(board);
   const commit = useCallback((next: Board) => {
     boardRef.current = next;
