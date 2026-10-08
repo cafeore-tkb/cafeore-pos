@@ -2,6 +2,7 @@ import {
   type ColorScreen,
   type OrderEntity,
   type WithId,
+  orderElapsedTime,
   readableTextColor,
   resolveItemColor,
   useColorSettings,
@@ -192,19 +193,17 @@ const CupButton = ({
     <div>{children}</div>
   );
 
-// 受け付けてから提供まで（まだなら今まで）の時間。15分を超えたら赤くする
+// 受け付けてから提供まで（まだなら今まで）の時間。15分以上で赤くする
 const ServedTime = ({ order }: { order: OrderEntity }) => {
-  const elapsed = dayjs(
-    dayjs(order.servedAt ?? undefined).diff(order.createdAt),
-  );
+  const { m, ss, overdue } = orderElapsedTime(order);
   return (
     <div
       className={cn(
         "rounded-md px-2",
-        elapsed.minute() >= 15 ? "bg-red-500 text-white" : "bg-slate-100",
+        overdue ? "bg-red-500 text-white" : "bg-slate-100",
       )}
     >
-      <div>{order.servedAt == null ? "未提供" : elapsed.format("m分ss秒")}</div>
+      <div>{order.servedAt == null ? "未提供" : `${m}分${ss}秒`}</div>
     </div>
   );
 };
