@@ -113,8 +113,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
   };
 
   // アイテムの背景色は、その画面の色の設定（アイテム → 種別の順）から引く。設定の無いアイテムは色を付けない。
-  // ダッシュボードは別に直すので、ここでは色の設定を使わない
-  const colorScreen = user === "dashboard" ? null : cardColorScreens[user];
+  const colorScreen = cardColorScreens[user];
   const { colorSettings } = useColorSettings(colorScreen !== null);
 
   // マスター画面では準備完了・呼び出し中、提供画面では提供済みのカップをグレーのままにする。
@@ -215,10 +214,6 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                       servable &&
                         "shadow-md ring-4 ring-green-500 ring-offset-2",
                       served && "opacity-50",
-                      // ダッシュボードはこの PR では変えない（別に直す）
-                      user === "dashboard" &&
-                        item.item_type.name === "milk" &&
-                        "bg-gray-300",
                     )}
                     style={itemStyle(item)}
                   >
@@ -343,14 +338,12 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
   );
 }
 
-// 注文カードを出す画面ごとの色の設定の画面
-const cardColorScreens: Record<
-  Exclude<props["user"], "dashboard">,
-  ColorScreen
-> = {
+// 注文カードを出す画面ごとの色の設定の画面（ダッシュボードには色の設定が無い）
+const cardColorScreens: Record<props["user"], ColorScreen | null> = {
   cashier: "cashier_order",
   master: "master",
   serve: "serve",
+  dashboard: null,
 };
 
 // 押して状態を切り替えられるカップだけボタンにする。
