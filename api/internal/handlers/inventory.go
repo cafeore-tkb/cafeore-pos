@@ -443,16 +443,14 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		return
 	}
 
-	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	// 消した行は通知に名前を出すために RETURNING で受け取る
 	var deleted models.StockResource
-	_ = h.inv.db.First(&deleted, "id = ?", id).Error
-
 	var affected int64
 	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_id = ?", id).Delete(&models.ItemStockUsage{}).Error; err != nil {
 			return err
 		}
-		res := tx.Delete(&models.StockResource{}, "id = ?", id)
+		res := tx.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", id)
 		affected = res.RowsAffected
 		return res.Error
 	})
@@ -465,9 +463,7 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-	if deleted.ID != uuid.Nil {
-		h.inv.activity.Post(stockResourceDeletedMessage(&deleted))
-	}
+	h.inv.activity.Post(stockResourceDeletedMessage(&deleted))
 }
 
 // POST /api/inventory/resources/:id/events - 棚卸し・入荷・調整の記録

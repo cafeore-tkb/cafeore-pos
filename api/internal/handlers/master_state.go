@@ -25,7 +25,7 @@ func NewMasterStateHandler(db *gorm.DB, hub *Hub, activity *notify.Activity) *Ma
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
 	return models.MasterStateResponse{
 		CreatedAt: masterState.CreatedAt,
-		Type:    masterState.Type,
+		Type:      masterState.Type,
 	}
 }
 

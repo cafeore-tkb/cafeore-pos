@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
@@ -178,15 +179,13 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		return
 	}
 
-	// 通知に名前を出すために先に読む。読めなくても削除は進める
-	var deleted models.Item
-	_ = h.db.First(&deleted, "id = ?", itemID).Error
-
 	// 消したアイテムの使用量が残ると、在庫の設定で見えないまま残るので一緒に消す。
 	// 先にアイテムを消して行を押さえ、同時の使用量の置き換え（ReplaceItemStockUsages）と重ならないようにする
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.Item
 	var affected int64
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&models.Item{}, "id = ?", itemID)
+		result := tx.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", itemID)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -204,7 +203,5 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
-	if deleted.ID != uuid.Nil {
-		h.activity.Post(itemDeletedMessage(&deleted))
-	}
+	h.activity.Post(itemDeletedMessage(&deleted))
 }

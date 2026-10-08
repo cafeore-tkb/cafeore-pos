@@ -25,9 +25,9 @@ func NewSlack(url string) *Slack {
 
 var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
-// EscapeText は Slack の文中で特別な意味を持つ & < > を逃がす
+// Slack の文中で特別な意味を持つ & < > を逃がす
 // （<!channel> や <@U…> がメンション、<url|text> がリンクになるのを防ぐ）。
-func EscapeText(text string) string {
+func escapeText(text string) string {
 	return slackEscaper.Replace(text)
 }
 

@@ -177,11 +177,9 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 		return
 	}
 
-	// 通知に対象を出すために先に読む。読めなくても削除は進める
+	// 消した行は通知に対象を出すために RETURNING で受け取る
 	var deleted models.ColorSetting
-	_ = h.db.First(&deleted, "id = ?", settingID).Error
-
-	result := h.db.Delete(&models.ColorSetting{}, "id = ?", settingID)
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", settingID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -191,7 +189,5 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-	if deleted.ID != uuid.Nil {
-		h.activity.Post(colorSettingDeletedMessage(h.targetName(&deleted), &deleted))
-	}
+	h.activity.Post(colorSettingDeletedMessage(h.targetName(&deleted), &deleted))
 }

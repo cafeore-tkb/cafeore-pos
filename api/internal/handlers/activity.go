@@ -223,19 +223,17 @@ func signed(v float64) string {
 // remaining は記録したあとの残量（推定）。分からなければ nil
 func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated, remaining *float64) string {
 	var text string
-	switch e.Kind {
-	case string(models.StockEventKindCount):
+	if e.Kind == string(models.StockEventKindCount) {
 		text = fmt.Sprintf("📝 %s %s%s", r.Name, formatNumber(e.Quantity), r.Unit)
 		if estimated != nil {
 			text += fmt.Sprintf("（推定 %s%s、差 %s%s）", formatNumber(*estimated), r.Unit, signed(e.Quantity-*estimated), r.Unit)
 		}
-	case string(models.StockEventKindReceipt):
+	} else {
+		// 入荷・調整は差分なので、記録したあとの残りを添える
 		text = fmt.Sprintf("📝 %s %s%s", r.Name, signed(e.Quantity), r.Unit)
-	default:
-		text = fmt.Sprintf("📝 %s %s%s", r.Name, signed(e.Quantity), r.Unit)
-	}
-	if e.Kind != string(models.StockEventKindCount) && remaining != nil {
-		text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
+		if remaining != nil {
+			text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
+		}
 	}
 	if e.Note != "" {
 		text += fmt.Sprintf("「%s」", e.Note)

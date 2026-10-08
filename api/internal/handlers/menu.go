@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
@@ -195,11 +196,9 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 
-	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	// 消した行は通知に名前を出すために RETURNING で受け取る
 	var deleted models.Menu
-	_ = h.db.First(&deleted, "id = ?", menuID).Error
-
-	result := h.db.Delete(&models.Menu{}, "id = ?", menuID)
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", menuID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -209,7 +208,5 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-	if deleted.ID != uuid.Nil {
-		h.activity.Post(menuDeletedMessage(&deleted))
-	}
+	h.activity.Post(menuDeletedMessage(&deleted))
 }

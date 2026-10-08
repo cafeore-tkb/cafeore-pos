@@ -44,7 +44,7 @@ func (a *Activity) Post(text string) {
 	if a == nil || text == "" {
 		return
 	}
-	text = EscapeText(text)
+	text = escapeText(text)
 	select {
 	case a.lines <- text:
 	default:

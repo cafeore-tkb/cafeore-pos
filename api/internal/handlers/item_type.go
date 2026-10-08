@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ItemTypeHandler struct {
@@ -73,7 +74,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 // GET /api/item-types/:id - idからアイテムタイプ取得
 func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -96,7 +97,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 // PUT /api/item-types/:id - アイテムタイプ更新
 func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -144,18 +145,16 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 // DELETE /api/item-types/:id - アイテムタイプ削除
 func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
-	// 通知に名前を出すために先に読む。読めなくても削除は進める
+	// 消した行は通知に名前を出すために RETURNING で受け取る
 	var deleted models.ItemType
-	_ = h.db.First(&deleted, "id = ?", itemTypeID).Error
-
-	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", itemTypeID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -167,7 +166,5 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
-	if deleted.ID != uuid.Nil {
-		h.activity.Post(itemTypeDeletedMessage(&deleted))
-	}
+	h.activity.Post(itemTypeDeletedMessage(&deleted))
 }
