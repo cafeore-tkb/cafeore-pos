@@ -1073,6 +1073,209 @@
       }
     }
   },
+  "CaosBrewSummary": {
+    "type": "object",
+    "description": "抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める",
+    "required": ["brews", "avg_sec", "median_sec", "stddev_sec", "coefficient"],
+    "properties": {
+      "brews": {
+        "type": "integer",
+        "description": "件数"
+      },
+      "avg_sec": {
+        "type": "number",
+        "description": "抽出時間の平均（秒）"
+      },
+      "median_sec": {
+        "type": "number",
+        "description": "抽出時間の中央値（秒）"
+      },
+      "stddev_sec": {
+        "type": "number",
+        "description": "抽出時間の標準偏差（秒。標本。1 件なら 0）"
+      },
+      "coefficient": {
+        "type": "number",
+        "description": "係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い"
+      }
+    }
+  },
+  "CaosDripperBrewStat": {
+    "description": "日・ドリッパー・杯数ごとのまとめ",
+    "allOf": [
+      {
+        "type": "object",
+        "required": ["day", "dripper", "cups"],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "注文を作った日（日本時間の YYYY-MM-DD）"
+          },
+          "dripper": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "cups": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
+      },
+      {
+        "$ref": "#/components/schemas/CaosBrewSummary"
+      }
+    ]
+  },
+  "CaosSlotBrewStat": {
+    "description": "日・時間帯（日本時間の 30 分ごと。抽出を始めた時刻で分ける）・杯数ごとのまとめ（全部のドリッパーを合わせる）",
+    "allOf": [
+      {
+        "type": "object",
+        "required": ["day", "slot", "cups"],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "注文を作った日（日本時間の YYYY-MM-DD）"
+          },
+          "slot": {
+            "type": "string",
+            "description": "枠の始まり（日本時間の HH:MM）",
+            "example": "10:30"
+          },
+          "cups": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
+      },
+      {
+        "$ref": "#/components/schemas/CaosBrewSummary"
+      }
+    ]
+  },
+  "CaosPersonBrewStat": {
+    "description": "担当者・杯数ごとのまとめ（集計した全部の日を合わせる）",
+    "allOf": [
+      {
+        "type": "object",
+        "required": ["name", "cups"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "抽出を始めたときに、そのドリッパーにいた担当者の名前（交代の記録 caos_lane_changes から）"
+          },
+          "cups": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
+      },
+      {
+        "$ref": "#/components/schemas/CaosBrewSummary"
+      }
+    ]
+  },
+  "CaosRebrewStat": {
+    "type": "object",
+    "description": "日・ドリッパー（入れ直しを淹れたドリッパー）ごとの、抽出が終わった入れ直しのカードの数",
+    "required": ["day", "dripper", "rebrews", "extra_cups"],
+    "properties": {
+      "day": {
+        "type": "string",
+        "description": "注文を作った日（日本時間の YYYY-MM-DD）"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "rebrews": {
+        "type": "integer",
+        "description": "抽出が終わった入れ直しのカード（emergency_drip_id）の数"
+      },
+      "extra_cups": {
+        "type": "integer",
+        "description": "入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計）"
+      }
+    }
+  },
+  "CaosBrewStats": {
+    "type": "object",
+    "required": [
+      "standard",
+      "brews",
+      "by_dripper",
+      "by_slot",
+      "by_person",
+      "person_skipped",
+      "rebrews",
+      "interrupted_brews"
+    ],
+    "properties": {
+      "standard": {
+        "type": "object",
+        "description": "係数の分母にした標準の抽出時間（秒）",
+        "required": ["one_cup_sec", "two_cup_sec"],
+        "properties": {
+          "one_cup_sec": {
+            "type": "integer",
+            "example": 135
+          },
+          "two_cup_sec": {
+            "type": "integer",
+            "example": 195
+          }
+        }
+      },
+      "brews": {
+        "type": "integer",
+        "description": "抽出時間のまとめに入れたカードの数（抽出が終わった最初の抽出のカード。入れ直しのカードは除く）"
+      },
+      "by_dripper": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosDripperBrewStat"
+        }
+      },
+      "by_slot": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosSlotBrewStat"
+        }
+      },
+      "by_person": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosPersonBrewStat"
+        }
+      },
+      "person_skipped": {
+        "type": "object",
+        "description": "担当者ごとのまとめに入れなかったカードの数",
+        "required": ["no_person"],
+        "properties": {
+          "no_person": {
+            "type": "integer",
+            "description": "抽出を始めたとき、そのドリッパーに担当者がいなかった（その日のそれより前の交代の記録が無い・名前が空）"
+          }
+        }
+      },
+      "rebrews": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosRebrewStat"
+        }
+      },
+      "interrupted_brews": {
+        "type": "integer",
+        "description": "抽出を始めたが終える前に中断した（カードのカップを全部緊急にした）最初の抽出のカードの数。抽出時間のまとめには入れない"
+      }
+    }
+  },
   "CaosUndoCupState": {
     "type": "object",
     "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",

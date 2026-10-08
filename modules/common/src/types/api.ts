@@ -194,6 +194,25 @@ export interface paths {
      */
     post: operations["swapCaosLanes"];
   };
+  "/api/caos/brew-stats": {
+    /**
+     * CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+     * @description CaOS のカードに入ったカップ（order_cups）の抽出の時刻から、抽出時間を集計する。読み取りだけ（盤面はロックしない）。
+     * 集計の決まりは api/internal/caosstats（DB を使わない純粋な関数）。
+     * - カードは drip_id（同じ値のカップが 1 枚のカード。最初の抽出）。抽出時間は brew_finished_at - brew_started_at、ドリッパーは dripper、
+     *   杯数はそのカードで抽出を始めたカップの数（あとで緊急にしたカップも、最初の抽出の列が残るので数える）
+     * - 係数は 1 件ごとの「実際の抽出時間 ÷ 標準の抽出時間（1 杯 135 秒・2 杯 195 秒。画面の caosTiming.ts と同じ）」の平均（1 より大きいほど遅い）
+     * - 時間帯は抽出を始めた時刻の日本時間の 30 分ごと。日（day）は注文を作った日（日本時間。CaOS の盤面の「今日」と同じ区切り）
+     * - 担当者は交代の記録（caos_lane_changes）から、抽出を始めた時刻にそのドリッパーにいた人（その日のそれまでの最後の交代のあとの名前）。
+     *   記録が無い・名前が空なら担当者なし（person_skipped.no_person）
+     * - 緊急（入れ直し）は emergency_drip_id のカード（emergency_dripper・emergency_brew_started_at・emergency_brew_finished_at）で、
+     *   抽出時間のまとめから除いて rebrews に数える（入れ直しを淹れたドリッパー）。
+     *   抽出を始めて終えずに中断した最初の抽出（カードのカップが全部緊急）は、まとめに入れず interrupted_brews に数える
+     * クエリの day（日本時間の YYYY-MM-DD）でその日だけにする。省くと全部の日（担当者ごとのまとめは日をまたいで合わせる）。
+     * （クエリをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     */
+    get: operations["getCaosBrewStats"];
+  };
   "/api/caos/undo": {
     /**
      * CaOS の「1つ戻す」
@@ -747,6 +766,75 @@ export interface components {
     CaosLaneSwapRequest: {
       first: number;
       second: number;
+    };
+    /** @description 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める */
+    CaosBrewSummary: {
+      /** @description 件数 */
+      brews: number;
+      /** @description 抽出時間の平均（秒） */
+      avg_sec: number;
+      /** @description 抽出時間の中央値（秒） */
+      median_sec: number;
+      /** @description 抽出時間の標準偏差（秒。標本。1 件なら 0） */
+      stddev_sec: number;
+      /** @description 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い */
+      coefficient: number;
+    };
+    /** @description 日・ドリッパー・杯数ごとのまとめ */
+    CaosDripperBrewStat: {
+      /** @description 注文を作った日（日本時間の YYYY-MM-DD） */
+      day: string;
+      dripper: number;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 日・時間帯（日本時間の 30 分ごと。抽出を始めた時刻で分ける）・杯数ごとのまとめ（全部のドリッパーを合わせる） */
+    CaosSlotBrewStat: {
+      /** @description 注文を作った日（日本時間の YYYY-MM-DD） */
+      day: string;
+      /**
+       * @description 枠の始まり（日本時間の HH:MM）
+       * @example 10:30
+       */
+      slot: string;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 担当者・杯数ごとのまとめ（集計した全部の日を合わせる） */
+    CaosPersonBrewStat: {
+      /** @description 抽出を始めたときに、そのドリッパーにいた担当者の名前（交代の記録 caos_lane_changes から） */
+      name: string;
+      cups: number;
+    } & components["schemas"]["CaosBrewSummary"];
+    /** @description 日・ドリッパー（入れ直しを淹れたドリッパー）ごとの、抽出が終わった入れ直しのカードの数 */
+    CaosRebrewStat: {
+      /** @description 注文を作った日（日本時間の YYYY-MM-DD） */
+      day: string;
+      dripper: number;
+      /** @description 抽出が終わった入れ直しのカード（emergency_drip_id）の数 */
+      rebrews: number;
+      /** @description 入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計） */
+      extra_cups: number;
+    };
+    CaosBrewStats: {
+      /** @description 係数の分母にした標準の抽出時間（秒） */
+      standard: {
+        /** @example 135 */
+        one_cup_sec: number;
+        /** @example 195 */
+        two_cup_sec: number;
+      };
+      /** @description 抽出時間のまとめに入れたカードの数（抽出が終わった最初の抽出のカード。入れ直しのカードは除く） */
+      brews: number;
+      by_dripper: components["schemas"]["CaosDripperBrewStat"][];
+      by_slot: components["schemas"]["CaosSlotBrewStat"][];
+      by_person: components["schemas"]["CaosPersonBrewStat"][];
+      /** @description 担当者ごとのまとめに入れなかったカードの数 */
+      person_skipped: {
+        /** @description 抽出を始めたとき、そのドリッパーに担当者がいなかった（その日のそれより前の交代の記録が無い・名前が空） */
+        no_person: number;
+      };
+      rebrews: components["schemas"]["CaosRebrewStat"][];
+      /** @description 抽出を始めたが終える前に中断した（カードのカップを全部緊急にした）最初の抽出のカードの数。抽出時間のまとめには入れない */
+      interrupted_brews: number;
     };
     /**
      * @description 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
@@ -1733,6 +1821,38 @@ export interface operations {
         };
       };
       /** @description 形の違うリクエスト（同じドリッパーどうし、など） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の本番の抽出時間の集計（ドリッパー・時間帯・担当者ごとの係数）
+   * @description CaOS のカードに入ったカップ（order_cups）の抽出の時刻から、抽出時間を集計する。読み取りだけ（盤面はロックしない）。
+   * 集計の決まりは api/internal/caosstats（DB を使わない純粋な関数）。
+   * - カードは drip_id（同じ値のカップが 1 枚のカード。最初の抽出）。抽出時間は brew_finished_at - brew_started_at、ドリッパーは dripper、
+   *   杯数はそのカードで抽出を始めたカップの数（あとで緊急にしたカップも、最初の抽出の列が残るので数える）
+   * - 係数は 1 件ごとの「実際の抽出時間 ÷ 標準の抽出時間（1 杯 135 秒・2 杯 195 秒。画面の caosTiming.ts と同じ）」の平均（1 より大きいほど遅い）
+   * - 時間帯は抽出を始めた時刻の日本時間の 30 分ごと。日（day）は注文を作った日（日本時間。CaOS の盤面の「今日」と同じ区切り）
+   * - 担当者は交代の記録（caos_lane_changes）から、抽出を始めた時刻にそのドリッパーにいた人（その日のそれまでの最後の交代のあとの名前）。
+   *   記録が無い・名前が空なら担当者なし（person_skipped.no_person）
+   * - 緊急（入れ直し）は emergency_drip_id のカード（emergency_dripper・emergency_brew_started_at・emergency_brew_finished_at）で、
+   *   抽出時間のまとめから除いて rebrews に数える（入れ直しを淹れたドリッパー）。
+   *   抽出を始めて終えずに中断した最初の抽出（カードのカップが全部緊急）は、まとめに入れず interrupted_brews に数える
+   * クエリの day（日本時間の YYYY-MM-DD）でその日だけにする。省くと全部の日（担当者ごとのまとめは日をまたいで合わせる）。
+   * （クエリをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   */
+  getCaosBrewStats: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewStats"];
+        };
+      };
+      /** @description day が YYYY-MM-DD でない */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

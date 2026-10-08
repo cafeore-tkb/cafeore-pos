@@ -320,6 +320,7 @@ func main() {
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
 		api.POST("/caos/undo", caosHandler.UndoCaosCups)
+		api.GET("/caos/brew-stats", caosHandler.GetCaosBrewStats)
 		// 緊急（入れ直し）と緊急のシール
 		api.POST("/caos/emergency", caosHandler.MarkCaosEmergency)
 		api.POST("/orders/:id/cups/:cupId/emergency-label/claim", caosHandler.ClaimEmergencyLabel)
