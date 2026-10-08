@@ -15,15 +15,11 @@ import {
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
 import { goodsOnlyServed } from "../functional/goodsOnlyServed";
-import {
-  dismissSubmitFailed,
-  notifySubmitFailed,
-} from "../functional/submitFailedToast";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
-import { useSubmitKey } from "../functional/useSubmitKey";
+import { useSubmitOrder } from "../functional/useSubmitOrder";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -101,10 +97,8 @@ const CashierV2 = ({
 
   const printer = usePrinter();
 
-  // 保存中の二重送信を防ぐ。ref は同じ描画のうちに Enter が連打された場合のため
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
-  const submitKey = useSubmitKey();
+  const { submit, submitting, submittingRef, resetKey } =
+    useSubmitOrder(submitPayload);
 
   usePreventNumberKeyUpDown();
 
@@ -122,8 +116,8 @@ const CashierV2 = ({
     resetStatus();
     renewUISession();
     // 入力を消したら、同じ内容を打ち直しても別の注文として扱う
-    submitKey.reset();
-  }, [dispatchOrder, resetStatus, renewUISession, submitKey.reset]);
+    resetKey();
+  }, [dispatchOrder, resetStatus, renewUISession, resetKey]);
 
   const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
   const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
@@ -161,9 +155,6 @@ const CashierV2 = ({
 
   const submitOrder = useCallback(
     async (exactPayment?: boolean) => {
-      if (submittingRef.current) {
-        return;
-      }
       if (!canSubmitOrder) {
         return;
       }
@@ -183,23 +174,10 @@ const CashierV2 = ({
 
       // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
       // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
-      submittingRef.current = true;
-      setSubmitting(true);
-      let savedOrder: WithId<OrderEntity>;
-      try {
-        savedOrder = await submitPayload(
-          submitOne,
-          submitKey.keyFor(submitOne),
-        );
-      } catch (error) {
-        console.error(error);
-        notifySubmitFailed(submitOne.orderId, error);
+      const savedOrder = await submit(submitOne);
+      if (!savedOrder) {
         return;
-      } finally {
-        submittingRef.current = false;
-        setSubmitting(false);
       }
-      dismissSubmitFailed();
       // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
       submitOne.orderId = savedOrder.orderId;
       printer.printOrderLabel(submitOne);
@@ -218,14 +196,13 @@ const CashierV2 = ({
       newOrder,
       resetAll,
       printer,
-      submitPayload,
+      submit,
       descComment,
       playSound,
       manualOrderId,
       setOrderIdOverride,
       wsStatus,
       setServiceActive,
-      submitKey.keyFor,
     ],
   );
 
@@ -261,7 +238,7 @@ const CashierV2 = ({
     return () => {
       window.removeEventListener("keydown", handler);
     };
-  }, [keyEventHandlers]);
+  }, [keyEventHandlers, submittingRef]);
 
   const itemMenu = (
     <ItemButtons
