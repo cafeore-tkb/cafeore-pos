@@ -84,7 +84,7 @@ const startOfLocalDay = (ms: number) => {
 };
 
 // 実データテスト（2025年の注文。商品 ID が無い）のカードのまとめ方。盤面のカードには使わない。
-// サーバーの練習用の盤面（CaOS9）で作り直すので、それまでここだけに残す
+// 練習の盤面（CaOS9）で作り直すので、それまでここだけに残す
 type HistoricalGroup =
   | "CHAMP"
   | "ORE"
