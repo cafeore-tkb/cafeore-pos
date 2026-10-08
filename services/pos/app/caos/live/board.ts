@@ -40,7 +40,7 @@ const describe = (card: CaosCard, orderParts: Map<string, CaosCard[]>) => {
   const merged = sourceOrderIds.length > 1;
   // 指名は自由記述のまま出す（ドリッパーの指名は CaOS6 で明細の dripper から入れる）
   const nominee = first.nominee ? `（指名:${first.nominee}）` : "";
-  // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS8）。今は印だけ
+  // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ
   const limited = card.seniorOnly ? "（限定）" : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
     "・",
