@@ -376,28 +376,17 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			foundByID[c.ID] = c
 			lockIDs = append(lockIDs, c.OrderID)
 		}
-		// 途中に入れるドリッパーの列のカップは番号を +1 するので、その注文の行もロックする
-		// （注文の編集はカップを同じ値で入れ直すので、ロックせずにずらすと、ずらした番号が消えうる）。
-		// 列に入るのは advisory lock を取った CaOS の書き込みだけなので、ここで読んだ列よりずらすカップは増えない
-		var laneOrderIDs []uuid.UUID
-		for _, d := range sortedUnique(inserting, cmp.Compare) {
-			rows, err := readCaosLane(tx, d, start, end)
-			if err != nil {
-				return err
-			}
-			for _, r := range rows {
-				laneOrderIDs = append(laneOrderIDs, r.OrderID)
-			}
+		// 書かないカップの注文もロックする：
+		//   - 途中に入れるドリッパーの終わっていないカップ。番号を +1 するので（注文の編集はカップを同じ値で入れ直すので、
+		//     ロックせずにずらすと、ずらした番号が消えうる）。列に入るのは advisory lock を取った CaOS の書き込みだけなので、ここで読んだより増えない
+		//   - 入るカード（after の drip_id）のカップ。下でそのカードの全部のカップを確かめるので（未割当のカードには advisory lock が無い）
+		var extra []uuid.UUID
+		if err := tx.Model(&models.OrderCup{}).
+			Where("drip_id IN ? OR (dripper IN ? AND brew_finished_at IS NULL)", dripIDs, inserting).
+			Pluck("order_id", &extra).Error; err != nil {
+			return err
 		}
-		// 入るカード（after の drip_id）の、書かないカップの注文もロックする（下でそのカードの全部のカップを確かめるので。
-		// 未割当のカードには advisory lock が無く、同じカードへの書き込みが重なりうる）
-		var cardOrderIDs []uuid.UUID
-		if len(dripIDs) > 0 {
-			if err := tx.Model(&models.OrderCup{}).Where("drip_id IN ?", dripIDs).Pluck("order_id", &cardOrderIDs).Error; err != nil {
-				return err
-			}
-		}
-		orders, err := lockCaosOrders(tx, lockIDs, slices.Concat(laneOrderIDs, cardOrderIDs), start, end)
+		orders, err := lockCaosOrders(tx, lockIDs, extra, start, end)
 		if err != nil {
 			return err
 		}
