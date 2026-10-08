@@ -1,11 +1,15 @@
 import {
+  CAOS_CHANGEOVER_SEC,
   CAOS_DRIPPER_IDS,
+  CAOS_FIRST_START_DELAY_SEC,
   caosBrewSec,
   caosClockLabel,
   caosDurationLabel,
+  caosTimeOfDayLabel,
   jstDayStart,
 } from "@cafeore/common";
 import { useEffect, useRef, useState } from "react";
+import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
   AuxiliaryContent,
@@ -34,10 +38,11 @@ import { makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
+  nextAvailableBays,
   orderNumber,
-  queueWaitSeconds,
   splitIntoDripUnits,
   ticketKey,
+  totalCups,
 } from "./utils/orderQueue";
 
 type PanelSnapshot = {
@@ -168,7 +173,7 @@ export default function App() {
 
   // Linked multi-item order selection (e.g. #152 has items in Bay 1 and Bay 2)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [realTime, setRealTime] = useState(() => new Date());
+  const realTime = useCurrentTime(1000);
   // 秒は日本時間の 0 時から数える（盤面の「今日」と同じ区切り）
   const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
   const testPlayStatus = testPlaySession?.status;
@@ -227,11 +232,6 @@ export default function App() {
       orderNumber(a.id) - orderNumber(b.id) ||
       (a.itemIndex || 0) - (b.itemIndex || 0),
   );
-
-  useEffect(() => {
-    const clock = window.setInterval(() => setRealTime(new Date()), 1000);
-    return () => window.clearInterval(clock);
-  }, []);
 
   useEffect(() => {
     if (testPlayStatus !== "active" || !isRunning) return;
@@ -415,8 +415,10 @@ export default function App() {
     const duration = caosBrewSec(orderToAssign.cupCount);
     const computedStartSec =
       lastTicket?.startTimeSec && lastTicket.totalDurationSec
-        ? lastTicket.startTimeSec + lastTicket.totalDurationSec + 15
-        : realTimeSec + 10;
+        ? lastTicket.startTimeSec +
+          lastTicket.totalDurationSec +
+          CAOS_CHANGEOVER_SEC
+        : realTimeSec + CAOS_FIRST_START_DELAY_SEC;
 
     // Convert to OrderTicket
     const newTicket: OrderTicket = {
@@ -640,25 +642,11 @@ export default function App() {
   };
 
   // Live cup totals shown in the header
-  const unassignedCardCups = boardUnassignedOrders.reduce(
-    (acc, cur) => acc + cur.cupCount,
-    0,
+  const totalUnassignedDisplay = totalCups(boardUnassignedOrders);
+  const totalWaitingCupsDisplay = totalCups(
+    boardBaristas.flatMap((barista) => barista.queue),
   );
-  const totalUnassignedDisplay = unassignedCardCups;
-
-  const currentBayQueueCups = boardBaristas.reduce(
-    (acc, b) => acc + b.queue.reduce((qAcc, t) => qAcc + t.cupCount, 0),
-    0,
-  );
-  const totalWaitingCupsDisplay = currentBayQueueCups;
-  const nextAvailable = [...boardBaristas]
-    .map((barista) => ({
-      bayNumber: barista.bayNumber,
-      seconds: queueWaitSeconds(barista.queue),
-      isStandby: barista.queue.length === 0,
-    }))
-    .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
-    .slice(0, 3);
+  const nextAvailable = nextAvailableBays(boardBaristas);
 
   const openAuxiliaryTab = (tab: AuxiliaryTab) => {
     try {
@@ -677,10 +665,15 @@ export default function App() {
     window.open(url.toString(), "_blank", "noopener,noreferrer");
   };
 
+  // 豆は POS の在庫。盤面にある杯数は実データテスト中は出さない
   const renderAuxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
       baristas={boardBaristas}
+      beans={{
+        ...live.beans,
+        waitingCups: isLive ? live.beans.waitingCups : undefined,
+      }}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>
@@ -714,7 +707,7 @@ export default function App() {
           controlViewMode={controlViewMode}
           onSelectTab={setActiveTab}
           onSelectControlViewMode={setControlViewMode}
-          timeStr={`${operationalTime.getHours().toString().padStart(2, "0")}:${operationalTime.getMinutes().toString().padStart(2, "0")}:${operationalTime.getSeconds().toString().padStart(2, "0")}`}
+          timeStr={caosTimeOfDayLabel(realTimeSec)}
           unassignedCups={totalUnassignedDisplay}
           totalWaitingCups={totalWaitingCupsDisplay}
           soundEnabled={soundEnabled}

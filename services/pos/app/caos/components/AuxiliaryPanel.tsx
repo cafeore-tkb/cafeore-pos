@@ -14,6 +14,8 @@ export const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
 interface AuxiliaryContentProps {
   tab: AuxiliaryTab;
   baristas: Barista[];
+  // 豆のパネルに出す POS の在庫（豆だけ）と、盤面にある杯数（在庫対象の ID ごと）
+  beans: React.ComponentProps<typeof BeanQueueView>;
   salesOrders: HistoricalOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
@@ -22,13 +24,14 @@ interface AuxiliaryContentProps {
 export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   tab,
   baristas,
+  beans,
   salesOrders,
   periodStartMs,
   periodEndMs,
 }) => (
   <>
     {tab === "bays" && <BaysOverviewView baristas={baristas} />}
-    {tab === "beans" && <BeanQueueView />}
+    {tab === "beans" && <BeanQueueView {...beans} />}
     {tab === "analytics" && (
       <AnalyticsView
         baristas={baristas}

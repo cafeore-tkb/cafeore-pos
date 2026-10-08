@@ -1,3 +1,4 @@
+import { caosClockLabel, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -10,7 +11,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
-import { canMergeDripUnits, orderNumber, ticketKey } from "../utils/orderQueue";
+import {
+  activeRemainingSec,
+  canMergeDripUnits,
+  orderNumber,
+  ticketKey,
+} from "../utils/orderQueue";
 import type { ControlViewCProps } from "./ControlViewC";
 
 export interface ControlViewDProps extends ControlViewCProps {
@@ -34,6 +40,10 @@ interface SheetCup {
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
+  /** 背景色（盤面のカードだけ。色の設定の色、無ければ白） */
+  color?: string;
+  /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
+  itemKey?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -83,20 +93,6 @@ interface OrderGroup {
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
 
-const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - currentTimeSec);
-  return current.totalDurationSec;
-};
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-};
-
 const sheetLabel: Record<BeanCode, string> = {
   CHAMP: "チャンプ",
   ORE: "俺ブレ",
@@ -107,6 +103,10 @@ const sheetLabel: Record<BeanCode, string> = {
   MILK: "牛",
   SP: "限定",
 };
+
+// カップの名前。盤面のカードは商品の略称（API の abbr）をそのまま出す。実データテストのカードは今までどおり
+const cupLabel = (cup: SheetCup) =>
+  cup.itemKey ? cup.beanName : sheetLabel[cup.beanCode];
 
 const cupColor = (cup: SheetCup) => {
   if (cup.beanCode === "SP") return "bg-red-200";
@@ -122,6 +122,8 @@ const ticketCup = (ticket: OrderTicket): SheetCup => ({
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
+  color: ticket.color,
+  itemKey: ticket.itemKey,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -146,6 +148,8 @@ const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   beanName: order.beanName,
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
+  color: order.color,
+  itemKey: order.itemKey,
 });
 
 const CupChip: React.FC<{
@@ -166,6 +170,10 @@ const CupChip: React.FC<{
   onClick,
 }) => {
   const stacked = cup.cupCount >= 2;
+  // 盤面のカードは色の設定の色（無ければ白）。文字色は背景色から決める（POS と共通の readableTextColor）
+  const colorStyle = cup.color
+    ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
+    : undefined;
 
   return (
     <div
@@ -175,29 +183,39 @@ const CupChip: React.FC<{
         <div
           aria-hidden
           className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
+          style={colorStyle}
         />
       )}
       <button
         type="button"
         disabled={!onClick}
         onClick={onClick}
+        style={colorStyle}
         className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
           lifted ? "shadow-2xl" : ""
         }`}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
-          <span className="truncate font-black text-[14px] text-slate-950 leading-tight">
-            {sheetLabel[cup.beanCode]}
+          <span
+            className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
+          >
+            {cupLabel(cup)}
           </span>
-          <span className="shrink-0 font-black font-mono text-[11px] text-slate-700">
+          <span
+            className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             ×{cup.cupCount}
           </span>
         </span>
-        <span className="truncate font-bold font-mono text-[11px] text-slate-600">
+        <span
+          className={`truncate font-bold font-mono text-[11px] ${cup.color ? "opacity-75" : "text-slate-600"}`}
+        >
           No. {cup.id.replaceAll("#", "")}
         </span>
         {(baristaName || note) && (
-          <span className="truncate font-bold text-[10px] text-slate-700">
+          <span
+            className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
+          >
             {baristaName ? `指名：${baristaName}` : ""}
             {note ? ` ${note}` : ""}
           </span>
@@ -413,7 +431,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   const remainingByBay = new Map<number, number>(
     sortedBaristas.map((barista) => [
       barista.id,
-      remainingSeconds(barista, simTimeSec),
+      activeRemainingSec(barista, simTimeSec),
     ]),
   );
 
@@ -732,7 +750,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                 </th>
                 {sortedBaristas.map((barista) => {
                   const current = barista.queue[0];
-                  const seconds = remainingSeconds(barista, simTimeSec);
+                  const seconds = activeRemainingSec(barista, simTimeSec);
                   return (
                     <th
                       key={barista.id}
@@ -759,9 +777,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         {current ? (
                           <>
                             <span className="font-mono">
-                              {seconds === 0
-                                ? "継続"
-                                : formatRemaining(seconds)}
+                              {seconds === 0 ? "継続" : caosClockLabel(seconds)}
                             </span>
                             <span>次へ</span>
                             <ArrowRightCircle className="h-3.5 w-3.5" />
@@ -862,7 +878,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
-                                  ? `抽出中 残${formatRemaining(seconds)}`
+                                  ? `抽出中 残${caosClockLabel(seconds)}`
                                   : "抽出中"
                                 : "",
                             ]

@@ -1,8 +1,10 @@
+import { readableTextColor } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { isLaneId, moveTargets } from "../utils/lanes";
+import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
   ticket: OrderTicket;
@@ -44,6 +46,13 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   const isCompleted = ticket.status === "completed";
   const isNamed = Boolean(ticket.preferredBaristaId);
+  // 盤面のカードは、色の設定の色（画面 master。無ければ白）で塗る（終わった・指名のカードはそれぞれの色を優先）
+  const masterColor =
+    ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
+  // 文字色は背景色から決める（POS と共通の readableTextColor）
+  const masterTextColor = masterColor
+    ? readableTextColor(masterColor)
+    : undefined;
   const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
   const isActionOpen =
     ticket.status === "scheduled" && actionTicketKey === ticketKey;
@@ -155,6 +164,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       onPointerCancel={finishDrag}
       id={`ticket-${ticket.ticketUid || ticket.id.replace("#", "")}`}
       style={{
+        ...(masterColor
+          ? { backgroundColor: masterColor, color: masterTextColor }
+          : {}),
         ...(widthPx ? { width: `${widthPx}px` } : {}),
         ...(dragOffset
           ? {
@@ -223,9 +235,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                     ? "text-violet-700"
                     : isCompleted
                       ? "text-slate-500"
-                      : ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1
-                        ? "text-slate-950"
-                        : "text-slate-600"
+                      : masterColor
+                        ? ""
+                        : ticket.totalItemsInOrder &&
+                            ticket.totalItemsInOrder > 1
+                          ? "text-slate-950"
+                          : "text-slate-600"
               }`}
             >
               {ticket.id}
@@ -254,21 +269,24 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         </div>
 
         {/* Coffee Name */}
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-1.5">
           <span
-            className={`flex-1 truncate font-bold text-[14px] leading-tight tracking-tight ${
+            className={`max-w-[65%] shrink-0 truncate font-bold text-[14px] leading-tight tracking-tight ${
               isOrderSelected
                 ? "font-black text-amber-950"
                 : isCompleted
                   ? "text-slate-600"
-                  : "text-slate-900"
+                  : masterColor
+                    ? ""
+                    : "text-slate-900"
             }`}
             title={ticket.beanName}
           >
             {ticket.beanName}
           </span>
+          <BeanBadge card={ticket} />
           {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
-            <span className="shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
+            <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計
               {ticket.totalOrderCups}杯
             </span>

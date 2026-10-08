@@ -13,6 +13,7 @@ export type ScreenKind =
   | "cashier"
   | "master"
   | "master-sheet"
+  | "master-sheet-view"
   | "serve"
   | "cashier-mini"
   | "callscreen"
@@ -34,7 +35,8 @@ export function ScreenPreview({ kind }: { kind: ScreenKind }) {
 const previews: Record<ScreenKind, () => JSX.Element> = {
   cashier: CashierPreview,
   master: () => <OrderBoardPreview user="master" />,
-  "master-sheet": CaosPreview,
+  "master-sheet": () => <CaosPreview />,
+  "master-sheet-view": () => <CaosPreview readOnly />,
   serve: () => <OrderBoardPreview user="serve" />,
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
@@ -424,7 +426,8 @@ function RehearsalPreview() {
 }
 
 // CaOS（ドリップ管制）の管制盤：ドリッパー1〜6の行に抽出カードがタイムラインで並び、下に未割当の注文。
-function CaosPreview() {
+// readOnly は閲覧だけの画面（/master-sheet/view）。管制盤の切り替えの代わりに「閲覧のみ」を出す。
+function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
   const lanes: {
     state: string;
     cards: { left: number; width: number; tone: string }[];
@@ -455,17 +458,23 @@ function CaosPreview() {
         <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
           CaOS
         </span>
-        {["A", "B", "C", "D"].map((v, i) => (
-          <span
-            key={v}
-            className={cn(
-              "flex h-[1.4em] w-[1.4em] items-center justify-center rounded font-bold text-[0.7em]",
-              i === 0 ? "bg-blue-700 text-white" : "bg-white text-slate-500",
-            )}
-          >
-            {v}
+        {readOnly ? (
+          <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
+            閲覧のみ
           </span>
-        ))}
+        ) : (
+          ["A", "B", "C", "D"].map((v, i) => (
+            <span
+              key={v}
+              className={cn(
+                "flex h-[1.4em] w-[1.4em] items-center justify-center rounded font-bold text-[0.7em]",
+                i === 0 ? "bg-blue-700 text-white" : "bg-white text-slate-500",
+              )}
+            >
+              {v}
+            </span>
+          ))
+        )}
         <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
       </div>
       <div className="relative flex-1 overflow-hidden rounded-md border bg-white">

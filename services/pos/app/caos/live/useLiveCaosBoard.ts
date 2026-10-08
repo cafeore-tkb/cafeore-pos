@@ -7,8 +7,10 @@ import {
   nextCaosDripper,
   putCaosCups,
   unassignWrites,
+  useColorSettings,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useBeanInventory } from "../hooks/useBeanInventory";
 import { usePosOrders } from "../hooks/usePosOrders";
 import type { Barista, OrderTicket } from "../types";
 import { cardsToBoard } from "./board";
@@ -17,7 +19,9 @@ import { cardsToBoard } from "./board";
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる。操作はカップに書く（PUT /api/caos/cups・「次へ」）。
 // 書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。結果は書いた注文の配信で届く。
 // 断られたら（決まりに合わない・ほかの端末が先に書いた）理由を error に出す。
-// enabled が false（実データテスト中）のときは注文を読まない。
+// カードの色は色の設定、豆は POS の在庫（「商品 → 豆」と残量）をそのまま使う。CaOS は在庫を持たず、減らしもしない。
+// enabled が false（実データテスト中）のときは注文と色の設定を読まない。
+// 閲覧だけの画面（ReadOnlyBoard.tsx）も同じ盤面を使い、操作（assign など）だけ使わない。
 
 const ERROR_SHOWN_MS = 5000;
 
@@ -44,10 +48,36 @@ export const useLiveCaosBoard = ({
     () => buildCaosCards(orders ?? [], today),
     [orders, today],
   );
+  const { colorSettings } = useColorSettings(enabled);
+  const { beanStatuses, beanIndex, ...beanState } = useBeanInventory();
   const board = useMemo(
-    () => cardsToBoard(cards, baristas, nowSec, dayStartMs),
-    [cards, baristas, nowSec, dayStartMs],
+    () =>
+      cardsToBoard(
+        cards,
+        baristas,
+        nowSec,
+        dayStartMs,
+        colorSettings,
+        beanIndex,
+      ),
+    [cards, baristas, nowSec, dayStartMs, colorSettings, beanIndex],
   );
+  // 盤面にある（未割当・待機・抽出中の）杯数（豆＝在庫対象の ID ごと）。豆のパネルに出す
+  const beanWaitingCups = useMemo(() => {
+    const cups = new Map<string, number>(
+      beanStatuses.map((status) => [status.resource.id, 0]),
+    );
+    const waiting = [
+      ...board.unassignedOrders,
+      ...board.baristas.flatMap((barista) => barista.queue),
+    ];
+    for (const card of waiting) {
+      for (const bean of card.beans ?? []) {
+        cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
+      }
+    }
+    return cups;
+  }, [board, beanStatuses]);
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +104,12 @@ export const useLiveCaosBoard = ({
     status,
     board,
     error,
+    /** 豆のパネルに出す POS の在庫（豆だけ）と、盤面にある杯数 */
+    beans: {
+      statuses: beanStatuses,
+      waitingCups: beanWaitingCups,
+      ...beanState,
+    },
     /** 割当・移動。toFront なら、そのドリッパーの待機の先頭へ */
     assign: (
       ticketUid: string | undefined,

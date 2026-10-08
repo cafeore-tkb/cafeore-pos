@@ -6,7 +6,7 @@
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに注文と抽出がリアルタイムに流れます。操作のボタン（次へ・空きスロット）は出さず、盤面への操作も送りません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -41,9 +41,10 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 
 - 初期状態は全ドリッパーが空で、cafeore-pos で受けた注文が届いた順に未割当へ追加されます。
 - CaOS は独自にデータを作りません。データは POS の API と sohosai-shift から取ります（モックの注文、手で注文を足す画面、AI 学習・補正係数、端末だけの豆の在庫、仮の名簿と自動交代はありません）。
-- 予定時刻は、全ドリッパー同じ抽出時間（1杯 135 秒・2杯 195 秒。`@cafeore/common` の `caosBrewSec`）で計算します（ドリッパーごとの補正はしません）。
-- 列は `1st`〜`6th` と番号だけで出します。担当者の名前と、限定を淹れられるか（上級生か）は、あとでサーバーから出します。それまでは限定のカードもどの列にも割り当てられます。限定かは商品の種類の「限定」（`senior_only`）をそのまま使い、カードに「（限定）」と出します。
-- 豆キューは、あとで POS の在庫（`/inventory`）を出します。いまは何も出しません。
+- 予定時刻は、全ドリッパー同じ抽出時間（1杯 135 秒・2杯 195 秒。`@cafeore/common` の `caosBrewSec`）で計算します（ドリッパーごとの補正はしません）。抽出中・待機のカードの開始・終了の見込みは `planCaosLane`（同じく `@cafeore/common`）で決め、タイムラインはその時刻をそのまま使います。
+- 「当日」の区切り・盤面の秒の起点・時計は、サーバーの今日と同じ日本時間の 0 時です（`modules/common/src/lib/jst.ts` の `jstDate`・`jstDayStart`）。端末の時刻帯によらず同じ盤面・同じ時刻で出ます。
+- 列は `1st`〜`6th` と番号だけで出します。担当者の名前と、限定を淹れられるか（上級生か）は、あとでサーバーから出します。それまでは限定のカードもどの列にも割り当てられます。限定かは商品の種類の「限定」（`senior_only`）をそのまま使い、カードにその種類の表示名を「（限定）」のように出します。
+- 豆キューは、POS の在庫（`/inventory`）の豆をそのまま出します（下の「豆キューは…」）。
 - 未割当注文と各ドリッパーの待機列は、指名注文を含めて原則オーダー番号順です。
 - 指名（明細の担当者。自由記述）はカードに「（指名:名前）」と出し、指名ごとにカードを分けます。指名のドリッパーだけに置く決まりは、明細にドリッパーの番号を持たせてから入れます（CaOS6）。
 - 1回の抽出は最大2杯です。3杯以上の注文は2杯以下のカードへ自動分割します。
@@ -60,12 +61,15 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 実データテスト中は cafeore-pos の注文を使わず、テストの注文だけで手元の盤面を動かします。終了後の実績表示中もそのままで、リセットすると cafeore-pos の注文に戻ります。
 - 盤面は注文のカップ（`order_cups`）の列で持ちます。CaOS が決めたこと（ドリッパーの番号 `dripper`・ドリッパーの中の順番 `dripper_position`・同じカードで淹れるカップの印 `drip_id`・抽出の開始 `brew_started_at` と終了 `brew_finished_at`）をカップに書き、注文の応答（`OrderResponse` の `cups`）に載ります。CaOS 以外の画面は読みません。
 - カードの状態は時刻で決まります（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。マスター（`/master`）でカップを全部準備完了にしたカードも終わりです。
-- 抽出の開始・終了の時刻はサーバーの時刻で、サーバーが付けます（iPad の時計は使いません）。空いているドリッパーに置いてそのまま始めるときは、書き込みの after に時刻の代わりに「始める」の印（`start_brew`）を送ります。抽出中・終わりのカードは `PUT /api/caos/cups` では動かせません（終えるのは「次へ」）。
-- 画面は、POS の画面全体で共有している WebSocket（`/api/ws/orders`、root の `OrdersWSProvider`）の注文から、今日（日本時間。注文の作成日時で区切る）のカードを組み立てます（`@cafeore/common` の `buildCaosCards`）。未割当は、抽出が要り（商品の種類の `needs_brew`）まだ準備完了でないカップを、注文ごと・商品ごと・指名ごとに最大2杯で組み立てます。注文の編集・削除で消えたカップはカードから抜けます。CaOS 用に別の接続は張りません。
+- 抽出の開始・終了の時刻はサーバーの時刻で、サーバーが付けます（iPad の時計は使いません）。空いているドリッパーに置いてそのまま始めるときは、書き込みの after に時刻の代わりに「始める」の印（`start_brew`）を送ります。抽出中・終わりのカードは `PUT /api/caos/cups` では動かせません（終えるのは「次へ」）。抽出中のカードの残り時間は、この開始の時刻から数えます。
+- 画面は、POS の画面全体で共有している WebSocket（`/api/ws/orders`、root の `OrdersWSProvider`）の注文から、今日（日本時間。注文の作成日時で区切る）のカードを組み立てます（`@cafeore/common` の `buildCaosCards`）。未割当は、抽出が要り（商品の種類の `needs_brew`）まだ準備完了でないカップを、注文ごと・商品ごと・指名ごとに最大2杯で組み立てます。注文の編集・削除で消えたカップはカードから抜けます。CaOS 用に別の接続は張りません。閲覧だけの画面（`/master-sheet/view`）も同じ組み立て（`buildCaosCards` と `live/board.ts` の `cardsToBoard`）を使います。
 - 操作（割当・ドリッパーの移動・先頭へ・未割当に戻す・統合）は、カップの書く前と書いたあとの値を `PUT /api/caos/cups` で送ります（`assignWrites`・`unassignWrites`・`mergeWrites`）。書いたカップの注文は全部の画面に配られます（ほかのインスタンスへは `orders_changed`）。ほかの iPad が先に書いていた（409）・決まりに合わない（422）ときは何も変わらず、理由が画面の下に出ます。
 - `次へ` は `POST /api/caos/drippers/{dripper}/next` です。抽出中のカードを終え、そのカードのカップだけを準備完了にし（POS のカップの準備完了と同じ。注文の準備完了はカップから決まります）、待機の先頭を始めます。
 - 「1つ戻す」はありません（あとで、各画面が最後の操作を条件付きで書き戻す形で足します）。
-- メニュー名から豆を判定します（優勝ブレンド→チャンプ、俺ブレ、ケニア、タンザニア、ブラジル、アイスコーヒー→氷、アイスオレ→牛、それ以外のホット→★SP）。アイスミルクとグッズは除外します。
+- カードの豆は、POS の在庫の設定の「商品ごとの使用量」（`GET /api/inventory/usages`）で、カードの商品が使う豆の在庫対象から引き、在庫対象の名前をそのまま出します。区分は商品の種類の表示名（`display_name`）をそのまま出します（どちらもカードのバッジ）。カードの名前は商品の略称（API の `abbr`）をそのまま出します。アイスミルクとグッズはカードになりません（商品の種類の `needs_brew` が false）。
+- カードの色は POS の色の設定（画面 master。商品 > 種類。`@cafeore/common` の `resolveItemColor`）だけで決め、設定が無ければ白です。
+- 豆キューは POS の在庫（`GET /api/inventory`）の豆を表示するだけです。CaOS は在庫を持たず、「次へ」でも減らしません（消費は POS が注文から数えます）。棚卸し・入荷は POS の在庫の画面（`/inventory`）で記録します。
+- メニュー名から決める豆のコード（`utils/posOrders.ts` の `posBeanCode`。カードの左の線の色などに使う）は CaOS5 で消します。
 - API の URL は POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 
 ## 実データ・テストプレイ

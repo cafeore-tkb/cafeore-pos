@@ -34,6 +34,58 @@ export const caosDurationLabel = (sec: number) =>
 /** 秒を「02:15」に（残り時間）。10 分以上は「12:05」 */
 export const caosClockLabel = (sec: number) =>
   `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+/** 盤面の秒（その日の 0 時（日本時間、jstDayStart）からの秒）を「10:05:09」に。24 時を越えたら 0 時に戻す */
+export const caosTimeOfDayLabel = (sec: number) => {
+  const day = ((Math.floor(sec) % 86400) + 86400) % 86400;
+  return `${String(Math.floor(day / 3600)).padStart(2, "0")}:${caosClockLabel(day % 3600)}`;
+};
+
+/** 前の抽出が終わってから次の抽出を始めるまでの入れ替えの時間（秒） */
+export const CAOS_CHANGEOVER_SEC = 15;
+/** 抽出中のカードが無いドリッパーで、先頭の待機カードを始める見込み（今から何秒後か） */
+export const CAOS_FIRST_START_DELAY_SEC = 10;
+
+/** 1 つのドリッパーの予定時刻（盤面の秒） */
+export interface CaosLanePlan {
+  /** 抽出中のカード：開始・終了の見込み・残り */
+  brewing?: { startSec: number; endSec: number; remainingSec: number };
+  /** 待機カード（並び順のまま）：開始・終了の見込み */
+  queued: { startSec: number; endSec: number }[];
+}
+
+/**
+ * 1 つのドリッパーの抽出中・待機カードの予定時刻を決める。
+ *   - 抽出中のカードは、始めた時刻（分からなければ今）から抽出時間で終わる見込み。過ぎていたら今終わる見込みにする
+ *   - 待機カードは、前のカードの終わりから入れ替えの時間（CAOS_CHANGEOVER_SEC）を挟んで順に始める
+ *   - 抽出中のカードが無いときは、先頭の待機カードを今から CAOS_FIRST_START_DELAY_SEC 後に始める
+ */
+export const planCaosLane = (
+  nowSec: number,
+  brewing: { startSec?: number; durationSec: number } | undefined,
+  queuedDurationsSec: readonly number[],
+): CaosLanePlan => {
+  let cursor = nowSec;
+  let brewingPlan: CaosLanePlan["brewing"];
+  if (brewing) {
+    const startSec = brewing.startSec ?? nowSec;
+    const plannedEndSec = startSec + brewing.durationSec;
+    brewingPlan = {
+      startSec,
+      endSec: Math.max(nowSec, plannedEndSec),
+      remainingSec: Math.max(0, plannedEndSec - nowSec),
+    };
+    cursor = brewingPlan.endSec;
+  }
+  const queued = queuedDurationsSec.map((durationSec, index) => {
+    const startSec =
+      !brewing && index === 0
+        ? nowSec + CAOS_FIRST_START_DELAY_SEC
+        : cursor + CAOS_CHANGEOVER_SEC;
+    cursor = startSec + durationSec;
+    return { startSec, endSec: cursor };
+  });
+  return { brewing: brewingPlan, queued };
+};
 
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 
