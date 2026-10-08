@@ -48,8 +48,8 @@ const entryOf = (card: CaosCard, state: CellState): SheetEntry => ({
   rowIds: cardOrderNos(card),
 });
 
-// 注文の杯数（分けた注文はカード全部の杯数、1 枚だけの注文はそのカードの杯数）
-const orderCupsOf = (card: CaosCard, looks: CardLooks) =>
+/** 注文の杯数（分けた注文はカード全部の杯数、1 枚だけの注文はそのカードの杯数） */
+export const orderCupsOf = (card: CaosCard, looks: CardLooks) =>
   looks.get(card.key)?.split?.cups ?? card.cups.length;
 
 export const buildSheet = (

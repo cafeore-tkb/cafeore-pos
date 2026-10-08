@@ -59,7 +59,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - データは開始の画面で手元の JSON ファイルを選んで読み込みます（ドラッグでも可）。読める形は [cafeore-tkb/sohosai-analysis](https://github.com/cafeore-tkb/sohosai-analysis) の `YYYY/data/day*.json`（`{ orders: [...] }`）と、cafeore-pos の `GET /api/orders` の応答を保存したものです。day1・day2・day12 のように複数選ぶと、重なる注文は 1 件にまとめます。
 - 読み込みはこの端末のブラウザの中だけで、担当者名・指名・コメント・お預かりなどは読み込むときに落とします（`@cafeore/common` の `caosPracticeData.ts`）。サーバーには送らず、画面を開き直したら選び直しです。テストプレイ中は POS の注文の取り込みを止め、API にも書かないので、本番の盤面・注文・在庫には混ざりません。リセットすると本番の盤面に戻ります。
 - 開始前に時間帯と30分／1時間を選択します。ヘッダーの `1x / 2x / 5x / 10x` に合わせて、時計・タイムライン・注文到着・抽出時間が実時間基準で一緒に進みます。
-- 練習の盤面は、本番と同じ形の注文とカップ（ドリッパー・順番・カード・抽出の時刻の列）をブラウザの中だけで持ちます（`hooks/useTestPlay.ts`）。カードの組み立てと操作の書き込みは本番と同じ関数（`buildCaosCards`・`assignWrites` など。管制盤の操作の書き込みは `logic/writes.ts` を本番と共有）で、書き込みを当てる（番号を決め、後ろをずらす）のと「次へ」は API と同じ決まりの `@cafeore/common` の `applyCaosPracticeWrites`・`advanceCaosPracticeDripper` で行います。時刻は練習の時計の今です。サーバー・本番の盤面・注文・在庫には何も送りません。
+- 練習の盤面は、本番と同じ形の注文とカップ（ドリッパー・順番・カード・抽出の時刻の列）をブラウザの中だけで持ちます（`hooks/useTestPlay.ts`）。カードの組み立てと操作の書き込みは本番と同じ関数（`buildCaosCards`・`assignWrites` など。`useCaosSession` が本番と同じものを呼ぶ）で、書き込みを当てる（番号を決め、後ろをずらす）のと「次へ」は API と同じ決まりの `@cafeore/common` の `applyCaosPracticeWrites`・`advanceCaosPracticeDripper` で行います。時刻は練習の時計の今です。サーバー・本番の盤面・注文・在庫には何も送りません。
 - 実データの品物は、グッズ（種類の名前が `others`）以外を 1 杯ずつカップにします（POS が注文を保存したときと同じ）。抽出が要るか・上級生のみかは本番と同じく種類の名前で決めます。種類の表示名と ID（色の設定を引く）は、POS の商品の種類から名前で引きます（`logic/historical.ts` の `toPracticeOrders`）。
 - 「終了・実績」を押すと、売上、商品構成、ピーク、提供時間、担当量、分割注文の仕上がりΔを表示します。提供時間は練習の結果（抽出の要るカップが全部準備完了になった時刻）です。
 - 過去の注文データはリポジトリに入れません。
@@ -73,5 +73,5 @@ lint は POS と同じ決まりです（`biome.json` に CaOS だけの除外は
 ## コードの分け方
 
 - `components/`：部品（表示だけ）。受け取った値を出し、押されたら受け取った関数を呼ぶ。カードは `OrderCard` 1 つで、管制盤 A・C・D と右のパネルで共通。見出し・列の番号・「次へ」・空きスロットは `BoardParts`、右のパネル（割当・詳細・補助のタブ）は `SidePanels` の `SidePanel`。
-- `logic/`：盤面の決まり（純粋な関数）。カードと列の型は持たず、`@cafeore/common` の `buildCaosCards` で組み立てた `CaosCard` と `caosLane` の列（`lanes` の `Lane`）をそのまま使う。カードの名前・注文番号・色・分割の表示（`cards`）・操作の書き込み（割当・移動・先頭へ・途中への差し込み・未割当に戻す・統合。`writes`）・列の時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・実績の集計（`analytics`）・実データテスト（練習の注文と実績。`historical`）。カードの組み立てと書き込みの決まりそのものは `@cafeore/common` の `caos-board.ts`・`caosPractice.ts`。実データの注文は `@cafeore/common` の `PracticeDataOrder`。
+- `logic/`：盤面の決まり（純粋な関数）。カードと列の型は持たず、`@cafeore/common` の `buildCaosCards` で組み立てた `CaosCard` と `caosLane` の列（`lanes` の `Lane`）をそのまま使う。カードの名前・注文番号・色・分割の表示（`cards`）・列の時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・実績の集計（`analytics`）・実データテスト（練習の注文と実績。`historical`）。カードの組み立てと書き込みの決まりそのものは `@cafeore/common` の `caos-board.ts`・`caosPractice.ts`。実データの注文は `@cafeore/common` の `PracticeDataOrder`。
 - `hooks/`：状態と副作用。本番の盤面（`useLiveBoard`。注文を読み、API に書く）、実データテスト（`useTestPlay`。練習の盤面と時計。読み込んだ JSON は `usePracticeData`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグと落とす先（`useCardDrag`。待機のカードの前への差し込みは `dropTargetAt`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。

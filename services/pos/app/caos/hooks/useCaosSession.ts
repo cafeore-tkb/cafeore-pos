@@ -2,8 +2,11 @@ import {
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
+  assignWrites,
   caosLane,
   jstDayStart,
+  mergeWrites,
+  unassignWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -15,11 +18,6 @@ import { timeOfDayLabel } from "../logic/format";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
-import {
-  mergeCardWrites,
-  placeCardWrites,
-  unassignCardWrites,
-} from "../logic/writes";
 import { soundManager } from "../utils/audio";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
@@ -34,10 +32,14 @@ const SIM_SPEEDS = [1, 2, 5, 10];
 // 新しいカード（dripId）の ID
 const newDripId = () => crypto.randomUUID();
 
+// 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
+const NOT_FOUND = { error: "カードが見つかりません" };
+
 // CaOS の盤面・時刻・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
 // 普段は cafeore-pos の注文で動かす（useLiveBoard。盤面は注文のカップの列にあり、操作は API に書いて全部の iPad で共有する）。
 // 実データテスト中（終了後の実績表示も含め、リセットするまで）は cafeore-pos の注文を使わず、練習の盤面（useTestPlay）で動かす。
-// どちらもカードは @cafeore/common の buildCaosCards で組み立てた CaosCard、操作の書き込みは logic/writes.ts で同じ。違うのは送り先だけ。
+// どちらもカードは @cafeore/common の buildCaosCards で組み立てた CaosCard、操作の書き込みは @cafeore/common の
+// assignWrites・unassignWrites・mergeWrites で同じ。違うのは送り先だけ。
 export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
@@ -80,6 +82,8 @@ export const useCaosSession = () => {
     [cards, colorSettings],
   );
 
+  // 画面のカードのキーから、今の盤面のカードを引く
+  const cardOf = (key: string) => cards.find((card) => card.key === key);
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。作れたら音を鳴らす）
   const write = (result: CaosWritesResult) => {
     if ("error" in result) {
@@ -123,12 +127,28 @@ export const useCaosSession = () => {
       soundManager.enabled = !soundEnabled;
       setSoundEnabled(!soundEnabled);
     },
-    /** 未割当・待機のカードをドリッパーへ（place が無ければ待機の最後へ） */
-    place: (key: string, bayId: number, place?: CaosPlace) =>
-      write(placeCardWrites(cards, key, bayId, place, newDripId)),
-    returnToUnassigned: (key: string) => write(unassignCardWrites(cards, key)),
-    merge: (firstKey: string, secondKey: string) =>
-      write(mergeCardWrites(cards, firstKey, secondKey, newDripId)),
+    /** 割当・ドリッパーの移動・順番の入れ替え（place が "front" なら待機の先頭、{ beforeKey } ならそのカードの前、無ければ最後）。順番の数はサーバー（練習なら練習の盤面）が決める */
+    place: (key: string, bayId: number, place?: CaosPlace) => {
+      const card = cardOf(key);
+      return write(
+        card
+          ? assignWrites(cards, card, bayId, { place, newId: newDripId })
+          : NOT_FOUND,
+      );
+    },
+    /** 待機のカードを未割当に戻す */
+    returnToUnassigned: (key: string) => {
+      const card = cardOf(key);
+      return write(card ? unassignWrites(card) : NOT_FOUND);
+    },
+    /** 1 杯のカードどうしを 2 杯の同時抽出にまとめる */
+    merge: (firstKey: string, secondKey: string) => {
+      const card = cardOf(firstKey);
+      const withCard = cardOf(secondKey);
+      return write(
+        card && withCard ? mergeWrites(card, withCard, newDripId) : NOT_FOUND,
+      );
+    },
     /**
      * 「次へ」。画面が抽出中と見ているカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
      * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める

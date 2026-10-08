@@ -31,7 +31,7 @@ export interface TestPlaySession {
 // 実データテスト（練習）。過去の注文の時刻を 1 秒ずつ進め（速さはヘッダーの 1x〜10x）、時刻が来た注文を練習の盤面に出す。
 // 終わりの時刻に着いたら onTimeUp（タイマーを止める）。historicalOrders は読み込んだ実データの注文（usePracticeData）。
 // 練習の盤面はブラウザの中だけで持ち（本番と同じ形の注文とカップ）、カードの組み立ては本番と同じ buildCaosCards、
-// 操作の書き込みは本番と同じ logic/writes.ts で作り、当てる（番号を決め、後ろをずらす）のと「次へ」は
+// 操作の書き込みは本番と同じ @cafeore/common の assignWrites など（hooks/useCaosSession.ts）で作り、当てる（番号を決め、後ろをずらす）のと「次へ」は
 // 本番の API と同じ決まりの @cafeore/common の applyCaosPracticeWrites・advanceCaosPracticeDripper で行う。時刻は練習の時計の今。
 // サーバー・本番の盤面・注文・在庫には何も送らない。
 export const useTestPlay = ({

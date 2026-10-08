@@ -17,6 +17,7 @@ import {
   buildSheet,
   cellKey,
   linkedOrderNos,
+  orderCupsOf,
 } from "../logic/sheet";
 import {
   EmptySlotButton,
@@ -462,9 +463,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     注文 {group.key}
                   </h3>
                   <span className="font-black text-[13px]">
-                    {looks.get(group.items[0].key)?.split?.cups ??
-                      group.items[0].cups.length}
-                    杯
+                    {orderCupsOf(group.items[0], looks)}杯
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 p-2">
