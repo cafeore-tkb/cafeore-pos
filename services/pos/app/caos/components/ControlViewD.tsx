@@ -1,4 +1,4 @@
-import { formatMinSec, readableTextColor } from "@cafeore/common";
+import { caosClockLabel, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -9,7 +9,6 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLimitedLabel } from "../limitedLabel";
 import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import {
@@ -41,7 +40,7 @@ interface SheetCup {
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
-  /** マスターの画面と同じ背景色（盤面のカードだけ） */
+  /** 背景色（盤面のカードだけ。色の設定の色、無ければ白） */
   color?: string;
   /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
   itemKey?: string;
@@ -94,8 +93,7 @@ interface OrderGroup {
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
 
-// 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
-const sheetLabel: Partial<Record<BeanCode, string>> = {
+const sheetLabel: Record<BeanCode, string> = {
   CHAMP: "チャンプ",
   ORE: "俺ブレ",
   TNZ: "タンザ",
@@ -103,14 +101,12 @@ const sheetLabel: Partial<Record<BeanCode, string>> = {
   BRA: "ブラジル",
   ICE: "氷",
   MILK: "牛",
+  SP: "限定",
 };
 
-// カップの名前。盤面のカードは商品の略称、実データテストの限定は商品の種類 limited の表示名（無ければ商品名）
-const cupLabel = (cup: SheetCup, limitedLabel: string) => {
-  if (cup.itemKey) return cup.beanName;
-  if (cup.beanCode === "SP") return limitedLabel || cup.beanName;
-  return sheetLabel[cup.beanCode] ?? cup.beanName;
-};
+// カップの名前。盤面のカードは商品の略称（API の abbr）をそのまま出す。実データテストのカードは今までどおり
+const cupLabel = (cup: SheetCup) =>
+  cup.itemKey ? cup.beanName : sheetLabel[cup.beanCode];
 
 const cupColor = (cup: SheetCup) => {
   if (cup.beanCode === "SP") return "bg-red-200";
@@ -173,9 +169,8 @@ const CupChip: React.FC<{
   lifted = false,
   onClick,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const stacked = cup.cupCount >= 2;
-  // 盤面のカードはマスターの画面と同じ背景色。文字色は背景色から決める（POS と共通の readableTextColor）
+  // 盤面のカードは色の設定の色（無ければ白）。文字色は背景色から決める（POS と共通の readableTextColor）
   const colorStyle = cup.color
     ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
     : undefined;
@@ -204,7 +199,7 @@ const CupChip: React.FC<{
           <span
             className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
           >
-            {cupLabel(cup, limitedLabel)}
+            {cupLabel(cup)}
           </span>
           <span
             className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
@@ -782,7 +777,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         {current ? (
                           <>
                             <span className="font-mono">
-                              {seconds === 0 ? "継続" : formatMinSec(seconds)}
+                              {seconds === 0 ? "継続" : caosClockLabel(seconds)}
                             </span>
                             <span>次へ</span>
                             <ArrowRightCircle className="h-3.5 w-3.5" />
@@ -883,7 +878,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
-                                  ? `抽出中 残${formatMinSec(seconds)}`
+                                  ? `抽出中 残${caosClockLabel(seconds)}`
                                   : "抽出中"
                                 : "",
                             ]

@@ -67,6 +67,7 @@ describe("[db] orderRepository", async () => {
           makes_cup: true,
           needs_brew: true,
           senior_only: false,
+          iced_brew: false,
         },
         assignee: null,
       }),

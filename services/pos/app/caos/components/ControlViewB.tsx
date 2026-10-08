@@ -1,4 +1,4 @@
-import { formatMinSec } from "@cafeore/common";
+import { caosClockLabel } from "@cafeore/common";
 import {
   CheckCircle2,
   ChevronRight,
@@ -237,7 +237,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                       >
                         {remainingSeconds === 0
                           ? "継続中"
-                          : formatMinSec(remainingSeconds)}
+                          : caosClockLabel(remainingSeconds)}
                       </div>
                     </>
                   ) : (
@@ -332,7 +332,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                   }`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
+                  {item.isStandby ? "待機" : caosClockLabel(item.seconds)}
                 </span>
               ))}
             </div>

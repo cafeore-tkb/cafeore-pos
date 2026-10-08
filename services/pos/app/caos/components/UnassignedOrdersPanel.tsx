@@ -1,9 +1,10 @@
-import { formatMinSec } from "@cafeore/common";
+import { CAOS_DRIPPER_IDS, caosClockLabel } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
+import { isLaneId } from "../utils/lanes";
 import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
 import { BeanBadge } from "./BeanBadge";
@@ -101,10 +102,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6;
+        return element && isLaneId(bayId);
       });
     const bayId = Number(target?.dataset.bayTarget);
-    return bayId >= 1 && bayId <= 6 ? bayId : null;
+    return isLaneId(bayId) ? bayId : null;
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
@@ -182,7 +183,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   className={`whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
+                  {item.isStandby ? "待機" : caosClockLabel(item.seconds)}
                 </span>
               ))}
             </div>
@@ -229,7 +230,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
             const cardStyle = order.preferredBaristaId
               ? "bg-violet-50 border-violet-300 text-slate-900"
               : surface.className;
-            // 指名の色を優先し、それ以外はマスターの画面と同じ背景色（あれば）
+            // 指名の色を優先し、それ以外は色の設定の色（画面 master。無ければ白）
             const surfaceStyle = order.preferredBaristaId
               ? undefined
               : surface.style;
@@ -274,7 +275,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     {order.beanName} ×{order.cupCount}
                   </h3>
                   <BeanBadge
-                    beans={order.beans}
+                    card={order}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
                   {order.preferredBaristaId && (
@@ -441,7 +442,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 1から3`}
                     >
-                      {[1, 2, 3].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(0, 3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"
@@ -465,7 +466,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       style={padStyle}
                       aria-label={`${order.id}の割当先 4から6`}
                     >
-                      {[4, 5, 6].map((bayId) => (
+                      {CAOS_DRIPPER_IDS.slice(3).map((bayId) => (
                         <button
                           key={bayId}
                           type="button"

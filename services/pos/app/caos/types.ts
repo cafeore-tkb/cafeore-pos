@@ -6,9 +6,7 @@ export type BeanCode =
   | "BRA"
   | "ICE"
   | "MILK"
-  | "SP"
-  // 盤面のカードで、氷・牛・限定のどれでもない商品（どの豆かは beans で見分ける）
-  | "OTHER";
+  | "SP";
 
 // カードの豆。POS の在庫対象（kind が bean）の ID と名前をそのまま持つ
 export interface CardBean {
@@ -17,12 +15,14 @@ export interface CardBean {
 }
 
 export interface OrderTicket {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** 背景色（#RRGGBB。色の設定の画面 master、無ければ白）。cafeore-pos の盤面のカードにだけ付く */
   color?: string;
   /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
   itemIndex?: number; // e.g. 1 (of 2 items in order #152)
@@ -67,12 +67,14 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** 背景色（#RRGGBB。色の設定の画面 master、無ければ白）。cafeore-pos の盤面のカードにだけ付く */
   color?: string;
   /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   id: string; // e.g. "#162"
   ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
   itemIndex?: number;
@@ -89,7 +91,7 @@ export interface UnassignedOrder {
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
   seniorOnly?: boolean; // 限定（種類の senior_only）
-  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
+  mergeKey?: string; // 統合できる相手を決めるキー（注文のカードは商品と指名、実データテストは豆）。同じキーの 1 杯どうしだけ統合できる
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 

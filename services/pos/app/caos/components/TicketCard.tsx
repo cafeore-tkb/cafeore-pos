@@ -3,6 +3,7 @@ import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
+import { isLaneId, moveTargets } from "../utils/lanes";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
@@ -45,7 +46,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   const isCompleted = ticket.status === "completed";
   const isNamed = Boolean(ticket.preferredBaristaId);
-  // 盤面のカードは、マスターの画面と同じ背景色で塗る（終わった・指名のカードはそれぞれの色を優先）
+  // 盤面のカードは、色の設定の色（画面 master。無ければ白）で塗る（終わった・指名のカードはそれぞれの色を優先）
   const masterColor =
     ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
   // 文字色は背景色から決める（POS と共通の readableTextColor）
@@ -81,13 +82,13 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     );
     if (padButton) {
       const bayId = Number(padButton.dataset.bayTarget);
-      return bayId >= 1 && bayId <= 6 && bayId !== currentBayId ? bayId : null;
+      return isLaneId(bayId) && bayId !== currentBayId ? bayId : null;
     }
     const lane = elements
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6 && bayId !== currentBayId;
+        return element && isLaneId(bayId) && bayId !== currentBayId;
       });
     return lane ? Number(lane.dataset.bayTarget) : null;
   };
@@ -192,12 +193,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       )}
       {isActionOpen && (
         <>
-          {[1, 2, 3].map((bayId, index) => {
-            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
-            const disabled = Boolean(
-              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
-            );
-            return (
+          {/* 1〜3 はカードの上、4〜6 は下に並べる */}
+          {moveTargets(ticket.preferredBaristaId, currentBayId).map(
+            ({ bayId, toFront, disabled }, index) => (
               <button
                 key={bayId}
                 type="button"
@@ -205,47 +203,20 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 disabled={disabled}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMoveTicket(ticket, bayId, bayId === currentBayId);
+                  onMoveTicket(ticket, bayId, toFront);
                   onCloseAction();
                 }}
-                className="-top-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
+                className={`${index < 3 ? "-top-[38px]" : "-bottom-[38px]"} absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400`}
                 style={{
-                  left: `${index * 33.333}%`,
+                  left: `${(index % 3) * 33.333}%`,
                   width: "33.333%",
                   ...padDragStyle,
                 }}
               >
-                {bayId === currentBayId ? "先頭" : bayId}
+                {toFront ? "先頭" : bayId}
               </button>
-            );
-          })}
-          {[4, 5, 6].map((bayId, index) => {
-            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
-            const disabled = Boolean(
-              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
-            );
-            return (
-              <button
-                key={bayId}
-                type="button"
-                data-bay-target={bayId}
-                disabled={disabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMoveTicket(ticket, bayId, bayId === currentBayId);
-                  onCloseAction();
-                }}
-                className="-bottom-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
-                style={{
-                  left: `${index * 33.333}%`,
-                  width: "33.333%",
-                  ...padDragStyle,
-                }}
-              >
-                {bayId === currentBayId ? "先頭" : bayId}
-              </button>
-            );
-          })}
+            ),
+          )}
           <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
             <X className="h-10 w-10 stroke-[3] text-red-600/35" />
           </div>
@@ -313,7 +284,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           >
             {ticket.beanName}
           </span>
-          <BeanBadge beans={ticket.beans} />
+          <BeanBadge card={ticket} />
           {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
             <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計

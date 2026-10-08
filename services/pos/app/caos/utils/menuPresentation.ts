@@ -86,20 +86,11 @@ export const MENU_PRESENTATION: Record<BeanCode, MenuPresentation> = {
     badgeClass: "bg-emerald-200 text-emerald-950",
     accent: "#047857",
   },
-  OTHER: {
-    family: "gourmet",
-    familyLabel: "その他",
-    shortLabel: "その他",
-    processLabel: "通常抽出",
-    cardClass: "bg-white border-slate-300",
-    badgeClass: "bg-slate-900 text-white",
-    accent: "#64748b",
-  },
 };
 
-// カードの見た目。cafeore-pos の盤面のカードは、マスターの画面と同じ背景色（color）で塗り、
+// カードの見た目。cafeore-pos の盤面のカードは、色の設定の色（color。無ければ白）で塗り、
 // 文字色は背景色から決める（POS と共通の readableTextColor）。colored のカードの中の文字は色を継ぐ。
-// 色を持たないカード（実データテスト・手元で足した注文）は、今までどおり豆ごとの色。
+// 色を持たないカード（実データテスト）は、今までどおり豆ごとの色。
 export const cardSurface = (card: { beanCode: BeanCode; color?: string }) => {
   if (card.color) {
     const color = readableTextColor(card.color);

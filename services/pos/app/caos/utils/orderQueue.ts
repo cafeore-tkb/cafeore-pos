@@ -1,11 +1,15 @@
-import { CHANGEOVER_SEC, FIRST_START_DELAY_SEC } from "@cafeore/common";
+import {
+  CAOS_CHANGEOVER_SEC,
+  CAOS_FIRST_START_DELAY_SEC,
+  CAOS_MAX_CUPS,
+} from "@cafeore/common";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
-// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
-// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）で比べる。
+// 1杯同士で、統合の相手を決めるキー（mergeKey）が同じものだけを、2杯の同時抽出へ統合できる。
+// 注文から組み立てたカードの mergeKey は @cafeore/common の caosMergeKey（canMergeCards が比べるもの。商品と指名）。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
@@ -13,9 +17,7 @@ export const canMergeDripUnits = (
   (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.beanCode === second.beanCode &&
-  first.preferredBaristaId === second.preferredBaristaId &&
-  // 盤面のカードは統合できる相手のキー（商品と指名）を持つ。API は同じ商品・同じ指名の 1 杯どうししか統合しないので、候補もそれに揃える
+  first.mergeKey !== undefined &&
   first.mergeKey === second.mergeKey;
 
 export const orderNumber = (id: string) =>
@@ -27,7 +29,7 @@ const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
   (a.ticketUid || "").localeCompare(b.ticketUid || "");
 
 // arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS9（練習の盤面）で作り直すので、
-// 定数だけ共通のもの（@cafeore/common の caosTiming）にしてある。普段の盤面の予定時刻は planLane で決める（live/board.ts）
+// 定数だけ共通のもの（@cafeore/common）にしてある。普段の盤面の予定時刻は planCaosLane で決める（live/board.ts）
 export const arrangeQueue = (
   queue: OrderTicket[],
   nowSec: number,
@@ -60,12 +62,12 @@ export const arrangeQueue = (
           nowSec,
           (first.startTimeSec ?? nowSec) + first.totalDurationSec,
         )
-      : (first.startTimeSec ?? nowSec + FIRST_START_DELAY_SEC) +
+      : (first.startTimeSec ?? nowSec + CAOS_FIRST_START_DELAY_SEC) +
         first.totalDurationSec;
   let cursor = firstEnd;
 
   for (const ticket of ordered.slice(1)) {
-    const startTimeSec = cursor + CHANGEOVER_SEC;
+    const startTimeSec = cursor + CAOS_CHANGEOVER_SEC;
     result.push({
       ...ticket,
       status: "scheduled",
@@ -85,9 +87,24 @@ export const queueWaitSeconds = (queue: OrderTicket[]) =>
       sum +
       (index === 0
         ? (ticket.timeRemainingSec ?? ticket.totalDurationSec)
-        : ticket.totalDurationSec + CHANGEOVER_SEC),
+        : ticket.totalDurationSec + CAOS_CHANGEOVER_SEC),
     0,
   );
+
+// 次に空くドリッパー（空くまでの秒の短い順に 3 つ）
+export const nextAvailableBays = (baristas: Barista[]) =>
+  baristas
+    .map((barista) => ({
+      bayNumber: barista.bayNumber,
+      seconds: queueWaitSeconds(barista.queue),
+      isStandby: barista.queue.length === 0,
+    }))
+    .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
+    .slice(0, 3);
+
+// カードの杯数の合計
+export const totalCups = (cards: { cupCount: number }[]) =>
+  cards.reduce((sum, card) => sum + card.cupCount, 0);
 
 // ドリッパーの先頭のカードの残り（秒）。カードが無ければ 0
 export const activeRemainingSec = (barista: Barista, nowSec: number) => {
@@ -106,7 +123,7 @@ export const splitIntoDripUnits = (orders: UnassignedOrder[]) => {
     let remaining = order.cupCount;
     let part = 1;
     while (remaining > 0) {
-      const cups = Math.min(2, remaining);
+      const cups = Math.min(CAOS_MAX_CUPS, remaining);
       parts.push({
         ...order,
         ticketUid: `${order.ticketUid || order.id.replace("#", "")}-part${part}`,

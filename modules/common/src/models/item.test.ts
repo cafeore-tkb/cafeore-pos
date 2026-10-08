@@ -12,6 +12,7 @@ describe("[unit] itemTypeSchema", () => {
       makes_cup: true,
       needs_brew: true,
       senior_only: false,
+      iced_brew: false,
     });
   });
 
@@ -23,7 +24,16 @@ describe("[unit] itemTypeSchema", () => {
       makes_cup: true,
       needs_brew: true,
       senior_only: true,
+      iced_brew: false,
     };
     expect(itemTypeSchema.parse(itemType)).toEqual(itemType);
+    const iced = {
+      ...itemType,
+      name: "ice",
+      display_name: "アイス",
+      senior_only: false,
+      iced_brew: true,
+    };
+    expect(itemTypeSchema.parse(iced)).toEqual(iced);
   });
 });

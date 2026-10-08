@@ -19,13 +19,13 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// 本物の Postgres が要るので、LISTEN_TEST_DATABASE_URL を渡したときだけ走らせる。
+// 本物の Postgres が要るので、TEST_DATABASE_URL を渡したときだけ走らせる。
 // 中のテーブルは作り直すので、捨ててよい DB を渡すこと。
 func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
-	dsn := os.Getenv("LISTEN_TEST_DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("LISTEN_TEST_DATABASE_URL is not set")
+		t.Skip("TEST_DATABASE_URL is not set")
 	}
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
