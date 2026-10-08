@@ -268,19 +268,13 @@ function ResourceRow({
 // アイテムの ID → 在庫対象の ID → 入力中の量
 type Draft = Record<string, Record<string, string>>;
 
-// 保存する内容が同じかどうか。入力の書き方（"15" と "15.0" など）の違いは無視する
-const sameUsages = (
-  a: Record<string, string> | undefined,
-  b: Record<string, string> | undefined,
-) => {
-  const key = (draft: Record<string, string> | undefined) =>
-    JSON.stringify(
-      toUsageInputs(draft ?? {}).sort((x, y) =>
-        x.resource_id.localeCompare(y.resource_id),
-      ),
-    );
-  return key(a) === key(b);
-};
+// 保存する内容を比べるためのキー。入力の書き方（"15" と "15.0" など）の違いは無視する
+const usageKey = (amounts: Record<string, string> = {}) =>
+  JSON.stringify(
+    toUsageInputs(amounts).sort((x, y) =>
+      x.resource_id.localeCompare(y.resource_id),
+    ),
+  );
 
 function UsagesSection({
   items,
@@ -302,11 +296,8 @@ function UsagesSection({
 
   useEffect(() => setDraft(saved), [saved]);
 
-  const columns = useMemo(() => sortResources(resources), [resources]);
-  const cups = useMemo(
-    () => resources.filter((r) => r.kind === "cup"),
-    [resources],
-  );
+  const columns = sortResources(resources);
+  const cups = resources.filter((r) => r.kind === "cup");
 
   const sortedItems = useMemo(
     () =>
@@ -323,13 +314,13 @@ function UsagesSection({
   );
 
   const changedItems = sortedItems.filter(
-    (item) => !sameUsages(draft[item.id], saved[item.id]),
+    (item) => usageKey(draft[item.id]) !== usageKey(saved[item.id]),
   );
 
   // カップが未設定のアイテムに、同じタイプのほかのアイテムに入っているカップを入れる
   const fillCups = () => {
     const filledPairs = Object.entries(draft).flatMap(([item_id, amounts]) =>
-      toUsageInputs(amounts ?? {}).map(({ resource_id }) => ({
+      toUsageInputs(amounts).map(({ resource_id }) => ({
         item_id,
         resource_id,
       })),
@@ -348,13 +339,13 @@ function UsagesSection({
       filled++;
     }
     setDraft(next);
-    toast(
-      filled > 0
-        ? `${filled}件にカップを入れました。保存すると反映されます`
-        : empty > 0
-          ? "同じタイプでカップが入っているアイテムがありません"
-          : "カップが空のアイテムはありません",
-    );
+    if (filled > 0) {
+      toast(`${filled}件にカップを入れました。保存すると反映されます`);
+    } else if (empty > 0) {
+      toast("同じタイプでカップが入っているアイテムがありません");
+    } else {
+      toast("カップが空のアイテムはありません");
+    }
   };
 
   const setCell = (itemId: string, resourceId: string, value: string) =>

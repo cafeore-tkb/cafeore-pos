@@ -612,7 +612,7 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return
 	}
 
-	usages, resourceIDs, err := buildItemStockUsages(itemID, req)
+	usages, err := buildItemStockUsages(itemID, req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -624,14 +624,16 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&item, "id = ?", itemID).Error; err != nil {
 			return err
 		}
-		if len(resourceIDs) > 0 {
-			var resources int64
-			if err := tx.Model(&models.StockResource{}).Where("id IN ?", resourceIDs).Count(&resources).Error; err != nil {
-				return err
-			}
-			if resources != int64(len(resourceIDs)) {
-				return errUsageResourceNotFound
-			}
+		resourceIDs := make([]uuid.UUID, len(usages))
+		for i, u := range usages {
+			resourceIDs[i] = u.ResourceID
+		}
+		var resources int64
+		if err := tx.Model(&models.StockResource{}).Where("id IN ?", resourceIDs).Count(&resources).Error; err != nil {
+			return err
+		}
+		if resources != int64(len(usages)) {
+			return errUsageResourceNotFound
 		}
 		if err := tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error; err != nil {
 			return err
@@ -659,20 +661,18 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 }
 
 // 本文を検証して1つのアイテムの使用量の行にする。量は正、在庫対象は重複なし。
-func buildItemStockUsages(itemID uuid.UUID, req []models.ItemStockUsageRequest) ([]models.ItemStockUsage, []uuid.UUID, error) {
+func buildItemStockUsages(itemID uuid.UUID, req []models.ItemStockUsageRequest) ([]models.ItemStockUsage, error) {
 	usages := make([]models.ItemStockUsage, 0, len(req))
-	resourceIDs := make([]uuid.UUID, 0, len(req))
 	seen := make(map[uuid.UUID]bool, len(req))
 	for _, u := range req {
 		resourceID := uuid.UUID(u.ResourceId)
 		if u.Amount <= 0 || seen[resourceID] {
-			return nil, nil, errors.New("amount must be positive and each resource must be unique")
+			return nil, errors.New("amount must be positive and each resource must be unique")
 		}
 		seen[resourceID] = true
-		resourceIDs = append(resourceIDs, resourceID)
 		usages = append(usages, models.ItemStockUsage{ItemID: itemID, ResourceID: resourceID, Amount: u.Amount})
 	}
-	return usages, resourceIDs, nil
+	return usages, nil
 }
 
 // POST /api/inventory/remind - 残量確認のリマインド（スケジューラから呼ぶ）
