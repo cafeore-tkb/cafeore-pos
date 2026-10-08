@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,24 +12,62 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// 起動時のマイグレーション（migrate.go）を本物の Postgres で走らせる。MIGRATE_TEST_DATABASE_URL を渡したときだけ動く
-// （空の DB を渡すこと。public スキーマを作り直す。在庫のテストと同じ DB は使わないこと）。
+// 起動時のマイグレーション（migrate.go）を本物の Postgres で走らせる。TEST_DATABASE_URL を渡したときだけ動く。
+// migrate は本番と同じく public スキーマを前提にしているので、テストごとに使い捨ての空の database を作って流し、
+// 終わったら消す。渡した DB の中身には触らないので、ほかの DB のテストと同じ DB を指しても壊し合わない。
+// 接続するロールには CREATEDB が要る。
 //
-//	MIGRATE_TEST_DATABASE_URL=postgres://postgres@localhost:55432/migrate_test go test ./cmd/server/ -run Migrate
+//	TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres go test ./cmd/server/ -run Migrate
+//
+// TODO: #790 がマージされたら、この準備は #790 の api/internal/testdb（testdb.NewDatabase）に寄せる
+// （TEST_DATABASE_URL を読む・無ければスキップ・CI では落とす、の決まりも testdb にまとまっている）。
+// 今はまだ testdb が無いので、ここで同じ形の準備をしている。CI に Postgres が無いうちは落とさずスキップする。
 
 func openMigrateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("MIGRATE_TEST_DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("MIGRATE_TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
+		t.Skip("TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
 	}
-	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
+	open := func(dsn string) *gorm.DB {
+		t.Helper()
+		db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		return db
+	}
+
+	admin := open(dsn)
+	name := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	mustExec(t, admin, "CREATE DATABASE "+name)
+	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す。
+	// 閉じ忘れた接続があっても消せるよう FORCE を付ける
+	t.Cleanup(func() {
+		if err := admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)").Error; err != nil {
+			t.Errorf("failed to drop database %s: %v", name, err)
+		}
+	})
+	return open(withDatabase(t, dsn, name))
+}
+
+// 接続文字列の database を差し替える。URL でも key=value でもよい。
+func withDatabase(t *testing.T, dsn, name string) string {
+	t.Helper()
+	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+		return dsn + " dbname=" + name
+	}
+	u, err := url.Parse(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, db, "DROP SCHEMA public CASCADE")
-	mustExec(t, db, "CREATE SCHEMA public")
-	return db
+	u.Path = "/" + name
+	return u.String()
 }
 
 func mustExec(t *testing.T, db *gorm.DB, sql string, args ...any) {
@@ -57,7 +97,7 @@ func readItemTypeFlags(t *testing.T, db *gorm.DB) map[string]itemTypeFlags {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	got := map[string]itemTypeFlags{}
 	for rows.Next() {
 		var name string
