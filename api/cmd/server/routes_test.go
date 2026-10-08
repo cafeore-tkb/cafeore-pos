@@ -60,8 +60,8 @@ func openAPIOperations(t *testing.T) []string {
 func TestRegisterRoutesMatchesOpenAPI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	// ハンドラーは登録するだけで呼ばないので、nil のままでよい
-	registerRoutes(r, routeHandlers{})
+	// ハンドラーは登録するだけで呼ばないので、DB などは nil のままでよい
+	registerRoutes(r, nil, nil, nil)
 
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { orderRepository } from "../repositories/order";
-import { ApiError, apiWebSocketUrl, throwApiError } from "./client";
+import { apiWebSocketUrl, throwApiError } from "./client";
 
 const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -34,16 +34,6 @@ describe("[unit] throwApiError", () => {
     expect(() => throwApiError(response, undefined, "Failed")).toThrow(
       "Failed: 400 Bad Request",
     );
-  });
-
-  test("keeps the status", () => {
-    try {
-      throwApiError(response, undefined, "Failed");
-    } catch (e) {
-      expect(e).toBeInstanceOf(ApiError);
-      expect((e as ApiError).status).toBe(400);
-    }
-    expect.assertions(2);
   });
 });
 

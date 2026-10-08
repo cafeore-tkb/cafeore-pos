@@ -12,7 +12,7 @@ export const colorSettingRepoFactory = (): ColorSettingRepository => ({
     );
     // 400 のレスポンス型があると error で data が絞り込まれないので、data も見る
     if (error || !response.ok || !data)
-      return throwApiError(response, error, "Failed to save color setting");
+      throwApiError(response, error, "Failed to save color setting");
     return data;
   },
   delete: async (id) => {
