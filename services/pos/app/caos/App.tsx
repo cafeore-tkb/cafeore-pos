@@ -1,26 +1,12 @@
 import {
-  CHANGEOVER_SEC,
-  type CaosWritesResult,
-  DRIPPER_NUMBERS,
-  FIRST_START_DELAY_SEC,
-  IMMINENT_SEC,
-  STANDBY_LABEL,
-  assignWrites,
-  brewDurationLabel,
-  brewDurationSec,
-  buildCaosCards,
-  caosDay,
-  formatClockOfDay,
-  formatMinSec,
-  formatRemainingLabel,
-  mergeWrites,
-  nextCaosDripper,
-  putCaosCups,
-  startOfJstDay,
-  unassignWrites,
-  useColorSettings,
+  CAOS_CHANGEOVER_SEC,
+  CAOS_FIRST_START_DELAY_SEC,
+  caosBrewSec,
+  caosTimeOfDayLabel,
+  jstDayStart,
 } from "@cafeore/common";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
   AuxiliaryContent,
@@ -35,12 +21,9 @@ import {
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import { useBeanInventory } from "./hooks/useBeanInventory";
-import { usePosOrders } from "./hooks/usePosOrders";
-import { cardsToBoard } from "./live/board";
+import { useLiveCaosBoard } from "./live/useLiveCaosBoard";
 import type {
   Barista,
-  HistoricalDataset,
   HistoricalOrder,
   OrderTicket,
   TestPlaySession,
@@ -51,10 +34,10 @@ import { makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
-  orderNumber,
-  queueWaitSeconds,
+  compareCards,
+  nextAvailableBays,
   splitIntoDripUnits,
-  ticketKey,
+  totalCups,
 } from "./utils/orderQueue";
 
 type PanelSnapshot = {
@@ -73,19 +56,8 @@ const readPanelSnapshot = (): PanelSnapshot | null => {
   }
 };
 
-// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS9（練習の盤面）で作り直すので、ここは触らない。
-// 普段の盤面（cafeore-pos の盤面）は、サーバーの営業日と同じ日本時間の 0 時を起点にする（startOfJstDay）
-const startOfLocalDay = (ms: number) => {
-  const date = new Date(ms);
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  ).getTime();
-};
-
 // 実データテスト（2025年の注文。商品 ID が無い）のカードのまとめ方。盤面のカードには使わない。
-// 練習の盤面（CaOS9）で作り直すので、それまでここだけに残す
+// 練習の盤面（CaOS8）で作り直すので、それまでここだけに残す
 type HistoricalGroup =
   | "CHAMP"
   | "ORE"
@@ -95,7 +67,7 @@ type HistoricalGroup =
   | "ICE"
   | "MILK"
   | "SP";
-const historicalBeanCode = (name: string, type: string): HistoricalGroup => {
+const historicalGroupOf = (name: string, type: string): HistoricalGroup => {
   if (type === "ice") return "ICE";
   if (type === "iceOre" || type === "milk") return "MILK";
   if (name.includes("俺")) return "ORE";
@@ -121,27 +93,20 @@ const historicalOrderToDripUnits = (
     { names: string[]; count: number }
   >();
   drinks.forEach((item) => {
-    const code = historicalBeanCode(item.name, item.type);
+    const code = historicalGroupOf(item.name, item.type);
     const current = grouped.get(code) || { names: [], count: 0 };
     current.count += 1;
     if (!current.names.includes(item.name)) current.names.push(item.name);
     grouped.set(code, current);
   });
-  const id = `#${order.orderId.toString().padStart(3, "0")}`;
-  const source = Array.from(
-    grouped,
-    ([groupKey, group], index): UnassignedOrder => ({
-      id,
-      ticketUid: `history-${order.orderId}-${groupKey}-${index}`,
-      itemKey: `history-${groupKey}`,
-      beanName: group.names.join("・"),
-      cupCount: group.count,
-      badgeTag: `${group.count}杯`,
-      predictedTimeStr: brewDurationLabel(group.count),
-      recommendedBaristas: "全ドリッパー",
-      recommendedBayIds: [...DRIPPER_NUMBERS],
-    }),
-  );
+  const source = Array.from(grouped, ([groupKey, group], index) => ({
+    ticketUid: `history-${order.orderId}-${groupKey}-${index}`,
+    orderNos: [order.orderId],
+    beanName: group.names.join("・"),
+    cupCount: group.count,
+    // 実データテストの盤面は、同じまとめ方の 1 杯どうしを統合できる
+    mergeKey: `history-${groupKey}`,
+  }));
   return splitIntoDripUnits(source);
 };
 
@@ -178,10 +143,8 @@ export default function App() {
   const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
     null,
   );
-  const [assignSlotData, setAssignSlotData] = useState<{
-    bayId: number | null;
-    order: UnassignedOrder | null;
-  } | null>(null);
+  // 空きスロットから開いた割当のドリッパー
+  const [assignSlotBayId, setAssignSlotBayId] = useState<number | null>(null);
 
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [simSpeed, setSimSpeed] = useState<number>(1);
@@ -189,10 +152,8 @@ export default function App() {
     direction: "back" | "now" | "forward";
     id: number;
   } | null>(null);
-  const [historicalOrders, setHistoricalOrders] = useState<HistoricalOrder[]>(
-    [],
-  );
-  const [testDataLoading, setTestDataLoading] = useState(true);
+  // 実データテストの注文。過去の注文データは同梱しない（あとで画面から読み込む形にする）ので、今は空。
+  const historicalOrders: HistoricalOrder[] = [];
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const [testPlaySession, setTestPlaySession] =
     useState<TestPlaySession | null>(
@@ -202,9 +163,9 @@ export default function App() {
 
   // Linked multi-item order selection (e.g. #152 has items in Bay 1 and Bay 2)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [realTime, setRealTime] = useState(() => new Date());
-  // 盤面の秒の起点。サーバーの営業日と同じく日本時間の 0:00（端末の時刻帯によらない）
-  const [realDayStartMs] = useState(() => startOfJstDay(Date.now()));
+  const realTime = useCurrentTime(1000);
+  // 秒は日本時間の 0 時から数える（盤面の「今日」と同じ区切り）
+  const realDayStartMs = jstDayStart(realTime.getTime());
   const testPlayStatus = testPlaySession?.status;
   const testPlayCurrentMs = testPlaySession?.currentMs;
   const testPlayEndMs = testPlaySession?.endMs;
@@ -215,86 +176,32 @@ export default function App() {
   // Seconds are counted from the session's first midnight so the clock keeps
   // increasing past 24:00 instead of wrapping and scrambling every queue.
   const operationalDayStartMs = testPlaySession
-    ? startOfLocalDay(testPlaySession.startMs)
+    ? jstDayStart(testPlaySession.startMs)
     : realDayStartMs;
   const realTimeSec = Math.floor(
     (operationalTime.getTime() - operationalDayStartMs) / 1000,
   );
 
-  // 普段は cafeore-pos の注文で動かす。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
-  // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる。操作はカップに書く（PUT /api/caos/cups・「次へ」）。
-  // 書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。
+  // 普段は cafeore-pos の注文で動かす（useLiveCaosBoard）。
   // 実データテスト中（終了後の実績表示も含め、リセットするまで）は注文を使わず、テストの注文だけで手元の盤面を動かす。
-  const live = !testPlaySession;
-  const { orders: posOrders, status: posStatus } = usePosOrders(live);
-  const today = caosDay(realTime);
-  const liveCards = useMemo(
-    () => buildCaosCards(posOrders ?? [], today),
-    [posOrders, today],
-  );
-  // カードの色をマスターの画面と同じにするための色の設定（POS の色の設定の API）
-  const { colorSettings } = useColorSettings(live);
-  // 豆の在庫と「商品 → 豆」は POS の在庫（API）をそのまま使う。CaOS では在庫を持たず、減らしもしない
-  const {
-    beanStatuses,
-    beanIndex,
-    error: beanError,
-    isLoading: beanLoading,
-  } = useBeanInventory();
-  // カードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
-  const liveBoard = useMemo(
-    () =>
-      cardsToBoard(
-        liveCards,
-        baristas,
-        realTimeSec,
-        realDayStartMs,
-        colorSettings,
-        beanIndex,
-      ),
-    [
-      liveCards,
-      baristas,
-      realTimeSec,
-      realDayStartMs,
-      colorSettings,
-      beanIndex,
-    ],
-  );
-  const boardBaristas = live ? liveBoard.baristas : baristas;
-  const boardUnassignedOrders = live
-    ? liveBoard.unassignedOrders
+  const isLive = !testPlaySession;
+  const live = useLiveCaosBoard({
+    enabled: isLive,
+    baristas,
+    now: realTime,
+    nowSec: realTimeSec,
+    dayStartMs: realDayStartMs,
+  });
+  const boardBaristas = isLive ? live.board.baristas : baristas;
+  const boardUnassignedOrders = isLive
+    ? live.board.unassignedOrders
     : unassignedOrders;
-  // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
-  const pendingNextRef = useRef(new Set<number>());
-  const [liveError, setLiveError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!liveError) return;
-    const timer = window.setTimeout(() => setLiveError(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [liveError]);
-
-  // カップへの書き込みを送る。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を出す。
-  // 結果は書いた注文の配信で届く。豆の在庫は POS の在庫（注文から数える）なので、ここでは減らさない
-  const runWrites = async (result: CaosWritesResult) => {
-    if ("error" in result) {
-      setLiveError(result.error);
-      return;
-    }
-    const { error } = await putCaosCups(result.writes);
-    if (error) setLiveError(error);
-  };
-  // 画面のカード（ticketUid）から、組み立てたカードを引く
-  const liveCard = (ticketUid: string | undefined) =>
-    ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
-  const newDripId = () => crypto.randomUUID();
 
   const findLiveTicket = (key: string) => {
     for (const bay of boardBaristas) {
       const ticket =
-        bay.queue.find((item) => ticketKey(item) === key) ||
-        bay.pastTickets?.find((item) => ticketKey(item) === key);
+        bay.queue.find((item) => item.ticketUid === key) ||
+        bay.pastTickets?.find((item) => item.ticketUid === key);
       if (ticket) return ticket;
     }
     return null;
@@ -310,35 +217,7 @@ export default function App() {
       setSelectedTicketKey(null);
   }, [selectedTicketKey, selectedTicketStatus]);
 
-  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
-    (a, b) =>
-      orderNumber(a.id) - orderNumber(b.id) ||
-      (a.itemIndex || 0) - (b.itemIndex || 0),
-  );
-
-  useEffect(() => {
-    const clock = window.setInterval(() => setRealTime(new Date()), 1000);
-    return () => window.clearInterval(clock);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setTestDataLoading(true);
-    import("./data/sohosai-2025-day12.json")
-      .then((module) => {
-        const dataset = module.default as HistoricalDataset;
-        if (!cancelled) setHistoricalOrders(dataset.orders);
-      })
-      .catch(() => {
-        if (!cancelled) setHistoricalOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTestDataLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(compareCards);
 
   useEffect(() => {
     if (testPlayStatus !== "active" || !isRunning) return;
@@ -429,13 +308,7 @@ export default function App() {
             );
             activeTicket.timeRemainingSec = nextSec;
             updatedQueue[0] = activeTicket;
-
-            return {
-              ...barista,
-              status: nextSec <= IMMINENT_SEC ? "imminent" : "brewing",
-              remainingStr: formatRemainingLabel(nextSec),
-              queue: updatedQueue,
-            };
+            return { ...barista, queue: updatedQueue };
           }
           return barista;
         }),
@@ -452,19 +325,8 @@ export default function App() {
     const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
 
-    if (live) {
-      if (pendingNextRef.current.has(bayId)) return;
-      // 抽出中のカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが断る）。
-      // 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始める
-      const current = targetBarista.queue[0];
-      const card =
-        current.status === "brewing" ? liveCard(current.ticketUid) : undefined;
-      pendingNextRef.current.add(bayId);
-      void nextCaosDripper(bayId, card?.dripId ?? null)
-        .then(({ error }) => {
-          if (error) setLiveError(error);
-        })
-        .finally(() => pendingNextRef.current.delete(bayId));
+    if (isLive) {
+      live.next(bayId, targetBarista.queue[0]);
       return;
     }
 
@@ -483,29 +345,17 @@ export default function App() {
         // This compensates every later card when the active drip ran long or short.
         const nextQueue = arrangeQueue(b.queue.slice(1), realTimeSec, true);
 
-        return {
-          ...b,
-          status: nextQueue.length > 0 ? "brewing" : "standby",
-          remainingStr:
-            nextQueue.length > 0
-              ? formatRemainingLabel(nextQueue[0].totalDurationSec)
-              : STANDBY_LABEL,
-          queue: nextQueue,
-          pastTickets,
-        };
+        return { ...b, queue: nextQueue, pastTickets };
       }),
     );
   };
 
   // Assign order to a bay
-  const handleAssignOrderToBay = (
-    orderUidOrId: string,
-    targetBayId: number,
-  ) => {
+  const handleAssignOrderToBay = (ticketUid: string, targetBayId: number) => {
     soundManager.playDispatch();
 
     const orderToAssign = boardUnassignedOrders.find(
-      (o) => o.ticketUid === orderUidOrId || o.id === orderUidOrId,
+      (o) => o.ticketUid === ticketUid,
     );
     if (!orderToAssign) return;
     if (
@@ -513,49 +363,31 @@ export default function App() {
       orderToAssign.preferredBaristaId !== targetBayId
     )
       return;
-    if (live) {
-      const card = liveCard(orderToAssign.ticketUid);
-      if (!card) return;
-      void runWrites(
-        assignWrites(liveCards, card, targetBayId, { newId: newDripId }),
-      );
+    if (isLive) {
+      live.assign(orderToAssign.ticketUid, targetBayId);
       return;
     }
 
     // Remove from unassigned
     setUnassignedOrders((prev) =>
-      prev.filter(
-        (o) =>
-          (o.ticketUid || o.id) !==
-          (orderToAssign.ticketUid || orderToAssign.id),
-      ),
+      prev.filter((o) => o.ticketUid !== orderToAssign.ticketUid),
     );
 
     // Calculate dynamic start time based on target bay's queue
     const targetBay = baristas.find((b) => b.id === targetBayId);
     const lastTicket = targetBay?.queue[targetBay.queue.length - 1];
-    const duration = brewDurationSec(orderToAssign.cupCount);
+    const duration = caosBrewSec(orderToAssign.cupCount);
     const computedStartSec =
       lastTicket?.startTimeSec && lastTicket.totalDurationSec
-        ? lastTicket.startTimeSec + lastTicket.totalDurationSec + CHANGEOVER_SEC
-        : realTimeSec + FIRST_START_DELAY_SEC;
+        ? lastTicket.startTimeSec +
+          lastTicket.totalDurationSec +
+          CAOS_CHANGEOVER_SEC
+        : realTimeSec + CAOS_FIRST_START_DELAY_SEC;
 
     // Convert to OrderTicket
     const newTicket: OrderTicket = {
-      id: orderToAssign.id,
-      ticketUid:
-        orderToAssign.ticketUid || `${orderToAssign.id}-bay${targetBayId}`,
-      itemIndex: orderToAssign.itemIndex,
-      totalItemsInOrder: orderToAssign.totalItemsInOrder,
-      totalOrderCups: orderToAssign.totalOrderCups,
-      orderNotes: orderToAssign.orderNotes,
-      sourceOrderIds: orderToAssign.sourceOrderIds,
-      preferredBaristaId: orderToAssign.preferredBaristaId,
-      itemKey: orderToAssign.itemKey,
-      beanName: orderToAssign.beanName,
-      cupCount: orderToAssign.cupCount,
+      ...orderToAssign,
       status: "scheduled",
-      scheduledTimeStr: formatMinSec(duration),
       startTimeSec: computedStartSec,
       totalDurationSec: duration,
     };
@@ -581,32 +413,25 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
-    if (live) {
-      const card = liveCard(ticket.ticketUid);
-      if (!card) return;
-      void runWrites(
-        assignWrites(liveCards, card, targetBayId, {
-          index: toFront ? 0 : undefined,
-          newId: newDripId,
-        }),
-      );
+    if (isLive) {
+      live.assign(ticket.ticketUid, targetBayId, toFront);
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
     }
     // 実データテストの盤面は注文番号の順に並べるので、順番の入れ替えはしない
     if (toFront) return;
-    const key = ticketKey(ticket);
+    const key = ticket.ticketUid;
     setBaristas((prev) => {
       return prev.map((bay) => ({
         ...bay,
         queue: arrangeQueue(
           bay.id === targetBayId
             ? [
-                ...bay.queue.filter((item) => ticketKey(item) !== key),
+                ...bay.queue.filter((item) => item.ticketUid !== key),
                 { ...ticket, status: "scheduled" as const },
               ]
-            : bay.queue.filter((item) => ticketKey(item) !== key),
+            : bay.queue.filter((item) => item.ticketUid !== key),
           realTimeSec,
         ),
       }));
@@ -617,89 +442,64 @@ export default function App() {
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
-    if (live) {
-      const card = liveCard(ticket.ticketUid);
-      if (!card) return;
-      void runWrites(unassignWrites(card));
+    if (isLive) {
+      live.unassign(ticket.ticketUid);
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
     }
-    const key = ticketKey(ticket);
+    const {
+      status: _status,
+      timeRemainingSec: _remaining,
+      totalDurationSec: _duration,
+      startTimeSec: _start,
+      endTimeSec: _end,
+      ...card
+    } = ticket;
     setBaristas((prev) =>
       prev.map((bay) => ({
         ...bay,
         queue: arrangeQueue(
-          bay.queue.filter((item) => ticketKey(item) !== key),
+          bay.queue.filter((item) => item.ticketUid !== card.ticketUid),
           realTimeSec,
         ),
       })),
     );
-    setUnassignedOrders((prev) => [
-      {
-        id: ticket.id,
-        ticketUid: ticket.ticketUid,
-        itemIndex: ticket.itemIndex,
-        totalItemsInOrder: ticket.totalItemsInOrder,
-        totalOrderCups: ticket.totalOrderCups,
-        orderNotes: ticket.orderNotes,
-        sourceOrderIds: ticket.sourceOrderIds,
-        itemKey: ticket.itemKey,
-        beanName: ticket.beanName,
-        cupCount: ticket.cupCount,
-        badgeTag: `${ticket.cupCount}杯`,
-        predictedTimeStr: brewDurationLabel(ticket.cupCount),
-        recommendedBaristas: ticket.preferredBaristaId
-          ? `ドリッパー ${ticket.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: ticket.preferredBaristaId
-          ? [ticket.preferredBaristaId]
-          : [...DRIPPER_NUMBERS],
-        preferredBaristaId: ticket.preferredBaristaId,
-      },
-      ...prev,
-    ]);
+    setUnassignedOrders((prev) => [card, ...prev]);
     setSelectedOrderId(null);
     soundManager.playDispatch();
   };
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
     const first = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === firstUid,
+      (order) => order.ticketUid === firstUid,
     );
     const second = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === secondUid,
+      (order) => order.ticketUid === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
-    if (live) {
-      const card = liveCard(firstUid);
-      const withCard = liveCard(secondUid);
-      if (!card || !withCard) return;
-      void runWrites(mergeWrites(card, withCard, newDripId));
+    if (isLive) {
+      live.merge(firstUid, secondUid);
       setSelectedOrderId(null);
       return;
     }
     setUnassignedOrders((prev) => {
-      const sourceOrderIds = Array.from(
-        new Set([
-          ...(first.sourceOrderIds || [first.id]),
-          ...(second.sourceOrderIds || [second.id]),
-        ]),
-      ).sort((a, b) => orderNumber(a) - orderNumber(b));
       const merged: UnassignedOrder = {
         ...first,
-        id: sourceOrderIds.join("+"),
         ticketUid: `merged-${[firstUid, secondUid].sort().join("-")}`,
-        sourceOrderIds,
+        orderNos: Array.from(
+          new Set([...first.orderNos, ...second.orderNos]),
+        ).sort((a, b) => a - b),
+        itemIndex: 1,
+        totalItemsInOrder: 1,
+        totalOrderCups: 2,
         cupCount: 2,
-        badgeTag: "2杯 統合",
-        orderNotes: `${sourceOrderIds.join(" + ")} 同時ドリップ`,
       };
       return [
-        ...prev.filter((order) => {
-          const uid = order.ticketUid || order.id;
-          return uid !== firstUid && uid !== secondUid;
-        }),
+        ...prev.filter(
+          (order) =>
+            order.ticketUid !== firstUid && order.ticketUid !== secondUid,
+        ),
         merged,
       ];
     });
@@ -712,7 +512,7 @@ export default function App() {
     setUnassignedOrders([]);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
-    setAssignSlotData(null);
+    setAssignSlotBayId(null);
     setTestPlaySession(null);
     historicalOrderCursor.current = 0;
     setIsRunning(true);
@@ -734,7 +534,7 @@ export default function App() {
     setUnassignedOrders([]);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
-    setAssignSlotData(null);
+    setAssignSlotBayId(null);
     historicalOrderCursor.current = 0;
     setTestPlaySession({
       status: "active",
@@ -758,44 +558,11 @@ export default function App() {
   };
 
   // Live cup totals shown in the header
-  const unassignedCardCups = boardUnassignedOrders.reduce(
-    (acc, cur) => acc + cur.cupCount,
-    0,
+  const totalUnassignedDisplay = totalCups(boardUnassignedOrders);
+  const totalWaitingCupsDisplay = totalCups(
+    boardBaristas.flatMap((barista) => barista.queue),
   );
-  const totalUnassignedDisplay = unassignedCardCups;
-
-  const currentBayQueueCups = boardBaristas.reduce(
-    (acc, b) => acc + b.queue.reduce((qAcc, t) => qAcc + t.cupCount, 0),
-    0,
-  );
-  const totalWaitingCupsDisplay = currentBayQueueCups;
-  const nextAvailable = [...boardBaristas]
-    .map((barista) => ({
-      bayNumber: barista.bayNumber,
-      seconds: queueWaitSeconds(barista.queue),
-      isStandby: barista.queue.length === 0,
-    }))
-    .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
-    .slice(0, 3);
-
-  // 盤面にある（未割当・待機・抽出中の）杯数（豆＝在庫対象の ID ごと）。豆のパネルに出す。実データテスト中は出さない
-  const beanWaitingCups = useMemo(() => {
-    if (!live) return undefined;
-    const cups = new Map<string, number>();
-    const waiting = [
-      ...boardUnassignedOrders,
-      ...boardBaristas.flatMap((barista) => barista.queue),
-    ];
-    for (const card of waiting) {
-      for (const bean of card.beans ?? []) {
-        cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
-      }
-    }
-    for (const status of beanStatuses) {
-      if (!cups.has(status.resource.id)) cups.set(status.resource.id, 0);
-    }
-    return cups;
-  }, [live, boardUnassignedOrders, boardBaristas, beanStatuses]);
+  const nextAvailable = nextAvailableBays(boardBaristas);
 
   const openAuxiliaryTab = (tab: AuxiliaryTab) => {
     try {
@@ -814,16 +581,15 @@ export default function App() {
     window.open(url.toString(), "_blank", "noopener,noreferrer");
   };
 
+  // 豆は POS の在庫。盤面にある杯数は実データテスト中は出さない
   const renderAuxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
       baristas={boardBaristas}
-      beanInventory={{
-        statuses: beanStatuses,
-        isLoading: beanLoading,
-        error: beanError,
+      beans={{
+        ...live.beans,
+        waitingCups: isLive ? live.beans.waitingCups : undefined,
       }}
-      beanWaitingCups={beanWaitingCups}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>
@@ -857,7 +623,7 @@ export default function App() {
           controlViewMode={controlViewMode}
           onSelectTab={setActiveTab}
           onSelectControlViewMode={setControlViewMode}
-          timeStr={formatClockOfDay(realTimeSec)}
+          timeStr={caosTimeOfDayLabel(realTimeSec)}
           unassignedCups={totalUnassignedDisplay}
           totalWaitingCups={totalWaitingCupsDisplay}
           soundEnabled={soundEnabled}
@@ -879,7 +645,7 @@ export default function App() {
           }
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={handleEndTestPlay}
-          posStatus={posStatus}
+          posStatus={live.status}
         />
 
         {/* Dynamic Tab Body */}
@@ -896,16 +662,14 @@ export default function App() {
             onSelectOrder={handleToggleOrderSelection}
             onAdvanceBay={handleAdvanceBay}
             onOpenTicketDetail={(ticket) =>
-              setSelectedTicketKey(ticketKey(ticket))
+              setSelectedTicketKey(ticket.ticketUid)
             }
             onMoveTicket={handleMoveScheduledTicket}
             onReturnToUnassigned={handleReturnScheduledTicket}
             onCloseTicketAction={() => setSelectedTicketKey(null)}
-            onOpenEmptySlot={(bayId) =>
-              setAssignSlotData({ bayId, order: null })
-            }
+            onOpenEmptySlot={setAssignSlotBayId}
             onAssignToBay={(order, bayId) =>
-              handleAssignOrderToBay(order.ticketUid || order.id, bayId)
+              handleAssignOrderToBay(order.ticketUid, bayId)
             }
             onMergeOrders={handleMergeUnassignedOrders}
           />
@@ -929,7 +693,7 @@ export default function App() {
           currentBayId={
             boardBaristas.find((bay) =>
               bay.queue.some(
-                (ticket) => ticketKey(ticket) === selectedTicketKey,
+                (ticket) => ticket.ticketUid === selectedTicketKey,
               ),
             )?.id || null
           }
@@ -943,30 +707,28 @@ export default function App() {
       )}
 
       {/* Assign Slot Modal */}
-      {assignSlotData && (
+      {assignSlotBayId !== null && (
         <AssignSlotModal
-          bayId={assignSlotData.bayId}
-          targetOrder={assignSlotData.order}
+          bayId={assignSlotBayId}
           baristas={boardBaristas}
           unassignedOrders={sortedUnassignedOrders}
-          onClose={() => setAssignSlotData(null)}
+          onClose={() => setAssignSlotBayId(null)}
           onAssign={handleAssignOrderToBay}
         />
       )}
 
-      {liveError && (
+      {live.error && (
         <div
           role="alert"
           className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
         >
-          {liveError}
+          {live.error}
         </div>
       )}
 
       {testSetupOpen && (
         <TestPlaySetup
           orders={historicalOrders}
-          loading={testDataLoading}
           onClose={() => setTestSetupOpen(false)}
           onStart={handleStartTestPlay}
         />

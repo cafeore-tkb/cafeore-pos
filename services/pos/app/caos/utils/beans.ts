@@ -22,7 +22,3 @@ export const buildBeanIndex = (
   }
   return index;
 };
-
-// カードの豆の名前（在庫対象の名前をそのまま）。豆が無ければ空
-export const beanNamesOf = (card: { beans?: CardBean[] }) =>
-  (card.beans ?? []).map((bean) => bean.name).join("・");

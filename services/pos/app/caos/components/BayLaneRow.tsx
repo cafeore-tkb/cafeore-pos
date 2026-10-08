@@ -1,12 +1,8 @@
-import {
-  CHANGEOVER_SEC,
-  IMMINENT_SEC,
-  dripperLabel,
-  formatMinSec,
-} from "@cafeore/common";
+import { CAOS_SOON_SEC, caosClockLabel, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import type { Barista, OrderTicket } from "../types";
+import { activeRemainingSec, orderLabel } from "../utils/orderQueue";
 import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
@@ -43,20 +39,18 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   simTimeSec,
   readOnly = false,
 }) => {
-  // Determine if active ticket is imminent (<15s or flagged imminent)
+  // 抽出中のカードの残りが CAOS_SOON_SEC 以下なら「まもなく」
   const activeTicket = barista.queue[0];
   const isImminent =
-    barista.status === "imminent" ||
-    (activeTicket &&
-      activeTicket.status === "brewing" &&
-      (activeTicket.timeRemainingSec ?? 999) <= IMMINENT_SEC);
+    activeTicket?.status === "brewing" &&
+    activeRemainingSec(barista, simTimeSec) <= CAOS_SOON_SEC;
   const isOvertime = Boolean(
     activeTicket &&
       activeTicket.status === "brewing" &&
       activeTicket.timeRemainingSec === 0,
   );
   const formatRemaining = (seconds?: number) =>
-    seconds === undefined ? "--:--" : formatMinSec(seconds);
+    seconds === undefined ? "--:--" : caosClockLabel(seconds);
 
   // Combine past completed tickets and current queue for full timeline view
   const allTickets: OrderTicket[] = [
@@ -67,17 +61,13 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     ...barista.queue,
   ];
 
-  let queueCursorSec: number | null = null;
+  // 開始・終了は盤面で決めた時刻をそのまま使う（cafeore-pos の盤面は live/board.ts の planCaosLane）。
+  // 終了が無いカードは開始から抽出時間、開始が無いカード（準備完了で終わったカード）は終了から抽出時間を引く
   const positionedTickets = allTickets.map((ticket) => {
-    let startSec = ticket.startTimeSec ?? timelineStartSec + 855;
-    if (queueCursorSec !== null && ticket.status !== "completed")
-      startSec = Math.max(startSec, queueCursorSec + CHANGEOVER_SEC);
-    const plannedEndSec = startSec + ticket.totalDurationSec;
-    const endSec =
-      ticket === activeTicket
-        ? Math.max(plannedEndSec, simTimeSec)
-        : plannedEndSec;
-    if (ticket.status !== "completed") queueCursorSec = endSec;
+    const startSec =
+      ticket.startTimeSec ??
+      (ticket.endTimeSec ?? simTimeSec) - ticket.totalDurationSec;
+    const endSec = ticket.endTimeSec ?? startSec + ticket.totalDurationSec;
     return { ticket, startSec, endSec };
   });
 
@@ -105,7 +95,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
           <div className="flex min-w-0 items-center gap-1 leading-none">
             {activeTicket && (
               <span className="ml-auto shrink-0 font-black font-mono text-[16px] text-slate-950">
-                {activeTicket.id}
+                {orderLabel(activeTicket)}
               </span>
             )}
           </div>
@@ -174,7 +164,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
 
           return (
             <div
-              key={ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`}
+              key={ticket.ticketUid}
               className="absolute top-1.5 bottom-1.5"
               style={{
                 left: `${leftPx}px`,

@@ -1,7 +1,11 @@
 import type { Cup } from "../models/cup";
-import { DRIPPER_NUMBERS, assignmentDisplay } from "../models/dripper";
+import {
+  DRIPPER_NUMBERS,
+  assignmentDisplay,
+  dripperLabel,
+} from "../models/dripper";
 import type { components } from "../types/api";
-import { jstDate } from "./jstDay";
+import { jstDate } from "./jst";
 
 // CaOS（ドリップ管制）の盤面の決まり。DB や画面を使わない純粋な関数だけを置く。
 //
@@ -12,31 +16,90 @@ import { jstDate } from "./jstDay";
 //   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻。どちらもサーバーの時刻で、サーバーが付ける（画面からは送らない）
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
 // カップが全部準備完了（マスターで準備完了にした）のカードも終わりとみなす。
-// 指名はレジで選んだドリッパーの番号（注文の明細の dripper）。番号のあるカップはその番号のドリッパーにしか置けない。
-// 番号の無い自由記述（assignee）だけの古い明細は指名なし。
+// 指名はレジで選んだドリッパーの番号（注文の明細の dripper）。番号のあるカップはその番号のドリッパーにしか置けず、
+// 1 枚のカードのカップは同じ番号（指名なしどうし）だけ。番号の無い自由記述（assignee）だけの古い明細は指名なし。
 //
 // CaOS の画面は、注文の一覧（共有の WebSocket の orders）から buildCaosCards でカードを組み立て、
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
 
-/** ドリッパーの数（番号は 1〜6。models/dripper の DRIPPER_NUMBERS。画面では 1st〜6th） */
-export const CAOS_DRIPPERS = DRIPPER_NUMBERS.length;
 /** 1 枚のカード（1 回のドリップ）で淹れる最大の杯数 */
 export const CAOS_MAX_CUPS = 2;
 
+/** 1 枚のカードの抽出時間（秒）。全ドリッパー同じ（1 杯 135 秒・2 杯 195 秒） */
+export const caosBrewSec = (cups: number) => (cups > 1 ? 195 : 135);
+/** 秒を「2分15秒」に */
+export const caosDurationLabel = (sec: number) =>
+  `${Math.floor(sec / 60)}分${sec % 60}秒`;
+/** 秒を「02:15」に（残り時間）。10 分以上は「12:05」 */
+export const caosClockLabel = (sec: number) =>
+  `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+/** 盤面の秒（その日の 0 時（日本時間、jstDayStart）からの秒）を「10:05:09」に。24 時を越えたら 0 時に戻す */
+export const caosTimeOfDayLabel = (sec: number) => {
+  const day = ((Math.floor(sec) % 86400) + 86400) % 86400;
+  return `${String(Math.floor(day / 3600)).padStart(2, "0")}:${caosClockLabel(day % 3600)}`;
+};
+
+/** 前の抽出が終わってから次の抽出を始めるまでの入れ替えの時間（秒） */
+export const CAOS_CHANGEOVER_SEC = 15;
+/** 抽出中のカードが無いドリッパーで、先頭の待機カードを始める見込み（今から何秒後か） */
+export const CAOS_FIRST_START_DELAY_SEC = 10;
+/** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
+export const CAOS_SOON_SEC = 15;
+
+/** 1 つのドリッパーの予定時刻（盤面の秒） */
+export interface CaosLanePlan {
+  /** 抽出中のカード：開始・終了の見込み・残り */
+  brewing?: { startSec: number; endSec: number; remainingSec: number };
+  /** 待機カード（並び順のまま）：開始・終了の見込み */
+  queued: { startSec: number; endSec: number }[];
+}
+
+/**
+ * 1 つのドリッパーの抽出中・待機カードの予定時刻を決める。
+ *   - 抽出中のカードは、始めた時刻（分からなければ今）から抽出時間で終わる見込み。過ぎていたら今終わる見込みにする
+ *   - 待機カードは、前のカードの終わりから入れ替えの時間（CAOS_CHANGEOVER_SEC）を挟んで順に始める
+ *   - 抽出中のカードが無いときは、先頭の待機カードを今から CAOS_FIRST_START_DELAY_SEC 後に始める
+ */
+export const planCaosLane = (
+  nowSec: number,
+  brewing: { startSec?: number; durationSec: number } | undefined,
+  queuedDurationsSec: readonly number[],
+): CaosLanePlan => {
+  let cursor = nowSec;
+  let brewingPlan: CaosLanePlan["brewing"];
+  if (brewing) {
+    const startSec = brewing.startSec ?? nowSec;
+    const plannedEndSec = startSec + brewing.durationSec;
+    brewingPlan = {
+      startSec,
+      endSec: Math.max(nowSec, plannedEndSec),
+      remainingSec: Math.max(0, plannedEndSec - nowSec),
+    };
+    cursor = brewingPlan.endSec;
+  }
+  const queued = queuedDurationsSec.map((durationSec, index) => {
+    const startSec =
+      !brewing && index === 0
+        ? nowSec + CAOS_FIRST_START_DELAY_SEC
+        : cursor + CAOS_CHANGEOVER_SEC;
+    cursor = startSec + durationSec;
+    return { startSec, endSec: cursor };
+  });
+  return { brewing: brewingPlan, queued };
+};
+
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 
-/** カップの今の CaOS の値 */
-export interface CaosCupState {
-  dripper: number | null;
-  dripperPosition: number | null;
-  dripId: string | null;
-  brewStartedAt: Date | null;
-  brewFinishedAt: Date | null;
-}
+/** カップの今の CaOS の値（Cup の列） */
+export type CaosCupState = Pick<
+  Cup,
+  "dripper" | "dripperPosition" | "dripId" | "brewStartedAt" | "brewFinishedAt"
+>;
 
 /** PUT /api/caos/cups の書き込み 1 つ（カップの組を before から after にする） */
 export type CaosCupsWrite = components["schemas"]["CaosCupsWrite"];
+type CaosCupAfter = CaosCupsWrite["after"];
 
 const UNASSIGNED_STATE: CaosCupState = {
   dripper: null,
@@ -69,7 +132,7 @@ export interface CaosBoardCup {
   /** 注文の中の並び（0 始まり） */
   position: number;
   item: Cup["item"];
-  /** 指名のドリッパーの番号（明細の dripper。1〜6）。自由記述だけの古い明細・指名なしは null */
+  /** 指名のドリッパーの番号（明細の dripper。1〜6）。指名なし・自由記述だけの古い明細は null */
   nominatedDripper: number | null;
   /** 指名の表示（マスターと同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。指名なしは null */
   nominee: string | null;
@@ -93,28 +156,22 @@ export interface CaosCard {
   cups: CaosBoardCup[];
   /** いちばん小さい注文番号 */
   orderNo: number;
-  /** 指名の番号（1〜6）。このドリッパーにしか置けない */
-  nominatedDripper: number | undefined;
   /** 限定（種類の senior_only）。上級生だけが淹れる */
   seniorOnly: boolean;
   /** 今のカップの値（書き込みの before に送る） */
   state: CaosCupState;
 }
 
-/** 日本時間の日付（YYYY-MM-DD。./jstDay の jstDate）。CaOS は作成日時がこの日の注文だけを見る */
-export const caosDay = (date: Date) => jstDate(date.getTime());
-
-/** 抽出が要るカップか（種類の「カップを作る」「抽出が要る」。種類の名前は見ない） */
+/** 抽出が要るカップか（種類の needs_brew。カップを作らない種類は API が false にして返す。種類の名前は見ない） */
 export const cupNeedsBrew = (cup: Pick<Cup, "item">) =>
-  cup.item.item_type.makes_cup !== false &&
-  cup.item.item_type.needs_brew !== false;
+  cup.item.item_type.needs_brew;
 
 const cupState = (cup: Cup): CaosCupState => ({
-  dripper: cup.dripper ?? null,
-  dripperPosition: cup.dripperPosition ?? null,
-  dripId: cup.dripId ?? null,
-  brewStartedAt: cup.brewStartedAt ?? null,
-  brewFinishedAt: cup.brewFinishedAt ?? null,
+  dripper: cup.dripper,
+  dripperPosition: cup.dripperPosition,
+  dripId: cup.dripId,
+  brewStartedAt: cup.brewStartedAt,
+  brewFinishedAt: cup.brewFinishedAt,
 });
 
 const compareStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -123,9 +180,6 @@ const compareCups = (a: CaosBoardCup, b: CaosBoardCup) =>
   a.orderNo - b.orderNo ||
   compareStr(a.orderId, b.orderId) ||
   a.position - b.position;
-
-const nomineeKey = (nominee: string | null) =>
-  nominee === null ? "" : `\u0001${nominee}`;
 
 const latest = (dates: (Date | null)[]) =>
   dates.reduce<Date | null>(
@@ -139,7 +193,6 @@ const makeCard = (
   state: CaosCupState,
 ): CaosCard => {
   const sorted = [...cups].sort(compareCups);
-  const first = sorted[0];
   return {
     key: state.dripId ?? `cups:${sorted.map((cup) => cup.id).join(",")}`,
     dripId: state.dripId,
@@ -152,8 +205,7 @@ const makeCard = (
         ? (state.brewFinishedAt ?? latest(sorted.map((cup) => cup.readyAt)))
         : null,
     cups: sorted,
-    orderNo: first.orderNo,
-    nominatedDripper: first.nominatedDripper ?? undefined,
+    orderNo: sorted[0].orderNo,
     seniorOnly: sorted.some((cup) => cup.item.item_type.senior_only === true),
     state,
   };
@@ -166,7 +218,8 @@ const statusRank: Record<CaosCardStatus, number> = {
   queued: 3,
 };
 
-/** ドリッパーの待機の並び（サーバーの「次へ」と同じ：順番・注文番号・dripId） */
+// ドリッパーの待機の並び：順番・いちばん小さい注文番号・dripId の順。
+// API の「次へ」（api/internal/handlers/caos.go の splitCaosLane）と同じ決まり。caos-lane-cases.json で両方を確かめる
 const compareQueued = (a: CaosCard, b: CaosCard) =>
   (a.dripperPosition ?? 0) - (b.dripperPosition ?? 0) ||
   a.orderNo - b.orderNo ||
@@ -183,7 +236,7 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
       compareStr(x.orderId, y.orderId) ||
       compareStr(x.item.item_type.name, y.item.item_type.name) ||
       compareStr(x.item.name, y.item.name) ||
-      compareStr(nomineeKey(x.nominee), nomineeKey(y.nominee)) ||
+      (x.nominatedDripper ?? 0) - (y.nominatedDripper ?? 0) ||
       x.position - y.position
     );
   }
@@ -205,11 +258,12 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
 };
 
 /**
- * 注文の一覧から、その日（day。caosDay）のカードを組み立てる。
+ * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。
  *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まり、カップが全部準備完了なら終わり
+ *     （API の「次へ」の splitCaosLane と同じ決まり）
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
- *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名ごと
- *     （指名の番号と表示。番号の無い古い明細は自由記述ごと）に分け、1 枚は最大 2 杯
+ *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名の番号ごとに分け、1 枚は最大 2 杯
+ *     （統合の caosMergeKey と同じく番号で分ける。自由記述は表示だけ）
  * 並びは、未割当（注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
  * 抽出が要らないカップ（needs_brew が false）は、列の値があっても出さない。
  */
@@ -220,19 +274,17 @@ export const buildCaosCards = (
   const byDrip = new Map<string, CaosBoardCup[]>();
   const loose = new Map<string, CaosBoardCup[]>();
   for (const order of orders) {
-    if (caosDay(order.createdAt) !== day) continue;
+    if (jstDate(order.createdAt.getTime()) !== day) continue;
     order.cups.forEach((cup, position) => {
       if (!cupNeedsBrew(cup)) return;
       const menu = order.menus.find(
         (menu) => menu.orderMenuId === cup.orderMenuId,
       );
       const nominatedDripper = menu?.dripper ?? null;
-      const nominee = menu
-        ? assignmentDisplay({
-            dripper: nominatedDripper,
-            assignee: menu.assignee?.trim() || null,
-          })
-        : null;
+      const nominee = assignmentDisplay({
+        dripper: nominatedDripper,
+        assignee: menu?.assignee?.trim() || null,
+      });
       const boardCup: CaosBoardCup = {
         id: cup.id,
         orderId: order.id,
@@ -256,7 +308,6 @@ export const buildCaosCards = (
         order.id,
         cup.item.id ?? cup.item.name,
         nominatedDripper ?? "",
-        nominee ?? "",
       ].join("\u0000");
       loose.set(key, [...(loose.get(key) ?? []), boardCup]);
     });
@@ -293,7 +344,7 @@ export const buildCaosCards = (
   return cards.sort(compareCards);
 };
 
-/** ドリッパーの列（終わり・抽出中・待機） */
+/** ドリッパーの列（終わり・抽出中・待機）。抽出中と待機の並びは API の「次へ」と同じ決まり */
 export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
   const mine = cards.filter((card) => card.dripper === dripper);
   return {
@@ -305,19 +356,11 @@ export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
 
 // ---------------------------------------------------------------- 書き込み
 
-/** カードに書く値。抽出の時刻は持たず、始めるかどうか（start）だけ。始めた時刻はサーバーが付ける */
-export interface CaosCupAfter {
-  dripper: number | null;
-  dripperPosition: number | null;
-  dripId: string | null;
-  start: boolean;
-}
-
 const UNASSIGNED_AFTER: CaosCupAfter = {
   dripper: null,
-  dripperPosition: null,
-  dripId: null,
-  start: false,
+  dripper_position: null,
+  drip_id: null,
+  start_brew: false,
 };
 
 const beforeJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
@@ -328,17 +371,10 @@ const beforeJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
   brew_finished_at: state.brewFinishedAt?.toISOString() ?? null,
 });
 
-const afterJSON = (after: CaosCupAfter): CaosCupsWrite["after"] => ({
-  dripper: after.dripper,
-  dripper_position: after.dripperPosition,
-  drip_id: after.dripId,
-  start_brew: after.start,
-});
-
 const writeOf = (card: CaosCard, after: CaosCupAfter): CaosCupsWrite => ({
   cup_ids: card.cups.map((cup) => cup.id),
   before: beforeJSON(card.state),
-  after: afterJSON(after),
+  after,
 });
 
 /** 書き込みを作れなかった理由（画面にそのまま出す） */
@@ -361,13 +397,15 @@ export const assignWrites = (
   dripper: number,
   { index, newId }: CaosAssignOptions,
 ): CaosWritesResult => {
-  if (!Number.isInteger(dripper) || dripper < 1 || dripper > CAOS_DRIPPERS)
-    return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
+  if (!DRIPPER_NUMBERS.includes(dripper))
+    return { error: `ドリッパーは 1〜${DRIPPER_NUMBERS.length} です` };
   if (card.status !== "unassigned" && card.status !== "queued")
     return { error: "抽出中・終了のカードは動かせません" };
-  if (card.nominatedDripper && card.nominatedDripper !== dripper)
+  // 指名の番号のあるカードは、その番号のドリッパーにしか置けない（サーバーも同じ決まりで断る）
+  const nominated = card.cups[0].nominatedDripper;
+  if (nominated !== null && nominated !== dripper)
     return {
-      error: `指名のあるカードは ${card.nominatedDripper} 番のドリッパーにしか置けません`,
+      error: `指名のあるカードは ${dripperLabel(nominated)} のドリッパーにしか置けません`,
     };
   if (
     card.status === "queued" &&
@@ -392,9 +430,9 @@ export const assignWrites = (
     writes: [
       writeOf(card, {
         dripper,
-        dripperPosition: position,
-        dripId: card.dripId ?? newId(),
-        start: !lane.brewing && others.length === 0,
+        dripper_position: position,
+        drip_id: card.dripId ?? newId(),
+        start_brew: !lane.brewing && others.length === 0,
       }),
     ],
   };
@@ -407,16 +445,21 @@ export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
-/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名の番号（サーバーも同じ番号どうしだけ通す） */
+/**
+ * 統合の相手を決めるキー（商品と指名の番号）。1 杯のカードどうしで、このキーが同じなら統合できる。
+ * 未割当の分け方（buildCaosCards）と同じく番号で決め、サーバーも番号の違うカップを 1 枚のカードにさせない
+ */
+export const caosMergeKey = (card: CaosCard) =>
+  `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.cups[0].nominatedDripper ?? ""}`;
+
+/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名の番号（caosMergeKey） */
 export const canMergeCards = (a: CaosCard, b: CaosCard) =>
   a.key !== b.key &&
   a.status === b.status &&
   (a.status === "unassigned" || a.status === "queued") &&
   a.cups.length === 1 &&
   b.cups.length === 1 &&
-  (a.cups[0].item.id ?? a.cups[0].item.name) ===
-    (b.cups[0].item.id ?? b.cups[0].item.name) &&
-  a.cups[0].nominatedDripper === b.cups[0].nominatedDripper;
+  caosMergeKey(a) === caosMergeKey(b);
 
 /**
  * 1 杯のカードどうしを 2 杯の同時抽出にまとめる。
@@ -431,15 +474,15 @@ export const mergeWrites = (
   if (!canMergeCards(card, withCard))
     return { error: "このカード同士は統合できません" };
   if (card.status === "unassigned") {
-    const after = { ...UNASSIGNED_AFTER, dripId: newId() };
+    const after = { ...UNASSIGNED_AFTER, drip_id: newId() };
     return { writes: [writeOf(card, after), writeOf(withCard, after)] };
   }
   // 待機どうし（まだ始めていない）なので、始めない
   const after: CaosCupAfter = {
     dripper: card.state.dripper,
-    dripperPosition: card.state.dripperPosition,
-    dripId: card.state.dripId,
-    start: false,
+    dripper_position: card.state.dripperPosition,
+    drip_id: card.state.dripId,
+    start_brew: false,
   };
   return { writes: [writeOf(card, after), writeOf(withCard, after)] };
 };

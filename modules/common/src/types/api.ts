@@ -122,6 +122,7 @@ export interface paths {
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+     * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
      * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
      */
     put: operations["writeCaosCups"];
@@ -272,6 +273,8 @@ export interface components {
       needs_brew: boolean;
       /** @description この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false */
       senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
@@ -288,6 +291,11 @@ export interface components {
        * @default false
        */
       senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
@@ -300,6 +308,8 @@ export interface components {
       needs_brew?: boolean;
       /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
       senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**
@@ -556,18 +566,6 @@ export interface components {
        * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
        */
       drip_id: string | null;
-    };
-    CaosNextResult: {
-      /**
-       * Format: uuid
-       * @description 終えたカード。無ければ null
-       */
-      finished_drip_id: string | null;
-      /**
-       * Format: uuid
-       * @description 始めたカード。待機が無ければ null
-       */
-      started_drip_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1263,6 +1261,7 @@ export interface operations {
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+   * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
    * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
    */
   writeCaosCups: {
@@ -1316,11 +1315,9 @@ export interface operations {
       };
     };
     responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["CaosNextResult"];
-        };
+      /** @description 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る） */
+      204: {
+        content: never;
       };
       /** @description 形の違うリクエスト */
       400: {

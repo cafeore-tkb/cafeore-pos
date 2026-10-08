@@ -43,9 +43,6 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 
 var errInvalidOrderMenus = errors.New("invalid order menus")
 
-// ドリッパーの番号は 1st〜6th の 1〜6
-const maxDripper = 6
-
 // 空白だけの自由記述は指名なしとして扱う
 func normalizeAssignee(assignee *string) *string {
 	if assignee == nil {
@@ -65,12 +62,12 @@ func sameAssignee(a, b *string) bool {
 	return *a == *b
 }
 
-// 指名はドリッパーの番号が必須で、自由記述は番号に添えるだけ。
+// 指名はドリッパーの番号（1〜caosDrippers）が必須で、自由記述は番号に添えるだけ。
 // 番号より前の注文の明細（番号が無く自由記述だけの指名）は、変えずに残すときだけ通す。
 // 番号の付いた明細から番号だけを外して自由記述を残すことはできない。
 func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) error {
 	if dripper != nil {
-		if *dripper < 1 || *dripper > maxDripper {
+		if *dripper < 1 || *dripper > caosDrippers {
 			return errInvalidOrderMenus
 		}
 		return nil

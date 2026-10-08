@@ -1,34 +1,43 @@
-import { CHANGEOVER_SEC, FIRST_START_DELAY_SEC } from "@cafeore/common";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import {
+  CAOS_CHANGEOVER_SEC,
+  CAOS_FIRST_START_DELAY_SEC,
+  CAOS_MAX_CUPS,
+} from "@cafeore/common";
+import type { Barista, DripCard, OrderTicket, UnassignedOrder } from "../types";
 
-export const ticketKey = (ticket: OrderTicket) =>
-  ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
+/** 注文番号の表示（「#152」、統合したカードは「#152+#160」）。選んだ注文を指すキーにも使う（読み戻さない） */
+export const orderLabel = (card: { orderNos: readonly number[] }) =>
+  card.orderNos.map((no) => `#${no.toString().padStart(3, "0")}`).join("+");
 
-// 同じ商品・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
-// 商品は itemKey（盤面のカードは商品の ID）で比べる。
-// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）でも比べる。
+/** カードを注文ごとにまとめる（並びはそのまま）。キーは orderLabel */
+export const groupByOrder = <T extends DripCard>(cards: readonly T[]) => {
+  const groups = new Map<string, T[]>();
+  for (const card of cards) {
+    const key = orderLabel(card);
+    groups.set(key, [...(groups.get(key) ?? []), card]);
+  }
+  return groups;
+};
+
+/** 注文番号・注文の中の順に並べる */
+export const compareCards = (a: DripCard, b: DripCard) =>
+  a.orderNos[0] - b.orderNos[0] ||
+  a.itemIndex - b.itemIndex ||
+  a.ticketUid.localeCompare(b.ticketUid);
+
+// 1杯同士で、統合の相手を決めるキー（mergeKey）が同じものだけを、2杯の同時抽出へ統合できる。
+// 注文から組み立てたカードの mergeKey は @cafeore/common の caosMergeKey（canMergeCards が比べるもの。商品と指名）。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
 ) =>
-  (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
+  first.ticketUid !== second.ticketUid &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.itemKey === second.itemKey &&
-  first.preferredBaristaId === second.preferredBaristaId &&
-  // 盤面のカードは統合できる相手のキー（商品と指名）を持つ。API は同じ商品・同じ指名の 1 杯どうししか統合しないので、候補もそれに揃える
   first.mergeKey === second.mergeKey;
 
-export const orderNumber = (id: string) =>
-  Number(id.match(/\d+/)?.[0]) || Number.MAX_SAFE_INTEGER;
-
-const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
-  orderNumber(a.id) - orderNumber(b.id) ||
-  (a.itemIndex || 0) - (b.itemIndex || 0) ||
-  (a.ticketUid || "").localeCompare(b.ticketUid || "");
-
-// arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS9（練習の盤面）で作り直すので、
-// 定数だけ共通のもの（@cafeore/common の caosTiming）にしてある。普段の盤面の予定時刻は planLane で決める（live/board.ts）
+// arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS8（練習の盤面）で作り直すので、
+// 定数だけ共通のもの（@cafeore/common）にしてある。普段の盤面の予定時刻は planCaosLane で決める（live/board.ts）
 export const arrangeQueue = (
   queue: OrderTicket[],
   nowSec: number,
@@ -40,7 +49,7 @@ export const arrangeQueue = (
   const scheduled = queue
     .filter((ticket) => ticket !== existingActive)
     .map((ticket) => ({ ...ticket, status: "scheduled" as const }))
-    .sort(compareQueueOrder);
+    .sort(compareCards);
   const ordered = existingActive ? [existingActive, ...scheduled] : scheduled;
   if (ordered.length === 0) return ordered;
 
@@ -61,12 +70,12 @@ export const arrangeQueue = (
           nowSec,
           (first.startTimeSec ?? nowSec) + first.totalDurationSec,
         )
-      : (first.startTimeSec ?? nowSec + FIRST_START_DELAY_SEC) +
+      : (first.startTimeSec ?? nowSec + CAOS_FIRST_START_DELAY_SEC) +
         first.totalDurationSec;
   let cursor = firstEnd;
 
   for (const ticket of ordered.slice(1)) {
-    const startTimeSec = cursor + CHANGEOVER_SEC;
+    const startTimeSec = cursor + CAOS_CHANGEOVER_SEC;
     result.push({
       ...ticket,
       status: "scheduled",
@@ -78,17 +87,32 @@ export const arrangeQueue = (
   return result;
 };
 
-// Seconds until the dripper has finished everything already queued, using the
-// same changeover gap as the scheduler.
-export const queueWaitSeconds = (queue: OrderTicket[]) =>
+// ドリッパーが待機まで淹れ終えるまでの秒（入れ替えの時間を含む）
+const queueWaitSeconds = (queue: OrderTicket[]) =>
   queue.reduce(
     (sum, ticket, index) =>
       sum +
       (index === 0
         ? (ticket.timeRemainingSec ?? ticket.totalDurationSec)
-        : ticket.totalDurationSec + CHANGEOVER_SEC),
+        : ticket.totalDurationSec + CAOS_CHANGEOVER_SEC),
     0,
   );
+
+// 次に空くドリッパー（空くまでの秒の短い順に 3 つ）。管制盤 A・C の「次に空く」
+export const nextAvailableBays = (baristas: Barista[]) =>
+  baristas
+    .map((barista) => ({
+      bayNumber: barista.bayNumber,
+      seconds: queueWaitSeconds(barista.queue),
+      isStandby: barista.queue.length === 0,
+    }))
+    .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
+    .slice(0, 3);
+export type NextAvailable = ReturnType<typeof nextAvailableBays>;
+
+// カードの杯数の合計
+export const totalCups = (cards: { cupCount: number }[]) =>
+  cards.reduce((sum, card) => sum + card.cupCount, 0);
 
 // ドリッパーの先頭のカードの残り（秒）。カードが無ければ 0
 export const activeRemainingSec = (barista: Barista, nowSec: number) => {
@@ -100,19 +124,25 @@ export const activeRemainingSec = (barista: Barista, nowSec: number) => {
   return current.totalDurationSec;
 };
 
-export const splitIntoDripUnits = (orders: UnassignedOrder[]) => {
-  const totalOrderCups = orders.reduce((sum, order) => sum + order.cupCount, 0);
+// 注文のカードを最大杯数（CAOS_MAX_CUPS）ずつに分け、注文の中の並び・カードの数・注文の杯数を付ける（実データテスト）
+type UnsplitOrder = Omit<
+  UnassignedOrder,
+  "itemIndex" | "totalItemsInOrder" | "totalOrderCups"
+>;
+export const splitIntoDripUnits = (
+  orders: UnsplitOrder[],
+): UnassignedOrder[] => {
+  const totalOrderCups = totalCups(orders);
   const units = orders.flatMap((order) => {
-    const parts: UnassignedOrder[] = [];
+    const parts: UnsplitOrder[] = [];
     let remaining = order.cupCount;
     let part = 1;
     while (remaining > 0) {
-      const cups = Math.min(2, remaining);
+      const cups = Math.min(CAOS_MAX_CUPS, remaining);
       parts.push({
         ...order,
-        ticketUid: `${order.ticketUid || order.id.replace("#", "")}-part${part}`,
+        ticketUid: `${order.ticketUid}-part${part}`,
         cupCount: cups,
-        badgeTag: `${cups}杯 ${order.badgeTag.replace(/^\d+杯\s*/, "")}`,
       });
       remaining -= cups;
       part += 1;

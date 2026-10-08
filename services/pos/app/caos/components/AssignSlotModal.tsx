@@ -1,13 +1,13 @@
-import { dripperLabel } from "@cafeore/common";
+import { caosBrewSec, caosDurationLabel, dripperLabel } from "@cafeore/common";
 import { ArrowRight, Check, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
-import { nominationText } from "../utils/nomination";
+import { orderLabel } from "../utils/orderQueue";
 
 interface AssignSlotModalProps {
-  bayId: number | null;
-  targetOrder: UnassignedOrder | null;
+  /** 空きスロットを押したドリッパー */
+  bayId: number;
   baristas: Barista[];
   unassignedOrders: UnassignedOrder[];
   onClose: () => void;
@@ -16,26 +16,18 @@ interface AssignSlotModalProps {
 
 export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
   bayId,
-  targetOrder,
   baristas,
   unassignedOrders,
   onClose,
   onAssign,
 }) => {
-  const [selectedOrderUid, setSelectedOrderUid] = useState<string>(
-    targetOrder
-      ? targetOrder.ticketUid || targetOrder.id
-      : unassignedOrders[0]?.ticketUid || unassignedOrders[0]?.id || "",
+  const [selectedOrderUid, setSelectedOrderUid] = useState(
+    unassignedOrders[0]?.ticketUid ?? "",
   );
-  const [selectedBayId, setSelectedBayId] = useState<number>(
-    bayId ??
-      (targetOrder?.preferredBaristaId ||
-        targetOrder?.recommendedBayIds[0] ||
-        1),
-  );
+  const [selectedBayId, setSelectedBayId] = useState(bayId);
 
   const selectedOrder = unassignedOrders.find(
-    (order) => (order.ticketUid || order.id) === selectedOrderUid,
+    (order) => order.ticketUid === selectedOrderUid,
   );
   const canAssign = Boolean(
     selectedOrder &&
@@ -49,9 +41,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-slate-200 border-b bg-[#f8fafc] px-5 py-4">
           <h3 className="font-bold text-base text-slate-900">
-            {bayId
-              ? `ドリッパー ${dripperLabel(bayId)} にオーダー割当`
-              : "オーダーの割当"}
+            {`ドリッパー ${dripperLabel(bayId)} にオーダー割当`}
           </h3>
           <button
             onClick={onClose}
@@ -75,7 +65,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
             ) : (
               <div className="max-h-[160px] space-y-1.5 overflow-y-auto">
                 {unassignedOrders.map((ord) => {
-                  const uid = ord.ticketUid || ord.id;
+                  const uid = ord.ticketUid;
                   const isSelected = selectedOrderUid === uid;
                   return (
                     <div
@@ -94,38 +84,35 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                       <div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-black font-mono text-[16px] text-slate-900">
-                            {ord.id}
+                            {orderLabel(ord)}
                           </span>
                           {ord.cupCount > 1 && (
                             <span className="rounded bg-amber-500 px-1.5 py-0.5 font-bold font-mono text-[10px] text-white leading-none">
                               {ord.cupCount}杯
                             </span>
                           )}
-                          {ord.totalItemsInOrder &&
-                            ord.totalItemsInOrder > 1 && (
-                              <span className="rounded border border-amber-300 bg-amber-100 px-1 py-0.5 font-bold text-[10px] text-amber-900 leading-none">
-                                [{ord.itemIndex}/{ord.totalItemsInOrder}]
-                              </span>
-                            )}
+                          {ord.totalItemsInOrder > 1 && (
+                            <span className="rounded border border-amber-300 bg-amber-100 px-1 py-0.5 font-bold text-[10px] text-amber-900 leading-none">
+                              [{ord.itemIndex}/{ord.totalItemsInOrder}]
+                            </span>
+                          )}
                           <span className="font-bold text-slate-800">
                             {ord.beanName}
                           </span>
-                          {nominationText(ord) && (
-                            <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                              指名:{nominationText(ord)}
+                          {ord.preferredBaristaId && (
+                            <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                              指名:{dripperLabel(ord.preferredBaristaId)}
                             </span>
                           )}
-                          <span className="rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-[10px] text-slate-700">
-                            {ord.badgeTag}
-                          </span>
+                          {ord.orderNos.length > 1 && (
+                            <span className="rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-[10px] text-slate-700">
+                              統合
+                            </span>
+                          )}
                         </div>
-                        {ord.orderNotes && (
-                          <div className="mt-0.5 font-medium text-[10.5px] text-slate-500">
-                            {ord.orderNotes}
-                          </div>
-                        )}
                         <div className="mt-1 text-[11px] text-slate-500">
-                          標準予測: {ord.predictedTimeStr}
+                          標準予測:{" "}
+                          {caosDurationLabel(caosBrewSec(ord.cupCount))}
                         </div>
                       </div>
                       {isSelected && (

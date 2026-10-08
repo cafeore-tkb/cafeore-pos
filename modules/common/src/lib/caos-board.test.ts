@@ -6,14 +6,20 @@ import {
   assignWrites,
   buildCaosCards,
   canMergeCards,
-  caosDay,
+  caosBrewSec,
+  caosClockLabel,
+  caosDurationLabel,
   caosLane,
+  caosTimeOfDayLabel,
   mergeWrites,
+  planCaosLane,
   unassignWrites,
 } from "./caos-board";
+import laneCases from "./caos-lane-cases.json";
+import { jstDate, jstDayStart } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
-const DAY = caosDay(NOW);
+const DAY = jstDate(NOW.getTime());
 
 const type = (name: string, flags: Partial<Cup["item"]["item_type"]> = {}) => ({
   name,
@@ -21,6 +27,7 @@ const type = (name: string, flags: Partial<Cup["item"]["item_type"]> = {}) => ({
   makes_cup: true,
   needs_brew: true,
   senior_only: false,
+  iced_brew: false,
   ...flags,
 });
 const blend = {
@@ -93,7 +100,7 @@ let idSeq = 0;
 const newId = () => `drip-${++idSeq}`;
 
 describe("[unit] CaOS の盤面の組み立て", () => {
-  test("未割当：注文ごと・商品ごと・指名ごとに分け、1 枚は最大 2 杯。抽出が要らないカップと準備完了のカップは出さない", () => {
+  test("未割当：注文ごと・商品ごと・指名の番号ごとに分け、1 枚は最大 2 杯。抽出が要らないカップと準備完了のカップは出さない", () => {
     const o1 = order(
       1,
       [
@@ -108,8 +115,8 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         cup({ item: blend, readyAt: NOW }),
       ],
       {
-        // 指名は明細のドリッパーの番号。自由記述は番号に添えるだけ（表示は番号）。
-        // 番号の無い自由記述だけの古い明細は、数字でも指名なし（表示は自由記述）
+        // 指名は明細のドリッパーの番号。自由記述は番号に添えるだけ（表示は番号で、同じ番号なら 1 枚にまとめる）。
+        // 番号の無い自由記述だけの古い明細は、数字でも指名なし（指名なしのカップと同じ分け方。表示は自由記述）
         dripper: { "line-2": 3, "line-3": 3 },
         assignee: { "line-3": " 山田 ", "line-4": " 4 " },
       },
@@ -122,16 +129,15 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         c.status,
         c.cups.length,
         c.cups[0].item.name,
-        c.nominatedDripper,
-        c.cups[0].nominee,
+        c.cups.map((x) => x.nominatedDripper),
+        c.cups.map((x) => x.nominee),
       ]),
     ).toEqual([
-      [1, "unassigned", 1, "ケニア", undefined, null],
-      [1, "unassigned", 2, "ブレンド", undefined, null],
-      [1, "unassigned", 1, "ブレンド", undefined, null],
-      [1, "unassigned", 2, "ブレンド", 3, "3rd"],
-      [1, "unassigned", 1, "ブレンド", undefined, "4"],
-      [2, "unassigned", 1, "ブレンド", undefined, null],
+      [1, "unassigned", 1, "ケニア", [null], [null]],
+      [1, "unassigned", 2, "ブレンド", [null, null], [null, null]],
+      [1, "unassigned", 2, "ブレンド", [null, null], [null, "4"]],
+      [1, "unassigned", 2, "ブレンド", [3, 3], ["3rd", "3rd"]],
+      [2, "unassigned", 1, "ブレンド", [null], [null]],
     ]);
     // 未割当のキーはカップの ID の組
     expect(cards[0].key).toBe(`cups:${ids(cards[0]).join(",")}`);
@@ -215,6 +221,99 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ["限定", true],
     ]);
   });
+
+  test("今日の区切りは端末の時刻帯によらず日本時間の 0 時", () => {
+    expect(jstDate(Date.parse("2026-10-07T14:59:59Z"))).toBe("2026-10-07");
+    expect(jstDate(Date.parse("2026-10-07T15:00:00Z"))).toBe("2026-10-08");
+    expect(jstDayStart(NOW.getTime())).toBe(Date.parse("2026-10-07T15:00:00Z"));
+  });
+
+  test("抽出時間と表示", () => {
+    expect(caosBrewSec(1)).toBe(135);
+    expect(caosBrewSec(2)).toBe(195);
+    expect(caosDurationLabel(caosBrewSec(2))).toBe("3分15秒");
+    expect(caosClockLabel(65)).toBe("01:05");
+    expect(caosClockLabel(725)).toBe("12:05");
+    expect(caosTimeOfDayLabel(10 * 3600 + 5 * 60 + 9)).toBe("10:05:09");
+    // 24 時を越えたら 0 時に戻す
+    expect(caosTimeOfDayLabel(24 * 3600 + 61)).toBe("00:01:01");
+  });
+});
+
+describe("[unit] CaOS のドリッパーの予定時刻（planCaosLane）", () => {
+  test("抽出中のカードは始めた時刻から抽出時間で終わる見込み", () => {
+    expect(planCaosLane(1000, { startSec: 950, durationSec: 195 }, [])).toEqual(
+      {
+        brewing: { startSec: 950, endSec: 1145, remainingSec: 145 },
+        queued: [],
+      },
+    );
+  });
+
+  test("抽出時間を過ぎたら今終わる見込みで、残りは 0", () => {
+    expect(
+      planCaosLane(1200, { startSec: 950, durationSec: 195 }, [135]),
+    ).toEqual({
+      brewing: { startSec: 950, endSec: 1200, remainingSec: 0 },
+      queued: [{ startSec: 1215, endSec: 1350 }],
+    });
+  });
+
+  test("待機カードは入れ替えの 15 秒を挟んで順に始める", () => {
+    expect(
+      planCaosLane(1000, { startSec: 1000, durationSec: 135 }, [195, 135])
+        .queued,
+    ).toEqual([
+      { startSec: 1150, endSec: 1345 },
+      { startSec: 1360, endSec: 1495 },
+    ]);
+  });
+
+  test("抽出中が無いときは、先頭を今から 10 秒後に始める", () => {
+    expect(planCaosLane(1000, undefined, [135, 195])).toEqual({
+      brewing: undefined,
+      queued: [
+        { startSec: 1010, endSec: 1145 },
+        { startSec: 1160, endSec: 1355 },
+      ],
+    });
+  });
+
+  test("開始時刻が分からない抽出中のカードは今から始めた見込み", () => {
+    expect(planCaosLane(1000, { durationSec: 135 }, []).brewing).toEqual({
+      startSec: 1000,
+      endSec: 1135,
+      remainingSec: 135,
+    });
+  });
+});
+
+// API の「次へ」（splitCaosLane）と同じ例で、同じ結果になるか（caos-lane-cases.json。API のテストも同じ例を読む）
+describe("[unit] CaOS のドリッパーの列（API と同じ決まり）", () => {
+  const at = new Date(NOW.getTime() - 60_000);
+  for (const c of laneCases.cases) {
+    test(c.name, () => {
+      const byOrder = new Map<number, Cup[]>();
+      for (const x of c.cups) {
+        byOrder.set(x.order_no, [
+          ...(byOrder.get(x.order_no) ?? []),
+          cup({
+            item: blend,
+            dripper: 1,
+            dripperPosition: x.dripper_position,
+            dripId: x.drip_id,
+            brewStartedAt: x.started ? at : null,
+            brewFinishedAt: x.finished ? at : null,
+            readyAt: x.ready ? at : null,
+          }),
+        ]);
+      }
+      const orders = [...byOrder].map(([no, cups]) => order(no, cups));
+      const lane = caosLane(buildCaosCards(orders, DAY), 1);
+      expect(lane.brewing?.dripId ?? null).toBe(c.brewing);
+      expect(lane.queued.map((card) => card.dripId)).toEqual(c.queued);
+    });
+  }
 });
 
 describe("[unit] CaOS の書き込み", () => {
@@ -244,7 +343,8 @@ describe("[unit] CaOS の書き込み", () => {
             cup({ item: blend, line: "n" }),
             cup({ item: blend, line: "old" }),
           ],
-          { dripper: { n: 4 }, assignee: { old: "4" } },
+          // n は 4 番の指名（自由記述つき）、old は番号の無い自由記述だけの古い明細
+          { dripper: { n: 4 }, assignee: { n: "たくみ", old: "4" } },
         ),
         order(5, [cup({ item: blend })]),
         order(6, [cup({ item: kenya })]),
@@ -316,14 +416,15 @@ describe("[unit] CaOS の書き込み", () => {
     });
   });
 
-  test("指名のあるカードはその番号のドリッパーだけ。抽出中は動かせない", () => {
+  test("指名の番号のカードはその番号のドリッパーにだけ置ける。自由記述だけの古い明細はどこにでも。抽出中は動かせない", () => {
     const cards = board();
-    const named = find(cards, (c) => c.nominatedDripper === 4);
+    const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
+    expect(named.cups[0].nominee).toBe("4th");
     expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("error");
     expect(assignWrites(cards, named, 4, { newId })).toHaveProperty("writes");
-    // 自由記述だけの古い明細は、数字でも指名なし（どこにでも置ける）
-    const old = find(cards, (c) => c.cups[0].nominee === "4");
-    expect(old.nominatedDripper).toBeUndefined();
+    expect(assignWrites(cards, named, 7, { newId })).toHaveProperty("error");
+    const old = find(cards, (c) => c.cups.some((x) => x.nominee === "4"));
+    expect(old.cups.map((x) => x.nominatedDripper)).toEqual([null, null]);
     expect(assignWrites(cards, old, 1, { newId })).toHaveProperty("writes");
     expect(
       assignWrites(
@@ -350,19 +451,21 @@ describe("[unit] CaOS の書き込み", () => {
     ).toHaveProperty("error");
   });
 
-  test("統合：1 杯どうし・同じ商品・同じ指名。未割当は新しい dripId、待機は相手を同じ値にする", () => {
+  test("統合：1 杯どうし・同じ商品・同じ指名の番号。未割当は新しい dripId、待機は相手を同じ値にする", () => {
     const cards = board();
     const o5 = find(cards, (c) => c.orderNo === 5);
-    const o4 = find(
-      cards,
-      (c) => c.orderNo === 4 && !c.nominatedDripper && !c.cups[0].nominee,
-    );
     const o6 = find(cards, (c) => c.orderNo === 6);
-    const named = find(cards, (c) => c.nominatedDripper === 4);
-    expect(canMergeCards(o4, o5)).toBe(true);
+    const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
     expect(canMergeCards(o5, o6)).toBe(false); // 商品が違う
-    expect(canMergeCards(o4, named)).toBe(false); // 指名が違う
-    const merged = mergeWrites(o4, o5, newId);
+    expect(canMergeCards(o5, named)).toBe(false); // 指名の番号が違う
+    // 番号が同じなら、自由記述が違っても統合できる（未割当の分け方と同じ）
+    const named7 = buildCaosCards(
+      [order(7, [cup({ item: blend })], { dripper: { "line-1": 4 } })],
+      DAY,
+    )[0];
+    expect(canMergeCards(named, named7)).toBe(true);
+    const o2cup = buildCaosCards([order(8, [cup({ item: blend })])], DAY)[0];
+    const merged = mergeWrites(o2cup, o5, newId);
     if (!("writes" in merged)) throw new Error(merged.error);
     expect(merged.writes.map((w) => w.after.drip_id)).toEqual([
       merged.writes[0].after.drip_id,
@@ -403,10 +506,7 @@ describe("[unit] CaOS の書き込み", () => {
 
   test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
     const cards = board();
-    const o4 = find(
-      cards,
-      (c) => c.orderNo === 4 && !c.nominatedDripper && !c.cups[0].nominee,
-    );
+    const o4 = buildCaosCards([order(4, [cup({ item: blend })])], DAY)[0];
     const o5 = find(cards, (c) => c.orderNo === 5);
     const merged = mergeWrites(o4, o5, () => "merged");
     if (!("writes" in merged)) throw new Error(merged.error);

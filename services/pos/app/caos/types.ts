@@ -4,79 +4,60 @@ export interface CardBean {
   name: string;
 }
 
-export interface OrderTicket {
-  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品・実データテストのカードには付かない */
-  color?: string;
-  /** 商品を見分けるキー。盤面のカードは商品の ID（実データテストのカードは商品の情報が無いので、その中だけのキー） */
-  itemKey: string;
-  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
-  typeName?: string;
-  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
-  beans?: CardBean[];
-  id: string; // e.g. "#152"
-  ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
-  itemIndex?: number; // e.g. 1 (of 2 items in order #152)
-  totalItemsInOrder?: number; // e.g. 2
-  totalOrderCups?: number; // e.g. 3 (total cups in entire order #152)
-  orderNotes?: string; // e.g. "チャンプ 2杯 + 俺ブレ 1杯"
-  sourceOrderIds?: string[]; // combined drip across separate register orders
+// カード（1 回のドリップ。最大 2 杯）の表示に使う値。未割当のカードも、ドリッパーのカードも同じ形。
+// 盤面のカードは live/board.ts が @cafeore/common の CaosCard から作る（実データテストのカードは App.tsx）。
+export interface DripCard {
+  /** 画面の中でカードを指すキー（盤面のカードは CaosCard の key） */
+  ticketUid: string;
+  /** 注文番号。統合したカードは元の注文すべて（小さい順）。表示は orderLabel で整える */
+  orderNos: number[];
+  /** 同じ注文の中のカードの並び（1 始まり）・カードの数・注文の杯数。統合したカードは 1・1・2 */
+  itemIndex: number;
+  totalItemsInOrder: number;
+  totalOrderCups: number;
   /** カードの名前。盤面のカードは商品の略称（abbr）をそのまま */
   beanName: string;
   cupCount: number;
-  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
-  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
-  nominee?: string;
-  status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
-  timeRemainingSec?: number; // for brewing
+  /** 背景色（#RRGGBB。色の設定の画面 master、無ければ白）。盤面のカードにだけ付く */
+  color?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  beans?: CardBean[];
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
+  /** 指名のドリッパー（1〜6。盤面のカードは注文の明細の dripper）。このドリッパーにだけ置ける */
+  preferredBaristaId?: number;
+  /**
+   * 統合できる相手を決めるキー。同じキーの 1 杯どうしだけ統合できる。
+   * 盤面のカードは商品と指名の番号（@cafeore/common の caosMergeKey）、実データテストのカードはまとめ方
+   */
+  mergeKey: string;
+}
+
+// 未割当のカード
+export type UnassignedOrder = DripCard;
+
+// ドリッパーのカード（抽出中・待機・終わり）
+export interface OrderTicket extends DripCard {
+  status: "brewing" | "scheduled" | "completed";
+  /** 抽出中のカードの残り（秒） */
+  timeRemainingSec?: number;
   totalDurationSec: number;
-  scheduledTimeStr?: string; // e.g. "2:05"
-  startTimeSec?: number; // 抽出の開始（盤面の秒。その日の 0:00 からの秒）
-  endTimeSec?: number; // 抽出の終了（盤面の秒）
-  completedAtSec?: number; // for historical completed drip
-  seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
+  /** 抽出の開始・終了（盤面の秒。その日の 0:00 からの秒）。終わったカードの終了は終えた時刻 */
+  startTimeSec?: number;
+  endTimeSec?: number;
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
 export interface Barista {
   id: number;
   bayNumber: number;
-  status: "brewing" | "imminent" | "standby" | "ready";
-  remainingStr: string; // "01:48 残り"
-  pastTickets?: OrderTicket[]; // Past completed tickets in this bay
+  /** 終わったカード */
+  pastTickets?: OrderTicket[];
+  /** 抽出中（先頭）と待機のカード */
   queue: OrderTicket[];
 }
 
-export interface UnassignedOrder {
-  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品・実データテストのカードには付かない */
-  color?: string;
-  /** 商品を見分けるキー。盤面のカードは商品の ID（実データテストのカードは商品の情報が無いので、その中だけのキー） */
-  itemKey: string;
-  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
-  typeName?: string;
-  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
-  beans?: CardBean[];
-  id: string; // e.g. "#162"
-  ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
-  itemIndex?: number;
-  totalItemsInOrder?: number;
-  totalOrderCups?: number;
-  orderNotes?: string;
-  sourceOrderIds?: string[]; // combined drip across separate register orders
-  /** カードの名前。盤面のカードは商品の略称（abbr）をそのまま */
-  beanName: string;
-  cupCount: number;
-  badgeTag: string;
-  predictedTimeStr: string;
-  recommendedBaristas: string;
-  recommendedBayIds: number[];
-  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
-  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
-  nominee?: string;
-  seniorOnly?: boolean; // 限定（種類の senior_only）
-  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
-}
-
-export interface HistoricalItem {
+interface HistoricalItem {
   name: string;
   price: number;
   /** 商品の種類の名前（POS の商品の種類の name）。表示名・判定は POS の種類から引く */
@@ -91,11 +72,6 @@ export interface HistoricalOrder {
   total: number;
   billingAmount: number;
   items: HistoricalItem[];
-}
-
-export interface HistoricalDataset {
-  source: string;
-  orders: HistoricalOrder[];
 }
 
 export interface TestPlaySession {

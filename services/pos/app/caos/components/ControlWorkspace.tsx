@@ -1,21 +1,18 @@
 import type React from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import type { NextAvailable } from "../utils/orderQueue";
 import { ControlViewA } from "./ControlViewA";
-import { ControlViewB } from "./ControlViewB";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
 
-export type ControlViewMode = "current" | "new" | "c" | "d";
+export type ControlViewMode = "current" | "c" | "d";
 
-interface ControlWorkspaceProps {
-  mode: ControlViewMode;
+// 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
+export interface ControlViewProps {
   baristas: Barista[];
   unassignedOrders: UnassignedOrder[];
-  nextAvailable: Array<{
-    bayNumber: number;
-    seconds: number;
-    isStandby: boolean;
-  }>;
+  nextAvailable: NextAvailable;
+  /** 選んだ注文（orderLabel） */
   selectedOrderId: string | null;
   actionTicketKey: string | null;
   currentTimeSec: number;
@@ -35,97 +32,10 @@ interface ControlWorkspaceProps {
   onMergeOrders: (firstUid: string, secondUid: string) => void;
 }
 
-export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
-  mode,
-  baristas,
-  unassignedOrders,
-  nextAvailable,
-  selectedOrderId,
-  actionTicketKey,
-  currentTimeSec,
-  timelineCommand,
-  onSelectOrder,
-  onAdvanceBay,
-  onOpenTicketDetail,
-  onMoveTicket,
-  onReturnToUnassigned,
-  onCloseTicketAction,
-  onOpenEmptySlot,
-  onAssignToBay,
-  onMergeOrders,
-}) => {
-  if (mode === "new") {
-    return (
-      <ControlViewB
-        baristas={baristas}
-        unassignedOrders={unassignedOrders}
-        simTimeSec={currentTimeSec}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onAdvanceBay={onAdvanceBay}
-        onOpenTicketDetail={onOpenTicketDetail}
-        onOpenEmptySlot={onOpenEmptySlot}
-        onAssignToBay={onAssignToBay}
-      />
-    );
-  }
-
-  if (mode === "d") {
-    return (
-      <ControlViewD
-        baristas={baristas}
-        unassignedOrders={unassignedOrders}
-        simTimeSec={currentTimeSec}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onAdvanceBay={onAdvanceBay}
-        onOpenTicketDetail={onOpenTicketDetail}
-        onOpenEmptySlot={onOpenEmptySlot}
-        onAssignToBay={onAssignToBay}
-        onMoveTicket={onMoveTicket}
-        onReturnToUnassigned={onReturnToUnassigned}
-        onMergeOrders={onMergeOrders}
-      />
-    );
-  }
-
-  if (mode === "c") {
-    return (
-      <ControlViewC
-        baristas={baristas}
-        unassignedOrders={unassignedOrders}
-        simTimeSec={currentTimeSec}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onAdvanceBay={onAdvanceBay}
-        onOpenTicketDetail={onOpenTicketDetail}
-        onOpenEmptySlot={onOpenEmptySlot}
-        onAssignToBay={onAssignToBay}
-      />
-    );
-  }
-
-  return (
-    <ControlViewA
-      baristas={baristas}
-      unassignedOrders={unassignedOrders}
-      nextAvailable={nextAvailable}
-      selectedOrderId={selectedOrderId}
-      actionTicketKey={actionTicketKey}
-      currentTimeSec={currentTimeSec}
-      timelineCommand={timelineCommand}
-      onSelectOrder={onSelectOrder}
-      onAdvanceBay={onAdvanceBay}
-      onOpenTicketDetail={onOpenTicketDetail}
-      onMoveTicket={onMoveTicket}
-      onReturnToUnassigned={onReturnToUnassigned}
-      onCloseTicketAction={onCloseTicketAction}
-      onOpenEmptySlot={onOpenEmptySlot}
-      onAssignToBay={onAssignToBay}
-      onMergeOrders={onMergeOrders}
-    />
-  );
+export const ControlWorkspace: React.FC<
+  ControlViewProps & { mode: ControlViewMode }
+> = ({ mode, ...props }) => {
+  if (mode === "d") return <ControlViewD {...props} />;
+  if (mode === "c") return <ControlViewC {...props} />;
+  return <ControlViewA {...props} />;
 };

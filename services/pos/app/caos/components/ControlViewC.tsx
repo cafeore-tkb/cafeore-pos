@@ -1,59 +1,24 @@
-import { dripperLabel, formatMinSec } from "@cafeore/common";
+import { CAOS_SOON_SEC, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
-import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
-import type { ControlViewBProps } from "./ControlViewB";
+import { activeRemainingSec, orderLabel } from "../utils/orderQueue";
+import type { ControlViewProps } from "./ControlWorkspace";
 import { DripperOrderCard } from "./DripperOrderCard";
+import { NextAvailableChips } from "./NextAvailableChips";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
-export type ControlViewCProps = ControlViewBProps;
-
-const dripperLabelGroups = [
-  {
-    group: "H",
-    labels: ["H2", "H1"],
-    className: "border-orange-300 bg-orange-50 text-orange-800",
-  },
-  {
-    group: "I",
-    labels: ["I2", "I1"],
-    className: "border-sky-300 bg-sky-50 text-sky-800",
-  },
-] as const;
-
-export const ControlViewC: React.FC<ControlViewCProps> = ({
+export const ControlViewC: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
-  simTimeSec,
+  nextAvailable,
+  currentTimeSec,
   selectedOrderId,
   onSelectOrder,
-  onSelectQueueOrder,
   onAdvanceBay,
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
 }) => {
-  const sortedBaristas = useMemo(
-    () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
-    [baristas],
-  );
-  const nextAvailable = useMemo(
-    () =>
-      sortedBaristas
-        .map((barista) => ({
-          bayNumber: barista.bayNumber,
-          seconds: queueWaitSeconds(barista.queue),
-          isStandby: barista.queue.length === 0,
-        }))
-        .sort(
-          (left, right) =>
-            left.seconds - right.seconds || left.bayNumber - right.bayNumber,
-        )
-        .slice(0, 3),
-    [sortedBaristas],
-  );
-
   return (
     <section
       className="grid h-full min-h-0 grid-cols-2 gap-2"
@@ -65,29 +30,20 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
           <h2 className="shrink-0 font-black text-[15px] text-slate-950">
             ドリッパー
           </h2>
-          <div className="ml-1 flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500">
-            <span className="shrink-0">次に空く:</span>
-            {nextAvailable.map((item, index) => (
-              <span
-                key={item.bayNumber}
-                className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
-              >
-                #{item.bayNumber}{" "}
-                {item.isStandby ? "待機" : formatMinSec(item.seconds)}
-              </span>
-            ))}
-          </div>
+          <NextAvailableChips nextAvailable={nextAvailable} />
         </header>
 
         <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
-          {sortedBaristas.map((barista) => {
+          {baristas.map((barista) => {
             const current = barista.queue[0];
             const waitingQueue = barista.queue.slice(1);
-            const seconds = activeRemainingSec(barista, simTimeSec);
-            const isImminent = Boolean(current && seconds <= 30);
+            const seconds = activeRemainingSec(barista, currentTimeSec);
+            const isImminent = Boolean(current && seconds <= CAOS_SOON_SEC);
             const isLinked = Boolean(
               selectedOrderId &&
-                barista.queue.some((ticket) => ticket.id === selectedOrderId),
+                barista.queue.some(
+                  (ticket) => orderLabel(ticket) === selectedOrderId,
+                ),
             );
 
             return (
@@ -101,26 +57,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
                       {dripperLabel(barista.bayNumber)}
                     </div>
-                  </div>
-                  <div
-                    className="flex shrink-0 items-center gap-1.5"
-                    aria-label="ドリッパーラベル"
-                  >
-                    {dripperLabelGroups.map((group) => (
-                      <div
-                        key={group.group}
-                        className="flex items-center gap-1"
-                      >
-                        {group.labels.map((label) => (
-                          <span
-                            key={label}
-                            className={`rounded-md border px-1.5 py-0.5 font-black font-mono text-[11px] leading-none ${group.className}`}
-                          >
-                            {label}
-                          </span>
-                        ))}
-                      </div>
-                    ))}
                   </div>
                 </div>
 
@@ -136,14 +72,14 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     {waitingQueue.length > 0 ? (
                       waitingQueue.map((ticket, index) => (
                         <DripperOrderCard
-                          key={ticket.ticketUid || `${ticket.id}-${index}`}
+                          key={ticket.ticketUid}
                           kind="waiting"
                           ticket={ticket}
                           queuePosition={index + 1}
                           emptyLabel="待ちへ割当"
                           onClick={() => {
-                            if (selectedOrderId !== ticket.id)
-                              onSelectOrder(ticket.id);
+                            if (selectedOrderId !== orderLabel(ticket))
+                              onSelectOrder(orderLabel(ticket));
                             onOpenTicketDetail(ticket);
                           }}
                         />
@@ -189,8 +125,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
           nextAvailable={nextAvailable}
           selectedOrderId={selectedOrderId}
           onSelectOrder={onSelectOrder}
-          onSelectQueueOrder={onSelectQueueOrder}
-          onClearSelection={() => onSelectOrder("")}
           onAssignToBay={onAssignToBay}
         />
       </aside>

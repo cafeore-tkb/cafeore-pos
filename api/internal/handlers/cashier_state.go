@@ -124,7 +124,7 @@ var menuSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 	{name: "items", spec: valueSpec{kind: kindArray, elem: &menuItemSpec, minLen: 1}},
 	{name: "assignee", spec: valueSpec{kind: kindString, nullable: true}},
 	// 番号より前の画面が送る状態には無い（zod は無ければ null にする）
-	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: maxDripper}},
+	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: caosDrippers}},
 }}
 
 // menuItemSchema。item は itemSchema.required() なので id も必須
@@ -141,6 +141,7 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "makes_cup", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "iced_brew", optional: true, spec: valueSpec{kind: kindBool}},
 		}}},
 	}}},
 	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},

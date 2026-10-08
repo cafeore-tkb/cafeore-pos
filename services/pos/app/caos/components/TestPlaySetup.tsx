@@ -5,7 +5,6 @@ import type { HistoricalOrder } from "../types";
 
 interface TestPlaySetupProps {
   orders: HistoricalOrder[];
-  loading: boolean;
   onClose: () => void;
   onStart: (startMs: number, durationMinutes: 30 | 60) => void;
 }
@@ -22,7 +21,6 @@ const formatSlot = (timestamp: number) =>
 
 export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   orders,
-  loading,
   onClose,
   onStart,
 }) => {
@@ -129,12 +127,12 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           </span>
           <select
             value={effectiveStart || ""}
-            disabled={loading || slots.length === 0}
+            disabled={slots.length === 0}
             onChange={(event) => setSelectedStart(Number(event.target.value))}
             className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-3 font-black text-[16px] text-slate-900"
           >
-            {loading && <option>データを読み込み中…</option>}
-            {!loading && slots.length === 0 && (
+            {orders.length === 0 && <option>データがありません</option>}
+            {orders.length > 0 && slots.length === 0 && (
               <option>利用できる時間帯がありません</option>
             )}
             {slots.map((slot) => {
@@ -161,7 +159,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
 
         <button
           type="button"
-          disabled={effectiveStart === null || loading}
+          disabled={effectiveStart === null}
           onClick={() =>
             effectiveStart !== null && onStart(effectiveStart, duration)
           }

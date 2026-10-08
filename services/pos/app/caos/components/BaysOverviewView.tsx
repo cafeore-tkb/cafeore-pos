@@ -1,6 +1,7 @@
 import { dripperLabel } from "@cafeore/common";
 import type React from "react";
 import type { Barista } from "../types";
+import { orderLabel } from "../utils/orderQueue";
 
 // ドリッパーのタブ：6 列（1st〜6th）の今の抽出と待ちの件数。
 // 列の担当者は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
@@ -35,7 +36,7 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
                       {current.beanName}
                     </span>
                     <span className="shrink-0 font-black font-mono text-[15px] text-slate-950">
-                      {current.id}
+                      {orderLabel(current)}
                     </span>
                   </div>
                 ) : (
