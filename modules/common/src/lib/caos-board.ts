@@ -4,7 +4,7 @@ import { jstDate } from "./jstDay";
 
 // CaOS（ドリップ管制）の盤面の決まり。DB や画面を使わない純粋な関数だけを置く。
 //
-// 盤面は注文のカップ（OrderResponse の cups）の列で持つ（サーバーにカードの表は無い）：
+// 盤面は注文のカップ（OrderResponse の cups）の列で持つ：
 //   - dripper：ドリッパーの番号（1〜6）。指名の番号と同じもの
 //   - dripperPosition：ドリッパーの中の順番（小さいほど先）
 //   - dripId：同じカードで淹れるカップの印（統合したら同じ値）
@@ -15,7 +15,6 @@ import { jstDate } from "./jstDay";
 // CaOS の画面は、注文の一覧（共有の WebSocket の orders）から buildCaosCards でカードを組み立て、
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
-// 練習用の盤面も同じ関数を使う。
 
 /** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
 export const CAOS_DRIPPERS = 6;
@@ -36,7 +35,7 @@ export interface CaosCupState {
 /** PUT /api/caos/cups の書き込み 1 つ（カップの組を before から after にする） */
 export type CaosCupsWrite = components["schemas"]["CaosCupsWrite"];
 
-export const UNASSIGNED_STATE: CaosCupState = {
+const UNASSIGNED_STATE: CaosCupState = {
   dripper: null,
   dripperPosition: null,
   dripId: null,
@@ -167,7 +166,7 @@ const statusRank: Record<CaosCardStatus, number> = {
 };
 
 /** ドリッパーの待機の並び（サーバーの「次へ」と同じ：順番・注文番号・dripId） */
-export const compareQueued = (a: CaosCard, b: CaosCard) =>
+const compareQueued = (a: CaosCard, b: CaosCard) =>
   (a.dripperPosition ?? 0) - (b.dripperPosition ?? 0) ||
   a.orderNo - b.orderNo ||
   compareStr(a.key, b.key);
