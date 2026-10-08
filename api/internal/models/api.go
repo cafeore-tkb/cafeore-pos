@@ -55,7 +55,7 @@ type CaosCupAfter struct {
 	StartBrew bool `json:"start_brew"`
 }
 
-// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
 type CaosCupState struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
@@ -72,7 +72,7 @@ type CaosCupsWrite struct {
 	// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
 	After CaosCupAfter `json:"after"`
 
-	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
 }
@@ -80,6 +80,27 @@ type CaosCupsWrite struct {
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
 type CaosCupsWriteRequest struct {
 	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosEmergencyRequest defines model for CaosEmergencyRequest.
+type CaosEmergencyRequest struct {
+	// CupIds 緊急にするカップ
+	CupIds []openapi_types.UUID `json:"cup_ids"`
+
+	// Interrupt カップの抽出中のカードを中断する（そのカードのカップを全部緊急にし、ドリッパーの待機の先頭を始める）
+	Interrupt bool `json:"interrupt"`
+}
+
+// CaosEmergencyResult defines model for CaosEmergencyResult.
+type CaosEmergencyResult struct {
+	// InterruptedDripIds 中断した抽出中のカード
+	InterruptedDripIds []openapi_types.UUID `json:"interrupted_drip_ids"`
+
+	// MarkedCupIds 緊急にしたカップ（もう緊急だったカップは含まない）
+	MarkedCupIds []openapi_types.UUID `json:"marked_cup_ids"`
+
+	// StartedDripIds 中断のあとに始めた待機の先頭のカード
+	StartedDripIds []openapi_types.UUID `json:"started_drip_ids"`
 }
 
 // CaosNextRequest defines model for CaosNextRequest.
@@ -160,6 +181,21 @@ type CommentResponse struct {
 	CreatedAt time.Time          `json:"created_at"`
 	OrderId   openapi_types.UUID `json:"order_id"`
 	Text      string             `json:"text"`
+}
+
+// EmergencyLabelClaim defines model for EmergencyLabelClaim.
+type EmergencyLabelClaim struct {
+	// Claimed true なら、このレジが緊急のシールを印刷する
+	Claimed bool `json:"claimed"`
+
+	// EmergencyPrintedAt 今の印刷した時刻（claimed が true なら付けた時刻。release に送る）
+	EmergencyPrintedAt *time.Time `json:"emergency_printed_at"`
+}
+
+// EmergencyLabelRelease defines model for EmergencyLabelRelease.
+type EmergencyLabelRelease struct {
+	// EmergencyPrintedAt claim で付けた時刻
+	EmergencyPrintedAt time.Time `json:"emergency_printed_at"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -373,9 +409,20 @@ type OrderCupResponse struct {
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）
-	DripperPosition *float64           `json:"dripper_position"`
-	Id              openapi_types.UUID `json:"id"`
-	Item            ItemResponse       `json:"item"`
+	DripperPosition *float64 `json:"dripper_position"`
+
+	// EmergencyAt 緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。
+	// 緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）
+	EmergencyAt *time.Time `json:"emergency_at"`
+
+	// EmergencyDripId 入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード
+	EmergencyDripId *openapi_types.UUID `json:"emergency_drip_id"`
+
+	// EmergencyPrintedAt 緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する
+	// （POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）
+	EmergencyPrintedAt *time.Time         `json:"emergency_printed_at"`
+	Id                 openapi_types.UUID `json:"id"`
+	Item               ItemResponse       `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -517,6 +564,9 @@ type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
 
+// MarkCaosEmergencyJSONRequestBody defines body for MarkCaosEmergency for application/json ContentType.
+type MarkCaosEmergencyJSONRequestBody = CaosEmergencyRequest
+
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 
@@ -564,3 +614,6 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// ReleaseEmergencyLabelJSONRequestBody defines body for ReleaseEmergencyLabel for application/json ContentType.
+type ReleaseEmergencyLabelJSONRequestBody = EmergencyLabelRelease

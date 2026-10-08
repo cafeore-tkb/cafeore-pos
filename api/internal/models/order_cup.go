@@ -44,5 +44,17 @@ type OrderCup struct {
 	BrewStartedAt  *time.Time
 	BrewFinishedAt *time.Time
 
+	// 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルが付ける（handlers/caos_emergency.go）。
+	// 同じカップは 2 回緊急にしない（EmergencyAt があれば何もしない）。
+	//   - EmergencyAt：緊急にした時刻。付けたとき、上の CaOS の列のうち Dripper・DripperPosition・BrewStartedAt・
+	//     BrewFinishedAt は空に戻し（入れ直しのカードの値に使う）、DripID（最初に淹れたカード）は残す
+	//   - EmergencyDripID：入れ直しで淹れるカード。緊急のカップでは、CaOS のカードはこちらで決まる（DripID ではない）。
+	//     空なら未割当の緊急のカード（CaOS の未割当のいちばん上に出る）
+	//   - EmergencyPrintedAt：緊急のシールを印刷した時刻。プリンターにつないだレジが、空なら付けてから印刷する
+	//     （付けられたときだけ印刷するので 2 重に印刷しない）。印刷に失敗したら空に戻す
+	EmergencyAt        *time.Time
+	EmergencyDripID    *uuid.UUID `gorm:"type:uuid;index"`
+	EmergencyPrintedAt *time.Time
+
 	Item Item `gorm:"foreignKey:ItemID;references:ID"`
 }

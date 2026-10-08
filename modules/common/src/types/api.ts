@@ -123,6 +123,8 @@ export interface paths {
      * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
      * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+     * - 緊急のカップ（emergency_at のあるカップ）では、before・after の drip_id は入れ直しのカード（emergency_drip_id）を指す（最初に淹れた drip_id は書き換えない）。
+     *   緊急のカップとほかのカップを 1 枚のカードにはできない
      */
     put: operations["writeCaosCups"];
   };
@@ -135,6 +137,37 @@ export interface paths {
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
+  };
+  "/api/caos/emergency": {
+    /**
+     * カップを緊急（入れ直し）にする
+     * @description マスターの緊急ボタンと CaOS の入れ直しのパネルが使う。カップに緊急の印（emergency_at）を付けるだけで、入れ直しのカードは CaOS の未割当のいちばん上に出る
+     * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_drip_id で持ち、最初に淹れた drip_id は残す）。
+     * もう緊急のカップは何もしない（同じカップを 2 回緊急にしない）。カップの準備完了・提供済みは変えない（入れ直しのカードの「次へ」で準備完了にする）。
+     *
+     * interrupt が true なら、cup_ids のカップの抽出中のカードを中断する：そのカードのカップを全部緊急にし、カードは盤面から消え、
+     * そのドリッパーの待機の先頭を始める（時刻はサーバーの今）。interrupt が false でも、抽出中のカードのカップが全部緊急になれば同じく中断になる。
+     *
+     * 緊急になったカップの注文には、プリンターにつないだレジが緊急のシール（「緊急」→ そのカップの本物と同じシール）を印刷する（emergency_printed_at）。
+     */
+    post: operations["markCaosEmergency"];
+  };
+  "/api/orders/{id}/cups/{cupId}/emergency-label/claim": {
+    /**
+     * 緊急のシールを印刷する役を取る
+     * @description emergency_at があって emergency_printed_at が null のときだけ、emergency_printed_at にサーバーの今を付ける（条件付きの 1 回の書き込み）。
+     * 付けられた（claimed が true）レジだけが緊急のシールを印刷する。レジが 2 台あっても、どちらか 1 台だけが付けられる。
+     * 付けたら注文を配る（ほかの画面はもう印刷しない）。
+     */
+    post: operations["claimEmergencyLabel"];
+  };
+  "/api/orders/{id}/cups/{cupId}/emergency-label/release": {
+    /**
+     * 緊急のシールの印刷に失敗したので、印刷した時刻を空に戻す
+     * @description emergency_printed_at が送った時刻（claim で付けた時刻）のままなら null に戻し、注文を配る（次の更新で、どれかのレジが試し直す）。
+     * ほかの値になっていれば何もしない（409）。
+     */
+    post: operations["releaseEmergencyLabel"];
   };
   "/api/master-status": {
     /** マスターステート取得 */
@@ -355,6 +388,23 @@ export interface components {
        * @description CaOS で抽出を終えた時刻
        */
       brew_finished_at: string | null;
+      /**
+       * Format: date-time
+       * @description 緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。
+       * 緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）
+       */
+      emergency_at: string | null;
+      /**
+       * Format: uuid
+       * @description 入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード
+       */
+      emergency_drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description 緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する
+       * （POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）
+       */
+      emergency_printed_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -503,7 +553,7 @@ export interface components {
       /** Format: uuid */
       submitted_order_id: string | null;
     };
-    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当 */
     CaosCupState: {
       dripper: number | null;
       /** Format: double */
@@ -559,6 +609,36 @@ export interface components {
        * @description 始めたカード。待機が無ければ null
        */
       started_drip_id: string | null;
+    };
+    CaosEmergencyRequest: {
+      /** @description 緊急にするカップ */
+      cup_ids: string[];
+      /** @description カップの抽出中のカードを中断する（そのカードのカップを全部緊急にし、ドリッパーの待機の先頭を始める） */
+      interrupt: boolean;
+    };
+    CaosEmergencyResult: {
+      /** @description 緊急にしたカップ（もう緊急だったカップは含まない） */
+      marked_cup_ids: string[];
+      /** @description 中断した抽出中のカード */
+      interrupted_drip_ids: string[];
+      /** @description 中断のあとに始めた待機の先頭のカード */
+      started_drip_ids: string[];
+    };
+    EmergencyLabelClaim: {
+      /** @description true なら、このレジが緊急のシールを印刷する */
+      claimed: boolean;
+      /**
+       * Format: date-time
+       * @description 今の印刷した時刻（claimed が true なら付けた時刻。release に送る）
+       */
+      emergency_printed_at: string | null;
+    };
+    EmergencyLabelRelease: {
+      /**
+       * Format: date-time
+       * @description claim で付けた時刻
+       */
+      emergency_printed_at: string;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1255,6 +1335,8 @@ export interface operations {
    * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS6 で明細の dripper に替える）
    * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+   * - 緊急のカップ（emergency_at のあるカップ）では、before・after の drip_id は入れ直しのカード（emergency_drip_id）を指す（最初に淹れた drip_id は書き換えない）。
+   *   緊急のカップとほかのカップを 1 枚のカードにはできない
    */
   writeCaosCups: {
     requestBody: {
@@ -1320,6 +1402,130 @@ export interface operations {
         };
       };
       /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * カップを緊急（入れ直し）にする
+   * @description マスターの緊急ボタンと CaOS の入れ直しのパネルが使う。カップに緊急の印（emergency_at）を付けるだけで、入れ直しのカードは CaOS の未割当のいちばん上に出る
+   * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_drip_id で持ち、最初に淹れた drip_id は残す）。
+   * もう緊急のカップは何もしない（同じカップを 2 回緊急にしない）。カップの準備完了・提供済みは変えない（入れ直しのカードの「次へ」で準備完了にする）。
+   *
+   * interrupt が true なら、cup_ids のカップの抽出中のカードを中断する：そのカードのカップを全部緊急にし、カードは盤面から消え、
+   * そのドリッパーの待機の先頭を始める（時刻はサーバーの今）。interrupt が false でも、抽出中のカードのカップが全部緊急になれば同じく中断になる。
+   *
+   * 緊急になったカップの注文には、プリンターにつないだレジが緊急のシール（「緊急」→ そのカップの本物と同じシール）を印刷する（emergency_printed_at）。
+   */
+  markCaosEmergency: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosEmergencyRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosEmergencyResult"];
+        };
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description カップが消えた・注文の変更と重なった（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 決まりに合わない（抽出の要らないカップ・今日でない注文・抽出中でないカードの中断。何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急のシールを印刷する役を取る
+   * @description emergency_at があって emergency_printed_at が null のときだけ、emergency_printed_at にサーバーの今を付ける（条件付きの 1 回の書き込み）。
+   * 付けられた（claimed が true）レジだけが緊急のシールを印刷する。レジが 2 台あっても、どちらか 1 台だけが付けられる。
+   * 付けたら注文を配る（ほかの画面はもう印刷しない）。
+   */
+  claimEmergencyLabel: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    responses: {
+      /** @description 成功（付けられなかったときも 200 で claimed が false） */
+      200: {
+        content: {
+          "application/json": components["schemas"]["EmergencyLabelClaim"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急のシールの印刷に失敗したので、印刷した時刻を空に戻す
+   * @description emergency_printed_at が送った時刻（claim で付けた時刻）のままなら null に戻し、注文を配る（次の更新で、どれかのレジが試し直す）。
+   * ほかの値になっていれば何もしない（409）。
+   */
+  releaseEmergencyLabel: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmergencyLabelRelease"];
+      };
+    };
+    responses: {
+      /** @description 空に戻した */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 印刷した時刻が送った時刻と違う（何もしない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
