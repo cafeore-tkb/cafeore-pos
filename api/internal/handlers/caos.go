@@ -120,7 +120,7 @@ func caosUpdates(a models.CaosCupAfter, position *int, startedAt *time.Time) map
 	}
 }
 
-// lockCaosDrippers は抽出中を作るドリッパーの advisory lock を番号の順に取る（注文の行より先に取る）。
+// lockCaosDrippers はカップを置くドリッパーの advisory lock を番号の順に取る（注文の行より先に取る）。
 func lockCaosDrippers(tx *gorm.DB, drippers []int) error {
 	for _, d := range sortedUnique(drippers, cmp.Compare) {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "caos:dripper:"+strconv.Itoa(d)).Error; err != nil {
@@ -143,7 +143,7 @@ func compareUUID(a, b uuid.UUID) int {
 }
 
 // lockCaosOrders は注文の行を ID の順にロックし、カップを読む。orderIDs（書くカップの注文）は、消えていれば 409、今日の注文でなければ 422。
-// extra（番号をずらすかもしれないカップの注文）もいっしょに ID の順でロックする（消えていたら飛ばす）。返すのは orderIDs の注文だけ。
+// extra（番号をずらすかもしれないカップと、入るカードの書かないカップの注文）もいっしょに ID の順でロックする（消えていたら飛ばす）。返すのは orderIDs の注文だけ。
 // ロックは 1 回の並びで取る（2 回に分けると、ほかの書き込みと順番が逆になってデッドロックしうる）。
 func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Time) (map[uuid.UUID]*models.Order, error) {
 	must := make(map[uuid.UUID]bool, len(orderIDs))
@@ -490,12 +490,7 @@ func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
 		return
 	}
 	orderIDs, err := h.writeCups(req.Writes)
-	if respondError(c, err) {
-		return
-	}
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
-	h.publish(orderIDs)
+	h.respond(c, orderIDs, err)
 }
 
 // ---------------------------------------------------------------- 「次へ」
@@ -610,18 +605,18 @@ func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
 	if err == errConflict {
 		err = conflictErrorf("注文の変更と重なりました。もう一度押してください")
 	}
+	h.respond(c, orderIDs, err)
+}
+
+// ---------------------------------------------------------------- 応答と配信
+
+// respond は err を応答に書く。無ければ 204 を返してから、書いた注文を読み直して、このインスタンスにつないでいる画面へ配る。
+func (h *CaosHandler) respond(c *gin.Context, orderIDs []uuid.UUID, err error) {
 	if respondError(c, err) {
 		return
 	}
 	c.Status(http.StatusNoContent)
 	c.Writer.WriteHeaderNow()
-	h.publish(orderIDs)
-}
-
-// ---------------------------------------------------------------- 配信
-
-// publish は書いた注文を読み直して、このインスタンスにつないでいる画面へ配る。
-func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
 	for _, id := range orderIDs {
 		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("caos: failed to publish order %s: %v", id, err)

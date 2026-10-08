@@ -139,21 +139,17 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 }
 
 // 注文の明細（カップの商品）
-type caosLine struct {
-	items []models.Item
-}
-
-func line(items ...models.Item) caosLine { return caosLine{items: items} }
+func line(items ...models.Item) []models.Item { return items }
 
 // createOrderAt は注文番号 no の注文を作る。
-func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, lines ...caosLine) models.Order {
+func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, lines ...[]models.Item) models.Order {
 	t.Helper()
 	order := models.Order{ID: uuid.New(), OrderId: no, CreatedAt: createdAt, BillingAmount: 500, Received: 500}
 	pos := 0
 	for _, l := range lines {
 		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500}
 		order.OrderMenus = append(order.OrderMenus, m)
-		for _, item := range l.items {
+		for _, item := range l {
 			order.OrderCups = append(order.OrderCups, models.OrderCup{ID: uuid.New(), OrderMenuID: m.ID, ItemID: item.ID, Position: pos})
 			pos++
 		}
@@ -164,7 +160,7 @@ func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, l
 	return order
 }
 
-func (f *caosFixture) createOrder(t *testing.T, no int, lines ...caosLine) models.Order {
+func (f *caosFixture) createOrder(t *testing.T, no int, lines ...[]models.Item) models.Order {
 	t.Helper()
 	return f.createOrderAt(t, no, time.Now(), lines...)
 }
