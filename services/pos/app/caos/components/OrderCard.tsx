@@ -4,6 +4,7 @@ import type React from "react";
 import { orderLabel } from "../logic/cards";
 import { laneOrdinal, moveTargets } from "../logic/lanes";
 import type { DripCard } from "../types";
+import { BeanBadge } from "./BeanBadge";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // 置き場所ごとの違いは、文字の大きさ（size）と、終わり（done）・選択中（selected）・添え書き（note）だけ。
@@ -163,15 +164,8 @@ export const OrderCard: React.FC<
         >
           {card.beanName}
         </span>
-        {/* 区分は商品の種類の表示名をそのまま出す */}
-        {card.typeName && (
-          <span
-            title={`区分：${card.typeName}`}
-            className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
-          >
-            {card.typeName}
-          </span>
-        )}
+        {/* 豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す */}
+        <BeanBadge card={card} />
         {card.totalItemsInOrder > 1 && (
           <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
             {card.itemIndex}/{card.totalItemsInOrder}・計{card.totalOrderCups}杯

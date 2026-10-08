@@ -1,6 +1,7 @@
 import { useColorSettings } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
+import { attachBeans, waitingCupsByBean } from "../logic/beans";
 import {
   advanceBay,
   assignCard,
@@ -17,6 +18,7 @@ import { nextAvailableBays } from "../logic/queue";
 import type { RebrewDecision } from "../logic/rebrew";
 import type { Board, HistoricalOrder, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
+import { useBeanInventory } from "./useBeanInventory";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
 import { usePracticeData } from "./usePracticeData";
@@ -58,6 +60,7 @@ export const useCaosSession = (initial?: {
   });
   const pos = usePosIngest({ enabled: !test.session, receive: state.receive });
   const { colorSettings } = useColorSettings();
+  const { beanStatuses, beanIndex, ...beanState } = useBeanInventory();
 
   // 盤面の秒。その日の 0 時から数える（テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const realTime = useCurrentTime(1000);
@@ -69,8 +72,19 @@ export const useCaosSession = (initial?: {
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 
   const board = useMemo(
-    () => paintBoard(state.board, colorSettings),
-    [state.board, colorSettings],
+    () => attachBeans(paintBoard(state.board, colorSettings), beanIndex),
+    [state.board, colorSettings, beanIndex],
+  );
+  // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
+  const beanWaitingCups = useMemo(
+    () =>
+      test.session
+        ? undefined
+        : waitingCupsByBean(
+            board,
+            beanStatuses.map((status) => status.resource.id),
+          ),
+    [board, beanStatuses, test.session],
   );
 
   // できた操作だけ音を鳴らす
@@ -88,6 +102,12 @@ export const useCaosSession = (initial?: {
     cups: {
       unassigned: totalCups(board.unassigned),
       waiting: totalCups(board.baristas.flatMap((barista) => barista.queue)),
+    },
+    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
+    beans: {
+      statuses: beanStatuses,
+      waitingCups: beanWaitingCups,
+      ...beanState,
     },
     nowSec,
     timeLabel: timeOfDayLabel(nowSec),

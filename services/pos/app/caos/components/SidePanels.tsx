@@ -247,9 +247,13 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 };
 
 export const AuxiliaryContent: React.FC<
-  { tab: AuxiliaryTab } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, baristas, ...analytics }) => {
-  if (tab === "beans") return <BeanQueueView />;
+  {
+    tab: AuxiliaryTab;
+    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
+    beans: React.ComponentProps<typeof BeanQueueView>;
+  } & React.ComponentProps<typeof AnalyticsView>
+> = ({ tab, beans, baristas, ...analytics }) => {
+  if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView baristas={baristas} {...analytics} />;
   // ドリッパー：6 列（1st〜6th）の今の抽出と待ちの件数
