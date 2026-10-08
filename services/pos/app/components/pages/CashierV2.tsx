@@ -427,7 +427,7 @@ const CashierV2 = ({
             {/* disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
             <div
               aria-busy={submitting}
-              className={cn(submitting && "pointer-events-none opacity-50")}
+              className={cn(submitting && "opacity-50")}
             >
               <fieldset
                 disabled={!canEnterSubmit}
