@@ -159,7 +159,9 @@ func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	o1 := f.createOrder(t, 1, line(geisha))
-	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{geisha}, assignee: strPtr("5")})
+	// 指名は明細のドリッパーの番号（dripper）。2 杯目の明細は番号の無い古い自由記述だけ（指名なし）
+	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{geisha}, dripper: intPtr(2), assignee: strPtr("山田さん")},
+		caosLine{items: []models.Item{geisha}, assignee: strPtr("5")})
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1, card2 := uuid.New(), uuid.New()
 
@@ -194,15 +196,31 @@ func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
 		t.Fatalf("limited cup to 4 (佐藤 → 鈴木) = %d, want 422", code)
 	}
 
-	// 指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない。担当者を上級生に替えれば置ける
+	// 指名（2nd）の限定のカップ：指名の 2nd の担当者が上級生でなければ、どこにも置けない
+	// （2nd は限定で、ほかは指名で断る。上級生の 1st・3rd でも置けない）
 	f.mustPutLane(t, 1, "高橋", true)
-	for _, d := range []int{1, 5} {
-		if code, _ := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(d, 2, card2, false))); code != http.StatusUnprocessableEntity {
-			t.Fatalf("nominated limited cup to %d = %d, want 422", d, code)
+	f.mustPutLane(t, 2, "小林", false)
+	for d := 1; d <= caosDrippers; d++ {
+		code, body := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(d, 2, card2, false)))
+		if code != http.StatusUnprocessableEntity {
+			t.Fatalf("nominated limited cup to %d (2nd is not a senior) = %d, want 422", d, code)
+		}
+		want := "指名のあるカップは 2 番"
+		if d == 2 {
+			want = "上級生"
+		}
+		if !strings.Contains(body, want) {
+			t.Fatalf("nominated limited cup to %d: %s, want %q", d, body, want)
 		}
 	}
-	f.mustPutLane(t, 5, "田中", true)
-	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(5, 2, card2, true)))
+	// 担当者を上級生に替えれば 2nd にだけ置ける（ほかの上級生のドリッパーへは指名で断る）
+	f.mustPutLane(t, 2, "伊藤", true)
+	if code, body := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, false))); code != http.StatusUnprocessableEntity || !strings.Contains(body, "指名") {
+		t.Fatalf("nominated limited cup to 1st (a senior) = %d: %s", code, body)
+	}
+	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, card2, true)))
+	// 番号の無い自由記述だけの古い明細の限定のカップは指名なし：上級生のドリッパーならどこにでも置ける（1st の高橋）
+	f.mustPut(t, write(ids(o2.OrderCups[1]), unassigned, placed(1, 2, uuid.New(), false)))
 }
 
 func TestCaosLanesReachOtherInstances(t *testing.T) {

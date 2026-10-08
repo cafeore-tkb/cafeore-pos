@@ -1,3 +1,4 @@
+import { dripperLabel } from "../models/dripper";
 import type { components } from "../types/api";
 import { CAOS_DRIPPERS, type CaosCard, caosLane } from "./caos-board";
 
@@ -10,9 +11,8 @@ import { CAOS_DRIPPERS, type CaosCard, caosLane } from "./caos-board";
 export type CaosLane = components["schemas"]["CaosLane"];
 export type CaosLanes = components["schemas"]["CaosLanes"];
 
-/** ドリッパーの呼び方（1 → 「1st」） */
-export const caosLaneOrdinal = (dripper: number) =>
-  ["1st", "2nd", "3rd", "4th", "5th", "6th"][dripper - 1] ?? `${dripper}th`;
+/** ドリッパーの呼び方（1 → 「1st」。指名の表示と同じ models/dripper の dripperLabel） */
+export const caosLaneOrdinal = dripperLabel;
 
 /** 担当者のいない 6 つ */
 export const emptyCaosLanes = (day: string): CaosLanes => ({
@@ -52,15 +52,20 @@ export const isSeniorLane = (lanes: readonly CaosLane[], dripper: number) =>
 /**
  * カードをそのドリッパーへ置けない理由（限定のカードで、担当者が上級生でない）。置けるなら null。
  * サーバーと同じく、別のドリッパーへ置くときだけ確かめる（同じドリッパーの中の順番の入れ替えは確かめない。
- * 担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）
+ * 担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
+ * 指名（nominatedDripper）のほかのドリッパーへ置けないのは assignWrites が確かめる。両方が効くので、
+ * 指名のドリッパーの担当者が上級生でない限定のカードは、どこにも置けない（担当者を上級生に替えれば置ける）
  */
 export const seniorOnlyBlock = (
-  card: Pick<CaosCard, "seniorOnly" | "dripper">,
+  card: Pick<CaosCard, "seniorOnly" | "dripper"> &
+    Partial<Pick<CaosCard, "nominatedDripper">>,
   dripper: number,
   lanes: readonly CaosLane[],
 ): string | null => {
   if (!card.seniorOnly || card.dripper === dripper) return null;
   if (isSeniorLane(lanes, dripper)) return null;
+  if (card.nominatedDripper === dripper)
+    return `限定のカードは上級生のドリッパーにしか置けません（指名の ${caosLaneOrdinal(dripper)} の担当者は上級生ではありません。担当者を上級生に替えると置けます）`;
   return `限定のカードは上級生のドリッパーにしか置けません（${caosLaneOrdinal(dripper)} の担当者は上級生ではありません）`;
 };
 

@@ -1265,6 +1265,7 @@ components:
         - unit_price
         - menu
         - assignee
+        - dripper
       properties:
         id:
           type: string
@@ -1281,6 +1282,13 @@ components:
         assignee:
           type: string
           nullable: true
+          description: 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+          description: 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null
     # 注文の1杯。注文明細（メニュー）の構成品を数量分に展開したもの（グッズは含まない）
     OrderCupResponse:
       type: object
@@ -1347,6 +1355,7 @@ components:
       required:
         - menu_id
         - assignee
+        - dripper
       properties:
         order_menu_id:
           type: string
@@ -1358,6 +1367,13 @@ components:
         assignee:
           type: string
           nullable: true
+          description: 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+          description: 指名したドリッパーの番号（1〜6）。指名しない明細は null
     # レスポンス用（完全な情報）
     OrderResponse:
       type: object
@@ -1572,13 +1588,18 @@ components:
         - ColorTargetTypeItemType
     ColorScreen:
       type: string
-      description: 背景色を適用する画面
+      description: |
+        背景色を適用する画面。
+        cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+        master・serve はマスター・提供画面のカップ
       enum:
         - cashier
+        - cashier_order
         - master
         - serve
       x-enum-varnames:
         - ColorScreenCashier
+        - ColorScreenCashierOrder
         - ColorScreenMaster
         - ColorScreenServe
     ColorSettingResponse:

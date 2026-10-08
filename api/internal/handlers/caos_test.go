@@ -54,9 +54,10 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 	return f
 }
 
-// 注文の明細（カップの商品と指名）
+// 注文の明細（カップの商品と指名。指名はドリッパーの番号 dripper と自由記述 assignee）
 type caosLine struct {
 	items    []models.Item
+	dripper  *int
 	assignee *string
 }
 
@@ -68,7 +69,7 @@ func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, l
 	order := models.Order{ID: uuid.New(), OrderId: no, CreatedAt: createdAt, BillingAmount: 500, Received: 500}
 	pos := 0
 	for _, l := range lines {
-		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500, Assignee: l.assignee}
+		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500, Dripper: l.dripper, Assignee: l.assignee}
 		order.OrderMenus = append(order.OrderMenus, m)
 		for _, item := range l.items {
 			order.OrderCups = append(order.OrderCups, models.OrderCup{ID: uuid.New(), OrderMenuID: m.ID, ItemID: item.ID, Position: pos})
@@ -178,7 +179,9 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	db, _ := openListenTestDB(t)
 	f := newCaosFixture(t, db)
 	o1 := f.createOrder(t, 1, line(f.blend, f.blend), line(f.milk))
-	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{f.blend}, assignee: strPtr(" ２ ")})
+	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{f.blend}, dripper: intPtr(2), assignee: strPtr("山田")},
+		// 番号より前の明細：自由記述が数字でも指名なし
+		caosLine{items: []models.Item{f.blend}, assignee: strPtr("3")})
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1 := uuid.New()
 	// サーバーの今。iPad の時計とずれていてもこちらで付ける
@@ -241,6 +244,13 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 		t.Fatalf("nominated cup on another dripper = %d, want 422", code)
 	}
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), false)))
+	// 自由記述だけの古い明細は指名なしなので、どのドリッパーにも置ける。指名の違うカップとは統合できない
+	if code, _ := f.put(t, write(ids(o2.OrderCups[1]), unassigned, placed(2, 2, *f.cup(t, o2.OrderCups[0].ID).DripID, false))); code != http.StatusUnprocessableEntity {
+		t.Fatalf("merging cups of different nominations = %d, want 422", code)
+	}
+	legacyCard := uuid.New()
+	f.mustPut(t, write(ids(o2.OrderCups[1]), unassigned, placed(4, 2, legacyCard, false)))
+	f.mustPut(t, write(ids(o2.OrderCups[1]), f.state(t, o2.OrderCups[1].ID), toUnassigned))
 
 	// 1 つのドリッパーで抽出中は 1 枚だけ。待機なら置ける
 	card3 := uuid.New()
@@ -583,14 +593,3 @@ func expectOrderNotification(t *testing.T, conn *pgx.Conn, orderID uuid.UUID) {
 	}
 }
 
-func TestNominatedDripper(t *testing.T) {
-	for in, want := range map[string]int{"3": 3, " ６ ": 6, "①": 1, "7": 0, "0": 0, "+1": 0, "1.0": 0, "たくみ": 0, "": 0} {
-		got, ok := nominatedDripper(&in)
-		if (want == 0 && ok) || (want != 0 && got != want) {
-			t.Errorf("nominatedDripper(%q) = %d, %v; want %d", in, got, ok, want)
-		}
-	}
-	if _, ok := nominatedDripper(nil); ok {
-		t.Error("nominatedDripper(nil) is ok")
-	}
-}

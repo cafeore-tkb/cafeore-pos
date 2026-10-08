@@ -9,7 +9,6 @@ import {
   caosDay,
   caosLane,
   mergeWrites,
-  nominatedDripper,
   unassignWrites,
 } from "./caos-board";
 
@@ -69,15 +68,21 @@ const order = (
   no: number,
   cups: Cup[],
   {
+    dripper = {},
     assignee = {},
     createdAt = NOW,
-  }: { assignee?: Record<string, string>; createdAt?: Date } = {},
+  }: {
+    dripper?: Record<string, number>;
+    assignee?: Record<string, string>;
+    createdAt?: Date;
+  } = {},
 ): CaosOrderInput => ({
   id: `order-${no}`,
   orderId: no,
   createdAt,
   menus: Array.from(new Set(cups.map((c) => c.orderMenuId))).map((line) => ({
     orderMenuId: line,
+    dripper: dripper[line] ?? null,
     assignee: assignee[line] ?? null,
   })),
   cups,
@@ -98,9 +103,16 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         cup({ item: kenya }),
         cup({ item: milk }),
         cup({ item: blend, line: "line-2" }),
+        cup({ item: blend, line: "line-3" }),
+        cup({ item: blend, line: "line-4" }),
         cup({ item: blend, readyAt: NOW }),
       ],
-      { assignee: { "line-2": " ３ " } },
+      {
+        // 指名は明細のドリッパーの番号。自由記述は番号に添えるだけ（表示は番号）。
+        // 番号の無い自由記述だけの古い明細は、数字でも指名なし（表示は自由記述）
+        dripper: { "line-2": 3, "line-3": 3 },
+        assignee: { "line-3": " 山田 ", "line-4": " 4 " },
+      },
     );
     const o2 = order(2, [cup({ item: blend })]);
     const cards = buildCaosCards([o2, o1], DAY);
@@ -111,13 +123,15 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         c.cups.length,
         c.cups[0].item.name,
         c.nominatedDripper,
+        c.cups[0].nominee,
       ]),
     ).toEqual([
-      [1, "unassigned", 1, "ケニア", undefined],
-      [1, "unassigned", 2, "ブレンド", undefined],
-      [1, "unassigned", 1, "ブレンド", undefined],
-      [1, "unassigned", 1, "ブレンド", 3],
-      [2, "unassigned", 1, "ブレンド", undefined],
+      [1, "unassigned", 1, "ケニア", undefined, null],
+      [1, "unassigned", 2, "ブレンド", undefined, null],
+      [1, "unassigned", 1, "ブレンド", undefined, null],
+      [1, "unassigned", 2, "ブレンド", 3, "3rd"],
+      [1, "unassigned", 1, "ブレンド", undefined, "4"],
+      [2, "unassigned", 1, "ブレンド", undefined, null],
     ]);
     // 未割当のキーはカップの ID の組
     expect(cards[0].key).toBe(`cups:${ids(cards[0]).join(",")}`);
@@ -201,15 +215,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ["限定", true],
     ]);
   });
-
-  test("指名の番号は 1〜6 の数字だけ（全角も読む）", () => {
-    expect(nominatedDripper("２")).toBe(2);
-    expect(nominatedDripper(" 6 ")).toBe(6);
-    expect(nominatedDripper("7")).toBeUndefined();
-    expect(nominatedDripper("+1")).toBeUndefined();
-    expect(nominatedDripper("たくみ")).toBeUndefined();
-    expect(nominatedDripper(null)).toBeUndefined();
-  });
 });
 
 describe("[unit] CaOS の書き込み", () => {
@@ -232,9 +237,15 @@ describe("[unit] CaOS の書き込み", () => {
         order(3, [
           cup({ item: blend, dripper: 1, dripperPosition: 3, dripId: "q3" }),
         ]),
-        order(4, [cup({ item: blend }), cup({ item: blend, line: "n" })], {
-          assignee: { n: "4" },
-        }),
+        order(
+          4,
+          [
+            cup({ item: blend }),
+            cup({ item: blend, line: "n" }),
+            cup({ item: blend, line: "old" }),
+          ],
+          { dripper: { n: 4 }, assignee: { old: "4" } },
+        ),
         order(5, [cup({ item: blend })]),
         order(6, [cup({ item: kenya })]),
       ],
@@ -310,6 +321,10 @@ describe("[unit] CaOS の書き込み", () => {
     const named = find(cards, (c) => c.nominatedDripper === 4);
     expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("error");
     expect(assignWrites(cards, named, 4, { newId })).toHaveProperty("writes");
+    // 自由記述だけの古い明細は、数字でも指名なし（どこにでも置ける）
+    const old = find(cards, (c) => c.cups[0].nominee === "4");
+    expect(old.nominatedDripper).toBeUndefined();
+    expect(assignWrites(cards, old, 1, { newId })).toHaveProperty("writes");
     expect(
       assignWrites(
         cards,
@@ -338,7 +353,10 @@ describe("[unit] CaOS の書き込み", () => {
   test("統合：1 杯どうし・同じ商品・同じ指名。未割当は新しい dripId、待機は相手を同じ値にする", () => {
     const cards = board();
     const o5 = find(cards, (c) => c.orderNo === 5);
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.nominatedDripper);
+    const o4 = find(
+      cards,
+      (c) => c.orderNo === 4 && !c.nominatedDripper && !c.cups[0].nominee,
+    );
     const o6 = find(cards, (c) => c.orderNo === 6);
     const named = find(cards, (c) => c.nominatedDripper === 4);
     expect(canMergeCards(o4, o5)).toBe(true);
@@ -385,7 +403,10 @@ describe("[unit] CaOS の書き込み", () => {
 
   test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
     const cards = board();
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.nominatedDripper);
+    const o4 = find(
+      cards,
+      (c) => c.orderNo === 4 && !c.nominatedDripper && !c.cups[0].nominee,
+    );
     const o5 = find(cards, (c) => c.orderNo === 5);
     const merged = mergeWrites(o4, o5, () => "merged");
     if (!("writes" in merged)) throw new Error(merged.error);

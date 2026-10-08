@@ -75,7 +75,7 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
               {queuePosition ? `${queuePosition}. ` : ""}
               {ticket.beanName}
             </span>
-            <BeanBadge beans={ticket.beans} />
+            <BeanBadge beans={ticket.beans} typeName={ticket.typeName} />
           </div>
         </>
       ) : (

@@ -1,9 +1,11 @@
 import {
+  type ColorScreen,
   type CupStatus,
   type OrderEntity,
   type WithId,
-  masterDefaultColor,
+  assignmentDisplay,
   orderRepository,
+  readableTextColor,
   resolveItemColor,
   useColorSettings,
 } from "@cafeore/common";
@@ -111,26 +113,24 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     });
   };
 
-  // 注文カードの背景色設定はマスター・提供画面だけで使う（レジの設定はメニューのボタン用）
-  const colorScreen = user === "master" || user === "serve" ? user : null;
+  // アイテムの背景色は、その画面の色の設定（アイテム → 種別の順）から引く。設定の無いアイテムは色を付けない。
+  // ダッシュボードは別に直すので、ここでは色の設定を使わない
+  const colorScreen = user === "dashboard" ? null : cardColorScreens[user];
   const { colorSettings } = useColorSettings(colorScreen !== null);
 
-  // 設定があれば下の className の既定色より優先する。
-  // マスター画面では、設定が無ければマスターの既定の色（CaOS のカードと共通。@cafeore/common）。
   // マスター画面では準備完了・呼び出し中、提供画面では提供済みのカップをグレーのままにする。
-  const itemBackgroundColor = (item: (typeof displayOrders)[number]) => {
+  const itemStyle = (item: CupItem) => {
     if (colorScreen === null) return undefined;
     const status = cupStatus(item);
     if (
       colorScreen === "master"
         ? order.status === "calling" || status !== "preparing"
-        : status === "served"
+        : colorScreen === "serve" && status === "served"
     )
       return undefined;
-    const color = resolveItemColor(colorSettings, item, colorScreen);
-    return colorScreen === "master"
-      ? (color ?? masterDefaultColor(item))
-      : color;
+    const backgroundColor = resolveItemColor(colorSettings, item, colorScreen);
+    if (backgroundColor === undefined) return undefined;
+    return { backgroundColor, color: readableTextColor(backgroundColor) };
   };
 
   return (
@@ -206,31 +206,22 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                   <Card
                     className={cn(
                       "h-full p-3 transition-all duration-200",
-                      // マスター画面の既定の色は itemBackgroundColor で付ける
-                      user === "serve"
-                        ? item.item_type.name === "milk" && "bg-yellow-200"
-                        : user !== "master" &&
-                            item.item_type.name === "milk" &&
-                            "bg-gray-300",
-                      // (user === "master" ||
-                      //   user === "serve") &&
-                      //   item.item_type.name === "hotOre" &&
-                      //   "bg-orange-300",
                       user === "master" &&
                         (order.status === "calling" ||
                           status !== "preparing") &&
                         "bg-gray-200 text-gray-500",
                       user === "serve" &&
-                        ((status === "served" && "bg-gray-200 text-gray-500") ||
-                          (item.item_type.name === "iceOre" && "bg-sky-200")),
+                        status === "served" &&
+                        "bg-gray-200 text-gray-500",
                       servable &&
                         "shadow-md ring-4 ring-green-500 ring-offset-2",
                       served && "opacity-50",
-                      user === "cashier" &&
-                        item.item_type.name === "others" &&
-                        "bg-green-300",
+                      // ダッシュボードはこの PR では変えない（別に直す）
+                      user === "dashboard" &&
+                        item.item_type.name === "milk" &&
+                        "bg-gray-300",
                     )}
-                    style={{ backgroundColor: itemBackgroundColor(item) }}
+                    style={itemStyle(item)}
                   >
                     <h3 className="text-center font-bold text-3xl">
                       {item.abbr}
@@ -255,14 +246,14 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                         提供済
                       </p>
                     )}
-                    {item.assignee && (
+                    {assignmentDisplay(item) && (
                       <p
                         className={cn(
                           order.status === "preparing" && "text-red-500",
                           "font-bold text-sm",
                         )}
                       >
-                        指名:{item.assignee}
+                        指名:{assignmentDisplay(item)}
                       </p>
                     )}
                   </Card>
@@ -352,6 +343,16 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
     </div>
   );
 }
+
+// 注文カードを出す画面ごとの色の設定の画面
+const cardColorScreens: Record<
+  Exclude<props["user"], "dashboard">,
+  ColorScreen
+> = {
+  cashier: "cashier_order",
+  master: "master",
+  serve: "serve",
+};
 
 // 押して状態を切り替えられるカップだけボタンにする。
 // 押せることが分かるよう、ホバーで浮かせて押した瞬間に沈ませる。

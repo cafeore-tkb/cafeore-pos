@@ -265,7 +265,14 @@
   },
   "MenuInfo": {
     "type": "object",
-    "required": ["id", "menu_name", "unit_price", "menu", "assignee"],
+    "required": [
+      "id",
+      "menu_name",
+      "unit_price",
+      "menu",
+      "assignee",
+      "dripper"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -285,7 +292,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null"
       }
     }
   },
@@ -363,7 +378,7 @@
   },
   "MenuInfoCreate": {
     "type": "object",
-    "required": ["menu_id", "assignee"],
+    "required": ["menu_id", "assignee", "dripper"],
     "properties": {
       "order_menu_id": {
         "type": "string",
@@ -376,7 +391,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1〜6）。指名しない明細は null"
       }
     }
   },
@@ -626,10 +649,11 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面",
-    "enum": ["cashier", "master", "serve"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ\n",
+    "enum": ["cashier", "cashier_order", "master", "serve"],
     "x-enum-varnames": [
       "ColorScreenCashier",
+      "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe"
     ]
