@@ -1,15 +1,14 @@
 import { ClipboardList, Table2, X } from "lucide-react";
 import type React from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
 import {
-  canMergeDripUnits,
-  orderLabel,
-  orderNoLabel,
-  totalCups,
-} from "../logic/cards";
+  useScrollToFirstLive,
+  useSheetSelection,
+} from "../hooks/useSheetSelection";
+import { orderLabel, orderNoLabel, totalCups } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { canPlaceOn, laneOrdinal } from "../logic/lanes";
+import { laneOrdinal } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   type SheetEntry,
@@ -64,22 +63,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onReturnToUnassigned,
   onMergeOrders,
 }) => {
-  const [selectedUid, setSelectedUid] = useState<string | null>(null);
-  // Order numbers of a merge waiting for App to hand back the combined card.
-  const [mergingNos, setMergingNos] = useState<number[] | null>(null);
-  const selectedOrder =
-    unassignedOrders.find((order) => order.ticketUid === selectedUid) ?? null;
-
-  useEffect(() => {
-    if (selectedUid && !selectedOrder) setSelectedUid(null);
-  }, [selectedOrder, selectedUid]);
-
-  // App's selection can move on without this view (tapping a placed card, a move that clears it);
-  // drop the local card selection then so the header and "ここに配置" never point at another order.
-  useEffect(() => {
-    if (selectedOrder && selectedOrderId !== orderLabel(selectedOrder))
-      setSelectedUid(null);
-  }, [selectedOrder, selectedOrderId]);
+  const picked = useSheetSelection({
+    unassigned: unassignedOrders,
+    selectedOrderId,
+    onSelectOrder,
+    onAssign: onAssignToBay,
+    onMerge: onMergeOrders,
+  });
+  const selectedOrder = picked.selected;
+  const sheetScrollRef = useScrollToFirstLive(HISTORY_ROWS_ON_OPEN);
 
   const sheet = useMemo(
     () => buildSheet(baristas, unassignedOrders),
@@ -103,79 +95,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   );
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 
-  const sheetScrollRef = useRef<HTMLDivElement>(null);
-  // Scroll to the live rows only when the sheet opens; afterwards the user owns the scroll.
-  useLayoutEffect(() => {
-    const container = sheetScrollRef.current;
-    if (!container) return;
-    const rows: HTMLElement[] = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-sheet-row]"),
-    );
-    const firstLive = rows.findIndex((row) => row.dataset.live === "true");
-    const row =
-      rows[
-        Math.max(
-          0,
-          (firstLive === -1 ? rows.length : firstLive) - HISTORY_ROWS_ON_OPEN,
-        )
-      ];
-    const head = container.querySelector("thead");
-    if (!row || !head) return;
-    container.scrollTop +=
-      row.getBoundingClientRect().top -
-      container.getBoundingClientRect().top -
-      head.getBoundingClientRect().height;
-  }, []);
-
-  const clearSelection = () => {
-    setSelectedUid(null);
-    onSelectOrder(null);
-  };
-
-  const mergeWithSelected = (order: DripCard) => {
-    if (!selectedOrder || !canMergeDripUnits(selectedOrder, order)) return;
-    onMergeOrders(selectedOrder.ticketUid, order.ticketUid);
-    setMergingNos([...selectedOrder.orderNos, ...order.orderNos]);
-    clearSelection();
-  };
-
-  // The combined card is listed under the earlier order, often far from the card just tapped,
-  // so select it and bring it into view; it can then be placed right away.
-  useEffect(() => {
-    if (!mergingNos) return;
-    const merged = unassignedOrders.find(
-      (order) =>
-        order.orderNos.length > 1 &&
-        mergingNos.every((no) => order.orderNos.includes(no)),
-    );
-    if (!merged) return;
-    setMergingNos(null);
-    const uid = merged.ticketUid;
-    setSelectedUid(uid);
-    onSelectOrder(orderLabel(merged));
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-sheet-cup="${CSS.escape(uid)}"]`)
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-  }, [mergingNos, unassignedOrders, onSelectOrder]);
-
-  const toggleSelection = (order: DripCard) => {
-    const uid = order.ticketUid;
-    if (selectedUid === uid) {
-      clearSelection();
-      return;
-    }
-    setSelectedUid(uid);
-    onSelectOrder(orderLabel(order));
-  };
-
-  const assignSelected = (bayId: number) => {
-    if (!selectedOrder || !canPlaceOn(selectedOrder, bayId)) return;
-    onAssignToBay(selectedOrder, bayId);
-    clearSelection();
-  };
-
   // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。
   // 表のカードは右の注文内容へ落とすと未割当に戻る。
   const drag = useCardDrag<DragSource, DropTarget>({
@@ -196,19 +115,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       );
     },
     onBegin: (source) => {
-      if (source.kind === "unassigned") {
-        setSelectedUid(source.order.ticketUid);
-        onSelectOrder(orderLabel(source.order));
-      } else if (selectedUid) {
-        // Moving a placed card: hide the "ここに配置" slots of a pending selection.
-        clearSelection();
-      }
+      if (source.kind === "unassigned") picked.select(source.order);
+      // Moving a placed card: hide the "ここに配置" slots of a pending selection.
+      else if (selectedOrder) picked.clear();
     },
     onDrop: (source, target) => {
       if (source.kind === "unassigned") {
         if (target === "unassigned") return;
         onAssignToBay(source.order, target);
-        clearSelection();
+        picked.clear();
         return;
       }
       if (target === "unassigned") onReturnToUnassigned(source.ticket);
@@ -296,7 +211,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           {selectedOrder && (
             <button
               type="button"
-              onClick={clearSelection}
+              onClick={picked.clear}
               className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
             >
               <X className="h-3.5 w-3.5" />
@@ -421,12 +336,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                 </div>
                               ))}
                               {isTargetRow &&
-                                selectedOrder &&
-                                canPlaceOn(selectedOrder, barista.id) && (
+                                picked.canAssignTo(barista.id) && (
                                   <button
                                     type="button"
                                     aria-label={`ドリッパー${laneOrdinal(barista.id)}に配置`}
-                                    onClick={() => assignSelected(barista.id)}
+                                    onClick={() => picked.assignTo(barista.id)}
                                     className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
                                       isDropColumn
                                         ? "border-blue-700 bg-blue-200 text-blue-800 ring-2 ring-blue-400"
@@ -541,32 +455,30 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 <div className="grid grid-cols-2 gap-1.5 p-2">
                   {group.items.map((order) => {
                     const uid = order.ticketUid;
-                    const isMergeCandidate = Boolean(
-                      selectedOrder && canMergeDripUnits(selectedOrder, order),
-                    );
+                    const isSelected = selectedOrder?.ticketUid === uid;
+                    const isMergeCandidate = picked.canMergeWith(order);
                     return (
                       <OrderCard
                         key={uid}
                         card={order}
                         size="sm"
-                        selected={selectedUid === uid}
+                        selected={isSelected}
                         data-sheet-cup={uid}
                         // A selected card has touch-action none, so it can be dragged in any direction.
                         onPointerDown={(event) =>
                           drag.press(
                             { kind: "unassigned", order },
                             event,
-                            selectedUid === uid,
+                            isSelected,
                           )
                         }
                         onClickCapture={drag.suppressClick}
-                        onClick={() =>
-                          isMergeCandidate
-                            ? mergeWithSelected(order)
-                            : toggleSelection(order)
-                        }
+                        onClick={() => {
+                          if (isMergeCandidate) picked.mergeWith(order);
+                          else picked.toggle(order);
+                        }}
                         className={`h-[64px] cursor-grab hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${
-                          selectedUid === uid ? "touch-none" : "touch-pan-y"
+                          isSelected ? "touch-none" : "touch-pan-y"
                         }`}
                         dragging={dragCup?.ticketUid === uid}
                       >

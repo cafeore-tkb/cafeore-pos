@@ -2,7 +2,6 @@ import { useColorSettings } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import {
-  type RebrewDecision,
   advanceBay,
   assignCard,
   mergeUnassigned,
@@ -15,6 +14,7 @@ import { startOfLocalDay, timeOfDayLabel } from "../logic/format";
 import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
 import { nextAvailableBays } from "../logic/queue";
+import type { RebrewDecision } from "../logic/rebrew";
 import type { Board, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";

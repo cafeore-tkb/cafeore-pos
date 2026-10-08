@@ -1,11 +1,11 @@
 import { AlertTriangle, Clock3 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import type { RebrewDecision } from "../logic/board";
 import { MAX_CUPS, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
 import {
+  type RebrewDecision,
   canConfirmRebrew,
   rebrewCandidates,
   rebrewSlots,

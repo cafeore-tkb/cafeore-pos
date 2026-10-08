@@ -5,6 +5,17 @@ import { queueWaitSeconds } from "./queue";
 
 // 緊急の入れ直しのパネルの選び方（置くドリッパーの候補と、差し込む位置）
 
+/** 入れ直しのパネルで選んだもの */
+export interface RebrewDecision {
+  cupCount: number;
+  /** 抽出中のカードを今止める */
+  interruptCurrent: boolean;
+  /** 入れ直しを置くドリッパー（null なら未割当） */
+  targetBayId: number | null;
+  /** 置くドリッパーの列の中の位置（rebrewSlots の index） */
+  insertIndex: number | null;
+}
+
 /** 置くドリッパーの候補（空くまでの短い順）。指名があればその列だけ。限定もいまはどの列でも可 */
 export const rebrewCandidates = (baristas: Barista[], ticket: OrderTicket) => {
   const candidates = baristas
@@ -21,7 +32,7 @@ export const rebrewCandidates = (baristas: Barista[], ticket: OrderTicket) => {
 };
 
 /** 入れ直しの元（抽出中・終わったカードと、そのドリッパー）と、抽出中のカードを今止めるか */
-export interface RebrewSource {
+interface RebrewSource {
   ticket: OrderTicket;
   sourceBayId: number;
   interruptCurrent: boolean;

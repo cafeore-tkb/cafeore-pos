@@ -8,6 +8,7 @@ import {
 } from "./cards";
 import { canPlaceOn, laneOrdinal, makeLaneBaristas } from "./lanes";
 import { arrangeQueue, scheduleQueue } from "./queue";
+import { type RebrewDecision, rebrewSlots } from "./rebrew";
 
 // 盤面の操作。どれも今の盤面から次の盤面を返す（できない操作は null）。
 // label は「1つ戻す」に出す操作の名前。
@@ -133,7 +134,7 @@ export const advanceBay = (
           ? {
               ...item,
               // Re-anchor the entire downstream queue to the actual completion time.
-              queue: arrangeQueue(rest, nowSec, true),
+              queue: arrangeQueue(rest, nowSec),
               pastTickets: [
                 ...item.pastTickets,
                 { ...head, status: "completed", endTimeSec: nowSec },
@@ -166,16 +167,6 @@ export const mergeUnassigned = (
   };
 };
 
-export interface RebrewDecision {
-  cupCount: number;
-  /** 抽出中のカードを今止める */
-  interruptCurrent: boolean;
-  /** 入れ直しを置くドリッパー（null なら未割当） */
-  targetBayId: number | null;
-  /** 置くドリッパーの列の中の位置 */
-  insertIndex: number | null;
-}
-
 /** 緊急の入れ直し。抽出中・終わったカードから、同じ中身のカードを作り直す */
 export const rebrew = (
   board: Board,
@@ -187,6 +178,22 @@ export const rebrew = (
   const found = findTicket(board.baristas, key);
   if (!found || found.ticket.status === "scheduled") return null;
   const { ticket, bayId: sourceBayId } = found;
+  const source = {
+    ticket,
+    sourceBayId,
+    interruptCurrent: decision.interruptCurrent,
+  };
+  // 置くドリッパーは、選べる差し込み位置（logic/rebrew の rebrewSlots）を選んだときだけ
+  const target = board.baristas.find(
+    (barista) => barista.id === decision.targetBayId,
+  );
+  if (
+    target &&
+    !rebrewSlots(target, source).slots.some(
+      (slot) => slot.index === decision.insertIndex,
+    )
+  )
+    return null;
   const card: DripCard = {
     ...toCard(ticket),
     ticketUid: uid,
@@ -210,19 +217,9 @@ export const rebrew = (
         },
       ];
     }
-    if (barista.id === decision.targetBayId) {
-      // 抽出中のカードの前には入れない（止めたカードの代わりに今から始めるときだけ先頭に入れる）
-      const minimumIndex =
-        queue.length > 0 && !(interrupt && barista.id === sourceBayId) ? 1 : 0;
-      const insertion = Math.max(
-        minimumIndex,
-        Math.min(decision.insertIndex ?? queue.length, queue.length),
-      );
-      queue = [
-        ...queue.slice(0, insertion),
-        toTicket(card),
-        ...queue.slice(insertion),
-      ];
+    if (barista === target) {
+      const index = decision.insertIndex ?? queue.length;
+      queue = [...queue.slice(0, index), toTicket(card), ...queue.slice(index)];
     }
     if (queue === barista.queue) return barista;
     return { ...barista, queue: scheduleQueue(queue, nowSec), pastTickets };

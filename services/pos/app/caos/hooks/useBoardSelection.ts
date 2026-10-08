@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { type RebrewDecision, findTicket } from "../logic/board";
+import { findTicket } from "../logic/board";
 import { orderLabel } from "../logic/cards";
+import type { RebrewDecision } from "../logic/rebrew";
 import type { Board, DripCard, OrderTicket } from "../types";
 
 // 画面で選んでいるもの（注文・待機のカード・空きスロット・入れ直しのカード）と、選んだものへの操作。

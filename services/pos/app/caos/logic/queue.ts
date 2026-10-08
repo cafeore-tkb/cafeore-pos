@@ -9,22 +9,13 @@ export const CHANGEOVER_SEC = 15;
 const SOON_SEC = 15;
 
 // 待機のカードを注文番号の順に並べ、開始の予定時刻を付け直す。
-// 抽出中のカードはそのまま先頭に残す。抽出中のカードが無ければ（activateFirst なら必ず）先頭を今から始める。
-export const arrangeQueue = (
-  queue: OrderTicket[],
-  nowSec: number,
-  activateFirst = false,
-) => {
-  const existingActive = !activateFirst
-    ? queue.find((ticket) => ticket.status === "brewing")
-    : undefined;
-  const scheduled = queue
-    .filter((ticket) => ticket !== existingActive)
+// 抽出中のカードはそのまま先頭に残す。抽出中のカードが無ければ先頭を今から始める。
+export const arrangeQueue = (queue: OrderTicket[], nowSec: number) => {
+  const brewing = queue.filter((ticket) => ticket.status === "brewing");
+  const waiting = queue
+    .filter((ticket) => ticket.status !== "brewing")
     .sort(compareCards);
-  return scheduleQueue(
-    existingActive ? [existingActive, ...scheduled] : scheduled,
-    nowSec,
-  );
+  return scheduleQueue([...brewing, ...waiting], nowSec);
 };
 
 // 並びはそのままで、開始の予定時刻を付け直す。先頭が抽出中でなければ今から始める
@@ -82,30 +73,28 @@ export const nextAvailableBays = (baristas: Barista[]) =>
     .slice(0, 3);
 export type NextAvailable = ReturnType<typeof nextAvailableBays>;
 
-// ドリッパーの先頭のカードの残り（秒）。カードが無ければ 0
-const activeRemainingSec = (barista: Barista, nowSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - nowSec);
-  return current.totalDurationSec;
+// 先頭のカードの残り（秒）
+const remainingOf = (ticket: OrderTicket, nowSec: number) => {
+  if (ticket.timeRemainingSec !== undefined) return ticket.timeRemainingSec;
+  if (ticket.endTimeSec !== undefined)
+    return Math.max(0, ticket.endTimeSec - nowSec);
+  return ticket.totalDurationSec;
 };
 
-// 抽出中のカードの残りが SOON_SEC 以下（「まもなく」）
-const isSoon = (barista: Barista, nowSec: number) =>
-  barista.queue[0]?.status === "brewing" &&
-  activeRemainingSec(barista, nowSec) <= SOON_SEC;
-
-// 列の今（抽出中のカード・待機のカード・残り・まもなく・予定を過ぎて継続中）
+// 列の今（抽出中のカード・待機のカード・残りの秒・まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中）
 export const laneStatus = (barista: Barista, nowSec: number) => {
-  const [current, ...waiting] = barista.queue;
+  const [current, ...waiting] = barista.queue as [
+    OrderTicket | undefined,
+    ...OrderTicket[],
+  ];
+  const remainingSec = current ? remainingOf(current, nowSec) : 0;
+  const brewing = current?.status === "brewing";
   return {
-    current: current as OrderTicket | undefined,
+    current,
     waiting,
-    remainingSec: activeRemainingSec(barista, nowSec),
-    soon: isSoon(barista, nowSec),
-    overtime: current?.status === "brewing" && current.timeRemainingSec === 0,
+    remainingSec,
+    soon: brewing && remainingSec <= SOON_SEC,
+    overtime: brewing && current?.timeRemainingSec === 0,
   };
 };
 

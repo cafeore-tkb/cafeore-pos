@@ -29,11 +29,7 @@ export const timeMarkers = (startSec: number, endSec: number) =>
  * 列のカード（終わり・抽出中・待機）を置く時刻。
  * 待機のカードは前のカードの終わりから入れ替えの時間を空けて置き、抽出中のカードは「次へ」を押すまで今まで伸ばす。
  */
-export const positionTickets = (
-  barista: Barista,
-  nowSec: number,
-  timelineStartSec: number,
-) => {
+export const positionTickets = (barista: Barista, nowSec: number) => {
   const activeTicket = barista.queue[0];
   let cursorSec: number | null = null;
   return [
@@ -43,7 +39,7 @@ export const positionTickets = (
     })),
     ...barista.queue,
   ].map((ticket: OrderTicket) => {
-    let startSec = ticket.startTimeSec ?? timelineStartSec + 855;
+    let startSec = ticket.startTimeSec ?? nowSec;
     if (cursorSec !== null && ticket.status !== "completed")
       startSec = Math.max(startSec, cursorSec + CHANGEOVER_SEC);
     const plannedEndSec = startSec + ticket.totalDurationSec;

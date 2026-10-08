@@ -81,3 +81,39 @@ export const testPlayAnalytics = (session: TestPlaySession | null) => ({
 /** テストの残り（「12分」） */
 export const testPlayRemainingLabel = (session: TestPlaySession) =>
   `${Math.max(0, Math.ceil((session.endMs - session.currentMs) / 60_000))}分`;
+
+const SLOT_MS = 30 * 60_000;
+
+/**
+ * テストを始められる時刻（30 分ごと）。注文のある日ごとに、最初の注文の 30 分区切りから、
+ * 時間帯（durationMinutes 分）に注文がある時刻だけ
+ */
+export const testPlaySlots = (
+  orders: HistoricalOrder[],
+  durationMinutes: number,
+) => {
+  const durationMs = durationMinutes * 60_000;
+  const days = new Map<string, number[]>();
+  for (const order of orders) {
+    const date = new Date(order.createdAt);
+    const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    days.set(dayKey, [...(days.get(dayKey) ?? []), date.getTime()]);
+  }
+  return Array.from(days.values())
+    .sort((a, b) => Math.min(...a) - Math.min(...b))
+    .flatMap((timestamps) => {
+      const first = new Date(Math.min(...timestamps));
+      first.setMinutes(first.getMinutes() < 30 ? 0 : 30, 0, 0);
+      const last = Math.max(...timestamps);
+      const slots: number[] = [];
+      for (
+        let cursor = first.getTime();
+        cursor + durationMs <= last + SLOT_MS;
+        cursor += SLOT_MS
+      ) {
+        if (ordersInPeriod(orders, cursor, cursor + durationMs).length > 0)
+          slots.push(cursor);
+      }
+      return slots;
+    });
+};

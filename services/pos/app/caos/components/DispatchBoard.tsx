@@ -172,11 +172,7 @@ export const DispatchBoard: React.FC<
           <div className="relative divide-y divide-slate-200">
             {baristas.map((barista) => {
               const lane = laneStatus(barista, currentTimeSec);
-              const positioned = positionTickets(
-                barista,
-                currentTimeSec,
-                range.startSec,
-              );
+              const positioned = positionTickets(barista, currentTimeSec);
               // Place the Empty Slot button after the last ticket, but never behind NOW where
               // it would scroll out of view on an idle lane.
               const lastEndSec = positioned.at(-1)?.endSec ?? currentTimeSec;
