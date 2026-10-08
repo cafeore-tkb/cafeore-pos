@@ -2,12 +2,6 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { orderRepository } from "../repositories/order";
 import { apiWebSocketUrl, throwApiError } from "./client";
 
-const jsonResponse = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -41,7 +35,7 @@ describe("[unit] apiClient", () => {
   test("reads the error the API wrote", async () => {
     // クライアントは呼ぶたびに fetch を読むので、読み込んだ後に差し替えても届く
     vi.stubGlobal("fetch", async () =>
-      jsonResponse(404, { error: "Order not found" }),
+      Response.json({ error: "Order not found" }, { status: 404 }),
     );
     await expect(
       orderRepository.delete("00000000-0000-4000-8000-000000000001"),
