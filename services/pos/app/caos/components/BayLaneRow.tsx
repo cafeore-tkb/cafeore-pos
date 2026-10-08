@@ -7,10 +7,7 @@ import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
   barista: Barista;
-  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
-  highlightFilter: string | null;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
@@ -28,9 +25,7 @@ interface BayLaneRowProps {
 
 export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   barista,
-  highlightFilter,
   selectedOrderId,
-  onSelectOrder,
   onAdvanceBay,
   onOpenTicketDetail,
   actionTicketKey,
@@ -184,9 +179,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
             >
               <TicketCard
                 ticket={ticket}
-                highlightFilter={highlightFilter}
                 selectedOrderId={selectedOrderId}
-                onSelectOrder={onSelectOrder}
                 onOpenDetail={onOpenTicketDetail}
                 actionTicketKey={actionTicketKey}
                 currentBayId={barista.id}

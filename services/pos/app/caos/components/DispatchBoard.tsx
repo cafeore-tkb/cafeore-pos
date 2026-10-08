@@ -7,8 +7,6 @@ import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
   baristas: Barista[];
-  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
-  highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
@@ -35,7 +33,6 @@ const PAST_VIEW_THRESHOLD_PX = 600;
 
 export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   baristas,
-  highlightFilter,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -59,13 +56,6 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   // and stays where they left it until they come back or press 現在.
   const [isFollowingNow, setIsFollowingNow] = useState(true);
   const [isScrolledToPast, setIsScrolledToPast] = useState(false);
-
-  const _formatClock = (seconds: number) => {
-    const normalized = ((seconds % 86400) + 86400) % 86400;
-    const hours = Math.floor(normalized / 3600);
-    const minutes = Math.floor((normalized % 3600) / 60);
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-  };
 
   // Position of current NOW cursor along timeline
   const nowX = (simTimeSec - timelineStartSec) * PIXELS_PER_SEC;
@@ -308,9 +298,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                 <BayLaneRow
                   key={barista.id}
                   barista={barista}
-                  highlightFilter={highlightFilter}
                   selectedOrderId={selectedOrderId}
-                  onSelectOrder={onSelectOrder}
                   onAdvanceBay={onAdvanceBay}
                   onOpenTicketDetail={onOpenTicketDetail}
                   actionTicketKey={actionTicketKey}

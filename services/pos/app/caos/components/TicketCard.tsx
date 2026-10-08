@@ -3,16 +3,12 @@ import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
-import { cardHasBean } from "../utils/beans";
 import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  // 豆で絞り込む（在庫対象の ID）
-  highlightFilter: string | null;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onOpenDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
   currentBayId: number;
@@ -24,7 +20,6 @@ interface TicketCardProps {
 
 export const TicketCard: React.FC<TicketCardProps> = ({
   ticket,
-  highlightFilter,
   selectedOrderId,
   onOpenDetail,
   actionTicketKey,
@@ -41,8 +36,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     null,
   );
   const [dragTargetBay, setDragTargetBay] = useState<number | null>(null);
-  const isMatchFilter =
-    !highlightFilter || cardHasBean(ticket, highlightFilter);
   const isOrderSelected = selectedOrderId === ticket.id;
 
   // 左の線は、マスターの画面の色の設定の色（終わった・指名で背景を塗らないカードでも商品が分かるように）。
@@ -190,7 +183,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""}`}
+      }`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">

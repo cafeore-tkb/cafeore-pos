@@ -27,7 +27,7 @@ const compareQueueOrder = (a: OrderTicket, b: OrderTicket) =>
   (a.itemIndex || 0) - (b.itemIndex || 0) ||
   (a.ticketUid || "").localeCompare(b.ticketUid || "");
 
-// arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS8（練習用の盤面）で作り直すので、
+// arrangeQueue は実データテスト（手元の盤面）の並べ直し。CaOS9（練習の盤面）で作り直すので、
 // 定数だけ共通のもの（@cafeore/common の caosTiming）にしてある。普段の盤面の予定時刻は planLane で決める（live/board.ts）
 export const arrangeQueue = (
   queue: OrderTicket[],
