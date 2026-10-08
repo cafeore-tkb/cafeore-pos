@@ -1,9 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  OVERDUE_SECONDS,
-  elapsedSeconds,
-  orderElapsedSeconds,
-} from "./elapsed-time";
+import { elapsedSeconds, isOverdue, orderElapsedSeconds } from "./elapsed-time";
 
 const at = (iso: string) => new Date(iso);
 const START = at("2026-11-07T10:00:00+09:00");
@@ -16,11 +12,10 @@ describe("[unit] elapsedSeconds", () => {
 
   test("becomes overdue at exactly 15 minutes", () => {
     expect(
-      elapsedSeconds(START, at("2026-11-07T10:14:59.999+09:00")) >=
-        OVERDUE_SECONDS,
+      isOverdue(elapsedSeconds(START, at("2026-11-07T10:14:59.999+09:00"))),
     ).toBe(false);
     expect(
-      elapsedSeconds(START, at("2026-11-07T10:15:00+09:00")) >= OVERDUE_SECONDS,
+      isOverdue(elapsedSeconds(START, at("2026-11-07T10:15:00+09:00"))),
     ).toBe(true);
   });
 

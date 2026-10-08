@@ -2,7 +2,11 @@
 // 分と秒に分けて出すのは画面の側（services/pos/app/lib/minSec.ts）。
 
 /** この秒数（15分）以上たった注文を遅れとして目立たせる */
-export const OVERDUE_SECONDS = 15 * 60;
+const OVERDUE_SECONDS = 15 * 60;
+
+/** 遅れ（15分以上）か */
+export const isOverdue = (seconds: number): boolean =>
+  seconds >= OVERDUE_SECONDS;
 
 /** from から to までの秒数（切り捨て。to が from より前なら 0） */
 export const elapsedSeconds = (from: Date, to: Date): number =>

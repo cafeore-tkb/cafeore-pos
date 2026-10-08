@@ -1,7 +1,7 @@
 import {
-  OVERDUE_SECONDS,
   type OrderEntity,
   type WithId,
+  isOverdue,
   orderElapsedSeconds,
 } from "@cafeore/common";
 import { useState } from "react";
@@ -62,7 +62,7 @@ export function OrderList({ orders }: OrderStatusListProps) {
             {orders?.map((order) => (
               <TableRow
                 className={cn(
-                  orderElapsedSeconds(order) >= OVERDUE_SECONDS && "bg-red-300",
+                  isOverdue(orderElapsedSeconds(order)) && "bg-red-300",
                 )}
                 key={order.orderId}
                 onClick={() => setFocusedOrderId(order.orderId)}

@@ -1,8 +1,8 @@
 import {
-  OVERDUE_SECONDS,
   type OrderEntity,
   type WithId,
   elapsedSeconds,
+  isOverdue,
 } from "@cafeore/common";
 import { minSec } from "~/lib/minSec";
 import { cn } from "~/lib/utils";
@@ -18,7 +18,7 @@ export const RealtimeElapsedTime = ({
     <div
       className={cn(
         "grid rounded-md px-2",
-        seconds >= OVERDUE_SECONDS && "bg-red-500 text-white",
+        isOverdue(seconds) && "bg-red-500 text-white",
       )}
     >
       <div className="text-sm">経過時間</div>

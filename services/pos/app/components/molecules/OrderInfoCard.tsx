@@ -1,8 +1,8 @@
 import {
   type ColorScreen,
-  OVERDUE_SECONDS,
   type OrderEntity,
   type WithId,
+  isOverdue,
   orderElapsedSeconds,
   readableTextColor,
   resolveItemColor,
@@ -203,7 +203,7 @@ const ServedTime = ({ order }: { order: OrderEntity }) => {
     <div
       className={cn(
         "rounded-md px-2",
-        seconds >= OVERDUE_SECONDS ? "bg-red-500 text-white" : "bg-slate-100",
+        isOverdue(seconds) ? "bg-red-500 text-white" : "bg-slate-100",
       )}
     >
       <div>{order.servedAt == null ? "未提供" : `${m}分${ss}秒`}</div>
