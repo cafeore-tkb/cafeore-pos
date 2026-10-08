@@ -16,14 +16,16 @@ import {
 } from "~/components/ui/table";
 
 const screenLabels: Record<ColorScreen, string> = {
-  cashier: "レジ",
+  cashier: "レジ（ボタン）",
+  cashier_order: "レジ（過去の注文）",
   master: "マスター",
   serve: "提供",
 };
 
-// others はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、レジだけ設定できる
+// others はカップを作らず、カップだけを出すマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、
+// それ以外の画面だけ設定できる
 const isShownOnScreen = (itemTypeName: string, screen: ColorScreen) =>
-  screen === "cashier" || itemTypeName !== "others";
+  (screen !== "master" && screen !== "serve") || itemTypeName !== "others";
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
@@ -43,8 +45,8 @@ export function ColorSettingsTab() {
   return (
     <div className="flex flex-col gap-8">
       <p className="text-muted-foreground text-sm">
-        レジ画面のメニューのボタンと、マスター画面・提供画面でのアイテムの背景色です。
-        アイテムの設定 → タイプの設定 → 既定の色 の順に使われます。
+        画面ごとのアイテムの背景色です。アイテムの設定 → タイプの設定
+        の順に使われ、どちらも無ければ色を付けません（レジのボタンはボタンの既定の色）。
       </p>
 
       <section className="flex flex-col gap-2">
