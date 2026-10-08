@@ -355,7 +355,9 @@ func (h *PrintJobHandler) finish(c *gin.Context, rawPrinterID, status string, re
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if res.RowsAffected == 0 && !(row.Status == status && row.PrinterID != nil && *row.PrinterID == printerID) {
+	// 同じ端末が同じ結果を送り直したとき（応答が届かずに再送した など）は、もう反映済みなので成功として返す
+	alreadyApplied := row.Status == status && row.PrinterID != nil && *row.PrinterID == printerID
+	if res.RowsAffected == 0 && !alreadyApplied {
 		c.JSON(http.StatusConflict, gin.H{"error": "この端末が印刷中の仕事ではありません"})
 		return
 	}
