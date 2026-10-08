@@ -22,6 +22,7 @@ import type { PracticeDataItem, PracticeDataOrder } from "./caosPracticeData";
 //   - 限定（種類の senior_only）のカップは、担当者が上級生のドリッパーにしか置けない。担当者は練習を始めたときの
 //     本番の担当者の写し（lanes）。指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
+// 緊急（入れ直し）は練習では出さない（練習のカップは emergencyAt がいつも null。画面も入れ直しのパネルを開かない）。
 
 /** 練習の盤面の注文（本番の注文と同じく、カップに CaOS の値を持つ） */
 export interface CaosPracticeOrder extends CaosOrderInput {
@@ -108,6 +109,14 @@ export const toCaosPracticeOrder = (
       dripId: null,
       brewStartedAt: null,
       brewFinishedAt: null,
+      // 練習では緊急（入れ直し）を出さない
+      emergencyAt: null,
+      emergencyDripper: null,
+      emergencyDripperPosition: null,
+      emergencyDripId: null,
+      emergencyBrewStartedAt: null,
+      emergencyBrewFinishedAt: null,
+      emergencyPrintedAt: null,
     });
   });
   return {

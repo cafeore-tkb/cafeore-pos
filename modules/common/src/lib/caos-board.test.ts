@@ -11,6 +11,7 @@ import {
   mergeWrites,
   unassignWrites,
 } from "./caos-board";
+import { seniorOnlyBlock } from "./caosLanes";
 
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = caosDay(NOW);
@@ -61,6 +62,13 @@ const cup = ({ line = "line-1", ...init }: CupInit): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  emergencyAt: null,
+  emergencyDripper: null,
+  emergencyDripperPosition: null,
+  emergencyDripId: null,
+  emergencyBrewStartedAt: null,
+  emergencyBrewFinishedAt: null,
+  emergencyPrintedAt: null,
   ...init,
 });
 
@@ -430,5 +438,138 @@ describe("[unit] CaOS の書き込み", () => {
     expect(after.map((c) => [c.key, c.cups.map((x) => x.orderNo)])).toEqual([
       ["merged", [4, 5]],
     ]);
+  });
+});
+
+describe("[unit] CaOS の緊急（入れ直し）", () => {
+  const start = new Date(NOW.getTime() - 60_000);
+  // 最初の抽出の列（2nd で淹れて終えた）は残ったまま緊急にしたカップ
+  const rebrew = (init: CupInit) =>
+    cup({
+      emergencyAt: start,
+      dripper: 2,
+      dripperPosition: 1,
+      dripId: "first",
+      brewStartedAt: start,
+      brewFinishedAt: NOW,
+      readyAt: start,
+      ...init,
+    });
+
+  test("緊急のカップは準備完了でも未割当のいちばん上に出る。最初の抽出の列が残っていても最初のカードには入らない", () => {
+    const cards = buildCaosCards(
+      [
+        order(1, [cup({ item: blend })]),
+        order(3, [
+          rebrew({ item: blend }),
+          rebrew({ item: blend }),
+          // 最初のカードに残ったカップ（準備完了なので終わり）
+          cup({
+            item: blend,
+            dripper: 2,
+            dripperPosition: 1,
+            dripId: "first",
+            brewStartedAt: start,
+            brewFinishedAt: NOW,
+            readyAt: NOW,
+          }),
+        ]),
+        order(2, [rebrew({ item: kenya, readyAt: null })]),
+      ],
+      DAY,
+    );
+    expect(
+      cards.map((c) => [c.orderNo, c.status, c.emergency, c.cups.length]),
+    ).toEqual([
+      [2, "unassigned", true, 1],
+      [3, "unassigned", true, 2],
+      [1, "unassigned", false, 1],
+      [3, "done", false, 1],
+    ]);
+    expect(cards[1].dripId).toBeNull();
+    expect(cards[3].dripId).toBe("first");
+  });
+
+  test("入れ直しのカードは入れ直しの列で持ち、準備完了でも「次へ」まで終わりにしない", () => {
+    const placed = (at: Partial<Cup>) =>
+      rebrew({
+        item: blend,
+        emergencyDripper: 4,
+        emergencyDripperPosition: 3,
+        emergencyDripId: "again",
+        ...at,
+      });
+    const brewing = buildCaosCards(
+      [order(3, [placed({ emergencyBrewStartedAt: start })])],
+      DAY,
+    );
+    expect(caosLane(brewing, 4).brewing?.dripId).toBe("again");
+    expect(caosLane(brewing, 2).done).toEqual([]);
+    expect(brewing[0].state).toEqual({
+      dripper: 4,
+      dripperPosition: 3,
+      dripId: "again",
+      brewStartedAt: start,
+      brewFinishedAt: null,
+    });
+    const done = buildCaosCards(
+      [
+        order(3, [
+          placed({
+            emergencyBrewStartedAt: start,
+            emergencyBrewFinishedAt: NOW,
+          }),
+        ]),
+      ],
+      DAY,
+    );
+    expect(done[0].status).toBe("done");
+    expect(done[0].dripper).toBe(4);
+  });
+
+  test("書き込みの drip_id は入れ直しのカード。緊急のカードはふつうのカードと統合しない", () => {
+    const cards = buildCaosCards(
+      [order(3, [rebrew({ item: blend })]), order(5, [cup({ item: blend })])],
+      DAY,
+    );
+    const [emergency, normal] = cards;
+    expect(emergency.emergency).toBe(true);
+    const result = assignWrites(cards, emergency, 2, { newId: () => "again" });
+    if (!("writes" in result)) throw new Error(result.error);
+    // before は入れ直しの列（未割当）。最初の抽出の列（2nd・first）は送らない
+    expect(result.writes[0].before).toEqual({
+      dripper: null,
+      dripper_position: null,
+      drip_id: null,
+      brew_started_at: null,
+      brew_finished_at: null,
+    });
+    expect(result.writes[0].after.drip_id).toBe("again");
+    expect(canMergeCards(emergency, normal)).toBe(false);
+  });
+
+  test("緊急のカードも指名と限定の決まりはふつうのカードと同じ", () => {
+    const cards = buildCaosCards(
+      [
+        order(3, [rebrew({ item: blend })], { dripper: { "line-1": 2 } }),
+        order(4, [rebrew({ item: limited })]),
+      ],
+      DAY,
+    );
+    const [nominated, senior] = cards;
+    expect(nominated.emergency).toBe(true);
+    expect(nominated.nominatedDripper).toBe(2);
+    expect(assignWrites(cards, nominated, 3, { newId })).toEqual({
+      error: "指名のあるカードは 2 番のドリッパーにしか置けません",
+    });
+    expect("writes" in assignWrites(cards, nominated, 2, { newId })).toBe(true);
+    expect(senior.emergency).toBe(true);
+    expect(senior.seniorOnly).toBe(true);
+    const lanes = [
+      { dripper: 1, name: "佐藤", senior: false, updated_at: null },
+      { dripper: 5, name: "鈴木", senior: true, updated_at: null },
+    ];
+    expect(seniorOnlyBlock(senior, 1, lanes)).not.toBeNull();
+    expect(seniorOnlyBlock(senior, 5, lanes)).toBeNull();
   });
 });

@@ -32,6 +32,7 @@ export interface OrderTicket {
   endTimeSec?: number; // 抽出の終了（盤面の秒）
   completedAtSec?: number; // for historical completed drip
   seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
+  isRebrew?: boolean; // 緊急（入れ直し）のカード
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）はここでは持たず、サーバーの担当者から出す（lanes/）
@@ -67,7 +68,8 @@ export interface UnassignedOrder {
   /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。指名なしは付かない */
   nominee?: string;
   seniorOnly?: boolean; // 限定（種類の senior_only）
-  /** 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる（@cafeore/common の canMergeCards と同じ決まり） */
+  isRebrew?: boolean; // 緊急（入れ直し）のカード。未割当のいちばん上に出る
+  /** 統合できる相手を決めるキー（商品と指名、緊急か）。同じキーの 1 杯どうしだけ統合できる（@cafeore/common の canMergeCards と同じ決まり） */
   mergeKey: string;
 }
 

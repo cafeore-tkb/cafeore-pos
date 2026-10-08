@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
+import { useRebrew } from "./RebrewPanel";
 
 interface TicketCardProps {
   ticket: OrderTicket;
@@ -44,6 +45,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   const isCompleted = ticket.status === "completed";
   const isNamed = Boolean(ticket.preferredBaristaId);
+  // 抽出中・終わったカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew()(ticket);
   // 盤面のカードは、マスターの画面と同じ背景色で塗る（終わった・指名のカードはそれぞれの色を優先）
   const masterColor =
     ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
@@ -111,7 +114,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           suppressNextClick.current = false;
           return;
         }
-        if (ticket.status !== "scheduled") return;
+        if (ticket.status !== "scheduled") {
+          rebrew?.();
+          return;
+        }
         if (isActionOpen) {
           onReturnToUnassigned(ticket);
           onCloseAction();
@@ -189,7 +195,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      }`}
+      } ${ticket.isRebrew ? "ring-2 ring-red-500" : ""}`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
@@ -289,6 +295,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             {nominationText(ticket) && (
               <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
                 指名:{nominationText(ticket)}
+              </span>
+            )}
+            {ticket.isRebrew && (
+              <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[11px] text-white">
+                {ticket.status === "brewing" ? "入れ直し中" : "入れ直し"}
               </span>
             )}
           </div>

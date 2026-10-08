@@ -18,6 +18,7 @@ import {
   orderNumber,
 } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
+import { useRebrew } from "./RebrewPanel";
 
 export interface ControlViewDProps extends ControlViewBProps {
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
@@ -228,6 +229,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 抽出中・終わったカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew();
   const selectedOrder = useMemo(
     () =>
       unassignedOrders.find((order) => order.ticketUid === selectedUid) ?? null,
@@ -441,7 +444,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       });
     });
     return Array.from(groups.values()).sort(
-      (left, right) => orderNumber(left.id) - orderNumber(right.id),
+      (left, right) =>
+        // 緊急（入れ直し）のある注文がいちばん上
+        Number(right.items.some((item) => item.isRebrew)) -
+          Number(left.items.some((item) => item.isRebrew)) ||
+        orderNumber(left.id) - orderNumber(right.id),
     );
   }, [sortedBaristas, unassignedOrders]);
 
@@ -838,6 +845,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                             cup={ticketCup(ticket)}
                             nominee={nominationText(ticket)}
                             note={[
+                              ticket.isRebrew ? "入れ直し" : "",
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
@@ -855,7 +863,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                                       onSelectOrder(ticket.id);
                                     onOpenTicketDetail(ticket);
                                   }
-                                : undefined
+                                : // 抽出中・終わったカードは入れ直しのパネルを開く
+                                  rebrew(ticket)
                             }
                           />
                         </div>

@@ -19,6 +19,7 @@ import { ReadyBell } from "../atoms/ReadyBell";
 import { ServeCheck } from "../atoms/ServeCheck";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { EmergencyCupButton } from "./EmergencyCupButton";
 import { InputComment } from "./InputComment";
 import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
 
@@ -188,7 +189,7 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                 status === "served" &&
                 (isPartlyServed(order, item) ||
                   (user === "serve" && timing === "present"));
-              return (
+              const cupCard = (
                 <CupButton
                   key={item.cupId ?? `${idx}-${item.id}`}
                   busy={
@@ -258,6 +259,15 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                     )}
                   </Card>
                 </CupButton>
+              );
+              // マスター画面では、カップの下に緊急ボタン（入れ直し）を出す
+              return user === "master" && item.cupId ? (
+                <div key={item.cupId} className="flex flex-col gap-1">
+                  {cupCard}
+                  <EmergencyCupButton order={order} cupId={item.cupId} />
+                </div>
+              ) : (
+                cupCard
               );
             })}
           </div>

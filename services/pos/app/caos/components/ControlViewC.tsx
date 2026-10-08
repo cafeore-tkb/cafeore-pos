@@ -6,6 +6,7 @@ import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
+import { useRebrew } from "./RebrewPanel";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 export type ControlViewCProps = ControlViewBProps;
@@ -39,6 +40,8 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 抽出中のカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew();
   const nextAvailable = useMemo(
     () =>
       sortedBaristas
@@ -136,6 +139,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     ticket={current}
                     isImminent={isImminent}
                     emptyLabel="待機中"
+                    onClick={rebrew(current)}
                   />
 
                   <div className="flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

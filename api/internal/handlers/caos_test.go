@@ -399,7 +399,7 @@ func TestCaosNextOnDB(t *testing.T) {
 	start := time.Now().Add(-time.Minute)
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
 	if err := db.Model(&models.OrderCup{}).Where("id = ?", old.OrderCups[0].ID).
-		Updates(placedState(2, uuid.New(), &start).updates()).Error; err != nil {
+		Updates(placedState(2, uuid.New(), &start).updates(false)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if code, _ := f.next(t, 2, nil); code != http.StatusConflict {

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
+import { useEmergencyLabels } from "~/label/useEmergencyLabels";
 import { cn } from "~/lib/utils";
 import {
   applyCashierOrderActionAtom,
@@ -109,6 +110,8 @@ const CashierV2 = ({
   }, []);
 
   const printer = usePrinter();
+  // 緊急（入れ直し）になったカップの緊急のシールを、このレジのプリンターで印刷する
+  useEmergencyLabels(orders, printer);
 
   usePreventNumberKeyUpDown();
 

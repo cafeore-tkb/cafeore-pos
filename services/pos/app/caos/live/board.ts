@@ -60,8 +60,11 @@ const describe = (
     "・",
   );
 
-  // 分割の表示（1/3・計4杯）は、1 注文だけのカードに付ける
-  const parts = !merged ? orderParts.get(first.orderId) || [card] : [card];
+  // 分割の表示（1/3・計4杯）は、1 注文だけのふつうのカードに付ける（入れ直しのカードには付けない）
+  const parts =
+    !merged && !card.emergency
+      ? orderParts.get(first.orderId) || [card]
+      : [card];
   const itemIndex = parts.findIndex((part) => part.key === card.key) + 1;
   const totalOrderCups = parts.reduce((sum, part) => sum + part.cups.length, 0);
 
@@ -89,6 +92,7 @@ const describe = (
     preferredBaristaId,
     nominee,
     seniorOnly: card.seniorOnly,
+    isRebrew: card.emergency || undefined,
   };
 };
 
@@ -116,7 +120,8 @@ export const cardsToBoard = (
   // 1 注文だけのカードを、注文ごとに並べる（「1/3」の表示に使う）
   const orderParts = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (new Set(card.cups.map((cup) => cup.orderId)).size > 1) continue;
+    if (card.emergency || new Set(card.cups.map((cup) => cup.orderId)).size > 1)
+      continue;
     const parts = orderParts.get(card.cups[0].orderId) || [];
     parts.push(card);
     orderParts.set(card.cups[0].orderId, parts);
@@ -187,10 +192,10 @@ export const cardsToBoard = (
       return {
         ...info,
         // 未割当で dripId のあるカードは統合したもの
-        badgeTag: `${cups}杯${card.dripId ? " 統合" : ""}`,
+        badgeTag: `${cups}杯${card.emergency ? " 緊急" : card.dripId ? " 統合" : ""}`,
         predictedTimeStr: brewDurationLabel(cups),
-        // 統合できる相手（@cafeore/common の canMergeCards と同じく、商品と指名の番号）
-        mergeKey: `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.nominatedDripper ?? ""}`,
+        // 統合できる相手（@cafeore/common の canMergeCards と同じく、商品と指名の番号。緊急のカードは緊急どうしだけ）
+        mergeKey: `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.nominatedDripper ?? ""}\u0000${card.emergency ? "emergency" : ""}`,
       };
     });
 
@@ -200,3 +205,11 @@ export const cardsToBoard = (
     cards: new Map(cards.map((card) => [card.key, card])),
   };
 };
+
+/** 入れ直しのパネルに出すカップ（注文番号と略称）。もう緊急にしたカップは選べない */
+export const rebrewCups = (card: CaosCard) =>
+  card.cups.map((cup) => ({
+    id: cup.id,
+    label: `${orderLabel(cup.orderNo)} ${cup.item.abbr}`,
+    disabled: cup.emergencyAt !== null,
+  }));

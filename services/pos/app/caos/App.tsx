@@ -5,6 +5,7 @@ import {
   buildCaosCards,
   caosDay,
   formatClockOfDay,
+  markCaosEmergency,
   mergeWrites,
   nextCaosDripper,
   putCaosCups,
@@ -25,13 +26,19 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import {
+  type RebrewDecision,
+  RebrewPanel,
+  canRebrew,
+  useProvideRebrew,
+} from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { usePosOrders } from "./hooks/usePosOrders";
 import { PracticeLanesScope, useCaosLanes } from "./lanes/CaosLanesContext";
-import { cardsToBoard } from "./live/board";
+import { cardsToBoard, rebrewCups } from "./live/board";
 import {
   type PracticeStart,
   usePracticeBoard,
@@ -223,6 +230,22 @@ export default function App() {
     ? findLiveTicket(selectedTicketKey)
     : null;
   const selectedTicketStatus = selectedTicket?.status;
+  // 入れ直しのパネルを開いているカード（盤面のカードだけ。カードが動いたら届いた盤面から引き直す）
+  const [rebrewKey, setRebrewKey] = useState<string | null>(null);
+  const rebrewTicket = rebrewKey ? findLiveTicket(rebrewKey) : null;
+  const rebrewCard = rebrewTicket
+    ? liveCard(rebrewTicket.ticketUid)
+    : undefined;
+  // 抽出中・終わったカードから入れ直しのパネルを開けるようにする（盤面のときだけ）
+  useProvideRebrew(
+    live
+      ? (ticket) => {
+          if (!canRebrew(ticket)) return;
+          setSelectedTicketKey(null);
+          setRebrewKey(ticket.ticketUid);
+        }
+      : null,
+  );
 
   // Only drips that have not started can be moved, so close the move UI once it starts.
   useEffect(() => {
@@ -355,6 +378,17 @@ export default function App() {
     soundManager.playDispatch();
   };
 
+  // 緊急（入れ直し）。選んだカップに緊急の印を付けるだけ（入れ直しのカードは未割当のいちばん上に出る）。
+  // 中断なら、抽出中のカードを終わらせ、ドリッパーは待機の先頭を始める（サーバーが決める）。
+  // 練習の盤面では入れ直しを出さない（本番の API に送らない）
+  const handleConfirmRebrew = async ({ cupIds, interrupt }: RebrewDecision) => {
+    setRebrewKey(null);
+    if (!live) return;
+    soundManager.playDispatch();
+    const { error } = await markCaosEmergency(cupIds, interrupt);
+    if (error) setLiveError(error);
+  };
+
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
     const first = boardUnassignedOrders.find(
       (order) => order.ticketUid === firstUid,
@@ -383,6 +417,7 @@ export default function App() {
   const handleStartTestPlay = (start: PracticeStart) => {
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
+    setRebrewKey(null);
     setAssignSlotData(null);
     // 練習の担当者は、始めたときの本番の担当者の写し
     practice.start(start, liveLanes);
@@ -610,6 +645,17 @@ export default function App() {
             unassignedOrders={boardUnassignedOrders}
             onClose={() => setAssignSlotData(null)}
             onAssign={handleAssignOrderToBay}
+          />
+        )}
+
+        {/* 入れ直し（緊急）は盤面のときだけ。練習の盤面では出さない */}
+        {live && rebrewTicket && rebrewCard && (
+          <RebrewPanel
+            key={rebrewKey}
+            ticket={rebrewTicket}
+            cups={rebrewCups(rebrewCard)}
+            onClose={() => setRebrewKey(null)}
+            onConfirm={handleConfirmRebrew}
           />
         )}
 

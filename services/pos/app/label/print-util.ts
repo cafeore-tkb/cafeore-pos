@@ -1,91 +1,39 @@
-import { type OrderEntity, assignmentLabelText } from "@cafeore/common";
+import {
+  type CupLabel,
+  type Label,
+  type OrderEntity,
+  type OrderSummaryLabel,
+  emergencyLabels,
+  orderLabels,
+} from "@cafeore/common";
+import { useRef } from "react";
 import { useRawPrinter } from "./printer";
 
-type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
+// ラベルの中身は @cafeore/common の label.ts で作り、ここでプリンターの命令にする。
+// レジの会計のラベルも緊急のシールも同じ作り方なので、緊急で出すシールは本物と全く同じになる。
+// 印刷は同じ iPad の中の待ち行列で 1 件ずつ送り、前の印刷の返事を待ってから次を送る
+// （会計のラベルと緊急のシールが重なっても、命令が混ざったり抜けたりしない）。
 
 export const usePrinter = () => {
   const rawPrinter = useRawPrinter();
+  // 待ち行列の最後の印刷
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
 
-  const printSingleItemLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
-    console.log(item.name);
-    rawPrinter.addHeader(orderId, null);
-    rawPrinter.addLine(item.name, [1, 2]);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    const assignment = assignmentLabelText(item);
-    if (assignment) {
-      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addFeed(1);
-  };
-
-  // 追加で番号と注文を載せたラベルを印刷
-  const printOrderSummaryLabel = (order: OrderEntity) => {
-    rawPrinter.addHeader(order.orderId, order.total);
-
-    const assignedMenus = order.menus.filter(
-      (menu) => assignmentLabelText(menu) !== null,
-    );
-    const unassignedMenus = order.menus.filter(
-      (menu) => assignmentLabelText(menu) === null,
-    );
-
-    for (const menu of assignedMenus) {
-      rawPrinter.addLine(menu.name, [1, 1]);
-      rawPrinter.addLine(`  指名：${assignmentLabelText(menu)}`, [1, 1]);
-    }
-
-    for (let i = 0; i < unassignedMenus.length; i += 2) {
-      // アイテム名が8文字以上のときは6文字だけ取り出す
-      // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
-      const item1 =
-        unassignedMenus[i].name.length < 8
-          ? unassignedMenus[i].name
-          : unassignedMenus[i].name.slice(0, 6);
-      const item2 = unassignedMenus[i + 1]
-        ? unassignedMenus[i + 1].name.length < 8
-          ? unassignedMenus[i + 1].name
-          : unassignedMenus[i + 1].name.slice(0, 6)
-        : null;
-
-      if (item2) {
-        // 2つある場合は横に並べる
-        const line = `${item1.padEnd(8, " ")}${item2}`;
-        rawPrinter.addLine(line, [1, 1]);
-      } else {
-        // 1つだけの場合
-        rawPrinter.addLine(item1, [1, 1]);
-      }
-    }
-  };
-
-  const printLogoLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
+  // カップに貼るシール
+  const addCupLabel = (label: CupLabel) => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
     rawPrinter.addPageArea(0, 24, 570, 230);
 
-    const y = 48;
     rawPrinter.addPagePosition(0, 48);
-    rawPrinter.addHeader(orderId, null);
+    rawPrinter.addHeader(label.orderNo, null);
     rawPrinter.addPagePosition(0, 108);
-    rawPrinter.addLine(item.name, [1, 2]);
+    rawPrinter.addLine(label.name, [1, 2]);
     rawPrinter.addPagePosition(0, 156);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
+    rawPrinter.addLine(`${label.index}/${label.total}`, [2, 1]);
     rawPrinter.addPagePosition(0, 204);
-    const assignment = assignmentLabelText(item);
-    if (assignment) {
-      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
+    if (label.assignee) {
+      rawPrinter.addLine(`指名： ${label.assignee}`, [1, 1]);
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }
@@ -93,28 +41,69 @@ export const usePrinter = () => {
     rawPrinter.addLogo();
     rawPrinter.addPageEnd();
   };
-  const printOrderLabel = (order: OrderEntity) => {
-    rawPrinter.init();
-    const coffees = order.getCoffeeCups();
 
-    console.log(coffees);
-
-    // 各アイテムのラベルを印刷
-    for (const [idx, item] of coffees.entries()) {
-      printLogoLabel(
-        order.orderId,
-        idx + 1,
-        order.getCoffeeCups().length,
-        item,
-      );
+  // 引換券に貼るシール（番号と注文）
+  const addSummaryLabel = (label: OrderSummaryLabel) => {
+    rawPrinter.addHeader(label.orderNo, label.total);
+    for (const { name, assignee } of label.assigned) {
+      rawPrinter.addLine(name, [1, 1]);
+      rawPrinter.addLine(`  指名：${assignee}`, [1, 1]);
     }
-
-    // 引換券に貼るラベルを印刷
-    printOrderSummaryLabel(order);
-
-    rawPrinter.addFeed(7);
-    rawPrinter.print();
+    for (const line of label.lines) {
+      rawPrinter.addLine(line, [1, 1]);
+    }
   };
 
-  return { status: rawPrinter.status, printOrderLabel };
+  // 緊急の目印のシール（「緊急」とだけ書く）。カップのシールと同じ大きさの 1 枚
+  const addEmergencyLabel = () => {
+    rawPrinter.feedCurrentTop();
+    rawPrinter.addPageBegin();
+    rawPrinter.addPageArea(0, 24, 570, 230);
+    rawPrinter.addPagePosition(0, 170);
+    rawPrinter.addLine("緊急", [4, 4]);
+    rawPrinter.addPageEnd();
+  };
+
+  const addLabel = (label: Label) => {
+    switch (label.type) {
+      case "cup":
+        addCupLabel(label);
+        return;
+      case "summary":
+        addSummaryLabel(label);
+        return;
+      case "emergency":
+        addEmergencyLabel();
+        return;
+    }
+  };
+
+  /** ラベルを待ち行列に入れて印刷する。印刷できたかを返す */
+  const printLabels = (labels: Label[]): Promise<boolean> => {
+    const job = () => {
+      rawPrinter.init();
+      for (const label of labels) addLabel(label);
+      rawPrinter.addFeed(7);
+      return rawPrinter.print();
+    };
+    const run = queueRef.current.then(job, job);
+    queueRef.current = run.catch(() => false);
+    return run;
+  };
+
+  /** レジの会計のラベル（カップごとのシールと、引換券に貼るシール）。保存を待たずにすぐ印刷する */
+  const printOrderLabel = (order: OrderEntity) => {
+    void printLabels(orderLabels(order));
+  };
+
+  /**
+   * 緊急のシール：「緊急」のシール → そのカップの本物と全く同じシール。印刷できたかを返す
+   * （シールの無いカップは印刷せず false）
+   */
+  const printEmergencyLabel = (order: OrderEntity, cupId: string) => {
+    const labels = emergencyLabels(order, cupId);
+    return labels ? printLabels(labels) : Promise.resolve(false);
+  };
+
+  return { status: rawPrinter.status, printOrderLabel, printEmergencyLabel };
 };
