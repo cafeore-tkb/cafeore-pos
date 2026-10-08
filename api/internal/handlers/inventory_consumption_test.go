@@ -168,12 +168,8 @@ func (e *inventoryEnv) setMenuItems(menu models.Menu, items ...models.MenuItem) 
 func (e *inventoryEnv) order(menus ...models.Menu) uuid.UUID {
 	e.t.Helper()
 	order := models.Order{ID: uuid.New(), CreatedAt: time.Now(), BillingAmount: 500, Received: 500}
-	requests := make([]models.MenuInfoCreate, len(menus))
-	for i, menu := range menus {
-		requests[i] = models.MenuInfoCreate{MenuId: menu.ID}
-	}
 	e.must(e.db.Transaction(func(tx *gorm.DB) error {
-		lines, cups, err := loadOrderMenus(tx, order.ID, requests, &models.Order{})
+		lines, cups, err := loadOrderMenus(tx, order.ID, menuLines(menus...), &models.Order{})
 		if err != nil {
 			return err
 		}

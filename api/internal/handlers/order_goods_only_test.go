@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"cafeore-pos/api/internal/models"
 )
@@ -46,7 +45,7 @@ func (e *inventoryEnv) sendOrder(r *gin.Engine, method, path string, body any, w
 func menuLines(menus ...models.Menu) []models.MenuInfoCreate {
 	lines := make([]models.MenuInfoCreate, len(menus))
 	for i, menu := range menus {
-		lines[i] = models.MenuInfoCreate{MenuId: openapi_types.UUID(menu.ID)}
+		lines[i] = models.MenuInfoCreate{MenuId: menu.ID}
 	}
 	return lines
 }
@@ -110,7 +109,7 @@ func TestUpdateOrderServesOrderThatBecomesGoodsOnly(t *testing.T) {
 	// 飲み物を外してグッズだけにすると、提供済みになる
 	req := updateRequest(resp)
 	for _, line := range req.MenuIds {
-		if line.MenuId == openapi_types.UUID(goods.ID) {
+		if line.MenuId == goods.ID {
 			req.MenuIds = []models.MenuInfoCreate{line}
 		}
 	}

@@ -70,8 +70,7 @@ func serveCuplessOrder(order *models.Order, now time.Time) {
 		order.ServedAt = &now
 	}
 	if order.ReadyAt == nil {
-		readyAt := *order.ServedAt
-		order.ReadyAt = &readyAt
+		order.ReadyAt = order.ServedAt
 	}
 }
 

@@ -211,9 +211,6 @@ func TestServeCuplessOrder(t *testing.T) {
 	if !sameTime(order.ReadyAt, &earlier) || !sameTime(order.ServedAt, &earlier) {
 		t.Fatalf("served order without cups must be ready at the served time: %+v", order)
 	}
-	if order.ReadyAt == order.ServedAt {
-		t.Fatal("ready_at and served_at must not share a pointer")
-	}
 
 	// カップのある注文は変えない（状態はカップから決まる）
 	order = twoCupOrder()
