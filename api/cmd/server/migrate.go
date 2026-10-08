@@ -82,7 +82,7 @@ var backfills = []backfill{
 			Where("name IN ?", []string{"milk", "others"}).
 			Update("needs_brew", false).Error
 	}},
-	// 「上級生だけが淹れる（限定）」（2026-10）。CaOS が種類の名前 limited を限定（SP）として扱っていたのと
+	// 「上級生だけが淹れる」（2026-10）。CaOS が種類の名前 limited を限定（SP）として扱っていたのと
 	// 同じ結果にする：limited だけ true、ほかは列の既定値（false）のまま。
 	{model: &models.ItemType{}, column: "senior_only", fill: func(tx *gorm.DB) error {
 		return tx.Unscoped().Model(&models.ItemType{}).

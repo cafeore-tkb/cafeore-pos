@@ -206,7 +206,7 @@
       },
       "senior_only": {
         "type": "boolean",
-        "description": "この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false"
+        "description": "この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false"
       },
       "iced_brew": {
         "type": "boolean",
