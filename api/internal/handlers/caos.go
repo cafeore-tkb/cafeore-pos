@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
@@ -158,18 +159,17 @@ func (s caosState) updates() map[string]any {
 	}
 }
 
-// nominatedDripper は明細の指名（assignee）が 1〜6 の数字ならその番号。画面の nominatedDripper と同じ読み方。
+// nominatedDripper は明細の指名（assignee）が 1〜6 の数字ならその番号。画面の nominatedDripper と同じ読み方
+// （前後の空白を落として NFKC で正規化し、数字だけのとき）。
 // CaOS6 で明細にドリッパーの番号（dripper）を足したら、そちらに替える。
 func nominatedDripper(assignee *string) (int, bool) {
 	if assignee == nil {
 		return 0, false
 	}
-	s := strings.Map(func(r rune) rune {
-		if r >= '０' && r <= '９' {
-			return r - '０' + '0'
-		}
-		return r
-	}, strings.TrimSpace(*assignee))
+	s := norm.NFKC.String(strings.TrimSpace(*assignee))
+	if s == "" || strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' }) {
+		return 0, false
+	}
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 1 || n > caosDrippers {
 		return 0, false

@@ -553,3 +553,15 @@ func expectOrderNotification(t *testing.T, conn *pgx.Conn, orderID uuid.UUID) {
 		}
 	}
 }
+
+func TestNominatedDripper(t *testing.T) {
+	for in, want := range map[string]int{"3": 3, " ６ ": 6, "①": 1, "7": 0, "0": 0, "+1": 0, "1.0": 0, "たくみ": 0, "": 0} {
+		got, ok := nominatedDripper(&in)
+		if (want == 0 && ok) || (want != 0 && got != want) {
+			t.Errorf("nominatedDripper(%q) = %d, %v; want %d", in, got, ok, want)
+		}
+	}
+	if _, ok := nominatedDripper(nil); ok {
+		t.Error("nominatedDripper(nil) is ok")
+	}
+}
