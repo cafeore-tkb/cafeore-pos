@@ -193,7 +193,7 @@ type changeSet struct {
 	allOrders    bool // true なら orderIDs は見ずに全注文を配り直す
 	masterState  bool
 	cashierState bool
-	// CaOS の今日のカード（全部を読み直して配る）
+	// CaOS の盤面（今日のカードと列の担当者。全部を読み直して配る）
 	drips bool
 }
 
