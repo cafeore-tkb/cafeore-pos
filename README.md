@@ -167,7 +167,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
 | `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
-| `caos_drips_changed` | CaOS の盤面（今日のカード。下の「CaOS（ドリップ管制）の盤面」） | `<インスタンス ID>` |
+| `caos_drips_changed` | CaOS の盤面（今日のカードと列の担当者。下の「CaOS（ドリップ管制）の盤面」） | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
 - ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。4 つのチャンネルは 1 本の接続でまとめて待ち受ける

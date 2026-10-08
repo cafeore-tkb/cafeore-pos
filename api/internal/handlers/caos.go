@@ -148,8 +148,8 @@ func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
 	}
 }
 
-// notifyDripsChanged は、カードが変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
-// 通知には送ったインスタンスの ID だけを載せる。受けた側は ListenChanges で受けて今日のカードを全部読み直して配る。
+// notifyDripsChanged は、盤面（カードか列の担当者）が変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
+// 通知には送ったインスタンスの ID だけを載せる。受けた側は ListenChanges で受けて、今日のカードと列の担当者を全部読み直して配る。
 // 失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
 func notifyDripsChanged(db *gorm.DB) {
 	notifyChanged(db, dripsChangedChannel, instanceID)
