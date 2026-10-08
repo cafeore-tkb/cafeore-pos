@@ -11,6 +11,7 @@ const hot = {
   makes_cup: true,
   needs_brew: true,
   senior_only: false,
+  iced_brew: false,
 };
 const milk = {
   id: "t2",
@@ -19,6 +20,7 @@ const milk = {
   makes_cup: true,
   needs_brew: false,
   senior_only: false,
+  iced_brew: false,
 };
 const others = {
   id: "t3",
@@ -27,6 +29,7 @@ const others = {
   makes_cup: false,
   needs_brew: false,
   senior_only: false,
+  iced_brew: false,
 };
 
 const blendA: WithId<Item> = {

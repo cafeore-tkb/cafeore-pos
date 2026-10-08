@@ -1,4 +1,4 @@
-import { useItemMaster } from "@cafeore/common";
+import { caosTimeOfDayLabel, useItemMaster } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -38,14 +38,6 @@ interface SplitResult {
   lastFinishedAt: number;
   bayNumbers: number[];
 }
-
-const formatClock = (seconds: number) => {
-  const normalized = ((seconds % 86400) + 86400) % 86400;
-  const hours = Math.floor(normalized / 3600);
-  const minutes = Math.floor((normalized % 3600) / 60);
-  const secs = Math.floor(normalized % 60);
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
 
 const deltaStatus = (deltaSec: number) => {
   if (deltaSec <= 15)
@@ -529,8 +521,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       {result.bayNumbers.map((bay) => `#${bay}`).join(" + ")}
                     </span>
                     <span className="font-mono">
-                      {formatClock(result.firstFinishedAt)} →{" "}
-                      {formatClock(result.lastFinishedAt)}
+                      {caosTimeOfDayLabel(result.firstFinishedAt)} →{" "}
+                      {caosTimeOfDayLabel(result.lastFinishedAt)}
                     </span>
                   </div>
                 </article>

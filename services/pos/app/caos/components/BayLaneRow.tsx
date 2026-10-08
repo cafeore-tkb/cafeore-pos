@@ -1,4 +1,4 @@
-import { CHANGEOVER_SEC, IMMINENT_SEC, formatMinSec } from "@cafeore/common";
+import { caosClockLabel } from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import type { Barista, OrderTicket } from "../types";
@@ -45,14 +45,14 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     barista.status === "imminent" ||
     (activeTicket &&
       activeTicket.status === "brewing" &&
-      (activeTicket.timeRemainingSec ?? 999) <= IMMINENT_SEC);
+      (activeTicket.timeRemainingSec ?? 999) <= 15);
   const isOvertime = Boolean(
     activeTicket &&
       activeTicket.status === "brewing" &&
       activeTicket.timeRemainingSec === 0,
   );
   const formatRemaining = (seconds?: number) =>
-    seconds === undefined ? "--:--" : formatMinSec(seconds);
+    seconds === undefined ? "--:--" : caosClockLabel(seconds);
 
   // Combine past completed tickets and current queue for full timeline view
   const allTickets: OrderTicket[] = [
@@ -63,17 +63,13 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     ...barista.queue,
   ];
 
-  let queueCursorSec: number | null = null;
+  // 開始・終了は盤面で決めた時刻をそのまま使う（cafeore-pos の盤面は live/board.ts の planCaosLane）。
+  // 終了が無いカードは開始から抽出時間、開始が無いカード（準備完了で終わったカード）は終了から抽出時間を引く
   const positionedTickets = allTickets.map((ticket) => {
-    let startSec = ticket.startTimeSec ?? timelineStartSec + 855;
-    if (queueCursorSec !== null && ticket.status !== "completed")
-      startSec = Math.max(startSec, queueCursorSec + CHANGEOVER_SEC);
-    const plannedEndSec = startSec + ticket.totalDurationSec;
-    const endSec =
-      ticket === activeTicket
-        ? Math.max(plannedEndSec, simTimeSec)
-        : plannedEndSec;
-    if (ticket.status !== "completed") queueCursorSec = endSec;
+    const startSec =
+      ticket.startTimeSec ??
+      (ticket.endTimeSec ?? simTimeSec) - ticket.totalDurationSec;
+    const endSec = ticket.endTimeSec ?? startSec + ticket.totalDurationSec;
     return { ticket, startSec, endSec };
   });
 

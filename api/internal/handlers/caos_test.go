@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,7 +21,8 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// CaOS の書き込みの DB のテスト。注文の DB と同じく LISTEN_TEST_DATABASE_URL を渡したときだけ走る（openListenTestDB）。
+// CaOS の書き込みの DB のテスト。注文の DB と同じく TEST_DATABASE_URL を渡したときだけ走る（openListenTestDB）。
+// ドリッパーの列の決まり（splitCaosLane）のテストは DB を使わない。
 
 type caosFixture struct {
 	db     *gorm.DB
@@ -54,10 +57,9 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 	return f
 }
 
-// 注文の明細（カップの商品と指名）
+// 注文の明細（カップの商品）
 type caosLine struct {
-	items    []models.Item
-	assignee *string
+	items []models.Item
 }
 
 func line(items ...models.Item) caosLine { return caosLine{items: items} }
@@ -68,7 +70,7 @@ func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, l
 	order := models.Order{ID: uuid.New(), OrderId: no, CreatedAt: createdAt, BillingAmount: 500, Received: 500}
 	pos := 0
 	for _, l := range lines {
-		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500, Assignee: l.assignee}
+		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500}
 		order.OrderMenus = append(order.OrderMenus, m)
 		for _, item := range l.items {
 			order.OrderCups = append(order.OrderCups, models.OrderCup{ID: uuid.New(), OrderMenuID: m.ID, ItemID: item.ID, Position: pos})
@@ -99,11 +101,8 @@ func (f *caosFixture) cup(t *testing.T, id uuid.UUID) models.OrderCup {
 func (f *caosFixture) state(t *testing.T, id uuid.UUID) map[string]any {
 	t.Helper()
 	cup := f.cup(t, id)
-	return stateJSON(cupCaosState(&cup))
-}
-
-func stateJSON(s caosState) map[string]any {
-	return map[string]any{"dripper": s.Dripper, "dripper_position": s.DripperPosition, "drip_id": s.DripID,
+	s := caosCupState(&cup)
+	return map[string]any{"dripper": s.Dripper, "dripper_position": s.DripperPosition, "drip_id": s.DripId,
 		"brew_started_at": s.BrewStartedAt, "brew_finished_at": s.BrewFinishedAt}
 }
 
@@ -138,17 +137,27 @@ func (f *caosFixture) mustPut(t *testing.T, writes ...map[string]any) {
 }
 
 // next は「次へ」を呼ぶ。
-func (f *caosFixture) next(t *testing.T, dripper int, seen *uuid.UUID) (int, models.CaosNextResult) {
+func (f *caosFixture) next(t *testing.T, dripper int, seen *uuid.UUID) int {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{"drip_id": seen})
 	w := callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: fmt.Sprint(dripper)}})
-	var res models.CaosNextResult
-	if w.Code == http.StatusOK {
-		if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
-			t.Fatal(err)
-		}
+	return w.Code
+}
+
+// brewingOn はドリッパーの抽出中のカード（「次へ」と同じ決まりで読む）。
+func (f *caosFixture) brewingOn(t *testing.T, dripper int) []uuid.UUID {
+	t.Helper()
+	start, end := caosToday(time.Now())
+	rows, err := readCaosLane(f.db, dripper, start, end)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return w.Code, res
+	brewing, _ := splitCaosLane(rows)
+	out := make([]uuid.UUID, len(brewing))
+	for i, card := range brewing {
+		out[i] = card.dripID
+	}
+	return out
 }
 
 // ハンドラを呼ぶ（パスの引数つき）
@@ -172,13 +181,11 @@ func ids(cups ...models.OrderCup) []uuid.UUID {
 	return out
 }
 
-func strPtr(s string) *string { return &s }
-
 func TestCaosWriteCupsOnDB(t *testing.T) {
 	db, _ := openListenTestDB(t)
 	f := newCaosFixture(t, db)
 	o1 := f.createOrder(t, 1, line(f.blend, f.blend), line(f.milk))
-	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{f.blend}, assignee: strPtr(" ２ ")})
+	o2 := f.createOrder(t, 2, line(f.blend))
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1 := uuid.New()
 	// サーバーの今。iPad の時計とずれていてもこちらで付ける
@@ -236,10 +243,6 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 		t.Fatalf("milk in a card = %d, want 422", code)
 	}
 
-	// 指名の番号のあるカップは、その番号のドリッパーにしか置けない
-	if code, _ := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, uuid.New(), false))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("nominated cup on another dripper = %d, want 422", code)
-	}
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), false)))
 
 	// 1 つのドリッパーで抽出中は 1 枚だけ。待機なら置ける
@@ -328,10 +331,11 @@ func TestCaosNextOnDB(t *testing.T) {
 	)
 
 	// 次へ：抽出中のカードを終え、そのカップだけ準備完了にし、待機の先頭（順番の小さいもの）を始める
-	code, res := f.next(t, 1, &card1)
-	if code != http.StatusOK || res.FinishedDripId == nil || uuid.UUID(*res.FinishedDripId) != card1 ||
-		res.StartedDripId == nil || uuid.UUID(*res.StartedDripId) != card3 {
-		t.Fatalf("next = %d %+v", code, res)
+	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
+	}
+	if got := f.brewingOn(t, 1); len(got) != 1 || got[0] != card3 {
+		t.Fatalf("brewing after next = %v, want %v", got, card3)
 	}
 	for _, c := range o1.OrderCups[:2] {
 		if cup := f.cup(t, c.ID); cup.ReadyAt == nil || cup.BrewFinishedAt == nil {
@@ -350,10 +354,10 @@ func TestCaosNextOnDB(t *testing.T) {
 	}
 
 	// 同じカードの「次へ」をもう一度押しても、次のカードは終わらせない。抽出中があるのに無いと見ていても断る
-	if code, _ := f.next(t, 1, &card1); code != http.StatusConflict {
+	if code := f.next(t, 1, &card1); code != http.StatusConflict {
 		t.Fatalf("second next = %d, want 409", code)
 	}
-	if code, _ := f.next(t, 1, nil); code != http.StatusConflict {
+	if code := f.next(t, 1, nil); code != http.StatusConflict {
 		t.Fatalf("next without the brewing card = %d, want 409", code)
 	}
 
@@ -361,9 +365,14 @@ func TestCaosNextOnDB(t *testing.T) {
 	if w := callWithParams(t, f.orders.MarkOrderCupReady, http.MethodPatch, "", gin.Params{{Key: "id", Value: o3.ID.String()}, {Key: "cupId", Value: o3.OrderCups[0].ID.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("PATCH cup ready = %d", w.Code)
 	}
-	code, res = f.next(t, 1, nil)
-	if code != http.StatusOK || res.FinishedDripId != nil || res.StartedDripId == nil || uuid.UUID(*res.StartedDripId) != card2 {
-		t.Fatalf("next after the master = %d %+v", code, res)
+	if code := f.next(t, 1, nil); code != http.StatusNoContent {
+		t.Fatalf("next after the master = %d", code)
+	}
+	if got := f.brewingOn(t, 1); len(got) != 1 || got[0] != card2 {
+		t.Fatalf("brewing after next = %v, want %v", got, card2)
+	}
+	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewFinishedAt != nil {
+		t.Fatal("next finished the card that the master made ready")
 	}
 	// 抽出中のカードを準備完了にしたら、その列に抽出中のカードを置ける（終わりとみなす）
 	o4 := f.createOrder(t, 4, line(f.blend))
@@ -374,33 +383,29 @@ func TestCaosNextOnDB(t *testing.T) {
 	if code, body := f.put(t, write(ids(o4.OrderCups[0]), unassigned, placed(1, 4, card4, true))); code != http.StatusNoContent {
 		t.Fatalf("brewing after the master = %d: %s", code, body)
 	}
-	if code, _ := f.next(t, 1, &card4); code != http.StatusOK {
+	if code := f.next(t, 1, &card4); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	// 何も無いドリッパー・形の違う番号
-	if code, _ := f.next(t, 1, nil); code != http.StatusConflict {
+	if code := f.next(t, 1, nil); code != http.StatusConflict {
 		t.Fatalf("next on an empty dripper = %d, want 409", code)
 	}
-	if code, _ := f.next(t, 7, nil); code != http.StatusBadRequest {
+	if code := f.next(t, 7, nil); code != http.StatusBadRequest {
 		t.Fatalf("next on dripper 7 = %d, want 400", code)
 	}
 
 	// 前の日の注文のカップは見ない（終わっていない抽出中が残っていても、今日の盤面は空）
 	start := time.Now().Add(-time.Minute)
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
+	dripper, pos, id := 2, 1.0, uuid.New()
 	if err := db.Model(&models.OrderCup{}).Where("id = ?", old.OrderCups[0].ID).
-		Updates(placedState(2, uuid.New(), &start).updates()).Error; err != nil {
+		Updates(caosUpdates(models.CaosCupAfter{Dripper: &dripper, DripperPosition: &pos, DripId: &id}, &start)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := f.next(t, 2, nil); code != http.StatusConflict {
+	if code := f.next(t, 2, nil); code != http.StatusConflict {
 		t.Fatalf("next with yesterday's card = %d, want 409", code)
 	}
 	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, toUnassigned)) // 何も変えない書き込みも通る
-}
-
-func placedState(dripper int, id uuid.UUID, start *time.Time) caosState {
-	pos := 1.0
-	return caosState{Dripper: &dripper, DripperPosition: &pos, DripID: &id, BrewStartedAt: start}
 }
 
 func TestCaosConcurrentWrites(t *testing.T) {
@@ -410,8 +415,6 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	for no := 1; no <= 6; no++ {
 		orders = append(orders, f.createOrder(t, no, line(f.blend)))
 	}
-	start := time.Now()
-
 	// 6 台が同時に、別のカードを空いているドリッパー 2 で始めようとする：通るのは 1 枚だけ（ほかは 422）
 	var wg sync.WaitGroup
 	codes := make([]int, len(orders))
@@ -480,14 +483,14 @@ func TestCaosConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			codes[i], _ = f.next(t, 2, &brewingID)
+			codes[i] = f.next(t, 2, &brewingID)
 		}()
 	}
 	wg.Wait()
 	ok = 0
 	for _, code := range codes {
 		switch code {
-		case http.StatusOK:
+		case http.StatusNoContent:
 			ok++
 		case http.StatusConflict:
 		default:
@@ -497,8 +500,8 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	if ok != 1 {
 		t.Fatalf("%d nexts succeeded, want 1", ok)
 	}
-	if n, err := countBrewing(db, 2, start.Add(-time.Hour), start.Add(time.Hour)); err != nil || n != 1 {
-		t.Fatalf("brewing on dripper 2 = %d, %v; want 1", n, err)
+	if got := f.brewingOn(t, 2); len(got) != 1 {
+		t.Fatalf("brewing on dripper 2 = %v, want 1 card", got)
 	}
 
 	// 注文の編集と CaOS の割当・戻すが重なっても、どちらの変更も消えない
@@ -557,7 +560,7 @@ func TestCaosWriteReachesOtherInstances(t *testing.T) {
 	expectOrderNotification(t, other, o.ID)
 
 	// 「次へ」も同じ
-	if code, _ := f.next(t, 3, nil); code != http.StatusOK {
+	if code := f.next(t, 3, nil); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	msg = nextBroadcast(t, hub)
@@ -583,14 +586,68 @@ func expectOrderNotification(t *testing.T, conn *pgx.Conn, orderID uuid.UUID) {
 	}
 }
 
-func TestNominatedDripper(t *testing.T) {
-	for in, want := range map[string]int{"3": 3, " ６ ": 6, "①": 1, "7": 0, "0": 0, "+1": 0, "1.0": 0, "たくみ": 0, "": 0} {
-		got, ok := nominatedDripper(&in)
-		if (want == 0 && ok) || (want != 0 && got != want) {
-			t.Errorf("nominatedDripper(%q) = %d, %v; want %d", in, got, ok, want)
+// ドリッパーの列の決まり（抽出中・待機の並び・終わり）が、画面の caosLane と同じ入力で同じ結果になるか。
+// 例は modules/common/src/lib/caos-lane-cases.json（画面のテスト caos-board.test.ts も同じ例を読む）。
+func TestSplitCaosLaneCases(t *testing.T) {
+	data, err := os.ReadFile("../../../modules/common/src/lib/caos-lane-cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Cases []struct {
+			Name string
+			Cups []struct {
+				DripID          uuid.UUID `json:"drip_id"`
+				OrderNo         int       `json:"order_no"`
+				DripperPosition float64   `json:"dripper_position"`
+				Started         bool
+				Finished        bool
+				Ready           bool
+			}
+			Brewing *uuid.UUID
+			Queued  []uuid.UUID
 		}
 	}
-	if _, ok := nominatedDripper(nil); ok {
-		t.Error("nominatedDripper(nil) is ok")
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no cases")
+	}
+	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	timeIf := func(ok bool) *time.Time {
+		if !ok {
+			return nil
+		}
+		return &at
+	}
+	for _, tc := range file.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			var rows []caosLaneCup
+			for _, c := range tc.Cups {
+				dripper, pos, id := 1, c.DripperPosition, c.DripID
+				rows = append(rows, caosLaneCup{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
+					ID: uuid.New(), Dripper: &dripper, DripperPosition: &pos, DripID: &id,
+					BrewStartedAt: timeIf(c.Started), BrewFinishedAt: timeIf(c.Finished), ReadyAt: timeIf(c.Ready),
+				}})
+			}
+			brewing, queued := splitCaosLane(rows)
+			var gotBrewing *uuid.UUID
+			if len(brewing) > 1 {
+				t.Fatalf("%d brewing cards", len(brewing))
+			} else if len(brewing) == 1 {
+				gotBrewing = &brewing[0].dripID
+			}
+			if !ptrEqual(gotBrewing, tc.Brewing) {
+				t.Errorf("brewing = %v, want %v", gotBrewing, tc.Brewing)
+			}
+			gotQueued := make([]uuid.UUID, len(queued))
+			for i, card := range queued {
+				gotQueued[i] = card.dripID
+			}
+			if !slices.Equal(gotQueued, tc.Queued) && (len(gotQueued) > 0 || len(tc.Queued) > 0) {
+				t.Errorf("queued = %v, want %v", gotQueued, tc.Queued)
+			}
+		})
 	}
 }

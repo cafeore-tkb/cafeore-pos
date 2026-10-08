@@ -1,3 +1,4 @@
+import { caosTimeOfDayLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -150,16 +151,15 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   // Generate timeline markers every 1 minute, with major labels every 5 minutes
   const timeMarkers = [];
   for (let sec = timelineStartSec; sec <= timelineEndSec; sec += 60) {
-    const clockSec = ((sec % 86400) + 86400) % 86400;
-    const m = Math.floor(clockSec / 60) % 60;
-    const h = Math.floor(clockSec / 3600);
+    const timeStr = caosTimeOfDayLabel(sec).slice(0, 5); // 「10:05」
+    const m = Number(timeStr.slice(3));
     const isMajor = m % 5 === 0;
     const left = (sec - timelineStartSec) * PIXELS_PER_SEC;
 
     timeMarkers.push({
       sec,
-      timeStr: `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-      minuteStr: `:${m.toString().padStart(2, "0")}`,
+      timeStr,
+      minuteStr: timeStr.slice(2),
       isMajor,
       isHour: m === 0,
       left,

@@ -1,0 +1,161 @@
+{
+  "description": "CaOS のドリッパーの列の決まり（抽出中・待機の並び・終わり）の例。画面の caosLane（caos-board.test.ts）と API の splitCaosLane（api/internal/handlers/caos_test.go）の両方が読み、同じ結果になるかを確かめる。カップは全部ドリッパー 1 のもの",
+  "cases": [
+    {
+      "name": "終わり・抽出中・待機を分け、待機は順番の順",
+      "cups": [
+        {
+          "drip_id": "00000000-0000-4000-8000-00000000000a",
+          "order_no": 1,
+          "dripper_position": 1,
+          "started": true,
+          "finished": true,
+          "ready": true
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-00000000000b",
+          "order_no": 2,
+          "dripper_position": 2,
+          "started": true,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-00000000000b",
+          "order_no": 2,
+          "dripper_position": 2,
+          "started": true,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-00000000000c",
+          "order_no": 3,
+          "dripper_position": 5,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-00000000000d",
+          "order_no": 4,
+          "dripper_position": 3,
+          "started": false,
+          "finished": false,
+          "ready": false
+        }
+      ],
+      "brewing": "00000000-0000-4000-8000-00000000000b",
+      "queued": [
+        "00000000-0000-4000-8000-00000000000d",
+        "00000000-0000-4000-8000-00000000000c"
+      ]
+    },
+    {
+      "name": "カップが全部準備完了のカードは終わり（抽出中でも待機でも）。一部だけなら終わらない",
+      "cups": [
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000a1",
+          "order_no": 1,
+          "dripper_position": 1,
+          "started": true,
+          "finished": false,
+          "ready": true
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000a2",
+          "order_no": 2,
+          "dripper_position": 2,
+          "started": false,
+          "finished": false,
+          "ready": true
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000a3",
+          "order_no": 3,
+          "dripper_position": 3,
+          "started": false,
+          "finished": false,
+          "ready": true
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000a3",
+          "order_no": 3,
+          "dripper_position": 3,
+          "started": false,
+          "finished": false,
+          "ready": false
+        }
+      ],
+      "brewing": null,
+      "queued": ["00000000-0000-4000-8000-0000000000a3"]
+    },
+    {
+      "name": "順番が同じなら、カードのいちばん小さい注文番号、それも同じなら drip_id の順",
+      "cups": [
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000b9",
+          "order_no": 9,
+          "dripper_position": 2,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000b9",
+          "order_no": 4,
+          "dripper_position": 2,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000b5",
+          "order_no": 5,
+          "dripper_position": 2,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000b6",
+          "order_no": 6,
+          "dripper_position": 1.5,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000c2",
+          "order_no": 8,
+          "dripper_position": 8,
+          "started": false,
+          "finished": false,
+          "ready": false
+        },
+        {
+          "drip_id": "00000000-0000-4000-8000-0000000000c1",
+          "order_no": 8,
+          "dripper_position": 8,
+          "started": false,
+          "finished": false,
+          "ready": false
+        }
+      ],
+      "brewing": null,
+      "queued": [
+        "00000000-0000-4000-8000-0000000000b6",
+        "00000000-0000-4000-8000-0000000000b9",
+        "00000000-0000-4000-8000-0000000000b5",
+        "00000000-0000-4000-8000-0000000000c1",
+        "00000000-0000-4000-8000-0000000000c2"
+      ]
+    },
+    {
+      "name": "何も無い",
+      "cups": [],
+      "brewing": null,
+      "queued": []
+    }
+  ]
+}

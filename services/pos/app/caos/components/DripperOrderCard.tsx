@@ -23,7 +23,7 @@ const cardTheme = (
       id: "text-violet-700",
     };
   }
-  // マスターの画面と同じ背景色（あれば）
+  // 色の設定の色（画面 master。無ければ白）
   return {
     card: surface.className,
     id: surface.colored ? "" : surface.dark ? "text-white" : "text-slate-600",
@@ -71,7 +71,7 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
               {queuePosition ? `${queuePosition}. ` : ""}
               {ticket.beanName}
             </span>
-            <BeanBadge beans={ticket.beans} typeName={ticket.typeName} />
+            <BeanBadge card={ticket} />
           </div>
         </>
       ) : (

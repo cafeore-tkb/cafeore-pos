@@ -1,4 +1,4 @@
-import { formatMinSec, readableTextColor } from "@cafeore/common";
+import { caosClockLabel, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -40,7 +40,7 @@ interface SheetCup {
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
-  /** マスターの画面の色の設定の背景色。無ければ白 */
+  /** 背景色（盤面のカードだけ。色の設定の色、無ければ白） */
   color?: string;
 }
 
@@ -142,7 +142,7 @@ const CupChip: React.FC<{
   onClick,
 }) => {
   const stacked = cup.cupCount >= 2;
-  // マスターの画面の色の設定があればその背景色、無ければ白。文字色は背景色から決める（POS と共通の readableTextColor）
+  // 盤面のカードは色の設定の色（無ければ白）。文字色は背景色から決める（POS と共通の readableTextColor）
   const colorStyle = cup.color
     ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
     : undefined;
@@ -749,7 +749,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         {current ? (
                           <>
                             <span className="font-mono">
-                              {seconds === 0 ? "継続" : formatMinSec(seconds)}
+                              {seconds === 0 ? "継続" : caosClockLabel(seconds)}
                             </span>
                             <span>次へ</span>
                             <ArrowRightCircle className="h-3.5 w-3.5" />
@@ -850,7 +850,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
-                                  ? `抽出中 残${formatMinSec(seconds)}`
+                                  ? `抽出中 残${caosClockLabel(seconds)}`
                                   : "抽出中"
                                 : "",
                             ]

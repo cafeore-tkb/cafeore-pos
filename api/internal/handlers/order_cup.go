@@ -91,7 +91,7 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 
 		Dripper:         cup.Dripper,
 		DripperPosition: cup.DripperPosition,
-		DripId:          apiUUID(cup.DripID),
+		DripId:          cup.DripID,
 		BrewStartedAt:   cup.BrewStartedAt,
 		BrewFinishedAt:  cup.BrewFinishedAt,
 	}

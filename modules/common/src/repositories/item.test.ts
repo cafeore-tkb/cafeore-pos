@@ -43,6 +43,7 @@ describe("[db] itemRepository", async () => {
         makes_cup: true,
         needs_brew: true,
         senior_only: false,
+        iced_brew: false,
       },
     });
     savedItemHoge = await itemRepository.save(item);
@@ -66,6 +67,7 @@ describe("[db] itemRepository", async () => {
         makes_cup: true,
         needs_brew: true,
         senior_only: false,
+        iced_brew: true,
       },
     });
     const savedItem = await itemRepository.save(item);
@@ -84,6 +86,7 @@ describe("[db] itemRepository", async () => {
         makes_cup: true,
         needs_brew: true,
         senior_only: false,
+        iced_brew: false,
       },
     });
     const savedItem = await itemRepository.save(item);
@@ -102,6 +105,7 @@ describe("[db] itemRepository", async () => {
         makes_cup: true,
         needs_brew: false,
         senior_only: false,
+        iced_brew: false,
       },
     });
     const savedItem = await itemRepository.save(item);

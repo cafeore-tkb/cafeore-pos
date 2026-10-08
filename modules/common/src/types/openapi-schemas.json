@@ -182,7 +182,8 @@
       "display_name",
       "makes_cup",
       "needs_brew",
-      "senior_only"
+      "senior_only",
+      "iced_brew"
     ],
     "properties": {
       "id": {
@@ -206,6 +207,10 @@
       "senior_only": {
         "type": "boolean",
         "description": "この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false"
       }
     }
   },
@@ -229,6 +234,11 @@
         "description": "省略したら makes_cup と同じ。makes_cup が false のときに true は 400"
       },
       "senior_only": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
         "type": "boolean",
         "default": false,
         "description": "省略したら false。needs_brew が false のときに true は 400"
@@ -258,6 +268,10 @@
         "description": "省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400"
       },
       "senior_only": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
         "type": "boolean",
         "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       }
@@ -828,24 +842,6 @@
         "format": "uuid",
         "nullable": true,
         "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
-      }
-    }
-  },
-  "CaosNextResult": {
-    "type": "object",
-    "required": ["finished_drip_id", "started_drip_id"],
-    "properties": {
-      "finished_drip_id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "終えたカード。無ければ null"
-      },
-      "started_drip_id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "始めたカード。待機が無ければ null"
       }
     }
   },

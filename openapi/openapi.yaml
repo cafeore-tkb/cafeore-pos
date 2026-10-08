@@ -623,7 +623,6 @@ paths:
         - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
         - 今日（日本時間）の注文のカップだけ書ける
         - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
-        - 指名の番号のあるカップは、その番号のドリッパーにしか置けない（今は明細の assignee が 1〜6 の数字のとき。CaOS7 で明細の dripper に替える）
         - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
       operationId: writeCaosCups
       tags:
@@ -682,12 +681,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CaosNextRequest'
       responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CaosNextResult'
+        '204':
+          description: 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る）
         '400':
           description: 形の違うリクエスト
           content:
@@ -1108,6 +1103,7 @@ components:
         - makes_cup
         - needs_brew
         - senior_only
+        - iced_brew
       properties:
         id:
           type: string
@@ -1125,6 +1121,9 @@ components:
         senior_only:
           type: boolean
           description: この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false
+        iced_brew:
+          type: boolean
+          description: この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false
     ItemTypeCreateRequest:
       type: object
       required:
@@ -1143,6 +1142,10 @@ components:
           type: boolean
           description: 省略したら makes_cup と同じ。makes_cup が false のときに true は 400
         senior_only:
+          type: boolean
+          default: false
+          description: 省略したら false。needs_brew が false のときに true は 400
+        iced_brew:
           type: boolean
           default: false
           description: 省略したら false。needs_brew が false のときに true は 400
@@ -1168,6 +1171,9 @@ components:
           type: boolean
           description: 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400
         senior_only:
+          type: boolean
+          description: 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+        iced_brew:
           type: boolean
           description: 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
     # 指名を入れたMenu
@@ -1661,20 +1667,6 @@ components:
           format: uuid
           nullable: true
           description: 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
-    CaosNextResult:
-      type: object
-      required: [finished_drip_id, started_drip_id]
-      properties:
-        finished_drip_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: 終えたカード。無ければ null
-        started_drip_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: 始めたカード。待機が無ければ null
     ErrorResponse:
       type: object
       required:
