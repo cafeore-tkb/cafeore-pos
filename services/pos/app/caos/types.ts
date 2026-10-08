@@ -28,8 +28,8 @@ export interface OrderTicket {
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
   scheduledTimeStr?: string; // e.g. "2:05"
-  startTimeSec?: number; // sim time in seconds when this drip starts
-  endTimeSec?: number; // sim time in seconds when this drip ends
+  startTimeSec?: number; // 抽出の開始（盤面の秒。その日の 0:00 からの秒）
+  endTimeSec?: number; // 抽出の終了（盤面の秒）
   completedAtSec?: number; // for historical completed drip
   seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
 }

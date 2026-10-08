@@ -9,7 +9,6 @@ import {
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
-import { cardHasBean } from "../utils/beans";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 
@@ -18,8 +17,6 @@ export interface ControlViewBProps {
   unassignedOrders: UnassignedOrder[];
   simTimeSec: number;
   selectedOrderId: string | null;
-  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
-  highlightFilter: string | null;
   onSelectOrder: (orderId: string) => void;
   onSelectQueueOrder: (order: UnassignedOrder) => void;
   onAdvanceBay: (bayId: number) => void;
@@ -38,7 +35,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   unassignedOrders,
   simTimeSec,
   selectedOrderId,
-  highlightFilter,
   onSelectOrder,
   onSelectQueueOrder,
   onAdvanceBay,
@@ -347,12 +343,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
           <div className="grid h-[calc(100%-38px)] grid-cols-5 grid-rows-2 gap-1.5">
             {visibleGroups.map((group, index) => {
               const isSelected = selectedOrderId === group.id;
-              const matchesHeaderFilter = Boolean(
-                highlightFilter &&
-                  group.items.some((item) =>
-                    cardHasBean(item, highlightFilter),
-                  ),
-              );
               const assignedRoutes = sortedBaristas.flatMap((barista) =>
                 barista.queue
                   .filter((ticket) => ticket.id === group.id)
@@ -375,9 +365,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                   className={`relative min-h-0 cursor-pointer touch-manipulation rounded-lg border p-2 transition-all active:scale-[0.99] ${openPadUid && group.items.some((item) => orderUid(item) === openPadUid) ? "z-40 overflow-visible" : "overflow-hidden"} ${
                     isSelected
                       ? "border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-400"
-                      : matchesHeaderFilter
-                        ? "border-sky-400 bg-sky-50"
-                        : "border-slate-300 bg-white hover:border-slate-500 hover:shadow-sm"
+                      : "border-slate-300 bg-white hover:border-slate-500 hover:shadow-sm"
                   }`}
                 >
                   {(() => {
