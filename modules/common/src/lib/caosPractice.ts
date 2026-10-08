@@ -4,6 +4,8 @@ import {
   CAOS_MAX_CUPS,
   type CaosCupsWrite,
   type CaosOrderInput,
+  buildCaosCards,
+  caosLane,
   cupNeedsBrew,
 } from "./caos-board";
 
@@ -15,6 +17,7 @@ import {
 // 本番ならサーバーがする「書き込みを当てる」（番号を決める・後ろをずらす）と「次へ」だけをここで同じ決まりで行う
 // （api/internal/handlers/caos.go の writeCups・placeCaosCups・advance と、同じ確かめ方・同じ理由の文。
 // サーバーを使わずに練習するため、わざと 2 か所に持つ。決まりや文を変えるときは両方そろえること）。
+// ドリッパーの列の分け方は、API の splitCaosLane と同じ結果になる本番の caosLane をそのまま使う。
 //   - 抽出が要るかは本番と同じく種類の名前で決める（cupNeedsBrew）。上級生のみのカードは本番と同じく、どのドリッパーにも置ける
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
@@ -150,68 +153,8 @@ const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
 const allCups = (orders: CaosPracticeOrder[]) =>
   orders.flatMap((order) => order.cups);
 
-const findCup = (orders: CaosPracticeOrder[], cupId: string) => {
-  for (const order of orders) {
-    const cup = order.cups.find((candidate) => candidate.id === cupId);
-    if (cup) return cup;
-  }
-  return null;
-};
-
-// ---------------------------------------------------------------- ドリッパーの列（サーバーの splitCaosLane と同じ）
-
-interface LaneCard {
-  dripId: string;
-  cups: Cup[];
-  orderNo: number;
-}
-
-const compareStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-/**
- * ドリッパーの終わっていないカップを、抽出中のカードと待機のカード（先頭から順に）に分ける。
- * 終了の時刻があるか、カップが全部準備完了のカードは終わり（どちらにも入れない）。開始の時刻があれば抽出中、無ければ待機。
- * 待機の並びは dripper_position・いちばん小さい注文番号・drip_id の順
- */
-const splitLane = (orders: CaosPracticeOrder[], dripper: number) => {
-  const cards: LaneCard[] = [];
-  const byId = new Map<string, LaneCard>();
-  for (const order of orders) {
-    for (const cup of order.cups) {
-      if (
-        cup.dripper !== dripper ||
-        cup.brewFinishedAt !== null ||
-        cup.dripId === null
-      )
-        continue;
-      let card = byId.get(cup.dripId);
-      if (!card) {
-        card = { dripId: cup.dripId, cups: [], orderNo: order.orderId };
-        byId.set(cup.dripId, card);
-        cards.push(card);
-      }
-      card.cups.push(cup);
-      card.orderNo = Math.min(card.orderNo, order.orderId);
-    }
-  }
-  const brewing: LaneCard[] = [];
-  const queued: LaneCard[] = [];
-  for (const card of cards) {
-    const first = card.cups[0];
-    const allReady = card.cups.every((cup) => cup.readyAt !== null);
-    if (first.brewFinishedAt !== null || allReady) continue;
-    if (first.brewStartedAt !== null) brewing.push(card);
-    else queued.push(card);
-  }
-  const position = (card: LaneCard) => card.cups[0].dripperPosition ?? 0;
-  queued.sort(
-    (a, b) =>
-      position(a) - position(b) ||
-      a.orderNo - b.orderNo ||
-      compareStr(a.dripId, b.dripId),
-  );
-  return { brewing, queued };
-};
+const findCup = (orders: CaosPracticeOrder[], cupId: string) =>
+  allCups(orders).find((cup) => cup.id === cupId);
 
 // ---------------------------------------------------------------- 書き込みを当てる（PUT /api/caos/cups と同じ）
 
@@ -247,18 +190,17 @@ const placeCups = (
       position: Math.max(0, ...lane.map((cup) => cup.dripperPosition ?? 0)) + 1,
     };
 
-  const target = lane.find(
+  const p = lane.find(
     (cup) =>
       cup.dripId === write.after.insert_before &&
       cup.brewStartedAt === null &&
       cup.dripperPosition !== null,
-  );
-  if (!target || target.dripperPosition === null)
+  )?.dripperPosition;
+  if (p == null)
     return {
       error:
         "前に入れるカードが、そのドリッパーの待機にありません（ほかの端末で動いたかもしれません）",
     };
-  const p = target.dripperPosition;
   for (const cup of lane) {
     if (cup.dripperPosition !== null && cup.dripperPosition >= p)
       cup.dripperPosition += 1;
@@ -344,8 +286,12 @@ export const applyCaosPracticeWrites = (
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
   }
   // 1 つのドリッパーで抽出中は 1 枚（「次へ」と同じ決まりで数える）
+  const cards = buildCaosCards(next);
   for (const dripper of brewing) {
-    if (splitLane(next, dripper).brewing.length > 1)
+    const count = cards.filter(
+      (card) => card.dripper === dripper && card.status === "brewing",
+    ).length;
+    if (count > 1)
       return { error: `${dripper} 番のドリッパーはもう抽出中です` };
   }
   return { orders: next };
@@ -366,8 +312,7 @@ export const advanceCaosPracticeDripper = (
   if (!Number.isInteger(dripper) || dripper < 1 || dripper > CAOS_DRIPPERS)
     return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
   const next = cloneOrders(orders);
-  const { brewing, queued } = splitLane(next, dripper);
-  const cur = brewing[0];
+  const { brewing: cur, queued } = caosLane(buildCaosCards(next), dripper);
   if (seenDripId !== null && (!cur || cur.dripId !== seenDripId))
     return {
       error:

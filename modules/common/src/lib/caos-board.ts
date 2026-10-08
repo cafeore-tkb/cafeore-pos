@@ -29,12 +29,6 @@ export const CAOS_MAX_CUPS = 2;
 
 /** 1 枚のカードの抽出時間（秒）。全ドリッパー同じ（1 杯 135 秒・2 杯 195 秒） */
 export const caosBrewSec = (cups: number) => (cups > 1 ? 195 : 135);
-/** 秒を「2分15秒」に */
-export const caosDurationLabel = (sec: number) =>
-  `${Math.floor(sec / 60)}分${sec % 60}秒`;
-/** 秒を「02:15」に（残り時間）。10 分以上は「12:05」 */
-export const caosClockLabel = (sec: number) =>
-  `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
 
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 
@@ -134,6 +128,10 @@ const compareCups = (a: CaosBoardCup, b: CaosBoardCup) =>
 const nomineeKey = (nominee: string | null) =>
   nominee === null ? "" : `\u0001${nominee}`;
 
+// 準備完了（提供済みも）のカップ
+const isReady = (cup: Pick<Cup, "readyAt" | "servedAt">) =>
+  cup.readyAt !== null || cup.servedAt !== null;
+
 const latest = (dates: (Date | null)[]) =>
   dates.reduce<Date | null>(
     (out, d) => (d && (!out || d > out) ? d : out),
@@ -211,7 +209,7 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
 };
 
 /**
- * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。
+ * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。day を省くと日では絞らない（練習の盤面）。
  *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まり、カップが全部準備完了なら終わり
  *     （API の「次へ」の splitCaosLane と同じ決まり）
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
@@ -221,12 +219,13 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
  */
 export const buildCaosCards = (
   orders: readonly CaosOrderInput[],
-  day: string,
+  day?: string,
 ): CaosCard[] => {
   const byDrip = new Map<string, CaosBoardCup[]>();
   const loose = new Map<string, CaosBoardCup[]>();
   for (const order of orders) {
-    if (jstDate(order.createdAt.getTime()) !== day) continue;
+    if (day !== undefined && jstDate(order.createdAt.getTime()) !== day)
+      continue;
     for (const [position, cup] of order.cups.entries()) {
       if (!cupNeedsBrew(cup)) continue;
       const nominee =
@@ -244,7 +243,7 @@ export const buildCaosCards = (
         servedAt: cup.servedAt,
         state: cupState(cup),
       };
-      const ready = cup.readyAt !== null || cup.servedAt !== null;
+      const ready = isReady(cup);
       const { dripId, dripper } = boardCup.state;
       if (dripId && (dripper !== null || !ready)) {
         byDrip.set(dripId, [...(byDrip.get(dripId) ?? []), boardCup]);
@@ -261,9 +260,7 @@ export const buildCaosCards = (
   const cards: CaosCard[] = [];
   for (const cups of byDrip.values()) {
     const state = cups[0].state;
-    const allReady = cups.every(
-      (cup) => cup.readyAt !== null || cup.servedAt !== null,
-    );
+    const allReady = cups.every(isReady);
     const status: CaosCardStatus =
       state.dripper === null
         ? "unassigned"
@@ -385,18 +382,18 @@ export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
-/** 統合の相手を決めるキー（商品と指名）。1 杯のカードどうしで、このキーが同じなら統合できる */
-export const caosMergeKey = (card: CaosCard) =>
+// 統合の相手を決めるキー（商品と指名）。1 杯のカードどうしで、このキーが同じなら統合できる
+const mergeKey = (card: CaosCard) =>
   `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.cups[0].nominee ?? ""}`;
 
-/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名（caosMergeKey） */
+/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名 */
 export const canMergeCards = (a: CaosCard, b: CaosCard) =>
   a.key !== b.key &&
   a.status === b.status &&
   (a.status === "unassigned" || a.status === "queued") &&
   a.cups.length === 1 &&
   b.cups.length === 1 &&
-  caosMergeKey(a) === caosMergeKey(b);
+  mergeKey(a) === mergeKey(b);
 
 /**
  * 1 杯のカードどうしを 2 杯の同時抽出にまとめる。

@@ -104,11 +104,6 @@ describe("[unit] CaOS の練習の注文", () => {
       2, 1,
     ]);
   });
-
-  test("上級生のみの品物は、本番と同じく種類の名前で印が付く", () => {
-    const [card] = unassigned(ordersOf([limited]));
-    expect(card.seniorOnly).toBe(true);
-  });
 });
 
 describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決まり）", () => {

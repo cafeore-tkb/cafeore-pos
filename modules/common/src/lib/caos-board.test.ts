@@ -7,8 +7,6 @@ import {
   buildCaosCards,
   canMergeCards,
   caosBrewSec,
-  caosClockLabel,
-  caosDurationLabel,
   caosLane,
   cupNeedsBrew,
   cupSeniorOnly,
@@ -242,12 +240,9 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(jstDayStart(NOW.getTime())).toBe(Date.parse("2026-10-07T15:00:00Z"));
   });
 
-  test("抽出時間と表示", () => {
+  test("抽出時間", () => {
     expect(caosBrewSec(1)).toBe(135);
     expect(caosBrewSec(2)).toBe(195);
-    expect(caosDurationLabel(caosBrewSec(2))).toBe("3分15秒");
-    expect(caosClockLabel(65)).toBe("01:05");
-    expect(caosClockLabel(725)).toBe("12:05");
   });
 });
 
