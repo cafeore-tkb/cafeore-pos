@@ -1,7 +1,8 @@
 import { AlertTriangle, Clock3 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { MAX_CUPS, orderLabel } from "../logic/cards";
+import type { Barista } from "../logic/board";
+import { MAX_CUPS, type OrderTicket, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
 import {
@@ -10,7 +11,6 @@ import {
   rebrewCandidates,
   rebrewSlots,
 } from "../logic/rebrew";
-import type { Barista, OrderTicket } from "../types";
 import { PanelFooter, SidePanel } from "./SidePanels";
 
 // 緊急の入れ直し（抽出中・終わったカードから）。中断／継続、杯数、置くドリッパー、差し込む位置を選ぶ

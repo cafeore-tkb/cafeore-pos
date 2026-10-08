@@ -1,12 +1,16 @@
-import { ArrowRight, ExternalLink, Undo2, X } from "lucide-react";
+import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
-import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import { useOutsidePress } from "../hooks/useOutsidePress";
-import { brewSec, orderLabel } from "../logic/cards";
+import type { Barista } from "../logic/board";
+import {
+  type DripCard,
+  type OrderTicket,
+  brewSec,
+  orderLabel,
+} from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { canPlaceOn, laneOrdinal, moveTargets } from "../logic/lanes";
-import type { Barista, DripCard, OrderTicket } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
@@ -20,18 +24,9 @@ export const SidePanel: React.FC<{
   onOutsidePress?: () => void;
   /** 見出しの色（入れ直しは赤） */
   tone?: "plain" | "alert";
-  actions?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({
-  title,
-  onClose,
-  onOutsidePress,
-  tone = "plain",
-  actions,
-  footer,
-  children,
-}) => {
+}> = ({ title, onClose, onOutsidePress, tone = "plain", footer, children }) => {
   const panelRef = useRef<HTMLElement>(null);
   useOutsidePress(
     onOutsidePress !== undefined,
@@ -41,13 +36,12 @@ export const SidePanel: React.FC<{
   return (
     <aside
       ref={panelRef}
-      className={`context-sheet fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] select-none flex-col border-l bg-white text-slate-950 shadow-2xl ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
+      className={`fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
     >
       <header
         className={`flex min-h-[52px] shrink-0 items-center gap-1 border-b px-4 ${tone === "alert" ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}
       >
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
-        {actions}
         <button
           type="button"
           onClick={onClose}
@@ -239,7 +233,9 @@ export const TicketDetailPanel: React.FC<{
   </SidePanel>
 );
 
-// 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルか、新しいブラウザタブ（?panel=）で開く
+// 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルで開く
+export type AuxiliaryTab = "bays" | "beans" | "analytics";
+
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
   bays: "ドリッパー",
   beans: "豆キュー",
@@ -293,39 +289,10 @@ export const AuxiliaryContent: React.FC<
 
 export const AuxiliarySheet: React.FC<{
   tab: AuxiliaryTab;
-  onOpenInNewTab: () => void;
   onClose: () => void;
   children: React.ReactNode;
-}> = ({ tab, onOpenInNewTab, onClose, children }) => (
-  <SidePanel
-    title={AUXILIARY_TITLES[tab]}
-    onClose={onClose}
-    actions={
-      <button
-        type="button"
-        onClick={onOpenInNewTab}
-        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full hover:bg-slate-200"
-        aria-label={`${AUXILIARY_TITLES[tab]}を新しいブラウザタブで開く`}
-        title="新しいタブで開く"
-      >
-        <ExternalLink className="h-5 w-5" />
-      </button>
-    }
-  >
+}> = ({ tab, onClose, children }) => (
+  <SidePanel title={AUXILIARY_TITLES[tab]} onClose={onClose}>
     {children}
   </SidePanel>
-);
-
-export const StandaloneAuxiliaryPanel: React.FC<{
-  tab: AuxiliaryTab;
-  children: React.ReactNode;
-}> = ({ tab, children }) => (
-  <div className="h-screen overflow-hidden bg-slate-100 font-sans text-slate-950">
-    <header className="flex h-14 items-center border-slate-300 border-b bg-white px-5">
-      <h1 className="font-black text-[18px]">{AUXILIARY_TITLES[tab]}</h1>
-    </header>
-    <main className="h-[calc(100vh-56px)] overflow-y-auto p-4">
-      <div className="mx-auto max-w-[900px]">{children}</div>
-    </main>
-  </div>
 );

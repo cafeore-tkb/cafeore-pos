@@ -1,5 +1,5 @@
 import type React from "react";
-import type { DripCard } from "../types";
+import type { DripCard } from "../logic/cards";
 
 // カードの豆と区分の札。豆は POS の在庫対象の名前、区分は商品の種類の表示名をそのまま出す（例「ケニア豆 / ホット」）。
 // 豆が無い（在庫の設定に「商品 → 豆」が無い）カードは区分だけ、どちらも無いカード（実データテスト）には出さない。

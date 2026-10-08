@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type BoardChange, emptyBoard, receiveCards } from "../logic/board";
+import {
+  type Board,
+  type BoardChange,
+  emptyBoard,
+  receiveCards,
+} from "../logic/board";
+import type { DripCard } from "../logic/cards";
 import { tickBrewing } from "../logic/queue";
-import type { Board, DripCard } from "../types";
 
 // 盤面の状態。操作（logic/board.ts）を当てる・届いたカードを足す・抽出中の残りを減らすタイマー。
 // 盤面は ref でも持ち、どの変更も ref の最新の盤面から次の盤面を作る（同じ描画のうちに操作が 2 つ来ても、
 // 2 つ目は 1 つ目のあとの盤面に当たり、できたかどうか（音を鳴らすか）もその盤面で決まる）。
 export const useBoardState = ({
-  initial,
   isRunning,
   simSpeed,
 }: {
-  initial?: Board;
   isRunning: boolean;
   simSpeed: number;
 }) => {
-  const [board, setBoard] = useState<Board>(() => initial ?? emptyBoard());
+  const [board, setBoard] = useState<Board>(emptyBoard);
   const boardRef = useRef(board);
   const commit = useCallback((next: Board) => {
     boardRef.current = next;
@@ -29,7 +32,7 @@ export const useBoardState = ({
       () =>
         commit({
           ...boardRef.current,
-          baristas: tickBrewing(boardRef.current.baristas, 1),
+          baristas: tickBrewing(boardRef.current.baristas),
         }),
       1000 / simSpeed,
     );

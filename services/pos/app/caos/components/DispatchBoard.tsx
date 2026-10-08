@@ -4,12 +4,11 @@ import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { ticketsWhere } from "../logic/board";
-import { orderLabel } from "../logic/cards";
+import { type OrderTicket, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
-import type { OrderTicket } from "../types";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { BayPad, OrderCard } from "./OrderCard";
@@ -178,7 +177,7 @@ export const DispatchBoard: React.FC<
           {/* 6 列 */}
           <div className="relative divide-y divide-slate-200">
             {baristas.map((barista) => {
-              const lane = laneStatus(barista, currentTimeSec);
+              const lane = laneStatus(barista);
               const { positioned, freeFromSec } = positionTickets(
                 barista,
                 currentTimeSec,

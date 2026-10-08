@@ -1,5 +1,5 @@
-import type { Barista, OrderTicket } from "../types";
-import { orderLabel } from "./cards";
+import type { Barista } from "./board";
+import { type OrderTicket, orderLabel } from "./cards";
 import { canPlaceOn } from "./lanes";
 import { queueWaitSeconds } from "./queue";
 

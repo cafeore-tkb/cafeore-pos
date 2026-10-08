@@ -1,7 +1,8 @@
 import type React from "react";
 import type { TimelineCommand } from "../hooks/useTimelineScroll";
+import type { Barista } from "../logic/board";
+import type { DripCard, OrderTicket } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import type { Barista, DripCard, OrderTicket } from "../types";
 import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";

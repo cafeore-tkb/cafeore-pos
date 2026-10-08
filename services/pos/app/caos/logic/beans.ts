@@ -1,5 +1,6 @@
 import type { InventoryStatus, StockUsage } from "@cafeore/common";
-import type { Board, CardBean, DripCard } from "../types";
+import type { Board } from "./board";
+import type { CardBean, DripCard } from "./cards";
 
 // カードの豆。POS の在庫の設定（/inventory/settings）の「商品ごとの使用量」で、商品が使う豆の在庫対象を引く。
 // 名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。

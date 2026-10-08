@@ -1,7 +1,7 @@
+import dayjs from "dayjs";
 import { useEffect, useRef, useState } from "react";
-import { startOfLocalDay } from "../logic/format";
+import type { DripCard } from "../logic/cards";
 import { ingestPosOrders } from "../logic/posOrders";
-import type { DripCard } from "../types";
 import { usePosOrders } from "./usePosOrders";
 
 // cafeore-pos の注文を盤面に取り込む（共有の WebSocket から届くたびに、新しい注文を足し、取り下げを外す）。
@@ -24,7 +24,7 @@ export const usePosIngest = ({
     const result = ingestPosOrders(
       orders,
       ingested.current,
-      startOfLocalDay(Date.now()),
+      dayjs().startOf("day").valueOf(),
     );
     ingested.current = result.ingested;
     receive(result.incoming, result.withdrawn);
