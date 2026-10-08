@@ -61,6 +61,8 @@ type Props = {
   itemTypes: ItemType[];
   resources: StockResource[];
   usages: StockUsage[];
+  /** 在庫対象と使用量を読み終えたか。読み終えるまではアイテムのフォームを出さない */
+  stockReady: boolean;
 };
 
 export function ProductEditor({
@@ -72,6 +74,7 @@ export function ProductEditor({
   itemTypes,
   resources,
   usages,
+  stockReady,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -232,6 +235,14 @@ export function ProductEditor({
     if (kind === "item") {
       const source = items.find((item) => item.id === id);
       if (mode !== "new" && !source) return null;
+      // フォームは使用量を最初の描画でしか読まないので、届くまで出さない
+      if (!stockReady) {
+        return (
+          <p className="text-muted-foreground text-sm">
+            在庫の使用量を読み込んでいます…
+          </p>
+        );
+      }
       const initialItem =
         source &&
         (isEdit
