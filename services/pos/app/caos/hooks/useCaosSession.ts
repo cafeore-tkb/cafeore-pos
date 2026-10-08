@@ -1,4 +1,5 @@
 import { useColorSettings } from "@cafeore/common";
+import dayjs from "dayjs";
 import { useCallback, useMemo, useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import {
@@ -10,7 +11,7 @@ import {
   returnTicket,
 } from "../logic/board";
 import { compareUnassigned, totalCups } from "../logic/cards";
-import { startOfLocalDay, timeOfDayLabel } from "../logic/format";
+import { timeOfDayLabel } from "../logic/format";
 import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
 import { nextAvailableBays } from "../logic/queue";
@@ -61,10 +62,10 @@ export const useCaosSession = (initial?: {
 
   // 盤面の秒。その日の 0 時から数える（テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const realTime = useCurrentTime(1000);
-  const [realDayStartMs] = useState(() => startOfLocalDay(Date.now()));
+  const [realDayStartMs] = useState(() => dayjs().startOf("day").valueOf());
   const nowMs = test.session?.currentMs ?? realTime.getTime();
   const dayStartMs = test.session
-    ? startOfLocalDay(test.session.startMs)
+    ? dayjs(test.session.startMs).startOf("day").valueOf()
     : realDayStartMs;
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 

@@ -1,5 +1,5 @@
+import dayjs from "dayjs";
 import { useEffect, useRef, useState } from "react";
-import { startOfLocalDay } from "../logic/format";
 import { ingestPosOrders } from "../logic/posOrders";
 import type { DripCard } from "../types";
 import { usePosOrders } from "./usePosOrders";
@@ -24,7 +24,7 @@ export const usePosIngest = ({
     const result = ingestPosOrders(
       orders,
       ingested.current,
-      startOfLocalDay(Date.now()),
+      dayjs().startOf("day").valueOf(),
     );
     ingested.current = result.ingested;
     receive(result.incoming, result.withdrawn);
