@@ -2,13 +2,24 @@ import { caosClockLabel } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
-import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
-export type ControlViewCProps = ControlViewBProps;
+export interface ControlViewCProps {
+  baristas: Barista[];
+  unassignedOrders: UnassignedOrder[];
+  simTimeSec: number;
+  selectedOrderId: string | null;
+  onSelectOrder: (orderId: string) => void;
+  onSelectQueueOrder: (order: UnassignedOrder) => void;
+  onAdvanceBay: (bayId: number) => void;
+  onOpenTicketDetail: (ticket: OrderTicket) => void;
+  onOpenEmptySlot: (bayId: number) => void;
+  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
+}
 
 const dripperLabelGroups = [
   {

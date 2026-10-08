@@ -17,9 +17,9 @@ import {
   orderNumber,
   ticketKey,
 } from "../utils/orderQueue";
-import type { ControlViewBProps } from "./ControlViewB";
+import type { ControlViewCProps } from "./ControlViewC";
 
-export interface ControlViewDProps extends ControlViewBProps {
+export interface ControlViewDProps extends ControlViewCProps {
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
