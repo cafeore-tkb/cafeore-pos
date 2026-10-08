@@ -5,6 +5,16 @@ import { toast } from "sonner";
 const SUBMIT_FAILED_TOAST_ID = "cashier-submit-failed";
 
 /**
+ * 保存した注文を返す。失敗したら reject する
+ *
+ * idempotencyKey が同じなら、保存済みでも新しく作らずにその注文を返す
+ */
+type SubmitPayload = (
+  order: OrderEntity,
+  idempotencyKey: string | undefined,
+) => Promise<WithId<OrderEntity>>;
+
+/**
  * レジの注文を保存する
  *
  * - 保存中は二重に送らない。`submittingRef` は同じ描画のうちのキー入力を止めるため
@@ -13,12 +23,7 @@ const SUBMIT_FAILED_TOAST_ID = "cashier-submit-failed";
  *   同じ内容のまま送り直せば同じキーを付け、サーバーは新しく作らずに保存済みの注文を返す。
  *   内容を変えたら別の注文として新しいキーにする。入力を消したら `resetKey` する
  */
-const useSubmitOrder = (
-  submitPayload: (
-    order: OrderEntity,
-    idempotencyKey: string | undefined,
-  ) => Promise<WithId<OrderEntity>>,
-) => {
+const useSubmitOrder = (submitPayload: SubmitPayload) => {
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const lastKey = useRef<{ content: string; key: string | undefined } | null>(
@@ -85,4 +90,4 @@ const orderContent = (order: OrderEntity) =>
     order.comments.map((comment) => [comment.author, comment.text]),
   ]);
 
-export { useSubmitOrder };
+export { useSubmitOrder, type SubmitPayload };

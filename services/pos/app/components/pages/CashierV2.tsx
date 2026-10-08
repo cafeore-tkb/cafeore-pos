@@ -19,7 +19,10 @@ import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
-import { useSubmitOrder } from "../functional/useSubmitOrder";
+import {
+  type SubmitPayload,
+  useSubmitOrder,
+} from "../functional/useSubmitOrder";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -39,15 +42,7 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
-  /**
-   * 保存した注文を返す。失敗したら reject する
-   *
-   * idempotencyKey が同じなら、保存済みでも新しく作らずにその注文を返す
-   */
-  submitPayload: (
-    order: OrderEntity,
-    idempotencyKey: string | undefined,
-  ) => Promise<WithId<OrderEntity>>;
+  submitPayload: SubmitPayload;
   syncOrder: (order: OrderEntity) => void;
 };
 
