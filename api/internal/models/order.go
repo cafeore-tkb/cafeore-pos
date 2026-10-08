@@ -20,6 +20,7 @@ type Order struct {
 	DiscountOrderCups int
 
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
+	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`
 	Comments   []Comment   `gorm:"foreignKey:OrderID;references:ID"`
 }
 

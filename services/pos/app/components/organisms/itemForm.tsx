@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { guessCup, sortResources } from "~/lib/stock";
+import { sortResources } from "~/lib/stock";
 import type { ItemTypeFormValues } from "./itemTypeForm";
 
 export type ItemFormValues = {
@@ -34,6 +34,8 @@ type Props = {
   resources: StockResource[];
   /** 渡さなければ新規として、タイプからカップを入れる */
   initialUsages?: Record<string, string>;
+  /** タイプの ID → そのタイプのアイテムに入っているカップの ID。新規の初期値に使う */
+  cupByType?: Map<string, string>;
   onSubmit: (
     values: ItemFormValues,
     menu: SameNameMenu | null,
@@ -50,6 +52,7 @@ export function ItemForm({
   itemTypes,
   resources,
   initialUsages,
+  cupByType,
   onSubmit,
   onCreateItemType,
   menuKeysInUse,
@@ -61,15 +64,10 @@ export function ItemForm({
     return itemTypes[0]?.id ?? "";
   }, [initialItem, itemTypes]);
 
-  const cups = useMemo(
-    () => resources.filter((r) => r.kind === "cup"),
-    [resources],
-  );
-  // 新規はタイプからカップを推測して入れる。使用量を触るまではタイプに合わせて入れ直す
+  // 新規は同じタイプのアイテムに入っているカップを入れる。使用量を触るまではタイプに合わせて入れ直す
   const guessUsages = (itemTypeId: string): Record<string, string> => {
-    const typeName = itemTypes.find((t) => t.id === itemTypeId)?.name;
-    const cup = guessCup(typeName, cups);
-    return cup ? { [cup.id]: "1" } : {};
+    const cupId = cupByType?.get(itemTypeId);
+    return cupId ? { [cupId]: "1" } : {};
   };
   const [usagesTouched, setUsagesTouched] = useState(initialUsages != null);
 
@@ -89,13 +87,13 @@ export function ItemForm({
   const menuKeyTaken =
     menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
 
-  // 在庫対象があとから読み込まれたときも、触る前なら推測し直す
-  const cupIds = cups.map((cup) => cup.id).join();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: カップの顔ぶれが変わったときだけ
+  // 在庫対象や使用量があとから読み込まれたときも、触る前なら入れ直す
+  const cupByTypeKey = JSON.stringify([...(cupByType ?? [])]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: タイプとカップの組が変わったときだけ
   useEffect(() => {
     if (usagesTouched) return;
     setValues((prev) => ({ ...prev, usages: guessUsages(prev.itemTypeId) }));
-  }, [cupIds]);
+  }, [cupByTypeKey]);
 
   const updateField = (
     key: Exclude<keyof ItemFormValues, "usages">,

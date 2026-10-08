@@ -28,7 +28,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import { toUsageInputs, usagesByItem } from "~/lib/stock";
+import { cupByItemType, toUsageInputs, usagesByItem } from "~/lib/stock";
 import { copyName } from "~/lib/utils";
 
 export type ProductKind = "menu" | "item" | "itemType";
@@ -248,6 +248,11 @@ export function ProductEditor({
           itemTypes={itemTypes}
           resources={resources}
           initialUsages={source ? usageDraftOf(source.id) : undefined}
+          cupByType={cupByItemType(
+            items,
+            usages,
+            resources.filter((r) => r.kind === "cup"),
+          )}
           submitting={submitting}
           onCreateItemType={createItemType}
           menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}

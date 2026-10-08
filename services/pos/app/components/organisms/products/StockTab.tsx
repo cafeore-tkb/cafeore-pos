@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import {
-  guessCup,
+  cupByItemType,
   sortResources,
   stockResourceDefaults,
   toUsageInputs,
@@ -323,23 +323,34 @@ function UsagesSection({
     (item) => !sameUsages(draft[item.id], saved[item.id]),
   );
 
-  // カップが未設定のアイテムに、タイプから推測したカップを入れる
+  // カップが未設定のアイテムに、同じタイプのほかのアイテムに入っているカップを入れる
   const fillCups = () => {
+    const filledPairs = Object.entries(draft).flatMap(([item_id, amounts]) =>
+      toUsageInputs(amounts ?? {}).map(({ resource_id }) => ({
+        item_id,
+        resource_id,
+      })),
+    );
+    const cupOfType = cupByItemType(sortedItems, filledPairs, cups);
     let filled = 0;
+    let empty = 0;
     const next = { ...draft };
     for (const item of sortedItems) {
       const amounts = next[item.id] ?? {};
       if (cups.some((cup) => amounts[cup.id])) continue;
-      const cup = guessCup(item.item_type.name, cups);
-      if (!cup) continue;
-      next[item.id] = { ...amounts, [cup.id]: "1" };
+      empty++;
+      const cupId = item.item_type.id && cupOfType.get(item.item_type.id);
+      if (!cupId) continue;
+      next[item.id] = { ...amounts, [cupId]: "1" };
       filled++;
     }
     setDraft(next);
     toast(
       filled > 0
         ? `${filled}件にカップを入れました。保存すると反映されます`
-        : "カップが空のアイテムはありません",
+        : empty > 0
+          ? "同じタイプでカップが入っているアイテムがありません"
+          : "カップが空のアイテムはありません",
     );
   };
 
@@ -389,7 +400,7 @@ function UsagesSection({
         </div>
         {cups.length > 0 && (
           <Button type="button" variant="outline" onClick={fillCups}>
-            空のカップをタイプから入れる
+            空のカップを同じタイプに合わせる
           </Button>
         )}
       </div>
