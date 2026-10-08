@@ -1,15 +1,3 @@
-export type BeanCode =
-  | "CHAMP"
-  | "ORE"
-  | "TNZ"
-  | "KEN"
-  | "BRA"
-  | "ICE"
-  | "MILK"
-  | "SP"
-  // 盤面のカードで、氷・牛・限定のどれでもない商品（どの豆かは beans で見分ける）
-  | "OTHER";
-
 // カードの豆。POS の在庫対象（kind が bean）の ID と名前をそのまま持つ
 export interface CardBean {
   id: string;
@@ -17,10 +5,12 @@ export interface CardBean {
 }
 
 export interface OrderTicket {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品・実データテストのカードには付かない */
   color?: string;
-  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
-  itemKey?: string;
+  /** 商品を見分けるキー。盤面のカードは商品の ID（実データテストのカードは商品の情報が無いので、その中だけのキー） */
+  itemKey: string;
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
   id: string; // e.g. "#152"
@@ -30,21 +20,9 @@ export interface OrderTicket {
   totalOrderCups?: number; // e.g. 3 (total cups in entire order #152)
   orderNotes?: string; // e.g. "チャンプ 2杯 + 俺ブレ 1杯"
   sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
+  /** カードの名前。盤面のカードは商品の略称（abbr）をそのまま */
   beanName: string;
   cupCount: number;
-  tag?:
-    | "HOT"
-    | "ICE"
-    | "BATCH"
-    | "牛"
-    | "牛オレ"
-    | "氷"
-    | "★SP"
-    | "定番"
-    | "浅煎り"
-    | "水洗"
-    | string;
   preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
   /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
   nominee?: string;
@@ -69,10 +47,12 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品・実データテストのカードには付かない */
   color?: string;
-  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
-  itemKey?: string;
+  /** 商品を見分けるキー。盤面のカードは商品の ID（実データテストのカードは商品の情報が無いので、その中だけのキー） */
+  itemKey: string;
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
   id: string; // e.g. "#162"
@@ -82,7 +62,7 @@ export interface UnassignedOrder {
   totalOrderCups?: number;
   orderNotes?: string;
   sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
+  /** カードの名前。盤面のカードは商品の略称（abbr）をそのまま */
   beanName: string;
   cupCount: number;
   badgeTag: string;
@@ -94,13 +74,13 @@ export interface UnassignedOrder {
   nominee?: string;
   seniorOnly?: boolean; // 限定（種類の senior_only）
   mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
-  cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 
 export interface HistoricalItem {
   name: string;
   price: number;
-  type: "hot" | "iceOre" | "ice" | "milk" | "others" | string;
+  /** 商品の種類の名前（POS の商品の種類の name）。表示名・判定は POS の種類から引く */
+  type: string;
 }
 
 export interface HistoricalOrder {

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   type ColorSetting,
-  masterDefaultColor,
   readableTextColor,
   resolveItemColor,
 } from "./colorSetting";
@@ -68,28 +67,5 @@ describe("[unit] readableTextColor", () => {
     expect(readableTextColor("#000000")).toBe("#ffffff");
     expect(readableTextColor("#6b7280")).toBe("#ffffff");
     expect(readableTextColor("#1d4ed8")).toBe("#ffffff");
-  });
-});
-
-describe("[unit] masterDefaultColor", () => {
-  const of = (name: string, type: string) => ({
-    name,
-    item_type: { name: type },
-  });
-
-  test("uses the color of the item type", () => {
-    expect(masterDefaultColor(of("アイスコーヒー", "ice"))).toBe("#bedbff");
-    expect(masterDefaultColor(of("アイスオーレ", "iceOre"))).toBe("#b8e6fe");
-    expect(masterDefaultColor(of("アイスミルク", "milk"))).toBe("#d1d5dc");
-  });
-
-  test("named items are green unless the type has a color", () => {
-    expect(masterDefaultColor(of("ブルマン", "hot"))).toBe("#7bf1a8");
-    expect(masterDefaultColor(of("ライチ", "limited"))).toBe("#7bf1a8");
-    expect(masterDefaultColor(of("ライチ", "ice"))).toBe("#bedbff");
-  });
-
-  test("other items have no default color", () => {
-    expect(masterDefaultColor(of("俺ブレンド", "hot"))).toBeUndefined();
   });
 });

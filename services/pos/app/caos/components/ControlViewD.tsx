@@ -9,8 +9,7 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLimitedLabel } from "../limitedLabel";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
 import { nominationText } from "../utils/nomination";
 import {
@@ -38,16 +37,14 @@ const DRAG_THRESHOLD_PX = 12;
 interface SheetCup {
   key: string;
   id: string;
-  beanCode: BeanCode;
+  /** カードの名前（盤面のカードは商品の略称をそのまま） */
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
   /** 指名の表示（盤面のカードだけ。utils/nomination.ts の nominationText を参照） */
   nominee?: string;
-  /** マスターの画面と同じ背景色（盤面のカードだけ） */
+  /** マスターの画面の色の設定の背景色。無ければ白 */
   color?: string;
-  /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
-  itemKey?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -97,41 +94,14 @@ interface OrderGroup {
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
 
-// 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
-const sheetLabel: Partial<Record<BeanCode, string>> = {
-  CHAMP: "チャンプ",
-  ORE: "俺ブレ",
-  TNZ: "タンザ",
-  KEN: "ケニア",
-  BRA: "ブラジル",
-  ICE: "氷",
-  MILK: "牛",
-};
-
-// カップの名前。盤面のカードは商品の略称、実データテストの限定は商品の種類 limited の表示名（無ければ商品名）
-const cupLabel = (cup: SheetCup, limitedLabel: string) => {
-  if (cup.itemKey) return cup.beanName;
-  if (cup.beanCode === "SP") return limitedLabel || cup.beanName;
-  return sheetLabel[cup.beanCode] ?? cup.beanName;
-};
-
-const cupColor = (cup: SheetCup) => {
-  if (cup.beanCode === "SP") return "bg-red-200";
-  if (cup.beanCode === "ICE") return "bg-sky-200";
-  if (cup.beanCode === "MILK") return "bg-gray-200";
-  return "bg-white";
-};
-
 const ticketCup = (ticket: OrderTicket): SheetCup => ({
   key: ticketKey(ticket),
   id: ticket.id,
-  beanCode: ticket.beanCode,
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
   nominee: ticket.nominee,
   color: ticket.color,
-  itemKey: ticket.itemKey,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -152,13 +122,11 @@ const sourceCup = (source: DragSource) =>
 const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   key: order.ticketUid || order.id,
   id: order.id,
-  beanCode: order.beanCode,
   beanName: order.beanName,
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
   nominee: order.nominee,
   color: order.color,
-  itemKey: order.itemKey,
 });
 
 const CupChip: React.FC<{
@@ -178,9 +146,8 @@ const CupChip: React.FC<{
   lifted = false,
   onClick,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const stacked = cup.cupCount >= 2;
-  // 盤面のカードはマスターの画面と同じ背景色。文字色は背景色から決める（POS と共通の readableTextColor）
+  // マスターの画面の色の設定があればその背景色、無ければ白。文字色は背景色から決める（POS と共通の readableTextColor）
   const colorStyle = cup.color
     ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
     : undefined;
@@ -192,7 +159,7 @@ const CupChip: React.FC<{
       {stacked && (
         <div
           aria-hidden
-          className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
+          className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 bg-white shadow-xs"
           style={colorStyle}
         />
       )}
@@ -201,7 +168,7 @@ const CupChip: React.FC<{
         disabled={!onClick}
         onClick={onClick}
         style={colorStyle}
-        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
+        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 bg-white px-1.5 py-1 text-left shadow-xs ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
           lifted ? "shadow-2xl" : ""
         }`}
       >
@@ -209,7 +176,7 @@ const CupChip: React.FC<{
           <span
             className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
           >
-            {cupLabel(cup, limitedLabel)}
+            {cup.beanName}
           </span>
           <span
             className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}

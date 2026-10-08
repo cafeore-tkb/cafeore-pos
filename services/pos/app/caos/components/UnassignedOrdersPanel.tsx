@@ -276,6 +276,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   </h3>
                   <BeanBadge
                     beans={order.beans}
+                    typeName={order.typeName}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
                   {nominationText(order) && (
