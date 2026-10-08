@@ -1,6 +1,6 @@
 import {
   type CaosLane,
-  caosLaneOrdinal,
+  dripperLabel,
   isSeniorName,
   laneCandidates,
 } from "@cafeore/common";
@@ -54,7 +54,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
 }) => {
   const { feed, feedKey, error, loading } = shiftFeed;
   const [typed, setTyped] = useState("");
-  const ordinal = caosLaneOrdinal(lane.dripper);
+  const ordinal = dripperLabel(lane.dripper);
   const candidates = useMemo(
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
     [feed, lane.dripper, nowMs, lane.name],
@@ -201,7 +201,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                   >
                     <ArrowLeftRight className="h-4 w-4 shrink-0 text-slate-500" />
                     <span className="shrink-0 font-black font-mono">
-                      {caosLaneOrdinal(other.dripper)}
+                      {dripperLabel(other.dripper)}
                     </span>
                     <PersonName lane={other} />
                   </button>

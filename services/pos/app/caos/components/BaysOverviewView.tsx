@@ -3,8 +3,8 @@ import type React from "react";
 import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista } from "../types";
 
-// ドリッパーのタブ：6 列（1st〜6th）の今の抽出と待ちの件数。
-// 列の担当者は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
+// ドリッパーのタブ：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数。
+// 担当者はサーバーが持つ（lanes/ の LaneName。交代の候補は sohosai-shift の予定から出す）。
 
 interface BaysOverviewViewProps {
   baristas: Barista[];
