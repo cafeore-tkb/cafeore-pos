@@ -39,9 +39,6 @@ export interface OrderTicket {
   startTimeSec?: number; // sim time in seconds when this drip starts
   endTimeSec?: number; // sim time in seconds when this drip ends
   completedAtSec?: number; // for historical completed drip
-  isRebrew?: boolean; // emergency remake linked to an original cup
-  rebrewOfTicketUid?: string;
-  isInterrupted?: boolean; // original drip stopped because a remake was required
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
@@ -70,8 +67,6 @@ export interface UnassignedOrder {
   recommendedBaristas: string;
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
-  isRebrew?: boolean;
-  rebrewOfTicketUid?: string;
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 

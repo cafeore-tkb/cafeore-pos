@@ -16,11 +16,6 @@ interface DripperOrderCardProps {
 
 const cardTheme = (ticket: OrderTicket) => {
   const menu = MENU_PRESENTATION[ticket.beanCode];
-  if (ticket.isRebrew)
-    return {
-      card: "border-red-300 bg-red-50 text-slate-900",
-      id: "text-red-700",
-    };
   if (ticket.preferredBaristaId) {
     return {
       card: "border-violet-300 bg-violet-50 text-slate-900",

@@ -645,31 +645,23 @@
   "CaosCardCup": {
     "type": "object",
     "description": "カードの中の 1 杯。商品・注文番号・指名は注文（/api/ws/orders の orders）のカップから引く",
-    "required": ["id", "emergency_at"],
+    "required": ["id"],
     "properties": {
       "id": {
         "type": "string",
         "format": "uuid",
         "description": "注文のカップの ID"
-      },
-      "emergency_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true,
-        "description": "緊急（入れ直し）にした時刻"
       }
     }
   },
   "CaosCard": {
     "type": "object",
-    "description": "CaOS の盤面のカード。1 回のドリップ（最大 2 杯）が 1 枚。\n未割当のカードは保存せず、まだカードに入っていないカップから組み立てる（id は null。cups の ID の組で指す）。\n緊急のカード（入れ直し）は emergency が true で、未割当でも待機でもいちばん上に並ぶ。\n",
+    "description": "CaOS の盤面のカード。1 回のドリップ（最大 2 杯）が 1 枚。\n未割当のカードは保存せず、まだカードに入っていないカップから組み立てる（id は null。cups の ID の組で指す）。\n",
     "required": [
       "id",
       "status",
       "lane",
       "position",
-      "emergency",
-      "interrupted",
       "started_at",
       "finished_at",
       "cups"
@@ -695,14 +687,6 @@
         "type": "number",
         "format": "double",
         "description": "並び。待機は列の中の順番（小さいほど先。ふつうは注文番号）、未割当は表示の順（0 から）"
-      },
-      "emergency": {
-        "type": "boolean",
-        "description": "緊急（入れ直し）のカード"
-      },
-      "interrupted": {
-        "type": "boolean",
-        "description": "緊急のために途中でやめた抽出"
       },
       "started_at": {
         "type": "string",
@@ -742,19 +726,18 @@
   },
   "CaosOpName": {
     "type": "string",
-    "enum": ["assign", "unassign", "next", "merge", "emergency", "undo"],
+    "enum": ["assign", "unassign", "next", "merge", "undo"],
     "x-enum-varnames": [
       "CaosOpNameAssign",
       "CaosOpNameUnassign",
       "CaosOpNameNext",
       "CaosOpNameMerge",
-      "CaosOpNameEmergency",
       "CaosOpNameUndo"
     ]
   },
   "CaosOp": {
     "type": "object",
-    "description": "盤面への操作。name で選び、使うものだけを送る。\n- assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり。緊急とふつうはそれぞれの中で数える）。無ければ注文番号の順。列が空いていればそのまま抽出を始める\n- unassign：待機の card を未割当に戻す\n- next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる\n- merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる\n- emergency：抽出中か終了のカードのカップ（cup_ids）を緊急にする。interrupt なら抽出中のカードを中断し、そのカードのカップを全部緊急にする\n- undo：op_id の操作を 1 つ戻す\n",
+    "description": "盤面への操作。name で選び、使うものだけを送る。\n- assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり）。無ければ注文番号の順。列が空いていればそのまま抽出を始める\n- unassign：待機の card を未割当に戻す\n- next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる\n- merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる\n- undo：op_id の操作を 1 つ戻す\n",
     "required": ["name"],
     "properties": {
       "name": {
@@ -774,16 +757,6 @@
       "index": {
         "type": "integer",
         "minimum": 0
-      },
-      "cup_ids": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "format": "uuid"
-        }
-      },
-      "interrupt": {
-        "type": "boolean"
       },
       "op_id": {
         "type": "string",

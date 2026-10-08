@@ -10,7 +10,7 @@ import { API_BASE_URL } from "./item";
 export type CaosCard = components["schemas"]["CaosCard"];
 /** カードの指し方（配られたカードの id と cups の ID をそのまま送る） */
 export type CaosCardRef = components["schemas"]["CaosCardRef"];
-/** 盤面への操作（割当・未割当に戻す・次へ・統合・緊急・1つ戻す） */
+/** 盤面への操作（割当・未割当に戻す・次へ・統合・1つ戻す） */
 export type CaosOp = components["schemas"]["CaosOp"];
 export type CaosOpResult = components["schemas"]["CaosOpResult"];
 

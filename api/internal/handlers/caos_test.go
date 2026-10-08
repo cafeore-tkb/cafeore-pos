@@ -237,31 +237,6 @@ func TestCaosOpsOnDB(t *testing.T) {
 		t.Fatalf("brewing = %+v, want order 2", brewing)
 	}
 
-	// 緊急：カップに印を付けるだけ。未割当のいちばん上に出る
-	emergency := f.mustOp(t, map[string]any{"name": "emergency", "cup_ids": []string{o1.OrderCups[0].ID.String()}})
-	cards = f.board(t)
-	if !cards[0].Emergency || cards[0].Status != caos.StatusUnassigned || cards[0].Cups[0].ID != o1.OrderCups[0].ID {
-		t.Fatalf("first card = %+v, want the emergency card", cards[0])
-	}
-	if cup := f.cup(t, o1.OrderCups[0].ID); cup.EmergencyAt == nil || cup.EmergencyDripID != nil {
-		t.Fatalf("cup = %+v, want emergency mark only", cup)
-	}
-	// 2 回目は何もしない（op_id なし）
-	if id := f.mustOp(t, map[string]any{"name": "emergency", "cup_ids": []string{o1.OrderCups[0].ID.String()}}); id != nil {
-		t.Fatal("second emergency changed the board")
-	}
-	// 入れ直しのカードを割り当てて「次へ」。カップはもう準備完了なのでそのまま
-	readyAt := f.cup(t, o1.OrderCups[0].ID).ReadyAt
-	f.mustOp(t, map[string]any{"name": "assign", "card": ref(cards[0]), "lane": 2})
-	f.mustOp(t, map[string]any{"name": "next", "lane": 2})
-	if cup := f.cup(t, o1.OrderCups[0].ID); cup.EmergencyDripID == nil || !cup.ReadyAt.Equal(*readyAt) {
-		t.Fatalf("rebrewed cup = %+v", cup)
-	}
-	// 緊急の印は、入れ直しのカードを割り当てたあとなので戻せない
-	if code, _ := f.op(t, map[string]any{"name": "undo", "op_id": emergency.String()}); code != http.StatusUnprocessableEntity {
-		t.Fatalf("undo emergency = %d, want 422", code)
-	}
-
 	// 注文を消すと、カップが無くなったカードは盤面から除く（読むときに判断する）
 	if w := callWithParams(t, f.orders.DeleteOrder, http.MethodDelete, "", gin.Params{{Key: "id", Value: o2.ID.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("DELETE order = %d", w.Code)

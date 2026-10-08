@@ -14,7 +14,6 @@ interface TicketCardProps {
   onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket) => void;
   widthPx?: number;
 }
 
@@ -28,7 +27,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseAction,
-  onRequestRebrew,
   widthPx,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -48,7 +46,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   if (ticket.beanCode === "MILK") leftBorderColor = "border-l-[#8b5cf6]";
 
   const isCompleted = ticket.status === "completed";
-  const isRebrew = Boolean(ticket.isRebrew);
   const isNamed = Boolean(ticket.preferredBaristaId);
   const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
   const isActionOpen =
@@ -104,10 +101,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           suppressNextClick.current = false;
           return;
         }
-        if (ticket.status !== "scheduled") {
-          onRequestRebrew(ticket);
-          return;
-        }
+        if (ticket.status !== "scheduled") return;
         if (isActionOpen) {
           onReturnToUnassigned(ticket);
           onCloseAction();
@@ -171,13 +165,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           : {}),
       }}
       className={`group relative h-full ${dragOffset ? `${isActionOpen ? "overflow-visible" : "overflow-hidden"} z-[120] scale-[1.03] opacity-90 shadow-2xl ring-2 ring-blue-500` : isActionOpen ? "z-[80] overflow-visible" : "overflow-hidden"} min-w-[135px] shrink-0 rounded-lg border-2 border-l-[5px] ${leftBorderColor} flex select-none flex-col justify-center px-2 py-1.5 transition-[box-shadow,border-color] ${ticket.status === "scheduled" ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-default touch-manipulation"} ${
-        isRebrew
-          ? `border-red-300 bg-red-50 text-slate-900 shadow-xs ${isCompleted ? "opacity-55 hover:opacity-75" : "hover:border-red-500 hover:shadow-md"}`
-          : isCompleted
-            ? "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70"
-            : isNamed
-              ? "border-violet-300 bg-violet-50 shadow-xs hover:border-violet-400 hover:shadow-md"
-              : "border-[#cbd5e1] bg-white shadow-xs hover:border-slate-400 hover:shadow-md"
+        isCompleted
+          ? "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70"
+          : isNamed
+            ? "border-violet-300 bg-violet-50 shadow-xs hover:border-violet-400 hover:shadow-md"
+            : "border-[#cbd5e1] bg-white shadow-xs hover:border-slate-400 hover:shadow-md"
       } ${
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
@@ -261,18 +253,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             {/* Large Order Number Label */}
             <span
               className={`font-black font-mono text-[22px] leading-none tracking-tight ${
-                isRebrew
-                  ? "text-red-700"
-                  : isOrderSelected
-                    ? "font-black text-amber-900"
-                    : isNamed
-                      ? "text-violet-700"
-                      : isCompleted
-                        ? "text-slate-500"
-                        : ticket.totalItemsInOrder &&
-                            ticket.totalItemsInOrder > 1
-                          ? "text-slate-950"
-                          : "text-slate-600"
+                isOrderSelected
+                  ? "font-black text-amber-900"
+                  : isNamed
+                    ? "text-violet-700"
+                    : isCompleted
+                      ? "text-slate-500"
+                      : ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1
+                        ? "text-slate-950"
+                        : "text-slate-600"
               }`}
             >
               {ticket.id}
@@ -288,23 +277,13 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 指名
               </span>
             )}
-            {isRebrew && (
-              <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-                {ticket.status === "brewing" ? "入れ直し中" : "入れ直し"}
-              </span>
-            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {isCompleted && !ticket.isInterrupted && (
+            {isCompleted && (
               <span className="flex items-center gap-0.5 rounded border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 font-bold text-[10px] text-emerald-800 leading-none">
                 <Check className="h-3 w-3" />
                 <span className="sr-only">完了</span>
-              </span>
-            )}
-            {ticket.isInterrupted && (
-              <span className="rounded border border-red-300 bg-red-50 px-1.5 py-0.5 font-black text-[10px] text-red-700">
-                中断
               </span>
             )}
           </div>

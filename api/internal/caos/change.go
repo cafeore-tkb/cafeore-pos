@@ -11,33 +11,29 @@ import (
 
 // CupMarks はカップのうち、操作で変わりうるもの（と、戻すときに確かめる提供済み）。
 type CupMarks struct {
-	DripID          *uuid.UUID `json:"drip_id"`
-	EmergencyAt     *time.Time `json:"emergency_at"`
-	EmergencyDripID *uuid.UUID `json:"emergency_drip_id"`
-	ReadyAt         *time.Time `json:"ready_at"`
-	ServedAt        *time.Time `json:"served_at"`
+	DripID   *uuid.UUID `json:"drip_id"`
+	ReadyAt  *time.Time `json:"ready_at"`
+	ServedAt *time.Time `json:"served_at"`
 }
 
 // Marks はカップの今の CupMarks。
 func (c *Cup) Marks() CupMarks {
-	return CupMarks{DripID: c.DripID, EmergencyAt: c.EmergencyAt, EmergencyDripID: c.EmergencyDripID, ReadyAt: c.ReadyAt, ServedAt: c.ServedAt}
+	return CupMarks{DripID: c.DripID, ReadyAt: c.ReadyAt, ServedAt: c.ServedAt}
 }
 
 // SetMarks はカップに CupMarks を書く。
 func (c *Cup) SetMarks(m CupMarks) {
-	c.DripID, c.EmergencyAt, c.EmergencyDripID, c.ReadyAt, c.ServedAt = m.DripID, m.EmergencyAt, m.EmergencyDripID, m.ReadyAt, m.ServedAt
+	c.DripID, c.ReadyAt, c.ServedAt = m.DripID, m.ReadyAt, m.ServedAt
 }
 
 // Equal は同じ中身か（時刻は Equal で比べる）。
 func (m CupMarks) Equal(o CupMarks) bool {
-	return sameID(m.DripID, o.DripID) && sameTime(m.EmergencyAt, o.EmergencyAt) && sameID(m.EmergencyDripID, o.EmergencyDripID) &&
-		sameTime(m.ReadyAt, o.ReadyAt) && sameTime(m.ServedAt, o.ServedAt)
+	return sameID(m.DripID, o.DripID) && sameTime(m.ReadyAt, o.ReadyAt) && sameTime(m.ServedAt, o.ServedAt)
 }
 
 // Equal は同じ中身か（時刻は Equal で比べる）。
 func (d Drip) Equal(o Drip) bool {
 	return d.ID == o.ID && d.Lane == o.Lane && d.Position == o.Position && d.Status == o.Status &&
-		d.Emergency == o.Emergency && d.Interrupted == o.Interrupted &&
 		sameTime(d.StartedAt, o.StartedAt) && sameTime(d.FinishedAt, o.FinishedAt) && d.CreatedAt.Equal(o.CreatedAt)
 }
 

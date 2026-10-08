@@ -16,7 +16,6 @@ interface DispatchBoardProps {
   onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   simTimeSec: number;
   timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
@@ -42,7 +41,6 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   simTimeSec,
   timelineCommand,
@@ -315,7 +313,6 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   onMoveTicket={onMoveTicket}
                   onReturnToUnassigned={onReturnToUnassigned}
                   onCloseTicketAction={onCloseTicketAction}
-                  onRequestRebrew={onRequestRebrew}
                   onOpenEmptySlot={onOpenEmptySlot}
                   timelineStartSec={timelineStartSec}
                   pixelsPerSec={PIXELS_PER_SEC}

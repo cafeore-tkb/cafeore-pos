@@ -226,20 +226,16 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     transform: `translate3d(${-dragVisual.x}px, ${-dragVisual.y}px, 0)`,
                   }
                 : undefined;
-            const cardStyle = order.isRebrew
-              ? "bg-red-50 border-red-300 text-slate-900"
-              : order.preferredBaristaId
-                ? "bg-violet-50 border-violet-300 text-slate-900"
-                : `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`;
-            const idColor = order.isRebrew
-              ? "text-red-700"
-              : order.preferredBaristaId
-                ? "text-violet-700"
-                : menu.family === "premium"
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+            const cardStyle = order.preferredBaristaId
+              ? "bg-violet-50 border-violet-300 text-slate-900"
+              : `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`;
+            const idColor = order.preferredBaristaId
+              ? "text-violet-700"
+              : menu.family === "premium"
+                ? "text-white"
+                : order.totalItemsInOrder && order.totalItemsInOrder > 1
+                  ? "text-slate-950"
+                  : "text-slate-600";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -249,11 +245,6 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     >
                       {order.id}
                     </span>
-                    {order.isRebrew && (
-                      <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-                        入れ直し
-                      </span>
-                    )}
                     {order.totalItemsInOrder && order.totalItemsInOrder > 1 && (
                       <span className="whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[11px] text-slate-700">
                         {order.itemIndex}/{order.totalItemsInOrder}・計
