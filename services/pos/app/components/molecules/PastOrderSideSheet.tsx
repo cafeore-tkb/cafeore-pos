@@ -1,5 +1,5 @@
 import type { OrderEntity, WithId } from "@cafeore/common";
-import { useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import {
   Sheet,
@@ -10,21 +10,15 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../ui/sheet";
-import { OrderInfoCard } from "./OrderInfoCard";
 
 type props = {
   orders: WithId<OrderEntity>[] | undefined;
-  cardUser: "cashier" | "master" | "serve";
   cardTiming: "present" | "past" | "all";
-  comment: (servedOrder: OrderEntity, descComment: string) => void;
+  // 注文カード。どう見せるかは呼ぶ側の画面が決める
+  renderCard: (order: WithId<OrderEntity>) => ReactNode;
 };
 
-export function PastOrderSideSheet({
-  orders,
-  cardUser,
-  cardTiming,
-  comment,
-}: props) {
+export function PastOrderSideSheet({ orders, cardTiming, renderCard }: props) {
   const ITEMS_PER_PAGE = 20;
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil((orders ? orders.length : 0) / ITEMS_PER_PAGE);
@@ -62,17 +56,9 @@ export function PastOrderSideSheet({
         </SheetHeader>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
-          {currentPageOrders?.map((order) => {
-            return (
-              <OrderInfoCard
-                key={order.id}
-                order={order}
-                timing={cardTiming}
-                user={cardUser}
-                comment={comment}
-              />
-            );
-          })}
+          {currentPageOrders?.map((order) => (
+            <Fragment key={order.id}>{renderCard(order)}</Fragment>
+          ))}
         </div>
 
         {/* ページネーション */}

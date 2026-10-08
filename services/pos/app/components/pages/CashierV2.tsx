@@ -26,8 +26,10 @@ import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
+import { InputComment } from "../molecules/InputComment";
 import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
+import { OrderInfoCard, WaitingLabel } from "../molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
 import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
@@ -270,9 +272,18 @@ const CashierV2 = ({
             <PrinterStatus status={printer.status} />
             <PastOrderSideSheet
               orders={servedOrders}
-              cardUser={"cashier"}
               cardTiming={"all"}
-              comment={addComment}
+              renderCard={(order) => (
+                <OrderInfoCard
+                  order={order}
+                  timing="all"
+                  cups={order.getItems()}
+                  colorScreen="cashier_order"
+                >
+                  <InputComment order={order} addComment={addComment} />
+                  <WaitingLabel order={order} />
+                </OrderInfoCard>
+              )}
             />
           </div>
         </div>

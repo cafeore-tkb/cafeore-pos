@@ -2,6 +2,7 @@ import {
   MasterStateEntity,
   type OrderEntity,
   type OrderStatType,
+  type WithId,
   masterRepository,
   orderRepository,
   orderStatTypes,
@@ -15,8 +16,13 @@ import {
   useSubmit,
 } from "react-router";
 import { z } from "zod";
+import { useCupActions } from "~/components/functional/useCupActions";
 import { useOrderStat } from "~/components/functional/useOrderStat";
-import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import { InputComment } from "~/components/molecules/InputComment";
+import {
+  OrderInfoCard,
+  WaitingLabel,
+} from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
@@ -30,19 +36,6 @@ export default function FielsOfMaster() {
   const { orders } = useOrdersWSContext();
   const submit = useSubmit();
   const isOperational = useOrderStat();
-
-  const mutateOrder = async (servedOrder: OrderEntity, descComment: string) => {
-    if (!servedOrder.id) return;
-
-    submit(
-      {
-        intent: "addComment",
-        servedOrderId: servedOrder.id,
-        descComment,
-      },
-      { method: "POST" },
-    );
-  };
 
   const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
@@ -83,9 +76,10 @@ export default function FielsOfMaster() {
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
             orders={orders}
-            cardUser={"master"}
             cardTiming={"past"}
-            comment={mutateOrder}
+            renderCard={(order) => (
+              <MasterOrderCard order={order} timing="past" />
+            )}
           />
         </div>
       </div>
@@ -94,13 +88,7 @@ export default function FielsOfMaster() {
         {orders?.map((order) => {
           return (
             order.servedAt === null && (
-              <OrderInfoCard
-                key={order.id}
-                order={order}
-                timing={"present"}
-                user={"master"}
-                comment={mutateOrder}
-              />
+              <MasterOrderCard key={order.id} order={order} timing="present" />
             )
           );
         })}
@@ -108,6 +96,51 @@ export default function FielsOfMaster() {
     </div>
   );
 }
+
+// マスター画面の注文カード。カップを1杯ずつ出し、押すと準備完了を切り替える
+const MasterOrderCard = ({
+  order,
+  timing,
+}: { order: WithId<OrderEntity>; timing: "present" | "past" }) => {
+  const submit = useSubmit();
+  const { cups, press, readyCup } = useCupActions(order, timing === "present");
+  const calling = order.status === "calling";
+  return (
+    <OrderInfoCard
+      order={order}
+      timing={timing}
+      colorScreen="master"
+      grayed={calling}
+      cups={cups.map((cup) => ({
+        ...cup,
+        // 呼び出し中の注文のカップと、準備完了・提供済みのカップは灰色にする
+        gray: calling || cup.shown !== "preparing",
+        served: cup.shown === "served" && cup.partlyServed,
+        // 提供済みのカップを押すと準備中まで戻ってしまうので押せなくする
+        onClick:
+          cup.shown === "served"
+            ? undefined
+            : press(cup.cupId, (cupId) =>
+                readyCup(
+                  cupId,
+                  cup.shown === "preparing" ? "ready" : "preparing",
+                ),
+              ),
+      }))}
+    >
+      <InputComment
+        order={order}
+        addComment={(order, descComment) =>
+          submit(
+            { intent: "addComment", servedOrderId: order.id, descComment },
+            { method: "POST" },
+          )
+        }
+      />
+      <WaitingLabel order={order} />
+    </OrderInfoCard>
+  );
+};
 
 export const clientAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();

@@ -1,7 +1,10 @@
 import type { OrderEntity, WithId } from "@cafeore/common";
 import dayjs from "dayjs";
 import { useState } from "react";
-import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import {
+  OrderInfoCard,
+  WaitingLabel,
+} from "~/components/molecules/OrderInfoCard";
 import {
   Table,
   TableBody,
@@ -88,10 +91,11 @@ export function OrderList({ orders }: OrderStatusListProps) {
         {detailOrder && (
           <OrderInfoCard
             order={detailOrder}
-            user={"dashboard"}
             timing="all"
-            comment={() => {}}
-          />
+            cups={detailOrder.getItems()}
+          >
+            <WaitingLabel order={detailOrder} />
+          </OrderInfoCard>
         )}
       </div>
     </>
