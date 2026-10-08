@@ -17,23 +17,16 @@ describe("[unit] itemTypeSchema", () => {
   });
 
   test("API の値はそのまま使う", () => {
+    // どの項目も既定値と違う値にして、既定値で上書きされないことを見る（組み合わせの検査は API の仕事）
     const itemType = {
       id: "1",
-      name: "limited",
-      display_name: "限定",
-      makes_cup: true,
-      needs_brew: true,
+      name: "x",
+      display_name: "x",
+      makes_cup: false,
+      needs_brew: false,
       senior_only: true,
-      iced_brew: false,
-    };
-    expect(itemTypeSchema.parse(itemType)).toEqual(itemType);
-    const iced = {
-      ...itemType,
-      name: "ice",
-      display_name: "アイス",
-      senior_only: false,
       iced_brew: true,
     };
-    expect(itemTypeSchema.parse(iced)).toEqual(iced);
+    expect(itemTypeSchema.parse(itemType)).toEqual(itemType);
   });
 });

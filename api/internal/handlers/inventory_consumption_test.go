@@ -1,10 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -222,18 +223,11 @@ func (e *inventoryEnv) expectResources(label string, orderID uuid.UUID, want ...
 	for i, r := range want {
 		wantIDs[i] = r.ID
 	}
-	less := func(ids []uuid.UUID) func(i, j int) bool {
-		return func(i, j int) bool { return ids[i].String() < ids[j].String() }
-	}
-	sort.Slice(got, less(got))
-	sort.Slice(wantIDs, less(wantIDs))
-	if len(got) != len(wantIDs) {
+	byBytes := func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) }
+	slices.SortFunc(got, byBytes)
+	slices.SortFunc(wantIDs, byBytes)
+	if !slices.Equal(got, wantIDs) {
 		e.t.Fatalf("%s: resources %v, want %v", label, got, wantIDs)
-	}
-	for i := range got {
-		if got[i] != wantIDs[i] {
-			e.t.Fatalf("%s: resources %v, want %v", label, got, wantIDs)
-		}
 	}
 }
 
