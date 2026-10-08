@@ -20,7 +20,11 @@ import {
 } from "./components/ControlWorkspace";
 import { LaneChangeDialog } from "./components/LaneChangeDialog";
 import { LaneConfirmDialog } from "./components/LaneConfirmDialog";
-import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
+import {
+  type RebrewDecision,
+  RebrewPanel,
+  rebrewTargetQueue,
+} from "./components/RebrewPanel";
 import { ShiftFeedSettings } from "./components/ShiftFeedSettings";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
@@ -503,9 +507,13 @@ export default function App() {
       rejectLimited(ticket, decision.targetBayId)
     )
       return;
-    const targetQueue =
+    // 差し込み位置はパネルと同じ並び（中断するなら元のカードを除いた並び）で数える
+    const targetQueue = rebrewTargetQueue(
       boardBaristas.find((barista) => barista.id === decision.targetBayId)
-        ?.queue || [];
+        ?.queue || [],
+      ticket,
+      decision.interruptCurrent,
+    );
     void runOp(`${ticket.id}の入れ直し`, {
       name: "rebrew",
       source_id: ticket.ticketUid,
@@ -784,6 +792,8 @@ export default function App() {
 
       {rebrewSource && rebrewTicket && (
         <RebrewPanel
+          // 別のカードを開き直したら、選んでいた杯数・列・位置を持ち越さない
+          key={rebrewSource.ticketKey}
           ticket={rebrewTicket}
           sourceBayId={rebrewSource.bayId}
           baristas={boardBaristas}
