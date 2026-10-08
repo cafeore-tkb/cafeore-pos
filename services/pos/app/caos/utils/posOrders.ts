@@ -14,11 +14,3 @@ export const posBeanCode = (type: string): BeanCode => {
   if (type === "limited") return "SP";
   return "OTHER";
 };
-
-// cafeore-pos の指名は自由記述なので、番号（1〜6）のときだけ枠を固定する。
-export const nominatedBayId = (assignee: string) => {
-  const bayNumber = Number(assignee.trim().normalize("NFKC"));
-  if (Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= 6)
-    return bayNumber;
-  return undefined;
-};

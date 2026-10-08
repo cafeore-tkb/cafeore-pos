@@ -1,4 +1,6 @@
 import {
+  buildCaosCards,
+  caosDay,
   formatClockOfDay,
   startOfJstDay,
   useColorSettings,
@@ -8,13 +10,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ControlViewA } from "./components/ControlViewA";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { type PosConnectionStatus, usePosOrders } from "./hooks/usePosOrders";
-import { buildCupCatalog, cardsToBoard } from "./live/board";
+import { cardsToBoard } from "./live/board";
 import { makeLaneBaristas } from "./utils/lanes";
 import { queueWaitSeconds } from "./utils/orderQueue";
 
-// 閲覧だけの管制盤（/master-sheet/view）。共有の盤面（カードと注文）を POS の共有の WebSocket で受け取り、
-// 管制盤 A のタイムラインに流すだけで、POST /api/caos/ops は送らない。カードを触っても何も起きない。
-// 盤面の組み立て（日本時間の当日の起点・予定時刻・カードの色・豆）は操作の画面（App.tsx）と同じものを使う。
+// 閲覧だけの管制盤（/master-sheet/view）。注文を POS の共有の WebSocket で受け取り、今日（日本時間）のカードを
+// 組み立てて管制盤 A のタイムラインに流すだけで、カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// カードを触っても何も起きない。
+// 盤面の組み立て（注文の一覧からのカード・日本時間の当日の起点・予定時刻・カードの色・豆）は操作の画面（App.tsx）と同じものを使う。
 
 const STATUS_LABEL: Record<PosConnectionStatus, string> = {
   off: "未接続",
@@ -37,8 +40,12 @@ export default function ReadOnlyBoard() {
     return () => window.clearInterval(clock);
   }, []);
 
-  const { orders, cards, status } = usePosOrders(true);
-  const cupCatalog = useMemo(() => buildCupCatalog(orders), [orders]);
+  const { orders, status } = usePosOrders(true);
+  const today = caosDay(now);
+  const cards = useMemo(
+    () => buildCaosCards(orders ?? [], today),
+    [orders, today],
+  );
   // カードの色をマスターの画面と同じにするための色の設定
   const { colorSettings } = useColorSettings();
   // カードの豆（POS の在庫の「商品 → 豆」。操作の画面と同じ）
@@ -47,15 +54,14 @@ export default function ReadOnlyBoard() {
   const board = useMemo(
     () =>
       cardsToBoard(
-        cards ?? [],
-        cupCatalog,
+        cards,
         baristas,
         nowSec,
         dayStartMs,
         colorSettings,
         beanIndex,
       ),
-    [cards, cupCatalog, baristas, nowSec, dayStartMs, colorSettings, beanIndex],
+    [cards, baristas, nowSec, dayStartMs, colorSettings, beanIndex],
   );
   const nextAvailable = [...board.baristas]
     .map((barista) => ({

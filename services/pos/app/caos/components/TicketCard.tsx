@@ -15,7 +15,7 @@ interface TicketCardProps {
   onOpenDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
   currentBayId: number;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
+  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseAction: () => void;
   widthPx?: number;
@@ -161,7 +161,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             (!ticket.preferredBaristaId ||
               ticket.preferredBaristaId === targetBay)
           ) {
-            onMoveTicket(ticket, targetBay);
+            // 同じドリッパーの「先頭」に落としたら、待機の先頭へ
+            onMoveTicket(ticket, targetBay, targetBay === currentBayId);
             onCloseAction();
           }
         }
@@ -199,12 +200,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       {isActionOpen && (
         <>
           {[1, 2, 3].map((bayId, index) => {
-            const disabled =
-              bayId === currentBayId ||
-              Boolean(
-                ticket.preferredBaristaId &&
-                  ticket.preferredBaristaId !== bayId,
-              );
+            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
+            const disabled = Boolean(
+              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
+            );
             return (
               <button
                 key={bayId}
@@ -213,7 +212,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 disabled={disabled}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMoveTicket(ticket, bayId);
+                  onMoveTicket(ticket, bayId, bayId === currentBayId);
                   onCloseAction();
                 }}
                 className="-top-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
@@ -223,17 +222,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   ...padDragStyle,
                 }}
               >
-                {bayId}
+                {bayId === currentBayId ? "先頭" : bayId}
               </button>
             );
           })}
           {[4, 5, 6].map((bayId, index) => {
-            const disabled =
-              bayId === currentBayId ||
-              Boolean(
-                ticket.preferredBaristaId &&
-                  ticket.preferredBaristaId !== bayId,
-              );
+            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
+            const disabled = Boolean(
+              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
+            );
             return (
               <button
                 key={bayId}
@@ -242,7 +239,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 disabled={disabled}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMoveTicket(ticket, bayId);
+                  onMoveTicket(ticket, bayId, bayId === currentBayId);
                   onCloseAction();
                 }}
                 className="-bottom-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
@@ -252,7 +249,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   ...padDragStyle,
                 }}
               >
-                {bayId}
+                {bayId === currentBayId ? "先頭" : bayId}
               </button>
             );
           })}

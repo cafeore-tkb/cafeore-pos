@@ -1,45 +1,72 @@
 package handlers
 
 import (
+	"cmp"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/models"
 )
 
-// CaOS（ドリップ管制）の盤面の読み書き・API・配信。盤面の決まり（組み立て・操作）は caos パッケージ（DB を使わない）にある。
+// CaOS（ドリップ管制）の書き込み。盤面は注文のカップ（order_cups）の列で持つ（models.OrderCup の Dripper・DripperPosition・
+// DripID・BrewStartedAt・BrewFinishedAt）。カードの表は持たず、画面は注文の一覧からカードを組み立てる。
 //
-//   - 表：caos_drips（カードの情報だけ。models.CaosDrip）と caos_ops（操作の記録。models.CaosOpRecord）。
-//     カードの中身はカップ（order_cups の drip_id）が持つ
-//   - 注文の作成・編集・削除では CaOS のために何も書かない。盤面は読むたびに今のカップから組み立てる（caos.Board.Normalize・Cards）
-//   - 操作（POST /api/caos/ops）は、その日の advisory lock で 1 件ずつ行い、カップを書くときは注文の行をロックしてから
-//     （注文の編集・カップの準備完了と同じ順番）、読んだときから変わっていないかを確かめる。変わっていたら最初からやり直す
-//   - 配信：/api/ws/orders の {"type":"drips"}。操作のたびと、注文が変わったとき（Hub.RequestBoard）に今日の盤面を全部配る。
-//     ほかのインスタンスへは DB の通知（caosBoardChangedChannel）で知らせる
+//   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
+//     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる
+//   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める
+//
+// どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。抽出中のカードを作る書き込みは、
+// そのドリッパーの advisory lock を注文の行より先に取り、1 つのドリッパーで抽出中が 1 枚かを順番に確かめる。
+// 書いたカップの注文は今の注文の配信（1 件ずつ）で全部の画面へ、ほかのインスタンスへは orders_changed で届く（publishOrder）。
 
-// 盤面が変わったことをインスタンス同士で知らせる DB の通知チャンネル。通知の中身は "<送ったインスタンスの ID>"
-const caosBoardChangedChannel = "caos_board_changed"
+const (
+	// ドリッパーの数。番号は 1〜caosDrippers
+	caosDrippers = 6
+	// 1 枚のカード（1 回のドリップ）で淹れる最大の杯数
+	caosMaxCups = 2
+	// 「次へ」が注文と重なって読み直す回数
+	caosAttempts = 3
+)
 
-// 注文と重なって書けなかったときに、最初からやり直す回数
-const caosAttempts = 3
+var (
+	// before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた）
+	errCaosConflict = errors.New("caos: cups changed")
+	jst             = time.FixedZone("JST", 9*60*60)
+)
 
-// 読んだあとに注文の側でカップが変わっていた（注文の編集・削除・カップの準備完了と重なった）
-var errCaosConflict = errors.New("caos: cups changed while applying the op")
+// 決まりに合わない書き込み。理由を画面にそのまま出す（422）
+type caosRuleError struct{ message string }
+
+func (e *caosRuleError) Error() string { return e.message }
+
+func caosRule(format string, args ...any) error {
+	return &caosRuleError{message: fmt.Sprintf(format, args...)}
+}
+
+// 楽観ロックで断る理由（409）
+type caosConflictError struct{ message string }
+
+func (e *caosConflictError) Error() string { return e.message }
+func (e *caosConflictError) Unwrap() error { return errCaosConflict }
+
+func caosConflict(message string) error { return &caosConflictError{message: message} }
 
 type CaosHandler struct {
 	db  *gorm.DB
 	hub *Hub
-	// 今の時刻（テストで差し替える）。盤面の日付と操作の時刻に使う
+	// 今の時刻（テストで差し替える）。今日の範囲と、抽出の開始・終了の時刻に使う（iPad の時計は使わない）
 	now func() time.Time
 }
 
@@ -47,327 +74,600 @@ func NewCaosHandler(db *gorm.DB, hub *Hub) *CaosHandler {
 	return &CaosHandler{db: db, hub: hub, now: time.Now}
 }
 
-// ---------------------------------------------------------------- 読む
-
-// 盤面のカップ 1 杯（注文番号・商品・指名と一緒に読む）。
-type caosCupRow struct {
-	ID       uuid.UUID
-	OrderID  uuid.UUID
-	OrderNo  int
-	Position int
-	ItemID   uuid.UUID
-	ItemName string
-	ItemType string
-	Assignee *string
-	ReadyAt  *time.Time
-	ServedAt *time.Time
-	DripID   *uuid.UUID
+// caosToday は今日（日本時間）の始まりと終わり。CaOS は作成日時がこの間の注文だけを見る。
+func caosToday(now time.Time) (time.Time, time.Time) {
+	t := now.In(jst)
+	start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, jst)
+	return start, start.AddDate(0, 0, 1)
 }
 
-// loadCaosBoard はその日の盤面（保存したカードと、その日の注文のカップ）を読む。
-// 販売終了（論理削除）した商品・種類のカップも読む。
-func loadCaosBoard(tx *gorm.DB, day string) (caos.Board, error) {
-	start, end, err := caos.DayRange(day)
-	if err != nil {
-		return caos.Board{}, err
-	}
-	var rows []caosCupRow
-	if err := tx.Raw(`
-		SELECT c.id, c.order_id, o.order_id AS order_no, c.position, c.item_id,
-			COALESCE(i.name, '') AS item_name, COALESCE(t.name, '') AS item_type, m.assignee,
-			c.ready_at, c.served_at, c.drip_id
-		FROM order_cups c
-		JOIN orders o ON o.id = c.order_id
-		LEFT JOIN order_menus m ON m.id = c.order_menu_id
-		LEFT JOIN items i ON i.id = c.item_id
-		LEFT JOIN item_types t ON t.id = i.item_type_id
-		WHERE o.created_at >= ? AND o.created_at < ?`, start, end).Scan(&rows).Error; err != nil {
-		return caos.Board{}, err
-	}
-	var drips []models.CaosDrip
-	if err := tx.Where("day = ?", day).Find(&drips).Error; err != nil {
-		return caos.Board{}, err
-	}
-	b := caos.Board{Cups: make([]caos.Cup, len(rows)), Drips: make([]caos.Drip, len(drips))}
-	for i, r := range rows {
-		var nominee *string
-		if r.Assignee != nil {
-			if s := strings.TrimSpace(*r.Assignee); s != "" {
-				nominee = &s
-			}
-		}
-		b.Cups[i] = caos.Cup{
-			ID: r.ID, OrderID: r.OrderID, OrderNo: r.OrderNo, Position: r.Position,
-			ItemID: r.ItemID, ItemName: r.ItemName, ItemType: r.ItemType, Nominee: nominee,
-			ReadyAt: r.ReadyAt, ServedAt: r.ServedAt,
-			DripID: r.DripID,
-		}
-	}
-	for i, d := range drips {
-		b.Drips[i] = caos.Drip{
-			ID: d.ID, Lane: d.Lane, Position: d.Position, Status: d.Status,
-			StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
-		}
-	}
-	return b, nil
+// ---------------------------------------------------------------- カップの値
+
+// caosState は CaOS がカップに書く値（カップの今の値）。
+type caosState struct {
+	Dripper         *int
+	DripperPosition *float64
+	DripID          *uuid.UUID
+	BrewStartedAt   *time.Time
+	BrewFinishedAt  *time.Time
 }
 
-// BoardMessage は今日の盤面を WSMessage にする（接続したときと、配り直すとき）。
-func (h *CaosHandler) BoardMessage() (WSMessage, error) {
-	b, err := loadCaosBoard(h.db, caos.Day(h.now()))
-	if err != nil {
-		return WSMessage{}, err
-	}
-	b.Normalize()
-	return WSMessage{Type: WSMessageTypeDrips, Drips: b.Cards()}, nil
+func cupCaosState(c *models.OrderCup) caosState {
+	return caosState{c.Dripper, c.DripperPosition, c.DripID, c.BrewStartedAt, c.BrewFinishedAt}
 }
 
-// ---------------------------------------------------------------- 書く
+func apiCaosState(s models.CaosCupState) caosState {
+	return caosState{s.Dripper, s.DripperPosition, apiDripID(s.DripId), msTime(s.BrewStartedAt), msTime(s.BrewFinishedAt)}
+}
 
-// saveCaosChange は盤面の変わったところを保存する。カップの準備完了が変わった注文を返す（画面へ配る）。
-//
-// カードの行は、1 つの列で抽出中が 1 枚の索引に書き換えの途中で引っかからないよう、変わった行をいったん消してから入れ直す。
-// カップは注文ごとに、注文の行をロックしてから今の値が ch.Before と同じかを確かめて書く（違えば errCaosConflict）。
-// 準備完了が変わったら、POS のカップの準備完了と同じく注文の状態をカップから決め直す（syncOrderWithCups）。
-func saveCaosChange(tx *gorm.DB, day string, ch caos.Change) ([]uuid.UUID, error) {
-	if len(ch.Drips) > 0 {
-		ids := make([]uuid.UUID, len(ch.Drips))
-		var rows []models.CaosDrip
-		for i, dc := range ch.Drips {
-			ids[i] = dc.ID
-			if d := dc.After; d != nil {
-				rows = append(rows, models.CaosDrip{
-					ID: d.ID, Day: day, Lane: d.Lane, Position: d.Position, Status: d.Status,
-					StartedAt: d.StartedAt, FinishedAt: d.FinishedAt, CreatedAt: d.CreatedAt,
-				})
-			}
+// apiCaosAfter は書く値（時刻は無い。始めるときの時刻は書くときにサーバーの今を入れる）。
+func apiCaosAfter(s models.CaosCupAfter) caosState {
+	return caosState{Dripper: s.Dripper, DripperPosition: s.DripperPosition, DripID: apiDripID(s.DripId)}
+}
+
+func apiDripID(id *openapi_types.UUID) *uuid.UUID {
+	if id == nil {
+		return nil
+	}
+	v := uuid.UUID(*id)
+	return &v
+}
+
+// 時刻はミリ秒までにそろえる（画面の Date はミリ秒までしか持たないので、送り返された before と比べられるように）
+func msTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	v := t.Truncate(time.Millisecond)
+	return &v
+}
+
+func ptrEqual[T comparable](a, b *T) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+func msEqual(a, b *time.Time) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && msTime(a).Equal(*msTime(b)))
+}
+
+func (s caosState) equal(o caosState) bool {
+	return ptrEqual(s.Dripper, o.Dripper) && ptrEqual(s.DripperPosition, o.DripperPosition) &&
+		ptrEqual(s.DripID, o.DripID) && msEqual(s.BrewStartedAt, o.BrewStartedAt) && msEqual(s.BrewFinishedAt, o.BrewFinishedAt)
+}
+
+// 抽出を始めた（抽出中か終わり）値か
+func (s caosState) started() bool { return s.BrewStartedAt != nil || s.BrewFinishedAt != nil }
+
+// validate は書く値の形を確かめる（400）。start は抽出を始めるか（after の start_brew）。
+func (s caosState) validate(start bool) error {
+	if s.Dripper == nil {
+		if s.DripperPosition != nil || start {
+			return errors.New("ドリッパーの無いカップに順番は書けず、抽出も始められません")
 		}
-		if err := tx.Where("id IN ?", ids).Delete(&models.CaosDrip{}).Error; err != nil {
-			return nil, err
-		}
-		if len(rows) > 0 {
-			if err := tx.Create(&rows).Error; err != nil {
-				return nil, err
-			}
+		return nil
+	}
+	if *s.Dripper < 1 || *s.Dripper > caosDrippers {
+		return fmt.Errorf("ドリッパーは 1〜%d です", caosDrippers)
+	}
+	if s.DripID == nil || s.DripperPosition == nil {
+		return errors.New("ドリッパーに置くカップには drip_id と dripper_position が要ります")
+	}
+	return nil
+}
+
+func (s caosState) updates() map[string]any {
+	return map[string]any{
+		"dripper":          s.Dripper,
+		"dripper_position": s.DripperPosition,
+		"drip_id":          s.DripID,
+		"brew_started_at":  s.BrewStartedAt,
+		"brew_finished_at": s.BrewFinishedAt,
+	}
+}
+
+// nominatedDripper は明細の指名（assignee）が 1〜6 の数字ならその番号。画面の nominatedDripper と同じ読み方
+// （前後の空白を落として NFKC で正規化し、数字だけのとき）。
+// CaOS6 で明細にドリッパーの番号（dripper）を足したら、そちらに替える。
+func nominatedDripper(assignee *string) (int, bool) {
+	if assignee == nil {
+		return 0, false
+	}
+	s := norm.NFKC.String(strings.TrimSpace(*assignee))
+	if s == "" || strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' }) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 || n > caosDrippers {
+		return 0, false
+	}
+	return n, true
+}
+
+// lockCaosDrippers は抽出中を作るドリッパーの advisory lock を番号の順に取る（注文の行より先に取る）。
+func lockCaosDrippers(tx *gorm.DB, drippers []int) error {
+	for _, d := range uniqueInts(drippers) {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "caos:dripper:"+strconv.Itoa(d)).Error; err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	// 注文の ID の順にロックする（ほかの操作と同じ順にして、待ち合いで止まらないようにする）
-	byOrder := map[uuid.UUID][]caos.CupChange{}
-	var orderIDs []uuid.UUID
-	for _, cc := range ch.Cups {
-		if _, ok := byOrder[cc.OrderID]; !ok {
-			orderIDs = append(orderIDs, cc.OrderID)
-		}
-		byOrder[cc.OrderID] = append(byOrder[cc.OrderID], cc)
-	}
-	slices.SortFunc(orderIDs, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
-	var readied []uuid.UUID
-	for _, orderID := range orderIDs {
-		order, err := lockOrderWith(tx, orderID)
+func uniqueInts(v []int) []int {
+	out := slices.Clone(v)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// lockCaosOrders は注文の行を ID の順にロックし、明細とカップを読む。今日の注文でなければ断る。
+func lockCaosOrders(tx *gorm.DB, orderIDs []uuid.UUID, start, end time.Time) (map[uuid.UUID]*models.Order, error) {
+	ids := slices.Clone(orderIDs)
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	ids = slices.Compact(ids)
+	orders := make(map[uuid.UUID]*models.Order, len(ids))
+	for _, id := range ids {
+		order, err := lockOrder(tx, id)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errCaosConflict
+			return nil, caosConflict("注文が消えました（ほかの端末で削除されたかもしれません）")
 		}
 		if err != nil {
 			return nil, err
 		}
-		before := order
-		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
-		readyChanged := false
-		for _, cc := range byOrder[orderID] {
-			cup := findOrderCup(&order, cc.ID)
-			if cup == nil || !cupMarks(cup).Equal(cc.Before) {
-				return nil, errCaosConflict
-			}
-			readyChanged = readyChanged || !timeEqual(cc.Before.ReadyAt, cc.After.ReadyAt)
-			cup.DripID, cup.ReadyAt, cup.ServedAt = cc.After.DripID, cc.After.ReadyAt, cc.After.ServedAt
-			if err := tx.Model(&models.OrderCup{}).Where("id = ?", cup.ID).Updates(map[string]any{
-				"drip_id":   cup.DripID,
-				"ready_at":  cup.ReadyAt,
-				"served_at": cup.ServedAt,
-			}).Error; err != nil {
-				return nil, err
-			}
+		if order.CreatedAt.Before(start) || !order.CreatedAt.Before(end) {
+			return nil, caosRule("今日の注文のカップだけ書けます")
 		}
-		if !readyChanged {
-			continue
-		}
-		syncOrderWithCups(&order)
-		// カップは上で書いたので、注文の状態だけを書く（saveOrderStatus はカップの変わっていない行を飛ばす）
-		before.OrderCups = order.OrderCups
-		if err := saveOrderStatus(tx, &before, &order); err != nil {
-			return nil, err
-		}
-		readied = append(readied, orderID)
+		orders[id] = &order
 	}
-	return readied, nil
+	return orders, nil
 }
 
-func cupMarks(c *models.OrderCup) caos.CupMarks {
-	return caos.CupMarks{DripID: c.DripID, ReadyAt: c.ReadyAt, ServedAt: c.ServedAt}
+// 抽出中のカードの数（そのドリッパーの今日の注文で、始めていてまだ終えておらず、準備完了でないカップが残っているもの）
+func countBrewing(tx *gorm.DB, dripper int, start, end time.Time) (int64, error) {
+	var n int64
+	err := tx.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT c.drip_id
+			FROM order_cups c JOIN orders o ON o.id = c.order_id
+			WHERE o.created_at >= ? AND o.created_at < ? AND c.dripper = ?
+				AND c.brew_started_at IS NOT NULL AND c.brew_finished_at IS NULL
+			GROUP BY c.drip_id
+			HAVING bool_or(c.ready_at IS NULL)
+		) AS brewing`, start, end, dripper).Scan(&n).Error
+	return n, err
 }
 
-// ---------------------------------------------------------------- 操作
+// ---------------------------------------------------------------- PUT /api/caos/cups
 
-// 操作の結果
-type caosApplied struct {
-	opID *uuid.UUID
-	// カップの準備完了が変わった注文
-	orders []uuid.UUID
-	// 盤面が変わったか（変わらなければ配らない）
-	changed bool
+type caosWrite struct {
+	cups          []uuid.UUID
+	before, after caosState
+	// 抽出を始める（after の brew_started_at に、書くときのサーバーの今を入れる）
+	start bool
 }
 
-// apply は今日の盤面に操作を 1 つ行う。全部を 1 つのトランザクションで行う：
-//  1. その日の advisory lock を取り、盤面を読み、注文の側で変わったこと（消えたカップ・マスターでの準備完了）をカードに写して保存する
-//  2. 操作（undo なら記録で戻す）を行い、変わったところを保存する
-//  3. 操作の記録（caos_ops）を残す
-func (h *CaosHandler) apply(op caos.Op, undoID uuid.UUID) (caosApplied, error) {
-	now := h.now().Truncate(time.Microsecond) // DB に保存される精度にそろえ、記録した値と読み直した値を比べられるようにする
-	day := caos.Day(now)
-	var res caosApplied
+func toCaosWrites(req models.CaosCupsWriteRequest) ([]caosWrite, error) {
+	if len(req.Writes) == 0 {
+		return nil, errors.New("writes が空です")
+	}
+	seen := map[uuid.UUID]bool{}
+	writes := make([]caosWrite, len(req.Writes))
+	for i, w := range req.Writes {
+		if len(w.CupIds) == 0 {
+			return nil, errors.New("cup_ids が空です")
+		}
+		out := caosWrite{before: apiCaosState(w.Before), after: apiCaosAfter(w.After), start: w.After.StartBrew}
+		if err := out.after.validate(out.start); err != nil {
+			return nil, err
+		}
+		for _, id := range w.CupIds {
+			if seen[uuid.UUID(id)] {
+				return nil, errors.New("同じカップを 2 回書いています")
+			}
+			seen[uuid.UUID(id)] = true
+			out.cups = append(out.cups, uuid.UUID(id))
+		}
+		writes[i] = out
+	}
+	return writes, nil
+}
+
+// writeCups は writes を 1 つのトランザクションで書く。書いた注文の ID を返す。
+// 抽出を始める書き込みの brew_started_at は、サーバーの今（ミリ秒まで）。
+func (h *CaosHandler) writeCups(writes []caosWrite) ([]uuid.UUID, error) {
+	now := h.now().Truncate(time.Millisecond)
+	start, end := caosToday(now)
+	var cupIDs []uuid.UUID
+	var brewing []int
+	for i, w := range writes {
+		cupIDs = append(cupIDs, w.cups...)
+		if w.start {
+			writes[i].after.BrewStartedAt = &now
+			brewing = append(brewing, *w.after.Dripper)
+		}
+	}
+	var orderIDs []uuid.UUID
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		res = caosApplied{}
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "caos:"+day).Error; err != nil {
+		if err := lockCaosDrippers(tx, brewing); err != nil {
 			return err
 		}
-		b, err := loadCaosBoard(tx, day)
+		// どの注文のカップか（ロックする注文を決めるだけ。値はロックしてから読む）
+		var rows []struct {
+			ID      uuid.UUID
+			OrderID uuid.UUID
+			Brew    bool
+		}
+		if err := tx.Raw(`
+			SELECT c.id, c.order_id, COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew
+			FROM order_cups c
+			LEFT JOIN items i ON i.id = c.item_id
+			LEFT JOIN item_types t ON t.id = i.item_type_id
+			WHERE c.id IN ?`, cupIDs).Scan(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) != len(cupIDs) {
+			return caosConflict("カップが消えました（注文が編集・削除されたかもしれません）")
+		}
+		needsBrew := make(map[uuid.UUID]bool, len(rows))
+		orderIDs = orderIDs[:0]
+		for _, r := range rows {
+			needsBrew[r.ID] = r.Brew
+			orderIDs = append(orderIDs, r.OrderID)
+		}
+		orders, err := lockCaosOrders(tx, orderIDs, start, end)
 		if err != nil {
 			return err
 		}
-		read := b.Clone()
-		b.Normalize()
-		if ch := caos.Diff(&read, &b); !ch.Empty() {
-			if _, err := saveCaosChange(tx, day, ch); err != nil {
-				return err
-			}
-			res.changed = true
+		orderIDs = orderIDs[:0]
+		for id := range orders {
+			orderIDs = append(orderIDs, id)
 		}
 
-		base := b.Clone()
-		var rec *models.CaosOpRecord
-		if op.Name == caos.OpUndo {
-			rec = &models.CaosOpRecord{}
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(rec, "id = ? AND day = ?", undoID, day).Error
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				return &caos.InvalidError{Message: "戻す操作が見つかりません"}
-			case err != nil:
-				return err
-			case rec.UndoneAt != nil:
-				return &caos.InvalidError{Message: "この操作はもう元に戻しています"}
+		touched := map[uuid.UUID]bool{}
+		for _, w := range writes {
+			for _, id := range w.cups {
+				order, cup := findCaosCup(orders, id)
+				if cup == nil {
+					return caosConflict("カップが消えました（注文が編集されたかもしれません）")
+				}
+				if !cupCaosState(cup).equal(w.before) {
+					return caosConflict("ほかの端末で先に変わりました。もう一度操作してください")
+				}
+				// 抽出中・終わりのカードは動かさない（時刻はサーバーが付けるので、書き直すと時刻が消える。終えるのは「次へ」）
+				if w.before.started() {
+					return caosRule("抽出中・終わりのカードは動かせません")
+				}
+				if (w.after.Dripper != nil || w.after.DripID != nil) && !needsBrew[id] {
+					return caosRule("抽出の要らないカップ（%s）はドリッパーに置けません", cupItemName(tx, cup))
+				}
+				if w.after.Dripper != nil {
+					if n, ok := nominatedDripper(menuAssignee(order, cup.OrderMenuID)); ok && n != *w.after.Dripper {
+						return caosRule("指名のあるカップは %d 番のドリッパーにしか置けません", n)
+					}
+				}
 			}
-			if err := b.Revert(rec.Change); err != nil {
+			if err := tx.Model(&models.OrderCup{}).Where("id IN ?", w.cups).Updates(w.after.updates()).Error; err != nil {
 				return err
 			}
-		} else if err := b.Apply(op, now, uuid.New); err != nil {
-			return err
+			if w.after.DripID != nil {
+				touched[*w.after.DripID] = true
+			}
 		}
 
-		ch := caos.Diff(&base, &b)
-		orders, err := saveCaosChange(tx, day, ch)
-		if err != nil {
-			return err
+		// 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か
+		for id := range touched {
+			var cups []models.OrderCup
+			if err := tx.Where("drip_id = ?", id).Find(&cups).Error; err != nil {
+				return err
+			}
+			if len(cups) > caosMaxCups {
+				return caosRule("1 枚のカードは %d 杯までです", caosMaxCups)
+			}
+			for i := range cups {
+				if !cupCaosState(&cups[i]).equal(cupCaosState(&cups[0])) {
+					return caosRule("同じカードのカップは全部いっしょに動かしてください")
+				}
+			}
 		}
-		res.orders = orders
-		res.changed = res.changed || !ch.Empty()
-		if rec != nil {
-			return tx.Model(rec).Update("undone_at", now).Error
+		for _, d := range uniqueInts(brewing) {
+			n, err := countBrewing(tx, d, start, end)
+			if err != nil {
+				return err
+			}
+			if n > 1 {
+				return caosRule("%d 番のドリッパーはもう抽出中です", d)
+			}
 		}
-		if ch.Empty() {
-			return nil
-		}
-		record := models.CaosOpRecord{ID: uuid.New(), Day: day, Name: op.Name, Change: ch, CreatedAt: now}
-		if err := tx.Create(&record).Error; err != nil {
-			return err
-		}
-		res.opID = &record.ID
 		return nil
 	})
-	return res, err
+	return orderIDs, err
 }
 
-// POST /api/caos/ops - 今日の盤面への操作（割当・未割当に戻す・次へ・統合・1つ戻す）
-func (h *CaosHandler) ApplyCaosOp(c *gin.Context) {
-	var req models.CaosOp
+func findCaosCup(orders map[uuid.UUID]*models.Order, cupID uuid.UUID) (*models.Order, *models.OrderCup) {
+	for _, order := range orders {
+		if cup := findOrderCup(order, cupID); cup != nil {
+			return order, cup
+		}
+	}
+	return nil, nil
+}
+
+func menuAssignee(order *models.Order, orderMenuID uuid.UUID) *string {
+	for _, line := range order.OrderMenus {
+		if line.ID == orderMenuID {
+			return line.Assignee
+		}
+	}
+	return nil
+}
+
+func cupItemName(tx *gorm.DB, cup *models.OrderCup) string {
+	var item models.Item
+	if err := tx.Unscoped().Select("name").First(&item, "id = ?", cup.ItemID).Error; err != nil {
+		return "不明な商品"
+	}
+	return item.Name
+}
+
+// PUT /api/caos/cups - CaOS が決めたこと（ドリッパー・順番・カード・抽出の時刻）をカップに書く
+func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
+	var req models.CaosCupsWriteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	op, undoID, err := toCaosOp(req)
+	writes, err := toCaosWrites(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	orderIDs, err := h.writeCups(writes)
+	if respondCaosError(c, err) {
+		return
+	}
+	c.Status(http.StatusNoContent)
+	c.Writer.WriteHeaderNow()
+	h.publish(orderIDs)
+}
 
-	var res caosApplied
+// ---------------------------------------------------------------- 「次へ」
+
+// 「次へ」で読むドリッパーのカップ
+type caosLaneCup struct {
+	ID              uuid.UUID
+	OrderID         uuid.UUID
+	OrderNo         int
+	DripID          *uuid.UUID
+	DripperPosition *float64
+	BrewStartedAt   *time.Time
+	BrewFinishedAt  *time.Time
+	ReadyAt         *time.Time
+}
+
+// ドリッパーの中のカード（同じ drip_id のカップ）
+type caosLaneCard struct {
+	dripID  uuid.UUID
+	cups    []caosLaneCup
+	orderNo int
+}
+
+func (c *caosLaneCard) allReady() bool {
+	return !slices.ContainsFunc(c.cups, func(cup caosLaneCup) bool { return cup.ReadyAt == nil })
+}
+
+// ドリッパーの中の順番（同じカードのカップは同じ値）
+func (c *caosLaneCard) position() float64 {
+	if p := c.cups[0].DripperPosition; p != nil {
+		return *p
+	}
+	return 0
+}
+
+// advance は「次へ」を 1 回行う。終えたカードと始めたカード、書いた注文を返す。
+func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) (finished, started *uuid.UUID, orderIDs []uuid.UUID, err error) {
+	now := h.now().Truncate(time.Millisecond)
+	start, end := caosToday(now)
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		finished, started, orderIDs = nil, nil, nil
+		if err := lockCaosDrippers(tx, []int{dripper}); err != nil {
+			return err
+		}
+		var rows []caosLaneCup
+		if err := tx.Raw(`
+			SELECT c.id, c.order_id, o.order_id AS order_no, c.drip_id, c.dripper_position,
+				c.brew_started_at, c.brew_finished_at, c.ready_at
+			FROM order_cups c JOIN orders o ON o.id = c.order_id
+			WHERE o.created_at >= ? AND o.created_at < ? AND c.dripper = ? AND c.brew_finished_at IS NULL`,
+			start, end, dripper).Scan(&rows).Error; err != nil {
+			return err
+		}
+		var brewing, queued []*caosLaneCard
+		byID := map[uuid.UUID]*caosLaneCard{}
+		for _, r := range rows {
+			if r.DripID == nil {
+				continue
+			}
+			card, ok := byID[*r.DripID]
+			if !ok {
+				card = &caosLaneCard{dripID: *r.DripID, orderNo: r.OrderNo}
+				byID[*r.DripID] = card
+				if r.BrewStartedAt != nil {
+					brewing = append(brewing, card)
+				} else {
+					queued = append(queued, card)
+				}
+			}
+			card.cups = append(card.cups, r)
+			card.orderNo = min(card.orderNo, r.OrderNo)
+		}
+		// 準備完了になったカード（マスターで準備完了にした）は終わりとみなす
+		done := func(c *caosLaneCard) bool { return c.allReady() }
+		brewing = slices.DeleteFunc(brewing, done)
+		queued = slices.DeleteFunc(queued, done)
+		slices.SortFunc(queued, func(a, b *caosLaneCard) int {
+			return cmp.Or(
+				cmp.Compare(a.position(), b.position()),
+				cmp.Compare(a.orderNo, b.orderNo),
+				strings.Compare(a.dripID.String(), b.dripID.String()),
+			)
+		})
+
+		var cur, head *caosLaneCard
+		if len(brewing) > 0 {
+			cur = brewing[0]
+		}
+		switch {
+		case seen != nil && (cur == nil || cur.dripID != *seen):
+			return caosConflict("このカードはもう終わっています（ほかの端末で「次へ」を押したかもしれません）")
+		case seen == nil && cur != nil:
+			return caosConflict("抽出中のカードがあります（画面が古いかもしれません）")
+		}
+		if len(queued) > 0 {
+			head = queued[0]
+		}
+		if cur == nil && head == nil {
+			return caosConflict("このドリッパーには抽出中・待機のカードがありません")
+		}
+
+		var ids []uuid.UUID
+		for _, card := range []*caosLaneCard{cur, head} {
+			if card == nil {
+				continue
+			}
+			for _, cup := range card.cups {
+				ids = append(ids, cup.OrderID)
+			}
+		}
+		orders, err := lockCaosOrders(tx, ids, start, end)
+		if err != nil {
+			return err
+		}
+		// ロックする前に読んだカップが、そのままか
+		for _, card := range []*caosLaneCard{cur, head} {
+			if card == nil {
+				continue
+			}
+			for _, r := range card.cups {
+				_, cup := findCaosCup(orders, r.ID)
+				if cup == nil || !ptrEqual(cup.Dripper, &dripper) || !ptrEqual(cup.DripID, r.DripID) ||
+					!msEqual(cup.BrewStartedAt, r.BrewStartedAt) || cup.BrewFinishedAt != nil || !timeEqual(cup.ReadyAt, r.ReadyAt) {
+					return errCaosConflict
+				}
+			}
+		}
+
+		if cur != nil {
+			finished = &cur.dripID
+			// カップを準備完了にし、注文の状態をカップから決め直す（POS のカップの準備完了と同じ）
+			for _, order := range orders {
+				before := *order
+				before.OrderCups = slices.Clone(order.OrderCups)
+				changed := false
+				for i := range order.OrderCups {
+					cup := &order.OrderCups[i]
+					if !ptrEqual(cup.DripID, &cur.dripID) {
+						continue
+					}
+					changed = true
+					if cup.ReadyAt == nil {
+						cup.ReadyAt = &now
+					}
+				}
+				if !changed {
+					continue
+				}
+				syncOrderWithCups(order)
+				if err := saveOrderStatus(tx, &before, order); err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&models.OrderCup{}).Where("drip_id = ?", cur.dripID).
+				Update("brew_finished_at", now).Error; err != nil {
+				return err
+			}
+		}
+		if head != nil {
+			started = &head.dripID
+			if err := tx.Model(&models.OrderCup{}).Where("drip_id = ?", head.dripID).
+				Update("brew_started_at", now).Error; err != nil {
+				return err
+			}
+		}
+		for id := range orders {
+			orderIDs = append(orderIDs, id)
+		}
+		return nil
+	})
+	return finished, started, orderIDs, err
+}
+
+// POST /api/caos/drippers/:dripper/next - 「次へ」
+func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
+	dripper, err := strconv.Atoi(c.Param("dripper"))
+	if err != nil || dripper < 1 || dripper > caosDrippers {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ドリッパーは 1〜%d です", caosDrippers)})
+		return
+	}
+	var req models.CaosNextRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var seen *uuid.UUID
+	if req.DripId != nil {
+		id := uuid.UUID(*req.DripId)
+		seen = &id
+	}
+	var finished, started *uuid.UUID
+	var orderIDs []uuid.UUID
 	for range caosAttempts {
-		res, err = h.apply(op, undoID)
-		if !errors.Is(err, errCaosConflict) {
+		finished, started, orderIDs, err = h.advance(dripper, seen)
+		// ロックする前に読んだカップが変わっていた（注文の編集などと重なった）ときだけ読み直す
+		if err != errCaosConflict {
 			break
 		}
 	}
-	switch {
-	case caos.IsInvalid(err):
-		// ルールに合わない操作は 422（理由をそのまま画面に出す）
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
-	case errors.Is(err, errCaosConflict):
-		c.JSON(http.StatusConflict, gin.H{"error": "注文の変更と重なりました。もう一度押してください"})
-		return
-	case err != nil:
-		log.Printf("caos: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err == errCaosConflict {
+		err = caosConflict("注文の変更と重なりました。もう一度押してください")
+	}
+	if respondCaosError(c, err) {
 		return
 	}
-	c.JSON(http.StatusOK, models.CaosOpResult{OpId: res.opID})
-	h.publish(res)
+	c.JSON(http.StatusOK, models.CaosNextResult{FinishedDripId: apiUUID(finished), StartedDripId: apiUUID(started)})
+	h.publish(orderIDs)
 }
 
-// publish は操作のあとに、盤面と準備完了の変わった注文を画面へ配り、ほかのインスタンスへ知らせる。
-func (h *CaosHandler) publish(res caosApplied) {
-	for _, id := range res.orders {
-		// 注文の配信が盤面の配り直しも頼む（Hub.RequestBoard）
+func apiUUID(id *uuid.UUID) *openapi_types.UUID {
+	if id == nil {
+		return nil
+	}
+	v := openapi_types.UUID(*id)
+	return &v
+}
+
+// ---------------------------------------------------------------- 共通
+
+// respondCaosError はエラーを返したら true。
+func respondCaosError(c *gin.Context, err error) bool {
+	var rule *caosRuleError
+	switch {
+	case err == nil:
+		return false
+	case errors.As(err, &rule):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": rule.message})
+	case errors.Is(err, errCaosConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	default:
+		log.Printf("caos: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+	return true
+}
+
+// publish は書いた注文を、このインスタンスの画面へ配り、ほかのインスタンスへ知らせる。
+func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
+	for _, id := range orderIDs {
 		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("caos: failed to publish order %s: %v", id, err)
 		}
 	}
-	if res.changed {
-		h.hub.RequestBoard()
-		notifyChanged(h.db, caosBoardChangedChannel, instanceID)
-	}
-}
-
-var errCaosRequest = errors.New("invalid caos op")
-
-// toCaosOp は API のリクエストを caos.Op にする。undo なら戻す操作の ID も返す。
-func toCaosOp(req models.CaosOp) (caos.Op, uuid.UUID, error) {
-	op := caos.Op{Name: string(req.Name), Card: toCardRef(req.Card), With: toCardRef(req.With), Index: req.Index}
-	if req.Lane != nil {
-		op.Lane = *req.Lane
-	}
-	if op.Name == caos.OpUndo {
-		if req.OpId == nil {
-			return op, uuid.Nil, errCaosRequest
-		}
-		return op, uuid.UUID(*req.OpId), nil
-	}
-	return op, uuid.Nil, nil
-}
-
-func toCardRef(ref *models.CaosCardRef) *caos.CardRef {
-	if ref == nil {
-		return nil
-	}
-	out := &caos.CardRef{}
-	if ref.Id != nil {
-		id := uuid.UUID(*ref.Id)
-		out.ID = &id
-	}
-	if ref.CupIds != nil {
-		for _, id := range *ref.CupIds {
-			out.CupIDs = append(out.CupIDs, uuid.UUID(id))
-		}
-	}
-	return out
 }

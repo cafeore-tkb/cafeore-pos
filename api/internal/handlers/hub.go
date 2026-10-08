@@ -21,9 +21,9 @@ const (
 	wsMaxMessageSize = 4096
 	// 接続ごとの送信待ちの上限。溢れたら遅い端末とみなして切る
 	wsSendBufferSize = 32
-	// SendInitial で送る初期データの最大数（orders と master_state と cashier_state と drips）。
+	// SendInitial で送る初期データの最大数（orders と master_state と cashier_state）。
 	// 初期データのあとに held（上限 wsSendBufferSize）を流しても溢れないよう、send はこの分だけ大きくとる
-	wsMaxInitialMessages = 4
+	wsMaxInitialMessages = 3
 )
 
 // Client は WebSocket の1接続。
@@ -48,59 +48,13 @@ type Hub struct {
 	// 注文の読み込みから配信までを1つずつ行う（Publish）。
 	// 読んだ順に配信されるので、後から届いた配信が古い状態で上書きすることがない。
 	publishMu sync.Mutex
-
-	// CaOS の盤面を読む関数（RunBoard で渡す）と、配り直しの依頼。
-	// 依頼が重なっても、配り終わるまでに来たものは 1 回の読み直しにまとめる
-	boardMu   sync.Mutex
-	loadBoard func() (WSMessage, error)
-	boardWake chan struct{}
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients:   make(map[*Client]struct{}),
 		broadcast: make(chan WSMessage, 10),
-		boardWake: make(chan struct{}, 1),
 	}
-}
-
-// RunBoard は CaOS の盤面の配り直しの依頼（RequestBoard）を待ち、load で今の盤面を読んで配る。
-// 盤面は今日の分を全部送るので、続けて来た依頼は 1 回にまとめる。
-func (h *Hub) RunBoard(load func() (WSMessage, error)) {
-	h.boardMu.Lock()
-	h.loadBoard = load
-	h.boardMu.Unlock()
-	for range h.boardWake {
-		if err := h.Publish(load); err != nil {
-			log.Println("failed to load the caos board:", err)
-		}
-	}
-}
-
-// RequestBoard は CaOS の盤面の配り直しを頼む。すぐに戻る。
-// CaOS の操作のあとと、注文が変わったとき（盤面はカップから組み立てるので）に呼ぶ。
-func (h *Hub) RequestBoard() {
-	select {
-	case h.boardWake <- struct{}{}:
-	default:
-		// もう依頼が溜まっている。その配信に今の状態も含まれる
-	}
-}
-
-// boardMessage は接続した端末に送る今の盤面。RunBoard を始めていなければ ok = false
-func (h *Hub) boardMessage() (WSMessage, bool) {
-	h.boardMu.Lock()
-	load := h.loadBoard
-	h.boardMu.Unlock()
-	if load == nil {
-		return WSMessage{}, false
-	}
-	msg, err := load()
-	if err != nil {
-		log.Println("failed to load the caos board:", err)
-		return WSMessage{}, false
-	}
-	return msg, true
 }
 
 func (h *Hub) Run() {

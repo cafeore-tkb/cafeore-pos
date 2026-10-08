@@ -19,7 +19,7 @@ export interface CardBean {
 export interface OrderTicket {
   /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
   color?: string;
-  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
+  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
@@ -53,6 +53,7 @@ export interface OrderTicket {
   startTimeSec?: number; // sim time in seconds when this drip starts
   endTimeSec?: number; // sim time in seconds when this drip ends
   completedAtSec?: number; // for historical completed drip
+  seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
@@ -68,7 +69,7 @@ export interface Barista {
 export interface UnassignedOrder {
   /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
   color?: string;
-  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
+  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
   itemKey?: string;
   /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
   beans?: CardBean[];
@@ -87,6 +88,8 @@ export interface UnassignedOrder {
   recommendedBaristas: string;
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
+  seniorOnly?: boolean; // 限定（種類の senior_only）
+  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 

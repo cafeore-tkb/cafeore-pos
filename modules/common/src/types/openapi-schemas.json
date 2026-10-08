@@ -291,7 +291,18 @@
   },
   "OrderCupResponse": {
     "type": "object",
-    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "required": [
+      "id",
+      "order_menu_id",
+      "item",
+      "ready_at",
+      "served_at",
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -316,6 +327,37 @@
         "format": "date-time",
         "nullable": true,
         "description": "このカップを提供した時刻。未提供なら null"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6,
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない"
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true,
+        "description": "CaOS のドリッパーの中の順番（小さいほど先）"
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる"
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を始めた時刻"
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を終えた時刻"
       }
     }
   },
@@ -676,148 +718,133 @@
       }
     }
   },
-  "CaosCardStatus": {
-    "type": "string",
-    "enum": ["unassigned", "queued", "brewing", "done"],
-    "x-enum-varnames": [
-      "CaosCardStatusUnassigned",
-      "CaosCardStatusQueued",
-      "CaosCardStatusBrewing",
-      "CaosCardStatusDone"
-    ],
-    "description": "unassigned＝未割当（保存しない） / queued＝列の待機 / brewing＝抽出中（1 つの列に 1 枚） / done＝終了"
-  },
-  "CaosCardCup": {
+  "CaosCupState": {
     "type": "object",
-    "description": "カードの中の 1 杯。商品・注文番号・指名は注文（/api/ws/orders の orders）のカップから引く",
-    "required": ["id"],
-    "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid",
-        "description": "注文のカップの ID"
-      }
-    }
-  },
-  "CaosCard": {
-    "type": "object",
-    "description": "CaOS の盤面のカード。1 回のドリップ（最大 2 杯）が 1 枚。\n未割当のカードは保存せず、まだカードに入っていないカップから組み立てる（id は null。cups の ID の組で指す）。\n",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当",
     "required": [
-      "id",
-      "status",
-      "lane",
-      "position",
-      "started_at",
-      "finished_at",
-      "cups"
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at"
     ],
     "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "保存したカードの ID。未割当のカードは null（統合した未割当のカードだけはカップに入れた ID を持つ）"
-      },
-      "status": {
-        "$ref": "#/components/schemas/CaosCardStatus"
-      },
-      "lane": {
+      "dripper": {
         "type": "integer",
         "nullable": true,
         "minimum": 1,
-        "maximum": 6,
-        "description": "担当の列（1〜6）。未割当は null"
+        "maximum": 6
       },
-      "position": {
+      "dripper_position": {
         "type": "number",
         "format": "double",
-        "description": "並び。待機は列の中の順番（小さいほど先。ふつうは注文番号）、未割当は表示の順（0 から）"
-      },
-      "started_at": {
-        "type": "string",
-        "format": "date-time",
         "nullable": true
       },
-      "finished_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true
-      },
-      "cups": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosCardCup"
-        }
-      }
-    }
-  },
-  "CaosCardRef": {
-    "type": "object",
-    "description": "カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい",
-    "properties": {
-      "id": {
+      "drip_id": {
         "type": "string",
         "format": "uuid",
         "nullable": true
       },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
+  "CaosCupAfter": {
+    "type": "object",
+    "description": "CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。\nstart_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。\ndripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当\n",
+    "required": ["dripper", "dripper_position", "drip_id", "start_brew"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "start_brew": {
+        "type": "boolean",
+        "description": "抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今"
+      }
+    }
+  },
+  "CaosCupsWrite": {
+    "type": "object",
+    "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）\n",
+    "required": ["cup_ids", "before", "after"],
+    "properties": {
       "cup_ids": {
         "type": "array",
+        "minItems": 1,
         "items": {
           "type": "string",
           "format": "uuid"
         }
+      },
+      "before": {
+        "$ref": "#/components/schemas/CaosCupState"
+      },
+      "after": {
+        "$ref": "#/components/schemas/CaosCupAfter"
       }
     }
   },
-  "CaosOpName": {
-    "type": "string",
-    "enum": ["assign", "unassign", "next", "merge", "undo"],
-    "x-enum-varnames": [
-      "CaosOpNameAssign",
-      "CaosOpNameUnassign",
-      "CaosOpNameNext",
-      "CaosOpNameMerge",
-      "CaosOpNameUndo"
-    ]
-  },
-  "CaosOp": {
+  "CaosCupsWriteRequest": {
     "type": "object",
-    "description": "盤面への操作。name で選び、使うものだけを送る。\n- assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり）。無ければ注文番号の順。列が空いていればそのまま抽出を始める\n- unassign：待機の card を未割当に戻す\n- next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる\n- merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる\n- undo：op_id の操作を 1 つ戻す\n",
-    "required": ["name"],
+    "required": ["writes"],
     "properties": {
-      "name": {
-        "$ref": "#/components/schemas/CaosOpName"
-      },
-      "card": {
-        "$ref": "#/components/schemas/CaosCardRef"
-      },
-      "with": {
-        "$ref": "#/components/schemas/CaosCardRef"
-      },
-      "lane": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6
-      },
-      "index": {
-        "type": "integer",
-        "minimum": 0
-      },
-      "op_id": {
-        "type": "string",
-        "format": "uuid"
+      "writes": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/CaosCupsWrite"
+        }
       }
     }
   },
-  "CaosOpResult": {
+  "CaosNextRequest": {
     "type": "object",
-    "required": ["op_id"],
+    "required": ["drip_id"],
     "properties": {
-      "op_id": {
+      "drip_id": {
         "type": "string",
         "format": "uuid",
         "nullable": true,
-        "description": "この操作の記録の ID（「1つ戻す」で送る）。何も変わらなかった操作と undo では null"
+        "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
+      }
+    }
+  },
+  "CaosNextResult": {
+    "type": "object",
+    "required": ["finished_drip_id", "started_drip_id"],
+    "properties": {
+      "finished_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "終えたカード。無ければ null"
+      },
+      "started_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "始めたカード。待機が無ければ null"
       }
     }
   },
