@@ -2,11 +2,10 @@ import type React from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import type { NextAvailable } from "../utils/orderQueue";
 import { ControlViewA } from "./ControlViewA";
-import { ControlViewB } from "./ControlViewB";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
 
-export type ControlViewMode = "current" | "new" | "c" | "d";
+export type ControlViewMode = "current" | "c" | "d";
 
 // 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
 export interface ControlViewProps {
@@ -36,34 +35,6 @@ export interface ControlViewProps {
 export const ControlWorkspace: React.FC<
   ControlViewProps & { mode: ControlViewMode }
 > = ({ mode, ...props }) => {
-  const {
-    baristas,
-    unassignedOrders,
-    selectedOrderId,
-    currentTimeSec,
-    onSelectOrder,
-    onAdvanceBay,
-    onOpenTicketDetail,
-    onOpenEmptySlot,
-    onAssignToBay,
-  } = props;
-  if (mode === "new") {
-    return (
-      <ControlViewB
-        baristas={baristas}
-        unassignedOrders={unassignedOrders}
-        simTimeSec={currentTimeSec}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onAdvanceBay={onAdvanceBay}
-        onOpenTicketDetail={onOpenTicketDetail}
-        onOpenEmptySlot={onOpenEmptySlot}
-        onAssignToBay={onAssignToBay}
-      />
-    );
-  }
-
   if (mode === "d") return <ControlViewD {...props} />;
   if (mode === "c") return <ControlViewC {...props} />;
   return <ControlViewA {...props} />;
