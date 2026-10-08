@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { cardHasBean } from "../utils/beans";
+import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
@@ -287,9 +288,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               {ticket.cupCount}杯
             </span>
 
-            {ticket.preferredBaristaId && (
-              <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                指名
+            {nominationText(ticket) && (
+              <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                指名:{nominationText(ticket)}
               </span>
             )}
           </div>

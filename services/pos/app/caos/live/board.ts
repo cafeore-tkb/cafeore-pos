@@ -60,10 +60,14 @@ const describe = (
     new Set(card.cups.map((cup) => orderLabel(cup.orderNo))),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
-  const nominee = first.nominee ?? undefined;
+  // 指名の番号（明細の dripper）のカードは、その番号のドリッパーにだけ置ける。統合したカードも同じ番号どうし。
+  // 指名の表示はマスターの画面と同じ assignmentDisplay（buildCaosCards がカップの nominee に入れる）。
+  // 番号は「2nd」、番号の無い自由記述だけの古い明細は自由記述（ドリッパーには固定しない）
   const preferredBaristaId = card.nominatedDripper;
-  const unmatchedNominee =
-    nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
+  const nominee =
+    Array.from(
+      new Set(card.cups.flatMap((cup) => (cup.nominee ? [cup.nominee] : []))),
+    ).join("・") || undefined;
   // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ
   const limited = card.seniorOnly ? "（限定）" : "";
   const abbrs = Array.from(new Set(card.cups.map((cup) => cup.item.abbr))).join(
@@ -86,7 +90,7 @@ const describe = (
       : undefined,
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
-    beanName: `${abbrs}${unmatchedNominee}${limited}`,
+    beanName: `${abbrs}${limited}`,
     // 色はマスターの画面と同じ（統合カードは先頭のカップの商品の色）
     color: masterCardColor(colorSettings, {
       id: first.item.id,
@@ -98,6 +102,7 @@ const describe = (
     beans: Array.from(beans.values()),
     cupCount: card.cups.length,
     preferredBaristaId,
+    nominee,
     seniorOnly: card.seniorOnly,
   };
 };
@@ -210,7 +215,7 @@ export const cardsToBoard = (
           ? [info.preferredBaristaId]
           : [1, 2, 3, 4, 5, 6],
         cardColor: cardColorOf(info.beanCode),
-        mergeKey: `${card.cups[0].item.id}\u0000${card.cups[0].nominee ?? ""}`,
+        mergeKey: `${card.cups[0].item.id}\u0000${card.nominatedDripper ?? ""}`,
       };
     });
 

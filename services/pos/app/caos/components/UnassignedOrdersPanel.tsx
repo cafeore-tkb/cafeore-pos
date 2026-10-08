@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
 import { cardSurface } from "../utils/menuPresentation";
+import { nominationText } from "../utils/nomination";
 import { canMergeDripUnits } from "../utils/orderQueue";
 import { BeanBadge } from "./BeanBadge";
 
@@ -277,9 +278,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     beans={order.beans}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
-                  {order.preferredBaristaId && (
+                  {nominationText(order) && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
-                      指名 {order.preferredBaristaId}
+                      指名:{nominationText(order)}
                     </span>
                   )}
                 </div>

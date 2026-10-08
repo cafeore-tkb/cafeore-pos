@@ -45,7 +45,9 @@ export interface OrderTicket {
     | "浅煎り"
     | "水洗"
     | string;
-  preferredBaristaId?: number; // 指名。必ず1人だけ
+  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  nominee?: string;
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
@@ -87,7 +89,9 @@ export interface UnassignedOrder {
   predictedTimeStr: string;
   recommendedBaristas: string;
   recommendedBayIds: number[];
-  preferredBaristaId?: number; // 指名。必ず1人だけ
+  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  nominee?: string;
   seniorOnly?: boolean; // 限定（種類の senior_only）
   mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
   cardColor: "blue" | "peach" | "cyan" | "emerald";

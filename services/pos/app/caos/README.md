@@ -72,7 +72,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - カードの豆は、POS の在庫の設定の「商品ごとの使用量」（`GET /api/inventory/usages`）で、カードの商品が使う豆の在庫対象から引き、在庫対象の名前をそのまま出します（名前で豆を決めません）。カードの名前は商品の略称（API の `abbr`）をそのまま出します。氷・牛・限定の区分は商品の種類（item_type の `ice`・`iceOre`・`limited`）で決め、限定の呼び方は商品の種類 `limited` の表示名（`display_name`）を出します（`caos/limitedLabel.tsx`）。アイスミルクとグッズはカードになりません（商品の種類の `needs_brew` が false）。
 - カードの色はマスターの画面と同じです（POS の色の設定、無ければマスターの画面の既定の色。`utils/masterColor.ts`）。
 - 豆キューは POS の在庫（`GET /api/inventory`）の豆を表示するだけです。CaOS は在庫を持たず、「次へ」でも減らしません（消費は POS が注文から数えます）。棚卸し・入荷は POS の在庫の画面（`/inventory`）で記録します。
-- POSの指名は、`1`〜`6` の番号のときだけその列に固定し、それ以外はカードに「（指名:名前）」と表示します。
+- 指名は、レジで選んだドリッパーの番号（注文の明細の `dripper`。1st〜6th は 1〜6）で決めます。未割当のカードは同じ商品でも指名の番号ごとに分け、番号の付いたカップはその番号のドリッパーにだけ置けます（画面の `assignWrites` とサーバーの `PUT /api/caos/cups` の両方で確かめます）。統合も同じ番号どうしだけです。番号の無い自由記述だけの古い明細は指名なしとして扱います。カードの指名の表示は POS のマスターの画面と同じ `assignmentDisplay`（`modules/common/src/models/dripper.ts`）で、番号は「指名:2nd」、番号の無い古い明細は自由記述をそのまま出します（ドリッパーには固定しません）。
 - API の URL は POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 
 ## 実データ・テストプレイ
