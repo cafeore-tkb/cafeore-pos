@@ -11,6 +11,18 @@ export const cupSchema = z.object({
   item: itemSchema.required(),
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
+  // CaOS（ドリップ管制）が決めたこと（API の同じ名前の列）。CaOS 以外の画面は読まない。
+  // 読み方は lib/caos-board.ts（状態は時刻で決まる）。前に保存したデータには無いので、無ければ未割当
+  /** ドリッパーの番号（1〜6）。未割当なら null */
+  dripper: z.number().int().nullable().default(null),
+  /** ドリッパーの中の順番（小さいほど先） */
+  dripperPosition: z.number().nullable().default(null),
+  /** 同じカードで淹れるカップの印 */
+  dripId: z.string().nullable().default(null),
+  /** 抽出を始めた時刻 */
+  brewStartedAt: z.date().nullable().default(null),
+  /** 抽出を終えた時刻 */
+  brewFinishedAt: z.date().nullable().default(null),
 });
 
 export type Cup = z.infer<typeof cupSchema>;

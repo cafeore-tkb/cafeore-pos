@@ -23,7 +23,11 @@ interface ControlWorkspaceProps {
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
+  onMoveTicket: (
+    ticket: OrderTicket,
+    targetBayId: number,
+    toFront?: boolean,
+  ) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
   onOpenEmptySlot: (bayId: number) => void;

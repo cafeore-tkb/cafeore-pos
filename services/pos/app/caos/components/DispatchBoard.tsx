@@ -13,7 +13,7 @@ interface DispatchBoardProps {
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
+  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
   onOpenEmptySlot: (bayId: number) => void;

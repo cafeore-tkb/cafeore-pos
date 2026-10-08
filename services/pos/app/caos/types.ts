@@ -39,6 +39,7 @@ export interface OrderTicket {
   startTimeSec?: number; // sim time in seconds when this drip starts
   endTimeSec?: number; // sim time in seconds when this drip ends
   completedAtSec?: number; // for historical completed drip
+  seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
 }
 
 // ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
@@ -67,6 +68,7 @@ export interface UnassignedOrder {
   recommendedBaristas: string;
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
+  seniorOnly?: boolean; // 限定（種類の senior_only）
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 

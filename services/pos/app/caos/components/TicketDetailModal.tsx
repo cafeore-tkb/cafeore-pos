@@ -7,7 +7,7 @@ interface TicketDetailModalProps {
   ticket: OrderTicket | null;
   currentBayId: number | null;
   onClose: () => void;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
+  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
 }
 
@@ -62,28 +62,27 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         <div className="space-y-5 p-5">
           <section>
             <h3 className="mb-2 font-black text-[14px] text-slate-700">
-              他のドリッパーへ移動
+              他のドリッパーへ移動・先頭へ
             </h3>
             <div className="grid grid-cols-3 gap-2">
               {[1, 2, 3, 4, 5, 6].map((bayId) => {
-                const disabled =
-                  bayId === currentBayId ||
-                  Boolean(
-                    ticket.preferredBaristaId &&
-                      ticket.preferredBaristaId !== bayId,
-                  );
+                // 今のドリッパーのボタンは、このドリッパーの待機の先頭へ
+                const disabled = Boolean(
+                  ticket.preferredBaristaId &&
+                    ticket.preferredBaristaId !== bayId,
+                );
                 return (
                   <button
                     key={bayId}
                     type="button"
                     disabled={disabled}
                     onClick={() => {
-                      onMoveTicket(ticket, bayId);
+                      onMoveTicket(ticket, bayId, bayId === currentBayId);
                       onClose();
                     }}
                     className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
                   >
-                    {bayId}
+                    {bayId === currentBayId ? `${bayId} 先頭へ` : bayId}
                   </button>
                 );
               })}

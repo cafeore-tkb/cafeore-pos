@@ -248,6 +248,13 @@ export const responseToOrderEntity = (
       item: responseToItemEntity(cup.item).toItem(),
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
+      dripper: cup.dripper ?? null,
+      dripperPosition: cup.dripper_position ?? null,
+      dripId: cup.drip_id ?? null,
+      brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
+      brewFinishedAt: cup.brew_finished_at
+        ? new Date(cup.brew_finished_at)
+        : null,
     })),
   };
   return OrderEntity.fromOrder(order);

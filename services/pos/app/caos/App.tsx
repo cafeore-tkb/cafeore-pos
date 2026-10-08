@@ -1,4 +1,13 @@
-import { type CaosOp, caosCardRef, postCaosOp } from "@cafeore/common";
+import {
+  type CaosWritesResult,
+  assignWrites,
+  buildCaosCards,
+  caosDay,
+  mergeWrites,
+  nextCaosDripper,
+  putCaosCups,
+  unassignWrites,
+} from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
@@ -15,7 +24,7 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { usePosOrders } from "./hooks/usePosOrders";
-import { buildCupCatalog, cardsToBoard } from "./live/board";
+import { cardsToBoard } from "./live/board";
 import type {
   Barista,
   BeanCode,
@@ -26,7 +35,7 @@ import type {
   UnassignedOrder,
 } from "./types";
 import { soundManager } from "./utils/audio";
-import { laneOrdinal, makeLaneBaristas } from "./utils/lanes";
+import { makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
@@ -35,12 +44,6 @@ import {
   splitIntoDripUnits,
   ticketKey,
 } from "./utils/orderQueue";
-
-type UndoSnapshot = {
-  baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
-  label: string;
-};
 
 type PanelSnapshot = {
   baristas: Barista[];
@@ -145,9 +148,6 @@ export default function App() {
   const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
     [],
   );
-  const undoSnapshotRef = useRef<UndoSnapshot | null>(null);
-  const arrivalsAfterUndoSnapshotRef = useRef<UnassignedOrder[]>([]);
-  const [undoLabel, setUndoLabel] = useState<string | null>(null);
 
   // Filters & Toggles
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -200,38 +200,28 @@ export default function App() {
     (operationalTime.getTime() - operationalDayStartMs) / 1000,
   );
 
-  // 普段は cafeore-pos の盤面で動かす。盤面と注文は同じ WebSocket で届き、操作は POST /api/caos/ops。
-  // 盤面はサーバーにあるので、複数の iPad で同じものを見て操作できる。
-  // 実データテスト中（終了後の実績表示も含め、リセットするまで）は盤面を使わず、テストの注文だけで手元の盤面を動かす。
+  // 普段は cafeore-pos の注文で動かす。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
+  // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる。操作はカップに書く（PUT /api/caos/cups・「次へ」）。
+  // 書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。
+  // 実データテスト中（終了後の実績表示も含め、リセットするまで）は注文を使わず、テストの注文だけで手元の盤面を動かす。
   const live = !testPlaySession;
-  const {
-    orders: posOrders,
-    cards: liveCards,
-    status: posStatus,
-  } = usePosOrders(live);
-  const cupCatalog = useMemo(() => buildCupCatalog(posOrders), [posOrders]);
-  // 盤面のカードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
+  const { orders: posOrders, status: posStatus } = usePosOrders(live);
+  const today = caosDay(realTime);
+  const liveCards = useMemo(
+    () => buildCaosCards(posOrders ?? [], today),
+    [posOrders, today],
+  );
+  // カードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
   const liveBoard = useMemo(
-    () =>
-      cardsToBoard(
-        liveCards ?? [],
-        cupCatalog,
-        baristas,
-        realTimeSec,
-        realDayStartMs,
-      ),
-    [liveCards, cupCatalog, baristas, realTimeSec, realDayStartMs],
+    () => cardsToBoard(liveCards, baristas, realTimeSec, realDayStartMs),
+    [liveCards, baristas, realTimeSec, realDayStartMs],
   );
   const boardBaristas = live ? liveBoard.baristas : baristas;
   const boardUnassignedOrders = live
     ? liveBoard.unassignedOrders
     : unassignedOrders;
-  // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
-  const liveUndoRef = useRef<string | null>(null);
-  // 「次へ」を送っている途中の列（応答が盤面に届く前の二度押しを止める）
+  // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNextRef = useRef(new Set<number>());
-  // 「1つ戻す」を送っている途中（結果が返るまでの二度押しを止める）
-  const pendingUndoRef = useRef(false);
   const [liveError, setLiveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -240,26 +230,20 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [liveError]);
 
-  // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果の盤面は WebSocket の drips で届く。
-  // 通ったら true を返す
-  const runLive = async (label: string | null, op: CaosOp) => {
-    const { result, error } = await postCaosOp(op);
-    if (error || !result) {
-      setLiveError(error || "操作に失敗しました");
-      return false;
+  // カップへの書き込みを送る。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を出す。
+  // 結果は書いた注文の配信で届く
+  const runWrites = async (result: CaosWritesResult) => {
+    if ("error" in result) {
+      setLiveError(result.error);
+      return;
     }
-    if (label && result.op_id) {
-      undoSnapshotRef.current = null;
-      liveUndoRef.current = result.op_id;
-      setUndoLabel(label);
-    }
-    return true;
+    const { error } = await putCaosCups(result.writes);
+    if (error) setLiveError(error);
   };
-  // 画面のカード（ticketUid）を、操作で指す形にする
-  const liveRef = (ticketUid: string | undefined) => {
-    const card = ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
-    return card ? caosCardRef(card) : undefined;
-  };
+  // 画面のカード（ticketUid）から、組み立てたカードを引く
+  const liveCard = (ticketUid: string | undefined) =>
+    ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
+  const newDripId = () => crypto.randomUUID();
 
   const findLiveTicket = (key: string) => {
     for (const bay of boardBaristas) {
@@ -355,64 +339,8 @@ export default function App() {
       historicalOrderCursor.current += 1;
     }
     if (incoming.length === 0) return;
-    if (undoSnapshotRef.current) {
-      arrivalsAfterUndoSnapshotRef.current.push(...incoming);
-    }
     setUnassignedOrders((prev) => [...prev, ...incoming]);
   }, [testPlayCurrentMs, testPlayOrders, testPlayStatus]);
-
-  const captureUndo = (label: string) => {
-    liveUndoRef.current = null;
-    undoSnapshotRef.current = {
-      baristas,
-      unassignedOrders,
-      label,
-    };
-    arrivalsAfterUndoSnapshotRef.current = [];
-    setUndoLabel(label);
-  };
-
-  const handleUndo = () => {
-    const liveUndo = liveUndoRef.current;
-    if (live && liveUndo) {
-      if (pendingUndoRef.current) return;
-      setSelectedOrderId(null);
-      setSelectedTicketKey(null);
-      // 戻せたときだけ「1つ戻す」の対象を消す。
-      // 断られたら（ほかの iPad が先に操作した、など）理由を出し、対象は残す
-      pendingUndoRef.current = true;
-      void runLive(null, { name: "undo", op_id: liveUndo })
-        .then((ok) => {
-          if (!ok) return;
-          // 送っている間にほかの操作をしていたら、そちらを「1つ戻す」の対象に残す
-          if (liveUndoRef.current === liveUndo) {
-            liveUndoRef.current = null;
-            setUndoLabel(null);
-          }
-        })
-        .finally(() => {
-          pendingUndoRef.current = false;
-        });
-      soundManager.playDispatch();
-      return;
-    }
-    const snapshot = undoSnapshotRef.current;
-    if (!snapshot) return;
-    const restoredKeys = new Set(
-      snapshot.unassignedOrders.map((order) => order.ticketUid || order.id),
-    );
-    const arrivals = arrivalsAfterUndoSnapshotRef.current.filter(
-      (order) => !restoredKeys.has(order.ticketUid || order.id),
-    );
-    setBaristas(snapshot.baristas);
-    setUnassignedOrders([...snapshot.unassignedOrders, ...arrivals]);
-    setSelectedOrderId(null);
-    setSelectedTicketKey(null);
-    undoSnapshotRef.current = null;
-    arrivalsAfterUndoSnapshotRef.current = [];
-    setUndoLabel(null);
-    soundManager.playDispatch();
-  };
 
   const handleToggleOrderSelection = (orderId: string) => {
     if (!orderId) {
@@ -482,7 +410,6 @@ export default function App() {
 
     const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
-    const label = `${laneOrdinal(targetBarista.bayNumber)}の「次へ」`;
 
     if (live) {
       if (pendingNextRef.current.has(bayId)) return;
@@ -490,15 +417,15 @@ export default function App() {
       // 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始める
       const current = targetBarista.queue[0];
       const card =
-        current.status === "brewing" ? liveRef(current.ticketUid) : undefined;
+        current.status === "brewing" ? liveCard(current.ticketUid) : undefined;
       pendingNextRef.current.add(bayId);
-      void runLive(label, { name: "next", lane: bayId, card }).finally(() =>
-        pendingNextRef.current.delete(bayId),
-      );
+      void nextCaosDripper(bayId, card?.dripId ?? null)
+        .then(({ error }) => {
+          if (error) setLiveError(error);
+        })
+        .finally(() => pendingNextRef.current.delete(bayId));
       return;
     }
-
-    captureUndo(label);
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -543,14 +470,16 @@ export default function App() {
     )
       return;
     if (live) {
-      void runLive(`${orderToAssign.id}の割当`, {
-        name: "assign",
-        card: liveRef(orderToAssign.ticketUid),
-        lane: targetBayId,
-      });
+      const card = liveCard(orderToAssign.ticketUid);
+      if (!card) return;
+      void runWrites(
+        assignWrites(liveCards, card, targetBayId, {
+          now: new Date(),
+          newId: newDripId,
+        }),
+      );
       return;
     }
-    captureUndo(`${orderToAssign.id}の割当`);
 
     // Remove from unassigned
     setUnassignedOrders((prev) =>
@@ -611,24 +540,31 @@ export default function App() {
     );
   };
 
+  // 待機のカードを別のドリッパーへ。toFront なら、そのドリッパーの待機の先頭へ（同じドリッパーの中の順番の入れ替えにも使う）
   const handleMoveScheduledTicket = (
     ticket: OrderTicket,
     targetBayId: number,
+    toFront?: boolean,
   ) => {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
     if (live) {
-      void runLive(`${ticket.id}の割当変更`, {
-        name: "assign",
-        card: liveRef(ticket.ticketUid),
-        lane: targetBayId,
-      });
+      const card = liveCard(ticket.ticketUid);
+      if (!card) return;
+      void runWrites(
+        assignWrites(liveCards, card, targetBayId, {
+          index: toFront ? 0 : undefined,
+          now: new Date(),
+          newId: newDripId,
+        }),
+      );
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
     }
-    captureUndo(`${ticket.id}の割当変更`);
+    // 実データテストの盤面は注文番号の順に並べるので、順番の入れ替えはしない
+    if (toFront) return;
     const key = ticketKey(ticket);
     setBaristas((prev) => {
       return prev.map((bay) => ({
@@ -651,15 +587,13 @@ export default function App() {
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
     if (live) {
-      void runLive(`${ticket.id}を未割当に戻す`, {
-        name: "unassign",
-        card: liveRef(ticket.ticketUid),
-      });
+      const card = liveCard(ticket.ticketUid);
+      if (!card) return;
+      void runWrites(unassignWrites(card));
       setSelectedOrderId(null);
       soundManager.playDispatch();
       return;
     }
-    captureUndo(`${ticket.id}を未割当に戻す`);
     const key = ticketKey(ticket);
     setBaristas((prev) =>
       prev.map((bay) => ({
@@ -713,15 +647,13 @@ export default function App() {
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
     if (live) {
-      void runLive(`${first.id}と${second.id}の統合`, {
-        name: "merge",
-        card: liveRef(firstUid),
-        with: liveRef(secondUid),
-      });
+      const card = liveCard(firstUid);
+      const withCard = liveCard(secondUid);
+      if (!card || !withCard) return;
+      void runWrites(mergeWrites(card, withCard, newDripId));
       setSelectedOrderId(null);
       return;
     }
-    captureUndo(`${first.id}と${second.id}の統合`);
     setUnassignedOrders((prev) => {
       const sourceOrderIds = Array.from(
         new Set([
@@ -753,10 +685,6 @@ export default function App() {
   const handleResetData = () => {
     setBaristas(makeLaneBaristas());
     setUnassignedOrders([]);
-    undoSnapshotRef.current = null;
-    liveUndoRef.current = null;
-    arrivalsAfterUndoSnapshotRef.current = [];
-    setUndoLabel(null);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
@@ -780,9 +708,6 @@ export default function App() {
     setBaristas(makeLaneBaristas());
     setUnassignedOrders([]);
     setSelectedOrderId(null);
-    undoSnapshotRef.current = null;
-    arrivalsAfterUndoSnapshotRef.current = [];
-    setUndoLabel(null);
     setSelectedTicketKey(null);
     setAssignSlotData(null);
     historicalOrderCursor.current = 0;
@@ -896,9 +821,6 @@ export default function App() {
           onTimelineNavigate={(direction) =>
             setTimelineCommand({ direction, id: Date.now() })
           }
-          canUndo={Boolean(undoLabel)}
-          undoLabel={undoLabel}
-          onUndo={handleUndo}
           testPlaying={testPlaySession?.status === "active"}
           testProgressLabel={
             testPlaySession
