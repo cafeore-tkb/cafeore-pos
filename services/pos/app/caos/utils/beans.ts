@@ -1,5 +1,5 @@
 import type { InventoryStatus, StockUsage } from "@cafeore/common";
-import type { BeanCode, CardBean } from "../types";
+import type { CardBean } from "../types";
 
 // 商品 ID → その商品が使う豆（POS の在庫対象のうち kind が bean のもの）。
 // 在庫の設定（/inventory/settings）の「商品ごとの使用量」をそのまま使い、名前で豆を決めない。
@@ -26,13 +26,3 @@ export const buildBeanIndex = (
 // カードの豆の名前（在庫対象の名前をそのまま）。豆が無ければ空
 export const beanNamesOf = (card: { beans?: CardBean[] }) =>
   (card.beans ?? []).map((bean) => bean.name).join("・");
-
-// 豆で絞り込む・まとめるときの判定。盤面のカードは在庫対象の ID、
-// 商品の情報が無い実データテストのカードは豆のコードで比べる
-export const cardHasBean = (
-  card: { beans?: CardBean[]; beanCode: BeanCode },
-  beanKey: string,
-) =>
-  card.beans
-    ? card.beans.some((bean) => bean.id === beanKey)
-    : card.beanCode === beanKey;
