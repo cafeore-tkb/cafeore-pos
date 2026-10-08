@@ -292,6 +292,13 @@ func (s *CaosStore) do(tx *gorm.DB, day string, b *caos.Board, cs *caos.Changese
 		return "", nil, err
 	}
 	now := s.clock()
+	// 緊急の入れ直しは、入れ直しのカードのカップ分の緊急の印刷を、同じトランザクションで印刷キューに積む（print_job.go）。
+	// 練習用の盤面（CaosPracticeStore）はここを通らないので積まない。「1つ戻す」でも、積んだ印刷は取り消さない
+	if op.Name == "rebrew" {
+		if _, err := enqueueRebrewEmergency(tx, record.Created(), now); err != nil {
+			return "", nil, err
+		}
+	}
 	var marks []caos.ReadyMark
 	var readied []string
 	for _, id := range cs.Completed.List() {
