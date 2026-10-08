@@ -105,6 +105,17 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/ops": {
+    /**
+     * CaOS の今日の盤面への操作
+     * @description 割当・未割当に戻す・次へ・統合・緊急・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は、その日の advisory lock で 1 件ずつ順番に処理する。
+     * 盤面はカップ中心：カードの中身はカップ（order_cups の drip_id・emergency_drip_id）が持ち、未割当のカードは保存せずカップから組み立てる。
+     * 「次へ」は、そのカードのカップだけを準備完了にする（POS のカップの準備完了と同じ処理。注文の準備完了はカップから決まる）。
+     * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で戻し、記録のあとカードやカップが変わっていたら 422 で断る。
+     * 盤面は /api/ws/orders の {"type":"drips","drips":[CaosCard]} で全部の画面に配る（操作のたびと、注文が変わったとき）。
+     */
+    post: operations["applyCaosOp"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -425,6 +436,88 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    /**
+     * @description unassigned＝未割当（保存しない） / queued＝列の待機 / brewing＝抽出中（1 つの列に 1 枚） / done＝終了
+     * @enum {string}
+     */
+    CaosCardStatus: "unassigned" | "queued" | "brewing" | "done";
+    /** @description カードの中の 1 杯。商品・注文番号・指名は注文（/api/ws/orders の orders）のカップから引く */
+    CaosCardCup: {
+      /**
+       * Format: uuid
+       * @description 注文のカップの ID
+       */
+      id: string;
+      /**
+       * Format: date-time
+       * @description 緊急（入れ直し）にした時刻
+       */
+      emergency_at: string | null;
+    };
+    /**
+     * @description CaOS の盤面のカード。1 回のドリップ（最大 2 杯）が 1 枚。
+     * 未割当のカードは保存せず、まだカードに入っていないカップから組み立てる（id は null。cups の ID の組で指す）。
+     * 緊急のカード（入れ直し）は emergency が true で、未割当でも待機でもいちばん上に並ぶ。
+     */
+    CaosCard: {
+      /**
+       * Format: uuid
+       * @description 保存したカードの ID。未割当のカードは null（統合した未割当のカードだけはカップに入れた ID を持つ）
+       */
+      id: string | null;
+      status: components["schemas"]["CaosCardStatus"];
+      /** @description 担当の列（1〜6）。未割当は null */
+      lane: number | null;
+      /**
+       * Format: double
+       * @description 並び。待機は列の中の順番（小さいほど先。ふつうは注文番号）、未割当は表示の順（0 から）
+       */
+      position: number;
+      /** @description 緊急（入れ直し）のカード */
+      emergency: boolean;
+      /** @description 緊急のために途中でやめた抽出 */
+      interrupted: boolean;
+      /** Format: date-time */
+      started_at: string | null;
+      /** Format: date-time */
+      finished_at: string | null;
+      cups: components["schemas"]["CaosCardCup"][];
+    };
+    /** @description カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい */
+    CaosCardRef: {
+      /** Format: uuid */
+      id?: string | null;
+      cup_ids?: string[];
+    };
+    /** @enum {string} */
+    CaosOpName: "assign" | "unassign" | "next" | "merge" | "emergency" | "undo";
+    /**
+     * @description 盤面への操作。name で選び、使うものだけを送る。
+     * - assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり。緊急とふつうはそれぞれの中で数える）。無ければ注文番号の順。列が空いていればそのまま抽出を始める
+     * - unassign：待機の card を未割当に戻す
+     * - next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる
+     * - merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる
+     * - emergency：抽出中か終了のカードのカップ（cup_ids）を緊急にする。interrupt なら抽出中のカードを中断し、そのカードのカップを全部緊急にする
+     * - undo：op_id の操作を 1 つ戻す
+     */
+    CaosOp: {
+      name: components["schemas"]["CaosOpName"];
+      card?: components["schemas"]["CaosCardRef"];
+      with?: components["schemas"]["CaosCardRef"];
+      lane?: number;
+      index?: number;
+      cup_ids?: string[];
+      interrupt?: boolean;
+      /** Format: uuid */
+      op_id?: string;
+    };
+    CaosOpResult: {
+      /**
+       * Format: uuid
+       * @description この操作の記録の ID（「1つ戻す」で送る）。何も変わらなかった操作と undo では null
+       */
+      op_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1098,6 +1191,47 @@ export interface operations {
       };
       /** @description オーダーが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今日の盤面への操作
+   * @description 割当・未割当に戻す・次へ・統合・緊急・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は、その日の advisory lock で 1 件ずつ順番に処理する。
+   * 盤面はカップ中心：カードの中身はカップ（order_cups の drip_id・emergency_drip_id）が持ち、未割当のカードは保存せずカップから組み立てる。
+   * 「次へ」は、そのカードのカップだけを準備完了にする（POS のカップの準備完了と同じ処理。注文の準備完了はカップから決まる）。
+   * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で戻し、記録のあとカードやカップが変わっていたら 422 で断る。
+   * 盤面は /api/ws/orders の {"type":"drips","drips":[CaosCard]} で全部の画面に配る（操作のたびと、注文が変わったとき）。
+   */
+  applyCaosOp: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosOp"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosOpResult"];
+        };
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 同時に変わった注文と重なり、何度か試しても通らなかった（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

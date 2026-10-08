@@ -399,6 +399,14 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&models.Order{}, "id = ?", order.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // ほかで先に消された（下で 404 にする）
+		}
+		if err != nil {
+			return err
+		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}

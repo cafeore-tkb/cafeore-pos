@@ -22,5 +22,15 @@ type OrderCup struct {
 	ReadyAt  *time.Time
 	ServedAt *time.Time
 
+	// CaOS（ドリップ管制）が決めたこと。読み書きは handlers/caos.go だけで、
+	// ほかの画面（レジ・マスター・提供）は読まない（注文の応答にも出さない）。
+	// 注文の編集では、ほかの列と同じく同じ値のまま入れ直す。
+	//   - DripID：最初に淹れたカード（caos_drips）
+	//   - EmergencyAt：緊急（入れ直し）にした時刻
+	//   - EmergencyDripID：入れ直しで淹れたカード
+	DripID          *uuid.UUID `gorm:"type:uuid;index"`
+	EmergencyAt     *time.Time
+	EmergencyDripID *uuid.UUID `gorm:"type:uuid;index"`
+
 	Item Item `gorm:"foreignKey:ItemID;references:ID"`
 }

@@ -26,7 +26,8 @@ const (
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel}
+// CaOS の盤面（caosBoardChangedChannel。caos.go）もここで待ち受ける。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, caosBoardChangedChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -73,8 +74,8 @@ func notifyCashierStateChanged(db *gorm.DB) {
 	notifyChanged(db, cashierStateChangedChannel, instanceID)
 }
 
-// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態が変わるたびに、
-// DB から読み直して配信する。
+// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の盤面が変わるたびに、
+// DB から読み直して配信する。CaOS の盤面は注文のカップから組み立てるので、注文が変わったときも配り直す。
 //
 // 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
 // このインスタンスの画面へだけ配り、通知を送り返さない。
@@ -191,6 +192,8 @@ type changeSet struct {
 	allOrders    bool // true なら orderIDs は見ずに全注文を配り直す
 	masterState  bool
 	cashierState bool
+	// CaOS の盤面。注文が変わったときも配り直す
+	board bool
 }
 
 func newPendingChanges() *pendingChanges {
@@ -211,6 +214,8 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.masterState = true })
 	case cashierStateChangedChannel:
 		q.update(func(s *changeSet) { s.cashierState = true })
+	case caosBoardChangedChannel:
+		q.update(func(s *changeSet) { s.board = true })
 	}
 }
 
@@ -218,10 +223,10 @@ func (q *pendingChanges) add(channel, payload string) {
 func (q *pendingChanges) addOrder(rawOrderID string) {
 	orderID, err := uuid.Parse(rawOrderID)
 	if rawOrderID == "" || err != nil {
-		q.update(func(s *changeSet) { s.allOrders = true })
+		q.update(func(s *changeSet) { s.allOrders, s.board = true, true })
 		return
 	}
-	q.update(func(s *changeSet) { s.orderIDs[orderID] = struct{}{} })
+	q.update(func(s *changeSet) { s.orderIDs[orderID], s.board = struct{}{}, true })
 }
 
 // 全部を配り直すよう積む（待ち受けを始めたとき）。
@@ -230,6 +235,7 @@ func (q *pendingChanges) addAll() {
 		s.allOrders = true
 		s.masterState = true
 		s.cashierState = true
+		s.board = true
 	})
 }
 
@@ -275,6 +281,9 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		if s.cashierState {
 			broadcastCashierState(h.db, h.hub)
+		}
+		if s.board {
+			h.hub.RequestBoard()
 		}
 	}
 }

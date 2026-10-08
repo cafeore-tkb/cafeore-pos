@@ -9,6 +9,16 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CaosOpName.
+const (
+	CaosOpNameAssign    CaosOpName = "assign"
+	CaosOpNameEmergency CaosOpName = "emergency"
+	CaosOpNameMerge     CaosOpName = "merge"
+	CaosOpNameNext      CaosOpName = "next"
+	CaosOpNameUnassign  CaosOpName = "unassign"
+	CaosOpNameUndo      CaosOpName = "undo"
+)
+
 // Defines values for ColorScreen.
 const (
 	ColorScreenCashier ColorScreen = "cashier"
@@ -42,6 +52,42 @@ const (
 	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
 )
+
+// CaosCardRef カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
+type CaosCardRef struct {
+	CupIds *[]openapi_types.UUID `json:"cup_ids,omitempty"`
+	Id     *openapi_types.UUID   `json:"id"`
+}
+
+// CaosOp 盤面への操作。name で選び、使うものだけを送る。
+// - assign：card を lane へ（未割当→待機、待機→別の列・列の中の順番の入れ替え）。index は列の待機の中の位置（0 始まり。緊急とふつうはそれぞれの中で数える）。無ければ注文番号の順。列が空いていればそのまま抽出を始める
+// - unassign：待機の card を未割当に戻す
+// - next：lane の抽出中のカードを終わらせ、そのカップを準備完了にして、待機の次を始める。card を付けると、それが今の抽出中のときだけ終わらせる
+// - merge：1 杯の card と with（未割当どうし・待機どうし、同じ商品・同じ指名）を 2 杯の同時抽出にまとめる
+// - emergency：抽出中か終了のカードのカップ（cup_ids）を緊急にする。interrupt なら抽出中のカードを中断し、そのカードのカップを全部緊急にする
+// - undo：op_id の操作を 1 つ戻す
+type CaosOp struct {
+	// Card カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
+	Card      *CaosCardRef          `json:"card,omitempty"`
+	CupIds    *[]openapi_types.UUID `json:"cup_ids,omitempty"`
+	Index     *int                  `json:"index,omitempty"`
+	Interrupt *bool                 `json:"interrupt,omitempty"`
+	Lane      *int                  `json:"lane,omitempty"`
+	Name      CaosOpName            `json:"name"`
+	OpId      *openapi_types.UUID   `json:"op_id,omitempty"`
+
+	// With カードの指し方。保存したカードは id、未割当のカードは cups の ID の組（cup_ids）。配られたカードの id と cups をそのまま送ればよい
+	With *CaosCardRef `json:"with,omitempty"`
+}
+
+// CaosOpName defines model for CaosOpName.
+type CaosOpName string
+
+// CaosOpResult defines model for CaosOpResult.
+type CaosOpResult struct {
+	// OpId この操作の記録の ID（「1つ戻す」で送る）。何も変わらなかった操作と undo では null
+	OpId *openapi_types.UUID `json:"op_id"`
+}
 
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
@@ -415,6 +461,9 @@ type StockUsage struct {
 
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
+
+// ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
+type ApplyCaosOpJSONRequestBody = CaosOp
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
