@@ -285,7 +285,9 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		ID:               models.CashierStateID,
 		EdittingOrder:    models.JSONB(raw),
 		SubmittedOrderID: (*uuid.UUID)(req.SubmittedOrderId),
-		UpdatedAt:        time.Now(),
+		// DB に保存される精度（マイクロ秒）にそろえる。保存した内容を読み直さずに返す・配信するので、
+		// そろえないと GET や再接続時の初期データと updated_at が食い違う
+		UpdatedAt: time.Now().Truncate(time.Microsecond),
 	}
 
 	resp, err := h.saveAndBroadcast(&state)

@@ -30,15 +30,31 @@ jobs:
           working-directory: api
           version: v2.9.0
 
-  # テストは DB を使わない（GORM の DryRun）ので、DB のサービスは要らない。
+  # 本物の Postgres を使うテストは、この 1 つの Postgres を TEST_DATABASE_URL で共有する
+  # （準備と後始末は api/internal/testdb。CI では TEST_DATABASE_URL が無いと落ちる）。
+  # 本番（Supabase）に合わせて 17。
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'api/go.mod'
-      - run: go test -v ./...
+      - run: go test -race -v ./...
 
   # Go のビルドだけを見る。イメージ全体は下の image で見る。
   build:

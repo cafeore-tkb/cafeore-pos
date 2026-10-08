@@ -63,7 +63,8 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, state)
+	// GET と同じ形で返す。models.MasterState は json タグが無く、そのままだと "Type" のような大文字のキーになる
+	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
 	h.broadcastMasterState()
 }
 

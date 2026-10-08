@@ -153,9 +153,37 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
 - 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
+  - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
+  - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る（手元での流し方は下の「backend のテスト」）
 
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
+
+### backend のテスト
+
+```bash
+cd api && go test ./...
+```
+
+本物の Postgres を使うテストの接続先は、どれも **`TEST_DATABASE_URL` の 1 つだけ**で渡す。
+無ければそのテストはスキップされる（CI では落とす）。手元では、たとえば `api/compose.yaml` の Postgres を立てて渡す。
+
+```bash
+docker compose -f api/compose.yaml up -d db
+```
+
+```bash
+cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
+```
+
+- 渡した DB の既存の schema・データには触らない。テストごとに使い捨ての schema か database を作り、終わったら消す
+- **接続するロールには CREATEDB が要る**（起動時のマイグレーションのテストが使い捨ての database を作るため）。
+  `compose.yaml` や CI の `postgres` ユーザーは持っている
+- 拡張の `uuid-ossp` を渡した DB の public に入れる（無ければ作る）
+- 本物の DB を使うテストを足すときは **`api/internal/testdb` を使い、別の環境変数を作らない**。
+  ふつうは `testdb.New(t)`（使い捨ての schema にモデルからテーブルを作る）、public スキーマが前提のものは
+  `testdb.NewDatabase`（使い捨ての database）
 
 ### PR ごとの Neon ブランチ
 
