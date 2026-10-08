@@ -218,10 +218,7 @@ const CommentList = ({ order }: { order: OrderEntity }) =>
       {order.comments.map((comment, index) => (
         <div
           key={`${index}-${comment.author}`}
-          className={cn(
-            order.status === "calling" && "bg-gray-400",
-            "my-2 flex gap-2 rounded-md bg-gray-200 px-2 py-1",
-          )}
+          className="my-2 flex gap-2 rounded-md bg-gray-200 px-2 py-1"
         >
           <div className="flex-none font-bold">
             {AUTHOR_MARKS[comment.author]}
