@@ -419,6 +419,11 @@
         "items": {
           "$ref": "#/components/schemas/CommentCreateRequest"
         }
+      },
+      "print_labels": {
+        "type": "boolean",
+        "default": false,
+        "description": "true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。\n印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）\n"
       }
     }
   },
@@ -1265,6 +1270,184 @@
       "error": {
         "type": "string",
         "example": "Invalid order ID format"
+      }
+    }
+  },
+  "PrintJobKind": {
+    "type": "string",
+    "enum": ["order", "emergency"],
+    "x-enum-varnames": ["PrintJobKindOrder", "PrintJobKindEmergency"],
+    "description": "order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール"
+  },
+  "PrintJobSource": {
+    "type": "string",
+    "enum": ["cashier", "master", "caos"],
+    "x-enum-varnames": [
+      "PrintJobSourceCashier",
+      "PrintJobSourceMaster",
+      "PrintJobSourceCaos"
+    ],
+    "description": "積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し"
+  },
+  "PrintJobStatus": {
+    "type": "string",
+    "enum": ["queued", "printing", "done", "failed", "canceled"],
+    "x-enum-varnames": [
+      "PrintJobStatusQueued",
+      "PrintJobStatusPrinting",
+      "PrintJobStatusDone",
+      "PrintJobStatusFailed",
+      "PrintJobStatusCanceled"
+    ],
+    "description": "queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した"
+  },
+  "PrintJob": {
+    "type": "object",
+    "description": "印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）",
+    "required": [
+      "id",
+      "kind",
+      "source",
+      "order_id",
+      "order_no",
+      "cup_id",
+      "status",
+      "printer_id",
+      "claimed_at",
+      "finished_at",
+      "error",
+      "attempts",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "積んだ順の番号。印刷はこの順"
+      },
+      "kind": {
+        "$ref": "#/components/schemas/PrintJobKind"
+      },
+      "source": {
+        "$ref": "#/components/schemas/PrintJobSource"
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_no": {
+        "type": "integer",
+        "description": "積んだときの注文番号（画面に出す用）"
+      },
+      "cup_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "emergency の対象のカップ。order では null"
+      },
+      "status": {
+        "$ref": "#/components/schemas/PrintJobStatus"
+      },
+      "printer_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "取った端末（印刷する端末の ID。端末の localStorage に持つ）"
+      },
+      "claimed_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "済み・失敗・取り消しにした時刻"
+      },
+      "error": {
+        "type": "string",
+        "nullable": true,
+        "description": "失敗の理由（画面にそのまま出す）"
+      },
+      "attempts": {
+        "type": "integer",
+        "description": "取られた回数（もう一度印刷すると増える）"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "PrintJobCreateRequest": {
+    "type": "object",
+    "required": ["kind", "source", "order_id"],
+    "properties": {
+      "kind": {
+        "$ref": "#/components/schemas/PrintJobKind"
+      },
+      "source": {
+        "type": "string",
+        "enum": ["cashier", "master"],
+        "x-enum-varnames": [
+          "PrintJobCreateSourceCashier",
+          "PrintJobCreateSourceMaster"
+        ],
+        "description": "積むところ（caos はサーバーが入れ直しのときに積む）"
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "cup_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "emergency の対象のカップ（emergency では必須）"
+      }
+    }
+  },
+  "PrintJobClaimRequest": {
+    "type": "object",
+    "required": ["printer_id"],
+    "properties": {
+      "printer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "印刷する端末の ID"
+      }
+    }
+  },
+  "PrintJobFailRequest": {
+    "type": "object",
+    "required": ["printer_id", "error"],
+    "properties": {
+      "printer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "error": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "失敗の理由（画面にそのまま出す）"
+      }
+    }
+  },
+  "PrintJobClaim": {
+    "type": "object",
+    "required": ["job", "order"],
+    "properties": {
+      "job": {
+        "$ref": "#/components/schemas/PrintJob"
+      },
+      "order": {
+        "$ref": "#/components/schemas/OrderResponse"
       }
     }
   },

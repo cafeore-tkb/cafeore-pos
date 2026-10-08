@@ -55,6 +55,34 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for PrintJobCreateRequestSource.
+const (
+	PrintJobCreateSourceCashier PrintJobCreateRequestSource = "cashier"
+	PrintJobCreateSourceMaster  PrintJobCreateRequestSource = "master"
+)
+
+// Defines values for PrintJobKind.
+const (
+	PrintJobKindEmergency PrintJobKind = "emergency"
+	PrintJobKindOrder     PrintJobKind = "order"
+)
+
+// Defines values for PrintJobSource.
+const (
+	PrintJobSourceCaos    PrintJobSource = "caos"
+	PrintJobSourceCashier PrintJobSource = "cashier"
+	PrintJobSourceMaster  PrintJobSource = "master"
+)
+
+// Defines values for PrintJobStatus.
+const (
+	PrintJobStatusCanceled PrintJobStatus = "canceled"
+	PrintJobStatusDone     PrintJobStatus = "done"
+	PrintJobStatusFailed   PrintJobStatus = "failed"
+	PrintJobStatusPrinting PrintJobStatus = "printing"
+	PrintJobStatusQueued   PrintJobStatus = "queued"
+)
+
 // Defines values for StockEventKind.
 const (
 	StockEventKindAdjust  StockEventKind = "adjust"
@@ -543,7 +571,11 @@ type OrderCreateRequest struct {
 	DiscountOrderId   *int                    `json:"discount_order_id"`
 	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
 	OrderId           int                     `json:"order_id"`
-	Received          int                     `json:"received"`
+
+	// PrintLabels true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。
+	// 印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）
+	PrintLabels *bool `json:"print_labels,omitempty"`
+	Received    int   `json:"received"`
 }
 
 // OrderCupResponse defines model for OrderCupResponse.
@@ -591,6 +623,88 @@ type OrderUpdateRequest struct {
 	Received          int                `json:"received"`
 	ServedAt          *time.Time         `json:"served_at"`
 }
+
+// PrintJob 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）
+type PrintJob struct {
+	// Attempts 取られた回数（もう一度印刷すると増える）
+	Attempts  int        `json:"attempts"`
+	ClaimedAt *time.Time `json:"claimed_at"`
+	CreatedAt time.Time  `json:"created_at"`
+
+	// CupId emergency の対象のカップ。order では null
+	CupId *openapi_types.UUID `json:"cup_id"`
+
+	// Error 失敗の理由（画面にそのまま出す）
+	Error *string `json:"error"`
+
+	// FinishedAt 済み・失敗・取り消しにした時刻
+	FinishedAt *time.Time `json:"finished_at"`
+
+	// Id 積んだ順の番号。印刷はこの順
+	Id int64 `json:"id"`
+
+	// Kind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
+	Kind    PrintJobKind       `json:"kind"`
+	OrderId openapi_types.UUID `json:"order_id"`
+
+	// OrderNo 積んだときの注文番号（画面に出す用）
+	OrderNo int `json:"order_no"`
+
+	// PrinterId 取った端末（印刷する端末の ID。端末の localStorage に持つ）
+	PrinterId *string `json:"printer_id"`
+
+	// Source 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
+	Source PrintJobSource `json:"source"`
+
+	// Status queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
+	Status    PrintJobStatus `json:"status"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// PrintJobClaim defines model for PrintJobClaim.
+type PrintJobClaim struct {
+	// Job 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）
+	Job   PrintJob      `json:"job"`
+	Order OrderResponse `json:"order"`
+}
+
+// PrintJobClaimRequest defines model for PrintJobClaimRequest.
+type PrintJobClaimRequest struct {
+	// PrinterId 印刷する端末の ID
+	PrinterId string `json:"printer_id"`
+}
+
+// PrintJobCreateRequest defines model for PrintJobCreateRequest.
+type PrintJobCreateRequest struct {
+	// CupId emergency の対象のカップ（emergency では必須）
+	CupId *openapi_types.UUID `json:"cup_id,omitempty"`
+
+	// Kind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
+	Kind    PrintJobKind       `json:"kind"`
+	OrderId openapi_types.UUID `json:"order_id"`
+
+	// Source 積むところ（caos はサーバーが入れ直しのときに積む）
+	Source PrintJobCreateRequestSource `json:"source"`
+}
+
+// PrintJobCreateRequestSource 積むところ（caos はサーバーが入れ直しのときに積む）
+type PrintJobCreateRequestSource string
+
+// PrintJobFailRequest defines model for PrintJobFailRequest.
+type PrintJobFailRequest struct {
+	// Error 失敗の理由（画面にそのまま出す）
+	Error     string `json:"error"`
+	PrinterId string `json:"printer_id"`
+}
+
+// PrintJobKind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
+type PrintJobKind string
+
+// PrintJobSource 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
+type PrintJobSource string
+
+// PrintJobStatus queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
+type PrintJobStatus string
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
@@ -744,3 +858,15 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// CreatePrintJobJSONRequestBody defines body for CreatePrintJob for application/json ContentType.
+type CreatePrintJobJSONRequestBody = PrintJobCreateRequest
+
+// ClaimPrintJobJSONRequestBody defines body for ClaimPrintJob for application/json ContentType.
+type ClaimPrintJobJSONRequestBody = PrintJobClaimRequest
+
+// CompletePrintJobJSONRequestBody defines body for CompletePrintJob for application/json ContentType.
+type CompletePrintJobJSONRequestBody = PrintJobClaimRequest
+
+// FailPrintJobJSONRequestBody defines body for FailPrintJob for application/json ContentType.
+type FailPrintJobJSONRequestBody = PrintJobFailRequest

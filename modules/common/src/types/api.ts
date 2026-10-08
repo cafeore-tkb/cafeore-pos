@@ -112,6 +112,78 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/print-jobs": {
+    /**
+     * 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）
+     * @description WebSocket（/api/ws/orders）の {"type":"print_jobs"} でも、変わるたびと、つないだときに全部届く。
+     */
+    get: operations["getPrintJobs"];
+    /**
+     * 印刷キューに積む（マスターの緊急ボタンなど）
+     * @description emergency は、そのカップの「緊急」のシールと、そのカップの本物と同じシールを、この順に印刷する（cup_id が要る。シールの無いカップ（アイスミルク・グッズ）は 400）。
+     * order は、その注文のラベル（カップごとのシールと引換券に貼るシール）を印刷し直す。
+     * レジの会計の印刷は、注文の作成（POST /api/orders の print_labels）で同じトランザクションの中で積む。
+     */
+    post: operations["createPrintJob"];
+  };
+  "/api/print-jobs/claim": {
+    /**
+     * 印刷する端末が、次の仕事を 1 件取る
+     * @description 待ち（queued）の仕事を積んだ順に 1 件だけ取り、印刷中（printing）にして、取った端末（printer_id）を記録する。
+     * SELECT ... FOR UPDATE SKIP LOCKED で取るので、印刷する端末が複数あっても同じ仕事を 2 台が取ることはない。
+     * 印刷に要る注文（カップ・明細つき）もいっしょに返す。注文やカップが消えていた仕事は失敗にして、次の仕事を取る。
+     * 待ちの仕事が無ければ 204。
+     */
+    post: operations["claimPrintJob"];
+  };
+  "/api/print-jobs/{id}/done": {
+    /**
+     * 印刷できた（済みにする）
+     * @description 取った端末（printer_id）だけが、印刷中の仕事を済みにできる。もう済みなら同じ結果を返す。それ以外は 409
+     */
+    post: operations["completePrintJob"];
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+  };
+  "/api/print-jobs/{id}/failed": {
+    /**
+     * 印刷できなかった（失敗として残す）
+     * @description 取った端末だけが、印刷中の仕事を失敗にできる。失敗は画面に出し、人が「もう一度印刷」（retry）か「取り消す」（cancel）を選ぶ
+     */
+    post: operations["failPrintJob"];
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+  };
+  "/api/print-jobs/{id}/retry": {
+    /**
+     * もう一度印刷する（待ちに戻す）
+     * @description 失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事（印刷した端末が落ちたなど）を待ちに戻す。それ以外は 409
+     */
+    post: operations["retryPrintJob"];
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+  };
+  "/api/print-jobs/{id}/cancel": {
+    /**
+     * 印刷をやめる（取り消す）
+     * @description 待ち・失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事を取り消す。それ以外は 409
+     */
+    post: operations["cancelPrintJob"];
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+  };
   "/api/caos/ops": {
     /**
      * CaOS の今日の盤面への操作
@@ -396,6 +468,13 @@ export interface components {
       discount_order_cups?: number;
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
+      /**
+       * @description true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。
+       * 印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）
+       *
+       * @default false
+       */
+      print_labels?: boolean;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -754,6 +833,86 @@ export interface components {
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
+    };
+    /**
+     * @description order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
+     * @enum {string}
+     */
+    PrintJobKind: "order" | "emergency";
+    /**
+     * @description 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
+     * @enum {string}
+     */
+    PrintJobSource: "cashier" | "master" | "caos";
+    /**
+     * @description queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
+     * @enum {string}
+     */
+    PrintJobStatus: "queued" | "printing" | "done" | "failed" | "canceled";
+    /** @description 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方） */
+    PrintJob: {
+      /**
+       * Format: int64
+       * @description 積んだ順の番号。印刷はこの順
+       */
+      id: number;
+      kind: components["schemas"]["PrintJobKind"];
+      source: components["schemas"]["PrintJobSource"];
+      /** Format: uuid */
+      order_id: string;
+      /** @description 積んだときの注文番号（画面に出す用） */
+      order_no: number;
+      /**
+       * Format: uuid
+       * @description emergency の対象のカップ。order では null
+       */
+      cup_id: string | null;
+      status: components["schemas"]["PrintJobStatus"];
+      /** @description 取った端末（印刷する端末の ID。端末の localStorage に持つ） */
+      printer_id: string | null;
+      /** Format: date-time */
+      claimed_at: string | null;
+      /**
+       * Format: date-time
+       * @description 済み・失敗・取り消しにした時刻
+       */
+      finished_at: string | null;
+      /** @description 失敗の理由（画面にそのまま出す） */
+      error: string | null;
+      /** @description 取られた回数（もう一度印刷すると増える） */
+      attempts: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    PrintJobCreateRequest: {
+      kind: components["schemas"]["PrintJobKind"];
+      /**
+       * @description 積むところ（caos はサーバーが入れ直しのときに積む）
+       * @enum {string}
+       */
+      source: "cashier" | "master";
+      /** Format: uuid */
+      order_id: string;
+      /**
+       * Format: uuid
+       * @description emergency の対象のカップ（emergency では必須）
+       */
+      cup_id?: string;
+    };
+    PrintJobClaimRequest: {
+      /** @description 印刷する端末の ID */
+      printer_id: string;
+    };
+    PrintJobFailRequest: {
+      printer_id: string;
+      /** @description 失敗の理由（画面にそのまま出す） */
+      error: string;
+    };
+    PrintJobClaim: {
+      job: components["schemas"]["PrintJob"];
+      order: components["schemas"]["OrderResponse"];
     };
     /** @enum {string} */
     StockResourceKind: "cup" | "bean";
@@ -1430,6 +1589,189 @@ export interface operations {
       };
       /** @description オーダーが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）
+   * @description WebSocket（/api/ws/orders）の {"type":"print_jobs"} でも、変わるたびと、つないだときに全部届く。
+   */
+  getPrintJobs: {
+    responses: {
+      /** @description 成功（積んだ順） */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"][];
+        };
+      };
+    };
+  };
+  /**
+   * 印刷キューに積む（マスターの緊急ボタンなど）
+   * @description emergency は、そのカップの「緊急」のシールと、そのカップの本物と同じシールを、この順に印刷する（cup_id が要る。シールの無いカップ（アイスミルク・グッズ）は 400）。
+   * order は、その注文のラベル（カップごとのシールと引換券に貼るシール）を印刷し直す。
+   * レジの会計の印刷は、注文の作成（POST /api/orders の print_labels）で同じトランザクションの中で積む。
+   */
+  createPrintJob: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrintJobCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 積んだ */
+      201: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"];
+        };
+      };
+      /** @description 中身が正しくない（カップがその注文に無い・シールの無いカップなど） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 注文が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 印刷する端末が、次の仕事を 1 件取る
+   * @description 待ち（queued）の仕事を積んだ順に 1 件だけ取り、印刷中（printing）にして、取った端末（printer_id）を記録する。
+   * SELECT ... FOR UPDATE SKIP LOCKED で取るので、印刷する端末が複数あっても同じ仕事を 2 台が取ることはない。
+   * 印刷に要る注文（カップ・明細つき）もいっしょに返す。注文やカップが消えていた仕事は失敗にして、次の仕事を取る。
+   * 待ちの仕事が無ければ 204。
+   */
+  claimPrintJob: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrintJobClaimRequest"];
+      };
+    };
+    responses: {
+      /** @description 取った */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJobClaim"];
+        };
+      };
+      /** @description 待ちの仕事が無い */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * 印刷できた（済みにする）
+   * @description 取った端末（printer_id）だけが、印刷中の仕事を済みにできる。もう済みなら同じ結果を返す。それ以外は 409
+   */
+  completePrintJob: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrintJobClaimRequest"];
+      };
+    };
+    responses: {
+      /** @description 済みにした */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"];
+        };
+      };
+      /** @description その端末が取った印刷中の仕事ではない */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 印刷できなかった（失敗として残す）
+   * @description 取った端末だけが、印刷中の仕事を失敗にできる。失敗は画面に出し、人が「もう一度印刷」（retry）か「取り消す」（cancel）を選ぶ
+   */
+  failPrintJob: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrintJobFailRequest"];
+      };
+    };
+    responses: {
+      /** @description 失敗にした */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"];
+        };
+      };
+      /** @description その端末が取った印刷中の仕事ではない */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * もう一度印刷する（待ちに戻す）
+   * @description 失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事（印刷した端末が落ちたなど）を待ちに戻す。それ以外は 409
+   */
+  retryPrintJob: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    responses: {
+      /** @description 待ちに戻した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"];
+        };
+      };
+      /** @description 戻せない状態 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 印刷をやめる（取り消す）
+   * @description 待ち・失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事を取り消す。それ以外は 409
+   */
+  cancelPrintJob: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    responses: {
+      /** @description 取り消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrintJob"];
+        };
+      };
+      /** @description 取り消せない状態 */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

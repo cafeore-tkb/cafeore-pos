@@ -25,5 +25,6 @@ func All() []any {
 		&CaosLaneRow{},
 		&CaosOpRow{},
 		&CaosPracticeRow{},
+		&PrintJobRow{},
 	}
 }
