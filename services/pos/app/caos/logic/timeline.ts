@@ -1,4 +1,4 @@
-import type { Barista } from "../types";
+import type { Barista } from "./board";
 import { timeOfDayLabel } from "./format";
 import { CHANGEOVER_SEC } from "./queue";
 

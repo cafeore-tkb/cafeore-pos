@@ -1,4 +1,4 @@
-import type { Barista } from "../types";
+import type { Barista } from "./board";
 
 // 列（ドリッパー 1〜6）。列は「1st」〜「6th」と番号だけで呼ぶ。
 // 担当者（名前・限定を淹れられる上級生か）は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
