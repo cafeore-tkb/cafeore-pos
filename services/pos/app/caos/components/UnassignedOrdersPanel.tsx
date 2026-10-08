@@ -286,6 +286,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
             );
 
             return (
+              // biome-ignore lint/a11y/useKeyWithClickEvents: iPad で触って動かすカード。中にボタンがあり、ドラッグも受けるので button にできない
               <div
                 key={order.ticketUid || order.id}
                 id={`unassigned-${(order.ticketUid || order.id).replace("#", "")}`}

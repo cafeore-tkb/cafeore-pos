@@ -105,11 +105,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   const splitResults = useMemo<SplitResult[]>(() => {
     const groups = new Map<string, CompletedPart[]>();
-    completedParts.forEach((part) => {
+    for (const part of completedParts) {
       const current = groups.get(part.ticket.id) || [];
       current.push(part);
       groups.set(part.ticket.id, current);
-    });
+    }
 
     return Array.from(groups, ([orderId, parts]) => {
       const expectedParts = Math.max(
@@ -144,9 +144,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       string,
       { expected: number; assigned: number; bays: Set<number> }
     >();
-    baristas.forEach((barista) => {
-      barista.queue.forEach((ticket) => {
-        if (!ticket.totalItemsInOrder || ticket.totalItemsInOrder <= 1) return;
+    for (const barista of baristas) {
+      for (const ticket of barista.queue) {
+        if (!ticket.totalItemsInOrder || ticket.totalItemsInOrder <= 1)
+          continue;
         const current = groups.get(ticket.id) || {
           expected: ticket.totalItemsInOrder,
           assigned: 0,
@@ -156,8 +157,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         current.assigned += 1;
         current.bays.add(barista.bayNumber);
         groups.set(ticket.id, current);
-      });
-    });
+      }
+    }
     return Array.from(groups, ([orderId, value]) => ({
       orderId,
       ...value,
@@ -194,7 +195,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     >();
     const leadTimes: number[] = [];
     let cups = 0;
-    salesOrders.forEach((order) => {
+    for (const order of salesOrders) {
       const createdMs = new Date(order.createdAt).getTime();
       const bucket = Math.floor(createdMs / 600_000) * 600_000;
       const bucketValue = bucketMap.get(bucket) || {
@@ -204,8 +205,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       };
       bucketValue.orders += 1;
       bucketValue.sales += order.billingAmount;
-      order.items.forEach((item) => {
-        if (item.type === "others") return;
+      for (const item of order.items) {
+        if (item.type === "others") continue;
         cups += 1;
         bucketValue.cups += 1;
         const menu = menuMap.get(item.name) || { cups: 0, sales: 0 };
@@ -213,13 +214,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         menu.sales += item.price;
         menuMap.set(item.name, menu);
         typeMap.set(item.type, (typeMap.get(item.type) || 0) + 1);
-      });
+      }
       bucketMap.set(bucket, bucketValue);
       if (order.readyAt)
         leadTimes.push(
           (new Date(order.readyAt).getTime() - createdMs) / 60_000,
         );
-    });
+    }
     const buckets = Array.from(bucketMap, ([time, value]) => ({
       time,
       ...value,

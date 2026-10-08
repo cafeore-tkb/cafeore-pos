@@ -43,10 +43,10 @@ export const posOrderToDripUnits = (order: PosOrder): UnassignedOrder[] => {
       assignee?: string;
     }
   >();
-  order.menus.forEach((line) => {
+  for (const line of order.menus) {
     const assignee = line.assignee?.trim() || undefined;
     const preferredBaristaId = assignee ? nominatedBayId(assignee) : undefined;
-    line.items.forEach(({ item, quantity }) => {
+    for (const { item, quantity } of line.items) {
       const type = item.item_type.name;
       // アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。
       if (
@@ -54,7 +54,7 @@ export const posOrderToDripUnits = (order: PosOrder): UnassignedOrder[] => {
         type === "milk" ||
         item.name.includes("アイスミルク")
       )
-        return;
+        continue;
       const beanCode = posBeanCode(item.name, type);
       const key = `${beanCode}-${assignee ?? ""}`;
       const current = grouped.get(key) || {
@@ -67,8 +67,8 @@ export const posOrderToDripUnits = (order: PosOrder): UnassignedOrder[] => {
       current.count += quantity;
       if (!current.names.includes(item.abbr)) current.names.push(item.abbr);
       grouped.set(key, current);
-    });
-  });
+    }
+  }
 
   const id = `#${order.orderId.toString().padStart(3, "0")}`;
   const source = Array.from(

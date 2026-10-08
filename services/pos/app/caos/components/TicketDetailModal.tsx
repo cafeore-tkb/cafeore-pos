@@ -51,6 +51,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100"
             aria-label="閉じる"

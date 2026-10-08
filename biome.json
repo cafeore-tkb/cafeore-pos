@@ -22,23 +22,5 @@
         "useSortedClasses": "warn"
       }
     }
-  },
-  "overrides": [
-    {
-      "include": ["services/pos/app/caos/**"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "noLabelWithoutControl": "off",
-            "useButtonType": "off",
-            "useKeyWithClickEvents": "off",
-            "useSemanticElements": "off"
-          },
-          "complexity": {
-            "noForEach": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

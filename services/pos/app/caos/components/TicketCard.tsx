@@ -93,6 +93,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   };
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: iPad で触って動かすカード。中にボタンがあり、ドラッグも受けるので button にできない
     <div
       ref={cardRef}
       onClick={() => {

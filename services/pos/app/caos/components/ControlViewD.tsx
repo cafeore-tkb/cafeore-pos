@@ -450,7 +450,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
 
   const orderGroups = useMemo<OrderGroup[]>(() => {
     const groups = new Map<string, OrderGroup>();
-    unassignedOrders.forEach((order) => {
+    for (const order of unassignedOrders) {
       const group = groups.get(order.id) || {
         id: order.id,
         items: [],
@@ -458,14 +458,14 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       };
       group.items.push(order);
       groups.set(order.id, group);
-    });
-    sortedBaristas.forEach((barista) => {
-      barista.queue.forEach((ticket) => {
+    }
+    for (const barista of sortedBaristas) {
+      for (const ticket of barista.queue) {
         groups
           .get(ticket.id)
           ?.assigned.push({ ticket, bayNumber: barista.bayNumber });
-      });
-    });
+      }
+    }
     return Array.from(groups.values()).sort(
       (left, right) => orderNumber(left.id) - orderNumber(right.id),
     );

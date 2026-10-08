@@ -53,6 +53,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
               : "オーダーの割当"}
           </h3>
           <button
+            type="button"
             onClick={onClose}
             className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800"
           >
@@ -64,9 +65,9 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         <div className="space-y-4 p-5 text-xs">
           {/* 1. Select Order */}
           <div>
-            <label className="mb-1.5 block font-bold text-slate-700">
+            <div className="mb-1.5 font-bold text-slate-700">
               割り当てる未割当オーダー:
-            </label>
+            </div>
             {unassignedOrders.length === 0 ? (
               <div className="rounded border border-slate-200 bg-slate-50 p-3 text-slate-500">
                 未割当オーダーがありません
@@ -77,14 +78,15 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                   const uid = ord.ticketUid || ord.id;
                   const isSelected = selectedOrderUid === uid;
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={uid}
                       onClick={() => {
                         setSelectedOrderUid(uid);
                         if (ord.preferredBaristaId)
                           setSelectedBayId(ord.preferredBaristaId);
                       }}
-                      className={`flex cursor-pointer items-center justify-between rounded-lg border p-2.5 transition-all ${
+                      className={`flex w-full cursor-pointer items-center justify-between rounded-lg border p-2.5 text-left transition-all ${
                         isSelected
                           ? "border-blue-500 bg-blue-50/70 shadow-xs ring-1 ring-blue-400"
                           : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
@@ -130,7 +132,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                       {isSelected && (
                         <Check className="h-4 w-4 shrink-0 text-blue-600" />
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -139,12 +141,13 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
 
           {/* 2. Select Bay */}
           <div>
-            <label className="mb-1.5 block font-bold text-slate-700">
+            <div className="mb-1.5 font-bold text-slate-700">
               割当先のドリッパー（抽出担当者）:
-            </label>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               {baristas.map((b) => (
                 <button
+                  type="button"
                   key={b.id}
                   disabled={Boolean(
                     selectedOrder?.preferredBaristaId &&
@@ -174,12 +177,14 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-between border-slate-200 border-t bg-[#f8fafc] px-5 py-3">
           <button
+            type="button"
             onClick={onClose}
             className="min-h-[44px] touch-manipulation rounded-lg border border-slate-300 px-4 font-bold text-slate-700 text-xs hover:bg-slate-100"
           >
             キャンセル
           </button>
           <button
+            type="button"
             disabled={!canAssign}
             onClick={() => {
               if (canAssign) {

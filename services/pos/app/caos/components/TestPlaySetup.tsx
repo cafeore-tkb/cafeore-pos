@@ -28,13 +28,13 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   const slots = useMemo(() => {
     if (orders.length === 0) return [];
     const groupedDays = new Map<string, number[]>();
-    orders.forEach((order) => {
+    for (const order of orders) {
       const date = new Date(order.createdAt);
       const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const values = groupedDays.get(dayKey) || [];
       values.push(date.getTime());
       groupedDays.set(dayKey, values);
-    });
+    }
     return Array.from(groupedDays.values())
       .sort((a, b) => Math.min(...a) - Math.min(...b))
       .flatMap((timestamps) => {

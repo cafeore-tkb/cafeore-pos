@@ -88,7 +88,7 @@ export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
     nowSec,
     (first.startTimeSec ?? nowSec) + first.totalDurationSec,
   );
-  queue.slice(1).forEach((ticket) => {
+  for (const ticket of queue.slice(1)) {
     const startTimeSec = cursor + 15;
     result.push({
       ...ticket,
@@ -97,7 +97,7 @@ export const reanchorQueueInOrder = (queue: OrderTicket[], nowSec: number) => {
       timeRemainingSec: undefined,
     });
     cursor = startTimeSec + ticket.totalDurationSec;
-  });
+  }
   return result;
 };
 

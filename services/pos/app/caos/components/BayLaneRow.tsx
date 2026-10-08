@@ -142,6 +142,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
       {/* 2. Operation - immediately to the right of the dripper */}
       <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-[#cbd5e1] border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
         <button
+          type="button"
           id={`bay-action-btn-${barista.id}`}
           disabled={barista.queue.length === 0}
           onClick={() => onAdvanceBay(barista.id)}
@@ -200,6 +201,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
           style={{ left: `${emptySlotLeftPx}px` }}
         >
           <button
+            type="button"
             id={`empty-slot-bay-${barista.id}`}
             onClick={() => onOpenEmptySlot(barista.id)}
             className="group flex h-full min-w-[130px] cursor-pointer touch-manipulation select-none items-center justify-center gap-1.5 rounded-lg border-2 border-[#cbd5e1] border-dashed bg-[#f8fafc] px-3 font-bold text-[#64748b] text-[12.5px] transition-all hover:border-blue-400 hover:text-blue-600 active:bg-blue-100/70"

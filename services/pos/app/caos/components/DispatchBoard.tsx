@@ -172,8 +172,8 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
     bayNumber: number;
   }[] = [];
   if (selectedOrderId) {
-    baristas.forEach((b) => {
-      [...(b.pastTickets || []), ...b.queue].forEach((t) => {
+    for (const b of baristas) {
+      for (const t of [...(b.pastTickets || []), ...b.queue]) {
         if (t.id === selectedOrderId) {
           matchingTickets.push({
             bayNumber: b.bayNumber,
@@ -181,8 +181,8 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
             cupCount: t.cupCount,
           });
         }
-      });
-    });
+      }
+    }
   }
 
   return (
@@ -216,6 +216,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={() => onSelectOrder("")}
             className="flex min-h-[34px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
           >

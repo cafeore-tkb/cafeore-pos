@@ -117,9 +117,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             );
           })}
           {activeTab === "control" && (
-            <div
-              className="ml-0.5 flex items-center gap-0.5 border-slate-300 border-l pl-1"
-              role="group"
+            <fieldset
+              className="ml-0.5 flex min-w-0 items-center gap-0.5 border-slate-300 border-l pl-1"
               aria-label="管制盤の表示切替"
             >
               {(["current", "c", "d"] as const).map((mode) => (
@@ -133,7 +132,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   {mode === "current" ? "A" : mode.toUpperCase()}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )}
         </nav>
 
@@ -145,6 +144,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           {/* Quick Sim Controls */}
           <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
             <button
+              type="button"
               id="sim-play-pause-btn"
               onClick={onTogglePlay}
               title={isRunning ? "一時停止" : "タイマー再開"}
@@ -157,6 +157,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               )}
             </button>
             <button
+              type="button"
               id="sim-speed-btn"
               onClick={() =>
                 onChangeSpeed(
@@ -175,6 +176,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               {simSpeed}x
             </button>
             <button
+              type="button"
               id="sim-reset-btn"
               onClick={onResetData}
               title="初期状態にリセット"
@@ -249,8 +251,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Right side: only persistent operational controls */}
       <div className="flex items-center gap-2">
-        <div
-          role="status"
+        <output
           aria-label={`cafeore-pos ${POS_STATUS_LABEL[posStatus]}`}
           title={`cafeore-posの注文: ${POS_STATUS_LABEL[posStatus]}`}
           className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${posStatus === "open" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : posStatus === "off" ? "border-slate-200 bg-slate-100 text-slate-400" : "border-amber-300 bg-amber-50 text-amber-800"}`}
@@ -259,7 +260,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <span
             className={`h-2 w-2 rounded-full ${posStatus === "open" ? "bg-emerald-500" : posStatus === "off" ? "bg-slate-300" : "bg-amber-400"}`}
           />
-        </div>
+        </output>
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
@@ -297,6 +298,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         {/* Sound toggle */}
         <button
+          type="button"
           id="btn-toggle-sound"
           onClick={onToggleSound}
           title={soundEnabled ? "通知音 ON" : "通知音 消音"}

@@ -93,13 +93,13 @@ const historicalOrderToDripUnits = (
       !item.name.includes("アイスミルク"),
   );
   const grouped = new Map<BeanCode, { names: string[]; count: number }>();
-  drinks.forEach((item) => {
+  for (const item of drinks) {
     const code = historicalBeanCode(item.name, item.type);
     const current = grouped.get(code) || { names: [], count: 0 };
     current.count += 1;
     if (!current.names.includes(item.name)) current.names.push(item.name);
     grouped.set(code, current);
-  });
+  }
   const id = `#${order.orderId.toString().padStart(3, "0")}`;
   const source = Array.from(
     grouped,
