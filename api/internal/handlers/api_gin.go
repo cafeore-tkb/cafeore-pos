@@ -20,6 +20,9 @@ type ServerInterface interface {
 	// CaOS の「次へ」
 	// (POST /api/caos/drippers/{dripper}/next)
 	AdvanceCaosDripper(c *gin.Context, dripper int)
+	// CaOS の「1つ戻す」
+	// (POST /api/caos/undo)
+	UndoCaosCups(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -192,6 +195,19 @@ func (siw *ServerInterfaceWrapper) AdvanceCaosDripper(c *gin.Context) {
 	}
 
 	siw.Handler.AdvanceCaosDripper(c, dripper)
+}
+
+// UndoCaosCups operation middleware
+func (siw *ServerInterfaceWrapper) UndoCaosCups(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UndoCaosCups(c)
 }
 
 // GetCashierState operation middleware
@@ -1029,6 +1045,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
+	router.POST(options.BaseURL+"/api/caos/undo", wrapper.UndoCaosCups)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)

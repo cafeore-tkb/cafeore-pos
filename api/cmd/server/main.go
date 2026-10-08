@@ -319,6 +319,7 @@ func main() {
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
+		api.POST("/caos/undo", caosHandler.UndoCaosCups)
 	}
 
 	// サーバー起動

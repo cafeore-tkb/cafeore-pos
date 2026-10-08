@@ -136,6 +136,26 @@ export interface paths {
      */
     post: operations["advanceCaosDripper"];
   };
+  "/api/caos/undo": {
+    /**
+     * CaOS の「1つ戻す」
+     * @description CaOS の画面（各 iPad の /master-sheet）が、自分が最後にした操作を戻す。画面はその操作の前の値と、その操作で自分が書いた値を覚えておき、
+     * カップごとに current（その操作で書いた値）と restore（操作の前の値）を送る。サーバーは、カップの今の値が current と同じときだけ restore を書く（条件付きの書き戻し）。
+     * ほかの画面（ほかの CaOS の iPad・マスター・提供など）があとで同じカップを変えていたら、何も書かずに 409 で断る（ほかの画面の操作を消さない）。
+     *
+     * PUT /api/caos/cups と違い、抽出中・終わりのカップも、準備完了の時刻（ready_at）も書き戻せる（「次へ」で終えたカードを抽出中に戻し、準備完了を外す。
+     * 空いているドリッパーに置いて始めたカードを未割当に戻す）。今の値が current とぴったり同じとき（時刻もミリ秒まで）だけなので、
+     * その間に「次へ」・準備完了・提供済みなどがあれば断られる。提供済み（served_at）は書き戻さず、変わっていれば断る（提供の操作を消さない）。
+     * 準備完了を変えた注文は、注文の状態をカップから決め直す（POS のカップの準備完了と同じ）。
+     *
+     * 確かめること：
+     * - カップの今の値（CaOS の列・ready_at・served_at）が current と違うなら 409。提供済みになっていたら、その理由を返す
+     * - 今日（日本時間）の注文のカップだけ
+     * - 書き戻したあとも、1 つのドリッパーで抽出中のカードは 1 枚・1 枚のカードは最大 2 杯・同じ drip_id のカップは同じ値（合わなければ 409）
+     * 書いたカップの注文は PUT /api/caos/cups と同じく全部の画面に配る。
+     */
+    post: operations["undoCaosCups"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -559,6 +579,35 @@ export interface components {
        * @description 始めたカード。待機が無ければ null
        */
       started_drip_id: string | null;
+    };
+    /**
+     * @description 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）の時刻を足したもの。
+     * served_at は比べるだけで書かない（restore の served_at は current と同じにする）
+     */
+    CaosUndoCupState: {
+      dripper: number | null;
+      /** Format: double */
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
+      /** Format: date-time */
+      ready_at: string | null;
+      /** Format: date-time */
+      served_at: string | null;
+    };
+    /** @description 1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる） */
+    CaosUndoCup: {
+      /** Format: uuid */
+      cup_id: string;
+      current: components["schemas"]["CaosUndoCupState"];
+      restore: components["schemas"]["CaosUndoCupState"];
+    };
+    CaosUndoRequest: {
+      cups: components["schemas"]["CaosUndoCup"][];
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -1321,6 +1370,54 @@ export interface operations {
       };
       /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
       409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の「1つ戻す」
+   * @description CaOS の画面（各 iPad の /master-sheet）が、自分が最後にした操作を戻す。画面はその操作の前の値と、その操作で自分が書いた値を覚えておき、
+   * カップごとに current（その操作で書いた値）と restore（操作の前の値）を送る。サーバーは、カップの今の値が current と同じときだけ restore を書く（条件付きの書き戻し）。
+   * ほかの画面（ほかの CaOS の iPad・マスター・提供など）があとで同じカップを変えていたら、何も書かずに 409 で断る（ほかの画面の操作を消さない）。
+   *
+   * PUT /api/caos/cups と違い、抽出中・終わりのカップも、準備完了の時刻（ready_at）も書き戻せる（「次へ」で終えたカードを抽出中に戻し、準備完了を外す。
+   * 空いているドリッパーに置いて始めたカードを未割当に戻す）。今の値が current とぴったり同じとき（時刻もミリ秒まで）だけなので、
+   * その間に「次へ」・準備完了・提供済みなどがあれば断られる。提供済み（served_at）は書き戻さず、変わっていれば断る（提供の操作を消さない）。
+   * 準備完了を変えた注文は、注文の状態をカップから決め直す（POS のカップの準備完了と同じ）。
+   *
+   * 確かめること：
+   * - カップの今の値（CaOS の列・ready_at・served_at）が current と違うなら 409。提供済みになっていたら、その理由を返す
+   * - 今日（日本時間）の注文のカップだけ
+   * - 書き戻したあとも、1 つのドリッパーで抽出中のカードは 1 枚・1 枚のカードは最大 2 杯・同じ drip_id のカップは同じ値（合わなければ 409）
+   * 書いたカップの注文は PUT /api/caos/cups と同じく全部の画面に配る。
+   */
+  undoCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosUndoRequest"];
+      };
+    };
+    responses: {
+      /** @description 書き戻した */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ほかの画面があとで変えていた（何も書かない）。error を画面にそのまま出す */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 今日の注文でない（何も書かない） */
+      422: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
