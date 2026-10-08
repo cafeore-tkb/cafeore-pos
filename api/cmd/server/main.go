@@ -361,7 +361,9 @@ func main() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Cloud Run は SIGTERM から 10 秒で止めるので、その中で Shutdown と通知の送り切りに分ける。
+	// 同じ ctx を使うと、Shutdown が待ち切ったときに通知を送らずに戻ってしまう。
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
@@ -369,7 +371,9 @@ func main() {
 	}
 
 	// 通知はまとめるために少し溜めてから送るので、止まる前に送り切る
-	activity.Close(ctx)
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer closeCancel()
+	activity.Close(closeCtx)
 
 	if sqlDB, err := db.DB(); err == nil {
 		if err := sqlDB.Close(); err != nil {

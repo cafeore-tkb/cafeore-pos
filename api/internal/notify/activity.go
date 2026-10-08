@@ -53,6 +53,7 @@ func (a *Activity) Post(text string) {
 }
 
 // Close は quiet を待たずに、溜まっている分を今すぐ送る。終了時（SIGTERM）に呼ぶ。
+// 以降に Post されたもの（応答後の goroutine から来るもの）は、まとめずにすぐ送る。
 // ctx が切れたら送り終わりを待たずに戻る。
 func (a *Activity) Close(ctx context.Context) {
 	if a == nil {
@@ -88,11 +89,14 @@ func (a *Activity) run() {
 		}
 	}
 
+	// Close の後は止まる直前なので、まとめるのを待たない
+	closed := false
+
 	for {
 		select {
 		case line := <-a.lines:
 			pending = append(pending, line)
-			if len(pending) >= a.max {
+			if closed || len(pending) >= a.max {
 				timer.Stop()
 				flush()
 				continue
@@ -112,6 +116,7 @@ func (a *Activity) run() {
 			}
 			timer.Stop()
 			flush()
+			closed = true
 			close(done)
 		}
 	}

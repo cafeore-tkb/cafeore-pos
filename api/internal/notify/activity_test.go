@@ -73,6 +73,12 @@ func TestActivityCloseSendsPendingLines(t *testing.T) {
 	if text := receive(t, received); text != "one\ntwo" {
 		t.Fatalf("unexpected message: %q", text)
 	}
+
+	// Close の後に来たものはまとめずにすぐ送る
+	a.Post("three")
+	if text := receive(t, received); text != "three" {
+		t.Fatalf("unexpected message: %q", text)
+	}
 }
 
 func TestActivityEscapesSlackMarkup(t *testing.T) {
