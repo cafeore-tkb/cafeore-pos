@@ -16,6 +16,7 @@ const flagLabels = (itemType: ItemType) =>
     itemType.makes_cup ? "カップ" : "カップなし",
     itemType.makes_cup && (itemType.needs_brew ? "抽出" : "抽出なし"),
     itemType.senior_only && "限定",
+    itemType.iced_brew && "アイス",
   ].filter((label) => label !== false);
 
 export function ItemTypesTab({
