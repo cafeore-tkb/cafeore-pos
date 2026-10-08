@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -131,24 +130,14 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 	// エラーにならないのに通知だけが届かない。変更の通知と同じ経路（h.db）で自分宛てに
 	// 確認の通知を送り、届かなければ警告して設定ミスに気づけるようにする。
 	// どのチャンネルも同じ接続で待ち受けているので、確認は orders_changed の1つで足りる。
-	connCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	probe := listenProbePrefix + instanceID + " " + uuid.NewString()
-	var probed atomic.Bool
-	go func() {
-		select {
-		case <-connCtx.Done():
-		case <-time.After(listenProbeTimeout):
-			if !probed.Load() {
-				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
-					"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
-					ordersChangedChannel, listenProbeTimeout)
-			}
-		}
-	}()
-	if err := h.db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, probe).Error; err != nil {
-		log.Printf("failed to send %s probe: %v", ordersChangedChannel, err)
-	}
+	probe := listenProbePrefix + uuid.NewString()
+	probeTimeout := time.AfterFunc(listenProbeTimeout, func() {
+		log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
+			"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
+			ordersChangedChannel, listenProbeTimeout)
+	})
+	defer probeTimeout.Stop()
+	notifyChanged(h.db, ordersChangedChannel, probe)
 
 	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全部を配り直す
 	changes.addAll()
@@ -171,7 +160,7 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 		}
 		switch {
 		case n.Channel == ordersChangedChannel && n.Payload == probe:
-			probed.Store(true)
+			probeTimeout.Stop()
 			log.Printf("%s: notifications are delivered", ordersChangedChannel)
 		case n.Channel == ordersChangedChannel && strings.HasPrefix(n.Payload, listenProbePrefix):
 			// ほかのインスタンスの確認の通知
@@ -220,7 +209,7 @@ func (q *pendingChanges) add(channel, payload string) {
 // 変わった注文を積む。形の分からない通知は、何が変わったか分からないので全注文を配り直す。
 func (q *pendingChanges) addOrder(rawOrderID string) {
 	orderID, err := uuid.Parse(rawOrderID)
-	if rawOrderID == "" || err != nil {
+	if err != nil {
 		q.update(func(s *changeSet) { s.allOrders = true })
 		return
 	}
