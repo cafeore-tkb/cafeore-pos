@@ -27,21 +27,33 @@ export const stockResourceDefaults: Record<
   },
 };
 
-// アイテムタイプからカップを推測する。使用量の初期値にだけ使う。
-const cupNameHints: Record<string, string> = {
-  hot: "ホット",
-  hotOre: "ホット",
-  ice: "アイス",
-  milk: "アイス",
-  iceOre: "オレ",
-};
-
-export const guessCup = (
-  itemTypeName: string | undefined,
+/**
+ * タイプ（ID）ごとに、そのタイプのアイテムにいちばん多く入っているカップ（ID）。
+ * 新しいアイテムや、カップが空のアイテムに入れる初期値にだけ使う。
+ * タイプの名前やカップの名前で決め打ちせず、いま DB に入っている使用量から決める
+ */
+export const cupByItemType = (
+  items: { id?: string; item_type: { id?: string } }[],
+  usages: { item_id: string; resource_id: string }[],
   cups: StockResource[],
-): StockResource | undefined => {
-  const hint = itemTypeName && cupNameHints[itemTypeName];
-  return hint ? cups.find((cup) => cup.name.includes(hint)) : undefined;
+): Map<string, string> => {
+  const typeOf = new Map(items.map((item) => [item.id, item.item_type.id]));
+  const counts = new Map<string, Map<string, number>>();
+  for (const { item_id, resource_id } of usages) {
+    const typeId = typeOf.get(item_id);
+    if (!typeId || !cups.some((cup) => cup.id === resource_id)) continue;
+    const byCup = counts.get(typeId) ?? new Map<string, number>();
+    byCup.set(resource_id, (byCup.get(resource_id) ?? 0) + 1);
+    counts.set(typeId, byCup);
+  }
+  // 同数ならカップの並び順で先のもの
+  return new Map(
+    [...counts].map(([typeId, byCup]) => {
+      const max = Math.max(...byCup.values());
+      const cup = cups.find((c) => byCup.get(c.id) === max);
+      return [typeId, cup?.id ?? ""];
+    }),
+  );
 };
 
 /** カップを先に、その後に豆を並べる */

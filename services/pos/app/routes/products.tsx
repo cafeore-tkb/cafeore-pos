@@ -84,9 +84,22 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
-  const { statuses, mutateInventory } = useInventory();
+  const {
+    statuses,
+    error: inventoryError,
+    isLoading: inventoryLoading,
+    mutateInventory,
+  } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
-  const { usages, mutateUsages } = useStockUsages();
+  const {
+    usages,
+    error: usagesError,
+    isLoading: usagesLoading,
+    mutateUsages,
+  } = useStockUsages();
+  // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまう
+  const stockReady =
+    !inventoryLoading && !usagesLoading && !inventoryError && !usagesError;
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -232,6 +245,7 @@ export default function ProductsPage() {
         itemTypes={itemTypes}
         resources={resources}
         usages={usages}
+        stockReady={stockReady}
       />
       <DeleteDialog
         target={deleteTarget}

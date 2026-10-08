@@ -239,7 +239,7 @@ func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated,
 
 // --- オーダーストップ ---
 
-func masterStateMessage(state string) string {
+func masterStateChangedMessage(state string) string {
 	switch state {
 	case "stop":
 		return tagged("⛔ オーダーストップ", tagStop)

@@ -45,6 +45,16 @@ export function ItemsTab({
     };
   }, [stockUsages, resources]);
 
+  // 使用量が入っているアイテムがあるタイプ。そうでないタイプ（グッズなど）は未設定でも目立たせない
+  const countedTypes = useMemo(() => {
+    const used = new Set(stockUsages.map((u) => u.item_id));
+    return new Set(
+      items
+        .filter((item) => used.has(item.id))
+        .map((item) => item.item_type.id),
+    );
+  }, [items, stockUsages]);
+
   const groups = useMemo(() => {
     const byType = new Map<string, WithId<ItemEntity>[]>();
     for (const item of items) {
@@ -107,8 +117,7 @@ export function ItemsTab({
                     </TableCell>
                     <StockCell
                       text={stockOf(item.id)}
-                      // グッズは数えないので未設定でも目立たせない
-                      warn={item.item_type.name !== "others"}
+                      warn={countedTypes.has(item.item_type.id)}
                     />
                     <TableCell>
                       <RowActions id={item.id} {...handlers} />

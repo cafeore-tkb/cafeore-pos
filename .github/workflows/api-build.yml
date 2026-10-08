@@ -48,6 +48,17 @@ name: api / build & deploy
 # main への push は api/** のままにしてある。本番フロントは固定の
 # VITE_API_BASE_URL を見るので backend を出し直す理由が無く、同じイメージの
 # リビジョンが本番サービスに積み上がるだけだから。
+#
+# ## PR では preview ラベルが付いているときだけ
+#
+# プレビューは **preview ラベルが付いた open な PR にだけ**出す。ラベルを
+# 付けたとき（labeled）と、付いている間の push や reopen でデプロイする。
+# ラベルを外すと pr-cleanup が片付ける。
+# ラベルの無い PR でもイメージが作れるかは api-ci の image job で確かめる。
+#
+# 片付けと追い越し合わないよう、プレビューを出す実行は pr-cleanup と同じ
+# concurrency group（preview-backend-pr-<番号>）に入れている。デプロイ中に
+# ラベルを外すと、片付けはデプロイが終わるのを待ってから走る。
 
 on:
   push:
@@ -57,6 +68,14 @@ on:
       - 'api/**'
       - '.github/workflows/api-build.yml'
   pull_request:
+    # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
+    # paths は labeled でも PR 全体の差分で判定されるので、下のパスを触っていない
+    # PR はラベルを付けてもデプロイされない。
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     paths:
       - 'api/**'
       - '.github/workflows/api-build.yml'
@@ -84,16 +103,134 @@ permissions:
 # 取り消した後に新しい実行が失敗すると、取り消された方のコミットも
 # デプロイされず、本番が 2 つ前の状態のまま残るため。
 # 取り消さない場合も、待機できるのは最新の 1 件だけなので実行は溜まらない。
+#
+# プレビューを出す PR の実行は pr-cleanup と同じ group に入れる（上の
+# 「PR では preview ラベルが付いているときだけ」を参照）。pr-cleanup 側は
+# cancel-in-progress: false なので、片付けはデプロイを打ち切らずに待つ。
+# 逆に片付け中にラベルを付け直すと、こちらが片付けを取り消してデプロイし直す。
+#
+# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
+# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
+# 走っているデプロイや待っている片付けを取り消してしまう。run_id で group を
+# 分けて逃がす。**条件は job の if と揃えること。**
 concurrency:
-  group: api-build-${{ github.ref }}
+  group: >-
+    ${{ github.event_name != 'pull_request' && format('api-build-{0}', github.ref)
+        || (github.actor != 'dependabot[bot]'
+            && github.event.pull_request.head.repo.full_name == github.repository
+            && github.event.pull_request.state == 'open'
+            && contains(github.event.pull_request.labels.*.name, 'preview')
+            && (github.event.action != 'labeled' || github.event.label.name == 'preview'))
+           && format('preview-backend-pr-{0}', github.event.number)
+        || format('api-build-skip-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PR のプレビューで、どの PR の backend を使うかを決める（.github/scripts/preview-backend-owner.sh）。
+  # 別の PR の上に積んだ PR で、自分では backend（api/ と この workflow）を変えていなければ、
+  # 中の backend は向き先の PR と同じコードなので、自分の backend は立てずに向き先の PR のもの
+  # （pr-<番号> のリビジョンと、その Neon ブランチ）を使う。そのときは build を走らせない。
+  # pos-deploy-workers.yml も同じスクリプトで、画面のプレビューをその backend に向ける。
+  #
+  # **if は build と揃えること。**
+  backend-owner:
+    name: Decide preview backend
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
+    outputs:
+      owner: ${{ steps.owner.outputs.owner }}
+      reuse: ${{ steps.owner.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - name: backend の持ち主を決める
+        id: owner
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 決められなかったときは、今までどおり自分の backend を立てる側に倒す
+          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
+          case "$owner" in
+            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
+          esac
+
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          if [ "$owner" = "$PR_NUMBER" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "この PR の backend を立てる"
+          else
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            echo "#$owner の backend を使う。この PR の backend は立てない"
+          fi
+
+  # 向き先の PR の backend を使うときに、そのことを PR にコメントする（build の代わり）。
+  reused-backend-comment:
+    name: Comment reused preview backend
+    needs: backend-owner
+    if: ${{ needs.backend-owner.outputs.reuse == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      COMMENT_MARKER: '<!-- cafeore-preview: api -->'
+    steps:
+      - name: どの PR の backend を使うかを PR にコメントする
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          OWNER: ${{ needs.backend-owner.outputs.owner }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### backend のプレビュー" \
+            "" \
+            "この PR は backend（\`api/\`）を変えていないので、**#$OWNER の backend**（\`pr-$OWNER\` のリビジョンと、その DB）を使う。この PR の backend は立てない。" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| backend | #$OWNER |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "" \
+            "このコメントは push のたびに書き換わる。")
+
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
+
   build:
     name: Build and push to Artifact Registry
+    needs: backend-owner
     runs-on: ubuntu-latest
 
-    # 2つ除外している。
+    # 3つ除外している。
     #
     #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
     #     （既存の pos-deploy-pull-request.yml と同じ条件）
@@ -101,10 +238,21 @@ jobs:
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
     #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
     #     やはり認証で落ちる。依存更新の妥当性は *-ci の typecheck で見る
+    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
+    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
+    #     （閉じた PR は片付けが済んでいるので、出すと消されずに残る）
+    #
+    # もう1つ、向き先の PR の backend を使う PR（backend-owner の reuse）も除く。
+    #
+    # **PR の条件は上の concurrency と揃えること。**
     if: >-
-      ${{ github.actor != 'dependabot[bot]'
+      ${{ needs.backend-owner.outputs.reuse != 'true'
+          && github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
-              || github.event.pull_request.head.repo.full_name == github.repository) }}
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
 
     env:
       # いずれも秘密情報ではない。既定値は infra の `terraform output` の現行値。
@@ -190,15 +338,25 @@ jobs:
       # **DB に影響するファイルを api/ の外に置くときは DB_AFFECTING_PATHS に足すこと**
       # （README の「PR ごとの Neon ブランチ」も直す）。
       # 名前変更は移動前のパスも見る。api/ の外へ移すだけの PR も api/ を変えているため。
+      # 別の PR の上に積んだ PR（向き先が main 以外）は、差分に出ない下の PR の DB の変更を
+      # 含みうるので、差分を見ずに専用ブランチを使う。共有ブランチに main に無い表を作らないため。
       - name: DB に影響する変更があるか調べる
         id: changes
         if: ${{ github.event_name == 'pull_request' && vars.NEON_PROJECT_ID != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           DB_AFFECTING_PATHS: '^(api/|\.github/workflows/api-build\.yml$)'
         run: |
           set -euo pipefail
+
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "db=true" >> "$GITHUB_OUTPUT"
+            echo "向き先が $DEFAULT_BRANCH ではなく $BASE_REF（積んだ PR）。下の PR の DB の変更を含みうるので、この PR 専用の Neon ブランチを使う"
+            exit 0
+          fi
 
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
             --paginate --jq '.[] | .filename, (.previous_filename // empty)')
@@ -272,26 +430,6 @@ jobs:
 
           echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
 
-      # 新しく作った Neon ブランチは空なので、AutoMigrate の最初の CREATE TABLE が
-      # uuid_generate_v4() を呼んだ時点で 42883 になり、initDB がエラーを返して
-      # コンテナが起動できない（api/internal/models/*.go の
-      # `default:uuid_generate_v4()` が拡張に依存しているため）。
-      #
-      # ローカルの compose では api/init/00_enable_extension.sql が同じことを
-      # している。あちらは ./api/init を Postgres の初期化ディレクトリに
-      # マウントしているだけなので、Neon には効かない。
-      #
-      # 本番はスキーマが手で作られており、そもそも AutoMigrate を走らせない
-      # （RUN_MIGRATIONS=false）。この拡張が要るのはプレビューだけ。
-      #
-      # IF NOT EXISTS なので毎 push 走っても害はない。親ブランチに拡張が
-      # 入っていれば CoW クローンにも引き継がれるので、その場合は保険になる。
-      - name: Neon ブランチに uuid-ossp を入れる
-        if: ${{ steps.neon.outputs.db_url != '' }}
-        env:
-          DB_URL: ${{ steps.neon.outputs.db_url }}
-        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
-
       - name: Cloud Run にデプロイする
         id: deploy
         env:
@@ -342,16 +480,6 @@ jobs:
                 ;;
             esac
             env_pairs+=("DATABASE_URL=$NEON_DB_URL")
-          fi
-
-          # プレビューは空の状態から作った Neon ブランチを使うので、
-          # AutoMigrate を走らせないとテーブルが無いまま起動してしまう。
-          #
-          # 本番には渡さない。あちらのスキーマは手で作られており、
-          # Terraform が置いた RUN_MIGRATIONS=false をそのまま効かせる
-          # （infra の gcp/cloud_run.tf を参照）。
-          if [ -n "$tag" ]; then
-            env_pairs+=("RUN_MIGRATIONS=true")
           fi
 
           # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
@@ -413,6 +541,39 @@ jobs:
             echo "image:   $image"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
+      # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
+      # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      - name: DB のスキーマがモデルとずれていないか確かめる
+        if: ${{ steps.deploy.outputs.url != '' }}
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          body=""
+          for i in $(seq 1 10); do
+            if body=$(curl -sf --max-time 30 "$URL/status"); then
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$body" ]; then
+            echo "::error::$URL/status に繋がらなかった"
+            exit 1
+          fi
+          drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
+          if [ -n "$drift" ]; then
+            {
+              echo "### DB のスキーマがモデルとずれている"
+              echo '```'
+              echo "$drift"
+              echo '```'
+              echo "DB を手で触った跡。モデルに足すか、DB から消すこと。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do echo "::error::$line"; done <<<"$drift"
+            exit 1
+          fi
+          echo "DB のスキーマはモデルと一致している"
 
       # デプロイが成功したときだけ走る（既定の if: success()）。
       - name: プレビュー URL を PR にコメントする

@@ -1,7 +1,13 @@
-import type { OrderEntity, WithId } from "@cafeore/common";
-import dayjs from "dayjs";
+import {
+  type OrderEntity,
+  type WithId,
+  orderElapsedTime,
+} from "@cafeore/common";
 import { useState } from "react";
-import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import {
+  OrderInfoCard,
+  WaitingLabel,
+} from "~/components/molecules/OrderInfoCard";
 import {
   Table,
   TableBody,
@@ -24,26 +30,14 @@ export function OrderList({ orders }: OrderStatusListProps) {
   const [focusedOrderId, setFocusedOrderId] = useState(1);
   const detailOrder = orders?.find((order) => order.orderId === focusedOrderId);
 
-  console.log(detailOrder);
-
   const numOfCups = (order: OrderEntity): number => {
     return order.menus.length;
   };
 
   const diffTime = (order: OrderEntity) => {
     if (order.servedAt == null) return "未提供";
-    return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-      "m:ss",
-    );
-  };
-
-  const pass15Minutes = (order: OrderEntity) => {
-    if (order.servedAt === null)
-      return dayjs(dayjs().diff(dayjs(order.createdAt))).minute() >= 15;
-    if (order.servedAt !== null)
-      return (
-        dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).minute() >= 15
-      );
+    const { m, ss } = orderElapsedTime(order);
+    return `${m}:${ss}`;
   };
 
   return (
@@ -65,7 +59,7 @@ export function OrderList({ orders }: OrderStatusListProps) {
           <TableBody>
             {orders?.map((order) => (
               <TableRow
-                className={cn(pass15Minutes(order) && "bg-red-300")}
+                className={cn(orderElapsedTime(order).overdue && "bg-red-300")}
                 key={order.orderId}
                 onClick={() => setFocusedOrderId(order.orderId)}
               >
@@ -88,10 +82,11 @@ export function OrderList({ orders }: OrderStatusListProps) {
         {detailOrder && (
           <OrderInfoCard
             order={detailOrder}
-            user={"dashboard"}
             timing="all"
-            comment={() => {}}
-          />
+            cups={detailOrder.getItems()}
+          >
+            <WaitingLabel order={detailOrder} />
+          </OrderInfoCard>
         )}
       </div>
     </>

@@ -100,7 +100,7 @@ func TestStockEventMessage(t *testing.T) {
 }
 
 func TestMasterStateMessage(t *testing.T) {
-	if masterStateMessage("stop") != "⛔ オーダーストップ :e-stop:" || masterStateMessage("operational") != "✅ オーダー再開 :e-restart:" {
+	if masterStateChangedMessage("stop") != "⛔ オーダーストップ :e-stop:" || masterStateChangedMessage("operational") != "✅ オーダー再開 :e-restart:" {
 		t.Fatal("unexpected master state message")
 	}
 }
