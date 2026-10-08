@@ -52,6 +52,9 @@ const modeLabels: Record<Editing["mode"], string> = {
   copy: "複製",
 };
 
+/** 在庫対象と使用量の読み込み。一度届けば ready のまま */
+export type StockState = "loading" | "ready" | "error";
+
 type Props = {
   editing: Editing | null;
   onClose: () => void;
@@ -62,7 +65,7 @@ type Props = {
   resources: StockResource[];
   usages: StockUsage[];
   /** 在庫対象と使用量を読み終えたか。読み終えるまではアイテムのフォームを出さない */
-  stockReady: boolean;
+  stock: StockState;
 };
 
 export function ProductEditor({
@@ -74,7 +77,7 @@ export function ProductEditor({
   itemTypes,
   resources,
   usages,
-  stockReady,
+  stock,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -236,10 +239,12 @@ export function ProductEditor({
       const source = items.find((item) => item.id === id);
       if (mode !== "new" && !source) return null;
       // フォームは使用量を最初の描画でしか読まないので、届くまで出さない
-      if (!stockReady) {
+      if (stock !== "ready") {
         return (
           <p className="text-muted-foreground text-sm">
-            在庫の使用量を読み込んでいます…
+            {stock === "error"
+              ? "在庫の使用量を読み込めませんでした。ページを読み込み直してください"
+              : "在庫の使用量を読み込んでいます…"}
           </p>
         );
       }

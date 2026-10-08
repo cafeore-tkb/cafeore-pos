@@ -23,6 +23,7 @@ import {
   type Editing,
   ProductEditor,
   type ProductKind,
+  type StockState,
 } from "~/components/organisms/products/ProductEditor";
 import type { RowHandlers } from "~/components/organisms/products/RowActions";
 import { StockTab } from "~/components/organisms/products/StockTab";
@@ -86,20 +87,25 @@ export default function ProductsPage() {
   } = useItemMaster();
   const {
     statuses,
+    isLoaded: inventoryLoaded,
     error: inventoryError,
-    isLoading: inventoryLoading,
     mutateInventory,
   } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
   const {
     usages,
+    isLoaded: usagesLoaded,
     error: usagesError,
-    isLoading: usagesLoading,
     mutateUsages,
   } = useStockUsages();
-  // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまう
-  const stockReady =
-    !inventoryLoading && !usagesLoading && !inventoryError && !usagesError;
+  // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまう。
+  // 一度届いたあとの再取得の失敗では止めない（入力中のフォームを消さない）
+  const stock: StockState =
+    inventoryLoaded && usagesLoaded
+      ? "ready"
+      : inventoryError || usagesError
+        ? "error"
+        : "loading";
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -245,7 +251,7 @@ export default function ProductsPage() {
         itemTypes={itemTypes}
         resources={resources}
         usages={usages}
-        stockReady={stockReady}
+        stock={stock}
       />
       <DeleteDialog
         target={deleteTarget}
