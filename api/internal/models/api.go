@@ -207,21 +207,48 @@ type ItemResponse struct {
 // ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
 type ItemTypeCreateRequest struct {
 	DisplayName string `json:"display_name"`
-	Name        string `json:"name"`
+
+	// MakesCup 省略したら true
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら makes_cup と同じ。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら false。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemTypeResponse defines model for ItemTypeResponse.
 type ItemTypeResponse struct {
 	DisplayName string             `json:"display_name"`
 	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+
+	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
+	MakesCup bool   `json:"makes_cup"`
+	Name     string `json:"name"`
+
+	// NeedsBrew この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false
+	NeedsBrew bool `json:"needs_brew"`
+
+	// SeniorOnly この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false
+	SeniorOnly bool `json:"senior_only"`
 }
 
 // ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
 type ItemTypeUpdateRequest struct {
 	DisplayName string             `json:"display_name"`
 	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+
+	// MakesCup 省略したら今の値のまま
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemUpdateRequest defines model for ItemUpdateRequest.
