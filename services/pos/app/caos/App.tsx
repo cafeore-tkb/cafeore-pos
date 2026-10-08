@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { type CaosOp, caosCardRef, postCaosOp } from "@cafeore/common";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssignSlotModal } from "./components/AssignSlotModal";
 import {
   AuxiliaryContent,
@@ -10,11 +11,16 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
-import { type RebrewDecision, RebrewPanel } from "./components/RebrewPanel";
+import {
+  type RebrewCup,
+  type RebrewDecision,
+  RebrewPanel,
+} from "./components/RebrewPanel";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { TicketDetailModal } from "./components/TicketDetailModal";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { usePosOrders } from "./hooks/usePosOrders";
+import { buildCupCatalog, cardsToBoard, cupChoices } from "./live/board";
 import type {
   Barista,
   BeanCode,
@@ -35,11 +41,6 @@ import {
   splitIntoDripUnits,
   ticketKey,
 } from "./utils/orderQueue";
-import {
-  isPendingPosOrder,
-  posOrderTicketPrefix,
-  posOrderToDripUnits,
-} from "./utils/posOrders";
 
 type UndoSnapshot = {
   baristas: Barista[];
@@ -150,9 +151,6 @@ export default function App() {
   const [unassignedOrders, setUnassignedOrders] = useState<UnassignedOrder[]>(
     [],
   );
-  // 取り込み済みの cafeore-pos 注文（UUID）。全件が届くたびに、新しい注文だけを未割当へ足すために使う。
-  const posIngestedOrderIds = useRef(new Set<string>());
-  const [posIngestEpoch, setPosIngestEpoch] = useState(0);
   const undoSnapshotRef = useRef<UndoSnapshot | null>(null);
   const arrivalsAfterUndoSnapshotRef = useRef<UnassignedOrder[]>([]);
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
@@ -212,13 +210,69 @@ export default function App() {
     (operationalTime.getTime() - operationalDayStartMs) / 1000,
   );
 
-  // 普段は cafeore-pos と同じ DB の注文で動かす。実データテスト中（終了後の実績表示も含め、リセットするまで）は
-  // DB からの取り込みを止め、テストの注文だけで盤面を動かす。
-  const posActive = !testPlaySession;
-  const { orders: posOrders, status: posStatus } = usePosOrders(posActive);
+  // 普段は cafeore-pos の盤面で動かす。盤面と注文は同じ WebSocket で届き、操作は POST /api/caos/ops。
+  // 盤面はサーバーにあるので、複数の iPad で同じものを見て操作できる。
+  // 実データテスト中（終了後の実績表示も含め、リセットするまで）は盤面を使わず、テストの注文だけで手元の盤面を動かす。
+  const live = !testPlaySession;
+  const {
+    orders: posOrders,
+    cards: liveCards,
+    status: posStatus,
+  } = usePosOrders(live);
+  const cupCatalog = useMemo(() => buildCupCatalog(posOrders), [posOrders]);
+  // 盤面のカードから組み立てた管制盤。列（1st〜6th）は手元の baristas から取る
+  const liveBoard = useMemo(
+    () =>
+      cardsToBoard(
+        liveCards ?? [],
+        cupCatalog,
+        baristas,
+        realTimeSec,
+        realDayStartMs,
+      ),
+    [liveCards, cupCatalog, baristas, realTimeSec, realDayStartMs],
+  );
+  const boardBaristas = live ? liveBoard.baristas : baristas;
+  const boardUnassignedOrders = live
+    ? liveBoard.unassignedOrders
+    : unassignedOrders;
+  // 直前の盤面の操作を「1つ戻す」ための操作の ID（サーバーが操作の記録を持っている）
+  const liveUndoRef = useRef<string | null>(null);
+  // 「次へ」を送っている途中の列（応答が盤面に届く前の二度押しを止める）
+  const pendingNextRef = useRef(new Set<number>());
+  // 「1つ戻す」を送っている途中（結果が返るまでの二度押しを止める）
+  const pendingUndoRef = useRef(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!liveError) return;
+    const timer = window.setTimeout(() => setLiveError(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [liveError]);
+
+  // 盤面への操作を送る。label を付けると「1つ戻す」の対象にする。結果の盤面は WebSocket の drips で届く。
+  // 通ったら true を返す
+  const runLive = async (label: string | null, op: CaosOp) => {
+    const { result, error } = await postCaosOp(op);
+    if (error || !result) {
+      setLiveError(error || "操作に失敗しました");
+      return false;
+    }
+    if (label && result.op_id) {
+      undoSnapshotRef.current = null;
+      liveUndoRef.current = result.op_id;
+      setUndoLabel(label);
+    }
+    return true;
+  };
+  // 画面のカード（ticketUid）を、操作で指す形にする
+  const liveRef = (ticketUid: string | undefined) => {
+    const card = ticketUid ? liveBoard.cards.get(ticketUid) : undefined;
+    return card ? caosCardRef(card) : undefined;
+  };
 
   const findLiveTicket = (key: string) => {
-    for (const bay of baristas) {
+    for (const bay of boardBaristas) {
       const ticket =
         bay.queue.find((item) => ticketKey(item) === key) ||
         bay.pastTickets?.find((item) => ticketKey(item) === key);
@@ -240,7 +294,7 @@ export default function App() {
       setSelectedTicketKey(null);
   }, [selectedTicketKey, selectedTicketStatus]);
 
-  const sortedUnassignedOrders = [...unassignedOrders].sort(
+  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
     (a, b) =>
       Number(Boolean(b.isRebrew)) - Number(Boolean(a.isRebrew)) ||
       orderNumber(a.id) - orderNumber(b.id) ||
@@ -270,47 +324,6 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-
-  // cafeore-pos の注文を取り込む。届いた一覧のうち、当日の未提供・未準備で新しく届いた注文を未割当へ足し、
-  // POS 側で準備完了・提供済み・削除になった注文は、まだ割り当てていない分だけ未割当から外す。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: posIngestEpoch はリセット後に取り込み直すための合図
-  useEffect(() => {
-    if (!posActive || !posOrders) return;
-    const dayStartMs = startOfLocalDay(Date.now());
-    const pending = posOrders.filter(
-      (order) =>
-        isPendingPosOrder(order) && order.createdAt.getTime() >= dayStartMs,
-    );
-    const pendingIds = new Set(pending.map((order) => order.id));
-    const ingested = posIngestedOrderIds.current;
-    const incoming = pending
-      .filter((order) => !ingested.has(order.id))
-      .sort((a, b) => a.orderId - b.orderId)
-      .flatMap((order) => {
-        ingested.add(order.id);
-        return posOrderToDripUnits(order);
-      });
-    const withdrawnPrefixes = [...ingested]
-      .filter((id) => !pendingIds.has(id))
-      .map((id) => posOrderTicketPrefix(id));
-    const isWithdrawn = (order: UnassignedOrder) =>
-      withdrawnPrefixes.some((prefix) =>
-        (order.ticketUid || "").startsWith(prefix),
-      );
-
-    if (incoming.length > 0 && undoSnapshotRef.current) {
-      arrivalsAfterUndoSnapshotRef.current.push(...incoming);
-    }
-    setUnassignedOrders((prev) => {
-      const remaining =
-        withdrawnPrefixes.length > 0
-          ? prev.filter((order) => !isWithdrawn(order))
-          : prev;
-      if (incoming.length === 0 && remaining.length === prev.length)
-        return prev;
-      return [...remaining, ...incoming];
-    });
-  }, [posActive, posOrders, posIngestEpoch]);
 
   useEffect(() => {
     if (testPlayStatus !== "active" || !isRunning) return;
@@ -363,6 +376,7 @@ export default function App() {
   }, [testPlayCurrentMs, testPlayOrders, testPlayStatus]);
 
   const captureUndo = (label: string) => {
+    liveUndoRef.current = null;
     undoSnapshotRef.current = {
       baristas,
       unassignedOrders,
@@ -373,6 +387,30 @@ export default function App() {
   };
 
   const handleUndo = () => {
+    const liveUndo = liveUndoRef.current;
+    if (live && liveUndo) {
+      if (pendingUndoRef.current) return;
+      setSelectedOrderId(null);
+      setRebrewSource(null);
+      setSelectedTicketKey(null);
+      // 戻せたときだけ「1つ戻す」の対象を消す。
+      // 断られたら（ほかの iPad が先に操作した、など）理由を出し、対象は残す
+      pendingUndoRef.current = true;
+      void runLive(null, { name: "undo", op_id: liveUndo })
+        .then((ok) => {
+          if (!ok) return;
+          // 送っている間にほかの操作をしていたら、そちらを「1つ戻す」の対象に残す
+          if (liveUndoRef.current === liveUndo) {
+            liveUndoRef.current = null;
+            setUndoLabel(null);
+          }
+        })
+        .finally(() => {
+          pendingUndoRef.current = false;
+        });
+      soundManager.playDispatch();
+      return;
+    }
     const snapshot = undoSnapshotRef.current;
     if (!snapshot) return;
     const restoredKeys = new Set(
@@ -458,9 +496,25 @@ export default function App() {
   const handleAdvanceBay = (bayId: number) => {
     soundManager.playComplete();
 
-    const targetBarista = baristas.find((b) => b.id === bayId);
+    const targetBarista = boardBaristas.find((b) => b.id === bayId);
     if (!targetBarista || targetBarista.queue.length === 0) return;
-    captureUndo(`${laneOrdinal(targetBarista.bayNumber)}の「次へ」`);
+    const label = `${laneOrdinal(targetBarista.bayNumber)}の「次へ」`;
+
+    if (live) {
+      if (pendingNextRef.current.has(bayId)) return;
+      // 抽出中のカードを付けて送る（二度押しやほかの端末と同時に押したときは、サーバーが断る）。
+      // 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始める
+      const current = targetBarista.queue[0];
+      const card =
+        current.status === "brewing" ? liveRef(current.ticketUid) : undefined;
+      pendingNextRef.current.add(bayId);
+      void runLive(label, { name: "next", lane: bayId, card }).finally(() =>
+        pendingNextRef.current.delete(bayId),
+      );
+      return;
+    }
+
+    captureUndo(label);
 
     setBaristas((prev) =>
       prev.map((b) => {
@@ -495,7 +549,7 @@ export default function App() {
   ) => {
     soundManager.playDispatch();
 
-    const orderToAssign = unassignedOrders.find(
+    const orderToAssign = boardUnassignedOrders.find(
       (o) => o.ticketUid === orderUidOrId || o.id === orderUidOrId,
     );
     if (!orderToAssign) return;
@@ -504,6 +558,14 @@ export default function App() {
       orderToAssign.preferredBaristaId !== targetBayId
     )
       return;
+    if (live) {
+      void runLive(`${orderToAssign.id}の割当`, {
+        name: "assign",
+        card: liveRef(orderToAssign.ticketUid),
+        lane: targetBayId,
+      });
+      return;
+    }
     captureUndo(`${orderToAssign.id}の割当`);
 
     // Remove from unassigned
@@ -574,6 +636,16 @@ export default function App() {
     if (ticket.status !== "scheduled") return;
     if (ticket.preferredBaristaId && ticket.preferredBaristaId !== targetBayId)
       return;
+    if (live) {
+      void runLive(`${ticket.id}の割当変更`, {
+        name: "assign",
+        card: liveRef(ticket.ticketUid),
+        lane: targetBayId,
+      });
+      setSelectedOrderId(null);
+      soundManager.playDispatch();
+      return;
+    }
     captureUndo(`${ticket.id}の割当変更`);
     const key = ticketKey(ticket);
     setBaristas((prev) => {
@@ -596,6 +668,15 @@ export default function App() {
 
   const handleReturnScheduledTicket = (ticket: OrderTicket) => {
     if (ticket.status !== "scheduled") return;
+    if (live) {
+      void runLive(`${ticket.id}を未割当に戻す`, {
+        name: "unassign",
+        card: liveRef(ticket.ticketUid),
+      });
+      setSelectedOrderId(null);
+      soundManager.playDispatch();
+      return;
+    }
     captureUndo(`${ticket.id}を未割当に戻す`);
     const key = ticketKey(ticket);
     setBaristas((prev) =>
@@ -643,65 +724,71 @@ export default function App() {
     soundManager.playDispatch();
   };
 
+  // 入れ直しのパネルに出すカップ。盤面ではカードのカップ、実データテストでは杯の番号
+  const rebrewCups: RebrewCup[] = (() => {
+    if (!rebrewTicket) return [];
+    const card = live
+      ? liveBoard.cards.get(rebrewTicket.ticketUid ?? "")
+      : undefined;
+    if (card) return cupChoices(card, cupCatalog);
+    return Array.from({ length: rebrewTicket.cupCount }, (_, index) => ({
+      id: String(index),
+      label: `${index + 1}杯目`,
+      disabled: false,
+    }));
+  })();
+
+  // 緊急（入れ直し）。盤面では、選んだカップに緊急の印を付けるだけ（入れ直しのカードは未割当のいちばん上に出る）。
+  // 中断なら、抽出中のカードを中断にして終わらせ、列は次を始める
   const handleConfirmRebrew = (decision: RebrewDecision) => {
     if (!rebrewSource || !rebrewTicket) return;
     const { bayId: sourceBayId } = rebrewSource;
     const ticket = rebrewTicket;
-    captureUndo(`${ticket.id}の入れ直し`);
-    const originalKey = ticketKey(ticket);
-    const duration = decision.cupCount > 1 ? 195 : 135;
-    const rebrewUid = `rebrew-${originalKey}-${Date.now()}`;
-    const newTicket: OrderTicket = {
-      ...ticket,
-      ticketUid: rebrewUid,
-      cupCount: decision.cupCount,
-      status: "scheduled",
-      totalDurationSec: duration,
-      scheduledTimeStr: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, "0")}`,
-      startTimeSec: undefined,
-      endTimeSec: undefined,
-      completedAtSec: undefined,
-      timeRemainingSec: undefined,
-      isRebrew: true,
-      rebrewOfTicketUid: originalKey,
-      isInterrupted: false,
-    };
-
-    if (decision.targetBayId === null) {
-      setUnassignedOrders((prev) => [
-        {
-          id: newTicket.id,
-          ticketUid: newTicket.ticketUid,
-          itemIndex: newTicket.itemIndex,
-          totalItemsInOrder: newTicket.totalItemsInOrder,
-          totalOrderCups: newTicket.totalOrderCups,
-          orderNotes: newTicket.orderNotes,
-          sourceOrderIds: newTicket.sourceOrderIds,
-          beanCode: newTicket.beanCode,
-          beanName: newTicket.beanName,
-          cupCount: newTicket.cupCount,
-          badgeTag: `${newTicket.cupCount}杯 入れ直し`,
-          predictedTimeStr: newTicket.scheduledTimeStr || "2:15",
-          // 限定（SP）もどの列でも淹れられる扱い（上級生の判定は、列の担当者をサーバーから出すときに足す）
-          recommendedBaristas: "全ドリッパー",
-          recommendedBayIds: baristas.map((barista) => barista.id),
-          preferredBaristaId: newTicket.preferredBaristaId,
-          cardColor: newTicket.beanCode === "SP" ? "emerald" : "blue",
-          isRebrew: true,
-          rebrewOfTicketUid: originalKey,
-        },
-        ...prev,
-      ]);
+    setRebrewSource(null);
+    setSelectedTicketKey(null);
+    setSelectedOrderId(ticket.id);
+    soundManager.playDispatch();
+    if (live) {
+      void runLive(`${ticket.id}の緊急`, {
+        name: "emergency",
+        cup_ids: decision.cupIds,
+        interrupt: decision.interruptCurrent,
+      });
+      return;
     }
 
-    setBaristas((prev) => {
-      let updated: Barista[] = prev.map((barista): Barista => {
-        if (
-          barista.id !== sourceBayId ||
-          !decision.interruptCurrent ||
-          ticket.status !== "brewing"
-        )
-          return barista;
+    // 実データテスト：手元の未割当のいちばん上に、入れ直しのカードを置く
+    captureUndo(`${ticket.id}の緊急`);
+    const originalKey = ticketKey(ticket);
+    const cupCount = decision.cupIds.length;
+    setUnassignedOrders((prev) => [
+      {
+        id: ticket.id,
+        ticketUid: `rebrew-${originalKey}-${Date.now()}`,
+        itemIndex: ticket.itemIndex,
+        totalItemsInOrder: ticket.totalItemsInOrder,
+        totalOrderCups: ticket.totalOrderCups,
+        orderNotes: ticket.orderNotes,
+        sourceOrderIds: ticket.sourceOrderIds,
+        beanCode: ticket.beanCode,
+        beanName: ticket.beanName,
+        cupCount,
+        badgeTag: `${cupCount}杯 緊急`,
+        predictedTimeStr: cupCount > 1 ? "3分15秒" : "2分15秒",
+        // 限定（SP）もどの列でも淹れられる扱い（上級生の判定は、列の担当者をサーバーから出すときに足す）
+        recommendedBaristas: "全ドリッパー",
+        recommendedBayIds: baristas.map((barista) => barista.id),
+        preferredBaristaId: ticket.preferredBaristaId,
+        cardColor: ticket.beanCode === "SP" ? "emerald" : "blue",
+        isRebrew: true,
+        rebrewOfTicketUid: originalKey,
+      },
+      ...prev,
+    ]);
+    if (!decision.interruptCurrent || ticket.status !== "brewing") return;
+    setBaristas((prev) =>
+      prev.map((barista): Barista => {
+        if (barista.id !== sourceBayId) return barista;
         const sourceIndex = barista.queue.findIndex(
           (item) => ticketKey(item) === originalKey,
         );
@@ -713,10 +800,10 @@ export default function App() {
           completedAtSec: realTimeSec,
           isInterrupted: true,
         };
-        const remaining = barista.queue.filter(
-          (_, index) => index !== sourceIndex,
+        const queue = reanchorQueueInOrder(
+          barista.queue.filter((_, index) => index !== sourceIndex),
+          realTimeSec,
         );
-        const queue = reanchorQueueInOrder(remaining, realTimeSec);
         return {
           ...barista,
           queue,
@@ -724,50 +811,27 @@ export default function App() {
           status: queue.length > 0 ? "brewing" : "standby",
           remainingStr: queue.length > 0 ? "再計算中" : "00:00 待機中",
         };
-      });
-
-      if (decision.targetBayId !== null) {
-        updated = updated.map((barista): Barista => {
-          if (barista.id !== decision.targetBayId) return barista;
-          const queue = [...barista.queue];
-          const canReplaceInterruptedNow =
-            decision.interruptCurrent &&
-            ticket.status === "brewing" &&
-            barista.id === sourceBayId;
-          const minimumIndex =
-            queue.length > 0 && !canReplaceInterruptedNow ? 1 : 0;
-          const insertion = Math.max(
-            minimumIndex,
-            Math.min(decision.insertIndex ?? queue.length, queue.length),
-          );
-          queue.splice(insertion, 0, newTicket);
-          const arranged = reanchorQueueInOrder(queue, realTimeSec);
-          return {
-            ...barista,
-            queue: arranged,
-            status: arranged.length > 0 ? "brewing" : "standby",
-            remainingStr:
-              arranged.length > 0 ? barista.remainingStr : "00:00 待機中",
-          };
-        });
-      }
-      return updated;
-    });
-
-    setRebrewSource(null);
-    setSelectedTicketKey(null);
-    setSelectedOrderId(ticket.id);
-    soundManager.playDispatch();
+      }),
+    );
   };
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
-    const first = unassignedOrders.find(
+    const first = boardUnassignedOrders.find(
       (order) => (order.ticketUid || order.id) === firstUid,
     );
-    const second = unassignedOrders.find(
+    const second = boardUnassignedOrders.find(
       (order) => (order.ticketUid || order.id) === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
+    if (live) {
+      void runLive(`${first.id}と${second.id}の統合`, {
+        name: "merge",
+        card: liveRef(firstUid),
+        with: liveRef(secondUid),
+      });
+      setSelectedOrderId(null);
+      return;
+    }
     captureUndo(`${first.id}と${second.id}の統合`);
     setUnassignedOrders((prev) => {
       const sourceOrderIds = Array.from(
@@ -800,9 +864,8 @@ export default function App() {
   const handleResetData = () => {
     setBaristas(makeLaneBaristas());
     setUnassignedOrders([]);
-    posIngestedOrderIds.current.clear();
-    setPosIngestEpoch((epoch) => epoch + 1);
     undoSnapshotRef.current = null;
+    liveUndoRef.current = null;
     arrivalsAfterUndoSnapshotRef.current = [];
     setUndoLabel(null);
     setSelectedOrderId(null);
@@ -858,18 +921,18 @@ export default function App() {
   };
 
   // Live cup totals shown in the header
-  const unassignedCardCups = unassignedOrders.reduce(
+  const unassignedCardCups = boardUnassignedOrders.reduce(
     (acc, cur) => acc + cur.cupCount,
     0,
   );
   const totalUnassignedDisplay = unassignedCardCups;
 
-  const currentBayQueueCups = baristas.reduce(
+  const currentBayQueueCups = boardBaristas.reduce(
     (acc, b) => acc + b.queue.reduce((qAcc, t) => qAcc + t.cupCount, 0),
     0,
   );
   const totalWaitingCupsDisplay = currentBayQueueCups;
-  const nextAvailable = [...baristas]
+  const nextAvailable = [...boardBaristas]
     .map((barista) => ({
       bayNumber: barista.bayNumber,
       seconds: queueWaitSeconds(barista.queue),
@@ -883,7 +946,7 @@ export default function App() {
       window.localStorage.setItem(
         PANEL_SNAPSHOT_KEY,
         JSON.stringify({
-          baristas,
+          baristas: boardBaristas,
           testPlaySession,
         } satisfies PanelSnapshot),
       );
@@ -898,7 +961,7 @@ export default function App() {
   const renderAuxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
-      baristas={baristas}
+      baristas={boardBaristas}
       salesOrders={
         testPlaySession?.orders.filter(
           (order) =>
@@ -964,7 +1027,7 @@ export default function App() {
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
           <ControlWorkspace
             mode={controlViewMode}
-            baristas={baristas}
+            baristas={boardBaristas}
             unassignedOrders={sortedUnassignedOrders}
             nextAvailable={nextAvailable}
             selectedOrderId={selectedOrderId}
@@ -1009,7 +1072,7 @@ export default function App() {
         <TicketDetailModal
           ticket={selectedTicket}
           currentBayId={
-            baristas.find((bay) =>
+            boardBaristas.find((bay) =>
               bay.queue.some(
                 (ticket) => ticketKey(ticket) === selectedTicketKey,
               ),
@@ -1029,7 +1092,7 @@ export default function App() {
         <AssignSlotModal
           bayId={assignSlotData.bayId}
           targetOrder={assignSlotData.order}
-          baristas={baristas}
+          baristas={boardBaristas}
           unassignedOrders={sortedUnassignedOrders}
           onClose={() => setAssignSlotData(null)}
           onAssign={handleAssignOrderToBay}
@@ -1038,12 +1101,21 @@ export default function App() {
 
       {rebrewSource && rebrewTicket && (
         <RebrewPanel
+          key={rebrewSource.ticketKey}
           ticket={rebrewTicket}
-          sourceBayId={rebrewSource.bayId}
-          baristas={baristas}
+          cups={rebrewCups}
           onClose={() => setRebrewSource(null)}
           onConfirm={handleConfirmRebrew}
         />
+      )}
+
+      {liveError && (
+        <div
+          role="alert"
+          className="-translate-x-1/2 fixed bottom-4 left-1/2 z-50 max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
+        >
+          {liveError}
+        </div>
       )}
 
       {testSetupOpen && (
