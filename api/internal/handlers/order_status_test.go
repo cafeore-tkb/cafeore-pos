@@ -183,37 +183,26 @@ func TestToggleOrderStatusWithoutCups(t *testing.T) {
 func TestServeCuplessOrder(t *testing.T) {
 	now := time.Now()
 	earlier := now.Add(-time.Hour)
-
-	// カップの無い注文（グッズだけ）は、作った時点で準備完了・提供済みになる
-	order := &models.Order{}
-	serveCuplessOrder(order, now)
-	if !sameTime(order.ReadyAt, &now) || !sameTime(order.ServedAt, &now) {
-		t.Fatalf("order without cups must be served at now: %+v", order)
-	}
-
-	// 付いている時刻は残す
-	order = &models.Order{ReadyAt: &earlier, ServedAt: &earlier}
-	serveCuplessOrder(order, now)
-	if !sameTime(order.ReadyAt, &earlier) || !sameTime(order.ServedAt, &earlier) {
-		t.Fatalf("served order without cups must keep its times: %+v", order)
-	}
-
-	// 準備完了だけの注文は、準備完了の時刻を残して提供済みにする
-	order = &models.Order{ReadyAt: &earlier}
-	serveCuplessOrder(order, now)
-	if !sameTime(order.ReadyAt, &earlier) || !sameTime(order.ServedAt, &now) {
-		t.Fatalf("ready order without cups must be served at now: %+v", order)
-	}
-
-	// 提供済みだけ付いた注文は、準備完了にも同じ時刻を付ける
-	order = &models.Order{ServedAt: &earlier}
-	serveCuplessOrder(order, now)
-	if !sameTime(order.ReadyAt, &earlier) || !sameTime(order.ServedAt, &earlier) {
-		t.Fatalf("served order without cups must be ready at the served time: %+v", order)
+	// カップの無い注文（グッズだけ）は提供済みにする。付いている時刻は残し、準備完了は提供済みと同じ時刻
+	for _, tc := range []struct {
+		name                  string
+		ready, served         *time.Time
+		wantReady, wantServed *time.Time
+	}{
+		{name: "new", wantReady: &now, wantServed: &now},
+		{name: "served", ready: &earlier, served: &earlier, wantReady: &earlier, wantServed: &earlier},
+		{name: "ready only", ready: &earlier, wantReady: &earlier, wantServed: &now},
+		{name: "served only", served: &earlier, wantReady: &earlier, wantServed: &earlier},
+	} {
+		order := &models.Order{ReadyAt: tc.ready, ServedAt: tc.served}
+		serveCuplessOrder(order, now)
+		if !sameTime(order.ReadyAt, tc.wantReady) || !sameTime(order.ServedAt, tc.wantServed) {
+			t.Errorf("%s: ready=%v served=%v, want ready=%v served=%v", tc.name, order.ReadyAt, order.ServedAt, tc.wantReady, tc.wantServed)
+		}
 	}
 
 	// カップのある注文は変えない（状態はカップから決まる）
-	order = twoCupOrder()
+	order := twoCupOrder()
 	serveCuplessOrder(order, now)
 	if order.ReadyAt != nil || order.ServedAt != nil || cupStates(order) != "pp" {
 		t.Fatalf("order with cups must not be changed: %s %+v", cupStates(order), order)
