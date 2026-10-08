@@ -73,7 +73,7 @@ const readPanelSnapshot = (): PanelSnapshot | null => {
   }
 };
 
-// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS8（練習用の盤面）で作り直すので、ここは触らない。
+// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS9（練習の盤面）で作り直すので、ここは触らない。
 // 普段の盤面（cafeore-pos の盤面）は、サーバーの営業日と同じ日本時間の 0 時を起点にする（startOfJstDay）
 const startOfLocalDay = (ms: number) => {
   const date = new Date(ms);
