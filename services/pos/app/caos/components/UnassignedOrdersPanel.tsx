@@ -1,13 +1,19 @@
-import { CAOS_DRIPPER_IDS, caosClockLabel } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
-import { isLaneId } from "../utils/lanes";
-import { cardSurface } from "../utils/menuPresentation";
-import { canMergeDripUnits } from "../utils/orderQueue";
+import { cardSurface } from "../utils/cardSurface";
+import { bayTargetAt } from "../utils/lanes";
+import {
+  type NextAvailable,
+  canMergeDripUnits,
+  groupByOrder,
+  orderLabel,
+} from "../utils/orderQueue";
+import { BayPad } from "./BayPad";
 import { BeanBadge } from "./BeanBadge";
+import { NextAvailableChips } from "./NextAvailableChips";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 25.04 19.03" aria-hidden="true">
@@ -40,12 +46,10 @@ const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
 
 interface UnassignedOrdersPanelProps {
   orders: UnassignedOrder[];
-  nextAvailable: { bayNumber: number; seconds: number; isStandby: boolean }[];
+  nextAvailable: NextAvailable;
   layout?: "strip" | "sidebar";
-  selectedOrderId?: string | null;
-  onSelectOrder?: (orderId: string) => void;
-  onSelectQueueOrder?: (order: UnassignedOrder) => void;
-  onClearSelection?: () => void;
+  selectedOrderId: string | null;
+  onSelectOrder: (orderId: string) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders?: (firstUid: string, secondUid: string) => void;
 }
@@ -56,8 +60,6 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
   layout = "strip",
   selectedOrderId,
   onSelectOrder,
-  onSelectQueueOrder,
-  onClearSelection,
   onAssignToBay,
   onMergeOrders,
 }) => {
@@ -88,28 +90,14 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       if (isSidebar && target.closest("[data-unassigned-uid]")) return;
       setOpenPadUid(null);
       setHoveredBay(null);
-      onClearSelection?.();
+      onSelectOrder("");
     };
     document.addEventListener("pointerdown", closeOnOutsidePress);
     return () =>
       document.removeEventListener("pointerdown", closeOnOutsidePress);
-  }, [openPadUid, onClearSelection, isSidebar]);
-
-  const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
-  const bayAtPoint = (clientX: number, clientY: number) => {
-    const target = document
-      .elementsFromPoint(clientX, clientY)
-      .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
-      .find((element) => {
-        const bayId = Number(element?.dataset.bayTarget);
-        return element && isLaneId(bayId);
-      });
-    const bayId = Number(target?.dataset.bayTarget);
-    return isLaneId(bayId) ? bayId : null;
-  };
+  }, [openPadUid, onSelectOrder, isSidebar]);
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
     setHoveredBay(null);
@@ -125,20 +113,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       }));
     }
 
-    const groups = new Map<string, UnassignedOrder[]>();
-    for (const order of visibleOrders) {
-      const group = groups.get(order.id) || [];
-      group.push(order);
-      groups.set(order.id, group);
-    }
-
     let nextRow = 1;
     const positionedOrders: Array<{
       order: UnassignedOrder;
       gridColumn: number;
       gridRow: number;
     }> = [];
-    for (const group of groups.values()) {
+    for (const group of groupByOrder(visibleOrders).values()) {
       group.forEach((order, index) => {
         positionedOrders.push({
           order,
@@ -174,20 +155,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
           >
             {orders.length} 件 / {totalCups} 杯
           </span>
-          {!isSidebar && (
-            <div className="flex items-center gap-1 font-bold text-[10px] text-slate-500">
-              <span className="ml-1">次に空く:</span>
-              {nextAvailable.map((item, index) => (
-                <span
-                  key={item.bayNumber}
-                  className={`whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
-                >
-                  #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : caosClockLabel(item.seconds)}
-                </span>
-              ))}
-            </div>
-          )}
+          {!isSidebar && <NextAvailableChips nextAvailable={nextAvailable} />}
         </div>
       </div>
 
@@ -204,18 +172,20 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
         >
           {displayedOrders.map(({ order, gridColumn, gridRow }, orderIndex) => {
             const surface = cardSurface(order);
+            const isNamed = Boolean(order.preferredBaristaId);
             const isOrderBoundary =
               !isSidebar &&
               orderIndex > 0 &&
-              displayedOrders[orderIndex - 1]?.order.id !== order.id;
+              displayedOrders[orderIndex - 1]?.order.orderNos[0] !==
+                order.orderNos[0];
             const openOrder = orders.find(
-              (candidate) => orderUid(candidate) === openPadUid,
+              (candidate) => candidate.ticketUid === openPadUid,
             );
             const isMergeCandidate = Boolean(
               openOrder && canMergeDripUnits(openOrder, order),
             );
-            const isSelected = selectedOrderId === order.id;
-            const isDragging = dragVisual?.uid === orderUid(order);
+            const isSelected = selectedOrderId === orderLabel(order);
+            const isDragging = dragVisual?.uid === order.ticketUid;
             // The sidebar scrolls and clips its cards, so there the dragged card floats as a
             // fixed copy above the page while the original (and its 1-6 pad) stays put.
             const isFloatingDrag = isDragging && isSidebar;
@@ -227,22 +197,14 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     transform: `translate3d(${-dragVisual.x}px, ${-dragVisual.y}px, 0)`,
                   }
                 : undefined;
-            const cardStyle = order.preferredBaristaId
-              ? "bg-violet-50 border-violet-300 text-slate-900"
-              : surface.className;
-            // 指名の色を優先し、それ以外は色の設定の色（画面 master。無ければ白）
-            const surfaceStyle = order.preferredBaristaId
-              ? undefined
-              : surface.style;
-            const idColor = order.preferredBaristaId
+            const cardStyle = surface.className;
+            const surfaceStyle = surface.style;
+            // 分割なしの注文番号は少し薄く（分割ありは濃く）
+            const idColor = isNamed
               ? "text-violet-700"
-              : surface.colored
+              : order.totalItemsInOrder > 1
                 ? ""
-                : surface.dark
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+                : "opacity-75";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -250,9 +212,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     <span
                       className={`font-black font-mono ${idColor} leading-none tracking-tight ${isSidebar ? "text-[32px]" : "text-[25px]"}`}
                     >
-                      {order.id}
+                      {orderLabel(order)}
                     </span>
-                    {order.totalItemsInOrder && order.totalItemsInOrder > 1 && (
+                    {order.totalItemsInOrder > 1 && (
                       <span className="whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[11px] text-slate-700">
                         {order.itemIndex}/{order.totalItemsInOrder}・計
                         {order.totalOrderCups}杯
@@ -289,9 +251,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
 
             return (
               <div
-                key={order.ticketUid || order.id}
-                id={`unassigned-${(order.ticketUid || order.id).replace("#", "")}`}
-                data-unassigned-uid={orderUid(order)}
+                key={order.ticketUid}
+                data-unassigned-uid={order.ticketUid}
                 data-merge-candidate={isMergeCandidate ? "true" : undefined}
                 onClick={() => {
                   if (suppressNextClick.current) {
@@ -299,16 +260,14 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     return;
                   }
                   if (isMergeCandidate && openPadUid && onMergeOrders) {
-                    onMergeOrders(openPadUid, orderUid(order));
+                    onMergeOrders(openPadUid, order.ticketUid);
                     setOpenPadUid(null);
                     setHoveredBay(null);
                     return;
                   }
-                  if (selectedOrderId !== order.id) {
-                    if (onSelectQueueOrder) onSelectQueueOrder(order);
-                    else if (onSelectOrder) onSelectOrder(order.id);
-                  }
-                  setOpenPadUid(orderUid(order));
+                  if (selectedOrderId !== orderLabel(order))
+                    onSelectOrder(orderLabel(order));
+                  setOpenPadUid(order.ticketUid);
                 }}
                 onPointerDown={(event) => {
                   // A touch drag ends without a click, so drop any suppression left by it.
@@ -328,8 +287,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     event.currentTarget.getBoundingClientRect();
                   padBeforePress.current = openPadUid;
                   // A closed sidebar card may be the start of a scroll, so its pad waits for a tap or drag.
-                  if (!isSidebar || openPadUid === orderUid(order))
-                    setOpenPadUid(orderUid(order));
+                  if (!isSidebar || openPadUid === order.ticketUid)
+                    setOpenPadUid(order.ticketUid);
                   setHoveredBay(null);
                 }}
                 onPointerMove={(event) => {
@@ -346,7 +305,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     return;
                   // On a closed sidebar card vertical movement belongs to scrolling, not to a drag.
                   const isClosedSidebarCard =
-                    isSidebar && openPadUid !== orderUid(order);
+                    isSidebar && openPadUid !== order.ticketUid;
                   if (
                     isClosedSidebarCard &&
                     !dragVisual &&
@@ -355,15 +314,17 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   ) {
                     return;
                   }
-                  if (openPadUid !== orderUid(order)) {
+                  if (openPadUid !== order.ticketUid) {
                     // Same as pressing a card in the strip: switching cards drops the old selection.
-                    if (openPadUid) onClearSelection?.();
-                    setOpenPadUid(orderUid(order));
+                    if (openPadUid) onSelectOrder("");
+                    setOpenPadUid(order.ticketUid);
                   }
-                  const bayId = bayAtPoint(event.clientX, event.clientY);
+                  const bayId = bayTargetAt(event.clientX, event.clientY, {
+                    preferred: order.preferredBaristaId,
+                  });
                   setHoveredBay(bayId);
                   setDragVisual({
-                    uid: orderUid(order),
+                    uid: order.ticketUid,
                     x: event.clientX - start.x,
                     y: event.clientY - start.y,
                   });
@@ -380,7 +341,9 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       ) >= 12
                     : false;
                   const bayId = moved
-                    ? bayAtPoint(event.clientX, event.clientY)
+                    ? bayTargetAt(event.clientX, event.clientY, {
+                        preferred: order.preferredBaristaId,
+                      })
                     : null;
                   dragStart.current = null;
                   setDragVisual(null);
@@ -396,7 +359,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   // The browser took the gesture as a scroll. The sidebar left the previous pad and
                   // selection alone, so restore it; the strip already cleared both on press.
                   setOpenPadUid(
-                    isSidebar || padBeforePress.current === orderUid(order)
+                    isSidebar || padBeforePress.current === order.ticketUid
                       ? padBeforePress.current
                       : null,
                   );
@@ -410,7 +373,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       }
                     : {}),
                 }}
-                className={`flex min-h-0 cursor-grab flex-col rounded-lg border transition-[box-shadow,border-color] hover:shadow-md active:cursor-grabbing ${isSidebar && openPadUid !== orderUid(order) ? "touch-pan-y" : "touch-none"} relative select-none ${isSidebar ? "justify-center p-4" : "justify-between p-2"} ${isInlineDrag ? "z-[120] scale-[1.03] overflow-visible opacity-90 shadow-2xl ring-2 ring-blue-500" : openPadUid === orderUid(order) ? "z-40 overflow-visible" : "overflow-hidden"} ${cardStyle} ${
+                className={`flex min-h-0 cursor-grab flex-col rounded-lg border transition-[box-shadow,border-color] hover:shadow-md active:cursor-grabbing ${isSidebar && openPadUid !== order.ticketUid ? "touch-pan-y" : "touch-none"} relative select-none ${isSidebar ? "justify-center p-4" : "justify-between p-2"} ${isInlineDrag ? "z-[120] scale-[1.03] overflow-visible opacity-90 shadow-2xl ring-2 ring-blue-500" : openPadUid === order.ticketUid ? "z-40 overflow-visible" : "overflow-hidden"} ${cardStyle} ${
                   isSelected
                     ? "z-10 border-amber-500 shadow-lg ring-4 ring-amber-400"
                     : ""
@@ -435,57 +398,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     </span>
                   </div>
                 )}
-                {openPadUid === orderUid(order) && (
-                  <>
-                    <div
-                      className="-top-[38px] absolute right-0 left-0 z-30 grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
-                      style={padStyle}
-                      aria-label={`${order.id}の割当先 1から3`}
-                    >
-                      {CAOS_DRIPPER_IDS.slice(0, 3).map((bayId) => (
-                        <button
-                          key={bayId}
-                          type="button"
-                          data-bay-target={bayId}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            assignToBay(order, bayId);
-                          }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
-                          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
-                        >
-                          {bayId}
-                        </button>
-                      ))}
-                    </div>
-                    <div
-                      className="-bottom-[38px] absolute right-0 left-0 z-30 grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
-                      style={padStyle}
-                      aria-label={`${order.id}の割当先 4から6`}
-                    >
-                      {CAOS_DRIPPER_IDS.slice(3).map((bayId) => (
-                        <button
-                          key={bayId}
-                          type="button"
-                          data-bay-target={bayId}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            assignToBay(order, bayId);
-                          }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
-                          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
-                        >
-                          {bayId}
-                        </button>
-                      ))}
-                    </div>
-                  </>
+                {openPadUid === order.ticketUid && (
+                  <BayPad
+                    preferredBaristaId={order.preferredBaristaId}
+                    hoveredBay={hoveredBay}
+                    style={padStyle}
+                    onPick={(bayId) => assignToBay(order, bayId)}
+                  />
                 )}
                 {/* Linked Order Highlight Pill */}
                 {isSelected && (

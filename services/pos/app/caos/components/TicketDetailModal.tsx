@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
 import { moveTargets } from "../utils/lanes";
+import { orderLabel } from "../utils/orderQueue";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketDetailModalProps {
@@ -44,7 +45,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
             <div className="mt-1 flex items-center gap-3">
               <span className="font-black font-mono text-[28px]">
-                {ticket.id}
+                {orderLabel(ticket)}
               </span>
               <span className="font-bold text-[18px]">{ticket.beanName}</span>
               <BeanBadge card={ticket} className="text-[12px]" />

@@ -1,9 +1,11 @@
-import { readableTextColor } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
-import { isLaneId, moveTargets } from "../utils/lanes";
+import { cardSurface } from "../utils/cardSurface";
+import { bayTargetAt } from "../utils/lanes";
+import { orderLabel } from "../utils/orderQueue";
+import { BayPad } from "./BayPad";
 import { BeanBadge } from "./BeanBadge";
 
 interface TicketCardProps {
@@ -36,20 +38,20 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     null,
   );
   const [dragTargetBay, setDragTargetBay] = useState<number | null>(null);
-  const isOrderSelected = selectedOrderId === ticket.id;
+  const isOrderSelected = selectedOrderId === orderLabel(ticket);
 
   const isCompleted = ticket.status === "completed";
   const isNamed = Boolean(ticket.preferredBaristaId);
-  // 盤面のカードは、色の設定の色（画面 master。無ければ白）で塗る（終わった・指名のカードはそれぞれの色を優先）
-  const masterColor =
-    ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
-  // 文字色は背景色から決める（POS と共通の readableTextColor）
-  const masterTextColor = masterColor
-    ? readableTextColor(masterColor)
-    : undefined;
-  const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
+  // カードの色（cardSurface）。終わったカードは薄い灰色
+  const surface = isCompleted
+    ? {
+        className:
+          "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70",
+        style: undefined,
+      }
+    : cardSurface(ticket);
   const isActionOpen =
-    ticket.status === "scheduled" && actionTicketKey === ticketKey;
+    ticket.status === "scheduled" && actionTicketKey === ticket.ticketUid;
   // While dragging, cancel the card's offset on the pad so the finger can slide onto 1-6.
   const padDragStyle = dragOffset
     ? { transform: `translate3d(${-dragOffset.x}px, ${-dragOffset.y}px, 0)` }
@@ -65,27 +67,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, [isActionOpen, onCloseAction]);
 
-  const bayAtPoint = (clientX: number, clientY: number) => {
-    const elements = document.elementsFromPoint(clientX, clientY);
-    // A 1-6 pad button decides on its own: releasing on this card's own (disabled) number
-    // must not fall through to the lane underneath the pad.
-    const padButton = elements.find(
-      (element): element is HTMLElement =>
-        element instanceof HTMLElement &&
-        element.matches("button[data-bay-target]"),
-    );
-    if (padButton) {
-      const bayId = Number(padButton.dataset.bayTarget);
-      return isLaneId(bayId) && bayId !== currentBayId ? bayId : null;
-    }
-    const lane = elements
-      .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
-      .find((element) => {
-        const bayId = Number(element?.dataset.bayTarget);
-        return element && isLaneId(bayId) && bayId !== currentBayId;
-      });
-    return lane ? Number(lane.dataset.bayTarget) : null;
-  };
+  // 指の下のドリッパー（今のドリッパーと、指名以外のドリッパーは置けない）
+  const bayAtPoint = (clientX: number, clientY: number) =>
+    bayTargetAt(clientX, clientY, {
+      from: currentBayId,
+      preferred: ticket.preferredBaristaId,
+    });
 
   const finishDrag = () => {
     dragStart.current = null;
@@ -144,23 +131,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         finishDrag();
         if (moved) {
           suppressNextClick.current = true;
-          if (
-            targetBay &&
-            (!ticket.preferredBaristaId ||
-              ticket.preferredBaristaId === targetBay)
-          ) {
-            // 同じドリッパーの「先頭」に落としたら、待機の先頭へ
-            onMoveTicket(ticket, targetBay, targetBay === currentBayId);
+          if (targetBay) {
+            onMoveTicket(ticket, targetBay);
             onCloseAction();
           }
         }
       }}
       onPointerCancel={finishDrag}
-      id={`ticket-${ticket.ticketUid || ticket.id.replace("#", "")}`}
       style={{
-        ...(masterColor
-          ? { backgroundColor: masterColor, color: masterTextColor }
-          : {}),
+        ...surface.style,
         ...(widthPx ? { width: `${widthPx}px` } : {}),
         ...(dragOffset
           ? {
@@ -168,13 +147,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             }
           : {}),
       }}
-      className={`group relative h-full ${dragOffset ? `${isActionOpen ? "overflow-visible" : "overflow-hidden"} z-[120] scale-[1.03] opacity-90 shadow-2xl ring-2 ring-blue-500` : isActionOpen ? "z-[80] overflow-visible" : "overflow-hidden"} flex min-w-[135px] shrink-0 select-none flex-col justify-center rounded-lg border-2 border-l-[5px] border-l-slate-400 px-2 py-1.5 transition-[box-shadow,border-color] ${ticket.status === "scheduled" ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-default touch-manipulation"} ${
-        isCompleted
-          ? "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70"
-          : isNamed
-            ? "border-violet-300 bg-violet-50 shadow-xs hover:border-violet-400 hover:shadow-md"
-            : "border-[#cbd5e1] bg-white shadow-xs hover:border-slate-400 hover:shadow-md"
-      } ${
+      className={`group relative h-full ${dragOffset ? `${isActionOpen ? "overflow-visible" : "overflow-hidden"} z-[120] scale-[1.03] opacity-90 shadow-2xl ring-2 ring-blue-500` : isActionOpen ? "z-[80] overflow-visible" : "overflow-hidden"} flex min-w-[135px] shrink-0 select-none flex-col justify-center rounded-lg border-2 border-l-[5px] border-l-slate-400 px-2 py-1.5 transition-[box-shadow,border-color] ${ticket.status === "scheduled" ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-default touch-manipulation"} ${surface.className} ${isCompleted ? "" : "shadow-xs hover:shadow-md"} ${
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
@@ -187,30 +160,16 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       )}
       {isActionOpen && (
         <>
-          {/* 1〜3 はカードの上、4〜6 は下に並べる */}
-          {moveTargets(ticket.preferredBaristaId, currentBayId).map(
-            ({ bayId, toFront, disabled }, index) => (
-              <button
-                key={bayId}
-                type="button"
-                data-bay-target={bayId}
-                disabled={disabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMoveTicket(ticket, bayId, toFront);
-                  onCloseAction();
-                }}
-                className={`${index < 3 ? "-top-[38px]" : "-bottom-[38px]"} absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400`}
-                style={{
-                  left: `${(index % 3) * 33.333}%`,
-                  width: "33.333%",
-                  ...padDragStyle,
-                }}
-              >
-                {toFront ? "先頭" : bayId}
-              </button>
-            ),
-          )}
+          <BayPad
+            preferredBaristaId={ticket.preferredBaristaId}
+            currentBayId={currentBayId}
+            hoveredBay={dragTargetBay}
+            style={padDragStyle}
+            onPick={(bayId, toFront) => {
+              onMoveTicket(ticket, bayId, toFront);
+              onCloseAction();
+            }}
+          />
           <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
             <X className="h-10 w-10 stroke-[3] text-red-600/35" />
           </div>
@@ -227,17 +186,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   ? "font-black text-amber-900"
                   : isNamed
                     ? "text-violet-700"
-                    : isCompleted
-                      ? "text-slate-500"
-                      : masterColor
-                        ? ""
-                        : ticket.totalItemsInOrder &&
-                            ticket.totalItemsInOrder > 1
-                          ? "text-slate-950"
-                          : "text-slate-600"
+                    : ticket.totalItemsInOrder > 1
+                      ? ""
+                      : "opacity-75"
               }`}
             >
-              {ticket.id}
+              {orderLabel(ticket)}
             </span>
 
             {/* Cup count badge */}
@@ -266,28 +220,20 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         <div className="flex items-center gap-1.5">
           <span
             className={`max-w-[65%] shrink-0 truncate font-bold text-[14px] leading-tight tracking-tight ${
-              isOrderSelected
-                ? "font-black text-amber-950"
-                : isCompleted
-                  ? "text-slate-600"
-                  : masterColor
-                    ? ""
-                    : "text-slate-900"
+              isOrderSelected ? "font-black text-amber-950" : ""
             }`}
             title={ticket.beanName}
           >
             {ticket.beanName}
           </span>
           <BeanBadge card={ticket} />
-          {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
+          {ticket.totalItemsInOrder > 1 && (
             <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計
               {ticket.totalOrderCups}杯
             </span>
           )}
         </div>
-
-        {/* Order Notes (e.g. チャンプ 2杯 + 俺ブレ 1杯) */}
       </div>
     </div>
   );

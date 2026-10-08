@@ -1,6 +1,5 @@
 import { caosTimeOfDayLabel, jstDayStart } from "@cafeore/common";
 import { Database, Eye } from "lucide-react";
-import { useState } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { ControlViewA } from "./components/ControlViewA";
 import type { PosConnectionStatus } from "./hooks/usePosOrders";
@@ -19,16 +18,17 @@ const STATUS_LABEL: Record<PosConnectionStatus, string> = {
 };
 
 const noop = () => {};
+// 列（1st〜6th）。閲覧だけの画面は列を変えない
+const LANES = makeLaneBaristas();
 
 export default function ReadOnlyBoard() {
   const now = useCurrentTime(1000);
   // 秒は日本時間の 0 時から数える（操作の画面と同じ）
-  const [dayStartMs] = useState(() => jstDayStart(Date.now()));
-  const [baristas] = useState(makeLaneBaristas);
+  const dayStartMs = jstDayStart(now.getTime());
   const nowSec = Math.floor((now.getTime() - dayStartMs) / 1000);
   const { board, status } = useLiveCaosBoard({
     enabled: true,
-    baristas,
+    baristas: LANES,
     now,
     nowSec,
     dayStartMs,

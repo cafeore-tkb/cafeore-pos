@@ -8,7 +8,7 @@ import type { NavTab } from "./TopHeader";
 
 export type AuxiliaryTab = Exclude<NavTab, "control">;
 
-export const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
+const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
   tab === "bays" ? "ドリッパー" : tab === "beans" ? "豆キュー" : "実績";
 
 interface AuxiliaryContentProps {

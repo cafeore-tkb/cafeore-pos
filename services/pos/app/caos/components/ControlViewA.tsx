@@ -1,33 +1,9 @@
 import type React from "react";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import type { ControlViewProps } from "./ControlWorkspace";
 import { DispatchBoard } from "./DispatchBoard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
-interface ControlViewAProps {
-  baristas: Barista[];
-  unassignedOrders: UnassignedOrder[];
-  nextAvailable: Array<{
-    bayNumber: number;
-    seconds: number;
-    isStandby: boolean;
-  }>;
-  selectedOrderId: string | null;
-  actionTicketKey: string | null;
-  currentTimeSec: number;
-  timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
-  onSelectOrder: (orderId: string) => void;
-  onAdvanceBay: (bayId: number) => void;
-  onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (
-    ticket: OrderTicket,
-    targetBayId: number,
-    toFront?: boolean,
-  ) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
-  onCloseTicketAction: () => void;
-  onOpenEmptySlot: (bayId: number) => void;
-  onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
-  onMergeOrders: (firstUid: string, secondUid: string) => void;
+interface ControlViewAProps extends ControlViewProps {
   /** 閲覧だけの画面（/master-sheet/view）。各列の「次へ」と空きスロットを出さない */
   readOnly?: boolean;
 }
@@ -74,8 +50,6 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
         nextAvailable={nextAvailable}
         selectedOrderId={selectedOrderId}
         onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onClearSelection={() => onSelectOrder("")}
         onAssignToBay={onAssignToBay}
         onMergeOrders={onMergeOrders}
       />

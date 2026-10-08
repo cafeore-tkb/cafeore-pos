@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Barista, OrderTicket } from "../types";
 import { laneOrdinal } from "../utils/lanes";
+import { orderLabel } from "../utils/orderQueue";
 import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
@@ -175,7 +176,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   if (selectedOrderId) {
     baristas.forEach((b) => {
       [...(b.pastTickets || []), ...b.queue].forEach((t) => {
-        if (t.id === selectedOrderId) {
+        if (orderLabel(t) === selectedOrderId) {
           matchingTickets.push({
             bayNumber: b.bayNumber,
             beanName: t.beanName,

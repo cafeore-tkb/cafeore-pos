@@ -9,7 +9,7 @@ export const laneOrdinal = (bayNumber: number) =>
   ["1st", "2nd", "3rd", "4th", "5th", "6th"][bayNumber - 1] ?? `${bayNumber}th`;
 
 /** ドリッパーの番号か（1〜6） */
-export const isLaneId = (bayId: number) => CAOS_DRIPPER_IDS.includes(bayId);
+const isLaneId = (bayId: number) => CAOS_DRIPPER_IDS.includes(bayId);
 
 /** カードの無い 6 列（初期状態・リセット・実データテストの開始） */
 export const makeLaneBaristas = (): Barista[] =>
@@ -17,8 +17,6 @@ export const makeLaneBaristas = (): Barista[] =>
     (id): Barista => ({
       id,
       bayNumber: id,
-      status: "standby",
-      remainingStr: "00:00 待機中",
       queue: [],
       pastTickets: [],
     }),
@@ -37,3 +35,30 @@ export const moveTargets = (
     toFront: bayId === currentBayId,
     disabled: Boolean(preferredBaristaId && preferredBaristaId !== bayId),
   }));
+
+/**
+ * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
+ * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
+ * from（移す前のドリッパー）と、指名のドリッパー以外（preferred）は、置けないので null。
+ */
+export const bayTargetAt = (
+  clientX: number,
+  clientY: number,
+  { from, preferred }: { from?: number; preferred?: number } = {},
+) => {
+  const elements = document.elementsFromPoint(clientX, clientY);
+  const button = elements.find(
+    (element): element is HTMLElement =>
+      element instanceof HTMLElement &&
+      element.matches("button[data-bay-target]"),
+  );
+  const target =
+    button ??
+    elements
+      .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
+      .find((element) => isLaneId(Number(element?.dataset.bayTarget)));
+  const bayId = Number(target?.dataset.bayTarget);
+  if (!isLaneId(bayId) || bayId === from) return null;
+  if (preferred && preferred !== bayId) return null;
+  return bayId;
+};

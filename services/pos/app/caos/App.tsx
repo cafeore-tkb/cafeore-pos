@@ -1,10 +1,7 @@
 import {
   CAOS_CHANGEOVER_SEC,
-  CAOS_DRIPPER_IDS,
   CAOS_FIRST_START_DELAY_SEC,
   caosBrewSec,
-  caosClockLabel,
-  caosDurationLabel,
   caosTimeOfDayLabel,
   jstDayStart,
 } from "@cafeore/common";
@@ -37,10 +34,9 @@ import { makeLaneBaristas } from "./utils/lanes";
 import {
   arrangeQueue,
   canMergeDripUnits,
+  compareCards,
   nextAvailableBays,
-  orderNumber,
   splitIntoDripUnits,
-  ticketKey,
   totalCups,
 } from "./utils/orderQueue";
 
@@ -71,7 +67,7 @@ type HistoricalGroup =
   | "ICE"
   | "MILK"
   | "SP";
-const historicalBeanCode = (name: string, type: string): HistoricalGroup => {
+const historicalGroupOf = (name: string, type: string): HistoricalGroup => {
   if (type === "ice") return "ICE";
   if (type === "iceOre" || type === "milk") return "MILK";
   if (name.includes("俺")) return "ORE";
@@ -97,29 +93,20 @@ const historicalOrderToDripUnits = (
     { names: string[]; count: number }
   >();
   drinks.forEach((item) => {
-    const code = historicalBeanCode(item.name, item.type);
+    const code = historicalGroupOf(item.name, item.type);
     const current = grouped.get(code) || { names: [], count: 0 };
     current.count += 1;
     if (!current.names.includes(item.name)) current.names.push(item.name);
     grouped.set(code, current);
   });
-  const id = `#${order.orderId.toString().padStart(3, "0")}`;
-  const source = Array.from(
-    grouped,
-    ([groupKey, group], index): UnassignedOrder => ({
-      id,
-      ticketUid: `history-${order.orderId}-${groupKey}-${index}`,
-      itemKey: `history-${groupKey}`,
-      beanName: group.names.join("・"),
-      cupCount: group.count,
-      badgeTag: `${group.count}杯`,
-      predictedTimeStr: caosDurationLabel(caosBrewSec(group.count)),
-      recommendedBaristas: "全ドリッパー",
-      recommendedBayIds: [...CAOS_DRIPPER_IDS],
-      // 実データテストの盤面は、同じまとめ方の 1 杯どうしを統合できる
-      mergeKey: `history-${groupKey}`,
-    }),
-  );
+  const source = Array.from(grouped, ([groupKey, group], index) => ({
+    ticketUid: `history-${order.orderId}-${groupKey}-${index}`,
+    orderNos: [order.orderId],
+    beanName: group.names.join("・"),
+    cupCount: group.count,
+    // 実データテストの盤面は、同じまとめ方の 1 杯どうしを統合できる
+    mergeKey: `history-${groupKey}`,
+  }));
   return splitIntoDripUnits(source);
 };
 
@@ -156,10 +143,8 @@ export default function App() {
   const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
     null,
   );
-  const [assignSlotData, setAssignSlotData] = useState<{
-    bayId: number | null;
-    order: UnassignedOrder | null;
-  } | null>(null);
+  // 空きスロットから開いた割当のドリッパー
+  const [assignSlotBayId, setAssignSlotBayId] = useState<number | null>(null);
 
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [simSpeed, setSimSpeed] = useState<number>(1);
@@ -180,7 +165,7 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const realTime = useCurrentTime(1000);
   // 秒は日本時間の 0 時から数える（盤面の「今日」と同じ区切り）
-  const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
+  const realDayStartMs = jstDayStart(realTime.getTime());
   const testPlayStatus = testPlaySession?.status;
   const testPlayCurrentMs = testPlaySession?.currentMs;
   const testPlayEndMs = testPlaySession?.endMs;
@@ -215,8 +200,8 @@ export default function App() {
   const findLiveTicket = (key: string) => {
     for (const bay of boardBaristas) {
       const ticket =
-        bay.queue.find((item) => ticketKey(item) === key) ||
-        bay.pastTickets?.find((item) => ticketKey(item) === key);
+        bay.queue.find((item) => item.ticketUid === key) ||
+        bay.pastTickets?.find((item) => item.ticketUid === key);
       if (ticket) return ticket;
     }
     return null;
@@ -232,11 +217,7 @@ export default function App() {
       setSelectedTicketKey(null);
   }, [selectedTicketKey, selectedTicketStatus]);
 
-  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(
-    (a, b) =>
-      orderNumber(a.id) - orderNumber(b.id) ||
-      (a.itemIndex || 0) - (b.itemIndex || 0),
-  );
+  const sortedUnassignedOrders = [...boardUnassignedOrders].sort(compareCards);
 
   useEffect(() => {
     if (testPlayStatus !== "active" || !isRunning) return;
@@ -327,13 +308,7 @@ export default function App() {
             );
             activeTicket.timeRemainingSec = nextSec;
             updatedQueue[0] = activeTicket;
-
-            return {
-              ...barista,
-              status: nextSec <= 15 ? "imminent" : "brewing",
-              remainingStr: `${caosClockLabel(nextSec)} 残り`,
-              queue: updatedQueue,
-            };
+            return { ...barista, queue: updatedQueue };
           }
           return barista;
         }),
@@ -370,29 +345,17 @@ export default function App() {
         // This compensates every later card when the active drip ran long or short.
         const nextQueue = arrangeQueue(b.queue.slice(1), realTimeSec, true);
 
-        return {
-          ...b,
-          status: nextQueue.length > 0 ? "brewing" : "standby",
-          remainingStr:
-            nextQueue.length > 0
-              ? `${caosClockLabel(nextQueue[0].totalDurationSec)} 残り`
-              : "00:00 待機中",
-          queue: nextQueue,
-          pastTickets,
-        };
+        return { ...b, queue: nextQueue, pastTickets };
       }),
     );
   };
 
   // Assign order to a bay
-  const handleAssignOrderToBay = (
-    orderUidOrId: string,
-    targetBayId: number,
-  ) => {
+  const handleAssignOrderToBay = (ticketUid: string, targetBayId: number) => {
     soundManager.playDispatch();
 
     const orderToAssign = boardUnassignedOrders.find(
-      (o) => o.ticketUid === orderUidOrId || o.id === orderUidOrId,
+      (o) => o.ticketUid === ticketUid,
     );
     if (!orderToAssign) return;
     if (
@@ -407,11 +370,7 @@ export default function App() {
 
     // Remove from unassigned
     setUnassignedOrders((prev) =>
-      prev.filter(
-        (o) =>
-          (o.ticketUid || o.id) !==
-          (orderToAssign.ticketUid || orderToAssign.id),
-      ),
+      prev.filter((o) => o.ticketUid !== orderToAssign.ticketUid),
     );
 
     // Calculate dynamic start time based on target bay's queue
@@ -427,20 +386,8 @@ export default function App() {
 
     // Convert to OrderTicket
     const newTicket: OrderTicket = {
-      id: orderToAssign.id,
-      ticketUid:
-        orderToAssign.ticketUid || `${orderToAssign.id}-bay${targetBayId}`,
-      itemIndex: orderToAssign.itemIndex,
-      totalItemsInOrder: orderToAssign.totalItemsInOrder,
-      totalOrderCups: orderToAssign.totalOrderCups,
-      orderNotes: orderToAssign.orderNotes,
-      sourceOrderIds: orderToAssign.sourceOrderIds,
-      preferredBaristaId: orderToAssign.preferredBaristaId,
-      itemKey: orderToAssign.itemKey,
-      beanName: orderToAssign.beanName,
-      cupCount: orderToAssign.cupCount,
+      ...orderToAssign,
       status: "scheduled",
-      scheduledTimeStr: caosDurationLabel(duration),
       startTimeSec: computedStartSec,
       totalDurationSec: duration,
     };
@@ -474,17 +421,17 @@ export default function App() {
     }
     // 実データテストの盤面は注文番号の順に並べるので、順番の入れ替えはしない
     if (toFront) return;
-    const key = ticketKey(ticket);
+    const key = ticket.ticketUid;
     setBaristas((prev) => {
       return prev.map((bay) => ({
         ...bay,
         queue: arrangeQueue(
           bay.id === targetBayId
             ? [
-                ...bay.queue.filter((item) => ticketKey(item) !== key),
+                ...bay.queue.filter((item) => item.ticketUid !== key),
                 { ...ticket, status: "scheduled" as const },
               ]
-            : bay.queue.filter((item) => ticketKey(item) !== key),
+            : bay.queue.filter((item) => item.ticketUid !== key),
           realTimeSec,
         ),
       }));
@@ -501,51 +448,34 @@ export default function App() {
       soundManager.playDispatch();
       return;
     }
-    const key = ticketKey(ticket);
+    const {
+      status: _status,
+      timeRemainingSec: _remaining,
+      totalDurationSec: _duration,
+      startTimeSec: _start,
+      endTimeSec: _end,
+      ...card
+    } = ticket;
     setBaristas((prev) =>
       prev.map((bay) => ({
         ...bay,
         queue: arrangeQueue(
-          bay.queue.filter((item) => ticketKey(item) !== key),
+          bay.queue.filter((item) => item.ticketUid !== card.ticketUid),
           realTimeSec,
         ),
       })),
     );
-    setUnassignedOrders((prev) => [
-      {
-        id: ticket.id,
-        ticketUid: ticket.ticketUid,
-        itemIndex: ticket.itemIndex,
-        totalItemsInOrder: ticket.totalItemsInOrder,
-        totalOrderCups: ticket.totalOrderCups,
-        orderNotes: ticket.orderNotes,
-        sourceOrderIds: ticket.sourceOrderIds,
-        itemKey: ticket.itemKey,
-        beanName: ticket.beanName,
-        cupCount: ticket.cupCount,
-        badgeTag: `${ticket.cupCount}杯`,
-        predictedTimeStr: caosDurationLabel(caosBrewSec(ticket.cupCount)),
-        recommendedBaristas: ticket.preferredBaristaId
-          ? `ドリッパー ${ticket.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: ticket.preferredBaristaId
-          ? [ticket.preferredBaristaId]
-          : [...CAOS_DRIPPER_IDS],
-        mergeKey: ticket.itemKey,
-        preferredBaristaId: ticket.preferredBaristaId,
-      },
-      ...prev,
-    ]);
+    setUnassignedOrders((prev) => [card, ...prev]);
     setSelectedOrderId(null);
     soundManager.playDispatch();
   };
 
   const handleMergeUnassignedOrders = (firstUid: string, secondUid: string) => {
     const first = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === firstUid,
+      (order) => order.ticketUid === firstUid,
     );
     const second = boardUnassignedOrders.find(
-      (order) => (order.ticketUid || order.id) === secondUid,
+      (order) => order.ticketUid === secondUid,
     );
     if (!first || !second || !canMergeDripUnits(first, second)) return;
     if (isLive) {
@@ -554,26 +484,22 @@ export default function App() {
       return;
     }
     setUnassignedOrders((prev) => {
-      const sourceOrderIds = Array.from(
-        new Set([
-          ...(first.sourceOrderIds || [first.id]),
-          ...(second.sourceOrderIds || [second.id]),
-        ]),
-      ).sort((a, b) => orderNumber(a) - orderNumber(b));
       const merged: UnassignedOrder = {
         ...first,
-        id: sourceOrderIds.join("+"),
         ticketUid: `merged-${[firstUid, secondUid].sort().join("-")}`,
-        sourceOrderIds,
+        orderNos: Array.from(
+          new Set([...first.orderNos, ...second.orderNos]),
+        ).sort((a, b) => a - b),
+        itemIndex: 1,
+        totalItemsInOrder: 1,
+        totalOrderCups: 2,
         cupCount: 2,
-        badgeTag: "2杯 統合",
-        orderNotes: `${sourceOrderIds.join(" + ")} 同時ドリップ`,
       };
       return [
-        ...prev.filter((order) => {
-          const uid = order.ticketUid || order.id;
-          return uid !== firstUid && uid !== secondUid;
-        }),
+        ...prev.filter(
+          (order) =>
+            order.ticketUid !== firstUid && order.ticketUid !== secondUid,
+        ),
         merged,
       ];
     });
@@ -586,7 +512,7 @@ export default function App() {
     setUnassignedOrders([]);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
-    setAssignSlotData(null);
+    setAssignSlotBayId(null);
     setTestPlaySession(null);
     historicalOrderCursor.current = 0;
     setIsRunning(true);
@@ -608,7 +534,7 @@ export default function App() {
     setUnassignedOrders([]);
     setSelectedOrderId(null);
     setSelectedTicketKey(null);
-    setAssignSlotData(null);
+    setAssignSlotBayId(null);
     historicalOrderCursor.current = 0;
     setTestPlaySession({
       status: "active",
@@ -736,16 +662,14 @@ export default function App() {
             onSelectOrder={handleToggleOrderSelection}
             onAdvanceBay={handleAdvanceBay}
             onOpenTicketDetail={(ticket) =>
-              setSelectedTicketKey(ticketKey(ticket))
+              setSelectedTicketKey(ticket.ticketUid)
             }
             onMoveTicket={handleMoveScheduledTicket}
             onReturnToUnassigned={handleReturnScheduledTicket}
             onCloseTicketAction={() => setSelectedTicketKey(null)}
-            onOpenEmptySlot={(bayId) =>
-              setAssignSlotData({ bayId, order: null })
-            }
+            onOpenEmptySlot={setAssignSlotBayId}
             onAssignToBay={(order, bayId) =>
-              handleAssignOrderToBay(order.ticketUid || order.id, bayId)
+              handleAssignOrderToBay(order.ticketUid, bayId)
             }
             onMergeOrders={handleMergeUnassignedOrders}
           />
@@ -769,7 +693,7 @@ export default function App() {
           currentBayId={
             boardBaristas.find((bay) =>
               bay.queue.some(
-                (ticket) => ticketKey(ticket) === selectedTicketKey,
+                (ticket) => ticket.ticketUid === selectedTicketKey,
               ),
             )?.id || null
           }
@@ -783,13 +707,12 @@ export default function App() {
       )}
 
       {/* Assign Slot Modal */}
-      {assignSlotData && (
+      {assignSlotBayId !== null && (
         <AssignSlotModal
-          bayId={assignSlotData.bayId}
-          targetOrder={assignSlotData.order}
+          bayId={assignSlotBayId}
           baristas={boardBaristas}
           unassignedOrders={sortedUnassignedOrders}
-          onClose={() => setAssignSlotData(null)}
+          onClose={() => setAssignSlotBayId(null)}
           onAssign={handleAssignOrderToBay}
         />
       )}

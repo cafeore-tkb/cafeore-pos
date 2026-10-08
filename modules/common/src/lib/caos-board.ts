@@ -44,6 +44,8 @@ export const caosTimeOfDayLabel = (sec: number) => {
 export const CAOS_CHANGEOVER_SEC = 15;
 /** 抽出中のカードが無いドリッパーで、先頭の待機カードを始める見込み（今から何秒後か） */
 export const CAOS_FIRST_START_DELAY_SEC = 10;
+/** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
+export const CAOS_SOON_SEC = 15;
 
 /** 1 つのドリッパーの予定時刻（盤面の秒） */
 export interface CaosLanePlan {

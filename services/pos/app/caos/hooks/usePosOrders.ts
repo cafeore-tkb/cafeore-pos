@@ -1,5 +1,5 @@
+import type { OrderEntity, WithId } from "@cafeore/common";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import type { PosOrder } from "../utils/posOrders";
 
 export type PosConnectionStatus =
   | "off"
@@ -14,7 +14,7 @@ export type PosConnectionStatus =
 export const usePosOrders = (
   enabled: boolean,
 ): {
-  orders: PosOrder[] | null;
+  orders: WithId<OrderEntity>[] | null;
   status: PosConnectionStatus;
 } => {
   const { orders, isOrdersLoaded, status } = useOrdersWSContext();

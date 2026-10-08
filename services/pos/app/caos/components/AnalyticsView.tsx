@@ -15,6 +15,7 @@ import type React from "react";
 import { useMemo } from "react";
 import type { Barista, HistoricalOrder, OrderTicket } from "../types";
 import { laneOrdinal } from "../utils/lanes";
+import { orderLabel } from "../utils/orderQueue";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -68,10 +69,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     () =>
       baristas.flatMap((barista) =>
         (barista.pastTickets || []).flatMap((ticket) => {
-          const finishedAt = ticket.completedAtSec ?? ticket.endTimeSec;
-          return ticket.totalItemsInOrder &&
-            ticket.totalItemsInOrder > 1 &&
-            finishedAt !== undefined
+          const finishedAt = ticket.endTimeSec;
+          return ticket.totalItemsInOrder > 1 && finishedAt !== undefined
             ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
             : [];
         }),
@@ -82,14 +81,14 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const splitResults = useMemo<SplitResult[]>(() => {
     const groups = new Map<string, CompletedPart[]>();
     completedParts.forEach((part) => {
-      const current = groups.get(part.ticket.id) || [];
+      const current = groups.get(orderLabel(part.ticket)) || [];
       current.push(part);
-      groups.set(part.ticket.id, current);
+      groups.set(orderLabel(part.ticket), current);
     });
 
     return Array.from(groups, ([orderId, parts]) => {
       const expectedParts = Math.max(
-        ...parts.map((part) => part.ticket.totalItemsInOrder || 1),
+        ...parts.map((part) => part.ticket.totalItemsInOrder),
       );
       if (parts.length < expectedParts) return null;
       const sorted = [...parts].sort((a, b) => a.finishedAt - b.finishedAt);
@@ -98,11 +97,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       return {
         orderId,
         expectedParts,
-        totalCups: Math.max(
-          ...parts.map(
-            (part) => part.ticket.totalOrderCups || part.ticket.cupCount,
-          ),
-        ),
+        totalCups: Math.max(...parts.map((part) => part.ticket.totalOrderCups)),
         deltaSec: lastFinishedAt - firstFinishedAt,
         firstFinishedAt,
         lastFinishedAt,
@@ -122,8 +117,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     >();
     baristas.forEach((barista) => {
       barista.queue.forEach((ticket) => {
-        if (!ticket.totalItemsInOrder || ticket.totalItemsInOrder <= 1) return;
-        const current = groups.get(ticket.id) || {
+        if (ticket.totalItemsInOrder <= 1) return;
+        const current = groups.get(orderLabel(ticket)) || {
           expected: ticket.totalItemsInOrder,
           assigned: 0,
           bays: new Set<number>(),
@@ -131,7 +126,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         current.expected = Math.max(current.expected, ticket.totalItemsInOrder);
         current.assigned += 1;
         current.bays.add(barista.bayNumber);
-        groups.set(ticket.id, current);
+        groups.set(orderLabel(ticket), current);
       });
     });
     return Array.from(groups, ([orderId, value]) => ({

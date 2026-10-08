@@ -1,4 +1,4 @@
-import { caosClockLabel, readableTextColor } from "@cafeore/common";
+import { caosClockLabel } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -9,21 +9,16 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Barista, OrderTicket, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
+import type { Barista, DripCard, OrderTicket, UnassignedOrder } from "../types";
+import { cardSurface } from "../utils/cardSurface";
+import { bayTargetAt, laneOrdinal } from "../utils/lanes";
 import {
   activeRemainingSec,
   canMergeDripUnits,
-  orderNumber,
-  ticketKey,
+  groupByOrder,
+  orderLabel,
 } from "../utils/orderQueue";
-import type { ControlViewBProps } from "./ControlViewB";
-
-export interface ControlViewDProps extends ControlViewBProps {
-  onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
-  onMergeOrders: (firstUid: string, secondUid: string) => void;
-}
+import type { ControlViewProps } from "./ControlWorkspace";
 
 // 紙のマスターシートと同じく、行は注文番号ごと。割り当てた注文は下へ積むだけで、
 // 淹れ終わっても行は動かさず薄く残す。
@@ -32,17 +27,6 @@ const MIN_ROWS = 8;
 const HISTORY_ROWS_ON_OPEN = 1;
 // C/Aの未割当カードと同じく、12px動くまではタップとして扱う。
 const DRAG_THRESHOLD_PX = 12;
-
-interface SheetCup {
-  key: string;
-  id: string;
-  /** カードの名前（盤面のカードは商品の略称をそのまま） */
-  beanName: string;
-  cupCount: number;
-  preferredBaristaId?: number;
-  /** 背景色（盤面のカードだけ。色の設定の色、無ければ白） */
-  color?: string;
-}
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
 type DragSource =
@@ -61,71 +45,43 @@ type CellState = "past" | "current" | "waiting";
 interface SheetEntry {
   ticket: OrderTicket;
   state: CellState;
-  // 統合した抽出は元の注文すべての行にまたがる。
-  rowIds: string[];
+  // 統合した抽出は元の注文すべての行にまたがる（行は注文番号）。
+  rowIds: number[];
 }
 
 interface SheetCell {
   entries: SheetEntry[];
   // 隣り合う行の統合は1つの枠で大きく囲む。隣り合わないときは他の行に目印だけ置く。
   rowSpan: number;
-  coveredBy?: string;
+  coveredBy?: number;
   mergedStubs: SheetEntry[];
 }
 
 interface SheetLayout {
   rows: Array<{
-    orderId: string;
+    orderNo: number;
     isLive: boolean;
     isPast: boolean;
     cups: number;
     orderCups?: number;
   }>;
   cells: Map<string, SheetCell>;
-  targetRowId: string | null;
+  targetRowId: number | null;
 }
 
 interface OrderGroup {
-  id: string;
+  key: string;
   items: UnassignedOrder[];
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
 
-const ticketCup = (ticket: OrderTicket): SheetCup => ({
-  key: ticketKey(ticket),
-  id: ticket.id,
-  beanName: ticket.beanName,
-  cupCount: ticket.cupCount,
-  preferredBaristaId: ticket.preferredBaristaId,
-  color: ticket.color,
-});
+const cellKey = (orderNo: number, bayId: number) => `${orderNo}@${bayId}`;
 
-const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
-  item.sourceOrderIds && item.sourceOrderIds.length > 0
-    ? item.sourceOrderIds
-    : [item.id];
-
-const shortIds = (ids: string[]) =>
-  ids.map((id) => id.replace("#", "")).join("+");
-
-const cellKey = (orderId: string, bayId: number) => `${orderId}@${bayId}`;
-
-const sourceCup = (source: DragSource) =>
-  source.kind === "unassigned"
-    ? unassignedCup(source.order)
-    : ticketCup(source.ticket);
-
-const unassignedCup = (order: UnassignedOrder): SheetCup => ({
-  key: order.ticketUid || order.id,
-  id: order.id,
-  beanName: order.beanName,
-  cupCount: order.cupCount,
-  preferredBaristaId: order.preferredBaristaId,
-  color: order.color,
-});
+const sourceCard = (source: DragSource): DripCard =>
+  source.kind === "unassigned" ? source.order : source.ticket;
 
 const CupChip: React.FC<{
-  cup: SheetCup;
+  cup: DripCard;
   baristaName?: string;
   note?: string;
   faded?: boolean;
@@ -142,10 +98,8 @@ const CupChip: React.FC<{
   onClick,
 }) => {
   const stacked = cup.cupCount >= 2;
-  // 盤面のカードは色の設定の色（無ければ白）。文字色は背景色から決める（POS と共通の readableTextColor）
-  const colorStyle = cup.color
-    ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
-    : undefined;
+  // カードの色（cardSurface。管制盤 A・C と同じ）
+  const surface = cardSurface(cup);
 
   return (
     <div
@@ -154,40 +108,32 @@ const CupChip: React.FC<{
       {stacked && (
         <div
           aria-hidden
-          className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 bg-white shadow-xs"
-          style={colorStyle}
+          className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border shadow-xs ${surface.className}`}
+          style={surface.style}
         />
       )}
       <button
         type="button"
         disabled={!onClick}
         onClick={onClick}
-        style={colorStyle}
-        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 bg-white px-1.5 py-1 text-left shadow-xs ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
+        style={surface.style}
+        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${surface.className} ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
           lifted ? "shadow-2xl" : ""
         }`}
       >
         <span className="flex min-w-0 items-baseline justify-between gap-1">
-          <span
-            className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
-          >
+          <span className="truncate font-black text-[14px] leading-tight">
             {cup.beanName}
           </span>
-          <span
-            className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
-          >
+          <span className="shrink-0 font-black font-mono text-[11px] opacity-80">
             ×{cup.cupCount}
           </span>
         </span>
-        <span
-          className={`truncate font-bold font-mono text-[11px] ${cup.color ? "opacity-75" : "text-slate-600"}`}
-        >
-          No. {cup.id.replaceAll("#", "")}
+        <span className="truncate font-bold font-mono text-[11px] opacity-75">
+          No. {cup.orderNos.join("+")}
         </span>
         {(baristaName || note) && (
-          <span
-            className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
-          >
+          <span className="truncate font-bold text-[10px] opacity-80">
             {baristaName ? `指名：${baristaName}` : ""}
             {note ? ` ${note}` : ""}
           </span>
@@ -197,10 +143,10 @@ const CupChip: React.FC<{
   );
 };
 
-export const ControlViewD: React.FC<ControlViewDProps> = ({
+export const ControlViewD: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
-  simTimeSec,
+  currentTimeSec,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -215,7 +161,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   const [cupDrag, setCupDrag] = useState<CupDrag | null>(null);
   const [hoveredTarget, setHoveredTarget] = useState<DropTarget | null>(null);
   // Order numbers of a merge waiting for App to hand back the combined card.
-  const [mergingIds, setMergingIds] = useState<string[] | null>(null);
+  const [mergingNos, setMergingNos] = useState<number[] | null>(null);
   const suppressNextClick = useRef(false);
   const endPress = useRef<(() => void) | null>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
@@ -237,9 +183,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   );
   const selectedOrder = useMemo(
     () =>
-      unassignedOrders.find(
-        (order) => (order.ticketUid || order.id) === selectedUid,
-      ) ?? null,
+      unassignedOrders.find((order) => order.ticketUid === selectedUid) ?? null,
     [selectedUid, unassignedOrders],
   );
 
@@ -250,7 +194,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   // App's selection can move on without this view (tapping a placed card, a move that clears it);
   // drop the local card selection then so the header and "ここに配置" never point at another order.
   useEffect(() => {
-    if (selectedOrder && selectedOrderId !== selectedOrder.id)
+    if (selectedOrder && selectedOrderId !== orderLabel(selectedOrder))
       setSelectedUid(null);
   }, [selectedOrder, selectedOrderId]);
 
@@ -263,7 +207,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
         ...(barista.pastTickets || []).map((ticket) => ({
           ticket,
           state: "past" as const,
-          rowIds: rowIdsOf(ticket),
+          rowIds: ticket.orderNos,
         })),
         ...barista.queue.map((ticket) => ({
           ticket,
@@ -271,17 +215,17 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
             ticket.status === "brewing"
               ? ("current" as const)
               : ("waiting" as const),
-          rowIds: rowIdsOf(ticket),
+          rowIds: ticket.orderNos,
         })),
       ]);
     }
 
     // Per order: whether it still has work, cups placed so far, and the order's total.
     const stats = new Map<
-      string,
+      number,
       { hasEntries: boolean; isLive: boolean; cups: number; orderCups?: number }
     >();
-    const statOf = (id: string) => {
+    const statOf = (id: number) => {
       const stat = stats.get(id) || {
         hasEntries: false,
         isLive: false,
@@ -305,42 +249,32 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     }
     // An order with cups still unassigned is not finished, even if its assigned cups are.
     for (const order of unassignedOrders) {
-      for (const id of rowIdsOf(order)) {
+      for (const id of order.orderNos) {
         const stat = statOf(id);
         stat.isLive = true;
-        if (rowIdsOf(order).length === 1)
-          stat.orderCups ??= order.totalOrderCups ?? order.cupCount;
+        if (order.orderNos.length === 1)
+          stat.orderCups ??= order.totalOrderCups;
       }
     }
 
     // Like the printed sheet, every order number gets a row, including ones with nothing to drip.
-    const idByNumber = new Map<number, string>();
-    const otherIds: string[] = [];
-    for (const id of stats.keys()) {
-      const number = orderNumber(id);
-      if (number === Number.MAX_SAFE_INTEGER) otherIds.push(id);
-      else idByNumber.set(number, id);
-    }
-    const numbers = Array.from(idByNumber.keys());
-    const orderedIds: string[] = [];
+    const numbers = Array.from(stats.keys());
+    const orderedIds: number[] = [];
     if (numbers.length > 0) {
       for (
         let number = Math.min(...numbers);
         number <= Math.max(...numbers);
         number++
       ) {
-        orderedIds.push(
-          idByNumber.get(number) ?? `#${number.toString().padStart(3, "0")}`,
-        );
+        orderedIds.push(number);
       }
     }
-    orderedIds.push(...otherIds.sort());
-    const rowIndex = new Map<string, number>(
+    const rowIndex = new Map<number, number>(
       orderedIds.map((id, index) => [id, index]),
     );
 
     const cells = new Map<string, SheetCell>();
-    const cellAt = (orderId: string, bayId: number) => {
+    const cellAt = (orderId: number, bayId: number) => {
       const key = cellKey(orderId, bayId);
       const cell = cells.get(key) || {
         entries: [],
@@ -351,7 +285,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       return cell;
     };
     for (const [bayId, entries] of entriesByBay) {
-      const touches = new Map<string, number>();
+      const touches = new Map<number, number>();
       for (const entry of entries)
         for (const id of entry.rowIds)
           touches.set(id, (touches.get(id) ?? 0) + 1);
@@ -383,10 +317,10 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       }
     }
 
-    const rows = orderedIds.map((orderId) => {
-      const stat = stats.get(orderId);
+    const rows = orderedIds.map((orderNo) => {
+      const stat = stats.get(orderNo);
       return {
-        orderId,
+        orderNo,
         isLive: stat?.isLive ?? false,
         isPast: Boolean(stat?.hasEntries && !stat.isLive),
         cups: stat?.cups ?? 0,
@@ -396,14 +330,14 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     return {
       rows,
       cells,
-      targetRowId: selectedOrder ? rowIdsOf(selectedOrder)[0] : null,
+      targetRowId: selectedOrder ? selectedOrder.orderNos[0] : null,
     };
   }, [selectedOrder, sortedBaristas, unassignedOrders]);
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
   const remainingByBay = new Map<number, number>(
     sortedBaristas.map((barista) => [
       barista.id,
-      activeRemainingSec(barista, simTimeSec),
+      activeRemainingSec(barista, currentTimeSec),
     ]),
   );
 
@@ -431,28 +365,39 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       head.getBoundingClientRect().height;
   }, []);
 
-  const orderGroups = useMemo<OrderGroup[]>(() => {
-    const groups = new Map<string, OrderGroup>();
-    unassignedOrders.forEach((order) => {
-      const group = groups.get(order.id) || {
-        id: order.id,
-        items: [],
-        assigned: [],
-      };
-      group.items.push(order);
-      groups.set(order.id, group);
-    });
-    sortedBaristas.forEach((barista) => {
-      barista.queue.forEach((ticket) => {
-        groups
-          .get(ticket.id)
-          ?.assigned.push({ ticket, bayNumber: barista.bayNumber });
-      });
-    });
-    return Array.from(groups.values()).sort(
-      (left, right) => orderNumber(left.id) - orderNumber(right.id),
-    );
-  }, [sortedBaristas, unassignedOrders]);
+  // 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカードを薄く添える
+  const orderGroups = useMemo<OrderGroup[]>(
+    () =>
+      Array.from(groupByOrder(unassignedOrders), ([key, items]) => ({
+        key,
+        items,
+        assigned: sortedBaristas.flatMap((barista) =>
+          barista.queue
+            .filter((ticket) => orderLabel(ticket) === key)
+            .map((ticket) => ({ ticket, bayNumber: barista.bayNumber })),
+        ),
+      })).sort(
+        (left, right) => left.items[0].orderNos[0] - right.items[0].orderNos[0],
+      ),
+    [sortedBaristas, unassignedOrders],
+  );
+
+  // 選んだ注文の行（統合したカードは元の注文すべての行）
+  const linkedRows = useMemo(
+    () =>
+      new Set(
+        [
+          ...unassignedOrders,
+          ...sortedBaristas.flatMap((barista) => [
+            ...(barista.pastTickets ?? []),
+            ...barista.queue,
+          ]),
+        ]
+          .filter((card) => orderLabel(card) === selectedOrderId)
+          .flatMap((card) => card.orderNos),
+      ),
+    [selectedOrderId, sortedBaristas, unassignedOrders],
+  );
 
   const totalUnassignedCups = unassignedOrders.reduce(
     (sum, order) => sum + order.cupCount,
@@ -473,41 +418,40 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
 
   const mergeWithSelected = (order: UnassignedOrder) => {
     if (!selectedOrder || !canMergeDripUnits(selectedOrder, order)) return;
-    onMergeOrders(
-      selectedOrder.ticketUid || selectedOrder.id,
-      order.ticketUid || order.id,
-    );
-    setMergingIds([...rowIdsOf(selectedOrder), ...rowIdsOf(order)]);
+    onMergeOrders(selectedOrder.ticketUid, order.ticketUid);
+    setMergingNos([...selectedOrder.orderNos, ...order.orderNos]);
     clearSelection();
   };
 
   // The combined card is listed under the earlier order, often far from the card just tapped,
   // so select it and bring it into view; it can then be placed right away.
   useEffect(() => {
-    if (!mergingIds) return;
-    const merged = unassignedOrders.find((order) =>
-      mergingIds.every((id) => order.sourceOrderIds?.includes(id)),
+    if (!mergingNos) return;
+    const merged = unassignedOrders.find(
+      (order) =>
+        order.cupCount === 2 &&
+        mergingNos.every((no) => order.orderNos.includes(no)),
     );
     if (!merged) return;
-    setMergingIds(null);
-    const uid = merged.ticketUid || merged.id;
+    setMergingNos(null);
+    const uid = merged.ticketUid;
     setSelectedUid(uid);
-    onSelectOrder(merged.id);
+    onSelectOrder(orderLabel(merged));
     requestAnimationFrame(() => {
       document
         .querySelector(`[data-sheet-cup="${CSS.escape(uid)}"]`)
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
-  }, [mergingIds, unassignedOrders, onSelectOrder]);
+  }, [mergingNos, unassignedOrders, onSelectOrder]);
 
   const toggleSelection = (order: UnassignedOrder) => {
-    const uid = order.ticketUid || order.id;
+    const uid = order.ticketUid;
     if (selectedUid === uid) {
       clearSelection();
       return;
     }
     setSelectedUid(uid);
-    if (selectedOrderId !== order.id) onSelectOrder(order.id);
+    if (selectedOrderId !== orderLabel(order)) onSelectOrder(orderLabel(order));
   };
 
   const assignSelected = (barista: Barista) => {
@@ -523,25 +467,18 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     clientX: number,
     clientY: number,
   ): DropTarget | null => {
-    const elements = document.elementsFromPoint(clientX, clientY);
     if (
       source.kind === "ticket" &&
-      elements.some((element) => element.closest("[data-return-target]"))
+      document
+        .elementsFromPoint(clientX, clientY)
+        .some((element) => element.closest("[data-return-target]"))
     ) {
       return "unassigned";
     }
-    const target = elements
-      .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
-      .find(Boolean);
-    const bayId = Number(target?.dataset.bayTarget);
-    if (!bayId) return null;
-    const preferredBaristaId =
-      source.kind === "unassigned"
-        ? source.order.preferredBaristaId
-        : source.ticket.preferredBaristaId;
-    if (preferredBaristaId && preferredBaristaId !== bayId) return null;
-    if (source.kind === "ticket" && source.fromBayId === bayId) return null;
-    return bayId;
+    return bayTargetAt(clientX, clientY, {
+      from: source.kind === "ticket" ? source.fromBayId : undefined,
+      preferred: sourceCard(source).preferredBaristaId,
+    });
   };
 
   const drop = (source: DragSource, target: DropTarget) => {
@@ -552,11 +489,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       return;
     }
     // The card may have started brewing or been moved while it was held.
-    const key = ticketKey(source.ticket);
+    const key = source.ticket.ticketUid;
     const latest = baristas
       .flatMap((barista) => barista.queue)
       .find(
-        (ticket) => ticketKey(ticket) === key && ticket.status === "scheduled",
+        (ticket) => ticket.ticketUid === key && ticket.status === "scheduled",
       );
     if (!latest) return;
     if (target === "unassigned") onReturnToUnassigned(latest);
@@ -565,8 +502,9 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
 
   const beginDrag = (source: DragSource) => {
     if (source.kind === "unassigned") {
-      setSelectedUid(source.order.ticketUid || source.order.id);
-      if (selectedOrderId !== source.order.id) onSelectOrder(source.order.id);
+      setSelectedUid(source.order.ticketUid);
+      if (selectedOrderId !== orderLabel(source.order))
+        onSelectOrder(orderLabel(source.order));
     } else if (selectedUid) {
       // Moving a placed card: hide the "ここに配置" slots of a pending selection.
       clearSelection();
@@ -665,8 +603,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   };
 
   const dragSource = cupDrag?.source ?? null;
-  const dragCup = dragSource ? sourceCup(dragSource) : null;
-  const draggedKey = dragCup?.key ?? null;
+  const dragCup = dragSource ? sourceCard(dragSource) : null;
+  const draggedKey = dragCup?.ticketUid ?? null;
   const isTicketDrag = dragSource?.kind === "ticket";
   const hoveredBayNumber =
     typeof hoveredTarget === "number"
@@ -687,11 +625,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
           </h2>
           <p className="min-w-0 truncate font-bold text-[11px] text-slate-500">
             {dragSource?.kind === "ticket"
-              ? `${dragSource.ticket.id} ${dragSource.ticket.beanName} ${dragSource.ticket.cupCount}杯 → 移す担当者の列で離す／右の注文内容で離すと未割当に戻す`
+              ? `${orderLabel(dragSource.ticket)} ${dragSource.ticket.beanName} ${dragSource.ticket.cupCount}杯 → 移す担当者の列で離す／右の注文内容で離すと未割当に戻す`
               : selectedOrder
                 ? cupDrag
-                  ? `${selectedOrder.id} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 担当者の列で離すと配置`
-                  : `${selectedOrder.id} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 配置する枠を選択`
+                  ? `${orderLabel(selectedOrder)} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 担当者の列で離すと配置`
+                  : `${orderLabel(selectedOrder)} ${selectedOrder.beanName} ${selectedOrder.cupCount}杯 → 配置する枠を選択`
                 : "右の注文カードを選んで表の枠をタップするか、列へドラッグして割り振ります"}
           </p>
           {selectedOrder && (
@@ -722,7 +660,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                 </th>
                 {sortedBaristas.map((barista) => {
                   const current = barista.queue[0];
-                  const seconds = activeRemainingSec(barista, simTimeSec);
+                  const seconds = activeRemainingSec(barista, currentTimeSec);
                   return (
                     <th
                       key={barista.id}
@@ -769,16 +707,14 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
             <tbody>
               {sheet.rows.map((row) => {
                 const isRowPast = row.isPast;
-                const isTargetRow = sheet.targetRowId === row.orderId;
-                const isRowLinked = Boolean(
-                  selectedOrderId?.split("+").includes(row.orderId),
-                );
+                const isTargetRow = sheet.targetRowId === row.orderNo;
+                const isRowLinked = linkedRows.has(row.orderNo);
                 const rowCups = Math.round(row.cups * 10) / 10;
 
                 return (
                   <tr
-                    key={row.orderId}
-                    data-sheet-row={row.orderId}
+                    key={row.orderNo}
+                    data-sheet-row={row.orderNo}
                     data-live={row.isLive}
                     className={`h-[72px] ${isRowPast ? "bg-slate-50" : isTargetRow ? "bg-blue-50/40" : ""}`}
                   >
@@ -792,12 +728,12 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                           row.isLive ? "text-slate-950" : "text-slate-400"
                         }`}
                       >
-                        {row.orderId.replace("#", "")}
+                        {row.orderNo}
                       </span>
                     </th>
                     {sortedBaristas.map((barista) => {
                       const cell = sheet.cells.get(
-                        cellKey(row.orderId, barista.id),
+                        cellKey(row.orderNo, barista.id),
                       );
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries || [];
@@ -811,7 +747,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                         rowIds,
                       }: SheetEntry) => (
                         <div
-                          key={ticketKey(ticket)}
+                          key={ticket.ticketUid}
                           onPointerDown={
                             state === "waiting"
                               ? (event) =>
@@ -836,11 +772,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               ? "cursor-grab touch-pan-y select-none active:cursor-grabbing"
                               : ""
                           } ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""} ${
-                            draggedKey === ticketKey(ticket) ? "opacity-30" : ""
+                            draggedKey === ticket.ticketUid ? "opacity-30" : ""
                           }`}
                         >
                           <CupChip
-                            cup={ticketCup(ticket)}
+                            cup={ticket}
                             baristaName={
                               ticket.preferredBaristaId
                                 ? baristaNames.get(ticket.preferredBaristaId)
@@ -860,8 +796,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                             onClick={
                               state === "waiting"
                                 ? () => {
-                                    if (selectedOrderId !== ticket.id)
-                                      onSelectOrder(ticket.id);
+                                    if (selectedOrderId !== orderLabel(ticket))
+                                      onSelectOrder(orderLabel(ticket));
                                     onOpenTicketDetail(ticket);
                                   }
                                 : undefined
@@ -892,10 +828,10 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                               {cellEntries.map(renderEntry)}
                               {cell?.mergedStubs.map(({ ticket, rowIds }) => (
                                 <div
-                                  key={ticketKey(ticket)}
+                                  key={ticket.ticketUid}
                                   className="flex h-[40px] items-center justify-center rounded-lg border-4 border-slate-900 font-black text-[11px] text-slate-700"
                                 >
-                                  {shortIds(rowIds)} 統合
+                                  {rowIds.join("+")} 統合
                                 </div>
                               ))}
                               {isTarget && (
@@ -1011,30 +947,22 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
         ) : (
           <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto p-2">
             {orderGroups.map((group) => {
-              const totalCups =
-                group.items[0]?.totalOrderCups ??
-                [
-                  ...group.items,
-                  ...group.assigned.map((entry) => entry.ticket),
-                ].reduce((sum, entry) => sum + entry.cupCount, 0);
-              const notes = group.items[0]?.orderNotes;
-
               return (
                 <article
-                  key={group.id}
+                  key={group.key}
                   className="overflow-hidden rounded-md border-2 border-slate-900"
                 >
                   <div className="flex items-center justify-between gap-2 border-slate-900 border-b-2 bg-slate-100 px-2 py-1">
                     <h3 className="font-black font-mono text-[17px]">
-                      注文 No. {group.id.replaceAll("#", "")}
+                      注文 No. {group.items[0].orderNos.join("+")}
                     </h3>
                     <span className="font-black text-[13px]">
-                      {totalCups}杯
+                      {group.items[0].totalOrderCups}杯
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 p-2">
                     {group.items.map((order) => {
-                      const uid = order.ticketUid || order.id;
+                      const uid = order.ticketUid;
                       const isMergeCandidate = Boolean(
                         selectedOrder &&
                           canMergeDripUnits(selectedOrder, order),
@@ -1057,7 +985,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                           } ${draggedKey === uid ? "opacity-30" : ""}`}
                         >
                           <CupChip
-                            cup={unassignedCup(order)}
+                            cup={order}
                             baristaName={
                               order.preferredBaristaId
                                 ? baristaNames.get(order.preferredBaristaId)
@@ -1080,20 +1008,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                       );
                     })}
                     {group.assigned.map(({ ticket, bayNumber }) => (
-                      <div key={ticketCup(ticket).key} className="h-[60px]">
-                        <CupChip
-                          cup={ticketCup(ticket)}
-                          note={`→ ${bayNumber}`}
-                          faded
-                        />
+                      <div key={ticket.ticketUid} className="h-[60px]">
+                        <CupChip cup={ticket} note={`→ ${bayNumber}`} faded />
                       </div>
                     ))}
                   </div>
-                  {notes && (
-                    <p className="border-slate-200 border-t px-2 py-1 font-bold text-[11px] text-slate-600">
-                      {notes}
-                    </p>
-                  )}
                 </article>
               );
             })}
