@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { findTicket } from "../logic/board";
-import { orderLabel } from "../logic/cards";
+import { type Board, findTicket } from "../logic/board";
+import { type DripCard, type OrderTicket, orderLabel } from "../logic/cards";
 import type { RebrewDecision } from "../logic/rebrew";
-import type { Board, DripCard, OrderTicket } from "../types";
 
 // 画面で選んでいるもの（注文・待機のカード・空きスロット・入れ直しのカード）と、選んだものへの操作。
 // パネルはカードのキーだけを持ち、カードは毎回いまの盤面から読む（開いているあいだに始まった・終わったカードを古いまま扱わない）。
