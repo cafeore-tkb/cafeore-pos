@@ -26,8 +26,3 @@ export const buildBeanIndex = (
 // カードの豆の名前（在庫対象の名前をそのまま）。豆が無ければ空
 export const beanNamesOf = (card: { beans?: CardBean[] }) =>
   (card.beans ?? []).map((bean) => bean.name).join("・");
-
-// 豆で絞り込む・まとめるときの判定。在庫の「商品 → 豆」の在庫対象の ID で比べる
-// （豆を持たないカード（実データテスト）はどの豆にも当たらない）
-export const cardHasBean = (card: { beans?: CardBean[] }, beanId: string) =>
-  (card.beans ?? []).some((bean) => bean.id === beanId);

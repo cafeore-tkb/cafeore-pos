@@ -1,6 +1,7 @@
 import {
   CHANGEOVER_SEC,
   type CaosWritesResult,
+  DRIPPER_NUMBERS,
   FIRST_START_DELAY_SEC,
   IMMINENT_SEC,
   STANDBY_LABEL,
@@ -74,7 +75,7 @@ const readPanelSnapshot = (): PanelSnapshot | null => {
   }
 };
 
-// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS8（練習用の盤面）で作り直すので、ここは触らない。
+// 実データテストの盤面の秒の起点（端末の時刻帯の 0 時）。テストは CaOS9（練習の盤面）で作り直すので、ここは触らない。
 // 普段の盤面（cafeore-pos の盤面）は、サーバーの営業日と同じ日本時間の 0 時を起点にする（startOfJstDay）
 const startOfLocalDay = (ms: number) => {
   const date = new Date(ms);
@@ -86,7 +87,7 @@ const startOfLocalDay = (ms: number) => {
 };
 
 // 実データテスト（2025年の注文。商品 ID が無い）のカードのまとめ方。盤面のカードには使わない。
-// サーバーの練習用の盤面（CaOS9）で作り直すので、それまでここだけに残す
+// 練習の盤面（CaOS9）で作り直すので、それまでここだけに残す
 type HistoricalGroup =
   | "CHAMP"
   | "ORE"
@@ -140,7 +141,7 @@ const historicalOrderToDripUnits = (
       badgeTag: `${group.count}杯`,
       predictedTimeStr: brewDurationLabel(group.count),
       recommendedBaristas: "全ドリッパー",
-      recommendedBayIds: [1, 2, 3, 4, 5, 6],
+      recommendedBayIds: [...DRIPPER_NUMBERS],
     }),
   );
   return splitIntoDripUnits(source);
@@ -667,7 +668,7 @@ export default function App() {
           : "全ドリッパー",
         recommendedBayIds: ticket.preferredBaristaId
           ? [ticket.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : [...DRIPPER_NUMBERS],
         preferredBaristaId: ticket.preferredBaristaId,
       },
       ...prev,
