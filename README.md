@@ -193,7 +193,25 @@ cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres
 | PR の種類 | 使うブランチ |
 | --- | --- |
 | DB のスキーマや中身に影響するファイルを変えている | その PR 専用の `preview/pr-<番号>` |
+| 別の PR の上に積んでいて、自分でも backend を変えている | その PR 専用の `preview/pr-<番号>` |
+| 別の PR の上に積んでいて、backend を変えていない | 自分の backend を立てず、向き先の PR の backend（と DB）を使う（下の「積んだ PR のプレビュー」） |
 | それ以外（フロントだけ、依存更新など） | 共有の `preview/shared` |
+
+#### 積んだ PR のプレビュー
+
+別の PR の上に積んだ PR（向き先が main 以外）は、差分に出ない下の PR の backend の変更（新しい表など）を
+含みうる。共有ブランチで起動すると AutoMigrate が main に無い表を作り、ほかの PR のスキーマの確認が落ちる。
+
+なので、積んだ PR で backend（`api/` と `api-build.yml`）を変えていないものは、自分の backend を立てず、
+向き先の PR の backend（`pr-<番号>` のリビジョンと、その Neon ブランチ）を使う。中の backend は向き先と
+同じコードだから。向き先もそうなら、さらに上へたどる（`.github/scripts/preview-backend-owner.sh`）。
+`api-build.yml` は build を飛ばして「#<番号> の backend を使う」とコメントし、`pos-deploy-workers.yml` は
+画面のプレビューをその backend に向ける。たどった先の PR に `preview` ラベルが無いときや、向き先を head に
+持つ PR が無いときは、自分の backend を専用ブランチで立てる。
+
+積んだ PR 同士は同じ backend と DB を使うので、上の PR の画面で操作した結果は下の PR の backend に入る。
+向き先の PR が閉じたりマージされたりすると、その backend は片付けられる。積んだ PR の画面のプレビューは、
+次に走ったとき（push やラベルの付け直し）に、新しい向き先に合わせて向き直る。
 
 「DB に影響するファイル」は `api-build.yml` の `DB_AFFECTING_PATHS` で決めていて、
 今は `api/` と `.github/workflows/api-build.yml`。**DB のスキーマや中身に影響する
