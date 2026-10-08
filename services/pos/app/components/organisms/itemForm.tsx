@@ -309,11 +309,7 @@ function NewItemType({
           />
         </div>
       </div>
-      <ItemTypeFlagFields
-        compact
-        value={values}
-        onChange={(flags) => setValues((prev) => ({ ...prev, ...flags }))}
-      />
+      <ItemTypeFlagFields compact value={values} onChange={setValues} />
       <div className="flex justify-end gap-2">
         <Button
           type="button"

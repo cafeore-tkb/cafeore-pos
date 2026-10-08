@@ -54,12 +54,12 @@ const FLAG_FIELDS: {
   },
 ];
 
-const setItemTypeFlag = (
+const setFlag = (
   flags: ItemTypeFlags,
   key: keyof ItemTypeFlags,
-  value: boolean,
+  checked: boolean,
 ): ItemTypeFlags => {
-  const next = { ...flags, [key]: value };
+  const next = { ...flags, [key]: checked };
   // 親から順に並んでいるので、1回なめれば孫まで外れる
   for (const field of FLAG_FIELDS) {
     if (field.parent && !next[field.parent]) next[field.key] = false;
@@ -68,13 +68,13 @@ const setItemTypeFlag = (
 };
 
 /** 種類の「カップを作る」「抽出が要る」「上級生のみ」「アイス」の切り替え。判定はこの値をそのまま使う */
-export function ItemTypeFlagFields({
+export function ItemTypeFlagFields<T extends ItemTypeFlags>({
   value,
   onChange,
   compact = false,
 }: {
-  value: ItemTypeFlags;
-  onChange: (value: ItemTypeFlags) => void;
+  value: T;
+  onChange: (value: T) => void;
   compact?: boolean;
 }) {
   const id = useId();
@@ -87,7 +87,7 @@ export function ItemTypeFlagFields({
             checked={value[key]}
             disabled={parent !== undefined && !value[parent]}
             onCheckedChange={(checked) =>
-              onChange(setItemTypeFlag(value, key, checked))
+              onChange({ ...value, ...setFlag(value, key, checked) })
             }
           />
           <div className="grid gap-1">
@@ -165,10 +165,7 @@ export function ItemTypeForm({
         </p>
       </div>
 
-      <ItemTypeFlagFields
-        value={values}
-        onChange={(flags) => setValues((prev) => ({ ...prev, ...flags }))}
-      />
+      <ItemTypeFlagFields value={values} onChange={setValues} />
 
       <div className="flex justify-end gap-2">
         <Button type="submit" disabled={submitting}>

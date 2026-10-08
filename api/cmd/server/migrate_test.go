@@ -93,22 +93,16 @@ type itemTypeFlags struct {
 
 func readItemTypeFlags(t *testing.T, db *gorm.DB) map[string]itemTypeFlags {
 	t.Helper()
-	rows, err := db.Raw("SELECT name, makes_cup, needs_brew, senior_only, iced_brew FROM item_types").Rows()
-	if err != nil {
+	var rows []struct {
+		Name                                      string
+		MakesCup, NeedsBrew, SeniorOnly, IcedBrew bool
+	}
+	if err := db.Raw("SELECT name, makes_cup, needs_brew, senior_only, iced_brew FROM item_types").Scan(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = rows.Close() }()
 	got := map[string]itemTypeFlags{}
-	for rows.Next() {
-		var name string
-		var f itemTypeFlags
-		if err := rows.Scan(&name, &f.MakesCup, &f.NeedsBrew, &f.SeniorOnly, &f.IcedBrew); err != nil {
-			t.Fatal(err)
-		}
-		got[name] = f
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
+	for _, r := range rows {
+		got[r.Name] = itemTypeFlags{r.MakesCup, r.NeedsBrew, r.SeniorOnly, r.IcedBrew}
 	}
 	return got
 }
