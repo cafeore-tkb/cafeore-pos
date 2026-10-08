@@ -17,19 +17,19 @@ import (
 
 // CaosHandler は CaOS（ドリップ管制）の盤面への操作の API。
 //
-// 盤面のカードは、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
+// 盤面のカードと列の担当者は、注文と同じく /api/ws/orders の WebSocket で配る（{"type":"drips"}。broadcastDrips）。
 // 注文の中身は既存の {"type":"orders"}・{"type":"order"} から。準備完了は、操作と同じトランザクションで
-// 既存の準備完了の処理（SetOrderReady。PATCH /ready と同じ切り替え）で付ける。
+// 既存の準備完了の処理（setOrderReady。PATCH /ready と同じ切り替え）で付ける。保存と注文との連動は caos_store.go（CaosStore）。
 type CaosHandler struct {
-	store  *caos.Store
+	store  *CaosStore
 	orders *OrderHandler
 }
 
-func NewCaosHandler(store *caos.Store, orders *OrderHandler) *CaosHandler {
+func NewCaosHandler(store *CaosStore, orders *OrderHandler) *CaosHandler {
 	return &CaosHandler{store: store, orders: orders}
 }
 
-// POST /api/caos/ops - 今日の盤面への操作（割当・戻す・次へ・統合・入れ直し・1つ戻す）
+// POST /api/caos/ops - 今日の盤面への操作（割当・戻す・次へ・統合・入れ直し・列の担当者の交代と入れ替え・1つ戻す）
 //
 // 「次へ」で注文のカードが全部終わったら、同じトランザクションで準備完了にする（結果の readied）。
 // 「1つ戻す」（undo）は、操作の結果の op_id を指定し、サーバーが残した操作の記録で戻す。
@@ -59,10 +59,11 @@ func (h *CaosHandler) ApplyOp(c *gin.Context) {
 	h.orders.publishCaosChanges(readied)
 }
 
-// SetOrderReady は CaOS が注文の準備完了を付ける・外す処理（caos.ReadyFunc）。
-// PATCH /api/orders/{id}/ready と同じ切り替え（toggleOrderReady）を、今の状態と違うときだけ行う。
+// setOrderReady は CaOS が注文の準備完了を付ける・外す処理（CaOS の「次へ」「1つ戻す」・統合相手の準備完了）。
+// PATCH /api/orders/{id}/ready と同じ切り替え（toggleOrderReady）を、今の状態と違うときだけ行う。注文の行をロックしてから今の状態を見る。
 // 付けるとまだのカップにも同じ時刻を付け、外すとその時刻で付いたカップを外す（先に個別に付けたカップは残る）。
-func SetOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
+// 書いたときは、新しい注文の ready_at（外したときは nil）と true を返す。注文が無ければ gorm.ErrRecordNotFound。
+func setOrderReady(tx *gorm.DB, orderID uuid.UUID, ready bool, now time.Time) (*time.Time, bool, error) {
 	order, err := lockOrderWith(tx, orderID)
 	if err != nil {
 		return nil, false, err
@@ -116,7 +117,7 @@ func (h *OrderHandler) lockCaosForOrder(tx *gorm.DB, orderID uuid.UUID) (bool, e
 //
 // SQL のエラーだけでなく、ロック待ちの打ち切りやデッドロックの検出も、Postgres ではその savepoint の中のエラーなので
 // 戻せば注文の tx は続けられる（caos_test.go で確かめている）。接続が切れたときは、CaOS と関係なく注文自体も失敗する。
-func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caos.OrderRef) []uuid.UUID {
+func (h *OrderHandler) syncCaos(tx *gorm.DB, refs ...caosOrderRef) []uuid.UUID {
 	var readied []uuid.UUID
 	if err := tx.Transaction(func(sp *gorm.DB) error {
 		var err error
@@ -144,21 +145,10 @@ func (h *OrderHandler) publishCaosChanges(readied []uuid.UUID) {
 }
 
 // notifyDripsChanged は、カードが変わったことをほかのインスタンスへ知らせる（注文の notifyOrderChanged と同じ）。
-// 通知には送ったインスタンスの ID だけを載せる。受けた側は今日のカードを全部読み直して配る。
+// 通知には送ったインスタンスの ID だけを載せる。受けた側は ListenChanges で受けて今日のカードを全部読み直して配る。
 // 失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
 func notifyDripsChanged(db *gorm.DB) {
-	if err := db.Exec("SELECT pg_notify(?, ?)", caos.ChangedChannel, instanceID).Error; err != nil {
-		log.Printf("caos: failed to notify %s: %v", caos.ChangedChannel, err)
-	}
-}
-
-// handleDripsChanged は、ほかのインスタンスでカードが変わった通知を受けて、このインスタンスの画面へ配る（通知は送り返さない）。
-// 自分が送った通知は無視する（変えたときに配信済み）。
-func (h *OrderHandler) handleDripsChanged(sender string) {
-	if sender == instanceID {
-		return
-	}
-	h.broadcastDrips()
+	notifyChanged(db, dripsChangedChannel, instanceID)
 }
 
 // カードの配信の依頼を受けてから実際に送るまでの待ち時間。この間に来た依頼は 1 回にまとめる。
@@ -190,22 +180,28 @@ func (h *OrderHandler) runDripsBroadcaster() {
 	}
 }
 
-// 今日のカードを DB から読み直して WebSocket へ送る（カードが 0 枚のときは drips が省かれて届く）。
+// 今日のカードと列の担当者を DB から読み直して WebSocket へ送る（カードが 0 枚のときは drips が省かれて届く）。
 func (h *OrderHandler) sendDrips() {
 	if msg, ok := h.dripsMessage(); ok {
 		h.hub.Broadcast(msg)
 	}
 }
 
-// 今日のカードを WSMessage にする。CaOS を使っていない・読めなかったら ok = false
+// 今日のカードと列の担当者（1〜6 の全部）を WSMessage にする。CaOS を使っていない・読めなかったら ok = false
 func (h *OrderHandler) dripsMessage() (WSMessage, bool) {
 	if h.caos == nil {
 		return WSMessage{}, false
 	}
-	drips, err := h.caos.Drips(h.caos.Today())
+	day := h.caos.Today()
+	drips, err := h.caos.Drips(day)
 	if err != nil {
 		log.Printf("caos: failed to read the cards: %v", err)
 		return WSMessage{}, false
 	}
-	return WSMessage{Type: WSMessageTypeDrips, Drips: drips}, true
+	lanes, err := h.caos.Lanes(day)
+	if err != nil {
+		log.Printf("caos: failed to read the lanes: %v", err)
+		return WSMessage{}, false
+	}
+	return WSMessage{Type: WSMessageTypeDrips, Drips: drips, Lanes: lanes}, true
 }

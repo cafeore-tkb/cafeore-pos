@@ -1,11 +1,12 @@
-import type {
-  CaosDrip,
-  CaosOp,
-  CaosOpResult,
-  OrderEntity,
-  WithId,
+import {
+  type CaosDrip,
+  type CaosOp,
+  type CaosOpResult,
+  type OrderEntity,
+  type WithId,
+  dripperLabel,
 } from "@cafeore/common";
-import type { Barista, BeanCode } from "../types";
+import type { BeanCode } from "../types";
 
 // 注文と抽出カードは、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から届く。
 // 注文は POS の画面と同じ OrderEntity、カードは API の形（openapi/openapi.yaml から生成した型）。
@@ -13,27 +14,26 @@ export type PosOrder = WithId<OrderEntity>;
 export type Drip = CaosDrip;
 export type { CaosOp, CaosOpResult };
 
-// 豆は DB の商品の種類（item_type）を先に見て決める。名前で決めるのは定番の豆だけ。
-// - 限定（limited）は SP。SP を淹れられるドリッパーにだけ回す
-// - どれにも当たらない商品（も花も香ブレンドなど）は「その他」。黙って SP にはしない
-export const posBeanCode = (name: string, type: string): BeanCode => {
+// 盤面のカードの区分は、DB の商品の種類（item_type）だけで決める。
+// - 限定（limited）は SP
+// - 氷（ice）・牛（iceOre）は仕上げが違うので分ける
+// どの豆かは名前では決めず、在庫の「商品 → 豆」（item_stock_usages）から引く（utils/beans.ts）
+export const posBeanCode = (type: string): BeanCode => {
   if (type === "ice") return "ICE";
   if (type === "iceOre") return "MILK";
   if (type === "limited") return "SP";
-  if (name.includes("俺")) return "ORE";
-  if (name.includes("優勝") || name.includes("縁")) return "CHAMP";
-  if (name.includes("タンザニア") || name.includes("キリマンジャロ"))
-    return "TNZ";
-  if (name.includes("ケニア")) return "KEN";
-  if (name.includes("ブラジル")) return "BRA";
   return "OTHER";
 };
 
-// cafeore-pos の指名は自由記述なので、番号（1〜6）か現在のドリッパー名に一致したときだけ枠を固定する。
-export const nominatedBayId = (assignee: string, baristas: Barista[]) => {
-  const normalized = assignee.trim().normalize("NFKC");
-  const bayNumber = Number(normalized);
-  if (Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= 6)
-    return bayNumber;
-  return baristas.find((barista) => barista.name === normalized)?.id;
-};
+// 指名はレジで選んだドリッパーの番号（明細の dripper。1st〜6th は 1〜6）。カードの lines[].dripper に入って届き、
+// 番号の付いたカードはその番号の列にだけ割り当てられる（preferredBaristaId）。番号の無い自由記述だけの古い明細は指名なし。
+// カードに出す指名の文字は、マスターの画面と同じく assignmentDisplay（@cafeore/common の models/dripper.ts）で作る
+// （番号は「2nd」、番号の無い古い明細は自由記述）。live/drips.ts の describe を参照。
+
+/** カードの指名の表示。盤面のカードは nominee（マスターと同じ表示）、実データテストのカードは番号から作る */
+export const nominationText = (card: {
+  nominee?: string;
+  preferredBaristaId?: number;
+}) =>
+  card.nominee ??
+  (card.preferredBaristaId ? dripperLabel(card.preferredBaristaId) : undefined);

@@ -9,6 +9,7 @@
 //
 // **観測されているのは需要ではなく、その日の体制でさばけた注文**（スループット）。
 
+import { JST_OFFSET_MS, jstDate } from "../lib/jstDay";
 import { GOODS_ROLE, roleOf } from "./roles";
 
 /** 過去の注文 JSON（`{ orders: [...] }`）の 1 件。使う項目だけ */
@@ -71,10 +72,6 @@ export const RATE_STRATA = 4;
 /** これを超える間隔は営業の中断とみなして捨てる（R/metrics.R の add_duration） */
 export const GAP_THRESHOLD_SEC = 5000;
 
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-export const jstDate = (ms: number) =>
-  new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 10);
 const jstClock = (ms: number) =>
   new Date(ms + JST_OFFSET_MS).toISOString().slice(11, 19);
 

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"cafeore-pos/api/internal/auth"
-	"cafeore-pos/api/internal/caos"
 	"cafeore-pos/api/internal/handlers"
 	"cafeore-pos/api/internal/notify"
 
@@ -245,10 +244,13 @@ func main() {
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
 	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
-	caosStore := caos.NewStore(db, handlers.SetOrderReady)
+	caosStore := handlers.NewCaosStore(db)
 	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
-	// ほかのインスタンスでの注文・CaOS のカードの変更も画面へ届けるため、DB の通知を待ち受ける。
+	// CaOS の練習用の盤面（実データテスト）。本番の盤面とは表も配信も分けてある
+	caosPracticeHandler := handlers.NewCaosPracticeHandler(handlers.NewCaosPracticeStore(db))
+	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面の変更も画面へ届けるため、
+	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	defer stopListening()
@@ -256,7 +258,7 @@ func main() {
 	if listenDSN == "" {
 		listenDSN = os.Getenv("DATABASE_URL")
 	}
-	go orderHandler.ListenOrderChanges(listenCtx, listenDSN)
+	go orderHandler.ListenChanges(listenCtx, listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
@@ -302,6 +304,11 @@ func main() {
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 
 		api.POST("/caos/ops", caosHandler.ApplyOp)
+		api.POST("/caos/practice", caosPracticeHandler.Create)
+		api.GET("/caos/practice/:id", caosPracticeHandler.Get)
+		api.POST("/caos/practice/:id/advance", caosPracticeHandler.Advance)
+		api.POST("/caos/practice/:id/ops", caosPracticeHandler.ApplyOp)
+		api.DELETE("/caos/practice/:id", caosPracticeHandler.Delete)
 
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)

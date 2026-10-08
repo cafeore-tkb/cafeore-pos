@@ -8,12 +8,13 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
 
 // 盤面のルール。DB には触らず、メモリ上のカードと注文だけを変える（テストはここに厚く書く）。
-// 1 つの盤面（営業日）への処理は Store が行ロックで 1 件ずつ順番に呼ぶので、ここではロックを考えない。
+// 1 つの盤面（営業日）への処理は、保存する側（handlers の CaosStore）がその日の advisory lock を取って 1 件ずつ順番に呼ぶので、ここではロックを考えない。
 // 操作は「確かめてから変える」順に書く。ErrInvalid のときは何も変わっていない。
 
 // ErrInvalid はルールに合わない操作。画面には理由をそのまま出す。
@@ -24,6 +25,9 @@ type InvalidError struct{ Message string }
 
 func (e *InvalidError) Error() string { return e.Message }
 func (e *InvalidError) Unwrap() error { return ErrInvalid }
+
+// IsInvalid はルールに合わない操作のエラーか。
+func IsInvalid(err error) bool { return errors.Is(err, ErrInvalid) }
 
 func invalid(format string, args ...any) error {
 	return &InvalidError{Message: fmt.Sprintf(format, args...)}
@@ -74,6 +78,14 @@ type Changeset struct {
 	Deleted orderedSet
 	// カードが全部終わった（準備完了にしてよい）注文
 	Completed orderedSet
+	// 担当者が変わった列（ドリッパーの番号。変えた順）
+	Lanes []int
+}
+
+func (cs *Changeset) touchLane(n int) {
+	if !slices.Contains(cs.Lanes, n) {
+		cs.Lanes = append(cs.Lanes, n)
+	}
 }
 
 func (cs *Changeset) touch(id string) {
@@ -86,16 +98,45 @@ func (cs *Changeset) drop(id string) {
 	cs.Deleted.add(id)
 }
 
-// Empty はカードが何も変わっていないこと。
-func (cs *Changeset) Empty() bool { return cs.Changed.Len() == 0 && cs.Deleted.Len() == 0 }
+// MergeChanges は、いくつかの処理の変更を 1 つにまとめる（今の盤面にあるカードは変わった、無いカードは消えた、とする）。
+// 保存を 1 回で行い、途中の状態で抽出中の索引（caos_drips_one_brewing）に引っかからないようにするため。
+func (b *Board) MergeChanges(sets ...*Changeset) *Changeset {
+	out := &Changeset{}
+	for _, cs := range sets {
+		for _, n := range cs.Lanes {
+			out.touchLane(n)
+		}
+		for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+			if _, ok := b.Drips[id]; ok {
+				out.touch(id)
+			} else {
+				out.drop(id)
+			}
+		}
+	}
+	return out
+}
+
+// Empty はカードも列の担当者も何も変わっていないこと。
+func (cs *Changeset) Empty() bool {
+	return cs.Changed.Len() == 0 && cs.Deleted.Len() == 0 && len(cs.Lanes) == 0
+}
 
 // Board は 1 つの営業日の盤面。
 type Board struct {
 	Drips  map[string]*Drip
 	Orders map[string]*OrderState
-	clock  func() time.Time
-	newID  func() string
+	// 列（ドリッパー 1〜6）の担当者。6 列とも必ずある
+	lanes map[int]Lane
+	clock func() time.Time
+	newID func() string
 }
+
+// MaxPersonName は担当者の名前の長さの上限（文字数）。
+const MaxPersonName = 40
+
+// allDrippers は 1〜6 の全部の列。
+var allDrippers = []int{1, 2, 3, 4, 5, 6}
 
 // MonotonicClock は 1 マイクロ秒ずつは必ず進む時計（DB の timestamptz の精度に合わせる。
 // 「1つ戻す」は updated_at が同じかで、ほかの端末が触っていないかを見るため）。
@@ -113,7 +154,10 @@ func MonotonicClock(now func() time.Time) func() time.Time {
 
 // NewBoard は盤面を作る。clock・newID が nil なら今の時刻と UUID を使う。
 func NewBoard(drips []Drip, orders []OrderState, clock func() time.Time, newID func() string) *Board {
-	b := &Board{Drips: map[string]*Drip{}, Orders: map[string]*OrderState{}, clock: clock, newID: newID}
+	b := &Board{Drips: map[string]*Drip{}, Orders: map[string]*OrderState{}, lanes: map[int]Lane{}, clock: clock, newID: newID}
+	for _, n := range allDrippers {
+		b.lanes[n] = Lane{Dripper: n}
+	}
 	if b.clock == nil {
 		b.clock = MonotonicClock(time.Now)
 	}
@@ -129,6 +173,29 @@ func NewBoard(drips []Drip, orders []OrderState, clock func() time.Time, newID f
 		b.Orders[o.ID] = &o
 	}
 	return b
+}
+
+// LoadLanes は保存してある列の担当者を盤面に入れる（保存していない列は担当者なしのまま。範囲外の列は無視する）。
+func (b *Board) LoadLanes(lanes []Lane) {
+	for _, l := range lanes {
+		if isDripper(l.Dripper) {
+			b.lanes[l.Dripper] = l
+		}
+	}
+}
+
+// Lanes は 1〜6 の順の全部の列の担当者。
+func (b *Board) Lanes() []Lane { return b.LaneRows(allDrippers) }
+
+// LaneRows は指定した列の今の担当者。
+func (b *Board) LaneRows(drippers []int) []Lane {
+	out := make([]Lane, 0, len(drippers))
+	for _, n := range drippers {
+		if l, ok := b.lanes[n]; ok {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func compareQueue(a, b *Drip) int {
@@ -196,14 +263,15 @@ func isDripper(n int) bool { return n >= 1 && n <= 6 }
 
 func ptr[T any](v T) *T { return &v }
 
-func sameNominee(a, b *string) bool {
+func sameDripper(a, b *int) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
 	return *a == *b
 }
 
-func distinctOrders(lines []DripLine) []string {
+// OrderIDsOf は明細に出てくる注文（出てきた順）。カードの order_ids は明細から求める（保存するのは明細だけ）。
+func OrderIDsOf(lines []DripLine) []string {
 	var out []string
 	for _, l := range lines {
 		if !slices.Contains(out, l.OrderID) {
@@ -213,7 +281,8 @@ func distinctOrders(lines []DripLine) []string {
 	return out
 }
 
-func sumCups(lines []DripLine) int {
+// CupsOf は明細の杯数の合計（カードの杯数）。
+func CupsOf(lines []DripLine) int {
 	n := 0
 	for _, l := range lines {
 		n += l.Cups
@@ -268,38 +337,39 @@ func (b *Board) completeOrders(cs *Changeset, orderIDs []string) {
 
 type wantedItem struct {
 	ItemID, Name, Abbr, Type string
-	Nominee                  *string
-	Cups                     int
+	// 指名したドリッパーの番号（1〜6）。指名なしは nil
+	Dripper *int
+	Cups    int
 }
 
 // wantedItems は注文の明細から、抽出するもの（商品と指名ごとの杯数）。アイスミルク（milk）とグッズ（others）は抽出しない。
+// 指名は明細の番号（dripper）だけで分ける。番号の無い明細（自由記述だけの古い明細も）は指名なし。
 func wantedItems(o Order) []wantedItem {
 	var items []*wantedItem
 	for _, l := range o.Lines {
 		if l.Type == "others" || l.Type == "milk" || l.Quantity <= 0 {
 			continue
 		}
-		var nominee *string
-		if l.Assignee != nil {
-			if s := strings.TrimSpace(*l.Assignee); s != "" {
-				nominee = &s
-			}
+		var dripper *int
+		if l.Dripper != nil && isDripper(*l.Dripper) {
+			dripper = ptr(*l.Dripper)
 		}
-		i := slices.IndexFunc(items, func(w *wantedItem) bool { return w.ItemID == l.ItemID && sameNominee(w.Nominee, nominee) })
+		i := slices.IndexFunc(items, func(w *wantedItem) bool { return w.ItemID == l.ItemID && sameDripper(w.Dripper, dripper) })
 		if i >= 0 {
 			items[i].Cups += l.Quantity
 			continue
 		}
-		items = append(items, &wantedItem{ItemID: l.ItemID, Name: l.Name, Abbr: l.Abbr, Type: l.Type, Nominee: nominee, Cups: l.Quantity})
+		items = append(items, &wantedItem{ItemID: l.ItemID, Name: l.Name, Abbr: l.Abbr, Type: l.Type, Dripper: dripper, Cups: l.Quantity})
 	}
 	slices.SortStableFunc(items, func(a, c *wantedItem) int {
-		nominee := func(n *string) string {
+		// 指名なしが先、指名は番号の順
+		dripper := func(n *int) int {
 			if n == nil {
-				return ""
+				return 0
 			}
-			return "\x01" + *n
+			return *n
 		}
-		return cmp.Or(strings.Compare(a.Type, c.Type), strings.Compare(a.Name, c.Name), strings.Compare(nominee(a.Nominee), nominee(c.Nominee)))
+		return cmp.Or(strings.Compare(a.Type, c.Type), strings.Compare(a.Name, c.Name), cmp.Compare(dripper(a.Dripper), dripper(c.Dripper)))
 	})
 	out := make([]wantedItem, len(items))
 	for i, w := range items {
@@ -311,7 +381,7 @@ func wantedItems(o Order) []wantedItem {
 func canonicalLines(lines []DripLine) string {
 	keyed := slices.Clone(lines)
 	key := func(l DripLine) string {
-		k, _ := json.Marshal([]any{l.ItemID, l.Nominee, l.Cups})
+		k, _ := json.Marshal([]any{l.ItemID, l.Dripper, l.Cups})
 		return string(k)
 	}
 	slices.SortFunc(keyed, func(a, c DripLine) int { return strings.Compare(key(a), key(c)) })
@@ -334,14 +404,14 @@ func (b *Board) syncOrder(cs *Changeset, o Order) {
 				continue
 			}
 			for _, l := range d.Lines {
-				if l.OrderID == o.ID && l.ItemID == item.ItemID && sameNominee(l.Nominee, item.Nominee) {
+				if l.OrderID == o.ID && l.ItemID == item.ItemID && sameDripper(l.Dripper, item.Dripper) {
 					locked += l.Cups
 				}
 			}
 		}
 		for remaining := item.Cups - locked; remaining > 0; remaining -= 2 {
 			wanted = append(wanted, DripLine{
-				OrderID: o.ID, ItemID: item.ItemID, Nominee: item.Nominee, Cups: min(2, remaining),
+				OrderID: o.ID, ItemID: item.ItemID, Dripper: item.Dripper, Cups: min(2, remaining),
 			})
 		}
 	}
@@ -375,7 +445,7 @@ func (b *Board) removeOrder(cs *Changeset, orderID string) {
 		b.update(cs, d, func(d *Drip) {
 			d.Lines = slices.DeleteFunc(slices.Clone(d.Lines), func(l DripLine) bool { return l.OrderID == orderID })
 			d.OrderIDs = slices.DeleteFunc(slices.Clone(d.OrderIDs), func(id string) bool { return id == orderID })
-			d.Cups = sumCups(d.Lines)
+			d.Cups = CupsOf(d.Lines)
 		})
 	}
 	delete(b.Orders, orderID)
@@ -501,6 +571,21 @@ func (b *Board) Apply(cs *Changeset, op Op) error {
 		return b.merge(cs, op.FirstID, op.SecondID)
 	case "rebrew":
 		return b.rebrew(cs, op.SourceID, op.Cups, op.Interrupt, op.Dripper, op.QueuePos)
+	case "set_lane":
+		n, err := dripper()
+		if err != nil {
+			return err
+		}
+		return b.setLane(cs, n, op.Person, op.Senior)
+	case "swap_lanes":
+		n, err := dripper()
+		if err != nil {
+			return err
+		}
+		if op.OtherDripper == nil || !isDripper(*op.OtherDripper) {
+			return invalid("入れ替える相手のドリッパーは 1〜6 です")
+		}
+		return b.swapLanes(cs, n, *op.OtherDripper)
 	default:
 		return invalid("知らない操作です")
 	}
@@ -569,12 +654,12 @@ func (b *Board) merge(cs *Changeset, firstID, secondID string) error {
 		first.RebrewOf != nil || second.RebrewOf != nil ||
 		len(first.Lines) == 0 || len(second.Lines) == 0 ||
 		first.Lines[0].ItemID != second.Lines[0].ItemID ||
-		!sameNominee(first.Lines[0].Nominee, second.Lines[0].Nominee) {
+		!sameDripper(first.Lines[0].Dripper, second.Lines[0].Dripper) {
 		return invalid("このカード同士は統合できません")
 	}
 	b.update(cs, first, func(d *Drip) {
 		d.Lines = append(slices.Clone(first.Lines), second.Lines...)
-		d.OrderIDs = distinctOrders(d.Lines)
+		d.OrderIDs = OrderIDsOf(d.Lines)
 		d.Cups = 2
 		d.QueuePos = min(first.QueuePos, second.QueuePos)
 	})
@@ -628,7 +713,7 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 		pos = *queuePos
 	}
 	b.insert(cs, Drip{
-		Status: status, Dripper: dripper, QueuePos: pos, OrderIDs: distinctOrders(lines),
+		Status: status, Dripper: dripper, QueuePos: pos, OrderIDs: OrderIDsOf(lines),
 		Lines: lines, Cups: cups, RebrewOf: ptr(src.ID),
 	})
 	b.promote(cs, src.Dripper)
@@ -636,7 +721,118 @@ func (b *Board) rebrew(cs *Changeset, sourceID string, cups int, interrupt bool,
 	return nil
 }
 
-// Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（Store が caos_ops の記録から呼ぶ）。
+// setLane は列の担当者を替える（交代）。抽出中かどうかは見ずに、その場で替える。
+// person が空なら担当者なしにする（上級生でもない）。カードには触らない（限定のカードが待っていても、そのまま列に残る。確かめるのは画面）。
+func (b *Board) setLane(cs *Changeset, dripper int, person string, senior bool) error {
+	name := strings.TrimSpace(person)
+	if utf8.RuneCountInString(name) > MaxPersonName {
+		return invalid("名前は %d 文字までです", MaxPersonName)
+	}
+	b.lanes[dripper] = Lane{Dripper: dripper, Name: name, Senior: senior && name != "", UpdatedAt: ptr(b.clock())}
+	cs.touchLane(dripper)
+	return nil
+}
+
+// swapLanes は 2 つの列の担当者（名前と上級生か）を入れ替える。カードには触らない。
+func (b *Board) swapLanes(cs *Changeset, dripper, other int) error {
+	if dripper == other {
+		return invalid("同じ列どうしは入れ替えられません")
+	}
+	at := b.clock()
+	x, y := b.lanes[dripper], b.lanes[other]
+	b.lanes[dripper] = Lane{Dripper: dripper, Name: y.Name, Senior: y.Senior, UpdatedAt: ptr(at)}
+	b.lanes[other] = Lane{Dripper: other, Name: x.Name, Senior: x.Senior, UpdatedAt: ptr(at)}
+	cs.touchLane(dripper)
+	cs.touchLane(other)
+	return nil
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
+}
+
+// CheckLanesUntouched は、操作のあと（after）から列の担当者が誰にも替えられていないかを確かめる（何も変えない）。
+// 「1つ戻す」で、カードを戻す前に呼ぶ（断るときに何も変えないため）。
+func (b *Board) CheckLanesUntouched(after []Lane) error {
+	for _, a := range after {
+		now, ok := b.lanes[a.Dripper]
+		if !ok || !sameTime(now.UpdatedAt, a.UpdatedAt) {
+			return invalid("ほかの端末で担当者を替えたため、元に戻せません")
+		}
+	}
+	return nil
+}
+
+// OpRecord は操作の前後の中身。「1つ戻す」はこれで戻す
+// （本番の盤面は handlers の CaosStore が caos_ops に、練習用の盤面は PracticeDoc が盤面の中に残す）。
+type OpRecord struct {
+	// 操作で変わった・消えたカードの、操作の前の中身
+	Before []Drip `json:"before"`
+	// 操作で変わった・できたカードの、操作の後の中身（戻すときに、これから誰も触っていないかを updated_at で確かめる）
+	After []Drip `json:"after"`
+	// 操作で担当者が変わった列の、操作の前と後（戻すときに、これから誰も替えていないかを updated_at で確かめる）
+	LanesBefore []Lane `json:"lanes_before"`
+	LanesAfter  []Lane `json:"lanes_after"`
+}
+
+// ApplyRecorded は画面からの操作を 1 つ行い（Apply）、「1つ戻す」のための操作の前後の中身を返す。
+// 準備完了にしてよい注文は cs.Completed に入る（付けるのは呼ぶ側）。断ったときは何も変わっていない。
+func (b *Board) ApplyRecorded(cs *Changeset, op Op) (OpRecord, error) {
+	before := b.Snapshot()
+	lanesBefore := b.Lanes()
+	if err := b.Apply(cs, op); err != nil {
+		return OpRecord{}, err
+	}
+	rec := OpRecord{Before: []Drip{}, After: b.Rows(cs.Changed.List()), LanesBefore: []Lane{}, LanesAfter: b.LaneRows(cs.Lanes)}
+	for _, id := range append(cs.Changed.List(), cs.Deleted.List()...) {
+		if d, ok := before[id]; ok {
+			rec.Before = append(rec.Before, d)
+		}
+	}
+	for _, l := range lanesBefore {
+		if slices.Contains(cs.Lanes, l.Dripper) {
+			rec.LanesBefore = append(rec.LanesBefore, l)
+		}
+	}
+	return rec, nil
+}
+
+// Undo は記録した操作を取り消す（「1つ戻す」）。列の担当者もカードも、記録のあと誰にも触られていないときだけ戻す。
+// 確かめてから変えるので、断ったときは何も変わっていない。
+// その操作で付けた準備完了は、呼ぶ側が先に盤面の注文（Orders）から外しておくこと（Restore の確かめのため）。
+func (b *Board) Undo(cs *Changeset, rec OpRecord) error {
+	// 列の担当者：記録のあと誰も替えていないか（カードより先に確かめ、断るときは何も変えない）
+	if err := b.CheckLanesUntouched(rec.LanesAfter); err != nil {
+		return err
+	}
+	// カード：記録のあと誰も触っていなければ、記録の中身で戻す（確かめてから変える）
+	if err := b.Restore(cs, rec.Before, rec.After); err != nil {
+		return err
+	}
+	return b.RestoreLanes(cs, rec.LanesBefore, rec.LanesAfter)
+}
+
+// RestoreLanes は「1つ戻す」で、記録しておいた列の担当者を操作の前に戻す（handlers の CaosStore が caos_ops の記録から呼ぶ）。
+// after の列が、その時点から誰にも替えられていないときだけ戻す。断ったときは何も変わっていない。
+// 一度も替えていなかった列は、updated_at も null の「替えていない」状態に戻る。
+func (b *Board) RestoreLanes(cs *Changeset, before, after []Lane) error {
+	if err := b.CheckLanesUntouched(after); err != nil {
+		return err
+	}
+	for _, l := range before {
+		if !isDripper(l.Dripper) {
+			continue
+		}
+		b.lanes[l.Dripper] = l
+		cs.touchLane(l.Dripper)
+	}
+	return nil
+}
+
+// Restore は「1つ戻す」で、記録しておいた操作をカードの上で取り消す（handlers の CaosStore が caos_ops の記録から呼ぶ）。
 // before：操作の前の行（操作で変わった・消えたカードの、操作の前の中身。サーバーが DB から取ったもの）。
 // after：操作の後の行（操作で変わった・できたカード）。この時点から誰も触っていないときだけ戻す。
 // 確かめてから変えるので、断ったときは何も変わっていない。確かめること：after のカードが触られていない、

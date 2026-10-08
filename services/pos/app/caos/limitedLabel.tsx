@@ -2,7 +2,7 @@ import { useItemMaster } from "@cafeore/common";
 import { createContext, useContext } from "react";
 
 // 限定（SP）を表す名前。POS の API の商品の種類（limited）の表示名をそのまま使う。
-// 限定を淹れられるドリッパーの印などに出す。読み込み前や種類が無いときは空（印を出さない）。
+// コードに「限定」「SP」のような呼び方を持たないために使う。読み込み前や種類が無いときは空。
 const LimitedLabelContext = createContext("");
 
 export const LimitedLabelProvider = ({

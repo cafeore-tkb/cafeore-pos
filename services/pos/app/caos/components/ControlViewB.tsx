@@ -1,3 +1,4 @@
+import { formatMinSec } from "@cafeore/common";
 import {
   CheckCircle2,
   ChevronRight,
@@ -7,16 +8,20 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useLimitedLabel } from "../limitedLabel";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
-import { queueWaitSeconds } from "../utils/orderQueue";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import { cardHasBean } from "../utils/beans";
+import { canPlaceOn, laneOrdinal } from "../utils/lanes";
+import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
+import { nominationText } from "../utils/posOrders";
+import { SeniorMark } from "./LaneName";
 
 export interface ControlViewBProps {
   baristas: Barista[];
   unassignedOrders: UnassignedOrder[];
   simTimeSec: number;
   selectedOrderId: string | null;
-  highlightFilter: BeanCode | null;
+  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  highlightFilter: string | null;
   onSelectOrder: (orderId: string) => void;
   onSelectQueueOrder: (order: UnassignedOrder) => void;
   onAdvanceBay: (bayId: number) => void;
@@ -30,22 +35,6 @@ interface OrderGroup {
   id: string;
   items: UnassignedOrder[];
 }
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
-};
-
-const getRemainingSeconds = (barista: Barista, simTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - simTimeSec);
-  return Math.round(current.totalDurationSec * barista.coefficient);
-};
 
 export const ControlViewB: React.FC<ControlViewBProps> = ({
   baristas,
@@ -61,7 +50,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onAssignToBay,
   onRequestRebrew,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
 
@@ -84,7 +72,8 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
+    // 指名の列だけ、限定のカードは上級生の列だけ
+    if (!canPlaceOn(order, bayId)) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
   };
@@ -108,7 +97,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
       sortedBaristas
         .map((barista) => ({
           bayNumber: barista.bayNumber,
-          seconds: queueWaitSeconds(barista.queue, barista.coefficient),
+          seconds: queueWaitSeconds(barista.queue),
           isStandby: barista.queue.length === 0,
         }))
         .sort((a, b) => a.seconds - b.seconds || a.bayNumber - b.bayNumber)
@@ -184,7 +173,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
           {sortedBaristas.map((barista) => {
             const current = barista.queue[0];
             const next = barista.queue[1];
-            const remainingSeconds = getRemainingSeconds(barista, simTimeSec);
+            const remainingSeconds = activeRemainingSec(barista, simTimeSec);
             const isImminent = current && remainingSeconds <= 30;
             const isLinked = Boolean(
               selectedOrderId &&
@@ -202,18 +191,14 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               >
                 <div className="flex min-h-[32px] items-start justify-between gap-1">
                   <div>
-                    <div className="font-black font-mono text-[11px] text-slate-500 uppercase">
-                      ドリッパー {barista.bayNumber}
+                    <div className="font-black font-mono text-[11px] text-slate-500">
+                      {laneOrdinal(barista.bayNumber)}
                     </div>
                     <div className="font-black text-[15px] text-slate-950 leading-tight">
                       {barista.name}
                     </div>
                   </div>
-                  {barista.canHandleSpecial && limitedLabel && (
-                    <span className="whitespace-nowrap rounded bg-emerald-950 px-1.5 py-1 font-black text-[9px] text-emerald-100 tracking-wide">
-                      {limitedLabel}
-                    </span>
-                  )}
+                  {barista.senior && <SeniorMark />}
                 </div>
 
                 <button
@@ -276,7 +261,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                       >
                         {remainingSeconds === 0
                           ? "継続中"
-                          : formatRemaining(remainingSeconds)}
+                          : formatMinSec(remainingSeconds)}
                       </div>
                     </>
                   ) : (
@@ -371,7 +356,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                   }`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatRemaining(item.seconds)}
+                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
                 </span>
               ))}
             </div>
@@ -384,7 +369,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               const isSelected = selectedOrderId === group.id;
               const matchesHeaderFilter = Boolean(
                 highlightFilter &&
-                  group.items.some((item) => item.beanCode === highlightFilter),
+                  group.items.some((item) =>
+                    cardHasBean(item, highlightFilter),
+                  ),
               );
               const assignedRoutes = sortedBaristas.flatMap((barista) =>
                 barista.queue
@@ -432,10 +419,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={Boolean(
-                                openOrder.preferredBaristaId &&
-                                  openOrder.preferredBaristaId !== bayId,
-                              )}
+                              disabled={!canPlaceOn(openOrder, bayId)}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}
@@ -454,10 +438,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={Boolean(
-                                openOrder.preferredBaristaId &&
-                                  openOrder.preferredBaristaId !== bayId,
-                              )}
+                              disabled={!canPlaceOn(openOrder, bayId)}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}
@@ -484,9 +465,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                         >
                           {group.id}
                         </div>
-                        {group.items[0].preferredBaristaId && (
-                          <div className="mt-1 inline-flex rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                            指名 {group.items[0].preferredBaristaId}
+                        {nominationText(group.items[0]) && (
+                          <div className="mt-1 inline-flex whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                            指名:{nominationText(group.items[0])}
                           </div>
                         )}
                         {group.items[0].totalOrderCups && (
@@ -529,9 +510,9 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                               </span>
                             )}
                         </div>
-                        {item.preferredBaristaId && (
+                        {nominationText(item) && (
                           <div className="mt-1 font-black text-[10px] text-violet-700">
-                            指名 {item.preferredBaristaId}
+                            指名:{nominationText(item)}
                           </div>
                         )}
                       </button>

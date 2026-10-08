@@ -2,6 +2,9 @@ import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
+import { canPlaceOn } from "../utils/lanes";
+import { nominationText } from "../utils/posOrders";
+import { BeanBadge } from "./BeanBadge";
 
 interface TicketDetailModalProps {
   ticket: OrderTicket | null;
@@ -45,6 +48,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {ticket.id}
               </span>
               <span className="font-bold text-[18px]">{ticket.beanName}</span>
+              <BeanBadge beans={ticket.beans} className="text-[12px]" />
               <span className="rounded-md bg-slate-950 px-2.5 py-1 font-black font-mono text-[17px] text-white">
                 {ticket.cupCount}杯
               </span>
@@ -67,11 +71,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             <div className="grid grid-cols-3 gap-2">
               {[1, 2, 3, 4, 5, 6].map((bayId) => {
                 const disabled =
-                  bayId === currentBayId ||
-                  Boolean(
-                    ticket.preferredBaristaId &&
-                      ticket.preferredBaristaId !== bayId,
-                  );
+                  bayId === currentBayId || !canPlaceOn(ticket, bayId);
                 return (
                   <button
                     key={bayId}
@@ -90,7 +90,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
             {ticket.preferredBaristaId && (
               <p className="mt-2 font-bold text-[13px] text-violet-700">
-                指名オーダー：ドリッパー {ticket.preferredBaristaId} のみ
+                指名オーダー：{nominationText(ticket)}の列のみ
               </p>
             )}
           </section>

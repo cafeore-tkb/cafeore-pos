@@ -27,6 +27,8 @@ interface ControlViewAProps {
   onMergeOrders: (firstUid: string, secondUid: string) => void;
   /** 閲覧だけの画面（/master-sheet/view）。各列の「次へ」と空きスロットを出さない */
   readOnly?: boolean;
+  /** 列の「交代」 */
+  onChangeLane?: (bayId: number) => void;
 }
 
 export const ControlViewA: React.FC<ControlViewAProps> = ({
@@ -48,6 +50,7 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
   onAssignToBay,
   onMergeOrders,
   readOnly = false,
+  onChangeLane,
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-2">
     <DispatchBoard
@@ -66,6 +69,7 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
       simTimeSec={currentTimeSec}
       timelineCommand={timelineCommand}
       readOnly={readOnly}
+      onChangeLane={onChangeLane}
     />
 
     <div className="relative z-[70] h-[196px] min-h-0 overflow-visible">

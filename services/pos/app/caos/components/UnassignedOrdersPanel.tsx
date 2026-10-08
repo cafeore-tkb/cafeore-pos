@@ -1,10 +1,14 @@
+import { formatMinSec } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
+import { canPlaceOn } from "../utils/lanes";
 import { cardSurface } from "../utils/menuPresentation";
 import { canMergeDripUnits } from "../utils/orderQueue";
+import { nominationText } from "../utils/posOrders";
+import { BeanBadge } from "./BeanBadge";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 25.04 19.03" aria-hidden="true">
@@ -106,7 +110,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
+    // 指名の列だけ、限定のカードは上級生の列だけ
+    if (!canPlaceOn(order, bayId)) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
     setHoveredBay(null);
@@ -148,8 +153,6 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
 
     return positionedOrders;
   })();
-  const formatRemaining = (seconds: number) =>
-    `${Math.floor(Math.max(0, seconds) / 60)}:${(Math.max(0, seconds) % 60).toString().padStart(2, "0")}`;
 
   return (
     <div
@@ -182,7 +185,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   className={`whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
                 >
                   #{item.bayNumber}{" "}
-                  {item.isStandby ? "待機" : formatRemaining(item.seconds)}
+                  {item.isStandby ? "待機" : formatMinSec(item.seconds)}
                 </span>
               ))}
             </div>
@@ -240,11 +243,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
               ? "text-red-700"
               : order.preferredBaristaId
                 ? "text-violet-700"
-                : surface.dark
-                  ? "text-white"
-                  : order.totalItemsInOrder && order.totalItemsInOrder > 1
-                    ? "text-slate-950"
-                    : "text-slate-600";
+                : surface.colored
+                  ? ""
+                  : surface.dark
+                    ? "text-white"
+                    : order.totalItemsInOrder && order.totalItemsInOrder > 1
+                      ? "text-slate-950"
+                      : "text-slate-600";
             const cardBody = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-1">
@@ -281,9 +286,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   >
                     {order.beanName} ×{order.cupCount}
                   </h3>
-                  {order.preferredBaristaId && (
+                  <BeanBadge
+                    beans={order.beans}
+                    className={isSidebar ? "text-[12px]" : ""}
+                  />
+                  {nominationText(order) && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
-                      指名 {order.preferredBaristaId}
+                      指名:{nominationText(order)}
                     </span>
                   )}
                 </div>
@@ -454,10 +463,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
+                          disabled={!canPlaceOn(order, bayId)}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}
@@ -478,10 +484,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={Boolean(
-                            order.preferredBaristaId &&
-                              order.preferredBaristaId !== bayId,
-                          )}
+                          disabled={!canPlaceOn(order, bayId)}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}

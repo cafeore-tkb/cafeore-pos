@@ -31,15 +31,15 @@ func TestBuildOrderMenusSnapshotsNewLines(t *testing.T) {
 
 func TestBuildOrderMenusPreservesExistingSnapshots(t *testing.T) {
 	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
-	assignee := "担当者"
+	assignee, dripper := "担当者", 3
 	old := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, MenuName: "注文時の名前", UnitPrice: 500}
-	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID, Assignee: &assignee}, {MenuId: menuID}}
+	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID, Assignee: &assignee, Dripper: &dripper}, {MenuId: menuID}}
 	master := models.Menu{ID: menuID, Name: "変更後の名前", Price: 800}
 	lines, err := buildOrderMenus(orderID, requests, []models.OrderMenu{old}, []models.Menu{master})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee {
+	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee || *lines[0].Dripper != dripper {
 		t.Fatalf("existing snapshot changed: %+v", lines[0])
 	}
 	if lines[1].MenuName != master.Name || lines[1].UnitPrice != 800 {
@@ -49,6 +49,77 @@ func TestBuildOrderMenusPreservesExistingSnapshots(t *testing.T) {
 	lines, err = buildOrderMenus(orderID, requests[:1], []models.OrderMenu{old}, nil)
 	if err != nil || lines[0].UnitPrice != 500 {
 		t.Fatalf("deleted menu's historical line lost: %+v, %v", lines, err)
+	}
+}
+
+func TestBuildOrderMenusAssignsDripper(t *testing.T) {
+	orderID, menuID := uuid.New(), uuid.New()
+	master := []models.Menu{{ID: menuID, Name: "ブレンド", Price: 500}}
+	second, sixth := 2, 6
+	free, blank := " 山田 ", "  "
+	requests := []models.MenuInfoCreate{
+		{MenuId: menuID, Dripper: &second},
+		{MenuId: menuID, Dripper: &sixth, Assignee: &free},
+		{MenuId: menuID, Assignee: &blank},
+		{MenuId: menuID},
+	}
+	lines, err := buildOrderMenus(orderID, requests, nil, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *lines[0].Dripper != 2 || lines[0].Assignee != nil {
+		t.Fatalf("dripper only: %+v", lines[0])
+	}
+	if *lines[1].Dripper != 6 || *lines[1].Assignee != "山田" {
+		t.Fatalf("dripper with free text must be kept and trimmed: %+v", lines[1])
+	}
+	if lines[2].Dripper != nil || lines[2].Assignee != nil || lines[3].Dripper != nil || lines[3].Assignee != nil {
+		t.Fatalf("unassigned lines must have neither: %+v %+v", lines[2], lines[3])
+	}
+	response := toOrderResponse(&models.Order{OrderMenus: lines})
+	if *response.Menus[1].Dripper != 6 || *response.Menus[1].Assignee != "山田" || response.Menus[3].Dripper != nil {
+		t.Fatalf("response must carry dripper: %+v", response.Menus)
+	}
+}
+
+func TestBuildOrderMenusRejectsInvalidAssignment(t *testing.T) {
+	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
+	master := []models.Menu{{ID: menuID, Name: "ブレンド", Price: 500}}
+	zero, seventh := 0, 7
+	free, changed := "1st", "2nd"
+	legacy := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, Assignee: &free, MenuName: "ブレンド", UnitPrice: 500}
+	cases := map[string][]models.MenuInfoCreate{
+		"dripper zero":             {{MenuId: menuID, Dripper: &zero}},
+		"dripper over 6th":         {{MenuId: menuID, Dripper: &seventh}},
+		"free text without number": {{MenuId: menuID, Assignee: &free}},
+		"legacy free text changed": {{MenuId: menuID, OrderMenuId: &lineID, Assignee: &changed}},
+	}
+	for name, requests := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := buildOrderMenus(orderID, requests, []models.OrderMenu{legacy}, master); !errors.Is(err, errInvalidOrderMenus) {
+				t.Fatalf("expected validation error, got %v", err)
+			}
+		})
+	}
+	// 番号より前の注文の自由記述だけの指名は、変えなければそのまま残せる。番号を付けてもよい
+	first := 1
+	for _, request := range []models.MenuInfoCreate{
+		{MenuId: menuID, OrderMenuId: &lineID, Assignee: &free},
+		{MenuId: menuID, OrderMenuId: &lineID, Assignee: &free, Dripper: &first},
+		{MenuId: menuID, OrderMenuId: &lineID},
+	} {
+		if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{request}, []models.OrderMenu{legacy}, master); err != nil {
+			t.Fatalf("legacy line must be editable: %+v, %v", request, err)
+		}
+	}
+	// 番号の付いた明細から番号だけを外して、自由記述を残すことはできない
+	numberedID, third, named := uuid.New(), 3, "山田"
+	numbered := models.OrderMenu{ID: numberedID, OrderID: orderID, MenuID: menuID, Dripper: &third, Assignee: &named, MenuName: "ブレンド", UnitPrice: 500}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID, Assignee: &named}}, []models.OrderMenu{numbered}, master); !errors.Is(err, errInvalidOrderMenus) {
+		t.Fatalf("free text must not stay without its number, got %v", err)
+	}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID}}, []models.OrderMenu{numbered}, master); err != nil {
+		t.Fatalf("numbered line must be unassignable: %v", err)
 	}
 }
 

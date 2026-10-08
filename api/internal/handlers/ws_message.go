@@ -21,7 +21,7 @@ const (
 	WSMessageTypeMasterState  WSMessageType = "master_state"
 	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
-	// CaOS の今日のカード（全部）。カードが変わるたびと、つないだときに届く
+	// CaOS の今日のカード（全部）と列の担当者（1〜6 の全部）。カードか担当者が変わるたびと、つないだときに届く
 	WSMessageTypeDrips WSMessageType = "drips"
 )
 
@@ -36,6 +36,8 @@ type WSMessage struct {
 	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
 	// drips：CaOS の今日のカード（0 枚のときは省かれる）
 	Drips []caos.Drip `json:"drips,omitempty"`
+	// drips：CaOS の今日の列の担当者（1〜6 の 6 列が必ずある。担当者がいない列は name が空）
+	Lanes []caos.Lane `json:"lanes,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {

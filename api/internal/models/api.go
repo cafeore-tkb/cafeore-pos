@@ -24,12 +24,14 @@ const (
 
 // Defines values for CaosOpName.
 const (
-	CaosOpAssign   CaosOpName = "assign"
-	CaosOpMerge    CaosOpName = "merge"
-	CaosOpNext     CaosOpName = "next"
-	CaosOpRebrew   CaosOpName = "rebrew"
-	CaosOpUnassign CaosOpName = "unassign"
-	CaosOpUndo     CaosOpName = "undo"
+	CaosOpAssign    CaosOpName = "assign"
+	CaosOpMerge     CaosOpName = "merge"
+	CaosOpNext      CaosOpName = "next"
+	CaosOpRebrew    CaosOpName = "rebrew"
+	CaosOpSetLane   CaosOpName = "set_lane"
+	CaosOpSwapLanes CaosOpName = "swap_lanes"
+	CaosOpUnassign  CaosOpName = "unassign"
+	CaosOpUndo      CaosOpName = "undo"
 )
 
 // Defines values for ColorScreen.
@@ -95,11 +97,11 @@ type CaosDrip struct {
 
 // CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
 type CaosDripLine struct {
-	Cups   int                `json:"cups"`
-	ItemId openapi_types.UUID `json:"item_id"`
+	Cups int `json:"cups"`
 
-	// Nominee POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける
-	Nominee *string            `json:"nominee"`
+	// Dripper 指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別
+	Dripper *int               `json:"dripper"`
+	ItemId  openapi_types.UUID `json:"item_id"`
 	OrderId openapi_types.UUID `json:"order_id"`
 }
 
@@ -115,9 +117,25 @@ type CaosErrorResponse struct {
 // CaosErrorResponseCode defines model for CaosErrorResponse.Code.
 type CaosErrorResponseCode string
 
+// CaosLane 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+// senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+type CaosLane struct {
+	Dripper int `json:"dripper"`
+
+	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+
+	// Senior 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+
+	// UpdatedAt 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
 // CaosOp name ごとに使うフィールド：
 // assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
 // rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
 // undo（op_id）
 type CaosOp struct {
 	// Cups 入れ直す杯数（元のカードの杯数まで）
@@ -131,9 +149,18 @@ type CaosOp struct {
 	Name      CaosOpName `json:"name"`
 
 	// OpId undo で戻す操作（操作の結果の op_id）
-	OpId     *openapi_types.UUID `json:"op_id,omitempty"`
+	OpId *openapi_types.UUID `json:"op_id,omitempty"`
+
+	// OtherDripper swap_lanes で dripper の列と担当者を入れ替える列
+	OtherDripper *int `json:"other_dripper,omitempty"`
+
+	// Person set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし
+	Person   *string             `json:"person,omitempty"`
 	QueuePos *float64            `json:"queue_pos"`
 	SecondId *openapi_types.UUID `json:"second_id,omitempty"`
+
+	// Senior set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る
+	Senior   *bool               `json:"senior,omitempty"`
 	SourceId *openapi_types.UUID `json:"source_id,omitempty"`
 }
 
@@ -145,11 +172,136 @@ type CaosOpResult struct {
 	Changed []CaosDrip           `json:"changed"`
 	Deleted []openapi_types.UUID `json:"deleted"`
 
+	// Lanes この操作で担当者が変わった列（undo では、戻した列）
+	Lanes []CaosLane `json:"lanes"`
+
 	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
 	OpId string `json:"op_id"`
 
 	// Readied この操作で準備完了にした注文（undo では、準備完了を外した注文）
 	Readied []openapi_types.UUID `json:"readied"`
+}
+
+// CaosPracticeAdvanceRequest defines model for CaosPracticeAdvanceRequest.
+type CaosPracticeAdvanceRequest struct {
+	// At 練習の時刻
+	At time.Time `json:"at"`
+}
+
+// CaosPracticeCreateRequest defines model for CaosPracticeCreateRequest.
+type CaosPracticeCreateRequest struct {
+	// EndsAt 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
+	EndsAt time.Time `json:"ends_at"`
+
+	// Lanes 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない
+	Lanes  *[]CaosPracticeLaneInput `json:"lanes,omitempty"`
+	Orders []CaosPracticeOrderInput `json:"orders"`
+
+	// StartsAt 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
+	StartsAt time.Time `json:"starts_at"`
+}
+
+// CaosPracticeItem 練習の盤面の商品。カードの明細の item_id はこの id
+type CaosPracticeItem struct {
+	Id   openapi_types.UUID `json:"id"`
+	Key  string             `json:"key"`
+	Name string             `json:"name"`
+	Type string             `json:"type"`
+}
+
+// CaosPracticeLaneInput defines model for CaosPracticeLaneInput.
+type CaosPracticeLaneInput struct {
+	Dripper int    `json:"dripper"`
+	Name    string `json:"name"`
+	Senior  bool   `json:"senior"`
+}
+
+// CaosPracticeLineInput 練習に送る注文の明細の 1 行（同じ商品が何杯か）
+type CaosPracticeLineInput struct {
+	// ItemKey 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）
+	ItemKey  *string `json:"item_key,omitempty"`
+	Name     string  `json:"name"`
+	Price    int     `json:"price"`
+	Quantity int     `json:"quantity"`
+
+	// Type 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない
+	Type string `json:"type"`
+}
+
+// CaosPracticeOpRequest defines model for CaosPracticeOpRequest.
+type CaosPracticeOpRequest struct {
+	// At 練習の時刻（操作の前に、ここまで時計を進める）
+	At time.Time `json:"at"`
+
+	// Op name ごとに使うフィールド：
+	// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
+	// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+	// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
+	// undo（op_id）
+	Op CaosOp `json:"op"`
+}
+
+// CaosPracticeOpResult defines model for CaosPracticeOpResult.
+type CaosPracticeOpResult struct {
+	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
+	OpId string `json:"op_id"`
+
+	// State 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
+	State CaosPracticeState `json:"state"`
+}
+
+// CaosPracticeOrder defines model for CaosPracticeOrder.
+type CaosPracticeOrder struct {
+	BillingAmount int                     `json:"billing_amount"`
+	CreatedAt     time.Time               `json:"created_at"`
+	Id            openapi_types.UUID      `json:"id"`
+	Lines         []CaosPracticeOrderLine `json:"lines"`
+	OrderNo       int                     `json:"order_no"`
+
+	// ReadyAt 練習の中で準備完了になった時刻（練習の時計）。まだなら null
+	ReadyAt *time.Time `json:"ready_at"`
+}
+
+// CaosPracticeOrderInput defines model for CaosPracticeOrderInput.
+type CaosPracticeOrderInput struct {
+	BillingAmount int `json:"billing_amount"`
+
+	// CreatedAt 注文の時刻（練習の時間帯の中）
+	CreatedAt time.Time               `json:"created_at"`
+	Lines     []CaosPracticeLineInput `json:"lines"`
+	OrderNo   int                     `json:"order_no"`
+}
+
+// CaosPracticeOrderLine defines model for CaosPracticeOrderLine.
+type CaosPracticeOrderLine struct {
+	ItemId   openapi_types.UUID `json:"item_id"`
+	Price    int                `json:"price"`
+	Quantity int                `json:"quantity"`
+}
+
+// CaosPracticeState 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
+type CaosPracticeState struct {
+	Drips  []CaosDrip         `json:"drips"`
+	EndsAt time.Time          `json:"ends_at"`
+	Id     openapi_types.UUID `json:"id"`
+	Items  []CaosPracticeItem `json:"items"`
+	Lanes  []CaosLane         `json:"lanes"`
+
+	// NextArrivalAt 次に届く注文の時刻。もう無ければ null
+	NextArrivalAt *time.Time `json:"next_arrival_at"`
+
+	// Now 練習の時計（最後に画面から受け取った時刻）
+	Now time.Time `json:"now"`
+
+	// Orders もう届いた注文（作った順）
+	Orders   []CaosPracticeOrder `json:"orders"`
+	StartsAt time.Time           `json:"starts_at"`
+
+	// TotalOrders 練習の注文の全部の数
+	TotalOrders int `json:"total_orders"`
+
+	// Version 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）
+	Version int `json:"version"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -321,7 +473,11 @@ type MenuCreateRequest struct {
 
 // MenuInfo defines model for MenuInfo.
 type MenuInfo struct {
+	// Assignee 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある
 	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null
+	Dripper *int `json:"dripper"`
 
 	// Id 注文明細ID
 	Id   openapi_types.UUID `json:"id"`
@@ -336,8 +492,12 @@ type MenuInfo struct {
 
 // MenuInfoCreate defines model for MenuInfoCreate.
 type MenuInfoCreate struct {
-	Assignee *string            `json:"assignee"`
-	MenuId   openapi_types.UUID `json:"menu_id"`
+	// Assignee 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う
+	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1〜6）。指名しない明細は null
+	Dripper *int               `json:"dripper"`
+	MenuId  openapi_types.UUID `json:"menu_id"`
 
 	// OrderMenuId 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
 	OrderMenuId *openapi_types.UUID `json:"order_menu_id,omitempty"`
@@ -527,6 +687,15 @@ type ReplaceStockUsagesJSONBody = []StockUsage
 
 // ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
 type ApplyCaosOpJSONRequestBody = CaosOp
+
+// CreateCaosPracticeJSONRequestBody defines body for CreateCaosPractice for application/json ContentType.
+type CreateCaosPracticeJSONRequestBody = CaosPracticeCreateRequest
+
+// AdvanceCaosPracticeJSONRequestBody defines body for AdvanceCaosPractice for application/json ContentType.
+type AdvanceCaosPracticeJSONRequestBody = CaosPracticeAdvanceRequest
+
+// ApplyCaosPracticeOpJSONRequestBody defines body for ApplyCaosPracticeOp for application/json ContentType.
+type ApplyCaosPracticeOpJSONRequestBody = CaosPracticeOpRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

@@ -23,9 +23,10 @@ var (
 )
 
 type menuLine struct {
-	items    []item
-	qty      []int
-	assignee *string
+	items []item
+	qty   []int
+	// 指名したドリッパーの番号（明細の dripper）
+	dripper *int
 }
 
 func one(it item, qty int) menuLine { return menuLine{items: []item{it}, qty: []int{qty}} }
@@ -46,19 +47,19 @@ func order(no int, lines ...menuLine) Order {
 	o := Order{ID: orderID(no), OrderNo: no, CreatedAt: time.Date(2026, 11, 1, 1, no%60, 0, 0, time.UTC)}
 	for _, ml := range lines {
 		for i, it := range ml.items {
-			o.Lines = append(o.Lines, OrderLine{Assignee: ml.assignee, ItemID: it.id, Name: it.name, Abbr: it.abbr, Type: it.typ, Quantity: ml.qty[i]})
+			o.Lines = append(o.Lines, OrderLine{Dripper: ml.dripper, ItemID: it.id, Name: it.name, Abbr: it.abbr, Type: it.typ, Quantity: ml.qty[i]})
 		}
 	}
 	return o
 }
 
-// SQL のテストと同じ注文 #1：優勝 3 杯・アイスミルク・トートセット（優勝＋トート）・俺ブレ（指名 ２）
+// SQL のテストと同じ注文 #1：優勝 3 杯・アイスミルク・トートセット（優勝＋トート）・俺ブレ（指名 2nd）
 func order1(oreCups int) Order {
 	return order(1,
 		one(champ, 3),
 		one(milk, 1),
 		menuLine{items: []item{champ, tote}, qty: []int{1, 1}},
-		menuLine{items: []item{ore}, qty: []int{oreCups}, assignee: ptr(" ２ ")},
+		menuLine{items: []item{ore}, qty: []int{oreCups}, dripper: ptr(2)},
 	)
 }
 
@@ -95,7 +96,7 @@ func apply(t *testing.T, b *Board, op Op) *Changeset {
 
 func applyErr(b *Board, op Op) error { return b.Apply(&Changeset{}, op) }
 
-// restore は記録しておいた操作を取り消す（Store が caos_ops の記録から行うのと同じ）
+// restore は記録しておいた操作を取り消す（handlers の CaosStore が caos_ops の記録から行うのと同じ）
 func restore(t *testing.T, b *Board, before, after []Drip) {
 	t.Helper()
 	if err := b.Restore(&Changeset{}, before, after); err != nil {
@@ -140,10 +141,10 @@ func checkInvariants(t *testing.T, b *Board) {
 		if (d.Status == StatusUnassigned) != (d.Dripper == nil) && d.Status != StatusDone {
 			t.Fatalf("状態と担当が合わない：%+v", d)
 		}
-		if d.Cups != sumCups(d.Lines) || d.Cups < 1 || d.Cups > 2 {
+		if d.Cups != CupsOf(d.Lines) || d.Cups < 1 || d.Cups > 2 {
 			t.Fatalf("杯数が合わない：%+v", d)
 		}
-		if !slices.Equal(d.OrderIDs, distinctOrders(d.Lines)) {
+		if !slices.Equal(d.OrderIDs, OrderIDsOf(d.Lines)) {
 			t.Fatalf("order_ids が明細と合わない：%+v", d)
 		}
 	}
@@ -178,13 +179,65 @@ func TestIngestSplitsIntoTwoCupCards(t *testing.T) {
 	checkInvariants(t, b)
 }
 
-func TestIngestTrimsNominee(t *testing.T) {
+func TestIngestCopiesNominatedDripper(t *testing.T) {
 	b := seeded(t)
 	for _, d := range cardsOf(b, 1) {
-		if d.Lines[0].ItemID == ore.id && (d.Lines[0].Nominee == nil || *d.Lines[0].Nominee != "２") {
-			t.Fatalf("指名は前後の空白を落として写す：%v", d.Lines[0].Nominee)
+		want := d.Lines[0].ItemID == ore.id
+		if got := d.Lines[0].Dripper; (got != nil) != want || (want && *got != 2) {
+			t.Fatalf("指名は明細の番号（dripper）をそのまま写し、指名の無い明細は null：%s %v", abbr(d.Lines[0].ItemID), got)
 		}
 	}
+}
+
+// 同じ商品でも指名の番号ごとにカードを分ける。同じ番号の明細はまとめて 2 杯ずつにする。並びは指名なし、番号の順
+func TestIngestSplitsByNominatedDripper(t *testing.T) {
+	b := newBoard()
+	b.IngestOrders(&Changeset{}, []Order{order(1,
+		menuLine{items: []item{champ}, qty: []int{1}, dripper: ptr(5)},
+		menuLine{items: []item{champ}, qty: []int{1}, dripper: ptr(2)},
+		one(champ, 1),
+		menuLine{items: []item{champ}, qty: []int{2}, dripper: ptr(2)},
+	)}, true)
+	var got []string
+	for _, d := range cardsOf(b, 1) {
+		n := "なし"
+		if d.Lines[0].Dripper != nil {
+			n = fmt.Sprint(*d.Lines[0].Dripper)
+		}
+		got = append(got, fmt.Sprintf("%s×%d", n, d.Cups))
+	}
+	if want := []string{"なし×1", "2×2", "2×1", "5×1"}; !slices.Equal(got, want) {
+		t.Fatalf("指名の番号ごとに分ける：%v, want %v", got, want)
+	}
+	checkInvariants(t, b)
+}
+
+// 1〜6 でない番号は指名なしとして扱う（API と DB で弾いているので、来ないはず）
+func TestIngestIgnoresOutOfRangeDripper(t *testing.T) {
+	b := newBoard()
+	b.IngestOrders(&Changeset{}, []Order{order(1,
+		menuLine{items: []item{champ}, qty: []int{1}, dripper: ptr(7)},
+		menuLine{items: []item{champ}, qty: []int{1}, dripper: ptr(0)},
+	)}, true)
+	cards := cardsOf(b, 1)
+	if len(cards) != 1 || cards[0].Cups != 2 || cards[0].Lines[0].Dripper != nil {
+		t.Fatalf("範囲外の番号は指名なしの 1 枚にまとめる：%+v", cards)
+	}
+}
+
+// 未割当のうちに指名の番号を付け替えたら、カードを新しい番号で作り直す
+func TestIngestRenominationRebuildsUnassigned(t *testing.T) {
+	b := newBoard()
+	b.IngestOrders(&Changeset{}, []Order{order(1, menuLine{items: []item{champ}, qty: []int{3}, dripper: ptr(2)})}, true)
+	b.IngestOrders(&Changeset{}, []Order{order(1, menuLine{items: []item{champ}, qty: []int{3}, dripper: ptr(4)})}, true)
+	var got []string
+	for _, d := range cardsOf(b, 1) {
+		got = append(got, fmt.Sprintf("%s:%d×%d", d.Status, *d.Lines[0].Dripper, d.Cups))
+	}
+	if want := []string{"unassigned:4×2", "unassigned:4×1"}; !slices.Equal(got, want) {
+		t.Fatalf("新しい番号で作り直す：%v", got)
+	}
+	checkInvariants(t, b)
 }
 
 func TestIngestSkipsReadyAndServed(t *testing.T) {
@@ -244,6 +297,22 @@ func TestMergeRejects(t *testing.T) {
 	isInvalid(t, applyErr(b, Op{Name: "merge", FirstID: c2.ID, SecondID: c2.ID}), "統合できません")
 	if fmt.Sprint(b.List()) != before {
 		t.Fatal("断ったのに変わった")
+	}
+}
+
+// 統合は同じ指名の番号どうしだけ（指名なしと指名、別の番号どうしは断る）
+func TestMergeNeedsSameNominatedDripper(t *testing.T) {
+	b := newBoard()
+	nominated := func(no int, n *int) Order {
+		return order(no, menuLine{items: []item{champ}, qty: []int{1}, dripper: n})
+	}
+	b.IngestOrders(&Changeset{}, []Order{nominated(1, ptr(2)), nominated(2, ptr(3)), nominated(3, nil), nominated(4, ptr(2))}, true)
+	c1, c2, c3, c4 := cardsOf(b, 1)[0], cardsOf(b, 2)[0], cardsOf(b, 3)[0], cardsOf(b, 4)[0]
+	isInvalid(t, applyErr(b, Op{Name: "merge", FirstID: c1.ID, SecondID: c2.ID}), "統合できません")
+	isInvalid(t, applyErr(b, Op{Name: "merge", FirstID: c1.ID, SecondID: c3.ID}), "統合できません")
+	apply(t, b, Op{Name: "merge", FirstID: c1.ID, SecondID: c4.ID})
+	if merged := cardsOf(b, 4); len(merged) != 1 || merged[0].Cups != 2 || *merged[0].Lines[1].Dripper != 2 {
+		t.Fatalf("同じ番号どうしは統合できる：%+v", merged)
 	}
 }
 
@@ -330,7 +399,7 @@ func TestNextReadyAndRestore(t *testing.T) {
 		t.Fatalf("最後のカードの次へで、注文のカードが全部終わったと返す（準備完了は既存の API で付ける）：%v", last.Completed.List())
 	}
 
-	// 1つ戻す：抽出中に戻る（Store と同じく、その操作で準備完了にした注文は外してから戻す）
+	// 1つ戻す：抽出中に戻る（CaosStore と同じく、その操作で準備完了にした注文は外してから戻す）
 	for _, id := range last.Completed.List() {
 		b.Orders[id].Ready = false
 	}

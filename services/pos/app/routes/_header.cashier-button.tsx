@@ -1,7 +1,9 @@
 import {
+  DRIPPER_NUMBERS,
   type MenuEntity,
   OrderEntity,
   type WithId,
+  dripperLabel,
   orderRepository,
   orderSchema,
   stringToJSONSchema,
@@ -221,11 +223,10 @@ export default function Casher() {
                         onValueChange={(value) => {
                           setQueue((prev) => {
                             const newItems = [...prev];
-                            let newValue = value;
-                            if (newValue === "null") {
-                              newValue = "";
-                            }
-                            newItems[index].assignee = newValue;
+                            newItems[index].assign(
+                              value === "null" ? null : Number(value),
+                              null,
+                            );
                             return newItems;
                           });
                         }}
@@ -236,11 +237,11 @@ export default function Casher() {
                         <SelectContent>
                           <SelectGroup>
                             <SelectLabel>指名</SelectLabel>
-                            <SelectItem value="first">1st</SelectItem>
-                            <SelectItem value="second">2nd</SelectItem>
-                            <SelectItem value="third">3rd</SelectItem>
-                            <SelectItem value="fourth">4th</SelectItem>
-                            <SelectItem value="fifth">5th</SelectItem>
+                            {DRIPPER_NUMBERS.map((d) => (
+                              <SelectItem key={d} value={String(d)}>
+                                {dripperLabel(d)}
+                              </SelectItem>
+                            ))}
                             <SelectItem value="null">指名なし</SelectItem>
                           </SelectGroup>
                         </SelectContent>

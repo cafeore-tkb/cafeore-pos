@@ -1,12 +1,7 @@
+import type { InventoryStatus } from "@cafeore/common";
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type {
-  Barista,
-  BeanItem,
-  HistoricalOrder,
-  LearningEngineLog,
-} from "../types";
-import { AiConfigView } from "./AiConfigView";
+import type { Barista, SalesOrder } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
 import { BeanQueueView } from "./BeanQueueView";
@@ -15,66 +10,51 @@ import type { NavTab } from "./TopHeader";
 export type AuxiliaryTab = Exclude<NavTab, "control">;
 
 export const getAuxiliaryTitle = (tab: AuxiliaryTab) =>
-  tab === "bays"
-    ? "ドリッパー / 補正設定"
-    : tab === "beans"
-      ? "豆キュー"
-      : "実績";
+  tab === "bays" ? "ドリッパー" : tab === "beans" ? "豆キュー" : "実績";
 
 interface AuxiliaryContentProps {
   tab: AuxiliaryTab;
   baristas: Barista[];
-  beans: BeanItem[];
-  learningLogs: LearningEngineLog[];
-  salesOrders: HistoricalOrder[];
+  // 豆のパネルに出す POS の在庫（豆だけ）と、盤面にある杯数（在庫対象の ID ごと）
+  beanInventory: {
+    statuses: InventoryStatus[];
+    isLoading: boolean;
+    error: unknown;
+  };
+  beanWaitingCups?: Map<string, number>;
+  salesOrders: SalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
-  nextShiftLabel: string;
-  onChangeShift: () => void;
-  onUpdateCoefficient: (bayId: number, coefficient: number) => void;
-  onResetLearning: () => void;
-  onUpdateBean: (bean: BeanItem) => void;
-  onAddBean: (bean: BeanItem) => void;
+  /** 列の「交代」と「入れ替え」。無ければ出さない */
+  onChangeLane?: (bayId: number) => void;
+  onSwapLanes?: (bayId: number, otherBayId: number) => void;
 }
 
 export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   tab,
   baristas,
-  beans,
-  learningLogs,
+  beanInventory,
+  beanWaitingCups,
   salesOrders,
   periodStartMs,
   periodEndMs,
-  nextShiftLabel,
-  onChangeShift,
-  onUpdateCoefficient,
-  onResetLearning,
-  onUpdateBean,
-  onAddBean,
+  onChangeLane,
+  onSwapLanes,
 }) => (
   <>
     {tab === "bays" && (
-      <div className="space-y-5">
-        <BaysOverviewView
-          baristas={baristas}
-          nextShiftLabel={nextShiftLabel}
-          onChangeShift={onChangeShift}
-        />
-        <div className="border-slate-300 border-t pt-4">
-          <AiConfigView
-            baristas={baristas}
-            logs={learningLogs}
-            onUpdateCoefficient={onUpdateCoefficient}
-            onResetLearning={onResetLearning}
-          />
-        </div>
-      </div>
+      <BaysOverviewView
+        baristas={baristas}
+        onChangeLane={onChangeLane}
+        onSwapLanes={onSwapLanes}
+      />
     )}
     {tab === "beans" && (
       <BeanQueueView
-        beans={beans}
-        onUpdateBean={onUpdateBean}
-        onAddBean={onAddBean}
+        statuses={beanInventory.statuses}
+        isLoading={beanInventory.isLoading}
+        error={beanInventory.error}
+        waitingCups={beanWaitingCups}
       />
     )}
     {tab === "analytics" && (
@@ -104,7 +84,7 @@ export const AuxiliarySheet: React.FC<AuxiliarySheetProps> = ({
   const title = getAuxiliaryTitle(tab);
 
   return (
-    <aside className="context-sheet absolute top-[56px] right-0 bottom-0 z-40 flex w-[min(440px,44vw)] min-w-[360px] flex-col border-slate-300 border-l bg-white shadow-2xl">
+    <aside className="context-sheet absolute top-[56px] right-0 bottom-0 z-[75] flex w-[min(440px,44vw)] min-w-[360px] flex-col border-slate-300 border-l bg-white shadow-2xl">
       <div className="flex h-[52px] shrink-0 items-center justify-between border-slate-200 border-b bg-slate-50 px-4">
         <h2 className="font-black text-[16px] text-slate-950">{title}</h2>
         <div className="flex items-center gap-1">

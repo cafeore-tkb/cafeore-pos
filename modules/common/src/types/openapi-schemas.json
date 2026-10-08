@@ -220,7 +220,14 @@
   },
   "MenuInfo": {
     "type": "object",
-    "required": ["id", "menu_name", "unit_price", "menu", "assignee"],
+    "required": [
+      "id",
+      "menu_name",
+      "unit_price",
+      "menu",
+      "assignee",
+      "dripper"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -240,7 +247,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null"
       }
     }
   },
@@ -276,7 +291,7 @@
   },
   "MenuInfoCreate": {
     "type": "object",
-    "required": ["menu_id", "assignee"],
+    "required": ["menu_id", "assignee", "dripper"],
     "properties": {
       "order_menu_id": {
         "type": "string",
@@ -289,7 +304,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1〜6）。指名しない明細は null"
       }
     }
   },
@@ -598,7 +621,7 @@
   "CaosDripLine": {
     "type": "object",
     "description": "抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）",
-    "required": ["order_id", "item_id", "nominee", "cups"],
+    "required": ["order_id", "item_id", "dripper", "cups"],
     "properties": {
       "order_id": {
         "type": "string",
@@ -608,10 +631,12 @@
         "type": "string",
         "format": "uuid"
       },
-      "nominee": {
-        "type": "string",
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
         "nullable": true,
-        "description": "POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける"
+        "description": "指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別"
       },
       "cups": {
         "type": "integer",
@@ -717,20 +742,57 @@
       }
     }
   },
+  "CaosLane": {
+    "type": "object",
+    "description": "列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。\nsenior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。\n",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。担当者がいない列は false"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）"
+      }
+    }
+  },
   "CaosOp": {
     "type": "object",
-    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nundo（op_id）\n",
+    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nset_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/\nundo（op_id）\n",
     "required": ["name"],
     "properties": {
       "name": {
         "type": "string",
-        "enum": ["assign", "unassign", "next", "merge", "rebrew", "undo"],
+        "enum": [
+          "assign",
+          "unassign",
+          "next",
+          "merge",
+          "rebrew",
+          "set_lane",
+          "swap_lanes",
+          "undo"
+        ],
         "x-enum-varnames": [
           "CaosOpAssign",
           "CaosOpUnassign",
           "CaosOpNext",
           "CaosOpMerge",
           "CaosOpRebrew",
+          "CaosOpSetLane",
+          "CaosOpSwapLanes",
           "CaosOpUndo"
         ]
       },
@@ -775,12 +837,27 @@
         "type": "string",
         "format": "uuid",
         "description": "undo で戻す操作（操作の結果の op_id）"
+      },
+      "person": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る"
+      },
+      "other_dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "description": "swap_lanes で dripper の列と担当者を入れ替える列"
       }
     }
   },
   "CaosOpResult": {
     "type": "object",
-    "required": ["op_id", "changed", "deleted", "readied"],
+    "required": ["op_id", "changed", "deleted", "readied", "lanes"],
     "properties": {
       "op_id": {
         "type": "string",
@@ -806,6 +883,13 @@
           "type": "string",
           "format": "uuid"
         }
+      },
+      "lanes": {
+        "type": "array",
+        "description": "この操作で担当者が変わった列（undo では、戻した列）",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
       }
     }
   },
@@ -824,9 +908,299 @@
       }
     }
   },
+  "CaosPracticeLineInput": {
+    "type": "object",
+    "description": "練習に送る注文の明細の 1 行（同じ商品が何杯か）",
+    "required": ["name", "type", "price", "quantity"],
+    "properties": {
+      "item_key": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）"
+      },
+      "name": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "type": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない"
+      },
+      "price": {
+        "type": "integer"
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      }
+    }
+  },
+  "CaosPracticeOrderInput": {
+    "type": "object",
+    "required": ["order_no", "created_at", "billing_amount", "lines"],
+    "properties": {
+      "order_no": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "注文の時刻（練習の時間帯の中）"
+      },
+      "billing_amount": {
+        "type": "integer"
+      },
+      "lines": {
+        "type": "array",
+        "maxItems": 100,
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeLineInput"
+        }
+      }
+    }
+  },
+  "CaosPracticeLaneInput": {
+    "type": "object",
+    "required": ["dripper", "name", "senior"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "maxLength": 40
+      },
+      "senior": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CaosPracticeCreateRequest": {
+    "type": "object",
+    "required": ["starts_at", "ends_at", "orders"],
+    "properties": {
+      "starts_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる"
+      },
+      "ends_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）"
+      },
+      "orders": {
+        "type": "array",
+        "maxItems": 3000,
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeOrderInput"
+        }
+      },
+      "lanes": {
+        "type": "array",
+        "description": "列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない",
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeLaneInput"
+        }
+      }
+    }
+  },
+  "CaosPracticeItem": {
+    "type": "object",
+    "description": "練習の盤面の商品。カードの明細の item_id はこの id",
+    "required": ["id", "key", "name", "type"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "key": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "type": {
+        "type": "string"
+      }
+    }
+  },
+  "CaosPracticeOrderLine": {
+    "type": "object",
+    "required": ["item_id", "price", "quantity"],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "price": {
+        "type": "integer"
+      },
+      "quantity": {
+        "type": "integer"
+      }
+    }
+  },
+  "CaosPracticeOrder": {
+    "type": "object",
+    "required": [
+      "id",
+      "order_no",
+      "created_at",
+      "billing_amount",
+      "lines",
+      "ready_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_no": {
+        "type": "integer"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "billing_amount": {
+        "type": "integer"
+      },
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeOrderLine"
+        }
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "練習の中で準備完了になった時刻（練習の時計）。まだなら null"
+      }
+    }
+  },
+  "CaosPracticeState": {
+    "type": "object",
+    "description": "練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）",
+    "required": [
+      "id",
+      "starts_at",
+      "ends_at",
+      "now",
+      "version",
+      "drips",
+      "lanes",
+      "items",
+      "orders",
+      "total_orders",
+      "next_arrival_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "starts_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "ends_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "now": {
+        "type": "string",
+        "format": "date-time",
+        "description": "練習の時計（最後に画面から受け取った時刻）"
+      },
+      "version": {
+        "type": "integer",
+        "description": "盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）"
+      },
+      "drips": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosDrip"
+        }
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeItem"
+        }
+      },
+      "orders": {
+        "type": "array",
+        "description": "もう届いた注文（作った順）",
+        "items": {
+          "$ref": "#/components/schemas/CaosPracticeOrder"
+        }
+      },
+      "total_orders": {
+        "type": "integer",
+        "description": "練習の注文の全部の数"
+      },
+      "next_arrival_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "次に届く注文の時刻。もう無ければ null"
+      }
+    }
+  },
+  "CaosPracticeAdvanceRequest": {
+    "type": "object",
+    "required": ["at"],
+    "properties": {
+      "at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "練習の時刻"
+      }
+    }
+  },
+  "CaosPracticeOpRequest": {
+    "type": "object",
+    "required": ["at", "op"],
+    "properties": {
+      "at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "練習の時刻（操作の前に、ここまで時計を進める）"
+      },
+      "op": {
+        "$ref": "#/components/schemas/CaosOp"
+      }
+    }
+  },
+  "CaosPracticeOpResult": {
+    "type": "object",
+    "required": ["op_id", "state"],
+    "properties": {
+      "op_id": {
+        "type": "string",
+        "description": "この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空"
+      },
+      "state": {
+        "$ref": "#/components/schemas/CaosPracticeState"
+      }
+    }
+  },
   "CaosWSMessage": {
     "type": "object",
-    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。\n",
+    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。\nカードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。\n",
     "required": ["type"],
     "properties": {
       "type": {
@@ -838,6 +1212,12 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/CaosDrip"
+        }
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
         }
       }
     }

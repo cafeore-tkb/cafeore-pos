@@ -9,6 +9,8 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Settings,
+  TriangleAlert,
   Undo2,
   Volume2,
   VolumeX,
@@ -44,6 +46,9 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** 上級生のいる列が無いときの知らせ（限定のカードを割り当てられない）。狭い画面では short を出す。無ければ null */
+  laneNotice: { full: string; short: string } | null;
+  onOpenSettings: () => void;
 }
 
 const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
@@ -78,6 +83,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  laneNotice,
+  onOpenSettings,
 }) => {
   const navItems = [
     { id: "control" as const, label: "CaOS", icon: null },
@@ -221,7 +228,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Metric 1: 未割当オーダー (Unassigned Orders) */}
-        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
+        <div className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 2xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             未割当オーダー
           </span>
@@ -236,7 +243,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Metric 2: 全ベイ待機杯数 (Total Queued Cups in Bays) */}
-        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
+        <div className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 2xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             全ドリッパー待機杯数
           </span>
@@ -252,7 +259,22 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </div>
 
       {/* Right side: only persistent operational controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        {laneNotice && (
+          <div
+            role="status"
+            data-lane-notice
+            title={laneNotice.full}
+            aria-label={laneNotice.full}
+            className="flex min-h-[44px] max-w-[220px] items-center gap-1 rounded-lg border border-amber-400 bg-amber-50 px-1.5 font-black text-[11px] text-amber-900 leading-tight"
+          >
+            <TriangleAlert className="h-4 w-4 shrink-0" />
+            <span className="whitespace-nowrap 2xl:hidden">
+              {laneNotice.short}
+            </span>
+            <span className="hidden 2xl:inline">{laneNotice.full}</span>
+          </div>
+        )}
         <div
           role="status"
           aria-label={`cafeore-pos ${POS_STATUS_LABEL[posStatus]}`}
@@ -271,7 +293,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
-              : "2025年の実データでテストプレイ"
+              : "過去の祭の実データでテストプレイ（練習用の盤面。本番の盤面には出ません）"
           }
         >
           {testPlaying ? (
@@ -279,7 +301,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           ) : (
             <CalendarClock className="h-4 w-4" />
           )}
-          <span>
+          <span className={testPlaying ? "" : "hidden xl:inline"}>
             {testPlaying
               ? `終了・実績 ${testProgressLabel || ""}`
               : "実データテスト"}
@@ -297,6 +319,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         >
           <Undo2 className="h-4 w-4" />
           <span>1つ戻す</span>
+        </button>
+
+        <button
+          type="button"
+          id="btn-settings"
+          onClick={onOpenSettings}
+          title="設定（sohosai-shift の合言葉）"
+          aria-label="設定"
+          className="flex h-11 w-10 touch-manipulation items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] text-slate-700"
+        >
+          <Settings className="h-4 w-4" />
         </button>
 
         {/* Sound toggle */}

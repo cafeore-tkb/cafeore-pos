@@ -1,9 +1,22 @@
-// Package caos は CaOS（ドリップ管制）の盤面。抽出カードの保存と、割当・次へ・統合などのルールを持つ。
+// Package caos は CaOS（ドリップ管制）の盤面の決まり。抽出カード（Drip）と列の担当者（Lane）、
+// 割当・次へ・統合・入れ直し・担当者の交代と入れ替え・1つ戻すのルール（Board）を持つ。
 //
-// 盤面は営業日（日本時間）ごとに 1 つ。カードは POS の注文から作り、注文のハンドラーと同じトランザクションの中で連動させる。
-// カードが全部終わった注文は、既存の準備完了の処理（ReadyFunc。POS の PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
-// 「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。
-// 配信は注文と同じく DB の通知から（caos_drips のトリガー → 各インスタンスが今日のカードを読み直して配る）。
+// このパッケージは DB を使わない（メモリ上のカードと注文だけを変える。テストも DB なしで回る）。
+// 保存・API・配信は、POS のほかの機能と同じ置き場所にある：
+//   - 表のモデル：models の CaosDripRow（caos_drips。カード）、CaosLaneRow（caos_lanes。列の担当者）、CaosOpRow（caos_ops。操作の記録）。
+//     ほかの表と同じく models.All() に入れ、起動時の AutoMigrate で作る
+//   - 保存と POS の注文との連動：handlers/caos_store.go（CaosStore）。盤面は営業日（日本時間）ごとに 1 つで、その日の advisory lock を取って 1 件ずつ順番に処理する。
+//     カードは注文のハンドラーと同じトランザクションの中でそろえ、カードが全部終わった注文は、既存の準備完了の処理（PATCH /ready と同じ切り替え）で同じトランザクションの中で準備完了にする。
+//     「1つ戻す」は、サーバーが残した操作の記録（caos_ops）で戻す。列の担当者の交代・入れ替えも同じ記録で戻す
+//   - 練習用の盤面（実データテスト）：決まりは practice.go（PracticeDoc。本番と同じ Board を、練習の時計と練習の注文で動かす）。
+//     表は models の CaosPracticeRow（caos_practices。練習 1 回分を 1 行の jsonb）、保存は handlers/caos_practice_store.go（CaosPracticeStore）、
+//     API は handlers/caos_practice.go（/api/caos/practice）。本番の表・注文・配信には触らない
+//   - API と配信：handlers/caos.go（POST /api/caos/ops と /api/ws/orders の {"type":"drips"}）。注文と同じく、カードを変えたインスタンスが自分の画面へ配り、
+//     pg_notify（caos_drips_changed）でほかのインスタンスに知らせる。受けたインスタンスは DB から今日のカードと列の担当者を読み直して配る（handlers/order_listener.go）。DB のトリガーは使わない
+//
+// 列（ドリッパー 1〜6）の担当者（名前と、上級生＝限定を淹れられるか）も盤面の一部として営業日ごとに持つ。
+// 担当者を替えるのは CaOS の画面からの操作（set_lane・swap_lanes）だけで、カードと同じく「1つ戻す」で戻せる。
+// sohosai-shift の予定は画面が交代の候補に出すだけで、サーバーは読まない（自動では替えない）。
 package caos
 
 import "time"
@@ -24,12 +37,14 @@ const (
 
 // DripLine は抽出カードの中身の 1 行（どの注文の、どの商品を、何杯）。
 // 注文番号や商品名は持たない（画面は /api/ws/orders で受け取る注文から引く）。
-// 指名（POS の明細の assignee、前後の空白を落としたもの）は、同じ商品でも指名ごとにカードを分けるので持つ。
+// 指名（POS の明細の dripper。指名したドリッパーの番号 1〜6）は、同じ商品でも指名ごとにカードを分けるので持つ。
+// 指名の自由記述（明細の assignee）は持たない（番号の無い自由記述だけの古い明細は、指名なしとして扱う）。
 type DripLine struct {
-	OrderID string  `json:"order_id"`
-	ItemID  string  `json:"item_id"`
-	Nominee *string `json:"nominee"`
-	Cups    int     `json:"cups"`
+	OrderID string `json:"order_id"`
+	ItemID  string `json:"item_id"`
+	// 指名したドリッパーの番号（1〜6）。指名なしは null。担当のドリッパー（Drip.Dripper）とは別
+	Dripper *int `json:"dripper"`
+	Cups    int  `json:"cups"`
 }
 
 // Drip は抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。
@@ -55,6 +70,25 @@ type Drip struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// Lane は列（ドリッパー 1〜6）の担当者。盤面には 1〜6 の 6 列が必ずあり、担当者がいない列は Name が空。
+// 上級生（限定を淹れられる）かは、交代したときに画面が sohosai-shift の名簿（seniors）で判定したものをそのまま持つ
+// （名簿を読めない端末でも同じ表示になるように）。
+type Lane struct {
+	Dripper int `json:"dripper"`
+	// 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
+	Name string `json:"name"`
+	// 上級生（限定を淹れられる）か。担当者がいない列は false
+	Senior bool `json:"senior"`
+	// 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// ReadyMark は操作で準備完了にした注文と、そのとき付けた ready_at（操作の記録 caos_ops に残し、「1つ戻す」で確かめる）。
+type ReadyMark struct {
+	OrderID string    `json:"order_id"`
+	ReadyAt time.Time `json:"ready_at"`
+}
+
 // Order は盤面が使う注文の中身（POS の orders と明細から作る）。
 type Order struct {
 	ID        string
@@ -67,7 +101,8 @@ type Order struct {
 
 // OrderLine は注文の明細の中の 1 品（メニューのセットは品ごとに分ける）。
 type OrderLine struct {
-	Assignee *string
+	// 明細の指名の番号（dripper。1〜6、指名なしは nil）
+	Dripper  *int
 	ItemID   string
 	Name     string
 	Abbr     string
@@ -92,6 +127,11 @@ type Op struct {
 	QueuePos  *float64 `json:"queue_pos,omitempty"`
 	// undo（1つ戻す）：戻す操作。操作の結果の op_id
 	OpID string `json:"op_id,omitempty"`
+	// set_lane（dripper の列の担当者を替える）：名前（空なら担当者なし）と、上級生か
+	Person string `json:"person,omitempty"`
+	Senior bool   `json:"senior,omitempty"`
+	// swap_lanes（dripper の列と other_dripper の列の担当者を入れ替える）
+	OtherDripper *int `json:"other_dripper,omitempty"`
 }
 
 // Result は操作の結果。呼んだ画面はこれですぐ反映する。
@@ -102,4 +142,20 @@ type Result struct {
 	Deleted []string `json:"deleted"`
 	// この操作で準備完了にした注文（undo では、準備完了を外した注文）
 	Readied []string `json:"readied"`
+	// この操作で担当者が変わった列（undo では、戻した列）
+	Lanes []Lane `json:"lanes"`
+}
+
+var jst = time.FixedZone("JST", 9*60*60)
+
+// Day は営業日（日本時間の日付。YYYY-MM-DD）。
+func Day(t time.Time) string { return t.In(jst).Format(time.DateOnly) }
+
+// ParseDay は YYYY-MM-DD を確かめ、その日の始まり（日本時間 0:00）を返す。
+func ParseDay(day string) (time.Time, error) {
+	t, err := time.ParseInLocation(time.DateOnly, day, jst)
+	if err != nil || t.Format(time.DateOnly) != day {
+		return time.Time{}, invalid("日付は YYYY-MM-DD です")
+	}
+	return t, nil
 }

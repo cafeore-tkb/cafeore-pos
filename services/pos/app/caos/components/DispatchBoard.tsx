@@ -1,12 +1,14 @@
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Barista, BeanCode, OrderTicket } from "../types";
+import type { Barista, OrderTicket } from "../types";
+import { laneTitle } from "../utils/lanes";
 import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
   baristas: Barista[];
-  highlightFilter: BeanCode | null;
+  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
@@ -21,6 +23,8 @@ interface DispatchBoardProps {
   timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
   /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
   readOnly?: boolean;
+  /** 列の「交代」 */
+  onChangeLane?: (bayId: number) => void;
 }
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -48,6 +52,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   simTimeSec,
   timelineCommand,
   readOnly = false,
+  onChangeLane,
 }) => {
   // Build a rolling timeline that runs 12 hours ahead of the current hour. It starts
   // one hour back so drips spanning the top of the hour keep their real position.
@@ -178,18 +183,16 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
   // Find all cards matching selectedOrderId to summarize
   const matchingTickets: {
-    baristaName: string;
+    laneTitle: string;
     beanName: string;
     cupCount: number;
-    bayNumber: number;
   }[] = [];
   if (selectedOrderId) {
     baristas.forEach((b) => {
       [...(b.pastTickets || []), ...b.queue].forEach((t) => {
         if (t.id === selectedOrderId) {
           matchingTickets.push({
-            baristaName: b.name,
-            bayNumber: b.bayNumber,
+            laneTitle: laneTitle(b),
             beanName: t.beanName,
             cupCount: t.cupCount,
           });
@@ -219,10 +222,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.length > 0
                 ? matchingTickets
-                    .map(
-                      (m) =>
-                        `ドリッパー ${m.bayNumber} ${m.baristaName}: ${m.beanName} ${m.cupCount}杯`,
-                    )
+                    .map((m) => `${m.laneTitle}: ${m.beanName} ${m.cupCount}杯`)
                     .join(" ＋ ")
                 : "オーダー詳細表示"}
             </span>
@@ -322,6 +322,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   onRequestRebrew={onRequestRebrew}
                   onOpenEmptySlot={onOpenEmptySlot}
                   readOnly={readOnly}
+                  onChangeLane={onChangeLane}
                   timelineStartSec={timelineStartSec}
                   pixelsPerSec={PIXELS_PER_SEC}
                   timelineWidthPx={timelineWidthPx}

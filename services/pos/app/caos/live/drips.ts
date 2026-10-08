@@ -1,20 +1,30 @@
-import type { ColorSetting } from "@cafeore/common";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
+import {
+  type ColorSetting,
+  IMMINENT_SEC,
+  type OrderEntity,
+  STANDBY_LABEL,
+  assignmentDisplay,
+  brewDurationLabel,
+  brewDurationSec,
+  formatMinSec,
+  formatRemainingLabel,
+  planLane,
+} from "@cafeore/common";
+import type {
+  Barista,
+  BeanCode,
+  CardBean,
+  OrderTicket,
+  UnassignedOrder,
+} from "../types";
+import type { BeanIndex } from "../utils/beans";
+import { allowedBayIdsFor, isLimitedCard } from "../utils/lanes";
 import { masterCardColor } from "../utils/masterColor";
 import { orderNumber } from "../utils/orderQueue";
-import {
-  type Drip,
-  type PosOrder,
-  nominatedBayId,
-  posBeanCode,
-} from "../utils/posOrders";
+import { type Drip, type PosOrder, posBeanCode } from "../utils/posOrders";
 
 // cafeore-pos の盤面（抽出カード）を、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
 // カードは注文と商品の参照しか持たないので、注文番号や商品名は {"type":"orders"} で届く注文から引く。
-
-const ONE_CUP_SEC = 135;
-const TWO_CUP_SEC = 195;
-const durationOf = (cups: number) => (cups > 1 ? TWO_CUP_SEC : ONE_CUP_SEC);
 
 interface CatalogItem {
   id: string;
@@ -24,10 +34,15 @@ interface CatalogItem {
   typeId?: string;
 }
 
-// 注文 ID → 注文番号と、その注文の商品（商品 ID → 名前・略称・種類）
+// 注文 ID → 注文番号と、その注文の商品（商品 ID → 名前・略称・種類）と、
+// カップ（マスターの画面と同じ getCups()。指名の表示に使う）
 export type Catalog = Map<
   string,
-  { orderNo: number; items: Map<string, CatalogItem> }
+  {
+    orderNo: number;
+    items: Map<string, CatalogItem>;
+    cups: ReturnType<OrderEntity["getCups"]>;
+  }
 >;
 
 export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
@@ -54,7 +69,11 @@ export const buildCatalog = (orders: PosOrder[] | null): Catalog => {
     }
     // カードの商品は注文した時点のカップから作るので、カップの商品も引けるようにしておく
     for (const cup of order.cups) add(cup.item);
-    catalog.set(order.id, { orderNo: order.orderId, items });
+    catalog.set(order.id, {
+      orderNo: order.orderId,
+      items,
+      cups: order.getCups(),
+    });
   }
   return catalog;
 };
@@ -88,12 +107,21 @@ const describe = (
   catalog: Catalog,
   orderParts: Map<string, Drip[]>,
   colorSettings: ColorSetting[],
+  beanIndex: BeanIndex,
 ) => {
   const first = drip.lines[0];
   const itemOf = (orderId: string, itemId: string) =>
     catalog.get(orderId)?.items.get(itemId);
   const firstItem = first ? itemOf(first.order_id, first.item_id) : undefined;
-  const beanCode = posBeanCode(firstItem?.name ?? "", firstItem?.type ?? "");
+  // 区分（氷・牛・限定）は商品の種類から
+  const beanCode = posBeanCode(firstItem?.type ?? "");
+  // 豆は在庫の「商品 → 豆」から引く（カードの商品が使う在庫対象をまとめる）
+  const beans = new Map<string, CardBean>();
+  for (const line of drip.lines) {
+    for (const bean of beanIndex.get(line.item_id) ?? []) {
+      beans.set(bean.id, bean);
+    }
+  }
   const sourceOrderIds = Array.from(
     new Set(
       drip.lines.map((line) =>
@@ -102,12 +130,25 @@ const describe = (
     ),
   ).sort((a, b) => orderNumber(a) - orderNumber(b));
   const merged = sourceOrderIds.length > 1;
-  const nominee = first?.nominee ?? undefined;
-  const preferredBaristaId = nominee
-    ? nominatedBayId(nominee, baristas)
-    : undefined;
-  const unmatchedNominee =
-    nominee && !preferredBaristaId ? `（指名:${nominee}）` : "";
+  // 指名の番号（明細の dripper）のカードは、その番号の列にだけ割り当てられる。統合したカードも同じ番号どうし
+  const preferredBaristaId = first?.dripper ?? undefined;
+  // 指名の表示はマスターの画面と同じ（カードの商品・指名の番号が同じカップの assignmentDisplay）。
+  // 番号は「2nd」、番号の無い自由記述だけの古い明細は自由記述（列には固定しない）
+  const nominees = new Set<string>();
+  for (const line of drip.lines) {
+    for (const cup of catalog.get(line.order_id)?.cups ?? []) {
+      if (cup.id !== line.item_id || cup.dripper !== line.dripper) continue;
+      const text = assignmentDisplay(cup);
+      if (text) nominees.add(text);
+    }
+  }
+  const nominee = Array.from(nominees).join("・") || undefined;
+  // 割り当て・移動できる列（指名の列だけ、限定のカードは上級生の列だけ。
+  // 限定のカードに上級生でない列が指名されていれば、その列を上級生に替えるまでどの列にも割り当てられない）
+  const allowedBayIds = allowedBayIdsFor(
+    { beanCode, preferredBaristaId },
+    baristas,
+  );
   const abbrs = Array.from(
     new Set(
       drip.lines.map(
@@ -135,12 +176,15 @@ const describe = (
       : undefined,
     sourceOrderIds: merged ? sourceOrderIds : undefined,
     beanCode,
-    beanName: `${abbrs}${unmatchedNominee}`,
+    beanName: abbrs,
+    nominee,
     // 色はマスターの画面と同じ（統合カードは先頭の商品の色）
     color: firstItem ? masterCardColor(colorSettings, firstItem) : undefined,
     itemKey: first?.item_id,
+    beans: Array.from(beans.values()),
     cupCount: drip.cups,
     preferredBaristaId,
+    allowedBayIds,
     isRebrew: Boolean(drip.rebrew_of) || undefined,
     rebrewOfTicketUid: drip.rebrew_of ?? undefined,
   };
@@ -152,7 +196,8 @@ export interface LiveBoard {
 }
 
 // 盤面のカードを、管制盤が使う形（ドリッパーごとの列と未割当）に組み立てる。
-// 待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する。
+// baristas は列の担当者（サーバーの caos_lanes から作ったもの）。限定のカードを割り当てられる列（上級生の列）もこれで決める。
+// 抽出中・待機カードの予定時刻は、抽出中のカードの開始時刻から毎回計算する（planLane。@cafeore/common の caosTiming）。
 // 注文がまだ届いていない（カタログに無い）カードは、注文番号が分からないので届くまで出さない。
 export const dripsToBoard = (
   allDrips: Drip[],
@@ -162,6 +207,8 @@ export const dripsToBoard = (
   dayStartMs: number,
   // マスターの画面の色の設定（カードの色をマスターと同じにする）
   colorSettings: ColorSetting[] = [],
+  // 商品 → 豆（POS の在庫の設定）
+  beanIndex: BeanIndex = new Map(),
 ): LiveBoard => {
   const drips = allDrips.filter((drip) =>
     drip.lines.every((line) => catalog.has(line.order_id)),
@@ -176,13 +223,20 @@ export const dripsToBoard = (
   }
 
   const toTicket = (drip: Drip, status: OrderTicket["status"]): OrderTicket => {
-    const totalDurationSec = durationOf(drip.cups);
+    const totalDurationSec = brewDurationSec(drip.cups);
     return {
-      ...describe(drip, baristas, catalog, orderParts, colorSettings),
+      ...describe(
+        drip,
+        baristas,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      ),
       tag: drip.rebrew_of ? "入れ直し" : undefined,
       status,
       totalDurationSec,
-      scheduledTimeStr: `${Math.floor(totalDurationSec / 60)}:${(totalDurationSec % 60).toString().padStart(2, "0")}`,
+      scheduledTimeStr: formatMinSec(totalDurationSec),
       startTimeSec: toSec(drip.started_at, dayStartMs),
       endTimeSec: toSec(drip.finished_at, dayStartMs),
       completedAtSec: toSec(drip.finished_at, dayStartMs),
@@ -201,45 +255,43 @@ export const dripsToBoard = (
       .filter((drip) => drip.status === "done")
       .sort((a, b) => (a.finished_at || "").localeCompare(b.finished_at || ""));
 
+    const brewingTicket = brewing ? toTicket(brewing, "brewing") : undefined;
+    const queuedTickets = queued.map((drip) => toTicket(drip, "scheduled"));
+    const plan = planLane(
+      nowSec,
+      brewingTicket && {
+        startSec: brewingTicket.startTimeSec,
+        durationSec: brewingTicket.totalDurationSec,
+      },
+      queuedTickets.map((ticket) => ticket.totalDurationSec),
+    );
     const queue: OrderTicket[] = [];
-    let cursor = nowSec;
-    let remainingSec: number | undefined;
-    if (brewing) {
-      const ticket = toTicket(brewing, "brewing");
-      const startSec = ticket.startTimeSec ?? nowSec;
-      remainingSec = Math.max(
-        0,
-        Math.round(ticket.totalDurationSec * barista.coefficient) -
-          (nowSec - startSec),
-      );
+    if (brewingTicket && plan.brewing) {
+      queue.push({
+        ...brewingTicket,
+        startTimeSec: plan.brewing.startSec,
+        timeRemainingSec: plan.brewing.remainingSec,
+      });
+    }
+    queuedTickets.forEach((ticket, index) => {
       queue.push({
         ...ticket,
-        startTimeSec: startSec,
-        timeRemainingSec: remainingSec,
+        startTimeSec: plan.queued[index].startSec,
+        timeRemainingSec: undefined,
       });
-      cursor = Math.max(nowSec, startSec + ticket.totalDurationSec);
-    }
-    queued.forEach((drip, index) => {
-      const ticket = toTicket(drip, "scheduled");
-      // 抽出中が無い（始まる直前）ときは少し先から、あるときは 15 秒の入れ替えを挟む
-      const startTimeSec = !brewing && index === 0 ? nowSec + 10 : cursor + 15;
-      queue.push({ ...ticket, startTimeSec, timeRemainingSec: undefined });
-      cursor = startTimeSec + ticket.totalDurationSec;
     });
 
-    const minutes = Math.floor((remainingSec ?? 0) / 60);
-    const seconds = (remainingSec ?? 0) % 60;
+    const remainingSec = plan.brewing?.remainingSec ?? 0;
     return {
       ...barista,
-      status: brewing
-        ? (remainingSec ?? 0) <= 15
+      status: plan.brewing
+        ? remainingSec <= IMMINENT_SEC
           ? "imminent"
           : "brewing"
         : "standby",
-      remainingStr: brewing
-        ? `0${minutes}:${seconds < 10 ? "0" : ""}${seconds} 残り`
-        : "00:00 待機中",
-      activeTicketId: brewing?.id,
+      remainingStr: plan.brewing
+        ? formatRemainingLabel(remainingSec)
+        : STANDBY_LABEL,
       queue,
       pastTickets: done.map((drip) => toTicket(drip, "completed")),
     };
@@ -249,18 +301,25 @@ export const dripsToBoard = (
     .filter((drip) => drip.status === "unassigned")
     .sort(compareQueue)
     .map((drip): UnassignedOrder => {
-      const card = describe(drip, baristas, catalog, orderParts, colorSettings);
+      const card = describe(
+        drip,
+        baristas,
+        catalog,
+        orderParts,
+        colorSettings,
+        beanIndex,
+      );
       const merged = Boolean(card.sourceOrderIds);
       return {
         ...card,
         badgeTag: `${drip.cups}杯${drip.rebrew_of ? " 入れ直し" : merged ? " 統合" : ""}`,
-        predictedTimeStr: drip.cups > 1 ? "3分15秒" : "2分15秒",
+        predictedTimeStr: brewDurationLabel(drip.cups),
         recommendedBaristas: card.preferredBaristaId
           ? `ドリッパー ${card.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: card.preferredBaristaId
-          ? [card.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : isLimitedCard(card)
+            ? "上級生の列"
+            : "全ドリッパー",
+        recommendedBayIds: card.allowedBayIds,
         cardColor: cardColorOf(card.beanCode),
       };
     });

@@ -1,5 +1,4 @@
 import {
-  type InventoryLevel,
   type InventoryStatus,
   type StockEventKind,
   inventoryRepository,
@@ -11,6 +10,7 @@ import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { fmt, formatHours, hoursUntilEmpty, levelStyle } from "~/lib/inventory";
 import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
@@ -19,25 +19,6 @@ export const meta: MetaFunction = () => {
 
 // この時間より前の棚卸しは、数え直しを促す色にする
 const STALE_COUNT_HOURS = 3;
-
-const levelStyle: Record<InventoryLevel, { label: string; className: string }> =
-  {
-    ok: { label: "十分", className: "bg-emerald-100 text-emerald-900" },
-    warning: { label: "少なめ", className: "bg-amber-100 text-amber-900" },
-    critical: { label: "危険", className: "bg-red-100 text-red-900" },
-    untracked: { label: "未計測", className: "bg-muted text-muted-foreground" },
-  };
-
-const fmt = (v: number, digits = 0) =>
-  v.toLocaleString("ja-JP", { maximumFractionDigits: digits });
-
-const formatHours = (hours: number) => {
-  const minutes = Math.round(hours * 60);
-  if (minutes < 60) return `${minutes} 分`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 || h >= 10 ? `${h} 時間` : `${h} 時間 ${m} 分`;
-};
 
 export default function InventoryPage() {
   const { statuses, error, isLoading, mutateInventory } = useInventory();
@@ -91,10 +72,7 @@ function StockCard({
     ? dayjs().diff(countedAt, "minute") / 60
     : 0;
   const staleCount = !hasCount || hoursSinceCount >= STALE_COUNT_HOURS;
-  const hoursLeft =
-    servings != null && servings > 0 && status.servings_last_hour > 0
-      ? servings / status.servings_last_hour
-      : null;
+  const hoursLeft = hoursUntilEmpty(status);
 
   const record = async (kind: StockEventKind) => {
     const quantity = Number(value);

@@ -115,14 +115,62 @@ export interface paths {
   "/api/caos/ops": {
     /**
      * CaOS の今日の盤面への操作
-     * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+     * @description 割当・戻す・次へ・統合・入れ直し・列の担当者の交代（set_lane）と入れ替え（swap_lanes）・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
      * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
      * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
      * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
      * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
+     * 列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+     * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
      */
     post: operations["applyCaosOp"];
+  };
+  "/api/caos/practice": {
+    /**
+     * CaOS の練習用の盤面を作る（実データテスト）
+     * @description 本番の盤面と同じルールで動く、本番とは別の練習用の盤面を作る。過去の注文（画面がビルドに入っている実績データから選んだ時間帯の分）を送る。
+     * 練習用の盤面は本番の盤面（caos_drips・caos_lanes・caos_ops）・注文・在庫・統計に混ざらず、WebSocket でも配らない（練習している画面が応答の盤面をそのまま使う）。
+     * 端末（練習 1 回）ごとに 1 つ。最後に触ってから 12 時間たった練習の盤面と、200 を超えた古い練習の盤面は、ここで片付ける。
+     */
+    post: operations["createCaosPractice"];
+  };
+  "/api/caos/practice/{id}": {
+    /** CaOS の練習用の盤面を読む（時計は進めない） */
+    get: operations["getCaosPractice"];
+    /** CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204） */
+    delete: operations["deleteCaosPractice"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+  };
+  "/api/caos/practice/{id}/advance": {
+    /**
+     * 練習の時計を進める
+     * @description 練習の時計は画面が持つ（一時停止・倍速は画面だけで決まる）。at（練習の時刻）までに来た注文を盤面に入れる。
+     * 時刻は戻らない（今より前の at は今のまま）。画面は時計が next_arrival_at を過ぎたときに送ればよい。
+     */
+    post: operations["advanceCaosPractice"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+  };
+  "/api/caos/practice/{id}/ops": {
+    /**
+     * CaOS の練習用の盤面への操作
+     * @description at まで時計を進めてから（advance と同じ）、本番の POST /api/caos/ops と同じ操作を 1 つ行う。ルールも本番と同じ。
+     * カードの開始・終了と注文の準備完了の時刻は練習の時刻で付ける。準備完了は練習の盤面の中だけで、本番の注文には触らない。
+     * 「1つ戻す」（undo）は、練習の盤面に残した操作の記録（新しいものから 30 件）で戻す。
+     */
+    post: operations["applyCaosPracticeOp"];
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
   };
   "/api/master-status": {
     /** マスターステート取得 */
@@ -276,7 +324,10 @@ export interface components {
       /** @description 注文時点のメニュー価格 */
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
+      /** @description 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderCupResponse: {
       /** Format: uuid */
@@ -306,7 +357,10 @@ export interface components {
       order_menu_id?: string;
       /** Format: uuid */
       menu_id: string;
+      /** @description 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderResponse: {
       /** Format: uuid */
@@ -431,8 +485,8 @@ export interface components {
       order_id: string;
       /** Format: uuid */
       item_id: string;
-      /** @description POS の指名（明細の assignee の前後の空白を落としたもの）。同じ商品でも指名ごとにカードを分ける */
-      nominee: string | null;
+      /** @description 指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別 */
+      dripper: number | null;
       cups: number;
     };
     /**
@@ -474,14 +528,39 @@ export interface components {
       updated_at: string;
     };
     /**
+     * @description 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
+     * senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+     */
+    CaosLane: {
+      dripper: number;
+      /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
+      name: string;
+      /** @description 上級生（限定を淹れられる）か。担当者がいない列は false */
+      senior: boolean;
+      /**
+       * Format: date-time
+       * @description 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+       */
+      updated_at: string | null;
+    };
+    /**
      * @description name ごとに使うフィールド：
      * assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
      * rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
+     * set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
      * undo（op_id）
      */
     CaosOp: {
       /** @enum {string} */
-      name: "assign" | "unassign" | "next" | "merge" | "rebrew" | "undo";
+      name:
+        | "assign"
+        | "unassign"
+        | "next"
+        | "merge"
+        | "rebrew"
+        | "set_lane"
+        | "swap_lanes"
+        | "undo";
       /** Format: uuid */
       drip_id?: string;
       dripper?: number | null;
@@ -502,6 +581,12 @@ export interface components {
        * @description undo で戻す操作（操作の結果の op_id）
        */
       op_id?: string;
+      /** @description set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし */
+      person?: string;
+      /** @description set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る */
+      senior?: boolean;
+      /** @description swap_lanes で dripper の列と担当者を入れ替える列 */
+      other_dripper?: number;
     };
     CaosOpResult: {
       /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
@@ -510,6 +595,8 @@ export interface components {
       deleted: string[];
       /** @description この操作で準備完了にした注文（undo では、準備完了を外した注文） */
       readied: string[];
+      /** @description この操作で担当者が変わった列（undo では、戻した列） */
+      lanes: components["schemas"]["CaosLane"][];
     };
     CaosErrorResponse: {
       /** @example ドリッパー 3 は抽出中ではありません */
@@ -517,14 +604,132 @@ export interface components {
       /** @enum {string} */
       code?: "invalid";
     };
+    /** @description 練習に送る注文の明細の 1 行（同じ商品が何杯か） */
+    CaosPracticeLineInput: {
+      /** @description 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし） */
+      item_key?: string;
+      name: string;
+      /** @description 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない */
+      type: string;
+      price: number;
+      quantity: number;
+    };
+    CaosPracticeOrderInput: {
+      order_no: number;
+      /**
+       * Format: date-time
+       * @description 注文の時刻（練習の時間帯の中）
+       */
+      created_at: string;
+      billing_amount: number;
+      lines: components["schemas"]["CaosPracticeLineInput"][];
+    };
+    CaosPracticeLaneInput: {
+      dripper: number;
+      name: string;
+      senior: boolean;
+    };
+    CaosPracticeCreateRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
+       */
+      starts_at: string;
+      /**
+       * Format: date-time
+       * @description 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
+       */
+      ends_at: string;
+      orders: components["schemas"]["CaosPracticeOrderInput"][];
+      /** @description 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない */
+      lanes?: components["schemas"]["CaosPracticeLaneInput"][];
+    };
+    /** @description 練習の盤面の商品。カードの明細の item_id はこの id */
+    CaosPracticeItem: {
+      /** Format: uuid */
+      id: string;
+      key: string;
+      name: string;
+      type: string;
+    };
+    CaosPracticeOrderLine: {
+      /** Format: uuid */
+      item_id: string;
+      price: number;
+      quantity: number;
+    };
+    CaosPracticeOrder: {
+      /** Format: uuid */
+      id: string;
+      order_no: number;
+      /** Format: date-time */
+      created_at: string;
+      billing_amount: number;
+      lines: components["schemas"]["CaosPracticeOrderLine"][];
+      /**
+       * Format: date-time
+       * @description 練習の中で準備完了になった時刻（練習の時計）。まだなら null
+       */
+      ready_at: string | null;
+    };
+    /** @description 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane） */
+    CaosPracticeState: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      starts_at: string;
+      /** Format: date-time */
+      ends_at: string;
+      /**
+       * Format: date-time
+       * @description 練習の時計（最後に画面から受け取った時刻）
+       */
+      now: string;
+      /** @description 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため） */
+      version: number;
+      drips: components["schemas"]["CaosDrip"][];
+      lanes: components["schemas"]["CaosLane"][];
+      items: components["schemas"]["CaosPracticeItem"][];
+      /** @description もう届いた注文（作った順） */
+      orders: components["schemas"]["CaosPracticeOrder"][];
+      /** @description 練習の注文の全部の数 */
+      total_orders: number;
+      /**
+       * Format: date-time
+       * @description 次に届く注文の時刻。もう無ければ null
+       */
+      next_arrival_at: string | null;
+    };
+    CaosPracticeAdvanceRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時刻
+       */
+      at: string;
+    };
+    CaosPracticeOpRequest: {
+      /**
+       * Format: date-time
+       * @description 練習の時刻（操作の前に、ここまで時計を進める）
+       */
+      at: string;
+      op: components["schemas"]["CaosOp"];
+    };
+    CaosPracticeOpResult: {
+      /** @description この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空 */
+      op_id: string;
+      state: components["schemas"]["CaosPracticeState"];
+    };
     /**
      * @description WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。
-     * 今日のカードの全部。カードが変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。0 枚のときは drips が省かれる。
+     * 今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。
+     * カードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。
      */
     CaosWSMessage: {
       /** @enum {string} */
       type: "drips";
       drips?: components["schemas"]["CaosDrip"][];
+      lanes?: components["schemas"]["CaosLane"][];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1233,12 +1438,13 @@ export interface operations {
   };
   /**
    * CaOS の今日の盤面への操作
-   * @description 割当・戻す・次へ・統合・入れ直し・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
+   * @description 割当・戻す・次へ・統合・入れ直し・列の担当者の交代（set_lane）と入れ替え（swap_lanes）・1つ戻すのどれか 1 つ（name で選ぶ）。1 つの盤面への操作は 1 件ずつ順番に処理する。
    * 操作の前に今日の注文と照らし合わせてカードをそろえる。全部を 1 つのトランザクションで行う。
    * 「次へ」で注文のカードが全部終わったら、既存の準備完了の処理で同じトランザクションの中で準備完了にする（readied）。
    * 「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
    * 記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
-   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードを全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
+   * 列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+   * カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
    */
   applyCaosOp: {
     requestBody: {
@@ -1254,6 +1460,144 @@ export interface operations {
         };
       };
       /** @description ルールに合わない操作（何も変えない）。error を画面にそのまま出す */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の練習用の盤面を作る（実データテスト）
+   * @description 本番の盤面と同じルールで動く、本番とは別の練習用の盤面を作る。過去の注文（画面がビルドに入っている実績データから選んだ時間帯の分）を送る。
+   * 練習用の盤面は本番の盤面（caos_drips・caos_lanes・caos_ops）・注文・在庫・統計に混ざらず、WebSocket でも配らない（練習している画面が応答の盤面をそのまま使う）。
+   * 端末（練習 1 回）ごとに 1 つ。最後に触ってから 12 時間たった練習の盤面と、200 を超えた古い練習の盤面は、ここで片付ける。
+   */
+  createCaosPractice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 作成成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 送ったものが正しくない */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /** CaOS の練習用の盤面を読む（時計は進めない） */
+  getCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 練習用の盤面が無い（消した・片付けられた） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** CaOS の練習用の盤面を消す（終わった・やめたとき。無くても 204） */
+  deleteCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 消した */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * 練習の時計を進める
+   * @description 練習の時計は画面が持つ（一時停止・倍速は画面だけで決まる）。at（練習の時刻）までに来た注文を盤面に入れる。
+   * 時刻は戻らない（今より前の at は今のまま）。画面は時計が next_arrival_at を過ぎたときに送ればよい。
+   */
+  advanceCaosPractice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeAdvanceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeState"];
+        };
+      };
+      /** @description 練習用の盤面が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 練習の時刻が時間帯の外 */
+      422: {
+        content: {
+          "application/json": components["schemas"]["CaosErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の練習用の盤面への操作
+   * @description at まで時計を進めてから（advance と同じ）、本番の POST /api/caos/ops と同じ操作を 1 つ行う。ルールも本番と同じ。
+   * カードの開始・終了と注文の準備完了の時刻は練習の時刻で付ける。準備完了は練習の盤面の中だけで、本番の注文には触らない。
+   * 「1つ戻す」（undo）は、練習の盤面に残した操作の記録（新しいものから 30 件）で戻す。
+   */
+  applyCaosPracticeOp: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosPracticeOpRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosPracticeOpResult"];
+        };
+      };
+      /** @description 練習用の盤面が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ルールに合わない操作（何も変えない。時計も進めない）。error を画面にそのまま出す */
       422: {
         content: {
           "application/json": components["schemas"]["CaosErrorResponse"];
