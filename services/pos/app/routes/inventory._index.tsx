@@ -10,7 +10,7 @@ import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { fmt, formatHours, hoursUntilEmpty, levelStyle } from "~/lib/inventory";
+import { fmt, formatHours, stockView } from "~/lib/inventory";
 import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
@@ -63,7 +63,7 @@ function StockCard({
   const [submitting, setSubmitting] = useState(false);
 
   const isCup = resource.kind === "cup";
-  const style = levelStyle[status.level];
+  const view = stockView(status);
   const remaining = status.remaining ?? null;
   const servings = status.remaining_servings ?? null;
   const countedAt = status.counted_at ? dayjs(status.counted_at) : null;
@@ -72,7 +72,6 @@ function StockCard({
     ? dayjs().diff(countedAt, "minute") / 60
     : 0;
   const staleCount = !hasCount || hoursSinceCount >= STALE_COUNT_HOURS;
-  const hoursLeft = hoursUntilEmpty(status);
 
   const record = async (kind: StockEventKind) => {
     const quantity = Number(value);
@@ -136,10 +135,10 @@ function StockCard({
         <span
           className={cn(
             "rounded px-2 py-0.5 font-medium text-sm",
-            style.className,
+            view.className,
           )}
         >
-          {style.label}
+          {view.label}
         </span>
       </div>
 
@@ -160,7 +159,7 @@ function StockCard({
 
       <div className="text-sm tabular-nums">
         直近1時間 {status.servings_last_hour} 杯
-        {hoursLeft != null && ` → 約 ${formatHours(hoursLeft)}で切れる見込み`}
+        {view.emptyIn && ` → 約 ${view.emptyIn}で切れる見込み`}
       </div>
 
       <div

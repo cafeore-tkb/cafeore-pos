@@ -2,7 +2,7 @@ import type { InventoryStatus } from "@cafeore/common";
 import dayjs from "dayjs";
 import { Coffee, ExternalLink } from "lucide-react";
 import type React from "react";
-import { fmt, formatHours, hoursUntilEmpty, levelStyle } from "~/lib/inventory";
+import { fmt, stockView } from "~/lib/inventory";
 
 interface BeanQueueViewProps {
   /** POS の在庫のうち豆（kind が bean）の残量。API の値をそのまま出す */
@@ -103,10 +103,9 @@ const BeanStockCard: React.FC<{
   waitingCups?: number;
 }> = ({ status, waitingCups }) => {
   const { resource } = status;
-  const level = levelStyle[status.level];
+  const view = stockView(status);
   const servings = status.remaining_servings ?? null;
   const remaining = status.remaining ?? null;
-  const hoursLeft = hoursUntilEmpty(status);
   const countedAt =
     status.counted_quantity != null && status.counted_at
       ? dayjs(status.counted_at)
@@ -121,9 +120,9 @@ const BeanStockCard: React.FC<{
           {resource.name}
         </h3>
         <span
-          className={`shrink-0 rounded px-2 py-0.5 font-bold text-xs ${level.className}`}
+          className={`shrink-0 rounded px-2 py-0.5 font-bold text-xs ${view.className}`}
         >
-          {level.label}
+          {view.label}
         </span>
       </div>
       <div className="mt-1 flex items-baseline justify-between gap-2">
@@ -143,7 +142,7 @@ const BeanStockCard: React.FC<{
       </div>
       <div className="mt-1 text-[11px] text-slate-700 tabular-nums">
         直近1時間 {status.servings_last_hour} 杯
-        {hoursLeft != null && ` → 約 ${formatHours(hoursLeft)}で切れる見込み`}
+        {view.emptyIn && ` → 約 ${view.emptyIn}で切れる見込み`}
       </div>
       <div className="text-[11px] text-slate-500">
         {countedAt
