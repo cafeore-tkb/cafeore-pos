@@ -9,15 +9,11 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
-  StandaloneAuxiliaryPanel,
+  type AuxiliaryTab,
   TicketDetailPanel,
 } from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
 import { type NavTab, TopHeader } from "./components/TopHeader";
-import {
-  type AuxiliaryTab,
-  useAuxiliaryWindow,
-} from "./hooks/useAuxiliaryWindow";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
@@ -26,15 +22,12 @@ import type { TimelineCommand } from "./hooks/useTimelineScroll";
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
 // 見せ方は components の部品。ここはどの管制盤・どのパネルを出すかだけを持ち、フックの値と操作を部品に渡す。
 export default function App() {
-  const auxWindow = useAuxiliaryWindow();
-  const session = useCaosSession(auxWindow.snapshot);
+  const session = useCaosSession();
   const selection = useBoardSelection(session.cards, session);
   const typeNames = useItemTypeNames();
   const { lanes, looks, testPlay } = session;
 
-  const [activeTab, setActiveTab] = useState<NavTab>(
-    auxWindow.standaloneTab ?? "control",
-  );
+  const [activeTab, setActiveTab] = useState<NavTab>("control");
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
@@ -51,14 +44,6 @@ export default function App() {
       {...testPlay.analytics}
     />
   );
-
-  if (auxWindow.standaloneTab) {
-    return (
-      <StandaloneAuxiliaryPanel tab={auxWindow.standaloneTab}>
-        {auxiliaryView(auxWindow.standaloneTab)}
-      </StandaloneAuxiliaryPanel>
-    );
-  }
 
   return (
     <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
@@ -123,9 +108,6 @@ export default function App() {
         {activeTab !== "control" && (
           <AuxiliarySheet
             tab={activeTab}
-            onOpenInNewTab={() =>
-              auxWindow.openInNewTab(activeTab, session.snapshot())
-            }
             onClose={() => setActiveTab("control")}
           >
             {auxiliaryView(activeTab)}

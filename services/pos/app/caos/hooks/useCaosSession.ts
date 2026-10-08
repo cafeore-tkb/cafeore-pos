@@ -1,5 +1,4 @@
 import {
-  type CaosCard,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
@@ -23,7 +22,7 @@ import {
 import { soundManager } from "../utils/audio";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
-import { type TestPlaySession, useTestPlay } from "./useTestPlay";
+import { useTestPlay } from "./useTestPlay";
 
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
@@ -34,22 +33,11 @@ const SIM_SPEEDS = [1, 2, 5, 10];
 // 新しいカード（dripId）の ID
 const newDripId = () => crypto.randomUUID();
 
-/** 別のタブで開いた補助のパネルに渡す、その時点の実データテストのカード・時間帯・実績（hooks/useAuxiliaryWindow.ts） */
-export interface SessionSnapshot {
-  cards: CaosCard[];
-  testPlaySession: TestPlaySession | null;
-  /** 実績に出す注文（練習の結果） */
-  salesOrders: PracticeDataOrder[];
-  /** 盤面の秒の起点（練習の日の 0 時） */
-  dayStartMs: number;
-}
-
 // CaOS の盤面・時刻・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
 // 普段は cafeore-pos の注文で動かす（useLiveBoard。盤面は注文のカップの列にあり、操作は API に書いて全部の iPad で共有する）。
 // 実データテスト中（終了後の実績表示も含め、リセットするまで）は cafeore-pos の注文を使わず、練習の盤面（useTestPlay）で動かす。
 // どちらもカードは @cafeore/common の buildCaosCards で組み立てた CaosCard、操作の書き込みは logic/writes.ts で同じ。違うのは送り先だけ。
-// initial があれば（別のタブで開いた補助のパネル）、そのときの実データテストの盤面と実績をそのまま出す（練習の盤面はもとの画面にしか無い）。
-export const useCaosSession = (initial?: SessionSnapshot) => {
+export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
@@ -68,7 +56,7 @@ export const useCaosSession = (initial?: SessionSnapshot) => {
   });
   const realTime = useCurrentTime(1000);
   const live = useLiveBoard({
-    enabled: !initial && !test.session,
+    enabled: !test.session,
     nowMs: realTime.getTime(),
   });
   const source = test.session ? test : live;
@@ -76,10 +64,9 @@ export const useCaosSession = (initial?: SessionSnapshot) => {
 
   // 盤面の秒。日本時間の 0 時から数える（盤面の「今日」と同じ区切り。テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
-  const testPlaySession = initial?.testPlaySession ?? test.session;
-  const cards = initial?.cards ?? source.cards;
-  const salesOrders = initial?.salesOrders ?? test.salesOrders;
-  const dayStartMs = initial?.dayStartMs ?? test.dayStartMs ?? realDayStartMs;
+  const testPlaySession = test.session;
+  const cards = source.cards;
+  const dayStartMs = test.dayStartMs ?? realDayStartMs;
   const nowMs = testPlaySession?.currentMs ?? realTime.getTime();
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 
@@ -157,11 +144,6 @@ export const useCaosSession = (initial?: SessionSnapshot) => {
       setIsRunning(true);
       soundManager.playDispatch();
     },
-    /** 別のタブで開く補助のパネルに渡すもの（実データテスト中だけ。本番の盤面は開いた側が自分で読む） */
-    snapshot: (): SessionSnapshot | null =>
-      testPlaySession
-        ? { cards, testPlaySession, salesOrders, dayStartMs }
-        : null,
     testPlay: {
       session: testPlaySession,
       isActive: testPlaySession?.status === "active",
@@ -170,7 +152,7 @@ export const useCaosSession = (initial?: SessionSnapshot) => {
         ? testPlayRemainingLabel(testPlaySession)
         : null,
       /** 実績のパネルに渡すもの */
-      analytics: testPlayAnalytics(testPlaySession, salesOrders),
+      analytics: testPlayAnalytics(testPlaySession, test.salesOrders),
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {

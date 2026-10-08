@@ -14,10 +14,9 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
-import type { AuxiliaryTab } from "../hooks/useAuxiliaryWindow";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
-import { AUXILIARY_TITLES } from "./SidePanels";
+import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 
 export type NavTab = "control" | AuxiliaryTab;
 
