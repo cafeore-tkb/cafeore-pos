@@ -23,9 +23,6 @@ type ServerInterface interface {
 	// カップを緊急（入れ直し）にする
 	// (POST /api/caos/emergency)
 	MarkCaosEmergency(c *gin.Context)
-	// CaOS の今日のドリッパーの担当者
-	// (GET /api/caos/lanes)
-	GetCaosLanes(c *gin.Context)
 	// CaOS の 2 つのドリッパーの担当者を入れ替える
 	// (POST /api/caos/lanes/swap)
 	SwapCaosLanes(c *gin.Context)
@@ -223,19 +220,6 @@ func (siw *ServerInterfaceWrapper) MarkCaosEmergency(c *gin.Context) {
 	}
 
 	siw.Handler.MarkCaosEmergency(c)
-}
-
-// GetCaosLanes operation middleware
-func (siw *ServerInterfaceWrapper) GetCaosLanes(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetCaosLanes(c)
 }
 
 // SwapCaosLanes operation middleware
@@ -1177,7 +1161,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
 	router.POST(options.BaseURL+"/api/caos/emergency", wrapper.MarkCaosEmergency)
-	router.GET(options.BaseURL+"/api/caos/lanes", wrapper.GetCaosLanes)
 	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
 	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
