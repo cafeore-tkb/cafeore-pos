@@ -12,7 +12,7 @@ export type ItemTypeFormValues = {
 
 export type ItemTypeFlags = Pick<
   ItemType,
-  "makes_cup" | "needs_brew" | "senior_only"
+  "makes_cup" | "needs_brew" | "senior_only" | "iced_brew"
 >;
 
 // 新しい種類の既定値（API の列の既定値と同じ）
@@ -20,6 +20,7 @@ export const DEFAULT_ITEM_TYPE_FLAGS: ItemTypeFlags = {
   makes_cup: true,
   needs_brew: true,
   senior_only: false,
+  iced_brew: false,
 };
 
 const FLAG_FIELDS: {
@@ -44,10 +45,16 @@ const FLAG_FIELDS: {
     label: "上級生だけが淹れる（限定）",
     description: "限定のコーヒーなど、上級生のドリッパーに割り振ります",
   },
+  {
+    key: "iced_brew",
+    label: "アイスで淹れる",
+    description:
+      "アイスコーヒーなど。アイスに対応していないドリッパーには割り振りません",
+  },
 ];
 
 /**
- * 上の項目を外したら下の項目も外す（カップを作らない → 抽出しない → 限定でない）。API も同じ組み合わせしか受け付けない
+ * 上の項目を外したら下の項目も外す（カップを作らない → 抽出しない → 限定でもアイスでもない）。API も同じ組み合わせしか受け付けない
  */
 export const setItemTypeFlag = (
   flags: ItemTypeFlags,
@@ -56,16 +63,19 @@ export const setItemTypeFlag = (
 ): ItemTypeFlags => {
   const next = { ...flags, [key]: value };
   if (!next.makes_cup) next.needs_brew = false;
-  if (!next.needs_brew) next.senior_only = false;
+  if (!next.needs_brew) {
+    next.senior_only = false;
+    next.iced_brew = false;
+  }
   return next;
 };
 
 const isFlagEnabled = (flags: ItemTypeFlags, key: keyof ItemTypeFlags) =>
   key === "makes_cup" ||
   (key === "needs_brew" && flags.makes_cup) ||
-  (key === "senior_only" && flags.needs_brew);
+  ((key === "senior_only" || key === "iced_brew") && flags.needs_brew);
 
-/** 種類の「カップを作る」「抽出が要る」「限定」の切り替え。判定はこの値をそのまま使う */
+/** 種類の「カップを作る」「抽出が要る」「限定」「アイス」の切り替え。判定はこの値をそのまま使う */
 export function ItemTypeFlagFields({
   value,
   onChange,
@@ -124,6 +134,7 @@ export function ItemTypeForm({
     needs_brew: initialValue?.needs_brew ?? DEFAULT_ITEM_TYPE_FLAGS.needs_brew,
     senior_only:
       initialValue?.senior_only ?? DEFAULT_ITEM_TYPE_FLAGS.senior_only,
+    iced_brew: initialValue?.iced_brew ?? DEFAULT_ITEM_TYPE_FLAGS.iced_brew,
   });
 
   const updateField = (key: "name" | "display_name", value: string) => {

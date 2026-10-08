@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,10 +18,15 @@ import (
 	"cafeore-pos/api/internal/notify"
 )
 
-// 在庫の消費を本物の Postgres で数える（inventory.go の orderItemsSQL）。INVENTORY_TEST_DATABASE_URL を渡したときだけ動く
-// （空の DB を渡すこと。表を空にする）。
+// 在庫の消費を本物の Postgres で数える（inventory.go の orderItemsSQL）。TEST_DATABASE_URL を渡したときだけ動く。
+// 渡した DB の中身には触らず、テストごとに使い捨ての schema を作って終わったら消すので、
+// ほかの DB のテストと同じ DB を指しても壊し合わない。
 //
-//	INVENTORY_TEST_DATABASE_URL=postgres://postgres@localhost:55432/inventory_test go test ./internal/handlers/ -run Inventory
+//	TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres go test ./internal/handlers/ -run Inventory
+//
+// TODO: #790 がマージされたら、この準備は #790 の api/internal/testdb（testdb.New）に寄せる
+// （TEST_DATABASE_URL を読む・無ければスキップ・CI では落とす、の決まりも testdb にまとまっている）。
+// 今はまだ testdb が無いので、ここで同じ形の準備をしている。CI に Postgres が無いうちは落とさずスキップする。
 
 type inventoryEnv struct {
 	t   *testing.T
@@ -29,20 +36,72 @@ type inventoryEnv struct {
 
 func newInventoryEnv(t *testing.T) *inventoryEnv {
 	t.Helper()
-	dsn := os.Getenv("INVENTORY_TEST_DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("INVENTORY_TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
+		t.Skip("TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
 	}
-	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
+	db := openInventoryTestSchema(t, dsn)
+	e := &inventoryEnv{t: t, db: db, inv: NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")}
+	e.must(db.AutoMigrate(models.All()...))
+	return e
+}
+
+// テストごとに使い捨ての schema を作って開き、終わったら消す。uuid_generate_v4() は DB の public に入れ、
+// search_path を「その schema,public」にして使う（#790 の testdb.New と同じ形）。
+func openInventoryTestSchema(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+	open := func(dsn string) *gorm.DB {
+		t.Helper()
+		db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}),
+			&gorm.Config{Logger: logger.Discard, DisableForeignKeyConstraintWhenMigrating: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		return db
+	}
+
+	admin := open(dsn)
+	// ほかのテスト（別のパッケージのテストのプロセスを含む）と同時に入れてもぶつからないよう、advisory lock で 1 つずつにする
+	if err := admin.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(0x7465737464627831)).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public`).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す
+	t.Cleanup(func() {
+		if err := admin.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
+			t.Errorf("failed to drop schema %s: %v", schema, err)
+		}
+	})
+	return open(withSearchPath(t, dsn, schema+",public"))
+}
+
+// 接続文字列に search_path を足す（どの接続もその schema を見るように）。URL でも key=value でもよい。
+func withSearchPath(t *testing.T, dsn, searchPath string) string {
+	t.Helper()
+	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+		return dsn + " search_path=" + searchPath
+	}
+	u, err := url.Parse(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &inventoryEnv{t: t, db: db, inv: NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")}
-	e.must(db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
-	e.must(db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
-		&models.OrderMenu{}, &models.OrderCup{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
-	e.must(db.Exec("TRUNCATE order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
-	return e
+	q := u.Query()
+	q.Set("search_path", searchPath)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func (e *inventoryEnv) must(err error) {

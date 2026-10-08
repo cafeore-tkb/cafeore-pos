@@ -25,6 +25,7 @@ const type = (name: string, flags: Partial<Cup["item"]["item_type"]> = {}) => ({
   makes_cup: true,
   needs_brew: true,
   senior_only: false,
+  iced_brew: false,
   ...flags,
 });
 const blend = {
