@@ -21,9 +21,12 @@ import (
 // CaOS（ドリップ管制）のドリッパーの担当者（caos_lanes。models.CaosLaneRow）。日本時間の日付ごとに、ドリッパー 1〜6 の名前と、
 // 交代した時点で上級生（限定を淹れられる人）だったか。
 //
-//   - GET /api/caos/lanes：今日の 6 つ
 //   - PUT /api/caos/lanes/:dripper：交代（名前と上級生か。空なら担当者なし）。抽出中かどうかは見ず、待機のカードも動かさない
 //   - POST /api/caos/lanes/swap：2 つのドリッパーの担当者を入れ替える
+//
+// 画面は今日の担当者を WebSocket の配信（つないだときと、変わるたび）と、上の 2 つの応答で受け取る（読むだけの API は無い）。
+// 替えるたびに、同じトランザクションで交代の記録（caos_lane_changes。models.CaosLaneChangeRow）を 1 つのドリッパーにつき 1 行足す。
+// 記録は抽出の統計のためのもので、画面には出さず配信もしない。
 //
 // 替えるのは CaOS の画面からだけ（sohosai-shift の予定は画面が候補に出すだけで、サーバーは読まない）。上級生かも画面が
 // sohosai-shift の名簿で判定して送り、そのまま持つ。PUT /api/caos/cups は、限定のカップを置くときにこの値を確かめる（caos.go）。
@@ -97,11 +100,18 @@ func lockCaosLanes(tx *gorm.DB) error {
 	return tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", caosLanesLock).Error
 }
 
-func saveCaosLane(tx *gorm.DB, row models.CaosLaneRow) error {
-	return tx.Clauses(clause.OnConflict{
+// saveCaosLane はドリッパーの担当者を書き、交代の記録を 1 行足す。prevName は替える前の名前（担当者なしなら空）。
+func saveCaosLane(tx *gorm.DB, row models.CaosLaneRow, prevName string) error {
+	if err := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "day"}, {Name: "dripper"}},
 		DoUpdates: clause.AssignmentColumns([]string{"name", "senior", "updated_at"}),
-	}).Create(&row).Error
+	}).Create(&row).Error; err != nil {
+		return err
+	}
+	return tx.Create(&models.CaosLaneChangeRow{
+		ChangedAt: row.UpdatedAt, Day: row.Day, Dripper: row.Dripper,
+		PrevName: prevName, Name: row.Name, Senior: row.Senior,
+	}).Error
 }
 
 func parseCaosDripper(c *gin.Context, raw string) (int, bool) {
@@ -111,16 +121,6 @@ func parseCaosDripper(c *gin.Context, raw string) (int, bool) {
 		return 0, false
 	}
 	return n, true
-}
-
-// GET /api/caos/lanes - 今日の担当者
-func (h *CaosHandler) GetCaosLanes(c *gin.Context) {
-	lanes, _, err := loadCaosLanes(h.db, caosDayString(h.now()))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, lanes)
 }
 
 // PUT /api/caos/lanes/:dripper - 交代
@@ -139,9 +139,9 @@ func (h *CaosHandler) PutCaosLane(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("名前は %d 文字までです", caosMaxLaneName)})
 		return
 	}
-	now := h.now()
-	row := models.CaosLaneRow{Day: caosDayString(now), Dripper: dripper, Name: name, Senior: req.Senior && name != "", UpdatedAt: now}
-	h.writeLanes(c, row.Day, func(tx *gorm.DB) error { return saveCaosLane(tx, row) })
+	h.writeLanes(c, func(models.CaosLanes) []models.CaosLane {
+		return []models.CaosLane{{Dripper: dripper, Name: name, Senior: req.Senior && name != ""}}
+	})
 }
 
 // POST /api/caos/lanes/swap - 2 つのドリッパーの担当者を入れ替える
@@ -160,37 +160,35 @@ func (h *CaosHandler) SwapCaosLanes(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "同じドリッパーどうしは入れ替えられません"})
 		return
 	}
-	now := h.now()
-	day := caosDayString(now)
-	h.writeLanes(c, day, func(tx *gorm.DB) error {
-		lanes, _, err := loadCaosLanes(tx, day)
-		if err != nil {
-			return err
+	h.writeLanes(c, func(cur models.CaosLanes) []models.CaosLane {
+		a, b := cur.Lanes[req.First-1], cur.Lanes[req.Second-1]
+		return []models.CaosLane{
+			{Dripper: req.First, Name: b.Name, Senior: b.Senior},
+			{Dripper: req.Second, Name: a.Name, Senior: a.Senior},
 		}
-		a, b := lanes.Lanes[req.First-1], lanes.Lanes[req.Second-1]
-		for _, row := range []models.CaosLaneRow{
-			{Day: day, Dripper: req.First, Name: b.Name, Senior: b.Senior, UpdatedAt: now},
-			{Day: day, Dripper: req.Second, Name: a.Name, Senior: a.Senior, UpdatedAt: now},
-		} {
-			if err := saveCaosLane(tx, row); err != nil {
-				return err
-			}
-		}
-		return nil
 	})
 }
 
-// writeLanes は担当者の書き込みを 1 つのトランザクションで行い、今日の 6 つを返して配る。
-func (h *CaosHandler) writeLanes(c *gin.Context, day string, write func(tx *gorm.DB) error) {
+// writeLanes は今日の担当者を change の返したとおりに替える（交代の記録もいっしょに足す）。
+// 読んでから書くまでを 1 つのトランザクションで行い、今日の 6 つを返して配る。
+func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLanes) []models.CaosLane) {
+	now := h.now()
+	day := caosDayString(now)
 	var lanes models.CaosLanes
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := lockCaosLanes(tx); err != nil {
 			return err
 		}
-		if err := write(tx); err != nil {
+		cur, _, err := loadCaosLanes(tx, day)
+		if err != nil {
 			return err
 		}
-		var err error
+		for _, l := range change(cur) {
+			row := models.CaosLaneRow{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
+			if err := saveCaosLane(tx, row, cur.Lanes[l.Dripper-1].Name); err != nil {
+				return err
+			}
+		}
 		lanes, _, err = loadCaosLanes(tx, day)
 		return err
 	})

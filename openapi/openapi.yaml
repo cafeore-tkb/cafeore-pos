@@ -624,7 +624,7 @@ paths:
         - 今日（日本時間）の注文のカップだけ書ける
         - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
         - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
-        - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（GET /api/caos/lanes の senior）にしか置けない。
+        - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（担当者の senior。PUT /api/caos/lanes/{dripper} で替える）にしか置けない。
           別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
           （担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
           指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
@@ -704,29 +704,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /api/caos/lanes:
-    get:
-      summary: CaOS の今日のドリッパーの担当者
-      description: |
-        今日（日本時間）のドリッパー 1〜6 の担当者（名前と、交代した時点で上級生だったか）。6 つ全部を番号の順に返す。担当者のいないドリッパーは name が空。
-        担当者が変わるたびに /api/ws/orders の {"type":"caos_lanes"} でも全部の画面に届く（つないだときにも、今日の担当者があれば届く）。
-      operationId: getCaosLanes
-      tags:
-        - caos
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CaosLanes'
   /api/caos/lanes/{dripper}:
     put:
       summary: CaOS のドリッパーの担当者を替える（交代）
       description: |
         そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
         name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-        変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる。
+        変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+        （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
+        同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
       operationId: putCaosLane
       tags:
         - caos
@@ -763,7 +749,7 @@ paths:
       summary: CaOS の 2 つのドリッパーの担当者を入れ替える
       description: |
         2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
-        配信は PUT /api/caos/lanes/{dripper} と同じ。
+        配信は PUT /api/caos/lanes/{dripper} と同じ。交代の記録はドリッパーごとに 1 行ずつ（2 行）足す。
       operationId: swapCaosLanes
       tags:
         - caos
