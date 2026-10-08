@@ -1,11 +1,10 @@
 import type React from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { ControlViewA } from "./ControlViewA";
-import { ControlViewB } from "./ControlViewB";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
 
-export type ControlViewMode = "current" | "new" | "c" | "d";
+export type ControlViewMode = "current" | "c" | "d";
 
 interface ControlWorkspaceProps {
   mode: ControlViewMode;
@@ -52,24 +51,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
   onAssignToBay,
   onMergeOrders,
 }) => {
-  if (mode === "new") {
-    return (
-      <ControlViewB
-        baristas={baristas}
-        unassignedOrders={unassignedOrders}
-        simTimeSec={currentTimeSec}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onSelectQueueOrder={(order) => onSelectOrder(order.id)}
-        onAdvanceBay={onAdvanceBay}
-        onOpenTicketDetail={onOpenTicketDetail}
-        onOpenEmptySlot={onOpenEmptySlot}
-        onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
-      />
-    );
-  }
-
   if (mode === "d") {
     return (
       <ControlViewD
