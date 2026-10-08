@@ -11,9 +11,6 @@ import { CAOS_DRIPPERS, type CaosCard, caosLane } from "./caos-board";
 export type CaosLane = components["schemas"]["CaosLane"];
 export type CaosLanes = components["schemas"]["CaosLanes"];
 
-/** ドリッパーの呼び方（1 → 「1st」。指名の表示と同じ models/dripper の dripperLabel） */
-export const caosLaneOrdinal = dripperLabel;
-
 /** 担当者のいない 6 つ */
 export const emptyCaosLanes = (day: string): CaosLanes => ({
   day,
@@ -65,8 +62,8 @@ export const seniorOnlyBlock = (
   if (!card.seniorOnly || card.dripper === dripper) return null;
   if (isSeniorLane(lanes, dripper)) return null;
   if (card.nominatedDripper === dripper)
-    return `限定のカードは上級生のドリッパーにしか置けません（指名の ${caosLaneOrdinal(dripper)} の担当者は上級生ではありません。担当者を上級生に替えると置けます）`;
-  return `限定のカードは上級生のドリッパーにしか置けません（${caosLaneOrdinal(dripper)} の担当者は上級生ではありません）`;
+    return `限定のカードは上級生のドリッパーにしか置けません（指名の ${dripperLabel(dripper)} の担当者は上級生ではありません。担当者を上級生に替えると置けます）`;
+  return `限定のカードは上級生のドリッパーにしか置けません（${dripperLabel(dripper)} の担当者は上級生ではありません）`;
 };
 
 /** そのドリッパーで待っている（まだ始めていない）限定のカードの枚数 */
@@ -97,7 +94,7 @@ export const laneChangeWarnings = (
     if (count === 0) return [];
     const where = single
       ? "このドリッパー"
-      : `${caosLaneOrdinal(change.dripper)} のドリッパー`;
+      : `${dripperLabel(change.dripper)} のドリッパー`;
     const who = change.name
       ? `${change.name}さんは上級生ではありません`
       : "担当者がいなくなります";

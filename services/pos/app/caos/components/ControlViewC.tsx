@@ -1,9 +1,8 @@
-import { formatMinSec } from "@cafeore/common";
+import { dripperLabel, formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
 import { LaneChangeButton, LaneName } from "../lanes/LaneName";
-import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
@@ -101,7 +100,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                 <div className="flex h-8 shrink-0 items-center justify-between gap-2 overflow-hidden px-0.5">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
-                      {laneOrdinal(barista.bayNumber)}
+                      {dripperLabel(barista.bayNumber)}
                     </div>
                     <LaneName
                       dripper={barista.bayNumber}
@@ -135,13 +134,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                   <DripperOrderCard
                     kind="current"
                     ticket={current}
-                    remainingLabel={
-                      current
-                        ? seconds === 0
-                          ? "継続"
-                          : formatMinSec(seconds)
-                        : undefined
-                    }
                     isImminent={isImminent}
                     emptyLabel="待機中"
                   />
@@ -153,7 +145,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                           key={ticket.ticketUid || `${ticket.id}-${index}`}
                           kind="waiting"
                           ticket={ticket}
-                          queueCount={waitingQueue.length}
                           queuePosition={index + 1}
                           emptyLabel="待ちへ割当"
                           onClick={() => {
@@ -166,7 +157,6 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     ) : (
                       <DripperOrderCard
                         kind="waiting"
-                        queueCount={0}
                         emptyLabel="待ちへ割当"
                         onClick={() => onOpenEmptySlot(barista.id)}
                       />
