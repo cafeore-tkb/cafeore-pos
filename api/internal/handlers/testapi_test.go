@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,99 +13,12 @@ import (
 
 	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/notify"
+	"cafeore-pos/api/internal/testdb"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
-
-// 結合テスト（Postgres を使うテスト）の土台。
-//
-// TEST_DATABASE_URL の Postgres に、テストごとに使い捨ての schema を作り、
-// 起動時と同じくモデル（models.All）からテーブルを作る。テストどうしで
-// データが混ざらず、終わったら schema ごと消す。
-//
-// TEST_DATABASE_URL が無ければスキップする。CI（CI=true）では必ず要るので、
-// 無ければ落として、結合テストが黙って飛ばされないようにする。
-//
-// ローカルでは api/compose.yaml の Postgres を使える:
-//
-//	docker compose -f api/compose.yaml up -d db
-//	TEST_DATABASE_URL=postgres://postgres:example@localhost:5432/postgres?sslmode=disable go test ./...
-func newTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL is required in CI")
-		}
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-
-	admin := openTestDB(t, dsn, "")
-	prepareTestDatabase(t, admin)
-
-	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := admin.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
-			t.Errorf("failed to drop schema %s: %v", schema, err)
-		}
-	})
-
-	// uuid_generate_v4() は public にあるので、search_path に残す
-	db := openTestDB(t, dsn, schema+",public")
-	// スキーマの正本はモデル。本番の起動時（cmd/server/migrate.go）と同じく AutoMigrate で作る
-	if err := db.AutoMigrate(models.All()...); err != nil {
-		t.Fatal(err)
-	}
-	return db
-}
-
-// 本番と同じく simple protocol で接続する。searchPath が空ならサーバーの既定のまま。
-func openTestDB(t *testing.T, dsn, searchPath string) *gorm.DB {
-	t.Helper()
-	config, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	if searchPath != "" {
-		config.RuntimeParams["search_path"] = searchPath
-	}
-	sqlDB := stdlib.OpenDB(*config)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-		// 見つからないこと（404）を確かめるテストも多いので、SQL のログは出さない
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return db
-}
-
-var prepareTestDatabaseOnce sync.Once
-
-// DB 全体で 1 度だけ要る準備。並行するテストで CREATE EXTENSION がぶつからないよう 1 度だけ行う
-func prepareTestDatabase(t *testing.T, admin *gorm.DB) {
-	t.Helper()
-	var err error
-	prepareTestDatabaseOnce.Do(func() {
-		err = admin.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public`).Error
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
 
 // -------------------------------------------------------------------
 // API を丸ごと立てる
@@ -136,7 +48,9 @@ func withPOSURL(url string) testAPIOption {
 
 func newTestAPI(t *testing.T, opts ...testAPIOption) *testAPI {
 	t.Helper()
-	db := newTestDB(t)
+	// TEST_DATABASE_URL の Postgres に使い捨ての schema を作り、モデルからテーブルを作る
+	// （無ければスキップ、CI では落とす）。決まりは testdb にまとめてある
+	db := testdb.New(t)
 
 	hub := NewHub()
 	go hub.Run()

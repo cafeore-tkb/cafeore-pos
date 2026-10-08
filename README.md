@@ -163,17 +163,16 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 
 ### backend のテスト
 
-本物の Postgres を使うテストの接続先は、どれも `TEST_DATABASE_URL` で渡す。
-無ければスキップされる（CI の `api-ci` では Postgres のサービスを 1 つ立てて渡し、
-無ければ落とすので、必ず走る）。`go test ./...` はパッケージを並行で走らせるので、
-渡した DB の既存の schema・データには触らず、使い捨てのものを作って終わったら消す。
+```bash
+cd api && go test ./...
+```
 
-- **共通の土台は `newTestDB`（`api/internal/handlers/testdb_test.go`）。** テストごとに使い捨ての
-  schema を作り、起動時と同じくモデル（`models.All()`）からテーブルを作る。`uuid-ossp` は
-  DB の public に 1 度だけ入れ、search_path を `その schema,public` にして使う。
-  本物の DB を使うテストを足すときは、別の環境変数を作らずこれを使う
-- 起動時のマイグレーション（`api/cmd/server/migrate_test.go`）だけは、本番と同じく public
-  スキーマを前提に確かめるので、テストごとに使い捨ての database を作る（ロールに CREATEDB が要る）
+本物の Postgres を使うテストの接続先は、どれも **`TEST_DATABASE_URL` の 1 つだけ**で渡す。
+無ければそのテストはスキップされる。CI（`api-ci` の `test`）では Postgres 17 のサービスを 1 つ立てて渡し、
+`CI=true` で `TEST_DATABASE_URL` が無ければ落とすので、黙って飛ばされることはない。
+
+手元で DB のテストまで走らせるには、Postgres を立てて `TEST_DATABASE_URL` を渡す。
+`api/compose.yaml` の Postgres なら次のとおり。
 
 ```bash
 docker compose -f api/compose.yaml up -d db
@@ -182,6 +181,23 @@ docker compose -f api/compose.yaml up -d db
 ```bash
 cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
 ```
+
+- 渡した DB の既存の schema・データには触らない。テストごとに使い捨ての schema か database を作り、
+  終わったら消す。`go test ./...` はパッケージを並行で走らせるが、同じ DB を共有しても壊し合わない
+- **接続するロールには CREATEDB が要る**（起動時のマイグレーションのテストが使い捨ての database を作るため）。
+  `compose.yaml` や CI の `postgres` ユーザーは持っている。ほかの Postgres を使うなら
+  `ALTER ROLE <ユーザー> CREATEDB` するか、スーパーユーザーで繋ぐ
+- 拡張の `uuid-ossp` を渡した DB の public に入れる（無ければ作る）
+
+#### 本物の DB を使うテストを足すとき
+
+**`api/internal/testdb` を使い、別の環境変数を作らない。** `TEST_DATABASE_URL` を読む・無ければスキップ・
+CI では落とす、の決まりはそこに 1 か所にまとめてある。
+
+- `testdb.New(t)`: テストごとに使い捨ての schema を作り、起動時と同じくモデル（`models.All()`）から
+  テーブルを作った DB を返す。ふつうはこれを使う（handlers の結合テストの `newTestAPI` もこれ）
+- `testdb.NewDatabase(t, logger)`: テストごとに使い捨ての空の database を作る。起動時のマイグレーション
+  （`api/cmd/server/migrate_test.go`）のように、本番と同じく public スキーマを前提に確かめるテスト用（CREATEDB が要る）
 
 ### PR ごとの Neon ブランチ
 

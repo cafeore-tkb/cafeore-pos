@@ -2,17 +2,14 @@ package main
 
 import (
 	"context"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"gorm.io/driver/postgres"
+	"cafeore-pos/api/internal/testdb"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -22,62 +19,17 @@ import (
 // プレビューは preview ラベルの付いた PR にしか出ないので、ラベルの無い PR は
 // main へのデプロイまで AutoMigrate が通るか分からない。ここで先に確かめる。
 //
-// TEST_DATABASE_URL の Postgres に、テストごとに使い捨ての database を作って流し、
-// 終わったら消す。migrate も findSchemaDrift も本番と同じく public スキーマを前提に
-// しているので、handlers の結合テスト（newTestDB）のような schema 分けではなく
-// database ごと分ける。渡した DB の中身には触らないので、go test ./... で handlers の
-// テストと並行に走っても壊し合わない。
+// migrate も findSchemaDrift も本番と同じく public スキーマを前提にしているので、
+// handlers の結合テスト（testdb.New）のような schema 分けではなく、テストごとに
+// 使い捨ての database（testdb.NewDatabase）を作って流す。渡した DB の中身には触らないので、
+// go test ./... で handlers のテストと並行に走っても壊し合わない。
 //
-// TEST_DATABASE_URL が無ければスキップする。CI（CI=true）では必ず要るので、無ければ落とす。
+// 接続先（TEST_DATABASE_URL）の決まりは testdb にまとめてある。無ければスキップし、CI では落とす。
 // 接続するロールには CREATEDB が要る（CI と api/compose.yaml の postgres は持っている）。
 func openEmptyTestDB(t *testing.T) (*gorm.DB, *ddlRecorder) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL is required in CI")
-		}
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	config, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		t.Fatalf("TEST_DATABASE_URL を読めない: %v", err)
-	}
-
-	admin := openMigrateTestDB(t, *config, logger.Default.LogMode(logger.Silent))
-	name := "test_migrate_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := admin.Exec("CREATE DATABASE " + name).Error; err != nil {
-		t.Fatal(err)
-	}
-	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す。
-	// 閉じ忘れた接続があっても消せるよう FORCE を付ける
-	t.Cleanup(func() {
-		if err := admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)").Error; err != nil {
-			t.Errorf("failed to drop database %s: %v", name, err)
-		}
-	})
-
 	rec := &ddlRecorder{}
-	config.Database = name
-	return openMigrateTestDB(t, *config, rec), rec
-}
-
-// initDB と同じ設定（simple protocol・外部キーを作らない）で開く
-func openMigrateTestDB(t *testing.T, config pgx.ConnConfig, log logger.Interface) *gorm.DB {
-	t.Helper()
-	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	sqlDB := stdlib.OpenDB(config)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
-		PrepareStmt:                              false,
-		DisableForeignKeyConstraintWhenMigrating: true,
-		Logger:                                   log,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return db
+	return testdb.NewDatabase(t, rec), rec
 }
 
 // 空の DB に反映でき、反映したあとの DB がモデルとずれていないこと。
