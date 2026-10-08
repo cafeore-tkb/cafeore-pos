@@ -15,12 +15,7 @@ interface BeanQueueViewProps {
 
 // 豆のパネル。POS の在庫（/inventory）の豆を表示するだけで、CaOS では在庫を持たない・減らさない。
 // 棚卸し・入荷・設定は POS の在庫の画面で行う。
-export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
-  statuses,
-  isLoading,
-  error,
-  waitingCups,
-}) => (
+export const BeanQueueView: React.FC<BeanQueueViewProps> = (props) => (
   <div className="space-y-3">
     <div className="flex items-start justify-between gap-2 border-slate-200 border-b pb-3">
       <div>
@@ -44,17 +39,12 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
     </div>
 
     {/* 在庫は取れて使用量だけ読めないときも、カードの豆が空になるので必ず出す */}
-    {error ? (
+    {props.error ? (
       <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-bold text-red-800 text-xs">
-        在庫を読み込めませんでした（{String(error)}）
+        在庫を読み込めませんでした（{String(props.error)}）
       </p>
     ) : null}
-    <BeanStockList
-      statuses={statuses}
-      isLoading={isLoading}
-      error={error}
-      waitingCups={waitingCups}
-    />
+    <BeanStockList {...props} />
   </div>
 );
 

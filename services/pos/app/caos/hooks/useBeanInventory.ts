@@ -1,4 +1,8 @@
-import { useInventory, useStockUsages } from "@cafeore/common";
+import {
+  INVENTORY_REFRESH_MS,
+  useInventory,
+  useStockUsages,
+} from "@cafeore/common";
 import { useMemo } from "react";
 import { buildBeanIndex } from "../logic/beans";
 
@@ -7,11 +11,10 @@ import { buildBeanIndex } from "../logic/beans";
 // - statuses：在庫対象のうち豆（kind が bean）の残量。豆キューに出す
 // - beanIndex：商品 ID → 豆（在庫の設定の「商品ごとの使用量」）。カードの豆を決める
 // 使用量も残量と同じ間隔で取り直し、開いたあとの設定の変更をカードに反映する。
-const USAGES_REFRESH_MS = 30 * 1000;
 
 export const useBeanInventory = () => {
   const inventory = useInventory();
-  const stockUsages = useStockUsages({ refreshInterval: USAGES_REFRESH_MS });
+  const stockUsages = useStockUsages({ refreshInterval: INVENTORY_REFRESH_MS });
   const statuses = useMemo(
     () =>
       inventory.statuses.filter((status) => status.resource.kind === "bean"),
