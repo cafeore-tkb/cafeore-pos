@@ -1,3 +1,4 @@
+import { DRIPPER_NUMBERS } from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
@@ -72,7 +73,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
               他のドリッパーへ移動・先頭へ
             </h3>
             <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3, 4, 5, 6].map((bayId) => {
+              {DRIPPER_NUMBERS.map((bayId) => {
                 // 今のドリッパーのボタンは、このドリッパーの待機の先頭へ
                 const disabled = Boolean(
                   ticket.preferredBaristaId &&

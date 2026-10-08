@@ -1,10 +1,10 @@
+import { dripperLabel } from "@cafeore/common";
 import type React from "react";
 import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 
-// ドリッパーのタブ：6 列（1st〜6th）の今の抽出と待ちの件数。
-// 列の担当者は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
+// ドリッパーのタブ：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数。
+// 担当者はサーバーが持つ（lanes/ の LaneName。交代の候補は sohosai-shift の予定から出す）。
 
 interface BaysOverviewViewProps {
   baristas: Barista[];
@@ -26,7 +26,7 @@ export const BaysOverviewView: React.FC<BaysOverviewViewProps> = ({
             >
               <div className="flex items-center gap-2">
                 <div className="flex h-8 min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
-                  {laneOrdinal(barista.bayNumber)}
+                  {dripperLabel(barista.bayNumber)}
                 </div>
                 <LaneName
                   dripper={barista.bayNumber}

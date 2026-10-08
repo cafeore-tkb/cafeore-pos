@@ -22,7 +22,7 @@ type OrderCup struct {
 	ReadyAt  *time.Time
 	ServedAt *time.Time
 
-	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）だけ。
+	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）と caos_emergency.go（緊急で空に戻す）だけ。
 	// 注文の応答（OrderResponse の cups）に載せるが、CaOS 以外の画面は読まない。
 	// 注文の編集では、ほかの列と同じく引き継いだカップは同じ値のまま入れ直す（新しい明細のカップは未割当）。
 	//

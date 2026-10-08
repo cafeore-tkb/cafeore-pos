@@ -1,19 +1,15 @@
-import { readableTextColor } from "@cafeore/common";
+import { CAOS_DRIPPERS, readableTextColor } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
-import { cardHasBean } from "../utils/beans";
 import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
 import { useRebrew } from "./RebrewPanel";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  // 豆で絞り込む（在庫対象の ID）
-  highlightFilter: string | null;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onOpenDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
   currentBayId: number;
@@ -25,7 +21,6 @@ interface TicketCardProps {
 
 export const TicketCard: React.FC<TicketCardProps> = ({
   ticket,
-  highlightFilter,
   selectedOrderId,
   onOpenDetail,
   actionTicketKey,
@@ -42,8 +37,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     null,
   );
   const [dragTargetBay, setDragTargetBay] = useState<number | null>(null);
-  const isMatchFilter =
-    !highlightFilter || cardHasBean(ticket, highlightFilter);
   const isOrderSelected = selectedOrderId === ticket.id;
 
   // 左の線は、マスターの画面の色の設定の色（終わった・指名で背景を塗らないカードでも商品が分かるように）。
@@ -61,9 +54,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const masterTextColor = masterColor
     ? readableTextColor(masterColor)
     : undefined;
-  const ticketKey = ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
   const isActionOpen =
-    ticket.status === "scheduled" && actionTicketKey === ticketKey;
+    ticket.status === "scheduled" && actionTicketKey === ticket.ticketUid;
   // While dragging, cancel the card's offset on the pad so the finger can slide onto 1-6.
   const padDragStyle = dragOffset
     ? { transform: `translate3d(${-dragOffset.x}px, ${-dragOffset.y}px, 0)` }
@@ -90,13 +82,20 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     );
     if (padButton) {
       const bayId = Number(padButton.dataset.bayTarget);
-      return bayId >= 1 && bayId <= 6 && bayId !== currentBayId ? bayId : null;
+      return bayId >= 1 && bayId <= CAOS_DRIPPERS && bayId !== currentBayId
+        ? bayId
+        : null;
     }
     const lane = elements
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6 && bayId !== currentBayId;
+        return (
+          element &&
+          bayId >= 1 &&
+          bayId <= CAOS_DRIPPERS &&
+          bayId !== currentBayId
+        );
       });
     return lane ? Number(lane.dataset.bayTarget) : null;
   };
@@ -173,7 +172,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         }
       }}
       onPointerCancel={finishDrag}
-      id={`ticket-${ticket.ticketUid || ticket.id.replace("#", "")}`}
+      id={`ticket-${ticket.ticketUid}`}
       style={{
         ...(masterColor
           ? { backgroundColor: masterColor, color: masterTextColor }
@@ -196,7 +195,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""} ${ticket.isRebrew ? "ring-2 ring-red-500" : ""}`}
+      } ${ticket.isRebrew ? "ring-2 ring-red-500" : ""}`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">

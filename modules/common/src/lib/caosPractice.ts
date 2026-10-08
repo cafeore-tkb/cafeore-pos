@@ -16,7 +16,8 @@ import type { PracticeDataItem, PracticeDataOrder } from "./caosPracticeData";
 // brewStartedAt・brewFinishedAt を持つ）で持つ。カードの組み立て（buildCaosCards）と、割当・移動・未割当に戻す・統合の
 // 書き込み（assignWrites・unassignWrites・mergeWrites）は本番と同じ ./caos-board の関数を使い、
 // 本番ならサーバーがする「書き込みを当てる」と「次へ」だけをここで同じ決まりで行う
-// （api/internal/handlers/caos.go の writeCups・advance と caos_lanes.go の限定の確かめと、同じ確かめ方・同じ理由の文）。
+// （api/internal/handlers/caos.go の writeCups・advance と caos_lanes.go の限定の確かめと、同じ確かめ方・同じ理由の文。
+// サーバーを使わずに練習するため、わざと 2 か所に持つ。決まりや文を変えるときは両方そろえること）。
 //   - 指名は明細のドリッパーの番号（menus の dripper）。番号のあるカップはその番号のドリッパーにしか置けない
 //   - 限定（種類の senior_only）のカップは、担当者が上級生のドリッパーにしか置けない。担当者は練習を始めたときの
 //     本番の担当者の写し（lanes）。指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
