@@ -66,9 +66,11 @@ export const canMergeDripUnits = (first: DripCard, second: DripCard) =>
   second.cupCount === 1 &&
   first.mergeKey === second.mergeKey;
 
-/** 1 杯どうしを統合した 2 杯のカード */
+/** 1 杯どうしを統合した 2 杯のカード。元のカードは mergedFrom に持つ（注文の ID は元のカードで見る） */
 export const mergeCards = (first: DripCard, second: DripCard): DripCard => ({
   ...first,
+  posOrderId: undefined,
+  mergedFrom: [first, second],
   ticketUid: `merged-${[first.ticketUid, second.ticketUid].sort().join("-")}`,
   orderNos: Array.from(new Set([...first.orderNos, ...second.orderNos])).sort(
     (a, b) => a - b,

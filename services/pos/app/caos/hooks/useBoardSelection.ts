@@ -65,7 +65,7 @@ export const useBoardSelection = (
       setRebrewKey(ticket.ticketUid);
     },
     closeRebrew: () => setRebrewKey(null),
-    /** 全部閉じる（リセット・1つ戻す・実データテストの開始） */
+    /** 全部閉じる（リセット・実データテストの開始） */
     clear: () => {
       setSelectedOrderId(null);
       setTicketKey(null);

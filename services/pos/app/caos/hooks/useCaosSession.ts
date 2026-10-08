@@ -105,8 +105,6 @@ export const useCaosSession = (initial?: {
       soundManager.enabled = !soundEnabled;
       setSoundEnabled(!soundEnabled);
     },
-    undoLabel: state.undoLabel,
-    undo: () => play(state.undo()),
     assign: (uid: string, bayId: number) =>
       play(state.apply((board) => assignCard(board, uid, bayId, nowSec))),
     move: (key: string, bayId: number) =>

@@ -83,10 +83,6 @@ export default function App() {
           onTimelineNavigate={(direction) =>
             setTimelineCommand({ direction, id: Date.now() })
           }
-          undoLabel={session.undoLabel}
-          onUndo={() => {
-            if (session.undo()) selection.clear();
-          }}
           testPlaying={testPlay.isActive}
           testProgressLabel={testPlay.remainingLabel}
           onOpenTestPlay={() => setTestSetupOpen(true)}

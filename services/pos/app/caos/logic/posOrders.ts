@@ -21,8 +21,6 @@ const nominatedBayId = (assignee: string) => {
   return Number.isInteger(bayId) && isBayId(bayId) ? bayId : undefined;
 };
 
-const posOrderTicketPrefix = (posOrderId: string) => `pos-${posOrderId}-`;
-
 // 注文をカードにする。同じ商品・同じ指名の杯をまとめ、最大 2 杯ずつに分ける。
 // 名前は商品の略称（abbr）、区分は商品の種類の表示名（display_name）をそのまま出す。
 const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
@@ -48,7 +46,8 @@ const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
         continue;
       }
       grouped.set(mergeKey, {
-        ticketUid: `${posOrderTicketPrefix(order.id)}${grouped.size}`,
+        ticketUid: `pos-${order.id}-${grouped.size}`,
+        posOrderId: order.id,
         orderNos: [order.orderId],
         beanName: `${item.abbr}${unmatchedAssignee}`,
         cupCount: quantity,
@@ -78,17 +77,14 @@ export const ingestPosOrders = (
   const incomingOrders = pending
     .filter((order) => !ingested.has(order.id))
     .sort((a, b) => a.orderId - b.orderId);
-  const withdrawnPrefixes = [...ingested]
-    .filter((id) => !pendingIds.has(id))
-    .map(posOrderTicketPrefix);
   return {
     incoming: incomingOrders.flatMap(posOrderToDripUnits),
     ingested: new Set([
       ...ingested,
       ...incomingOrders.map((order) => order.id),
     ]),
-    isWithdrawn: (card: DripCard) =>
-      withdrawnPrefixes.some((prefix) => card.ticketUid.startsWith(prefix)),
+    /** 取り込んだが、もう未準備・未提供でない注文（準備完了・提供済み・削除） */
+    withdrawn: new Set([...ingested].filter((id) => !pendingIds.has(id))),
   };
 };
 

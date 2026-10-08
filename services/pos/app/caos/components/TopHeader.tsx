@@ -46,9 +46,6 @@ interface TopHeaderProps {
   onResetData: () => void;
   showTimelineControls: boolean;
   onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
-  /** 1つ戻すで戻せる操作（無ければ null） */
-  undoLabel: string | null;
-  onUndo: () => void;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
@@ -100,8 +97,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onResetData,
   showTimelineControls,
   onTimelineNavigate,
-  undoLabel,
-  onUndo,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
@@ -296,14 +291,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               : "実データテスト"}
           </span>
         </button>
+        {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
         <button
           id="btn-undo"
           type="button"
-          disabled={undoLabel === null}
-          onClick={onUndo}
-          title={
-            undoLabel ? `${undoLabel}を元に戻す` : "元に戻せる操作はありません"
-          }
+          disabled
+          title="1つ戻すは準備中です"
           className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Undo2 className="h-4 w-4" />

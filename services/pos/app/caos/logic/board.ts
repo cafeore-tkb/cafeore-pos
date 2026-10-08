@@ -1,46 +1,50 @@
 import type { Barista, Board, DripCard, OrderTicket } from "../types";
-import {
-  canMergeDripUnits,
-  mergeCards,
-  orderLabel,
-  toCard,
-  toTicket,
-} from "./cards";
-import { canPlaceOn, laneOrdinal, makeLaneBaristas } from "./lanes";
+import { canMergeDripUnits, mergeCards, toCard, toTicket } from "./cards";
+import { canPlaceOn, makeLaneBaristas } from "./lanes";
 import { arrangeQueue, scheduleQueue } from "./queue";
 import { type RebrewDecision, rebrewSlots } from "./rebrew";
 
 // 盤面の操作。どれも今の盤面から次の盤面を返す（できない操作は null）。
-// label は「1つ戻す」に出す操作の名前。
 
-export type BoardChange = { board: Board; label: string } | null;
+export type BoardChange = Board | null;
 
 export const emptyBoard = (): Board => ({
   baristas: makeLaneBaristas(),
   unassigned: [],
 });
 
-/** 届いたカードを未割当に足し、取り下げられたカード（isWithdrawn）を未割当から外す。変わらなければ同じ盤面 */
+// 取り下げられた注文（withdrawn。POS 側で準備完了・提供済み・削除）のカードを外す。
+// 統合したカードは、元の注文が全部取り下げられたら外し、一部だけなら残りの注文のカード（1 杯）に戻す。
+const withdrawCard = (
+  card: DripCard,
+  withdrawn: ReadonlySet<string>,
+): DripCard[] => {
+  if (card.mergedFrom) {
+    const kept = card.mergedFrom.filter(
+      (part) => !part.posOrderId || !withdrawn.has(part.posOrderId),
+    );
+    return kept.length === card.mergedFrom.length ? [card] : kept;
+  }
+  return card.posOrderId && withdrawn.has(card.posOrderId) ? [] : [card];
+};
+
+/**
+ * 届いたカードを未割当に足し、取り下げられた注文（withdrawn）のカードを未割当から外す。変わらなければ同じ盤面。
+ * ドリッパーに割り当てたカードは外さない（淹れるかどうかは担当者が決める）
+ */
 export const receiveCards = (
   board: Board,
   incoming: DripCard[],
-  isWithdrawn?: (card: DripCard) => boolean,
+  withdrawn: ReadonlySet<string> = new Set(),
 ): Board => {
-  const remaining = isWithdrawn
-    ? board.unassigned.filter((card) => !isWithdrawn(card))
-    : board.unassigned;
-  if (incoming.length === 0 && remaining.length === board.unassigned.length)
-    return board;
-  return { ...board, unassigned: [...remaining, ...incoming] };
-};
-
-/** 1つ戻す。戻し先の盤面に、そのあとに届いたカード（arrivals）を足す（戻しても届いた注文は消さない） */
-export const restoreBoard = (snapshot: Board, arrivals: DripCard[]): Board => {
-  const restored = new Set(snapshot.unassigned.map((card) => card.ticketUid));
-  return receiveCards(
-    snapshot,
-    arrivals.filter((card) => !restored.has(card.ticketUid)),
+  const remaining = board.unassigned.flatMap((card) =>
+    withdrawCard(card, withdrawn),
   );
+  const unchanged =
+    remaining.length === board.unassigned.length &&
+    remaining.every((card, index) => card === board.unassigned[index]);
+  if (incoming.length === 0 && unchanged) return board;
+  return { ...board, unassigned: [...remaining, ...incoming] };
 };
 
 /** ドリッパーのカード（抽出中・待機・終わり）と、そのドリッパー */
@@ -91,15 +95,10 @@ export const assignCard = (
   const card = findUnassigned(board, uid);
   if (!card || !canPlaceOn(card, bayId)) return null;
   return {
-    label: `${orderLabel(card)}の割当`,
-    board: {
-      unassigned: withoutUnassigned(board, [uid]),
-      baristas: rearrange(board.baristas, nowSec, (barista) =>
-        barista.id === bayId
-          ? [...barista.queue, toTicket(card)]
-          : barista.queue,
-      ),
-    },
+    unassigned: withoutUnassigned(board, [uid]),
+    baristas: rearrange(board.baristas, nowSec, (barista) =>
+      barista.id === bayId ? [...barista.queue, toTicket(card)] : barista.queue,
+    ),
   };
 };
 
@@ -113,14 +112,11 @@ export const moveTicket = (
   const ticket = findScheduled(board, key);
   if (!ticket || !canPlaceOn(ticket, bayId)) return null;
   return {
-    label: `${orderLabel(ticket)}の割当変更`,
-    board: {
-      ...board,
-      baristas: rearrange(board.baristas, nowSec, (barista) => {
-        const queue = barista.queue.filter((item) => item.ticketUid !== key);
-        return barista.id === bayId ? [...queue, ticket] : queue;
-      }),
-    },
+    ...board,
+    baristas: rearrange(board.baristas, nowSec, (barista) => {
+      const queue = barista.queue.filter((item) => item.ticketUid !== key);
+      return barista.id === bayId ? [...queue, ticket] : queue;
+    }),
   };
 };
 
@@ -133,13 +129,10 @@ export const returnTicket = (
   const ticket = findScheduled(board, key);
   if (!ticket) return null;
   return {
-    label: `${orderLabel(ticket)}を未割当に戻す`,
-    board: {
-      unassigned: [toCard(ticket), ...board.unassigned],
-      baristas: rearrange(board.baristas, nowSec, (barista) =>
-        barista.queue.filter((item) => item.ticketUid !== key),
-      ),
-    },
+    unassigned: [toCard(ticket), ...board.unassigned],
+    baristas: rearrange(board.baristas, nowSec, (barista) =>
+      barista.queue.filter((item) => item.ticketUid !== key),
+    ),
   };
 };
 
@@ -153,23 +146,20 @@ export const advanceBay = (
   const [head, ...rest] = barista?.queue ?? [];
   if (!head) return null;
   return {
-    label: `${laneOrdinal(bayId)}の「次へ」`,
-    board: {
-      ...board,
-      baristas: board.baristas.map((item) =>
-        item.id === bayId
-          ? {
-              ...item,
-              // Re-anchor the entire downstream queue to the actual completion time.
-              queue: arrangeQueue(rest, nowSec),
-              pastTickets: [
-                ...item.pastTickets,
-                { ...head, status: "completed", endTimeSec: nowSec },
-              ],
-            }
-          : item,
-      ),
-    },
+    ...board,
+    baristas: board.baristas.map((item) =>
+      item.id === bayId
+        ? {
+            ...item,
+            // Re-anchor the entire downstream queue to the actual completion time.
+            queue: arrangeQueue(rest, nowSec),
+            pastTickets: [
+              ...item.pastTickets,
+              { ...head, status: "completed", endTimeSec: nowSec },
+            ],
+          }
+        : item,
+    ),
   };
 };
 
@@ -183,14 +173,11 @@ export const mergeUnassigned = (
   const second = findUnassigned(board, secondUid);
   if (!first || !second || !canMergeDripUnits(first, second)) return null;
   return {
-    label: `${orderLabel(first)}と${orderLabel(second)}の統合`,
-    board: {
-      ...board,
-      unassigned: [
-        ...withoutUnassigned(board, [firstUid, secondUid]),
-        mergeCards(first, second),
-      ],
-    },
+    ...board,
+    unassigned: [
+      ...withoutUnassigned(board, [firstUid, secondUid]),
+      mergeCards(first, second),
+    ],
   };
 };
 
@@ -221,11 +208,14 @@ export const rebrew = (
     )
   )
     return null;
+  // 入れ直しは注文の取り下げでは外さない（今までどおり）。統合の元も持たない
   const card: DripCard = {
     ...toCard(ticket),
     ticketUid: uid,
     cupCount: decision.cupCount,
     isRebrew: true,
+    posOrderId: undefined,
+    mergedFrom: undefined,
   };
   const interrupt = decision.interruptCurrent && ticket.status === "brewing";
 
@@ -253,13 +243,10 @@ export const rebrew = (
   });
 
   return {
-    label: `${orderLabel(ticket)}の入れ直し`,
-    board: {
-      baristas,
-      unassigned:
-        decision.targetBayId === null
-          ? [card, ...board.unassigned]
-          : board.unassigned,
-    },
+    baristas,
+    unassigned:
+      decision.targetBayId === null
+        ? [card, ...board.unassigned]
+        : board.unassigned,
   };
 };

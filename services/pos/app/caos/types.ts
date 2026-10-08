@@ -24,6 +24,10 @@ export interface DripCard {
   mergeKey: string;
   /** 緊急の入れ直し */
   isRebrew?: boolean;
+  /** cafeore-pos の注文の ID（UUID）。POS 側で準備完了・提供済み・削除になったら未割当から外す */
+  posOrderId?: string;
+  /** 統合したカードの元のカード（元の注文の一部だけ取り下げられたら、残りの注文のカードに戻す） */
+  mergedFrom?: DripCard[];
 }
 
 // ドリッパーのカード（抽出中・待機・終わり）

@@ -11,10 +11,7 @@ export const usePosIngest = ({
   receive,
 }: {
   enabled: boolean;
-  receive: (
-    incoming: DripCard[],
-    isWithdrawn: (card: DripCard) => boolean,
-  ) => void;
+  receive: (incoming: DripCard[], withdrawn: ReadonlySet<string>) => void;
 }) => {
   const { orders, status } = usePosOrders(enabled);
   // 取り込み済みの cafeore-pos 注文（UUID）
@@ -30,7 +27,7 @@ export const usePosIngest = ({
       startOfLocalDay(Date.now()),
     );
     ingested.current = result.ingested;
-    receive(result.incoming, result.isWithdrawn);
+    receive(result.incoming, result.withdrawn);
   }, [enabled, orders, epoch, receive]);
 
   return {
