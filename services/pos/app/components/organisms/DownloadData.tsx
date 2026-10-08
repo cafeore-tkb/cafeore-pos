@@ -6,6 +6,7 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import dayjs from "dayjs";
+import { downloadBlob } from "~/lib/download";
 import { Button } from "../ui/button";
 
 async function getSortedOrders() {
@@ -16,16 +17,12 @@ async function getSortedOrders() {
 // createdAt が空・不正な記録は末尾に寄せる
 const timeOf = (value: string) => {
   const time = new Date(value).getTime();
-  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 };
 
 async function getSortedMasterStates() {
   const states = await getMasterState();
-  return states.sort((a, b) => {
-    const ta = timeOf(a.createdAt);
-    const tb = timeOf(b.createdAt);
-    return ta === tb ? 0 : ta < tb ? -1 : 1;
-  });
+  return states.sort((a, b) => timeOf(a.createdAt) - timeOf(b.createdAt));
 }
 
 const formatDate = (value: Date | string | null) => {
@@ -56,14 +53,6 @@ const downloadJson = (data: unknown, name: string) => {
     new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
     `${name}-${getTimestamp()}.json`,
   );
-};
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
 };
 
 // API が返す注文の項目を 1 注文 1 行で書き出す
