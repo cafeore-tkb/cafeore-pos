@@ -243,13 +243,13 @@ func (h *CashierStateHandler) GetCashierState(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "cashier state not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	resp, err := toCashierStateResponse(state)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -290,7 +290,7 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 
 	resp, err := h.saveAndBroadcast(&state)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
