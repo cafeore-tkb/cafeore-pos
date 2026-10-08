@@ -4,6 +4,7 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
+import { usePendingStatus } from "~/lib/usePendingStatus";
 import { Button } from "../ui/button";
 import {
   Sheet,
@@ -104,32 +105,43 @@ const PastOrderCard = ({
   withGoods,
   gray,
   cancellable,
-}: CardOptions & { order: WithId<OrderEntity> }) => (
-  <OrderInfoCard
-    order={order}
-    timing="past"
-    cups={(withGoods ? order.getItems() : order.getCups()).map((cup) => ({
-      ...cup,
-      gray,
-    }))}
-    colorScreen={gray ? undefined : "cashier_order"}
-  >
-    <InputComment
+}: CardOptions & { order: WithId<OrderEntity> }) => {
+  // 提供取消も、応答待ちの間は押せなくし、失敗したらトーストを出す
+  const pending = usePendingStatus<boolean>(order);
+  const cancelServed = () => {
+    if (pending.isBusy("served")) return;
+    pending.run("served", false, () =>
+      orderRepository.serve(order.id).then(() => undefined),
+    );
+  };
+  return (
+    <OrderInfoCard
       order={order}
-      addComment={(order, text) =>
-        orderRepository.addComment(order.id, author, text)
-      }
-    />
-    <WaitingLabel order={order} />
-    {cancellable && (
-      <div className="mt-2 flex items-center justify-between">
-        <Button
-          onClick={() => orderRepository.serve(order.id)}
-          className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
-        >
-          提供取消
-        </Button>
-      </div>
-    )}
-  </OrderInfoCard>
-);
+      timing="past"
+      cups={(withGoods ? order.getItems() : order.getCups()).map((cup) => ({
+        ...cup,
+        gray,
+      }))}
+      colorScreen={gray ? undefined : "cashier_order"}
+    >
+      <InputComment
+        order={order}
+        addComment={(order, text) =>
+          orderRepository.addComment(order.id, author, text)
+        }
+      />
+      <WaitingLabel order={order} />
+      {cancellable && (
+        <div className="mt-2 flex items-center justify-between">
+          <Button
+            onClick={cancelServed}
+            disabled={pending.isBusy("served")}
+            className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
+          >
+            提供取消
+          </Button>
+        </div>
+      )}
+    </OrderInfoCard>
+  );
+};
