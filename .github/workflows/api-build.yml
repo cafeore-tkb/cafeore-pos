@@ -418,14 +418,20 @@ jobs:
           # 親ブランチに role / database が複数あると作成レスポンスに
           # 接続文字列が入らないため（既存ブランチを再利用する経路でも同じ）。
           db_url=$(neon connection-string "$branch" --pooled) || exit $?
+          # 注文などの変更通知の LISTEN は、pooler（トランザクションモード）経由では
+          # 通知が届かない。待ち受けだけは pooler を通らない接続文字列で張る
+          # （api の DATABASE_LISTEN_URL。README の「注文・オーダーストップ・レジの状態の配信」を参照）。
+          listen_url=$(neon connection-string "$branch") || exit $?
 
           # **ログに出させない。** 以降このステップの出力や後続ステップのログで
           # マスクされる。GITHUB_OUTPUT 経由で渡す値も同様。
           echo "::add-mask::$db_url"
+          echo "::add-mask::$listen_url"
 
           {
             echo "branch=$branch"
             echo "db_url=$db_url"
+            echo "listen_url=$listen_url"
           } >> "$GITHUB_OUTPUT"
 
           echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
@@ -439,6 +445,7 @@ jobs:
           IS_PR: ${{ github.event_name == 'pull_request' }}
           PR_NUMBER: ${{ github.event.number }}
           NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
+          NEON_LISTEN_URL: ${{ steps.neon.outputs.listen_url }}
         run: |
           set -uo pipefail
 
@@ -480,6 +487,15 @@ jobs:
                 ;;
             esac
             env_pairs+=("DATABASE_URL=$NEON_DB_URL")
+          fi
+          if [ -n "${NEON_LISTEN_URL:-}" ]; then
+            case "$NEON_LISTEN_URL" in
+              *,*)
+                echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
+                exit 1
+                ;;
+            esac
+            env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
           fi
 
           # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
