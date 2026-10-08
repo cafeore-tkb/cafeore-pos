@@ -39,7 +39,8 @@ export const moveTargets = (
 /**
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
- * from（移す前のドリッパー）と、指名のドリッパー以外（preferred）は、置けないので null。
+ * 列は from（移す前のドリッパー。運んでいるカード自身がその列の中にある）を飛ばして探す。
+ * from と、指名のドリッパー以外（preferred）は置けないので null。
  */
 export const bayTargetAt = (
   clientX: number,
@@ -47,17 +48,23 @@ export const bayTargetAt = (
   { from, preferred }: { from?: number; preferred?: number } = {},
 ) => {
   const elements = document.elementsFromPoint(clientX, clientY);
+  const bayOf = (element: HTMLElement | null | undefined) =>
+    Number(element?.dataset.bayTarget);
   const button = elements.find(
     (element): element is HTMLElement =>
       element instanceof HTMLElement &&
       element.matches("button[data-bay-target]"),
   );
-  const target =
-    button ??
-    elements
-      .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
-      .find((element) => isLaneId(Number(element?.dataset.bayTarget)));
-  const bayId = Number(target?.dataset.bayTarget);
+  const bayId = button
+    ? bayOf(button)
+    : bayOf(
+        elements
+          .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
+          .find((element) => {
+            const id = bayOf(element);
+            return isLaneId(id) && id !== from;
+          }),
+      );
   if (!isLaneId(bayId) || bayId === from) return null;
   if (preferred && preferred !== bayId) return null;
   return bayId;
