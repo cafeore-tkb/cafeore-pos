@@ -5,7 +5,10 @@ import {
   orderElapsedTime,
 } from "@cafeore/common";
 import { useState } from "react";
-import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
+import {
+  OrderInfoCard,
+  WaitingLabel,
+} from "~/components/molecules/OrderInfoCard";
 import {
   Table,
   TableBody,
@@ -27,8 +30,6 @@ interface OrderStatusListProps {
 export function OrderList({ orders }: OrderStatusListProps) {
   const [focusedOrderId, setFocusedOrderId] = useState(1);
   const detailOrder = orders?.find((order) => order.orderId === focusedOrderId);
-
-  console.log(detailOrder);
 
   const numOfCups = (order: OrderEntity): number => {
     return order.menus.length;
@@ -81,10 +82,11 @@ export function OrderList({ orders }: OrderStatusListProps) {
         {detailOrder && (
           <OrderInfoCard
             order={detailOrder}
-            user={"dashboard"}
             timing="all"
-            comment={() => {}}
-          />
+            cups={detailOrder.getItems()}
+          >
+            <WaitingLabel order={detailOrder} />
+          </OrderInfoCard>
         )}
       </div>
     </>
