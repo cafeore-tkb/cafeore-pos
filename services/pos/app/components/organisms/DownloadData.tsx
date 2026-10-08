@@ -116,7 +116,7 @@ export function DownloadButton() {
 }
 
 export function DownloadMasterStateButton() {
-  const downloadCsvFile = async () => {
+  const downloadStopsCsv = async () => {
     downloadCsv(
       MASTER_STATE_CSV_COLUMNS,
       await getSortedMasterStates(),
@@ -124,7 +124,7 @@ export function DownloadMasterStateButton() {
     );
   };
 
-  const downloadJsonFile = async () => {
+  const downloadStopsJson = async () => {
     downloadJson(
       { masterStates: await getSortedMasterStates() },
       "order-stops",
@@ -133,10 +133,10 @@ export function DownloadMasterStateButton() {
 
   return (
     <>
-      <Button className="m-2" onClick={downloadJsonFile}>
+      <Button className="m-2" onClick={downloadStopsJson}>
         JSONファイル
       </Button>
-      <Button className="m-2" onClick={downloadCsvFile}>
+      <Button className="m-2" onClick={downloadStopsCsv}>
         CSVファイル
       </Button>
     </>
