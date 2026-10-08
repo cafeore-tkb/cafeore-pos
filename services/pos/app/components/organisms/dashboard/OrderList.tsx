@@ -1,7 +1,8 @@
 import {
+  OVERDUE_SECONDS,
   type OrderEntity,
   type WithId,
-  orderElapsedTime,
+  orderElapsedSeconds,
 } from "@cafeore/common";
 import { useState } from "react";
 import {
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { minSec } from "~/lib/minSec";
 import { cn } from "~/lib/utils";
 interface OrderStatusListProps {
   orders: WithId<OrderEntity>[] | undefined;
@@ -36,8 +38,8 @@ export function OrderList({ orders }: OrderStatusListProps) {
 
   const diffTime = (order: OrderEntity) => {
     if (order.servedAt == null) return "未提供";
-    const { minutes, ss } = orderElapsedTime(order);
-    return `${minutes}:${ss}`;
+    const { m, ss } = minSec(orderElapsedSeconds(order));
+    return `${m}:${ss}`;
   };
 
   return (
@@ -59,7 +61,9 @@ export function OrderList({ orders }: OrderStatusListProps) {
           <TableBody>
             {orders?.map((order) => (
               <TableRow
-                className={cn(orderElapsedTime(order).overdue && "bg-red-300")}
+                className={cn(
+                  orderElapsedSeconds(order) >= OVERDUE_SECONDS && "bg-red-300",
+                )}
                 key={order.orderId}
                 onClick={() => setFocusedOrderId(order.orderId)}
               >
