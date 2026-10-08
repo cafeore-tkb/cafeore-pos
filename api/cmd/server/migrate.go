@@ -89,6 +89,14 @@ var backfills = []backfill{
 			Where("name = ?", "limited").
 			Update("senior_only", true).Error
 	}},
+	// 「アイスで淹れる」（2026-10）。CaOS がアイスに対応していないドリッパーを灰色にするのに使う。
+	// 一度だけの最初の値で、今の種類のうちアイス（ice）とアイスオレ（iceOre）を true にする。ほかは列の既定値（false）のまま。
+	// これ以降は商品管理で設定した値だけを使い、種類の名前では判断しない。
+	{model: &models.ItemType{}, column: "iced_brew", fill: func(tx *gorm.DB) error {
+		return tx.Unscoped().Model(&models.ItemType{}).
+			Where("name IN ?", []string{"ice", "iceOre"}).
+			Update("iced_brew", true).Error
+	}},
 }
 
 // pendingBackfills は、表はあるのに列がまだ無い backfill を返す。

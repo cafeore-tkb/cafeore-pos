@@ -241,6 +241,8 @@ export interface components {
       needs_brew: boolean;
       /** @description この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false */
       senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
@@ -257,6 +259,11 @@ export interface components {
        * @default false
        */
       senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
@@ -269,6 +276,8 @@ export interface components {
       needs_brew?: boolean;
       /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
       senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**

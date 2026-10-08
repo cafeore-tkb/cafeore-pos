@@ -38,6 +38,7 @@ const response: OrderResponse = {
                 makes_cup: true,
                 needs_brew: true,
                 senior_only: false,
+                iced_brew: false,
               },
             },
           },
