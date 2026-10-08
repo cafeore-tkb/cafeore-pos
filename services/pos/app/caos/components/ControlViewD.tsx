@@ -1,4 +1,4 @@
-import { formatMinSec, readableTextColor } from "@cafeore/common";
+import { dripperLabel, formatMinSec, readableTextColor } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -10,7 +10,6 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { nominationText } from "../utils/nomination";
 import {
   activeRemainingSec,
@@ -727,7 +726,7 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                     >
                       <div className="flex items-center justify-center gap-1">
                         <span className="font-black font-mono text-[18px] leading-none">
-                          {laneOrdinal(barista.bayNumber)}
+                          {dripperLabel(barista.bayNumber)}
                         </span>
                       </div>
                       <button

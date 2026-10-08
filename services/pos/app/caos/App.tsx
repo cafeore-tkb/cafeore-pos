@@ -1,6 +1,7 @@
 import {
   CHANGEOVER_SEC,
   type CaosWritesResult,
+  DRIPPER_NUMBERS,
   FIRST_START_DELAY_SEC,
   IMMINENT_SEC,
   STANDBY_LABEL,
@@ -138,7 +139,7 @@ const historicalOrderToDripUnits = (
       badgeTag: `${group.count}杯`,
       predictedTimeStr: brewDurationLabel(group.count),
       recommendedBaristas: "全ドリッパー",
-      recommendedBayIds: [1, 2, 3, 4, 5, 6],
+      recommendedBayIds: [...DRIPPER_NUMBERS],
     }),
   );
   return splitIntoDripUnits(source);
@@ -653,7 +654,7 @@ export default function App() {
           : "全ドリッパー",
         recommendedBayIds: ticket.preferredBaristaId
           ? [ticket.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : [...DRIPPER_NUMBERS],
         preferredBaristaId: ticket.preferredBaristaId,
       },
       ...prev,

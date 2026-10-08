@@ -1,8 +1,8 @@
+import { dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Barista, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
@@ -209,7 +209,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                 ? matchingTickets
                     .map(
                       (m) =>
-                        `ドリッパー ${laneOrdinal(m.bayNumber)}: ${m.beanName} ${m.cupCount}杯`,
+                        `ドリッパー ${dripperLabel(m.bayNumber)}: ${m.beanName} ${m.cupCount}杯`,
                     )
                     .join(" ＋ ")
                 : "オーダー詳細表示"}

@@ -1,5 +1,5 @@
 import type { Cup } from "../models/cup";
-import { assignmentDisplay } from "../models/dripper";
+import { DRIPPER_NUMBERS, assignmentDisplay } from "../models/dripper";
 import type { components } from "../types/api";
 import { jstDate } from "./jstDay";
 
@@ -19,8 +19,8 @@ import { jstDate } from "./jstDay";
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
 
-/** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
-export const CAOS_DRIPPERS = 6;
+/** ドリッパーの数（番号は 1〜6。models/dripper の DRIPPER_NUMBERS。画面では 1st〜6th） */
+export const CAOS_DRIPPERS = DRIPPER_NUMBERS.length;
 /** 1 枚のカード（1 回のドリップ）で淹れる最大の杯数 */
 export const CAOS_MAX_CUPS = 2;
 

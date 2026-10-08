@@ -1,6 +1,7 @@
 import {
   type CaosCard,
   type ColorSetting,
+  DRIPPER_NUMBERS,
   IMMINENT_SEC,
   STANDBY_LABEL,
   brewDurationLabel,
@@ -201,7 +202,7 @@ export const cardsToBoard = (
           : "全ドリッパー",
         recommendedBayIds: info.preferredBaristaId
           ? [info.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
+          : [...DRIPPER_NUMBERS],
         mergeKey: `${card.cups[0].item.id}\u0000${card.nominatedDripper ?? ""}`,
       };
     });

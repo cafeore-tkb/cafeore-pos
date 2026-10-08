@@ -1,4 +1,4 @@
-import { readableTextColor } from "@cafeore/common";
+import { CAOS_DRIPPERS, readableTextColor } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -80,13 +80,20 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     );
     if (padButton) {
       const bayId = Number(padButton.dataset.bayTarget);
-      return bayId >= 1 && bayId <= 6 && bayId !== currentBayId ? bayId : null;
+      return bayId >= 1 && bayId <= CAOS_DRIPPERS && bayId !== currentBayId
+        ? bayId
+        : null;
     }
     const lane = elements
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6 && bayId !== currentBayId;
+        return (
+          element &&
+          bayId >= 1 &&
+          bayId <= CAOS_DRIPPERS &&
+          bayId !== currentBayId
+        );
       });
     return lane ? Number(lane.dataset.bayTarget) : null;
   };

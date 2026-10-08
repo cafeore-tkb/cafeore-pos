@@ -1,8 +1,8 @@
+import { dripperLabel } from "@cafeore/common";
 import { ArrowRight, Check, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { nominationText } from "../utils/nomination";
 
 interface AssignSlotModalProps {
@@ -50,7 +50,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         <div className="flex items-center justify-between border-slate-200 border-b bg-[#f8fafc] px-5 py-4">
           <h3 className="font-bold text-base text-slate-900">
             {bayId
-              ? `ドリッパー ${laneOrdinal(bayId)} にオーダー割当`
+              ? `ドリッパー ${dripperLabel(bayId)} にオーダー割当`
               : "オーダーの割当"}
           </h3>
           <button
@@ -160,7 +160,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold font-mono text-slate-900">
-                      ドリッパー {laneOrdinal(b.bayNumber)}
+                      ドリッパー {dripperLabel(b.bayNumber)}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500">

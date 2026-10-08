@@ -1,4 +1,4 @@
-import { formatMinSec } from "@cafeore/common";
+import { CAOS_DRIPPERS, formatMinSec } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -102,10 +102,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
       .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
       .find((element) => {
         const bayId = Number(element?.dataset.bayTarget);
-        return element && bayId >= 1 && bayId <= 6;
+        return element && bayId >= 1 && bayId <= CAOS_DRIPPERS;
       });
     const bayId = Number(target?.dataset.bayTarget);
-    return bayId >= 1 && bayId <= 6 ? bayId : null;
+    return bayId >= 1 && bayId <= CAOS_DRIPPERS ? bayId : null;
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {

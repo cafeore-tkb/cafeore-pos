@@ -1,4 +1,4 @@
-import { formatMinSec } from "@cafeore/common";
+import { dripperLabel, formatMinSec } from "@cafeore/common";
 import {
   CheckCircle2,
   ChevronRight,
@@ -9,7 +9,6 @@ import {
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { nominationText } from "../utils/nomination";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 
@@ -187,7 +186,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                       ドリッパー
                     </div>
                     <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
-                      {laneOrdinal(barista.bayNumber)}
+                      {dripperLabel(barista.bayNumber)}
                     </div>
                   </div>
                 </div>

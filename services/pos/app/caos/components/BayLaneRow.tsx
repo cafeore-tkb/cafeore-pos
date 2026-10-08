@@ -1,8 +1,12 @@
-import { CHANGEOVER_SEC, IMMINENT_SEC, formatMinSec } from "@cafeore/common";
+import {
+  CHANGEOVER_SEC,
+  IMMINENT_SEC,
+  dripperLabel,
+  formatMinSec,
+} from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import type { Barista, OrderTicket } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { TicketCard } from "./TicketCard";
 
 interface BayLaneRowProps {
@@ -94,7 +98,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
       <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-[#e2e8f0] border-r bg-white px-2 py-1.5">
         {/* 列の番号（1st〜6th）。担当者の名前は出さない */}
         <div className="flex h-9 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 font-bold font-mono text-[13px] text-slate-600">
-          {laneOrdinal(barista.bayNumber)}
+          {dripperLabel(barista.bayNumber)}
         </div>
 
         <div className="flex h-full min-w-0 flex-1 flex-col justify-center">
@@ -146,7 +150,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
             disabled={barista.queue.length === 0}
             onClick={() => onAdvanceBay(barista.id)}
             className={`flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg font-black text-[15px] shadow-xs active:scale-95 ${barista.queue.length === 0 ? "bg-slate-200 text-slate-500" : isImminent ? "bg-amber-500 text-slate-950 ring-2 ring-amber-200" : "bg-[#006c4a] text-white"}`}
-            title={`${laneOrdinal(barista.bayNumber)}の現在の抽出を確定して次へ`}
+            title={`${dripperLabel(barista.bayNumber)}の現在の抽出を確定して次へ`}
           >
             <span>{barista.queue.length === 0 ? "待機" : "次へ"}</span>
             <ArrowRightCircle className="h-5 w-5" />
