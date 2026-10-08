@@ -6,3 +6,4 @@ export * from "./master-transfer";
 export * from "./jstDay";
 export * from "./caosTiming";
 export * from "./caos-board";
+export * from "./label";

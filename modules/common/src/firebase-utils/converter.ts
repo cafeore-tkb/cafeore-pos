@@ -255,6 +255,11 @@ export const responseToOrderEntity = (
       brewFinishedAt: cup.brew_finished_at
         ? new Date(cup.brew_finished_at)
         : null,
+      emergencyAt: cup.emergency_at ? new Date(cup.emergency_at) : null,
+      emergencyDripId: cup.emergency_drip_id ?? null,
+      emergencyPrintedAt: cup.emergency_printed_at
+        ? new Date(cup.emergency_printed_at)
+        : null,
     })),
   };
   return OrderEntity.fromOrder(order);

@@ -16,6 +16,10 @@ import { jstDate } from "./jstDay";
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
 // 練習用の盤面も同じ関数を使う。
+//
+// 緊急（入れ直し）のカップ（emergencyAt のあるカップ）は、CaOS のカードを emergencyDripId で持つ（dripId は最初に淹れたカード）。
+// ここでいうカップの dripId（CaosCupState.dripId・書き込みの drip_id）は、緊急のカップでは emergencyDripId のこと。
+// 緊急のカップは準備完了・提供済みでも入れ直すので盤面に出し、まだカードに入っていなければ未割当のいちばん上に出す。
 
 /** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
 export const CAOS_DRIPPERS = 6;
@@ -66,6 +70,8 @@ export interface CaosBoardCup {
   nominee: string | null;
   readyAt: Date | null;
   servedAt: Date | null;
+  /** 緊急（入れ直し）にした時刻。緊急でなければ null */
+  emergencyAt: Date | null;
   state: CaosCupState;
 }
 
@@ -88,6 +94,8 @@ export interface CaosCard {
   nominatedDripper: number | undefined;
   /** 限定（種類の senior_only）。上級生だけが淹れる */
   seniorOnly: boolean;
+  /** 緊急（入れ直し）のカード。未割当ではいちばん上に並ぶ */
+  emergency: boolean;
   /** 今のカップの値（書き込みの before に送る） */
   state: CaosCupState;
 }
@@ -109,10 +117,17 @@ export const cupNeedsBrew = (cup: Pick<Cup, "item">) =>
   cup.item.item_type.makes_cup !== false &&
   cup.item.item_type.needs_brew !== false;
 
+/** カップの CaOS のカード（緊急のカップは入れ直しのカード emergencyDripId。サーバーの caosCardID と同じ） */
+export const caosCardId = (
+  cup: Pick<Cup, "dripId" | "emergencyAt" | "emergencyDripId">,
+) =>
+  ((cup.emergencyAt ?? null) !== null ? cup.emergencyDripId : cup.dripId) ??
+  null;
+
 const cupState = (cup: Cup): CaosCupState => ({
   dripper: cup.dripper ?? null,
   dripperPosition: cup.dripperPosition ?? null,
-  dripId: cup.dripId ?? null,
+  dripId: caosCardId(cup),
   brewStartedAt: cup.brewStartedAt ?? null,
   brewFinishedAt: cup.brewFinishedAt ?? null,
 });
@@ -155,6 +170,7 @@ const makeCard = (
     orderNo: first.orderNo,
     nominatedDripper: nominatedDripper(first.nominee),
     seniorOnly: sorted.some((cup) => cup.item.item_type.senior_only === true),
+    emergency: sorted.some((cup) => cup.emergencyAt !== null),
     state,
   };
 };
@@ -176,6 +192,8 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
   if (a.status === "unassigned" || b.status === "unassigned") {
     if (a.status !== b.status)
       return statusRank[a.status] - statusRank[b.status];
+    // 緊急（入れ直し）のカードがいちばん上
+    if (a.emergency !== b.emergency) return a.emergency ? -1 : 1;
     const x = a.cups[0];
     const y = b.cups[0];
     return (
@@ -209,7 +227,9 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
  *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まり、カップが全部準備完了なら終わり
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
  *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名ごとに分け、1 枚は最大 2 杯
- * 並びは、未割当（注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
+ *   - 緊急（入れ直し）のカップは準備完了・提供済みでも出す（未割当では緊急どうしでカードにし、いちばん上に並ぶ）。
+ *     入れ直しのカードは準備完了で終わりにせず、「次へ」（brewFinishedAt）で終える
+ * 並びは、未割当（緊急が先、次に注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
  * 抽出が要らないカップ（needs_brew が false）は、列の値があっても出さない。
  */
 export const buildCaosCards = (
@@ -235,18 +255,25 @@ export const buildCaosCards = (
         nominee,
         readyAt: cup.readyAt,
         servedAt: cup.servedAt,
+        emergencyAt: cup.emergencyAt ?? null,
         state: cupState(cup),
       };
-      const ready = cup.readyAt !== null || cup.servedAt !== null;
+      const emergency = boardCup.emergencyAt !== null;
+      // 緊急のカップは準備完了・提供済みでも入れ直す
+      const ready =
+        !emergency && (cup.readyAt !== null || cup.servedAt !== null);
       const { dripId, dripper } = boardCup.state;
       if (dripId && (dripper !== null || !ready)) {
         byDrip.set(dripId, [...(byDrip.get(dripId) ?? []), boardCup]);
         return;
       }
       if (dripId || ready) return;
-      const key = [order.id, cup.item.id ?? cup.item.name, nominee ?? ""].join(
-        "\u0000",
-      );
+      const key = [
+        order.id,
+        cup.item.id ?? cup.item.name,
+        nominee ?? "",
+        emergency ? "emergency" : "",
+      ].join("\u0000");
       loose.set(key, [...(loose.get(key) ?? []), boardCup]);
     });
   }
@@ -254,8 +281,11 @@ export const buildCaosCards = (
   const cards: CaosCard[] = [];
   for (const cups of byDrip.values()) {
     const state = cups[0].state;
+    // 入れ直しのカードは準備完了で終わりにしない（カップが準備完了のまま入れ直すことがある）
     const allReady = cups.every(
-      (cup) => cup.readyAt !== null || cup.servedAt !== null,
+      (cup) =>
+        cup.emergencyAt === null &&
+        (cup.readyAt !== null || cup.servedAt !== null),
     );
     const status: CaosCardStatus =
       state.dripper === null
@@ -396,10 +426,11 @@ export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
-/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名 */
+/** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名（緊急のカードは緊急どうしだけ） */
 export const canMergeCards = (a: CaosCard, b: CaosCard) =>
   a.key !== b.key &&
   a.status === b.status &&
+  a.emergency === b.emergency &&
   (a.status === "unassigned" || a.status === "queued") &&
   a.cups.length === 1 &&
   b.cups.length === 1 &&

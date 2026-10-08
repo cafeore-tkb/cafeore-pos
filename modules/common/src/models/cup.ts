@@ -23,6 +23,13 @@ export const cupSchema = z.object({
   brewStartedAt: z.date().nullable().default(null),
   /** 抽出を終えた時刻 */
   brewFinishedAt: z.date().nullable().default(null),
+  // 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルが付ける（API の同じ名前の列）
+  /** 緊急にした時刻。緊急でなければ null。緊急のカップの CaOS のカードは emergencyDripId（dripId は最初に淹れたカード） */
+  emergencyAt: z.date().nullable().default(null),
+  /** 入れ直しで淹れるカードの印。null なら未割当の緊急のカード */
+  emergencyDripId: z.string().nullable().default(null),
+  /** 緊急のシールを印刷した時刻。緊急で null なら、プリンターにつないだレジが印刷する */
+  emergencyPrintedAt: z.date().nullable().default(null),
 });
 
 export type Cup = z.infer<typeof cupSchema>;
