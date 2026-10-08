@@ -2,9 +2,11 @@ import type { PracticeDataset } from "@cafeore/common";
 import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
+import { ordersInPeriod, testPlaySlots } from "../logic/historical";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
-// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）。
+// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
+// 始められる時刻は logic/historical の testPlaySlots。
 
 interface TestPlaySetupProps {
   /** 読み込んだ実データ。まだ無ければ null */
@@ -42,52 +44,23 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   const fileInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
-  const slots = useMemo(() => {
-    if (orders.length === 0) return [];
-    const groupedDays = new Map<string, number[]>();
-    for (const order of orders) {
-      const date = new Date(order.createdAt);
-      const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-      const values = groupedDays.get(dayKey) || [];
-      values.push(date.getTime());
-      groupedDays.set(dayKey, values);
-    }
-    return Array.from(groupedDays.values())
-      .sort((a, b) => Math.min(...a) - Math.min(...b))
-      .flatMap((timestamps) => {
-        const first = new Date(Math.min(...timestamps));
-        first.setMinutes(first.getMinutes() < 30 ? 0 : 30, 0, 0);
-        const last = Math.max(...timestamps);
-        const result: number[] = [];
-        for (
-          let cursor = first.getTime();
-          cursor + duration * 60_000 <= last + 30 * 60_000;
-          cursor += 30 * 60_000
-        ) {
-          const count = orders.filter((order) => {
-            const created = new Date(order.createdAt).getTime();
-            return created >= cursor && created < cursor + duration * 60_000;
-          }).length;
-          if (count > 0) result.push(cursor);
-        }
-        return result;
-      });
-  }, [orders, duration]);
+  const slots = useMemo(
+    () => testPlaySlots(orders, duration),
+    [orders, duration],
+  );
   const [selectedStart, setSelectedStart] = useState<number | null>(null);
   const effectiveStart =
     selectedStart && slots.includes(selectedStart)
       ? selectedStart
-      : slots[0] || null;
+      : (slots[0] ?? null);
   const selectedCount =
     effectiveStart === null
       ? 0
-      : orders.filter((order) => {
-          const created = new Date(order.createdAt).getTime();
-          return (
-            created >= effectiveStart &&
-            created < effectiveStart + duration * 60_000
-          );
-        }).length;
+      : ordersInPeriod(
+          orders,
+          effectiveStart,
+          effectiveStart + duration * 60_000,
+        ).length;
 
   return (
     <div
