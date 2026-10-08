@@ -1,5 +1,6 @@
-import type { Barista, HistoricalOrder, OrderTicket } from "../types";
-import { orderLabel, totalCups } from "./cards";
+import type { PracticeDataOrder } from "@cafeore/common";
+import type { Barista } from "./board";
+import { type OrderTicket, orderLabel, totalCups } from "./cards";
 
 // 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・入れ直し・ドリッパーごとの量・実データテストの売上
 
@@ -127,34 +128,23 @@ const baristaResults = (baristas: Barista[]) =>
 
 // 実データテストの売上（10 分ごとの注文・商品の順位・種類の内訳・注文から準備完了までの平均）
 const BUCKET_MS = 600_000;
-const salesAnalysis = (orders: HistoricalOrder[]) => {
+const salesAnalysis = (orders: PracticeDataOrder[]) => {
   if (orders.length === 0) return null;
-  const menuMap = new Map<string, { cups: number; sales: number }>();
+  const menuMap = new Map<string, number>();
   const typeMap = new Map<string, number>();
-  const bucketMap = new Map<
-    number,
-    { orders: number; sales: number; cups: number }
-  >();
+  const bucketMap = new Map<number, { orders: number; sales: number }>();
   const leadTimes: number[] = [];
   let cups = 0;
   for (const order of orders) {
     const createdMs = new Date(order.createdAt).getTime();
     const bucket = Math.floor(createdMs / BUCKET_MS) * BUCKET_MS;
-    const bucketValue = bucketMap.get(bucket) ?? {
-      orders: 0,
-      sales: 0,
-      cups: 0,
-    };
+    const bucketValue = bucketMap.get(bucket) ?? { orders: 0, sales: 0 };
     bucketValue.orders += 1;
     bucketValue.sales += order.billingAmount;
     for (const item of order.items) {
       if (item.type === "others") continue;
       cups += 1;
-      bucketValue.cups += 1;
-      const menu = menuMap.get(item.name) ?? { cups: 0, sales: 0 };
-      menu.cups += 1;
-      menu.sales += item.price;
-      menuMap.set(item.name, menu);
+      menuMap.set(item.name, (menuMap.get(item.name) ?? 0) + 1);
       typeMap.set(item.type, (typeMap.get(item.type) ?? 0) + 1);
     }
     bucketMap.set(bucket, bucketValue);
@@ -172,7 +162,7 @@ const salesAnalysis = (orders: HistoricalOrder[]) => {
     cups,
     averageOrder: Math.round(revenue / orders.length),
     averageLeadMinutes: average(leadTimes),
-    menuRanking: Array.from(menuMap, ([name, value]) => ({ name, ...value }))
+    menuRanking: Array.from(menuMap, ([name, cups]) => ({ name, cups }))
       .sort((a, b) => b.cups - a.cups)
       .slice(0, 8),
     typeMix: Array.from(typeMap, ([type, count]) => ({ type, count })).sort(
@@ -189,7 +179,7 @@ const salesAnalysis = (orders: HistoricalOrder[]) => {
 /** 実績のパネルに出すもの */
 export const analyticsReport = (
   baristas: Barista[],
-  salesOrders: HistoricalOrder[],
+  salesOrders: PracticeDataOrder[],
 ) => {
   const splits = splitResults(baristas);
   const averageDelta = average(splits.map((result) => result.deltaSec));

@@ -10,22 +10,19 @@ import (
 
 func TestBuildItemStockUsages(t *testing.T) {
 	itemID, cup, bean := uuid.New(), uuid.New(), uuid.New()
-	usages, resourceIDs, err := buildItemStockUsages(itemID, []models.ItemStockUsageRequest{
+	usages, err := buildItemStockUsages(itemID, []models.ItemStockUsageRequest{
 		{ResourceId: openapi_types.UUID(cup), Amount: 1},
 		{ResourceId: openapi_types.UUID(bean), Amount: 15},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(usages) != 2 || usages[1].ItemID != itemID || usages[1].ResourceID != bean || usages[1].Amount != 15 {
+	if len(usages) != 2 || usages[0].ResourceID != cup || usages[1].ItemID != itemID || usages[1].ResourceID != bean || usages[1].Amount != 15 {
 		t.Fatalf("incorrect usages: %+v", usages)
-	}
-	if len(resourceIDs) != 2 || resourceIDs[0] != cup {
-		t.Fatalf("incorrect resource ids: %+v", resourceIDs)
 	}
 
 	// 空は「使用量を全部消す」なのでエラーにしない
-	if usages, _, err := buildItemStockUsages(itemID, nil); err != nil || len(usages) != 0 {
+	if usages, err := buildItemStockUsages(itemID, nil); err != nil || len(usages) != 0 {
 		t.Fatalf("empty request: %+v %v", usages, err)
 	}
 }
@@ -39,7 +36,7 @@ func TestBuildItemStockUsagesRejectsInvalidRequests(t *testing.T) {
 	}
 	for name, req := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := buildItemStockUsages(uuid.New(), req); err == nil {
+			if _, err := buildItemStockUsages(uuid.New(), req); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})

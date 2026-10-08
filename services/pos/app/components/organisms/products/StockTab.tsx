@@ -23,10 +23,28 @@ import {
 import {
   cupByItemType,
   sortResources,
-  stockResourceDefaults,
   toUsageInputs,
-  usagesByItem,
+  usageDrafts,
 } from "~/lib/stock";
+
+const defaults: Record<StockResourceKind, Omit<StockResourceInput, "name">> = {
+  cup: {
+    kind: "cup",
+    unit: "個",
+    per_serving: 1,
+    notify_from: 500,
+    notify_step: 100,
+    buffer: 100,
+  },
+  bean: {
+    kind: "bean",
+    unit: "g",
+    per_serving: 15,
+    notify_from: 100,
+    notify_step: 20,
+    buffer: 30,
+  },
+};
 
 type Props = {
   items: WithId<ItemEntity>[];
@@ -120,7 +138,7 @@ function ResourceRow({
   onChanged: () => void;
 }) {
   const initial = (): StockResourceInput =>
-    resource ? { ...resource } : { ...stockResourceDefaults.cup, name: "" };
+    resource ? { ...resource } : { ...defaults.cup, name: "" };
   const [form, setForm] = useState<StockResourceInput>(initial);
   const [busy, setBusy] = useState(false);
 
@@ -159,7 +177,7 @@ function ResourceRow({
       } else {
         await inventoryRepository.createResource(form);
         toast(`${form.name} を追加しました`);
-        setForm({ ...stockResourceDefaults[form.kind], name: "" });
+        setForm({ ...defaults[form.kind], name: "" });
       }
       onChanged();
     } catch (e) {
@@ -198,9 +216,7 @@ function ResourceRow({
             const kind = e.target.value as StockResourceKind;
             // 新規のときは種類に合わせて既定値を入れ直す
             setForm((f) =>
-              resource
-                ? { ...f, kind }
-                : { ...stockResourceDefaults[kind], name: f.name },
+              resource ? { ...f, kind } : { ...defaults[kind], name: f.name },
             );
           }}
         >
@@ -252,32 +268,13 @@ function ResourceRow({
 // アイテムの ID → 在庫対象の ID → 入力中の量
 type Draft = Record<string, Record<string, string>>;
 
-const toDraft = (usages: StockUsage[]): Draft =>
-  Object.fromEntries(
-    [...usagesByItem(usages)].map(([itemId, amounts]) => [
-      itemId,
-      Object.fromEntries(
-        [...amounts].map(([resourceId, amount]) => [
-          resourceId,
-          String(amount),
-        ]),
-      ),
-    ]),
+// 保存する内容を比べるためのキー。入力の書き方（"15" と "15.0" など）の違いは無視する
+const usageKey = (amounts: Record<string, string> = {}) =>
+  JSON.stringify(
+    toUsageInputs(amounts).sort((x, y) =>
+      x.resource_id.localeCompare(y.resource_id),
+    ),
   );
-
-// 保存する内容が同じかどうか。入力の書き方（"15" と "15.0" など）の違いは無視する
-const sameUsages = (
-  a: Record<string, string> | undefined,
-  b: Record<string, string> | undefined,
-) => {
-  const key = (draft: Record<string, string> | undefined) =>
-    JSON.stringify(
-      toUsageInputs(draft ?? {}).sort((x, y) =>
-        x.resource_id.localeCompare(y.resource_id),
-      ),
-    );
-  return key(a) === key(b);
-};
 
 function UsagesSection({
   items,
@@ -293,17 +290,14 @@ function UsagesSection({
   // 取り直すたびに配列が作り直されるので、中身が変わったときだけ入力を揃え直す
   const usagesKey = JSON.stringify(usages);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 中身が変わったときだけ
-  const saved = useMemo(() => toDraft(usages), [usagesKey]);
+  const saved = useMemo(() => usageDrafts(usages), [usagesKey]);
   const [draft, setDraft] = useState<Draft>(saved);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => setDraft(saved), [saved]);
 
-  const columns = useMemo(() => sortResources(resources), [resources]);
-  const cups = useMemo(
-    () => resources.filter((r) => r.kind === "cup"),
-    [resources],
-  );
+  const columns = sortResources(resources);
+  const cups = resources.filter((r) => r.kind === "cup");
 
   const sortedItems = useMemo(
     () =>
@@ -320,18 +314,18 @@ function UsagesSection({
   );
 
   const changedItems = sortedItems.filter(
-    (item) => !sameUsages(draft[item.id], saved[item.id]),
+    (item) => usageKey(draft[item.id]) !== usageKey(saved[item.id]),
   );
 
   // カップが未設定のアイテムに、同じタイプのほかのアイテムに入っているカップを入れる
   const fillCups = () => {
     const filledPairs = Object.entries(draft).flatMap(([item_id, amounts]) =>
-      toUsageInputs(amounts ?? {}).map(({ resource_id }) => ({
+      toUsageInputs(amounts).map(({ resource_id }) => ({
         item_id,
         resource_id,
       })),
     );
-    const cupOfType = cupByItemType(sortedItems, filledPairs, cups);
+    const cupOfType = cupByItemType(sortedItems, filledPairs, resources);
     let filled = 0;
     let empty = 0;
     const next = { ...draft };
@@ -345,13 +339,13 @@ function UsagesSection({
       filled++;
     }
     setDraft(next);
-    toast(
-      filled > 0
-        ? `${filled}件にカップを入れました。保存すると反映されます`
-        : empty > 0
-          ? "同じタイプでカップが入っているアイテムがありません"
-          : "カップが空のアイテムはありません",
-    );
+    if (filled > 0) {
+      toast(`${filled}件にカップを入れました。保存すると反映されます`);
+    } else if (empty > 0) {
+      toast("同じタイプでカップが入っているアイテムがありません");
+    } else {
+      toast("カップが空のアイテムはありません");
+    }
   };
 
   const setCell = (itemId: string, resourceId: string, value: string) =>

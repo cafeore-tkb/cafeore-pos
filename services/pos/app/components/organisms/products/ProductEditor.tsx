@@ -28,7 +28,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import { cupByItemType, toUsageInputs, usagesByItem } from "~/lib/stock";
+import { cupByItemType, toUsageInputs, usageDrafts } from "~/lib/stock";
 import { copyName } from "~/lib/utils";
 
 export type ProductKind = "menu" | "item" | "itemType";
@@ -52,9 +52,6 @@ const modeLabels: Record<Editing["mode"], string> = {
   copy: "複製",
 };
 
-/** 在庫対象と使用量の読み込み。一度届けば ready のまま */
-export type StockState = "loading" | "ready" | "error";
-
 type Props = {
   editing: Editing | null;
   onClose: () => void;
@@ -64,8 +61,8 @@ type Props = {
   itemTypes: ItemType[];
   resources: StockResource[];
   usages: StockUsage[];
-  /** 在庫対象と使用量を読み終えたか。読み終えるまではアイテムのフォームを出さない */
-  stock: StockState;
+  /** 在庫対象と使用量を読み終えるまで、アイテムのフォームの代わりに出す文 */
+  stockNotice: string | null;
 };
 
 export function ProductEditor({
@@ -77,7 +74,7 @@ export function ProductEditor({
   itemTypes,
   resources,
   usages,
-  stock,
+  stockNotice,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -122,14 +119,6 @@ export function ProductEditor({
       throw e;
     }
   };
-
-  // 在庫対象の ID → 量（入力の形）。編集・複製の元の使用量を入れる
-  const usageDraftOf = (itemId: string) =>
-    Object.fromEntries(
-      [...(usagesByItem(usages).get(itemId) ?? [])].map(
-        ([resourceId, amount]) => [resourceId, String(amount)],
-      ),
-    );
 
   // アイテムを保存してから使用量を置き換える。新規で空なら送らない。
   // 使用量だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
@@ -239,14 +228,8 @@ export function ProductEditor({
       const source = items.find((item) => item.id === id);
       if (mode !== "new" && !source) return null;
       // フォームは使用量を最初の描画でしか読まないので、届くまで出さない
-      if (stock !== "ready") {
-        return (
-          <p className="text-muted-foreground text-sm">
-            {stock === "error"
-              ? "在庫の使用量を読み込めませんでした。ページを読み込み直してください"
-              : "在庫の使用量を読み込んでいます…"}
-          </p>
-        );
+      if (stockNotice) {
+        return <p className="text-muted-foreground text-sm">{stockNotice}</p>;
       }
       const initialItem =
         source &&
@@ -263,12 +246,11 @@ export function ProductEditor({
           initialItem={initialItem}
           itemTypes={itemTypes}
           resources={resources}
-          initialUsages={source ? usageDraftOf(source.id) : undefined}
-          cupByType={cupByItemType(
-            items,
-            usages,
-            resources.filter((r) => r.kind === "cup"),
-          )}
+          // 編集・複製は元の使用量を入れる
+          initialUsages={
+            source ? (usageDrafts(usages)[source.id] ?? {}) : undefined
+          }
+          cupByType={cupByItemType(items, usages, resources)}
           submitting={submitting}
           onCreateItemType={createItemType}
           menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
