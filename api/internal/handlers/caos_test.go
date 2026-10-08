@@ -230,20 +230,22 @@ func (f *caosFixture) next(t *testing.T, dripper int, seen *uuid.UUID) int {
 	return w.Code
 }
 
-// brewingOn はドリッパーの抽出中のカード（「次へ」と同じ決まりで読む）。
-func (f *caosFixture) brewingOn(t *testing.T, dripper int) []uuid.UUID {
+// lane はドリッパーの抽出中と待機のカード（「次へ」と同じ決まりで読み、並べる）。
+func (f *caosFixture) lane(t *testing.T, dripper int) (brewing, queued []uuid.UUID) {
 	t.Helper()
 	start, end := caosToday(time.Now())
 	rows, err := readCaosLane(f.db, dripper, start, end)
 	if err != nil {
 		t.Fatal(err)
 	}
-	brewing, _ := splitCaosLane(rows)
-	out := make([]uuid.UUID, len(brewing))
-	for i, card := range brewing {
-		out[i] = card.dripID
+	b, q := splitCaosLane(rows)
+	for _, card := range b {
+		brewing = append(brewing, card.dripID)
 	}
-	return out
+	for _, card := range q {
+		queued = append(queued, card.dripID)
+	}
+	return brewing, queued
 }
 
 // ハンドラを呼ぶ（パスの引数つき）
@@ -423,7 +425,7 @@ func TestCaosNextOnDB(t *testing.T) {
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
-	if got := f.brewingOn(t, 1); len(got) != 1 || got[0] != card3 {
+	if got, _ := f.lane(t, 1); len(got) != 1 || got[0] != card3 {
 		t.Fatalf("brewing after next = %v, want %v", got, card3)
 	}
 	for _, c := range o1.OrderCups[:2] {
@@ -457,7 +459,7 @@ func TestCaosNextOnDB(t *testing.T) {
 	if code := f.next(t, 1, nil); code != http.StatusNoContent {
 		t.Fatalf("next after the master = %d", code)
 	}
-	if got := f.brewingOn(t, 1); len(got) != 1 || got[0] != card2 {
+	if got, _ := f.lane(t, 1); len(got) != 1 || got[0] != card2 {
 		t.Fatalf("brewing after next = %v, want %v", got, card2)
 	}
 	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewFinishedAt != nil {
@@ -589,7 +591,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	if ok != 1 {
 		t.Fatalf("%d nexts succeeded, want 1", ok)
 	}
-	if got := f.brewingOn(t, 2); len(got) != 1 {
+	if got, _ := f.lane(t, 2); len(got) != 1 {
 		t.Fatalf("brewing on dripper 2 = %v, want 1 card", got)
 	}
 
@@ -668,22 +670,6 @@ func (f *caosFixture) position(t *testing.T, id uuid.UUID) int {
 	return *cup.DripperPosition
 }
 
-// queuedOn はドリッパーの待機のカード（「次へ」と同じ決まりで並べる）。
-func (f *caosFixture) queuedOn(t *testing.T, dripper int) []uuid.UUID {
-	t.Helper()
-	start, end := caosToday(time.Now())
-	rows, err := readCaosLane(f.db, dripper, start, end)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, queued := splitCaosLane(rows)
-	out := make([]uuid.UUID, len(queued))
-	for i, card := range queued {
-		out[i] = card.dripID
-	}
-	return out
-}
-
 func TestCaosWritePublishesOrders(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -746,7 +732,7 @@ func TestCaosInsertOnDB(t *testing.T) {
 	}
 	expectQueue := func(dripper int, want ...uuid.UUID) {
 		t.Helper()
-		if got := f.queuedOn(t, dripper); !slices.Equal(got, want) {
+		if _, got := f.lane(t, dripper); !slices.Equal(got, want) {
 			t.Fatalf("queue of dripper %d = %v, want %v", dripper, got, want)
 		}
 	}
@@ -833,7 +819,7 @@ func TestCaosMergeQueuedOnDB(t *testing.T) {
 	if p1, p3, p2 := f.position(t, o1.OrderCups[0].ID), f.position(t, o3.OrderCups[0].ID), f.position(t, o2.OrderCups[0].ID); p1 != 1 || p3 != 1 || p2 != 2 {
 		t.Fatalf("positions after merge = %d, %d, %d, want 1, 1, 2", p1, p3, p2)
 	}
-	if got := f.queuedOn(t, 5); !slices.Equal(got, []uuid.UUID{c1, c2}) {
+	if _, got := f.lane(t, 5); !slices.Equal(got, []uuid.UUID{c1, c2}) {
 		t.Fatalf("queue = %v", got)
 	}
 	// ほかのカードに入るときに前のカードは決められない
@@ -900,7 +886,7 @@ func TestCaosConcurrentInserts(t *testing.T) {
 		}
 		seen[p] = true
 	}
-	if q := f.queuedOn(t, 4); len(q) != n+1 || q[n] != headCard {
+	if _, q := f.lane(t, 4); len(q) != n+1 || q[n] != headCard {
 		t.Fatalf("queue = %v, want head at the end", q)
 	}
 
