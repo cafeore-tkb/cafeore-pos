@@ -1,4 +1,8 @@
-import { type CaosCard, readableTextColor } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  readableTextColor,
+} from "@cafeore/common";
 import { Check } from "lucide-react";
 import type React from "react";
 import {
@@ -171,8 +175,8 @@ export const BayPad: React.FC<{
   currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  /** toFront は「先頭」（今のドリッパーの待機の先頭へ） */
-  onPick: (bayId: number, toFront: boolean) => void;
+  /** place は「先頭」のボタンなら "front"（今のドリッパーの待機の先頭へ） */
+  onPick: (bayId: number, place?: CaosPlace) => void;
 }> = ({ currentBayId, hoveredBay, onPick }) => {
   const targets = moveTargets(currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
@@ -181,18 +185,18 @@ export const BayPad: React.FC<{
       key={row[0].bayId}
       className={`${index === 0 ? "-top-[38px]" : "-bottom-[38px]"} absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl`}
     >
-      {row.map(({ bayId, toFront }) => (
+      {row.map(({ bayId, place }) => (
         <button
           key={bayId}
           type="button"
           data-bay-target={bayId}
           onClick={(event) => {
             event.stopPropagation();
-            onPick(bayId, toFront);
+            onPick(bayId, place);
           }}
           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
         >
-          {toFront ? "先頭" : bayId}
+          {place ? "先頭" : bayId}
         </button>
       ))}
     </div>

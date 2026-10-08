@@ -63,10 +63,10 @@ export const useCaosSession = () => {
   const source = test.session ? test : live;
   const { colorSettings } = useColorSettings();
 
-  // 盤面の秒。日本時間の 0 時から数える（盤面の「今日」と同じ区切り。テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
-  const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
+  // 盤面の秒。日本時間の 0 時から数える（盤面の「今日」と同じ区切りで、日をまたいだら次の日の 0 時から。
+  // テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const { cards } = source;
-  const dayStartMs = test.dayStartMs ?? realDayStartMs;
+  const dayStartMs = test.dayStartMs ?? jstDayStart(realTime.getTime());
   const nowMs = test.session?.currentMs ?? realTime.getTime();
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 

@@ -80,11 +80,7 @@ export const DispatchBoard: React.FC<
     targetAt: ({ card, bayId }, x, y) =>
       dropTargetAt(x, y, { from: bayId, exceptKey: card.key }),
     onDrop: ({ card }, target) => {
-      onMoveTicket(
-        card,
-        target.bayId,
-        target.beforeKey ? { beforeKey: target.beforeKey } : undefined,
-      );
+      onMoveTicket(card, target.bayId, target.place);
       onCloseTicketAction();
     },
   });
@@ -314,12 +310,8 @@ export const DispatchBoard: React.FC<
                                 <BayPad
                                   currentBayId={bay.id}
                                   hoveredBay={drag.target?.bayId ?? null}
-                                  onPick={(bayId, toFront) => {
-                                    onMoveTicket(
-                                      ticket,
-                                      bayId,
-                                      toFront ? "front" : undefined,
-                                    );
+                                  onPick={(bayId, place) => {
+                                    onMoveTicket(ticket, bayId, place);
                                     onCloseTicketAction();
                                   }}
                                 />

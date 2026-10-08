@@ -1,3 +1,4 @@
+import type { CaosPlace } from "@cafeore/common";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -42,12 +43,12 @@ export const bayTargetAt = (
 };
 
 /**
- * ドラッグで落とす先。bayId はドリッパー（列）、beforeKey はその列の待機のカード（key。その前に入れる）。
- * beforeKey が無ければ、その列の待機の最後へ
+ * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機のカードの前（{ beforeKey }）。
+ * place が無ければ、その列の待機の最後へ
  */
 export interface DropTarget {
   bayId: number;
-  beforeKey?: string;
+  place?: CaosPlace;
   /** 前に入れるカードの表示（注文番号） */
   beforeLabel?: string;
 }
@@ -79,7 +80,7 @@ export const dropTargetAt = (
       if (!isBayId(bayId)) return null;
       return {
         bayId,
-        beforeKey: key,
+        place: { beforeKey: key },
         beforeLabel: ticket.dataset.ticketLabel,
       };
     }

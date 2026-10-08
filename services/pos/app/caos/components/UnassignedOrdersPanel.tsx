@@ -56,12 +56,7 @@ export const UnassignedOrdersPanel: React.FC<{
       if (openUid && openUid !== order.key) onSelectOrder(null);
       setOpenUid(order.key);
     },
-    onDrop: (order, target) =>
-      assign(
-        order,
-        target.bayId,
-        target.beforeKey ? { beforeKey: target.beforeKey } : undefined,
-      ),
+    onDrop: (order, target) => assign(order, target.bayId, target.place),
   });
 
   // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）を押したときは、そのカードのタップやドラッグで決める

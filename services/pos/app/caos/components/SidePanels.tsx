@@ -92,7 +92,6 @@ export const AssignPanel: React.FC<{
   const selectedOrder = unassignedOrders.find(
     (order) => order.key === selectedOrderUid,
   );
-  const canAssign = Boolean(selectedOrder);
 
   return (
     <SidePanel
@@ -102,7 +101,7 @@ export const AssignPanel: React.FC<{
         <PanelFooter onCancel={onClose}>
           <button
             type="button"
-            disabled={!canAssign}
+            disabled={!selectedOrder}
             onClick={() => {
               if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
@@ -191,17 +190,17 @@ export const TicketDetailPanel: React.FC<{
       他のドリッパーへ移動・先頭へ
     </h3>
     <div className="grid grid-cols-3 gap-2">
-      {moveTargets(currentBayId).map(({ bayId, toFront }) => (
+      {moveTargets(currentBayId).map(({ bayId, place }) => (
         <button
           key={bayId}
           type="button"
           onClick={() => {
-            onMoveTicket(ticket, bayId, toFront ? "front" : undefined);
+            onMoveTicket(ticket, bayId, place);
             onClose();
           }}
           className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
         >
-          {toFront ? `${bayId} 先頭へ` : bayId}
+          {place ? `${bayId} 先頭へ` : bayId}
         </button>
       ))}
     </div>

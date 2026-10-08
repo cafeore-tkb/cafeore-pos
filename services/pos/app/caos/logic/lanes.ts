@@ -25,11 +25,11 @@ export const laneOrdinal = (bayId: number) =>
   ["1st", "2nd", "3rd", "4th", "5th", "6th"][bayId - 1] ?? `${bayId}th`;
 
 /**
- * 割当・移動のボタン（1〜6）。待機のカードは、今のドリッパー（currentBayId）のボタンが「先頭」（このドリッパーの待機の先頭へ）。
+ * 割当・移動のボタン（1〜6）。待機のカードは、今のドリッパー（currentBayId）のボタンが「先頭」（place が "front"。このドリッパーの待機の先頭へ）。
  * 指名のドリッパーだけに置く決まりは、明細にドリッパーの番号を持たせてから入れる（CaOS6）
  */
 export const moveTargets = (currentBayId: number | null) =>
   CAOS_DRIPPER_IDS.map((bayId) => ({
     bayId,
-    toFront: bayId === currentBayId,
+    place: bayId === currentBayId ? ("front" as const) : undefined,
   }));
