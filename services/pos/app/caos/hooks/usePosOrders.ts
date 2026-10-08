@@ -7,12 +7,16 @@ export type PosConnectionStatus =
   | "open"
   | "reconnecting";
 
-// 注文は、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から受け取る。
-// CaOS 用に別の接続は張らない。つないだ直後は全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある。
-// enabled が false（実データテスト中）のときは注文を渡さない。
+// 注文は、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から受け取る。CaOS 用に別の接続は張らない。
+// つないだ直後に全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある。
+// CaOS の盤面は注文のカップの列で持つので、カードはこの注文から組み立てる（@cafeore/common の buildCaosCards）。
+// enabled が false（実データテスト中）のときは何も渡さない。
 export const usePosOrders = (
   enabled: boolean,
-): { orders: PosOrder[] | null; status: PosConnectionStatus } => {
+): {
+  orders: PosOrder[] | null;
+  status: PosConnectionStatus;
+} => {
   const { orders, isOrdersLoaded, status } = useOrdersWSContext();
   if (!enabled) return { orders: null, status: "off" };
   return {

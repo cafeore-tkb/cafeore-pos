@@ -39,12 +39,10 @@ export interface OrderTicket {
   startTimeSec?: number; // sim time in seconds when this drip starts
   endTimeSec?: number; // sim time in seconds when this drip ends
   completedAtSec?: number; // for historical completed drip
-  isRebrew?: boolean; // emergency remake linked to an original cup
-  rebrewOfTicketUid?: string;
-  isInterrupted?: boolean; // original drip stopped because a remake was required
+  seniorOnly?: boolean; // 上級生のみ（@cafeore/common の cupSeniorOnly）。上級生だけが淹れる
 }
 
-// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）は CaOS では持たない
+// ドリッパーの列（1st〜6th）。担当者（名前・上級生のみのカードを淹れられる上級生か）は CaOS では持たない
 export interface Barista {
   id: number;
   bayNumber: number;
@@ -70,8 +68,8 @@ export interface UnassignedOrder {
   recommendedBaristas: string;
   recommendedBayIds: number[];
   preferredBaristaId?: number; // 指名。必ず1人だけ
-  isRebrew?: boolean;
-  rebrewOfTicketUid?: string;
+  seniorOnly?: boolean; // 上級生のみ（@cafeore/common の cupSeniorOnly）
+  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名。実データテストも同じ）。同じキーの 1 杯どうしだけ統合できる
   cardColor: "blue" | "peach" | "cyan" | "emerald";
 }
 
