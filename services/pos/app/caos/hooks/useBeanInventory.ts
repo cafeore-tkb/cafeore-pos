@@ -12,15 +12,14 @@ const USAGES_REFRESH_MS = 30 * 1000;
 export const useBeanInventory = () => {
   const inventory = useInventory();
   const stockUsages = useStockUsages({ refreshInterval: USAGES_REFRESH_MS });
-  const { usages } = stockUsages;
   const statuses = useMemo(
     () =>
       inventory.statuses.filter((status) => status.resource.kind === "bean"),
     [inventory.statuses],
   );
   const beanIndex = useMemo(
-    () => buildBeanIndex(statuses, usages),
-    [statuses, usages],
+    () => buildBeanIndex(statuses, stockUsages.usages),
+    [statuses, stockUsages.usages],
   );
   return {
     statuses,

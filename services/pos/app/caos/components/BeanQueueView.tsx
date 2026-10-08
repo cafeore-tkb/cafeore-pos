@@ -21,7 +21,7 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
   error,
   waitingCups,
 }) => (
-  <div className="max-w-none touch-manipulation space-y-3">
+  <div className="space-y-3">
     <div className="flex items-start justify-between gap-2 border-slate-200 border-b pb-3">
       <div>
         <h2 className="flex items-center gap-2 font-black text-[16px] text-slate-900 tracking-tight">
@@ -49,7 +49,24 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
         在庫を読み込めませんでした（{String(error)}）
       </p>
     ) : null}
-    {statuses.length > 0 ? (
+    <BeanStockList
+      statuses={statuses}
+      isLoading={isLoading}
+      error={error}
+      waitingCups={waitingCups}
+    />
+  </div>
+);
+
+// 豆の一覧。豆が 1 つも出せないときは、読み込み中か、豆の在庫対象が無いことを出す（読めなかったときは上の帯だけ）
+const BeanStockList: React.FC<BeanQueueViewProps> = ({
+  statuses,
+  isLoading,
+  error,
+  waitingCups,
+}) => {
+  if (statuses.length > 0)
+    return (
       <div className="grid grid-cols-1 gap-2">
         {statuses.map((status) => (
           <BeanStockCard
@@ -61,14 +78,8 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = ({
           />
         ))}
       </div>
-    ) : (
-      !error && <EmptyState isLoading={isLoading} />
-    )}
-  </div>
-);
-
-// 豆が 1 つも出せないとき（読み込み中・豆の在庫対象が無い）
-const EmptyState: React.FC<{ isLoading: boolean }> = ({ isLoading }) => {
+    );
+  if (error) return null;
   if (isLoading)
     return (
       <p className="py-8 text-center text-slate-500 text-xs">読み込み中…</p>
@@ -103,8 +114,8 @@ const BeanStockCard: React.FC<{
 }> = ({ status, waitingCups }) => {
   const { resource } = status;
   const view = stockView(status);
-  const servings = status.remaining_servings ?? null;
-  const remaining = status.remaining ?? null;
+  const servings = status.remaining_servings;
+  const remaining = status.remaining;
   const countedAt =
     status.counted_quantity != null && status.counted_at
       ? dayjs(status.counted_at)
