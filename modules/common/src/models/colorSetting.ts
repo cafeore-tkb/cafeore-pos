@@ -1,7 +1,18 @@
 import { z } from "zod";
 
 export const colorTargetTypes = ["Item", "ItemType"] as const;
-export const colorScreens = ["master", "serve"] as const;
+/**
+ * 色の設定を使う画面
+ * - cashier: レジのメニューのボタン
+ * - cashier_order: レジの過去の注文のカード
+ * - master・serve: マスター・提供画面のカップ
+ */
+export const colorScreens = [
+  "cashier",
+  "cashier_order",
+  "master",
+  "serve",
+] as const;
 
 export const colorSettingSchema = z.object({
   id: z.string().uuid().optional(),
@@ -36,7 +47,7 @@ export const findColorSetting = <T extends ColorSetting>(
 /**
  * アイテムの背景色を設定から引く
  * item の設定 > item_type の設定の順で探し、どちらも無ければ undefined を返す。
- * undefined のときは呼び出し側の既定の色を使う。
+ * undefined のときは色を付けない（商品の種類や名前で既定の色を決め打ちしない）。
  */
 export const resolveItemColor = (
   settings: ColorSetting[],
@@ -57,4 +68,20 @@ export const resolveItemColor = (
     if (typeSetting) return typeSetting.color;
   }
   return undefined;
+};
+
+/**
+ * 背景色の上で読みやすい文字色を返す
+ * 背景の相対輝度が高ければ黒、低ければ白にする。
+ */
+export const readableTextColor = (backgroundColor: string): string => {
+  const channel = (offset: number) => {
+    const value =
+      Number.parseInt(backgroundColor.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  // 黒・白それぞれとのコントラスト比が等しくなる輝度が境目
+  return luminance > 0.179 ? "#000000" : "#ffffff";
 };

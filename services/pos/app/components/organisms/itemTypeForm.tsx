@@ -1,7 +1,6 @@
 import type { ItemType } from "@cafeore/common";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 
@@ -21,6 +20,7 @@ export function ItemTypeForm({
   onSubmit,
   submitting = false,
 }: Props) {
+  const id = useId();
   const [values, setValues] = useState<ItemTypeFormValues>({
     name: initialValue?.name ?? "",
     display_name: initialValue?.display_name ?? "",
@@ -34,46 +34,45 @@ export function ItemTypeForm({
   };
 
   return (
-    <Card className="max-w-2xl">
-      <CardHeader>
-        <CardTitle>{initialValue ? "タイプ 編集" : "タイプ 作成"}</CardTitle>
-      </CardHeader>
+    <form
+      className="grid gap-6"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await onSubmit(values);
+      }}
+    >
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-display-name`}>表示名</Label>
+        <Input
+          id={`${id}-display-name`}
+          value={values.display_name}
+          onChange={(e) => updateField("display_name", e.target.value)}
+          placeholder="ホット"
+          required
+        />
+      </div>
 
-      <CardContent>
-        <form
-          className="grid gap-6"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            await onSubmit(values);
-          }}
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="name">name</Label>
-            <Input
-              id="name"
-              value={values.name}
-              onChange={(e) => updateField("name", e.target.value)}
-              placeholder="hot"
-            />
-          </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-name`}>内部名</Label>
+        <Input
+          id={`${id}-name`}
+          value={values.name}
+          onChange={(e) => updateField("name", e.target.value)}
+          placeholder="hot"
+          className="font-mono"
+          required
+        />
+        <p className="text-muted-foreground text-xs">
+          レジのボタン配置やマスター画面の色分けに使う英字の名前です（hot / ice
+          / milk / others など）
+        </p>
+      </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="display_name">display_name</Label>
-            <Input
-              id="display_name"
-              value={values.display_name}
-              onChange={(e) => updateField("display_name", e.target.value)}
-              placeholder="ホット"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "保存中..." : "保存"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="flex justify-end gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "保存中..." : "保存"}
+        </Button>
+      </div>
+    </form>
   );
 }

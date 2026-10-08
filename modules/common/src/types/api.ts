@@ -85,6 +85,20 @@ export interface paths {
     /** オーダーを提供完了にする */
     patch: operations["markOrderServe"];
   };
+  "/api/orders/{id}/cups/{cupId}/ready": {
+    /**
+     * カップを準備完了にする
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     */
+    patch: operations["markOrderCupReady"];
+  };
+  "/api/orders/{id}/cups/{cupId}/served": {
+    /**
+     * カップを提供完了にする
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     */
+    patch: operations["markOrderCupServe"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -96,6 +110,59 @@ export interface paths {
     get: operations["getMasterState"];
     /** マスターステート更新 */
     post: operations["updateMasterState"];
+  };
+  "/api/inventory": {
+    /**
+     * 在庫の残量一覧
+     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+     */
+    get: operations["getInventory"];
+  };
+  "/api/inventory/resources": {
+    /** 在庫対象の作成 */
+    post: operations["createStockResource"];
+  };
+  "/api/inventory/resources/{id}": {
+    /** 在庫対象の更新 */
+    put: operations["updateStockResource"];
+    /** 在庫対象の削除 */
+    delete: operations["deleteStockResource"];
+  };
+  "/api/inventory/resources/{id}/events": {
+    /**
+     * 棚卸し・入荷・調整の記録
+     * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
+     */
+    post: operations["createStockEvent"];
+  };
+  "/api/inventory/usages": {
+    /** アイテム1杯あたりの使用量一覧 */
+    get: operations["getStockUsages"];
+    /** アイテム1杯あたりの使用量をまとめて置き換える */
+    put: operations["replaceStockUsages"];
+  };
+  "/api/inventory/remind": {
+    /**
+     * 残量確認のリマインドを Slack に送る
+     * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+     *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+     *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+     * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     * 直近に注文が無い（営業していない）ときは送らない。
+     */
+    post: operations["remindInventory"];
+  };
+  "/api/cashier-state": {
+    /**
+     * レジ状態取得
+     * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+     */
+    get: operations["getCashierState"];
+    /**
+     * レジ状態更新
+     * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+     */
+    put: operations["updateCashierState"];
   };
 }
 
@@ -192,6 +259,26 @@ export interface components {
       menu: components["schemas"]["MenuResponse"];
       assignee: string | null;
     };
+    OrderCupResponse: {
+      /** Format: uuid */
+      id: string;
+      /**
+       * Format: uuid
+       * @description このカップを含む注文明細のID（MenuInfo.id）
+       */
+      order_menu_id: string;
+      item: components["schemas"]["ItemResponse"];
+      /**
+       * Format: date-time
+       * @description このカップが準備完了になった時刻。未準備なら null
+       */
+      ready_at: string | null;
+      /**
+       * Format: date-time
+       * @description このカップを提供した時刻。未提供なら null
+       */
+      served_at: string | null;
+    };
     MenuInfoCreate: {
       /**
        * Format: uuid
@@ -217,6 +304,8 @@ export interface components {
       discount_order_id?: number | null;
       discount_order_cups?: number;
       menus: components["schemas"]["MenuInfo"][];
+      /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
+      cups: components["schemas"]["OrderCupResponse"][];
       comments?: components["schemas"]["CommentResponse"][];
     };
     OrderCreateRequest: {
@@ -289,10 +378,13 @@ export interface components {
      */
     ColorTargetType: "Item" | "ItemType";
     /**
-     * @description 背景色を適用する画面
+     * @description 背景色を適用する画面。
+     * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+     * master・serve はマスター・提供画面のカップ
+     *
      * @enum {string}
      */
-    ColorScreen: "master" | "serve";
+    ColorScreen: "cashier" | "cashier_order" | "master" | "serve";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
@@ -317,9 +409,148 @@ export interface components {
       /** @example #bfdbfe */
       color: string;
     };
+    CashierStateResponse: {
+      /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /**
+       * Format: uuid
+       * @description 直前に確定した注文の ID。編集中は null
+       */
+      submitted_order_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CashierStateUpdateRequest: {
+      editting_order: {
+        [key: string]: unknown;
+      };
+      /** Format: uuid */
+      submitted_order_id: string | null;
+    };
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
+    };
+    /** @enum {string} */
+    StockResourceKind: "cup" | "bean";
+    StockResourceRequest: {
+      kind: components["schemas"]["StockResourceKind"];
+      /** @example ホットカップ */
+      name: string;
+      /**
+       * @description 数える単位（個 / g）
+       * @example 個
+       */
+      unit: string;
+      /**
+       * Format: double
+       * @description 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+       * @example 1
+       */
+      per_serving: number;
+      /**
+       * @description 残りがこの杯数を切ったら通知を始める
+       * @example 500
+       */
+      notify_from: number;
+      /**
+       * @description notify_from から何杯減るごとに通知するか
+       * @example 100
+       */
+      notify_step: number;
+      /**
+       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @example 100
+       */
+      buffer: number;
+    };
+    StockResourceResponse: components["schemas"]["StockResourceRequest"] & {
+      /** Format: uuid */
+      id: string;
+    };
+    /**
+     * @description untracked は棚卸し・入荷がまだ一度も無い
+     * @enum {string}
+     */
+    InventoryLevel: "ok" | "warning" | "critical" | "untracked";
+    InventoryStatus: {
+      resource: components["schemas"]["StockResourceResponse"];
+      level: components["schemas"]["InventoryLevel"];
+      /**
+       * Format: date-time
+       * @description 最後の棚卸し。無ければ最初の入荷
+       */
+      counted_at?: string | null;
+      /** Format: double */
+      counted_quantity?: number | null;
+      /**
+       * Format: double
+       * @description counted_at 以降の入荷・調整の合計
+       */
+      received: number;
+      /**
+       * Format: double
+       * @description counted_at 以降の注文での消費量
+       */
+      consumed: number;
+      /** @description counted_at 以降に売れた杯数 */
+      servings: number;
+      /** Format: double */
+      remaining?: number | null;
+      /** Format: double */
+      remaining_servings?: number | null;
+      /** @description 直近1時間に売れた杯数 */
+      servings_last_hour: number;
+    };
+    /** @enum {string} */
+    StockEventKind: "count" | "receipt" | "adjust";
+    StockEventCreateRequest: {
+      kind: components["schemas"]["StockEventKind"];
+      /** Format: double */
+      quantity: number;
+      note?: string;
+    };
+    StockEventResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      resource_id: string;
+      kind: components["schemas"]["StockEventKind"];
+      /** Format: double */
+      quantity: number;
+      note?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    StockEventCreateResponse: {
+      event: components["schemas"]["StockEventResponse"];
+      /**
+       * Format: double
+       * @description 記録する直前の推定残量（count のときの答え合わせ用）
+       */
+      estimated?: number | null;
+      /**
+       * Format: double
+       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       */
+      actual_per_serving?: number | null;
+    };
+    StockUsage: {
+      /** Format: uuid */
+      item_id: string;
+      /** Format: uuid */
+      resource_id: string;
+      /**
+       * Format: double
+       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
+       */
+      amount: number;
+    };
+    InventoryRemindResponse: {
+      sent: boolean;
+      reason?: string;
     };
   };
   responses: never;
@@ -757,6 +988,74 @@ export interface operations {
       };
     };
   };
+  /**
+   * カップを準備完了にする
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   */
+  markOrderCupReady: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * カップを提供完了にする
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   */
+  markOrderCupServe: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+        /** @description カップID（OrderResponse.cups[].id） */
+        cupId: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーまたはカップが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /** 特定オーダーのコメント一覧取得 */
   getOrderComments: {
     parameters: {
@@ -831,6 +1130,191 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["MasterStateResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 在庫の残量一覧
+   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+   */
+  getInventory: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["InventoryStatus"][];
+        };
+      };
+    };
+  };
+  /** 在庫対象の作成 */
+  createStockResource: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockResourceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["StockResourceResponse"];
+        };
+      };
+    };
+  };
+  /** 在庫対象の更新 */
+  updateStockResource: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockResourceRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockResourceResponse"];
+        };
+      };
+    };
+  };
+  /** 在庫対象の削除 */
+  deleteStockResource: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      204: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * 棚卸し・入荷・調整の記録
+   * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
+   */
+  createStockEvent: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockEventCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      201: {
+        content: {
+          "application/json": components["schemas"]["StockEventCreateResponse"];
+        };
+      };
+    };
+  };
+  /** アイテム1杯あたりの使用量一覧 */
+  getStockUsages: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockUsage"][];
+        };
+      };
+    };
+  };
+  /** アイテム1杯あたりの使用量をまとめて置き換える */
+  replaceStockUsages: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StockUsage"][];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["StockUsage"][];
+        };
+      };
+    };
+  };
+  /**
+   * 残量確認のリマインドを Slack に送る
+   * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
+   *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
+   *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
+   * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   * 直近に注文が無い（営業していない）ときは送らない。
+   */
+  remindInventory: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["InventoryRemindResponse"];
+        };
+      };
+      /** @description ID トークンも合言葉も合わない */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態取得
+   * @description レジが編集中の注文と直前に確定した注文の ID。まだ一度も同期されていなければ 404。
+   */
+  getCashierState: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description まだレジ状態が無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * レジ状態更新
+   * @description 単一のレジ状態を丸ごと置き換える。成功すると WebSocket で全クライアントへ配信される。
+   */
+  updateCashierState: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CashierStateUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierStateResponse"];
+        };
+      };
+      /** @description editting_order に必須のキーが無い、または型が違う */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

@@ -11,6 +11,9 @@ mkdir -p ../modules/common/src/types
 npx openapi-typescript openapi.yaml -o ../modules/common/src/types/api.ts
 echo "TypeScript型を生成しました"
 
+# 一括取り込みの検証に使うスキーマ（JSON）
+pnpm -F @cafeore/common generate:schemas
+
 # Go型生成
 echo "Go型を生成中..."
 mkdir -p ../api/internal/models

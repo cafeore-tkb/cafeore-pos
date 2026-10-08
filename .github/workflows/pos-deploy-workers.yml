@@ -12,6 +12,11 @@ name: pos / deploy (Workers)
 # ただし versions upload は Worker が既にあることが前提なので、まだ無いと
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
 # その場合だけ deploy にフォールバックして Worker を作る。
+#
+# PR のプレビューは **preview ラベルが付いた open な PR にだけ**出す
+# （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
+# ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
+# コメントは消す（pr-cleanup.yml を参照）。
 
 on:
   push:
@@ -23,6 +28,12 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
   pull_request:
+    # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     paths:
       - 'services/pos/**'
       - 'modules/common/**'
@@ -40,8 +51,23 @@ permissions:
   # 外部の人のコードがこの権限を使うことはない。
   pull-requests: write
 
+# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
+# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
+# 走っているプレビューのデプロイを取り消してしまう。run_id で group を
+# 分けて逃がす。**条件は job の if と揃えること。**
+#
+# pr-cleanup.yml のコメントを消す job も PR ではこの group に入り、デプロイが
+# 終わるのを待ってから消す。**group 名を変えるときは pr-cleanup.yml も揃えること。**
 concurrency:
-  group: pos-deploy-workers-${{ github.ref }}
+  group: >-
+    ${{ (github.event_name != 'pull_request'
+         || (github.actor != 'dependabot[bot]'
+             && github.event.pull_request.head.repo.full_name == github.repository
+             && github.event.pull_request.state == 'open'
+             && contains(github.event.pull_request.labels.*.name, 'preview')
+             && (github.event.action != 'labeled' || github.event.label.name == 'preview')))
+        && format('pos-deploy-workers-{0}', github.ref)
+        || format('pos-deploy-workers-skip-{0}', github.run_id) }}
   # 本番へのデプロイを途中で止めると中途半端な状態になりうるので、
   # 打ち切ってよいのは PR のプレビューだけにする。
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -51,22 +77,29 @@ jobs:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # 2つ除外している。
+    # 3つ除外している。
     #
     #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
-    #     （既存の pos-deploy-pull-request.yml と同じ条件）
     #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
     #     渡らない（Dependabot 用の別ストアが引かれる）ので、やはり認証で落ちる。
     #     npm の更新は pnpm-lock.yaml を触るため、除外しないと毎週赤くなる
+    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
+    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
+    #
+    # **PR の条件は上の concurrency と揃えること。**
     if: >-
       ${{ github.actor != 'dependabot[bot]'
           && (github.event_name != 'pull_request'
-              || github.event.pull_request.head.repo.full_name == github.repository) }}
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
 
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
       # pos と mobile で別のコメントになるので、互いに上書きし合わない。
+      # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
       COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
@@ -108,8 +141,18 @@ jobs:
         continue-on-error: true
         env:
           PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -uo pipefail
+
+          # 別の PR の上に積んだ PR で backend を変えていなければ、向き先の PR の backend を使う
+          # （api-build.yml の backend-owner と同じスクリプト）。決められなければ自分の番号。
+          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
+          case "$owner" in
+            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
+          esac
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
 
           # backend は PR ごとに pr-<番号> のリビジョンタグを付けてデプロイされ、
           # そのタグ専用の URL を持つ。まずは実物を引く。
@@ -121,7 +164,7 @@ jobs:
           url=""
           if [ -n "$spec" ]; then
             url=$(printf '%s' "$spec" \
-              | jq -r --arg t "pr-$PR_NUMBER" \
+              | jq -r --arg t "pr-$owner" \
                   'first(.status.traffic[]? | select(.tag == $t) | .url) // empty' \
               2>/dev/null) || url=""
           fi
@@ -132,12 +175,12 @@ jobs:
           if [ -z "$url" ] && [ -n "$spec" ]; then
             base=$(printf '%s' "$spec" | jq -r '.status.url // empty' 2>/dev/null) || base=""
             case "$base" in
-              https://*) url="https://pr-$PR_NUMBER---${base#https://}" ;;
+              https://*) url="https://pr-$owner---${base#https://}" ;;
             esac
           fi
 
           case "$url" in
-            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url を使う" ;;
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url（#$owner の backend）を使う" ;;
             *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
           esac
 
@@ -258,6 +301,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
           MODE: ${{ steps.deploy.outputs.mode }}
+          API_OWNER: ${{ steps.api_url.outputs.owner }}
         run: |
           set -uo pipefail
 
@@ -268,15 +312,19 @@ jobs:
             "| | |" \
             "| --- | --- |" \
             "| URL | $PREVIEW_URL |" \
+            "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
             "| commit | \`$GITHUB_SHA\` |" \
             "| mode | \`$MODE\` |" \
             "" \
             "このコメントは push のたびに書き換わる。")
 
           # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
+          # github-actions[bot] が書いたものに限る。目印を本文で引用した他の人や
+          # bot のコメント（Claude の概要など）を上書きしてしまうため。
+          # 消す側の pr-cleanup.yml も同じ条件で探す。
           comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
             --paginate \
-            --jq "map(select(.body | contains(\"$COMMENT_MARKER\"))) | .[0].id // empty")
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
 
           if [ -n "$comment_id" ]; then
             gh api --method PATCH \

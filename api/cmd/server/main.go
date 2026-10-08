@@ -12,8 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"cafeore-pos/api/internal/auth"
 	"cafeore-pos/api/internal/handlers"
-	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -27,9 +28,15 @@ type StatusResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 	Version   string    `json:"version"`
 	Database  string    `json:"database"`
+	// DB にあってモデルに無いもの（またはその逆）。手で DB を触った跡。空なら一致している。
+	// デプロイの CI が見て、空でなければ落とす（api-build.yml）。
+	SchemaDrift []string `json:"schema_drift"`
 }
 
 var db *gorm.DB
+
+// 起動時に調べたスキーマのズレ（findSchemaDrift）。
+var schemaDrift = []string{}
 
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
@@ -72,35 +79,21 @@ func initDB() error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// AutoMigrate は RUN_MIGRATIONS=true のときだけ走らせる。
-	//
-	// 本番のスキーマは手で作られている。ここで無条件に AutoMigrate を走らせて
-	// 失敗すると、listen は initDB の後なのでコンテナが PORT を開けられず、
-	// Cloud Run のデプロイごと落ちる。
-	//
-	// 逆に PR プレビューは空の Neon ブランチを使うので、走らせないと
-	// テーブルが無いままになる。CI（api-build.yml）が true を渡している。
-	if os.Getenv("RUN_MIGRATIONS") == "true" {
-		if err := db.AutoMigrate(
-			&models.ItemType{},
-			&models.Item{},
-			&models.Menu{},
-			&models.MenuItem{},
-			&models.Order{},
-			&models.Comment{},
-			&models.OrderMenu{},
-			&models.MasterState{},
-			&models.ColorSetting{},
-		); err != nil {
-			return fmt.Errorf("failed to migrate database: %w", err)
-		}
-
-		log.Println("Database migration completed")
-	} else {
-		// 空の DB に対して黙って起動すると、テーブルが無いまま全クエリが
-		// 失敗して原因が分かりにくい。スキップしたことは必ず残す。
-		log.Println("RUN_MIGRATIONS is not \"true\": skipped AutoMigrate")
+	// スキーマはモデルが正本。本番もプレビューもローカルも、起動時に反映する。
+	if err := migrate(db); err != nil {
+		return err
 	}
+	log.Println("Database migration completed")
+
+	// ズレがあっても起動は止めない（注文は受けられるので）。/status に出して CI で気づく。
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		drift = []string{fmt.Sprintf("ズレを調べられなかった: %v", err)}
+	}
+	for _, d := range drift {
+		log.Printf("schema drift: %s", d)
+	}
+	schemaDrift = drift
 
 	log.Println("Database connected successfully")
 	return nil
@@ -151,10 +144,11 @@ func statusHandler(c *gin.Context) {
 	}
 
 	response := StatusResponse{
-		Status:    "ok",
-		Timestamp: time.Now(),
-		Version:   "1.0.0",
-		Database:  dbStatus,
+		Status:      "ok",
+		Timestamp:   time.Now(),
+		Version:     "1.0.0",
+		Database:    dbStatus,
+		SchemaDrift: schemaDrift,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -233,9 +227,27 @@ func main() {
 	itemHandler := handlers.NewItemHandler(db)
 	menuHandler := handlers.NewMenuHandler(db)
 	itemTypeHandler := handlers.NewItemTypeHandler(db)
-	orderHandler := handlers.NewOrderHandler(db, hub)
+	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
+	//
+	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
+	// INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で
+	// 発行した Google ID トークンを持つ相手（本番の Cloud Scheduler）か、
+	// X-Cron-Secret が INVENTORY_CRON_SECRET と一致する相手（ローカル・手動実行）。
+	remindAuth := handlers.RemindAuth{CronSecret: os.Getenv("INVENTORY_CRON_SECRET")}
+	if invoker, audience := os.Getenv("INVENTORY_REMIND_INVOKER"), os.Getenv("INVENTORY_REMIND_AUDIENCE"); invoker != "" && audience != "" {
+		remindAuth.Scheduler = auth.NewGoogleIDTokenVerifier(audience, invoker)
+	}
+	inventory := handlers.NewInventory(
+		db,
+		notify.NewSlack(os.Getenv("SLACK_WEBHOOK_URL")),
+		remindAuth,
+		os.Getenv("POS_BASE_URL"),
+	)
+	inventoryHandler := handlers.NewInventoryHandler(inventory)
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db)
+	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
+	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
 
 	// エンドポイント
@@ -271,6 +283,8 @@ func main() {
 		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
 		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
+		api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
+		api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
@@ -278,6 +292,17 @@ func main() {
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 
+		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
+		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
+
+		api.GET("/inventory", inventoryHandler.GetInventory)
+		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
+		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
+		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
+		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
+		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
+		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
+		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
