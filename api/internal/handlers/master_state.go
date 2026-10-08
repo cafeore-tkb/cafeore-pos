@@ -12,7 +12,7 @@ import (
 )
 
 type MasterStateHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
 	hub *Hub
 }
 
@@ -23,7 +23,7 @@ func NewMasterStateHandler(db *gorm.DB, hub *Hub) *MasterStateHandler {
 func toMasterStateResponse(masterState *models.MasterState) models.MasterStateResponse {
 	return models.MasterStateResponse{
 		CreatedAt: masterState.CreatedAt,
-		Type:    masterState.Type,
+		Type:      masterState.Type,
 	}
 }
 

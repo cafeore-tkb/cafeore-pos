@@ -75,7 +75,8 @@ func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]mode
 }
 
 // 存在しないアイテムを指していたら invalidMenuItemsError を返す。
-// 確かめずに作ると外部キー違反の DB エラーになり、入力の誤りと見分けられない。
+// 確かめずに作ると、外部キーのある DB では DB エラーになって入力の誤りと見分けられず、
+// 外部キーの無い DB（AutoMigrate は外部キーを張らない）では存在しないアイテムを指す構成ができてしまう。
 // 外部キーと同じ基準にするため、論理削除済みのアイテムも存在するものとして数える。
 func ensureItemsExist(tx *gorm.DB, menuItems []models.MenuItem) error {
 	ids := make([]uuid.UUID, 0, len(menuItems))

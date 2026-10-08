@@ -70,7 +70,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 // GET /api/item-types/:id - idからアイテムタイプ取得
 func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -93,7 +93,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 // PUT /api/item-types/:id - アイテムタイプ更新
 func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -138,7 +138,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 // DELETE /api/item-types/:id - アイテムタイプ削除
 func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
