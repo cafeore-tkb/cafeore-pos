@@ -4,7 +4,7 @@ import type { Board, TestPlaySession } from "../types";
 // 補助のタブ（ドリッパー・豆キュー・実績）を新しいブラウザタブ（?panel=）で開く。
 // 開くときに今の盤面を端末に置き（localStorage）、開いた側はそれを読んで出す（あとの変化は追わない）。
 
-export const AUXILIARY_TABS = ["bays", "beans", "analytics"] as const;
+const AUXILIARY_TABS = ["bays", "beans", "analytics"] as const;
 export type AuxiliaryTab = (typeof AUXILIARY_TABS)[number];
 
 type PanelSnapshot = {

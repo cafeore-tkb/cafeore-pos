@@ -10,22 +10,19 @@ import {
   rebrew,
   returnTicket,
 } from "../logic/board";
-import { timeOfDayLabel } from "../logic/format";
+import { compareUnassigned, totalCups } from "../logic/cards";
+import { startOfLocalDay, timeOfDayLabel } from "../logic/format";
+import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
+import { nextAvailableBays } from "../logic/queue";
 import type { Board, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
 import { useTestPlay } from "./useTestPlay";
 
-const startOfLocalDay = (ms: number) => {
-  const date = new Date(ms);
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  ).getTime();
-};
+// タイマーの速さ（ヘッダーで押すたびに次へ）
+const SIM_SPEEDS = [1, 2, 5, 10];
 
 // CaOS の盤面・時刻・注文の取り込み・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
 // 普段は cafeore-pos と同じ DB の注文で動かす。実データテスト中（終了後の実績表示も含め、リセットするまで）は
@@ -35,7 +32,7 @@ export const useCaosSession = (initial?: {
   testPlaySession: TestPlaySession | null;
 }) => {
   const [isRunning, setIsRunning] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(1);
+  const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
@@ -63,25 +60,37 @@ export const useCaosSession = (initial?: {
     : realDayStartMs;
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 
+  const board = useMemo(
+    () => paintBoard(state.board, colorSettings),
+    [state.board, colorSettings],
+  );
+
   // できた操作だけ音を鳴らす
   const play = (ok: boolean, sound = () => soundManager.playDispatch()) => {
     if (ok) sound();
     return ok;
   };
 
-  const board = useMemo(
-    () => paintBoard(state.board, colorSettings),
-    [state.board, colorSettings],
-  );
-
   return {
     board,
+    /** 未割当（入れ直しを先に、注文番号の順） */
+    unassigned: [...board.unassigned].sort(compareUnassigned),
+    nextAvailable: nextAvailableBays(board.baristas),
+    /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
+    cups: {
+      unassigned: totalCups(board.unassigned),
+      waiting: totalCups(board.baristas.flatMap((barista) => barista.queue)),
+    },
     nowSec,
     timeLabel: timeOfDayLabel(nowSec),
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,
-    setSimSpeed,
+    cycleSpeed: () =>
+      setSimSpeed(
+        (speed) =>
+          SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
+      ),
     posStatus: pos.status,
     soundEnabled,
     toggleSound: () => {
@@ -119,6 +128,13 @@ export const useCaosSession = (initial?: {
     },
     testPlay: {
       session: test.session,
+      isActive: test.session?.status === "active",
+      /** 残り（「12分」）。テストをしていなければ null */
+      remainingLabel: test.session
+        ? testPlayRemainingLabel(test.session)
+        : null,
+      /** 実績のパネルに渡すもの */
+      analytics: testPlayAnalytics(test.session),
       historicalOrders: test.historicalOrders,
       start: (startMs: number, durationMinutes: 30 | 60) => {
         state.reset();

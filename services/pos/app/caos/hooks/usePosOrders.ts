@@ -18,11 +18,6 @@ export const usePosOrders = (
   return {
     orders: isOrdersLoaded ? orders : null,
     // 共有の接続は切れると自動でつなぎ直すので、closed は「再接続中」と出す
-    status:
-      status === "open"
-        ? "open"
-        : status === "connecting"
-          ? "connecting"
-          : "reconnecting",
+    status: status === "closed" ? "reconnecting" : status,
   };
 };

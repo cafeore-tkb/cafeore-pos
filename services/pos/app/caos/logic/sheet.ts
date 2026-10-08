@@ -4,7 +4,7 @@ import { groupByOrder, orderLabel } from "./cards";
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
 // 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。
 
-export type CellState = "past" | "current" | "waiting";
+type CellState = "past" | "current" | "waiting";
 
 export interface SheetEntry {
   ticket: OrderTicket;
@@ -13,7 +13,7 @@ export interface SheetEntry {
   rowIds: number[];
 }
 
-export interface SheetCell {
+interface SheetCell {
   entries: SheetEntry[];
   // 隣り合う行の統合は1つの枠で大きく囲む。隣り合わないときは他の行に目印だけ置く。
   rowSpan: number;
@@ -21,7 +21,7 @@ export interface SheetCell {
   mergedStubs: SheetEntry[];
 }
 
-export interface SheetRow {
+interface SheetRow {
   orderNo: number;
   /** まだ淹れ終わっていないカード（未割当を含む）がある */
   isLive: boolean;

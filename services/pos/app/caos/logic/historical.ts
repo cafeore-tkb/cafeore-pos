@@ -1,4 +1,4 @@
-import type { DripCard, HistoricalOrder } from "../types";
+import type { DripCard, HistoricalOrder, TestPlaySession } from "../types";
 import { splitIntoDripUnits } from "./cards";
 
 // 実データテスト（2025年の注文。商品 ID が無い）のカード。cafeore-pos の注文のカードには使わない。
@@ -69,8 +69,15 @@ export const ordersInPeriod = (
     .filter((order) => createdMs(order) >= startMs && createdMs(order) < endMs)
     .sort((a, b) => createdMs(a) - createdMs(b));
 
-/** 実績に出す、テストの時刻（currentMs）までに届いた注文 */
-export const ordersSoFar = (session: {
-  orders: HistoricalOrder[];
-  currentMs: number;
-}) => session.orders.filter((order) => createdMs(order) <= session.currentMs);
+/** 実績に出す、テストの時刻までに届いた注文と、その時間帯（テストをしていなければ空） */
+export const testPlayAnalytics = (session: TestPlaySession | null) => ({
+  salesOrders: session
+    ? session.orders.filter((order) => createdMs(order) <= session.currentMs)
+    : [],
+  periodStartMs: session?.startMs,
+  periodEndMs: session ? Math.min(session.currentMs, session.endMs) : undefined,
+});
+
+/** テストの残り（「12分」） */
+export const testPlayRemainingLabel = (session: TestPlaySession) =>
+  `${Math.max(0, Math.ceil((session.endMs - session.currentMs) / 60_000))}分`;

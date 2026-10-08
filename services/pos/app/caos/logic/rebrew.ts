@@ -20,38 +20,49 @@ export const rebrewCandidates = (baristas: Barista[], ticket: OrderTicket) => {
   };
 };
 
+/** 入れ直しの元（抽出中・終わったカードと、そのドリッパー）と、抽出中のカードを今止めるか */
+export interface RebrewSource {
+  ticket: OrderTicket;
+  sourceBayId: number;
+  interruptCurrent: boolean;
+}
+
 /**
- * 置くドリッパーの列の中で、差し込める位置。
- * 抽出中のカードの前には入れない（止めたカードの代わりに今から始めるときと、列が空のときだけ先頭）。
+ * 置くドリッパー（barista）の列の中で、差し込める位置と、ドリッパーを選んだときの位置。
+ * 抽出中のカードの前には入れない。止めたカードの代わりに同じドリッパーで今から始めるときと、列が空のときだけ先頭に入れられる。
  */
-export const rebrewSlots = (
-  barista: Barista,
-  { replacesCurrent }: { replacesCurrent: boolean },
-) => {
+export const rebrewSlots = (barista: Barista, source: RebrewSource) => {
+  const replacesCurrent =
+    source.interruptCurrent &&
+    source.ticket.status === "brewing" &&
+    barista.id === source.sourceBayId;
   // 止めるカードは列から抜ける
   const queue = replacesCurrent ? barista.queue.slice(1) : barista.queue;
-  if (queue.length === 0)
-    return [{ index: 0, label: "今すぐ開始", isLast: false }];
-  return [
-    ...(replacesCurrent
-      ? [{ index: 0, label: "中断後、今すぐ開始", isLast: false }]
-      : []),
-    ...queue.map((previous, offset) => ({
-      index: offset + 1,
-      label:
-        offset === 0 && !replacesCurrent
-          ? "現在の抽出の次"
-          : `${orderLabel(previous)} ${previous.beanName} の次`,
-      isLast: offset === queue.length - 1,
-    })),
-  ];
+  const canStartNow = queue.length === 0 || replacesCurrent;
+  const front = canStartNow
+    ? [
+        {
+          index: 0,
+          label: queue.length === 0 ? "今すぐ開始" : "中断後、今すぐ開始",
+          isLast: false,
+        },
+      ]
+    : [];
+  return {
+    slots: [
+      ...front,
+      ...queue.map((previous, offset) => ({
+        index: offset + 1,
+        label:
+          offset === 0 && !replacesCurrent
+            ? "現在の抽出の次"
+            : `${orderLabel(previous)} ${previous.beanName} の次`,
+        isLast: offset === queue.length - 1,
+      })),
+    ],
+    defaultIndex: canStartNow ? 0 : 1,
+  };
 };
-
-/** ドリッパーを選んだときの差し込む位置（止めたカードの代わりか、列が空なら先頭、ほかは抽出中の次） */
-export const defaultRebrewIndex = (
-  barista: Barista,
-  { replacesCurrent }: { replacesCurrent: boolean },
-) => (replacesCurrent || barista.queue.length === 0 ? 0 : 1);
 
 /** 確定できるか（未割当に置くか、差し込める位置を選んだ） */
 export const canConfirmRebrew = (

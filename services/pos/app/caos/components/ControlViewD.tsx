@@ -94,6 +94,13 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     [selectedOrderId, baristas, unassignedOrders],
   );
   const targetRowId = selectedOrder?.orderNos[0] ?? null;
+  // 列ごとの今（抽出中のカード・残り・まもなく）
+  const lanes = new Map(
+    baristas.map((barista) => [
+      barista.id,
+      laneStatus(barista, currentTimeSec),
+    ]),
+  );
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 
   const sheetScrollRef = useRef<HTMLDivElement>(null);
@@ -122,7 +129,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
 
   const clearSelection = () => {
     setSelectedUid(null);
-    onSelectOrder("");
+    onSelectOrder(null);
   };
 
   const mergeWithSelected = (order: DripCard) => {
@@ -160,7 +167,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       return;
     }
     setSelectedUid(uid);
-    if (selectedOrderId !== orderLabel(order)) onSelectOrder(orderLabel(order));
+    onSelectOrder(orderLabel(order));
   };
 
   const assignSelected = (bayId: number) => {
@@ -191,8 +198,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     onBegin: (source) => {
       if (source.kind === "unassigned") {
         setSelectedUid(source.order.ticketUid);
-        if (selectedOrderId !== orderLabel(source.order))
-          onSelectOrder(orderLabel(source.order));
+        onSelectOrder(orderLabel(source.order));
       } else if (selectedUid) {
         // Moving a placed card: hide the "ここに配置" slots of a pending selection.
         clearSelection();
@@ -259,10 +265,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         onClickCapture={drag.suppressClick}
         onClick={() => {
           if (state === "current") onRequestRebrew(ticket);
-          if (state !== "waiting") return;
-          if (selectedOrderId !== orderLabel(ticket))
-            onSelectOrder(orderLabel(ticket));
-          onOpenTicketDetail(ticket);
+          if (state === "waiting") onOpenTicketDetail(ticket);
         }}
         className={`h-[64px] shrink-0 ${state === "past" ? "" : "cursor-pointer hover:ring-2 hover:ring-slate-400"} ${
           state === "waiting"
@@ -319,7 +322,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                   注文 No.
                 </th>
                 {baristas.map((barista) => {
-                  const lane = laneStatus(barista, currentTimeSec);
+                  const lane = lanes.get(barista.id);
                   return (
                     <th
                       key={barista.id}
@@ -333,9 +336,9 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       </div>
                       <NextButton
                         bayId={barista.id}
-                        active={Boolean(lane.current)}
-                        soon={lane.soon}
-                        remainingSec={lane.remainingSec}
+                        active={Boolean(lane?.current)}
+                        soon={lane?.soon ?? false}
+                        remainingSec={lane?.remainingSec}
                         onAdvance={onAdvanceBay}
                         className="mt-1 h-8 w-full text-[11px]"
                       />
@@ -380,12 +383,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries ?? [];
                       const isDropColumn = hoveredTarget === barista.id;
-                      const remainingSec = laneStatus(
-                        barista,
-                        currentTimeSec,
-                      ).remainingSec;
                       const entries = cellEntries.map((entry) =>
-                        renderEntry(entry, barista.id, remainingSec),
+                        renderEntry(
+                          entry,
+                          barista.id,
+                          lanes.get(barista.id)?.remainingSec ?? 0,
+                        ),
                       );
                       return (
                         <td

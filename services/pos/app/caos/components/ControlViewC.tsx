@@ -72,11 +72,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       key={ticket.ticketUid}
                       card={ticket}
                       size="sm"
-                      onClick={() => {
-                        if (selectedOrderId !== orderLabel(ticket))
-                          onSelectOrder(orderLabel(ticket));
-                        onOpenTicketDetail(ticket);
-                      }}
+                      onClick={() => onOpenTicketDetail(ticket)}
                       className="min-w-[180px] flex-1 cursor-pointer border-l-4 border-l-blue-500 hover:ring-2 hover:ring-blue-400"
                     />
                   ))}

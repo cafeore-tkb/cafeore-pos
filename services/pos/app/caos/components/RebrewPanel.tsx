@@ -7,7 +7,6 @@ import { clockLabel } from "../logic/format";
 import { laneOrdinal } from "../logic/lanes";
 import {
   canConfirmRebrew,
-  defaultRebrewIndex,
   rebrewCandidates,
   rebrewSlots,
 } from "../logic/rebrew";
@@ -29,15 +28,9 @@ export const RebrewPanel: React.FC<{
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
 
   const { candidates, fastestId } = rebrewCandidates(baristas, ticket);
-  // 止めるカードの代わりに、同じドリッパーで今から始められる
-  const replacesCurrent = (bayId: number) =>
-    interruptCurrent && isBrewing && bayId === sourceBayId;
+  const source = { ticket, sourceBayId, interruptCurrent };
   const selectedBay = baristas.find((barista) => barista.id === targetBayId);
-  const slots = selectedBay
-    ? rebrewSlots(selectedBay, {
-        replacesCurrent: replacesCurrent(selectedBay.id),
-      })
-    : [];
+  const slots = selectedBay ? rebrewSlots(selectedBay, source).slots : [];
   const choice = (selected: boolean) =>
     `touch-manipulation rounded-xl border-2 ${selected ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-700"}`;
 
@@ -144,11 +137,7 @@ export const RebrewPanel: React.FC<{
                 disabled={!eligible}
                 onClick={() => {
                   setTargetBayId(barista.id);
-                  setInsertIndex(
-                    defaultRebrewIndex(barista, {
-                      replacesCurrent: replacesCurrent(barista.id),
-                    }),
-                  );
+                  setInsertIndex(rebrewSlots(barista, source).defaultIndex);
                 }}
                 className={`min-h-[66px] p-2 text-left disabled:opacity-45 ${choice(targetBayId === barista.id)}`}
               >

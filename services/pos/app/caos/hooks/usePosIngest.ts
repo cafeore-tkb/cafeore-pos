@@ -1,16 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { startOfLocalDay } from "../logic/format";
 import { ingestPosOrders } from "../logic/posOrders";
 import type { DripCard } from "../types";
 import { usePosOrders } from "./usePosOrders";
-
-const startOfLocalDay = (ms: number) => {
-  const date = new Date(ms);
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  ).getTime();
-};
 
 // cafeore-pos の注文を盤面に取り込む（共有の WebSocket から届くたびに、新しい注文を足し、取り下げを外す）。
 // enabled が false（実データテスト中）のあいだは取り込まない。reset で取り込み直す。

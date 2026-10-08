@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
+  CONTROL_VIEWS,
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
@@ -17,70 +18,35 @@ import {
   type AuxiliaryTab,
   useAuxiliaryWindow,
 } from "./hooks/useAuxiliaryWindow";
+import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
-import { findTicket } from "./logic/board";
-import { compareUnassigned, orderLabel, totalCups } from "./logic/cards";
-import { ordersSoFar } from "./logic/historical";
-import { nextAvailableBays } from "./logic/queue";
 
-// CaOS（ドリップ管制）の画面。盤面・時刻・注文の取り込みは useCaosSession、見せ方は components の部品。
-// ここは画面の選択（どの管制盤・どのパネル・どのカード）だけを持ち、フックの値と操作を部品に渡す。
+// CaOS（ドリップ管制）の画面。盤面・時刻・注文の取り込みは useCaosSession、選んでいるものは useBoardSelection、
+// 見せ方は components の部品。ここはどの管制盤・どのパネルを出すかだけを持ち、フックの値と操作を部品に渡す。
 export default function App() {
   const auxWindow = useAuxiliaryWindow();
   const session = useCaosSession(auxWindow.snapshot);
+  const selection = useBoardSelection(session.board, session);
   const typeNames = useItemTypeNames();
-  const { board, nowSec, testPlay } = session;
+  const { board, testPlay } = session;
 
   const [activeTab, setActiveTab] = useState<NavTab>(
     auxWindow.standaloneTab ?? "control",
   );
-  const [controlViewMode, setControlViewMode] =
-    useState<ControlViewMode>("current");
+  const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
-  // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  // パネルはカードのキーだけを持ち、カードは毎回いまの盤面から読む（開いているあいだに始まった・終わったカードを古いまま扱わない）
-  const [selectedTicketKey, setSelectedTicketKey] = useState<string | null>(
-    null,
-  );
-  const [assignSlotBayId, setAssignSlotBayId] = useState<number | null>(null);
-  const [rebrewKey, setRebrewKey] = useState<string | null>(null);
+  const view = CONTROL_VIEWS[controlViewMode];
 
-  // 待機のカードだけ動かせるので、始まったら移動のボタン・詳細を閉じる
-  const selected = selectedTicketKey
-    ? findTicket(board.baristas, selectedTicketKey)
-    : null;
-  const selectedScheduled =
-    selected?.ticket.status === "scheduled" ? selected : null;
-  const rebrewSource = rebrewKey ? findTicket(board.baristas, rebrewKey) : null;
-  useEffect(() => {
-    if (selectedTicketKey && !selectedScheduled) setSelectedTicketKey(null);
-  }, [selectedTicketKey, selectedScheduled]);
-
-  const clearSelections = () => {
-    setSelectedOrderId(null);
-    setSelectedTicketKey(null);
-    setAssignSlotBayId(null);
-    setRebrewKey(null);
-  };
-
-  const unassignedOrders = [...board.unassigned].sort(compareUnassigned);
   const auxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
       baristas={board.baristas}
       typeNames={typeNames}
-      salesOrders={testPlay.session ? ordersSoFar(testPlay.session) : []}
-      periodStartMs={testPlay.session?.startMs}
-      periodEndMs={
-        testPlay.session
-          ? Math.min(testPlay.session.currentMs, testPlay.session.endMs)
-          : undefined
-      }
+      {...testPlay.analytics}
     />
   );
 
@@ -101,35 +67,28 @@ export default function App() {
           onSelectTab={setActiveTab}
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
-          unassignedCups={totalCups(board.unassigned)}
-          totalWaitingCups={totalCups(
-            board.baristas.flatMap((barista) => barista.queue),
-          )}
+          unassignedCups={session.cups.unassigned}
+          totalWaitingCups={session.cups.waiting}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
           isRunning={session.isRunning}
           onTogglePlay={session.toggleRunning}
           simSpeed={session.simSpeed}
-          onChangeSpeed={session.setSimSpeed}
+          onCycleSpeed={session.cycleSpeed}
           onResetData={() => {
             session.reset();
-            clearSelections();
+            selection.clear();
           }}
-          showTimelineControls={controlViewMode === "current"}
+          showTimelineControls={view.timelineControls}
           onTimelineNavigate={(direction) =>
             setTimelineCommand({ direction, id: Date.now() })
           }
-          canUndo={session.undoLabel !== null}
           undoLabel={session.undoLabel}
           onUndo={() => {
-            if (session.undo()) clearSelections();
+            if (session.undo()) selection.clear();
           }}
-          testPlaying={testPlay.session?.status === "active"}
-          testProgressLabel={
-            testPlay.session
-              ? `${Math.max(0, Math.ceil((testPlay.session.endMs - testPlay.session.currentMs) / 60_000))}分`
-              : null
-          }
+          testPlaying={testPlay.isActive}
+          testProgressLabel={testPlay.remainingLabel}
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={() => {
             testPlay.finish();
@@ -142,41 +101,23 @@ export default function App() {
           <ControlWorkspace
             mode={controlViewMode}
             baristas={board.baristas}
-            unassignedOrders={unassignedOrders}
-            nextAvailable={nextAvailableBays(board.baristas)}
-            selectedOrderId={selectedOrderId}
-            actionTicketKey={selectedScheduled ? selectedTicketKey : null}
-            currentTimeSec={nowSec}
+            unassignedOrders={session.unassigned}
+            nextAvailable={session.nextAvailable}
+            selectedOrderId={selection.selectedOrderId}
+            actionTicketKey={selection.scheduled?.ticket.ticketUid ?? null}
+            currentTimeSec={session.nowSec}
             timelineCommand={timelineCommand}
-            onSelectOrder={(orderId) =>
-              setSelectedOrderId((current) =>
-                !orderId || current === orderId ? null : orderId,
-              )
-            }
+            onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}
-            onOpenTicketDetail={(ticket) =>
-              setSelectedTicketKey(ticket.ticketUid)
-            }
-            onMoveTicket={(ticket, bayId) => {
-              if (session.move(ticket.ticketUid, bayId))
-                setSelectedOrderId(null);
-            }}
-            onReturnToUnassigned={(ticket) => {
-              if (session.returnToUnassigned(ticket.ticketUid))
-                setSelectedOrderId(null);
-            }}
-            onCloseTicketAction={() => setSelectedTicketKey(null)}
-            onRequestRebrew={(ticket) => {
-              setSelectedTicketKey(null);
-              setRebrewKey(ticket.ticketUid);
-            }}
-            onOpenEmptySlot={setAssignSlotBayId}
-            onAssignToBay={(order, bayId) =>
-              session.assign(order.ticketUid, bayId)
-            }
-            onMergeOrders={(firstUid, secondUid) => {
-              if (session.merge(firstUid, secondUid)) setSelectedOrderId(null);
-            }}
+            onOpenTicketPad={selection.openTicket}
+            onOpenTicketDetail={selection.openDetail}
+            onMoveTicket={selection.move}
+            onReturnToUnassigned={selection.returnToUnassigned}
+            onCloseTicketAction={selection.closeTicket}
+            onRequestRebrew={selection.openRebrew}
+            onOpenEmptySlot={selection.openAssignSlot}
+            onAssignToBay={selection.assign}
+            onMergeOrders={selection.merge}
           />
         </main>
 
@@ -196,49 +137,33 @@ export default function App() {
         )}
       </div>
 
-      {/* 待機のカードの詳細（管制盤 C・D。A はカードの上の 1〜6 のボタン） */}
-      {selectedScheduled && controlViewMode !== "current" && (
+      {selection.scheduled && view.detailPanel && (
         <TicketDetailPanel
-          ticket={selectedScheduled.ticket}
-          currentBayId={selectedScheduled.bayId}
-          onClose={() => {
-            setSelectedTicketKey(null);
-            setSelectedOrderId(null);
-          }}
-          onMoveTicket={(ticket, bayId) => {
-            if (session.move(ticket.ticketUid, bayId)) setSelectedOrderId(null);
-          }}
-          onReturnToUnassigned={(ticket) => {
-            if (session.returnToUnassigned(ticket.ticketUid))
-              setSelectedOrderId(null);
-          }}
+          ticket={selection.scheduled.ticket}
+          currentBayId={selection.scheduled.bayId}
+          onClose={selection.closeDetail}
+          onMoveTicket={selection.move}
+          onReturnToUnassigned={selection.returnToUnassigned}
         />
       )}
 
-      {/* 空きスロットからの割当 */}
-      {assignSlotBayId !== null && (
+      {selection.assignSlotBayId !== null && (
         <AssignPanel
-          bayId={assignSlotBayId}
+          bayId={selection.assignSlotBayId}
           baristas={board.baristas}
-          unassignedOrders={unassignedOrders}
-          onClose={() => setAssignSlotBayId(null)}
+          unassignedOrders={session.unassigned}
+          onClose={selection.closeAssignSlot}
           onAssign={session.assign}
         />
       )}
 
-      {rebrewSource && rebrewSource.ticket.status !== "scheduled" && (
+      {selection.rebrewSource && (
         <RebrewPanel
-          ticket={rebrewSource.ticket}
-          sourceBayId={rebrewSource.bayId}
+          ticket={selection.rebrewSource.ticket}
+          sourceBayId={selection.rebrewSource.bayId}
           baristas={board.baristas}
-          onClose={() => setRebrewKey(null)}
-          onConfirm={(decision) => {
-            if (!session.rebrew(rebrewSource.ticket.ticketUid, decision))
-              return;
-            setRebrewKey(null);
-            setSelectedTicketKey(null);
-            setSelectedOrderId(orderLabel(rebrewSource.ticket));
-          }}
+          onClose={selection.closeRebrew}
+          onConfirm={selection.rebrew}
         />
       )}
 
@@ -248,7 +173,7 @@ export default function App() {
           onClose={() => setTestSetupOpen(false)}
           onStart={(startMs, durationMinutes) => {
             testPlay.start(startMs, durationMinutes);
-            clearSelections();
+            selection.clear();
             setActiveTab("control");
             setTestSetupOpen(false);
           }}

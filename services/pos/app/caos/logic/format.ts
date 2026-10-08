@@ -13,3 +13,13 @@ export const timeOfDayLabel = (sec: number) => {
   const day = ((Math.floor(sec) % 86400) + 86400) % 86400;
   return `${pad2(Math.floor(day / 3600))}:${pad2(Math.floor(day / 60) % 60)}:${pad2(day % 60)}`;
 };
+
+/** その日（端末の時刻）の 0 時（ms） */
+export const startOfLocalDay = (ms: number) => {
+  const date = new Date(ms);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
+};

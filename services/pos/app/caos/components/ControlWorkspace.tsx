@@ -6,7 +6,13 @@ import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
 
-export type ControlViewMode = "current" | "c" | "d";
+// 管制盤 A・C・D。待機のカードは、A はカードの上の 1〜6 のボタン、C・D は右の詳細のパネルで動かす
+export const CONTROL_VIEWS = {
+  a: { label: "A", timelineControls: true, detailPanel: false },
+  c: { label: "C", timelineControls: false, detailPanel: true },
+  d: { label: "D", timelineControls: false, detailPanel: true },
+} as const;
+export type ControlViewMode = keyof typeof CONTROL_VIEWS;
 
 // 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
 export interface ControlViewProps {
@@ -19,8 +25,12 @@ export interface ControlViewProps {
   actionTicketKey: string | null;
   currentTimeSec: number;
   timelineCommand: TimelineCommand | null;
-  onSelectOrder: (orderId: string) => void;
+  /** 注文を選ぶ（null で外す） */
+  onSelectOrder: (orderId: string | null) => void;
   onAdvanceBay: (bayId: number) => void;
+  /** 待機のカードの 1〜6 のボタンを開く（管制盤 A） */
+  onOpenTicketPad: (ticket: OrderTicket) => void;
+  /** 待機のカードの詳細を開き、その注文を選ぶ（管制盤 C・D） */
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
@@ -32,10 +42,15 @@ export interface ControlViewProps {
   onMergeOrders: (firstUid: string, secondUid: string) => void;
 }
 
+const VIEWS: Record<ControlViewMode, React.FC<ControlViewProps>> = {
+  a: ControlViewA,
+  c: ControlViewC,
+  d: ControlViewD,
+};
+
 export const ControlWorkspace: React.FC<
   ControlViewProps & { mode: ControlViewMode }
 > = ({ mode, ...props }) => {
-  if (mode === "d") return <ControlViewD {...props} />;
-  if (mode === "c") return <ControlViewC {...props} />;
-  return <ControlViewA {...props} />;
+  const View = VIEWS[mode];
+  return <View {...props} />;
 };

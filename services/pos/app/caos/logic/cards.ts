@@ -25,6 +25,23 @@ export const groupByOrder = <T extends DripCard>(cards: readonly T[]) => {
   return groups;
 };
 
+/** 格子の置き場所。注文ごとに行を改め、1 行に perRow 枚まで（gridColumn・gridRow は 1 始まり） */
+export const placeByOrder = <T extends DripCard>(
+  cards: readonly T[],
+  perRow: number,
+) => {
+  let nextRow = 1;
+  return [...groupByOrder(cards).values()].flatMap((group) => {
+    const placed = group.map((card, index) => ({
+      card,
+      gridColumn: (index % perRow) + 1,
+      gridRow: nextRow + Math.floor(index / perRow),
+    }));
+    nextRow += Math.ceil(group.length / perRow);
+    return placed;
+  });
+};
+
 /** 注文番号・注文の中の順に並べる */
 export const compareCards = (a: DripCard, b: DripCard) =>
   a.orderNos[0] - b.orderNos[0] ||

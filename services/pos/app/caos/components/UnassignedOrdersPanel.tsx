@@ -5,8 +5,8 @@ import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
   canMergeDripUnits,
-  groupByOrder,
   orderLabel,
+  placeByOrder,
   totalCups,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
@@ -22,7 +22,7 @@ export const UnassignedOrdersPanel: React.FC<{
   nextAvailable: NextAvailable;
   layout?: "strip" | "sidebar";
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
+  onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (order: DripCard, bayId: number) => void;
   onMergeOrders?: (firstUid: string, secondUid: string) => void;
 }> = ({
@@ -45,7 +45,7 @@ export const UnassignedOrdersPanel: React.FC<{
     targetAt: (order, x, y) => bayTargetAt(x, y, order),
     onBegin: (order) => {
       // Same as tapping another card: switching cards drops the old selection.
-      if (openUid && openUid !== order.ticketUid) onSelectOrder("");
+      if (openUid && openUid !== order.ticketUid) onSelectOrder(null);
       setOpenUid(order.ticketUid);
     },
     onDrop: assign,
@@ -58,31 +58,18 @@ export const UnassignedOrdersPanel: React.FC<{
     (target) => Boolean(target.closest("[data-unassigned-uid]")),
     () => {
       setOpenUid(null);
-      onSelectOrder("");
+      onSelectOrder(null);
     },
   );
 
-  // 縦のリストは注文ごとに行を改め、1 行に 3 枚まで
+  // 縦のリストは注文ごとに行を改め、1 行に 3 枚まで。横帯は先頭の 12 枚
   const placed: Array<{
-    order: DripCard;
+    card: DripCard;
     gridColumn?: number;
     gridRow?: number;
-  }> = [];
-  if (isSidebar) {
-    let nextRow = 1;
-    for (const group of groupByOrder(orders).values()) {
-      for (const [index, order] of group.entries()) {
-        placed.push({
-          order,
-          gridColumn: (index % 3) + 1,
-          gridRow: nextRow + Math.floor(index / 3),
-        });
-      }
-      nextRow += Math.ceil(group.length / 3);
-    }
-  } else {
-    for (const order of orders.slice(0, 12)) placed.push({ order });
-  }
+  }> = isSidebar
+    ? placeByOrder(orders, 3)
+    : orders.slice(0, 12).map((card) => ({ card }));
 
   return (
     <section
@@ -98,7 +85,7 @@ export const UnassignedOrdersPanel: React.FC<{
       <div
         className={`grid min-h-0 flex-1 ${isSidebar ? "auto-rows-[112px] grid-cols-3 content-start gap-2 overflow-auto px-3 py-10" : "grid-cols-6 grid-rows-2 gap-1.5 p-2"}`}
       >
-        {placed.map(({ order, gridColumn, gridRow }, index) => {
+        {placed.map(({ card: order, gridColumn, gridRow }, index) => {
           const uid = order.ticketUid;
           const isOpen = openUid === uid;
           const isSelected = selectedOrderId === orderLabel(order);
@@ -109,7 +96,7 @@ export const UnassignedOrdersPanel: React.FC<{
           const isOrderBoundary =
             !isSidebar &&
             index > 0 &&
-            placed[index - 1].order.orderNos[0] !== order.orderNos[0];
+            placed[index - 1].card.orderNos[0] !== order.orderNos[0];
           return (
             <OrderCard
               key={uid}
@@ -130,7 +117,7 @@ export const UnassignedOrdersPanel: React.FC<{
                   setOpenUid(null);
                   return;
                 }
-                if (!isSelected) onSelectOrder(orderLabel(order));
+                onSelectOrder(orderLabel(order));
                 setOpenUid(uid);
               }}
               style={{ gridColumn, gridRow }}

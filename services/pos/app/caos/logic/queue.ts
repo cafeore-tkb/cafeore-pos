@@ -6,7 +6,7 @@ import { compareCards } from "./cards";
 /** 前の抽出が終わってから次の抽出を始めるまでの入れ替えの時間（秒） */
 export const CHANGEOVER_SEC = 15;
 /** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
-export const SOON_SEC = 15;
+const SOON_SEC = 15;
 
 // 待機のカードを注文番号の順に並べ、開始の予定時刻を付け直す。
 // 抽出中のカードはそのまま先頭に残す。抽出中のカードが無ければ（activateFirst なら必ず）先頭を今から始める。
@@ -83,7 +83,7 @@ export const nextAvailableBays = (baristas: Barista[]) =>
 export type NextAvailable = ReturnType<typeof nextAvailableBays>;
 
 // ドリッパーの先頭のカードの残り（秒）。カードが無ければ 0
-export const activeRemainingSec = (barista: Barista, nowSec: number) => {
+const activeRemainingSec = (barista: Barista, nowSec: number) => {
   const current = barista.queue[0];
   if (!current) return 0;
   if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
@@ -93,7 +93,7 @@ export const activeRemainingSec = (barista: Barista, nowSec: number) => {
 };
 
 // 抽出中のカードの残りが SOON_SEC 以下（「まもなく」）
-export const isSoon = (barista: Barista, nowSec: number) =>
+const isSoon = (barista: Barista, nowSec: number) =>
   barista.queue[0]?.status === "brewing" &&
   activeRemainingSec(barista, nowSec) <= SOON_SEC;
 

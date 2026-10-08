@@ -38,7 +38,7 @@ export const DispatchBoard: React.FC<
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicketDetail,
+  onOpenTicketPad,
   actionTicketKey,
   onMoveTicket,
   onReturnToUnassigned,
@@ -115,7 +115,7 @@ export const DispatchBoard: React.FC<
 
           <button
             type="button"
-            onClick={() => onSelectOrder("")}
+            onClick={() => onSelectOrder(null)}
             className="flex min-h-[34px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
           >
             <X className="h-3.5 w-3.5" />
@@ -285,8 +285,7 @@ export const DispatchBoard: React.FC<
                             onClickCapture={drag.suppressClick}
                             onClick={() => {
                               if (!isScheduled) onRequestRebrew(ticket);
-                              else if (!isActionOpen)
-                                onOpenTicketDetail(ticket);
+                              else if (!isActionOpen) onOpenTicketPad(ticket);
                               else {
                                 onReturnToUnassigned(ticket);
                                 onCloseTicketAction();
