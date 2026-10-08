@@ -19,46 +19,60 @@ import (
 // 緊急（入れ直し）。カップに印を付けるだけで、入れ直しのカードは CaOS の未割当のいちばん上に出る（画面が組み立てる）。
 //
 //   - POST /api/caos/emergency：カップを緊急にする（マスターの緊急ボタンと CaOS の入れ直しのパネル）。
-//     emergency_at を付け、CaOS の列（dripper・dripper_position・brew_started_at・brew_finished_at）を空に戻す。
-//     最初に淹れたカード（drip_id）は残し、入れ直しのカードは emergency_drip_id で持つ（caosCardID）
+//     emergency_at を付けるだけで、最初の抽出の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）は残す。
+//     入れ直しのカードは別の列（emergency_dripper・emergency_dripper_position・emergency_drip_id・emergency_brew_started_at・
+//     emergency_brew_finished_at）で持つ（caosCol）
 //   - POST /api/orders/:id/cups/:cupId/emergency-label/claim・release：緊急のシールを印刷する役を取る・返す。
 //     プリンターにつないだレジが、emergency_printed_at を「まだ空なら付ける」で付けられたときだけ印刷する（2 重に印刷しない）
 //
 // どれも注文の行をロックしてから書く（注文の編集がカップを入れ直すのと重ならないように）。
 
-// caosCardSQL はカップの CaOS のカードの SQL（alias はテーブルの別名。空なら付けない）。
-// 緊急のカップは入れ直しのカード（emergency_drip_id）、それ以外は drip_id。
-func caosCardSQL(alias string) string {
+// caosCol はカップの CaOS のカードの列 col（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）の SQL
+// （alias はテーブルの別名。空なら付けない）。緊急のカップは入れ直しの列（emergency_<col>）、それ以外は最初の抽出の列。
+func caosCol(alias, col string) string {
 	p := ""
 	if alias != "" {
 		p = alias + "."
 	}
-	return "(CASE WHEN " + p + "emergency_at IS NULL THEN " + p + "drip_id ELSE " + p + "emergency_drip_id END)"
+	return "(CASE WHEN " + p + "emergency_at IS NULL THEN " + p + col + " ELSE " + p + "emergency_" + col + " END)"
 }
 
+// caosCardSQL はカップの CaOS のカードの SQL（緊急のカップは入れ直しのカード emergency_drip_id）。
+func caosCardSQL(alias string) string { return caosCol(alias, "drip_id") }
+
 // caosCardID はカップの CaOS のカード（caosCardSQL と同じ）。
-func caosCardID(c *models.OrderCup) *uuid.UUID {
-	if c.EmergencyAt != nil {
-		return c.EmergencyDripID
-	}
-	return c.DripID
-}
+func caosCardID(c *models.OrderCup) *uuid.UUID { return cupCaosState(c).DripID }
 
 // whereCaosCard はカードが id のカップに絞る。
 func whereCaosCard(tx *gorm.DB, id uuid.UUID) *gorm.DB {
 	return tx.Where(caosCardSQL("")+" = ?", id)
 }
 
-// updateCaosCups はカップに CaOS の値を書く。カードの印は、緊急のカップには emergency_drip_id に、それ以外は drip_id に書く。
+// updateCaosCups はカップに CaOS の値を書く。緊急のカップは入れ直しの列に、それ以外は最初の抽出の列に書く。
 func updateCaosCups(tx *gorm.DB, cups []uuid.UUID, s caosState) error {
-	normal := s.updates()
-	if err := tx.Model(&models.OrderCup{}).Where("id IN ? AND emergency_at IS NULL", cups).Updates(normal).Error; err != nil {
+	if err := tx.Model(&models.OrderCup{}).Where("id IN ? AND emergency_at IS NULL", cups).Updates(s.updates(false)).Error; err != nil {
 		return err
 	}
-	emergency := s.updates()
-	delete(emergency, "drip_id")
-	emergency["emergency_drip_id"] = s.DripID
-	return tx.Model(&models.OrderCup{}).Where("id IN ? AND emergency_at IS NOT NULL", cups).Updates(emergency).Error
+	return tx.Model(&models.OrderCup{}).Where("id IN ? AND emergency_at IS NOT NULL", cups).Updates(s.updates(true)).Error
+}
+
+// updateCaosCard はカード id のカップの列 col を value にする（入れ直しのカードなら入れ直しの列 emergency_<col>）。
+func updateCaosCard(tx *gorm.DB, id uuid.UUID, col string, value any) error {
+	if err := tx.Model(&models.OrderCup{}).Where("emergency_at IS NULL AND drip_id = ?", id).Update(col, value).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.OrderCup{}).Where("emergency_at IS NOT NULL AND emergency_drip_id = ?", id).Update("emergency_"+col, value).Error
+}
+
+// finishCaosCard はカードの抽出を終える（brew_finished_at）。抽出中に緊急にしたカップ（中断せず、カードの残りのカップを
+// 淹れ続けたとき）の最初の抽出も、カードといっしょに終える（最初の抽出の列がカードのほかのカップとそろう）。
+func finishCaosCard(tx *gorm.DB, id uuid.UUID, now time.Time) error {
+	if err := updateCaosCard(tx, id, "brew_finished_at", now); err != nil {
+		return err
+	}
+	return tx.Model(&models.OrderCup{}).
+		Where("emergency_at IS NOT NULL AND drip_id = ? AND brew_started_at IS NOT NULL AND brew_finished_at IS NULL", id).
+		Update("brew_finished_at", now).Error
 }
 
 // ---------------------------------------------------------------- POST /api/caos/emergency
@@ -87,7 +101,8 @@ func (c caosEmergencyCup) brewing() bool { return c.BrewStartedAt != nil && c.Br
 func readEmergencyCups(tx *gorm.DB, where string, args ...any) ([]caosEmergencyCup, error) {
 	var rows []caosEmergencyCup
 	err := tx.Raw(`
-		SELECT c.id, c.order_id, c.dripper, `+caosCardSQL("c")+` AS drip_id, c.brew_started_at, c.brew_finished_at, c.emergency_at,
+		SELECT c.id, c.order_id, `+caosCol("c", "dripper")+` AS dripper, `+caosCardSQL("c")+` AS drip_id,
+			`+caosCol("c", "brew_started_at")+` AS brew_started_at, `+caosCol("c", "brew_finished_at")+` AS brew_finished_at, c.emergency_at,
 			COALESCE(t.makes_cup, true) AND COALESCE(t.needs_brew, true) AS brew
 		FROM order_cups c
 		LEFT JOIN items i ON i.id = c.item_id
@@ -101,10 +116,11 @@ func readEmergencyCups(tx *gorm.DB, where string, args ...any) ([]caosEmergencyC
 func readCaosLane(tx *gorm.DB, dripper int, start, end time.Time) (brewing, queued []*caosLaneCard, err error) {
 	var rows []caosLaneCup
 	if err := tx.Raw(`
-		SELECT c.id, c.order_id, o.order_id AS order_no, `+caosCardSQL("c")+` AS drip_id, c.dripper_position,
-			c.brew_started_at, c.brew_finished_at, c.ready_at, c.emergency_at
+		SELECT c.id, c.order_id, o.order_id AS order_no, `+caosCardSQL("c")+` AS drip_id,
+			`+caosCol("c", "dripper_position")+` AS dripper_position, `+caosCol("c", "brew_started_at")+` AS brew_started_at,
+			`+caosCol("c", "brew_finished_at")+` AS brew_finished_at, c.ready_at, c.emergency_at
 		FROM order_cups c JOIN orders o ON o.id = c.order_id
-		WHERE o.created_at >= ? AND o.created_at < ? AND c.dripper = ? AND c.brew_finished_at IS NULL`,
+		WHERE o.created_at >= ? AND o.created_at < ? AND `+caosCol("c", "dripper")+` = ? AND `+caosCol("c", "brew_finished_at")+` IS NULL`,
 		start, end, dripper).Scan(&rows).Error; err != nil {
 		return nil, nil, err
 	}
@@ -244,15 +260,21 @@ func (h *CaosHandler) markEmergency(cupIDs []uuid.UUID, interrupt bool) (caosEme
 		// ロックする前に読んだカップが、そのままか（違えば読み直す）
 		for _, c := range cups {
 			_, cup := findCaosCup(orders, c.ID)
-			if cup == nil || cup.EmergencyAt != nil || !ptrEqual(cup.Dripper, c.Dripper) || !ptrEqual(caosCardID(cup), c.DripID) ||
-				!msEqual(cup.BrewStartedAt, c.BrewStartedAt) || !msEqual(cup.BrewFinishedAt, c.BrewFinishedAt) {
+			if cup == nil || cup.EmergencyAt != nil {
+				return errCaosConflict
+			}
+			if s := cupCaosState(cup); !ptrEqual(s.Dripper, c.Dripper) || !ptrEqual(s.DripID, c.DripID) ||
+				!msEqual(s.BrewStartedAt, c.BrewStartedAt) || !msEqual(s.BrewFinishedAt, c.BrewFinishedAt) {
 				return errCaosConflict
 			}
 		}
 		for _, head := range heads {
 			for _, r := range head.cups {
 				_, cup := findCaosCup(orders, r.ID)
-				if cup == nil || !ptrEqual(caosCardID(cup), r.DripID) || cup.BrewStartedAt != nil || cup.BrewFinishedAt != nil ||
+				if cup == nil {
+					return errCaosConflict
+				}
+				if s := cupCaosState(cup); !ptrEqual(s.DripID, r.DripID) || s.BrewStartedAt != nil || s.BrewFinishedAt != nil ||
 					!timeEqual(cup.ReadyAt, r.ReadyAt) {
 					return errCaosConflict
 				}
@@ -262,22 +284,18 @@ func (h *CaosHandler) markEmergency(cupIDs []uuid.UUID, interrupt bool) (caosEme
 		for _, c := range cups {
 			res.marked = append(res.marked, c.ID)
 		}
-		if err := tx.Model(&models.OrderCup{}).Where("id IN ?", res.marked).Updates(map[string]any{
-			"emergency_at":         now,
-			"emergency_drip_id":    nil,
-			"emergency_printed_at": nil,
-			"dripper":              nil,
-			"dripper_position":     nil,
-			"brew_started_at":      nil,
-			"brew_finished_at":     nil,
-		}).Error; err != nil {
+		// 最初の抽出の列は残す（中断したカードのカップは、始めた時刻だけが残る）。入れ直しのカードは未割当から
+		marked := (caosState{}).updates(true)
+		marked["emergency_at"] = now
+		marked["emergency_printed_at"] = nil
+		if err := tx.Model(&models.OrderCup{}).Where("id IN ?", res.marked).Updates(marked).Error; err != nil {
 			return err
 		}
 		for id := range interrupted {
 			res.interrupted = append(res.interrupted, id)
 		}
 		for _, head := range heads {
-			if err := whereCaosCard(tx.Model(&models.OrderCup{}), head.dripID).Update("brew_started_at", now).Error; err != nil {
+			if err := updateCaosCard(tx, head.dripID, "brew_started_at", now); err != nil {
 				return err
 			}
 			res.started = append(res.started, head.dripID)

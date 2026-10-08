@@ -102,7 +102,7 @@ type CaosCupAfter struct {
 	StartBrew bool `json:"start_brew"`
 }
 
-// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップは emergency_ の付いた列）。全部 null なら未割当
 type CaosCupState struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
@@ -119,7 +119,7 @@ type CaosCupsWrite struct {
 	// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
 	After CaosCupAfter `json:"after"`
 
-	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップは emergency_ の付いた列）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
 }
@@ -289,18 +289,18 @@ type CaosUndoCup struct {
 	CupId openapi_types.UUID `json:"cup_id"`
 
 	// Current 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
-	// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+	// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
 	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
 	Current CaosUndoCupState `json:"current"`
 
 	// Restore 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
-	// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+	// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
 	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
 	Restore CaosUndoCupState `json:"restore"`
 }
 
 // CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
-// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+// dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
 // served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
 type CaosUndoCupState struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
@@ -626,11 +626,24 @@ type OrderCupResponse struct {
 	DripperPosition *float64 `json:"dripper_position"`
 
 	// EmergencyAt 緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。
-	// 緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）
+	// 緊急にしても dripper・dripper_position・drip_id・brew_started_at・brew_finished_at（最初の抽出）は残る。
+	// 緊急のカップの CaOS のカードは、下の emergency_ の付いた列（入れ直しのカード）で決まる
 	EmergencyAt *time.Time `json:"emergency_at"`
 
-	// EmergencyDripId 入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード
+	// EmergencyBrewFinishedAt 入れ直しの抽出を終えた時刻
+	EmergencyBrewFinishedAt *time.Time `json:"emergency_brew_finished_at"`
+
+	// EmergencyBrewStartedAt 入れ直しの抽出を始めた時刻
+	EmergencyBrewStartedAt *time.Time `json:"emergency_brew_started_at"`
+
+	// EmergencyDripId 入れ直しで淹れるカードの印（drip_id と同じ意味）。null なら未割当の緊急のカード
 	EmergencyDripId *openapi_types.UUID `json:"emergency_drip_id"`
+
+	// EmergencyDripper 入れ直しのカードのドリッパーの番号（dripper と同じ意味）
+	EmergencyDripper *int `json:"emergency_dripper"`
+
+	// EmergencyDripperPosition 入れ直しのカードのドリッパーの中の順番（dripper_position と同じ意味）
+	EmergencyDripperPosition *float64 `json:"emergency_dripper_position"`
 
 	// EmergencyPrintedAt 緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する
 	// （POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）

@@ -249,7 +249,8 @@ func TestCaosUndoRulesOnDB(t *testing.T) {
 	if code, body := f.undo(t, wrote, before); code != http.StatusConflict || !strings.Contains(body, "緊急") {
 		t.Fatalf("undo after emergency = %d %s, want 409", code, body)
 	}
-	// 入れ直しのカードの割当は戻せる（カードは emergency_drip_id に書き戻し、最初に淹れたカードの drip_id は残す）
+	// 入れ直しのカードの割当は戻せる（入れ直しの列 emergency_* を書き戻し、最初の抽出の列はそのまま）
+	first := f.cup(t, cupP[0])
 	before = f.undoStates(t, cupP)
 	rebrew := uuid.New()
 	f.mustPut(t, write(cupP, f.state(t, cupP[0]), placed(4, 2, rebrew, true)))
@@ -257,7 +258,10 @@ func TestCaosUndoRulesOnDB(t *testing.T) {
 	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
 		t.Fatalf("undo a rebrew assign = %d %s", code, body)
 	}
-	if cup := f.cup(t, cupP[0]); cup.EmergencyAt == nil || cup.EmergencyDripID != nil || cup.Dripper != nil || cup.DripID == nil || *cup.DripID != cardP {
+	if cup := f.cup(t, cupP[0]); cup.EmergencyAt == nil || cup.EmergencyDripID != nil || cup.EmergencyDripper != nil ||
+		cup.EmergencyDripperPosition != nil || cup.EmergencyBrewStartedAt != nil ||
+		!ptrEqual(cup.Dripper, first.Dripper) || !ptrEqual(cup.DripID, &cardP) ||
+		!timeEqual(cup.BrewStartedAt, first.BrewStartedAt) || !timeEqual(cup.BrewFinishedAt, first.BrewFinishedAt) || cup.BrewFinishedAt == nil {
 		t.Fatalf("rebrew cup after undo = %+v", cup)
 	}
 	// 緊急を書き戻すのは形の違うリクエスト

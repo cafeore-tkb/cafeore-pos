@@ -111,7 +111,11 @@ export const toCaosPracticeOrder = (
       brewFinishedAt: null,
       // 練習では緊急（入れ直し）を出さない
       emergencyAt: null,
+      emergencyDripper: null,
+      emergencyDripperPosition: null,
       emergencyDripId: null,
+      emergencyBrewStartedAt: null,
+      emergencyBrewFinishedAt: null,
       emergencyPrintedAt: null,
     });
   });

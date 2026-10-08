@@ -19,8 +19,9 @@ import { jstDate } from "./jstDay";
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は時刻の代わりに「始める」の印（start_brew）を持つ。
 //
-// 緊急（入れ直し）のカップ（emergencyAt のあるカップ）は、CaOS のカードを emergencyDripId で持つ（dripId は最初に淹れたカード）。
-// ここでいうカップの dripId（CaosCupState.dripId・書き込みの drip_id）は、緊急のカップでは emergencyDripId のこと。
+// 緊急（入れ直し）のカップ（emergencyAt のあるカップ）は、CaOS のカードを入れ直しの列（emergencyDripper・emergencyDripperPosition・
+// emergencyDripId・emergencyBrewStartedAt・emergencyBrewFinishedAt）で持つ（dripper〜brewFinishedAt は最初の抽出のまま残る）。
+// ここでいうカップの値（CaosCupState・書き込みの before・after）は、緊急のカップでは入れ直しの列のこと（サーバーの cupCaosState と同じ）。
 // 緊急のカップは準備完了・提供済みでも入れ直すので盤面に出し、まだカードに入っていなければ未割当のいちばん上に出す。
 
 /** ドリッパーの数（番号は 1〜6。models/dripper の DRIPPER_NUMBERS。画面では 1st〜6th） */
@@ -117,20 +118,23 @@ export const cupNeedsBrew = (cup: Pick<Cup, "item">) =>
   cup.item.item_type.makes_cup !== false &&
   cup.item.item_type.needs_brew !== false;
 
-/** カップの CaOS のカード（緊急のカップは入れ直しのカード emergencyDripId。サーバーの caosCardID と同じ） */
-export const caosCardId = (
-  cup: Pick<Cup, "dripId" | "emergencyAt" | "emergencyDripId">,
-) =>
-  ((cup.emergencyAt ?? null) !== null ? cup.emergencyDripId : cup.dripId) ??
-  null;
-
-const cupState = (cup: Cup): CaosCupState => ({
-  dripper: cup.dripper ?? null,
-  dripperPosition: cup.dripperPosition ?? null,
-  dripId: caosCardId(cup),
-  brewStartedAt: cup.brewStartedAt ?? null,
-  brewFinishedAt: cup.brewFinishedAt ?? null,
-});
+/** カップの CaOS のカードの値（緊急のカップは入れ直しの列。サーバーの cupCaosState と同じ） */
+export const cupCaosState = (cup: Cup): CaosCupState =>
+  (cup.emergencyAt ?? null) !== null
+    ? {
+        dripper: cup.emergencyDripper ?? null,
+        dripperPosition: cup.emergencyDripperPosition ?? null,
+        dripId: cup.emergencyDripId ?? null,
+        brewStartedAt: cup.emergencyBrewStartedAt ?? null,
+        brewFinishedAt: cup.emergencyBrewFinishedAt ?? null,
+      }
+    : {
+        dripper: cup.dripper ?? null,
+        dripperPosition: cup.dripperPosition ?? null,
+        dripId: cup.dripId ?? null,
+        brewStartedAt: cup.brewStartedAt ?? null,
+        brewFinishedAt: cup.brewFinishedAt ?? null,
+      };
 
 const compareStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -264,7 +268,7 @@ export const buildCaosCards = (
         readyAt: cup.readyAt,
         servedAt: cup.servedAt,
         emergencyAt: cup.emergencyAt ?? null,
-        state: cupState(cup),
+        state: cupCaosState(cup),
       };
       const emergency = boardCup.emergencyAt !== null;
       // 緊急のカップは準備完了・提供済みでも入れ直す

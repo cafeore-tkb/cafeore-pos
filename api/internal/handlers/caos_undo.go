@@ -29,11 +29,13 @@ import (
 //   - 指名のあるカップは指名のドリッパーにだけ（明細の dripper）。1 枚のカードの指名はそろう
 //   - 限定のカップをほかのドリッパーへ戻すなら、今日の今の担当者が上級生のドリッパーだけ（操作のあとで担当者が替わっていれば断る）
 //
-// 緊急のカップのカードは、PUT /api/caos/cups と同じく emergency_drip_id で持つ（cupCaosState・updateCaosCups・whereCaosCard）。
+// 緊急のカップは、PUT /api/caos/cups と同じく入れ直しの列（emergency_dripper・emergency_dripper_position・emergency_drip_id・
+// emergency_brew_started_at・emergency_brew_finished_at）を比べて書き戻す（cupCaosState・updateCaosCups・whereCaosCard）。
+// 最初の抽出の列（dripper〜brew_finished_at）は、緊急のカップでは比べも書き戻しもしない。
 // 担当者の交代（caos_lanes）と緊急は戻さない。戻すなら、カップを書かない操作として画面の useCaosUndo の remember に戻す処理を渡して足す。
 
 // caosUndoState は「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と、準備完了・提供済み・緊急）。
-// DripID は CaOS のカード（緊急のカップは入れ直しのカード。caosCardID）。
+// CaOS の列は CaOS のカードの値（緊急のカップは入れ直しの列。cupCaosState）。
 type caosUndoState struct {
 	caosState
 	ReadyAt     *time.Time
@@ -210,7 +212,7 @@ func (h *CaosHandler) undoCups(cups []caosUndoCup) ([]uuid.UUID, error) {
 		}
 		touched := map[uuid.UUID]bool{}
 		for _, c := range cups {
-			// カードの印は、緊急のカップには emergency_drip_id に、それ以外は drip_id に書く
+			// 緊急のカップは入れ直しの列に、それ以外は最初の抽出の列に書く
 			if err := updateCaosCups(tx, []uuid.UUID{c.id}, c.restore.caosState); err != nil {
 				return err
 			}

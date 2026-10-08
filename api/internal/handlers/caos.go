@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"log"
@@ -20,7 +19,8 @@ import (
 )
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップ（order_cups）の列で持つ（models.OrderCup の Dripper・DripperPosition・
-// DripID・BrewStartedAt・BrewFinishedAt）。画面は注文の一覧からカードを組み立てる。
+// DripID・BrewStartedAt・BrewFinishedAt。緊急のカップは入れ直しの列 Emergency*。caos_emergency.go の caosCol）。
+// 画面は注文の一覧からカードを組み立てる。
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     抽出の時刻は画面から受け取らない。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
@@ -95,9 +95,12 @@ type caosState struct {
 	BrewFinishedAt  *time.Time
 }
 
-// DripID はカップの CaOS のカード（緊急のカップは入れ直しのカード。caosCardID）。
+// cupCaosState はカップの CaOS のカードの値。緊急のカップは入れ直しの列（最初の抽出の列は見ない。caosCol と同じ）。
 func cupCaosState(c *models.OrderCup) caosState {
-	return caosState{c.Dripper, c.DripperPosition, caosCardID(c), c.BrewStartedAt, c.BrewFinishedAt}
+	if c.EmergencyAt != nil {
+		return caosState{c.EmergencyDripper, c.EmergencyDripperPosition, c.EmergencyDripID, c.EmergencyBrewStartedAt, c.EmergencyBrewFinishedAt}
+	}
+	return caosState{c.Dripper, c.DripperPosition, c.DripID, c.BrewStartedAt, c.BrewFinishedAt}
 }
 
 func apiCaosState(s models.CaosCupState) caosState {
@@ -159,13 +162,18 @@ func (s caosState) validate(start bool) error {
 	return nil
 }
 
-func (s caosState) updates() map[string]any {
+// updates は書く列。emergency なら入れ直しの列（emergency_ を前に付けた列）。
+func (s caosState) updates(emergency bool) map[string]any {
+	prefix := ""
+	if emergency {
+		prefix = "emergency_"
+	}
 	return map[string]any{
-		"dripper":          s.Dripper,
-		"dripper_position": s.DripperPosition,
-		"drip_id":          s.DripID,
-		"brew_started_at":  s.BrewStartedAt,
-		"brew_finished_at": s.BrewFinishedAt,
+		prefix + "dripper":          s.Dripper,
+		prefix + "dripper_position": s.DripperPosition,
+		prefix + "drip_id":          s.DripID,
+		prefix + "brew_started_at":  s.BrewStartedAt,
+		prefix + "brew_finished_at": s.BrewFinishedAt,
 	}
 }
 
@@ -215,8 +223,8 @@ func countBrewing(tx *gorm.DB, dripper int, start, end time.Time) (int64, error)
 		SELECT COUNT(*) FROM (
 			SELECT `+caosCardSQL("c")+`
 			FROM order_cups c JOIN orders o ON o.id = c.order_id
-			WHERE o.created_at >= ? AND o.created_at < ? AND c.dripper = ?
-				AND c.brew_started_at IS NOT NULL AND c.brew_finished_at IS NULL
+			WHERE o.created_at >= ? AND o.created_at < ? AND `+caosCol("c", "dripper")+` = ?
+				AND `+caosCol("c", "brew_started_at")+` IS NOT NULL AND `+caosCol("c", "brew_finished_at")+` IS NULL
 			GROUP BY `+caosCardSQL("c")+`
 			HAVING bool_or(c.ready_at IS NULL OR c.emergency_at IS NOT NULL)
 		) AS brewing`, start, end, dripper).Scan(&n).Error
@@ -504,45 +512,11 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) (finished, started *
 		if err := lockCaosDrippers(tx, []int{dripper}); err != nil {
 			return err
 		}
-		var rows []caosLaneCup
-		if err := tx.Raw(`
-			SELECT c.id, c.order_id, o.order_id AS order_no, `+caosCardSQL("c")+` AS drip_id, c.dripper_position,
-				c.brew_started_at, c.brew_finished_at, c.ready_at, c.emergency_at
-			FROM order_cups c JOIN orders o ON o.id = c.order_id
-			WHERE o.created_at >= ? AND o.created_at < ? AND c.dripper = ? AND c.brew_finished_at IS NULL`,
-			start, end, dripper).Scan(&rows).Error; err != nil {
+		// 準備完了になったカード（マスターで準備完了にした）は終わりとみなす（入れ直しのカードは除く。caosLaneCard.done）
+		brewing, queued, err := readCaosLane(tx, dripper, start, end)
+		if err != nil {
 			return err
 		}
-		var brewing, queued []*caosLaneCard
-		byID := map[uuid.UUID]*caosLaneCard{}
-		for _, r := range rows {
-			if r.DripID == nil {
-				continue
-			}
-			card, ok := byID[*r.DripID]
-			if !ok {
-				card = &caosLaneCard{dripID: *r.DripID, orderNo: r.OrderNo}
-				byID[*r.DripID] = card
-				if r.BrewStartedAt != nil {
-					brewing = append(brewing, card)
-				} else {
-					queued = append(queued, card)
-				}
-			}
-			card.cups = append(card.cups, r)
-			card.orderNo = min(card.orderNo, r.OrderNo)
-		}
-		// 準備完了になったカード（マスターで準備完了にした）は終わりとみなす（入れ直しのカードは除く。caosLaneCard.done）
-		done := func(c *caosLaneCard) bool { return c.done() }
-		brewing = slices.DeleteFunc(brewing, done)
-		queued = slices.DeleteFunc(queued, done)
-		slices.SortFunc(queued, func(a, b *caosLaneCard) int {
-			return cmp.Or(
-				cmp.Compare(a.position(), b.position()),
-				cmp.Compare(a.orderNo, b.orderNo),
-				strings.Compare(a.dripID.String(), b.dripID.String()),
-			)
-		})
 
 		var cur, head *caosLaneCard
 		if len(brewing) > 0 {
@@ -581,8 +555,11 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) (finished, started *
 			}
 			for _, r := range card.cups {
 				_, cup := findCaosCup(orders, r.ID)
-				if cup == nil || !ptrEqual(cup.Dripper, &dripper) || !ptrEqual(caosCardID(cup), r.DripID) ||
-					!msEqual(cup.BrewStartedAt, r.BrewStartedAt) || cup.BrewFinishedAt != nil || !timeEqual(cup.ReadyAt, r.ReadyAt) {
+				if cup == nil {
+					return errCaosConflict
+				}
+				if s := cupCaosState(cup); !ptrEqual(s.Dripper, &dripper) || !ptrEqual(s.DripID, r.DripID) ||
+					!msEqual(s.BrewStartedAt, r.BrewStartedAt) || s.BrewFinishedAt != nil || !timeEqual(cup.ReadyAt, r.ReadyAt) {
 					return errCaosConflict
 				}
 			}
@@ -613,15 +590,13 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) (finished, started *
 					return err
 				}
 			}
-			if err := whereCaosCard(tx.Model(&models.OrderCup{}), cur.dripID).
-				Update("brew_finished_at", now).Error; err != nil {
+			if err := finishCaosCard(tx, cur.dripID, now); err != nil {
 				return err
 			}
 		}
 		if head != nil {
 			started = &head.dripID
-			if err := whereCaosCard(tx.Model(&models.OrderCup{}), head.dripID).
-				Update("brew_started_at", now).Error; err != nil {
+			if err := updateCaosCard(tx, head.dripID, "brew_started_at", now); err != nil {
 				return err
 			}
 		}
