@@ -118,13 +118,6 @@ export const cupNeedsBrew = (cup: Pick<Cup, "item">) =>
   cup.item.item_type.makes_cup !== false &&
   cup.item.item_type.needs_brew !== false;
 
-/** カップの CaOS のカード（緊急のカップは入れ直しのカード emergencyDripId。サーバーの caosCardID と同じ） */
-export const caosCardId = (
-  cup: Pick<Cup, "dripId" | "emergencyAt" | "emergencyDripId">,
-) =>
-  ((cup.emergencyAt ?? null) !== null ? cup.emergencyDripId : cup.dripId) ??
-  null;
-
 /** カップの CaOS のカードの値（緊急のカップは入れ直しの列。サーバーの cupCaosState と同じ） */
 export const cupCaosState = (cup: Cup): CaosCupState =>
   (cup.emergencyAt ?? null) !== null
