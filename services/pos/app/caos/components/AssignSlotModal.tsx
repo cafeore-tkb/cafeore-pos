@@ -1,9 +1,8 @@
-import { caosBrewSec, caosDurationLabel } from "@cafeore/common";
+import { caosBrewSec, caosDurationLabel, dripperLabel } from "@cafeore/common";
 import { ArrowRight, Check, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import type { Barista, UnassignedOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 import { orderLabel } from "../utils/orderQueue";
 
 interface AssignSlotModalProps {
@@ -42,7 +41,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-slate-200 border-b bg-[#f8fafc] px-5 py-4">
           <h3 className="font-bold text-base text-slate-900">
-            {`ドリッパー ${laneOrdinal(bayId)} にオーダー割当`}
+            {`ドリッパー ${dripperLabel(bayId)} にオーダー割当`}
           </h3>
           <button
             onClick={onClose}
@@ -102,7 +101,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                           </span>
                           {ord.preferredBaristaId && (
                             <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                              指名 {ord.preferredBaristaId}
+                              指名:{dripperLabel(ord.preferredBaristaId)}
                             </span>
                           )}
                           {ord.orderNos.length > 1 && (
@@ -148,7 +147,7 @@ export const AssignSlotModal: React.FC<AssignSlotModalProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold font-mono text-slate-900">
-                      ドリッパー {laneOrdinal(b.bayNumber)}
+                      ドリッパー {dripperLabel(b.bayNumber)}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500">

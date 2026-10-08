@@ -3,6 +3,7 @@ import {
   type CupStatus,
   type OrderEntity,
   type WithId,
+  assignmentDisplay,
   orderRepository,
   readableTextColor,
   resolveItemColor,
@@ -245,14 +246,14 @@ export function OrderInfoCard({ order, user, timing, comment }: props) {
                         提供済
                       </p>
                     )}
-                    {item.assignee && (
+                    {assignmentDisplay(item) && (
                       <p
                         className={cn(
                           order.status === "preparing" && "text-red-500",
                           "font-bold text-sm",
                         )}
                       >
-                        指名:{item.assignee}
+                        指名:{assignmentDisplay(item)}
                       </p>
                     )}
                   </Card>

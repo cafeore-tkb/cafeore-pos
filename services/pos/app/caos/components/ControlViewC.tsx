@@ -1,7 +1,6 @@
-import { CAOS_SOON_SEC } from "@cafeore/common";
+import { CAOS_SOON_SEC, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
-import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, orderLabel } from "../utils/orderQueue";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { DripperOrderCard } from "./DripperOrderCard";
@@ -56,7 +55,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                 <div className="flex h-8 shrink-0 items-center justify-between gap-2 overflow-hidden px-0.5">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <div className="flex h-7 min-w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 px-1 font-black font-mono text-[13px] text-white">
-                      {laneOrdinal(barista.bayNumber)}
+                      {dripperLabel(barista.bayNumber)}
                     </div>
                   </div>
                 </div>

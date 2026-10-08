@@ -237,6 +237,7 @@ describe("[unit] order entity", () => {
         price: 500,
         key: "s",
         assignee: "担当者",
+        dripper: 1,
         items: [
           {
             item: {
@@ -260,8 +261,16 @@ describe("[unit] order entity", () => {
     ];
 
     expect(order.getDrinkCups()).toEqual([
-      expect.objectContaining({ abbr: "ブレンド", assignee: "担当者" }),
-      expect.objectContaining({ abbr: "ブレンド", assignee: "担当者" }),
+      expect.objectContaining({
+        abbr: "ブレンド",
+        assignee: "担当者",
+        dripper: 1,
+      }),
+      expect.objectContaining({
+        abbr: "ブレンド",
+        assignee: "担当者",
+        dripper: 1,
+      }),
     ]);
     expect(order.getDrinkCups().map((item) => item.abbr)).not.toContain(
       "セット",

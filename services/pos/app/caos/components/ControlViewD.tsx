@@ -1,4 +1,4 @@
-import { caosClockLabel } from "@cafeore/common";
+import { caosClockLabel, dripperLabel } from "@cafeore/common";
 import {
   ArrowRightCircle,
   ClipboardList,
@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Barista, DripCard, OrderTicket, UnassignedOrder } from "../types";
 import { cardSurface } from "../utils/cardSurface";
-import { bayTargetAt, laneOrdinal } from "../utils/lanes";
+import { bayTargetAt } from "../utils/lanes";
 import {
   activeRemainingSec,
   canMergeDripUnits,
@@ -82,7 +82,6 @@ const sourceCard = (source: DragSource): DripCard =>
 
 const CupChip: React.FC<{
   cup: DripCard;
-  baristaName?: string;
   note?: string;
   faded?: boolean;
   selected?: boolean;
@@ -90,7 +89,6 @@ const CupChip: React.FC<{
   onClick?: () => void;
 }> = ({
   cup,
-  baristaName,
   note,
   faded = false,
   selected = false,
@@ -132,9 +130,11 @@ const CupChip: React.FC<{
         <span className="truncate font-bold font-mono text-[11px] opacity-75">
           No. {cup.orderNos.join("+")}
         </span>
-        {(baristaName || note) && (
+        {(cup.preferredBaristaId || note) && (
           <span className="truncate font-bold text-[10px] opacity-80">
-            {baristaName ? `指名：${baristaName}` : ""}
+            {cup.preferredBaristaId
+              ? `指名:${dripperLabel(cup.preferredBaristaId)}`
+              : ""}
             {note ? ` ${note}` : ""}
           </span>
         )}
@@ -169,17 +169,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const sortedBaristas = useMemo(
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
-  );
-  // 指名の札は列の番号（1st〜6th）で出す
-  const baristaNames = useMemo(
-    () =>
-      new Map(
-        sortedBaristas.map((barista) => [
-          barista.id,
-          laneOrdinal(barista.bayNumber),
-        ]),
-      ),
-    [sortedBaristas],
   );
   const selectedOrder = useMemo(
     () =>
@@ -671,7 +660,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     >
                       <div className="flex items-center justify-center gap-1">
                         <span className="font-black font-mono text-[18px] leading-none">
-                          {laneOrdinal(barista.bayNumber)}
+                          {dripperLabel(barista.bayNumber)}
                         </span>
                       </div>
                       <button
@@ -777,11 +766,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         >
                           <CupChip
                             cup={ticket}
-                            baristaName={
-                              ticket.preferredBaristaId
-                                ? baristaNames.get(ticket.preferredBaristaId)
-                                : undefined
-                            }
                             note={[
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
@@ -986,11 +970,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         >
                           <CupChip
                             cup={order}
-                            baristaName={
-                              order.preferredBaristaId
-                                ? baristaNames.get(order.preferredBaristaId)
-                                : undefined
-                            }
                             selected={selectedUid === uid}
                             onClick={
                               isMergeCandidate
@@ -1037,15 +1016,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
               height: cupDrag.rect.height,
             }}
           >
-            <CupChip
-              cup={dragCup}
-              baristaName={
-                dragCup.preferredBaristaId
-                  ? baristaNames.get(dragCup.preferredBaristaId)
-                  : undefined
-              }
-              lifted
-            />
+            <CupChip cup={dragCup} lifted />
             {hoveredTarget !== null && (
               <div className="-right-1 -top-2 absolute z-[2] whitespace-nowrap rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
                 {hoveredTarget === "unassigned"

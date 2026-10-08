@@ -24,11 +24,11 @@ export interface DripCard {
   beans?: CardBean[];
   /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
   typeName?: string;
-  /** 指名のドリッパー（1〜6） */
+  /** 指名のドリッパー（1〜6。盤面のカードは注文の明細の dripper）。このドリッパーにだけ置ける */
   preferredBaristaId?: number;
   /**
    * 統合できる相手を決めるキー。同じキーの 1 杯どうしだけ統合できる。
-   * 盤面のカードは商品と指名（@cafeore/common の caosMergeKey）、実データテストのカードはまとめ方
+   * 盤面のカードは商品と指名の番号（@cafeore/common の caosMergeKey）、実データテストのカードはまとめ方
    */
   mergeKey: string;
 }

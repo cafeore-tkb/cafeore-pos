@@ -300,7 +300,11 @@ type MenuCreateRequest struct {
 
 // MenuInfo defines model for MenuInfo.
 type MenuInfo struct {
+	// Assignee 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある
 	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null
+	Dripper *int `json:"dripper"`
 
 	// Id 注文明細ID
 	Id   openapi_types.UUID `json:"id"`
@@ -315,8 +319,12 @@ type MenuInfo struct {
 
 // MenuInfoCreate defines model for MenuInfoCreate.
 type MenuInfoCreate struct {
-	Assignee *string            `json:"assignee"`
-	MenuId   openapi_types.UUID `json:"menu_id"`
+	// Assignee 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う
+	Assignee *string `json:"assignee"`
+
+	// Dripper 指名したドリッパーの番号（1〜6）。指名しない明細は null
+	Dripper *int               `json:"dripper"`
+	MenuId  openapi_types.UUID `json:"menu_id"`
 
 	// OrderMenuId 更新時に残す既存明細のID。新規明細では省略する。価格・名称はサーバーが保存する。
 	OrderMenuId *openapi_types.UUID `json:"order_menu_id,omitempty"`

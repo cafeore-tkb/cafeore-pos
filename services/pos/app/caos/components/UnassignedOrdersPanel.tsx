@@ -1,3 +1,4 @@
+import { dripperLabel } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -242,7 +243,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   />
                   {order.preferredBaristaId && (
                     <span className="whitespace-nowrap font-black text-[12px] text-violet-700">
-                      指名 {order.preferredBaristaId}
+                      指名:{dripperLabel(order.preferredBaristaId)}
                     </span>
                   )}
                 </div>

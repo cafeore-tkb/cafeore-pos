@@ -75,15 +75,21 @@ const order = (
   no: number,
   cups: Cup[],
   {
+    dripper = {},
     assignee = {},
     createdAt = NOW,
-  }: { assignee?: Record<string, string>; createdAt?: Date } = {},
+  }: {
+    dripper?: Record<string, number>;
+    assignee?: Record<string, string>;
+    createdAt?: Date;
+  } = {},
 ): CaosOrderInput => ({
   id: `order-${no}`,
   orderId: no,
   createdAt,
   menus: Array.from(new Set(cups.map((c) => c.orderMenuId))).map((line) => ({
     orderMenuId: line,
+    dripper: dripper[line] ?? null,
     assignee: assignee[line] ?? null,
   })),
   cups,
@@ -94,7 +100,7 @@ let idSeq = 0;
 const newId = () => `drip-${++idSeq}`;
 
 describe("[unit] CaOS の盤面の組み立て", () => {
-  test("未割当：注文ごと・商品ごと・指名ごとに分け、1 枚は最大 2 杯。抽出が要らないカップと準備完了のカップは出さない", () => {
+  test("未割当：注文ごと・商品ごと・指名の番号ごとに分け、1 枚は最大 2 杯。抽出が要らないカップと準備完了のカップは出さない", () => {
     const o1 = order(
       1,
       [
@@ -104,9 +110,16 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         cup({ item: kenya }),
         cup({ item: milk }),
         cup({ item: blend, line: "line-2" }),
+        cup({ item: blend, line: "line-3" }),
+        cup({ item: blend, line: "line-4" }),
         cup({ item: blend, readyAt: NOW }),
       ],
-      { assignee: { "line-2": " ３ " } },
+      {
+        // 指名は明細のドリッパーの番号。自由記述は番号に添えるだけ（表示は番号で、同じ番号なら 1 枚にまとめる）。
+        // 番号の無い自由記述だけの古い明細は、数字でも指名なし（指名なしのカップと同じ分け方。表示は自由記述）
+        dripper: { "line-2": 3, "line-3": 3 },
+        assignee: { "line-3": " 山田 ", "line-4": " 4 " },
+      },
     );
     const o2 = order(2, [cup({ item: blend })]);
     const cards = buildCaosCards([o2, o1], DAY);
@@ -116,14 +129,15 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         c.status,
         c.cups.length,
         c.cups[0].item.name,
-        c.cups[0].nominee,
+        c.cups.map((x) => x.nominatedDripper),
+        c.cups.map((x) => x.nominee),
       ]),
     ).toEqual([
-      [1, "unassigned", 1, "ケニア", null],
-      [1, "unassigned", 2, "ブレンド", null],
-      [1, "unassigned", 1, "ブレンド", null],
-      [1, "unassigned", 1, "ブレンド", "３"],
-      [2, "unassigned", 1, "ブレンド", null],
+      [1, "unassigned", 1, "ケニア", [null], [null]],
+      [1, "unassigned", 2, "ブレンド", [null, null], [null, null]],
+      [1, "unassigned", 2, "ブレンド", [null, null], [null, "4"]],
+      [1, "unassigned", 2, "ブレンド", [3, 3], ["3rd", "3rd"]],
+      [2, "unassigned", 1, "ブレンド", [null], [null]],
     ]);
     // 未割当のキーはカップの ID の組
     expect(cards[0].key).toBe(`cups:${ids(cards[0]).join(",")}`);
@@ -322,9 +336,16 @@ describe("[unit] CaOS の書き込み", () => {
         order(3, [
           cup({ item: blend, dripper: 1, dripperPosition: 3, dripId: "q3" }),
         ]),
-        order(4, [cup({ item: blend }), cup({ item: blend, line: "n" })], {
-          assignee: { n: "たくみ" },
-        }),
+        order(
+          4,
+          [
+            cup({ item: blend }),
+            cup({ item: blend, line: "n" }),
+            cup({ item: blend, line: "old" }),
+          ],
+          // n は 4 番の指名（自由記述つき）、old は番号の無い自由記述だけの古い明細
+          { dripper: { n: 4 }, assignee: { n: "たくみ", old: "4" } },
+        ),
         order(5, [cup({ item: blend })]),
         order(6, [cup({ item: kenya })]),
       ],
@@ -395,11 +416,16 @@ describe("[unit] CaOS の書き込み", () => {
     });
   });
 
-  test("指名（自由記述）のカードもどのドリッパーにも置ける。抽出中は動かせない", () => {
+  test("指名の番号のカードはその番号のドリッパーにだけ置ける。自由記述だけの古い明細はどこにでも。抽出中は動かせない", () => {
     const cards = board();
-    const named = find(cards, (c) => c.cups[0].nominee === "たくみ");
-    expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("writes");
+    const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
+    expect(named.cups[0].nominee).toBe("4th");
+    expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("error");
+    expect(assignWrites(cards, named, 4, { newId })).toHaveProperty("writes");
     expect(assignWrites(cards, named, 7, { newId })).toHaveProperty("error");
+    const old = find(cards, (c) => c.cups.some((x) => x.nominee === "4"));
+    expect(old.cups.map((x) => x.nominatedDripper)).toEqual([null, null]);
+    expect(assignWrites(cards, old, 1, { newId })).toHaveProperty("writes");
     expect(
       assignWrites(
         cards,
@@ -425,16 +451,21 @@ describe("[unit] CaOS の書き込み", () => {
     ).toHaveProperty("error");
   });
 
-  test("統合：1 杯どうし・同じ商品・同じ指名。未割当は新しい dripId、待機は相手を同じ値にする", () => {
+  test("統合：1 杯どうし・同じ商品・同じ指名の番号。未割当は新しい dripId、待機は相手を同じ値にする", () => {
     const cards = board();
     const o5 = find(cards, (c) => c.orderNo === 5);
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.cups[0].nominee);
     const o6 = find(cards, (c) => c.orderNo === 6);
-    const named = find(cards, (c) => c.cups[0].nominee === "たくみ");
-    expect(canMergeCards(o4, o5)).toBe(true);
+    const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
     expect(canMergeCards(o5, o6)).toBe(false); // 商品が違う
-    expect(canMergeCards(o4, named)).toBe(false); // 指名が違う
-    const merged = mergeWrites(o4, o5, newId);
+    expect(canMergeCards(o5, named)).toBe(false); // 指名の番号が違う
+    // 番号が同じなら、自由記述が違っても統合できる（未割当の分け方と同じ）
+    const named7 = buildCaosCards(
+      [order(7, [cup({ item: blend })], { dripper: { "line-1": 4 } })],
+      DAY,
+    )[0];
+    expect(canMergeCards(named, named7)).toBe(true);
+    const o2cup = buildCaosCards([order(8, [cup({ item: blend })])], DAY)[0];
+    const merged = mergeWrites(o2cup, o5, newId);
     if (!("writes" in merged)) throw new Error(merged.error);
     expect(merged.writes.map((w) => w.after.drip_id)).toEqual([
       merged.writes[0].after.drip_id,
@@ -475,7 +506,7 @@ describe("[unit] CaOS の書き込み", () => {
 
   test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
     const cards = board();
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.cups[0].nominee);
+    const o4 = buildCaosCards([order(4, [cup({ item: blend })])], DAY)[0];
     const o5 = find(cards, (c) => c.orderNo === 5);
     const merged = mergeWrites(o4, o5, () => "merged");
     if (!("writes" in merged)) throw new Error(merged.error);

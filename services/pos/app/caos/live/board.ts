@@ -35,8 +35,20 @@ const describe = (
     new Set(card.cups.map((cup) => cup.orderNo)),
   ).sort((a, b) => a - b);
   const merged = orderNos.length > 1;
-  // 指名は自由記述のまま出す（ドリッパーの指名は CaOS6 で明細の dripper から入れる）
-  const nominee = first.nominee ? `（指名:${first.nominee}）` : "";
+  // 指名の番号（明細の dripper）のカードは、その番号のドリッパーにだけ置ける（preferredBaristaId。札は「指名:2nd」）。
+  // 1 枚のカードのカップは同じ番号（buildCaosCards・caosMergeKey・サーバーの PUT がそろえる）。
+  // 番号の無い自由記述だけの古い明細は指名なしで、自由記述を名前に添えるだけ
+  const preferredBaristaId = first.nominatedDripper ?? undefined;
+  const legacyNominees = Array.from(
+    new Set(
+      card.cups.flatMap((cup) =>
+        cup.nominatedDripper === null && cup.nominee ? [cup.nominee] : [],
+      ),
+    ),
+  );
+  const nominee = legacyNominees.length
+    ? `（指名:${legacyNominees.join("・")}）`
+    : "";
   // 限定（種類の senior_only）。上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけで、文字はその種類の表示名
   const seniorType = card.cups.find((cup) => cup.item.item_type.senior_only)
     ?.item.item_type;
@@ -62,6 +74,7 @@ const describe = (
     beans: Array.from(beans.values()),
     typeName: first.item.item_type.display_name,
     cupCount: card.cups.length,
+    preferredBaristaId,
     mergeKey: caosMergeKey(card),
   };
 };

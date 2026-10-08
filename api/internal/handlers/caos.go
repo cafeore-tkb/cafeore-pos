@@ -30,7 +30,7 @@ import (
 // 書いたカップの注文は今の注文の配信（1 件ずつ）で全部の画面へ、ほかのインスタンスへは orders_changed で届く（publishOrder）。
 
 const (
-	// ドリッパーの数。番号は 1〜caosDrippers
+	// ドリッパーの数。番号は 1〜caosDrippers（1st〜6th）。注文の明細の指名の番号（order_menus.dripper）も同じ範囲
 	caosDrippers = 6
 	// 1 枚のカード（1 回のドリップ）で淹れる最大の杯数
 	caosMaxCups = 2
@@ -183,6 +183,23 @@ func findCaosCup(orders map[uuid.UUID]*models.Order, cupID uuid.UUID) *models.Or
 	return nil
 }
 
+// checkCaosCardNomination は 1 枚のカードのカップの指名（明細のドリッパーの番号。無指名も 1 つの値）がそろっているかを確かめる。
+// 指名の違うカップを統合すると、どのドリッパーにも置けないカードになるので断る
+func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
+	var nominations int64
+	if err := tx.Raw(`
+		SELECT COUNT(DISTINCT COALESCE(m.dripper, 0))
+		FROM order_cups c
+		JOIN order_menus m ON m.id = c.order_menu_id
+		WHERE c.drip_id = ?`, dripID).Scan(&nominations).Error; err != nil {
+		return err
+	}
+	if nominations > 1 {
+		return caosRule("指名の違うカップは同じカードにできません")
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------- ドリッパーの列
 
 // ドリッパーの列のカップ（注文番号つき）
@@ -328,6 +345,15 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		for id := range orders {
 			orderIDs = append(orderIDs, id)
 		}
+		// 明細の指名のドリッパーの番号（無指名は nil。自由記述 assignee だけの古い明細も指名なし）。注文の行をロックしてから読む
+		var lines []models.OrderMenu
+		if err := tx.Select("id", "dripper").Find(&lines, "order_id IN ?", orderIDs).Error; err != nil {
+			return err
+		}
+		nominated := make(map[uuid.UUID]*int, len(lines))
+		for _, line := range lines {
+			nominated[line.ID] = line.Dripper
+		}
 
 		touched := map[uuid.UUID]bool{}
 		for _, w := range writes {
@@ -345,6 +371,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				}
 				if (w.After.Dripper != nil || w.After.DripId != nil) && !items[id].ItemType.BrewRequired() {
 					return caosRule("抽出の要らないカップ（%s）はドリッパーに置けません", items[id].Name)
+				}
+				if n := nominated[cup.OrderMenuID]; w.After.Dripper != nil && n != nil && *n != *w.After.Dripper {
+					return caosRule("指名のあるカップは %d 番のドリッパーにしか置けません", *n)
 				}
 			}
 			var startedAt *time.Time
@@ -372,6 +401,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				if !sameCaosState(&cups[i], caosCupState(&cups[0])) {
 					return caosRule("同じカードのカップは全部いっしょに動かしてください")
 				}
+			}
+			if err := checkCaosCardNomination(tx, id); err != nil {
+				return err
 			}
 		}
 		// 1 つのドリッパーで抽出中は 1 枚（「次へ」と同じ決まりで数える）

@@ -1,3 +1,4 @@
+import { dripperLabel } from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef } from "react";
@@ -88,7 +89,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             </div>
             {ticket.preferredBaristaId && (
               <p className="mt-2 font-bold text-[13px] text-violet-700">
-                指名オーダー：ドリッパー {ticket.preferredBaristaId} のみ
+                指名オーダー：{dripperLabel(ticket.preferredBaristaId)}{" "}
+                のドリッパーのみ
               </p>
             )}
           </section>

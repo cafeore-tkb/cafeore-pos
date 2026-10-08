@@ -1,3 +1,4 @@
+import { dripperLabel } from "@cafeore/common";
 import { Check, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -200,8 +201,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             </span>
 
             {ticket.preferredBaristaId && (
-              <span className="rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-                指名
+              <span className="whitespace-nowrap rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
+                指名:{dripperLabel(ticket.preferredBaristaId)}
               </span>
             )}
           </div>

@@ -57,12 +57,16 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 	return f
 }
 
-// 注文の明細（カップの商品）
+// 注文の明細（カップの商品と指名。指名はドリッパーの番号 dripper と自由記述 assignee）
 type caosLine struct {
-	items []models.Item
+	items    []models.Item
+	dripper  *int
+	assignee *string
 }
 
 func line(items ...models.Item) caosLine { return caosLine{items: items} }
+
+func strPtr(s string) *string { return &s }
 
 // createOrderAt は注文番号 no の注文を作る。
 func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, lines ...caosLine) models.Order {
@@ -70,7 +74,7 @@ func (f *caosFixture) createOrderAt(t *testing.T, no int, createdAt time.Time, l
 	order := models.Order{ID: uuid.New(), OrderId: no, CreatedAt: createdAt, BillingAmount: 500, Received: 500}
 	pos := 0
 	for _, l := range lines {
-		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500}
+		m := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: f.menu.ID, MenuName: f.menu.Name, UnitPrice: 500, Dripper: l.dripper, Assignee: l.assignee}
 		order.OrderMenus = append(order.OrderMenus, m)
 		for _, item := range l.items {
 			order.OrderCups = append(order.OrderCups, models.OrderCup{ID: uuid.New(), OrderMenuID: m.ID, ItemID: item.ID, Position: pos})
@@ -185,7 +189,9 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	db, _ := openListenTestDB(t)
 	f := newCaosFixture(t, db)
 	o1 := f.createOrder(t, 1, line(f.blend, f.blend), line(f.milk))
-	o2 := f.createOrder(t, 2, line(f.blend))
+	o2 := f.createOrder(t, 2, caosLine{items: []models.Item{f.blend}, dripper: intPtr(2), assignee: strPtr("山田")},
+		// 番号より前の明細：自由記述が数字でも指名なし
+		caosLine{items: []models.Item{f.blend}, assignee: strPtr("3")})
 	o3 := f.createOrder(t, 3, line(f.blend))
 	card1 := uuid.New()
 	// サーバーの今。iPad の時計とずれていてもこちらで付ける
@@ -243,7 +249,22 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 		t.Fatalf("milk in a card = %d, want 422", code)
 	}
 
+	// 指名の番号（明細の dripper）のあるカップは、その番号のドリッパーにしか置けない
+	if code, _ := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(3, 2, uuid.New(), false))); code != http.StatusUnprocessableEntity {
+		t.Fatalf("nominated cup on another dripper = %d, want 422", code)
+	}
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), false)))
+	// 自由記述だけの古い明細は指名なしなので、どのドリッパーにも置ける。指名の違うカップとは 1 枚のカードにできない
+	if code, _ := f.put(t, write(ids(o2.OrderCups[1]), unassigned, placed(2, 2, *f.cup(t, o2.OrderCups[0].ID).DripID, false))); code != http.StatusUnprocessableEntity {
+		t.Fatalf("merging cups of different nominations = %d, want 422", code)
+	}
+	f.mustPut(t, write(ids(o2.OrderCups[1]), unassigned, placed(4, 2, uuid.New(), false)))
+	f.mustPut(t, write(ids(o2.OrderCups[1]), f.state(t, o2.OrderCups[1].ID), toUnassigned))
+	// 未割当のまま統合するときも同じ（指名の違うカップは同じ drip_id にできない）
+	named5 := f.createOrder(t, 5, caosLine{items: []models.Item{f.blend}, dripper: intPtr(5)}, line(f.blend))
+	if code, _ := f.put(t, write(ids(named5.OrderCups...), unassigned, map[string]any{"dripper": nil, "dripper_position": nil, "drip_id": uuid.New(), "start_brew": false})); code != http.StatusUnprocessableEntity {
+		t.Fatalf("merging unassigned cups of different nominations = %d, want 422", code)
+	}
 
 	// 1 つのドリッパーで抽出中は 1 枚だけ。待機なら置ける
 	card3 := uuid.New()
