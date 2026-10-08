@@ -45,8 +45,8 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - カードの状態は時刻で決まります（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。マスター（`/master`）でカップを全部準備完了にしたカードも終わりです。
 - 抽出の開始・終了の時刻はサーバーの時刻で、サーバーが付けます（iPad の時計は使いません）。空いているドリッパーに置いてそのまま始めるときは、書き込みの after に時刻の代わりに「始める」の印（`start_brew`）を送ります。抽出中・終わりのカードは `PUT /api/caos/cups` では動かせません（終えるのは「次へ」）。
 - 画面は、POS の画面全体で共有している WebSocket（`/api/ws/orders`、root の `OrdersWSProvider`）の注文から、今日（日本時間。注文の作成日時で区切る）のカードを組み立てます（`@cafeore/common` の `buildCaosCards`）。未割当は、抽出が要り（いまは商品の種類の名前に `others` も `milk` も含まないもの。`@cafeore/common` の `cupNeedsBrew`）まだ準備完了でないカップを、注文ごと・商品ごと・指名ごとに最大2杯で組み立てます。注文の編集・削除で消えたカップはカードから抜けます。CaOS 用に別の接続は張りません。
-- カードの名前は商品の略称、区分は商品の種類の表示名をそのまま出します。指名（明細の担当者。自由記述）は「（指名:名前）」、上級生のみのカードは「（上級生のみ）」を名前に添えます。統合できるのは同じ商品・同じ指名の 1 杯どうしだけです（`caosMergeKey`）。
-- 操作（割当・ドリッパーの移動・先頭へ・途中への差し込み・未割当に戻す・統合）は、カップの書く前と書いたあとの値を `PUT /api/caos/cups` で送ります（`assignWrites`・`unassignWrites`・`mergeWrites`）。書いたカップの注文は、つないでいる画面に配られます。ほかの iPad が先に書いていた（409）・決まりに合わない（422）ときは何も変わらず、理由が画面の下に出ます。
+- カードの名前は商品の略称、区分は商品の種類の表示名をそのまま出します。指名（明細の担当者。自由記述）は「（指名:名前）」、上級生のみのカードは「（上級生のみ）」を名前に添えます。統合できるのは同じ商品・同じ指名の 1 杯どうしだけです（`canMergeCards`）。
+- 操作（割当・ドリッパーの移動・先頭へ・途中への差し込み・未割当に戻す・統合）は、カップの書く前と書いたあとの値を `PUT /api/caos/cups` で送ります（`assignWrites`・`unassignWrites`・`mergeWrites`）。書いたカップの注文は、つないでいる画面に配られます。ほかの iPad が先に書いていた（409）・決まりに合わない（422）ときは何も変わらず、理由が POS の通知（sonner の toast）で出ます。
 - 順番（`dripper_position`）は整数で、サーバーが決めます。画面が送るのは「どのドリッパーの、どのカードの前に入れるか」（after の `insert_before`。`null` なら最後）だけです。サーバーは前に入るカードの番号に入れ、そのドリッパーでそれより後ろの終わっていないカップを +1 します。列から抜けたカードの番号は詰めません。
 - 待機のカードの「先頭」ボタンで待機の先頭へ、待機のカードの上にドラッグして落とすとそのカードの前へ（同じ列の中の入れ替えにも使えます）、列や 1〜6 のボタンに落とすとその列の最後へ入ります。
 - `次へ` は `POST /api/caos/drippers/{dripper}/next` です。抽出中のカードを終え、そのカードのカップだけを準備完了にし（POS のカップの準備完了と同じ。注文の準備完了はカップから決まります）、待機の先頭を始めます。
@@ -73,5 +73,5 @@ lint は POS と同じ決まりです（`biome.json` に CaOS だけの除外は
 ## コードの分け方
 
 - `components/`：部品（表示だけ）。受け取った値を出し、押されたら受け取った関数を呼ぶ。カードは `OrderCard` 1 つで、管制盤 A・C・D と右のパネルで共通。見出し・列の番号・「次へ」・空きスロットは `BoardParts`、右のパネル（割当・詳細・補助のタブ）は `SidePanels` の `SidePanel`。
-- `logic/`：盤面の決まり（純粋な関数）。カードと列の型は持たず、`@cafeore/common` の `buildCaosCards` で組み立てた `CaosCard` と `caosLane` の列（`lanes` の `Lane`）をそのまま使う。カードの名前・注文番号・色・分割の表示（`cards`）・操作の書き込み（割当・移動・先頭へ・途中への差し込み・未割当に戻す・統合・次へ。`writes`）・列の時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・実績の集計（`analytics`）・実データテスト（練習の注文と実績。`historical`）。カードの組み立てと書き込みの決まりそのものは `@cafeore/common` の `caos-board.ts`・`caosPractice.ts`。実データの注文は `@cafeore/common` の `PracticeDataOrder`。
-- `hooks/`：状態と副作用。本番の盤面（`useLiveBoard`。注文を読み、API に書く）、実データテスト（`useTestPlay`。練習の盤面と時計。読み込んだ JSON は `usePracticeData`）、断られた操作の理由（`useBoardError`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグと落とす先（`useCardDrag`。待機のカードの前への差し込みは `dropTargetAt`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。
+- `logic/`：盤面の決まり（純粋な関数）。カードと列の型は持たず、`@cafeore/common` の `buildCaosCards` で組み立てた `CaosCard` と `caosLane` の列（`lanes` の `Lane`）をそのまま使う。カードの名前・注文番号・色・分割の表示（`cards`）・操作の書き込み（割当・移動・先頭へ・途中への差し込み・未割当に戻す・統合。`writes`）・列の時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・実績の集計（`analytics`）・実データテスト（練習の注文と実績。`historical`）。カードの組み立てと書き込みの決まりそのものは `@cafeore/common` の `caos-board.ts`・`caosPractice.ts`。実データの注文は `@cafeore/common` の `PracticeDataOrder`。
+- `hooks/`：状態と副作用。本番の盤面（`useLiveBoard`。注文を読み、API に書く）、実データテスト（`useTestPlay`。練習の盤面と時計。読み込んだ JSON は `usePracticeData`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグと落とす先（`useCardDrag`。待機のカードの前への差し込みは `dropTargetAt`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。

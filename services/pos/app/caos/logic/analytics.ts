@@ -1,6 +1,6 @@
 import type { PracticeDataOrder } from "@cafeore/common";
 import { type CardLooks, type CardSplit, orderLabel, totalCups } from "./cards";
-import type { Lane } from "./lanes";
+import { type Lane, laneActive } from "./lanes";
 import { boardSec } from "./queue";
 
 // 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・ドリッパーごとの量・実データテストの売上
@@ -72,10 +72,7 @@ const pendingSplitOrders = (lanes: Lane[], looks: CardLooks) => {
     { expected: number; assigned: number; bays: Set<number> }
   >();
   for (const lane of lanes) {
-    for (const card of [
-      ...(lane.brewing ? [lane.brewing] : []),
-      ...lane.queued,
-    ]) {
+    for (const card of laneActive(lane)) {
       const split = looks.get(card.key)?.split;
       if (!split) continue;
       const key = orderLabel(card);

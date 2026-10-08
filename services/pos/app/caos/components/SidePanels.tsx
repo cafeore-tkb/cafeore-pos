@@ -10,7 +10,12 @@ import {
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { type Lane, laneOrdinal, moveTargets } from "../logic/lanes";
+import {
+  type Lane,
+  laneActive,
+  laneOrdinal,
+  moveTargets,
+} from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
@@ -237,8 +242,7 @@ export const AuxiliaryContent: React.FC<
   return (
     <div className="grid grid-cols-2 gap-2">
       {lanes.map((lane) => {
-        const current = lane.brewing ?? lane.queued[0];
-        const waiting = lane.queued.length - (lane.brewing ? 0 : 1);
+        const [current, ...waiting] = laneActive(lane);
         return (
           <article
             key={lane.id}
@@ -259,7 +263,7 @@ export const AuxiliaryContent: React.FC<
                 <span className="font-bold text-slate-400">待機中</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
-                待ち {Math.max(0, waiting)}件
+                待ち {waiting.length}件
               </div>
             </div>
           </article>

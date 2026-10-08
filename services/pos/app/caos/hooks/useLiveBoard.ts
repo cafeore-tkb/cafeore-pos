@@ -1,18 +1,18 @@
 import {
-  type CaosWritesResult,
+  type CaosCupsWrite,
   buildCaosCards,
   jstDate,
   nextCaosDripper,
   putCaosCups,
 } from "@cafeore/common";
 import { useMemo, useRef } from "react";
-import { useBoardError } from "./useBoardError";
+import { toast } from "sonner";
 import { usePosOrders } from "./usePosOrders";
 
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる（@cafeore/common の buildCaosCards）。
 // 操作はカップに書く（PUT /api/caos/cups・「次へ」）。書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。
-// 結果は書いた注文の配信で届く。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を error に出す。
+// 結果は書いた注文の配信で届く。断られたら（決まりに合わない・ほかの端末が先に書いた）理由を POS の通知（sonner）で出す。
 // enabled が false（実データテスト中）のときは注文を読まない。
 export const useLiveBoard = ({
   enabled,
@@ -29,20 +29,14 @@ export const useLiveBoard = ({
   );
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNext = useRef(new Set<number>());
-  const [error, setError] = useBoardError();
 
   return {
     status,
     cards,
-    error,
-    /** 書き込みを送る。作れなかったら理由を出して false */
-    runWrites: (result: CaosWritesResult) => {
-      if ("error" in result) {
-        setError(result.error);
-        return false;
-      }
-      void putCaosCups(result.writes).then(({ error }) => {
-        if (error) setError(error);
+    /** 書き込みを送る */
+    runWrites: (writes: CaosCupsWrite[]) => {
+      void putCaosCups(writes).then(({ error }) => {
+        if (error) toast.error(error);
       });
       return true;
     },
@@ -52,7 +46,7 @@ export const useLiveBoard = ({
       pendingNext.current.add(dripper);
       void nextCaosDripper(dripper, dripId)
         .then(({ error }) => {
-          if (error) setError(error);
+          if (error) toast.error(error);
         })
         .finally(() => pendingNext.current.delete(dripper));
       return true;

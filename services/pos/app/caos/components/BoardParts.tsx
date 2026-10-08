@@ -101,13 +101,3 @@ export const NextAvailableChips: React.FC<{ nextAvailable: NextAvailable }> = ({
     ))}
   </div>
 );
-
-/** 断られた操作の理由（決まりに合わない・ほかの端末が先に書いた）。画面の下に出す */
-export const BoardError: React.FC<{ message: string }> = ({ message }) => (
-  <div
-    role="alert"
-    className="-translate-x-1/2 fixed bottom-4 left-1/2 z-[200] max-w-[calc(100vw-32px)] rounded-lg bg-red-700 px-4 py-3 font-bold text-sm text-white shadow-lg"
-  >
-    {message}
-  </div>
-);

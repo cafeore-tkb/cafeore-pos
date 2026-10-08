@@ -10,6 +10,13 @@ export type Lane = { id: number } & ReturnType<typeof caosLane>;
 export const boardLanes = (cards: readonly CaosCard[]): Lane[] =>
   CAOS_DRIPPER_IDS.map((id) => ({ id, ...caosLane(cards, id) }));
 
+/** 列の終わっていないカード（抽出中・待機の順） */
+export const laneActive = (lane: Lane) =>
+  lane.brewing ? [lane.brewing, ...lane.queued] : lane.queued;
+
+/** 列のカード（終わり・抽出中・待機の順） */
+export const laneCards = (lane: Lane) => [...lane.done, ...laneActive(lane)];
+
 /** ドリッパーの番号か（1〜6） */
 export const isBayId = (bayId: number) => CAOS_DRIPPER_IDS.includes(bayId);
 

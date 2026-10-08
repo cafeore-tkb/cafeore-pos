@@ -7,7 +7,7 @@ import {
   unassignWrites,
 } from "@cafeore/common";
 
-// 管制盤の操作（割当・移動・先頭へ・途中への差し込み・未割当に戻す・統合・次へ）を、カップへの書き込みにする。
+// 管制盤の操作（割当・移動・先頭へ・途中への差し込み・未割当に戻す・統合）を、カップへの書き込みにする。
 // 本番（hooks/useLiveBoard。PUT /api/caos/cups に送る）と実データテスト（hooks/useTestPlay。練習の盤面に当てる）で同じものを使う。
 // カードは画面のカードのキー（組み立てたカード CaosCard の key）で引く。
 
@@ -49,11 +49,3 @@ export const mergeCardWrites = (
   const withCard = cardOf(cards, withKey);
   return card && withCard ? mergeWrites(card, withCard, newId) : NOT_FOUND;
 };
-
-/**
- * 「次へ」に付ける、画面が抽出中と見ているカードの dripId（二度押しやほかの端末と同時に押したときに断ってもらう）。
- * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める
- */
-export const brewingDripId = (cards: readonly CaosCard[], dripper: number) =>
-  cards.find((card) => card.dripper === dripper && card.status === "brewing")
-    ?.dripId ?? null;

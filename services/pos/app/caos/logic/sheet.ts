@@ -5,7 +5,7 @@ import {
   groupByOrder,
   orderLabel,
 } from "./cards";
-import type { Lane } from "./lanes";
+import { type Lane, laneActive, laneCards } from "./lanes";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
 // 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。
@@ -168,7 +168,7 @@ export const buildOrderGroups = (lanes: Lane[], unassigned: CaosCard[]) =>
     key,
     items,
     assigned: lanes.flatMap((lane) =>
-      [...(lane.brewing ? [lane.brewing] : []), ...lane.queued]
+      laneActive(lane)
         .filter((card) => orderLabel(card) === key)
         .map((card) => ({ card, bayId: lane.id })),
     ),
@@ -181,14 +181,7 @@ export const linkedOrderNos = (
   unassigned: CaosCard[],
 ) =>
   new Set(
-    [
-      ...unassigned,
-      ...lanes.flatMap((lane) => [
-        ...lane.done,
-        ...(lane.brewing ? [lane.brewing] : []),
-        ...lane.queued,
-      ]),
-    ]
+    [...unassigned, ...lanes.flatMap(laneCards)]
       .filter((card) => orderLabel(card) === selectedOrderId)
       .flatMap(cardOrderNos),
   );

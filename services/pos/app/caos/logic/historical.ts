@@ -6,13 +6,6 @@ import {
   toCaosPracticeOrder,
 } from "@cafeore/common";
 
-/** 実データテストの時間帯と練習の時計の今（ms） */
-interface TestPeriod {
-  startMs: number;
-  endMs: number;
-  currentMs: number;
-}
-
 // 実データテスト（練習）。実データの注文を練習の盤面の注文（本番と同じ形の注文とカップ。@cafeore/common の caosPractice）にし、
 // カードは本番と同じ buildCaosCards で組み立てる（hooks/useTestPlay.ts）。豆や抽出が要るかを商品の名前で決めない。
 
@@ -82,18 +75,11 @@ export const ordersInPeriod = (
     .filter((order) => createdMs(order) >= startMs && createdMs(order) < endMs)
     .sort((a, b) => createdMs(a) - createdMs(b) || a.orderId - b.orderId);
 
-/** 実績に出す、テストの時刻までに届いた注文（practiceSalesOrders）と、その時間帯（テストをしていなければ空） */
-export const testPlayAnalytics = (
-  session: TestPeriod | null,
-  salesOrders: PracticeDataOrder[],
-) => ({
-  salesOrders: session ? salesOrders : [],
-  periodStartMs: session?.startMs,
-  periodEndMs: session?.currentMs,
-});
-
 /** テストの残り（「12分」） */
-export const testPlayRemainingLabel = (session: TestPeriod) =>
+export const testPlayRemainingLabel = (session: {
+  endMs: number;
+  currentMs: number;
+}) =>
   `${Math.max(0, Math.ceil((session.endMs - session.currentMs) / 60_000))}分`;
 
 const SLOT_MS = 30 * 60_000;

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { BoardError } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -136,8 +135,6 @@ export default function App() {
           onAssign={selection.assign}
         />
       )}
-
-      {session.error && <BoardError message={session.error} />}
 
       {testSetupOpen && (
         <TestPlaySetup

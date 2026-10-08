@@ -2,19 +2,20 @@ import {
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
+  caosLane,
   jstDayStart,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { cardLooks, totalCups } from "../logic/cards";
 import { timeOfDayLabel } from "../logic/format";
-import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
-import { boardLanes } from "../logic/lanes";
+import { testPlayRemainingLabel } from "../logic/historical";
+import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
 import {
-  brewingDripId,
   mergeCardWrites,
   placeCardWrites,
   unassignCardWrites,
@@ -64,10 +65,9 @@ export const useCaosSession = () => {
 
   // 盤面の秒。日本時間の 0 時から数える（盤面の「今日」と同じ区切り。テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
   const [realDayStartMs] = useState(() => jstDayStart(Date.now()));
-  const testPlaySession = test.session;
-  const cards = source.cards;
+  const { cards } = source;
   const dayStartMs = test.dayStartMs ?? realDayStartMs;
-  const nowMs = testPlaySession?.currentMs ?? realTime.getTime();
+  const nowMs = test.session?.currentMs ?? realTime.getTime();
   const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 
   const lanes = useMemo(() => boardLanes(cards), [cards]);
@@ -80,9 +80,13 @@ export const useCaosSession = () => {
     [cards, colorSettings],
   );
 
-  // 書き込みを送る（作れたら音を鳴らす）
+  // 書き込みを送る（作れなかったら理由を POS の通知で出す。作れたら音を鳴らす）
   const write = (result: CaosWritesResult) => {
-    const ok = source.runWrites(result);
+    if ("error" in result) {
+      toast.error(result.error);
+      return false;
+    }
+    const ok = source.runWrites(result.writes);
     if (ok) soundManager.playDispatch();
     return ok;
   };
@@ -100,18 +104,11 @@ export const useCaosSession = () => {
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
     cups: {
       unassigned: totalCups(unassigned),
-      waiting: totalCups(
-        lanes.flatMap((lane) => [
-          ...(lane.brewing ? [lane.brewing] : []),
-          ...lane.queued,
-        ]),
-      ),
+      waiting: totalCups(lanes.flatMap(laneActive)),
     },
     nowSec,
     dayStartMs,
     timeLabel: timeOfDayLabel(nowSec),
-    /** 断られた操作の理由 */
-    error: source.error,
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,
@@ -128,13 +125,17 @@ export const useCaosSession = () => {
     },
     /** 未割当・待機のカードをドリッパーへ（place が無ければ待機の最後へ） */
     place: (key: string, bayId: number, place?: CaosPlace) =>
-      write(placeCardWrites(source.cards, key, bayId, place, newDripId)),
-    returnToUnassigned: (key: string) =>
-      write(unassignCardWrites(source.cards, key)),
+      write(placeCardWrites(cards, key, bayId, place, newDripId)),
+    returnToUnassigned: (key: string) => write(unassignCardWrites(cards, key)),
     merge: (firstKey: string, secondKey: string) =>
-      write(mergeCardWrites(source.cards, firstKey, secondKey, newDripId)),
+      write(mergeCardWrites(cards, firstKey, secondKey, newDripId)),
+    /**
+     * 「次へ」。画面が抽出中と見ているカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
+     * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める
+     */
     advance: (bayId: number) => {
-      const ok = source.runNext(bayId, brewingDripId(source.cards, bayId));
+      const seen = caosLane(cards, bayId).brewing?.dripId ?? null;
+      const ok = source.runNext(bayId, seen);
       if (ok) soundManager.playComplete();
       return ok;
     },
@@ -145,14 +146,17 @@ export const useCaosSession = () => {
       soundManager.playDispatch();
     },
     testPlay: {
-      session: testPlaySession,
-      isActive: testPlaySession?.status === "active",
+      isActive: test.session?.status === "active",
       /** 残り（「12分」）。テストをしていなければ null */
-      remainingLabel: testPlaySession
-        ? testPlayRemainingLabel(testPlaySession)
+      remainingLabel: test.session
+        ? testPlayRemainingLabel(test.session)
         : null,
       /** 実績のパネルに渡すもの */
-      analytics: testPlayAnalytics(testPlaySession, test.salesOrders),
+      analytics: {
+        salesOrders: test.salesOrders,
+        periodStartMs: test.session?.startMs,
+        periodEndMs: test.session?.currentMs,
+      },
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {

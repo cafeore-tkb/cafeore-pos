@@ -1,7 +1,7 @@
 import {
+  type CaosCupsWrite,
   type CaosPracticeOrder,
   type CaosPracticeResult,
-  type CaosWritesResult,
   type ItemType,
   type PracticeDataOrder,
   advanceCaosPracticeDripper,
@@ -11,13 +11,13 @@ import {
   jstDayStart,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   arrivedCount,
   ordersInPeriod,
   practiceSalesOrders,
   toPracticeOrders,
 } from "../logic/historical";
-import { useBoardError } from "./useBoardError";
 
 /** 実データテスト。時間帯（startMs〜endMs）・練習の時計の今（currentMs）と、時間帯の注文（時刻の順） */
 export interface TestPlaySession {
@@ -55,7 +55,6 @@ export const useTestPlay = ({
   const practiceRef = useRef(practiceOrders);
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const [error, setError] = useBoardError();
   const status = session?.status;
   const currentMs = session?.currentMs;
   const endMs = session?.endMs;
@@ -111,7 +110,7 @@ export const useTestPlay = ({
   // 結果の盤面を入れる。断ったら理由を出して false
   const commit = (result: CaosPracticeResult) => {
     if (result.error !== undefined) {
-      setError(result.error);
+      toast.error(result.error);
       return false;
     }
     replace(result.orders);
@@ -122,24 +121,14 @@ export const useTestPlay = ({
   return {
     session,
     cards,
-    error,
     /** 練習の日の 0 時（盤面の秒の起点）。練習していなければ null */
     dayStartMs: startMs === undefined ? null : jstDayStart(startMs),
     /** 実績に出す、届いた注文（提供時間は練習の結果） */
     salesOrders,
-    runWrites: (result: CaosWritesResult) => {
-      if ("error" in result) {
-        setError(result.error);
-        return false;
-      }
-      return commit(
-        applyCaosPracticeWrites(
-          practiceRef.current,
-          result.writes,
-          practiceNow(),
-        ),
-      );
-    },
+    runWrites: (writes: CaosCupsWrite[]) =>
+      commit(
+        applyCaosPracticeWrites(practiceRef.current, writes, practiceNow()),
+      ),
     runNext: (dripper: number, dripId: string | null) =>
       commit(
         advanceCaosPracticeDripper(
@@ -158,7 +147,6 @@ export const useTestPlay = ({
         sessionEndMs,
       );
       replace(toPracticeOrders(inPeriod, itemTypes));
-      setError(null);
       setSession({
         status: "active",
         startMs: sessionStartMs,
@@ -173,7 +161,6 @@ export const useTestPlay = ({
     /** テストをやめる（練習の盤面は捨てる） */
     clear: () => {
       replace([]);
-      setError(null);
       setSession(null);
     },
   };

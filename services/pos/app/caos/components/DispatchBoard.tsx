@@ -11,7 +11,7 @@ import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { laneOrdinal } from "../logic/lanes";
+import { laneCards, laneOrdinal } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
@@ -100,7 +100,7 @@ export const DispatchBoard: React.FC<
 
   // 選んだ注文のカード（列ごと）
   const matchingTickets = lanes.flatMap((lane) =>
-    [...lane.done, ...(lane.brewing ? [lane.brewing] : []), ...lane.queued]
+    laneCards(lane)
       .filter((card) => orderLabel(card) === selectedOrderId)
       .map(
         (card) =>

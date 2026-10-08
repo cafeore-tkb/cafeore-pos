@@ -1,5 +1,5 @@
 import { type CaosCard, caosBrewSec } from "@cafeore/common";
-import type { Lane } from "./lanes";
+import { type Lane, laneActive } from "./lanes";
 
 // ドリッパーの列の時刻（盤面の秒。dayStartMs（その日の 0 時）からの秒）。
 // 抽出の開始・終了はカップの時刻（サーバーが付ける）で、待機の予定時刻は毎回ここで計算する。
@@ -17,6 +17,10 @@ export const boardSec = (date: Date, dayStartMs: number) =>
 
 /** カードの抽出時間（秒） */
 export const cardBrewSec = (card: CaosCard) => caosBrewSec(card.cups.length);
+
+// 抽出中のカードの開始（盤面の秒。開始の時刻はサーバーが付ける）
+const brewStartSec = (card: CaosCard, nowSec: number, dayStartMs: number) =>
+  card.startedAt ? boardSec(card.startedAt, dayStartMs) : nowSec;
 
 /** カードを置く時刻（開始・終了の盤面の秒） */
 export interface CardTime {
@@ -44,16 +48,15 @@ export const laneTimes = (
       : endSec - cardBrewSec(card);
     return { card, startSec, endSec };
   });
-  const brewing = lane.brewing && {
-    card: lane.brewing,
-    startSec: lane.brewing.startedAt
-      ? boardSec(lane.brewing.startedAt, dayStartMs)
-      : nowSec,
-  };
-  const current = brewing && {
-    ...brewing,
-    endSec: Math.max(brewing.startSec + cardBrewSec(brewing.card), nowSec),
-  };
+  let current: CardTime | undefined;
+  if (lane.brewing) {
+    const startSec = brewStartSec(lane.brewing, nowSec, dayStartMs);
+    current = {
+      card: lane.brewing,
+      startSec,
+      endSec: Math.max(startSec + cardBrewSec(lane.brewing), nowSec),
+    };
+  }
   let cursor = current?.endSec ?? nowSec;
   const queued = lane.queued.map((card, index): CardTime => {
     const startSec =
@@ -71,20 +74,13 @@ export const laneTimes = (
  * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中
  */
 export const laneStatus = (lane: Lane, nowSec: number, dayStartMs: number) => {
-  const current = lane.brewing ?? lane.queued[0];
-  const waiting = lane.brewing ? lane.queued : lane.queued.slice(1);
-  const remainingSec = lane.brewing
-    ? Math.max(
-        0,
-        cardBrewSec(lane.brewing) -
-          (nowSec -
-            (lane.brewing.startedAt
-              ? boardSec(lane.brewing.startedAt, dayStartMs)
-              : nowSec)),
-      )
-    : current
-      ? cardBrewSec(current)
-      : 0;
+  const [current, ...waiting] = laneActive(lane);
+  const elapsedSec = lane.brewing
+    ? nowSec - brewStartSec(lane.brewing, nowSec, dayStartMs)
+    : 0;
+  const remainingSec = current
+    ? Math.max(0, cardBrewSec(current) - elapsedSec)
+    : 0;
   const brewing = Boolean(lane.brewing);
   return {
     current,

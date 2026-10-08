@@ -81,7 +81,6 @@ export const useSheetSelection = ({
       clear();
     },
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */
-    canAssignTo: () => selected !== null,
     assignTo: (bayId: number) => {
       if (!selected) return;
       onAssign(selected, bayId);

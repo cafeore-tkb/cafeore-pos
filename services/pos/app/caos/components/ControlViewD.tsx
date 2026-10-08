@@ -349,7 +349,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   </div>
                                 ),
                               )}
-                              {isTargetRow && picked.canAssignTo() && (
+                              {isTargetRow && (
                                 <button
                                   type="button"
                                   aria-label={`ドリッパー${laneOrdinal(bay.id)}に配置`}
