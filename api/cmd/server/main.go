@@ -249,7 +249,7 @@ func main() {
 	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
 	// CaOS の練習用の盤面（実データテスト）。本番の盤面とは表も配信も分けてある
 	caosPracticeHandler := handlers.NewCaosPracticeHandler(handlers.NewCaosPracticeStore(db))
-	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面の変更も画面へ届けるため、
+	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューの変更も画面へ届けるため、
 	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
@@ -263,6 +263,8 @@ func main() {
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
+	// 印刷キュー。レジ・マスター・CaOS は積むだけで、「この端末で印刷する」にした端末が順に取って印刷する
+	printJobHandler := handlers.NewPrintJobHandler(db, hub)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -302,6 +304,14 @@ func main() {
 
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
+
+		api.GET("/print-jobs", printJobHandler.List)
+		api.POST("/print-jobs", printJobHandler.Create)
+		api.POST("/print-jobs/claim", printJobHandler.Claim)
+		api.POST("/print-jobs/:id/done", printJobHandler.Complete)
+		api.POST("/print-jobs/:id/failed", printJobHandler.Fail)
+		api.POST("/print-jobs/:id/retry", printJobHandler.Retry)
+		api.POST("/print-jobs/:id/cancel", printJobHandler.Cancel)
 
 		api.POST("/caos/ops", caosHandler.ApplyOp)
 		api.GET("/caos/brew-stats", caosHandler.BrewStats)

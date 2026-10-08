@@ -612,6 +612,196 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/print-jobs:
+    get:
+      summary: 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）
+      description: |
+        WebSocket（/api/ws/orders）の {"type":"print_jobs"} でも、変わるたびと、つないだときに全部届く。
+      operationId: getPrintJobs
+      tags: [print]
+      responses:
+        '200':
+          description: 成功（積んだ順）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PrintJob'
+    post:
+      summary: 印刷キューに積む（マスターの緊急ボタンなど）
+      description: |
+        emergency は、そのカップの「緊急」のシールと、そのカップの本物と同じシールを、この順に印刷する（cup_id が要る。シールの無いカップ（アイスミルク・グッズ）は 400）。
+        order は、その注文のラベル（カップごとのシールと引換券に貼るシール）を印刷し直す。
+        レジの会計の印刷は、注文の作成（POST /api/orders の print_labels）で同じトランザクションの中で積む。
+      operationId: createPrintJob
+      tags: [print]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintJobCreateRequest'
+      responses:
+        '201':
+          description: 積んだ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJob'
+        '400':
+          description: 中身が正しくない（カップがその注文に無い・シールの無いカップなど）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 注文が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/print-jobs/claim:
+    post:
+      summary: 印刷する端末が、次の仕事を 1 件取る
+      description: |
+        待ち（queued）の仕事を積んだ順に 1 件だけ取り、印刷中（printing）にして、取った端末（printer_id）を記録する。
+        SELECT ... FOR UPDATE SKIP LOCKED で取るので、印刷する端末が複数あっても同じ仕事を 2 台が取ることはない。
+        印刷に要る注文（カップ・明細つき）もいっしょに返す。注文やカップが消えていた仕事は失敗にして、次の仕事を取る。
+        待ちの仕事が無ければ 204。
+      operationId: claimPrintJob
+      tags: [print]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintJobClaimRequest'
+      responses:
+        '200':
+          description: 取った
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJobClaim'
+        '204':
+          description: 待ちの仕事が無い
+  /api/print-jobs/{id}/done:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: 印刷できた（済みにする）
+      description: 取った端末（printer_id）だけが、印刷中の仕事を済みにできる。もう済みなら同じ結果を返す。それ以外は 409
+      operationId: completePrintJob
+      tags: [print]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintJobClaimRequest'
+      responses:
+        '200':
+          description: 済みにした
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJob'
+        '409':
+          description: その端末が取った印刷中の仕事ではない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/print-jobs/{id}/failed:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: 印刷できなかった（失敗として残す）
+      description: 取った端末だけが、印刷中の仕事を失敗にできる。失敗は画面に出し、人が「もう一度印刷」（retry）か「取り消す」（cancel）を選ぶ
+      operationId: failPrintJob
+      tags: [print]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintJobFailRequest'
+      responses:
+        '200':
+          description: 失敗にした
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJob'
+        '409':
+          description: その端末が取った印刷中の仕事ではない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/print-jobs/{id}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: もう一度印刷する（待ちに戻す）
+      description: 失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事（印刷した端末が落ちたなど）を待ちに戻す。それ以外は 409
+      operationId: retryPrintJob
+      tags: [print]
+      responses:
+        '200':
+          description: 待ちに戻した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJob'
+        '409':
+          description: 戻せない状態
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/print-jobs/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: 印刷をやめる（取り消す）
+      description: 待ち・失敗した仕事と、印刷中のまま 1 分たっても済みにならない仕事を取り消す。それ以外は 409
+      operationId: cancelPrintJob
+      tags: [print]
+      responses:
+        '200':
+          description: 取り消した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintJob'
+        '409':
+          description: 取り消せない状態
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/caos/ops:
     post:
       summary: CaOS の今日の盤面への操作
@@ -622,6 +812,9 @@ paths:
         「1つ戻す」（undo）は、操作の結果の op_id を指定する。サーバーが残した操作の記録で、カードと準備完了をそろえて戻す。
         記録のあと関係するカードや注文が触られていたら 422 で断り、何も変えない。
         列の担当者（ドリッパー 1〜6 の名前と上級生か）も盤面の一部で、交代・入れ替えも「1つ戻す」で戻せる。
+        入れ直し（rebrew）は、同じトランザクションで、入れ直しのカードのカップ分の緊急の印刷（「緊急」のシール＋そのカップの本物と同じシール）を印刷キューに積む
+        （カードの明細の注文・商品・指名・杯数から、その注文のカップを、準備中 → 準備完了 → 提供済みの順、同じ状態なら注文の中の並び順で選ぶ）。
+        「1つ戻す」では積んだ印刷を取り消さない。練習用の盤面（/api/caos/practice）では積まない。
         カードは注文と同じく /api/ws/orders の {"type":"drips"} で配る（今日のカードと列の担当者を全部。ほかのインスタンスへは DB の caos_drips_changed 通知で知らせる）。
       operationId: applyCaosOp
       tags: [caos]
@@ -1420,6 +1613,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CommentCreateRequest'
+        print_labels:
+          type: boolean
+          default: false
+          description: |
+            true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。
+            印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）
 
     # 更新リクエスト用
     OrderUpdateRequest:
@@ -2197,6 +2396,120 @@ components:
         error:
           type: string
           example: "Invalid order ID format"
+    PrintJobKind:
+      type: string
+      enum: [order, emergency]
+      x-enum-varnames: [PrintJobKindOrder, PrintJobKindEmergency]
+      description: order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
+    PrintJobSource:
+      type: string
+      enum: [cashier, master, caos]
+      x-enum-varnames: [PrintJobSourceCashier, PrintJobSourceMaster, PrintJobSourceCaos]
+      description: 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
+    PrintJobStatus:
+      type: string
+      enum: [queued, printing, done, failed, canceled]
+      x-enum-varnames: [PrintJobStatusQueued, PrintJobStatusPrinting, PrintJobStatusDone, PrintJobStatusFailed, PrintJobStatusCanceled]
+      description: queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
+    PrintJob:
+      type: object
+      description: 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）
+      required: [id, kind, source, order_id, order_no, cup_id, status, printer_id, claimed_at, finished_at, error, attempts, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: 積んだ順の番号。印刷はこの順
+        kind:
+          $ref: '#/components/schemas/PrintJobKind'
+        source:
+          $ref: '#/components/schemas/PrintJobSource'
+        order_id:
+          type: string
+          format: uuid
+        order_no:
+          type: integer
+          description: 積んだときの注文番号（画面に出す用）
+        cup_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: emergency の対象のカップ。order では null
+        status:
+          $ref: '#/components/schemas/PrintJobStatus'
+        printer_id:
+          type: string
+          nullable: true
+          description: 取った端末（印刷する端末の ID。端末の localStorage に持つ）
+        claimed_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 済み・失敗・取り消しにした時刻
+        error:
+          type: string
+          nullable: true
+          description: 失敗の理由（画面にそのまま出す）
+        attempts:
+          type: integer
+          description: 取られた回数（もう一度印刷すると増える）
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PrintJobCreateRequest:
+      type: object
+      required: [kind, source, order_id]
+      properties:
+        kind:
+          $ref: '#/components/schemas/PrintJobKind'
+        source:
+          type: string
+          enum: [cashier, master]
+          x-enum-varnames: [PrintJobCreateSourceCashier, PrintJobCreateSourceMaster]
+          description: 積むところ（caos はサーバーが入れ直しのときに積む）
+        order_id:
+          type: string
+          format: uuid
+        cup_id:
+          type: string
+          format: uuid
+          description: emergency の対象のカップ（emergency では必須）
+    PrintJobClaimRequest:
+      type: object
+      required: [printer_id]
+      properties:
+        printer_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 印刷する端末の ID
+    PrintJobFailRequest:
+      type: object
+      required: [printer_id, error]
+      properties:
+        printer_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        error:
+          type: string
+          maxLength: 500
+          description: 失敗の理由（画面にそのまま出す）
+    PrintJobClaim:
+      type: object
+      required: [job, order]
+      properties:
+        job:
+          $ref: '#/components/schemas/PrintJob'
+        order:
+          $ref: '#/components/schemas/OrderResponse'
     StockResourceKind:
       type: string
       enum: [cup, bean]

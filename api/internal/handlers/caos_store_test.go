@@ -38,14 +38,14 @@ func testDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	// CaOS の表は毎回作り直す（スキーマは Go のモデルだけで決まることを確かめるため）
-	if err := db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops, caos_practices").Error; err != nil {
+	if err := db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops, caos_practices, print_jobs").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
-		&models.CaosDripRow{}, &models.CaosLaneRow{}, &models.CaosOpRow{}, &models.CaosPracticeRow{}); err != nil {
+		&models.CaosDripRow{}, &models.CaosLaneRow{}, &models.CaosOpRow{}, &models.CaosPracticeRow{}, &models.PrintJobRow{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, caos_practices, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
+	if err := db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, caos_practices, print_jobs, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types").Error; err != nil {
 		t.Fatal(err)
 	}
 	return db

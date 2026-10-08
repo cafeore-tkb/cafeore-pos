@@ -24,6 +24,7 @@ import {
   OrderEntity,
   orderSchema,
 } from "../models/order";
+import type { PrintJob } from "../models/printJob";
 import type { components } from "../types/api";
 
 // 入力の型は出力と違ってよい（既定値で埋める項目など）
@@ -270,8 +271,10 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 };
 
 // OrderEntity を CreateRequest に変換
+// printLabels：注文と同じトランザクションで、この注文のラベルの印刷を印刷キューに積む（レジの会計）
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
+  { printLabels = false }: { printLabels?: boolean } = {},
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({
@@ -289,6 +292,7 @@ export const orderEntityToCreateRequest = (
     discount_order_cups: order.discountOrderCups,
     menu_ids: menuIds,
     comments: order.comments,
+    ...(printLabels ? { print_labels: true } : {}),
   };
 };
 
@@ -349,3 +353,28 @@ export const cashierStateToUpdateRequest = (
     submitted_order_id: parsed.submittedOrderId,
   };
 };
+
+/**
+ * 印刷キューの仕事（API の PrintJob → PrintJob）
+ */
+export type PrintJobResponse = components["schemas"]["PrintJob"];
+
+const dateOrNull = (value: string | null | undefined) =>
+  value ? new Date(value) : null;
+
+export const responseToPrintJob = (response: PrintJobResponse): PrintJob => ({
+  id: response.id,
+  kind: response.kind,
+  source: response.source,
+  orderId: response.order_id,
+  orderNo: response.order_no,
+  cupId: response.cup_id ?? null,
+  status: response.status,
+  printerId: response.printer_id ?? null,
+  claimedAt: dateOrNull(response.claimed_at),
+  finishedAt: dateOrNull(response.finished_at),
+  error: response.error ?? null,
+  attempts: response.attempts,
+  createdAt: new Date(response.created_at),
+  updatedAt: new Date(response.updated_at),
+});

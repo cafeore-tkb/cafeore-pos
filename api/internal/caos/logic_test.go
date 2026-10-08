@@ -472,6 +472,28 @@ func TestRebrewInterrupt(t *testing.T) {
 	}
 }
 
+// 操作の記録の Created は、操作でできたカードだけ（入れ直しなら入れ直しのカード。途中でやめた元のカードや、列が進んだカードは入らない）
+func TestOpRecordCreatedIsTheRebrewCard(t *testing.T) {
+	b := seeded(t)
+	a := cardsOf(b, 1)[0]
+	apply(t, b, Op{Name: "assign", DripID: a.ID, Dripper: ptr(1)})
+	rec, err := b.ApplyRecorded(&Changeset{}, Op{Name: "rebrew", SourceID: a.ID, Cups: 1, Interrupt: true, Dripper: ptr(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := rec.Created()
+	if len(rec.After) < 2 || len(created) != 1 || created[0].RebrewOf == nil || *created[0].RebrewOf != a.ID || created[0].Cups != 1 {
+		t.Fatalf("入れ直しのカードだけ：after %d 枚、created %+v", len(rec.After), created)
+	}
+	rec, err = b.ApplyRecorded(&Changeset{}, Op{Name: "next", Dripper: ptr(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.Created(); len(got) != 0 {
+		t.Fatalf("次へではカードはできない：%+v", got)
+	}
+}
+
 func TestRebrewRejectsMoreCupsThanSource(t *testing.T) {
 	b := seeded(t)
 	c2 := cardsOf(b, 2)[0]

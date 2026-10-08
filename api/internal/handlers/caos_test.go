@@ -62,9 +62,9 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	mustDo(t, db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
 	mustDo(t, db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{}, &models.Order{}, &models.Comment{},
 		&models.OrderMenu{}, &models.OrderCup{}, &models.MasterState{}, &models.StockResource{}, &models.ItemStockUsage{}, &models.StockEvent{}))
-	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops, caos_practices").Error)
-	mustDo(t, db.AutoMigrate(&models.CaosDripRow{}, &models.CaosLaneRow{}, &models.CaosOpRow{}, &models.CaosPracticeRow{}))
-	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, caos_practices, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
+	mustDo(t, db.Exec("DROP TABLE IF EXISTS caos_drips, caos_lanes, caos_ops, caos_practices, print_jobs").Error)
+	mustDo(t, db.AutoMigrate(&models.CaosDripRow{}, &models.CaosLaneRow{}, &models.CaosOpRow{}, &models.CaosPracticeRow{}, &models.PrintJobRow{}))
+	mustDo(t, db.Exec("TRUNCATE caos_drips, caos_lanes, caos_ops, caos_practices, print_jobs, order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, stock_events, item_stock_usages, stock_resources").Error)
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	mustDo(t, db.Create(&hot).Error)
@@ -97,6 +97,14 @@ func newCaosEnvWith(t *testing.T, options string) *caosEnv {
 	r.POST("/api/caos/practice/:id/advance", p.Advance)
 	r.POST("/api/caos/practice/:id/ops", p.ApplyOp)
 	r.DELETE("/api/caos/practice/:id", p.Delete)
+	pj := NewPrintJobHandler(db, hub)
+	r.GET("/api/print-jobs", pj.List)
+	r.POST("/api/print-jobs", pj.Create)
+	r.POST("/api/print-jobs/claim", pj.Claim)
+	r.POST("/api/print-jobs/:id/done", pj.Complete)
+	r.POST("/api/print-jobs/:id/failed", pj.Fail)
+	r.POST("/api/print-jobs/:id/retry", pj.Retry)
+	r.POST("/api/print-jobs/:id/cancel", pj.Cancel)
 	return &caosEnv{db: db, dsn: dsn, router: r, orders: orders, store: store, menu: menu.ID}
 }
 

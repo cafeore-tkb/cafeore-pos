@@ -90,9 +90,13 @@ func TestCaosPracticeThroughHTTP(t *testing.T) {
 	if code := e.call(t, http.MethodPost, base+"/ops", map[string]any{"at": start.Add(6 * time.Minute), "op": map[string]any{"name": "next", "dripper": 1}}, nil); code != http.StatusUnprocessableEntity {
 		t.Fatalf("ルールに合わない操作は 422：%d", code)
 	}
+	// 練習の緊急の入れ直しは、印刷キューに積まない
+	if code := e.call(t, http.MethodPost, base+"/ops", map[string]any{"at": start.Add(7 * time.Minute), "op": map[string]any{"name": "rebrew", "source_id": state.Drips[0].ID, "cups": 1, "dripper": 1}}, &res); code != http.StatusOK {
+		t.Fatalf("入れ直し：%d", code)
+	}
 
-	// 本番の盤面と注文には何も入らない
-	for _, table := range []string{"caos_drips", "caos_ops", "caos_lanes", "orders"} {
+	// 本番の盤面と注文と印刷キューには何も入らない
+	for _, table := range []string{"caos_drips", "caos_ops", "caos_lanes", "orders", "print_jobs"} {
 		var n int64
 		mustDo(t, e.db.Table(table).Count(&n).Error)
 		if n != 0 {

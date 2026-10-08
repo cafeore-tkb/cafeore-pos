@@ -287,6 +287,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	printLabels := req.PrintLabels != nil && *req.PrintLabels
 	var readied []uuid.UUID
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		locked := h.lockCaos(tx, order.CreatedAt)
@@ -297,6 +298,13 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		order.OrderMenus, order.OrderCups = lines, cups
 		if err := tx.Create(&order).Error; err != nil {
 			return err
+		}
+		// レジの会計のラベルは、注文と同じトランザクションで印刷キューに積む（注文だけ保存されてラベルが抜けることがない）
+		if printLabels {
+			job := newPrintJobRow(printJobKindOrder, string(models.PrintJobSourceCashier), &order, nil, order.CreatedAt)
+			if err := tx.Create(&job).Error; err != nil {
+				return err
+			}
 		}
 		if locked {
 			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
@@ -319,6 +327,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, resp)
+	if printLabels {
+		// 印刷する端末はこれを受けて取りに来る
+		publishPrintJobs(h.db, h.hub)
+	}
 	h.publishCaosChanges(readied)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }

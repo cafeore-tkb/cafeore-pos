@@ -26,9 +26,10 @@ const (
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
-// CaOS の盤面のカード（dripsChangedChannel = caos_drips_changed。caos_store.go）も同じ接続で待ち受ける。
-// 通知の中身は "<送ったインスタンスの ID>"（notifyDripsChanged）。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripsChangedChannel}
+// CaOS の盤面のカード（dripsChangedChannel = caos_drips_changed。caos_store.go）と
+// 印刷キュー（printJobsChangedChannel = print_jobs_changed。print_job.go）も同じ接続で待ち受ける。
+// 通知の中身はどちらも "<送ったインスタンスの ID>"（notifyDripsChanged・publishPrintJobs）。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripsChangedChannel, printJobsChangedChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -75,7 +76,7 @@ func notifyCashierStateChanged(db *gorm.DB) {
 	notifyChanged(db, cashierStateChangedChannel, instanceID)
 }
 
-// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の盤面が変わるたびに、
+// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューが変わるたびに、
 // DB から読み直して配信する。
 //
 // 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
@@ -139,7 +140,7 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 		case <-connCtx.Done():
 		case <-time.After(listenProbeTimeout):
 			if !probed.Load() {
-				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面の変更が配られない。"+
+				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューの変更が配られない。"+
 					"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
 					ordersChangedChannel, listenProbeTimeout)
 			}
@@ -195,6 +196,8 @@ type changeSet struct {
 	cashierState bool
 	// CaOS の今日のカード（全部を読み直して配る）
 	drips bool
+	// 印刷キューのまだ終わっていない仕事（全部を読み直して配る）
+	printJobs bool
 }
 
 func newPendingChanges() *pendingChanges {
@@ -217,6 +220,8 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.cashierState = true })
 	case dripsChangedChannel:
 		q.update(func(s *changeSet) { s.drips = true })
+	case printJobsChangedChannel:
+		q.update(func(s *changeSet) { s.printJobs = true })
 	}
 }
 
@@ -237,6 +242,7 @@ func (q *pendingChanges) addAll() {
 		s.masterState = true
 		s.cashierState = true
 		s.drips = true
+		s.printJobs = true
 	})
 }
 
@@ -286,6 +292,10 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		if s.drips {
 			// 依頼を積むだけ（少し待って 1 回にまとめて送る。CaOS を使っていなければ何もしない）
 			h.broadcastDrips()
+		}
+		if s.printJobs {
+			// 印刷する端末は、これを受けて待ちの仕事を取りに来る（ほかのインスタンスで積まれた仕事も届く）
+			broadcastPrintJobs(h.db, h.hub)
 		}
 	}
 }

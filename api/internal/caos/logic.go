@@ -778,6 +778,17 @@ type OpRecord struct {
 	LanesAfter  []Lane `json:"lanes_after"`
 }
 
+// Created は操作でできたカード（操作の前には無かったカード）。入れ直し（rebrew）なら、入れ直しのカード。
+func (r OpRecord) Created() []Drip {
+	var created []Drip
+	for _, d := range r.After {
+		if !slices.ContainsFunc(r.Before, func(b Drip) bool { return b.ID == d.ID }) {
+			created = append(created, d)
+		}
+	}
+	return created
+}
+
 // ApplyRecorded は画面からの操作を 1 つ行い（Apply）、「1つ戻す」のための操作の前後の中身を返す。
 // 準備完了にしてよい注文は cs.Completed に入る（付けるのは呼ぶ側）。断ったときは何も変わっていない。
 func (b *Board) ApplyRecorded(cs *Changeset, op Op) (OpRecord, error) {

@@ -158,6 +158,27 @@ type ServerInterface interface {
 	// オーダーを提供完了にする
 	// (PATCH /api/orders/{id}/served)
 	MarkOrderServe(c *gin.Context, id openapi_types.UUID)
+	// 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）
+	// (GET /api/print-jobs)
+	GetPrintJobs(c *gin.Context)
+	// 印刷キューに積む（マスターの緊急ボタンなど）
+	// (POST /api/print-jobs)
+	CreatePrintJob(c *gin.Context)
+	// 印刷する端末が、次の仕事を 1 件取る
+	// (POST /api/print-jobs/claim)
+	ClaimPrintJob(c *gin.Context)
+	// 印刷をやめる（取り消す）
+	// (POST /api/print-jobs/{id}/cancel)
+	CancelPrintJob(c *gin.Context, id int64)
+	// 印刷できた（済みにする）
+	// (POST /api/print-jobs/{id}/done)
+	CompletePrintJob(c *gin.Context, id int64)
+	// 印刷できなかった（失敗として残す）
+	// (POST /api/print-jobs/{id}/failed)
+	FailPrintJob(c *gin.Context, id int64)
+	// もう一度印刷する（待ちに戻す）
+	// (POST /api/print-jobs/{id}/retry)
+	RetryPrintJob(c *gin.Context, id int64)
 	// サーバーステータス取得
 	// (GET /status)
 	GetStatus(c *gin.Context)
@@ -1100,6 +1121,141 @@ func (siw *ServerInterfaceWrapper) MarkOrderServe(c *gin.Context) {
 	siw.Handler.MarkOrderServe(c, id)
 }
 
+// GetPrintJobs operation middleware
+func (siw *ServerInterfaceWrapper) GetPrintJobs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPrintJobs(c)
+}
+
+// CreatePrintJob operation middleware
+func (siw *ServerInterfaceWrapper) CreatePrintJob(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePrintJob(c)
+}
+
+// ClaimPrintJob operation middleware
+func (siw *ServerInterfaceWrapper) ClaimPrintJob(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ClaimPrintJob(c)
+}
+
+// CancelPrintJob operation middleware
+func (siw *ServerInterfaceWrapper) CancelPrintJob(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelPrintJob(c, id)
+}
+
+// CompletePrintJob operation middleware
+func (siw *ServerInterfaceWrapper) CompletePrintJob(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompletePrintJob(c, id)
+}
+
+// FailPrintJob operation middleware
+func (siw *ServerInterfaceWrapper) FailPrintJob(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.FailPrintJob(c, id)
+}
+
+// RetryPrintJob operation middleware
+func (siw *ServerInterfaceWrapper) RetryPrintJob(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryPrintJob(c, id)
+}
+
 // GetStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetStatus(c *gin.Context) {
 
@@ -1188,5 +1344,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
+	router.GET(options.BaseURL+"/api/print-jobs", wrapper.GetPrintJobs)
+	router.POST(options.BaseURL+"/api/print-jobs", wrapper.CreatePrintJob)
+	router.POST(options.BaseURL+"/api/print-jobs/claim", wrapper.ClaimPrintJob)
+	router.POST(options.BaseURL+"/api/print-jobs/:id/cancel", wrapper.CancelPrintJob)
+	router.POST(options.BaseURL+"/api/print-jobs/:id/done", wrapper.CompletePrintJob)
+	router.POST(options.BaseURL+"/api/print-jobs/:id/failed", wrapper.FailPrintJob)
+	router.POST(options.BaseURL+"/api/print-jobs/:id/retry", wrapper.RetryPrintJob)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)
 }

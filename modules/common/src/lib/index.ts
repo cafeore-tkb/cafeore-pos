@@ -7,3 +7,4 @@ export * from "./jstDay";
 export * from "./caosTiming";
 export * from "./caosShiftFeed";
 export * from "./caosPracticeData";
+export * from "./label";

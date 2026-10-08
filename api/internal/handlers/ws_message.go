@@ -23,6 +23,8 @@ const (
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
 	// CaOS の今日のカード（全部）と列の担当者（1〜6 の全部）。カードか担当者が変わるたびと、つないだときに届く
 	WSMessageTypeDrips WSMessageType = "drips"
+	// 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）の全部。変わるたびと、つないだときに届く
+	WSMessageTypePrintJobs WSMessageType = "print_jobs"
 )
 
 type WSMessage struct {
@@ -38,6 +40,8 @@ type WSMessage struct {
 	Drips []caos.Drip `json:"drips,omitempty"`
 	// drips：CaOS の今日の列の担当者（1〜6 の 6 列が必ずある。担当者がいない列は name が空）
 	Lanes []caos.Lane `json:"lanes,omitempty"`
+	// print_jobs：印刷キューの、まだ終わっていない仕事（0 件のときは省かれる）
+	PrintJobs []models.PrintJob `json:"print_jobs,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -61,6 +65,9 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		initial = append(initial, msg)
 	}
 	if msg, ok := h.dripsMessage(); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := printJobsMessage(h.db); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)

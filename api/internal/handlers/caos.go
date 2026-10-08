@@ -51,6 +51,10 @@ func (h *CaosHandler) ApplyOp(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, res)
+	if op.Name == "rebrew" {
+		// 緊急の入れ直しで積んだ緊急の印刷を、印刷する端末へ届ける
+		publishPrintJobs(h.orders.db, h.orders.hub)
+	}
 	// 準備完了を付けた・外した注文は、POS の画面にもその注文を配る
 	readied := make([]uuid.UUID, 0, len(res.Readied))
 	for _, id := range res.Readied {

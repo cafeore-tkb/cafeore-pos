@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+// 送ってからこの時間たっても印刷の結果が返らなければ、失敗とみなす
+const PRINT_TIMEOUT_MS = 30_000;
+
 /**
  * jsでしか書けない部分を書くフック
  * @returns {printer}
@@ -28,6 +31,11 @@ export const useRawPrinter = () => {
     }
     const ePosDev = new window.epson.ePOSDevice();
     ePosDeviceRef.current = ePosDev;
+    // 途中で切れたら未接続にする（印刷キューは、つながるまで仕事を取らない）
+    ePosDev.ondisconnect = () => {
+      printerRef.current = undefined;
+      setStatus("disconnected");
+    };
 
     ePosDev.connect("192.168.77.2", 8008, (data) => {
       if (data === "OK" || data === "SSL_CONNECT_OK") {
@@ -259,19 +267,39 @@ export const useRawPrinter = () => {
   };
 
   /**
-   *
-   * @returns {void}
+   * ためた命令をプリンターへ送る。プリンターが印刷し終えたら解決し、印刷できなかったら理由を付けて失敗する
+   * （印刷キューの済み・失敗に使う）。
+   * @returns {Promise<void>}
    */
-  const print = () => {
-    const prn = printerRef.current;
-    if (!prn) {
-      setStatus("disconnected");
-      console.error("Printer not connected");
-      return;
-    }
-
-    prn.send();
-  };
+  const print = () =>
+    new Promise((resolve, reject) => {
+      const prn = printerRef.current;
+      if (!prn) {
+        setStatus("disconnected");
+        reject(new Error("プリンターにつながっていません"));
+        return;
+      }
+      const timer = setTimeout(() => {
+        prn.onreceive = null;
+        reject(new Error("プリンターから応答がありません"));
+      }, PRINT_TIMEOUT_MS);
+      prn.onreceive = (res) => {
+        clearTimeout(timer);
+        prn.onreceive = null;
+        if (res?.success) {
+          resolve();
+        } else {
+          reject(new Error(`印刷できませんでした（${res?.code ?? "不明"}）`));
+        }
+      };
+      try {
+        prn.send();
+      } catch (e) {
+        clearTimeout(timer);
+        prn.onreceive = null;
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    });
 
   const printer = {
     connect,
