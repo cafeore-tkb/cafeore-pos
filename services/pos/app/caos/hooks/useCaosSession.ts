@@ -15,11 +15,15 @@ import { testPlayAnalytics, testPlayRemainingLabel } from "../logic/historical";
 import { paintBoard } from "../logic/posOrders";
 import { nextAvailableBays } from "../logic/queue";
 import type { RebrewDecision } from "../logic/rebrew";
-import type { Board, TestPlaySession } from "../types";
+import type { Board, HistoricalOrder, TestPlaySession } from "../types";
 import { soundManager } from "../utils/audio";
 import { useBoardState } from "./useBoardState";
 import { usePosIngest } from "./usePosIngest";
+import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
+
+// 実データを読み込んでいないとき
+const NO_ORDERS: HistoricalOrder[] = [];
 
 // タイマーの速さ（ヘッダーで押すたびに次へ）
 const SIM_SPEEDS = [1, 2, 5, 10];
@@ -41,7 +45,11 @@ export const useCaosSession = (initial?: {
     isRunning,
     simSpeed,
   });
+  // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
+  // （ブラウザの中で名前とコメントを落とす。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
+  const practiceData = usePracticeData();
   const test = useTestPlay({
+    historicalOrders: practiceData.dataset?.orders ?? NO_ORDERS,
     initial: initial?.testPlaySession ?? null,
     isRunning,
     simSpeed,
@@ -135,7 +143,8 @@ export const useCaosSession = (initial?: {
         : null,
       /** 実績のパネルに渡すもの */
       analytics: testPlayAnalytics(test.session),
-      historicalOrders: test.historicalOrders,
+      /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
+      practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
         state.reset();
         test.start(startMs, durationMinutes);

@@ -2,18 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { historicalArrivals, ordersInPeriod } from "../logic/historical";
 import type { DripCard, HistoricalOrder, TestPlaySession } from "../types";
 
-// 実データテストの注文。過去の注文データは同梱しない（あとで画面から読み込む形にする）ので、今は空。
-const HISTORICAL_ORDERS: HistoricalOrder[] = [];
-
 // 実データテスト。過去の注文の時刻を 1 秒ずつ進め（速さはヘッダーの 1x〜10x）、時刻が来た注文をカードにして届ける。
-// 終わりの時刻に着いたら onTimeUp（タイマーを止める）。
+// 終わりの時刻に着いたら onTimeUp（タイマーを止める）。historicalOrders は読み込んだ実データの注文（usePracticeData）。
 export const useTestPlay = ({
+  historicalOrders,
   initial,
   isRunning,
   simSpeed,
   receive,
   onTimeUp,
 }: {
+  historicalOrders: HistoricalOrder[];
   initial: TestPlaySession | null;
   isRunning: boolean;
   simSpeed: number;
@@ -61,7 +60,6 @@ export const useTestPlay = ({
 
   return {
     session,
-    historicalOrders: HISTORICAL_ORDERS,
     /** 時間帯（startMs から durationMinutes 分）でテストを始める */
     start: (startMs: number, durationMinutes: 30 | 60) => {
       const sessionEndMs = startMs + durationMinutes * 60_000;
@@ -72,7 +70,7 @@ export const useTestPlay = ({
         endMs: sessionEndMs,
         currentMs: startMs,
         durationMinutes,
-        orders: ordersInPeriod(HISTORICAL_ORDERS, startMs, sessionEndMs),
+        orders: ordersInPeriod(historicalOrders, startMs, sessionEndMs),
       });
     },
     /** テストを終える（実績を見るために、リセットするまで盤面と時刻は残す） */

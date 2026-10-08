@@ -169,7 +169,11 @@ export default function App() {
 
       {testSetupOpen && (
         <TestPlaySetup
-          orders={testPlay.historicalOrders}
+          dataset={testPlay.practiceData.dataset}
+          loading={testPlay.practiceData.loading}
+          problems={testPlay.practiceData.problems}
+          onSelectFiles={(files) => void testPlay.practiceData.readFiles(files)}
+          onClearData={testPlay.practiceData.clear}
           onClose={() => setTestSetupOpen(false)}
           onStart={(startMs, durationMinutes) => {
             testPlay.start(startMs, durationMinutes);

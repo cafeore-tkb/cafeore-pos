@@ -67,10 +67,12 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 
 ## 実データ・テストプレイ
 
-- ヘッダーの「実データテスト」から、2025年の実注文を使ったテストプレイを開始できます。
+- ヘッダーの「実データテスト」から、過去の祭の実注文を使ったテストプレイを開始できます。
+- データは開始の画面で手元の JSON ファイルを選んで読み込みます（ドラッグでも可）。読める形は [cafeore-tkb/sohosai-analysis](https://github.com/cafeore-tkb/sohosai-analysis) の `YYYY/data/day*.json`（`{ orders: [...] }`）と、cafeore-pos の `GET /api/orders` の応答を保存したものです。day1・day2・day12 のように複数選ぶと、重なる注文は 1 件にまとめます。
+- 読み込みはこの端末のブラウザの中だけで、担当者名・指名・コメント・お預かりなどは読み込むときに落とします（`@cafeore/common` の `caosPracticeData.ts`）。サーバーには送らず、画面を開き直したら選び直しです。テストプレイ中は POS の注文の取り込みを止め、API にも書かないので、本番の盤面・注文・在庫には混ざりません。リセットすると本番の盤面に戻ります。
 - 開始前に時間帯と30分／1時間を選択します。ヘッダーの `1x / 2x / 5x / 10x` に合わせて、時計・タイムライン・注文到着・抽出時間が実時間基準で一緒に進みます。
 - 「終了・実績」を押すと、売上、商品構成、ピーク、提供時間、担当量、分割注文の仕上がりΔを表示します。
-- 過去の注文データ（[cafeore-tkb/sohosai-analysis](https://github.com/cafeore-tkb/sohosai-analysis/tree/main/2025/data) の `day12.json` など）は同梱していません。いまは時間帯の欄が「データがありません」になり、テストプレイは始められません（データは画面から読み込む形にする予定です）。
+- 過去の注文データはリポジトリに入れません。
 
 ## 置き場所
 
@@ -95,4 +97,4 @@ lint は POS と同じ決まりです（`biome.json` に CaOS だけの除外は
 
 - `components/`：部品（表示だけ）。受け取った値を出し、押されたら受け取った関数を呼ぶ。カードは `OrderCard` 1 つで、管制盤 A・C・D と右のパネルで共通。見出し・列の番号・「次へ」・空きスロットは `BoardParts`、右のパネル（割当・詳細・入れ直し・補助のタブ）は `SidePanels` の `SidePanel`。
 - `logic/`：盤面の決まり（純粋な関数）。カードの組み立て（`posOrders`）・統合と並び（`cards`）・割当や移動や「次へ」や入れ直し（`board`）・列の予定時刻（`queue`）・D の表（`sheet`）・A の目盛りと置く時刻（`timeline`）・入れ直しの選び方（`rebrew`）・実績の集計（`analytics`）・実データテスト（`historical`）。
-- `hooks/`：状態と副作用。盤面の状態とタイマー（`useBoardState`）、注文の取り込み（`usePosIngest`）、実データテスト（`useTestPlay`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグ（`useCardDrag`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。
+- `hooks/`：状態と副作用。盤面の状態とタイマー（`useBoardState`）、注文の取り込み（`usePosIngest`）、実データテスト（`useTestPlay`。読み込んだ JSON は `usePracticeData`）、それらをまとめる `useCaosSession`、選んでいるもの（`useBoardSelection`・D の `useSheetSelection`）、ドラッグ（`useCardDrag`）、A の横スクロール（`useTimelineScroll`）など。`App.tsx` はフックを呼んで部品に渡すだけ。
