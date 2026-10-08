@@ -88,7 +88,11 @@ const savedOrder = () => {
             brewStartedAt: null,
             brewFinishedAt: null,
             emergencyAt: null,
+            emergencyDripper: null,
+            emergencyDripperPosition: null,
             emergencyDripId: null,
+            emergencyBrewStartedAt: null,
+            emergencyBrewFinishedAt: null,
             emergencyPrintedAt: null,
           }))
         : [],

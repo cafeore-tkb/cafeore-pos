@@ -92,27 +92,35 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 		write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, false)),
 	)
 
-	// 抽出中のカードの 1 杯だけを緊急にする（中断しない）：そのカップは CaOS の列が空になり、最初のカード（drip_id）は残る。
-	// カードは残りの 1 杯で抽出を続ける
+	// 抽出中のカードの 1 杯だけを緊急にする（中断しない）：最初の抽出の列（ドリッパー・カード・始めた時刻）はそのまま残り、
+	// 入れ直しの列は空（未割当の緊急のカード）。カードは残りの 1 杯で抽出を続ける
 	res := f.mustEmergency(t, false, o1.OrderCups[0].ID)
 	if !sameIDs(toIDs(res.MarkedCupIds), o1.OrderCups[0].ID) || len(res.InterruptedDripIds) != 0 || len(res.StartedDripIds) != 0 {
 		t.Fatalf("emergency = %+v", res)
 	}
 	cup := f.cup(t, o1.OrderCups[0].ID)
-	if cup.EmergencyAt == nil || cup.EmergencyDripID != nil || cup.EmergencyPrintedAt != nil ||
-		cup.Dripper != nil || cup.DripperPosition != nil || cup.BrewStartedAt != nil || cup.BrewFinishedAt != nil ||
-		cup.DripID == nil || *cup.DripID != card1 || cup.ReadyAt != nil {
+	if cup.EmergencyAt == nil || cup.EmergencyPrintedAt != nil || cup.ReadyAt != nil ||
+		cup.EmergencyDripper != nil || cup.EmergencyDripperPosition != nil || cup.EmergencyDripID != nil ||
+		cup.EmergencyBrewStartedAt != nil || cup.EmergencyBrewFinishedAt != nil ||
+		cup.Dripper == nil || *cup.Dripper != 1 || cup.DripperPosition == nil || cup.DripID == nil || *cup.DripID != card1 ||
+		cup.BrewStartedAt == nil || cup.BrewFinishedAt != nil {
 		t.Fatalf("emergency cup = %+v", cup)
 	}
-	if rest := f.cup(t, o1.OrderCups[1].ID); rest.EmergencyAt != nil || rest.BrewStartedAt == nil || *rest.DripID != card1 {
+	firstStarted := *cup.BrewStartedAt
+	if rest := f.cup(t, o1.OrderCups[1].ID); rest.EmergencyAt != nil || !timeEqual(rest.BrewStartedAt, &firstStarted) || *rest.DripID != card1 {
 		t.Fatalf("the other cup of the card = %+v", rest)
+	}
+	// 緊急のカップの CaOS のカードは入れ直しの列（未割当）
+	if s := cupCaosState(&cup); s.Dripper != nil || s.DripID != nil || s.started() {
+		t.Fatalf("caos state of the emergency cup = %+v", s)
 	}
 	// 注文の応答に載る
 	var order models.Order
 	if err := preloadOrder(db).First(&order, "id = ?", o1.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if resp := toOrderResponse(&order); resp.Cups[0].EmergencyAt == nil || resp.Cups[0].EmergencyPrintedAt != nil || resp.Cups[1].EmergencyAt != nil {
+	if resp := toOrderResponse(&order); resp.Cups[0].EmergencyAt == nil || resp.Cups[0].EmergencyPrintedAt != nil || resp.Cups[1].EmergencyAt != nil ||
+		resp.Cups[0].BrewStartedAt == nil || resp.Cups[0].EmergencyBrewStartedAt != nil {
 		t.Fatalf("cups in the response = %+v", resp.Cups)
 	}
 
@@ -131,16 +139,18 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 		t.Fatalf("interrupt a queued card = %d, want 422", code)
 	}
 
-	// 入れ直しのカードはふつうに割り当てる。カードの印は emergency_drip_id に書き、最初の drip_id は残す
+	// 入れ直しのカードはふつうに割り当てる。入れ直しの列（emergency_*）に書き、最初の抽出の列は残す
 	rebrew := uuid.New()
 	f.mustPut(t, write(ids(o1.OrderCups[0]), unassigned, placed(2, 1, rebrew, true)))
 	cup = f.cup(t, o1.OrderCups[0].ID)
-	if cup.EmergencyDripID == nil || *cup.EmergencyDripID != rebrew || *cup.DripID != card1 || *cup.Dripper != 2 || cup.BrewStartedAt == nil {
+	if cup.EmergencyDripID == nil || *cup.EmergencyDripID != rebrew || cup.EmergencyDripper == nil || *cup.EmergencyDripper != 2 ||
+		cup.EmergencyDripperPosition == nil || cup.EmergencyBrewStartedAt == nil || cup.EmergencyBrewFinishedAt != nil ||
+		*cup.DripID != card1 || *cup.Dripper != 1 || !timeEqual(cup.BrewStartedAt, &firstStarted) || cup.BrewFinishedAt != nil {
 		t.Fatalf("assigned rebrew cup = %+v", cup)
 	}
-	// 書き込みの before の drip_id は入れ直しのカード（最初の drip_id では 409）
+	// 書き込みの before は入れ直しの列（最初の抽出の列では 409）
 	if code, _ := f.put(t, write(ids(o1.OrderCups[0]), stateJSON(caosState{Dripper: cup.Dripper, DripperPosition: cup.DripperPosition, DripID: &card1, BrewStartedAt: cup.BrewStartedAt}), toUnassigned)); code != http.StatusConflict {
-		t.Fatalf("before with the first drip_id = %d, want 409", code)
+		t.Fatalf("before with the first brew = %d, want 409", code)
 	}
 	// 入れ直しのカードとふつうのカードは統合できない
 	o3 := f.createOrder(t, 3, line(f.blend))
@@ -148,18 +158,23 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 		t.Fatalf("merge a rebrew card with another = %d, want 422", code)
 	}
 
-	// もとのカードの「次へ」は、残りの 1 杯だけを準備完了にする（入れ直すカップは準備完了にしない）
+	// もとのカードの「次へ」は、残りの 1 杯だけを準備完了にする（入れ直すカップは準備完了にしない）。
+	// 入れ直すカップの最初の抽出も、カードといっしょに終える（最初の抽出の時刻がカードのほかのカップとそろう）。入れ直しのカードはそのまま
 	if code, res := f.next(t, 1, &card1); code != http.StatusOK || res.StartedDripId == nil || uuid.UUID(*res.StartedDripId) != card2 {
 		t.Fatalf("next of the first card = %d %+v", code, res)
 	}
-	if c := f.cup(t, o1.OrderCups[0].ID); c.ReadyAt != nil || c.BrewFinishedAt != nil {
+	rest := f.cup(t, o1.OrderCups[1].ID)
+	if c := f.cup(t, o1.OrderCups[0].ID); c.ReadyAt != nil || c.BrewFinishedAt == nil || !timeEqual(c.BrewFinishedAt, rest.BrewFinishedAt) ||
+		c.EmergencyBrewStartedAt == nil || c.EmergencyBrewFinishedAt != nil {
 		t.Fatalf("rebrew cup after the first card's next = %+v", c)
 	}
-	// 入れ直しのカードの「次へ」で、カップを準備完了にする
+	firstFinished := *rest.BrewFinishedAt
+	// 入れ直しのカードの「次へ」で、カップを準備完了にする。最初の抽出の列は変わらない
 	if code, res := f.next(t, 2, &rebrew); code != http.StatusOK || res.FinishedDripId == nil || uuid.UUID(*res.FinishedDripId) != rebrew {
 		t.Fatalf("next of the rebrew card = %d %+v", code, res)
 	}
-	if c := f.cup(t, o1.OrderCups[0].ID); c.ReadyAt == nil || c.BrewFinishedAt == nil || *c.DripID != card1 {
+	if c := f.cup(t, o1.OrderCups[0].ID); c.ReadyAt == nil || c.EmergencyBrewFinishedAt == nil || *c.DripID != card1 || *c.Dripper != 1 ||
+		!timeEqual(c.BrewStartedAt, &firstStarted) || !timeEqual(c.BrewFinishedAt, &firstFinished) {
 		t.Fatalf("rebrew cup after its next = %+v", c)
 	}
 
@@ -174,7 +189,9 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 	if c := f.cup(t, o4.OrderCups[0].ID); c.BrewStartedAt == nil {
 		t.Fatal("the next card did not start after the interrupt")
 	}
-	if c := f.cup(t, o2.OrderCups[0].ID); c.EmergencyAt == nil || c.BrewStartedAt != nil || c.ReadyAt != nil {
+	// 中断したカードのカップは、最初の抽出の始めた時刻だけが残る（終えた時刻は空のまま）
+	if c := f.cup(t, o2.OrderCups[0].ID); c.EmergencyAt == nil || c.ReadyAt != nil || c.DripID == nil || *c.DripID != card2 ||
+		c.BrewStartedAt == nil || c.BrewFinishedAt != nil || c.EmergencyDripID != nil || c.EmergencyBrewStartedAt != nil {
 		t.Fatalf("interrupted cup = %+v", c)
 	}
 
@@ -221,7 +238,9 @@ func TestCaosEmergencyOnDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	cups := buildOrderCups(o1.ID, edited.OrderMenus, &edited, nil)
-	if !timeEqual(cups[0].EmergencyAt, saved.EmergencyAt) || !ptrEqual(cups[0].EmergencyDripID, saved.EmergencyDripID) {
+	if !timeEqual(cups[0].EmergencyAt, saved.EmergencyAt) || !ptrEqual(cups[0].EmergencyDripID, saved.EmergencyDripID) ||
+		!ptrEqual(cups[0].EmergencyDripper, saved.EmergencyDripper) || !timeEqual(cups[0].EmergencyBrewFinishedAt, saved.EmergencyBrewFinishedAt) ||
+		!timeEqual(cups[0].BrewFinishedAt, saved.BrewFinishedAt) {
 		t.Fatalf("edited cup = %+v, want the emergency kept", cups[0])
 	}
 }

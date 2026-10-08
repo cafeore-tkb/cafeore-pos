@@ -5,7 +5,7 @@ import {
   type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
-  caosCardId,
+  cupCaosState,
 } from "./caos-board";
 
 // CaOS の「1つ戻す」。DB や画面を使わない純粋な関数だけを置く（書き戻すのは POST /api/caos/undo）。
@@ -20,7 +20,8 @@ import {
 // 操作の種類ごとに、覚える値を作る関数（undoOf*）を足す。担当者の交代・緊急などカップを書かない操作は、
 // 画面の側（caos/hooks/useCaosUndo）で、その操作を戻す処理をそのまま覚える（今は入れていない）。
 //
-// カップの dripId は CaosCupState と同じく CaOS のカード（緊急のカップは入れ直しのカード emergencyDripId。caosCardId）。
+// カップの CaOS の値は CaosCupState と同じく CaOS のカードの値（緊急のカップは入れ直しの列 emergencyDripper〜emergencyBrewFinishedAt。
+// cupCaosState）。緊急のカップの最初の抽出の列は比べも書き戻しもしない。
 // 提供済み（servedAt）と緊急（emergencyAt）は比べるだけで書き戻さない（あとで変わっていればサーバーが断る）。
 
 /** 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と、準備完了・提供済み・緊急） */
@@ -176,7 +177,7 @@ export const undoOfNext = (
   return cups.length > 0 ? { kind: "next", label, cups } : null;
 };
 
-/** 届いている注文の、カップの今の値（ID ごと。dripId は CaOS のカード＝緊急のカップは入れ直しのカード） */
+/** 届いている注文の、カップの今の値（ID ごと。CaOS の値は CaOS のカード＝緊急のカップは入れ直しの列） */
 export const caosObservedCups = (
   orders: readonly Pick<CaosOrderInput, "cups">[],
 ): Map<string, CaosUndoCupState> =>
@@ -185,11 +186,7 @@ export const caosObservedCups = (
       order.cups.map((cup: Cup): [string, CaosUndoCupState] => [
         cup.id,
         {
-          dripper: cup.dripper ?? null,
-          dripperPosition: cup.dripperPosition ?? null,
-          dripId: caosCardId(cup),
-          brewStartedAt: cup.brewStartedAt ?? null,
-          brewFinishedAt: cup.brewFinishedAt ?? null,
+          ...cupCaosState(cup),
           readyAt: cup.readyAt,
           servedAt: cup.servedAt,
           emergencyAt: cup.emergencyAt ?? null,

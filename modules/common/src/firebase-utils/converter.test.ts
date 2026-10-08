@@ -61,7 +61,11 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   brew_started_at: null,
   brew_finished_at: null,
   emergency_at: null,
+  emergency_dripper: null,
+  emergency_dripper_position: null,
   emergency_drip_id: null,
+  emergency_brew_started_at: null,
+  emergency_brew_finished_at: null,
   emergency_printed_at: null,
 });
 

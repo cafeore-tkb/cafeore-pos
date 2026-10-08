@@ -318,7 +318,11 @@
       "brew_started_at",
       "brew_finished_at",
       "emergency_at",
+      "emergency_dripper",
+      "emergency_dripper_position",
       "emergency_drip_id",
+      "emergency_brew_started_at",
+      "emergency_brew_finished_at",
       "emergency_printed_at"
     ],
     "properties": {
@@ -381,13 +385,38 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。\n緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）\n"
+        "description": "緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。\n緊急にしても dripper・dripper_position・drip_id・brew_started_at・brew_finished_at（最初の抽出）は残る。\n緊急のカップの CaOS のカードは、下の emergency_ の付いた列（入れ直しのカード）で決まる\n"
+      },
+      "emergency_dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6,
+        "description": "入れ直しのカードのドリッパーの番号（dripper と同じ意味）"
+      },
+      "emergency_dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true,
+        "description": "入れ直しのカードのドリッパーの中の順番（dripper_position と同じ意味）"
       },
       "emergency_drip_id": {
         "type": "string",
         "format": "uuid",
         "nullable": true,
-        "description": "入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード"
+        "description": "入れ直しで淹れるカードの印（drip_id と同じ意味）。null なら未割当の緊急のカード"
+      },
+      "emergency_brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "入れ直しの抽出を始めた時刻"
+      },
+      "emergency_brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "入れ直しの抽出を終えた時刻"
       },
       "emergency_printed_at": {
         "type": "string",
@@ -765,7 +794,7 @@
   },
   "CaosCupState": {
     "type": "object",
-    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップは emergency_ の付いた列）。全部 null なら未割当",
     "required": [
       "dripper",
       "dripper_position",
@@ -1046,7 +1075,7 @@
   },
   "CaosUndoCupState": {
     "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndrip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",
     "required": [
       "dripper",
       "dripper_position",

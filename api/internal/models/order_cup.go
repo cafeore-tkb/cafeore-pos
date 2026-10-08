@@ -22,7 +22,7 @@ type OrderCup struct {
 	ReadyAt  *time.Time
 	ServedAt *time.Time
 
-	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）・caos_emergency.go（緊急で空に戻す）・caos_undo.go（1つ戻す）だけ。
+	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）・caos_emergency.go（緊急）・caos_undo.go（1つ戻す）だけ。
 	// 注文の応答（OrderResponse の cups）に載せるが、CaOS 以外の画面は読まない。
 	// 注文の編集では、ほかの列と同じく引き継いだカップは同じ値のまま入れ直す（新しい明細のカップは未割当）。
 	//
@@ -46,15 +46,20 @@ type OrderCup struct {
 
 	// 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルが付ける（handlers/caos_emergency.go）。
 	// 同じカップは 2 回緊急にしない（EmergencyAt があれば何もしない）。
-	//   - EmergencyAt：緊急にした時刻。付けたとき、上の CaOS の列のうち Dripper・DripperPosition・BrewStartedAt・
-	//     BrewFinishedAt は空に戻し（入れ直しのカードの値に使う）、DripID（最初に淹れたカード）は残す
-	//   - EmergencyDripID：入れ直しで淹れるカード。緊急のカップでは、CaOS のカードはこちらで決まる（DripID ではない）。
-	//     空なら未割当の緊急のカード（CaOS の未割当のいちばん上に出る）
+	//   - EmergencyAt：緊急にした時刻。緊急にしても上の最初の抽出の列（Dripper・DripperPosition・DripID・BrewStartedAt・
+	//     BrewFinishedAt）はそのまま残す（抽出の統計で最初の抽出も数えるため）
+	//   - EmergencyDripper・EmergencyDripperPosition・EmergencyDripID・EmergencyBrewStartedAt・EmergencyBrewFinishedAt：
+	//     入れ直しのカード。上の 5 つの列と同じ意味で、緊急のカップでは CaOS のカードはこちらで決まる（PUT /api/caos/cups・
+	//     「次へ」が読み書きするのもこちら）。EmergencyDripID が空なら未割当の緊急のカード（CaOS の未割当のいちばん上に出る）
 	//   - EmergencyPrintedAt：緊急のシールを印刷した時刻。プリンターにつないだレジが、空なら付けてから印刷する
 	//     （付けられたときだけ印刷するので 2 重に印刷しない）。印刷に失敗したら空に戻す
-	EmergencyAt        *time.Time
-	EmergencyDripID    *uuid.UUID `gorm:"type:uuid;index"`
-	EmergencyPrintedAt *time.Time
+	EmergencyAt              *time.Time
+	EmergencyDripper         *int       `gorm:"type:smallint;check:order_cups_emergency_dripper_check,emergency_dripper BETWEEN 1 AND 6"`
+	EmergencyDripperPosition *float64   `gorm:"type:double precision"`
+	EmergencyDripID          *uuid.UUID `gorm:"type:uuid;index"`
+	EmergencyBrewStartedAt   *time.Time
+	EmergencyBrewFinishedAt  *time.Time
+	EmergencyPrintedAt       *time.Time
 
 	Item Item `gorm:"foreignKey:ItemID;references:ID"`
 }

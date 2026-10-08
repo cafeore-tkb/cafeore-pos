@@ -122,12 +122,13 @@ export interface paths {
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
-     * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（GET /api/caos/lanes の senior）にしか置けない。
+     * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（担当者の senior。PUT /api/caos/lanes/{dripper} で替える）にしか置けない。
      *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
      *   （担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
      *   指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
      * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
-     * - 緊急のカップ（emergency_at のあるカップ）では、before・after の drip_id は入れ直しのカード（emergency_drip_id）を指す（最初に淹れた drip_id は書き換えない）。
+     * - 緊急のカップ（emergency_at のあるカップ）では、before・after は入れ直しのカードの列（emergency_dripper・emergency_dripper_position・
+     *   emergency_drip_id・emergency_brew_started_at・emergency_brew_finished_at）を指す（最初の抽出の列は書き換えない）。
      *   緊急のカップとほかのカップを 1 枚のカードにはできない
      */
     put: operations["writeCaosCups"];
@@ -146,7 +147,8 @@ export interface paths {
     /**
      * カップを緊急（入れ直し）にする
      * @description マスターの緊急ボタンと CaOS の入れ直しのパネルが使う。カップに緊急の印（emergency_at）を付けるだけで、入れ直しのカードは CaOS の未割当のいちばん上に出る
-     * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_drip_id で持ち、最初に淹れた drip_id は残す）。
+     * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_ の付いた列で持ち、最初の抽出の列 dripper・dripper_position・drip_id・
+     * brew_started_at・brew_finished_at は残す。中断したカードのカップは brew_started_at だけが残る）。
      * もう緊急のカップは何もしない（同じカップを 2 回緊急にしない）。カップの準備完了・提供済みは変えない（入れ直しのカードの「次へ」で準備完了にする）。
      *
      * interrupt が true なら、cup_ids のカップの抽出中のカードを中断する：そのカードのカップを全部緊急にし、カードは盤面から消え、
@@ -173,20 +175,14 @@ export interface paths {
      */
     post: operations["releaseEmergencyLabel"];
   };
-  "/api/caos/lanes": {
-    /**
-     * CaOS の今日のドリッパーの担当者
-     * @description 今日（日本時間）のドリッパー 1〜6 の担当者（名前と、交代した時点で上級生だったか）。6 つ全部を番号の順に返す。担当者のいないドリッパーは name が空。
-     * 担当者が変わるたびに /api/ws/orders の {"type":"caos_lanes"} でも全部の画面に届く（つないだときにも、今日の担当者があれば届く）。
-     */
-    get: operations["getCaosLanes"];
-  };
   "/api/caos/lanes/{dripper}": {
     /**
      * CaOS のドリッパーの担当者を替える（交代）
      * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
      * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる。
+     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+     * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
+     * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
      */
     put: operations["putCaosLane"];
   };
@@ -194,7 +190,7 @@ export interface paths {
     /**
      * CaOS の 2 つのドリッパーの担当者を入れ替える
      * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
-     * 配信は PUT /api/caos/lanes/{dripper} と同じ。
+     * 配信は PUT /api/caos/lanes/{dripper} と同じ。交代の記録はドリッパーごとに 1 行ずつ（2 行）足す。
      */
     post: operations["swapCaosLanes"];
   };
@@ -216,7 +212,8 @@ export interface paths {
      * - 書き戻したあとも、1 つのドリッパーで抽出中のカードは 1 枚・1 枚のカードは最大 2 杯・同じカードのカップは同じ値・入れ直しのカードはほかのカードと混ざらない（合わなければ 409）
      * - 書き戻した結果が PUT /api/caos/cups と同じ決まりに反するなら 422：指名のあるカップは指名のドリッパーにだけ・1 枚のカードの指名はそろう・
      *   限定のカップをほかのドリッパーへ戻すなら、今日の今の担当者が上級生のドリッパーだけ（戻す間に担当者が替わっていれば断る）
-     * 緊急のカップのカードは PUT /api/caos/cups と同じく emergency_drip_id に書く。担当者の交代・緊急は戻さない（カップの値だけを戻す）。
+     * 緊急のカップは PUT /api/caos/cups と同じく入れ直しの列（emergency_dripper〜emergency_brew_finished_at）を比べて書き戻す（最初の抽出の列は触らない）。
+     * 担当者の交代・緊急は戻さない（カップの値だけを戻す）。
      * 書いたカップの注文は PUT /api/caos/cups と同じく全部の画面に配る。
      */
     post: operations["undoCaosCups"];
@@ -446,14 +443,32 @@ export interface components {
       /**
        * Format: date-time
        * @description 緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。
-       * 緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）
+       * 緊急にしても dripper・dripper_position・drip_id・brew_started_at・brew_finished_at（最初の抽出）は残る。
+       * 緊急のカップの CaOS のカードは、下の emergency_ の付いた列（入れ直しのカード）で決まる
        */
       emergency_at: string | null;
+      /** @description 入れ直しのカードのドリッパーの番号（dripper と同じ意味） */
+      emergency_dripper: number | null;
+      /**
+       * Format: double
+       * @description 入れ直しのカードのドリッパーの中の順番（dripper_position と同じ意味）
+       */
+      emergency_dripper_position: number | null;
       /**
        * Format: uuid
-       * @description 入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード
+       * @description 入れ直しで淹れるカードの印（drip_id と同じ意味）。null なら未割当の緊急のカード
        */
       emergency_drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description 入れ直しの抽出を始めた時刻
+       */
+      emergency_brew_started_at: string | null;
+      /**
+       * Format: date-time
+       * @description 入れ直しの抽出を終えた時刻
+       */
+      emergency_brew_finished_at: string | null;
       /**
        * Format: date-time
        * @description 緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する
@@ -614,7 +629,7 @@ export interface components {
       /** Format: uuid */
       submitted_order_id: string | null;
     };
-    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当 */
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップは emergency_ の付いた列）。全部 null なら未割当 */
     CaosCupState: {
       dripper: number | null;
       /** Format: double */
@@ -735,7 +750,7 @@ export interface components {
     };
     /**
      * @description 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
-     * drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+     * dripper〜brew_finished_at は CaosCupState と同じく、緊急のカップでは入れ直しの列（emergency_dripper〜emergency_brew_finished_at）。
      * served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
      */
     CaosUndoCupState: {
@@ -1459,12 +1474,13 @@ export interface operations {
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（item_types.needs_brew が false）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
-   * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（GET /api/caos/lanes の senior）にしか置けない。
+   * - 限定のカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（担当者の senior。PUT /api/caos/lanes/{dripper} で替える）にしか置けない。
    *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
    *   （担当者を上級生でない人に替えても、待っていた限定のカードはそのドリッパーに残るので）。
    *   指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない
    * - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
-   * - 緊急のカップ（emergency_at のあるカップ）では、before・after の drip_id は入れ直しのカード（emergency_drip_id）を指す（最初に淹れた drip_id は書き換えない）。
+   * - 緊急のカップ（emergency_at のあるカップ）では、before・after は入れ直しのカードの列（emergency_dripper・emergency_dripper_position・
+   *   emergency_drip_id・emergency_brew_started_at・emergency_brew_finished_at）を指す（最初の抽出の列は書き換えない）。
    *   緊急のカップとほかのカップを 1 枚のカードにはできない
    */
   writeCaosCups: {
@@ -1541,7 +1557,8 @@ export interface operations {
   /**
    * カップを緊急（入れ直し）にする
    * @description マスターの緊急ボタンと CaOS の入れ直しのパネルが使う。カップに緊急の印（emergency_at）を付けるだけで、入れ直しのカードは CaOS の未割当のいちばん上に出る
-   * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_drip_id で持ち、最初に淹れた drip_id は残す）。
+   * （割当・「次へ」はふつうのカードと同じ。入れ直しのカードは emergency_ の付いた列で持ち、最初の抽出の列 dripper・dripper_position・drip_id・
+   * brew_started_at・brew_finished_at は残す。中断したカードのカップは brew_started_at だけが残る）。
    * もう緊急のカップは何もしない（同じカップを 2 回緊急にしない）。カップの準備完了・提供済みは変えない（入れ直しのカードの「次へ」で準備完了にする）。
    *
    * interrupt が true なら、cup_ids のカップの抽出中のカードを中断する：そのカードのカップを全部緊急にし、カードは盤面から消え、
@@ -1663,25 +1680,12 @@ export interface operations {
     };
   };
   /**
-   * CaOS の今日のドリッパーの担当者
-   * @description 今日（日本時間）のドリッパー 1〜6 の担当者（名前と、交代した時点で上級生だったか）。6 つ全部を番号の順に返す。担当者のいないドリッパーは name が空。
-   * 担当者が変わるたびに /api/ws/orders の {"type":"caos_lanes"} でも全部の画面に届く（つないだときにも、今日の担当者があれば届く）。
-   */
-  getCaosLanes: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["CaosLanes"];
-        };
-      };
-    };
-  };
-  /**
    * CaOS のドリッパーの担当者を替える（交代）
    * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
    * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる。
+   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+   * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
+   * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
    */
   putCaosLane: {
     parameters: {
@@ -1713,7 +1717,7 @@ export interface operations {
   /**
    * CaOS の 2 つのドリッパーの担当者を入れ替える
    * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
-   * 配信は PUT /api/caos/lanes/{dripper} と同じ。
+   * 配信は PUT /api/caos/lanes/{dripper} と同じ。交代の記録はドリッパーごとに 1 行ずつ（2 行）足す。
    */
   swapCaosLanes: {
     requestBody: {
@@ -1753,7 +1757,8 @@ export interface operations {
    * - 書き戻したあとも、1 つのドリッパーで抽出中のカードは 1 枚・1 枚のカードは最大 2 杯・同じカードのカップは同じ値・入れ直しのカードはほかのカードと混ざらない（合わなければ 409）
    * - 書き戻した結果が PUT /api/caos/cups と同じ決まりに反するなら 422：指名のあるカップは指名のドリッパーにだけ・1 枚のカードの指名はそろう・
    *   限定のカップをほかのドリッパーへ戻すなら、今日の今の担当者が上級生のドリッパーだけ（戻す間に担当者が替わっていれば断る）
-   * 緊急のカップのカードは PUT /api/caos/cups と同じく emergency_drip_id に書く。担当者の交代・緊急は戻さない（カップの値だけを戻す）。
+   * 緊急のカップは PUT /api/caos/cups と同じく入れ直しの列（emergency_dripper〜emergency_brew_finished_at）を比べて書き戻す（最初の抽出の列は触らない）。
+   * 担当者の交代・緊急は戻さない（カップの値だけを戻す）。
    * 書いたカップの注文は PUT /api/caos/cups と同じく全部の画面に配る。
    */
   undoCaosCups: {
