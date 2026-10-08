@@ -9,7 +9,6 @@ import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
 import { ReadyBell } from "~/components/atoms/ReadyBell";
 import { ServeCheck } from "~/components/atoms/ServeCheck";
-import { useCupActions } from "~/components/functional/useCupActions";
 import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
@@ -62,7 +61,16 @@ export default function Serve() {
 
 // 提供画面の注文カード。カップを1杯ずつ出し、押すと 準備中 → 提供可能 → 提供済み → 準備中 と回す
 const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
-  const { cups, press, readyCup, serveCup } = useCupActions(order);
+  // カップの状態も、押してから配信が届くまでの間は押した後の状態を表示する
+  const cupPending = usePendingStatus<CupStatus>(order);
+  const send =
+    (request: typeof orderRepository.readyCup) =>
+    (cupId: string, next: CupStatus) =>
+      cupPending.run(cupId, next, async () =>
+        cupStatusOf(await request(order.id, cupId), cupId),
+      );
+  const readyCup = send(orderRepository.readyCup);
+  const serveCup = send(orderRepository.serveCup);
 
   // 注文単位の呼び出し・提供も、押してから配信が届くまでの間は押した後の状態を表示する
   const orderPending = usePendingStatus<boolean>(order);
@@ -107,16 +115,27 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
       timing="present"
       colorScreen="serve"
       grayed={order.status === "calling"}
-      cups={cups.map((cup) => ({
-        ...cup,
-        // 提供済みのカップは灰色にし、提供可能になったカップは目立たせる
-        gray: cup.shown === "served",
-        servable: cup.shown === "ready",
-        served: cup.shown === "served",
-        onClick: press(cup.cupId, (cupId) =>
-          changeCup(cupId, cup.abbr, cup.shown),
-        ),
-      }))}
+      cups={order.getCups().map((cup) => {
+        const { cupId } = cup;
+        const shown = cupId
+          ? cupPending.statusOf(cupId, cup.status)
+          : cup.status;
+        return {
+          ...cup,
+          // 提供済みのカップは灰色にし、提供可能になったカップは目立たせる
+          gray: shown === "served",
+          servable: shown === "ready",
+          served: shown === "served",
+          busy: cupId !== undefined && cupPending.isBusy(cupId),
+          // 押せるのはサーバーが作ったカップだけ。応答待ちの間は押せなくして、ダブルタップで2回進むのを防ぐ
+          onClick: cupId
+            ? () => {
+                if (!cupPending.isBusy(cupId))
+                  changeCup(cupId, cup.abbr, shown);
+              }
+            : undefined,
+        };
+      })}
     >
       <InputComment
         order={order}
@@ -147,3 +166,6 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
     </OrderInfoCard>
   );
 };
+
+const cupStatusOf = (order: OrderEntity, cupId: string) =>
+  order.getCups().find((cup) => cup.cupId === cupId)?.status;
