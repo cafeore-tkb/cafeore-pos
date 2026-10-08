@@ -39,18 +39,6 @@ export const formatMinSecJa = (seconds: number) => {
 export const brewDurationLabel = (cups: number) =>
   formatMinSecJa(brewDurationSec(cups));
 
-/** ドリッパーの抽出の残りの表示（例 "02:15 残り"） */
-export const formatRemainingLabel = (seconds: number) => {
-  const safe = wholeSeconds(seconds);
-  const minutes = Math.floor(safe / 60)
-    .toString()
-    .padStart(2, "0");
-  return `${minutes}:${(safe % 60).toString().padStart(2, "0")} 残り`;
-};
-
-/** 抽出していないドリッパーの表示 */
-export const STANDBY_LABEL = "00:00 待機中";
-
 /** 盤面の時刻（その日の 0:00 からの秒）を「HH:MM:SS」にする。24 時を越えたら 0 時に戻す */
 export const formatClockOfDay = (seconds: number) => {
   const normalized = ((Math.floor(seconds) % 86400) + 86400) % 86400;

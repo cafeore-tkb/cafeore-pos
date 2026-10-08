@@ -1,3 +1,4 @@
+import { dripperLabel } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -13,7 +14,6 @@ import {
 import type React from "react";
 import { useMemo } from "react";
 import type { Barista, OrderTicket, PracticeSalesOrder } from "../types";
-import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
@@ -602,7 +602,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-950">
-                  {laneOrdinal(result.bayNumber)}
+                  {dripperLabel(result.bayNumber)}
                 </span>
               </div>
               <div className="mt-2 flex items-end gap-3">

@@ -1,3 +1,4 @@
+import { CAOS_DRIPPERS } from "./caos-board";
 import { jstDate } from "./jstDay";
 
 // sohosai-shift（シフト作成ツール）が CaOS へ配信する担当者の予定（Firestore の caosFeeds/{合言葉}）を読む。
@@ -11,9 +12,7 @@ import { jstDate } from "./jstDay";
 //   seniors：上級生（限定を淹れられる人）の氏名
 
 /** 本番の枠の長さ（分） */
-export const SHIFT_SLOT_MINUTES = 30;
-
-const LANE_COUNT = 6;
+const SHIFT_SLOT_MINUTES = 30;
 const MINUTE_MS = 60_000;
 
 /** 合言葉を URL に入れられる形にする。使えない形（空・空白や / を含む）なら null */
@@ -63,7 +62,7 @@ type FirestoreValue = {
 };
 
 /** Firestore の REST の値（{"stringValue": "..."} など）を普通の値に直す */
-export const decodeFirestoreValue = (value: unknown): unknown => {
+const decodeFirestoreValue = (value: unknown): unknown => {
   if (!value || typeof value !== "object") return null;
   const v = value as FirestoreValue;
   if ("stringValue" in v) return v.stringValue ?? "";
@@ -99,7 +98,7 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 /** 1st〜6th の氏名（前後の空白を落とし、6 人分にそろえる） */
 const asLaneNames = (value: unknown): string[] => {
   const names = Array.isArray(value) ? value : [];
-  return Array.from({ length: LANE_COUNT }, (_, i) =>
+  return Array.from({ length: CAOS_DRIPPERS }, (_, i) =>
     asString(names[i]).trim(),
   );
 };

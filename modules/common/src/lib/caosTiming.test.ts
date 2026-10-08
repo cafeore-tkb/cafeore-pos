@@ -4,7 +4,6 @@ import {
   brewDurationSec,
   formatClockOfDay,
   formatMinSec,
-  formatRemainingLabel,
   planLane,
 } from "./caosTiming";
 
@@ -26,12 +25,6 @@ describe("[unit] 表示の文字", () => {
   test("m:ss は負を 0 にする", () => {
     expect(formatMinSec(-5)).toBe("0:00");
     expect(formatMinSec(65)).toBe("1:05");
-  });
-
-  test("残り", () => {
-    expect(formatRemainingLabel(195)).toBe("03:15 残り");
-    expect(formatRemainingLabel(7)).toBe("00:07 残り");
-    expect(formatRemainingLabel(-1)).toBe("00:00 残り");
   });
 
   test("時計は 24 時を越えたら 0 時に戻す", () => {

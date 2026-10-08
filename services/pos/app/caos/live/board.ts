@@ -2,12 +2,9 @@ import {
   type CaosCard,
   type ColorSetting,
   IMMINENT_SEC,
-  STANDBY_LABEL,
   brewDurationLabel,
   brewDurationSec,
   caosLane,
-  formatMinSec,
-  formatRemainingLabel,
   planLane,
 } from "@cafeore/common";
 import type { Barista, CardBean, OrderTicket, UnassignedOrder } from "../types";
@@ -90,7 +87,6 @@ const describe = (
       id: first.item.id,
       typeId: itemType.id,
     }),
-    itemKey: first.item.id ?? first.item.name,
     beans: Array.from(beans.values()),
     cupCount: card.cups.length,
     preferredBaristaId,
@@ -140,7 +136,6 @@ export const cardsToBoard = (
       ...describe(card, orderParts, colorSettings, beanIndex),
       status,
       totalDurationSec,
-      scheduledTimeStr: formatMinSec(totalDurationSec),
       startTimeSec: toSec(card.startedAt, dayStartMs),
       endTimeSec: toSec(card.finishedAt, dayStartMs),
       completedAtSec: toSec(card.finishedAt, dayStartMs),
@@ -184,9 +179,6 @@ export const cardsToBoard = (
           ? "imminent"
           : "brewing"
         : "standby",
-      remainingStr: plan.brewing
-        ? formatRemainingLabel(remainingSec)
-        : STANDBY_LABEL,
       queue,
       pastTickets: done.map((card) => toTicket(card, "completed")),
     };
@@ -202,13 +194,8 @@ export const cardsToBoard = (
         // 未割当で dripId のあるカードは統合したもの
         badgeTag: `${cups}杯${card.emergency ? " 緊急" : card.dripId ? " 統合" : ""}`,
         predictedTimeStr: brewDurationLabel(cups),
-        recommendedBaristas: info.preferredBaristaId
-          ? `ドリッパー ${info.preferredBaristaId}`
-          : "全ドリッパー",
-        recommendedBayIds: info.preferredBaristaId
-          ? [info.preferredBaristaId]
-          : [1, 2, 3, 4, 5, 6],
-        mergeKey: `${card.cups[0].item.id}\u0000${card.nominatedDripper ?? ""}`,
+        // 統合できる相手（@cafeore/common の canMergeCards と同じく、商品と指名の番号）
+        mergeKey: `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.nominatedDripper ?? ""}`,
       };
     });
 
