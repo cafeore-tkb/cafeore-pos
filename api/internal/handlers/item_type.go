@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"cafeore-pos/api/internal/models"
@@ -25,7 +26,46 @@ func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
 		Id:          openapi_types.UUID(itemType.ID),
 		Name:        itemType.Name,
 		DisplayName: itemType.DisplayName,
+		MakesCup:    itemType.CreatesCup(),
+		NeedsBrew:   itemType.BrewRequired(),
+		SeniorOnly:  itemType.SeniorOnlyBrew(),
 	}
+}
+
+var (
+	errBrewWithoutCup    = errors.New("needs_brew must be false when makes_cup is false")
+	errSeniorWithoutBrew = errors.New("senior_only must be false when needs_brew is false")
+)
+
+// setItemTypeFlags はリクエストの makes_cup / needs_brew / senior_only を種類に入れる。
+// 省略した値は今の値のまま（新規は makes_cup・needs_brew が true、senior_only が false）。
+// ただし、上の項目を false にして下の項目を省略したら、下も false にする（カップを作らない → 抽出しない → 限定でない）。
+// カップを作らないのに抽出が要る、抽出しないのに限定、という組み合わせは受け付けない。
+func setItemTypeFlags(itemType *models.ItemType, makesCup, needsBrew, seniorOnly *bool) error {
+	cup := itemType.CreatesCup()
+	if makesCup != nil {
+		cup = *makesCup
+	}
+	brew := itemType.NeedsBrew == nil || *itemType.NeedsBrew
+	if needsBrew != nil {
+		brew = *needsBrew
+	} else if !cup {
+		brew = false
+	}
+	if brew && !cup {
+		return errBrewWithoutCup
+	}
+	senior := itemType.SeniorOnly
+	if seniorOnly != nil {
+		senior = *seniorOnly
+	} else if !brew {
+		senior = false
+	}
+	if senior && !brew {
+		return errSeniorWithoutBrew
+	}
+	itemType.MakesCup, itemType.NeedsBrew, itemType.SeniorOnly = &cup, &brew, senior
+	return nil
 }
 
 // GET /api/item-types - ItemType一覧取得
@@ -57,6 +97,10 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	itemType := models.ItemType{
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
+	}
+	if err := setItemTypeFlags(&itemType, req.MakesCup, req.NeedsBrew, req.SeniorOnly); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	if err := h.db.Create(&itemType).Error; err != nil {
@@ -120,6 +164,10 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	// 更新
 	itemType.Name = req.Name
 	itemType.DisplayName = req.DisplayName
+	if err := setItemTypeFlags(&itemType, req.MakesCup, req.NeedsBrew, req.SeniorOnly); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.db.Save(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
