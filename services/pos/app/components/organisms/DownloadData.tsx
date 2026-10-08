@@ -95,7 +95,8 @@ const ORDER_CSV_COLUMNS: CsvColumns<OrderEntity> = [
     "menus",
     (o) => o.menus.map((m) => `${m.name}(${m.assignee ?? "なし"})`).join("; "),
   ],
-  ["cups", (o) => o.getDrinkCups().length],
+  // サーバーが作ったカップの数（カップの無い古い注文はメニューから数える）
+  ["cups", (o) => o.getCups().length],
   ["total", (o) => o.total],
   ["discount", (o) => o.discount],
   ["billingAmount", (o) => o.billingAmount],

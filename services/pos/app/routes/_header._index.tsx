@@ -204,7 +204,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">オーダーストップ記録書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">
-            オーダーストップ・再開の記録を時刻順に JSON・CSV でダウンロードします
+            ストップ・再開の記録を時刻順にダウンロードします
           </p>
           <DownloadMasterStateButton />
         </div>
