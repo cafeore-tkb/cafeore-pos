@@ -23,15 +23,16 @@ interface ControlWorkspaceProps {
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
+  onMoveTicket: (
+    ticket: OrderTicket,
+    targetBayId: number,
+    toFront?: boolean,
+  ) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
-  /** 列の「交代」（管制盤 A の各列）。無ければ出さない */
-  onChangeLane?: (bayId: number) => void;
 }
 
 export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
@@ -49,11 +50,9 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
-  onChangeLane,
 }) => {
   if (mode === "new") {
     return (
@@ -69,7 +68,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         onOpenTicketDetail={onOpenTicketDetail}
         onOpenEmptySlot={onOpenEmptySlot}
         onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
       />
     );
   }
@@ -88,7 +86,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         onOpenTicketDetail={onOpenTicketDetail}
         onOpenEmptySlot={onOpenEmptySlot}
         onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
         onMoveTicket={onMoveTicket}
         onReturnToUnassigned={onReturnToUnassigned}
         onMergeOrders={onMergeOrders}
@@ -110,7 +107,6 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
         onOpenTicketDetail={onOpenTicketDetail}
         onOpenEmptySlot={onOpenEmptySlot}
         onAssignToBay={onAssignToBay}
-        onRequestRebrew={onRequestRebrew}
       />
     );
   }
@@ -130,11 +126,9 @@ export const ControlWorkspace: React.FC<ControlWorkspaceProps> = ({
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onCloseTicketAction={onCloseTicketAction}
-      onRequestRebrew={onRequestRebrew}
       onOpenEmptySlot={onOpenEmptySlot}
       onAssignToBay={onAssignToBay}
       onMergeOrders={onMergeOrders}
-      onChangeLane={onChangeLane}
     />
   );
 };

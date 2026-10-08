@@ -1,6 +1,5 @@
-import type { CaosLane } from "@cafeore/common";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import type { Drip, PosOrder } from "../utils/posOrders";
+import type { PosOrder } from "../utils/posOrders";
 
 export type PosConnectionStatus =
   | "off"
@@ -8,26 +7,20 @@ export type PosConnectionStatus =
   | "open"
   | "reconnecting";
 
-// 注文と今日の抽出カードは、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から受け取る。
-// CaOS 用に別の接続は張らない。
-// - 注文：つないだ直後に全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある
-// - カード：つないだ直後と、変わるたびに今日の分が全部届く
-// - 列の担当者：カードと同じメッセージで、1〜6 の全部が届く
-// enabled が false（実データテスト中。練習用の盤面を出す）のときは注文とカードを渡さない（列の担当者は本番の列の写しを練習の始めに使うので渡す）。
+// 注文は、POS の画面全体で共有している WebSocket（root の OrdersWSProvider）から受け取る。CaOS 用に別の接続は張らない。
+// つないだ直後に全部、そのあとは変わった 1 件ずつ届き、共有の側でまとめてある。
+// CaOS の盤面は注文のカップの列で持つので、カードはこの注文から組み立てる（@cafeore/common の buildCaosCards）。
+// enabled が false（実データテスト中）のときは何も渡さない。
 export const usePosOrders = (
   enabled: boolean,
 ): {
   orders: PosOrder[] | null;
-  drips: Drip[] | null;
-  lanes: CaosLane[] | null;
   status: PosConnectionStatus;
 } => {
-  const { orders, isOrdersLoaded, drips, lanes, status } = useOrdersWSContext();
-  if (!enabled) return { orders: null, drips: null, lanes, status: "off" };
+  const { orders, isOrdersLoaded, status } = useOrdersWSContext();
+  if (!enabled) return { orders: null, status: "off" };
   return {
     orders: isOrdersLoaded ? orders : null,
-    drips,
-    lanes,
     // 共有の接続は切れると自動でつなぎ直すので、closed は「再接続中」と出す
     status:
       status === "open"

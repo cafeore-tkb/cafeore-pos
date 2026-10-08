@@ -1,15 +1,3 @@
-export type BeanCode =
-  | "CHAMP"
-  | "ORE"
-  | "TNZ"
-  | "KEN"
-  | "BRA"
-  | "ICE"
-  | "MILK"
-  | "SP"
-  // 盤面のカードで、氷・牛・限定のどれでもない商品（どの豆かは beans で見分ける）
-  | "OTHER";
-
 // カードの豆。POS の在庫対象（kind が bean）の ID と名前をそのまま持つ
 export interface CardBean {
   id: string;
@@ -17,11 +5,13 @@ export interface CardBean {
 }
 
 export interface OrderTicket {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品には付かない */
   color?: string;
-  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
-  itemKey?: string;
-  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  /** 商品を見分けるキー。商品の ID（実データテストで商品の ID の無いデータは「name:商品名」） */
+  itemKey: string;
+  /** 区分。商品の種類の表示名（display_name）をそのまま */
+  typeName?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（商品の ID で引く） */
   beans?: CardBean[];
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
@@ -30,26 +20,12 @@ export interface OrderTicket {
   totalOrderCups?: number; // e.g. 3 (total cups in entire order #152)
   orderNotes?: string; // e.g. "チャンプ 2杯 + 俺ブレ 1杯"
   sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
+  /** カードの名前。商品の略称（abbr）をそのまま（略称の無い実データは商品名） */
   beanName: string;
   cupCount: number;
-  tag?:
-    | "HOT"
-    | "ICE"
-    | "BATCH"
-    | "牛"
-    | "牛オレ"
-    | "氷"
-    | "★SP"
-    | "定番"
-    | "浅煎り"
-    | "水洗"
-    | string;
-  preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
-  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。指名なしは付かない */
   nominee?: string;
-  /** 割り当て・移動できる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
-  allowedBayIds?: number[];
   status: "brewing" | "scheduled" | "ready" | "unassigned" | "completed";
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
@@ -57,20 +33,14 @@ export interface OrderTicket {
   startTimeSec?: number; // sim time in seconds when this drip starts
   endTimeSec?: number; // sim time in seconds when this drip ends
   completedAtSec?: number; // for historical completed drip
-  isRebrew?: boolean; // emergency remake linked to an original cup
-  rebrewOfTicketUid?: string;
-  isInterrupted?: boolean; // original drip stopped because a remake was required
-  queuePos?: number; // cafeore-pos の盤面での待機列の並び順（入れ直しの差し込み位置に使う）
+  seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
+  isRebrew?: boolean; // 緊急（入れ直し）のカード
 }
 
-// ドリッパーの列（1st〜6th）と、その担当者（サーバーの盤面の caos_lanes。交代は CaOS の画面から）
+// ドリッパーの列（1st〜6th）。担当者（名前・限定を淹れられる上級生か）はここでは持たず、サーバーの担当者から出す（lanes/）
 export interface Barista {
   id: number;
   bayNumber: number;
-  /** 列の担当者の名前（サーバーの盤面の caos_lanes）。担当者がいなければ空 */
-  name: string;
-  /** 担当者が上級生（限定を淹れられる）か。交代したときの sohosai-shift の名簿の判定（サーバーが持つ） */
-  senior: boolean;
   status: "brewing" | "imminent" | "standby" | "ready";
   remainingStr: string; // "01:48 残り"
   pastTickets?: OrderTicket[]; // Past completed tickets in this bay
@@ -78,11 +48,13 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
-  /** マスターの画面と同じ背景色（#RRGGBB）。cafeore-pos の盤面のカードにだけ付く */
+  /** マスターの画面の色の設定の背景色（#RRGGBB）。設定の無い商品には付かない */
   color?: string;
-  /** 商品の ID。統合の候補を同じ商品どうしに絞るのに使う（盤面のカードにだけ付く） */
-  itemKey?: string;
-  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  /** 商品を見分けるキー。商品の ID（実データテストで商品の ID の無いデータは「name:商品名」） */
+  itemKey: string;
+  /** 区分。商品の種類の表示名（display_name）をそのまま */
+  typeName?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（商品の ID で引く） */
   beans?: CardBean[];
   id: string; // e.g. "#162"
   ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
@@ -91,35 +63,37 @@ export interface UnassignedOrder {
   totalOrderCups?: number;
   orderNotes?: string;
   sourceOrderIds?: string[]; // combined drip across separate register orders
-  beanCode: BeanCode;
+  /** カードの名前。商品の略称（abbr）をそのまま（略称の無い実データは商品名） */
   beanName: string;
   cupCount: number;
   badgeTag: string;
   predictedTimeStr: string;
   recommendedBaristas: string;
   recommendedBayIds: number[];
-  preferredBaristaId?: number; // 指名（ドリッパーの番号）。必ず1人だけ
-  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。盤面のカードにだけ付く */
+  preferredBaristaId?: number; // 指名（明細のドリッパーの番号）。必ず1人だけ
+  /** 指名の表示（マスターの画面と同じ assignmentDisplay。番号は「2nd」、番号の無い古い明細は自由記述）。指名なしは付かない */
   nominee?: string;
-  /** 割り当てられる列（指名と、限定のカードは上級生の列だけ）。盤面のカードにだけ付く */
-  allowedBayIds?: number[];
-  isRebrew?: boolean;
-  rebrewOfTicketUid?: string;
-  cardColor: "blue" | "peach" | "cyan" | "emerald";
+  seniorOnly?: boolean; // 限定（種類の senior_only）
+  isRebrew?: boolean; // 緊急（入れ直し）のカード。未割当のいちばん上に出る
+  mergeKey?: string; // 統合できる相手を決めるキー（商品と指名）。同じキーの 1 杯どうしだけ統合できる
 }
 
-/** 実績（売上・注文→完成）に出す注文。実データテストの練習用の盤面の注文から作る（practice/board.ts） */
-export interface SalesOrderItem {
-  name: string;
-  price: number;
-  type: "hot" | "iceOre" | "ice" | "milk" | "others" | string;
-}
-
-export interface SalesOrder {
+// 実データテスト（練習）の実績に出す注文。読み込んだ実データの注文に、練習の結果（提供時間）と品物の種類を足したもの
+export interface PracticeSalesOrder {
   orderId: number;
   createdAt: string;
-  /** 練習の中で準備完了になった時刻。まだなら null */
+  /** 練習で、抽出の要るカップが全部準備完了になった時刻。まだ・抽出の要るカップが無い注文は null */
   readyAt: string | null;
   billingAmount: number;
-  items: SalesOrderItem[];
+  items: PracticeSalesItem[];
+}
+
+export interface PracticeSalesItem {
+  name: string;
+  price: number;
+  /** 商品の種類の名前と表示名（DB の今の種類から。決め方は @cafeore/common の practiceItemType） */
+  type: string;
+  typeLabel: string;
+  /** カップを作る品物か（グッズは false。杯数・商品構成に数えない） */
+  makesCup: boolean;
 }

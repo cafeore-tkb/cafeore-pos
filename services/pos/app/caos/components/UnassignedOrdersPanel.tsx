@@ -4,10 +4,9 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnassignedOrder } from "../types";
-import { canPlaceOn } from "../utils/lanes";
 import { cardSurface } from "../utils/menuPresentation";
+import { nominationText } from "../utils/nomination";
 import { canMergeDripUnits } from "../utils/orderQueue";
-import { nominationText } from "../utils/posOrders";
 import { BeanBadge } from "./BeanBadge";
 
 const MergeCupsIcon = ({ className = "" }: { className?: string }) => (
@@ -110,8 +109,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    // 指名の列だけ、限定のカードは上級生の列だけ
-    if (!canPlaceOn(order, bayId)) return;
+    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
     setHoveredBay(null);
@@ -229,12 +227,13 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                     transform: `translate3d(${-dragVisual.x}px, ${-dragVisual.y}px, 0)`,
                   }
                 : undefined;
+            // 緊急（入れ直し）は赤、指名は紫、それ以外はマスターの画面と同じ背景色（あれば）
             const cardStyle = order.isRebrew
-              ? "bg-red-50 border-red-300 text-slate-900"
+              ? "bg-red-50 border-red-500 text-slate-900"
               : order.preferredBaristaId
                 ? "bg-violet-50 border-violet-300 text-slate-900"
                 : surface.className;
-            // 入れ直し・指名の色を優先し、それ以外はマスターの画面と同じ背景色（あれば）
+            // 指名の色を優先し、それ以外はマスターの画面と同じ背景色（あれば）
             const surfaceStyle =
               order.isRebrew || order.preferredBaristaId
                 ? undefined
@@ -260,8 +259,8 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                       {order.id}
                     </span>
                     {order.isRebrew && (
-                      <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-                        入れ直し
+                      <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[11px] text-white">
+                        緊急
                       </span>
                     )}
                     {order.totalItemsInOrder && order.totalItemsInOrder > 1 && (
@@ -288,6 +287,7 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                   </h3>
                   <BeanBadge
                     beans={order.beans}
+                    typeName={order.typeName}
                     className={isSidebar ? "text-[12px]" : ""}
                   />
                   {nominationText(order) && (
@@ -463,7 +463,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={!canPlaceOn(order, bayId)}
+                          disabled={Boolean(
+                            order.preferredBaristaId &&
+                              order.preferredBaristaId !== bayId,
+                          )}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}
@@ -484,7 +487,10 @@ export const UnassignedOrdersPanel: React.FC<UnassignedOrdersPanelProps> = ({
                             event.stopPropagation();
                             assignToBay(order, bayId);
                           }}
-                          disabled={!canPlaceOn(order, bayId)}
+                          disabled={Boolean(
+                            order.preferredBaristaId &&
+                              order.preferredBaristaId !== bayId,
+                          )}
                           className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${hoveredBay === bayId ? "border-white bg-blue-500 text-white" : order.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                         >
                           {bayId}

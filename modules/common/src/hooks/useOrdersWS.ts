@@ -3,18 +3,16 @@ import { useEffect, useState } from "react";
 import { type MasterState, responseToMasterState } from "../data";
 import {
   type OrderResponse,
-  type PrintJobResponse,
   responseToCashierState,
   responseToOrderEntity,
-  responseToPrintJob,
 } from "../firebase-utils";
 import type { WithId } from "../lib";
+import type { CaosLanes } from "../lib/caosLanes";
 import {
   type ReconnectingWebSocketStatus,
   createReconnectingWebSocket,
 } from "../lib/reconnectingWebSocket";
-import type { CashierStateEntity, OrderEntity, PrintJob } from "../models";
-import type { CaosDrip, CaosLane } from "../repositories/caos";
+import type { CashierStateEntity, OrderEntity } from "../models";
 import type { components } from "../types/api";
 
 type WsStatus = ReconnectingWebSocketStatus;
@@ -33,10 +31,8 @@ type WSMessage =
       type: "cashier_state";
       cashier_state: components["schemas"]["CashierStateResponse"];
     }
-  // CaOS（ドリップ管制）の今日の抽出カードと列の担当者（1〜6）。変わるたびに全部届く（カードが 0 件なら drips は省かれる）
-  | { type: "drips"; drips?: CaosDrip[]; lanes?: CaosLane[] }
-  // 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）の全部。変わるたびと、つないだときに届く（0 件なら print_jobs は省かれる）
-  | { type: "print_jobs"; print_jobs?: PrintJobResponse[] };
+  // CaOS のドリッパーの担当者（今日の 6 つ全部）。変わるたびと、つないだとき（今日の担当者があれば）に届く
+  | { type: "caos_lanes"; caos_lanes: CaosLanes };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -50,12 +46,8 @@ export const useOrdersWS = () => {
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(
     null,
   );
-  // CaOS の画面のためのもの。POS のほかの画面は使わない。未受信は undefined
-  const [drips, setDrips] = useState<CaosDrip[]>();
-  // CaOS の列の担当者。未受信は undefined
-  const [lanes, setLanes] = useState<CaosLane[]>();
-  // 印刷キューの、まだ終わっていない仕事。未受信は undefined
-  const [printJobs, setPrintJobs] = useState<PrintJob[]>();
+  // CaOS のドリッパーの担当者。まだ届いていなければ null（担当者なし）
+  const [caosLanes, setCaosLanes] = useState<CaosLanes | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
@@ -101,13 +93,8 @@ export const useOrdersWS = () => {
             setCashierState(responseToCashierState(data.cashier_state));
             break;
 
-          case "drips":
-            setDrips(data.drips ?? []);
-            setLanes(data.lanes ?? []);
-            break;
-
-          case "print_jobs":
-            setPrintJobs((data.print_jobs ?? []).map(responseToPrintJob));
+          case "caos_lanes":
+            setCaosLanes(data.caos_lanes);
             break;
 
           default:
@@ -137,12 +124,8 @@ export const useOrdersWS = () => {
     masterState,
     /** レジの編集中注文と直前に確定した注文 ID。未受信なら null */
     cashierState,
-    /** CaOS の今日の抽出カード。未受信なら null */
-    drips: drips ?? null,
-    /** CaOS の今日の列の担当者（1〜6）。未受信なら null */
-    lanes: lanes ?? null,
-    /** 印刷キューの、まだ終わっていない仕事（積んだ順）。未受信なら null */
-    printJobs: printJobs ?? null,
+    /** CaOS のドリッパーの担当者（日付つき）。未受信なら null */
+    caosLanes,
     status,
   };
 };

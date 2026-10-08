@@ -45,9 +45,9 @@ func buildColorSetting(request models.ColorSettingUpsertRequest) (models.ColorSe
 		return models.ColorSetting{}, errors.New("target_type must be Item or ItemType")
 	}
 	switch request.Screen {
-	case models.ColorScreenCashier, models.ColorScreenMaster, models.ColorScreenServe:
+	case models.ColorScreenCashier, models.ColorScreenCashierOrder, models.ColorScreenMaster, models.ColorScreenServe:
 	default:
-		return models.ColorSetting{}, errors.New("screen must be cashier, master or serve")
+		return models.ColorSetting{}, errors.New("screen must be cashier, cashier_order, master or serve")
 	}
 	if !colorPattern.MatchString(request.Color) {
 		return models.ColorSetting{}, errors.New("color must be #RRGGBB")

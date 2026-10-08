@@ -19,11 +19,6 @@ const cardTheme = (
   ticket: OrderTicket,
 ): { card: string; id: string; style?: React.CSSProperties } => {
   const surface = cardSurface(ticket);
-  if (ticket.isRebrew)
-    return {
-      card: "border-red-300 bg-red-50 text-slate-900",
-      id: "text-red-700",
-    };
   if (ticket.preferredBaristaId) {
     return {
       card: "border-violet-300 bg-violet-50 text-slate-900",
@@ -80,7 +75,7 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
               {queuePosition ? `${queuePosition}. ` : ""}
               {ticket.beanName}
             </span>
-            <BeanBadge beans={ticket.beans} />
+            <BeanBadge beans={ticket.beans} typeName={ticket.typeName} />
           </div>
         </>
       ) : (

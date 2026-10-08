@@ -217,12 +217,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 
-	var readied []uuid.UUID
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		locked, err := h.lockCaosForOrder(tx, orderID)
-		if err != nil {
-			return err
-		}
 		order, err := lockOrderWith(tx, orderID)
 		if err != nil {
 			return err
@@ -233,14 +228,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
-		if err := saveOrderStatus(tx, &before, &order); err != nil {
-			return err
-		}
-		// 準備完了・提供済みになった注文のカードを、同じトランザクションで抽出終了にする
-		if locked {
-			readied = h.syncCaos(tx, caosOrderRef{ID: order.ID, CreatedAt: order.CreatedAt})
-		}
-		return nil
+		return saveOrderStatus(tx, &before, &order)
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -260,7 +248,6 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
-	h.publishCaosChanges(readied)
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

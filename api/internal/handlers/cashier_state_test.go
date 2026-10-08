@@ -66,6 +66,8 @@ func TestValidateEdittingOrderAcceptsOptionalKeys(t *testing.T) {
 	order := parseEdittingOrder(t)
 	order["id"] = "00000000-0000-4000-8000-000000000003"
 	firstMenu(order)["orderMenuId"] = "00000000-0000-4000-8000-000000000004"
+	itemType := firstMenu(order)["items"].([]interface{})[0].(map[string]interface{})["item"].(map[string]interface{})["item_type"].(map[string]interface{})
+	itemType["makes_cup"], itemType["needs_brew"], itemType["senior_only"] = true, true, false
 	firstMenu(order)["dripper"] = float64(6)
 	firstMenu(order)["assignee"] = "山田"
 	if err := validateEdittingOrder(order); err != nil {
@@ -99,6 +101,10 @@ func TestValidateEdittingOrderRejectsBrokenShape(t *testing.T) {
 		"menu item without item_type": func(o map[string]interface{}) {
 			item := firstMenu(o)["items"].([]interface{})[0].(map[string]interface{})["item"]
 			delete(item.(map[string]interface{}), "item_type")
+		},
+		"item_type flag not bool": func(o map[string]interface{}) {
+			item := firstMenu(o)["items"].([]interface{})[0].(map[string]interface{})["item"]
+			item.(map[string]interface{})["item_type"].(map[string]interface{})["makes_cup"] = "true"
 		},
 		"comment not object":    func(o map[string]interface{}) { o["comments"] = []interface{}{"x"} },
 		"comment bad author":    func(o map[string]interface{}) { firstComment(o)["author"] = "guest" },

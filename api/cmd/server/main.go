@@ -243,13 +243,8 @@ func main() {
 		os.Getenv("POS_BASE_URL"),
 	)
 	inventoryHandler := handlers.NewInventoryHandler(inventory)
-	// CaOS（ドリップ管制）の盤面。注文の変更を同じトランザクションでカードに反映する
-	caosStore := handlers.NewCaosStore(db)
-	orderHandler := handlers.NewOrderHandler(db, hub, inventory, caosStore)
-	caosHandler := handlers.NewCaosHandler(caosStore, orderHandler)
-	// CaOS の練習用の盤面（実データテスト）。本番の盤面とは表も配信も分けてある
-	caosPracticeHandler := handlers.NewCaosPracticeHandler(handlers.NewCaosPracticeStore(db))
-	// ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューの変更も画面へ届けるため、
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
+	// ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更も POS の画面へ届けるため、
 	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
 	listenCtx, stopListening := context.WithCancel(context.Background())
@@ -263,8 +258,8 @@ func main() {
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
-	// 印刷キュー。レジ・マスター・CaOS は積むだけで、「この端末で印刷する」にした端末が順に取って印刷する
-	printJobHandler := handlers.NewPrintJobHandler(db, hub)
+	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
+	caosHandler := handlers.NewCaosHandler(db, hub)
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -305,22 +300,6 @@ func main() {
 		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 		api.POST("/orders/:id/comments", commentHandler.CreateComment)
 
-		api.GET("/print-jobs", printJobHandler.List)
-		api.POST("/print-jobs", printJobHandler.Create)
-		api.POST("/print-jobs/claim", printJobHandler.Claim)
-		api.POST("/print-jobs/:id/done", printJobHandler.Complete)
-		api.POST("/print-jobs/:id/failed", printJobHandler.Fail)
-		api.POST("/print-jobs/:id/retry", printJobHandler.Retry)
-		api.POST("/print-jobs/:id/cancel", printJobHandler.Cancel)
-
-		api.POST("/caos/ops", caosHandler.ApplyOp)
-		api.GET("/caos/brew-stats", caosHandler.BrewStats)
-		api.POST("/caos/practice", caosPracticeHandler.Create)
-		api.GET("/caos/practice/:id", caosPracticeHandler.Get)
-		api.POST("/caos/practice/:id/advance", caosPracticeHandler.Advance)
-		api.POST("/caos/practice/:id/ops", caosPracticeHandler.ApplyOp)
-		api.DELETE("/caos/practice/:id", caosPracticeHandler.Delete)
-
 		api.GET("/master-status", masterStateHandler.GetMasterStatus)
 		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
 
@@ -338,6 +317,16 @@ func main() {
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
+		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
+		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
+		api.POST("/caos/undo", caosHandler.UndoCaosCups)
+		// 緊急（入れ直し）と緊急のシール
+		api.POST("/caos/emergency", caosHandler.MarkCaosEmergency)
+		api.POST("/orders/:id/cups/:cupId/emergency-label/claim", caosHandler.ClaimEmergencyLabel)
+		api.POST("/orders/:id/cups/:cupId/emergency-label/release", caosHandler.ReleaseEmergencyLabel)
+		api.GET("/caos/lanes", caosHandler.GetCaosLanes)
+		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
+		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
 	}
 
 	// サーバー起動

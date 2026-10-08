@@ -24,10 +24,9 @@ import {
   OrderEntity,
   orderSchema,
 } from "../models/order";
-import type { PrintJob } from "../models/printJob";
 import type { components } from "../types/api";
 
-// 入力の型は出力と違ってよい（既定値で埋める項目など）
+// 入力の型は出力と違ってよい（既定値のある項目は、古いドキュメントに無くても読める）
 export const converter = <T>(
   schema: ZodType<T, ZodTypeDef, unknown>,
 ): FirestoreDataConverter<T> => {
@@ -251,6 +250,18 @@ export const responseToOrderEntity = (
       item: responseToItemEntity(cup.item).toItem(),
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
+      dripper: cup.dripper ?? null,
+      dripperPosition: cup.dripper_position ?? null,
+      dripId: cup.drip_id ?? null,
+      brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
+      brewFinishedAt: cup.brew_finished_at
+        ? new Date(cup.brew_finished_at)
+        : null,
+      emergencyAt: cup.emergency_at ? new Date(cup.emergency_at) : null,
+      emergencyDripId: cup.emergency_drip_id ?? null,
+      emergencyPrintedAt: cup.emergency_printed_at
+        ? new Date(cup.emergency_printed_at)
+        : null,
     })),
   };
   return OrderEntity.fromOrder(order);
@@ -271,10 +282,8 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 };
 
 // OrderEntity を CreateRequest に変換
-// printLabels：注文と同じトランザクションで、この注文のラベルの印刷を印刷キューに積む（レジの会計）
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
-  { printLabels = false }: { printLabels?: boolean } = {},
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({
@@ -292,7 +301,6 @@ export const orderEntityToCreateRequest = (
     discount_order_cups: order.discountOrderCups,
     menu_ids: menuIds,
     comments: order.comments,
-    ...(printLabels ? { print_labels: true } : {}),
   };
 };
 
@@ -353,28 +361,3 @@ export const cashierStateToUpdateRequest = (
     submitted_order_id: parsed.submittedOrderId,
   };
 };
-
-/**
- * 印刷キューの仕事（API の PrintJob → PrintJob）
- */
-export type PrintJobResponse = components["schemas"]["PrintJob"];
-
-const dateOrNull = (value: string | null | undefined) =>
-  value ? new Date(value) : null;
-
-export const responseToPrintJob = (response: PrintJobResponse): PrintJob => ({
-  id: response.id,
-  kind: response.kind,
-  source: response.source,
-  orderId: response.order_id,
-  orderNo: response.order_no,
-  cupId: response.cup_id ?? null,
-  status: response.status,
-  printerId: response.printer_id ?? null,
-  claimedAt: dateOrNull(response.claimed_at),
-  finishedAt: dateOrNull(response.finished_at),
-  error: response.error ?? null,
-  attempts: response.attempts,
-  createdAt: new Date(response.created_at),
-  updatedAt: new Date(response.updated_at),
-});

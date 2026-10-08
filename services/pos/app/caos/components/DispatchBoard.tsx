@@ -2,7 +2,7 @@ import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Barista, OrderTicket } from "../types";
-import { laneTitle } from "../utils/lanes";
+import { laneOrdinal } from "../utils/lanes";
 import { BayLaneRow } from "./BayLaneRow";
 
 interface DispatchBoardProps {
@@ -14,17 +14,14 @@ interface DispatchBoardProps {
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
+  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   simTimeSec: number;
   timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
   /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
   readOnly?: boolean;
-  /** 列の「交代」 */
-  onChangeLane?: (bayId: number) => void;
 }
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -47,12 +44,10 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   simTimeSec,
   timelineCommand,
   readOnly = false,
-  onChangeLane,
 }) => {
   // Build a rolling timeline that runs 12 hours ahead of the current hour. It starts
   // one hour back so drips spanning the top of the hour keep their real position.
@@ -183,16 +178,16 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
   // Find all cards matching selectedOrderId to summarize
   const matchingTickets: {
-    laneTitle: string;
     beanName: string;
     cupCount: number;
+    bayNumber: number;
   }[] = [];
   if (selectedOrderId) {
     baristas.forEach((b) => {
       [...(b.pastTickets || []), ...b.queue].forEach((t) => {
         if (t.id === selectedOrderId) {
           matchingTickets.push({
-            laneTitle: laneTitle(b),
+            bayNumber: b.bayNumber,
             beanName: t.beanName,
             cupCount: t.cupCount,
           });
@@ -222,7 +217,10 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.length > 0
                 ? matchingTickets
-                    .map((m) => `${m.laneTitle}: ${m.beanName} ${m.cupCount}杯`)
+                    .map(
+                      (m) =>
+                        `ドリッパー ${laneOrdinal(m.bayNumber)}: ${m.beanName} ${m.cupCount}杯`,
+                    )
                     .join(" ＋ ")
                 : "オーダー詳細表示"}
             </span>
@@ -319,10 +317,8 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   onMoveTicket={onMoveTicket}
                   onReturnToUnassigned={onReturnToUnassigned}
                   onCloseTicketAction={onCloseTicketAction}
-                  onRequestRebrew={onRequestRebrew}
                   onOpenEmptySlot={onOpenEmptySlot}
                   readOnly={readOnly}
-                  onChangeLane={onChangeLane}
                   timelineStartSec={timelineStartSec}
                   pixelsPerSec={PIXELS_PER_SEC}
                   timelineWidthPx={timelineWidthPx}

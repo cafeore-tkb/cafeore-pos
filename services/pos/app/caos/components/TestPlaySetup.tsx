@@ -1,8 +1,14 @@
-import { jstDate, startOfJstDay } from "@cafeore/common";
+import {
+  type ItemType,
+  type PracticeDataOrder,
+  itemTypeRepository,
+  jstDate,
+  practiceItemType,
+  startOfJstDay,
+} from "@cafeore/common";
 import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PracticeDataOrder } from "../practice/data";
 import {
   type LoadedPracticeData,
   clearStoredPracticeData,
@@ -10,23 +16,19 @@ import {
   readPracticeFiles,
   storePracticeData,
 } from "../practice/loaded";
+import type { PracticeStart } from "../practice/usePracticeBoard";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
 // データは利用者が選んだファイルをこの端末のブラウザの中で読み、担当者名・指名・コメントを落としてから使う
 // （サーバーにも配信にも出さない。practice/loaded.ts）。読み込んだデータはこの端末に覚えておき、「消す」で消せる。
 // 時間帯は日本時間の 0 分・30 分の区切り（端末の時刻帯によらない。盤面の時計と同じ）。
+// 品物の種類（抽出が要るか・カップを作るか・限定か）は DB の今の商品の種類から決める（読むだけ。practiceItemType）。
 
 const SLOT_MS = 30 * 60_000;
 
 interface TestPlaySetupProps {
-  starting: boolean;
   onClose: () => void;
-  onStart: (start: {
-    label: string;
-    orders: PracticeDataOrder[];
-    startMs: number;
-    endMs: number;
-  }) => void;
+  onStart: (start: PracticeStart) => void;
 }
 
 const formatSlot = (timestamp: number) =>
@@ -49,7 +51,6 @@ const countIn = (orders: PracticeDataOrder[], startMs: number, endMs: number) =>
   ).length;
 
 export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
-  starting,
   onClose,
   onStart,
 }) => {
@@ -62,6 +63,26 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   const [duration, setDuration] = useState<30 | 60>(30);
   const [selectedStart, setSelectedStart] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // DB の今の商品の種類（取れなければ空のまま。データの種類の設定か既定で決める）
+  const [itemTypes, setItemTypes] = useState<ItemType[] | null>(null);
+  const [itemTypesFailed, setItemTypesFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    itemTypeRepository
+      .findAll()
+      .then((types) => {
+        if (!cancelled) setItemTypes(types);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setItemTypes([]);
+        setItemTypesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,8 +165,20 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
     effectiveStart === null
       ? 0
       : countIn(orders, effectiveStart, effectiveStart + duration * 60_000);
-  const loading = datasetLoading;
+  const loading = datasetLoading || itemTypes === null;
   const noData = !datasetLoading && !dataset;
+  // DB に同じ名前の種類が無い品物の種類（データの種類の設定か、既定の「抽出が要る」で扱う）
+  const unknownTypes = useMemo(() => {
+    if (!itemTypes) return [];
+    const names = new Set<string>();
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (practiceItemType(item, itemTypes).source !== "db")
+          names.add(item.type || "種類なし");
+      }
+    }
+    return Array.from(names).sort();
+  }, [orders, itemTypes]);
 
   return (
     <div
@@ -319,14 +352,25 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
               <span className="font-black font-mono text-[20px]">
                 {selectedCount}
               </span>{" "}
-              件を順番に投入します。物販は売上分析に含め、管制盤にはドリンクだけを表示します。
+              件を順番に投入します。グッズ（カップを作らない種類）は売上だけに数え、管制盤には抽出が要る品物だけを出します。
             </div>
+            {(itemTypesFailed || unknownTypes.length > 0) && (
+              <p
+                role="status"
+                className="mt-2 font-bold text-[12px] text-amber-950"
+              >
+                {itemTypesFailed
+                  ? "商品の種類を cafeore-pos から読めませんでした。"
+                  : `今の商品の種類に無い種類（${unknownTypes.join("・")}）があります。`}
+                データに種類の設定があればそれを、無ければ抽出が要る品物として扱います。
+              </p>
+            )}
           </>
         )}
 
         <button
           type="button"
-          disabled={effectiveStart === null || loading || noData || starting}
+          disabled={effectiveStart === null || loading || noData}
           onClick={() =>
             effectiveStart !== null &&
             dataset &&
@@ -335,12 +379,13 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
               orders,
               startMs: effectiveStart,
               endMs: effectiveStart + duration * 60_000,
+              itemTypes: itemTypes ?? [],
             })
           }
           className="mt-5 flex min-h-[54px] w-full items-center justify-center gap-2 rounded-xl bg-blue-700 font-black text-[17px] text-white shadow-sm disabled:bg-slate-300"
         >
           <Play className="h-5 w-5 fill-current" />
-          {starting ? "練習の盤面を用意中…" : "テストプレイ開始"}
+          テストプレイ開始
         </button>
       </section>
     </div>

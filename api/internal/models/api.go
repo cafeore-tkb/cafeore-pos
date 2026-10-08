@@ -9,36 +9,12 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for CaosDripStatus.
-const (
-	CaosDripStatusBrewing    CaosDripStatus = "brewing"
-	CaosDripStatusDone       CaosDripStatus = "done"
-	CaosDripStatusQueued     CaosDripStatus = "queued"
-	CaosDripStatusUnassigned CaosDripStatus = "unassigned"
-)
-
-// Defines values for CaosErrorResponseCode.
-const (
-	CaosErrorCodeInvalid CaosErrorResponseCode = "invalid"
-)
-
-// Defines values for CaosOpName.
-const (
-	CaosOpAssign    CaosOpName = "assign"
-	CaosOpMerge     CaosOpName = "merge"
-	CaosOpNext      CaosOpName = "next"
-	CaosOpRebrew    CaosOpName = "rebrew"
-	CaosOpSetLane   CaosOpName = "set_lane"
-	CaosOpSwapLanes CaosOpName = "swap_lanes"
-	CaosOpUnassign  CaosOpName = "unassign"
-	CaosOpUndo      CaosOpName = "undo"
-)
-
 // Defines values for ColorScreen.
 const (
-	ColorScreenCashier ColorScreen = "cashier"
-	ColorScreenMaster  ColorScreen = "master"
-	ColorScreenServe   ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -55,34 +31,6 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
-// Defines values for PrintJobCreateRequestSource.
-const (
-	PrintJobCreateSourceCashier PrintJobCreateRequestSource = "cashier"
-	PrintJobCreateSourceMaster  PrintJobCreateRequestSource = "master"
-)
-
-// Defines values for PrintJobKind.
-const (
-	PrintJobKindEmergency PrintJobKind = "emergency"
-	PrintJobKindOrder     PrintJobKind = "order"
-)
-
-// Defines values for PrintJobSource.
-const (
-	PrintJobSourceCaos    PrintJobSource = "caos"
-	PrintJobSourceCashier PrintJobSource = "cashier"
-	PrintJobSourceMaster  PrintJobSource = "master"
-)
-
-// Defines values for PrintJobStatus.
-const (
-	PrintJobStatusCanceled PrintJobStatus = "canceled"
-	PrintJobStatusDone     PrintJobStatus = "done"
-	PrintJobStatusFailed   PrintJobStatus = "failed"
-	PrintJobStatusPrinting PrintJobStatus = "printing"
-	PrintJobStatusQueued   PrintJobStatus = "queued"
-)
-
 // Defines values for StockEventKind.
 const (
 	StockEventKindAdjust  StockEventKind = "adjust"
@@ -96,366 +44,149 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
-// CaosBrewStats defines model for CaosBrewStats.
-type CaosBrewStats struct {
-	// Brews 抽出時間のまとめに入れたカードの数（抽出が終わったカードから、入れ直しと中断を除いたもの）
-	Brews     int                   `json:"brews"`
-	ByDripper []CaosDripperBrewStat `json:"by_dripper"`
-	ByPerson  []CaosPersonBrewStat  `json:"by_person"`
-	BySlot    []CaosSlotBrewStat    `json:"by_slot"`
+// CaosCupAfter CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
+// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
+type CaosCupAfter struct {
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
 
-	// PersonSkipped 担当者ごとのまとめに入れなかったカードの数
-	PersonSkipped struct {
-		// Handover 抽出の途中で、その列の担当者が替わった
-		Handover int `json:"handover"`
-
-		// NoPerson 抽出を始めたとき、その列に担当者がいなかった
-		NoPerson int `json:"no_person"`
-	} `json:"person_skipped"`
-	Rebrews []CaosRebrewStat `json:"rebrews"`
-
-	// Standard 係数の分母にした標準の抽出時間（秒）
-	Standard struct {
-		OneCupSec int `json:"one_cup_sec"`
-		TwoCupSec int `json:"two_cup_sec"`
-	} `json:"standard"`
+	// StartBrew 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今
+	StartBrew bool `json:"start_brew"`
 }
 
-// CaosBrewSummary 抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める
-type CaosBrewSummary struct {
-	// AvgSec 抽出時間の平均（秒）
-	AvgSec float32 `json:"avg_sec"`
-
-	// Brews 件数
-	Brews int `json:"brews"`
-
-	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
-	Coefficient float32 `json:"coefficient"`
-
-	// MedianSec 抽出時間の中央値（秒）
-	MedianSec float32 `json:"median_sec"`
-
-	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
-	StddevSec float32 `json:"stddev_sec"`
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
+type CaosCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
 }
 
-// CaosDrip 抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの
-type CaosDrip struct {
-	CreatedAt  time.Time          `json:"created_at"`
-	Cups       int                `json:"cups"`
-	Dripper    *int               `json:"dripper"`
-	FinishedAt *time.Time         `json:"finished_at"`
-	Id         openapi_types.UUID `json:"id"`
+// CaosCupsWrite カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+// 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+type CaosCupsWrite struct {
+	// After CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。
+	// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+	// dripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当
+	After CaosCupAfter `json:"after"`
 
-	// Interrupted 入れ直しのために途中でやめた抽出
-	Interrupted bool                 `json:"interrupted"`
-	Lines       []CaosDripLine       `json:"lines"`
-	OrderIds    []openapi_types.UUID `json:"order_ids"`
-
-	// QueuePos 待機列の並び順（ふだんは注文番号）
-	QueuePos float64 `json:"queue_pos"`
-
-	// RebrewOf 入れ直しのカードなら、元のカード
-	RebrewOf  *openapi_types.UUID `json:"rebrew_of"`
-	StartedAt *time.Time          `json:"started_at"`
-
-	// Status unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
-	Status CaosDripStatus `json:"status"`
-
-	// UpdatedAt 「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す
-	UpdatedAt time.Time `json:"updated_at"`
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
 }
 
-// CaosDripLine 抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）
-type CaosDripLine struct {
-	Cups int `json:"cups"`
-
-	// Dripper 指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別
-	Dripper *int               `json:"dripper"`
-	ItemId  openapi_types.UUID `json:"item_id"`
-	OrderId openapi_types.UUID `json:"order_id"`
+// CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
+type CaosCupsWriteRequest struct {
+	Writes []CaosCupsWrite `json:"writes"`
 }
 
-// CaosDripStatus unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了
-type CaosDripStatus string
+// CaosEmergencyRequest defines model for CaosEmergencyRequest.
+type CaosEmergencyRequest struct {
+	// CupIds 緊急にするカップ
+	CupIds []openapi_types.UUID `json:"cup_ids"`
 
-// CaosDripperBrewStat defines model for CaosDripperBrewStat.
-type CaosDripperBrewStat struct {
-	// AvgSec 抽出時間の平均（秒）
-	AvgSec float32 `json:"avg_sec"`
-
-	// Brews 件数
-	Brews int `json:"brews"`
-
-	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
-	Coefficient float32            `json:"coefficient"`
-	Cups        int                `json:"cups"`
-	Day         openapi_types.Date `json:"day"`
-	Dripper     int                `json:"dripper"`
-
-	// MedianSec 抽出時間の中央値（秒）
-	MedianSec float32 `json:"median_sec"`
-
-	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
-	StddevSec float32 `json:"stddev_sec"`
+	// Interrupt カップの抽出中のカードを中断する（そのカードのカップを全部緊急にし、ドリッパーの待機の先頭を始める）
+	Interrupt bool `json:"interrupt"`
 }
 
-// CaosErrorResponse defines model for CaosErrorResponse.
-type CaosErrorResponse struct {
-	Code  *CaosErrorResponseCode `json:"code,omitempty"`
-	Error string                 `json:"error"`
+// CaosEmergencyResult defines model for CaosEmergencyResult.
+type CaosEmergencyResult struct {
+	// InterruptedDripIds 中断した抽出中のカード
+	InterruptedDripIds []openapi_types.UUID `json:"interrupted_drip_ids"`
+
+	// MarkedCupIds 緊急にしたカップ（もう緊急だったカップは含まない）
+	MarkedCupIds []openapi_types.UUID `json:"marked_cup_ids"`
+
+	// StartedDripIds 中断のあとに始めた待機の先頭のカード
+	StartedDripIds []openapi_types.UUID `json:"started_drip_ids"`
 }
 
-// CaosErrorResponseCode defines model for CaosErrorResponse.Code.
-type CaosErrorResponseCode string
-
-// CaosLane 列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。
-// senior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。
+// CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
 type CaosLane struct {
 	Dripper int `json:"dripper"`
 
 	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
 	Name string `json:"name"`
 
-	// Senior 上級生（限定を淹れられる）か。担当者がいない列は false
+	// Senior 上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値
 	Senior bool `json:"senior"`
 
-	// UpdatedAt 最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）
+	// UpdatedAt 最後に替えた時刻。今日まだ替えていなければ null
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
-// CaosOp name ごとに使うフィールド：
-// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
-// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
-// undo（op_id）
-type CaosOp struct {
-	// Cups 入れ直す杯数（元のカードの杯数まで）
-	Cups    *int                `json:"cups,omitempty"`
-	DripId  *openapi_types.UUID `json:"drip_id,omitempty"`
-	Dripper *int                `json:"dripper"`
-	FirstId *openapi_types.UUID `json:"first_id,omitempty"`
-
-	// Interrupt 抽出中の元のカードを途中でやめる
-	Interrupt *bool      `json:"interrupt,omitempty"`
-	Name      CaosOpName `json:"name"`
-
-	// OpId undo で戻す操作（操作の結果の op_id）
-	OpId *openapi_types.UUID `json:"op_id,omitempty"`
-
-	// OtherDripper swap_lanes で dripper の列と担当者を入れ替える列
-	OtherDripper *int `json:"other_dripper,omitempty"`
-
-	// Person set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし
-	Person   *string             `json:"person,omitempty"`
-	QueuePos *float64            `json:"queue_pos"`
-	SecondId *openapi_types.UUID `json:"second_id,omitempty"`
-
-	// Senior set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る
-	Senior   *bool               `json:"senior,omitempty"`
-	SourceId *openapi_types.UUID `json:"source_id,omitempty"`
+// CaosLaneSwapRequest defines model for CaosLaneSwapRequest.
+type CaosLaneSwapRequest struct {
+	First  int `json:"first"`
+	Second int `json:"second"`
 }
 
-// CaosOpName defines model for CaosOp.Name.
-type CaosOpName string
-
-// CaosOpResult defines model for CaosOpResult.
-type CaosOpResult struct {
-	Changed []CaosDrip           `json:"changed"`
-	Deleted []openapi_types.UUID `json:"deleted"`
-
-	// Lanes この操作で担当者が変わった列（undo では、戻した列）
-	Lanes []CaosLane `json:"lanes"`
-
-	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
-	OpId string `json:"op_id"`
-
-	// Readied この操作で準備完了にした注文（undo では、準備完了を外した注文）
-	Readied []openapi_types.UUID `json:"readied"`
-}
-
-// CaosPersonBrewStat defines model for CaosPersonBrewStat.
-type CaosPersonBrewStat struct {
-	// AvgSec 抽出時間の平均（秒）
-	AvgSec float32 `json:"avg_sec"`
-
-	// Brews 件数
-	Brews int `json:"brews"`
-
-	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
-	Coefficient float32 `json:"coefficient"`
-	Cups        int     `json:"cups"`
-
-	// MedianSec 抽出時間の中央値（秒）
-	MedianSec float32 `json:"median_sec"`
-
-	// Name 抽出を始めたときに、その列にいた担当者の名前
+// CaosLaneUpdateRequest defines model for CaosLaneUpdateRequest.
+type CaosLaneUpdateRequest struct {
+	// Name 担当者の名前（前後の空白は落とす）。空なら担当者なし
 	Name string `json:"name"`
 
-	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
-	StddevSec float32 `json:"stddev_sec"`
+	// Senior 上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false
+	Senior bool `json:"senior"`
 }
 
-// CaosPracticeAdvanceRequest defines model for CaosPracticeAdvanceRequest.
-type CaosPracticeAdvanceRequest struct {
-	// At 練習の時刻
-	At time.Time `json:"at"`
+// CaosLanes 今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ
+type CaosLanes struct {
+	// Day 日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う
+	Day   string     `json:"day"`
+	Lanes []CaosLane `json:"lanes"`
 }
 
-// CaosPracticeCreateRequest defines model for CaosPracticeCreateRequest.
-type CaosPracticeCreateRequest struct {
-	// EndsAt 練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）
-	EndsAt time.Time `json:"ends_at"`
-
-	// Lanes 列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない
-	Lanes  *[]CaosPracticeLaneInput `json:"lanes,omitempty"`
-	Orders []CaosPracticeOrderInput `json:"orders"`
-
-	// StartsAt 練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる
-	StartsAt time.Time `json:"starts_at"`
+// CaosNextRequest defines model for CaosNextRequest.
+type CaosNextRequest struct {
+	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+	DripId *openapi_types.UUID `json:"drip_id"`
 }
 
-// CaosPracticeItem 練習の盤面の商品。カードの明細の item_id はこの id
-type CaosPracticeItem struct {
-	Id   openapi_types.UUID `json:"id"`
-	Key  string             `json:"key"`
-	Name string             `json:"name"`
-	Type string             `json:"type"`
+// CaosNextResult defines model for CaosNextResult.
+type CaosNextResult struct {
+	// FinishedDripId 終えたカード。無ければ null
+	FinishedDripId *openapi_types.UUID `json:"finished_drip_id"`
+
+	// StartedDripId 始めたカード。待機が無ければ null
+	StartedDripId *openapi_types.UUID `json:"started_drip_id"`
 }
 
-// CaosPracticeLaneInput defines model for CaosPracticeLaneInput.
-type CaosPracticeLaneInput struct {
-	Dripper int    `json:"dripper"`
-	Name    string `json:"name"`
-	Senior  bool   `json:"senior"`
+// CaosUndoCup 1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる）
+type CaosUndoCup struct {
+	CupId openapi_types.UUID `json:"cup_id"`
+
+	// Current 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+	// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+	Current CaosUndoCupState `json:"current"`
+
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+	// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+	// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+	Restore CaosUndoCupState `json:"restore"`
 }
 
-// CaosPracticeLineInput 練習に送る注文の明細の 1 行（同じ商品が何杯か）
-type CaosPracticeLineInput struct {
-	// ItemKey 商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）
-	ItemKey  *string `json:"item_key,omitempty"`
-	Name     string  `json:"name"`
-	Price    int     `json:"price"`
-	Quantity int     `json:"quantity"`
-
-	// Type 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない
-	Type string `json:"type"`
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。
+// drip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。
+// served_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）
+type CaosUndoCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *float64            `json:"dripper_position"`
+	EmergencyAt     *time.Time          `json:"emergency_at"`
+	ReadyAt         *time.Time          `json:"ready_at"`
+	ServedAt        *time.Time          `json:"served_at"`
 }
 
-// CaosPracticeOpRequest defines model for CaosPracticeOpRequest.
-type CaosPracticeOpRequest struct {
-	// At 練習の時刻（操作の前に、ここまで時計を進める）
-	At time.Time `json:"at"`
-
-	// Op name ごとに使うフィールド：
-	// assign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/
-	// rebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/
-	// set_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/
-	// undo（op_id）
-	Op CaosOp `json:"op"`
-}
-
-// CaosPracticeOpResult defines model for CaosPracticeOpResult.
-type CaosPracticeOpResult struct {
-	// OpId この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空
-	OpId string `json:"op_id"`
-
-	// State 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
-	State CaosPracticeState `json:"state"`
-}
-
-// CaosPracticeOrder defines model for CaosPracticeOrder.
-type CaosPracticeOrder struct {
-	BillingAmount int                     `json:"billing_amount"`
-	CreatedAt     time.Time               `json:"created_at"`
-	Id            openapi_types.UUID      `json:"id"`
-	Lines         []CaosPracticeOrderLine `json:"lines"`
-	OrderNo       int                     `json:"order_no"`
-
-	// ReadyAt 練習の中で準備完了になった時刻（練習の時計）。まだなら null
-	ReadyAt *time.Time `json:"ready_at"`
-}
-
-// CaosPracticeOrderInput defines model for CaosPracticeOrderInput.
-type CaosPracticeOrderInput struct {
-	BillingAmount int `json:"billing_amount"`
-
-	// CreatedAt 注文の時刻（練習の時間帯の中）
-	CreatedAt time.Time               `json:"created_at"`
-	Lines     []CaosPracticeLineInput `json:"lines"`
-	OrderNo   int                     `json:"order_no"`
-}
-
-// CaosPracticeOrderLine defines model for CaosPracticeOrderLine.
-type CaosPracticeOrderLine struct {
-	ItemId   openapi_types.UUID `json:"item_id"`
-	Price    int                `json:"price"`
-	Quantity int                `json:"quantity"`
-}
-
-// CaosPracticeState 練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）
-type CaosPracticeState struct {
-	Drips  []CaosDrip         `json:"drips"`
-	EndsAt time.Time          `json:"ends_at"`
-	Id     openapi_types.UUID `json:"id"`
-	Items  []CaosPracticeItem `json:"items"`
-	Lanes  []CaosLane         `json:"lanes"`
-
-	// NextArrivalAt 次に届く注文の時刻。もう無ければ null
-	NextArrivalAt *time.Time `json:"next_arrival_at"`
-
-	// Now 練習の時計（最後に画面から受け取った時刻）
-	Now time.Time `json:"now"`
-
-	// Orders もう届いた注文（作った順）
-	Orders   []CaosPracticeOrder `json:"orders"`
-	StartsAt time.Time           `json:"starts_at"`
-
-	// TotalOrders 練習の注文の全部の数
-	TotalOrders int `json:"total_orders"`
-
-	// Version 盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）
-	Version int `json:"version"`
-}
-
-// CaosRebrewStat 日・ドリッパーごとの、入れ直しと中断の数
-type CaosRebrewStat struct {
-	Day openapi_types.Date `json:"day"`
-
-	// Dripper 入れ直しは元のカードを淹れたドリッパー、中断はそのカードのドリッパー。元のカードが終わっていない・見つからないときは null
-	Dripper *int `json:"dripper"`
-
-	// ExtraCups 入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計）
-	ExtraCups int `json:"extra_cups"`
-
-	// Interrupted 途中でやめた抽出の数
-	Interrupted int `json:"interrupted"`
-
-	// Rebrews 抽出が終わった入れ直しのカードの数
-	Rebrews int `json:"rebrews"`
-}
-
-// CaosSlotBrewStat defines model for CaosSlotBrewStat.
-type CaosSlotBrewStat struct {
-	// AvgSec 抽出時間の平均（秒）
-	AvgSec float32 `json:"avg_sec"`
-
-	// Brews 件数
-	Brews int `json:"brews"`
-
-	// Coefficient 係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い
-	Coefficient float32            `json:"coefficient"`
-	Cups        int                `json:"cups"`
-	Day         openapi_types.Date `json:"day"`
-
-	// MedianSec 抽出時間の中央値（秒）
-	MedianSec float32 `json:"median_sec"`
-
-	// Slot 枠の始まり（日本時間の HH:MM）
-	Slot string `json:"slot"`
-
-	// StddevSec 抽出時間の標準偏差（秒。標本。1 件なら 0）
-	StddevSec float32 `json:"stddev_sec"`
+// CaosUndoRequest defines model for CaosUndoRequest.
+type CaosUndoRequest struct {
+	Cups []CaosUndoCup `json:"cups"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -474,7 +205,9 @@ type CashierStateUpdateRequest struct {
 	SubmittedOrderId *openapi_types.UUID    `json:"submitted_order_id"`
 }
 
-// ColorScreen 背景色を適用する画面
+// ColorScreen 背景色を適用する画面。
+// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+// master・serve はマスター・提供画面のカップ
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -482,7 +215,9 @@ type ColorSettingResponse struct {
 	Color string             `json:"color"`
 	Id    openapi_types.UUID `json:"id"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -496,7 +231,9 @@ type ColorSettingResponse struct {
 type ColorSettingUpsertRequest struct {
 	Color string `json:"color"`
 
-	// Screen 背景色を適用する画面
+	// Screen 背景色を適用する画面。
+	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
+	// master・serve はマスター・提供画面のカップ
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -521,6 +258,21 @@ type CommentResponse struct {
 	CreatedAt time.Time          `json:"created_at"`
 	OrderId   openapi_types.UUID `json:"order_id"`
 	Text      string             `json:"text"`
+}
+
+// EmergencyLabelClaim defines model for EmergencyLabelClaim.
+type EmergencyLabelClaim struct {
+	// Claimed true なら、このレジが緊急のシールを印刷する
+	Claimed bool `json:"claimed"`
+
+	// EmergencyPrintedAt 今の印刷した時刻（claimed が true なら付けた時刻。release に送る）
+	EmergencyPrintedAt *time.Time `json:"emergency_printed_at"`
+}
+
+// EmergencyLabelRelease defines model for EmergencyLabelRelease.
+type EmergencyLabelRelease struct {
+	// EmergencyPrintedAt claim で付けた時刻
+	EmergencyPrintedAt time.Time `json:"emergency_printed_at"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -580,21 +332,48 @@ type ItemResponse struct {
 // ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
 type ItemTypeCreateRequest struct {
 	DisplayName string `json:"display_name"`
-	Name        string `json:"name"`
+
+	// MakesCup 省略したら true
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら makes_cup と同じ。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら false。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemTypeResponse defines model for ItemTypeResponse.
 type ItemTypeResponse struct {
 	DisplayName string             `json:"display_name"`
 	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+
+	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
+	MakesCup bool   `json:"makes_cup"`
+	Name     string `json:"name"`
+
+	// NeedsBrew この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false
+	NeedsBrew bool `json:"needs_brew"`
+
+	// SeniorOnly この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false
+	SeniorOnly bool `json:"senior_only"`
 }
 
 // ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
 type ItemTypeUpdateRequest struct {
 	DisplayName string             `json:"display_name"`
 	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+
+	// MakesCup 省略したら今の値のまま
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemUpdateRequest defines model for ItemUpdateRequest.
@@ -697,17 +476,38 @@ type OrderCreateRequest struct {
 	DiscountOrderId   *int                    `json:"discount_order_id"`
 	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
 	OrderId           int                     `json:"order_id"`
-
-	// PrintLabels true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。
-	// 印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）
-	PrintLabels *bool `json:"print_labels,omitempty"`
-	Received    int   `json:"received"`
+	Received          int                     `json:"received"`
 }
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	Id   openapi_types.UUID `json:"id"`
-	Item ItemResponse       `json:"item"`
+	// BrewFinishedAt CaOS で抽出を終えた時刻
+	BrewFinishedAt *time.Time `json:"brew_finished_at"`
+
+	// BrewStartedAt CaOS で抽出を始めた時刻
+	BrewStartedAt *time.Time `json:"brew_started_at"`
+
+	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+	DripId *openapi_types.UUID `json:"drip_id"`
+
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	Dripper *int `json:"dripper"`
+
+	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）
+	DripperPosition *float64 `json:"dripper_position"`
+
+	// EmergencyAt 緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。
+	// 緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）
+	EmergencyAt *time.Time `json:"emergency_at"`
+
+	// EmergencyDripId 入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード
+	EmergencyDripId *openapi_types.UUID `json:"emergency_drip_id"`
+
+	// EmergencyPrintedAt 緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する
+	// （POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）
+	EmergencyPrintedAt *time.Time         `json:"emergency_printed_at"`
+	Id                 openapi_types.UUID `json:"id"`
+	Item               ItemResponse       `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -749,88 +549,6 @@ type OrderUpdateRequest struct {
 	Received          int                `json:"received"`
 	ServedAt          *time.Time         `json:"served_at"`
 }
-
-// PrintJob 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）
-type PrintJob struct {
-	// Attempts 取られた回数（もう一度印刷すると増える）
-	Attempts  int        `json:"attempts"`
-	ClaimedAt *time.Time `json:"claimed_at"`
-	CreatedAt time.Time  `json:"created_at"`
-
-	// CupId emergency の対象のカップ。order では null
-	CupId *openapi_types.UUID `json:"cup_id"`
-
-	// Error 失敗の理由（画面にそのまま出す）
-	Error *string `json:"error"`
-
-	// FinishedAt 済み・失敗・取り消しにした時刻
-	FinishedAt *time.Time `json:"finished_at"`
-
-	// Id 積んだ順の番号。印刷はこの順
-	Id int64 `json:"id"`
-
-	// Kind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
-	Kind    PrintJobKind       `json:"kind"`
-	OrderId openapi_types.UUID `json:"order_id"`
-
-	// OrderNo 積んだときの注文番号（画面に出す用）
-	OrderNo int `json:"order_no"`
-
-	// PrinterId 取った端末（印刷する端末の ID。端末の localStorage に持つ）
-	PrinterId *string `json:"printer_id"`
-
-	// Source 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
-	Source PrintJobSource `json:"source"`
-
-	// Status queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
-	Status    PrintJobStatus `json:"status"`
-	UpdatedAt time.Time      `json:"updated_at"`
-}
-
-// PrintJobClaim defines model for PrintJobClaim.
-type PrintJobClaim struct {
-	// Job 印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）
-	Job   PrintJob      `json:"job"`
-	Order OrderResponse `json:"order"`
-}
-
-// PrintJobClaimRequest defines model for PrintJobClaimRequest.
-type PrintJobClaimRequest struct {
-	// PrinterId 印刷する端末の ID
-	PrinterId string `json:"printer_id"`
-}
-
-// PrintJobCreateRequest defines model for PrintJobCreateRequest.
-type PrintJobCreateRequest struct {
-	// CupId emergency の対象のカップ（emergency では必須）
-	CupId *openapi_types.UUID `json:"cup_id,omitempty"`
-
-	// Kind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
-	Kind    PrintJobKind       `json:"kind"`
-	OrderId openapi_types.UUID `json:"order_id"`
-
-	// Source 積むところ（caos はサーバーが入れ直しのときに積む）
-	Source PrintJobCreateRequestSource `json:"source"`
-}
-
-// PrintJobCreateRequestSource 積むところ（caos はサーバーが入れ直しのときに積む）
-type PrintJobCreateRequestSource string
-
-// PrintJobFailRequest defines model for PrintJobFailRequest.
-type PrintJobFailRequest struct {
-	// Error 失敗の理由（画面にそのまま出す）
-	Error     string `json:"error"`
-	PrinterId string `json:"printer_id"`
-}
-
-// PrintJobKind order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール
-type PrintJobKind string
-
-// PrintJobSource 積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し
-type PrintJobSource string
-
-// PrintJobStatus queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した
-type PrintJobStatus string
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
@@ -925,17 +643,23 @@ type StockUsage struct {
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
 
-// ApplyCaosOpJSONRequestBody defines body for ApplyCaosOp for application/json ContentType.
-type ApplyCaosOpJSONRequestBody = CaosOp
+// WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
+type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
 
-// CreateCaosPracticeJSONRequestBody defines body for CreateCaosPractice for application/json ContentType.
-type CreateCaosPracticeJSONRequestBody = CaosPracticeCreateRequest
+// AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
+type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
 
-// AdvanceCaosPracticeJSONRequestBody defines body for AdvanceCaosPractice for application/json ContentType.
-type AdvanceCaosPracticeJSONRequestBody = CaosPracticeAdvanceRequest
+// MarkCaosEmergencyJSONRequestBody defines body for MarkCaosEmergency for application/json ContentType.
+type MarkCaosEmergencyJSONRequestBody = CaosEmergencyRequest
 
-// ApplyCaosPracticeOpJSONRequestBody defines body for ApplyCaosPracticeOp for application/json ContentType.
-type ApplyCaosPracticeOpJSONRequestBody = CaosPracticeOpRequest
+// SwapCaosLanesJSONRequestBody defines body for SwapCaosLanes for application/json ContentType.
+type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
+
+// PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
+type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
+
+// UndoCaosCupsJSONRequestBody defines body for UndoCaosCups for application/json ContentType.
+type UndoCaosCupsJSONRequestBody = CaosUndoRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
@@ -985,14 +709,5 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
 
-// CreatePrintJobJSONRequestBody defines body for CreatePrintJob for application/json ContentType.
-type CreatePrintJobJSONRequestBody = PrintJobCreateRequest
-
-// ClaimPrintJobJSONRequestBody defines body for ClaimPrintJob for application/json ContentType.
-type ClaimPrintJobJSONRequestBody = PrintJobClaimRequest
-
-// CompletePrintJobJSONRequestBody defines body for CompletePrintJob for application/json ContentType.
-type CompletePrintJobJSONRequestBody = PrintJobClaimRequest
-
-// FailPrintJobJSONRequestBody defines body for FailPrintJob for application/json ContentType.
-type FailPrintJobJSONRequestBody = PrintJobFailRequest
+// ReleaseEmergencyLabelJSONRequestBody defines body for ReleaseEmergencyLabel for application/json ContentType.
+type ReleaseEmergencyLabelJSONRequestBody = EmergencyLabelRelease

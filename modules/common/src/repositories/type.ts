@@ -24,11 +24,6 @@ export type ColorSettingRepository = {
 };
 
 export type OrderRepository = BaseRepository<OrderEntity> & {
-  /**
-   * 注文を作り、同じトランザクションでその注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を
-   * 印刷キューに積む（レジの会計）。印刷は「この端末で印刷する」にした端末が行う
-   */
-  createWithLabels(order: OrderEntity): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
   // カップ（1杯）単位の準備完了・提供済みの切り替え。切り替え後の注文を返す。

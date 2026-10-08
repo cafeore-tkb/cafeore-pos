@@ -12,14 +12,12 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import type { Barista, OrderTicket, SalesOrder } from "../types";
-import { laneTitle } from "../utils/lanes";
-import { SeniorMark } from "./LaneName";
+import type { Barista, OrderTicket, PracticeSalesOrder } from "../types";
+import { laneOrdinal } from "../utils/lanes";
 
 interface AnalyticsViewProps {
   baristas: Barista[];
-  /** 実データテストの練習の注文（準備完了は練習の中で付いた時刻） */
-  salesOrders?: SalesOrder[];
+  salesOrders?: PracticeSalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
 }
@@ -71,31 +69,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   periodStartMs,
   periodEndMs,
 }) => {
-  const rebrewSummary = useMemo(() => {
-    const history = baristas.flatMap((barista) => barista.pastTickets || []);
-    const rebrews = history.filter(
-      (ticket) => ticket.isRebrew && !ticket.isInterrupted,
-    );
-    const interrupted = history.filter((ticket) => ticket.isInterrupted);
-    const rebrewCups = rebrews.reduce(
-      (sum, ticket) => sum + ticket.cupCount,
-      0,
-    );
-    // 入れ直しで余分に使った豆は CaOS では数えない（豆の在庫は POS の在庫で見る）
-    return {
-      rebrewCount: rebrews.length,
-      rebrewCups,
-      interruptedCount: interrupted.length,
-    };
-  }, [baristas]);
   const completedParts = useMemo<CompletedPart[]>(
     () =>
       baristas.flatMap((barista) =>
         (barista.pastTickets || []).flatMap((ticket) => {
           const finishedAt = ticket.completedAtSec ?? ticket.endTimeSec;
-          return !ticket.isInterrupted &&
-            !ticket.isRebrew &&
-            ticket.totalItemsInOrder &&
+          return ticket.totalItemsInOrder &&
             ticket.totalItemsInOrder > 1 &&
             finishedAt !== undefined
             ? [{ ticket, bayNumber: barista.bayNumber, finishedAt }]
@@ -189,7 +168,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const salesAnalysis = useMemo(() => {
     if (salesOrders.length === 0) return null;
     const menuMap = new Map<string, { cups: number; sales: number }>();
-    const typeMap = new Map<string, number>();
+    const typeMap = new Map<string, { label: string; count: number }>();
     const bucketMap = new Map<
       number,
       { orders: number; sales: number; cups: number }
@@ -207,14 +186,20 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       bucketValue.orders += 1;
       bucketValue.sales += order.billingAmount;
       order.items.forEach((item) => {
-        if (item.type === "others") return;
+        // グッズ（カップを作らない品物）は売上だけに数える
+        if (!item.makesCup) return;
         cups += 1;
         bucketValue.cups += 1;
         const menu = menuMap.get(item.name) || { cups: 0, sales: 0 };
         menu.cups += 1;
         menu.sales += item.price;
         menuMap.set(item.name, menu);
-        typeMap.set(item.type, (typeMap.get(item.type) || 0) + 1);
+        const typeCount = typeMap.get(item.type) || {
+          label: item.typeLabel,
+          count: 0,
+        };
+        typeCount.count += 1;
+        typeMap.set(item.type, typeCount);
       });
       bucketMap.set(bucket, bucketValue);
       if (order.readyAt)
@@ -243,9 +228,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       menuRanking: Array.from(menuMap, ([name, value]) => ({ name, ...value }))
         .sort((a, b) => b.cups - a.cups)
         .slice(0, 8),
-      typeMix: Array.from(typeMap, ([type, count]) => ({ type, count })).sort(
-        (a, b) => b.count - a.count,
-      ),
+      typeMix: Array.from(typeMap, ([type, value]) => ({
+        type,
+        ...value,
+      })).sort((a, b) => b.count - a.count),
       buckets,
       peak,
     };
@@ -262,7 +248,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         );
         return {
           bayNumber: barista.bayNumber,
-          name: barista.name,
           cups: completed.reduce((sum, ticket) => sum + ticket.cupCount, 0),
           drips: completed.length,
           averageSec: durations.length
@@ -271,24 +256,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   durations.length,
               )
             : null,
-          // 上級生（限定を淹れられる）か。サーバーの列の担当者の判定
-          senior: barista.senior,
         };
       }),
     [baristas],
   );
 
-  const typeLabel = (type: string) =>
-    type === "hot"
-      ? "ホット"
-      : type === "iceOre"
-        ? "アイスオレ"
-        : type === "ice"
-          ? "アイス"
-          : type === "milk"
-            ? "ミルク"
-            : type;
-  // 時刻は日本時間で出す（端末の時刻帯によらない。盤面の時計と同じ）
+  // 時刻は日本時間（盤面の時計と同じ。端末の時刻帯によらない）
   const formatBucket = (timestamp: number) =>
     new Intl.DateTimeFormat("ja-JP", {
       timeZone: "Asia/Tokyo",
@@ -321,7 +294,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 {periodStartMs && periodEndMs && (
                   <p className="mt-0.5 font-bold text-[11px] text-slate-500">
                     {formatBucket(periodStartMs)}〜{formatBucket(periodEndMs)}{" "}
-                    の実績データ（完成は練習の結果）
+                    の実績データ
                   </p>
                 )}
               </div>
@@ -435,7 +408,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   {salesAnalysis.typeMix.map((item) => (
                     <div key={item.type}>
                       <div className="flex justify-between font-bold text-[11px]">
-                        <span>{typeLabel(item.type)}</span>
+                        <span>{item.label}</span>
                         <span>{item.count}杯</span>
                       </div>
                       <div className="mt-0.5 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -460,36 +433,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             </div>
           </section>
         </>
-      )}
-
-      {(rebrewSummary.rebrewCount > 0 ||
-        rebrewSummary.interruptedCount > 0) && (
-        <section className="rounded-xl border border-red-200 bg-red-50 p-3 shadow-xs">
-          <h3 className="flex items-center gap-2 font-black text-[15px] text-red-900">
-            <AlertTriangle className="h-4 w-4" />
-            緊急入れ直し
-          </h3>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">
-                完了した入れ直し
-              </div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.rebrewCount}
-                <span className="text-[11px]">
-                  件 / {rebrewSummary.rebrewCups}杯
-                </span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">中断</div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.interruptedCount}
-                <span className="text-[11px]">件</span>
-              </div>
-            </div>
-          </div>
-        </section>
       )}
 
       <div className="grid grid-cols-2 gap-2">
@@ -658,10 +601,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-black text-slate-950">
-                  {laneTitle(result)}
+                <span className="font-black text-slate-950">
+                  {laneOrdinal(result.bayNumber)}
                 </span>
-                {result.senior && <SeniorMark />}
               </div>
               <div className="mt-2 flex items-end gap-3">
                 <span className="font-black font-mono text-[23px]">

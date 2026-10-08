@@ -1,7 +1,8 @@
 package handlers
 
 import (
-	"cafeore-pos/api/internal/caos"
+	"time"
+
 	"cafeore-pos/api/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -21,10 +22,8 @@ const (
 	WSMessageTypeMasterState  WSMessageType = "master_state"
 	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
-	// CaOS の今日のカード（全部）と列の担当者（1〜6 の全部）。カードか担当者が変わるたびと、つないだときに届く
-	WSMessageTypeDrips WSMessageType = "drips"
-	// 印刷キューの、まだ終わっていない仕事（待ち・印刷中・失敗）の全部。変わるたびと、つないだときに届く
-	WSMessageTypePrintJobs WSMessageType = "print_jobs"
+	// CaOS の今日のドリッパーの担当者（6 つ全部。caos_lanes.go）
+	WSMessageTypeCaosLanes WSMessageType = "caos_lanes"
 )
 
 type WSMessage struct {
@@ -36,12 +35,7 @@ type WSMessage struct {
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
 	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
 	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
-	// drips：CaOS の今日のカード（0 枚のときは省かれる）
-	Drips []caos.Drip `json:"drips,omitempty"`
-	// drips：CaOS の今日の列の担当者（1〜6 の 6 列が必ずある。担当者がいない列は name が空）
-	Lanes []caos.Lane `json:"lanes,omitempty"`
-	// print_jobs：印刷キューの、まだ終わっていない仕事（0 件のときは省かれる）
-	PrintJobs []models.PrintJob `json:"print_jobs,omitempty"`
+	CaosLanes    *models.CaosLanes            `json:"caos_lanes,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -64,10 +58,7 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 	if msg, ok := cashierStateMessage(h.db); ok {
 		initial = append(initial, msg)
 	}
-	if msg, ok := h.dripsMessage(); ok {
-		initial = append(initial, msg)
-	}
-	if msg, ok := printJobsMessage(h.db); ok {
+	if msg, ok := caosLanesMessage(h.db, time.Now()); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)
@@ -95,11 +86,11 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 
 // 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
 // ほかのインスタンスにも DB の通知で知らせる（order_listener.go）。
+// 通知は自分の配信の成否に関わらず送る。DB にはもう書けていて、受けた側は注文 ID から読み直すだけなので、
+// ここでの読み直しが一時的に失敗しても、ほかのインスタンスの画面は新しい状態になる。
 func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
 	resp, err := broadcastOrder(db, hub, orderID)
-	if err == nil {
-		notifyOrderChanged(db, orderID)
-	}
+	notifyOrderChanged(db, orderID)
 	return resp, err
 }
 

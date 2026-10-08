@@ -1,56 +1,55 @@
-// sohosai-shift（シフト作成ツール）が CaOS へ配信する担当者の予定（Firestore の caosFeeds/{合言葉}）を読む。
-//
-// sohosai-shift の管理者が「配信」を押すと、合言葉つきのドキュメントが書かれる。合言葉を知っていればログインなしで読める。
-// CaOS はこれを「交代」のときの名前の候補と、上級生（限定を淹れられる人）の判定にだけ使う。
-// 列の担当者を時刻どおりに自動で替えることはしない（交代は人が CaOS で行う。services/pos/app/caos/DESIGN_REQUIREMENTS.md）。
-//
-// 中身（Firestore の REST の形式で届くのを、ここで普通の値に直す）：
-//   room：部屋の名前 / updatedAt：最後に配信した時刻
-//   drippers：本番の 30 分ごとの枠。キーは枠の開始（日本時間 "YYYY-MM-DD HH:mm"）、値は 1st〜6th の氏名（空きは ""）
-//   drills：オペ練の回ごと。ラウンド k の開始は start + (k-1)×(minutes+gap) 分、終わりは開始＋minutes 分。
-//           drippers のキーはラウンドの番号（"1"〜）、値は 1st〜6th の氏名
-//   seniors：上級生（限定を淹れられる人）の氏名
+import { jstDate } from "./jstDay";
 
-/** 合言葉の形（sohosai-shift が作るもの）。違う形のものは送らない */
-export const CAOS_FEED_KEY_PATTERN = /^[A-Za-z0-9]{32,64}$/;
+// sohosai-shift（シフト作成ツール）が CaOS へ配信する担当者の予定（Firestore の caosFeeds/{合言葉}）を読む。
+// 合言葉を知っていればログインなしで読める（Firestore の REST）。合言葉はビルドに入れず、各 iPad の CaOS の設定で入れて端末に覚える。
+// CaOS はこれを「交代」のときの名前の候補と、上級生（限定を淹れられる人）の判定にだけ使う。予定の時刻どおりに自動で替えることはしない。
+//
+// 中身（Firestore の REST の形で届くのを、ここで普通の値に直す）：
+//   drippers：本番の 30 分ごとの枠。キーは枠の開始（日本時間 "YYYY-MM-DD HH:MM"）、値は 1st〜6th の氏名（空きは ""）
+//   drills：オペ練の回ごと（回 id → {title, date, start, minutes, gap, rounds, drippers}）。
+//           ラウンド k の開始は start + (k-1)×(minutes+gap) 分、終わりは開始＋minutes 分。drippers のキーはラウンドの番号（"1"〜）
+//   seniors：上級生（限定を淹れられる人）の氏名
 
 /** 本番の枠の長さ（分） */
 export const SHIFT_SLOT_MINUTES = 30;
 
 const LANE_COUNT = 6;
+const MINUTE_MS = 60_000;
 
-/** 列（ドリッパー 1〜6）の呼び方。1st〜6th */
-export const laneOrdinal = (dripper: number) =>
-  ["1st", "2nd", "3rd", "4th", "5th", "6th"][dripper - 1] ?? `${dripper}th`;
+/** 合言葉を URL に入れられる形にする。使えない形（空・空白や / を含む）なら null */
+export const normalizeFeedKey = (key: string): string | null => {
+  const trimmed = key.trim();
+  if (!trimmed || trimmed.length > 200 || /[\s/?#]/.test(trimmed)) return null;
+  return trimmed;
+};
 
 export const caosFeedUrl = (key: string) =>
-  `https://firestore.googleapis.com/v1/projects/sohosai-shift/databases/(default)/documents/caosFeeds/${key}`;
+  `https://firestore.googleapis.com/v1/projects/sohosai-shift/databases/(default)/documents/caosFeeds/${encodeURIComponent(key)}`;
 
 export interface ShiftDrill {
   id: string;
   title: string;
   /** 日本時間の日付 YYYY-MM-DD */
   date: string;
-  /** 日本時間の開始 HH:mm */
+  /** 日本時間の開始 HH:MM */
   start: string;
   minutes: number;
   gap: number;
   rounds: number;
-  /** ラウンドの番号（1〜）→ 1st〜6th の氏名 */
+  /** ラウンドの番号（"1"〜）→ 1st〜6th の氏名 */
   drippers: Record<string, string[]>;
 }
 
 export interface ShiftFeed {
-  room: string;
-  /** 最後に配信した時刻（ISO 8601）。分からなければ null */
-  updatedAt: string | null;
-  /** 本番の枠の開始（日本時間 "YYYY-MM-DD HH:mm"）→ 1st〜6th の氏名 */
+  /** 本番の枠の開始（日本時間 "YYYY-MM-DD HH:MM"）→ 1st〜6th の氏名 */
   drippers: Record<string, string[]>;
   drills: ShiftDrill[];
   seniors: string[];
+  /** ドキュメントを最後に書いた時刻（Firestore の updateTime）。分からなければ null */
+  updatedAt: string | null;
 }
 
-// ---------------------------------------------------------------- Firestore の REST の形式を読む
+// ---------------------------------------------------------------- Firestore の REST の形を読む
 
 type FirestoreValue = {
   stringValue?: string;
@@ -138,29 +137,26 @@ export const parseShiftFeed = (doc: unknown): ShiftFeed => {
     ? fields.seniors.map((name) => asString(name).trim()).filter(Boolean)
     : [];
   return {
-    room: asString(fields.room),
-    updatedAt:
-      asString(fields.updatedAt) || asString(record.updateTime) || null,
     drippers: asNameTable(fields.drippers),
     drills,
     seniors,
+    updatedAt: asString(record.updateTime) || null,
   };
 };
 
 /**
- * 合言葉の feed を読む。読めなければ理由を Error で投げる（画面にそのまま出す）。
- * fetch は差し替えられる（テスト用）。
+ * 合言葉の予定を読む。読めなければ理由を Error で投げる（画面にそのまま出す）。
+ * fetch は差し替えられる（テスト用）
  */
 export const fetchShiftFeed = async (
   key: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ShiftFeed> => {
-  if (!CAOS_FEED_KEY_PATTERN.test(key)) {
-    throw new Error("合言葉は英数字 32〜64 文字です");
-  }
+  const normalized = normalizeFeedKey(key);
+  if (!normalized) throw new Error("合言葉の形が違います");
   let response: Response;
   try {
-    response = await fetchImpl(caosFeedUrl(key), {
+    response = await fetchImpl(caosFeedUrl(normalized), {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -170,7 +166,7 @@ export const fetchShiftFeed = async (
   if (response.status === 404) {
     throw new Error("合言葉が違うか、まだ配信されていません");
   }
-  if (response.status === 403 || response.status === 401) {
+  if (response.status === 401 || response.status === 403) {
     throw new Error("読む権限がありません（合言葉を確かめてください）");
   }
   if (!response.ok) {
@@ -183,32 +179,30 @@ export const fetchShiftFeed = async (
   }
 };
 
-// ---------------------------------------------------------------- 候補
-
-const MINUTE_MS = 60_000;
+// ---------------------------------------------------------------- 候補と上級生
 
 const normalizeName = (name: string) => name.normalize("NFKC").trim();
 
-/** 上級生（限定を淹れられる人）か。feed の seniors に名前があれば上級生。feed が無ければ false */
+/** 上級生（限定を淹れられる人）か。予定の seniors に名前があれば上級生。予定が無ければ false */
 export const isSeniorName = (feed: ShiftFeed | null, name: string) => {
   const target = normalizeName(name);
   if (!feed || !target) return false;
   return feed.seniors.some((senior) => normalizeName(senior) === target);
 };
 
-/** 日本時間の "YYYY-MM-DD" と "HH:mm" のエポックミリ秒。読めなければ NaN */
+/** 日本時間の "YYYY-MM-DD" と "HH:MM" のエポックミリ秒。読めなければ NaN */
 const jstMs = (date: string, time: string) =>
-  Date.parse(`${date}T${time.padStart(5, "0")}:00+09:00`);
+  /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{1,2}:\d{2}$/.test(time)
+    ? Date.parse(`${date}T${time.padStart(5, "0")}:00+09:00`)
+    : Number.NaN;
 
-const jstDateOf = (ms: number) =>
-  new Date(ms + 9 * 60 * MINUTE_MS).toISOString().slice(0, 10);
-
+/** 日本時間の時刻 HH:MM */
 const clockOf = (ms: number) =>
   new Date(ms + 9 * 60 * MINUTE_MS).toISOString().slice(11, 16);
 
 /** 予定の 1 つ（本番の枠か、オペ練のラウンド） */
 export interface ShiftPeriod {
-  /** 画面に出す呼び方（例「今の枠 11:00〜11:30」「第2回オペ練 R2 13:25〜13:45」） */
+  /** 画面に出す呼び方（例「今の枠 11:00〜11:30」「第2回オペ練 次のR2 13:25〜13:45」） */
   label: string;
   startMs: number;
   endMs: number;
@@ -216,24 +210,24 @@ export interface ShiftPeriod {
   names: string[];
 }
 
-/** 今の時刻の枠・次の枠・今のオペ練のラウンド・次のラウンド（同じ日のものだけ）。順番は候補に出す順 */
+/** 今の枠・次の枠・オペ練の今のラウンド・次のラウンド（今日のものだけ）。並びは候補に出す順 */
 export const currentShiftPeriods = (
   feed: ShiftFeed,
   nowMs: number,
 ): ShiftPeriod[] => {
-  const today = jstDateOf(nowMs);
+  const today = jstDate(nowMs);
   const range = (startMs: number, endMs: number) =>
     `${clockOf(startMs)}〜${clockOf(endMs)}`;
 
   const slots = Object.entries(feed.drippers)
     .map(([key, names]) => {
-      const [date, time] = key.split(" ");
-      const startMs = jstMs(date ?? "", time ?? "");
+      const [date = "", time = ""] = key.trim().split(/\s+/);
+      const startMs = jstMs(date, time);
       return {
+        date,
         startMs,
         endMs: startMs + SHIFT_SLOT_MINUTES * MINUTE_MS,
         names,
-        date,
       };
     })
     .filter((slot) => Number.isFinite(slot.startMs) && slot.date === today)
@@ -266,47 +260,35 @@ export const currentShiftPeriods = (
   const nextRound = rounds.find((round) => round.startMs > nowMs);
 
   const periods: ShiftPeriod[] = [];
-  if (currentSlot)
+  const push = (
+    label: string,
+    p: { startMs: number; endMs: number; names: string[] },
+  ) =>
     periods.push({
-      label: `今の枠 ${range(currentSlot.startMs, currentSlot.endMs)}`,
-      ...currentSlot,
+      label: `${label} ${range(p.startMs, p.endMs)}`,
+      startMs: p.startMs,
+      endMs: p.endMs,
+      names: p.names,
     });
-  if (nextSlot)
-    periods.push({
-      label: `次の枠 ${range(nextSlot.startMs, nextSlot.endMs)}`,
-      ...nextSlot,
-    });
+  if (currentSlot) push("今の枠", currentSlot);
+  if (nextSlot) push("次の枠", nextSlot);
   if (currentRound)
-    periods.push({
-      label: `${currentRound.title} 今のR${currentRound.round} ${range(currentRound.startMs, currentRound.endMs)}`,
-      ...currentRound,
-    });
-  if (nextRound)
-    periods.push({
-      label: `${nextRound.title} 次のR${nextRound.round} ${range(nextRound.startMs, nextRound.endMs)}`,
-      ...nextRound,
-    });
-  return periods.map(({ label, startMs, endMs, names }) => ({
-    label,
-    startMs,
-    endMs,
-    names,
-  }));
+    push(`${currentRound.title} 今のR${currentRound.round}`, currentRound);
+  if (nextRound) push(`${nextRound.title} 次のR${nextRound.round}`, nextRound);
+  return periods;
 };
 
 export interface LaneCandidate {
   name: string;
   senior: boolean;
-  /** どの予定で、どの番目か（例「今の枠 11:00〜11:30 の 1st」） */
+  /** どの予定の人か（例「今の枠 11:00〜11:30」） */
   reasons: string[];
-  /** その列（番目）の予定の人か。上に出す */
-  forThisLane: boolean;
 }
 
 /**
- * 「交代」のときの名前の候補。今の時刻の枠・次の枠・オペ練の今（次）のラウンドで、
- * その列（番目）の人を上に、同じ予定のほかの番目の人をその下に、今日の予定に出てくるほかの人を最後に並べる。
- * 今その列にいる人（current）は除く。
+ * 「交代」の名前の候補。今の枠・次の枠・オペ練の今と次のラウンドの、そのドリッパーの番目（1st なら 1 人目）の人。
+ * 同じ人は 1 つにまとめる。空きと、今そのドリッパーにいる人（current）は出さない。
+ * 候補に無い人は画面で自由に入れる
  */
 export const laneCandidates = (
   feed: ShiftFeed | null,
@@ -316,59 +298,17 @@ export const laneCandidates = (
 ): LaneCandidate[] => {
   if (!feed) return [];
   const byName = new Map<string, LaneCandidate>();
-  const add = (name: string, reason: string | null, forThisLane: boolean) => {
-    const trimmed = name.trim();
-    if (!trimmed || normalizeName(trimmed) === normalizeName(current)) return;
-    const candidate = byName.get(trimmed) ?? {
-      name: trimmed,
-      senior: isSeniorName(feed, trimmed),
+  for (const period of currentShiftPeriods(feed, nowMs)) {
+    const name = (period.names[dripper - 1] ?? "").trim();
+    if (!name || normalizeName(name) === normalizeName(current)) continue;
+    const key = normalizeName(name);
+    const candidate = byName.get(key) ?? {
+      name,
+      senior: isSeniorName(feed, name),
       reasons: [],
-      forThisLane: false,
     };
-    if (reason && !candidate.reasons.includes(reason))
-      candidate.reasons.push(reason);
-    candidate.forThisLane ||= forThisLane;
-    byName.set(trimmed, candidate);
-  };
-  const periods = currentShiftPeriods(feed, nowMs);
-  for (const period of periods) {
-    add(
-      period.names[dripper - 1] ?? "",
-      `${period.label} の ${laneOrdinal(dripper)}`,
-      true,
-    );
+    candidate.reasons.push(period.label);
+    byName.set(key, candidate);
   }
-  for (const period of periods) {
-    period.names.forEach((name, i) => {
-      if (i !== dripper - 1)
-        add(name, `${period.label} の ${laneOrdinal(i + 1)}`, false);
-    });
-  }
-  // 今日の予定に出てくるほかの人（予定の時刻からずれて交代することもあるので）
-  const today = jstDateOf(nowMs);
-  const others = new Set<string>();
-  for (const [key, names] of Object.entries(feed.drippers)) {
-    if (key.startsWith(today)) for (const name of names) others.add(name);
-  }
-  for (const drill of feed.drills) {
-    if (drill.date !== today) continue;
-    for (const names of Object.values(drill.drippers))
-      for (const name of names) others.add(name);
-  }
-  const rest = [...others]
-    .map((name) => name.trim())
-    .filter((name) => name && !byName.has(name))
-    .sort((a, b) => a.localeCompare(b, "ja"));
-  for (const name of rest) add(name, null, false);
-
-  const list = [...byName.values()];
-  return [
-    ...list.filter((candidate) => candidate.forThisLane),
-    ...list.filter(
-      (candidate) => !candidate.forThisLane && candidate.reasons.length > 0,
-    ),
-    ...list.filter(
-      (candidate) => !candidate.forThisLane && candidate.reasons.length === 0,
-    ),
-  ];
+  return [...byName.values()];
 };

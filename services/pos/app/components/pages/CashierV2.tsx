@@ -8,6 +8,8 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
+import { usePrinter } from "~/label/print-util";
+import { useEmergencyLabels } from "~/label/useEmergencyLabels";
 import { cn } from "~/lib/utils";
 import {
   applyCashierOrderActionAtom,
@@ -28,7 +30,7 @@ import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
-import { PrintStationControl } from "../molecules/PrintStationControl";
+import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
@@ -107,6 +109,10 @@ const CashierV2 = ({
     soundRef.current?.play();
   }, []);
 
+  const printer = usePrinter();
+  // 緊急（入れ直し）になったカップの緊急のシールを、このレジのプリンターで印刷する
+  useEmergencyLabels(orders, printer);
+
   usePreventNumberKeyUpDown();
 
   /**
@@ -176,8 +182,7 @@ const CashierV2 = ({
       goodsOnlyServed(submitOne);
       // 備考を追加
       submitOne.addComment("cashier", descComment);
-      // ラベルは、注文の保存と同じトランザクションで印刷キューに積まれ、
-      // 「この端末で印刷する」にした端末が印刷する（routes/_header.cashier.tsx の submitOrderAction）
+      printer.printOrderLabel(submitOne);
       submitPayload(submitOne);
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
@@ -193,6 +198,7 @@ const CashierV2 = ({
       canSubmitOrder,
       newOrder,
       resetAll,
+      printer,
       submitPayload,
       descComment,
       playSound,
@@ -264,7 +270,7 @@ const CashierV2 = ({
             <Label htmlFor="menu-button">メニュー表示</Label>
           </div>
           <div className="flex items-center space-x-2">
-            <PrintStationControl />
+            <PrinterStatus status={printer.status} />
             <PastOrderSideSheet
               orders={servedOrders}
               cardUser={"cashier"}

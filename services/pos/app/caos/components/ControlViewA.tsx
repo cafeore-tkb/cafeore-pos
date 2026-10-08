@@ -18,17 +18,18 @@ interface ControlViewAProps {
   onSelectOrder: (orderId: string) => void;
   onAdvanceBay: (bayId: number) => void;
   onOpenTicketDetail: (ticket: OrderTicket) => void;
-  onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
+  onMoveTicket: (
+    ticket: OrderTicket,
+    targetBayId: number,
+    toFront?: boolean,
+  ) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseTicketAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
   /** 閲覧だけの画面（/master-sheet/view）。各列の「次へ」と空きスロットを出さない */
   readOnly?: boolean;
-  /** 列の「交代」 */
-  onChangeLane?: (bayId: number) => void;
 }
 
 export const ControlViewA: React.FC<ControlViewAProps> = ({
@@ -45,12 +46,10 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
   readOnly = false,
-  onChangeLane,
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-2">
     <DispatchBoard
@@ -64,12 +63,10 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onCloseTicketAction={onCloseTicketAction}
-      onRequestRebrew={onRequestRebrew}
       onOpenEmptySlot={onOpenEmptySlot}
       simTimeSec={currentTimeSec}
       timelineCommand={timelineCommand}
       readOnly={readOnly}
-      onChangeLane={onChangeLane}
     />
 
     <div className="relative z-[70] h-[196px] min-h-0 overflow-visible">

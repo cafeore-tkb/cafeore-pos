@@ -8,12 +8,13 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { cardHasBean } from "../utils/beans";
-import { canPlaceOn, laneOrdinal } from "../utils/lanes";
+import { laneOrdinal } from "../utils/lanes";
+import { nominationText } from "../utils/nomination";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
-import { nominationText } from "../utils/posOrders";
-import { SeniorMark } from "./LaneName";
+import { RebrewButton } from "./RebrewPanel";
 
 export interface ControlViewBProps {
   baristas: Barista[];
@@ -28,7 +29,6 @@ export interface ControlViewBProps {
   onOpenTicketDetail: (ticket: OrderTicket) => void;
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
-  onRequestRebrew: (ticket: OrderTicket, bayId: number) => void;
 }
 
 interface OrderGroup {
@@ -48,7 +48,6 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
 }) => {
   const [openPadUid, setOpenPadUid] = useState<string | null>(null);
   const orderUid = (order: UnassignedOrder) => order.ticketUid || order.id;
@@ -72,8 +71,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
   };
 
   const assignToBay = (order: UnassignedOrder, bayId: number) => {
-    // 指名の列だけ、限定のカードは上級生の列だけ
-    if (!canPlaceOn(order, bayId)) return;
+    if (order.preferredBaristaId && order.preferredBaristaId !== bayId) return;
     onAssignToBay(order, bayId);
     setOpenPadUid(null);
   };
@@ -112,7 +110,7 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
         .filter((ticket) => ticket.id === selectedOrderId)
         .map((ticket) => ({
           uid:
-            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.beanCode}`,
+            ticket.ticketUid || `${ticket.id}-${barista.id}-${ticket.itemKey}`,
           beanName: ticket.beanName,
           bayNumber: barista.bayNumber,
         })),
@@ -191,51 +189,43 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
               >
                 <div className="flex min-h-[32px] items-start justify-between gap-1">
                   <div>
-                    <div className="font-black font-mono text-[11px] text-slate-500">
+                    <div className="font-black font-mono text-[11px] text-slate-500 uppercase">
+                      ドリッパー
+                    </div>
+                    <div className="font-black font-mono text-[15px] text-slate-950 leading-tight">
                       {laneOrdinal(barista.bayNumber)}
                     </div>
-                    <div className="font-black text-[15px] text-slate-950 leading-tight">
-                      {barista.name}
-                    </div>
+                    <LaneName
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
+                    />
                   </div>
-                  {barista.senior && <SeniorMark />}
+                  <LaneChangeButton dripper={barista.bayNumber} />
                 </div>
 
-                <button
-                  type="button"
-                  disabled={!current}
-                  onClick={() =>
-                    current && onRequestRebrew(current, barista.id)
-                  }
-                  className={`min-h-[104px] w-full touch-manipulation rounded-md border p-2 text-left transition-colors ${
-                    current?.isRebrew
-                      ? "border-red-400 bg-red-50 text-slate-950 hover:bg-red-100"
-                      : current
-                        ? isImminent
-                          ? "border-red-300 bg-red-50 hover:bg-red-100"
-                          : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
-                        : "border-slate-300 border-dashed bg-slate-50 text-slate-400"
+                <div
+                  className={`min-h-[104px] w-full rounded-md border p-2 text-left transition-colors ${
+                    current
+                      ? isImminent
+                        ? "border-red-300 bg-red-50"
+                        : "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-300 border-dashed bg-slate-50 text-slate-400"
                   }`}
                 >
                   <div
-                    className={`font-black text-[9px] tracking-[0.16em] ${current?.isRebrew || isImminent ? "text-red-600" : "text-slate-400"}`}
+                    className={`font-black text-[9px] tracking-[0.16em] ${isImminent ? "text-red-600" : "text-slate-400"}`}
                   >
                     NOW
                   </div>
                   {current ? (
                     <>
                       <div
-                        className={`mt-1 flex items-start justify-between gap-1 ${current.isRebrew || isImminent ? "text-slate-950" : "text-white"}`}
+                        className={`mt-1 flex items-start justify-between gap-1 ${isImminent ? "text-slate-950" : "text-white"}`}
                       >
                         <div className="min-w-0">
                           <div className="truncate font-black text-[15px] leading-tight">
                             {current.beanName}
                           </div>
-                          {current.isRebrew && (
-                            <div className="mt-1 inline-flex rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-                              入れ直し中
-                            </div>
-                          )}
                           <div className="mt-0.5 flex items-center gap-1 font-bold text-[10px] opacity-85">
                             <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[14px] text-slate-950 leading-none opacity-100">
                               {current.cupCount}杯
@@ -250,26 +240,25 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                               )}
                           </div>
                         </div>
-                        <span
-                          className={`shrink-0 font-black font-mono text-[21px] leading-none ${current.isRebrew ? "text-red-700" : ""}`}
-                        >
+                        <span className="shrink-0 font-black font-mono text-[21px] leading-none">
                           {current.id}
                         </span>
                       </div>
                       <div
-                        className={`mt-1.5 font-black font-mono text-[30px] leading-none tracking-tight ${current.isRebrew || isImminent ? "text-red-600" : "text-white"}`}
+                        className={`mt-1.5 font-black font-mono text-[30px] leading-none tracking-tight ${isImminent ? "text-red-600" : "text-white"}`}
                       >
                         {remainingSeconds === 0
                           ? "継続中"
                           : formatMinSec(remainingSeconds)}
                       </div>
+                      <RebrewButton ticket={current} className="mt-1.5" />
                     </>
                   ) : (
                     <div className="flex h-[62px] items-center justify-center font-bold text-[14px]">
                       待機中
                     </div>
                   )}
-                </button>
+                </div>
 
                 <div className="min-h-[58px] rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
                   <div className="font-black text-[9px] text-slate-500 tracking-[0.16em]">
@@ -419,7 +408,10 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={!canPlaceOn(openOrder, bayId)}
+                              disabled={Boolean(
+                                openOrder.preferredBaristaId &&
+                                  openOrder.preferredBaristaId !== bayId,
+                              )}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}
@@ -438,7 +430,10 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                                 event.stopPropagation();
                                 assignToBay(openOrder, bayId);
                               }}
-                              disabled={!canPlaceOn(openOrder, bayId)}
+                              disabled={Boolean(
+                                openOrder.preferredBaristaId &&
+                                  openOrder.preferredBaristaId !== bayId,
+                              )}
                               className={`touch-manipulation rounded-md border font-black font-mono text-[17px] disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${openOrder.preferredBaristaId === bayId ? "border-violet-300 bg-violet-600 text-white" : "border-slate-300 bg-white text-slate-950"}`}
                             >
                               {bayId}
@@ -483,22 +478,17 @@ export const ControlViewB: React.FC<ControlViewBProps> = ({
                     {group.items.map((item) => (
                       <button
                         type="button"
-                        key={item.ticketUid || `${item.id}-${item.beanCode}`}
+                        key={item.ticketUid || `${item.id}-${item.itemKey}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           openAssignmentPad(item);
                         }}
-                        className={`w-full touch-manipulation rounded-md border px-2 py-1 text-left transition-colors ${item.isRebrew ? "border-red-300 bg-red-50 hover:bg-red-100" : "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"}`}
+                        className="w-full touch-manipulation rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
                       >
                         <div className="flex items-center justify-between gap-1">
                           <span className="truncate font-black text-[13px] text-slate-900">
                             {item.beanName}
                           </span>
-                          {item.isRebrew && (
-                            <span className="rounded bg-red-600 px-1 py-0.5 font-black text-[9px] text-white">
-                              入れ直し
-                            </span>
-                          )}
                           <span className="shrink-0 rounded bg-slate-950 px-1.5 py-0.5 font-black font-mono text-[14px] text-white leading-none">
                             {item.cupCount}杯
                           </span>

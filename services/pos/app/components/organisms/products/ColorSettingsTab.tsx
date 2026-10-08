@@ -1,5 +1,6 @@
 import {
   type ColorScreen,
+  type ItemType,
   colorScreens,
   findColorSetting,
   useColorSettings,
@@ -16,14 +17,16 @@ import {
 } from "~/components/ui/table";
 
 const screenLabels: Record<ColorScreen, string> = {
-  cashier: "レジ",
+  cashier: "レジ（ボタン）",
+  cashier_order: "レジ（過去の注文）",
   master: "マスター",
   serve: "提供",
 };
 
-// others はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、レジだけ設定できる
-const isShownOnScreen = (itemTypeName: string, screen: ColorScreen) =>
-  screen === "cashier" || itemTypeName !== "others";
+// カップを作らない種類（グッズなど）はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、
+// それ以外の画面（レジのボタン・レジの過去の注文）だけ設定できる
+const isShownOnScreen = (itemType: ItemType, screen: ColorScreen) =>
+  (screen !== "master" && screen !== "serve") || itemType.makes_cup;
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
@@ -43,8 +46,8 @@ export function ColorSettingsTab() {
   return (
     <div className="flex flex-col gap-8">
       <p className="text-muted-foreground text-sm">
-        レジ画面のメニューのボタンと、マスター画面・提供画面でのアイテムの背景色です。
-        アイテムの設定 → タイプの設定 → 既定の色 の順に使われます。
+        画面ごとのアイテムの背景色です。アイテムの設定 → タイプの設定
+        の順に使われ、どちらも無ければ色を付けません（レジのボタンはボタンの既定の色）。
       </p>
 
       <section className="flex flex-col gap-2">
@@ -66,7 +69,7 @@ export function ColorSettingsTab() {
                 </TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(itemType.name, screen) ? (
+                    {isShownOnScreen(itemType, screen) ? (
                       <ColorSettingCell
                         targetType="ItemType"
                         targetId={itemType.id}
@@ -109,7 +112,7 @@ export function ColorSettingsTab() {
                 <TableCell>{item.item_type.display_name}</TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(item.item_type.name, screen) ? (
+                    {isShownOnScreen(item.item_type, screen) ? (
                       <ColorSettingCell
                         targetType="Item"
                         targetId={item.id}

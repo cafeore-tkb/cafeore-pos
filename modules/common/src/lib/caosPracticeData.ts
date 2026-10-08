@@ -1,5 +1,5 @@
 // CaOS の実データテストのデータ。利用者が画面で選んだ注文 JSON を、ブラウザの中でこの形にする
-// （読み込んだデータはサーバーにも配信にも出さない。練習用の盤面に送るのは、ここで作った注文から作る練習の注文だけ）。
+// （読み込んだデータはサーバーにも配信にも出さない。練習の盤面もブラウザの中だけで動かす。./caosPractice）。
 //
 // 入れる項目は下の toPracticeOrder で決めた分だけ（許可したものだけを写す）。
 // 担当者名・指名（assignee）・コメント（comments）・お預かり（received）・Firestore の文書 ID などは写さない。
@@ -19,9 +19,24 @@
 export interface PracticeDataItem {
   id: string;
   name: string;
+  /** 商品の略称（cafeore-pos の注文にだけある） */
+  abbr?: string;
   price: number;
-  /** 商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など） */
+  /** 商品の種類の名前（POS の item_type の name と同じ。2024・2025 年は hot・ice・iceOre・milk・others）。無いデータは "" */
   type: string;
+  /**
+   * 注文したときの商品の種類の設定（cafeore-pos の注文にだけある）。DB に同じ名前の種類が無いときに使う
+   * （どう決めるかは ./caosPractice の practiceItemType）
+   */
+  itemType?: PracticeDataItemType;
+}
+
+/** 商品の種類の設定（POS の item_type の表示名と、カップを作る・抽出が要る・限定） */
+export interface PracticeDataItemType {
+  display_name: string;
+  makes_cup: boolean;
+  needs_brew: boolean;
+  senior_only: boolean;
 }
 
 /** 実データの注文 */
@@ -59,6 +74,26 @@ const num = (value: unknown): number =>
 
 const text = (value: unknown): string =>
   typeof value === "string" ? value.trim() : "";
+
+const bool = (value: unknown, fallback: boolean): boolean =>
+  typeof value === "boolean" ? value : fallback;
+
+/** cafeore-pos の注文の品物の種類の設定。無ければ undefined（API の列の既定値は ./caosPractice で入れる） */
+const itemTypeOf = (type: unknown): PracticeDataItemType | undefined => {
+  if (!isObject(type)) return undefined;
+  if (
+    typeof type.makes_cup !== "boolean" &&
+    typeof type.needs_brew !== "boolean" &&
+    typeof type.senior_only !== "boolean"
+  )
+    return undefined;
+  return {
+    display_name: text(type.display_name),
+    makes_cup: bool(type.makes_cup, true),
+    needs_brew: bool(type.needs_brew, true),
+    senior_only: bool(type.senior_only, false),
+  };
+};
 
 interface RawOrder {
   orderId: number;
@@ -111,11 +146,15 @@ const fromCafeorePos = (order: Loose): RawOrder => {
     const price =
       lineItems.length > 0 ? Math.round(unitPrice / lineItems.length) : 0;
     for (const item of lineItems) {
+      const abbr = text(field(item, "abbr"));
+      const itemType = itemTypeOf(field(item, "item_type"));
       items.push({
         id: text(field(item, "id")),
         name: text(field(item, "name")),
+        ...(abbr ? { abbr } : {}),
         price,
         type: text(field(field(item, "item_type"), "name")),
+        ...(itemType ? { itemType } : {}),
       });
     }
   }
@@ -153,8 +192,19 @@ export const toPracticeOrder = (order: unknown): PracticeDataOrder | null => {
       .map((item) => ({
         id: item.id,
         name: item.name,
+        ...(item.abbr ? { abbr: item.abbr } : {}),
         price: item.price,
         type: item.type,
+        ...(item.itemType
+          ? {
+              itemType: {
+                display_name: item.itemType.display_name,
+                makes_cup: item.itemType.makes_cup,
+                needs_brew: item.itemType.needs_brew,
+                senior_only: item.itemType.senior_only,
+              },
+            }
+          : {}),
       })),
   };
 };
@@ -209,7 +259,20 @@ const ALLOWED_ORDER_KEYS = new Set([
   "billingAmount",
   "items",
 ]);
-const ALLOWED_ITEM_KEYS = new Set(["id", "name", "price", "type"]);
+const ALLOWED_ITEM_KEYS = new Set([
+  "id",
+  "name",
+  "abbr",
+  "price",
+  "type",
+  "itemType",
+]);
+const ALLOWED_ITEM_TYPE_KEYS = new Set([
+  "display_name",
+  "makes_cup",
+  "needs_brew",
+  "senior_only",
+]);
 
 /** 写してはいけない項目が入っていないか（念のため。見つかったら投げる） */
 export const assertNoPersonalFields = (orders: unknown[]) => {
@@ -222,6 +285,13 @@ export const assertNoPersonalFields = (orders: unknown[]) => {
       for (const key of Object.keys(isObject(item) ? item : {})) {
         if (!ALLOWED_ITEM_KEYS.has(key))
           throw new Error(`写してはいけない項目があります：items.${key}`);
+      }
+      const itemType = field(item, "itemType");
+      for (const key of Object.keys(isObject(itemType) ? itemType : {})) {
+        if (!ALLOWED_ITEM_TYPE_KEYS.has(key))
+          throw new Error(
+            `写してはいけない項目があります：items.itemType.${key}`,
+          );
       }
     }
   }

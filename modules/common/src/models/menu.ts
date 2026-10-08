@@ -24,7 +24,7 @@ export const menuSchema = z.object({
 
 export type Menu = z.infer<typeof menuSchema>;
 // dripper を省いてよい形（番号より前のデータ・指名しないメニュー）
-type MenuInput = z.input<typeof menuSchema>;
+type MenuInput = Omit<Menu, "dripper"> & { dripper?: number | null };
 
 type LegacyMenu = {
   id?: string;

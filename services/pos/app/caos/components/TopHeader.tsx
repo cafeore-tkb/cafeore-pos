@@ -9,14 +9,12 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Settings,
-  TriangleAlert,
-  Undo2,
   Volume2,
   VolumeX,
 } from "lucide-react";
 import type React from "react";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import { LaneHeaderStatus } from "../lanes/LaneHeaderStatus";
 import type { ControlViewMode } from "./ControlWorkspace";
 
 export type NavTab = "control" | "bays" | "beans" | "analytics";
@@ -38,17 +36,13 @@ interface TopHeaderProps {
   onResetData: () => void;
   showTimelineControls: boolean;
   onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
-  canUndo: boolean;
-  undoLabel: string | null;
-  onUndo: () => void;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
-  /** 上級生のいる列が無いときの知らせ（限定のカードを割り当てられない）。狭い画面では short を出す。無ければ null */
-  laneNotice: { full: string; short: string } | null;
-  onOpenSettings: () => void;
+  /** 「1つ戻す」のボタン（UndoButton）。実データテストの右に出す */
+  undoButton?: React.ReactNode;
 }
 
 const POS_STATUS_LABEL: Record<PosConnectionStatus, string> = {
@@ -75,16 +69,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onResetData,
   showTimelineControls,
   onTimelineNavigate,
-  canUndo,
-  undoLabel,
-  onUndo,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
-  laneNotice,
-  onOpenSettings,
+  undoButton,
 }) => {
   const navItems = [
     { id: "control" as const, label: "CaOS", icon: null },
@@ -228,7 +218,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Metric 1: 未割当オーダー (Unassigned Orders) */}
-        <div className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 2xl:flex">
+        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             未割当オーダー
           </span>
@@ -243,7 +233,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Metric 2: 全ベイ待機杯数 (Total Queued Cups in Bays) */}
-        <div className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 2xl:flex">
+        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
           <span className="font-semibold text-[#475569] text-[12px]">
             全ドリッパー待機杯数
           </span>
@@ -259,22 +249,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </div>
 
       {/* Right side: only persistent operational controls */}
-      <div className="flex items-center gap-1.5">
-        {laneNotice && (
-          <div
-            role="status"
-            data-lane-notice
-            title={laneNotice.full}
-            aria-label={laneNotice.full}
-            className="flex min-h-[44px] max-w-[220px] items-center gap-1 rounded-lg border border-amber-400 bg-amber-50 px-1.5 font-black text-[11px] text-amber-900 leading-tight"
-          >
-            <TriangleAlert className="h-4 w-4 shrink-0" />
-            <span className="whitespace-nowrap 2xl:hidden">
-              {laneNotice.short}
-            </span>
-            <span className="hidden 2xl:inline">{laneNotice.full}</span>
-          </div>
-        )}
+      <div className="flex items-center gap-2">
+        {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
+        <LaneHeaderStatus />
         <div
           role="status"
           aria-label={`cafeore-pos ${POS_STATUS_LABEL[posStatus]}`}
@@ -293,7 +270,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
-              : "過去の祭の実データでテストプレイ（練習用の盤面。本番の盤面には出ません）"
+              : "過去の祭の実データ（手元の JSON）でテストプレイ"
           }
         >
           {testPlaying ? (
@@ -301,37 +278,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           ) : (
             <CalendarClock className="h-4 w-4" />
           )}
-          <span className={testPlaying ? "" : "hidden xl:inline"}>
+          <span>
             {testPlaying
               ? `終了・実績 ${testProgressLabel || ""}`
               : "実データテスト"}
           </span>
         </button>
-        <button
-          id="btn-undo"
-          type="button"
-          disabled={!canUndo}
-          onClick={onUndo}
-          title={
-            undoLabel ? `${undoLabel}を元に戻す` : "元に戻せる操作はありません"
-          }
-          className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          <Undo2 className="h-4 w-4" />
-          <span>1つ戻す</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-settings"
-          onClick={onOpenSettings}
-          title="設定（sohosai-shift の合言葉）"
-          aria-label="設定"
-          className="flex h-11 w-10 touch-manipulation items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] text-slate-700"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
-
+        {undoButton}
         {/* Sound toggle */}
         <button
           id="btn-toggle-sound"

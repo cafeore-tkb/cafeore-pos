@@ -1,10 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  type OrderResponse,
-  orderEntityToCreateRequest,
-  responseToOrderEntity,
-  responseToPrintJob,
-} from "../firebase-utils/converter";
+import type { Cup } from "../models/cup";
 import { MenuEntity } from "../models/menu";
 import { OrderEntity } from "../models/order";
 import {
@@ -12,205 +7,205 @@ import {
   orderCupLabels,
   orderLabels,
   orderSummaryLabel,
-  printJobLabels,
+  pendingEmergencyLabels,
 } from "./label";
 
-const itemType = (name: string) => ({
+const type = (name: string, needsBrew: boolean, makesCup = true) => ({
   id: `type-${name}`,
   name,
   display_name: name,
+  makes_cup: makesCup,
+  needs_brew: needsBrew,
+  senior_only: false,
 });
-const item = (id: string, name: string, type: string) => ({
+const item = (id: string, name: string, t: ReturnType<typeof type>) => ({
   id,
   name,
-  abbr: name.slice(0, 2),
-  item_type: itemType(type),
+  abbr: name.slice(0, 1),
+  item_type: t,
 });
-const blend = item("item-blend", "俺ブレンド", "hot");
-const kenya = item("item-kenya", "ケニア", "ice");
-const milk = item("item-milk", "アイスミルク", "milk");
-const tote = item("item-tote", "トートバッグ", "others");
+const blend = item("i-blend", "ブレンド", type("hot", true));
+const kenya = item("i-kenya", "ケニア", type("hot", true));
+const milk = item("i-milk", "アイスミルク", type("milk", false));
+const goods = item("i-goods", "ステッカー", type("others", false, false));
 
 const menu = (
-  id: string,
   name: string,
-  items: ReturnType<typeof item>[],
-  price = 500,
-) => ({
-  id: `line-${id}`,
-  menu_name: name,
-  unit_price: price,
-  assignee: null as string | null,
-  dripper: null as number | null,
-  menu: {
-    id: `menu-${id}`,
+  items: { item: typeof blend; quantity: number }[],
+  price: number,
+) =>
+  MenuEntity.fromMenu({
+    id: `m-${name}`,
     name,
+    abbr: name.slice(0, 1),
     price,
-    abbr: name,
-    key: id,
-    items: items.map((i) => ({ quantity: 1, item: i })),
-  },
-});
+    key: name,
+    items,
+    assignee: null,
+  });
 
-// 俺ブレンド＋トートのセット・ケニア（指名 2nd・自由記述あり）・アイスミルク・ケニア
-const lines = [
-  menu("set", "俺ブレンドとトートのセット", [blend, tote], 1500),
-  { ...menu("kenya1", "ケニア", [kenya]), dripper: 2, assignee: "山田" },
-  menu("milk", "アイスミルク", [milk], 300),
-  menu("kenya2", "ケニア", [kenya]),
-];
-const cup = (id: string, line: string, i: ReturnType<typeof item>) => ({
-  id,
-  order_menu_id: `line-${line}`,
-  item: i,
-  ready_at: null,
-  served_at: null,
-});
-const response: OrderResponse = {
-  id: "order-1",
-  order_id: 12,
-  created_at: "2026-10-08T01:00:00Z",
-  billing_amount: 2800,
-  received: 3000,
-  menus: lines,
-  cups: [
-    cup("cup-blend", "set", blend),
-    cup("cup-kenya1", "kenya1", kenya),
-    cup("cup-milk", "milk", milk),
-    cup("cup-kenya2", "kenya2", kenya),
-  ],
+// レジで会計する注文（保存前。サーバーのカップは無い）
+const cashierOrder = () => {
+  const order = OrderEntity.createNew({ orderId: 42 });
+  const set = menu(
+    "ブレンドとミルクのセット",
+    [
+      { item: blend, quantity: 2 },
+      { item: milk, quantity: 1 },
+    ],
+    700,
+  );
+  const named = menu("ケニア", [{ item: kenya, quantity: 1 }], 600);
+  named.assign(2, "たくみ");
+  order.menus = [
+    set,
+    named,
+    menu("ステッカー", [{ item: goods, quantity: 1 }], 200),
+    menu("ブレンド", [{ item: blend, quantity: 1 }], 500),
+  ];
+  return order;
 };
 
-describe("[unit] label", () => {
-  test("カップごとのシールは、シールのあるカップ（アイスミルク・グッズ以外）を注文した順に数える", () => {
-    const order = responseToOrderEntity(response);
-    expect(orderCupLabels(order)).toEqual([
+// 保存した注文：サーバーが明細の順 → 構成品の順 → 数量にカップを作る（グッズ以外）。WebSocket で届く形
+const savedOrder = () => {
+  const draft = cashierOrder();
+  const menus = draft.menus.map((m, i) =>
+    MenuEntity.fromMenu({ ...m.toMenu(), orderMenuId: `line-${i}` }),
+  );
+  let seq = 0;
+  const cups: Cup[] = menus.flatMap((m) =>
+    m.items.flatMap(({ item, quantity }) =>
+      item.item_type.makes_cup
+        ? Array.from({ length: quantity }, () => ({
+            id: `cup-${++seq}`,
+            orderMenuId: m.orderMenuId ?? "",
+            item: item.toItem() as Cup["item"],
+            readyAt: null,
+            servedAt: null,
+            dripper: null,
+            dripperPosition: null,
+            dripId: null,
+            brewStartedAt: null,
+            brewFinishedAt: null,
+            emergencyAt: null,
+            emergencyDripId: null,
+            emergencyPrintedAt: null,
+          }))
+        : [],
+    ),
+  );
+  return OrderEntity.fromOrder({
+    ...draft.toOrder(),
+    id: "order-42",
+    menus,
+    cups,
+  });
+};
+
+describe("[unit] ラベルの中身", () => {
+  test("会計のラベル：抽出が要るカップごとに 1 枚（何杯目/全部で何杯・指名）と、引換券のシール", () => {
+    const labels = orderLabels(cashierOrder());
+    expect(labels).toEqual([
       {
         type: "cup",
-        cupId: "cup-blend",
-        orderNo: 12,
-        name: "俺ブレンド",
+        cupId: undefined,
+        orderNo: 42,
+        name: "ブレンド",
         index: 1,
-        total: 3,
-        assignment: null,
+        total: 4,
+        assignee: null,
       },
       {
         type: "cup",
-        cupId: "cup-kenya1",
-        orderNo: 12,
-        name: "ケニア",
+        cupId: undefined,
+        orderNo: 42,
+        name: "ブレンド",
         index: 2,
-        total: 3,
-        assignment: "山田",
+        total: 4,
+        assignee: null,
       },
       {
         type: "cup",
-        cupId: "cup-kenya2",
-        orderNo: 12,
+        cupId: undefined,
+        orderNo: 42,
         name: "ケニア",
         index: 3,
-        total: 3,
-        assignment: null,
+        total: 4,
+        assignee: "たくみ",
+      },
+      {
+        type: "cup",
+        cupId: undefined,
+        orderNo: 42,
+        name: "ブレンド",
+        index: 4,
+        total: 4,
+        assignee: null,
+      },
+      {
+        type: "summary",
+        orderNo: 42,
+        total: 2000,
+        assigned: [{ name: "ケニア", assignee: "たくみ" }],
+        // 8 文字以上の名前は 6 文字にし、2 つずつ横に並べる
+        lines: ["ブレンドとミ  ステッカー", "ブレンド"],
       },
     ]);
   });
 
-  test("引換券に貼るシールは、指名のある明細と、残りの明細の名前を 2 つずつ並べた行", () => {
-    const order = responseToOrderEntity(response);
-    expect(orderSummaryLabel(order)).toEqual({
-      type: "summary",
-      orderNo: 12,
-      total: 2800,
-      assigned: [{ name: "ケニア", assignment: "山田" }],
-      // 8 文字以上の名前は 6 文字にする
-      lines: ["俺ブレンドと  アイスミルク", "ケニア"],
-    });
-  });
-
-  test("レジの会計のラベルは、カップのシールを順に、最後に引換券のシール", () => {
-    const order = responseToOrderEntity(response);
-    expect(orderLabels(order).map((l) => l.type)).toEqual([
-      "cup",
-      "cup",
-      "cup",
-      "summary",
+  test("保存した注文のカップのシールは、会計のときのシールと全く同じ（カップの ID だけ付く）", () => {
+    const before = orderCupLabels(cashierOrder());
+    const after = orderCupLabels(savedOrder());
+    expect(after.map((l) => l.cupId)).toEqual([
+      "cup-1",
+      "cup-2",
+      "cup-4",
+      "cup-5",
     ]);
+    expect(after.map(({ cupId, ...rest }) => rest)).toEqual(
+      before.map(({ cupId, ...rest }) => rest),
+    );
+    expect(orderSummaryLabel(savedOrder())).toEqual(
+      orderSummaryLabel(cashierOrder()),
+    );
   });
 
-  test("緊急は「緊急」のシール → そのカップの本物と全く同じシール", () => {
-    const order = responseToOrderEntity(response);
-    const real = orderLabels(order);
-    expect(emergencyLabels(order, "cup-kenya2")).toEqual([
+  test("緊急のシール：「緊急」のシールのあとに、そのカップの本物と全く同じシール", () => {
+    const order = savedOrder();
+    const real = orderCupLabels(order)[2];
+    expect(emergencyLabels(order, "cup-4")).toEqual([
       { type: "emergency" },
-      real[2],
+      real,
     ]);
-    expect(
-      printJobLabels({ kind: "emergency", cupId: "cup-kenya1" }, order),
-    ).toEqual([{ type: "emergency" }, real[1]]);
-    expect(printJobLabels({ kind: "order", cupId: null }, order)).toEqual(real);
-    // シールの無いカップ・無いカップ・カップの指定が無いときは作らない
-    expect(emergencyLabels(order, "cup-milk")).toBeNull();
-    expect(emergencyLabels(order, "cup-x")).toBeNull();
-    expect(
-      printJobLabels({ kind: "emergency", cupId: null }, order),
-    ).toBeNull();
+    // シールの無いカップ（アイスミルク）・無いカップ
+    expect(emergencyLabels(order, "cup-3")).toBeNull();
+    expect(emergencyLabels(order, "nope")).toBeNull();
   });
 
-  test("保存前の注文（カップなし）は、今までのレジと同じ getCoffeeCups の展開", () => {
-    const order = OrderEntity.createNew({ orderId: 3 });
-    order.menus = responseToOrderEntity(response).menus.map((m) =>
-      MenuEntity.fromMenu(m.toMenu()),
-    );
-    expect(
-      orderCupLabels(order).map((l) => [l.name, l.index, l.total, l.cupId]),
-    ).toEqual(
-      order
-        .getCoffeeCups()
-        .map((c, i, all) => [c.name, i + 1, all.length, undefined]),
-    );
-  });
-});
-
-describe("[unit] print job conversion", () => {
-  test("API の PrintJob の日時を Date にする", () => {
-    const job = responseToPrintJob({
-      id: 5,
-      kind: "emergency",
-      source: "caos",
-      order_id: "order-1",
-      order_no: 12,
-      cup_id: "cup-kenya1",
-      status: "printing",
-      printer_id: "printer-a",
-      claimed_at: "2026-10-08T01:00:00Z",
-      finished_at: null,
-      error: null,
-      attempts: 1,
-      created_at: "2026-10-08T00:59:00Z",
-      updated_at: "2026-10-08T01:00:00Z",
-    });
-    expect(job).toMatchObject({
-      id: 5,
-      kind: "emergency",
-      source: "caos",
-      orderId: "order-1",
-      orderNo: 12,
-      cupId: "cup-kenya1",
-      status: "printing",
-      printerId: "printer-a",
-      claimedAt: new Date("2026-10-08T01:00:00Z"),
-      finishedAt: null,
-      error: null,
-    });
+  test("指名は自由記述があればその文、無ければドリッパーの番号（1st〜6th）を印刷する", () => {
+    const order = cashierOrder();
+    order.menus[1].assign(3, null);
+    const kenya = orderCupLabels(order)[2];
+    expect(kenya.name).toBe("ケニア");
+    expect(kenya.assignee).toBe("3rd");
+    expect(orderSummaryLabel(order).assigned).toEqual([
+      { name: "ケニア", assignee: "3rd" },
+    ]);
+    // 保存した注文（サーバーのカップ）でも同じ
+    const draft = savedOrder();
+    draft.menus[1].assign(3, null);
+    expect(orderCupLabels(draft)[2].assignee).toBe("3rd");
   });
 
-  test("レジの会計だけ print_labels を付けて注文を作る", () => {
-    const order = responseToOrderEntity(response);
-    expect(orderEntityToCreateRequest(order)).not.toHaveProperty(
-      "print_labels",
-    );
+  test("印刷していない緊急のカップを見つける", () => {
+    const order = savedOrder();
+    const at = new Date("2026-10-08T03:00:00Z");
+    const cups = order.cups as Cup[];
+    cups[0].emergencyAt = at;
+    cups[0].emergencyPrintedAt = at; // もう印刷した
+    cups[3].emergencyAt = at;
     expect(
-      orderEntityToCreateRequest(order, { printLabels: true }).print_labels,
-    ).toBe(true);
+      pendingEmergencyLabels([order]).map((p) => [p.order.id, p.cupId]),
+    ).toEqual([["order-42", "cup-4"]]);
   });
 });

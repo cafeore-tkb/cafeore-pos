@@ -1,15 +1,25 @@
-import type { CupLabel, Label, OrderSummaryLabel } from "@cafeore/common";
+import {
+  type CupLabel,
+  type Label,
+  type OrderEntity,
+  type OrderSummaryLabel,
+  emergencyLabels,
+  orderLabels,
+} from "@cafeore/common";
+import { useRef } from "react";
 import { useRawPrinter } from "./printer";
 
-/**
- * シール（@cafeore/common の Label）をプリンターの命令にして印刷する。
- * シールの中身は @cafeore/common の orderLabels・emergencyLabels（printJobLabels）が作る。
- * レジの会計のラベルも緊急のシールも、ここで同じように印刷するので、緊急で印刷し直すシールは本物と全く同じになる。
- */
+// ラベルの中身は @cafeore/common の label.ts で作り、ここでプリンターの命令にする。
+// レジの会計のラベルも緊急のシールも同じ作り方なので、緊急で出すシールは本物と全く同じになる。
+// 印刷は同じ iPad の中の待ち行列で 1 件ずつ送り、前の印刷の返事を待ってから次を送る
+// （会計のラベルと緊急のシールが重なっても、命令が混ざったり抜けたりしない）。
+
 export const usePrinter = () => {
   const rawPrinter = useRawPrinter();
+  // 待ち行列の最後の印刷
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
 
-  // カップに貼るシール（1 枚ずつ、ページの決まった位置に書く）
+  // カップに貼るシール
   const addCupLabel = (label: CupLabel) => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
@@ -22,8 +32,8 @@ export const usePrinter = () => {
     rawPrinter.addPagePosition(0, 156);
     rawPrinter.addLine(`${label.index}/${label.total}`, [2, 1]);
     rawPrinter.addPagePosition(0, 204);
-    if (label.assignment) {
-      rawPrinter.addLine(`指名： ${label.assignment}`, [1, 1]);
+    if (label.assignee) {
+      rawPrinter.addLine(`指名： ${label.assignee}`, [1, 1]);
     } else {
       rawPrinter.addLine("　", [1, 1]);
     }
@@ -32,53 +42,68 @@ export const usePrinter = () => {
     rawPrinter.addPageEnd();
   };
 
-  // 引換券に貼るシール（番号・金額と注文の中身）
+  // 引換券に貼るシール（番号と注文）
   const addSummaryLabel = (label: OrderSummaryLabel) => {
     rawPrinter.addHeader(label.orderNo, label.total);
-    for (const { name, assignment } of label.assigned) {
+    for (const { name, assignee } of label.assigned) {
       rawPrinter.addLine(name, [1, 1]);
-      rawPrinter.addLine(`  指名：${assignment}`, [1, 1]);
+      rawPrinter.addLine(`  指名：${assignee}`, [1, 1]);
     }
     for (const line of label.lines) {
       rawPrinter.addLine(line, [1, 1]);
     }
   };
 
-  // 緊急の目印のシール（「緊急」とだけ大きく書く）。本物と同じシールの前に 1 枚出す
-  const addEmergencyMark = () => {
+  // 緊急の目印のシール（「緊急」とだけ書く）。カップのシールと同じ大きさの 1 枚
+  const addEmergencyLabel = () => {
     rawPrinter.feedCurrentTop();
     rawPrinter.addPageBegin();
     rawPrinter.addPageArea(0, 24, 570, 230);
-    rawPrinter.addPagePosition(160, 160);
+    rawPrinter.addPagePosition(0, 170);
     rawPrinter.addLine("緊急", [4, 4]);
     rawPrinter.addPageEnd();
   };
 
-  /**
-   * シールを順に印刷する。プリンターが印刷し終えたら解決し、印刷できなかったら理由を付けて失敗する
-   */
-  const printLabels = async (labels: Label[]) => {
-    rawPrinter.init();
-    for (const label of labels) {
-      switch (label.type) {
-        case "cup":
-          addCupLabel(label);
-          break;
-        case "summary":
-          addSummaryLabel(label);
-          break;
-        case "emergency":
-          addEmergencyMark();
-          break;
-      }
+  const addLabel = (label: Label) => {
+    switch (label.type) {
+      case "cup":
+        addCupLabel(label);
+        return;
+      case "summary":
+        addSummaryLabel(label);
+        return;
+      case "emergency":
+        addEmergencyLabel();
+        return;
     }
-    rawPrinter.addFeed(7);
-    await rawPrinter.print();
   };
 
-  return {
-    status: rawPrinter.status,
-    connect: rawPrinter.connect,
-    printLabels,
+  /** ラベルを待ち行列に入れて印刷する。印刷できたかを返す */
+  const printLabels = (labels: Label[]): Promise<boolean> => {
+    const job = () => {
+      rawPrinter.init();
+      for (const label of labels) addLabel(label);
+      rawPrinter.addFeed(7);
+      return rawPrinter.print();
+    };
+    const run = queueRef.current.then(job, job);
+    queueRef.current = run.catch(() => false);
+    return run;
   };
+
+  /** レジの会計のラベル（カップごとのシールと、引換券に貼るシール）。保存を待たずにすぐ印刷する */
+  const printOrderLabel = (order: OrderEntity) => {
+    void printLabels(orderLabels(order));
+  };
+
+  /**
+   * 緊急のシール：「緊急」のシール → そのカップの本物と全く同じシール。印刷できたかを返す
+   * （シールの無いカップは印刷せず false）
+   */
+  const printEmergencyLabel = (order: OrderEntity, cupId: string) => {
+    const labels = emergencyLabels(order, cupId);
+    return labels ? printLabels(labels) : Promise.resolve(false);
+  };
+
+  return { status: rawPrinter.status, printOrderLabel, printEmergencyLabel };
 };

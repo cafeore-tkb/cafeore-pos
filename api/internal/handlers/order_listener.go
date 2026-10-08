@@ -26,10 +26,8 @@ const (
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
-// CaOS の盤面のカード（dripsChangedChannel = caos_drips_changed。caos_store.go）と
-// 印刷キュー（printJobsChangedChannel = print_jobs_changed。print_job.go）も同じ接続で待ち受ける。
-// 通知の中身はどちらも "<送ったインスタンスの ID>"（notifyDripsChanged・publishPrintJobs）。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripsChangedChannel, printJobsChangedChannel}
+// CaOS のドリッパーの担当者（caos_lanes_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, caosLanesChangedChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -76,7 +74,7 @@ func notifyCashierStateChanged(db *gorm.DB) {
 	notifyChanged(db, cashierStateChangedChannel, instanceID)
 }
 
-// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューが変わるたびに、
+// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の担当者が変わるたびに、
 // DB から読み直して配信する。
 //
 // 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
@@ -140,7 +138,7 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 		case <-connCtx.Done():
 		case <-time.After(listenProbeTimeout):
 			if !probed.Load() {
-				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態・CaOS の盤面・印刷キューの変更が配られない。"+
+				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
 					"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
 					ordersChangedChannel, listenProbeTimeout)
 			}
@@ -194,10 +192,7 @@ type changeSet struct {
 	allOrders    bool // true なら orderIDs は見ずに全注文を配り直す
 	masterState  bool
 	cashierState bool
-	// CaOS の盤面（今日のカードと列の担当者。全部を読み直して配る）
-	drips bool
-	// 印刷キューのまだ終わっていない仕事（全部を読み直して配る）
-	printJobs bool
+	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
 }
 
 func newPendingChanges() *pendingChanges {
@@ -218,10 +213,8 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.masterState = true })
 	case cashierStateChangedChannel:
 		q.update(func(s *changeSet) { s.cashierState = true })
-	case dripsChangedChannel:
-		q.update(func(s *changeSet) { s.drips = true })
-	case printJobsChangedChannel:
-		q.update(func(s *changeSet) { s.printJobs = true })
+	case caosLanesChangedChannel:
+		q.update(func(s *changeSet) { s.caosLanes = true })
 	}
 }
 
@@ -241,8 +234,7 @@ func (q *pendingChanges) addAll() {
 		s.allOrders = true
 		s.masterState = true
 		s.cashierState = true
-		s.drips = true
-		s.printJobs = true
+		s.caosLanes = true
 	})
 }
 
@@ -289,13 +281,8 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		if s.cashierState {
 			broadcastCashierState(h.db, h.hub)
 		}
-		if s.drips {
-			// 依頼を積むだけ（少し待って 1 回にまとめて送る。CaOS を使っていなければ何もしない）
-			h.broadcastDrips()
-		}
-		if s.printJobs {
-			// 印刷する端末は、これを受けて待ちの仕事を取りに来る（ほかのインスタンスで積まれた仕事も届く）
-			broadcastPrintJobs(h.db, h.hub)
+		if s.caosLanes {
+			broadcastCaosLanes(h.db, h.hub, time.Now())
 		}
 	}
 }

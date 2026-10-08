@@ -3,12 +3,12 @@ import type { OrderEntity } from "../models/order";
 
 // ラベル（シール）の中身を作る。レジの会計のラベルも、緊急のシールも、ここで作ったものを印刷する
 // （services/pos の label/print-util.ts が、これをプリンターの命令にする）。
-// 同じ注文からは、いつ作っても同じ中身になるので、緊急で印刷し直すシールは本物と全く同じになる。
+// 緊急のシールは「緊急」とだけ書いたシールのあとに、そのカップの本物と全く同じシールを出す（本物には「緊急」と書かない）。
 
 /** カップに貼るシール 1 枚（注文番号・商品名・何杯目/全部で何杯・指名） */
 export type CupLabel = {
   type: "cup";
-  /** サーバーが作ったカップの ID。カップを持たない注文（保存前など）は undefined */
+  /** サーバーが作ったカップの ID。保存前の注文（レジの会計）は undefined */
   cupId: string | undefined;
   orderNo: number;
   name: string;
@@ -16,8 +16,8 @@ export type CupLabel = {
   index: number;
   /** シールのあるカップが全部で何杯か */
   total: number;
-  /** 指名（自由記述があればその文、無ければ "1st" など）。指名なしは null */
-  assignment: string | null;
+  /** ラベルに印刷する指名（assignmentLabelText：自由記述があればその文、無ければドリッパーの番号）。無ければ null */
+  assignee: string | null;
 };
 
 /** 引換券に貼るシール（注文番号・金額・指名のある明細・残りの明細の名前） */
@@ -25,7 +25,7 @@ export type OrderSummaryLabel = {
   type: "summary";
   orderNo: number;
   total: number;
-  assigned: { name: string; assignment: string }[];
+  assigned: { name: string; assignee: string }[];
   /** 指名の無い明細の名前を 2 つずつ横に並べた行 */
   lines: string[];
 };
@@ -36,28 +36,36 @@ export type EmergencyMarkLabel = { type: "emergency" };
 export type Label = CupLabel | OrderSummaryLabel | EmergencyMarkLabel;
 
 /**
- * シールを印刷するカップの種類か。アイスミルク（milk）とグッズ（others）にはシールが無い
- * （OrderEntity.getCoffeeCups と同じ決まり。サーバーの isLabelCup も同じ）
- */
-export const isLabelItemType = (itemTypeName: string): boolean =>
-  itemTypeName !== "milk" && itemTypeName !== "others";
-
-/**
- * 注文のカップごとのシール。注文した順（サーバーのカップの並び）に、シールのあるカップだけを数える。
- * カップを持たない注文は、getCoffeeCups と同じ展開になる
+ * 注文のカップごとのシール。シールを貼るのは種類の「抽出が要る」が付いたカップ（OrderEntity.getCoffeeCups と同じ）。
+ *   - 保存前の注文（レジの会計。サーバーのカップが無い）は getCoffeeCups の展開（明細の順 → 構成品の順 → 数量）
+ *   - 保存した注文は、サーバーが注文のときに同じ展開で作ったカップ（cups。注文した順）。あとでメニューの構成が変わっても、
+ *     会計のときに印刷したシールと同じになる
  */
 export const orderCupLabels = (order: OrderEntity): CupLabel[] => {
-  const cups = order
-    .getCups()
-    .filter((cup) => isLabelItemType(cup.item_type.name));
+  const cups =
+    order.cups.length === 0
+      ? order.getCoffeeCups().map((item) => ({
+          cupId: undefined,
+          name: item.name,
+          assignee: assignmentLabelText(item),
+        }))
+      : order.cups
+          .filter((cup) => cup.item.item_type.needs_brew)
+          .map((cup) => ({
+            cupId: cup.id,
+            name: cup.item.name,
+            assignee: assignmentLabelText(
+              order.menus.find(
+                (menu) => menu.orderMenuId === cup.orderMenuId,
+              ) ?? { dripper: null, assignee: null },
+            ),
+          }));
   return cups.map((cup, i) => ({
     type: "cup",
-    cupId: cup.cupId,
+    ...cup,
     orderNo: order.orderId,
-    name: cup.name,
     index: i + 1,
     total: cups.length,
-    assignment: assignmentLabelText(cup),
   }));
 };
 
@@ -68,8 +76,8 @@ const shortName = (name: string) => (name.length < 8 ? name : name.slice(0, 6));
 /** 引換券に貼るシール */
 export const orderSummaryLabel = (order: OrderEntity): OrderSummaryLabel => {
   const assigned = order.menus.flatMap((menu) => {
-    const assignment = assignmentLabelText(menu);
-    return assignment === null ? [] : [{ name: menu.name, assignment }];
+    const assignee = assignmentLabelText(menu);
+    return assignee === null ? [] : [{ name: menu.name, assignee }];
   });
   const unassigned = order.menus.filter(
     (menu) => assignmentLabelText(menu) === null,
@@ -97,7 +105,7 @@ export const orderLabels = (order: OrderEntity): Label[] => [
 ];
 
 /**
- * 緊急の印刷：「緊急」のシール → そのカップの本物と全く同じシール。
+ * 緊急のシール：「緊急」のシール → そのカップの本物と全く同じシール。
  * シールの無いカップ・その注文に無いカップは null
  */
 export const emergencyLabels = (
@@ -108,11 +116,16 @@ export const emergencyLabels = (
   return label ? [{ type: "emergency" }, label] : null;
 };
 
-/** 印刷キューの仕事 1 件で印刷するシール。作れなければ null（カップが無いなど） */
-export const printJobLabels = (
-  job: { kind: "order" | "emergency"; cupId: string | null },
-  order: OrderEntity,
-): Label[] | null => {
-  if (job.kind === "order") return orderLabels(order);
-  return job.cupId ? emergencyLabels(order, job.cupId) : null;
-};
+/** まだ緊急のシールを印刷していないカップ（緊急にしてあり、印刷した時刻が空）。注文の順 */
+export const pendingEmergencyLabels = <T extends OrderEntity>(
+  orders: readonly T[],
+): { order: T; cupId: string }[] =>
+  orders.flatMap((order) =>
+    order.cups
+      .filter(
+        (cup) =>
+          (cup.emergencyAt ?? null) !== null &&
+          (cup.emergencyPrintedAt ?? null) === null,
+      )
+      .map((cup) => ({ order, cupId: cup.id })),
+  );

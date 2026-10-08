@@ -4,22 +4,20 @@ import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 export const ticketKey = (ticket: OrderTicket) =>
   ticket.ticketUid || `${ticket.id}-${ticket.itemIndex || 1}`;
 
-// 同じメニュー・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる（入れ直しは除く）。
+// 同じ商品・同じ指名の1杯同士だけを、2杯の同時抽出へ統合できる。
+// 商品は itemKey（盤面のカードは商品の ID）で比べる。
+// 注文から組み立てたカードは mergeKey（商品と指名。@cafeore/common の canMergeCards と同じ）でも比べる。
 export const canMergeDripUnits = (
   first: UnassignedOrder,
   second: UnassignedOrder,
 ) =>
   (first.ticketUid || first.id) !== (second.ticketUid || second.id) &&
-  !first.isRebrew &&
-  !second.isRebrew &&
   first.cupCount === 1 &&
   second.cupCount === 1 &&
-  first.beanCode === second.beanCode &&
-  // 盤面のカードは商品の ID を持つ。API は同じ商品どうししか統合しないので、候補もそれに揃える
-  (first.itemKey === undefined ||
-    second.itemKey === undefined ||
-    first.itemKey === second.itemKey) &&
-  first.preferredBaristaId === second.preferredBaristaId;
+  first.itemKey === second.itemKey &&
+  first.preferredBaristaId === second.preferredBaristaId &&
+  // 盤面のカードは統合できる相手のキー（商品と指名）を持つ。API は同じ商品・同じ指名の 1 杯どうししか統合しないので、候補もそれに揃える
+  first.mergeKey === second.mergeKey;
 
 export const orderNumber = (id: string) =>
   Number(id.match(/\d+/)?.[0]) || Number.MAX_SAFE_INTEGER;

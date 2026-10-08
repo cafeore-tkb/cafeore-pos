@@ -2,11 +2,12 @@ import { formatMinSec } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
 import { laneOrdinal } from "../utils/lanes";
 import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import type { ControlViewBProps } from "./ControlViewB";
 import { DripperOrderCard } from "./DripperOrderCard";
-import { LaneName } from "./LaneName";
+import { useRebrew } from "./RebrewPanel";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 export type ControlViewCProps = ControlViewBProps;
@@ -35,12 +36,13 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
 }) => {
   const sortedBaristas = useMemo(
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 抽出中のカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew();
   const nextAvailable = useMemo(
     () =>
       sortedBaristas
@@ -105,9 +107,10 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                       {laneOrdinal(barista.bayNumber)}
                     </div>
                     <LaneName
-                      barista={barista}
-                      className="font-black text-[15px] text-slate-950"
+                      dripper={barista.bayNumber}
+                      className="font-black text-[13px] text-slate-950"
                     />
+                    <LaneChangeButton dripper={barista.bayNumber} />
                   </div>
                   <div
                     className="flex shrink-0 items-center gap-1.5"
@@ -144,11 +147,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                     }
                     isImminent={isImminent}
                     emptyLabel="待機中"
-                    onClick={
-                      current
-                        ? () => onRequestRebrew(current, barista.id)
-                        : undefined
-                    }
+                    onClick={rebrew(current)}
                   />
 
                   <div className="flex min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

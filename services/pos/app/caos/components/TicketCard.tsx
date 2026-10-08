@@ -4,23 +4,22 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderTicket } from "../types";
 import { cardHasBean } from "../utils/beans";
-import { canPlaceOn } from "../utils/lanes";
-import { nominationText } from "../utils/posOrders";
+import { nominationText } from "../utils/nomination";
 import { BeanBadge } from "./BeanBadge";
+import { useRebrew } from "./RebrewPanel";
 
 interface TicketCardProps {
   ticket: OrderTicket;
-  // 豆で絞り込む（盤面のカードは在庫対象の ID、実データテストのカードは豆のコード）
+  // 豆で絞り込む（在庫対象の ID）
   highlightFilter: string | null;
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string) => void;
   onOpenDetail: (ticket: OrderTicket) => void;
   actionTicketKey?: string | null;
   currentBayId: number;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
+  onMoveTicket: (ticket: OrderTicket, bayId: number, toFront?: boolean) => void;
   onReturnToUnassigned: (ticket: OrderTicket) => void;
   onCloseAction: () => void;
-  onRequestRebrew: (ticket: OrderTicket) => void;
   widthPx?: number;
 }
 
@@ -34,7 +33,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onCloseAction,
-  onRequestRebrew,
   widthPx,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -48,20 +46,17 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     !highlightFilter || cardHasBean(ticket, highlightFilter);
   const isOrderSelected = selectedOrderId === ticket.id;
 
-  // Operational color is reserved for drinks that require a special finish/person.
-  let leftBorderColor = "border-l-slate-400";
-  if (ticket.beanCode === "SP") leftBorderColor = "border-l-[#059669]";
-  if (ticket.beanCode === "ICE") leftBorderColor = "border-l-[#06b6d4]";
-  if (ticket.beanCode === "MILK") leftBorderColor = "border-l-[#8b5cf6]";
+  // 左の線は、マスターの画面の色の設定の色（終わった・指名で背景を塗らないカードでも商品が分かるように）。
+  // 設定が無ければ灰色。商品の種類で色を決め打ちしない
+  const leftBorderColor = ticket.color ? "" : "border-l-slate-400";
 
   const isCompleted = ticket.status === "completed";
-  const isRebrew = Boolean(ticket.isRebrew);
   const isNamed = Boolean(ticket.preferredBaristaId);
-  // 盤面のカードは、マスターの画面と同じ背景色で塗る（入れ直し・終わった・指名のカードはそれぞれの色を優先）
+  // 抽出中・終わったカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew()(ticket);
+  // 盤面のカードは、マスターの画面と同じ背景色で塗る（終わった・指名のカードはそれぞれの色を優先）
   const masterColor =
-    ticket.color && !isRebrew && !isCompleted && !isNamed
-      ? ticket.color
-      : undefined;
+    ticket.color && !isCompleted && !isNamed ? ticket.color : undefined;
   // 文字色は背景色から決める（POS と共通の readableTextColor）
   const masterTextColor = masterColor
     ? readableTextColor(masterColor)
@@ -121,7 +116,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           return;
         }
         if (ticket.status !== "scheduled") {
-          onRequestRebrew(ticket);
+          rebrew?.();
           return;
         }
         if (isActionOpen) {
@@ -166,8 +161,13 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         finishDrag();
         if (moved) {
           suppressNextClick.current = true;
-          if (targetBay && canPlaceOn(ticket, targetBay)) {
-            onMoveTicket(ticket, targetBay);
+          if (
+            targetBay &&
+            (!ticket.preferredBaristaId ||
+              ticket.preferredBaristaId === targetBay)
+          ) {
+            // 同じドリッパーの「先頭」に落としたら、待機の先頭へ
+            onMoveTicket(ticket, targetBay, targetBay === currentBayId);
             onCloseAction();
           }
         }
@@ -178,6 +178,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         ...(masterColor
           ? { backgroundColor: masterColor, color: masterTextColor }
           : {}),
+        ...(ticket.color ? { borderLeftColor: ticket.color } : {}),
         ...(widthPx ? { width: `${widthPx}px` } : {}),
         ...(dragOffset
           ? {
@@ -186,18 +187,16 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           : {}),
       }}
       className={`group relative h-full ${dragOffset ? `${isActionOpen ? "overflow-visible" : "overflow-hidden"} z-[120] scale-[1.03] opacity-90 shadow-2xl ring-2 ring-blue-500` : isActionOpen ? "z-[80] overflow-visible" : "overflow-hidden"} min-w-[135px] shrink-0 rounded-lg border-2 border-l-[5px] ${leftBorderColor} flex select-none flex-col justify-center px-2 py-1.5 transition-[box-shadow,border-color] ${ticket.status === "scheduled" ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-default touch-manipulation"} ${
-        isRebrew
-          ? `border-red-300 bg-red-50 text-slate-900 shadow-xs ${isCompleted ? "opacity-55 hover:opacity-75" : "hover:border-red-500 hover:shadow-md"}`
-          : isCompleted
-            ? "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70"
-            : isNamed
-              ? "border-violet-300 bg-violet-50 shadow-xs hover:border-violet-400 hover:shadow-md"
-              : "border-[#cbd5e1] bg-white shadow-xs hover:border-slate-400 hover:shadow-md"
+        isCompleted
+          ? "border-slate-200 bg-slate-100 text-slate-500 opacity-50 hover:opacity-70"
+          : isNamed
+            ? "border-violet-300 bg-violet-50 shadow-xs hover:border-violet-400 hover:shadow-md"
+            : "border-[#cbd5e1] bg-white shadow-xs hover:border-slate-400 hover:shadow-md"
       } ${
         isOrderSelected
           ? "z-20 scale-[1.02] border-amber-500 bg-amber-50/95 shadow-xl ring-4 ring-amber-400"
           : ""
-      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""}`}
+      } ${!isMatchFilter ? "opacity-25 blur-[0.5px]" : ""} ${ticket.isRebrew ? "ring-2 ring-red-500" : ""}`}
     >
       {dragOffset && dragTargetBay && (
         <div className="pointer-events-none absolute top-1 right-1 z-[130] rounded-full bg-blue-700 px-2 py-1 font-black font-mono text-[12px] text-white shadow-md">
@@ -207,8 +206,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       {isActionOpen && (
         <>
           {[1, 2, 3].map((bayId, index) => {
-            const disabled =
-              bayId === currentBayId || !canPlaceOn(ticket, bayId);
+            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
+            const disabled = Boolean(
+              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
+            );
             return (
               <button
                 key={bayId}
@@ -217,7 +218,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 disabled={disabled}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMoveTicket(ticket, bayId);
+                  onMoveTicket(ticket, bayId, bayId === currentBayId);
                   onCloseAction();
                 }}
                 className="-top-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
@@ -227,13 +228,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   ...padDragStyle,
                 }}
               >
-                {bayId}
+                {bayId === currentBayId ? "先頭" : bayId}
               </button>
             );
           })}
           {[4, 5, 6].map((bayId, index) => {
-            const disabled =
-              bayId === currentBayId || !canPlaceOn(ticket, bayId);
+            // 今のドリッパーのボタンは「先頭」（このドリッパーの待機の先頭へ）
+            const disabled = Boolean(
+              ticket.preferredBaristaId && ticket.preferredBaristaId !== bayId,
+            );
             return (
               <button
                 key={bayId}
@@ -242,7 +245,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 disabled={disabled}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onMoveTicket(ticket, bayId);
+                  onMoveTicket(ticket, bayId, bayId === currentBayId);
                   onCloseAction();
                 }}
                 className="-bottom-[38px] absolute z-[90] h-[34px] touch-none rounded-md border bg-white font-black font-mono text-[17px] shadow-lg disabled:bg-slate-200 disabled:text-slate-400"
@@ -252,7 +255,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   ...padDragStyle,
                 }}
               >
-                {bayId}
+                {bayId === currentBayId ? "先頭" : bayId}
               </button>
             );
           })}
@@ -268,20 +271,18 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             {/* Large Order Number Label */}
             <span
               className={`font-black font-mono text-[22px] leading-none tracking-tight ${
-                isRebrew
-                  ? "text-red-700"
-                  : isOrderSelected
-                    ? "font-black text-amber-900"
-                    : isNamed
-                      ? "text-violet-700"
-                      : isCompleted
-                        ? "text-slate-500"
-                        : masterColor
-                          ? ""
-                          : ticket.totalItemsInOrder &&
-                              ticket.totalItemsInOrder > 1
-                            ? "text-slate-950"
-                            : "text-slate-600"
+                isOrderSelected
+                  ? "font-black text-amber-900"
+                  : isNamed
+                    ? "text-violet-700"
+                    : isCompleted
+                      ? "text-slate-500"
+                      : masterColor
+                        ? ""
+                        : ticket.totalItemsInOrder &&
+                            ticket.totalItemsInOrder > 1
+                          ? "text-slate-950"
+                          : "text-slate-600"
               }`}
             >
               {ticket.id}
@@ -297,23 +298,18 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 指名:{nominationText(ticket)}
               </span>
             )}
-            {isRebrew && (
-              <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
+            {ticket.isRebrew && (
+              <span className="rounded bg-red-600 px-1.5 py-0.5 font-black text-[11px] text-white">
                 {ticket.status === "brewing" ? "入れ直し中" : "入れ直し"}
               </span>
             )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {isCompleted && !ticket.isInterrupted && (
+            {isCompleted && (
               <span className="flex items-center gap-0.5 rounded border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 font-bold text-[10px] text-emerald-800 leading-none">
                 <Check className="h-3 w-3" />
                 <span className="sr-only">完了</span>
-              </span>
-            )}
-            {ticket.isInterrupted && (
-              <span className="rounded border border-red-300 bg-red-50 px-1.5 py-0.5 font-black text-[10px] text-red-700">
-                中断
               </span>
             )}
           </div>
@@ -335,7 +331,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           >
             {ticket.beanName}
           </span>
-          <BeanBadge beans={ticket.beans} />
+          <BeanBadge beans={ticket.beans} typeName={ticket.typeName} />
           {ticket.totalItemsInOrder && ticket.totalItemsInOrder > 1 && (
             <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
               {ticket.itemIndex}/{ticket.totalItemsInOrder}・計

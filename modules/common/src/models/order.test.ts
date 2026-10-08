@@ -9,7 +9,14 @@ const coffeeItem = MenuEntity.fromMenu({
   abbr: "1",
   price: 300,
   key: "1",
-  item_type: { id: "1", name: "hot", display_name: "ホット" },
+  item_type: {
+    id: "1",
+    name: "hot",
+    display_name: "ホット",
+    makes_cup: true,
+    needs_brew: true,
+    senior_only: false,
+  },
   assignee: null,
 });
 
@@ -19,7 +26,14 @@ const milkItem = MenuEntity.fromMenu({
   abbr: "2",
   price: 100,
   key: "2",
-  item_type: { id: "3", name: "milk", display_name: "ミルク" },
+  item_type: {
+    id: "3",
+    name: "milk",
+    display_name: "ミルク",
+    makes_cup: true,
+    needs_brew: false,
+    senior_only: false,
+  },
   assignee: null,
 });
 
@@ -35,7 +49,14 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 100,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: {
+          id: "1",
+          name: "hot",
+          display_name: "ホット",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
         assignee: null,
       }),
       MenuEntity.fromMenu({
@@ -44,7 +65,14 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 341,
         key: "2",
-        item_type: { id: "3", name: "milk", display_name: "ミルク" },
+        item_type: {
+          id: "3",
+          name: "milk",
+          display_name: "ミルク",
+          makes_cup: true,
+          needs_brew: false,
+          senior_only: false,
+        },
         assignee: null,
       }),
     ];
@@ -59,7 +87,14 @@ describe("[unit] order entity", () => {
         abbr: "3",
         price: 100,
         key: "3",
-        item_type: { id: "2", name: "ice", display_name: "アイス" },
+        item_type: {
+          id: "2",
+          name: "ice",
+          display_name: "アイス",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
         assignee: null,
       }),
     );
@@ -120,7 +155,14 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 400,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: {
+          id: "1",
+          name: "hot",
+          display_name: "ホット",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
         assignee: null,
       },
       {
@@ -129,7 +171,14 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 500,
         key: "2",
-        item_type: { id: "3", name: "milk", display_name: "ミルク" },
+        item_type: {
+          id: "3",
+          name: "milk",
+          display_name: "ミルク",
+          makes_cup: true,
+          needs_brew: false,
+          senior_only: false,
+        },
         assignee: null,
       },
     ];
@@ -192,6 +241,9 @@ describe("[unit] order entity", () => {
                 id: "00000000-0000-4000-8000-000000000003",
                 name: "hot",
                 display_name: "ホット",
+                makes_cup: true,
+                needs_brew: true,
+                senior_only: false,
               },
             },
             quantity: 2,
@@ -225,6 +277,41 @@ describe("[unit] order entity", () => {
     ]);
   });
 
+  test("カップ・割引の杯数は種類の名前ではなく項目で決まる", () => {
+    const itemOf = (
+      id: string,
+      name: string,
+      flags: { makes_cup: boolean; needs_brew: boolean },
+    ) =>
+      MenuEntity.fromMenu({
+        id,
+        name,
+        abbr: name,
+        price: 100,
+        key: id,
+        item_type: {
+          id,
+          name,
+          display_name: name,
+          senior_only: false,
+          ...flags,
+        },
+        assignee: null,
+      });
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    order.menus = [
+      // 名前が others でも、カップを作る・抽出する種類として設定されていれば数える
+      itemOf("1", "others", { makes_cup: true, needs_brew: true }),
+      itemOf("2", "goods", { makes_cup: false, needs_brew: false }),
+      itemOf("3", "soda", { makes_cup: true, needs_brew: false }),
+    ];
+    expect(order.getDrinkCups().map((item) => item.abbr)).toEqual([
+      "others",
+      "soda",
+    ]);
+    expect(order.getCoffeeCups().map((item) => item.abbr)).toEqual(["others"]);
+  });
+
   test("applyDiscount", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     expect(order.billingAmount).toBe(0);
@@ -236,7 +323,14 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 400,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: {
+          id: "1",
+          name: "hot",
+          display_name: "ホット",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
         assignee: null,
       },
       {
@@ -245,7 +339,14 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 500,
         key: "2",
-        item_type: { id: "2", name: "ice", display_name: "アイス" },
+        item_type: {
+          id: "2",
+          name: "ice",
+          display_name: "アイス",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
         assignee: null,
       },
     ];

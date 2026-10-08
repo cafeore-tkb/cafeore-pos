@@ -24,7 +24,7 @@ func newTestWSServer(t *testing.T) (*Hub, string) {
 	go hub.Run()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.GET("/ws", NewOrderHandler(db, hub, nil, nil).WSHandler)
+	r.GET("/ws", NewOrderHandler(db, hub, nil).WSHandler)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return hub, "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
@@ -52,11 +52,11 @@ func readWS(t *testing.T, conn *websocket.Conn) WSMessage {
 	return msg
 }
 
-// 接続直後の初期データ（orders, master_state, print_jobs の順）を読み切る。
-// DryRun の DB は空の結果を返すので、どれも中身は空で届く
+// 接続直後の初期データ（orders, master_state の順）を読み切る。
+// DryRun の DB は空の結果を返すので、どちらも中身は空で届く
 func readInitialWS(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
-	for _, want := range []WSMessageType{WSMessageTypeOrders, WSMessageTypeMasterState, WSMessageTypePrintJobs} {
+	for _, want := range []WSMessageType{WSMessageTypeOrders, WSMessageTypeMasterState} {
 		if msg := readWS(t, conn); msg.Type != want {
 			t.Fatalf("initial message must be %s: %+v", want, msg)
 		}

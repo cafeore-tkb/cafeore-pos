@@ -34,12 +34,9 @@ export const orderRepoFactory = (): OrderRepository => {
     return responseToOrderEntity(data);
   };
 
-  const create = async (
-    order: OrderEntity,
-    printLabels = false,
-  ): Promise<WithId<OrderEntity>> => {
+  const create = async (order: OrderEntity): Promise<WithId<OrderEntity>> => {
     const { data, error, response } = await client.POST("/api/orders", {
-      body: orderEntityToCreateRequest(order, { printLabels }),
+      body: orderEntityToCreateRequest(order),
     });
 
     if (error || !response.ok) {
@@ -60,8 +57,6 @@ export const orderRepoFactory = (): OrderRepository => {
       }
       return await create(order);
     },
-
-    createWithLabels: async (order) => await create(order, true),
 
     ready: async (id: string): Promise<void> => {
       const { data, error, response } = await client.PATCH(

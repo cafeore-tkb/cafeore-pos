@@ -9,18 +9,18 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLimitedLabel } from "../limitedLabel";
-import type { Barista, BeanCode, OrderTicket, UnassignedOrder } from "../types";
-import { canPlaceOn, laneOrdinal } from "../utils/lanes";
+import { LaneChangeButton, LaneName } from "../lanes/LaneName";
+import type { Barista, OrderTicket, UnassignedOrder } from "../types";
+import { laneOrdinal } from "../utils/lanes";
+import { nominationText } from "../utils/nomination";
 import {
   activeRemainingSec,
   canMergeDripUnits,
   orderNumber,
   ticketKey,
 } from "../utils/orderQueue";
-import { nominationText } from "../utils/posOrders";
 import type { ControlViewBProps } from "./ControlViewB";
-import { SeniorMark } from "./LaneName";
+import { useRebrew } from "./RebrewPanel";
 
 export interface ControlViewDProps extends ControlViewBProps {
   onMoveTicket: (ticket: OrderTicket, targetBayId: number) => void;
@@ -39,17 +39,14 @@ const DRAG_THRESHOLD_PX = 12;
 interface SheetCup {
   key: string;
   id: string;
-  beanCode: BeanCode;
+  /** カードの名前（盤面のカードは商品の略称をそのまま） */
   beanName: string;
   cupCount: number;
   preferredBaristaId?: number;
-  /** 指名の表示（盤面のカードだけ。nominationText を参照） */
+  /** 指名の表示（盤面のカードだけ。utils/nomination.ts の nominationText を参照） */
   nominee?: string;
-  isRebrew?: boolean;
-  /** マスターの画面と同じ背景色（盤面のカードだけ） */
+  /** マスターの画面の色の設定の背景色。無ければ白 */
   color?: string;
-  /** 商品の ID（盤面のカードだけ）。あれば API の商品の略称（beanName）をそのまま出す */
-  itemKey?: string;
 }
 
 // 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
@@ -99,42 +96,14 @@ interface OrderGroup {
   assigned: Array<{ ticket: OrderTicket; bayNumber: number }>;
 }
 
-// 実データテストのカード（商品の情報が無い）の呼び方。盤面のカードは API の商品の略称を出す
-const sheetLabel: Partial<Record<BeanCode, string>> = {
-  CHAMP: "チャンプ",
-  ORE: "俺ブレ",
-  TNZ: "タンザ",
-  KEN: "ケニア",
-  BRA: "ブラジル",
-  ICE: "氷",
-  MILK: "牛",
-};
-
-// カップの名前。盤面のカードは商品の略称、実データテストの限定は商品の種類 limited の表示名（無ければ商品名）
-const cupLabel = (cup: SheetCup, limitedLabel: string) => {
-  if (cup.itemKey) return cup.beanName;
-  if (cup.beanCode === "SP") return limitedLabel || cup.beanName;
-  return sheetLabel[cup.beanCode] ?? cup.beanName;
-};
-
-const cupColor = (cup: SheetCup) => {
-  if (cup.beanCode === "SP") return "bg-red-200";
-  if (cup.beanCode === "ICE") return "bg-sky-200";
-  if (cup.beanCode === "MILK") return "bg-gray-200";
-  return "bg-white";
-};
-
 const ticketCup = (ticket: OrderTicket): SheetCup => ({
   key: ticketKey(ticket),
   id: ticket.id,
-  beanCode: ticket.beanCode,
   beanName: ticket.beanName,
   cupCount: ticket.cupCount,
   preferredBaristaId: ticket.preferredBaristaId,
   nominee: ticket.nominee,
-  isRebrew: ticket.isRebrew,
   color: ticket.color,
-  itemKey: ticket.itemKey,
 });
 
 const rowIdsOf = (item: { id: string; sourceOrderIds?: string[] }) =>
@@ -155,14 +124,11 @@ const sourceCup = (source: DragSource) =>
 const unassignedCup = (order: UnassignedOrder): SheetCup => ({
   key: order.ticketUid || order.id,
   id: order.id,
-  beanCode: order.beanCode,
   beanName: order.beanName,
   cupCount: order.cupCount,
   preferredBaristaId: order.preferredBaristaId,
   nominee: order.nominee,
-  isRebrew: order.isRebrew,
   color: order.color,
-  itemKey: order.itemKey,
 });
 
 const CupChip: React.FC<{
@@ -182,9 +148,8 @@ const CupChip: React.FC<{
   lifted = false,
   onClick,
 }) => {
-  const limitedLabel = useLimitedLabel();
   const stacked = cup.cupCount >= 2;
-  // 盤面のカードはマスターの画面と同じ背景色。文字色は背景色から決める（POS と共通の readableTextColor）
+  // マスターの画面の色の設定があればその背景色、無ければ白。文字色は背景色から決める（POS と共通の readableTextColor）
   const colorStyle = cup.color
     ? { backgroundColor: cup.color, color: readableTextColor(cup.color) }
     : undefined;
@@ -196,7 +161,7 @@ const CupChip: React.FC<{
       {stacked && (
         <div
           aria-hidden
-          className={`absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 shadow-xs ${cupColor(cup)}`}
+          className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-lg border border-slate-500 bg-white shadow-xs"
           style={colorStyle}
         />
       )}
@@ -205,9 +170,7 @@ const CupChip: React.FC<{
         disabled={!onClick}
         onClick={onClick}
         style={colorStyle}
-        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border px-1.5 py-1 text-left shadow-xs ${cupColor(cup)} ${
-          cup.isRebrew ? "border-2 border-red-600" : "border-slate-500"
-        } ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
+        className={`relative z-[1] flex h-full w-full min-w-0 touch-manipulation flex-col justify-center rounded-lg border border-slate-500 bg-white px-1.5 py-1 text-left shadow-xs ${selected || lifted ? "ring-4 ring-blue-600" : onClick ? "hover:ring-2 hover:ring-slate-400" : ""} ${
           lifted ? "shadow-2xl" : ""
         }`}
       >
@@ -215,7 +178,7 @@ const CupChip: React.FC<{
           <span
             className={`truncate font-black text-[14px] leading-tight ${cup.color ? "" : "text-slate-950"}`}
           >
-            {cupLabel(cup, limitedLabel)}
+            {cup.beanName}
           </span>
           <span
             className={`shrink-0 font-black font-mono text-[11px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
@@ -228,11 +191,10 @@ const CupChip: React.FC<{
         >
           No. {cup.id.replaceAll("#", "")}
         </span>
-        {(nominee || note || cup.isRebrew) && (
+        {(nominee || note) && (
           <span
             className={`truncate font-bold text-[10px] ${cup.color ? "opacity-80" : "text-slate-700"}`}
           >
-            {cup.isRebrew ? "入れ直し " : ""}
             {nominee ? `指名:${nominee}` : ""}
             {note ? ` ${note}` : ""}
           </span>
@@ -252,7 +214,6 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
-  onRequestRebrew,
   onMoveTicket,
   onReturnToUnassigned,
   onMergeOrders,
@@ -270,6 +231,8 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     () => [...baristas].sort((left, right) => left.bayNumber - right.bayNumber),
     [baristas],
   );
+  // 抽出中・終わったカードを押すと入れ直しのパネルを開く
+  const rebrew = useRebrew();
   const selectedOrder = useMemo(
     () =>
       unassignedOrders.find(
@@ -485,7 +448,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       });
     });
     return Array.from(groups.values()).sort(
-      (left, right) => orderNumber(left.id) - orderNumber(right.id),
+      (left, right) =>
+        // 緊急（入れ直し）のある注文がいちばん上
+        Number(right.items.some((item) => item.isRebrew)) -
+          Number(left.items.some((item) => item.isRebrew)) ||
+        orderNumber(left.id) - orderNumber(right.id),
     );
   }, [sortedBaristas, unassignedOrders]);
 
@@ -494,9 +461,12 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
     0,
   );
 
-  // 指名の列だけ、限定のカードは上級生の列だけ
   const canAssignTo = (barista: Barista) =>
-    Boolean(selectedOrder && canPlaceOn(selectedOrder, barista.id));
+    Boolean(
+      selectedOrder &&
+        (!selectedOrder.preferredBaristaId ||
+          selectedOrder.preferredBaristaId === barista.id),
+    );
 
   const clearSelection = () => {
     setSelectedUid(null);
@@ -567,8 +537,11 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
       .find(Boolean);
     const bayId = Number(target?.dataset.bayTarget);
     if (!bayId) return null;
-    const card = source.kind === "unassigned" ? source.order : source.ticket;
-    if (!canPlaceOn(card, bayId)) return null;
+    const preferredBaristaId =
+      source.kind === "unassigned"
+        ? source.order.preferredBaristaId
+        : source.ticket.preferredBaristaId;
+    if (preferredBaristaId && preferredBaristaId !== bayId) return null;
     if (source.kind === "ticket" && source.fromBayId === bayId) return null;
     return bayId;
   };
@@ -761,13 +734,16 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-center gap-1">
-                        <span className="font-black font-mono text-[14px] leading-none">
+                        <span className="font-black font-mono text-[18px] leading-none">
                           {laneOrdinal(barista.bayNumber)}
                         </span>
-                        <span className="truncate font-black text-[12px]">
-                          {barista.name}
-                        </span>
-                        {barista.senior && <SeniorMark />}
+                        <LaneName
+                          dripper={barista.bayNumber}
+                          className="font-black text-[13px]"
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-center">
+                        <LaneChangeButton dripper={barista.bayNumber} />
                       </div>
                       <button
                         type="button"
@@ -876,28 +852,26 @@ export const ControlViewD: React.FC<ControlViewDProps> = ({
                             cup={ticketCup(ticket)}
                             nominee={nominationText(ticket)}
                             note={[
+                              ticket.isRebrew ? "入れ直し" : "",
                               rowIds.length > 1 ? "統合" : "",
                               state === "current"
                                 ? seconds > 0
                                   ? `抽出中 残${formatMinSec(seconds)}`
                                   : "抽出中"
-                                : ticket.isInterrupted
-                                  ? "中断"
-                                  : "",
+                                : "",
                             ]
                               .filter(Boolean)
                               .join(" ")}
                             faded={state === "past"}
                             onClick={
-                              state === "past"
-                                ? undefined
-                                : state === "current"
-                                  ? () => onRequestRebrew(ticket, barista.id)
-                                  : () => {
-                                      if (selectedOrderId !== ticket.id)
-                                        onSelectOrder(ticket.id);
-                                      onOpenTicketDetail(ticket);
-                                    }
+                              state === "waiting"
+                                ? () => {
+                                    if (selectedOrderId !== ticket.id)
+                                      onSelectOrder(ticket.id);
+                                    onOpenTicketDetail(ticket);
+                                  }
+                                : // 抽出中・終わったカードは入れ直しのパネルを開く
+                                  rebrew(ticket)
                             }
                           />
                         </div>

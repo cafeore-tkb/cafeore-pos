@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-// 送ってからこの時間たっても印刷の結果が返らなければ、失敗とみなす
-const PRINT_TIMEOUT_MS = 30_000;
+// プリンターの返事を待つ長さ。これを過ぎたら印刷できなかったとみなす
+const PRINT_TIMEOUT_MS = 60_000;
 
 /**
  * jsでしか書けない部分を書くフック
@@ -31,11 +31,6 @@ export const useRawPrinter = () => {
     }
     const ePosDev = new window.epson.ePOSDevice();
     ePosDeviceRef.current = ePosDev;
-    // 途中で切れたら未接続にする（印刷キューは、つながるまで仕事を取らない）
-    ePosDev.ondisconnect = () => {
-      printerRef.current = undefined;
-      setStatus("disconnected");
-    };
 
     ePosDev.connect("192.168.77.2", 8008, (data) => {
       if (data === "OK" || data === "SSL_CONNECT_OK") {
@@ -267,39 +262,40 @@ export const useRawPrinter = () => {
   };
 
   /**
-   * ためた命令をプリンターへ送る。プリンターが印刷し終えたら解決し、印刷できなかったら理由を付けて失敗する
-   * （印刷キューの済み・失敗に使う）。
-   * @returns {Promise<void>}
+   * ためた命令をプリンターに送る。プリンターの返事（onreceive）で、印刷できたかを返す。
+   * 返事が来ない・エラー（onerror）なら false（PRINT_TIMEOUT_MS で諦める）。
+   * 送るのは 1 件ずつ（print-util.ts の待ち行列が、前の返事を待ってから次を送る）
+   * @returns {Promise<boolean>}
    */
-  const print = () =>
-    new Promise((resolve, reject) => {
-      const prn = printerRef.current;
-      if (!prn) {
-        setStatus("disconnected");
-        reject(new Error("プリンターにつながっていません"));
-        return;
-      }
-      const timer = setTimeout(() => {
-        prn.onreceive = null;
-        reject(new Error("プリンターから応答がありません"));
-      }, PRINT_TIMEOUT_MS);
-      prn.onreceive = (res) => {
+  const print = () => {
+    const prn = printerRef.current;
+    if (!prn) {
+      setStatus("disconnected");
+      console.error("Printer not connected");
+      return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         prn.onreceive = null;
-        if (res?.success) {
-          resolve();
-        } else {
-          reject(new Error(`印刷できませんでした（${res?.code ?? "不明"}）`));
-        }
+        prn.onerror = null;
+        resolve(ok);
       };
+      const timer = setTimeout(() => done(false), PRINT_TIMEOUT_MS);
+      prn.onreceive = (res) => done(Boolean(res?.success));
+      prn.onerror = () => done(false);
       try {
         prn.send();
       } catch (e) {
-        clearTimeout(timer);
-        prn.onreceive = null;
-        reject(e instanceof Error ? e : new Error(String(e)));
+        console.error(e);
+        done(false);
       }
     });
+  };
 
   const printer = {
     connect,

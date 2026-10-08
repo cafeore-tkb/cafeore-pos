@@ -7,25 +7,25 @@ import {
 
 // 作りものの注文（本物のデータは入れない）
 const firestoreOrder = {
-  id: "08KglT5FsR3mVzq20x3r",
+  id: "firestore-doc-a",
   orderId: 775,
   createdAt: "2025-11-03T05:16:14.100Z",
-  readyAt: "2025-11-03T05:23:28.040Z",
+  readyAt: "2025-11-03T05:23:28.000Z",
   servedAt: null,
   items: [
     {
-      id: "08_special_mocha_blend",
-      name: "も花も香ブレンド",
+      id: "special_blend",
+      name: "テストブレンド",
       price: 500,
       type: "hot",
-      assignee: "1st:りょん",
+      assignee: "1st:テスト担当",
     },
   ],
   total: 500,
   comments: [
     {
       author: "serve",
-      text: "ゆかりきてないです",
+      text: "テストのコメントです",
       createdAt: "2025-11-03T05:17:00.000Z",
     },
   ],
@@ -38,30 +38,37 @@ test("unit: Firestore 版の注文から、許可した項目だけを写す（�
   expect(toPracticeOrder(firestoreOrder)).toStrictEqual({
     orderId: 775,
     createdAt: "2025-11-03T05:16:14.100Z",
-    readyAt: "2025-11-03T05:23:28.040Z",
+    readyAt: "2025-11-03T05:23:28.000Z",
     servedAt: null,
     total: 500,
     billingAmount: 500,
     items: [
       {
-        id: "08_special_mocha_blend",
-        name: "も花も香ブレンド",
+        id: "special_blend",
+        name: "テストブレンド",
         price: 500,
         type: "hot",
       },
     ],
   });
   const json = JSON.stringify(toPracticeOrder(firestoreOrder));
-  expect(json).not.toContain("りょん");
-  expect(json).not.toContain("ゆかりきてない");
+  expect(json).not.toContain("テスト担当");
+  expect(json).not.toContain("テストのコメント");
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
   const item = (id: string, name: string, type: string) => ({
     id,
     name,
-    abbr: name,
-    item_type: { id: `t-${type}`, name: type },
+    abbr: `${name.slice(0, 2)}`,
+    item_type: {
+      id: `t-${type}`,
+      name: type,
+      display_name: `表示-${type}`,
+      makes_cup: type !== "others",
+      needs_brew: type !== "others",
+      senior_only: false,
+    },
   });
   const order = {
     id: "0b6c...",
@@ -106,8 +113,32 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
     total: 900,
     billingAmount: 900,
     items: [
-      { id: "champ", name: "優勝ブレンド", price: 500, type: "hot" },
-      { id: "tote", name: "トート", price: 400, type: "others" },
+      {
+        id: "champ",
+        name: "優勝ブレンド",
+        abbr: "優勝",
+        price: 500,
+        type: "hot",
+        itemType: {
+          display_name: "表示-hot",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+        },
+      },
+      {
+        id: "tote",
+        name: "トート",
+        abbr: "トー",
+        price: 400,
+        type: "others",
+        itemType: {
+          display_name: "表示-others",
+          makes_cup: false,
+          needs_brew: false,
+          senior_only: false,
+        },
+      },
     ],
   });
   // 応答の配列をそのまま保存したファイルも読める
@@ -132,6 +163,11 @@ test("unit: 同じ注文が別のファイルにあっても 1 件にし、作�
   assertNoPersonalFields(orders);
   expect(() =>
     assertNoPersonalFields([{ ...orders[0], comments: [] }]),
+  ).toThrow();
+  expect(() =>
+    assertNoPersonalFields([
+      { ...orders[0], items: [{ ...orders[0].items[0], assignee: "x" }] },
+    ]),
   ).toThrow();
 });
 

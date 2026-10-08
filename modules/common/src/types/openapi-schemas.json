@@ -176,7 +176,14 @@
   },
   "ItemTypeResponse": {
     "type": "object",
-    "required": ["id", "name", "display_name"],
+    "required": [
+      "id",
+      "name",
+      "display_name",
+      "makes_cup",
+      "needs_brew",
+      "senior_only"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -187,6 +194,18 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "この種類のアイテムは上級生だけが淹れる（限定）。needs_brew が false なら必ず false"
       }
     }
   },
@@ -199,6 +218,20 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "default": true,
+        "description": "省略したら true"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら makes_cup と同じ。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
       }
     }
   },
@@ -215,6 +248,18 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       }
     }
   },
@@ -261,7 +306,21 @@
   },
   "OrderCupResponse": {
     "type": "object",
-    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "required": [
+      "id",
+      "order_menu_id",
+      "item",
+      "ready_at",
+      "served_at",
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at",
+      "emergency_at",
+      "emergency_drip_id",
+      "emergency_printed_at"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -286,6 +345,55 @@
         "format": "date-time",
         "nullable": true,
         "description": "このカップを提供した時刻。未提供なら null"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6,
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない"
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true,
+        "description": "CaOS のドリッパーの中の順番（小さいほど先）"
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる"
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を始めた時刻"
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を終えた時刻"
+      },
+      "emergency_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "緊急（入れ直し）にした時刻。緊急でなければ null（POST /api/caos/emergency で付ける。2 回は付けない）。\n緊急にしたとき、dripper・dripper_position・brew_started_at・brew_finished_at は空に戻り、入れ直しのカードの値になる（drip_id は最初に淹れたカードのまま）\n"
+      },
+      "emergency_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "入れ直しで淹れるカードの印。緊急のカップでは CaOS のカードはこちらで決まる。null なら未割当の緊急のカード"
+      },
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "緊急のシールを印刷した時刻。emergency_at があってこれが null のカップは、プリンターにつないだレジが印刷する\n（POST .../emergency-label/claim で付けられたときだけ印刷する。失敗したら .../release で null に戻す）\n"
       }
     }
   },
@@ -419,11 +527,6 @@
         "items": {
           "$ref": "#/components/schemas/CommentCreateRequest"
         }
-      },
-      "print_labels": {
-        "type": "boolean",
-        "default": false,
-        "description": "true なら、注文と同じトランザクションで、この注文のラベル（カップごとのシールと引換券に貼るシール）の印刷を印刷キューに積む（レジの会計）。\n印刷するのは「この端末で印刷する」にした端末（POST /api/print-jobs/claim）\n"
       }
     }
   },
@@ -567,10 +670,11 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面",
-    "enum": ["cashier", "master", "serve"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ\n",
+    "enum": ["cashier", "cashier_order", "master", "serve"],
     "x-enum-varnames": [
       "ColorScreenCashier",
+      "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe"
     ]
@@ -623,818 +727,6 @@
       }
     }
   },
-  "CaosDripLine": {
-    "type": "object",
-    "description": "抽出カードの中身の 1 行。注文番号や商品名は持たない（/api/ws/orders の注文から引く）",
-    "required": ["order_id", "item_id", "dripper", "cups"],
-    "properties": {
-      "order_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "item_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "dripper": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6,
-        "nullable": true,
-        "description": "指名したドリッパーの番号（POS の明細の dripper。1st〜6th は 1〜6）。指名なしは null。同じ商品でも指名ごとにカードを分ける。番号の無い自由記述だけの古い明細は指名なし。カードの担当（CaosDrip.dripper）とは別"
-      },
-      "cups": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 2
-      }
-    }
-  },
-  "CaosDripStatus": {
-    "type": "string",
-    "enum": ["unassigned", "queued", "brewing", "done"],
-    "x-enum-varnames": [
-      "CaosDripStatusUnassigned",
-      "CaosDripStatusQueued",
-      "CaosDripStatusBrewing",
-      "CaosDripStatusDone"
-    ],
-    "description": "unassigned＝未割当 / queued＝担当の待機列 / brewing＝抽出中（1 人 1 枚） / done＝抽出終了"
-  },
-  "CaosDrip": {
-    "type": "object",
-    "description": "抽出カード。1 回のドリップ（最大 2 杯）が 1 枚。order_ids と cups は lines から求めたもの",
-    "required": [
-      "id",
-      "status",
-      "dripper",
-      "queue_pos",
-      "order_ids",
-      "lines",
-      "cups",
-      "rebrew_of",
-      "interrupted",
-      "started_at",
-      "finished_at",
-      "created_at",
-      "updated_at"
-    ],
-    "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "status": {
-        "$ref": "#/components/schemas/CaosDripStatus"
-      },
-      "dripper": {
-        "type": "integer",
-        "nullable": true,
-        "minimum": 1,
-        "maximum": 6
-      },
-      "queue_pos": {
-        "type": "number",
-        "format": "double",
-        "description": "待機列の並び順（ふだんは注文番号）"
-      },
-      "order_ids": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "format": "uuid"
-        }
-      },
-      "lines": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDripLine"
-        }
-      },
-      "cups": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 2
-      },
-      "rebrew_of": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "入れ直しのカードなら、元のカード"
-      },
-      "interrupted": {
-        "type": "boolean",
-        "description": "入れ直しのために途中でやめた抽出"
-      },
-      "started_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true
-      },
-      "finished_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true
-      },
-      "created_at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "updated_at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "「1つ戻す」は、この値が操作の記録と同じとき（ほかの端末が触っていないとき）だけ戻す"
-      }
-    }
-  },
-  "CaosLane": {
-    "type": "object",
-    "description": "列（ドリッパー 1〜6）の担当者。営業日ごとに持ち、配信では 1〜6 の 6 列が必ずそろう。担当者がいない列は name が空。\nsenior は交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの（名簿を読めない端末でも同じ表示になるように持つ）。\n",
-    "required": ["dripper", "name", "senior", "updated_at"],
-    "properties": {
-      "dripper": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6
-      },
-      "name": {
-        "type": "string",
-        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
-      },
-      "senior": {
-        "type": "boolean",
-        "description": "上級生（限定を淹れられる）か。担当者がいない列は false"
-      },
-      "updated_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true,
-        "description": "最後に替えた時刻。一度も替えていない列は null（「1つ戻す」は、この値が操作の記録と同じときだけ戻す）"
-      }
-    }
-  },
-  "CaosOp": {
-    "type": "object",
-    "description": "name ごとに使うフィールド：\nassign（drip_id・dripper）/ unassign（drip_id）/ next（dripper。drip_id は任意で、終わらせるカード。今抽出中のカードと違えば 422）/ merge（first_id・second_id）/\nrebrew（source_id・cups・interrupt・dripper（null なら未割当）・queue_pos（null なら元の位置））/\nset_lane（dripper・person（空なら担当者なし）・senior）/ swap_lanes（dripper・other_dripper）/\nundo（op_id）\n",
-    "required": ["name"],
-    "properties": {
-      "name": {
-        "type": "string",
-        "enum": [
-          "assign",
-          "unassign",
-          "next",
-          "merge",
-          "rebrew",
-          "set_lane",
-          "swap_lanes",
-          "undo"
-        ],
-        "x-enum-varnames": [
-          "CaosOpAssign",
-          "CaosOpUnassign",
-          "CaosOpNext",
-          "CaosOpMerge",
-          "CaosOpRebrew",
-          "CaosOpSetLane",
-          "CaosOpSwapLanes",
-          "CaosOpUndo"
-        ]
-      },
-      "drip_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "dripper": {
-        "type": "integer",
-        "nullable": true,
-        "minimum": 1,
-        "maximum": 6
-      },
-      "first_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "second_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "source_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "cups": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 2,
-        "description": "入れ直す杯数（元のカードの杯数まで）"
-      },
-      "interrupt": {
-        "type": "boolean",
-        "description": "抽出中の元のカードを途中でやめる"
-      },
-      "queue_pos": {
-        "type": "number",
-        "format": "double",
-        "nullable": true
-      },
-      "op_id": {
-        "type": "string",
-        "format": "uuid",
-        "description": "undo で戻す操作（操作の結果の op_id）"
-      },
-      "person": {
-        "type": "string",
-        "maxLength": 40,
-        "description": "set_lane の担当者の名前（前後の空白は落とす）。空なら担当者なし"
-      },
-      "senior": {
-        "type": "boolean",
-        "description": "set_lane の担当者が上級生（限定を淹れられる）か。画面が sohosai-shift の名簿で判定して送る"
-      },
-      "other_dripper": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6,
-        "description": "swap_lanes で dripper の列と担当者を入れ替える列"
-      }
-    }
-  },
-  "CaosOpResult": {
-    "type": "object",
-    "required": ["op_id", "changed", "deleted", "readied", "lanes"],
-    "properties": {
-      "op_id": {
-        "type": "string",
-        "description": "この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空"
-      },
-      "changed": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDrip"
-        }
-      },
-      "deleted": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "format": "uuid"
-        }
-      },
-      "readied": {
-        "type": "array",
-        "description": "この操作で準備完了にした注文（undo では、準備完了を外した注文）",
-        "items": {
-          "type": "string",
-          "format": "uuid"
-        }
-      },
-      "lanes": {
-        "type": "array",
-        "description": "この操作で担当者が変わった列（undo では、戻した列）",
-        "items": {
-          "$ref": "#/components/schemas/CaosLane"
-        }
-      }
-    }
-  },
-  "CaosErrorResponse": {
-    "type": "object",
-    "required": ["error"],
-    "properties": {
-      "error": {
-        "type": "string",
-        "example": "ドリッパー 3 は抽出中ではありません"
-      },
-      "code": {
-        "type": "string",
-        "enum": ["invalid"],
-        "x-enum-varnames": ["CaosErrorCodeInvalid"]
-      }
-    }
-  },
-  "CaosBrewSummary": {
-    "type": "object",
-    "description": "抽出時間のまとめ。秒は小数 1 桁、係数は小数 2 桁に丸める",
-    "required": ["brews", "avg_sec", "median_sec", "stddev_sec", "coefficient"],
-    "properties": {
-      "brews": {
-        "type": "integer",
-        "description": "件数"
-      },
-      "avg_sec": {
-        "type": "number",
-        "description": "抽出時間の平均（秒）"
-      },
-      "median_sec": {
-        "type": "number",
-        "description": "抽出時間の中央値（秒）"
-      },
-      "stddev_sec": {
-        "type": "number",
-        "description": "抽出時間の標準偏差（秒。標本。1 件なら 0）"
-      },
-      "coefficient": {
-        "type": "number",
-        "description": "係数。1 件ごとの「実際 ÷ 標準」の平均（杯数をそろえた集まりなら「平均 ÷ 標準」と同じ）。1 より大きいほど遅い"
-      }
-    }
-  },
-  "CaosDripperBrewStat": {
-    "description": "日・ドリッパー（列の番号）・杯数ごとのまとめ",
-    "allOf": [
-      {
-        "type": "object",
-        "required": ["day", "dripper", "cups"],
-        "properties": {
-          "day": {
-            "type": "string",
-            "format": "date"
-          },
-          "dripper": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 6
-          },
-          "cups": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2
-          }
-        }
-      },
-      {
-        "$ref": "#/components/schemas/CaosBrewSummary"
-      }
-    ]
-  },
-  "CaosSlotBrewStat": {
-    "description": "日・時間帯（日本時間の 30 分ごと。抽出を始めた時刻で分ける）・杯数ごとのまとめ（全部のドリッパーを合わせる）",
-    "allOf": [
-      {
-        "type": "object",
-        "required": ["day", "slot", "cups"],
-        "properties": {
-          "day": {
-            "type": "string",
-            "format": "date"
-          },
-          "slot": {
-            "type": "string",
-            "description": "枠の始まり（日本時間の HH:MM）",
-            "example": "10:30"
-          },
-          "cups": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2
-          }
-        }
-      },
-      {
-        "$ref": "#/components/schemas/CaosBrewSummary"
-      }
-    ]
-  },
-  "CaosPersonBrewStat": {
-    "description": "担当者・杯数ごとのまとめ（集計した全部の日を合わせる）",
-    "allOf": [
-      {
-        "type": "object",
-        "required": ["name", "cups"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "抽出を始めたときに、その列にいた担当者の名前"
-          },
-          "cups": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2
-          }
-        }
-      },
-      {
-        "$ref": "#/components/schemas/CaosBrewSummary"
-      }
-    ]
-  },
-  "CaosRebrewStat": {
-    "type": "object",
-    "description": "日・ドリッパーごとの、入れ直しと中断の数",
-    "required": ["day", "dripper", "rebrews", "interrupted", "extra_cups"],
-    "properties": {
-      "day": {
-        "type": "string",
-        "format": "date"
-      },
-      "dripper": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6,
-        "nullable": true,
-        "description": "入れ直しは元のカードを淹れたドリッパー、中断はそのカードのドリッパー。元のカードが終わっていない・見つからないときは null"
-      },
-      "rebrews": {
-        "type": "integer",
-        "description": "抽出が終わった入れ直しのカードの数"
-      },
-      "interrupted": {
-        "type": "integer",
-        "description": "途中でやめた抽出の数"
-      },
-      "extra_cups": {
-        "type": "integer",
-        "description": "入れ直しで余分に使った杯数（抽出が終わった入れ直しのカードの杯数の合計）"
-      }
-    }
-  },
-  "CaosBrewStats": {
-    "type": "object",
-    "required": [
-      "standard",
-      "brews",
-      "by_dripper",
-      "by_slot",
-      "by_person",
-      "person_skipped",
-      "rebrews"
-    ],
-    "properties": {
-      "standard": {
-        "type": "object",
-        "description": "係数の分母にした標準の抽出時間（秒）",
-        "required": ["one_cup_sec", "two_cup_sec"],
-        "properties": {
-          "one_cup_sec": {
-            "type": "integer",
-            "example": 135
-          },
-          "two_cup_sec": {
-            "type": "integer",
-            "example": 195
-          }
-        }
-      },
-      "brews": {
-        "type": "integer",
-        "description": "抽出時間のまとめに入れたカードの数（抽出が終わったカードから、入れ直しと中断を除いたもの）"
-      },
-      "by_dripper": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDripperBrewStat"
-        }
-      },
-      "by_slot": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosSlotBrewStat"
-        }
-      },
-      "by_person": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosPersonBrewStat"
-        }
-      },
-      "person_skipped": {
-        "type": "object",
-        "description": "担当者ごとのまとめに入れなかったカードの数",
-        "required": ["no_person", "handover"],
-        "properties": {
-          "no_person": {
-            "type": "integer",
-            "description": "抽出を始めたとき、その列に担当者がいなかった"
-          },
-          "handover": {
-            "type": "integer",
-            "description": "抽出の途中で、その列の担当者が替わった"
-          }
-        }
-      },
-      "rebrews": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosRebrewStat"
-        }
-      }
-    }
-  },
-  "CaosPracticeLineInput": {
-    "type": "object",
-    "description": "練習に送る注文の明細の 1 行（同じ商品が何杯か）",
-    "required": ["name", "type", "price", "quantity"],
-    "properties": {
-      "item_key": {
-        "type": "string",
-        "maxLength": 100,
-        "description": "商品を見分けるキー（実績データの商品の ID。空なら名前）。同じキーは同じ商品（統合できるのは同じ商品どうし）"
-      },
-      "name": {
-        "type": "string",
-        "maxLength": 100
-      },
-      "type": {
-        "type": "string",
-        "maxLength": 100,
-        "description": "商品の種類（POS の item_type の name と同じ。hot・ice・iceOre・milk・others・limited など）。milk と others は抽出しない"
-      },
-      "price": {
-        "type": "integer"
-      },
-      "quantity": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 100
-      }
-    }
-  },
-  "CaosPracticeOrderInput": {
-    "type": "object",
-    "required": ["order_no", "created_at", "billing_amount", "lines"],
-    "properties": {
-      "order_no": {
-        "type": "integer",
-        "minimum": 0
-      },
-      "created_at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "注文の時刻（練習の時間帯の中）"
-      },
-      "billing_amount": {
-        "type": "integer"
-      },
-      "lines": {
-        "type": "array",
-        "maxItems": 100,
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeLineInput"
-        }
-      }
-    }
-  },
-  "CaosPracticeLaneInput": {
-    "type": "object",
-    "required": ["dripper", "name", "senior"],
-    "properties": {
-      "dripper": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 6
-      },
-      "name": {
-        "type": "string",
-        "maxLength": 40
-      },
-      "senior": {
-        "type": "boolean"
-      }
-    }
-  },
-  "CaosPracticeCreateRequest": {
-    "type": "object",
-    "required": ["starts_at", "ends_at", "orders"],
-    "properties": {
-      "starts_at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "練習の時間帯の始まり（過去の時刻）。練習の時計はここから始まる"
-      },
-      "ends_at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "練習の時間帯の終わり（始まりから 6 時間まで）。時計はこのあと 3 時間まで進められる（残ったカードを淹れ終えるため）"
-      },
-      "orders": {
-        "type": "array",
-        "maxItems": 3000,
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeOrderInput"
-        }
-      },
-      "lanes": {
-        "type": "array",
-        "description": "列の担当者の初めの状態（任意）。練習の中で交代しても本番の列には響かない",
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeLaneInput"
-        }
-      }
-    }
-  },
-  "CaosPracticeItem": {
-    "type": "object",
-    "description": "練習の盤面の商品。カードの明細の item_id はこの id",
-    "required": ["id", "key", "name", "type"],
-    "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "key": {
-        "type": "string"
-      },
-      "name": {
-        "type": "string"
-      },
-      "type": {
-        "type": "string"
-      }
-    }
-  },
-  "CaosPracticeOrderLine": {
-    "type": "object",
-    "required": ["item_id", "price", "quantity"],
-    "properties": {
-      "item_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "price": {
-        "type": "integer"
-      },
-      "quantity": {
-        "type": "integer"
-      }
-    }
-  },
-  "CaosPracticeOrder": {
-    "type": "object",
-    "required": [
-      "id",
-      "order_no",
-      "created_at",
-      "billing_amount",
-      "lines",
-      "ready_at"
-    ],
-    "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "order_no": {
-        "type": "integer"
-      },
-      "created_at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "billing_amount": {
-        "type": "integer"
-      },
-      "lines": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeOrderLine"
-        }
-      },
-      "ready_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true,
-        "description": "練習の中で準備完了になった時刻（練習の時計）。まだなら null"
-      }
-    }
-  },
-  "CaosPracticeState": {
-    "type": "object",
-    "description": "練習用の盤面。カードと列の担当者は本番と同じ形（CaosDrip・CaosLane）",
-    "required": [
-      "id",
-      "starts_at",
-      "ends_at",
-      "now",
-      "version",
-      "drips",
-      "lanes",
-      "items",
-      "orders",
-      "total_orders",
-      "next_arrival_at"
-    ],
-    "properties": {
-      "id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "starts_at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "ends_at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "now": {
-        "type": "string",
-        "format": "date-time",
-        "description": "練習の時計（最後に画面から受け取った時刻）"
-      },
-      "version": {
-        "type": "integer",
-        "description": "盤面が変わるたびに 1 つ増える（画面が古い応答で上書きしないため）"
-      },
-      "drips": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDrip"
-        }
-      },
-      "lanes": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosLane"
-        }
-      },
-      "items": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeItem"
-        }
-      },
-      "orders": {
-        "type": "array",
-        "description": "もう届いた注文（作った順）",
-        "items": {
-          "$ref": "#/components/schemas/CaosPracticeOrder"
-        }
-      },
-      "total_orders": {
-        "type": "integer",
-        "description": "練習の注文の全部の数"
-      },
-      "next_arrival_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true,
-        "description": "次に届く注文の時刻。もう無ければ null"
-      }
-    }
-  },
-  "CaosPracticeAdvanceRequest": {
-    "type": "object",
-    "required": ["at"],
-    "properties": {
-      "at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "練習の時刻"
-      }
-    }
-  },
-  "CaosPracticeOpRequest": {
-    "type": "object",
-    "required": ["at", "op"],
-    "properties": {
-      "at": {
-        "type": "string",
-        "format": "date-time",
-        "description": "練習の時刻（操作の前に、ここまで時計を進める）"
-      },
-      "op": {
-        "$ref": "#/components/schemas/CaosOp"
-      }
-    }
-  },
-  "CaosPracticeOpResult": {
-    "type": "object",
-    "required": ["op_id", "state"],
-    "properties": {
-      "op_id": {
-        "type": "string",
-        "description": "この操作の記録の ID。「1つ戻す」（undo）で指定する。undo の結果では空"
-      },
-      "state": {
-        "$ref": "#/components/schemas/CaosPracticeState"
-      }
-    }
-  },
-  "CaosWSMessage": {
-    "type": "object",
-    "description": "WebSocket（/api/ws/orders）で届く CaOS のメッセージ（POS の画面は知らない type を無視する）。\n今日のカードの全部と、列の担当者（1〜6 の全部）。カードか担当者が変わるたび（ほかのインスタンスでの変更は DB の caos_drips_changed 通知から）と、つないだときに届く。\nカードが 0 枚のときは drips が省かれる。lanes は 6 列が必ずそろう。\n",
-    "required": ["type"],
-    "properties": {
-      "type": {
-        "type": "string",
-        "enum": ["drips"],
-        "x-enum-varnames": ["CaosWSMessageDrips"]
-      },
-      "drips": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosDrip"
-        }
-      },
-      "lanes": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CaosLane"
-        }
-      }
-    }
-  },
   "CashierStateResponse": {
     "type": "object",
     "required": ["editting_order", "submitted_order_id", "updated_at"],
@@ -1471,6 +763,374 @@
       }
     }
   },
+  "CaosCupState": {
+    "type": "object",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま。緊急のカップの drip_id は emergency_drip_id）。全部 null なら未割当",
+    "required": [
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at"
+    ],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
+  "CaosCupAfter": {
+    "type": "object",
+    "description": "CaOS がカップに書く値。抽出の時刻は送らない（開始・終了の時刻はサーバーの今で付ける）。\nstart_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。\ndripper・dripper_position・drip_id が全部 null で start_brew が false なら未割当\n",
+    "required": ["dripper", "dripper_position", "drip_id", "start_brew"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "start_brew": {
+        "type": "boolean",
+        "description": "抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今"
+      }
+    }
+  },
+  "CaosCupsWrite": {
+    "type": "object",
+    "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）\n",
+    "required": ["cup_ids", "before", "after"],
+    "properties": {
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "before": {
+        "$ref": "#/components/schemas/CaosCupState"
+      },
+      "after": {
+        "$ref": "#/components/schemas/CaosCupAfter"
+      }
+    }
+  },
+  "CaosCupsWriteRequest": {
+    "type": "object",
+    "required": ["writes"],
+    "properties": {
+      "writes": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/CaosCupsWrite"
+        }
+      }
+    }
+  },
+  "CaosNextRequest": {
+    "type": "object",
+    "required": ["drip_id"],
+    "properties": {
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
+      }
+    }
+  },
+  "CaosNextResult": {
+    "type": "object",
+    "required": ["finished_drip_id", "started_drip_id"],
+    "properties": {
+      "finished_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "終えたカード。無ければ null"
+      },
+      "started_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "始めたカード。待機が無ければ null"
+      }
+    }
+  },
+  "CaosEmergencyRequest": {
+    "type": "object",
+    "required": ["cup_ids", "interrupt"],
+    "properties": {
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "description": "緊急にするカップ",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "interrupt": {
+        "type": "boolean",
+        "description": "カップの抽出中のカードを中断する（そのカードのカップを全部緊急にし、ドリッパーの待機の先頭を始める）"
+      }
+    }
+  },
+  "CaosEmergencyResult": {
+    "type": "object",
+    "required": ["marked_cup_ids", "interrupted_drip_ids", "started_drip_ids"],
+    "properties": {
+      "marked_cup_ids": {
+        "type": "array",
+        "description": "緊急にしたカップ（もう緊急だったカップは含まない）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "interrupted_drip_ids": {
+        "type": "array",
+        "description": "中断した抽出中のカード",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "started_drip_ids": {
+        "type": "array",
+        "description": "中断のあとに始めた待機の先頭のカード",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "EmergencyLabelClaim": {
+    "type": "object",
+    "required": ["claimed", "emergency_printed_at"],
+    "properties": {
+      "claimed": {
+        "type": "boolean",
+        "description": "true なら、このレジが緊急のシールを印刷する"
+      },
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "今の印刷した時刻（claimed が true なら付けた時刻。release に送る）"
+      }
+    }
+  },
+  "EmergencyLabelRelease": {
+    "type": "object",
+    "required": ["emergency_printed_at"],
+    "properties": {
+      "emergency_printed_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "claim で付けた時刻"
+      }
+    }
+  },
+  "CaosLane": {
+    "type": "object",
+    "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿で判定した値"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた時刻。今日まだ替えていなければ null"
+      }
+    }
+  },
+  "CaosLanes": {
+    "type": "object",
+    "description": "今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ",
+    "required": ["day", "lanes"],
+    "properties": {
+      "day": {
+        "type": "string",
+        "description": "日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う",
+        "example": "2026-11-03"
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
+      }
+    }
+  },
+  "CaosLaneUpdateRequest": {
+    "type": "object",
+    "required": ["name", "senior"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生（限定を淹れられる）か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false"
+      }
+    }
+  },
+  "CaosLaneSwapRequest": {
+    "type": "object",
+    "required": ["first", "second"],
+    "properties": {
+      "first": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "second": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      }
+    }
+  },
+  "CaosUndoCupState": {
+    "type": "object",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値。CaosCupState にカップの準備完了（ready_at）・提供済み（served_at）・緊急（emergency_at）の時刻を足したもの。\ndrip_id は CaosCupState と同じく、緊急のカップでは入れ直しのカード（emergency_drip_id）。\nserved_at・emergency_at は比べるだけで書かない（restore の served_at・emergency_at は current と同じにする。緊急を戻すのは今は無い）\n",
+    "required": [
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at",
+      "ready_at",
+      "served_at",
+      "emergency_at"
+    ],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "number",
+        "format": "double",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "ready_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "served_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "emergency_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
+  "CaosUndoCup": {
+    "type": "object",
+    "description": "1 杯の書き戻し。current はその操作で自分が書いた値（サーバーが付けた時刻も含む）、restore はその操作の前の値。今の値が current なら restore にする（時刻はミリ秒までで比べる）",
+    "required": ["cup_id", "current", "restore"],
+    "properties": {
+      "cup_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "current": {
+        "$ref": "#/components/schemas/CaosUndoCupState"
+      },
+      "restore": {
+        "$ref": "#/components/schemas/CaosUndoCupState"
+      }
+    }
+  },
+  "CaosUndoRequest": {
+    "type": "object",
+    "required": ["cups"],
+    "properties": {
+      "cups": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/CaosUndoCup"
+        }
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],
@@ -1478,184 +1138,6 @@
       "error": {
         "type": "string",
         "example": "Invalid order ID format"
-      }
-    }
-  },
-  "PrintJobKind": {
-    "type": "string",
-    "enum": ["order", "emergency"],
-    "x-enum-varnames": ["PrintJobKindOrder", "PrintJobKindEmergency"],
-    "description": "order＝注文のラベル（カップごとのシール＋引換券に貼るシール） / emergency＝「緊急」のシール＋そのカップの本物と同じシール"
-  },
-  "PrintJobSource": {
-    "type": "string",
-    "enum": ["cashier", "master", "caos"],
-    "x-enum-varnames": [
-      "PrintJobSourceCashier",
-      "PrintJobSourceMaster",
-      "PrintJobSourceCaos"
-    ],
-    "description": "積んだところ。cashier＝レジ / master＝マスターの緊急ボタン / caos＝CaOS の緊急の入れ直し"
-  },
-  "PrintJobStatus": {
-    "type": "string",
-    "enum": ["queued", "printing", "done", "failed", "canceled"],
-    "x-enum-varnames": [
-      "PrintJobStatusQueued",
-      "PrintJobStatusPrinting",
-      "PrintJobStatusDone",
-      "PrintJobStatusFailed",
-      "PrintJobStatusCanceled"
-    ],
-    "description": "queued＝待ち / printing＝印刷する端末が取った / done＝済み / failed＝失敗（画面に出す） / canceled＝取り消した"
-  },
-  "PrintJob": {
-    "type": "object",
-    "description": "印刷キューの仕事 1 件。中身（シールに何を書くか）は持たず、印刷する端末が印刷するときの注文から作る（レジと緊急で同じ作り方）",
-    "required": [
-      "id",
-      "kind",
-      "source",
-      "order_id",
-      "order_no",
-      "cup_id",
-      "status",
-      "printer_id",
-      "claimed_at",
-      "finished_at",
-      "error",
-      "attempts",
-      "created_at",
-      "updated_at"
-    ],
-    "properties": {
-      "id": {
-        "type": "integer",
-        "format": "int64",
-        "description": "積んだ順の番号。印刷はこの順"
-      },
-      "kind": {
-        "$ref": "#/components/schemas/PrintJobKind"
-      },
-      "source": {
-        "$ref": "#/components/schemas/PrintJobSource"
-      },
-      "order_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "order_no": {
-        "type": "integer",
-        "description": "積んだときの注文番号（画面に出す用）"
-      },
-      "cup_id": {
-        "type": "string",
-        "format": "uuid",
-        "nullable": true,
-        "description": "emergency の対象のカップ。order では null"
-      },
-      "status": {
-        "$ref": "#/components/schemas/PrintJobStatus"
-      },
-      "printer_id": {
-        "type": "string",
-        "nullable": true,
-        "description": "取った端末（印刷する端末の ID。端末の localStorage に持つ）"
-      },
-      "claimed_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true
-      },
-      "finished_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true,
-        "description": "済み・失敗・取り消しにした時刻"
-      },
-      "error": {
-        "type": "string",
-        "nullable": true,
-        "description": "失敗の理由（画面にそのまま出す）"
-      },
-      "attempts": {
-        "type": "integer",
-        "description": "取られた回数（もう一度印刷すると増える）"
-      },
-      "created_at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "updated_at": {
-        "type": "string",
-        "format": "date-time"
-      }
-    }
-  },
-  "PrintJobCreateRequest": {
-    "type": "object",
-    "required": ["kind", "source", "order_id"],
-    "properties": {
-      "kind": {
-        "$ref": "#/components/schemas/PrintJobKind"
-      },
-      "source": {
-        "type": "string",
-        "enum": ["cashier", "master"],
-        "x-enum-varnames": [
-          "PrintJobCreateSourceCashier",
-          "PrintJobCreateSourceMaster"
-        ],
-        "description": "積むところ（caos はサーバーが入れ直しのときに積む）"
-      },
-      "order_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "cup_id": {
-        "type": "string",
-        "format": "uuid",
-        "description": "emergency の対象のカップ（emergency では必須）"
-      }
-    }
-  },
-  "PrintJobClaimRequest": {
-    "type": "object",
-    "required": ["printer_id"],
-    "properties": {
-      "printer_id": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 100,
-        "description": "印刷する端末の ID"
-      }
-    }
-  },
-  "PrintJobFailRequest": {
-    "type": "object",
-    "required": ["printer_id", "error"],
-    "properties": {
-      "printer_id": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 100
-      },
-      "error": {
-        "type": "string",
-        "maxLength": 500,
-        "description": "失敗の理由（画面にそのまま出す）"
-      }
-    }
-  },
-  "PrintJobClaim": {
-    "type": "object",
-    "required": ["job", "order"],
-    "properties": {
-      "job": {
-        "$ref": "#/components/schemas/PrintJob"
-      },
-      "order": {
-        "$ref": "#/components/schemas/OrderResponse"
       }
     }
   },

@@ -2,20 +2,19 @@ package models
 
 import "time"
 
-// CaosLaneRow は CaOS の列（ドリッパー 1〜6）の担当者（caos_lanes）の行。営業日ごと。読み書きは handlers/caos_store.go。
-// 一度も替えていない列は行が無い（担当者なし）。画面や API に出す形は caos.Lane（配信では 6 列が必ずそろう）。
-// 替えるのは CaOS の画面からの操作（set_lane・swap_lanes）だけで、「1つ戻す」で一度も替えていない状態に戻すと行を消す。
+// CaosLaneRow は CaOS（ドリップ管制）のドリッパーの担当者（caos_lanes）。日本時間の日付ごとに、ドリッパー 1〜6 の 1 行ずつ。
+// 読み書きは handlers/caos_lanes.go だけ。替えるのは CaOS の画面の「交代」と「入れ替え」だけで、sohosai-shift の予定で自動では替えない。
+// その日にまだ替えていないドリッパーは行が無い（担当者なし）。担当者を空にしたときは行を残して name を空にする。
 type CaosLaneRow struct {
-	// 営業日（日本時間の日付）
+	// 日本時間の日付（YYYY-MM-DD）
 	Day     string `gorm:"type:date;primaryKey;autoIncrement:false"`
 	Dripper int    `gorm:"type:smallint;primaryKey;autoIncrement:false;check:caos_lanes_dripper_check,dripper BETWEEN 1 AND 6"`
 	// 担当者の名前。空なら担当者なし
 	Name string `gorm:"not null"`
-	// 上級生（限定を淹れられる）か。交代したときに画面が sohosai-shift の名簿（seniors）で判定したもの
-	Senior bool `gorm:"not null;default:false"`
-	// 盤面の時計の値をそのまま入れ、GORM には書き換えさせない
-	// （「1つ戻す」は、この値が操作の記録と同じかで、ほかの端末が替えていないかを見る）
-	UpdatedAt time.Time `gorm:"not null;autoUpdateTime:false"`
+	// 上級生（限定を淹れられる）か。交代した時点で画面が sohosai-shift の名簿（seniors）で判定した値。
+	// 名簿を読めない端末でも同じに出て、PUT /api/caos/cups でも確かめられるよう、サーバーに持つ
+	Senior    bool      `gorm:"not null;default:false"`
+	UpdatedAt time.Time `gorm:"not null"`
 }
 
 func (CaosLaneRow) TableName() string { return "caos_lanes" }

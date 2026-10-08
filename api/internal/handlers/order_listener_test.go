@@ -34,7 +34,7 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	}
 	for _, sql := range []string{
 		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`,
-		`DROP TABLE IF EXISTS order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, master_states, cashier_states, print_jobs CASCADE`,
+		`DROP TABLE IF EXISTS order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, master_states, cashier_states, caos_lanes CASCADE`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
 			t.Fatal(err)
@@ -42,7 +42,7 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	}
 	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{},
 		&models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
-		&models.MasterState{}, &models.CashierState{}, &models.PrintJobRow{}); err != nil {
+		&models.MasterState{}, &models.CashierState{}, &models.CaosLaneRow{}); err != nil {
 		t.Fatal(err)
 	}
 	return db, dsn
@@ -71,17 +71,14 @@ func noBroadcast(t *testing.T, h *Hub) {
 func TestListenChangesPublishesOtherInstancesOrders(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
-	h := NewOrderHandler(db, hub, nil, nil)
+	h := NewOrderHandler(db, hub, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
 
-	// 待ち受けを始めたら全注文（と印刷キュー）を配り直す
+	// 待ち受けを始めたら全注文を配り直す
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
 		t.Fatalf("first broadcast = %s, want orders", msg.Type)
-	}
-	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypePrintJobs {
-		t.Fatalf("second broadcast = %s, want print_jobs", msg.Type)
 	}
 
 	itemType := models.ItemType{Name: "hot", DisplayName: "ホット"}
@@ -225,19 +222,16 @@ func expectNotification(t *testing.T, conn *pgx.Conn, channel string) {
 
 func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	db, dsn := openListenTestDB(t)
-	other := listenAsOtherInstance(t, dsn, masterStateChangedChannel, cashierStateChangedChannel, printJobsChangedChannel)
+	other := listenAsOtherInstance(t, dsn, masterStateChangedChannel, cashierStateChangedChannel)
 	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
-	h := NewOrderHandler(db, hub, nil, nil)
+	h := NewOrderHandler(db, hub, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
 
-	// まだオーダーストップもレジの状態も無いので、待ち受けを始めたときは全注文と印刷キュー（空）だけを配る
+	// まだオーダーストップもレジの状態も無いので、待ち受けを始めたときは全注文だけを配る
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
 		t.Fatalf("first broadcast = %s, want orders", msg.Type)
-	}
-	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypePrintJobs || len(msg.PrintJobs) != 0 {
-		t.Fatalf("second broadcast = %+v, want empty print_jobs", msg)
 	}
 	noBroadcast(t, hub)
 
@@ -287,31 +281,9 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	}
 	noBroadcast(t, hub)
 
-	// 印刷キュー：このインスタンスで変えたときは、その場で 1 回だけ配り、ほかのインスタンスへ通知する
-	if err := db.Create(&models.PrintJobRow{Kind: "order", Source: "cashier", OrderID: uuid.New(), OrderNo: 1, Status: "queued", CreatedAt: time.Now(), UpdatedAt: time.Now()}).Error; err != nil {
-		t.Fatal(err)
-	}
-	publishPrintJobs(db, hub)
-	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypePrintJobs || len(msg.PrintJobs) != 1 {
-		t.Fatalf("broadcast = %+v, want print_jobs with 1 job", msg)
-	}
-	expectNotification(t, other, printJobsChangedChannel)
-	noBroadcast(t, hub)
-
-	// ほかのインスタンスで積まれたら、通知を受けて読み直して配る（印刷する端末がこのインスタンスにつないでいても届く）
-	if err := db.Create(&models.PrintJobRow{Kind: "emergency", Source: "master", OrderID: uuid.New(), OrderNo: 2, Status: "queued", CreatedAt: time.Now(), UpdatedAt: time.Now()}).Error; err != nil {
-		t.Fatal(err)
-	}
-	notifyStateFromOtherInstance(t, db, printJobsChangedChannel)
-	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypePrintJobs || len(msg.PrintJobs) != 2 {
-		t.Fatalf("broadcast = %+v, want print_jobs with 2 jobs", msg)
-	}
-	noBroadcast(t, hub)
-
 	// 自分が送った通知では配り直さない
 	notifyMasterStateChanged(db)
 	notifyCashierStateChanged(db)
-	notifyChanged(db, printJobsChangedChannel, instanceID)
 	noBroadcast(t, hub)
 }
 
@@ -326,14 +298,14 @@ func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	}
 
 	hub := NewHub()
-	h := NewOrderHandler(db, hub, nil, nil)
+	h := NewOrderHandler(db, hub, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.ListenChanges(ctx, dsn)
 
-	// 待ち受けを始めたら、取りこぼしに備えて全注文・オーダーストップ・レジの状態・印刷キューを配り直す
+	// 待ち受けを始めたら、取りこぼしに備えて全注文・オーダーストップ・レジの状態を配り直す
 	got := map[WSMessageType]WSMessage{}
-	for range 4 {
+	for range 3 {
 		msg := nextBroadcast(t, hub)
 		got[msg.Type] = msg
 	}
@@ -345,9 +317,6 @@ func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	}
 	if _, ok := got[WSMessageTypeCashierState]; !ok {
 		t.Fatalf("broadcasts = %+v, want cashier_state", got)
-	}
-	if _, ok := got[WSMessageTypePrintJobs]; !ok {
-		t.Fatalf("broadcasts = %+v, want print_jobs", got)
 	}
 	noBroadcast(t, hub)
 }
@@ -364,14 +333,13 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(ordersChangedChannel, instanceID+" "+uuid.NewString())
 	q.add(masterStateChangedChannel, instanceID)
 	q.add(cashierStateChangedChannel, instanceID)
-	q.add(dripsChangedChannel, instanceID)
 	select {
 	case <-q.wake:
 	default:
 		t.Fatal("not woken")
 	}
 	s := q.take()
-	if s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 2 {
+	if s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 2 {
 		t.Fatalf("take() = %+v; want 2 order ids only", s)
 	}
 	for _, id := range []uuid.UUID{a, b} {
@@ -381,7 +349,7 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	}
 
 	// 取り出したら空になる
-	if s := q.take(); s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 0 {
+	if s := q.take(); s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() after take = %+v; want empty", s)
 	}
 
@@ -389,7 +357,7 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(ordersChangedChannel, other+" "+a.String())
 	q.add(ordersChangedChannel, "")
 	q.add(ordersChangedChannel, other+" not-a-uuid")
-	if s := q.take(); !s.allOrders || s.masterState || s.cashierState || s.drips || len(s.orderIDs) != 0 {
+	if s := q.take(); !s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want all orders", s)
 	}
 
@@ -398,32 +366,14 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.add(masterStateChangedChannel, uuid.NewString())
 	q.add(cashierStateChangedChannel, other)
 	q.add(cashierStateChangedChannel, "")
-	if s := q.take(); s.allOrders || !s.masterState || !s.cashierState || s.drips || len(s.orderIDs) != 0 {
+	if s := q.take(); s.allOrders || !s.masterState || !s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want master and cashier states", s)
-	}
-
-	// CaOS の盤面も、ほかのインスタンスからの通知が何度来ても 1 回にまとめる
-	q.add(dripsChangedChannel, other)
-	q.add(dripsChangedChannel, uuid.NewString())
-	if s := q.take(); s.allOrders || s.masterState || s.cashierState || !s.drips || len(s.orderIDs) != 0 {
-		t.Fatalf("take() = %+v; want drips", s)
-	}
-
-	// 印刷キューも、ほかのインスタンスからの通知が何度来ても 1 回にまとめ、自分が送ったものは積まない
-	q.add(printJobsChangedChannel, instanceID)
-	if s := q.take(); s.printJobs {
-		t.Fatalf("take() = %+v; want nothing for own print_jobs notification", s)
-	}
-	q.add(printJobsChangedChannel, other)
-	q.add(printJobsChangedChannel, uuid.NewString())
-	if s := q.take(); s.allOrders || s.masterState || s.cashierState || s.drips || !s.printJobs || len(s.orderIDs) != 0 {
-		t.Fatalf("take() = %+v; want print jobs", s)
 	}
 
 	// 待ち受けを始めたときは全部を配り直す
 	q.add(ordersChangedChannel, other+" "+a.String())
 	q.addAll()
-	if s := q.take(); !s.allOrders || !s.masterState || !s.cashierState || !s.drips || !s.printJobs || len(s.orderIDs) != 0 {
+	if s := q.take(); !s.allOrders || !s.masterState || !s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want everything", s)
 	}
 }

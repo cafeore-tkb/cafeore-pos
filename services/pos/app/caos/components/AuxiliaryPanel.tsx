@@ -1,7 +1,7 @@
 import type { InventoryStatus } from "@cafeore/common";
 import { ExternalLink, X } from "lucide-react";
 import type React from "react";
-import type { Barista, SalesOrder } from "../types";
+import type { Barista, PracticeSalesOrder } from "../types";
 import { AnalyticsView } from "./AnalyticsView";
 import { BaysOverviewView } from "./BaysOverviewView";
 import { BeanQueueView } from "./BeanQueueView";
@@ -22,12 +22,9 @@ interface AuxiliaryContentProps {
     error: unknown;
   };
   beanWaitingCups?: Map<string, number>;
-  salesOrders: SalesOrder[];
+  salesOrders: PracticeSalesOrder[];
   periodStartMs?: number;
   periodEndMs?: number;
-  /** 列の「交代」と「入れ替え」。無ければ出さない */
-  onChangeLane?: (bayId: number) => void;
-  onSwapLanes?: (bayId: number, otherBayId: number) => void;
 }
 
 export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
@@ -38,17 +35,9 @@ export const AuxiliaryContent: React.FC<AuxiliaryContentProps> = ({
   salesOrders,
   periodStartMs,
   periodEndMs,
-  onChangeLane,
-  onSwapLanes,
 }) => (
   <>
-    {tab === "bays" && (
-      <BaysOverviewView
-        baristas={baristas}
-        onChangeLane={onChangeLane}
-        onSwapLanes={onSwapLanes}
-      />
-    )}
+    {tab === "bays" && <BaysOverviewView baristas={baristas} />}
     {tab === "beans" && (
       <BeanQueueView
         statuses={beanInventory.statuses}
@@ -84,7 +73,7 @@ export const AuxiliarySheet: React.FC<AuxiliarySheetProps> = ({
   const title = getAuxiliaryTitle(tab);
 
   return (
-    <aside className="context-sheet absolute top-[56px] right-0 bottom-0 z-[75] flex w-[min(440px,44vw)] min-w-[360px] flex-col border-slate-300 border-l bg-white shadow-2xl">
+    <aside className="context-sheet absolute top-[56px] right-0 bottom-0 z-40 flex w-[min(440px,44vw)] min-w-[360px] flex-col border-slate-300 border-l bg-white shadow-2xl">
       <div className="flex h-[52px] shrink-0 items-center justify-between border-slate-200 border-b bg-slate-50 px-4">
         <h2 className="font-black text-[16px] text-slate-950">{title}</h2>
         <div className="flex items-center gap-1">

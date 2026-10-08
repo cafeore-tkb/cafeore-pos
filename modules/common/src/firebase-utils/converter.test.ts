@@ -36,6 +36,9 @@ const response: OrderResponse = {
                 id: "00000000-0000-4000-8000-000000000005",
                 name: "hot",
                 display_name: "ホット",
+                makes_cup: true,
+                needs_brew: true,
+                senior_only: false,
               },
             },
           },
@@ -52,6 +55,14 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   item: response.menus[0].menu.items[0].item,
   ready_at: null,
   served_at: null,
+  dripper: null,
+  dripper_position: null,
+  drip_id: null,
+  brew_started_at: null,
+  brew_finished_at: null,
+  emergency_at: null,
+  emergency_drip_id: null,
+  emergency_printed_at: null,
 });
 
 describe("[unit] order snapshot conversion", () => {

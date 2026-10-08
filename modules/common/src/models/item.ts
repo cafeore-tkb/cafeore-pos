@@ -1,10 +1,19 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
 
+// 判定に使う項目（カップを作る・抽出が要る・限定）は商品管理で種類ごとに設定し、API の値をそのまま使う。
+// 種類の名前（hot / milk / others など）で決め打ちしないこと。
+// 項目を持つ前に保存したデータ（Firestore の注文や保存済みのレジ状態）には無いので、無ければ API の列の既定値と同じにする。
 export const itemTypeSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   display_name: z.string(),
+  /** 1杯ずつカップを作る（マスター・提供画面に出る）。グッズは false */
+  makes_cup: z.boolean().default(true),
+  /** 抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。ミルクやグッズは false */
+  needs_brew: z.boolean().default(true),
+  /** 上級生だけが淹れる（限定） */
+  senior_only: z.boolean().default(false),
 });
 
 export const itemSchema = z.object({
