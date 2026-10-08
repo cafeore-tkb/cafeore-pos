@@ -16,7 +16,8 @@ import (
 )
 
 // 画面は古い順に並んでいる前提で反転して表示するので、並び順を DB 任せにしない
-func TestFindMasterStatesOrdersByCreatedAtAsc(t *testing.T) {
+func TestGetMasterStatusOrdersByCreatedAtAsc(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=localhost dbname=unused", PreferSimpleProtocol: true}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
 	if err != nil {
 		t.Fatal(err)
@@ -28,8 +29,13 @@ func TestFindMasterStatesOrdersByCreatedAtAsc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := findMasterStates(db); err != nil {
-		t.Fatal(err)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/master-status", nil)
+	NewMasterStateHandler(db, nil).GetMasterStatus(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	if !strings.Contains(sql, "ORDER BY created_at ASC") {
 		t.Fatalf("must order by created_at ASC: %s", sql)

@@ -22,12 +22,6 @@ export const responseToMasterState = (
   };
 };
 
-/**
- * オーダーストップ中か。記録がまだ無い（未受信を含む）なら稼働中とみなす
- */
-export const isOrderOperational = (state: MasterState | null | undefined) =>
-  state?.type !== "stop";
-
 /** オーダーストップ・再開の記録を古い順に取得する */
 export const getMasterState = async (): Promise<MasterState[]> => {
   const { data, error, response } = await client.GET("/api/master-status", {});

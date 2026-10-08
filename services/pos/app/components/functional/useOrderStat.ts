@@ -1,4 +1,3 @@
-import { isOrderOperational } from "@cafeore/common";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 
 /**
@@ -11,5 +10,5 @@ import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
  */
 export const useOrderStat = (): boolean => {
   const { masterState } = useOrdersWSContext();
-  return isOrderOperational(masterState);
+  return masterState?.type !== "stop";
 };
