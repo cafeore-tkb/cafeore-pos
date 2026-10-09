@@ -4,8 +4,8 @@ import {
   type WithId,
   resolveItemColor,
 } from "@cafeore/common";
-import type { Board, DripCard } from "../types";
-import { type UnsplitCard, splitIntoDripUnits } from "./cards";
+import type { Board } from "./board";
+import { type DripCard, type UnsplitCard, splitIntoDripUnits } from "./cards";
 import { isBayId } from "./lanes";
 
 // cafeore-pos の注文。POS の画面と同じく、共有の WebSocket から届いた OrderEntity を使う。

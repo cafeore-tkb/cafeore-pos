@@ -1,6 +1,10 @@
-import type { Barista, DripCard, OrderTicket } from "../types";
-import { ticketsWhere } from "./board";
-import { groupByOrder, orderLabel } from "./cards";
+import { type Barista, ticketsWhere } from "./board";
+import {
+  type DripCard,
+  type OrderTicket,
+  groupByOrder,
+  orderLabel,
+} from "./cards";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
 // 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。
