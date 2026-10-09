@@ -80,16 +80,10 @@ const ORDER_CSV_COLUMNS: CsvColumns<OrderEntity> = [
   ],
 ];
 
-const MASTER_STATE_LABELS: Record<string, string> = {
-  stop: "中止",
-  operational: "再開",
-};
-
 // オーダーストップ・再開の切り替えを 1 回 1 行で書き出す
 const MASTER_STATE_CSV_COLUMNS: CsvColumns<MasterState> = [
   ["createdAt", (s) => formatDate(s.createdAt)],
   ["type", (s) => s.type],
-  ["label", (s) => MASTER_STATE_LABELS[s.type] ?? ""],
 ];
 
 export function DownloadButton() {
