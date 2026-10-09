@@ -696,15 +696,14 @@ export const planMasterImport = (
     ]);
   }
 
-  const SCHEMAS: Record<
-    Exclude<MasterCall["table"], "item_stock_usages">,
-    SchemaName
-  > = {
+  // 使用量は本文の配列の1件ずつに当てる
+  const SCHEMAS: Record<MasterCall["table"], SchemaName> = {
     item_types: "ItemTypeCreateRequest",
     items: "ItemCreateRequest",
     menus: "MenuCreateRequest",
     color_settings: "ColorSettingUpsertRequest",
     stock_resources: "StockResourceRequest",
+    item_stock_usages: "ItemStockUsageRequest",
   };
   // coerceTypes で CSV の文字列（"400" など）がスキーマの型に直る。エラーの位置は本文の中のパスにする
   const errorsOf = (name: SchemaName, body: unknown, at: string[] = []) => {
@@ -716,13 +715,13 @@ export const planMasterImport = (
     }));
   };
   for (const call of calls) {
-    // 使用量の本文はアイテムの ID と配列なので、配列を1件ずつ当てる
+    const schema = SCHEMAS[call.table];
     const errors =
       call.table === "item_stock_usages"
         ? (call.body.usages as unknown[]).flatMap((usage, i) =>
-            errorsOf("ItemStockUsageRequest", usage, ["usages", String(i)]),
+            errorsOf(schema, usage, ["usages", String(i)]),
           )
-        : errorsOf(SCHEMAS[call.table], call.body);
+        : errorsOf(schema, call.body);
     const source = sources.get(call);
     if (!source) continue;
     for (const { error, path } of errors) {
