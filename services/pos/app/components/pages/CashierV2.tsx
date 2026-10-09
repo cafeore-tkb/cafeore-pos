@@ -214,6 +214,7 @@ const CashierV2 = ({
 
   const itemMenu = (
     <ItemButtons
+      className="h-screen"
       items={items ?? []}
       addItem={useCallback(
         (item) => dispatchOrder({ type: "addItem", item }),

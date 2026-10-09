@@ -100,7 +100,7 @@ export default function Casher() {
     <div className="p-5">
       <div className="flex flex-row flex-wrap ">
         <ItemButtons
-          className="h-auto w-2/3"
+          className="w-2/3"
           items={items}
           addItem={(item) => setQueue([...queue, item])}
         />

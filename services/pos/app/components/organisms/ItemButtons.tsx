@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 type props = {
   items: WithId<MenuEntity>[];
   addItem: (item: WithId<MenuEntity>) => void;
-  /** 外側の枠に足すクラス（既定の h-screen や幅を変えるとき） */
+  /** 外側の枠の高さ・幅 */
   className?: string;
 };
 
@@ -54,7 +54,7 @@ export const ItemButtons = ({ items, addItem, className }: props) => {
     return { backgroundColor, color: readableTextColor(backgroundColor) };
   };
   return (
-    <div className={cn("relative h-screen pr-5 pl-5", className)}>
+    <div className={cn("relative pr-5 pl-5", className)}>
       {groups.map(({ itemType, items }, index) => (
         <div key={itemType.id ?? itemType.name}>
           <div
