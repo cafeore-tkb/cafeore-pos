@@ -8,7 +8,7 @@ import { buildBeanIndex } from "../logic/beans";
 
 // 豆の在庫は POS の在庫（GET /api/inventory）と在庫の設定（GET /api/inventory/usages）をそのまま使う。
 // CaOS では在庫を持たず、減らしもしない。
-// - statuses：在庫対象のうち豆（kind が bean）の残量。豆キューに出す
+// - statuses：在庫対象のうち豆（kind が bean）の残量。豆キューに出す（棚卸し・入荷の記録は POS に書く）
 // - beanIndex：商品 ID → 豆（在庫の設定の「商品ごとの使用量」）。カードの豆を決める
 // 使用量も残量と同じ間隔で取り直し、開いたあとの設定の変更をカードに反映する。
 
@@ -30,5 +30,7 @@ export const useBeanInventory = () => {
     // 使用量を読めないと全カードの豆が空になるので、残量と合わせて出す
     error: inventory.error ?? stockUsages.error,
     isLoading: inventory.isLoading || stockUsages.isLoading,
+    // 豆キューで棚卸し・入荷を記録したら残量を取り直す
+    onRecorded: () => void inventory.mutateInventory(),
   };
 };
