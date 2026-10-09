@@ -42,9 +42,48 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
+		// AutoMigrate は足した列の全行に列の既定値を入れるだけなので、種類ごとに違う最初の値は
+		// 列を足した直後に入れる。列がもう DB にあれば走らない（あとで画面や API で変えた値を戻さない）。
+		// 表が無い（空の DB）ときは行も無いので要らない。
+		itemType := &models.ItemType{}
+		m := tx.Migrator()
+		var backfills []itemTypeBackfill
+		if m.HasTable(itemType) {
+			for _, b := range itemTypeBackfills {
+				if !m.HasColumn(itemType, b.column) {
+					backfills = append(backfills, b)
+				}
+			}
+		}
+
 		if err := tx.AutoMigrate(models.All()...); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
+
+		for _, b := range backfills {
+			if err := tx.Unscoped().Model(itemType).Where("name IN ?", b.names).Update(b.column, b.value).Error; err != nil {
+				return fmt.Errorf("failed to backfill item_types.%s: %w", b.column, err)
+			}
+		}
 		return nil
 	})
+}
+
+type itemTypeBackfill struct {
+	column string
+	value  bool
+	names  []string
+}
+
+// 商品の種類の項目（2026-10）を足したときの、既存の種類の最初の値。それまで種類の名前で決め打ちしていたのと
+// 同じ結果になるよう、列の既定値と違う値になる種類だけを書く（削除済みの種類も同じ）。一度だけの移行で、
+// これ以降は商品管理で設定した値だけを使う。
+//   - グッズ（others）はカップを作らない。ミルク（milk）とグッズは抽出しない
+//   - CaOS が限定（SP）として扱っていた limited だけ上級生のみ
+//   - アイス（ice）とアイスオレ（iceOre）だけアイスで淹れる
+var itemTypeBackfills = []itemTypeBackfill{
+	{column: "makes_cup", value: false, names: []string{"others"}},
+	{column: "needs_brew", value: false, names: []string{"milk", "others"}},
+	{column: "senior_only", value: true, names: []string{"limited"}},
+	{column: "iced_brew", value: true, names: []string{"ice", "iceOre"}},
 }

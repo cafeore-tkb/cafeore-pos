@@ -10,14 +10,11 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// グッズの種類。グッズは作って出すものではないので、カップを作らない。
-const goodsItemTypeName = "others"
-
 // 注文明細からカップ（1杯ずつの行）を作る。
 //
 //   - 既存の明細（existing.OrderMenus に含まれる ID）は、保存済みのカップをそのまま引き継ぐ。
 //     ID・状態・item とも変えないので、編集中にメニューの構成が変わっていても影響しない。
-//   - 新しい明細は、メニューの構成品のうちグッズ以外を数量分に展開し、準備中のカップを作る。
+//   - 新しい明細は、メニューの構成品のうちカップを作る種類（item_types.makes_cup）のものを数量分に展開し、準備中のカップを作る。
 //     並びは画面の getItems() と同じ展開（明細の順 → 構成品の順 → 数量）。
 //   - 保存済みのカップが無い既存の明細（カップを持つ前の注文）も同じように展開し、
 //     状態は注文の ready_at / served_at を写す（マイグレーションの SQL と同じ）。
@@ -74,13 +71,14 @@ func buildOrderCups(orderID uuid.UUID, lines []models.OrderMenu, existing *model
 	return cups
 }
 
-// 削除済みの item（読み込めなかったもの）とグッズはカップにしない。
-// 削除済みの種類はグッズとみなさない（マイグレーションの SQL と同じ）。
+// 削除済みの item（読み込めなかったもの）と、カップを作らない種類（グッズなど）の item はカップにしない。
+// 種類が読み込めなかったとき（削除済みの種類）は、列の既定値と同じくカップを作るとみなす。
+// 在庫の消費（inventory.go の orderItemsSQL）も、同じ決まりでカップにならないものを見分ける。
 func isCupItem(item models.Item) bool {
 	if item.ID == uuid.Nil || item.DeletedAt.Valid {
 		return false
 	}
-	return item.ItemType.DeletedAt.Valid || item.ItemType.Name != goodsItemTypeName
+	return item.ItemType.CreatesCup()
 }
 
 func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {

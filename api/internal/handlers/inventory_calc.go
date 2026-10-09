@@ -21,7 +21,8 @@ type stockSnapshot struct {
 	CountedQuantity *float64
 	// 基準点以降の入荷・調整（棚卸しが無いときは最初の入荷も含む）
 	Received float64
-	// 基準点以降の注文での消費量と杯数
+	// 基準点以降の注文での消費量と杯数。注文した時点の構成（カップ）で数え、
+	// 1杯あたりの量は今の item_stock_usages を使う（inventory.go の orderItemsSQL）
 	Consumed         float64
 	Servings         int
 	ServingsLastHour int

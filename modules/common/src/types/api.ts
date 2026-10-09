@@ -235,16 +235,49 @@ export interface components {
       id: string;
       name: string;
       display_name: string;
+      /** @description この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false */
+      makes_cup: boolean;
+      /** @description この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false */
+      needs_brew: boolean;
+      /** @description この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false */
+      senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
       display_name: string;
+      /**
+       * @description 省略したら true
+       * @default true
+       */
+      makes_cup?: boolean;
+      /** @description 省略したら makes_cup と同じ。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
       id: string;
       name: string;
       display_name: string;
+      /** @description 省略したら今の値のまま */
+      makes_cup?: boolean;
+      /** @description 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**

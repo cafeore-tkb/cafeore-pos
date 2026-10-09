@@ -70,6 +70,7 @@ const (
 	kindEnum
 	kindObject
 	kindArray
+	kindBool
 )
 
 type valueSpec struct {
@@ -133,6 +134,11 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "id", optional: true, spec: valueSpec{kind: kindString}},
 			{name: "name", spec: valueSpec{kind: kindString}},
 			{name: "display_name", spec: valueSpec{kind: kindString}},
+			// 古いレジ状態には無い（無ければフロントの zod が既定値を入れる）
+			{name: "makes_cup", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "iced_brew", optional: true, spec: valueSpec{kind: kindBool}},
 		}}},
 	}}},
 	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},
@@ -200,6 +206,10 @@ func validateValue(path string, v interface{}, spec valueSpec) error {
 			if err := validateValue(path+"."+f.name, fv, f.spec); err != nil {
 				return err
 			}
+		}
+	case kindBool:
+		if _, ok := v.(bool); !ok {
+			return fmt.Errorf("%s must be a boolean", path)
 		}
 	case kindArray:
 		arr, ok := v.([]interface{})

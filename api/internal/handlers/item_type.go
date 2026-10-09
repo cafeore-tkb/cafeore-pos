@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"cafeore-pos/api/internal/models"
@@ -21,11 +22,51 @@ func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
+	// 抽出しない種類は上級生のみにもアイスにもならない
+	brew := itemType.BrewRequired()
 	return models.ItemTypeResponse{
 		Id:          openapi_types.UUID(itemType.ID),
 		Name:        itemType.Name,
 		DisplayName: itemType.DisplayName,
+		MakesCup:    itemType.CreatesCup(),
+		NeedsBrew:   brew,
+		SeniorOnly:  brew && itemType.SeniorOnly,
+		IcedBrew:    brew && itemType.IcedBrew,
 	}
+}
+
+var (
+	errBrewWithoutCup    = errors.New("needs_brew must be false when makes_cup is false")
+	errSeniorWithoutBrew = errors.New("senior_only must be false when needs_brew is false")
+	errIcedWithoutBrew   = errors.New("iced_brew must be false when needs_brew is false")
+)
+
+// setItemTypeFlags はリクエストの makes_cup / needs_brew / senior_only / iced_brew を種類に入れる。
+// 省略した値は今の値のまま（新規は makes_cup・needs_brew が true、senior_only・iced_brew が false）。
+// ただし、上の項目が false になるなら、省略した下の項目も false にする
+// （カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
+// カップを作らないのに抽出が要る、抽出しないのに上級生のみ・アイス、という組み合わせは受け付けない。
+func setItemTypeFlags(itemType *models.ItemType, makesCup, needsBrew, seniorOnly, icedBrew *bool) error {
+	orCurrent := func(req *bool, current bool) bool {
+		if req != nil {
+			return *req
+		}
+		return current
+	}
+	cup := orCurrent(makesCup, itemType.CreatesCup())
+	brew := orCurrent(needsBrew, cup && itemType.BrewRequired())
+	senior := orCurrent(seniorOnly, brew && itemType.SeniorOnly)
+	iced := orCurrent(icedBrew, brew && itemType.IcedBrew)
+	switch {
+	case brew && !cup:
+		return errBrewWithoutCup
+	case senior && !brew:
+		return errSeniorWithoutBrew
+	case iced && !brew:
+		return errIcedWithoutBrew
+	}
+	itemType.MakesCup, itemType.NeedsBrew, itemType.SeniorOnly, itemType.IcedBrew = &cup, &brew, senior, iced
+	return nil
 }
 
 // GET /api/item-types - ItemType一覧取得
@@ -58,6 +99,10 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
 	}
+	if err := setItemTypeFlags(&itemType, req.MakesCup, req.NeedsBrew, req.SeniorOnly, req.IcedBrew); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.db.Create(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -70,7 +115,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 // GET /api/item-types/:id - idからアイテムタイプ取得
 func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -93,7 +138,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 // PUT /api/item-types/:id - アイテムタイプ更新
 func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -120,6 +165,10 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	// 更新
 	itemType.Name = req.Name
 	itemType.DisplayName = req.DisplayName
+	if err := setItemTypeFlags(&itemType, req.MakesCup, req.NeedsBrew, req.SeniorOnly, req.IcedBrew); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.db.Save(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -138,7 +187,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 // DELETE /api/item-types/:id - アイテムタイプ削除
 func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
