@@ -427,9 +427,6 @@ type StockUsage struct {
 	ResourceId openapi_types.UUID `json:"resource_id"`
 }
 
-// ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
-type ReplaceStockUsagesJSONBody = []StockUsage
-
 // ReplaceItemStockUsagesJSONBody defines parameters for ReplaceItemStockUsages.
 type ReplaceItemStockUsagesJSONBody = []ItemStockUsageRequest
 
@@ -447,9 +444,6 @@ type UpdateStockResourceJSONRequestBody = StockResourceRequest
 
 // CreateStockEventJSONRequestBody defines body for CreateStockEvent for application/json ContentType.
 type CreateStockEventJSONRequestBody = StockEventCreateRequest
-
-// ReplaceStockUsagesJSONRequestBody defines body for ReplaceStockUsages for application/json ContentType.
-type ReplaceStockUsagesJSONRequestBody = ReplaceStockUsagesJSONBody
 
 // ReplaceItemStockUsagesJSONRequestBody defines body for ReplaceItemStockUsages for application/json ContentType.
 type ReplaceItemStockUsagesJSONRequestBody = ReplaceItemStockUsagesJSONBody
