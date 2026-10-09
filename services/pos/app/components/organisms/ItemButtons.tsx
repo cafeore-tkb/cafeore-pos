@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 type props = {
   items: WithId<MenuEntity>[];
   addItem: (item: WithId<MenuEntity>) => void;
-  /** 外側の枠に足すクラス。既定の高さ（h-screen）を変えるときに渡す */
+  /** 外側の枠に足すクラス（既定の h-screen や幅を変えるとき） */
   className?: string;
 };
 

@@ -99,14 +99,11 @@ export default function Casher() {
   return (
     <div className="p-5">
       <div className="flex flex-row flex-wrap ">
-        {/* 種類ごとの見出し・並び・色は DB の種類と背景色設定から決める（レジ画面と同じ） */}
-        <div className="relative w-2/3">
-          <ItemButtons
-            className="h-auto"
-            items={items}
-            addItem={(item) => setQueue([...queue, item])}
-          />
-        </div>
+        <ItemButtons
+          className="h-auto w-2/3"
+          items={items}
+          addItem={(item) => setQueue([...queue, item])}
+        />
         <div className="relative w-1/3 pl-5">
           <Table>
             <TableCaption />
