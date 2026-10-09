@@ -316,15 +316,13 @@ function UsagesSection({
 
   const sortedItems = useMemo(
     () =>
-      [...items]
-        .filter((item) => item.item_type.name !== "others")
-        .sort(
-          (a, b) =>
-            a.item_type.display_name.localeCompare(
-              b.item_type.display_name,
-              "ja",
-            ) || a.name.localeCompare(b.name, "ja"),
-        ),
+      [...items].sort(
+        (a, b) =>
+          a.item_type.display_name.localeCompare(
+            b.item_type.display_name,
+            "ja",
+          ) || a.name.localeCompare(b.name, "ja"),
+      ),
     [items],
   );
 
