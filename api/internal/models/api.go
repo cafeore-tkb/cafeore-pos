@@ -279,9 +279,12 @@ type OrderCreateRequest struct {
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int                    `json:"discount_order_id"`
-	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
-	OrderId           int                     `json:"order_id"`
-	Received          int                     `json:"received"`
+
+	// IdempotencyKey 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
+	MenuIds        []MenuInfoCreate    `json:"menu_ids"`
+	OrderId        int                 `json:"order_id"`
+	Received       int                 `json:"received"`
 }
 
 // OrderCupResponse defines model for OrderCupResponse.

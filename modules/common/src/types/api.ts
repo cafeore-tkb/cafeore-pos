@@ -323,6 +323,11 @@ export interface components {
       discount_order_cups?: number;
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
+      /**
+       * Format: uuid
+       * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+       */
+      idempotency_key?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
