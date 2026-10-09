@@ -2,22 +2,26 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type MenuHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewMenuHandler(db *gorm.DB) *MenuHandler {
-	return &MenuHandler{db: db}
+func NewMenuHandler(db *gorm.DB, activity *notify.Activity) *MenuHandler {
+	return &MenuHandler{db: db, activity: activity}
 }
 
 func toMenuResponse(menu *models.Menu) models.MenuResponse {
@@ -128,6 +132,7 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toMenuResponse(&menu))
+	h.activity.Post(menuCreatedMessage(&menu))
 }
 
 func (h *MenuHandler) UpdateMenu(c *gin.Context) {
@@ -147,6 +152,13 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// 通知で変更前と比べるために読んでおく。読めなかったら空と比べた誤った差分になるので、通知だけしない
+	var before models.Menu
+	beforeErr := preloadMenu(h.db).First(&before, "id = ?", menuID).Error
+	if beforeErr != nil {
+		log.Printf("activity: failed to load menu %s before update: %v", menuID, beforeErr)
 	}
 
 	menu := models.Menu{ID: menuID}
@@ -178,6 +190,9 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
+	if beforeErr == nil {
+		h.activity.Post(menuUpdatedMessage(&before, &menu))
+	}
 }
 
 func (h *MenuHandler) DeleteMenu(c *gin.Context) {
@@ -187,7 +202,9 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.Menu{}, "id = ?", menuID)
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.Menu
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", menuID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -197,4 +214,5 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+	h.activity.Post(menuDeletedMessage(&deleted))
 }
