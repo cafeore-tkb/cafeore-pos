@@ -106,9 +106,17 @@ export interface paths {
     post: operations["createOrderComment"];
   };
   "/api/master-status": {
-    /** マスターステート取得 */
+    /**
+     * オーダーストップの記録の一覧
+     * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+     * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+     */
     get: operations["getMasterState"];
-    /** マスターステート更新 */
+    /**
+     * オーダーストップ・再開
+     * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+     * オーダーストップの状態を書くのはここだけ。
+     */
     post: operations["updateMasterState"];
   };
   "/api/inventory": {
@@ -370,7 +378,8 @@ export interface components {
       type: string;
     };
     MasterStateUpdateRequest: {
-      type: string;
+      /** @enum {string} */
+      type: "stop" | "operational";
     };
     /**
      * @description 背景色を設定する対象の種類
@@ -1107,7 +1116,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート取得 */
+  /**
+   * オーダーストップの記録の一覧
+   * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+   * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+   */
   getMasterState: {
     responses: {
       /** @description 成功 */
@@ -1118,7 +1131,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート更新 */
+  /**
+   * オーダーストップ・再開
+   * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+   * オーダーストップの状態を書くのはここだけ。
+   */
   updateMasterState: {
     requestBody: {
       content: {
@@ -1126,10 +1143,16 @@ export interface operations {
       };
     };
     responses: {
-      /** @description 成功 */
-      200: {
+      /** @description 記録した */
+      201: {
         content: {
           "application/json": components["schemas"]["MasterStateResponse"];
+        };
+      };
+      /** @description type が stop でも operational でもない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
