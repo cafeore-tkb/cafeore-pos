@@ -134,16 +134,16 @@ func formatQuantity(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
-// 「約 N 杯（M g）」
+// 「残り約N杯（Mg）」。カップは1杯 = 1個なので「残り約N個」
 func describeRemaining(s stockSnapshot) string {
 	r, rs := s.Remaining(), s.RemainingServings()
 	if r == nil || rs == nil {
 		return "未計測"
 	}
 	if s.Resource.Kind == string(models.StockResourceKindCup) {
-		return fmt.Sprintf("残り約 %.0f 個", math.Floor(*rs))
+		return fmt.Sprintf("残り約%.0f個", math.Floor(*rs))
 	}
-	return fmt.Sprintf("残り約 %.0f 杯（%s %s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
+	return fmt.Sprintf("残り約%.0f杯（%s%s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
 }
 
 // 直近1時間のペースで、あと何時間もつか。
@@ -153,30 +153,35 @@ func describePace(s stockSnapshot) string {
 		return ""
 	}
 	if *rs <= 0 {
-		return fmt.Sprintf("直近1時間 %d 杯", s.ServingsLastHour)
+		return fmt.Sprintf("直近1時間 %d杯", s.ServingsLastHour)
 	}
 	hours := *rs / float64(s.ServingsLastHour)
-	return fmt.Sprintf("直近1時間 %d 杯 → 約 %sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
+	return fmt.Sprintf("直近1時間 %d杯 → 約%sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
 }
 
 func formatDuration(d time.Duration) string {
 	m := int(d.Round(time.Minute).Minutes())
 	if m < 60 {
-		return fmt.Sprintf("%d 分", m)
+		return fmt.Sprintf("%d分", m)
 	}
 	// 10 時間を超えたら分までは要らない
 	if m%60 == 0 || m >= 600 {
-		return fmt.Sprintf("%d 時間", m/60)
+		return fmt.Sprintf("%d時間", m/60)
 	}
-	return fmt.Sprintf("%d 時間 %d 分", m/60, m%60)
+	return fmt.Sprintf("%d時間%d分", m/60, m%60)
 }
 
 func alertMessage(s stockSnapshot) string {
-	icon := ":warning:"
+	icon := "⚠️"
 	suffix := ""
 	if s.Level() == models.InventoryLevelCritical {
-		icon = ":rotating_light:"
-		suffix = fmt.Sprintf("（バッファ %d 杯を切りました）", s.Resource.Buffer)
+		icon = "🚨"
+		// バッファは杯数で持つが、カップは1杯 = 1個なので残量と同じく個で出す
+		unit := "杯"
+		if s.Resource.Kind == string(models.StockResourceKindCup) {
+			unit = "個"
+		}
+		suffix = fmt.Sprintf("（バッファ%d%sを切りました）", s.Resource.Buffer, unit)
 	}
 	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.Name, describeRemaining(s), suffix)}
 	if pace := describePace(s); pace != "" {
@@ -186,7 +191,7 @@ func alertMessage(s stockSnapshot) string {
 }
 
 func remindMessage(snapshots []stockSnapshot, now time.Time, posURL string) string {
-	lines := []string{":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。"}
+	lines := []string{"⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。"}
 	for _, s := range snapshots {
 		last := "未実施"
 		if s.CountedQuantity != nil && s.BaseAt != nil {

@@ -1367,6 +1367,12 @@ components:
         - ColorScreenCashierOrder
         - ColorScreenMaster
         - ColorScreenServe
+      # 画面に出す名前。POS（openapiEnumLabels）と API の Slack の通知（colorScreenLabels）はここに合わせる
+      x-enum-descriptions:
+        - レジ（ボタン）
+        - レジ（過去の注文）
+        - マスター
+        - 提供
     ColorSettingResponse:
       type: object
       required:
@@ -1455,6 +1461,8 @@ components:
       type: string
       enum: [cup, bean]
       x-enum-varnames: [StockResourceKindCup, StockResourceKindBean]
+      # 画面に出す名前。POS（openapiEnumLabels）と API の Slack の通知（stockKindLabels）はここに合わせる
+      x-enum-descriptions: [カップ, 豆]
     StockResourceRequest:
       type: object
       required:

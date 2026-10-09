@@ -38,6 +38,8 @@ type Inventory struct {
 	slack      *notify.Slack
 	remindAuth RemindAuth
 	posURL     string
+	// 在庫対象・使用量の変更と、棚卸し・入荷・調整の記録を流す
+	activity *notify.Activity
 }
 
 // POST /api/inventory/remind を叩いてよい相手。どちらか一方を満たせば通す。
@@ -49,8 +51,8 @@ type RemindAuth struct {
 	CronSecret string
 }
 
-func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string) *Inventory {
-	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL}
+func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string, activity *notify.Activity) *Inventory {
+	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL, activity: activity}
 }
 
 // ids が nil なら削除されていない在庫対象すべて。
@@ -383,6 +385,7 @@ func (h *InventoryHandler) CreateStockResource(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toStockResourceResponse(&resource))
+	h.inv.activity.Post(stockResourceCreatedMessage(&resource))
 }
 
 // PUT /api/inventory/resources/:id - 在庫対象の更新
@@ -414,6 +417,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
 	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
 	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
+	before := resource
 	columns := []string{"kind", "name", "unit", "per_serving", "notify_from", "notify_step", "buffer"}
 	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
 		resource.LastAlertThreshold = nil
@@ -433,6 +437,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
 	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
+	h.inv.activity.Post(stockResourceUpdatedMessage(&before, &resource))
 }
 
 // DELETE /api/inventory/resources/:id - 在庫対象の削除
@@ -442,12 +447,14 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		return
 	}
 
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.StockResource
 	var affected int64
 	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_id = ?", id).Delete(&models.ItemStockUsage{}).Error; err != nil {
 			return err
 		}
-		res := tx.Delete(&models.StockResource{}, "id = ?", id)
+		res := tx.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", id)
 		affected = res.RowsAffected
 		return res.Error
 	})
@@ -460,6 +467,7 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+	h.inv.activity.Post(stockResourceDeletedMessage(&deleted))
 }
 
 // POST /api/inventory/resources/:id/events - 棚卸し・入荷・調整の記録
@@ -515,6 +523,19 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, resp)
 	go h.inv.CheckAlerts([]uuid.UUID{id})
+	// 記録後の残量は応答を待たせないよう裏で数える
+	go h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
+}
+
+func (inv *Inventory) postStockEvent(resource models.StockResource, event models.StockEvent, estimated *float64) {
+	var remaining *float64
+	after, err := inv.snapshots(context.Background(), []uuid.UUID{resource.ID})
+	if err != nil {
+		log.Printf("activity: failed to calculate remaining of %s: %v", resource.Name, err)
+	} else if len(after) > 0 {
+		remaining = after[0].Remaining()
+	}
+	inv.activity.Post(stockEventMessage(&resource, &event, estimated, remaining))
 }
 
 // 記録の種類と数量の組み合わせを検証し、不正なら 400 で返す文言を返す。
@@ -583,10 +604,12 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return
 	}
 
+	// 名前は通知に使う。何も変わらなかった保存は通知しない
+	var item models.Item
+	changed := false
 	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
 		// 同じアイテムの置き換えやアイテムの削除と重ならないよう、アイテムの行を押さえる
-		var item models.Item
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&item, "id = ?", itemID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "name").First(&item, "id = ?", itemID).Error; err != nil {
 			return err
 		}
 		resourceIDs := make([]uuid.UUID, len(usages))
@@ -606,6 +629,7 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 			return err
 		}
 		closing, adding := diffItemStockUsages(current, usages)
+		changed = len(closing) > 0 || len(adding) > 0
 		now := time.Now()
 		if len(closing) > 0 {
 			if err := tx.Model(&models.ItemStockUsage{}).
@@ -637,6 +661,22 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
 	go h.inv.CheckAlerts(nil)
+	if changed {
+		go h.inv.postItemUsages(item.Name, usages)
+	}
+}
+
+func (inv *Inventory) postItemUsages(itemName string, usages []models.ItemStockUsage) {
+	var list []models.StockResource
+	if err := inv.db.Unscoped().Find(&list).Error; err != nil {
+		log.Printf("activity: failed to load stock resources: %v", err)
+		return
+	}
+	resources := make(map[uuid.UUID]models.StockResource, len(list))
+	for _, r := range list {
+		resources[r.ID] = r
+	}
+	inv.activity.Post(itemUsagesMessage(itemName, usages, resources))
 }
 
 // 今有効な行と新しい使用量を比べ、閉じる在庫対象と足す行を返す。量が変わったものは両方に入り、変わらないものはどちらにも入らない。
