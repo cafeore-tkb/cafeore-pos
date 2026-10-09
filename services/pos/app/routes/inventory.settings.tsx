@@ -3,7 +3,6 @@ import {
   type StockResource,
   type StockResourceInput,
   type StockResourceKind,
-  type StockUsage,
   type WithId,
   inventoryRepository,
   useInventory,
@@ -245,9 +244,8 @@ const usageKey = (itemId: string, resourceId: string) =>
 
 function UsagesSection({ resources }: { resources: StockResource[] }) {
   const { items } = useItemMaster();
-  const { usages, isLoading: usagesLoading, mutateUsages } = useStockUsages();
+  const { usages, isLoading: usagesLoading } = useStockUsages();
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setDraft(
@@ -345,26 +343,6 @@ function UsagesSection({ resources }: { resources: StockResource[] }) {
       return next;
     });
 
-  const save = async () => {
-    const body: StockUsage[] = [];
-    for (const [key, value] of Object.entries(draft)) {
-      const amount = Number(value);
-      if (!value || Number.isNaN(amount) || amount <= 0) continue;
-      const [item_id, resource_id] = key.split(":");
-      body.push({ item_id, resource_id, amount });
-    }
-    try {
-      setSaving(true);
-      await inventoryRepository.replaceUsages(body);
-      await mutateUsages();
-      toast("使用量を保存しました");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (columns.length === 0) return null;
 
   return (
@@ -448,11 +426,10 @@ function UsagesSection({ resources }: { resources: StockResource[] }) {
         </Table>
       </div>
 
-      <div>
-        <Button type="button" disabled={saving} onClick={() => void save()}>
-          使用量を保存
-        </Button>
-      </div>
+      {/* 全部を置き換える PUT /api/inventory/usages を消したので、アイテムごとの保存に移るまで保存できない */}
+      <p className="text-muted-foreground text-sm">
+        使用量の保存は、アイテムごとの保存に移し替えている途中のため、いまはできません。
+      </p>
     </section>
   );
 }

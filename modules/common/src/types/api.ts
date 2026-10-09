@@ -136,10 +136,17 @@ export interface paths {
     post: operations["createStockEvent"];
   };
   "/api/inventory/usages": {
-    /** アイテム1杯あたりの使用量一覧 */
+    /** アイテム1杯あたりの今の使用量一覧 */
     get: operations["getStockUsages"];
-    /** アイテム1杯あたりの使用量をまとめて置き換える */
-    put: operations["replaceStockUsages"];
+  };
+  "/api/inventory/usages/{item_id}": {
+    /**
+     * 1つのアイテムの使用量を置き換える
+     * @description そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
+     * ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+     * 変わった在庫対象だけ前の値を履歴に残して今から新しい値にするので、それより前の注文は前の使用量で数える。
+     */
+    put: operations["replaceItemStockUsages"];
   };
   "/api/inventory/remind": {
     /**
@@ -540,6 +547,15 @@ export interface components {
     StockUsage: {
       /** Format: uuid */
       item_id: string;
+      /** Format: uuid */
+      resource_id: string;
+      /**
+       * Format: double
+       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
+       */
+      amount: number;
+    };
+    ItemStockUsageRequest: {
       /** Format: uuid */
       resource_id: string;
       /**
@@ -1223,7 +1239,7 @@ export interface operations {
       };
     };
   };
-  /** アイテム1杯あたりの使用量一覧 */
+  /** アイテム1杯あたりの今の使用量一覧 */
   getStockUsages: {
     responses: {
       /** @description 成功 */
@@ -1234,18 +1250,40 @@ export interface operations {
       };
     };
   };
-  /** アイテム1杯あたりの使用量をまとめて置き換える */
-  replaceStockUsages: {
+  /**
+   * 1つのアイテムの使用量を置き換える
+   * @description そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
+   * ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+   * 変わった在庫対象だけ前の値を履歴に残して今から新しい値にするので、それより前の注文は前の使用量で数える。
+   */
+  replaceItemStockUsages: {
+    parameters: {
+      path: {
+        item_id: string;
+      };
+    };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["StockUsage"][];
+        "application/json": components["schemas"]["ItemStockUsageRequest"][];
       };
     };
     responses: {
-      /** @description 成功 */
+      /** @description 成功（そのアイテムの置き換え後の使用量） */
       200: {
         content: {
           "application/json": components["schemas"]["StockUsage"][];
+        };
+      };
+      /** @description 量が 0 以下、同じ在庫対象が重複、または在庫対象が無い */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description アイテムが無い */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

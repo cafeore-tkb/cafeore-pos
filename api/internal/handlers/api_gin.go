@@ -47,12 +47,12 @@ type ServerInterface interface {
 	// 棚卸し・入荷・調整の記録
 	// (POST /api/inventory/resources/{id}/events)
 	CreateStockEvent(c *gin.Context, id openapi_types.UUID)
-	// アイテム1杯あたりの使用量一覧
+	// アイテム1杯あたりの今の使用量一覧
 	// (GET /api/inventory/usages)
 	GetStockUsages(c *gin.Context)
-	// アイテム1杯あたりの使用量をまとめて置き換える
-	// (PUT /api/inventory/usages)
-	ReplaceStockUsages(c *gin.Context)
+	// 1つのアイテムの使用量を置き換える
+	// (PUT /api/inventory/usages/{item_id})
+	ReplaceItemStockUsages(c *gin.Context, itemId openapi_types.UUID)
 	// アイテムタイプ一覧取得
 	// (GET /api/item-types)
 	GetItemTypes(c *gin.Context)
@@ -351,8 +351,19 @@ func (siw *ServerInterfaceWrapper) GetStockUsages(c *gin.Context) {
 	siw.Handler.GetStockUsages(c)
 }
 
-// ReplaceStockUsages operation middleware
-func (siw *ServerInterfaceWrapper) ReplaceStockUsages(c *gin.Context) {
+// ReplaceItemStockUsages operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceItemStockUsages(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", c.Param("item_id"), &itemId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter item_id: %w", err), http.StatusBadRequest)
+		return
+	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -361,7 +372,7 @@ func (siw *ServerInterfaceWrapper) ReplaceStockUsages(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.ReplaceStockUsages(c)
+	siw.Handler.ReplaceItemStockUsages(c, itemId)
 }
 
 // GetItemTypes operation middleware
@@ -996,7 +1007,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/inventory/resources/:id", wrapper.UpdateStockResource)
 	router.POST(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.CreateStockEvent)
 	router.GET(options.BaseURL+"/api/inventory/usages", wrapper.GetStockUsages)
-	router.PUT(options.BaseURL+"/api/inventory/usages", wrapper.ReplaceStockUsages)
+	router.PUT(options.BaseURL+"/api/inventory/usages/:item_id", wrapper.ReplaceItemStockUsages)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.POST(options.BaseURL+"/api/item-types", wrapper.CreateItemType)
 	router.DELETE(options.BaseURL+"/api/item-types/:id", wrapper.DeleteItemType)

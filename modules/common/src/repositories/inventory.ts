@@ -84,15 +84,4 @@ export const inventoryRepository = {
     }
     return data ?? [];
   },
-
-  replaceUsages: async (usages: StockUsage[]): Promise<StockUsage[]> => {
-    const { data, error, response } = await client.PUT(
-      "/api/inventory/usages",
-      { body: usages },
-    );
-    if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to save stock usages");
-    }
-    return data ?? [];
-  },
 };

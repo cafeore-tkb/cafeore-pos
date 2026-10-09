@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"cafeore-pos/api/internal/models"
 
@@ -42,9 +43,44 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
+		if err := migrateItemStockUsageHistory(tx); err != nil {
+			return fmt.Errorf("failed to migrate item_stock_usages: %w", err)
+		}
+
 		if err := tx.AutoMigrate(models.All()...); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
 		return nil
 	})
+}
+
+// 使用量を履歴で持つようにしたとき（2026-10）の一度だけの移行。AutoMigrate は NOT NULL の列を既存の行に
+// 足せず、主キーも付け替えないので、ここで valid_from を足して主キーを (item_id, resource_id, valid_from) にする。
+// 既存の行は、それより前のどの注文にも効くよう、十分に古い時刻から有効にする。valid_to は AutoMigrate が足す。
+// 表が無い（空の DB）か、もう valid_from があれば何もしない。
+func migrateItemStockUsageHistory(tx *gorm.DB) error {
+	usage := &models.ItemStockUsage{}
+	m := tx.Migrator()
+	if !m.HasTable(usage) || m.HasColumn(usage, "valid_from") {
+		return nil
+	}
+	var pkey string
+	if err := tx.Raw(`SELECT conname FROM pg_constraint WHERE conrelid = 'item_stock_usages'::regclass AND contype = 'p'`).
+		Scan(&pkey).Error; err != nil {
+		return err
+	}
+	sqls := []string{
+		`ALTER TABLE item_stock_usages ADD COLUMN valid_from timestamptz NOT NULL DEFAULT '1970-01-01T00:00:00Z'`,
+		`ALTER TABLE item_stock_usages ALTER COLUMN valid_from DROP DEFAULT`,
+	}
+	if pkey != "" {
+		sqls = append(sqls, `ALTER TABLE item_stock_usages DROP CONSTRAINT "`+strings.ReplaceAll(pkey, `"`, `""`)+`"`)
+	}
+	sqls = append(sqls, `ALTER TABLE item_stock_usages ADD PRIMARY KEY (item_id, resource_id, valid_from)`)
+	for _, sql := range sqls {
+		if err := tx.Exec(sql).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
