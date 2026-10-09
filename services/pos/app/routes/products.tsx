@@ -99,8 +99,9 @@ export default function ProductsPage() {
   } = useStockUsages();
   // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまうので、届くまでフォームを出さない。
   // 一度届いたあとの再取得の失敗では止めない（入力中のフォームを消さない）
+  const stockLoaded = inventoryLoaded && usagesLoaded;
   const stockNotice = (() => {
-    if (inventoryLoaded && usagesLoaded) return null;
+    if (stockLoaded) return null;
     if (inventoryError || usagesError) {
       return "在庫の使用量を読み込めませんでした。ページを読み込み直してください";
     }
@@ -211,7 +212,7 @@ export default function ProductsPage() {
                 usage={usageOfItems}
                 resources={resources}
                 stockUsages={usages}
-                stockLoaded={inventoryLoaded && usagesLoaded}
+                stockLoaded={stockLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>

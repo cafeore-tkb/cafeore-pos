@@ -64,19 +64,18 @@ export function ItemForm({
     return itemTypes[0]?.id ?? "";
   }, [initialItem, itemTypes]);
 
-  // 新規は同じタイプのアイテムに入っているカップを入れる。使用量を触るまではタイプに合わせて入れ直す
-  const guessUsages = (itemTypeId: string): Record<string, string> => {
-    const cupId = cupByType.get(itemTypeId);
-    return cupId ? { [cupId]: "1" } : {};
-  };
-  const [usagesTouched, setUsagesTouched] = useState(initialUsages != null);
-
-  const [values, setValues] = useState<ItemFormValues>(() => ({
+  const [fields, setFields] = useState<Omit<ItemFormValues, "usages">>({
     name: initialItem?.name ?? "",
     abbr: initialItem?.abbr ?? "",
     itemTypeId: initialItemTypeId,
-    usages: initialUsages ?? guessUsages(initialItemTypeId),
-  }));
+  });
+  // null は使用量をまだ触っていない新規。そのあいだは同じタイプのアイテムに入っているカップを入れる
+  const [usages, setUsages] = useState(initialUsages ?? null);
+  const guessedCup = cupByType.get(fields.itemTypeId);
+  const values: ItemFormValues = {
+    ...fields,
+    usages: usages ?? (guessedCup ? { [guessedCup]: "1" } : {}),
+  };
 
   const [menu, setMenu] = useState<MenuDraft>({
     enabled: false,
@@ -87,26 +86,12 @@ export function ItemForm({
   const menuKeyTaken =
     menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
 
-  const updateField = (
-    key: Exclude<keyof ItemFormValues, "usages">,
-    value: string,
-  ) => {
-    setValues((prev) => ({
-      ...prev,
-      [key]: value,
-      ...(key === "itemTypeId" && !usagesTouched
-        ? { usages: guessUsages(value) }
-        : {}),
-    }));
+  const updateField = (key: keyof typeof fields, value: string) => {
+    setFields((prev) => ({ ...prev, [key]: value }));
   };
 
-  const setUsage = (resourceId: string, value: string) => {
-    setUsagesTouched(true);
-    setValues((prev) => ({
-      ...prev,
-      usages: { ...prev.usages, [resourceId]: value },
-    }));
-  };
+  const setUsage = (resourceId: string, value: string) =>
+    setUsages({ ...values.usages, [resourceId]: value });
 
   return (
     <form

@@ -401,13 +401,6 @@ const describeError = (error: ErrorObject, value: unknown): string => {
   }
 };
 
-// エラーの出た列。足りない列は instancePath に出ないので params から取る
-const propertyOf = (error: ErrorObject, path: string[]): string | null =>
-  path[0] ??
-  (error.keyword === "required"
-    ? String((error.params as { missingProperty: string }).missingProperty)
-    : null);
-
 /**
  * 読み込んだ行を、既存の API の呼び出しの列にする。
  * 作成だけを行い、名前（メニューはキー）が既にあればエラーにする。背景色は既存の対象にも付けられる。
@@ -703,54 +696,53 @@ export const planMasterImport = (
     ]);
   }
 
-  const SCHEMAS: Record<
-    Exclude<MasterCall["table"], "item_stock_usages">,
-    SchemaName
-  > = {
+  // 使用量は本文の配列の1件ずつに当てる
+  const SCHEMAS: Record<MasterCall["table"], SchemaName> = {
     item_types: "ItemTypeCreateRequest",
     items: "ItemCreateRequest",
     menus: "MenuCreateRequest",
     color_settings: "ColorSettingUpsertRequest",
     stock_resources: "StockResourceRequest",
+    item_stock_usages: "ItemStockUsageRequest",
+  };
+  // coerceTypes で CSV の文字列（"400" など）がスキーマの型に直る。エラーの位置は本文の中のパスにする
+  const errorsOf = (name: SchemaName, body: unknown, at: string[] = []) => {
+    const validate = validatorOf(name);
+    if (validate(body)) return [];
+    return (validate.errors ?? []).map((error) => ({
+      error,
+      path: [...at, ...error.instancePath.split("/").slice(1)],
+    }));
   };
   for (const call of calls) {
-    if (call.table === "item_stock_usages") {
-      // 本文は配列なので1件ずつ当て、エラーはその行で示す
-      const validate = validatorOf("ItemStockUsageRequest");
-      const source = sources.get(call);
-      for (const [i, usage] of (
-        call.body.usages as Record<string, unknown>[]
-      ).entries()) {
-        const row = source?.items[i];
-        if (validate(usage) || !row) continue;
-        for (const error of validate.errors ?? []) {
-          const path = error.instancePath.split("/").slice(1);
-          const property = propertyOf(error, path);
-          report(
-            row,
-            property && (REF_COLUMNS[property] ?? property),
-            describeError(error, getAt(usage, path)),
-          );
-        }
-      }
-      continue;
-    }
-    const validate = validatorOf(SCHEMAS[call.table]);
-    // coerceTypes で CSV の文字列（"400" など）がスキーマの型に直る
-    if (validate(call.body)) continue;
+    const schema = SCHEMAS[call.table];
+    const errors =
+      call.table === "item_stock_usages"
+        ? (call.body.usages as unknown[]).flatMap((usage, i) =>
+            errorsOf(schema, usage, ["usages", String(i)]),
+          )
+        : errorsOf(schema, call.body);
     const source = sources.get(call);
     if (!source) continue;
-    for (const error of validate.errors ?? []) {
-      const path = error.instancePath.split("/").slice(1);
+    for (const { error, path } of errors) {
       const value = getAt(call.body, path);
       let row = source.row;
       let rest = path;
-      // メニューの構成のエラーは、menu_items の行で示す
-      if (call.table === "menus" && path[0] === "items" && path.length >= 2) {
+      // メニューの構成と使用量のエラーは、menu_items・item_stock_usages の行で示す
+      const nested =
+        (call.table === "menus" && path[0] === "items") ||
+        call.table === "item_stock_usages";
+      if (nested && path.length >= 2) {
         row = source.items[Number(path[1])] ?? row;
         rest = path.slice(2);
       }
-      const property = propertyOf(error, rest);
+      const property =
+        rest[0] ??
+        (error.keyword === "required"
+          ? String(
+              (error.params as { missingProperty: string }).missingProperty,
+            )
+          : null);
       const column =
         call.table === "menus" && property === "items" && rest.length <= 1
           ? "menu_items"
