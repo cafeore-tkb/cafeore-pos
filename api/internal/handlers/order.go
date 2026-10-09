@@ -301,19 +301,21 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	status := http.StatusCreated
 	if existing != nil {
-		c.JSON(http.StatusOK, toOrderResponse(existing))
-		return
+		// 保存済みの注文を返すときも配信と残量の確認をする。前の作成が配信の前に失敗していても、
+		// 送り直しで済ませるため。配信は同じ注文の置き換え、確認は通知済みなら送らないので、重ねても変わらない
+		status = http.StatusOK
 	}
 
-	// 関連データをロードし、作った注文だけを配信する
+	// 関連データをロードし、この注文だけを配信する
 	resp, err := publishOrder(h.db, h.hub, order.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(status, resp)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
