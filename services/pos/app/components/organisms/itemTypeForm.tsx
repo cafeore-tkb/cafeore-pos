@@ -1,4 +1,4 @@
-import { type ItemType, itemTypeSchema } from "@cafeore/common";
+import type { ItemType } from "@cafeore/common";
 import { useId, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -12,11 +12,15 @@ type ItemTypeFlags = Pick<
   "makes_cup" | "needs_brew" | "senior_only" | "iced_brew"
 >;
 
-// 新しい種類の入力の初め（項目は API の列の既定値と同じ zod の既定値）
-export const EMPTY_ITEM_TYPE: ItemTypeFormValues = itemTypeSchema.parse({
+// 新しい種類の入力の初め（項目は API の列の既定値と同じ）
+export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
   name: "",
   display_name: "",
-});
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
+};
 
 // parent が外れているあいだは押せず、外すとこちらも外れる（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
 // API も同じ組み合わせしか受け付けない

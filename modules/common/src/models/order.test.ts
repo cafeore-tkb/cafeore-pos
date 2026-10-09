@@ -1,14 +1,18 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
-import { itemTypeSchema } from "./item";
+import type { ItemType } from "./item";
 import { MenuEntity } from "./menu";
 import { OrderEntity } from "./order";
 
-const hotType = itemTypeSchema.parse({
+const hotType: ItemType = {
   id: "1",
   name: "hot",
   display_name: "ホット",
-});
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
+};
 const iceType = {
   ...hotType,
   id: "2",

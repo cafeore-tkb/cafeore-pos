@@ -6,7 +6,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import _ from "lodash";
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodSchema } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
@@ -26,9 +26,8 @@ import {
 } from "../models/order";
 import type { components } from "../types/api";
 
-// 入力の型は出力と違ってよい（既定値のある項目は、古いドキュメントに無くても読める）
 export const converter = <T>(
-  schema: ZodType<T, ZodTypeDef, unknown>,
+  schema: ZodSchema<T>,
 ): FirestoreDataConverter<T> => {
   return {
     toFirestore: (data: T) => {

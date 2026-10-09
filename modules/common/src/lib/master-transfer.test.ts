@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { itemTypeSchema } from "../models/item";
 import { readOpenapiSchemas } from "../scripts/generate-openapi-schemas";
 import openapiSchemas from "../types/openapi-schemas.json";
 import {
@@ -20,8 +19,13 @@ const ITEM_MILK = "22222222-2222-4222-8222-222222222222";
 const MENU_OLD = "33333333-3333-4333-8333-333333333333";
 
 const hotType = {
-  ...itemTypeSchema.parse({ name: "hot", display_name: "ホット" }),
   id: TYPE_HOT,
+  name: "hot",
+  display_name: "ホット",
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
 };
 
 const emptySnapshot: MasterSnapshot = {
