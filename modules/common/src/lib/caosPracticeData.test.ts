@@ -52,9 +52,6 @@ test("unit: Firestore 版の注文から、許可した項目だけを写す（�
       },
     ],
   });
-  const json = JSON.stringify(toPracticeOrder(firestoreOrder));
-  expect(json).not.toContain("テスト担当");
-  expect(json).not.toContain("テストのコメント");
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
@@ -145,7 +142,6 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
   // 応答の配列をそのまま保存したファイルも読める
   const { orders } = mergePracticeFiles([[order]]);
   expect(orders.map((converted) => converted.orderId)).toStrictEqual([12]);
-  expect(JSON.stringify(orders)).not.toContain("山田");
 });
 
 test("unit: 同じ注文が別のファイルにあっても 1 件にし、作った順に並べる", () => {

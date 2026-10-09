@@ -19,7 +19,6 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   baristas,
   unassignedOrders,
   nextAvailable,
-  currentTimeSec,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -39,7 +38,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
 
       <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
         {baristas.map((barista) => {
-          const lane = laneStatus(barista, currentTimeSec);
+          const lane = laneStatus(barista);
           const { current } = lane;
           const isLinked = barista.queue.some(
             (ticket) => orderLabel(ticket) === selectedOrderId,
