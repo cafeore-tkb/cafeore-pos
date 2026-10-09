@@ -10,6 +10,7 @@ import {
   caosLane,
   cupNeedsBrew,
   cupSeniorOnly,
+  itemMakesCup,
   mergeWrites,
   unassignWrites,
 } from "./caos-board";
@@ -196,7 +197,8 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(cards.map((c) => c.orderNo)).toEqual([2]);
   });
 
-  test("抽出が要るか・上級生のみかは種類の名前（部分一致）で決める", () => {
+  // TODO: C1（種類の makes_cup・needs_brew・senior_only）が入ったら、名前で決める前提ごとこのテストを消す
+  test("カップを作るか・抽出が要るか・上級生のみかは種類の名前（部分一致）で決める", () => {
     const names = [
       "brend",
       "gourmet",
@@ -210,6 +212,15 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     const of = (name: string) => ({
       item: { id: name, name, abbr: name, item_type: type(name) },
     });
+    expect(names.filter(itemMakesCup)).toEqual([
+      "brend",
+      "gourmet",
+      "hot",
+      "ice",
+      "iceOre",
+      "limited",
+      "milk",
+    ]);
     expect(names.filter((name) => cupNeedsBrew(of(name)))).toEqual([
       "brend",
       "gourmet",
