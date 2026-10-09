@@ -34,11 +34,14 @@ func (r *StockResource) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// アイテム1杯で在庫対象をどれだけ使うか。
+// アイテム1杯で在庫対象をどれだけ使うか。変えるときは今の行を閉じて新しい行を足し、履歴で持つ。
+// 注文は、注文した時刻に有効だった行（ValidFrom 以降、ValidTo より前）で数える。ValidTo が nil なら今有効。
 type ItemStockUsage struct {
 	ItemID     uuid.UUID `gorm:"type:uuid;primaryKey"`
 	ResourceID uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Amount     float64   `gorm:"type:double precision;not null;check:amount > 0"`
+	ValidFrom  time.Time `gorm:"primaryKey;not null"`
+	ValidTo    *time.Time
+	Amount     float64 `gorm:"type:double precision;not null;check:amount > 0"`
 }
 
 // 棚卸し（count）・入荷（receipt）・調整（adjust）の記録。

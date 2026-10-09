@@ -136,16 +136,15 @@ export interface paths {
     post: operations["createStockEvent"];
   };
   "/api/inventory/usages": {
-    /** アイテム1杯あたりの使用量一覧 */
+    /** アイテム1杯あたりの今の使用量一覧 */
     get: operations["getStockUsages"];
-    /** アイテム1杯あたりの使用量をまとめて置き換える */
-    put: operations["replaceStockUsages"];
   };
   "/api/inventory/usages/{item_id}": {
     /**
      * 1つのアイテムの使用量を置き換える
      * @description そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
      * ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+     * 変わった在庫対象だけ前の値を履歴に残して今から新しい値にするので、それより前の注文は前の使用量で数える。
      */
     put: operations["replaceItemStockUsages"];
   };
@@ -1240,24 +1239,8 @@ export interface operations {
       };
     };
   };
-  /** アイテム1杯あたりの使用量一覧 */
+  /** アイテム1杯あたりの今の使用量一覧 */
   getStockUsages: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量をまとめて置き換える */
-  replaceStockUsages: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StockUsage"][];
-      };
-    };
     responses: {
       /** @description 成功 */
       200: {
@@ -1271,6 +1254,7 @@ export interface operations {
    * 1つのアイテムの使用量を置き換える
    * @description そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
    * ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+   * 変わった在庫対象だけ前の値を履歴に残して今から新しい値にするので、それより前の注文は前の使用量で数える。
    */
   replaceItemStockUsages: {
     parameters: {
