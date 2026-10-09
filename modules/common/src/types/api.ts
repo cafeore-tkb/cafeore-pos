@@ -278,6 +278,25 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない */
+      dripper: number | null;
+      /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
+      dripper_position: number | null;
+      /**
+       * Format: uuid
+       * @description CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+       */
+      drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を始めた時刻
+       */
+      brew_started_at: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を終えた時刻
+       */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -428,6 +447,54 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
+    CaosCupState: {
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
+    };
+    /**
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+     * start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+     * dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+     */
+    CaosCupAfter: {
+      dripper: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /**
+       * Format: uuid
+       * @description dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
+       * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+       */
+      insert_before: string | null;
+      /** @description 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今 */
+      start_brew: boolean;
+    };
+    /**
+     * @description カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+     * 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+     */
+    CaosCupsWrite: {
+      cup_ids: string[];
+      before: components["schemas"]["CaosCupState"];
+      after: components["schemas"]["CaosCupAfter"];
+    };
+    CaosCupsWriteRequest: {
+      writes: components["schemas"]["CaosCupsWrite"][];
+    };
+    CaosNextRequest: {
+      /**
+       * Format: uuid
+       * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+       */
+      drip_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */

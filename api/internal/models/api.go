@@ -44,6 +44,54 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 )
 
+// CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+// dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+type CaosCupAfter struct {
+	DripId  *openapi_types.UUID `json:"drip_id"`
+	Dripper *int                `json:"dripper"`
+
+	// InsertBefore dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
+	// dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+	InsertBefore *openapi_types.UUID `json:"insert_before"`
+
+	// StartBrew 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今
+	StartBrew bool `json:"start_brew"`
+}
+
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+type CaosCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *int                `json:"dripper_position"`
+}
+
+// CaosCupsWrite カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+// 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+type CaosCupsWrite struct {
+	// After CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+	// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+	// dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+	After CaosCupAfter `json:"after"`
+
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
+}
+
+// CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
+type CaosCupsWriteRequest struct {
+	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosNextRequest defines model for CaosNextRequest.
+type CaosNextRequest struct {
+	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+	DripId *openapi_types.UUID `json:"drip_id"`
+}
+
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -286,8 +334,22 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	Id   openapi_types.UUID `json:"id"`
-	Item ItemResponse       `json:"item"`
+	// BrewFinishedAt CaOS で抽出を終えた時刻
+	BrewFinishedAt *time.Time `json:"brew_finished_at"`
+
+	// BrewStartedAt CaOS で抽出を始めた時刻
+	BrewStartedAt *time.Time `json:"brew_started_at"`
+
+	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+	DripId *openapi_types.UUID `json:"drip_id"`
+
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	Dripper *int `json:"dripper"`
+
+	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
+	DripperPosition *int               `json:"dripper_position"`
+	Id              openapi_types.UUID `json:"id"`
+	Item            ItemResponse       `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -297,6 +359,18 @@ type OrderCupResponse struct {
 
 	// ServedAt このカップを提供した時刻。未提供なら null
 	ServedAt *time.Time `json:"served_at"`
+}
+
+// OrderListItem defines model for OrderListItem.
+type OrderListItem struct {
+	BillingAmount     int                `json:"billing_amount"`
+	CreatedAt         time.Time          `json:"created_at"`
+	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
+	Id                openapi_types.UUID `json:"id"`
+	OrderId           int                `json:"order_id"`
+	ReadyAt           *time.Time         `json:"ready_at"`
+	Received          *int               `json:"received,omitempty"`
+	ServedAt          *time.Time         `json:"served_at"`
 }
 
 // OrderResponse defines model for OrderResponse.
