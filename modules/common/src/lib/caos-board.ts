@@ -18,12 +18,18 @@ import { jstDate } from "./jst";
 // 時刻の代わりに「始める」の印（start_brew）を持つ。
 
 /** ドリッパーの数（番号は 1〜6。画面では 1st〜6th） */
-export const CAOS_DRIPPERS = 6;
+const CAOS_DRIPPERS = 6;
 /** ドリッパーの番号（1〜6） */
 export const CAOS_DRIPPER_IDS: readonly number[] = Array.from(
   { length: CAOS_DRIPPERS },
   (_, i) => i + 1,
 );
+/** ドリッパーの番号が 1〜6 でなければ、その理由（画面にそのまま出す） */
+export const caosDripperError = (dripper: number) =>
+  CAOS_DRIPPER_IDS.includes(dripper)
+    ? null
+    : `ドリッパーは 1〜${CAOS_DRIPPERS} です`;
+
 /** 1 枚のカード（1 回のドリップ）で淹れる最大の杯数 */
 export const CAOS_MAX_CUPS = 2;
 
@@ -128,6 +134,10 @@ const compareCups = (a: CaosBoardCup, b: CaosBoardCup) =>
   a.orderNo - b.orderNo ||
   compareStr(a.orderId, b.orderId) ||
   a.position - b.position;
+
+// 同じカードにまとめてよいカップの印（商品と指名）
+const itemNomineeKey = (cup: Pick<CaosBoardCup, "item" | "nominee">) =>
+  `${cup.item.id ?? cup.item.name}\u0000${cup.nominee ?? ""}`;
 
 const nomineeKey = (nominee: string | null) =>
   nominee === null ? "" : `\u0001${nominee}`;
@@ -265,9 +275,7 @@ export const buildCaosCards = (
         continue;
       }
       if (dripId || ready) continue;
-      const key = [order.id, cup.item.id ?? cup.item.name, nominee ?? ""].join(
-        "\u0000",
-      );
+      const key = `${order.id}\u0000${itemNomineeKey(boardCup)}`;
       loose.set(key, [...(loose.get(key) ?? []), boardCup]);
     }
   }
@@ -351,8 +359,8 @@ export const assignWrites = (
   dripper: number,
   { place, newId }: CaosAssignOptions,
 ): CaosWritesResult => {
-  if (!CAOS_DRIPPER_IDS.includes(dripper))
-    return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
+  const invalid = caosDripperError(dripper);
+  if (invalid) return { error: invalid };
   if (card.status !== "unassigned" && card.status !== "queued")
     return { error: "抽出中・終了のカードは動かせません" };
   const lane = caosLane(cards, dripper);
@@ -388,10 +396,6 @@ export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
-// 統合の相手を決めるキー（商品と指名）。1 杯のカードどうしで、このキーが同じなら統合できる
-const mergeKey = (card: CaosCard) =>
-  `${card.cups[0].item.id ?? card.cups[0].item.name}\u0000${card.cups[0].nominee ?? ""}`;
-
 /** 統合できるか：1 杯どうしで、未割当どうし・待機どうし、同じ商品・同じ指名 */
 export const canMergeCards = (a: CaosCard, b: CaosCard) =>
   a.key !== b.key &&
@@ -399,7 +403,7 @@ export const canMergeCards = (a: CaosCard, b: CaosCard) =>
   (a.status === "unassigned" || a.status === "queued") &&
   a.cups.length === 1 &&
   b.cups.length === 1 &&
-  mergeKey(a) === mergeKey(b);
+  itemNomineeKey(a.cups[0]) === itemNomineeKey(b.cups[0]);
 
 /**
  * 1 杯のカードどうしを 2 杯の同時抽出にまとめる。

@@ -1,12 +1,12 @@
 import type { Cup } from "../models/cup";
 import {
-  CAOS_DRIPPERS,
   CAOS_MAX_CUPS,
   type CaosCard,
   type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
   buildCaosCards,
+  caosDripperError,
   caosLane,
   cupNeedsBrew,
   itemMakesCup,
@@ -130,12 +130,8 @@ const validateAfter = (after: CaosCupsWrite["after"]) => {
       return "ドリッパーの無いカップは、前に入れるカードを決められず、抽出も始められません";
     return null;
   }
-  if (
-    !Number.isInteger(after.dripper) ||
-    after.dripper < 1 ||
-    after.dripper > CAOS_DRIPPERS
-  )
-    return `ドリッパーは 1〜${CAOS_DRIPPERS} です`;
+  const invalid = caosDripperError(after.dripper);
+  if (invalid) return invalid;
   if (after.drip_id === null)
     return "ドリッパーに置くカップには drip_id が要ります";
   if (after.insert_before !== null && after.insert_before === after.drip_id)
@@ -309,8 +305,8 @@ export const advanceCaosPracticeDripper = (
   seenDripId: string | null,
   now: Date,
 ): CaosPracticeResult => {
-  if (!Number.isInteger(dripper) || dripper < 1 || dripper > CAOS_DRIPPERS)
-    return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
+  const invalid = caosDripperError(dripper);
+  if (invalid) return { error: invalid };
   const next = cloneOrders(orders);
   const { brewing: cur, queued } = caosLane(buildCaosCards(next), dripper);
   if (seenDripId !== null && (!cur || cur.dripId !== seenDripId))
