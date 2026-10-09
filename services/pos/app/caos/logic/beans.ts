@@ -28,13 +28,12 @@ export const buildBeanIndex = (
 };
 
 // 盤面のカードに豆を付ける。在庫の設定はあとから読み込まれたり変わったりするので、カードには持たず、出すたびに付ける
-// （logic/posOrders.ts の paintBoard と同じ）。設定が無い商品は空。商品の無いカード（実データテスト）はそのまま。
+// （logic/posOrders.ts の paintBoard と同じ）。設定が無い商品と、商品の無いカード（実データテスト）はそのまま。
 export const attachBeans = (board: Board, index: BeanIndex): Board =>
-  mapCards(board, (card) =>
-    card.item
-      ? { ...card, beans: (card.item.id && index.get(card.item.id)) || [] }
-      : card,
-  );
+  mapCards(board, (card) => {
+    const beans = card.item?.id && index.get(card.item.id);
+    return beans ? { ...card, beans } : card;
+  });
 
 /** 豆（在庫対象の ID）ごとの、盤面で待っている（未割当・待機・抽出中の）杯数。待っていない豆は入らない */
 export const waitingCupsByBean = (board: Board): Map<string, number> => {

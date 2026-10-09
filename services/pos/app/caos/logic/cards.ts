@@ -20,7 +20,7 @@ export interface DripCard {
   color?: string;
   /** 区分。商品の種類の表示名（display_name）をそのまま（cafeore-pos の注文のカードにだけ付く） */
   typeName?: string;
-  /** 豆（POS の在庫対象のうち kind が bean）。item から在庫の設定の「商品 → 豆」を引いて付ける（logic/beans.ts の attachBeans）。設定が無い商品は空 */
+  /** 豆（POS の在庫対象のうち kind が bean）。item から在庫の設定の「商品 → 豆」を引いて付ける（logic/beans.ts の attachBeans）。設定が無い商品には付かない */
   beans?: StockResource[];
   /** 指名のドリッパー（1〜6） */
   preferredBaristaId?: number;
