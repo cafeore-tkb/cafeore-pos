@@ -402,30 +402,26 @@ const CashierV2 = ({
               focus={inputStatus === "submit"}
               number={5}
             />
-            {/* disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
-            <div
+            {/* 保存中に disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
+            <fieldset
+              disabled={!canEnterSubmit}
               aria-busy={submitting}
-              className={cn(submitting && "opacity-50")}
+              className={cn("min-w-0 border-0 p-0", submitting && "opacity-50")}
             >
-              <fieldset
-                disabled={!canEnterSubmit}
-                className="min-w-0 border-0 p-0"
-              >
-                <SubmitSection
-                  submitOrder={submitOrder}
-                  onExactPayment={() => submitOrder(true)}
-                  order={newOrder}
-                  focus={inputStatus === "submit"}
-                  focusTarget={submitFocusTarget}
-                  exactPaymentDisabled={
-                    newOrder.menus.length === 0 || hasReceivedInput
-                  }
-                />
-              </fieldset>
+              <SubmitSection
+                submitOrder={submitOrder}
+                onExactPayment={() => submitOrder(true)}
+                order={newOrder}
+                focus={inputStatus === "submit"}
+                focusTarget={submitFocusTarget}
+                exactPaymentDisabled={
+                  newOrder.menus.length === 0 || hasReceivedInput
+                }
+              />
               {submitting && (
                 <p className="text-center text-sm text-stone-500">保存中…</p>
               )}
-            </div>
+            </fieldset>
           </div>
         </div>
         <audio src={bellTwice} ref={soundRef}>
