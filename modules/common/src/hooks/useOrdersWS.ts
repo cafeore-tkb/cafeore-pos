@@ -39,7 +39,8 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
-  // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま
+  // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま。
+  // 切断しても null に戻さず、最後に受け取った状態を保つ（つなぎ直すとサーバーが最新を送ってくる）
   const [masterState, setMasterState] = useState<MasterState | null>(null);
   // レジの編集中注文。API にまだ無ければサーバーは何も流さないので null のまま
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(
