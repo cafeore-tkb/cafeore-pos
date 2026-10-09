@@ -18,8 +18,6 @@ export type DeleteTarget = {
   /** 使っている側の種類。usedBy が空でなければ削除させない */
   usedByLabel?: string;
   usedBy: string[];
-  /** 削除できるときに添える注意 */
-  note?: string;
   run: () => Promise<void>;
 };
 
@@ -63,10 +61,7 @@ export function DeleteDialog({ target, onClose }: Props) {
                   </ul>
                 </div>
               ) : (
-                <p>
-                  この{target.label}は一覧から消えます。
-                  {target.note}
-                </p>
+                <p>この{target.label}は一覧から消えます。</p>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

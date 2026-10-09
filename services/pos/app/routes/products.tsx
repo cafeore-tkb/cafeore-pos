@@ -76,9 +76,9 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
-  const { statuses } = useInventory();
+  const { statuses, isLoaded: inventoryLoaded } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
-  const { usages } = useStockUsages();
+  const { usages, isLoaded: usagesLoaded } = useStockUsages();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -174,6 +174,7 @@ export default function ProductsPage() {
                 usage={usageOfItems}
                 resources={resources}
                 stockUsages={usages}
+                stockLoaded={inventoryLoaded && usagesLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>
