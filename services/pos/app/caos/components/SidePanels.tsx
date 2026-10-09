@@ -23,7 +23,7 @@ import { OrderCard } from "./OrderCard";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
 // onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
-export const SidePanel: React.FC<{
+const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
   onOutsidePress?: () => void;
@@ -59,7 +59,7 @@ export const SidePanel: React.FC<{
 };
 
 /** パネルの下の「キャンセル」と確定のボタン */
-export const PanelFooter: React.FC<{
+const PanelFooter: React.FC<{
   onCancel: () => void;
   children: React.ReactNode;
 }> = ({ onCancel, children }) => (
@@ -198,7 +198,7 @@ export const TicketDetailPanel: React.FC<{
             onMoveTicket(ticket, bayId, place);
             onClose();
           }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white"
         >
           {place ? `${bayId} 先頭へ` : bayId}
         </button>

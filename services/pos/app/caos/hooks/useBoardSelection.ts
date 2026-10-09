@@ -7,7 +7,7 @@ import { orderLabel } from "../logic/cards";
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
  * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、assign は空きスロットへの割当、auxiliary は補助のタブ
  */
-export type OpenPanel =
+type OpenPanel =
   | { kind: "detail"; key: string }
   | { kind: "assign"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }

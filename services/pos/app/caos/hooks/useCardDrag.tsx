@@ -13,7 +13,6 @@ const DRAG_THRESHOLD_PX = 12;
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
  * 列は from（移す前のドリッパー。運んでいるカード自身がその列の中にある）を飛ばして探す。
- * from は null。
  */
 export const bayTargetAt = (
   clientX: number,

@@ -5,22 +5,21 @@ import { type Lane, laneActive } from "./lanes";
 // 抽出の開始・終了はカップの時刻（サーバーが付ける）で、待機の予定時刻は毎回ここで計算する。
 
 /** 前の抽出が終わってから次の抽出を始めるまでの入れ替えの時間（秒） */
-export const CHANGEOVER_SEC = 15;
+const CHANGEOVER_SEC = 15;
 /** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
 const SOON_SEC = 15;
 /** 抽出中が無い列の待機の先頭を置く、今から先の秒（「次へ」で始める） */
 const START_SOON_SEC = 10;
 
-/** カードの抽出時間（秒） */
-export const cardBrewSec = (card: CaosCard) => caosBrewSec(card.cups.length);
-const brewMs = (card: CaosCard) => cardBrewSec(card) * 1000;
+// カードの抽出時間（ミリ秒）
+const brewMs = (card: CaosCard) => caosBrewSec(card.cups.length) * 1000;
 
 // 抽出中のカードの開始（開始の時刻はサーバーが付ける）
 const brewStartMs = (card: CaosCard, nowMs: number) =>
   card.startedAt?.getTime() ?? nowMs;
 
 /** カードを置く時刻（開始・終了。エポックのミリ秒） */
-export interface CardTime {
+interface CardTime {
   card: CaosCard;
   startMs: number;
   endMs: number;

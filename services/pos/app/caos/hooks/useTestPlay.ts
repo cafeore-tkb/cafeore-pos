@@ -18,7 +18,7 @@ import {
 } from "../logic/historical";
 
 /** 実データテスト。時間帯（startMs〜endMs）・練習の時計の今（currentMs）と、時間帯の注文（時刻の順） */
-export interface TestPlaySession {
+interface TestPlaySession {
   status: "active" | "finished";
   startMs: number;
   endMs: number;
