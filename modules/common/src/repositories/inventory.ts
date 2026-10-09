@@ -17,7 +17,7 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to fetch inventory");
     }
-    return data ?? [];
+    return data;
   },
 
   createResource: async (input: StockResourceInput): Promise<StockResource> => {
@@ -28,7 +28,7 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to create stock resource");
     }
-    return data as StockResource;
+    return data;
   },
 
   updateResource: async (
@@ -42,7 +42,7 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to update stock resource");
     }
-    return data as StockResource;
+    return data;
   },
 
   deleteResource: async (id: string): Promise<void> => {
@@ -71,7 +71,7 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to record stock event");
     }
-    return data as StockEventResult;
+    return data;
   },
 
   getUsages: async (): Promise<StockUsage[]> => {
@@ -81,7 +81,7 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to fetch stock usages");
     }
-    return data ?? [];
+    return data;
   },
 
   replaceUsages: async (usages: StockUsage[]): Promise<StockUsage[]> => {
@@ -92,6 +92,6 @@ export const inventoryRepository = {
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to save stock usages");
     }
-    return data ?? [];
+    return data;
   },
 };

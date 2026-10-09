@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { orderRepository } from "../repositories/order";
 import { apiWebSocketUrl, throwApiError } from "./client";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
+// apiClient は作ったときの fetch を使うので、読み込む前に差し替えておく
+const fetchMock = vi.hoisted(() => {
+  const mock = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", mock);
+  return mock;
 });
 
 describe("[unit] throwApiError", () => {
@@ -33,8 +36,7 @@ describe("[unit] throwApiError", () => {
 
 describe("[unit] apiClient", () => {
   test("reads the error the API wrote", async () => {
-    // クライアントは呼ぶたびに fetch を読むので、読み込んだ後に差し替えても届く
-    vi.stubGlobal("fetch", async () =>
+    fetchMock.mockResolvedValue(
       Response.json({ error: "Order not found" }, { status: 404 }),
     );
     await expect(

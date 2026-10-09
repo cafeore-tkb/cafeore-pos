@@ -2,23 +2,15 @@ import createClient from "openapi-fetch";
 import type { paths } from "../types/api";
 
 /** API の接続先。HTTP も WebSocket もここから決める */
-export const API_BASE_URL: string =
+export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 /** API の WebSocket の URL（http → ws、https → wss） */
 export const apiWebSocketUrl = (path: string) =>
   `${API_BASE_URL.replace(/^http/, "ws").replace(/\/$/, "")}${path}`;
 
-/**
- * API のクライアント。どのリポジトリもこれを使う。
- *
- * fetch は呼ぶたびに globalThis から読む。openapi-fetch は作ったときの fetch を
- * 掴むので、テストで fetch を差し替えても、先に作られたクライアントには届かないため
- */
-export const apiClient = createClient<paths>({
-  baseUrl: API_BASE_URL,
-  fetch: (request) => globalThis.fetch(request),
-});
+/** API のクライアント。どのリポジトリもこれを使う */
+export const apiClient = createClient<paths>({ baseUrl: API_BASE_URL });
 
 /**
  * API の呼び出しが失敗した理由。取れなければ HTTP のステータス。
