@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import type { OrderAction } from "~/components/functional/useOrderState";
+import type { SubmitPayload } from "~/components/functional/useSubmitOrder";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -33,23 +34,6 @@ export default function Cashier() {
   const canSubmitOrder = useMemo(
     () => isDeviceOnline && status === "open",
     [isDeviceOnline, status],
-  );
-
-  // 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
-  // submit だと直後のレジ状態同期の submit で打ち切られ、失敗しても気づけない (#732)
-  // 時間切れで打ち切っても通信は止まらず、あとでサーバー側の保存が成功することがある。
-  // 送り直しで二重にできないよう、同じ注文には同じ idempotencyKey を付ける
-  const submitPayload = useCallback(
-    async (newOrder: OrderEntity, idempotencyKey: string | undefined) => {
-      const savedOrder = await withTimeout(
-        orderRepository.save(newOrder, { idempotencyKey }),
-        SUBMIT_TIMEOUT_MS,
-      );
-      // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
-      lastSubmittedOrderId = savedOrder.id;
-      return savedOrder;
-    },
-    [],
   );
 
   const syncOrder = useCallback(
@@ -103,6 +87,20 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
 // 別々に読み書きすると入力を空にする同期と上書きし合うので、同期で一緒に書き込む。
 // 次の品物を足すまでは、どの同期でも載せ続ける
 let lastSubmittedOrderId: string | null = null;
+
+// 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
+// submit だと直後のレジ状態同期の submit で打ち切られ、失敗しても気づけない (#732)
+// 時間切れで打ち切っても通信は止まらず、あとでサーバー側の保存が成功することがある。
+// 送り直しで二重にできないよう、同じ注文には同じ idempotencyKey を付ける
+const submitPayload: SubmitPayload = async (newOrder, idempotencyKey) => {
+  const savedOrder = await withTimeout(
+    orderRepository.save(newOrder, { idempotencyKey }),
+    SUBMIT_TIMEOUT_MS,
+  );
+  // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
+  lastSubmittedOrderId = savedOrder.id;
+  return savedOrder;
+};
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
