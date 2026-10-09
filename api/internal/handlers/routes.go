@@ -1,31 +1,27 @@
-package main
+package handlers
 
 import (
-	"cafeore-pos/api/internal/handlers"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// ルートを登録する。
+// RegisterRoutes は API のルートを登録する。main.go も、テストで API を丸ごと立てるときもこれを呼ぶ。
 //
-// openapi.yaml の全操作をここで手書きで登録する。oapi-codegen の gin サーバー
+// openapi.yaml の全操作をここで手書きで登録する（/status・/health は DB の状態と起動時に調べた
+// スキーマのズレを返すので main.go が登録する）。oapi-codegen の gin サーバー
 // （RegisterHandlers）は、パスの id を UUID に変換できないと独自の形の 400 を返す・
 // ハンドラーの引数の形が違う・WebSocket など openapi に無いルートを扱えない、ので使わない。
-// openapi.yaml との食い違いは routes_test.go で確かめる。
-func registerRoutes(r gin.IRouter, db *gorm.DB, hub *handlers.Hub, inventory *handlers.Inventory) {
-	item := handlers.NewItemHandler(db)
-	menu := handlers.NewMenuHandler(db)
-	itemType := handlers.NewItemTypeHandler(db)
-	order := handlers.NewOrderHandler(db, hub, inventory)
-	comment := handlers.NewCommentHandler(db, hub)
-	masterState := handlers.NewMasterStateHandler(db, hub)
-	cashierState := handlers.NewCashierStateHandler(db, hub)
-	inv := handlers.NewInventoryHandler(inventory)
-	colorSetting := handlers.NewColorSettingHandler(db)
-
-	r.GET("/status", statusHandler)
-	r.GET("/health", healthHandler)
+// openapi.yaml との食い違いは cmd/server/routes_test.go で確かめる。
+func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory) {
+	item := NewItemHandler(db)
+	menu := NewMenuHandler(db)
+	itemType := NewItemTypeHandler(db)
+	order := NewOrderHandler(db, hub, inventory)
+	comment := NewCommentHandler(db, hub)
+	masterState := NewMasterStateHandler(db, hub)
+	cashierState := NewCashierStateHandler(db, hub)
+	inv := NewInventoryHandler(inventory)
+	colorSetting := NewColorSettingHandler(db)
 
 	api := r.Group("/api")
 	{
