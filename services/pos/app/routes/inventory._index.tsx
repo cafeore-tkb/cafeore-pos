@@ -49,7 +49,7 @@ export default function InventoryPage() {
     return (
       <div className="p-4">
         在庫対象がまだありません。
-        <Link className="underline" to="/inventory/settings">
+        <Link className="underline" to="/products?tab=stock">
           設定
         </Link>
         からカップや豆を追加してください。
