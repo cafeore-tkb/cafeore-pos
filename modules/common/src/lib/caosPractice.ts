@@ -1,11 +1,12 @@
 import type { Cup } from "../models/cup";
 import {
-  CAOS_DRIPPERS,
   CAOS_MAX_CUPS,
   type CaosCard,
+  type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
   buildCaosCards,
+  caosDripperError,
   caosLane,
   cupNeedsBrew,
   itemMakesCup,
@@ -107,14 +108,15 @@ const sameTime = (a: Date | null, b: Date | null) =>
 const parseTime = (value: string | null) =>
   value === null ? null : new Date(value);
 
-const sameBefore = (cup: Cup, before: CaosCupsWrite["before"]) =>
-  cup.dripper === before.dripper &&
-  cup.dripperPosition === before.dripper_position &&
-  cup.dripId === before.drip_id &&
-  sameTime(cup.brewStartedAt, parseTime(before.brew_started_at)) &&
-  sameTime(cup.brewFinishedAt, parseTime(before.brew_finished_at));
+const stateOf = (before: CaosCupsWrite["before"]): CaosCupState => ({
+  dripper: before.dripper,
+  dripperPosition: before.dripper_position,
+  dripId: before.drip_id,
+  brewStartedAt: parseTime(before.brew_started_at),
+  brewFinishedAt: parseTime(before.brew_finished_at),
+});
 
-const sameState = (a: Cup, b: Cup) =>
+const sameState = (a: CaosCupState, b: CaosCupState) =>
   a.dripper === b.dripper &&
   a.dripperPosition === b.dripperPosition &&
   a.dripId === b.dripId &&
@@ -128,12 +130,8 @@ const validateAfter = (after: CaosCupsWrite["after"]) => {
       return "ドリッパーの無いカップは、前に入れるカードを決められず、抽出も始められません";
     return null;
   }
-  if (
-    !Number.isInteger(after.dripper) ||
-    after.dripper < 1 ||
-    after.dripper > CAOS_DRIPPERS
-  )
-    return `ドリッパーは 1〜${CAOS_DRIPPERS} です`;
+  const invalid = caosDripperError(after.dripper);
+  if (invalid) return invalid;
   if (after.drip_id === null)
     return "ドリッパーに置くカップには drip_id が要ります";
   if (after.insert_before !== null && after.insert_before === after.drip_id)
@@ -152,9 +150,6 @@ const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
 const allCups = (orders: CaosPracticeOrder[]) =>
   orders.flatMap((order) => order.cups);
 
-const findCup = (orders: CaosPracticeOrder[], cupId: string) =>
-  allCups(orders).find((cup) => cup.id === cupId);
-
 // ---------------------------------------------------------------- 書き込みを当てる（PUT /api/caos/cups と同じ）
 
 /**
@@ -166,8 +161,8 @@ const findCup = (orders: CaosPracticeOrder[], cupId: string) =>
 const placeCups = (
   orders: CaosPracticeOrder[],
   write: CaosCupsWrite,
+  dripper: number,
 ): { position: number; error?: undefined } | { error: string } => {
-  const dripper = write.after.dripper as number;
   const writing = new Set(write.cup_ids);
   const cups = allCups(orders).filter((cup) => !writing.has(cup.id));
   const joined = cups.find((cup) => cup.dripId === write.after.drip_id);
@@ -231,22 +226,20 @@ export const applyCaosPracticeWrites = (
   const next = cloneOrders(orders);
   const touched = new Set<string>();
   for (const write of writes) {
+    const before = stateOf(write.before);
     const cups: Cup[] = [];
     for (const id of write.cup_ids) {
-      const cup = findCup(next, id);
+      const cup = allCups(next).find((cup) => cup.id === id);
       if (!cup)
         return {
           error: "カップが消えました（注文が編集・削除されたかもしれません）",
         };
-      if (!sameBefore(cup, write.before))
+      if (!sameState(cup, before))
         return {
           error: "ほかの端末で先に変わりました。もう一度操作してください",
         };
       // 抽出中・終わりのカードは動かさない（終えるのは「次へ」）
-      if (
-        write.before.brew_started_at !== null ||
-        write.before.brew_finished_at !== null
-      )
+      if (before.brewStartedAt !== null || before.brewFinishedAt !== null)
         return { error: "抽出中・終わりのカードは動かせません" };
       if (
         (write.after.dripper !== null || write.after.drip_id !== null) &&
@@ -257,9 +250,9 @@ export const applyCaosPracticeWrites = (
         };
       cups.push(cup);
     }
+    const dripper = write.after.dripper;
     // 抽出を始められるのは、空いている（このカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ（API の requireCaosDripperFree と同じ）
-    if (write.after.start_brew && write.after.dripper !== null) {
-      const dripper = write.after.dripper;
+    if (write.after.start_brew && dripper !== null) {
       const lane = caosLane(buildCaosCards(next), dripper);
       const written = (card: CaosCard) =>
         card.cups.every((cup) => write.cup_ids.includes(cup.id));
@@ -271,13 +264,13 @@ export const applyCaosPracticeWrites = (
         };
     }
     let position: number | null = null;
-    if (write.after.dripper !== null) {
-      const placed = placeCups(next, write);
+    if (dripper !== null) {
+      const placed = placeCups(next, write, dripper);
       if (placed.error !== undefined) return { error: placed.error };
       position = placed.position;
     }
     for (const cup of cups) {
-      cup.dripper = write.after.dripper;
+      cup.dripper = dripper;
       cup.dripperPosition = position;
       cup.dripId = write.after.drip_id;
       cup.brewStartedAt = write.after.start_brew ? new Date(now) : null;
@@ -309,8 +302,8 @@ export const advanceCaosPracticeDripper = (
   seenDripId: string | null,
   now: Date,
 ): CaosPracticeResult => {
-  if (!Number.isInteger(dripper) || dripper < 1 || dripper > CAOS_DRIPPERS)
-    return { error: `ドリッパーは 1〜${CAOS_DRIPPERS} です` };
+  const invalid = caosDripperError(dripper);
+  if (invalid) return { error: invalid };
   const next = cloneOrders(orders);
   const { brewing: cur, queued } = caosLane(buildCaosCards(next), dripper);
   if (seenDripId !== null && (!cur || cur.dripId !== seenDripId))

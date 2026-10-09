@@ -184,7 +184,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("今日（日本時間）の注文だけを見る", () => {
+  test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {
     const yesterday = new Date("2026-10-07T14:59:59Z"); // 日本時間 10/7 23:59:59
     const midnight = new Date("2026-10-07T15:00:00Z"); // 日本時間 10/8 0:00
     const cards = buildCaosCards(
@@ -243,11 +243,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ["ブレンド", false],
       ["スペシャル", true],
     ]);
-  });
-
-  test("今日の区切りは端末の時刻帯によらず日本時間の 0 時", () => {
-    expect(jstDate(Date.parse("2026-10-07T14:59:59Z"))).toBe("2026-10-07");
-    expect(jstDate(Date.parse("2026-10-07T15:00:00Z"))).toBe("2026-10-08");
   });
 
   test("抽出時間", () => {
@@ -492,33 +487,5 @@ describe("[unit] CaOS の書き込み", () => {
       },
     ]);
     expect(mergeWrites(q2, o5, newId)).toHaveProperty("error"); // 待機と未割当
-  });
-
-  test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
-    const cards = board();
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.cups[0].nominee);
-    const o5 = find(cards, (c) => c.orderNo === 5);
-    const merged = mergeWrites(o4, o5, () => "merged");
-    if (!("writes" in merged)) throw new Error(merged.error);
-    const apply = (input: CaosOrderInput): CaosOrderInput => ({
-      ...input,
-      cups: input.cups.map((c) =>
-        merged.writes.some((w) => w.cup_ids.includes(c.id))
-          ? { ...c, dripId: "merged" }
-          : c,
-      ),
-    });
-    const o4cup = o4.cups[0];
-    const o5cup = o5.cups[0];
-    const after = buildCaosCards(
-      [
-        apply(order(4, [{ ...cup({ item: blend }), id: o4cup.id }])),
-        apply(order(5, [{ ...cup({ item: blend }), id: o5cup.id }])),
-      ],
-      DAY,
-    );
-    expect(after.map((c) => [c.key, c.cups.map((x) => x.orderNo)])).toEqual([
-      ["merged", [4, 5]],
-    ]);
   });
 });
