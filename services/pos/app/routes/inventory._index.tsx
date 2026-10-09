@@ -3,6 +3,7 @@ import {
   type InventoryStatus,
   type StockEventKind,
   inventoryRepository,
+  openapiEnumLabels,
   useInventory,
 } from "@cafeore/common";
 import dayjs from "dayjs";
@@ -153,7 +154,7 @@ function StockCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-            {isCup ? "カップ" : "豆"}
+            {openapiEnumLabels("StockResourceKind")[resource.kind]}
           </span>
           <h2 className="font-semibold text-lg">{resource.name}</h2>
         </div>

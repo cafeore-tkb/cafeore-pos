@@ -546,6 +546,12 @@
       "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe"
+    ],
+    "x-enum-descriptions": [
+      "レジ（ボタン）",
+      "レジ（過去の注文）",
+      "マスター",
+      "提供"
     ]
   },
   "ColorSettingResponse": {
@@ -645,7 +651,8 @@
   "StockResourceKind": {
     "type": "string",
     "enum": ["cup", "bean"],
-    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"]
+    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"],
+    "x-enum-descriptions": ["カップ", "豆"]
   },
   "StockResourceRequest": {
     "type": "object",

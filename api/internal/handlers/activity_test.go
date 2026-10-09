@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"fmt"
+	"maps"
+	"os"
 	"testing"
 
 	"cafeore-pos/api/internal/models"
+	"github.com/goccy/go-yaml"
 	"github.com/google/uuid"
 )
 
@@ -123,7 +127,41 @@ func TestColorSettingMessages(t *testing.T) {
 		t.Fatalf("unexpected: %q", got)
 	}
 	cashier := models.ColorSetting{Screen: "cashier_order", Color: "#fff085"}
-	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: ミルク（レジの過去の注文）#fff085 :e-add:" {
+	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: ミルク（レジ（過去の注文））#fff085 :e-add:" {
 		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+// 画面・在庫対象の種類の名前は openapi.yaml の x-enum-descriptions が正本。POS もそこから読むので、通知の名前もそろえる
+func TestEnumLabelsMatchOpenAPI(t *testing.T) {
+	raw, err := os.ReadFile("../../../openapi/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Enum         []any    `yaml:"enum"`
+				Descriptions []string `yaml:"x-enum-descriptions"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	for name, labels := range map[string]map[string]string{
+		"ColorScreen":       colorScreenLabels,
+		"StockResourceKind": stockKindLabels,
+	} {
+		schema := spec.Components.Schemas[name]
+		want := make(map[string]string, len(schema.Enum))
+		for i, value := range schema.Enum {
+			if i < len(schema.Descriptions) {
+				want[fmt.Sprint(value)] = schema.Descriptions[i]
+			}
+		}
+		if len(schema.Enum) == 0 || len(schema.Descriptions) != len(schema.Enum) || !maps.Equal(labels, want) {
+			t.Errorf("%s: Go の名前 %v、openapi.yaml の x-enum-descriptions %v（enum %v）", name, labels, schema.Descriptions, schema.Enum)
+		}
 	}
 }

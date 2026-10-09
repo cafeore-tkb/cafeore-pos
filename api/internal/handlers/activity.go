@@ -127,9 +127,10 @@ func menuDeletedMessage(menu *models.Menu) string {
 
 // --- 背景色 ---
 
+// 画面の名前。openapi.yaml の ColorScreen の x-enum-descriptions と同じにする（TestEnumLabelsMatchOpenAPI で確かめる）
 var colorScreenLabels = map[string]string{
-	string(models.ColorScreenCashier):      "レジのボタン",
-	string(models.ColorScreenCashierOrder): "レジの過去の注文",
+	string(models.ColorScreenCashier):      "レジ（ボタン）",
+	string(models.ColorScreenCashierOrder): "レジ（過去の注文）",
 	string(models.ColorScreenMaster):       "マスター",
 	string(models.ColorScreenServe):        "提供",
 }
@@ -160,6 +161,7 @@ func colorSettingDeletedMessage(target string, setting *models.ColorSetting) str
 
 // --- 在庫対象 ---
 
+// 在庫対象の種類の名前。openapi.yaml の StockResourceKind の x-enum-descriptions と同じにする（TestEnumLabelsMatchOpenAPI で確かめる）
 var stockKindLabels = map[string]string{
 	string(models.StockResourceKindCup):  "カップ",
 	string(models.StockResourceKindBean): "豆",
