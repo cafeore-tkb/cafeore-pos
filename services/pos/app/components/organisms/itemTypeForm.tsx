@@ -7,10 +7,7 @@ import { Switch } from "~/components/ui/switch";
 
 export type ItemTypeFormValues = Omit<ItemType, "id">;
 
-type ItemTypeFlags = Pick<
-  ItemType,
-  "makes_cup" | "needs_brew" | "senior_only" | "iced_brew"
->;
+type FlagKey = "makes_cup" | "needs_brew" | "senior_only" | "iced_brew";
 
 // 新しい種類の入力の初め（項目は API の列の既定値と同じ）
 export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
@@ -25,8 +22,8 @@ export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
 // parent が外れているあいだは押せず、外すとこちらも外れる（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
 // API も同じ組み合わせしか受け付けない
 const FLAG_FIELDS: {
-  key: keyof ItemTypeFlags;
-  parent?: keyof ItemTypeFlags;
+  key: FlagKey;
+  parent?: FlagKey;
   label: string;
   description: string;
 }[] = [
@@ -58,12 +55,12 @@ const FLAG_FIELDS: {
   },
 ];
 
-const setFlag = <T extends ItemTypeFlags>(
-  flags: T,
-  key: keyof ItemTypeFlags,
+const setFlag = (
+  values: ItemTypeFormValues,
+  key: FlagKey,
   checked: boolean,
-): T => {
-  const next = { ...flags, [key]: checked };
+): ItemTypeFormValues => {
+  const next = { ...values, [key]: checked };
   // 親から順に並んでいるので、1回なめれば孫まで外れる
   for (const field of FLAG_FIELDS) {
     if (field.parent && !next[field.parent]) next[field.key] = false;
@@ -72,13 +69,13 @@ const setFlag = <T extends ItemTypeFlags>(
 };
 
 /** 種類の「カップを作る」「抽出が要る」「上級生のみ」「アイス」の切り替え。判定はこの値をそのまま使う */
-export function ItemTypeFlagFields<T extends ItemTypeFlags>({
+export function ItemTypeFlagFields({
   value,
   onChange,
   compact = false,
 }: {
-  value: T;
-  onChange: (value: T) => void;
+  value: ItemTypeFormValues;
+  onChange: (value: ItemTypeFormValues) => void;
   compact?: boolean;
 }) {
   const id = useId();
