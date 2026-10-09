@@ -117,7 +117,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 		FROM orders o
 		JOIN order_menus om ON om.order_id = o.id
 		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
+		JOIN item_stock_usages u ON u.item_id = mi.item_id AND `+usageValidAtOrder+`
 		WHERE u.resource_id = @resource_id
 			AND o.created_at > @scan_from`,
 		map[string]any{
@@ -134,6 +134,9 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	s.Consumed, s.Servings, s.ServingsLastHour = row.Consumed, row.Servings, row.ServingsLastHour
 	return nil
 }
+
+// 使用量は、注文した時刻に有効だった行で掛ける（o は orders、u は item_stock_usages）。
+const usageValidAtOrder = `o.created_at >= u.valid_from AND (u.valid_to IS NULL OR o.created_at < u.valid_to)`
 
 const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
 
@@ -239,10 +242,11 @@ func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
 	ids := []uuid.UUID{}
 	if err := inv.db.Raw(`
 		SELECT DISTINCT u.resource_id
-		FROM order_menus om
+		FROM orders o
+		JOIN order_menus om ON om.order_id = o.id
 		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
-		WHERE om.order_id = ?`, orderID).Scan(&ids).Error; err != nil {
+		JOIN item_stock_usages u ON u.item_id = mi.item_id AND `+usageValidAtOrder+`
+		WHERE o.id = ?`, orderID).Scan(&ids).Error; err != nil {
 		log.Printf("inventory: failed to load resources for order %s: %v", orderID, err)
 		return nil
 	}
@@ -557,10 +561,10 @@ func validateStockEvent(kind models.StockEventKind, quantity float64) string {
 	return ""
 }
 
-// GET /api/inventory/usages - アイテムごとの使用量
+// GET /api/inventory/usages - アイテムごとの今の使用量
 func (h *InventoryHandler) GetStockUsages(c *gin.Context) {
 	var usages []models.ItemStockUsage
-	if err := h.inv.db.Find(&usages).Error; err != nil {
+	if err := h.inv.db.Where("valid_to IS NULL").Find(&usages).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -577,46 +581,6 @@ func toStockUsageResponses(usages []models.ItemStockUsage) []models.StockUsage {
 		}
 	}
 	return responses
-}
-
-// PUT /api/inventory/usages - 使用量をまとめて置き換える
-func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
-	var req models.ReplaceStockUsagesJSONRequestBody
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	type key struct{ item, resource uuid.UUID }
-	seen := make(map[key]bool, len(req))
-	usages := make([]models.ItemStockUsage, 0, len(req))
-	for _, u := range req {
-		k := key{uuid.UUID(u.ItemId), uuid.UUID(u.ResourceId)}
-		if u.Amount <= 0 || seen[k] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "amount must be positive and each item/resource pair must be unique"})
-			return
-		}
-		seen[k] = true
-		usages = append(usages, models.ItemStockUsage{ItemID: k.item, ResourceID: k.resource, Amount: u.Amount})
-	}
-
-	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("1 = 1").Delete(&models.ItemStockUsage{}).Error; err != nil {
-			return err
-		}
-		if len(usages) == 0 {
-			return nil
-		}
-		return tx.Create(&usages).Error
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, toStockUsageResponses(usages))
-	go h.inv.CheckAlerts(nil)
-	h.inv.activity.Post(allUsagesReplacedMessage(len(usages)))
 }
 
 var errUsageResourceNotFound = errors.New("resource not found")
@@ -640,8 +604,9 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return
 	}
 
-	// 名前は通知に使う
+	// 名前は通知に使う。何も変わらなかった保存は通知しない
 	var item models.Item
+	changed := false
 	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
 		// 同じアイテムの置き換えやアイテムの削除と重ならないよう、アイテムの行を押さえる
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "name").First(&item, "id = ?", itemID).Error; err != nil {
@@ -658,13 +623,28 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		if resources != int64(len(usages)) {
 			return errUsageResourceNotFound
 		}
-		if err := tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error; err != nil {
+		// 変わった在庫対象だけ、今の行を閉じて今から有効な行を足す。それより前の注文は前の使用量で数える
+		var current []models.ItemStockUsage
+		if err := tx.Where("item_id = ? AND valid_to IS NULL", itemID).Find(&current).Error; err != nil {
 			return err
 		}
-		if len(usages) == 0 {
+		closing, adding := diffItemStockUsages(current, usages)
+		changed = len(closing) > 0 || len(adding) > 0
+		now := time.Now()
+		if len(closing) > 0 {
+			if err := tx.Model(&models.ItemStockUsage{}).
+				Where("item_id = ? AND resource_id IN ? AND valid_to IS NULL", itemID, closing).
+				Update("valid_to", now).Error; err != nil {
+				return err
+			}
+		}
+		if len(adding) == 0 {
 			return nil
 		}
-		return tx.Create(&usages).Error
+		for i := range adding {
+			adding[i].ValidFrom = now
+		}
+		return tx.Create(&adding).Error
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -681,7 +661,9 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
 	go h.inv.CheckAlerts(nil)
-	go h.inv.postItemUsages(item.Name, usages)
+	if changed {
+		go h.inv.postItemUsages(item.Name, usages)
+	}
 }
 
 func (inv *Inventory) postItemUsages(itemName string, usages []models.ItemStockUsage) {
@@ -695,6 +677,27 @@ func (inv *Inventory) postItemUsages(itemName string, usages []models.ItemStockU
 		resources[r.ID] = r
 	}
 	inv.activity.Post(itemUsagesMessage(itemName, usages, resources))
+}
+
+// 今有効な行と新しい使用量を比べ、閉じる在庫対象と足す行を返す。量が変わったものは両方に入り、変わらないものはどちらにも入らない。
+func diffItemStockUsages(current, next []models.ItemStockUsage) (closing []uuid.UUID, adding []models.ItemStockUsage) {
+	nextAmount := make(map[uuid.UUID]float64, len(next))
+	for _, u := range next {
+		nextAmount[u.ResourceID] = u.Amount
+	}
+	currentAmount := make(map[uuid.UUID]float64, len(current))
+	for _, u := range current {
+		currentAmount[u.ResourceID] = u.Amount
+		if amount, ok := nextAmount[u.ResourceID]; !ok || amount != u.Amount {
+			closing = append(closing, u.ResourceID)
+		}
+	}
+	for _, u := range next {
+		if amount, ok := currentAmount[u.ResourceID]; !ok || amount != u.Amount {
+			adding = append(adding, u)
+		}
+	}
+	return closing, adding
 }
 
 // 本文を検証して1つのアイテムの使用量の行にする。量は正、在庫対象は重複なし。

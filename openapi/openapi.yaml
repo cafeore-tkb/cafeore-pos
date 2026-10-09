@@ -745,32 +745,10 @@ paths:
                 $ref: '#/components/schemas/StockEventCreateResponse'
   /api/inventory/usages:
     get:
-      summary: アイテム1杯あたりの使用量一覧
+      summary: アイテム1杯あたりの今の使用量一覧
       operationId: getStockUsages
       tags:
         - inventory
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StockUsage'
-    put:
-      summary: アイテム1杯あたりの使用量をまとめて置き換える
-      operationId: replaceStockUsages
-      tags:
-        - inventory
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/StockUsage'
       responses:
         '200':
           description: 成功
@@ -786,6 +764,7 @@ paths:
       description: |
         そのアイテムの使用量だけを、本文の内容に置き換える。空の配列なら使用量を全部消す。
         ほかのアイテムの使用量には触らないので、別の人が同時に別のアイテムを直しても上書きしない。
+        変わった在庫対象だけ前の値を履歴に残して今から新しい値にするので、それより前の注文は前の使用量で数える。
       operationId: replaceItemStockUsages
       tags:
         - inventory

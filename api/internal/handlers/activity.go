@@ -207,10 +207,6 @@ func itemUsagesMessage(itemName string, usages []models.ItemStockUsage, resource
 	return tagged(fmt.Sprintf("✏️ 使用量を変更: %s → %s", itemName, usagesText(usages, resources)), tagInventory)
 }
 
-func allUsagesReplacedMessage(count int) string {
-	return tagged(fmt.Sprintf("✏️ 使用量をまとめて置き換え（%d件）", count), tagInventory)
-}
-
 // --- 棚卸し・入荷・調整 ---
 
 func signed(v float64) string {
