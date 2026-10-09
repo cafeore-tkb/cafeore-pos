@@ -173,7 +173,6 @@ export default function Rehearsal() {
   const [plan, setPlan] = useState<MenuPlan | null>(null);
 
   const { orders: posOrders, isOrdersLoaded } = useOrdersWSContext();
-  // オーダーストップはヘッダーやマスターと同じ値（API から WebSocket で届いたもの）を見る
   const isOperational = useOrderStat();
 
   useEffect(() => {
