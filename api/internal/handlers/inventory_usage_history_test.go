@@ -144,7 +144,7 @@ func TestInventoryUsageHistoryCountsOrdersWithUsageAtOrderTime(t *testing.T) {
 	put(20)
 	fourth := order()
 	expect("消す前", 15+20+20, 3, 3)
-	router.DELETE("/items/:id", NewItemHandler(db).DeleteItem)
+	router.DELETE("/items/:id", NewItemHandler(db, nil).DeleteItem)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/items/"+item.ID.String(), nil))
 	if w.Code != http.StatusOK {

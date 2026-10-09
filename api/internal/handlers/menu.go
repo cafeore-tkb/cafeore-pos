@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -153,9 +154,12 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 
-	// 通知で変更前と比べるために読んでおく
+	// 通知で変更前と比べるために読んでおく。読めなかったら空と比べた誤った差分になるので、通知だけしない
 	var before models.Menu
-	_ = preloadMenu(h.db).First(&before, "id = ?", menuID).Error
+	beforeErr := preloadMenu(h.db).First(&before, "id = ?", menuID).Error
+	if beforeErr != nil {
+		log.Printf("activity: failed to load menu %s before update: %v", menuID, beforeErr)
+	}
 
 	menu := models.Menu{ID: menuID}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -186,7 +190,9 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
-	h.activity.Post(menuUpdatedMessage(&before, &menu))
+	if beforeErr == nil {
+		h.activity.Post(menuUpdatedMessage(&before, &menu))
+	}
 }
 
 func (h *MenuHandler) DeleteMenu(c *gin.Context) {
