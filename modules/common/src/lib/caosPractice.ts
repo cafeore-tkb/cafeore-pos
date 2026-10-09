@@ -150,9 +150,6 @@ const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
 const allCups = (orders: CaosPracticeOrder[]) =>
   orders.flatMap((order) => order.cups);
 
-const findCup = (orders: CaosPracticeOrder[], cupId: string) =>
-  allCups(orders).find((cup) => cup.id === cupId);
-
 // ---------------------------------------------------------------- 書き込みを当てる（PUT /api/caos/cups と同じ）
 
 /**
@@ -232,7 +229,7 @@ export const applyCaosPracticeWrites = (
     const before = stateOf(write.before);
     const cups: Cup[] = [];
     for (const id of write.cup_ids) {
-      const cup = findCup(next, id);
+      const cup = allCups(next).find((cup) => cup.id === id);
       if (!cup)
         return {
           error: "カップが消えました（注文が編集・削除されたかもしれません）",

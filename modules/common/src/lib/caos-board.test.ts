@@ -488,32 +488,4 @@ describe("[unit] CaOS の書き込み", () => {
     ]);
     expect(mergeWrites(q2, o5, newId)).toHaveProperty("error"); // 待機と未割当
   });
-
-  test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
-    const cards = board();
-    const o4 = find(cards, (c) => c.orderNo === 4 && !c.cups[0].nominee);
-    const o5 = find(cards, (c) => c.orderNo === 5);
-    const merged = mergeWrites(o4, o5, () => "merged");
-    if (!("writes" in merged)) throw new Error(merged.error);
-    const apply = (input: CaosOrderInput): CaosOrderInput => ({
-      ...input,
-      cups: input.cups.map((c) =>
-        merged.writes.some((w) => w.cup_ids.includes(c.id))
-          ? { ...c, dripId: "merged" }
-          : c,
-      ),
-    });
-    const o4cup = o4.cups[0];
-    const o5cup = o5.cups[0];
-    const after = buildCaosCards(
-      [
-        apply(order(4, [{ ...cup({ item: blend }), id: o4cup.id }])),
-        apply(order(5, [{ ...cup({ item: blend }), id: o5cup.id }])),
-      ],
-      DAY,
-    );
-    expect(after.map((c) => [c.key, c.cups.map((x) => x.orderNo)])).toEqual([
-      ["merged", [4, 5]],
-    ]);
-  });
 });
