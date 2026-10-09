@@ -1,4 +1,3 @@
-import { collectionSub, documentSub, orderConverter } from "@cafeore/common";
 import { orderBy } from "firebase/firestore";
 import { useRef, useState } from "react";
 import {
@@ -12,6 +11,7 @@ import logoMotion from "~/assets/cafeore_logo_motion.webm";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ViewState } from "~/components/viewState";
+import { collectionSub, documentSub, orderConverter } from "~/lib/firestore";
 import { cn } from "~/lib/utils";
 
 export default function Welcome() {

@@ -1,9 +1,8 @@
-import { API_BASE_URL } from "@cafeore/common";
+import { API_BASE_URL, apiClient } from "@cafeore/common";
 import { useEffect, useState } from "react";
 
 const HEALTH_CHECK_INTERVAL_MS = 10_000;
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
-const STATUS_CHECK_URL = `${API_BASE_URL.replace(/\/$/, "")}/status`;
 const backendHostname = new URL(API_BASE_URL).hostname;
 const IS_LOCAL_BACKEND = ["localhost", "127.0.0.1", "::1"].includes(
   backendHostname,
@@ -43,14 +42,13 @@ export const useOnlineStatus = () => {
       );
 
       try {
-        const response = await fetch(STATUS_CHECK_URL, {
+        const { data, response } = await apiClient.GET("/status", {
           cache: "no-store",
           signal: currentController.signal,
         });
-        if (!response.ok) {
+        if (!data) {
           throw new Error(`Status check failed: ${response.status}`);
         }
-        const data = (await response.json()) as { database?: unknown };
 
         if (!disposed && currentRequestId === requestId) {
           setOnlineStatus({

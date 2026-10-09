@@ -1,10 +1,6 @@
-import createClient from "openapi-fetch";
-// src/data/masterState.ts
 import useSWR from "swr";
-import { API_BASE_URL } from "../repositories";
-import type { components, paths } from "../types/api";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
+import { apiClient, throwApiError } from "../api/client";
+import type { components } from "../types/api";
 
 export type MasterState = {
   createdAt: string;
@@ -22,10 +18,10 @@ export const responseToMasterState = (
 
 /** オーダーストップ・再開の記録を古い順に取得する */
 export const getMasterState = async (): Promise<MasterState[]> => {
-  const { data, error, response } = await client.GET("/api/master-status", {});
+  const { data, error, response } = await apiClient.GET("/api/master-status");
 
   if (error || !response.ok || !data) {
-    throw new Error("Failed to fetch master states");
+    throwApiError(response, error, "Failed to fetch master states");
   }
 
   return data.map(responseToMasterState);
