@@ -8,7 +8,6 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
-  type AuxiliaryTab,
   TicketDetailPanel,
 } from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
@@ -19,37 +18,31 @@ import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
-// 見せ方は components の部品。ここはどの管制盤・どのパネルを出すかだけを持ち、フックの値と操作を部品に渡す。
+// 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
 export default function App() {
   const session = useCaosSession();
   const selection = useBoardSelection(session.cards, session);
   const typeNames = useItemTypeNames();
   const { lanes, looks, testPlay } = session;
+  const { panel } = selection;
 
-  const [activeTab, setActiveTab] = useState<NavTab>("control");
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
 
-  const auxiliaryView = (tab: AuxiliaryTab) => (
-    <AuxiliaryContent
-      tab={tab}
-      lanes={lanes}
-      looks={looks}
-      typeNames={typeNames}
-      {...testPlay.analytics}
-    />
-  );
-
   return (
     <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
-          activeTab={activeTab}
+          activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
           controlViewMode={controlViewMode}
-          onSelectTab={setActiveTab}
+          onSelectTab={(tab: NavTab) =>
+            tab === "control"
+              ? selection.closeAuxiliary()
+              : selection.openAuxiliary(tab)
+          }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
           unassignedCups={session.cups.unassigned}
@@ -73,7 +66,7 @@ export default function App() {
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={() => {
             testPlay.finish();
-            setActiveTab("analytics");
+            selection.openAuxiliary("analytics");
           }}
           posStatus={session.posStatus}
         />
@@ -102,12 +95,15 @@ export default function App() {
           />
         </main>
 
-        {activeTab !== "control" && (
-          <AuxiliarySheet
-            tab={activeTab}
-            onClose={() => setActiveTab("control")}
-          >
-            {auxiliaryView(activeTab)}
+        {panel?.kind === "auxiliary" && (
+          <AuxiliarySheet tab={panel.tab} onClose={selection.closeAuxiliary}>
+            <AuxiliaryContent
+              tab={panel.tab}
+              lanes={lanes}
+              looks={looks}
+              typeNames={typeNames}
+              {...testPlay.analytics}
+            />
           </AuxiliarySheet>
         )}
       </div>
@@ -123,9 +119,9 @@ export default function App() {
         />
       )}
 
-      {selection.assignSlotBayId !== null && (
+      {panel?.kind === "assign" && (
         <AssignPanel
-          bayId={selection.assignSlotBayId}
+          bayId={panel.bayId}
           lanes={lanes}
           unassignedOrders={session.unassigned}
           looks={looks}
@@ -145,7 +141,6 @@ export default function App() {
           onStart={(startMs, durationMinutes) => {
             testPlay.start(startMs, durationMinutes);
             selection.clear();
-            setActiveTab("control");
             setTestSetupOpen(false);
           }}
         />

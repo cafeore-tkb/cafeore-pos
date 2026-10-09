@@ -1,4 +1,4 @@
-import type { PracticeDataOrder } from "@cafeore/common";
+import { type PracticeDataOrder, itemMakesCup } from "@cafeore/common";
 import { type CardLooks, type CardSplit, orderLabel, totalCups } from "./cards";
 import { type Lane, laneActive } from "./lanes";
 
@@ -127,7 +127,7 @@ const salesAnalysis = (orders: PracticeDataOrder[]) => {
     bucketValue.orders += 1;
     bucketValue.sales += order.billingAmount;
     for (const item of order.items) {
-      if (item.type === "others") continue;
+      if (!itemMakesCup(item.type)) continue;
       cups += 1;
       menuMap.set(item.name, (menuMap.get(item.name) ?? 0) + 1);
       typeMap.set(item.type, (typeMap.get(item.type) ?? 0) + 1);
