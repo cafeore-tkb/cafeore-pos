@@ -606,6 +606,96 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/caos/cups:
+    put:
+      summary: CaOS が決めたことを注文のカップに書く
+      description: |
+        CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+        割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+        writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+        書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+
+        順番（dripper_position。整数）はサーバーが決める。画面は after の insert_before（どのカードの前に入れるか）だけを送る：
+        - insert_before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+        - insert_before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+        - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
+        - 列から抜けたカードの番号は空いたまま（詰めない）
+
+        抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+        （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+
+        確かめること：
+        - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+        - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
+        - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
+        - 今日（日本時間）の注文のカップだけ書ける
+        - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+        - 1 つのドリッパーで同時に抽出中のカードは 1 枚。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+      operationId: writeCaosCups
+      tags:
+        - caos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosCupsWriteRequest'
+      responses:
+        '204':
+          description: 書いた
+        '400':
+          description: 形の違うリクエスト・決まりに合わない（何も書かない）。error を画面にそのまま出す
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: before が今の値と違う（何も書かない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/caos/drippers/{dripper}/next:
+    post:
+      summary: CaOS の「次へ」
+      description: |
+        そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+        同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+        抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+        drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+      operationId: advanceCaosDripper
+      tags:
+        - caos
+      parameters:
+        - name: dripper
+          in: path
+          required: true
+          description: ドリッパーの番号（1〜6）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosNextRequest'
+      responses:
+        '204':
+          description: 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る）
+        '400':
+          description: 形の違うリクエスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/master-status:
     get:
       summary: マスターステート取得
