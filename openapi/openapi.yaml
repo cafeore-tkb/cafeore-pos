@@ -1199,6 +1199,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CommentCreateRequest'
+        idempotency_key:
+          type: string
+          format: uuid
+          description: 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
 
     # 更新リクエスト用
     OrderUpdateRequest:

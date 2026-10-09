@@ -190,6 +190,30 @@ func (h *OrderHandler) GetOrders(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
+// 冪等キー付きの作成で、その注文がすでにあれば作らずに返す（作ったときは nil）。
+// 応答が届かずにクライアントが送り直しても、注文が二重にできないようにする。
+// 同じキーの作成が同時に走ると後の方は主キーの重複で失敗するので、そのときも先にできた注文を返す。
+func createOrderOnce(hasKey bool, findExisting func() (*models.Order, error), create func() error) (*models.Order, error) {
+	if !hasKey {
+		return nil, create()
+	}
+	existing, err := findExisting()
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	createErr := create()
+	if createErr == nil {
+		return nil, nil
+	}
+	if existing, err := findExisting(); err == nil && existing != nil {
+		return existing, nil
+	}
+	return nil, createErr
+}
+
 // POST /api/orders - オーダー作成
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var req models.CreateOrderJSONRequestBody
@@ -199,9 +223,15 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	// 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ
+	orderID := uuid.New()
+	if req.IdempotencyKey != nil {
+		orderID = uuid.UUID(*req.IdempotencyKey)
+	}
+
 	// API型 → DB型に変換
 	order := models.Order{
-		ID:                uuid.New(),
+		ID:                orderID,
 		OrderId:           req.OrderId,
 		CreatedAt:         time.Now(),
 		BillingAmount:     req.BillingAmount,
@@ -235,19 +265,39 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		lines, cups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &models.Order{})
-		if err != nil {
-			return err
+	findExisting := func() (*models.Order, error) {
+		var existing models.Order
+		err := preloadOrder(h.db).Where("id = ?", order.ID).Take(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
 		}
-		order.OrderMenus, order.OrderCups = lines, cups
-		return tx.Create(&order).Error
-	}); err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	}
+	create := func() error {
+		return h.db.Transaction(func(tx *gorm.DB) error {
+			lines, cups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &models.Order{})
+			if err != nil {
+				return err
+			}
+			order.OrderMenus, order.OrderCups = lines, cups
+			return tx.Create(&order).Error
+		})
+	}
+
+	existing, err := createOrderOnce(req.IdempotencyKey != nil, findExisting, create)
+	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	if existing != nil {
+		c.JSON(http.StatusOK, toOrderResponse(existing))
 		return
 	}
 
