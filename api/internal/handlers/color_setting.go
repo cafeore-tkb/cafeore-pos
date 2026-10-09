@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -90,7 +91,9 @@ func (h *ColorSettingHandler) targetExists(setting *models.ColorSetting) (bool, 
 func (h *ColorSettingHandler) GetColorSettings(c *gin.Context) {
 	var settings []models.ColorSetting
 	if err := h.db.Order("target_type, target_id, screen").Find(&settings).Error; err != nil {
-		respondInternalError(c, err)
+		// DB のエラー文は外に出さず、ログにだけ残す
+		log.Printf("failed to get color settings: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
 
