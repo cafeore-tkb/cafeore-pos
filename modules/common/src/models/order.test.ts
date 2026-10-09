@@ -1,7 +1,28 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
+import { itemTypeSchema } from "./item";
 import { MenuEntity } from "./menu";
 import { OrderEntity } from "./order";
+
+const hotType = itemTypeSchema.parse({
+  id: "1",
+  name: "hot",
+  display_name: "ホット",
+});
+const iceType = {
+  ...hotType,
+  id: "2",
+  name: "ice",
+  display_name: "アイス",
+  iced_brew: true,
+};
+const milkType = {
+  ...hotType,
+  id: "3",
+  name: "milk",
+  display_name: "ミルク",
+  needs_brew: false,
+};
 
 const coffeeItem = MenuEntity.fromMenu({
   id: "1",
@@ -9,7 +30,7 @@ const coffeeItem = MenuEntity.fromMenu({
   abbr: "1",
   price: 300,
   key: "1",
-  item_type: { id: "1", name: "hot", display_name: "ホット" },
+  item_type: hotType,
   assignee: null,
 });
 
@@ -19,7 +40,7 @@ const milkItem = MenuEntity.fromMenu({
   abbr: "2",
   price: 100,
   key: "2",
-  item_type: { id: "3", name: "milk", display_name: "ミルク" },
+  item_type: milkType,
   assignee: null,
 });
 
@@ -35,7 +56,7 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 100,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: hotType,
         assignee: null,
       }),
       MenuEntity.fromMenu({
@@ -44,7 +65,7 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 341,
         key: "2",
-        item_type: { id: "3", name: "milk", display_name: "ミルク" },
+        item_type: milkType,
         assignee: null,
       }),
     ];
@@ -59,7 +80,7 @@ describe("[unit] order entity", () => {
         abbr: "3",
         price: 100,
         key: "3",
-        item_type: { id: "2", name: "ice", display_name: "アイス" },
+        item_type: iceType,
         assignee: null,
       }),
     );
@@ -120,7 +141,7 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 400,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: hotType,
         assignee: null,
       },
       {
@@ -129,7 +150,7 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 500,
         key: "2",
-        item_type: { id: "3", name: "milk", display_name: "ミルク" },
+        item_type: milkType,
         assignee: null,
       },
     ];
@@ -191,6 +212,10 @@ describe("[unit] order entity", () => {
                 id: "00000000-0000-4000-8000-000000000003",
                 name: "hot",
                 display_name: "ホット",
+                makes_cup: true,
+                needs_brew: true,
+                senior_only: false,
+                iced_brew: false,
               },
             },
             quantity: 2,
@@ -216,6 +241,35 @@ describe("[unit] order entity", () => {
     ]);
   });
 
+  test("カップ・割引の杯数は種類の名前ではなく項目で決まる", () => {
+    const itemOf = (
+      id: string,
+      name: string,
+      flags: { makes_cup: boolean; needs_brew: boolean },
+    ) =>
+      MenuEntity.fromMenu({
+        id,
+        name,
+        abbr: name,
+        price: 100,
+        key: id,
+        item_type: { ...hotType, id, name, display_name: name, ...flags },
+        assignee: null,
+      });
+    const order = OrderEntity.createNew({ orderId: 2024 });
+    order.menus = [
+      // 名前が others でも、カップを作る・抽出する種類として設定されていれば数える
+      itemOf("1", "others", { makes_cup: true, needs_brew: true }),
+      itemOf("2", "goods", { makes_cup: false, needs_brew: false }),
+      itemOf("3", "soda", { makes_cup: true, needs_brew: false }),
+    ];
+    expect(order.getDrinkCups().map((item) => item.abbr)).toEqual([
+      "others",
+      "soda",
+    ]);
+    expect(order.getCoffeeCups().map((item) => item.abbr)).toEqual(["others"]);
+  });
+
   test("applyDiscount", () => {
     const order = OrderEntity.createNew({ orderId: 2024 });
     expect(order.billingAmount).toBe(0);
@@ -227,7 +281,7 @@ describe("[unit] order entity", () => {
         abbr: "1",
         price: 400,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: hotType,
         assignee: null,
       },
       {
@@ -236,7 +290,7 @@ describe("[unit] order entity", () => {
         abbr: "2",
         price: 500,
         key: "2",
-        item_type: { id: "2", name: "ice", display_name: "アイス" },
+        item_type: iceType,
         assignee: null,
       },
     ];

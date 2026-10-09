@@ -237,13 +237,10 @@ export class OrderEntity implements Order {
 
   /**
    * コーヒーの数を取得する
-   * @returns 割引の対象となるコーヒーの数
+   * @returns 割引の対象となるコーヒー（種類の「抽出が要る」が付いたもの）
    */
   getCoffeeCups() {
-    return this.getItems().filter(
-      (item) =>
-        item.item_type.name !== "milk" && item.item_type.name !== "others",
-    );
+    return this.getItems().filter((item) => item.item_type.needs_brew);
   }
 
   getItems() {
@@ -260,8 +257,9 @@ export class OrderEntity implements Order {
     );
   }
 
+  /** 種類の「カップを作る」が付いたもの（サーバーがカップを作るものと同じ） */
   getDrinkCups() {
-    return this.getItems().filter((item) => item.item_type.name !== "others");
+    return this.getItems().filter((item) => item.item_type.makes_cup);
   }
 
   /**

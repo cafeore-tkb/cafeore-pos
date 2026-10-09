@@ -1,12 +1,28 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
-import type { Item } from "./item";
+import { type Item, itemTypeSchema } from "./item";
 import { MenuEntity } from "./menu";
 import { shouldSplitOrder } from "./recommendation";
 
-const hot = { id: "t1", name: "hot", display_name: "ホット" };
-const milk = { id: "t2", name: "milk", display_name: "ミルク" };
-const others = { id: "t3", name: "others", display_name: "その他" };
+const hot = itemTypeSchema.parse({
+  id: "t1",
+  name: "hot",
+  display_name: "ホット",
+});
+const milk = {
+  ...hot,
+  id: "t2",
+  name: "milk",
+  display_name: "ミルク",
+  needs_brew: false,
+};
+const others = {
+  ...milk,
+  id: "t3",
+  name: "others",
+  display_name: "その他",
+  makes_cup: false,
+};
 
 const blendA: WithId<Item> = {
   id: crypto.randomUUID(),

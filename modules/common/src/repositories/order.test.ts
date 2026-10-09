@@ -60,7 +60,15 @@ describe("[db] orderRepository", async () => {
         abbr: "1",
         price: 100,
         key: "1",
-        item_type: { id: "1", name: "hot", display_name: "ホット" },
+        item_type: {
+          id: "1",
+          name: "hot",
+          display_name: "ホット",
+          makes_cup: true,
+          needs_brew: true,
+          senior_only: false,
+          iced_brew: false,
+        },
         assignee: null,
       }),
     );
