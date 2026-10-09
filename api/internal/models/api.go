@@ -361,6 +361,18 @@ type OrderCupResponse struct {
 	ServedAt *time.Time `json:"served_at"`
 }
 
+// OrderListItem defines model for OrderListItem.
+type OrderListItem struct {
+	BillingAmount     int                `json:"billing_amount"`
+	CreatedAt         time.Time          `json:"created_at"`
+	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
+	Id                openapi_types.UUID `json:"id"`
+	OrderId           int                `json:"order_id"`
+	ReadyAt           *time.Time         `json:"ready_at"`
+	Received          *int               `json:"received,omitempty"`
+	ServedAt          *time.Time         `json:"served_at"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
 	BillingAmount int                `json:"billing_amount"`
