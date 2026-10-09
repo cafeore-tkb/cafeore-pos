@@ -1246,7 +1246,7 @@ export interface operations {
       204: {
         content: never;
       };
-      /** @description 形の違うリクエスト */
+      /** @description 形の違うリクエスト・決まりに合わない（何も書かない）。error を画面にそのまま出す */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -1254,12 +1254,6 @@ export interface operations {
       };
       /** @description before が今の値と違う（何も書かない） */
       409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description 決まりに合わない（何も書かない）。error を画面にそのまま出す */
-      422: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
