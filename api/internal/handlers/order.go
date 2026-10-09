@@ -214,6 +214,15 @@ func createOrderOnce(hasKey bool, findExisting func() (*models.Order, error), cr
 	return nil, createErr
 }
 
+// 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ。
+// 全部 0 の UUID は BeforeCreate が別の ID に振り直してしまい二重を防げないので、キーなしとして扱う
+func orderIDFromIdempotencyKey(key *openapi_types.UUID) (uuid.UUID, bool) {
+	if key == nil || uuid.UUID(*key) == uuid.Nil {
+		return uuid.New(), false
+	}
+	return uuid.UUID(*key), true
+}
+
 // POST /api/orders - オーダー作成
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var req models.CreateOrderJSONRequestBody
@@ -223,11 +232,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ
-	orderID := uuid.New()
-	if req.IdempotencyKey != nil {
-		orderID = uuid.UUID(*req.IdempotencyKey)
-	}
+	orderID, hasKey := orderIDFromIdempotencyKey(req.IdempotencyKey)
 
 	// API型 → DB型に変換
 	order := models.Order{
@@ -287,7 +292,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		})
 	}
 
-	existing, err := createOrderOnce(req.IdempotencyKey != nil, findExisting, create)
+	existing, err := createOrderOnce(hasKey, findExisting, create)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {

@@ -8,6 +8,7 @@ import (
 
 	"cafeore-pos/api/internal/models"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -185,6 +186,34 @@ func TestCreateOrderOnceReturnsExistingOrder(t *testing.T) {
 			}
 			if creates != tc.wantCreates {
 				t.Fatalf("create called %d times, want %d", creates, tc.wantCreates)
+			}
+		})
+	}
+}
+
+func TestOrderIDFromIdempotencyKey(t *testing.T) {
+	key := uuid.New()
+	nilKey := uuid.Nil
+	cases := []struct {
+		name    string
+		key     *openapi_types.UUID
+		wantKey bool
+	}{
+		{name: "キーなしは新しい ID", key: nil, wantKey: false},
+		{name: "全部 0 のキーはキーなしと同じ", key: &nilKey, wantKey: false},
+		{name: "キーはそのまま ID にする", key: &key, wantKey: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, hasKey := orderIDFromIdempotencyKey(tc.key)
+			if hasKey != tc.wantKey {
+				t.Fatalf("hasKey = %v, want %v", hasKey, tc.wantKey)
+			}
+			if id == uuid.Nil {
+				t.Fatal("order ID must not be the zero UUID")
+			}
+			if tc.wantKey && id != *tc.key {
+				t.Fatalf("id = %v, want %v", id, *tc.key)
 			}
 		})
 	}
