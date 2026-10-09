@@ -1,7 +1,8 @@
+import type { CaosPlace } from "@cafeore/common";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { canPlaceOn, isBayId } from "../logic/lanes";
+import { isBayId } from "../logic/lanes";
 
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機カード）で共通。
 // 12px 動くまではタップ。掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
@@ -12,12 +13,11 @@ const DRAG_THRESHOLD_PX = 12;
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
  * 列は from（移す前のドリッパー。運んでいるカード自身がその列の中にある）を飛ばして探す。
- * from と、置けないドリッパー（指名のドリッパー以外）は null。
+ * from は null。
  */
 export const bayTargetAt = (
   clientX: number,
   clientY: number,
-  card: { preferredBaristaId?: number },
   from?: number,
 ) => {
   const elements = document.elementsFromPoint(clientX, clientY);
@@ -38,9 +38,63 @@ export const bayTargetAt = (
             return isBayId(id) && id !== from;
           }),
       );
-  if (!isBayId(bayId) || bayId === from || !canPlaceOn(card, bayId))
-    return null;
+  if (!isBayId(bayId) || bayId === from) return null;
   return bayId;
+};
+
+/**
+ * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機のカードの前（{ beforeKey }）。
+ * place が無ければ、その列の待機の最後へ
+ */
+export interface DropTarget {
+  bayId: number;
+  place?: CaosPlace;
+  /** 前に入れるカードの表示（注文番号） */
+  beforeLabel?: string;
+}
+
+/**
+ * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）、待機のカード（data-queued-ticket）の上ならそのカードの前
+ * （同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。運んでいるカード自身（exceptKey）は飛ばす
+ */
+export const dropTargetAt = (
+  clientX: number,
+  clientY: number,
+  { from, exceptKey }: { from?: number; exceptKey?: string } = {},
+): DropTarget | null => {
+  const elements = document.elementsFromPoint(clientX, clientY);
+  const onButton = elements.some(
+    (element) =>
+      element instanceof HTMLElement &&
+      element.matches("button[data-bay-target]"),
+  );
+  if (!onButton) {
+    for (const element of elements) {
+      const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
+      const key = ticket?.dataset.queuedTicket;
+      if (!ticket || !key || key === exceptKey) continue;
+      const bayId = Number(
+        ticket.parentElement?.closest<HTMLElement>("[data-bay-target]")?.dataset
+          .bayTarget,
+      );
+      if (!isBayId(bayId)) return null;
+      return {
+        bayId,
+        place: { beforeKey: key },
+        beforeLabel: ticket.dataset.ticketLabel,
+      };
+    }
+  }
+  const bayId = bayTargetAt(clientX, clientY, from);
+  return bayId === null ? null : { bayId };
+};
+
+/** 落とす先の札（「→ 3」・「→ 3 #012 の前」） */
+export const dropTargetLabel = (target: DropTarget | null) => {
+  if (!target) return null;
+  return target.beforeLabel
+    ? `→ ${target.bayId} ${target.beforeLabel} の前`
+    : `→ ${target.bayId}`;
 };
 
 export const useCardDrag = <S, T>(handlers: {

@@ -21,8 +21,10 @@ interface TestPlaySetupProps {
   onStart: (startMs: number, durationMinutes: 30 | 60) => void;
 }
 
+// 開始の時刻（日本時間の「10/12(日) 11:00」）
 const formatSlot = (timestamp: number) =>
   new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
     month: "numeric",
     day: "numeric",
     weekday: "short",

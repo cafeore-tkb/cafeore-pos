@@ -16,7 +16,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
         <ScrollRestoration />
         <Scripts />
-        <Toaster />
+        <Toaster richColors />
         <script src="epos-2.27.0.js" />
       </body>
     </html>

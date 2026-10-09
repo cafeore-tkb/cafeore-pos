@@ -1,11 +1,20 @@
-import { readableTextColor } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  readableTextColor,
+} from "@cafeore/common";
 import { Check } from "lucide-react";
 import type React from "react";
-import { type DripCard, orderLabel } from "../logic/cards";
-import { laneOrdinal, moveTargets } from "../logic/lanes";
+import {
+  type CardLook,
+  cardName,
+  cardTypeName,
+  orderLabel,
+} from "../logic/cards";
+import { moveTargets } from "../logic/lanes";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
-// 置き場所ごとの違いは、文字の大きさ（size）と、終わり（done）・選択中（selected）・添え書き（note）だけ。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 
 const SIZES = {
@@ -39,56 +48,33 @@ const SIZES = {
   },
 };
 
-// 色。入れ直しは赤、指名のカードは紫、終わったカードは薄い灰色。それ以外は色の設定の色（color。画面 master）で塗り、
-// 色の無いカードは白。文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
-const surfaceOf = (card: DripCard, done: boolean) => {
-  if (card.isRebrew)
-    return {
-      className: `border-red-300 bg-red-50 text-slate-900 ${done ? "opacity-55" : ""}`,
-    };
+// 色。終わったカードは薄い灰色。それ以外は色の設定の色（look.color。画面 master）で塗り、色の無いカードは白。
+// 文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
+const surfaceOf = (done: boolean, color: string | undefined) => {
   if (done)
     return {
       className: "border-slate-200 bg-slate-100 text-slate-500 opacity-50",
     };
-  if (card.preferredBaristaId)
-    return { className: "border-violet-300 bg-violet-50 text-slate-900" };
-  const backgroundColor = card.color ?? "#ffffff";
+  const backgroundColor = color ?? "#ffffff";
   return {
     className: "border-slate-300",
     style: { backgroundColor, color: readableTextColor(backgroundColor) },
   };
 };
 
-// 注文番号の色。入れ直しは赤、指名は紫、分けた注文は濃く、1 枚だけの注文は少し薄く
-const orderNoClass = (card: DripCard) => {
-  if (card.isRebrew) return "text-red-700";
-  if (card.preferredBaristaId) return "text-violet-700";
-  return card.totalItemsInOrder > 1 ? "" : "opacity-75";
-};
-
-// 杯数の札。1 杯は白抜き、2 杯は塗り（指名のカードは紫）
-const cupsClass = (card: DripCard) => {
-  const tone = card.preferredBaristaId
-    ? {
-        border: "border-violet-700",
-        fill: "bg-violet-700",
-        ink: "text-violet-700",
-      }
-    : { border: "border-slate-950", fill: "bg-slate-950", ink: "text-black" };
-  return card.cupCount === 1
-    ? `${tone.border} bg-white ${tone.ink}`
-    : `${tone.border} ${tone.fill} text-white`;
-};
+// 杯数の札。1 杯は白抜き、2 杯は塗り
+const cupsClass = (cups: number) =>
+  cups === 1
+    ? "border-slate-950 bg-white text-black"
+    : "border-slate-950 bg-slate-950 text-white";
 
 export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
-    card: DripCard;
+    /** 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards） */
+    card: CaosCard;
+    /** 色と、分けた注文の中の位置（logic/cards.ts の cardLooks） */
+    look?: CardLook;
     size?: keyof typeof SIZES;
-    done?: boolean;
-    /** 入れ直しのために止めた */
-    interrupted?: boolean;
-    /** 抽出中（入れ直しの札を「入れ直し中」にする） */
-    brewing?: boolean;
     selected?: boolean;
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
@@ -96,10 +82,8 @@ export const OrderCard: React.FC<
   }
 > = ({
   card,
+  look,
   size = "md",
-  done = false,
-  interrupted = false,
-  brewing = false,
   selected = false,
   dragging = false,
   note,
@@ -109,8 +93,12 @@ export const OrderCard: React.FC<
   ...props
 }) => {
   const text = SIZES[size];
-  const surface = surfaceOf(card, done);
+  const done = card.status === "done";
+  const surface = surfaceOf(done, look?.color);
   const fade = dragging ? "opacity-30" : "";
+  const name = cardName(card);
+  const typeName = cardTypeName(card);
+  const split = look?.split;
   return (
     <div
       {...props}
@@ -121,36 +109,21 @@ export const OrderCard: React.FC<
       <div
         className={`flex min-w-0 items-center gap-1 overflow-hidden ${fade}`}
       >
+        {/* 注文番号。分けた注文は濃く、1 枚だけの注文は少し薄く */}
         <span
-          className={`shrink-0 font-black font-mono leading-none tracking-tight ${text.no} ${orderNoClass(card)}`}
+          className={`shrink-0 font-black font-mono leading-none tracking-tight ${text.no} ${split ? "" : "opacity-75"}`}
         >
           {orderLabel(card)}
         </span>
         <span
-          className={`shrink-0 whitespace-nowrap rounded-md border font-black font-mono leading-none ${text.cups} ${cupsClass(card)}`}
+          className={`shrink-0 whitespace-nowrap rounded-md border font-black font-mono leading-none ${text.cups} ${cupsClass(card.cups.length)}`}
         >
-          {card.cupCount}杯
+          {card.cups.length}杯
         </span>
-        {card.preferredBaristaId && (
-          <span className="min-w-0 truncate rounded bg-violet-700 px-1.5 py-0.5 font-black text-[11px] text-white">
-            指名:{laneOrdinal(card.preferredBaristaId)}
-          </span>
-        )}
-        {card.isRebrew && (
-          <span className="min-w-0 truncate rounded bg-red-600 px-1.5 py-0.5 font-black text-[10px] text-white">
-            {brewing ? "入れ直し中" : "入れ直し"}
-          </span>
-        )}
-        {interrupted ? (
-          <span className="ml-auto min-w-0 truncate rounded border border-red-300 bg-red-50 px-1.5 py-0.5 font-black text-[10px] text-red-700">
-            中断
-          </span>
-        ) : (
-          done && (
-            <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">
-              <title>完了</title>
-            </Check>
-          )
+        {done && (
+          <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">
+            <title>完了</title>
+          </Check>
         )}
       </div>
       <div
@@ -158,22 +131,22 @@ export const OrderCard: React.FC<
       >
         <span
           className={`max-w-[65%] shrink-0 truncate font-bold leading-tight tracking-tight ${text.name}`}
-          title={card.beanName}
+          title={name}
         >
-          {card.beanName}
+          {name}
         </span>
         {/* 区分は商品の種類の表示名をそのまま出す */}
-        {card.typeName && (
+        {typeName && (
           <span
-            title={`区分：${card.typeName}`}
+            title={`区分：${typeName}`}
             className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
           >
-            {card.typeName}
+            {typeName}
           </span>
         )}
-        {card.totalItemsInOrder > 1 && (
+        {split && (
           <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
-            {card.itemIndex}/{card.totalItemsInOrder}・計{card.totalOrderCups}杯
+            {split.index}/{split.total}・計{split.cups}杯
           </span>
         )}
       </div>
@@ -188,45 +161,42 @@ export const OrderCard: React.FC<
   );
 };
 
-// 1〜6 のボタンの色（ドラッグで指の下は青、指名のドリッパーは紫）
-const padTone = (bayId: number, hoveredBay: number | null, card: DripCard) => {
-  if (hoveredBay === bayId) return "border-white bg-blue-500 text-white";
-  if (card.preferredBaristaId === bayId)
-    return "border-violet-300 bg-violet-600 text-white";
-  return "border-slate-300 bg-white text-slate-950";
-};
+// 1〜6 のボタンの色（ドラッグで指の下は青）
+const padTone = (bayId: number, hoveredBay: number | null) =>
+  hoveredBay === bayId
+    ? "border-white bg-blue-500 text-white"
+    : "border-slate-300 bg-white text-slate-950";
 
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
-// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが押せない。
-// 指名のあるカードは指名のドリッパーだけ押せる。ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
+// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの待機の先頭へ）。
+// ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
-  card: DripCard;
   /** 待機カードの今のドリッパー */
   currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  onPick: (bayId: number) => void;
-}> = ({ card, currentBayId, hoveredBay, onPick }) => {
-  const targets = moveTargets(card, currentBayId ?? null);
+  /** place は「先頭」のボタンなら "front"（今のドリッパーの待機の先頭へ） */
+  onPick: (bayId: number, place?: CaosPlace) => void;
+}> = ({ currentBayId, hoveredBay, onPick }) => {
+  const targets = moveTargets(currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
   return [targets.slice(0, half), targets.slice(half)].map((row, index) => (
     <div
       key={row[0].bayId}
       className={`${index === 0 ? "-top-[38px]" : "-bottom-[38px]"} absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl`}
     >
-      {row.map(({ bayId, disabled }) => (
+      {row.map(({ bayId, place }) => (
         <button
           key={bayId}
           type="button"
           data-bay-target={bayId}
-          disabled={disabled}
           onClick={(event) => {
             event.stopPropagation();
-            onPick(bayId);
+            onPick(bayId, place);
           }}
-          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500 ${padTone(bayId, hoveredBay, card)}`}
+          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
         >
-          {bayId}
+          {place ? "先頭" : bayId}
         </button>
       ))}
     </div>
