@@ -495,6 +495,71 @@ func TestCaosNextOnDB(t *testing.T) {
 	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, toUnassigned)) // 何も変えない書き込みも通る
 }
 
+// 抽出を始められるのは、空いている（そのカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ。
+// 待機があるときに始めるのは「次へ」（待機の先頭）。画面の assignWrites も空いているドリッパーへの割当だけ start_brew を送る
+func TestCaosStartBrewOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	var o []models.Order
+	for no := 1; no <= 6; no++ {
+		o = append(o, f.createOrder(t, no, line(f.blend)))
+	}
+	cupOf := func(i int) uuid.UUID { return o[i].OrderCups[0].ID }
+	a, b, c, d, e := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	expectLane := func(dripper int, wantBrewing []uuid.UUID, wantQueued ...uuid.UUID) {
+		t.Helper()
+		if brewing, queued := f.lane(t, dripper); !slices.Equal(brewing, wantBrewing) || !slices.Equal(queued, wantQueued) {
+			t.Fatalf("dripper %d = %v / %v, want %v / %v", dripper, brewing, queued, wantBrewing, wantQueued)
+		}
+	}
+
+	// 待機があるドリッパーでは、抽出中が無くても、待機の先頭を飛ばして別のカードを始められない（400。何も書かない）
+	f.mustPut(t, write(ids(o[0].OrderCups[0]), unassigned, placed(1, a, false)))
+	if code, _ := f.put(t, write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, true))); code != http.StatusBadRequest {
+		t.Fatalf("start skipping the queue = %d, want 400", code)
+	}
+	if cup := f.cup(t, cupOf(1)); cup.Dripper != nil {
+		t.Fatalf("cup = %+v, want unassigned", cup)
+	}
+	// 待機の先頭でも、後ろに待機があれば PUT では始めない（始めるのは「次へ」）
+	f.mustPut(t, write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, false)))
+	if code, _ := f.put(t, write(ids(o[0].OrderCups[0]), f.state(t, cupOf(0)), placed(1, a, true))); code != http.StatusBadRequest {
+		t.Fatalf("start the head with a queue behind = %d, want 400", code)
+	}
+	expectLane(1, nil, a, b)
+	if code := f.next(t, 1, nil); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
+	}
+	expectLane(1, []uuid.UUID{a}, b)
+	// 抽出中があれば始められない
+	if code, _ := f.put(t, write(ids(o[2].OrderCups[0]), unassigned, placed(1, c, true))); code != http.StatusBadRequest {
+		t.Fatalf("second brewing card = %d, want 400", code)
+	}
+
+	// ドリッパーの待機がそのカードだけなら、置き直して始められる
+	f.mustPut(t, write(ids(o[2].OrderCups[0]), unassigned, placed(2, c, false)))
+	f.mustPut(t, write(ids(o[2].OrderCups[0]), f.state(t, cupOf(2)), placed(2, c, true)))
+	expectLane(2, []uuid.UUID{c})
+	// ほかのドリッパーの待機から、空いているドリッパーへ移して始められる
+	f.mustPut(t, write(ids(o[1].OrderCups[0]), f.state(t, cupOf(1)), placed(3, b, true)))
+	expectLane(3, []uuid.UUID{b})
+	expectLane(1, []uuid.UUID{a})
+
+	// まとめた書き込みは前から順に確かめる：始めてから待機に置くのは通り、待機に置いてから始めるのは断る
+	f.mustPut(t,
+		write(ids(o[3].OrderCups[0]), unassigned, placed(4, d, true)),
+		write(ids(o[4].OrderCups[0]), unassigned, placed(4, e, false)),
+	)
+	expectLane(4, []uuid.UUID{d}, e)
+	if code, _ := f.put(t,
+		write(ids(o[4].OrderCups[0]), f.state(t, cupOf(4)), placed(5, e, false)),
+		write(ids(o[5].OrderCups[0]), unassigned, placed(5, uuid.New(), true)),
+	); code != http.StatusBadRequest {
+		t.Fatalf("start after queueing in one request = %d, want 400", code)
+	}
+	expectLane(4, []uuid.UUID{d}, e)
+}
+
 func TestCaosConcurrentWrites(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
