@@ -127,6 +127,12 @@ func getAllowedOrigins() []string {
 	return result
 }
 
+// /status・/health を登録する。API のルートは handlers.RegisterRoutes が登録する。
+func registerStatusRoutes(r gin.IRouter) {
+	r.GET("/status", statusHandler)
+	r.GET("/health", healthHandler)
+}
+
 func statusHandler(c *gin.Context) {
 	dbStatus := "connected"
 
@@ -238,7 +244,8 @@ func main() {
 		remindAuth,
 		os.Getenv("POS_BASE_URL"),
 	)
-	registerRoutes(r, db, hub, inventory)
+	registerStatusRoutes(r)
+	handlers.RegisterRoutes(r, db, hub, inventory)
 
 	// サーバー起動
 	port := os.Getenv("PORT")
