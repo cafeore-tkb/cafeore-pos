@@ -5,7 +5,7 @@ import {
 } from "@cafeore/common";
 
 // カード（1 回のドリップ。最大 2 杯）の見せ方。カードは注文のカップから組み立てたもの（@cafeore/common の buildCaosCards の CaosCard）を
-// そのまま使い、名前・注文番号・色・分割の表示はここで引く。杯数と抽出時間は @cafeore/common の CAOS_MAX_CUPS・caosBrewSec。
+// そのまま使い、名前・注文番号・色・分割の表示はここで引く。
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
 
