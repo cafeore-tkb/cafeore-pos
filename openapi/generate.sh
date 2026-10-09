@@ -16,10 +16,10 @@ pnpm -F @cafeore/common generate:schemas
 
 # Go型生成
 echo "Go型を生成中..."
+# 型だけを生成する。ルートは api/internal/handlers/routes.go に手書きで登録し、
+# openapi.yaml と食い違っていないかは api/cmd/server/routes_test.go で確かめる。
 mkdir -p ../api/internal/models
-mkdir -p ../api/internal/handlers
 oapi-codegen -generate types -package models openapi.yaml > ../api/internal/models/api.go
-oapi-codegen -generate gin -package handlers openapi.yaml > ../api/internal/handlers/api_gin.go
 echo "Go型を生成しました"
 
 echo ""
