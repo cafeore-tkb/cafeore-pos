@@ -7,6 +7,7 @@ import {
   buildCaosCards,
   caosLane,
   cupNeedsBrew,
+  itemMakesCup,
 } from "./caos-board";
 
 // CaOS の実データテスト（練習）の盤面。ブラウザの中だけで動かし、サーバー・本番の盤面・注文・在庫には触らない。
@@ -52,9 +53,6 @@ export interface CaosPracticeSourceOrder {
   items: readonly CaosPracticeSourceItem[];
 }
 
-// グッズの種類の名前。POS が注文を保存するとき、この種類の品物はカップにしない（api/internal/handlers/order_cup.go の goodsItemTypeName）
-const GOODS_TYPE_NAME = "others";
-
 /**
  * 実データの注文を、練習の盤面の注文にする。グッズ以外の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
  * 抽出の要らないカップ（ミルクなど）もカップにはなるが、本番と同じく buildCaosCards がカードにしない。
@@ -67,7 +65,7 @@ export const toCaosPracticeOrder = (
   const id = `practice-${index}`;
   const cups: Cup[] = [];
   order.items.forEach((item, position) => {
-    if (item.type === GOODS_TYPE_NAME) return;
+    if (!itemMakesCup(item.type)) return;
     const cupId = `${id}-${position}`;
     cups.push({
       id: cupId,

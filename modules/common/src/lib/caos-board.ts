@@ -96,14 +96,18 @@ export interface CaosCard {
   state: CaosCupState;
 }
 
-// 抽出が要るか・上級生のみかは、いったん商品の種類の名前（item_type.name）で決める。CaOS で種類の名前を見るのはこの 2 つだけにする。
+// カップを作るか・抽出が要るか・上級生のみかは、いったん商品の種類の名前（item_type.name）で決める。
+// CaOS で種類の名前を見るのはこの 3 つ（itemMakesCup・cupNeedsBrew・cupSeniorOnly）だけにする。
 // TODO: C1（#807 の makes_cup・needs_brew・senior_only・iced_brew）が main に入ったら、
-// 名前で決めるのをやめ、種類の項目（needs_brew・senior_only）を読む形に戻す。
+// 名前で決めるのをやめ、種類の項目（makes_cup・needs_brew・senior_only）を読む形に戻す。
 
-/** 抽出が要るカップか。種類の名前に others（グッズ）も milk（ミルク）も含まなければ要る */
+/** その種類の品物がカップを作るか。種類の名前に others（グッズ）を含まなければ作る */
+export const itemMakesCup = (typeName: string) => !typeName.includes("others");
+
+/** 抽出が要るカップか。カップを作る種類で、種類の名前に milk（ミルク）を含まなければ要る */
 export const cupNeedsBrew = (cup: Pick<Cup, "item">) => {
   const name = cup.item.item_type.name;
-  return !name.includes("others") && !name.includes("milk");
+  return itemMakesCup(name) && !name.includes("milk");
 };
 
 /** 上級生のみのカップか。抽出が要り、種類の名前に limited を含めば上級生のみ */
