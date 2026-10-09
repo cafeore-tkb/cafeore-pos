@@ -61,9 +61,6 @@ importers:
       '@types/node':
         specifier: ^24.5.2
         version: 24.11.0
-      dayjs:
-        specifier: ^1.11.13
-        version: 1.11.19
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
