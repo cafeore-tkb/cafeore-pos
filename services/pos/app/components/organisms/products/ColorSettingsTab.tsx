@@ -1,7 +1,7 @@
 import {
-  type ColorScreen,
   colorScreens,
   findColorSetting,
+  openapiEnumLabels,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -14,13 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-
-const screenLabels: Record<ColorScreen, string> = {
-  cashier: "レジ（ボタン）",
-  cashier_order: "レジ（過去の注文）",
-  master: "マスター",
-  serve: "提供",
-};
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
@@ -51,7 +44,9 @@ export function ColorSettingsTab() {
             <TableRow>
               <TableHead>タイプ</TableHead>
               {colorScreens.map((screen) => (
-                <TableHead key={screen}>{screenLabels[screen]}</TableHead>
+                <TableHead key={screen}>
+                  {openapiEnumLabels("ColorScreen")[screen]}
+                </TableHead>
               ))}
             </TableRow>
           </TableHeader>
@@ -91,7 +86,9 @@ export function ColorSettingsTab() {
               <TableHead>名前</TableHead>
               <TableHead>種別</TableHead>
               {colorScreens.map((screen) => (
-                <TableHead key={screen}>{screenLabels[screen]}</TableHead>
+                <TableHead key={screen}>
+                  {openapiEnumLabels("ColorScreen")[screen]}
+                </TableHead>
               ))}
             </TableRow>
           </TableHeader>

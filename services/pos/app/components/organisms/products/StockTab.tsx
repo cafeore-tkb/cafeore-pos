@@ -6,6 +6,7 @@ import {
   type StockUsage,
   type WithId,
   inventoryRepository,
+  openapiEnumLabels,
 } from "@cafeore/common";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -220,8 +221,13 @@ function ResourceRow({
             );
           }}
         >
-          <option value="cup">カップ</option>
-          <option value="bean">豆</option>
+          {Object.entries(openapiEnumLabels("StockResourceKind")).map(
+            ([kind, label]) => (
+              <option key={kind} value={kind}>
+                {label}
+              </option>
+            ),
+          )}
         </select>
       </TableCell>
       <TableCell>
