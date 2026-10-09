@@ -211,6 +211,7 @@ export default function ProductsPage() {
                 usage={usageOfItems}
                 resources={resources}
                 stockUsages={usages}
+                stockLoaded={inventoryLoaded && usagesLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>

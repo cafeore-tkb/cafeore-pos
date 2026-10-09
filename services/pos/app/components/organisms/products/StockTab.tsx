@@ -8,7 +8,7 @@ import {
   inventoryRepository,
   openapiEnumLabels,
 } from "@cafeore/common";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -282,6 +282,15 @@ const usageKey = (amounts: Record<string, string> = {}) =>
     ),
   );
 
+// 取り直した使用量に入力を揃える。入力中（前に届いた値から変えた）のアイテムはそのまま残す
+const rebaseDraft = (draft: Draft, before: Draft, after: Draft): Draft => {
+  const next: Draft = { ...after };
+  for (const [itemId, amounts] of Object.entries(draft)) {
+    if (usageKey(amounts) !== usageKey(before[itemId])) next[itemId] = amounts;
+  }
+  return next;
+};
+
 function UsagesSection({
   items,
   resources,
@@ -300,7 +309,13 @@ function UsagesSection({
   const [draft, setDraft] = useState<Draft>(saved);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => setDraft(saved), [saved]);
+  // ほかの端末の保存や再取得で入力中の変更を消さないよう、変えていないアイテムだけ取り直した値にする
+  const prevSaved = useRef(saved);
+  useEffect(() => {
+    const before = prevSaved.current;
+    prevSaved.current = saved;
+    setDraft((prev) => rebaseDraft(prev, before, saved));
+  }, [saved]);
 
   const columns = sortResources(resources);
   const cups = resources.filter((r) => r.kind === "cup");

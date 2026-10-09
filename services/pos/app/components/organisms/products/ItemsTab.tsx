@@ -22,12 +22,15 @@ export function ItemsTab({
   usage,
   resources,
   stockUsages,
+  stockLoaded,
   ...handlers
 }: RowHandlers & {
   items: WithId<ItemEntity>[];
   usage: Usage;
   resources: StockResource[];
   stockUsages: StockUsage[];
+  /** 在庫対象と使用量が届いたか。届く前（読み込み中・失敗）は「未設定」と出さない */
+  stockLoaded: boolean;
 }) {
   // 「ホットカップ 1・ケニア豆 15g」のように並べる
   const stockOf = useMemo(() => {
@@ -116,6 +119,7 @@ export function ItemsTab({
                     </TableCell>
                     <StockCell
                       text={stockOf(item.id)}
+                      loaded={stockLoaded}
                       warn={countedTypes.has(item.item_type.id)}
                     />
                     <TableCell>
@@ -132,7 +136,18 @@ export function ItemsTab({
   );
 }
 
-function StockCell({ text, warn }: { text: string; warn: boolean }) {
+function StockCell({
+  text,
+  loaded,
+  warn,
+}: {
+  text: string;
+  loaded: boolean;
+  warn: boolean;
+}) {
+  if (!loaded) {
+    return <TableCell />;
+  }
   if (text) {
     return (
       <TableCell className="truncate text-sm" title={text}>
