@@ -1,7 +1,10 @@
 import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
-import { DownloadButton } from "~/components/organisms/DownloadData";
+import {
+  DownloadButton,
+  DownloadMasterStateButton,
+} from "~/components/organisms/DownloadData";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -173,7 +176,7 @@ export default function Index() {
         </section>
       ))}
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
@@ -194,9 +197,16 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">オーダーデータ書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">
-            全注文を CSV でダウンロードします
+            全注文を JSON・CSV でダウンロードします
           </p>
           <DownloadButton />
+        </div>
+        <div className="rounded-lg border p-4">
+          <h2 className="font-bold">オーダーストップ記録書き出し</h2>
+          <p className="mt-1 mb-3 text-muted-foreground text-sm">
+            ストップ・再開の記録を時刻順にダウンロードします
+          </p>
+          <DownloadMasterStateButton />
         </div>
       </section>
     </div>
