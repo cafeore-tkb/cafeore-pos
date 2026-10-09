@@ -2,6 +2,7 @@ import type { Cup } from "../models/cup";
 import {
   CAOS_DRIPPERS,
   CAOS_MAX_CUPS,
+  type CaosCard,
   type CaosCupsWrite,
   type CaosOrderInput,
   buildCaosCards,
@@ -229,7 +230,6 @@ export const applyCaosPracticeWrites = (
 
   const next = cloneOrders(orders);
   const touched = new Set<string>();
-  const brewing = new Set<number>();
   for (const write of writes) {
     const cups: Cup[] = [];
     for (const id of write.cup_ids) {
@@ -257,6 +257,19 @@ export const applyCaosPracticeWrites = (
         };
       cups.push(cup);
     }
+    // 抽出を始められるのは、空いている（このカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ（API の requireCaosDripperFree と同じ）
+    if (write.after.start_brew && write.after.dripper !== null) {
+      const dripper = write.after.dripper;
+      const lane = caosLane(buildCaosCards(next), dripper);
+      const written = (card: CaosCard) =>
+        card.cups.every((cup) => write.cup_ids.includes(cup.id));
+      if (lane.brewing && !written(lane.brewing))
+        return { error: `${dripper} 番のドリッパーはもう抽出中です` };
+      if (lane.queued.some((card) => !written(card)))
+        return {
+          error: `${dripper} 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください`,
+        };
+    }
     let position: number | null = null;
     if (write.after.dripper !== null) {
       const placed = placeCups(next, write);
@@ -271,8 +284,6 @@ export const applyCaosPracticeWrites = (
       cup.brewFinishedAt = null;
     }
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
-    if (write.after.start_brew && write.after.dripper !== null)
-      brewing.add(write.after.dripper);
   }
 
   // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か
@@ -282,15 +293,6 @@ export const applyCaosPracticeWrites = (
       return { error: `1 枚のカードは ${CAOS_MAX_CUPS} 杯までです` };
     if (cups.some((cup) => !sameState(cup, cups[0])))
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
-  }
-  // 1 つのドリッパーで抽出中は 1 枚（「次へ」と同じ決まりで数える）
-  const cards = buildCaosCards(next);
-  for (const dripper of brewing) {
-    const count = cards.filter(
-      (card) => card.dripper === dripper && card.status === "brewing",
-    ).length;
-    if (count > 1)
-      return { error: `${dripper} 番のドリッパーはもう抽出中です` };
   }
   return { orders: next };
 };
