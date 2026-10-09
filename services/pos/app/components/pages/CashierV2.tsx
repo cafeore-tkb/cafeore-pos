@@ -170,14 +170,12 @@ const CashierV2 = ({
       if (!result) {
         return;
       }
-      if (result.savedEarlierContent) {
-        // 前に送った内容が保存されていたら、保存された注文のラベルを出す
-        printer.printOrderLabel(result.savedOrder);
-      } else {
-        // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
-        submitOne.orderId = result.savedOrder.orderId;
-        printer.printOrderLabel(submitOne);
-      }
+      // 前に送った内容が保存されていたら、保存された注文のラベルを出す。
+      // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
+      submitOne.orderId = result.savedOrder.orderId;
+      printer.printOrderLabel(
+        result.savedEarlierContent ? result.savedOrder : submitOne,
+      );
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
       if (manualOrderId !== null && wsStatus !== "open") {

@@ -4,6 +4,12 @@ import { toast } from "sonner";
 
 const SUBMIT_FAILED_TOAST_ID = "cashier-submit-failed";
 const SAVED_EARLIER_TOAST_ID = "cashier-saved-earlier";
+// 見落とさないよう、閉じるまで出し続ける
+const STICKY_TOAST = {
+  duration: Number.POSITIVE_INFINITY,
+  closeButton: true,
+  richColors: true,
+};
 
 /**
  * 保存した注文を返す。失敗したら reject する
@@ -25,7 +31,7 @@ type SubmitResult = {
  * レジの注文を保存する
  *
  * - 保存中は二重に送らない。`submittingRef` は同じ描画のうちのキー入力を止めるため
- * - 失敗したら知らせて `undefined` を返す。知らせは見落とさないよう、閉じるか次に保存できるまで出し続ける
+ * - 失敗したら知らせて `undefined` を返す。知らせは閉じるか次に保存できるまで出し続ける
  * - 応答が届かずに失敗扱いになっても、サーバー側では保存できていることがある。
  *   保存できたと確かめられるまでは、内容を変えても入力を消しても再読み込みしても同じキーで送る。
  *   前の送信が保存されていれば、サーバーは新しく作らずにその注文を返すので二重にならない。
@@ -59,9 +65,7 @@ const useSubmitOrder = (submitPayload: SubmitPayload) => {
               id: SAVED_EARLIER_TOAST_ID,
               description:
                 "応答が届かなかった送信が保存できていたので、新しくは登録していません。ラベルは保存された内容で印刷しました。前の注文を直すときは注文の修正から、別の注文なら入力し直して送信してください",
-              duration: Number.POSITIVE_INFINITY,
-              closeButton: true,
-              richColors: true,
+              ...STICKY_TOAST,
             },
           );
         }
@@ -72,9 +76,7 @@ const useSubmitOrder = (submitPayload: SubmitPayload) => {
         toast.error(`No.${order.orderId} の注文を保存できませんでした`, {
           id: SUBMIT_FAILED_TOAST_ID,
           description: `ラベルは印刷していません。入力はそのまま残っています。もう一度送信してください。応答が届かなかっただけで保存できていた場合も、二重には登録されません（${reason}）`,
-          duration: Number.POSITIVE_INFINITY,
-          closeButton: true,
-          richColors: true,
+          ...STICKY_TOAST,
         });
       } finally {
         submittingRef.current = false;
