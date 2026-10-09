@@ -92,8 +92,7 @@ const CashierV2 = ({
 
   const printer = usePrinter();
 
-  const { submit, submitting, submittingRef, resetKey } =
-    useSubmitOrder(submitPayload);
+  const { submit, submitting, submittingRef } = useSubmitOrder(submitPayload);
 
   usePreventNumberKeyUpDown();
 
@@ -110,9 +109,7 @@ const CashierV2 = ({
     setHasReceivedInput(false);
     resetStatus();
     renewUISession();
-    // 入力を消したら、同じ内容を打ち直しても別の注文として扱う
-    resetKey();
-  }, [dispatchOrder, resetStatus, renewUISession, resetKey]);
+  }, [dispatchOrder, resetStatus, renewUISession]);
 
   const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
   const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
@@ -169,13 +166,18 @@ const CashierV2 = ({
 
       // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
       // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
-      const savedOrder = await submit(submitOne);
-      if (!savedOrder) {
+      const result = await submit(submitOne);
+      if (!result) {
         return;
       }
-      // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
-      submitOne.orderId = savedOrder.orderId;
-      printer.printOrderLabel(submitOne);
+      if (result.savedEarlierContent) {
+        // 前に送った内容が保存されていたら、保存された注文のラベルを出す
+        printer.printOrderLabel(result.savedOrder);
+      } else {
+        // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
+        submitOne.orderId = result.savedOrder.orderId;
+        printer.printOrderLabel(submitOne);
+      }
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
       if (manualOrderId !== null && wsStatus !== "open") {
@@ -270,12 +272,12 @@ const CashierV2 = ({
             <PastOrderSideSheet orders={orders} author="cashier" withGoods />
           </div>
         </div>
-        {/* 保存中は入力を変えられないようにする。失敗したら同じ入力で送り直すため */}
+        {/* 保存中は入力を変えられないようにする。保存できたら入力を消すので、その間に打った分が消えてしまう */}
         <div
           className={cn("flex gap-5 px-2", submitting && "pointer-events-none")}
         >
-          <div>{menuOpen && itemMenu}</div>
-          <div className="flex-1">
+          <fieldset disabled={submitting}>{menuOpen && itemMenu}</fieldset>
+          <fieldset disabled={submitting} className="flex-1">
             <InputHeader
               title="商品"
               focus={inputStatus === "items"}
@@ -305,8 +307,11 @@ const CashierV2 = ({
                 setInputStatus("items");
               }, [setInputStatus])}
             />
-          </div>
-          <div className={cn("flex-1", menuOpen && "hidden")}>
+          </fieldset>
+          <fieldset
+            disabled={submitting}
+            className={cn("flex-1", menuOpen && "hidden")}
+          >
             <InputHeader
               title="割引"
               focus={inputStatus === "discount"}
@@ -348,8 +353,11 @@ const CashierV2 = ({
                 }, [dispatchOrder, serviceActive, setServiceActive])}
               />
             </div>
-          </div>
-          <div className={cn("flex-1", menuOpen && "hidden")}>
+          </fieldset>
+          <fieldset
+            disabled={submitting}
+            className={cn("flex-1", menuOpen && "hidden")}
+          >
             <InputHeader
               title="備考"
               focus={inputStatus === "description"}
@@ -365,8 +373,8 @@ const CashierV2 = ({
                 }, [setInputStatus])}
               />
             </div>
-          </div>
-          <div className="flex-1">
+          </fieldset>
+          <fieldset disabled={submitting} className="flex-1">
             <InputHeader
               title="会計"
               focus={inputStatus === "received"}
@@ -389,7 +397,7 @@ const CashierV2 = ({
                 }, [setInputStatus])}
               />
             </div>
-          </div>
+          </fieldset>
           <div className={cn("flex-1", menuOpen && "hidden")}>
             <InputHeader
               title="確定"
