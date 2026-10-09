@@ -22,9 +22,10 @@ type WSMessage =
   // 作成・変更された1件の注文
   | { type: "order"; order: OrderResponse }
   | { type: "order_deleted"; order_id: string }
+  // 最新のオーダーストップの状態。接続直後と切り替えのたびに届く
   | {
       type: "master_state";
-      master_state: { created_at: string; type: string };
+      master_state: components["schemas"]["MasterStateResponse"];
     }
   | {
       type: "cashier_state";
@@ -38,6 +39,7 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
+  // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま
   const [masterState, setMasterState] = useState<MasterState | null>(null);
   // レジの編集中注文。API にまだ無ければサーバーは何も流さないので null のまま
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(

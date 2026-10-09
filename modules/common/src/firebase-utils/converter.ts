@@ -11,10 +11,8 @@ import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
   type GlobalCashierState,
-  MasterStateEntity,
   cashierStateWireSchema,
   globalCashierStateSchema,
-  globalMasterStateSchema,
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import { MenuEntity } from "../models/menu";
@@ -172,21 +170,6 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
       options,
     );
     return OrderEntity.fromOrder(convertedData);
-  },
-};
-
-export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
-  toFirestore: converter(globalMasterStateSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ) => {
-    const convertedData = converter(globalMasterStateSchema).fromFirestore(
-      snapshot,
-      options,
-    );
-
-    return MasterStateEntity.fromMasterState(convertedData);
   },
 };
 
