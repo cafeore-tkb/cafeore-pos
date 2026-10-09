@@ -1,0 +1,206 @@
+import {
+  type InventoryLevel,
+  type InventoryStatus,
+  type StockEventKind,
+  inventoryRepository,
+} from "@cafeore/common";
+import dayjs from "dayjs";
+import { type ReactNode, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { cn } from "~/lib/utils";
+
+// この時間より前の棚卸しは、数え直しを促す色にする
+const STALE_COUNT_MINUTES = 3 * 60;
+
+// 残量の段階の札
+const LEVELS: Record<InventoryLevel, { label: string; className: string }> = {
+  ok: { label: "十分", className: "bg-emerald-100 text-emerald-900" },
+  warning: { label: "少なめ", className: "bg-amber-100 text-amber-900" },
+  critical: { label: "危険", className: "bg-red-100 text-red-900" },
+  untracked: { label: "未計測", className: "bg-muted text-muted-foreground" },
+};
+
+/** 数を「1,234」の形に（小数は digits 桁まで） */
+const fmt = (v: number, digits = 0) =>
+  v.toLocaleString("ja-JP", { maximumFractionDigits: digits });
+
+/** 分の数を「45 分」「1 時間 30 分」「12 時間」の形に（10 時間以上は分を出さない） */
+const minutesLabel = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} 分`;
+  return m === 0 || h >= 10 ? `${h} 時間` : `${h} 時間 ${m} 分`;
+};
+
+// 在庫対象 1 つのカード（残量と、棚卸し・入荷の記録の欄）。在庫の画面（/inventory）と CaOS の豆キューで使う。
+// children はカードのいちばん下に足す行（豆キューの「盤面に◯杯」など）。
+export function StockCard({
+  status,
+  onRecorded,
+  children,
+}: {
+  status: InventoryStatus;
+  onRecorded: () => void;
+  children?: ReactNode;
+}) {
+  const { resource } = status;
+  const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const isCup = resource.kind === "cup";
+  const level = LEVELS[status.level];
+  const remaining = status.remaining ?? null;
+  const servings = status.remaining_servings ?? null;
+  const countedAt = status.counted_at ? dayjs(status.counted_at) : null;
+  const hasCount = status.counted_quantity != null;
+  // 端末の時計が棚卸しの時刻より遅れていても、マイナスにはしない
+  const minutesSinceCount = countedAt
+    ? Math.max(0, dayjs().diff(countedAt, "minute"))
+    : 0;
+  const staleCount = !hasCount || minutesSinceCount >= STALE_COUNT_MINUTES;
+  // 直近1時間の売れ方が続いたとして、切れるまでの分（見込めなければ null）
+  const perHour = status.servings_last_hour;
+  const minutesUntilEmpty =
+    servings != null && servings > 0 && perHour > 0
+      ? Math.round((servings / perHour) * 60)
+      : null;
+
+  const record = async (kind: StockEventKind) => {
+    const quantity = Number(value);
+    if (value.trim() === "" || Number.isNaN(quantity)) {
+      toast("数量を入力してください");
+      return;
+    }
+    if (kind === "count" && quantity < 0) {
+      toast("実数は 0 以上で入力してください");
+      return;
+    }
+    if (kind === "receipt" && quantity <= 0) {
+      toast("入荷は 0 より大きい数で入力してください");
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const result = await inventoryRepository.recordEvent(
+        resource.id,
+        kind,
+        quantity,
+      );
+      setValue("");
+      if (kind === "count" && result.estimated != null) {
+        const diff = quantity - result.estimated;
+        const perServing =
+          result.actual_per_serving != null && !isCup
+            ? ` / 実測 ${fmt(result.actual_per_serving, 1)}${resource.unit}/杯`
+            : "";
+        toast(`${resource.name} を棚卸ししました`, {
+          description: `推定 ${fmt(result.estimated)}${resource.unit} → 実数 ${fmt(quantity)}${resource.unit}（差 ${diff > 0 ? "+" : ""}${fmt(diff)}${resource.unit}）${perServing}`,
+        });
+      } else {
+        toast(
+          `${resource.name} に ${kind === "count" ? "実数" : "入荷"} ${fmt(quantity)}${resource.unit} を記録しました`,
+        );
+      }
+      onRecorded();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "記録に失敗しました");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm",
+        status.level === "critical" && "border-red-400",
+        status.level === "warning" && "border-amber-400",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
+            {isCup ? "カップ" : "豆"}
+          </span>
+          <h2 className="font-semibold text-lg">{resource.name}</h2>
+        </div>
+        <span
+          className={cn(
+            "rounded px-2 py-0.5 font-medium text-sm",
+            level.className,
+          )}
+        >
+          {level.label}
+        </span>
+      </div>
+
+      <div>
+        <div className="font-bold text-3xl tabular-nums">
+          {servings == null
+            ? "—"
+            : `${fmt(Math.floor(servings))} ${isCup ? "個" : "杯"}`}
+        </div>
+        <div className="text-muted-foreground text-sm tabular-nums">
+          {remaining != null &&
+            !isCup &&
+            `推定 ${fmt(remaining)} ${resource.unit} ・ `}
+          バッファ {fmt(resource.buffer)} 杯 ・ {fmt(resource.notify_from)}{" "}
+          杯から {fmt(resource.notify_step)} 杯ごとに通知
+        </div>
+      </div>
+
+      <div className="text-sm tabular-nums">
+        直近1時間 {status.servings_last_hour} 杯
+        {minutesUntilEmpty != null &&
+          ` → 約 ${minutesLabel(minutesUntilEmpty)}で切れる見込み`}
+      </div>
+
+      <div
+        className={cn(
+          "text-sm",
+          staleCount ? "font-medium text-amber-700" : "text-muted-foreground",
+        )}
+      >
+        {hasCount && countedAt
+          ? `最終棚卸し ${countedAt.format("M/D HH:mm")}（${minutesLabel(minutesSinceCount)}前）・以降 ${status.servings} 杯`
+          : "まだ棚卸ししていません"}
+      </div>
+
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            placeholder={isCup ? "個数" : "グラム"}
+            value={value}
+            disabled={submitting}
+            onChange={(e) => setValue(e.target.value)}
+            className="pr-8"
+          />
+          <span className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-3 text-muted-foreground text-sm">
+            {resource.unit}
+          </span>
+        </div>
+        <Button
+          type="button"
+          disabled={submitting}
+          onClick={() => void record("count")}
+        >
+          実数で更新
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={submitting}
+          onClick={() => void record("receipt")}
+        >
+          入荷を追加
+        </Button>
+      </div>
+      {children}
+    </div>
+  );
+}

@@ -37,6 +37,7 @@ export default function App() {
   const auxiliaryView = (tab: AuxiliaryTab) => (
     <AuxiliaryContent
       tab={tab}
+      beans={session.beans}
       baristas={board.baristas}
       typeNames={typeNames}
       {...testPlay.analytics}

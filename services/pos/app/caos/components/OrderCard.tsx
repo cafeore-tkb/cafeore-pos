@@ -111,6 +111,10 @@ export const OrderCard: React.FC<
   const text = SIZES[size];
   const surface = surfaceOf(card, done);
   const fade = dragging ? "opacity-30" : "";
+  // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
+  // 豆の無い（在庫の設定に「商品 → 豆」が無い）カードは区分だけ。狭いカードでは後ろが切れるので豆を先にする
+  const beans = card.beans?.map((bean) => bean.name).join("・");
+  const badge = [beans, card.typeName].filter(Boolean).join(" / ");
   return (
     <div
       {...props}
@@ -162,13 +166,12 @@ export const OrderCard: React.FC<
         >
           {card.beanName}
         </span>
-        {/* 区分は商品の種類の表示名をそのまま出す */}
-        {card.typeName && (
+        {badge && (
           <span
-            title={`区分：${card.typeName}`}
+            title={`豆：${beans || "なし"}　区分：${card.typeName ?? "なし"}`}
             className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
           >
-            {card.typeName}
+            {badge}
           </span>
         )}
         {card.totalItemsInOrder > 1 && (
