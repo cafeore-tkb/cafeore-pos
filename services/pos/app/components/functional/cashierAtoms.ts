@@ -2,7 +2,7 @@ import type { OrderEntity } from "@cafeore/common";
 import { atom } from "jotai";
 import { type OrderAction, applyOrderAction } from "./useOrderState";
 
-type SyncOrder = (order: OrderEntity) => void;
+type SyncOrder = (order: OrderEntity, action: OrderAction) => void;
 
 type ApplyCashierOrderActionPayload = {
   action: OrderAction;
@@ -23,7 +23,7 @@ const applyCashierOrderActionAtom = atom(
     const current = get(editingOrderAtom);
     const next = applyOrderAction.reduce(current, payload.action);
     set(editingOrderAtom, next);
-    payload.syncOrder?.(next);
+    payload.syncOrder?.(next, payload.action);
   },
 );
 

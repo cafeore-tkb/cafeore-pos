@@ -15,6 +15,7 @@ import {
 } from "react-router";
 import { z } from "zod";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import type { OrderAction } from "~/components/functional/useOrderState";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -52,7 +53,12 @@ export default function Cashier() {
   );
 
   const syncOrder = useCallback(
-    (order: OrderEntity) => {
+    (order: OrderEntity, action: OrderAction) => {
+      // 品物を足したら次の注文の入力が始まったとみなし、確定直後の表示を消す。
+      // 番号を進める同期などでは消さない（同期は遅れて走るので、保存の直後に消してしまう）
+      if (action.type === "addItem") {
+        lastSubmittedOrderId = null;
+      }
       submit({ syncOrder: JSON.stringify(order.toOrder()) }, { method: "PUT" });
     },
     [submit],
@@ -94,7 +100,8 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
   });
 
 // 直前に確定した注文の ID（cashier-mini の「ご注文ありがとうございました」表示用）。
-// 別々に読み書きすると入力を空にする同期と上書きし合うので、同期で一緒に書き込む
+// 別々に読み書きすると入力を空にする同期と上書きし合うので、同期で一緒に書き込む。
+// 次の品物を足すまでは、どの同期でも載せ続ける
 let lastSubmittedOrderId: string | null = null;
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {
@@ -112,12 +119,6 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
   }
 
   const { syncOrder } = submission.value;
-
-  // 次の注文の入力が始まるまでは、どの同期でも載せ続ける。
-  // 1 回だけ載せると、直後の注文番号の更新などの同期で null に上書きされ、表示が出ないことがある
-  if (syncOrder.menus.length > 0) {
-    lastSubmittedOrderId = null;
-  }
 
   cashierRepository
     .set({

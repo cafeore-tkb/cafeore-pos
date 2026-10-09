@@ -43,7 +43,7 @@ type props = {
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
   submitPayload: SubmitPayload;
-  syncOrder: (order: OrderEntity) => void;
+  syncOrder: (order: OrderEntity, action: OrderAction) => void;
 };
 
 /**
