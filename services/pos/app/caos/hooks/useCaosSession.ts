@@ -34,6 +34,15 @@ const newDripId = () => crypto.randomUUID();
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
 const NOT_FOUND = { error: "カードが見つかりません" };
 
+// 送った操作が成功したら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らす。断られたら鳴らさない。
+// 送れたか（練習で断られた・「次へ」の二度押しは false）を返す
+const playOnSuccess = (sent: boolean | Promise<boolean>, play: () => void) => {
+  void Promise.resolve(sent).then((ok) => {
+    if (ok) play();
+  });
+  return sent !== false;
+};
+
 // CaOS の盤面・時刻・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
 // 普段は cafeore-pos の注文で動かす（useLiveBoard。盤面は注文のカップの列にあり、操作は API に書いて全部の iPad で共有する）。
 // 実データテスト中（終了後の実績表示も含め、リセットするまで）は cafeore-pos の注文を使わず、練習の盤面（useTestPlay）で動かす。
@@ -80,15 +89,15 @@ export const useCaosSession = () => {
 
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
-  // 書き込みを送る（作れなかったら理由を POS の通知で出す。作れたら音を鳴らす）
+  // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）
   const write = (result: CaosWritesResult) => {
     if ("error" in result) {
       toast.error(result.error);
       return false;
     }
-    const ok = source.runWrites(result.writes);
-    if (ok) soundManager.playDispatch();
-    return ok;
+    return playOnSuccess(source.runWrites(result.writes), () =>
+      soundManager.playDispatch(),
+    );
   };
 
   return {
@@ -152,9 +161,9 @@ export const useCaosSession = () => {
      */
     advance: (bayId: number) => {
       const seen = caosLane(cards, bayId).brewing?.dripId ?? null;
-      const ok = source.runNext(bayId, seen);
-      if (ok) soundManager.playComplete();
-      return ok;
+      return playOnSuccess(source.runNext(bayId, seen), () =>
+        soundManager.playComplete(),
+      );
     },
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {

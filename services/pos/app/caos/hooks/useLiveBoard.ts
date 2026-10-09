@@ -9,6 +9,12 @@ import { useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { usePosOrders } from "./usePosOrders";
 
+// API の結果。断られたら理由を通知で出して false
+const succeeded = ({ error }: { error?: string }) => {
+  if (error) toast.error(error);
+  return !error;
+};
+
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる（@cafeore/common の buildCaosCards）。
 // 操作はカップに書く（PUT /api/caos/cups・「次へ」）。書いた注文は全部の画面に配られるので、複数の iPad で同じものを見て操作できる。
@@ -33,23 +39,15 @@ export const useLiveBoard = ({
   return {
     status,
     cards,
-    /** 書き込みを送る */
-    runWrites: (writes: CaosCupsWrite[]) => {
-      void putCaosCups(writes).then(({ error }) => {
-        if (error) toast.error(error);
-      });
-      return true;
-    },
-    /** 「次へ」を送る。dripId は画面が抽出中と見ているカード */
+    /** 書き込みを送る。API が書けたら true になる */
+    runWrites: (writes: CaosCupsWrite[]) => putCaosCups(writes).then(succeeded),
+    /** 「次へ」を送る。dripId は画面が抽出中と見ているカード。API が書けたら true になる（二度押しは送らずに false） */
     runNext: (dripper: number, dripId: string | null) => {
       if (pendingNext.current.has(dripper)) return false;
       pendingNext.current.add(dripper);
-      void nextCaosDripper(dripper, dripId)
-        .then(({ error }) => {
-          if (error) toast.error(error);
-        })
+      return nextCaosDripper(dripper, dripId)
+        .then(succeeded)
         .finally(() => pendingNext.current.delete(dripper));
-      return true;
     },
   };
 };
