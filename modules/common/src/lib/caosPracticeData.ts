@@ -15,7 +15,7 @@
 //         cups: [{ order_menu_id, item }], comments }]
 //     （配列のままでも、{ orders: [...] } でもよい）
 
-import { jstDate } from "../rehearsal/params";
+import { jstDate } from "./jst";
 
 /** 実データの注文の品物（1 杯・1 個ずつ）。id は実績データの商品の ID（無いデータもある） */
 export interface PracticeDataItem {

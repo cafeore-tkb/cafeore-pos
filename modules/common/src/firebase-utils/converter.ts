@@ -6,7 +6,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import _ from "lodash";
-import type { ZodSchema } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
@@ -26,8 +26,9 @@ import {
 } from "../models/order";
 import type { components } from "../types/api";
 
+// 入力の型は出力と違ってよい（既定値のある項目は、古いドキュメントに無くても読める。カップの CaOS の列など）
 export const converter = <T>(
-  schema: ZodSchema<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
 ): FirestoreDataConverter<T> => {
   return {
     toFirestore: (data: T) => {
@@ -247,6 +248,13 @@ export const responseToOrderEntity = (
       item: responseToItemEntity(cup.item).toItem(),
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
+      dripper: cup.dripper ?? null,
+      dripperPosition: cup.dripper_position ?? null,
+      dripId: cup.drip_id ?? null,
+      brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
+      brewFinishedAt: cup.brew_finished_at
+        ? new Date(cup.brew_finished_at)
+        : null,
     })),
   };
   return OrderEntity.fromOrder(order);
