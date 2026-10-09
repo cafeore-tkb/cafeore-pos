@@ -31,7 +31,7 @@ func toMasterStateResponse(masterState *models.MasterState) models.MasterStateRe
 func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
 	var masterStatus []models.MasterState
 	if err := h.db.Find(&masterStatus).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&state).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 

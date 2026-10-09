@@ -32,7 +32,7 @@ func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
 func (h *ItemTypeHandler) GetItemTypes(c *gin.Context) {
 	var itemTypes []models.ItemType
 	if err := h.db.Order("name").Find(&itemTypes).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&itemType).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "ItemType not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -113,7 +113,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -122,13 +122,13 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	itemType.DisplayName = req.DisplayName
 
 	if err := h.db.Save(&itemType).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	// 更新後のデータをロード
 	if err := h.db.First(&itemType, "id = ?", itemType.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -147,7 +147,7 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 
 	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 

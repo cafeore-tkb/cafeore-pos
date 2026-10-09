@@ -49,13 +49,13 @@ func (h *CommentHandler) GetOrderComments(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	var comments []models.Comment
 	if err := h.db.Where("order_id = ?", orderUUID).Order("created_at DESC").Find(&comments).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&comment).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 

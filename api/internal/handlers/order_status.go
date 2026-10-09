@@ -238,13 +238,13 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order cup not found"})
 		return
 	case err != nil:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
 	resp, err := publishOrder(h.db, h.hub, orderID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, resp)
