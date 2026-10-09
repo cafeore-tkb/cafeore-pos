@@ -139,6 +139,26 @@ func TestInventoryUsageHistoryCountsOrdersWithUsageAtOrderTime(t *testing.T) {
 	if got := inv.ResourceIDsForOrder(order()); len(got) != 0 {
 		t.Errorf("外した後の注文の在庫対象 = %v, want なし", got)
 	}
+
+	// アイテムを消しても、消す前の注文はその時点の使用量で数え続ける（使用量の行は消さずに閉じる）
+	put(20)
+	fourth := order()
+	expect("消す前", 15+20+20, 3, 3)
+	router.DELETE("/items/:id", NewItemHandler(db, nil).DeleteItem)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/items/"+item.ID.String(), nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("DELETE item: %d %s", w.Code, w.Body.String())
+	}
+	expect("消した後", 15+20+20, 3, 3)
+	if got := inv.ResourceIDsForOrder(fourth); len(got) != 2 {
+		t.Errorf("消す前の注文の在庫対象 = %v, want 豆とカップ", got)
+	}
+	var open int64
+	must(db.Model(&models.ItemStockUsage{}).Where("item_id = ? AND valid_to IS NULL", item.ID).Count(&open).Error)
+	if open != 0 {
+		t.Errorf("消した後も今有効な使用量が %d 行残っている", open)
+	}
 }
 
 // テストごとに使い捨ての schema を作って開き、終わったら消す。uuid_generate_v4() は DB の public に入れ、
