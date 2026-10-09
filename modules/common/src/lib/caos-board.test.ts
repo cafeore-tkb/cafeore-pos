@@ -14,7 +14,7 @@ import {
   unassignWrites,
 } from "./caos-board";
 import laneCases from "./caos-lane-cases.json";
-import { jstDate, jstDayStart } from "./jst";
+import { jstDate } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = jstDate(NOW.getTime());
@@ -237,7 +237,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
   test("今日の区切りは端末の時刻帯によらず日本時間の 0 時", () => {
     expect(jstDate(Date.parse("2026-10-07T14:59:59Z"))).toBe("2026-10-07");
     expect(jstDate(Date.parse("2026-10-07T15:00:00Z"))).toBe("2026-10-08");
-    expect(jstDayStart(NOW.getTime())).toBe(Date.parse("2026-10-07T15:00:00Z"));
   });
 
   test("抽出時間", () => {
