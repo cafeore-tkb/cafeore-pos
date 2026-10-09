@@ -521,10 +521,11 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		}
 	}
 
+	// 記録した直後の残量で通知する。応答の後に裏で数えると、その間の注文の分だけずれ、
+	// 終了時（activity.Close）より後に Post して欠けることもあるので、ハンドラーの中で送る
+	h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
 	c.JSON(http.StatusCreated, resp)
 	go h.inv.CheckAlerts([]uuid.UUID{id})
-	// 記録後の残量は応答を待たせないよう裏で数える
-	go h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
 }
 
 func (inv *Inventory) postStockEvent(resource models.StockResource, event models.StockEvent, estimated *float64) {
@@ -661,8 +662,9 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
 	go h.inv.CheckAlerts(nil)
+	// 終了時（activity.Close）より前に Post するよう、裏に回さずハンドラーの中で送る（Shutdown はハンドラーが戻るのを待つ）
 	if changed {
-		go h.inv.postItemUsages(item.Name, usages)
+		h.inv.postItemUsages(item.Name, usages)
 	}
 }
 

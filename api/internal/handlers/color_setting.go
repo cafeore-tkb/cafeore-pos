@@ -91,18 +91,24 @@ func upsertColorSetting(db *gorm.DB, setting *models.ColorSetting) *gorm.DB {
 	}).Create(setting)
 }
 
-// 設定先の Item / ItemType が存在する（論理削除されていない）か確かめる。
-func (h *ColorSettingHandler) targetExists(setting *models.ColorSetting) (bool, error) {
+var errColorTargetNotFound = errors.New("target not found")
+
+// 設定先の Item / ItemType が存在する（論理削除されていない）か確かめ、その行を押さえる。
+// 同じ対象への保存はここで順に並ぶので、変更前の読み込みと保存の間に別の保存が入らない。
+func lockColorTarget(tx *gorm.DB, setting *models.ColorSetting) error {
 	var target any = &models.Item{}
 	if setting.TargetType == string(models.ColorTargetTypeItemType) {
 		target = &models.ItemType{}
 	}
-
-	var count int64
-	if err := h.db.Model(target).Where("id = ?", setting.TargetID).Count(&count).Error; err != nil {
-		return false, err
+	// 無いときに「record not found」をログに出さないよう、First ではなく Find で読む
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Limit(1).Find(target, "id = ?", setting.TargetID)
+	if result.Error != nil {
+		return result.Error
 	}
-	return count > 0, nil
+	if result.RowsAffected == 0 {
+		return errColorTargetNotFound
+	}
+	return nil
 }
 
 // GET /api/color-settings - 背景色設定一覧取得
@@ -136,31 +142,29 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 		return
 	}
 
-	exists, err := h.targetExists(&setting)
+	var before, saved models.ColorSetting
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockColorTarget(tx, &setting); err != nil {
+			return err
+		}
+		// 通知で追加か変更かを分けるために読んでおく。追加なら無いのが普通なので、
+		// First で「record not found」をログに出さないよう Find で読む
+		if err := tx.Limit(1).Find(&before, "target_type = ? AND target_id = ? AND screen = ?",
+			setting.TargetType, setting.TargetID, setting.Screen).Error; err != nil {
+			return err
+		}
+		if err := upsertColorSetting(tx, &setting).Error; err != nil {
+			return err
+		}
+		// 更新になった場合は既存行の ID を返したいので、一意キーで読み直す。
+		return tx.First(&saved, "target_type = ? AND target_id = ? AND screen = ?",
+			setting.TargetType, setting.TargetID, setting.Screen).Error
+	})
+	if errors.Is(err, errColorTargetNotFound) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !exists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "target not found"})
-		return
-	}
-
-	// 通知で追加か変更かを分けるために読んでおく。追加なら無いのが普通なので、
-	// First で「record not found」をログに出さないよう Find で読む
-	var before models.ColorSetting
-	_ = h.db.Limit(1).Find(&before, "target_type = ? AND target_id = ? AND screen = ?",
-		setting.TargetType, setting.TargetID, setting.Screen).Error
-
-	if err := upsertColorSetting(h.db, &setting).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 更新になった場合は既存行の ID を返したいので、一意キーで読み直す。
-	var saved models.ColorSetting
-	if err := h.db.First(&saved, "target_type = ? AND target_id = ? AND screen = ?",
-		setting.TargetType, setting.TargetID, setting.Screen).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -138,9 +139,13 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// 通知で変更前と比べるため、タイプ込みで別に読んでおく（Save に関連を渡さないよう item とは分ける）
+	// 通知で変更前と比べるため、タイプ込みで別に読んでおく（Save に関連を渡さないよう item とは分ける）。
+	// 読めなかったら空と比べた誤った差分になるので、通知だけしない
 	var before models.Item
-	_ = h.db.Preload("ItemType").First(&before, "id = ?", itemID).Error
+	beforeErr := h.db.Preload("ItemType").First(&before, "id = ?", itemID).Error
+	if beforeErr != nil {
+		log.Printf("activity: failed to load item %s before update: %v", itemID, beforeErr)
+	}
 
 	// 更新
 	item.Name = req.Name
@@ -167,7 +172,9 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemResponse(&item))
-	h.activity.Post(itemUpdatedMessage(&before, &item))
+	if beforeErr == nil {
+		h.activity.Post(itemUpdatedMessage(&before, &item))
+	}
 }
 
 // DELETE /api/items/:id - アイテム削除
