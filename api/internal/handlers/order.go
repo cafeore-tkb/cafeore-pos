@@ -242,7 +242,6 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		}
 		order.OrderMenus, order.OrderCups = lines, cups
 		// グッズだけの注文は作るものが無いので、作った時点で準備完了・提供済みにする
-		// （レジの goodsOnlyServed の値は作成のリクエストに無いので、サーバーで決める）
 		serveCuplessOrder(&order, order.CreatedAt)
 		return tx.Create(&order).Error
 	}); err != nil {
