@@ -1,10 +1,8 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
 
-// 判定に使う項目（カップを作る・抽出が要る・上級生のみ・アイス）は商品管理で種類ごとに設定し、API の値をそのまま使う。
-// 種類の名前（hot / ice / milk / others など）で決め打ちしないこと。
-// 項目を持つ前のデータ（前の版の画面が保存したレジ状態や Firestore の注文）は、既定値で補わずに読まない
-// （ミルクやグッズをコーヒーとして数えないように）。
+// カップ・抽出などの判定は種類の名前で決め打ちせず、下の項目（API の値）を使う。
+// 項目の無い古いデータは既定値で補わずに弾く（ミルクやグッズをコーヒーとして数えないように）。
 export const itemTypeSchema = z.object({
   id: z.string().optional(),
   name: z.string(),

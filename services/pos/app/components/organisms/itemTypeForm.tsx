@@ -58,11 +58,11 @@ const FLAG_FIELDS: {
   },
 ];
 
-const setFlag = (
-  flags: ItemTypeFlags,
+const setFlag = <T extends ItemTypeFlags>(
+  flags: T,
   key: keyof ItemTypeFlags,
   checked: boolean,
-): ItemTypeFlags => {
+): T => {
   const next = { ...flags, [key]: checked };
   // 親から順に並んでいるので、1回なめれば孫まで外れる
   for (const field of FLAG_FIELDS) {
@@ -91,7 +91,7 @@ export function ItemTypeFlagFields<T extends ItemTypeFlags>({
             checked={value[key]}
             disabled={parent !== undefined && !value[parent]}
             onCheckedChange={(checked) =>
-              onChange({ ...value, ...setFlag(value, key, checked) })
+              onChange(setFlag(value, key, checked))
             }
           />
           <div className="grid gap-1">
