@@ -14,7 +14,6 @@ import {
   cashierMenuOpenAtom,
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
-import { goodsOnlyServed } from "../functional/goodsOnlyServed";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -154,7 +153,6 @@ const CashierV2 = ({
       const submitOne = newOrder.clone();
       if (exactPayment) submitOne.received = submitOne.billingAmount;
       submitOne.nowCreated();
-      goodsOnlyServed(submitOne);
       // 備考を追加
       submitOne.addComment("cashier", descComment);
       printer.printOrderLabel(submitOne);

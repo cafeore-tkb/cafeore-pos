@@ -14,6 +14,7 @@ import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { useState } from "react";
 import { type ClientActionFunction, useSubmit } from "react-router";
 import { z } from "zod";
+import { ItemButtons } from "~/components/organisms/ItemButtons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,106 +99,12 @@ export default function Casher() {
   return (
     <div className="p-5">
       <div className="flex flex-row flex-wrap ">
-        <div className="relative w-2/3 pr-5 pl-5">
-          <div key="hot" className="pb-3.75 pl-5 font-medium text-2xl text-hot">
-            ホット
-          </div>
-          <div
-            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
-            style={{ gridTemplateRows: "auto" }}
-          >
-            {items.map(
-              (item) =>
-                item.item_type.name === "hot" && (
-                  <Button
-                    key={item.id}
-                    className="h-12.5 w-50 bg-hot text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
-                    onClick={async () => {
-                      setQueue([...queue, item]);
-                    }}
-                  >
-                    {item.name}
-                  </Button>
-                ),
-            )}
-          </div>
-          <div
-            key="ice"
-            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl text-ice"
-          >
-            アイス
-          </div>
-          <div
-            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
-            style={{ gridTemplateRows: "auto" }}
-          >
-            {items.map(
-              (item) =>
-                (item.item_type.name === "ice" ||
-                  item.item_type.name === "milk") && (
-                  <Button
-                    key={item.id}
-                    className="h-12.5 w-50 bg-ice text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
-                    onClick={async () => {
-                      setQueue([...queue, item]);
-                    }}
-                  >
-                    {item.name}
-                  </Button>
-                ),
-            )}
-          </div>
-          <div
-            key="ore"
-            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl text-ore"
-          >
-            オレ
-          </div>
-          <div
-            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
-            style={{ gridTemplateRows: "auto" }}
-          >
-            {items.map(
-              (item) =>
-                (item.item_type.name === "hotOre" ||
-                  item.item_type.name === "iceOre") && (
-                  <Button
-                    key={item.id}
-                    className="h-12.5 w-50 bg-ore text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
-                    onClick={async () => {
-                      setQueue([...queue, item]);
-                    }}
-                  >
-                    {item.name}
-                  </Button>
-                ),
-            )}
-          </div>
-          <div
-            key="others"
-            className="pt-7.5 pb-3.75 pl-5 font-medium text-2xl"
-          >
-            その他
-          </div>
-          <div
-            className="grid grid-cols-3 items-center justify-items-center gap-7.5"
-            style={{ gridTemplateRows: "auto" }}
-          >
-            {items.map(
-              (item) =>
-                item.item_type.name === "others" && (
-                  <Button
-                    key={item.id}
-                    className="h-12.5 w-50 text-lg hover:bg-theme hover:ring-4 hover:ring-theme"
-                    onClick={async () => {
-                      setQueue([...queue, item]);
-                    }}
-                  >
-                    {item.name}
-                  </Button>
-                ),
-            )}
-          </div>
+        {/* 種類ごとの見出し・並び・色は DB の種類と背景色設定から決める（レジ画面と同じ） */}
+        <div className="relative w-2/3">
+          <ItemButtons
+            items={items}
+            addItem={(item) => setQueue([...queue, item])}
+          />
         </div>
         <div className="relative w-1/3 pl-5">
           <Table>
