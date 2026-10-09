@@ -1,4 +1,5 @@
 import {
+  type InventoryLevel,
   type InventoryStatus,
   type StockEventKind,
   inventoryRepository,
@@ -8,11 +9,30 @@ import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { fmt, formatHours, stockView } from "~/lib/inventory";
 import { cn } from "~/lib/utils";
 
 // この時間より前の棚卸しは、数え直しを促す色にする
-const STALE_COUNT_HOURS = 3;
+const STALE_COUNT_MINUTES = 3 * 60;
+
+// 残量の段階の札
+const LEVELS: Record<InventoryLevel, { label: string; className: string }> = {
+  ok: { label: "十分", className: "bg-emerald-100 text-emerald-900" },
+  warning: { label: "少なめ", className: "bg-amber-100 text-amber-900" },
+  critical: { label: "危険", className: "bg-red-100 text-red-900" },
+  untracked: { label: "未計測", className: "bg-muted text-muted-foreground" },
+};
+
+/** 数を「1,234」の形に（小数は digits 桁まで） */
+const fmt = (v: number, digits = 0) =>
+  v.toLocaleString("ja-JP", { maximumFractionDigits: digits });
+
+/** 分の数を「45 分」「1 時間 30 分」「12 時間」の形に（10 時間以上は分を出さない） */
+const minutesLabel = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} 分`;
+  return m === 0 || h >= 10 ? `${h} 時間` : `${h} 時間 ${m} 分`;
+};
 
 // 在庫対象 1 つのカード（残量と、棚卸し・入荷の記録の欄）。在庫の画面（/inventory）と CaOS の豆キューで使う。
 // children はカードのいちばん下に足す行（豆キューの「盤面に◯杯」など）。
@@ -30,15 +50,19 @@ export function StockCard({
   const [submitting, setSubmitting] = useState(false);
 
   const isCup = resource.kind === "cup";
-  const view = stockView(status);
+  const level = LEVELS[status.level];
   const remaining = status.remaining ?? null;
   const servings = status.remaining_servings ?? null;
   const countedAt = status.counted_at ? dayjs(status.counted_at) : null;
   const hasCount = status.counted_quantity != null;
-  const hoursSinceCount = countedAt
-    ? dayjs().diff(countedAt, "minute") / 60
-    : 0;
-  const staleCount = !hasCount || hoursSinceCount >= STALE_COUNT_HOURS;
+  const minutesSinceCount = countedAt ? dayjs().diff(countedAt, "minute") : 0;
+  const staleCount = !hasCount || minutesSinceCount >= STALE_COUNT_MINUTES;
+  // 直近1時間の売れ方が続いたとして、切れるまでの分（見込めなければ null）
+  const perHour = status.servings_last_hour;
+  const minutesUntilEmpty =
+    servings != null && servings > 0 && perHour > 0
+      ? Math.round((servings / perHour) * 60)
+      : null;
 
   const record = async (kind: StockEventKind) => {
     const quantity = Number(value);
@@ -102,10 +126,10 @@ export function StockCard({
         <span
           className={cn(
             "rounded px-2 py-0.5 font-medium text-sm",
-            view.className,
+            level.className,
           )}
         >
-          {view.label}
+          {level.label}
         </span>
       </div>
 
@@ -126,7 +150,8 @@ export function StockCard({
 
       <div className="text-sm tabular-nums">
         直近1時間 {status.servings_last_hour} 杯
-        {view.emptyIn && ` → 約 ${view.emptyIn}で切れる見込み`}
+        {minutesUntilEmpty != null &&
+          ` → 約 ${minutesLabel(minutesUntilEmpty)}で切れる見込み`}
       </div>
 
       <div
@@ -136,7 +161,7 @@ export function StockCard({
         )}
       >
         {hasCount && countedAt
-          ? `最終棚卸し ${countedAt.format("M/D HH:mm")}（${formatHours(hoursSinceCount)}前）・以降 ${status.servings} 杯`
+          ? `最終棚卸し ${countedAt.format("M/D HH:mm")}（${minutesLabel(minutesSinceCount)}前）・以降 ${status.servings} 杯`
           : "まだ棚卸ししていません"}
       </div>
 
