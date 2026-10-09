@@ -664,6 +664,7 @@
       },
       "name": {
         "type": "string",
+        "minLength": 1,
         "example": "ホットカップ"
       },
       "unit": {
@@ -675,21 +676,28 @@
         "type": "number",
         "format": "double",
         "description": "1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）",
+        "minimum": 0,
+        "not": {
+          "enum": [0]
+        },
         "example": 1
       },
       "notify_from": {
         "type": "integer",
         "description": "残りがこの杯数を切ったら通知を始める",
+        "minimum": 0,
         "example": 500
       },
       "notify_step": {
         "type": "integer",
         "description": "notify_from から何杯減るごとに通知するか",
+        "minimum": 0,
         "example": 100
       },
       "buffer": {
         "type": "integer",
         "description": "最低限残したい杯数。これを切ると危険扱い",
+        "minimum": 0,
         "example": 100
       }
     }
@@ -869,6 +877,25 @@
       "amount": {
         "type": "number",
         "format": "double",
+        "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
+      }
+    }
+  },
+  "ItemStockUsageRequest": {
+    "type": "object",
+    "required": ["resource_id", "amount"],
+    "properties": {
+      "resource_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "amount": {
+        "type": "number",
+        "format": "double",
+        "minimum": 0,
+        "not": {
+          "enum": [0]
+        },
         "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
       }
     }

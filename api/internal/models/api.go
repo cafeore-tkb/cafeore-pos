@@ -169,6 +169,13 @@ type ItemResponse struct {
 	Name     string             `json:"name"`
 }
 
+// ItemStockUsageRequest defines model for ItemStockUsageRequest.
+type ItemStockUsageRequest struct {
+	// Amount アイテム1杯で使う量（カップ 1、豆 15 など）
+	Amount     float64            `json:"amount"`
+	ResourceId openapi_types.UUID `json:"resource_id"`
+}
+
 // ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
 type ItemTypeCreateRequest struct {
 	DisplayName string `json:"display_name"`
@@ -420,8 +427,8 @@ type StockUsage struct {
 	ResourceId openapi_types.UUID `json:"resource_id"`
 }
 
-// ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
-type ReplaceStockUsagesJSONBody = []StockUsage
+// ReplaceItemStockUsagesJSONBody defines parameters for ReplaceItemStockUsages.
+type ReplaceItemStockUsagesJSONBody = []ItemStockUsageRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
@@ -438,8 +445,8 @@ type UpdateStockResourceJSONRequestBody = StockResourceRequest
 // CreateStockEventJSONRequestBody defines body for CreateStockEvent for application/json ContentType.
 type CreateStockEventJSONRequestBody = StockEventCreateRequest
 
-// ReplaceStockUsagesJSONRequestBody defines body for ReplaceStockUsages for application/json ContentType.
-type ReplaceStockUsagesJSONRequestBody = ReplaceStockUsagesJSONBody
+// ReplaceItemStockUsagesJSONRequestBody defines body for ReplaceItemStockUsages for application/json ContentType.
+type ReplaceItemStockUsagesJSONRequestBody = ReplaceItemStockUsagesJSONBody
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest
