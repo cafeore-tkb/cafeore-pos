@@ -184,7 +184,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("今日（日本時間）の注文だけを見る", () => {
+  test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {
     const yesterday = new Date("2026-10-07T14:59:59Z"); // 日本時間 10/7 23:59:59
     const midnight = new Date("2026-10-07T15:00:00Z"); // 日本時間 10/8 0:00
     const cards = buildCaosCards(
@@ -243,11 +243,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ["ブレンド", false],
       ["スペシャル", true],
     ]);
-  });
-
-  test("今日の区切りは端末の時刻帯によらず日本時間の 0 時", () => {
-    expect(jstDate(Date.parse("2026-10-07T14:59:59Z"))).toBe("2026-10-07");
-    expect(jstDate(Date.parse("2026-10-07T15:00:00Z"))).toBe("2026-10-08");
   });
 
   test("抽出時間", () => {

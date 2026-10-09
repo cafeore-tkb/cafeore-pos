@@ -166,6 +166,17 @@ const makeCard = (
   };
 };
 
+// dripId のあるカードの状態（終了あり・全部準備完了＝終わり、開始あり＝抽出中、ドリッパーあり＝待機、無し＝統合した未割当）
+const placedStatus = (
+  state: CaosCupState,
+  allReady: boolean,
+): CaosCardStatus => {
+  if (state.dripper === null) return "unassigned";
+  if (state.brewFinishedAt || allReady) return "done";
+  if (state.brewStartedAt) return "brewing";
+  return "queued";
+};
+
 const statusRank: Record<CaosCardStatus, number> = {
   unassigned: 0,
   done: 1,
@@ -264,16 +275,7 @@ export const buildCaosCards = (
   const cards: CaosCard[] = [];
   for (const cups of byDrip.values()) {
     const state = cups[0].state;
-    const allReady = cups.every(isReady);
-    const status: CaosCardStatus =
-      state.dripper === null
-        ? "unassigned"
-        : state.brewFinishedAt || allReady
-          ? "done"
-          : state.brewStartedAt
-            ? "brewing"
-            : "queued";
-    cards.push(makeCard(cups, status, state));
+    cards.push(makeCard(cups, placedStatus(state, cups.every(isReady)), state));
   }
   for (const cups of loose.values()) {
     const sorted = [...cups].sort(compareCups);
