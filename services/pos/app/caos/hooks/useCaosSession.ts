@@ -4,7 +4,7 @@ import {
   type PracticeDataOrder,
   assignWrites,
   caosLane,
-  jstDayStart,
+  jstClock,
   mergeWrites,
   unassignWrites,
   useColorSettings,
@@ -14,7 +14,6 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { cardLooks, totalCups } from "../logic/cards";
-import { timeOfDayLabel } from "../logic/format";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
@@ -65,12 +64,9 @@ export const useCaosSession = () => {
   const source = test.session ? test : live;
   const { colorSettings } = useColorSettings();
 
-  // 盤面の秒。日本時間の 0 時から数える（盤面の「今日」と同じ区切りで、日をまたいだら次の日の 0 時から。
-  // テスト中はテストの最初の日の 0 時から。24 時を過ぎても戻らない）
+  // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
-  const dayStartMs = test.dayStartMs ?? jstDayStart(realTime.getTime());
   const nowMs = test.session?.currentMs ?? realTime.getTime();
-  const nowSec = Math.floor((nowMs - dayStartMs) / 1000);
 
   const lanes = useMemo(() => boardLanes(cards), [cards]);
   const unassigned = useMemo(
@@ -104,15 +100,16 @@ export const useCaosSession = () => {
     unassigned,
     /** カードの色と、分けた注文の中の位置 */
     looks,
-    nextAvailable: nextAvailableBays(lanes, nowSec, dayStartMs),
+    nextAvailable: nextAvailableBays(lanes, nowMs),
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
     cups: {
       unassigned: totalCups(unassigned),
       waiting: totalCups(lanes.flatMap(laneActive)),
     },
-    nowSec,
-    dayStartMs,
-    timeLabel: timeOfDayLabel(nowSec),
+    /** 今（エポックのミリ秒。テスト中は練習の時計） */
+    nowMs,
+    /** ヘッダーの時刻（日本時間の「10:05:09」） */
+    timeLabel: jstClock(nowMs),
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,

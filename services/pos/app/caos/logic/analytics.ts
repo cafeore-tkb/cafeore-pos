@@ -1,7 +1,6 @@
 import type { PracticeDataOrder } from "@cafeore/common";
 import { type CardLooks, type CardSplit, orderLabel, totalCups } from "./cards";
 import { type Lane, laneActive } from "./lanes";
-import { boardSec } from "./queue";
 
 // 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・ドリッパーごとの量・実データテストの売上
 
@@ -23,10 +22,10 @@ const average = (values: number[]) =>
     : null;
 
 // 分けた注文のうち、全部のカードを淹れ終えた注文の仕上がりの差（最初と最後のカードの終わりの差）
-const splitResults = (lanes: Lane[], looks: CardLooks, dayStartMs: number) => {
+const splitResults = (lanes: Lane[], looks: CardLooks) => {
   const groups = new Map<
     string,
-    { split: CardSplit; bayId: number; finishedAt: number }[]
+    { split: CardSplit; bayId: number; finishedMs: number }[]
   >();
   for (const lane of lanes) {
     for (const card of lane.done) {
@@ -35,34 +34,30 @@ const splitResults = (lanes: Lane[], looks: CardLooks, dayStartMs: number) => {
       const key = orderLabel(card);
       groups.set(key, [
         ...(groups.get(key) ?? []),
-        {
-          split,
-          bayId: lane.id,
-          finishedAt: boardSec(card.finishedAt, dayStartMs),
-        },
+        { split, bayId: lane.id, finishedMs: card.finishedAt.getTime() },
       ]);
     }
   }
   return Array.from(groups, ([orderId, parts]) => {
     const expectedParts = Math.max(...parts.map((part) => part.split.total));
-    const finished = parts.map((part) => part.finishedAt);
-    const firstFinishedAt = Math.min(...finished);
-    const lastFinishedAt = Math.max(...finished);
+    const finished = parts.map((part) => part.finishedMs);
+    const firstFinishedMs = Math.min(...finished);
+    const lastFinishedMs = Math.max(...finished);
     return {
       orderId,
       expectedParts,
       isComplete: parts.length >= expectedParts,
       totalCups: Math.max(...parts.map((part) => part.split.cups)),
-      deltaSec: lastFinishedAt - firstFinishedAt,
-      firstFinishedAt,
-      lastFinishedAt,
+      deltaSec: Math.round((lastFinishedMs - firstFinishedMs) / 1000),
+      firstFinishedMs,
+      lastFinishedMs,
       bayIds: [...new Set(parts.map((part) => part.bayId))].sort(
         (a, b) => a - b,
       ),
     };
   })
     .filter((result) => result.isComplete)
-    .sort((a, b) => b.lastFinishedAt - a.lastFinishedAt);
+    .sort((a, b) => b.lastFinishedMs - a.lastFinishedMs);
 };
 
 // 分けた注文のうち、まだドリッパーに残っている（抽出中・待機の）カードの数とドリッパー
@@ -171,9 +166,8 @@ export const analyticsReport = (
   lanes: Lane[],
   looks: CardLooks,
   salesOrders: PracticeDataOrder[],
-  dayStartMs: number,
 ) => {
-  const splits = splitResults(lanes, looks, dayStartMs);
+  const splits = splitResults(lanes, looks);
   const averageDelta = average(splits.map((result) => result.deltaSec));
   return {
     sales: salesAnalysis(salesOrders),

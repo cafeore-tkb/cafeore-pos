@@ -38,7 +38,6 @@ export default function App() {
       tab={tab}
       lanes={lanes}
       looks={looks}
-      dayStartMs={session.dayStartMs}
       typeNames={typeNames}
       {...testPlay.analytics}
     />
@@ -88,8 +87,7 @@ export default function App() {
             nextAvailable={session.nextAvailable}
             selectedOrderId={selection.selectedOrderId}
             actionTicketKey={selection.scheduled?.card.key ?? null}
-            currentTimeSec={session.nowSec}
-            dayStartMs={session.dayStartMs}
+            nowMs={session.nowMs}
             timelineCommand={timelineCommand}
             onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}

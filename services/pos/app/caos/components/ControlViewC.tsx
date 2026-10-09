@@ -20,8 +20,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   unassignedOrders,
   looks,
   nextAvailable,
-  currentTimeSec,
-  dayStartMs,
+  nowMs,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -40,7 +39,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
 
       <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
         {lanes.map((bay) => {
-          const lane = laneStatus(bay, currentTimeSec, dayStartMs);
+          const lane = laneStatus(bay, nowMs);
           const { current } = lane;
           const isLinked = [current, ...lane.waiting].some(
             (card) => card && orderLabel(card) === selectedOrderId,

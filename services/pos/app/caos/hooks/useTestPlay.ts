@@ -7,8 +7,6 @@ import {
   advanceCaosPracticeDripper,
   applyCaosPracticeWrites,
   buildCaosCards,
-  jstDate,
-  jstDayStart,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -58,7 +56,6 @@ export const useTestPlay = ({
   const status = session?.status;
   const currentMs = session?.currentMs;
   const endMs = session?.endMs;
-  const startMs = session?.startMs;
 
   // One test-play tick advances one second of historical time. The shared
   // speed control changes the tick frequency so the clock, timeline, order
@@ -85,17 +82,15 @@ export const useTestPlay = ({
       onTimeUp();
   }, [currentMs, endMs, status, onTimeUp]);
 
-  // 時刻までに届いた注文から、練習の日（日本時間）のカードを組み立てる
+  // 時刻までに届いた注文からカードを組み立てる（練習の盤面は時間帯の注文だけを持つので、日では絞らない）
   const count = useMemo(
     () =>
       currentMs === undefined ? 0 : arrivedCount(practiceOrders, currentMs),
     [practiceOrders, currentMs],
   );
-  const day = startMs === undefined ? null : jstDate(startMs);
   const cards = useMemo(
-    () =>
-      day === null ? [] : buildCaosCards(practiceOrders.slice(0, count), day),
-    [practiceOrders, count, day],
+    () => buildCaosCards(practiceOrders.slice(0, count)),
+    [practiceOrders, count],
   );
   const orders = session?.orders;
   const salesOrders = useMemo(
@@ -121,8 +116,6 @@ export const useTestPlay = ({
   return {
     session,
     cards,
-    /** 練習の日の 0 時（盤面の秒の起点）。練習していなければ null */
-    dayStartMs: startMs === undefined ? null : jstDayStart(startMs),
     /** 実績に出す、届いた注文（提供時間は練習の結果） */
     salesOrders,
     runWrites: (writes: CaosCupsWrite[]) =>

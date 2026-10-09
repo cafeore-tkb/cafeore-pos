@@ -3,6 +3,7 @@ import {
   type ItemType,
   type PracticeDataOrder,
   cupNeedsBrew,
+  jstDate,
   toCaosPracticeOrder,
 } from "@cafeore/common";
 
@@ -85,7 +86,7 @@ export const testPlayRemainingLabel = (session: {
 const SLOT_MS = 30 * 60_000;
 
 /**
- * テストを始められる時刻（30 分ごと）。注文のある日ごとに、最初の注文の 30 分区切りから、
+ * テストを始められる時刻（30 分ごと）。注文のある日（日本時間）ごとに、最初の注文の 30 分区切りから、
  * 時間帯（durationMinutes 分）に注文がある時刻だけ
  */
 export const testPlaySlots = (
@@ -95,19 +96,19 @@ export const testPlaySlots = (
   const durationMs = durationMinutes * 60_000;
   const days = new Map<string, number[]>();
   for (const order of orders) {
-    const date = new Date(order.createdAt);
-    const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    days.set(dayKey, [...(days.get(dayKey) ?? []), date.getTime()]);
+    const ms = createdMs(order);
+    const day = jstDate(ms);
+    days.set(day, [...(days.get(day) ?? []), ms]);
   }
   return Array.from(days.values())
     .sort((a, b) => Math.min(...a) - Math.min(...b))
     .flatMap((timestamps) => {
-      const first = new Date(Math.min(...timestamps));
-      first.setMinutes(first.getMinutes() < 30 ? 0 : 30, 0, 0);
+      // 日本時間は時差が整数の時間なので、エポックのミリ秒で 30 分に切り捨てれば日本時間の 30 分区切り
+      const first = Math.floor(Math.min(...timestamps) / SLOT_MS) * SLOT_MS;
       const last = Math.max(...timestamps);
       const slots: number[] = [];
       for (
-        let cursor = first.getTime();
+        let cursor = first;
         cursor + durationMs <= last + SLOT_MS;
         cursor += SLOT_MS
       ) {

@@ -74,8 +74,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   lanes: bays,
   unassignedOrders,
   looks,
-  dayStartMs,
-  currentTimeSec,
+  nowMs,
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
@@ -110,9 +109,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   );
   const targetRowId = selectedOrder?.orderNo ?? null;
   // 列ごとの今（抽出中のカード・残り・まもなく）
-  const lanes = new Map(
-    bays.map((bay) => [bay.id, laneStatus(bay, currentTimeSec, dayStartMs)]),
-  );
+  const lanes = new Map(bays.map((bay) => [bay.id, laneStatus(bay, nowMs)]));
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 
   // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。

@@ -57,23 +57,23 @@ export const DispatchBoard: React.FC<
   onReturnToUnassigned,
   onCloseTicketAction,
   onOpenEmptySlot,
-  currentTimeSec,
-  dayStartMs,
+  nowMs,
   timelineCommand,
 }) => {
-  const range = timelineRange(currentTimeSec);
-  const timelineWidthPx = (range.endSec - range.startSec) * PIXELS_PER_SEC;
+  const range = timelineRange(nowMs);
+  // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
+  const toX = (ms: number) => ((ms - range.startMs) / 1000) * PIXELS_PER_SEC;
+  const timelineWidthPx = toX(range.endMs);
   // Position of current NOW cursor along timeline
-  const nowX = (currentTimeSec - range.startSec) * PIXELS_PER_SEC;
+  const nowX = toX(nowMs);
   const scroll = useTimelineScroll({
     nowX,
     followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
-    originPx: range.startSec * PIXELS_PER_SEC,
+    originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
     pagePx: 300 * PIXELS_PER_SEC,
     command: timelineCommand,
   });
-  const markers = timeMarkers(range.startSec, range.endSec);
-  const toX = (sec: number) => (sec - range.startSec) * PIXELS_PER_SEC;
+  const markers = timeMarkers(range.startMs, range.endMs);
 
   // 待機のカードを別の列へ・待機のカードの前へ（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
@@ -162,9 +162,9 @@ export const DispatchBoard: React.FC<
             >
               {markers.map((marker) => (
                 <div
-                  key={marker.sec}
+                  key={marker.ms}
                   className="absolute top-0 bottom-0 flex flex-col justify-between"
-                  style={{ left: `${toX(marker.sec)}px` }}
+                  style={{ left: `${toX(marker.ms)}px` }}
                 >
                   <div className={tickClass(marker)} />
                   {marker.isMajor ? (
@@ -185,12 +185,8 @@ export const DispatchBoard: React.FC<
           {/* 6 列 */}
           <div className="relative divide-y divide-slate-200">
             {lanes.map((bay) => {
-              const lane = laneStatus(bay, currentTimeSec, dayStartMs);
-              const { positioned, freeFromSec } = positionTickets(
-                bay,
-                currentTimeSec,
-                dayStartMs,
-              );
+              const lane = laneStatus(bay, nowMs);
+              const { positioned, freeFromMs } = positionTickets(bay, nowMs);
               const currentName = lane.current && cardName(lane.current);
 
               return (
@@ -256,9 +252,9 @@ export const DispatchBoard: React.FC<
                     className="relative h-[72px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
                     style={{ width: `${timelineWidthPx}px` }}
                   >
-                    {positioned.map(({ card: ticket, startSec, endSec }) => {
+                    {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
-                      if (endSec <= range.startSec) return null;
+                      if (endMs <= range.startMs) return null;
                       const isScheduled = ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
@@ -267,10 +263,10 @@ export const DispatchBoard: React.FC<
                           key={ticket.key}
                           className={isActionOpen ? "z-[80]" : undefined}
                           style={{
-                            left: Math.max(10, toX(startSec)),
+                            left: Math.max(10, toX(startMs)),
                             width: Math.max(
                               130,
-                              (endSec - startSec) * PIXELS_PER_SEC,
+                              ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
                             ),
                           }}
                         >
@@ -328,7 +324,7 @@ export const DispatchBoard: React.FC<
                     {/* 空きスロット（最後のカードの後ろ。NOW より前には置かない） */}
                     <div
                       style={{
-                        left: toX(freeFromSec) + 16,
+                        left: toX(freeFromMs) + 16,
                       }}
                     >
                       <EmptySlotButton
@@ -345,9 +341,9 @@ export const DispatchBoard: React.FC<
             .filter((marker) => marker.isHour)
             .map((marker) => (
               <div
-                key={`hour-line-${marker.sec}`}
+                key={`hour-line-${marker.ms}`}
                 className="pointer-events-none absolute top-[30px] bottom-0 z-20 w-[2px] bg-slate-500/70"
-                style={{ left: `${STICKY_LEFT_WIDTH + toX(marker.sec)}px` }}
+                style={{ left: `${STICKY_LEFT_WIDTH + toX(marker.ms)}px` }}
                 aria-hidden="true"
               />
             ))}

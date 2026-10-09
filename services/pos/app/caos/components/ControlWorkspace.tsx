@@ -29,10 +29,8 @@ export interface ControlViewProps {
   selectedOrderId: string | null;
   /** 1〜6 のボタンを開いた待機のカード（管制盤 A） */
   actionTicketKey: string | null;
-  /** 盤面の秒（dayStartMs からの秒） */
-  currentTimeSec: number;
-  /** 盤面の秒の起点（その日の 0 時） */
-  dayStartMs: number;
+  /** 今（エポックのミリ秒。実データテストでは練習の時計） */
+  nowMs: number;
   timelineCommand: TimelineCommand | null;
   /** 注文を選ぶ（null で外す） */
   onSelectOrder: (orderId: string | null) => void;

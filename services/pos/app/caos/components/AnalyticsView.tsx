@@ -1,5 +1,4 @@
-import type { PracticeDataOrder } from "@cafeore/common";
-import dayjs from "dayjs";
+import { type PracticeDataOrder, jstClock } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -20,7 +19,6 @@ import {
   deltaGrade,
 } from "../logic/analytics";
 import type { CardLooks } from "../logic/cards";
-import { timeOfDayLabel } from "../logic/format";
 import { type Lane, laneOrdinal } from "../logic/lanes";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
@@ -28,8 +26,6 @@ import { type Lane, laneOrdinal } from "../logic/lanes";
 interface AnalyticsViewProps {
   lanes: Lane[];
   looks: CardLooks;
-  /** 盤面の秒の起点（その日の 0 時） */
-  dayStartMs: number;
   /** 実データテストの、今までに届いた注文（テストをしていなければ空） */
   salesOrders: PracticeDataOrder[];
   periodStartMs?: number;
@@ -63,15 +59,14 @@ const GRADE_STYLE: Record<
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   lanes,
   looks,
-  dayStartMs,
   salesOrders,
   periodStartMs,
   periodEndMs,
   typeNames,
 }) => {
   const report = useMemo(
-    () => analyticsReport(lanes, looks, salesOrders, dayStartMs),
-    [lanes, looks, salesOrders, dayStartMs],
+    () => analyticsReport(lanes, looks, salesOrders),
+    [lanes, looks, salesOrders],
   );
   const {
     sales: salesAnalysis,
@@ -86,7 +81,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
   const typeLabel = (type: string) => typeNames.get(type) ?? type;
-  const formatBucket = (timestamp: number) => dayjs(timestamp).format("HH:mm");
+  const formatBucket = (timestamp: number) => jstClock(timestamp).slice(0, 5);
 
   return (
     <div className="space-y-3">
@@ -340,8 +335,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       レーン {result.bayIds.map((bay) => `#${bay}`).join(" + ")}
                     </span>
                     <span className="font-mono">
-                      {timeOfDayLabel(result.firstFinishedAt)} →{" "}
-                      {timeOfDayLabel(result.lastFinishedAt)}
+                      {jstClock(result.firstFinishedMs)} →{" "}
+                      {jstClock(result.lastFinishedMs)}
                     </span>
                   </div>
                 </article>

@@ -1,4 +1,4 @@
-// 時間の表示
+// 時間の表示。時刻（日本時間の「10:05:09」）は @cafeore/common の jstClock
 
 const pad2 = (value: number) => value.toString().padStart(2, "0");
 
@@ -6,10 +6,4 @@ const pad2 = (value: number) => value.toString().padStart(2, "0");
 export const clockLabel = (sec: number) => {
   const safe = Math.max(0, Math.round(sec));
   return `${Math.floor(safe / 60)}:${pad2(safe % 60)}`;
-};
-
-/** 盤面の秒（その日の 0:00 からの秒）を「10:05:09」に。24 時を越えたら 0 時に戻す */
-export const timeOfDayLabel = (sec: number) => {
-  const day = ((Math.floor(sec) % 86400) + 86400) % 86400;
-  return `${pad2(Math.floor(day / 3600))}:${pad2(Math.floor(day / 60) % 60)}:${pad2(day % 60)}`;
 };
