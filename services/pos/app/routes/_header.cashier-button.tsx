@@ -102,6 +102,7 @@ export default function Casher() {
         {/* 種類ごとの見出し・並び・色は DB の種類と背景色設定から決める（レジ画面と同じ） */}
         <div className="relative w-2/3">
           <ItemButtons
+            className="h-auto"
             items={items}
             addItem={(item) => setQueue([...queue, item])}
           />

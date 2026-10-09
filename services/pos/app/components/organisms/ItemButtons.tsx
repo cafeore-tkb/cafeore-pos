@@ -12,6 +12,8 @@ import { Button } from "../ui/button";
 type props = {
   items: WithId<MenuEntity>[];
   addItem: (item: WithId<MenuEntity>) => void;
+  /** 外側の枠に足すクラス。既定の高さ（h-screen）を変えるときに渡す */
+  className?: string;
 };
 
 type ItemTypeGroup = {
@@ -37,7 +39,7 @@ const groupByItemType = (items: WithId<MenuEntity>[]): ItemTypeGroup[] => {
   return [...groups.values()];
 };
 
-export const ItemButtons = ({ items, addItem }: props) => {
+export const ItemButtons = ({ items, addItem, className }: props) => {
   const groups = groupByItemType(items);
   const { colorSettings } = useColorSettings();
 
@@ -52,7 +54,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
     return { backgroundColor, color: readableTextColor(backgroundColor) };
   };
   return (
-    <div className="relative h-screen pr-5 pl-5">
+    <div className={cn("relative h-screen pr-5 pl-5", className)}>
       {groups.map(({ itemType, items }, index) => (
         <div key={itemType.id ?? itemType.name}>
           <div
@@ -76,7 +78,7 @@ export const ItemButtons = ({ items, addItem }: props) => {
                   addItem(item);
                 }}
               >
-                {item.abbr}
+                {item.abbr || item.name}
               </Button>
             ))}
           </div>
