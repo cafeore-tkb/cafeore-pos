@@ -9,6 +9,10 @@ import { isBayId } from "../logic/lanes";
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
 const DRAG_THRESHOLD_PX = 12;
 
+// 1〜6 のボタン（カードの上の BayPad）
+const isBayButton = (element: Element): element is HTMLElement =>
+  element instanceof HTMLElement && element.matches("button[data-bay-target]");
+
 /**
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
@@ -22,11 +26,7 @@ export const bayTargetAt = (
   const elements = document.elementsFromPoint(clientX, clientY);
   const bayOf = (element: HTMLElement | null | undefined) =>
     Number(element?.dataset.bayTarget);
-  const button = elements.find(
-    (element): element is HTMLElement =>
-      element instanceof HTMLElement &&
-      element.matches("button[data-bay-target]"),
-  );
+  const button = elements.find(isBayButton);
   const bayId = button
     ? bayOf(button)
     : bayOf(
@@ -62,12 +62,7 @@ export const dropTargetAt = (
   { from, exceptKey }: { from?: number; exceptKey?: string } = {},
 ): DropTarget | null => {
   const elements = document.elementsFromPoint(clientX, clientY);
-  const onButton = elements.some(
-    (element) =>
-      element instanceof HTMLElement &&
-      element.matches("button[data-bay-target]"),
-  );
-  if (!onButton) {
+  if (!elements.some(isBayButton)) {
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;

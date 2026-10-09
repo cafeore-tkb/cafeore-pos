@@ -1,6 +1,7 @@
 import { CircleDot } from "lucide-react";
 import type React from "react";
 import { orderLabel } from "../logic/cards";
+import { laneActive } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   EmptySlotButton,
@@ -41,8 +42,8 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
         {lanes.map((bay) => {
           const lane = laneStatus(bay, nowMs);
           const { current } = lane;
-          const isLinked = [current, ...lane.waiting].some(
-            (card) => card && orderLabel(card) === selectedOrderId,
+          const isLinked = laneActive(bay).some(
+            (card) => orderLabel(card) === selectedOrderId,
           );
           return (
             <article
