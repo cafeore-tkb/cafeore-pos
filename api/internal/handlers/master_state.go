@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -56,9 +57,13 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	}
 
 	// 同じ状態を続けて送られたときは通知しない。初めてなら無いのが普通なので、
-	// First で「record not found」をログに出さないよう Find で読む
+	// First で「record not found」をログに出さないよう Find で読む。
+	// 読めなかったら空と比べた誤った通知になるので、通知だけしない
 	var last models.MasterState
-	_ = h.db.Order("created_at DESC").Limit(1).Find(&last).Error
+	lastErr := h.db.Order("created_at DESC").Limit(1).Find(&last).Error
+	if lastErr != nil {
+		log.Printf("activity: failed to load master state before update: %v", lastErr)
+	}
 
 	state := models.MasterState{
 		Type:      req.Type,
@@ -72,7 +77,7 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, state)
 	h.broadcastMasterState()
-	if last.Type != state.Type {
+	if lastErr == nil && last.Type != state.Type {
 		h.activity.Post(masterStateChangedMessage(state.Type))
 	}
 }
