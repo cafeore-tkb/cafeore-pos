@@ -35,7 +35,7 @@ func TestInventoryUsageHistoryCountsOrdersWithUsageAtOrderTime(t *testing.T) {
 		}
 	}
 	must(db.AutoMigrate(models.All()...))
-	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")
+	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.PUT("/usages/:id", NewInventoryHandler(inv).ReplaceItemStockUsages)
