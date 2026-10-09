@@ -1,4 +1,4 @@
-import type { InventoryStatus } from "@cafeore/common";
+import { INVENTORY_REFRESH_MS, type InventoryStatus } from "@cafeore/common";
 import { Coffee } from "lucide-react";
 import type React from "react";
 import { StockCard } from "~/components/organisms/inventory/StockCard";
@@ -24,7 +24,7 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = (props) => (
         <span>豆キュー</span>
       </h2>
       <p className="mt-0.5 text-slate-500 text-xs">
-        POS の在庫の豆の残量（30秒ごとに更新）
+        POS の在庫の豆の残量（{INVENTORY_REFRESH_MS / 1000}秒ごとに更新）
       </p>
     </div>
 

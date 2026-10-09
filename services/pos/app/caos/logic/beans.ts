@@ -1,12 +1,15 @@
-import type { InventoryStatus, StockUsage } from "@cafeore/common";
+import type {
+  InventoryStatus,
+  StockResource,
+  StockUsage,
+} from "@cafeore/common";
 import { type Board, mapCards } from "./board";
-import type { CardBean } from "./cards";
 
 // カードの豆。POS の在庫の設定（/inventory/settings）の「商品ごとの使用量」で、商品が使う豆の在庫対象を引く。
 // 名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。
 
 /** 商品 ID → その商品が使う豆（在庫対象のうち kind が bean のもの） */
-export type BeanIndex = Map<string, CardBean[]>;
+export type BeanIndex = Map<string, StockResource[]>;
 
 /** beanStatuses は在庫のうち豆（kind が bean）だけ */
 export const buildBeanIndex = (
@@ -18,10 +21,7 @@ export const buildBeanIndex = (
   for (const { resource } of beanStatuses) {
     for (const usage of usages) {
       if (usage.resource_id !== resource.id) continue;
-      index.set(usage.item_id, [
-        ...(index.get(usage.item_id) ?? []),
-        { id: resource.id, name: resource.name },
-      ]);
+      index.set(usage.item_id, [...(index.get(usage.item_id) ?? []), resource]);
     }
   }
   return index;
