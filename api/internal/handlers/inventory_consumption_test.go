@@ -164,7 +164,7 @@ func (e *inventoryEnv) setMenuItems(menu models.Menu, items ...models.MenuItem) 
 	}
 }
 
-// POST /api/orders と同じ手順で注文を作る（カップもその時点の構成で作る）。
+// POST /api/orders と同じ手順で注文を作る（明細の構成とカップをその時点の構成で作る）。
 func (e *inventoryEnv) order(menus ...models.Menu) uuid.UUID {
 	e.t.Helper()
 	order := models.Order{ID: uuid.New(), CreatedAt: time.Now(), BillingAmount: 500, Received: 500}
@@ -179,7 +179,7 @@ func (e *inventoryEnv) order(menus ...models.Menu) uuid.UUID {
 	return order.ID
 }
 
-// カップを持つ前の注文（明細だけでカップが無い）を作る。
+// 構成もカップも持たない明細の注文（構成を残す前の版の API が作ったもの）を作る。
 func (e *inventoryEnv) legacyOrder(menus ...models.Menu) uuid.UUID {
 	e.t.Helper()
 	order := models.Order{ID: uuid.New(), CreatedAt: time.Now(), BillingAmount: 500, Received: 500}
@@ -227,7 +227,7 @@ func (e *inventoryEnv) expectResources(label string, orderID uuid.UUID, want ...
 	}
 }
 
-func TestInventoryCountsOrderCupsNotCurrentMenu(t *testing.T) {
+func TestInventoryCountsOrderTimeMenuNotCurrentMenu(t *testing.T) {
 	e := newInventoryEnv(t)
 	hot, goodsType := e.itemType("hot"), e.goodsType("物販")
 	blendA, blendB := e.item("ブレンドA", hot), e.item("ブレンドB", hot)
@@ -240,7 +240,7 @@ func TestInventoryCountsOrderCupsNotCurrentMenu(t *testing.T) {
 	single := e.menu("single", models.MenuItem{ItemID: blendA.ID, Quantity: 1})
 	set := e.menu("set", models.MenuItem{ItemID: blendA.ID, Quantity: 2}, models.MenuItem{ItemID: goods.ID, Quantity: 1})
 
-	// カップは A が3杯。グッズはカップにならないので今の構成から1つ
+	// 注文した時点の構成で、A が3杯とグッズが1つ
 	first := e.order(single, set)
 	before := map[*models.StockResource]consumptionWant{
 		&beanA: {45, 3},
@@ -251,11 +251,11 @@ func TestInventoryCountsOrderCupsNotCurrentMenu(t *testing.T) {
 	e.expect("メニューを直す前", before)
 	e.expectResources("メニューを直す前の注文", first, beanA, cup, bag)
 
-	// 祭の途中で、どちらのメニューも豆を A から B に変える
+	// 祭の途中で、どちらのメニューも豆を A から B に変え、セットのグッズを2つにする
 	e.setMenuItems(single, models.MenuItem{ItemID: blendB.ID, Quantity: 1})
-	e.setMenuItems(set, models.MenuItem{ItemID: blendB.ID, Quantity: 2}, models.MenuItem{ItemID: goods.ID, Quantity: 1})
+	e.setMenuItems(set, models.MenuItem{ItemID: blendB.ID, Quantity: 2}, models.MenuItem{ItemID: goods.ID, Quantity: 2})
 
-	// 直す前の注文の消費は変わらない（今の構成の B では数えない）
+	// 直す前の注文の消費は変わらない（今の構成の B やグッズ2つでは数えない）
 	e.expect("メニューを直した後", before)
 	e.expectResources("メニューを直した後の、直す前の注文", first, beanA, cup, bag)
 
@@ -281,7 +281,7 @@ func TestInventoryCountsLegacyOrdersFromMenu(t *testing.T) {
 	set := e.menu("set", models.MenuItem{ItemID: blendA.ID, Quantity: 2}, models.MenuItem{ItemID: goods.ID, Quantity: 1})
 	goodsOnly := e.menu("goods", models.MenuItem{ItemID: goods.ID, Quantity: 3})
 
-	// カップの無い以前の注文は、今のメニューの構成から数える
+	// 構成を持たない明細は、今のメニューの構成から数える
 	legacy := e.legacyOrder(set)
 	e.expect("カップの無い注文", map[*models.StockResource]consumptionWant{
 		&beanA: {30, 2},
@@ -289,7 +289,7 @@ func TestInventoryCountsLegacyOrdersFromMenu(t *testing.T) {
 	})
 	e.expectResources("カップの無い注文", legacy, beanA, bag)
 
-	// グッズだけの明細はカップを作らないので、今のメニューの構成から数える
+	// グッズだけの明細（カップを作らない）も、注文した時点の構成で数える
 	e.order(goodsOnly)
 	e.expect("グッズだけの明細", map[*models.StockResource]consumptionWant{
 		&beanA: {30, 2},
@@ -310,4 +310,23 @@ func TestInventoryDoesNotCountCupItemTwiceWhenTypeBecomesGoods(t *testing.T) {
 	e.expect("種類をグッズに変えた後", map[*models.StockResource]consumptionWant{
 		&beanA: {15, 1},
 	})
+}
+
+func TestInventoryCountsGoodsWhenTypeStartsMakingCups(t *testing.T) {
+	e := newInventoryEnv(t)
+	hot, goodsType := e.itemType("hot"), e.goodsType("物販")
+	blendA := e.item("ブレンドA", hot)
+	goods := e.item("ドリップバッグ", goodsType)
+	beanA := e.resource("豆A", models.StockResourceKindBean, map[uuid.UUID]float64{blendA.ID: 15})
+	bag := e.resource("ドリップバッグ", models.StockResourceKindCup, map[uuid.UUID]float64{goods.ID: 1})
+	set := e.menu("set", models.MenuItem{ItemID: blendA.ID, Quantity: 1}, models.MenuItem{ItemID: goods.ID, Quantity: 1})
+
+	order := e.order(set)
+	// 注文の後で種類を「カップを作る」に変えても、注文のときカップにならなかった品物は漏れない
+	e.must(e.db.Model(&goodsType).Update("makes_cup", true).Error)
+	e.expect("種類をカップを作るに変えた後", map[*models.StockResource]consumptionWant{
+		&beanA: {15, 1},
+		&bag:   {1, 1},
+	})
+	e.expectResources("種類をカップを作るに変えた後", order, beanA, bag)
 }

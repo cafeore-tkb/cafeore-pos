@@ -32,17 +32,19 @@ func TestBuildOrderMenusSnapshotsNewLines(t *testing.T) {
 func TestBuildOrderMenusPreservesExistingSnapshots(t *testing.T) {
 	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
 	assignee := "担当者"
-	old := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, MenuName: "注文時の名前", UnitPrice: 500}
+	oldItems := snapshotMenuItems(models.Menu{MenuItems: []models.MenuItem{{ItemID: uuid.New(), Quantity: 1}}})
+	old := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, MenuName: "注文時の名前", UnitPrice: 500, Items: oldItems}
 	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID, Assignee: &assignee}, {MenuId: menuID}}
-	master := models.Menu{ID: menuID, Name: "変更後の名前", Price: 800}
+	master := models.Menu{ID: menuID, Name: "変更後の名前", Price: 800, MenuItems: []models.MenuItem{{ItemID: uuid.New(), Quantity: 2}}}
 	lines, err := buildOrderMenus(orderID, requests, []models.OrderMenu{old}, []models.Menu{master})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee {
+	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee ||
+		string(lines[0].Items) != string(oldItems) {
 		t.Fatalf("existing snapshot changed: %+v", lines[0])
 	}
-	if lines[1].MenuName != master.Name || lines[1].UnitPrice != 800 {
+	if lines[1].MenuName != master.Name || lines[1].UnitPrice != 800 || string(lines[1].Items) != string(snapshotMenuItems(master)) {
 		t.Fatalf("new line must use current master: %+v", lines[1])
 	}
 	// 論理削除したメニューも、既存明細の編集ではマスター取得なしで保持する。

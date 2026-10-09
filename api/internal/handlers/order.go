@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -43,7 +44,7 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 var errInvalidOrderMenus = errors.New("invalid order menus")
 
 // 既存明細はIDで識別し、担当者以外の保存値は引き継ぐ。
-// 新規明細だけ販売中のマスターから価格・名称をスナップショットする。
+// 新規明細だけ販売中のマスターから価格・名称・構成をスナップショットする。
 func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existing []models.OrderMenu, menus []models.Menu) ([]models.OrderMenu, error) {
 	byID := make(map[uuid.UUID]models.OrderMenu, len(existing))
 	for _, line := range existing {
@@ -64,18 +65,28 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
-			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
+			line.ID, line.MenuName, line.UnitPrice, line.Items = old.ID, old.MenuName, old.UnitPrice, old.Items
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
 			menu, ok := masters[menuID]
 			if !ok {
 				return nil, errInvalidOrderMenus
 			}
-			line.MenuName, line.UnitPrice = menu.Name, menu.Price
+			line.MenuName, line.UnitPrice, line.Items = menu.Name, menu.Price, snapshotMenuItems(menu)
 		}
 		lines = append(lines, line)
 	}
 	return lines, nil
+}
+
+// メニューの今の構成を、明細に残す形（OrderMenu.Items）にする。カップを作らない品物も含む。
+func snapshotMenuItems(menu models.Menu) models.JSONB {
+	items := make([]models.OrderMenuItem, 0, len(menu.MenuItems))
+	for _, mi := range menu.MenuItems {
+		items = append(items, models.OrderMenuItem{ItemID: mi.ItemID, Quantity: mi.Quantity})
+	}
+	b, _ := json.Marshal(items) // uuid と int だけなので失敗しない
+	return models.JSONB(b)
 }
 
 // 明細とカップを作る。existing は編集前の注文（新規作成では空の注文）。
