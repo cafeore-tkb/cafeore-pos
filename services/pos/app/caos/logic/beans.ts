@@ -9,7 +9,7 @@ import { type Board, mapCards } from "./board";
 // 名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。
 
 /** 商品 ID → その商品が使う豆（在庫対象のうち kind が bean のもの） */
-export type BeanIndex = Map<string, StockResource[]>;
+type BeanIndex = Map<string, StockResource[]>;
 
 /** beanStatuses は在庫のうち豆（kind が bean）だけ */
 export const buildBeanIndex = (
