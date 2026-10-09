@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -171,7 +172,7 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		return
 	}
 
-	// 消したアイテムの使用量が残ると、在庫の設定で見えないまま残るので一緒に消す。
+	// アイテムは論理削除なので、使用量も行は消さずに今有効な行を閉じる。消す前の注文は消す前の使用量で数え続ける。
 	// 先にアイテムを消して行を押さえ、同時の使用量の置き換え（ReplaceItemStockUsages）と重ならないようにする
 	var affected int64
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -180,7 +181,9 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 			return result.Error
 		}
 		affected = result.RowsAffected
-		return tx.Where("item_id = ?", itemID).Delete(&models.ItemStockUsage{}).Error
+		return tx.Model(&models.ItemStockUsage{}).
+			Where("item_id = ? AND valid_to IS NULL", itemID).
+			Update("valid_to", time.Now()).Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
