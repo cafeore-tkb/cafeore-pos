@@ -1,10 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"maps"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"cafeore-pos/api/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -178,5 +183,94 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 	}
 	if !db.Migrator().HasColumn("item_types", "iced_brew") {
 		t.Fatal("item_types.iced_brew was not created")
+	}
+}
+
+// 注文した時点の構成（order_menus.items）の列を足したときだけ、既存の明細にそれまでの在庫の数え方と同じ構成を入れる
+func TestMigrateBackfillsOrderMenuItems(t *testing.T) {
+	db := openMigrateTestDB(t)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	create := func(v any) {
+		t.Helper()
+		if err := db.Create(v).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	noCup := false
+	hot := models.ItemType{Name: "hot", DisplayName: "hot"}
+	goodsType := models.ItemType{Name: "物販", DisplayName: "物販", MakesCup: &noCup, NeedsBrew: &noCup}
+	create(&hot)
+	create(&goodsType)
+	blendA := models.Item{Name: "A", Abbr: "A", ItemTypeID: hot.ID}
+	blendB := models.Item{Name: "B", Abbr: "B", ItemTypeID: hot.ID}
+	bag := models.Item{Name: "bag", Abbr: "bag", ItemTypeID: goodsType.ID}
+	create(&blendA)
+	create(&blendB)
+	create(&bag)
+	// 今の構成は B が2杯とグッズ1つ（注文の後で A から B に直した）
+	set := models.Menu{Name: "set", Abbr: "set", Price: 500, Key: "set", MenuItems: []models.MenuItem{
+		{ItemID: blendB.ID, Quantity: 2}, {ItemID: bag.ID, Quantity: 1},
+	}}
+	create(&set)
+	withCups, legacy, goodsCup := uuid.New(), uuid.New(), uuid.New()
+	order := models.Order{ID: uuid.New(), CreatedAt: time.Now(), OrderMenus: []models.OrderMenu{
+		{ID: withCups, MenuID: set.ID, MenuName: "set"},
+		{ID: legacy, MenuID: set.ID, MenuName: "set"},
+		{ID: goodsCup, MenuID: set.ID, MenuName: "set"},
+	}}
+	create(&order)
+	for i, cup := range []struct{ line, item uuid.UUID }{
+		{withCups, blendA.ID}, {withCups, blendA.ID},
+		// 注文の後でグッズの種類に変えたもの（カップがある）
+		{goodsCup, blendA.ID}, {goodsCup, blendA.ID}, {goodsCup, bag.ID},
+	} {
+		create(&models.OrderCup{OrderID: order.ID, OrderMenuID: cup.line, ItemID: cup.item, Position: i})
+	}
+	mustExec(t, db, "ALTER TABLE order_menus DROP COLUMN items")
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func() map[uuid.UUID]map[uuid.UUID]int {
+		t.Helper()
+		var rows []models.OrderMenu
+		if err := db.Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		got := map[uuid.UUID]map[uuid.UUID]int{}
+		for _, row := range rows {
+			var items []models.OrderMenuItem
+			if err := json.Unmarshal(row.Items, &items); err != nil {
+				t.Fatalf("%s: %v (%s)", row.ID, err, row.Items)
+			}
+			got[row.ID] = map[uuid.UUID]int{}
+			for _, item := range items {
+				got[row.ID][item.ItemID] += item.Quantity
+			}
+		}
+		return got
+	}
+	got := read()
+	want := map[uuid.UUID]map[uuid.UUID]int{
+		withCups: {blendA.ID: 2, bag.ID: 1}, // カップと、カップにならないグッズ
+		legacy:   {blendB.ID: 2, bag.ID: 1}, // カップの無い明細は今の構成
+		goodsCup: {blendA.ID: 2, bag.ID: 1}, // カップにあるグッズは構成から足さない
+	}
+	for line, w := range want {
+		if !maps.Equal(got[line], w) {
+			t.Errorf("%s: got %v, want %v", line, got[line], w)
+		}
+	}
+
+	// 列があれば二度と走らない
+	mustExec(t, db, "UPDATE order_menus SET items = '[]'::jsonb WHERE id = ?", withCups)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); len(got[withCups]) != 0 {
+		t.Errorf("backfill ran again: %v", got[withCups])
 	}
 }

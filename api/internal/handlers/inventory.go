@@ -135,26 +135,20 @@ const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AN
 
 // 注文で使ったアイテムと数（order_id, item_id, quantity）。
 //
-// 注文した時点の構成で数えるので、祭の途中でメニューの構成を直しても過去の消費は変わらない。
-//   - カップのある明細は、カップ（注文のときに作った1杯。その時点のアイテムを持つ）を1つずつ数える
-//   - カップの無い明細（カップを持つ前の注文・グッズだけの明細）は、今のメニューの構成から数える
-//   - カップのある明細のグッズ（カップを作らない種類＝item_types.makes_cup が false）はカップにならないので、
-//     今のメニューの構成から足す。ただし、その明細のカップにあるアイテムは二重に数えない
-//     （後から種類をカップを作らないものに変えた場合）。削除済みの種類はカップを作るとみなす（order_cup.go の isCupItem と同じ）
+// 注文した時点の構成で数えるので、祭の途中でメニューの構成や商品の種類を直しても過去の消費は変わらない。
+//   - 明細に残した注文した時点の構成（order_menus.items）から数える。カップを作らない品物も含むので、
+//     あとで種類の「カップを作る」を変えても漏れたり二重になったりしない
+//   - 構成を持たない明細（items が NULL）は、今のメニューの構成から数える。列を足す前の明細は
+//     migrate.go で埋めるので、ここに来るのはデプロイの切り替えの間に前の版が作った明細だけ
 const orderItemsSQL = `(
-	SELECT c.order_id, c.item_id, 1 AS quantity
-	FROM order_cups c
+	SELECT om.order_id, x.item_id, x.quantity
+	FROM order_menus om
+	CROSS JOIN LATERAL jsonb_to_recordset(om.items) AS x(item_id uuid, quantity int)
 	UNION ALL
 	SELECT om.order_id, mi.item_id, mi.quantity
 	FROM order_menus om
 	JOIN menu_items mi ON mi.menu_id = om.menu_id
-	WHERE NOT EXISTS (SELECT 1 FROM order_cups c WHERE c.order_menu_id = om.id)
-		OR (
-			EXISTS (
-				SELECT 1 FROM items i
-				JOIN item_types it ON it.id = i.item_type_id
-				WHERE i.id = mi.item_id AND NOT it.makes_cup AND it.deleted_at IS NULL)
-			AND NOT EXISTS (SELECT 1 FROM order_cups c WHERE c.order_menu_id = om.id AND c.item_id = mi.item_id))
+	WHERE om.items IS NULL
 )`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
