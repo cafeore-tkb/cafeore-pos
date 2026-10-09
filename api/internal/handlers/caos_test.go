@@ -306,12 +306,12 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 		t.Fatalf("stale before = %d, want 409", code)
 	}
 	// 抽出中のカードは動かせない（書き直すとサーバーの付けた時刻が消える）。before の時刻はミリ秒までで比べる
-	// （画面の Date はミリ秒まで）ので、ミリ秒より細かい違いは 409 でなく、抽出中だから断る 422
+	// （画面の Date はミリ秒まで）ので、ミリ秒より細かい違いは 409 でなく、抽出中だから断る 400
 	before := f.state(t, o1.OrderCups[0].ID)
 	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(500 * time.Microsecond)
 	for name, after := range map[string]map[string]any{"move": placed(2, card1, false), "restart": placed(1, card1, true), "unassign": toUnassigned} {
-		if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), before, after)); code != http.StatusUnprocessableEntity {
-			t.Fatalf("%s a brewing card = %d, want 422", name, code)
+		if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), before, after)); code != http.StatusBadRequest {
+			t.Fatalf("%s a brewing card = %d, want 400", name, code)
 		}
 	}
 	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(time.Millisecond)
@@ -320,19 +320,19 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	}
 
 	// 抽出が要らないカップはドリッパーにもカードにも入れられない
-	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, placed(3, uuid.New(), false))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("milk on a dripper = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, placed(3, uuid.New(), false))); code != http.StatusBadRequest {
+		t.Fatalf("milk on a dripper = %d, want 400", code)
 	}
-	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "drip_id": uuid.New(), "insert_before": nil, "start_brew": false})); code != http.StatusUnprocessableEntity {
-		t.Fatalf("milk in a card = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(o1.OrderCups[2]), unassigned, map[string]any{"dripper": nil, "drip_id": uuid.New(), "insert_before": nil, "start_brew": false})); code != http.StatusBadRequest {
+		t.Fatalf("milk in a card = %d, want 400", code)
 	}
 
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, uuid.New(), false)))
 
 	// 1 つのドリッパーで抽出中は 1 枚だけ。待機なら置ける
 	card3 := uuid.New()
-	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, card3, true))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("second brewing card = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, card3, true))); code != http.StatusBadRequest {
+		t.Fatalf("second brewing card = %d, want 400", code)
 	}
 	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, card3, false)))
 
@@ -340,19 +340,19 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	queued2 := f.createOrder(t, 4, line(f.blend, f.blend))
 	card4 := uuid.New()
 	f.mustPut(t, write(ids(queued2.OrderCups...), unassigned, placed(5, card4, false)))
-	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), placed(5, card4, false))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("third cup in a card = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), placed(5, card4, false))); code != http.StatusBadRequest {
+		t.Fatalf("third cup in a card = %d, want 400", code)
 	}
-	if code, _ := f.put(t, write(ids(queued2.OrderCups[0]), f.state(t, queued2.OrderCups[0].ID), placed(6, card4, false))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("a part of a card = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(queued2.OrderCups[0]), f.state(t, queued2.OrderCups[0].ID), placed(6, card4, false))); code != http.StatusBadRequest {
+		t.Fatalf("a part of a card = %d, want 400", code)
 	}
 
 	// まとめた書き込みは、どれか 1 つが通らなければ何も書かない
 	if code, _ := f.put(t,
 		write(ids(o3.OrderCups[0]), f.state(t, o3.OrderCups[0].ID), unassigned),
 		write(ids(o1.OrderCups[2]), unassigned, placed(4, uuid.New(), false)),
-	); code != http.StatusUnprocessableEntity {
-		t.Fatalf("partly invalid writes = %d, want 422", code)
+	); code != http.StatusBadRequest {
+		t.Fatalf("partly invalid writes = %d, want 400", code)
 	}
 	if cup := f.cup(t, o3.OrderCups[0].ID); cup.Dripper == nil {
 		t.Fatal("the valid write of a failed request was saved")
@@ -378,8 +378,8 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 
 	// 前の日の注文のカップは書けない
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
-	if code, _ := f.put(t, write(ids(old.OrderCups[0]), unassigned, placed(5, uuid.New(), false))); code != http.StatusUnprocessableEntity {
-		t.Fatalf("yesterday's cup = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(old.OrderCups[0]), unassigned, placed(5, uuid.New(), false))); code != http.StatusBadRequest {
+		t.Fatalf("yesterday's cup = %d, want 400", code)
 	}
 
 	// 消えたカップは 409、形の違うリクエストは 400
@@ -502,7 +502,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	for no := 1; no <= 6; no++ {
 		orders = append(orders, f.createOrder(t, no, line(f.blend)))
 	}
-	// 6 台が同時に、別のカードを空いているドリッパー 2 で始めようとする：通るのは 1 枚だけ（ほかは 422）
+	// 6 台が同時に、別のカードを空いているドリッパー 2 で始めようとする：通るのは 1 枚だけ（ほかは 400）
 	var wg sync.WaitGroup
 	codes := make([]int, len(orders))
 	for i, o := range orders {
@@ -518,7 +518,7 @@ func TestCaosConcurrentWrites(t *testing.T) {
 		switch code {
 		case http.StatusNoContent:
 			ok++
-		case http.StatusUnprocessableEntity:
+		case http.StatusBadRequest:
 		default:
 			t.Fatalf("PUT = %d", code)
 		}
@@ -820,8 +820,8 @@ func TestCaosMergeQueuedOnDB(t *testing.T) {
 	}
 	// ほかのカードに入るときに前のカードは決められない
 	o4 := f.createOrder(t, 4, line(f.blend))
-	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, map[string]any{"dripper": 5, "drip_id": c2, "insert_before": c1, "start_brew": false})); code != http.StatusUnprocessableEntity {
-		t.Fatalf("join with before = %d, want 422", code)
+	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, map[string]any{"dripper": 5, "drip_id": c2, "insert_before": c1, "start_brew": false})); code != http.StatusBadRequest {
+		t.Fatalf("join with before = %d, want 400", code)
 	}
 }
 
