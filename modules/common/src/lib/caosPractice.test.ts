@@ -312,6 +312,14 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(applyCaosPracticeWrites(orders, twoBrews, at(0)).error).toBe(
       "1 番のドリッパーはもう抽出中です",
     );
+    // 待機のカードがあるドリッパーで、ほかのカードの抽出を始めることはできない
+    const queuedThenBrew = twoBrews.map((write, i) => ({
+      ...write,
+      after: { ...write.after, start_brew: i === 1 },
+    }));
+    expect(applyCaosPracticeWrites(orders, queuedThenBrew, at(0)).error).toBe(
+      "1 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください",
+    );
     expect(orders[0].cups[0].dripId).toBeNull();
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
   });
