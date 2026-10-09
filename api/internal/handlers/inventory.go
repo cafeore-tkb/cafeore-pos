@@ -604,8 +604,9 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 		return
 	}
 
-	// 名前は通知に使う
+	// 名前は通知に使う。何も変わらなかった保存は通知しない
 	var item models.Item
+	changed := false
 	err = h.inv.db.Transaction(func(tx *gorm.DB) error {
 		// 同じアイテムの置き換えやアイテムの削除と重ならないよう、アイテムの行を押さえる
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "name").First(&item, "id = ?", itemID).Error; err != nil {
@@ -628,6 +629,7 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 			return err
 		}
 		closing, adding := diffItemStockUsages(current, usages)
+		changed = len(closing) > 0 || len(adding) > 0
 		now := time.Now()
 		if len(closing) > 0 {
 			if err := tx.Model(&models.ItemStockUsage{}).
@@ -659,7 +661,9 @@ func (h *InventoryHandler) ReplaceItemStockUsages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
 	go h.inv.CheckAlerts(nil)
-	go h.inv.postItemUsages(item.Name, usages)
+	if changed {
+		go h.inv.postItemUsages(item.Name, usages)
+	}
 }
 
 func (inv *Inventory) postItemUsages(itemName string, usages []models.ItemStockUsage) {
