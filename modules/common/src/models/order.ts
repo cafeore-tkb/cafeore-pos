@@ -14,7 +14,7 @@ export const commentSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  id: z.string().optional(), // Firestore のドキュメント ID
+  id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
   createdAt: z.date(),
   readyAt: z.date().nullable(),
