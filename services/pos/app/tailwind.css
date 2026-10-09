@@ -37,8 +37,6 @@
      白文字が乗る地には特設サイトの --nadeshiko-deep(3.3:1)を使う */
   --color-theme-sub: #eebbcb;
   --color-theme-sub-deep: #b6768c;
-  --color-hot: #f74316;
-  --color-ice: #0ebbf0;
   --color-ore: #834f2f;
 
   --radius-lg: var(--radius);
