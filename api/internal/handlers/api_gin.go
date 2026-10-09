@@ -83,10 +83,10 @@ type ServerInterface interface {
 	// アイテム情報更新
 	// (PUT /api/items/{id})
 	UpdateItem(c *gin.Context, id openapi_types.UUID)
-	// マスターステート取得
+	// オーダーストップの記録の一覧
 	// (GET /api/master-status)
 	GetMasterState(c *gin.Context)
-	// マスターステート更新
+	// オーダーストップ・再開
 	// (POST /api/master-status)
 	UpdateMasterState(c *gin.Context)
 	// メニュー一覧取得
