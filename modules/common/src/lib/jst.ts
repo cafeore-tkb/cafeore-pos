@@ -9,7 +9,3 @@ export const jstDate = (ms: number) =>
 /** 日本時間の時刻（HH:mm:ss） */
 export const jstClock = (ms: number) =>
   new Date(ms + JST_OFFSET_MS).toISOString().slice(11, 19);
-
-/** その日（日本時間）の 0 時 */
-export const jstDayStart = (ms: number) =>
-  Date.parse(`${jstDate(ms)}T00:00:00+09:00`);
