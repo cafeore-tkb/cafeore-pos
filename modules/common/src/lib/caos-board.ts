@@ -104,7 +104,7 @@ export interface CaosCard {
 
 // カップを作るか・抽出が要るか・上級生のみかは、いったん商品の種類の名前（item_type.name）で決める。
 // CaOS で種類の名前を見るのはこの 3 つ（itemMakesCup・cupNeedsBrew・cupSeniorOnly）だけにする。
-// TODO: C1（#807 の makes_cup・needs_brew・senior_only・iced_brew）が main に入ったら、
+// TODO: C1（#855・#859 の makes_cup・needs_brew・senior_only・iced_brew）と CaOS3 のうち後から main に入る方で、
 // 名前で決めるのをやめ、種類の項目（makes_cup・needs_brew・senior_only）を読む形に戻す。
 
 /** その種類の品物がカップを作るか。種類の名前に others（グッズ）を含まなければ作る */
