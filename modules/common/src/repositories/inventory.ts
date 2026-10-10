@@ -1,8 +1,5 @@
-import createClient from "openapi-fetch";
-import type { components, paths } from "../types/api";
-import { API_BASE_URL, throwApiError } from "./item";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
+import { apiClient, throwApiError } from "../api/client";
+import type { components } from "../types/api";
 
 export type InventoryStatus = components["schemas"]["InventoryStatus"];
 export type InventoryLevel = components["schemas"]["InventoryLevel"];
@@ -16,45 +13,45 @@ export type StockUsage = components["schemas"]["StockUsage"];
 
 export const inventoryRepository = {
   getStatuses: async (): Promise<InventoryStatus[]> => {
-    const { data, error, response } = await client.GET("/api/inventory");
+    const { data, error, response } = await apiClient.GET("/api/inventory");
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to fetch inventory");
+      throwApiError(response, error, "Failed to fetch inventory");
     }
-    return data ?? [];
+    return data;
   },
 
   createResource: async (input: StockResourceInput): Promise<StockResource> => {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/inventory/resources",
       { body: input },
     );
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to create stock resource");
+      throwApiError(response, error, "Failed to create stock resource");
     }
-    return data as StockResource;
+    return data;
   },
 
   updateResource: async (
     id: string,
     input: StockResourceInput,
   ): Promise<StockResource> => {
-    const { data, error, response } = await client.PUT(
+    const { data, error, response } = await apiClient.PUT(
       "/api/inventory/resources/{id}",
       { params: { path: { id } }, body: input },
     );
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to update stock resource");
+      throwApiError(response, error, "Failed to update stock resource");
     }
-    return data as StockResource;
+    return data;
   },
 
   deleteResource: async (id: string): Promise<void> => {
-    const { error, response } = await client.DELETE(
+    const { error, response } = await apiClient.DELETE(
       "/api/inventory/resources/{id}",
       { params: { path: { id } } },
     );
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to delete stock resource");
+      throwApiError(response, error, "Failed to delete stock resource");
     }
   },
 
@@ -67,32 +64,34 @@ export const inventoryRepository = {
     quantity: number,
     note?: string,
   ): Promise<StockEventResult> => {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/inventory/resources/{id}/events",
       { params: { path: { id } }, body: { kind, quantity, note } },
     );
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to record stock event");
+      throwApiError(response, error, "Failed to record stock event");
     }
-    return data as StockEventResult;
+    return data;
   },
 
   getUsages: async (): Promise<StockUsage[]> => {
-    const { data, error, response } = await client.GET("/api/inventory/usages");
+    const { data, error, response } = await apiClient.GET(
+      "/api/inventory/usages",
+    );
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to fetch stock usages");
+      throwApiError(response, error, "Failed to fetch stock usages");
     }
-    return data ?? [];
+    return data;
   },
 
   replaceUsages: async (usages: StockUsage[]): Promise<StockUsage[]> => {
-    const { data, error, response } = await client.PUT(
+    const { data, error, response } = await apiClient.PUT(
       "/api/inventory/usages",
       { body: usages },
     );
     if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to save stock usages");
+      throwApiError(response, error, "Failed to save stock usages");
     }
-    return data ?? [];
+    return data;
   },
 };
