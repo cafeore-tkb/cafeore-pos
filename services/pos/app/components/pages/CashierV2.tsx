@@ -19,10 +19,6 @@ import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
-import {
-  type SubmitPayload,
-  useSubmitOrder,
-} from "../functional/useSubmitOrder";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
@@ -42,8 +38,8 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
-  submitPayload: SubmitPayload;
-  syncOrder: (order: OrderEntity, action: OrderAction) => void;
+  submitPayload: (order: OrderEntity) => void;
+  syncOrder: (order: OrderEntity) => void;
 };
 
 /**
@@ -91,8 +87,6 @@ const CashierV2 = ({
   }, []);
 
   const printer = usePrinter();
-
-  const { submit, submitting, submittingRef } = useSubmitOrder(submitPayload);
 
   usePreventNumberKeyUpDown();
 
@@ -146,7 +140,7 @@ const CashierV2 = ({
   }, [inputStatus, canEnterSubmit, setInputStatus]);
 
   const submitOrder = useCallback(
-    async (exactPayment?: boolean) => {
+    (exactPayment?: boolean) => {
       if (!canSubmitOrder) {
         return;
       }
@@ -163,19 +157,8 @@ const CashierV2 = ({
       goodsOnlyServed(submitOne);
       // 備考を追加
       submitOne.addComment("cashier", descComment);
-
-      // 保存できたことを確かめてから、ラベル印刷と画面のリセットをする (#732)
-      // 失敗したときは入力をそのまま残し、もう一度送信できるようにする
-      const result = await submit(submitOne);
-      if (!result) {
-        return;
-      }
-      // 前に送った内容が保存されていたら、保存された注文のラベルを出す。
-      // 送り直しで保存済みの注文が返ったときは、その注文の番号でラベルを出す
-      submitOne.orderId = result.savedOrder.orderId;
-      printer.printOrderLabel(
-        result.savedEarlierContent ? result.savedOrder : submitOne,
-      );
+      printer.printOrderLabel(submitOne);
+      submitPayload(submitOne);
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
       if (manualOrderId !== null && wsStatus !== "open") {
@@ -191,7 +174,7 @@ const CashierV2 = ({
       newOrder,
       resetAll,
       printer,
-      submit,
+      submitPayload,
       descComment,
       playSound,
       manualOrderId,
@@ -218,10 +201,6 @@ const CashierV2 = ({
    */
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      // 保存中に Escape などで入力を消すと、失敗したときに打ち直しになる
-      if (submittingRef.current) {
-        return;
-      }
       const key = event.key;
       for (const [keyName, keyHandler] of Object.entries(keyEventHandlers)) {
         if (key === keyName) {
@@ -233,7 +212,7 @@ const CashierV2 = ({
     return () => {
       window.removeEventListener("keydown", handler);
     };
-  }, [keyEventHandlers, submittingRef]);
+  }, [keyEventHandlers]);
 
   const itemMenu = (
     <ItemButtons
@@ -270,12 +249,9 @@ const CashierV2 = ({
             <PastOrderSideSheet orders={orders} author="cashier" withGoods />
           </div>
         </div>
-        {/* 保存中は入力を変えられないようにする。保存できたら入力を消すので、その間に打った分が消えてしまう */}
-        <div
-          className={cn("flex gap-5 px-2", submitting && "pointer-events-none")}
-        >
-          <fieldset disabled={submitting}>{menuOpen && itemMenu}</fieldset>
-          <fieldset disabled={submitting} className="flex-1">
+        <div className="flex gap-5 px-2">
+          <div>{menuOpen && itemMenu}</div>
+          <div className="flex-1">
             <InputHeader
               title="商品"
               focus={inputStatus === "items"}
@@ -305,11 +281,8 @@ const CashierV2 = ({
                 setInputStatus("items");
               }, [setInputStatus])}
             />
-          </fieldset>
-          <fieldset
-            disabled={submitting}
-            className={cn("flex-1", menuOpen && "hidden")}
-          >
+          </div>
+          <div className={cn("flex-1", menuOpen && "hidden")}>
             <InputHeader
               title="割引"
               focus={inputStatus === "discount"}
@@ -351,11 +324,8 @@ const CashierV2 = ({
                 }, [dispatchOrder, serviceActive, setServiceActive])}
               />
             </div>
-          </fieldset>
-          <fieldset
-            disabled={submitting}
-            className={cn("flex-1", menuOpen && "hidden")}
-          >
+          </div>
+          <div className={cn("flex-1", menuOpen && "hidden")}>
             <InputHeader
               title="備考"
               focus={inputStatus === "description"}
@@ -371,8 +341,8 @@ const CashierV2 = ({
                 }, [setInputStatus])}
               />
             </div>
-          </fieldset>
-          <fieldset disabled={submitting} className="flex-1">
+          </div>
+          <div className="flex-1">
             <InputHeader
               title="会計"
               focus={inputStatus === "received"}
@@ -395,18 +365,16 @@ const CashierV2 = ({
                 }, [setInputStatus])}
               />
             </div>
-          </fieldset>
+          </div>
           <div className={cn("flex-1", menuOpen && "hidden")}>
             <InputHeader
               title="確定"
               focus={inputStatus === "submit"}
               number={5}
             />
-            {/* 保存中に disabled にするとフォーカスが外れて Enter で再送できなくなるので、押せなくするだけにする */}
             <fieldset
               disabled={!canEnterSubmit}
-              aria-busy={submitting}
-              className={cn("min-w-0 border-0 p-0", submitting && "opacity-50")}
+              className="min-w-0 border-0 p-0"
             >
               <SubmitSection
                 submitOrder={submitOrder}
@@ -418,9 +386,6 @@ const CashierV2 = ({
                   newOrder.menus.length === 0 || hasReceivedInput
                 }
               />
-              {submitting && (
-                <p className="text-center text-sm text-stone-500">保存中…</p>
-              )}
             </fieldset>
           </div>
         </div>

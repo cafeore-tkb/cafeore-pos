@@ -15,14 +15,25 @@ export default function CasherMini() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const soundRef1 = useRef<HTMLAudioElement>(null);
   const soundRef2 = useRef<HTMLAudioElement>(null);
-  // レジの編集中注文は API の WebSocket から受け取る
-  const { cashierState } = useOrdersWSContext();
+  // レジの編集中注文と確定済み注文は API の WebSocket から受け取る
+  const { cashierState, orders } = useOrdersWSContext();
   const order = cashierState?.edittingOrder;
-  // 確定した直後かどうかの目印としてだけ使う
   const submittedOrderId = cashierState?.submittedOrderId;
+  const preOrder = useMemo(
+    () =>
+      submittedOrderId == null
+        ? undefined
+        : orders.find((o) => o.id === submittedOrderId),
+    [orders, submittedOrderId],
+  );
   const isOperational = useOrderStat();
 
-  const orderId = order?.orderId;
+  const orderId = useMemo(() => {
+    if (logoShown) {
+      return preOrder?.orderId;
+    }
+    return order?.orderId;
+  }, [order, logoShown, preOrder]);
 
   /**
    * FIXME #412 useEffect内でstateを更新している

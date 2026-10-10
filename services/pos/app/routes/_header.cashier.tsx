@@ -1,7 +1,6 @@
 import {
   OrderEntity,
   cashierRepository,
-  orderRepository,
   orderSchema,
   stringToJSONSchema,
   useMenuMaster,
@@ -14,9 +13,8 @@ import {
   useSubmit,
 } from "react-router";
 import { z } from "zod";
+import { saveOrderInBackground } from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
-import type { OrderAction } from "~/components/functional/useOrderState";
-import type { SubmitPayload } from "~/components/functional/useSubmitOrder";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -37,12 +35,7 @@ export default function Cashier() {
   );
 
   const syncOrder = useCallback(
-    (order: OrderEntity, action: OrderAction) => {
-      // 品物を足したら次の注文の入力が始まったとみなし、確定直後の表示を消す。
-      // 番号を進める同期などでは消さない（同期は遅れて走るので、保存の直後に消してしまう）
-      if (action.type === "addItem") {
-        lastSubmittedOrderId = null;
-      }
+    (order: OrderEntity) => {
       submit({ syncOrder: JSON.stringify(order.toOrder()) }, { method: "PUT" });
     },
     [submit],
@@ -54,7 +47,7 @@ export default function Cashier() {
       orders={orders}
       wsStatus={status}
       canSubmitOrder={canSubmitOrder}
-      submitPayload={submitPayload}
+      submitPayload={saveOrderInBackground}
       syncOrder={syncOrder}
     />
   );
@@ -69,37 +62,6 @@ export const clientAction: ClientActionFunction = async (args) => {
     default:
       return new Response("Method not allowed", { status: 405 });
   }
-};
-
-// 応答が返らないままレジが固まらないよう、保存を待つ時間の上限
-const SUBMIT_TIMEOUT_MS = 10_000;
-
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${ms / 1000} 秒待っても応答がありません`)),
-      ms,
-    );
-    promise.then(resolve, reject).finally(() => clearTimeout(timer));
-  });
-
-// 直前に確定した注文の ID（cashier-mini の「ご注文ありがとうございました」表示用）。
-// 別々に読み書きすると入力を空にする同期と上書きし合うので、同期で一緒に書き込む。
-// 次の品物を足すまでは、どの同期でも載せ続ける
-let lastSubmittedOrderId: string | null = null;
-
-// 保存の成否を呼び出し元で待てるよう、submit を通さずに直接保存する。
-// submit だと直後のレジ状態同期の submit で打ち切られ、失敗しても気づけない (#732)
-// 時間切れで打ち切っても通信は止まらず、あとでサーバー側の保存が成功することがある。
-// 送り直しで二重にできないよう、同じ注文には同じ idempotencyKey を付ける
-const submitPayload: SubmitPayload = async (newOrder, idempotencyKey) => {
-  const savedOrder = await withTimeout(
-    orderRepository.save(newOrder, { idempotencyKey }),
-    SUBMIT_TIMEOUT_MS,
-  );
-  // レジ状態へは、保存後に入力を空にする同期でまとめて書き込む
-  lastSubmittedOrderId = savedOrder.id;
-  return savedOrder;
 };
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {
@@ -122,7 +84,7 @@ export const syncOrderAction: ClientActionFunction = async ({ request }) => {
     .set({
       id: "cashier-state",
       edittingOrder: OrderEntity.fromOrder(syncOrder),
-      submittedOrderId: lastSubmittedOrderId,
+      submittedOrderId: null,
     })
     .catch((err) => {
       // キー入力のたびに呼ぶので await しない。失敗はここで拾ってログに残す
