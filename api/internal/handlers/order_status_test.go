@@ -179,3 +179,32 @@ func TestToggleOrderStatusWithoutCups(t *testing.T) {
 		t.Fatalf("order without cups must be un-readied: %+v", order)
 	}
 }
+
+func TestServeCuplessOrder(t *testing.T) {
+	now := time.Now()
+	earlier := now.Add(-time.Hour)
+	// カップの無い注文（グッズだけ）は提供済みにする。付いている時刻は残し、準備完了は提供済みと同じ時刻
+	for _, tc := range []struct {
+		name                  string
+		ready, served         *time.Time
+		wantReady, wantServed *time.Time
+	}{
+		{name: "new", wantReady: &now, wantServed: &now},
+		{name: "served", ready: &earlier, served: &earlier, wantReady: &earlier, wantServed: &earlier},
+		{name: "ready only", ready: &earlier, wantReady: &earlier, wantServed: &now},
+		{name: "served only", served: &earlier, wantReady: &earlier, wantServed: &earlier},
+	} {
+		order := &models.Order{ReadyAt: tc.ready, ServedAt: tc.served}
+		serveCuplessOrder(order, now)
+		if !sameTime(order.ReadyAt, tc.wantReady) || !sameTime(order.ServedAt, tc.wantServed) {
+			t.Errorf("%s: ready=%v served=%v, want ready=%v served=%v", tc.name, order.ReadyAt, order.ServedAt, tc.wantReady, tc.wantServed)
+		}
+	}
+
+	// カップのある注文は変えない（状態はカップから決まる）
+	order := twoCupOrder()
+	serveCuplessOrder(order, now)
+	if order.ReadyAt != nil || order.ServedAt != nil || cupStates(order) != "pp" {
+		t.Fatalf("order with cups must not be changed: %s %+v", cupStates(order), order)
+	}
+}
