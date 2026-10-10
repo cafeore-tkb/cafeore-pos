@@ -1,32 +1,35 @@
+import { type CaosCard, type CaosPlace, caosBrewSec } from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import { useOutsidePress } from "../hooks/useOutsidePress";
-import type { Barista } from "../logic/board";
 import {
-  type DripCard,
-  type OrderTicket,
-  brewSec,
+  type CardLook,
+  type CardLooks,
+  cardName,
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { canPlaceOn, laneOrdinal, moveTargets } from "../logic/lanes";
+import {
+  type Lane,
+  laneActive,
+  laneOrdinal,
+  moveTargets,
+} from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
 import { OrderCard } from "./OrderCard";
 
-// 右のパネル（割当・詳細・入れ直し・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
+// 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
 // onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
-export const SidePanel: React.FC<{
+const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
   onOutsidePress?: () => void;
-  /** 見出しの色（入れ直しは赤） */
-  tone?: "plain" | "alert";
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, onOutsidePress, tone = "plain", footer, children }) => {
+}> = ({ title, onClose, onOutsidePress, footer, children }) => {
   const panelRef = useRef<HTMLElement>(null);
   useOutsidePress(
     onOutsidePress !== undefined,
@@ -36,11 +39,9 @@ export const SidePanel: React.FC<{
   return (
     <aside
       ref={panelRef}
-      className={`fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
+      className="fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
-      <header
-        className={`flex min-h-[52px] shrink-0 items-center gap-1 border-b px-4 ${tone === "alert" ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}
-      >
+      <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
         <button
           type="button"
@@ -58,7 +59,7 @@ export const SidePanel: React.FC<{
 };
 
 /** パネルの下の「キャンセル」と確定のボタン */
-export const PanelFooter: React.FC<{
+const PanelFooter: React.FC<{
   onCancel: () => void;
   children: React.ReactNode;
 }> = ({ onCancel, children }) => (
@@ -78,20 +79,18 @@ export const PanelFooter: React.FC<{
 export const AssignPanel: React.FC<{
   /** 空きスロットを押したドリッパー */
   bayId: number;
-  baristas: Barista[];
-  unassignedOrders: DripCard[];
+  lanes: Lane[];
+  unassignedOrders: CaosCard[];
+  looks: CardLooks;
   onClose: () => void;
-  onAssign: (card: DripCard, targetBayId: number) => void;
-}> = ({ bayId, baristas, unassignedOrders, onClose, onAssign }) => {
+  onAssign: (card: CaosCard, targetBayId: number) => void;
+}> = ({ bayId, lanes, unassignedOrders, looks, onClose, onAssign }) => {
   const [selectedOrderUid, setSelectedOrderUid] = useState(
-    unassignedOrders[0]?.ticketUid ?? "",
+    unassignedOrders[0]?.key ?? "",
   );
   const [selectedBayId, setSelectedBayId] = useState(bayId);
   const selectedOrder = unassignedOrders.find(
-    (order) => order.ticketUid === selectedOrderUid,
-  );
-  const canAssign = Boolean(
-    selectedOrder && canPlaceOn(selectedOrder, selectedBayId),
+    (order) => order.key === selectedOrderUid,
   );
 
   return (
@@ -102,7 +101,7 @@ export const AssignPanel: React.FC<{
         <PanelFooter onCancel={onClose}>
           <button
             type="button"
-            disabled={!canAssign}
+            disabled={!selectedOrder}
             onClick={() => {
               if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
@@ -126,16 +125,13 @@ export const AssignPanel: React.FC<{
         <div className="grid max-h-[200px] gap-1.5 overflow-y-auto p-1">
           {unassignedOrders.map((order) => (
             <OrderCard
-              key={order.ticketUid}
+              key={order.key}
               card={order}
+              look={looks.get(order.key)}
               size="sm"
-              selected={selectedOrderUid === order.ticketUid}
-              note={`標準予測: ${clockLabel(brewSec(order.cupCount))}`}
-              onClick={() => {
-                setSelectedOrderUid(order.ticketUid);
-                if (order.preferredBaristaId)
-                  setSelectedBayId(order.preferredBaristaId);
-              }}
+              selected={selectedOrderUid === order.key}
+              note={`標準予測: ${clockLabel(caosBrewSec(order.cups.length))}`}
+              onClick={() => setSelectedOrderUid(order.key)}
               className="cursor-pointer"
             />
           ))}
@@ -146,23 +142,20 @@ export const AssignPanel: React.FC<{
         割当先のドリッパー（抽出担当者）:
       </h3>
       <div className="grid grid-cols-3 gap-2">
-        {baristas.map((barista) => (
+        {lanes.map((lane) => (
           <button
-            key={barista.id}
+            key={lane.id}
             type="button"
-            disabled={Boolean(
-              selectedOrder && !canPlaceOn(selectedOrder, barista.id),
-            )}
-            onClick={() => setSelectedBayId(barista.id)}
+            onClick={() => setSelectedBayId(lane.id)}
             className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left ${
-              selectedBayId === barista.id
+              selectedBayId === lane.id
                 ? "border-emerald-600 bg-emerald-50 shadow-xs ring-1 ring-emerald-600"
-                : "border-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:opacity-25"
+                : "border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <LaneBadge bayId={barista.id} />
+            <LaneBadge bayId={lane.id} />
             <span className="text-[10px] text-slate-500">
-              待機 {barista.queue.length}件
+              待機 {lane.queued.length}件
             </span>
           </button>
         ))}
@@ -171,15 +164,17 @@ export const AssignPanel: React.FC<{
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・未割当に戻す。パネルの外を押すと閉じる
+// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す。パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<{
-  ticket: OrderTicket;
+  ticket: CaosCard;
+  look?: CardLook;
   currentBayId: number | null;
   onClose: () => void;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
+  onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
+  onReturnToUnassigned: (card: CaosCard) => void;
 }> = ({
   ticket,
+  look,
   currentBayId,
   onClose,
   onMoveTicket,
@@ -190,31 +185,25 @@ export const TicketDetailPanel: React.FC<{
     onClose={onClose}
     onOutsidePress={onClose}
   >
-    <OrderCard card={ticket} size="xl" />
+    <OrderCard card={ticket} look={look} size="xl" />
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
-      他のドリッパーへ移動
+      他のドリッパーへ移動・先頭へ
     </h3>
     <div className="grid grid-cols-3 gap-2">
-      {moveTargets(ticket, currentBayId).map(({ bayId, disabled }) => (
+      {moveTargets(currentBayId).map(({ bayId, place }) => (
         <button
           key={bayId}
           type="button"
-          disabled={disabled}
           onClick={() => {
-            onMoveTicket(ticket, bayId);
+            onMoveTicket(ticket, bayId, place);
             onClose();
           }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white"
         >
-          {bayId}
+          {place ? `${bayId} 先頭へ` : bayId}
         </button>
       ))}
     </div>
-    {ticket.preferredBaristaId && (
-      <p className="mt-2 font-bold text-[13px] text-violet-700">
-        指名オーダー：ドリッパー {laneOrdinal(ticket.preferredBaristaId)} のみ
-      </p>
-    )}
     <button
       type="button"
       onClick={() => {
@@ -244,26 +233,26 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 
 export const AuxiliaryContent: React.FC<
   { tab: AuxiliaryTab } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, baristas, ...analytics }) => {
+> = ({ tab, lanes, ...analytics }) => {
   if (tab === "beans") return <BeanQueueView />;
   if (tab === "analytics")
-    return <AnalyticsView baristas={baristas} {...analytics} />;
+    return <AnalyticsView lanes={lanes} {...analytics} />;
   // ドリッパー：6 列（1st〜6th）の今の抽出と待ちの件数
   return (
     <div className="grid grid-cols-2 gap-2">
-      {baristas.map((barista) => {
-        const current = barista.queue[0];
+      {lanes.map((lane) => {
+        const [current, ...waiting] = laneActive(lane);
         return (
           <article
-            key={barista.id}
+            key={lane.id}
             className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs"
           >
-            <LaneBadge bayId={barista.id} />
+            <LaneBadge bayId={lane.id} />
             <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
               {current ? (
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-bold text-slate-700">
-                    {current.beanName}
+                    {cardName(current)}
                   </span>
                   <span className="shrink-0 font-black font-mono text-[15px] text-slate-950">
                     {orderLabel(current)}
@@ -273,7 +262,7 @@ export const AuxiliaryContent: React.FC<
                 <span className="font-bold text-slate-400">待機中</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
-                待ち {Math.max(0, barista.queue.length - 1)}件
+                待ち {waiting.length}件
               </div>
             </div>
           </article>

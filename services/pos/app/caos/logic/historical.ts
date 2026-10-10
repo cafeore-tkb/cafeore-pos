@@ -1,64 +1,70 @@
-import type { PracticeDataOrder } from "@cafeore/common";
-import type { TestPlaySession } from "../hooks/useTestPlay";
-import { type DripCard, splitIntoDripUnits } from "./cards";
+import {
+  type CaosPracticeOrder,
+  type ItemType,
+  type PracticeDataOrder,
+  cupNeedsBrew,
+  jstDate,
+  toCaosPracticeOrder,
+} from "@cafeore/common";
 
-// 実データテスト（2025年の注文。商品 ID が無い）のカード。cafeore-pos の注文のカードには使わない。
-// 過去の注文には商品 ID が無いので、商品の名前でまとめ方（統合できる相手）を決める。
-// 実データテストは作り直す予定（練習の盤面）なので、それまでここだけに残す。
-const historicalGroupOf = (name: string, type: string) => {
-  if (type === "ice") return "ICE";
-  if (type === "iceOre" || type === "milk") return "MILK";
-  if (name.includes("俺")) return "ORE";
-  if (name.includes("縁")) return "CHAMP";
-  if (name.includes("キリマンジャロ")) return "TNZ";
-  if (name.includes("トラジャ")) return "BRA";
-  if (name.includes("ピンク")) return "KEN";
-  return "SP";
-};
+// 実データテスト（練習）。実データの注文を練習の盤面の注文（本番と同じ形の注文とカップ。@cafeore/common の caosPractice）にし、
+// カードは本番と同じ buildCaosCards で組み立てる（hooks/useTestPlay.ts）。豆や抽出が要るかを商品の名前で決めない。
 
-const historicalOrderToDripUnits = (order: PracticeDataOrder): DripCard[] => {
-  const grouped = new Map<string, { names: string[]; count: number }>();
-  for (const item of order.items) {
-    // Plain iced milk is served without dripping, so it never enters CaOS's drip queue.
-    if (
-      item.type === "others" ||
-      item.type === "milk" ||
-      item.name.includes("アイスミルク")
-    )
-      continue;
-    const group = historicalGroupOf(item.name, item.type);
-    const current = grouped.get(group) ?? { names: [], count: 0 };
-    current.count += 1;
-    if (!current.names.includes(item.name)) current.names.push(item.name);
-    grouped.set(group, current);
-  }
-  return splitIntoDripUnits(
-    Array.from(grouped, ([group, { names, count }], index) => ({
-      ticketUid: `history-${order.orderId}-${group}-${index}`,
-      orderNos: [order.orderId],
-      beanName: names.join("・"),
-      cupCount: count,
-      mergeKey: `history-${group}`,
-    })),
-  );
-};
-
-const createdMs = (order: PracticeDataOrder) =>
+const createdMs = (order: { createdAt: string }) =>
   new Date(order.createdAt).getTime();
 
-/** 時刻（nowMs）までに届いた注文（cursor から先）のカードと、次の cursor。orders は時刻の順 */
-export const historicalArrivals = (
+/**
+ * 実データの注文（時刻の順）を練習の盤面の注文にする。商品の種類は POS の商品の種類（itemTypes。DB）から名前で引き、
+ * 表示名と ID（色の設定を引く）を付ける。POS に無い種類は名前のまま
+ */
+export const toPracticeOrders = (
   orders: PracticeDataOrder[],
-  cursor: number,
+  itemTypes: readonly ItemType[],
+): CaosPracticeOrder[] => {
+  const typeOf = new Map(itemTypes.map((type) => [type.name, type]));
+  return orders.map((order, index) => {
+    const practice = toCaosPracticeOrder(order, index);
+    return {
+      ...practice,
+      cups: practice.cups.map((cup) => {
+        const type = typeOf.get(cup.item.item_type.name);
+        return type ? { ...cup, item: { ...cup.item, item_type: type } } : cup;
+      }),
+    };
+  });
+};
+
+/** 時刻（nowMs）までに届いた注文の数（注文は時刻の順なので、先頭からこの数だけが盤面に出る） */
+export const arrivedCount = (
+  orders: readonly { createdAt: Date }[],
   nowMs: number,
 ) => {
-  let next = cursor;
-  while (next < orders.length && createdMs(orders[next]) <= nowMs) next += 1;
-  return {
-    cards: orders.slice(cursor, next).flatMap(historicalOrderToDripUnits),
-    cursor: next,
-  };
+  const index = orders.findIndex((order) => order.createdAt.getTime() > nowMs);
+  return index < 0 ? orders.length : index;
 };
+
+/**
+ * 実績に出す、届いた注文。提供時間は練習の結果（抽出の要るカップが全部準備完了になった時刻）。
+ * orders と practiceOrders は同じ並び
+ */
+export const practiceSalesOrders = (
+  orders: PracticeDataOrder[],
+  practiceOrders: readonly CaosPracticeOrder[],
+  count: number,
+): PracticeDataOrder[] =>
+  orders.slice(0, count).map((order, index) => {
+    const brewCups = practiceOrders[index].cups.filter(cupNeedsBrew);
+    const ready = brewCups.every((cup) => cup.readyAt !== null);
+    const readyMs = Math.max(
+      ...brewCups.map((cup) => cup.readyAt?.getTime() ?? 0),
+    );
+    return {
+      ...order,
+      readyAt:
+        brewCups.length > 0 && ready ? new Date(readyMs).toISOString() : null,
+      servedAt: null,
+    };
+  });
 
 /** startMs から endMs までの注文を時刻の順に */
 export const ordersInPeriod = (
@@ -68,25 +74,19 @@ export const ordersInPeriod = (
 ) =>
   orders
     .filter((order) => createdMs(order) >= startMs && createdMs(order) < endMs)
-    .sort((a, b) => createdMs(a) - createdMs(b));
-
-/** 実績に出す、テストの時刻までに届いた注文と、その時間帯（テストをしていなければ空） */
-export const testPlayAnalytics = (session: TestPlaySession | null) => ({
-  salesOrders: session
-    ? session.orders.filter((order) => createdMs(order) <= session.currentMs)
-    : [],
-  periodStartMs: session?.startMs,
-  periodEndMs: session?.currentMs,
-});
+    .sort((a, b) => createdMs(a) - createdMs(b) || a.orderId - b.orderId);
 
 /** テストの残り（「12分」） */
-export const testPlayRemainingLabel = (session: TestPlaySession) =>
+export const testPlayRemainingLabel = (session: {
+  endMs: number;
+  currentMs: number;
+}) =>
   `${Math.max(0, Math.ceil((session.endMs - session.currentMs) / 60_000))}分`;
 
 const SLOT_MS = 30 * 60_000;
 
 /**
- * テストを始められる時刻（30 分ごと）。注文のある日ごとに、最初の注文の 30 分区切りから、
+ * テストを始められる時刻（30 分ごと）。注文のある日（日本時間）ごとに、最初の注文の 30 分区切りから、
  * 時間帯（durationMinutes 分）に注文がある時刻だけ
  */
 export const testPlaySlots = (
@@ -96,19 +96,19 @@ export const testPlaySlots = (
   const durationMs = durationMinutes * 60_000;
   const days = new Map<string, number[]>();
   for (const order of orders) {
-    const date = new Date(order.createdAt);
-    const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    days.set(dayKey, [...(days.get(dayKey) ?? []), date.getTime()]);
+    const ms = createdMs(order);
+    const day = jstDate(ms);
+    days.set(day, [...(days.get(day) ?? []), ms]);
   }
   return Array.from(days.values())
     .sort((a, b) => Math.min(...a) - Math.min(...b))
     .flatMap((timestamps) => {
-      const first = new Date(Math.min(...timestamps));
-      first.setMinutes(first.getMinutes() < 30 ? 0 : 30, 0, 0);
+      // 日本時間は時差が整数の時間なので、エポックのミリ秒で 30 分に切り捨てれば日本時間の 30 分区切り
+      const first = Math.floor(Math.min(...timestamps) / SLOT_MS) * SLOT_MS;
       const last = Math.max(...timestamps);
       const slots: number[] = [];
       for (
-        let cursor = first.getTime();
+        let cursor = first;
         cursor + durationMs <= last + SLOT_MS;
         cursor += SLOT_MS
       ) {

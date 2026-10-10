@@ -1,10 +1,11 @@
-import { type Barista, ticketsWhere } from "./board";
+import type { CaosCard } from "@cafeore/common";
 import {
-  type DripCard,
-  type OrderTicket,
+  type CardLooks,
+  cardOrderNos,
   groupByOrder,
   orderLabel,
 } from "./cards";
+import { type Lane, laneActive, laneCards } from "./lanes";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
 // 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。
@@ -12,7 +13,7 @@ import {
 type CellState = "past" | "current" | "waiting";
 
 export interface SheetEntry {
-  ticket: OrderTicket;
+  card: CaosCard;
   state: CellState;
   // 統合した抽出は元の注文すべての行にまたがる（行は注文番号）。
   rowIds: number[];
@@ -41,24 +42,28 @@ interface SheetRow {
 export const cellKey = (orderNo: number, bayId: number) =>
   `${orderNo}@${bayId}`;
 
-const entryState = (ticket: OrderTicket): CellState =>
-  ticket.status === "brewing" ? "current" : "waiting";
+const entryOf = (card: CaosCard, state: CellState): SheetEntry => ({
+  card,
+  state,
+  rowIds: cardOrderNos(card),
+});
 
-export const buildSheet = (baristas: Barista[], unassigned: DripCard[]) => {
+/** 注文の杯数（分けた注文はカード全部の杯数、1 枚だけの注文はそのカードの杯数） */
+export const orderCupsOf = (card: CaosCard, looks: CardLooks) =>
+  looks.get(card.key)?.split?.cups ?? card.cups.length;
+
+export const buildSheet = (
+  lanes: Lane[],
+  unassigned: CaosCard[],
+  looks: CardLooks,
+) => {
   const entriesByBay = new Map<number, SheetEntry[]>(
-    baristas.map((barista) => [
-      barista.id,
+    lanes.map((lane) => [
+      lane.id,
       [
-        ...barista.pastTickets.map((ticket) => ({
-          ticket,
-          state: "past" as const,
-          rowIds: ticket.orderNos,
-        })),
-        ...barista.queue.map((ticket) => ({
-          ticket,
-          state: entryState(ticket),
-          rowIds: ticket.orderNos,
-        })),
+        ...lane.done.map((card) => entryOf(card, "past")),
+        ...(lane.brewing ? [entryOf(lane.brewing, "current")] : []),
+        ...lane.queued.map((card) => entryOf(card, "waiting")),
       ],
     ]),
   );
@@ -80,18 +85,19 @@ export const buildSheet = (baristas: Barista[], unassigned: DripCard[]) => {
         stat.hasEntries = true;
         stat.isLive ||= entry.state !== "past";
         // A merged drip holds one cup from each source order.
-        stat.cups += entry.ticket.cupCount / entry.rowIds.length;
+        stat.cups += entry.card.cups.length / entry.rowIds.length;
         if (entry.rowIds.length === 1)
-          stat.orderCups ??= entry.ticket.totalOrderCups;
+          stat.orderCups ??= orderCupsOf(entry.card, looks);
       }
     }
   }
   // An order with cups still unassigned is not finished, even if its assigned cups are.
   for (const card of unassigned) {
-    for (const id of card.orderNos) {
+    const orderNos = cardOrderNos(card);
+    for (const id of orderNos) {
       const stat = statOf(id);
       stat.isLive = true;
-      if (card.orderNos.length === 1) stat.orderCups ??= card.totalOrderCups;
+      if (orderNos.length === 1) stat.orderCups ??= orderCupsOf(card, looks);
     }
   }
 
@@ -156,31 +162,26 @@ export const buildSheet = (baristas: Barista[], unassigned: DripCard[]) => {
   return { rows, cells };
 };
 
-// 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカードを薄く添える
-export const buildOrderGroups = (baristas: Barista[], unassigned: DripCard[]) =>
+// 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカード（抽出中・待機）を薄く添える
+export const buildOrderGroups = (lanes: Lane[], unassigned: CaosCard[]) =>
   Array.from(groupByOrder(unassigned), ([key, items]) => ({
     key,
     items,
-    assigned: baristas.flatMap((barista) =>
-      barista.queue
-        .filter((ticket) => orderLabel(ticket) === key)
-        .map((ticket) => ({ ticket, bayId: barista.id })),
+    assigned: lanes.flatMap((lane) =>
+      laneActive(lane)
+        .filter((card) => orderLabel(card) === key)
+        .map((card) => ({ card, bayId: lane.id })),
     ),
-  })).sort(
-    (left, right) => left.items[0].orderNos[0] - right.items[0].orderNos[0],
-  );
+  })).sort((left, right) => left.items[0].orderNo - right.items[0].orderNo);
 
 // 選んだ注文の行（統合したカードは元の注文すべての行）
 export const linkedOrderNos = (
   selectedOrderId: string | null,
-  baristas: Barista[],
-  unassigned: DripCard[],
+  lanes: Lane[],
+  unassigned: CaosCard[],
 ) =>
   new Set(
-    [
-      ...unassigned,
-      ...ticketsWhere(baristas, () => true).map(({ ticket }) => ticket),
-    ]
+    [...unassigned, ...lanes.flatMap(laneCards)]
       .filter((card) => orderLabel(card) === selectedOrderId)
-      .flatMap((card) => card.orderNos),
+      .flatMap(cardOrderNos),
   );

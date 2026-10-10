@@ -1,37 +1,47 @@
+import type { CaosCard, CaosPlace } from "@cafeore/common";
 import { useEffect, useState } from "react";
-import { type Board, findTicket } from "../logic/board";
-import { type DripCard, type OrderTicket, orderLabel } from "../logic/cards";
-import type { RebrewDecision } from "../logic/rebrew";
+import type { AuxiliaryTab } from "../components/SidePanels";
+import { orderLabel } from "../logic/cards";
 
-// 画面で選んでいるもの（注文・待機のカード・空きスロット・入れ直しのカード）と、選んだものへの操作。
+/**
+ * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
+ * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、assign は空きスロットへの割当、auxiliary は補助のタブ
+ */
+type OpenPanel =
+  | { kind: "detail"; key: string }
+  | { kind: "assign"; bayId: number }
+  | { kind: "auxiliary"; tab: AuxiliaryTab }
+  | null;
+
+// 画面で選んでいるもの（注文・開いているパネル）と、選んだものへの操作。
 // パネルはカードのキーだけを持ち、カードは毎回いまの盤面から読む（開いているあいだに始まった・終わったカードを古いまま扱わない）。
 export const useBoardSelection = (
-  board: Board,
+  cards: readonly CaosCard[],
   actions: {
-    assign: (uid: string, bayId: number) => boolean;
-    move: (key: string, bayId: number) => boolean;
+    place: (key: string, bayId: number, place?: CaosPlace) => boolean;
     returnToUnassigned: (key: string) => boolean;
-    merge: (firstUid: string, secondUid: string) => boolean;
-    rebrew: (key: string, decision: RebrewDecision) => boolean;
+    merge: (firstKey: string, secondKey: string) => boolean;
   },
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  // 1〜6 のボタン（管制盤 A）・詳細のパネル（管制盤 C・D）を開いた待機のカード
-  const [ticketKey, setTicketKey] = useState<string | null>(null);
-  const [assignSlotBayId, setAssignSlotBayId] = useState<number | null>(null);
-  const [rebrewKey, setRebrewKey] = useState<string | null>(null);
+  const [panel, setPanel] = useState<OpenPanel>(null);
+  // 閉じるのは、そのパネルが開いているときだけ（ほかのパネルに替わっていたら何もしない）
+  const close = (kind: NonNullable<OpenPanel>["kind"]) =>
+    setPanel((open) => (open?.kind === kind ? null : open));
 
-  // 待機のカードだけ動かせるので、始まったら（終わったら）閉じる
-  const found = ticketKey ? findTicket(board.baristas, ticketKey) : null;
-  const scheduled = found?.ticket.status === "scheduled" ? found : null;
+  // 待機のカードだけ動かせるので、始まったら（終わったら・未割当に戻ったら）閉じる
+  const ticketKey = panel?.kind === "detail" ? panel.key : null;
+  const found = ticketKey
+    ? cards.find((card) => card.key === ticketKey)
+    : undefined;
+  const scheduled =
+    found?.status === "queued" && found.dripper !== null
+      ? { card: found, bayId: found.dripper }
+      : null;
   useEffect(() => {
-    if (ticketKey && !scheduled) setTicketKey(null);
+    if (ticketKey && !scheduled) setPanel(null);
   }, [ticketKey, scheduled]);
-  // 入れ直しは抽出中・終わったカードから
-  const rebrewFound = rebrewKey ? findTicket(board.baristas, rebrewKey) : null;
-  const rebrewSource =
-    rebrewFound?.ticket.status === "scheduled" ? null : rebrewFound;
 
   // 動かしたら注文の選択を外す
   const thenDeselect = (ok: boolean) => {
@@ -41,52 +51,41 @@ export const useBoardSelection = (
   return {
     selectedOrderId,
     selectOrder: setSelectedOrderId,
+    /** 開いているパネル */
+    panel,
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
-    openTicket: (ticket: OrderTicket) => setTicketKey(ticket.ticketUid),
+    openTicket: (card: CaosCard) => setPanel({ kind: "detail", key: card.key }),
     /** 詳細のパネルを開き、その注文を選ぶ */
-    openDetail: (ticket: OrderTicket) => {
-      setTicketKey(ticket.ticketUid);
-      setSelectedOrderId(orderLabel(ticket));
+    openDetail: (card: CaosCard) => {
+      setPanel({ kind: "detail", key: card.key });
+      setSelectedOrderId(orderLabel(card));
     },
-    closeTicket: () => setTicketKey(null),
+    closeTicket: () => close("detail"),
     /** 詳細のパネルを閉じる（注文の選択も外す） */
     closeDetail: () => {
-      setTicketKey(null);
+      close("detail");
       setSelectedOrderId(null);
     },
-    assignSlotBayId,
-    openAssignSlot: setAssignSlotBayId,
-    closeAssignSlot: () => setAssignSlotBayId(null),
-    rebrewSource,
-    openRebrew: (ticket: OrderTicket) => {
-      setTicketKey(null);
-      setRebrewKey(ticket.ticketUid);
-    },
-    closeRebrew: () => setRebrewKey(null),
+    openAssignSlot: (bayId: number) => setPanel({ kind: "assign", bayId }),
+    closeAssignSlot: () => close("assign"),
+    openAuxiliary: (tab: AuxiliaryTab) => setPanel({ kind: "auxiliary", tab }),
+    closeAuxiliary: () => close("auxiliary"),
     /** 全部閉じる（リセット・実データテストの開始） */
     clear: () => {
       setSelectedOrderId(null);
-      setTicketKey(null);
-      setAssignSlotBayId(null);
-      setRebrewKey(null);
+      setPanel(null);
     },
-    assign: (card: DripCard, bayId: number) => {
-      actions.assign(card.ticketUid, bayId);
+    /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
+    assign: (card: CaosCard, bayId: number, place?: CaosPlace) => {
+      actions.place(card.key, bayId, place);
     },
-    move: (ticket: OrderTicket, bayId: number) =>
-      thenDeselect(actions.move(ticket.ticketUid, bayId)),
-    returnToUnassigned: (ticket: OrderTicket) =>
-      thenDeselect(actions.returnToUnassigned(ticket.ticketUid)),
-    merge: (firstUid: string, secondUid: string) =>
-      thenDeselect(actions.merge(firstUid, secondUid)),
-    /** 入れ直す。入れ直した注文を選んでおく */
-    rebrew: (decision: RebrewDecision) => {
-      if (!rebrewSource) return;
-      if (!actions.rebrew(rebrewSource.ticket.ticketUid, decision)) return;
-      setRebrewKey(null);
-      setTicketKey(null);
-      setSelectedOrderId(orderLabel(rebrewSource.ticket));
-    },
+    /** 待機のカードを別のドリッパーへ・先頭へ・カードの前へ */
+    move: (card: CaosCard, bayId: number, place?: CaosPlace) =>
+      thenDeselect(actions.place(card.key, bayId, place)),
+    returnToUnassigned: (card: CaosCard) =>
+      thenDeselect(actions.returnToUnassigned(card.key)),
+    merge: (firstKey: string, secondKey: string) =>
+      thenDeselect(actions.merge(firstKey, secondKey)),
   };
 };

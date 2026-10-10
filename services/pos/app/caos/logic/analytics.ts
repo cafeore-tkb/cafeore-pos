@@ -1,8 +1,8 @@
-import type { PracticeDataOrder } from "@cafeore/common";
-import type { Barista } from "./board";
-import { type OrderTicket, orderLabel, totalCups } from "./cards";
+import { type PracticeDataOrder, itemMakesCup } from "@cafeore/common";
+import { type CardLooks, type CardSplit, orderLabel, totalCups } from "./cards";
+import { type Lane, laneActive } from "./lanes";
 
-// 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・入れ直し・ドリッパーごとの量・実データテストの売上
+// 実績（補助のタブ）の集計。分けた注文の仕上がりの差（Δ）・ドリッパーごとの量・実データテストの売上
 
 /** 仕上がりの差（Δ）の目標と、要確認になる秒 */
 const DELTA_GOOD_SEC = 15;
@@ -22,69 +22,63 @@ const average = (values: number[]) =>
     : null;
 
 // 分けた注文のうち、全部のカードを淹れ終えた注文の仕上がりの差（最初と最後のカードの終わりの差）
-const splitResults = (baristas: Barista[]) => {
+const splitResults = (lanes: Lane[], looks: CardLooks) => {
   const groups = new Map<
     string,
-    { ticket: OrderTicket; bayId: number; finishedAt: number }[]
+    { split: CardSplit; bayId: number; finishedMs: number }[]
   >();
-  for (const barista of baristas) {
-    for (const ticket of barista.pastTickets) {
-      if (
-        ticket.isInterrupted ||
-        ticket.isRebrew ||
-        ticket.totalItemsInOrder <= 1 ||
-        ticket.endTimeSec === undefined
-      )
-        continue;
-      const key = orderLabel(ticket);
+  for (const lane of lanes) {
+    for (const card of lane.done) {
+      const split = looks.get(card.key)?.split;
+      if (!split || !card.finishedAt) continue;
+      const key = orderLabel(card);
       groups.set(key, [
         ...(groups.get(key) ?? []),
-        { ticket, bayId: barista.id, finishedAt: ticket.endTimeSec },
+        { split, bayId: lane.id, finishedMs: card.finishedAt.getTime() },
       ]);
     }
   }
   return Array.from(groups, ([orderId, parts]) => {
-    const expectedParts = Math.max(
-      ...parts.map((part) => part.ticket.totalItemsInOrder),
-    );
-    const finished = parts.map((part) => part.finishedAt);
-    const firstFinishedAt = Math.min(...finished);
-    const lastFinishedAt = Math.max(...finished);
+    const expectedParts = Math.max(...parts.map((part) => part.split.total));
+    const finished = parts.map((part) => part.finishedMs);
+    const firstFinishedMs = Math.min(...finished);
+    const lastFinishedMs = Math.max(...finished);
     return {
       orderId,
       expectedParts,
       isComplete: parts.length >= expectedParts,
-      totalCups: Math.max(...parts.map((part) => part.ticket.totalOrderCups)),
-      deltaSec: lastFinishedAt - firstFinishedAt,
-      firstFinishedAt,
-      lastFinishedAt,
+      totalCups: Math.max(...parts.map((part) => part.split.cups)),
+      deltaSec: Math.round((lastFinishedMs - firstFinishedMs) / 1000),
+      firstFinishedMs,
+      lastFinishedMs,
       bayIds: [...new Set(parts.map((part) => part.bayId))].sort(
         (a, b) => a - b,
       ),
     };
   })
     .filter((result) => result.isComplete)
-    .sort((a, b) => b.lastFinishedAt - a.lastFinishedAt);
+    .sort((a, b) => b.lastFinishedMs - a.lastFinishedMs);
 };
 
-// 分けた注文のうち、まだドリッパーに残っているカードの数とドリッパー
-const pendingSplitOrders = (baristas: Barista[]) => {
+// 分けた注文のうち、まだドリッパーに残っている（抽出中・待機の）カードの数とドリッパー
+const pendingSplitOrders = (lanes: Lane[], looks: CardLooks) => {
   const groups = new Map<
     string,
     { expected: number; assigned: number; bays: Set<number> }
   >();
-  for (const barista of baristas) {
-    for (const ticket of barista.queue) {
-      if (ticket.totalItemsInOrder <= 1) continue;
-      const key = orderLabel(ticket);
+  for (const lane of lanes) {
+    for (const card of laneActive(lane)) {
+      const split = looks.get(card.key)?.split;
+      if (!split) continue;
+      const key = orderLabel(card);
       const current = groups.get(key) ?? {
-        expected: ticket.totalItemsInOrder,
+        expected: split.total,
         assigned: 0,
         bays: new Set<number>(),
       };
-      current.expected = Math.max(current.expected, ticket.totalItemsInOrder);
+      current.expected = Math.max(current.expected, split.total);
       current.assigned += 1;
-      current.bays.add(barista.id);
+      current.bays.add(lane.id);
       groups.set(key, current);
     }
   }
@@ -95,33 +89,24 @@ const pendingSplitOrders = (baristas: Barista[]) => {
   }));
 };
 
-// 入れ直し（終えた入れ直しと、止めたカード）
-const rebrewSummary = (baristas: Barista[]) => {
-  const history = baristas.flatMap((barista) => barista.pastTickets);
-  const rebrews = history.filter(
-    (ticket) => ticket.isRebrew && !ticket.isInterrupted,
-  );
-  // 入れ直しで余分に使った豆は CaOS では数えない（豆の在庫は POS の在庫で見る）
-  return {
-    rebrewCount: rebrews.length,
-    rebrewCups: totalCups(rebrews),
-    interruptedCount: history.filter((ticket) => ticket.isInterrupted).length,
-  };
-};
-
 // ドリッパーごとの淹れた杯数・回数・平均の抽出時間
-const baristaResults = (baristas: Barista[]) =>
-  baristas.map((barista) => {
-    const durations = barista.pastTickets.flatMap((ticket) =>
-      ticket.startTimeSec !== undefined && ticket.endTimeSec !== undefined
-        ? [Math.max(0, ticket.endTimeSec - ticket.startTimeSec)]
+const baristaResults = (lanes: Lane[]) =>
+  lanes.map((lane) => {
+    const durations = lane.done.flatMap((card) =>
+      card.startedAt && card.finishedAt
+        ? [
+            Math.max(
+              0,
+              (card.finishedAt.getTime() - card.startedAt.getTime()) / 1000,
+            ),
+          ]
         : [],
     );
     const averageSec = average(durations);
     return {
-      bayId: barista.id,
-      cups: totalCups(barista.pastTickets),
-      drips: barista.pastTickets.length,
+      bayId: lane.id,
+      cups: totalCups(lane.done),
+      drips: lane.done.length,
       averageSec: averageSec === null ? null : Math.round(averageSec),
     };
   });
@@ -142,7 +127,7 @@ const salesAnalysis = (orders: PracticeDataOrder[]) => {
     bucketValue.orders += 1;
     bucketValue.sales += order.billingAmount;
     for (const item of order.items) {
-      if (item.type === "others") continue;
+      if (!itemMakesCup(item.type)) continue;
       cups += 1;
       menuMap.set(item.name, (menuMap.get(item.name) ?? 0) + 1);
       typeMap.set(item.type, (typeMap.get(item.type) ?? 0) + 1);
@@ -178,14 +163,14 @@ const salesAnalysis = (orders: PracticeDataOrder[]) => {
 
 /** 実績のパネルに出すもの */
 export const analyticsReport = (
-  baristas: Barista[],
+  lanes: Lane[],
+  looks: CardLooks,
   salesOrders: PracticeDataOrder[],
 ) => {
-  const splits = splitResults(baristas);
+  const splits = splitResults(lanes, looks);
   const averageDelta = average(splits.map((result) => result.deltaSec));
   return {
     sales: salesAnalysis(salesOrders),
-    rebrew: rebrewSummary(baristas),
     splits,
     averageDelta: averageDelta === null ? null : Math.round(averageDelta),
     within15Rate: splits.length
@@ -200,7 +185,7 @@ export const analyticsReport = (
       ? Math.max(...splits.map((result) => result.deltaSec))
       : null,
     sameLaneCount: splits.filter((result) => result.bayIds.length === 1).length,
-    baristas: baristaResults(baristas),
-    pendingSplits: pendingSplitOrders(baristas),
+    baristas: baristaResults(lanes),
+    pendingSplits: pendingSplitOrders(lanes, looks),
   };
 };

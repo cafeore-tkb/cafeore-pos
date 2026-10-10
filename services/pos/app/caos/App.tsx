@@ -4,12 +4,10 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
-import { RebrewPanel } from "./components/RebrewPanel";
 import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
-  type AuxiliaryTab,
   TicketDetailPanel,
 } from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
@@ -19,37 +17,32 @@ import { useCaosSession } from "./hooks/useCaosSession";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 
-// CaOS（ドリップ管制）の画面。盤面・時刻・注文の取り込みは useCaosSession、選んでいるものは useBoardSelection、
-// 見せ方は components の部品。ここはどの管制盤・どのパネルを出すかだけを持ち、フックの値と操作を部品に渡す。
+// CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
+// 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
 export default function App() {
   const session = useCaosSession();
-  const selection = useBoardSelection(session.board, session);
+  const selection = useBoardSelection(session.cards, session);
   const typeNames = useItemTypeNames();
-  const { board, testPlay } = session;
+  const { lanes, looks, testPlay } = session;
+  const { panel } = selection;
 
-  const [activeTab, setActiveTab] = useState<NavTab>("control");
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
 
-  const auxiliaryView = (tab: AuxiliaryTab) => (
-    <AuxiliaryContent
-      tab={tab}
-      baristas={board.baristas}
-      typeNames={typeNames}
-      {...testPlay.analytics}
-    />
-  );
-
   return (
     <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
-          activeTab={activeTab}
+          activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
           controlViewMode={controlViewMode}
-          onSelectTab={setActiveTab}
+          onSelectTab={(tab: NavTab) =>
+            tab === "control"
+              ? selection.closeAuxiliary()
+              : selection.openAuxiliary(tab)
+          }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
           unassignedCups={session.cups.unassigned}
@@ -73,7 +66,7 @@ export default function App() {
           onOpenTestPlay={() => setTestSetupOpen(true)}
           onEndTestPlay={() => {
             testPlay.finish();
-            setActiveTab("analytics");
+            selection.openAuxiliary("analytics");
           }}
           posStatus={session.posStatus}
         />
@@ -81,12 +74,13 @@ export default function App() {
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
           <ControlWorkspace
             mode={controlViewMode}
-            baristas={board.baristas}
+            lanes={lanes}
             unassignedOrders={session.unassigned}
+            looks={looks}
             nextAvailable={session.nextAvailable}
             selectedOrderId={selection.selectedOrderId}
-            actionTicketKey={selection.scheduled?.ticket.ticketUid ?? null}
-            currentTimeSec={session.nowSec}
+            actionTicketKey={selection.scheduled?.card.key ?? null}
+            nowMs={session.nowMs}
             timelineCommand={timelineCommand}
             onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}
@@ -95,26 +89,29 @@ export default function App() {
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
-            onRequestRebrew={selection.openRebrew}
             onOpenEmptySlot={selection.openAssignSlot}
             onAssignToBay={selection.assign}
             onMergeOrders={selection.merge}
           />
         </main>
 
-        {activeTab !== "control" && (
-          <AuxiliarySheet
-            tab={activeTab}
-            onClose={() => setActiveTab("control")}
-          >
-            {auxiliaryView(activeTab)}
+        {panel?.kind === "auxiliary" && (
+          <AuxiliarySheet tab={panel.tab} onClose={selection.closeAuxiliary}>
+            <AuxiliaryContent
+              tab={panel.tab}
+              lanes={lanes}
+              looks={looks}
+              typeNames={typeNames}
+              {...testPlay.analytics}
+            />
           </AuxiliarySheet>
         )}
       </div>
 
       {selection.scheduled && view.detailPanel && (
         <TicketDetailPanel
-          ticket={selection.scheduled.ticket}
+          ticket={selection.scheduled.card}
+          look={looks.get(selection.scheduled.card.key)}
           currentBayId={selection.scheduled.bayId}
           onClose={selection.closeDetail}
           onMoveTicket={selection.move}
@@ -122,23 +119,14 @@ export default function App() {
         />
       )}
 
-      {selection.assignSlotBayId !== null && (
+      {panel?.kind === "assign" && (
         <AssignPanel
-          bayId={selection.assignSlotBayId}
-          baristas={board.baristas}
+          bayId={panel.bayId}
+          lanes={lanes}
           unassignedOrders={session.unassigned}
+          looks={looks}
           onClose={selection.closeAssignSlot}
           onAssign={selection.assign}
-        />
-      )}
-
-      {selection.rebrewSource && (
-        <RebrewPanel
-          ticket={selection.rebrewSource.ticket}
-          sourceBayId={selection.rebrewSource.bayId}
-          baristas={board.baristas}
-          onClose={selection.closeRebrew}
-          onConfirm={selection.rebrew}
         />
       )}
 
@@ -153,7 +141,6 @@ export default function App() {
           onStart={(startMs, durationMinutes) => {
             testPlay.start(startMs, durationMinutes);
             selection.clear();
-            setActiveTab("control");
             setTestSetupOpen(false);
           }}
         />
