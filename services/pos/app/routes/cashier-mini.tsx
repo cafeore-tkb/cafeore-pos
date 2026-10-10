@@ -13,8 +13,6 @@ export const meta: MetaFunction = () => {
 export default function CasherMini() {
   const [logoShown, setLogoShown] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const soundRef1 = useRef<HTMLAudioElement>(null);
-  const soundRef2 = useRef<HTMLAudioElement>(null);
   // レジの編集中注文と確定済み注文は API の WebSocket から受け取る
   const { cashierState, orders } = useOrdersWSContext();
   const order = cashierState?.edittingOrder;
@@ -52,22 +50,6 @@ export default function CasherMini() {
     }
     videoRef.current?.play();
   }, [logoShown]);
-
-  /**
-   * OK
-   */
-  useEffect(() => {
-    if (submittedOrderId === null) {
-      return;
-    }
-    soundRef1.current?.play();
-    const timer = setTimeout(() => {
-      soundRef2.current?.play();
-    }, 500);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [submittedOrderId]);
 
   const textBelowLogo = useMemo(() => {
     if (submittedOrderId != null) {
