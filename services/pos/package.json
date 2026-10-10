@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@cafeore/common": "workspace:*",
-    "@conform-to/react": "^1.2.2",
     "@conform-to/zod": "^1.2.2",
     "@fontsource-variable/noto-sans-jp": "^5.2.9",
     "@fontsource/zen-old-mincho": "^5.1.0",
@@ -30,7 +29,6 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
-    "firebase": "^12.3.0",
     "gsap": "^3.12.5",
     "input-otp": "^1.2.4",
     "isbot": "^5",
@@ -43,7 +41,6 @@
     "react-router": "^7.0.0",
     "recharts": "^2.15.3",
     "sonner": "^1.5.0",
-    "swr": "^2.3.2",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.0",
@@ -55,7 +52,6 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
-    "firebase-tools": "^14.7.0",
     "postcss": "^8.5.2",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.6.3",
@@ -67,5 +63,5 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "trustedDependencies": ["@biomejs/biome", "esbuild", "protobufjs", "re2"]
+  "trustedDependencies": ["@biomejs/biome", "esbuild"]
 }

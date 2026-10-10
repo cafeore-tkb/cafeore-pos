@@ -5,9 +5,3 @@ node_modules
 /public/build
 .env*
 !.env.example
-
-.firebase
-.firebaserc
-firebase-debug.log
-firestore-debug.log
-ui-debug.log

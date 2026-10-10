@@ -98,7 +98,6 @@ jobs:
 
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
-      # pos と mobile で別のコメントになるので、互いに上書きし合わない。
       # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
       COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}

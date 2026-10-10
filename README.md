@@ -9,8 +9,7 @@ Run `pnpm i` to install dependencies.
 |--|--|
 |`pnpm i`| Install dependencies|
 |`pnpm pos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/pos`|
-|~~`pnpm mobile`~~ （停止中）| `services/mobile` 用。再開するときは `package.json` の `//mobile` を `mobile` に戻す|
-|`pnpm common` (`typecheck`\|`test:`(`unit`\|`db`)) | Run commands in `modules/common`|
+|`pnpm common` (`typecheck`\|`test:unit`) | Run commands in `modules/common`|
 
 ## CI / CD
 
@@ -19,10 +18,9 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中。`api-ci` は Docker イメージのビルドも見る。push はしない） |
+| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
@@ -63,9 +61,9 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 
 ### フロントエンド（Cloudflare Workers）
 
-POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプトは持たず、
+POS は `ssr: false` の SPA。Worker のスクリプトは持たず、
 `build/client` を静的アセットとして配信するだけの構成にしている
-（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
+（`services/pos/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
 
 main への push と手動実行では本番へ `wrangler deploy` する。PR（`preview` ラベル付きのみ）では
@@ -74,7 +72,6 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 
 PR ではプレビュー URL を**コメントで貼る**。2回目以降は新しいコメントを足さず、
 同じコメントを書き換える（本文に埋めた目印で自分のコメントを探している）。
-POS と mobile は目印が別なので、それぞれ1件ずつ独立して更新される。
 
 PR のビルドでは、**その PR のリビジョンの URL をビルド前に確定させて**
 `VITE_API_BASE_URL` に焼き込む。
@@ -106,9 +103,8 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 | Worker 名 | 対象 |
 |--|--|
 | `cafeore-pos` | `services/pos` |
-| `cafeore-mobile` | `services/mobile` |
 
-ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
+ローカルからは `pnpm pos deploy` で同じことができる。
 
 ### backend（Artifact Registry → Cloud Run）
 
@@ -297,16 +293,15 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
-| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
-| `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。
