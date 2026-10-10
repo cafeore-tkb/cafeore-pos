@@ -1,4 +1,5 @@
 import { useMasterState } from "@cafeore/common";
+import { useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
+import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 
 const formatMasterStateDate = (value: string) => {
   const date = new Date(value);
@@ -29,11 +31,16 @@ const formatMasterStateDate = (value: string) => {
  * ダッシュボードでオーダーストップの記録を表示するコンポーネント
  */
 export function OrderStatusList() {
-  const { masterStates, isLoading, error } = useMasterState();
+  const { masterStates, isLoading, error, mutateMasterStates } =
+    useMasterState();
+  // 切り替わったら WebSocket で届くので、そのたびに記録を取り直す
+  const { masterState } = useOrdersWSContext();
+  useEffect(() => {
+    if (masterState) mutateMasterStates();
+  }, [masterState, mutateMasterStates]);
 
   if (isLoading) return <div>読み込み中...</div>;
   if (error) return <div>取得失敗</div>;
-  console.log(masterStates);
 
   return (
     <div className="h-162.5 w-1/2 overflow-auto">
@@ -47,6 +54,7 @@ export function OrderStatusList() {
           </TableRow>
         </TableHeader>
         <TableBody>
+          {/* API は古い順に返すので、新しい順に並べ替える */}
           {masterStates
             ?.slice()
             .reverse()
