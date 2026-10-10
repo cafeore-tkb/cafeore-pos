@@ -17,6 +17,8 @@ export const useInventory = () => {
 
   return {
     statuses: data ?? [],
+    // 一度でも届いたか。再取得の失敗では data が残るので、error ではなくこちらで見る
+    isLoaded: data !== undefined,
     error,
     isLoading,
     mutateInventory: mutate,
@@ -31,6 +33,8 @@ export const useStockUsages = () => {
 
   return {
     usages: data ?? [],
+    // 一度でも届いたか。再取得の失敗では data が残るので、error ではなくこちらで見る
+    isLoaded: data !== undefined,
     error,
     isLoading,
     mutateUsages: mutate,

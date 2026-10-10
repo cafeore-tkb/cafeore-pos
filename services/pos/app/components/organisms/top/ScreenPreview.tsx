@@ -18,7 +18,8 @@ export type ScreenKind =
   | "callscreen"
   | "dashboard"
   | "inventory"
-  | "rehearsal";
+  | "rehearsal"
+  | "products";
 
 export function ScreenPreview({ kind }: { kind: ScreenKind }) {
   const Preview = previews[kind];
@@ -41,6 +42,7 @@ const previews: Record<ScreenKind, () => JSX.Element> = {
   dashboard: DashboardPreview,
   inventory: InventoryPreview,
   rehearsal: RehearsalPreview,
+  products: ProductsPreview,
 };
 
 function StatusBar() {
@@ -359,12 +361,11 @@ function InventoryPreview() {
   ] as const;
   return (
     <div className="flex h-full flex-col px-[1em] py-[0.8em]">
-      <span className="font-semibold text-[1.2em]">在庫</span>
-      <div className="mt-[0.3em] flex gap-[0.3em] text-[0.6em]">
-        <span className="rounded bg-stone-900 px-[0.6em] py-[0.2em] text-white">
-          残量
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-[1.2em]">在庫</span>
+        <span className="text-[0.6em] text-stone-500 underline">
+          在庫対象・使用量の設定 →
         </span>
-        <span className="rounded border px-[0.6em] py-[0.2em]">設定</span>
       </div>
       <div className="mt-[0.6em] grid flex-1 grid-cols-2 gap-[0.5em]">
         {resources.map((r) => (
@@ -418,6 +419,80 @@ function RehearsalPreview() {
       <div className="mt-[0.5em] rounded-md border border-green-600 bg-green-50 px-[0.6em] py-[0.3em] text-[0.7em]">
         <span className="font-bold">受付を続けてよい目安です</span>
         <span className="ml-[0.5em] text-stone-600">提供待ち 8 杯</span>
+      </div>
+    </div>
+  );
+}
+
+function ProductsPreview() {
+  const menus = [
+    { name: "優勝ブレンド", key: "-", price: "¥500" },
+    { name: "珈琲・俺ブレンド", key: "^", price: "¥300" },
+    { name: "ケニア", key: ";", price: "¥400" },
+    { name: "アイスコーヒー", key: "\\", price: "¥400" },
+    { name: "トートセット", key: "@", price: "¥1000" },
+  ];
+  return (
+    <div className="flex h-full">
+      <div className="flex flex-1 flex-col px-[1em] py-[0.8em]">
+        <span className="font-semibold text-[1.2em]">商品管理</span>
+        <div className="mt-[0.3em] flex w-fit gap-[0.2em] rounded-md bg-muted p-[0.2em] text-[0.55em]">
+          {["メニュー", "アイテム", "タイプ", "背景色", "在庫"].map(
+            (tab, i) => (
+              <span
+                key={tab}
+                className={cn(
+                  "rounded px-[0.5em] py-[0.15em]",
+                  i === 0 ? "bg-white shadow-sm" : "text-stone-500",
+                )}
+              >
+                {tab}
+              </span>
+            ),
+          )}
+        </div>
+        <div className="mt-[0.5em] divide-y rounded-md border text-[0.7em]">
+          {menus.map((menu, i) => (
+            <div
+              key={menu.name}
+              className={cn(
+                "flex items-center gap-[0.6em] px-[0.6em] py-[0.35em]",
+                i === 2 && "bg-muted",
+              )}
+            >
+              <span className="flex-1 font-semibold">{menu.name}</span>
+              <span className="rounded border px-[0.4em] font-mono">
+                {menu.key}
+              </span>
+              <span className="w-[3.5em] text-right tabular-nums">
+                {menu.price}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex w-[34%] flex-col gap-[0.4em] border-l bg-stone-50 p-[0.7em] text-[0.6em] shadow-[-0.3em_0_0.6em_rgba(0,0,0,0.06)]">
+        <span className="font-semibold text-[1.4em]">アイテムの編集</span>
+        <div>
+          <div className="text-stone-500">名前</div>
+          <div className="rounded border bg-white px-[0.4em] py-[0.2em]">
+            ケニア
+          </div>
+        </div>
+        <div className="rounded border bg-white p-[0.4em]">
+          <div className="font-semibold">在庫の使用量</div>
+          <div className="mt-[0.2em] flex justify-between">
+            <span>ホットカップ</span>
+            <span>1 個</span>
+          </div>
+          <div className="flex justify-between">
+            <span>ケニア豆</span>
+            <span>15 g</span>
+          </div>
+        </div>
+        <span className="mt-auto self-end rounded bg-stone-900 px-[0.8em] py-[0.2em] text-white">
+          保存
+        </span>
       </div>
     </div>
   );
