@@ -5,19 +5,22 @@ import (
 	"net/http"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ItemTypeHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
-	return &ItemTypeHandler{db: db}
+func NewItemTypeHandler(db *gorm.DB, activity *notify.Activity) *ItemTypeHandler {
+	return &ItemTypeHandler{db: db, activity: activity}
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
@@ -65,12 +68,13 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeCreatedMessage(&itemType))
 }
 
 // GET /api/item-types/:id - idからアイテムタイプ取得
 func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -93,7 +97,7 @@ func (h *ItemTypeHandler) GetItemType(c *gin.Context) {
 // PUT /api/item-types/:id - アイテムタイプ更新
 func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
@@ -117,6 +121,8 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 		return
 	}
 
+	before := itemType
+
 	// 更新
 	itemType.Name = req.Name
 	itemType.DisplayName = req.DisplayName
@@ -133,19 +139,22 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeUpdatedMessage(&before, &itemType))
 }
 
 // DELETE /api/item-types/:id - アイテムタイプ削除
 func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	itemTypeID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
-	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.ItemType
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", itemTypeID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -157,4 +166,5 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+	h.activity.Post(itemTypeDeletedMessage(&deleted))
 }

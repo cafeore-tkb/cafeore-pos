@@ -3,6 +3,7 @@ import {
   type InventoryStatus,
   type StockEventKind,
   inventoryRepository,
+  openapiEnumLabels,
   useInventory,
 } from "@cafeore/common";
 import dayjs from "dayjs";
@@ -33,10 +34,10 @@ const fmt = (v: number, digits = 0) =>
 
 const formatHours = (hours: number) => {
   const minutes = Math.round(hours * 60);
-  if (minutes < 60) return `${minutes} 分`;
+  if (minutes < 60) return `${minutes}分`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m === 0 || h >= 10 ? `${h} 時間` : `${h} 時間 ${m} 分`;
+  return m === 0 || h >= 10 ? `${h}時間` : `${h}時間${m}分`;
 };
 
 export default function InventoryPage() {
@@ -82,6 +83,8 @@ function StockCard({
   const [submitting, setSubmitting] = useState(false);
 
   const isCup = resource.kind === "cup";
+  // 杯数で持つ値（残り・バッファ・通知）は、カップなら1杯 = 1個なので個で出す
+  const servingUnit = isCup ? "個" : "杯";
   const style = levelStyle[status.level];
   const remaining = status.remaining ?? null;
   const servings = status.remaining_servings ?? null;
@@ -151,7 +154,7 @@ function StockCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-            {isCup ? "カップ" : "豆"}
+            {openapiEnumLabels("StockResourceKind")[resource.kind]}
           </span>
           <h2 className="font-semibold text-lg">{resource.name}</h2>
         </div>
@@ -169,20 +172,19 @@ function StockCard({
         <div className="font-bold text-3xl tabular-nums">
           {servings == null
             ? "—"
-            : `${fmt(Math.floor(servings))} ${isCup ? "個" : "杯"}`}
+            : `${fmt(Math.floor(servings))}${servingUnit}`}
         </div>
         <div className="text-muted-foreground text-sm tabular-nums">
           {remaining != null &&
             !isCup &&
-            `推定 ${fmt(remaining)} ${resource.unit} ・ `}
-          バッファ {fmt(resource.buffer)} 杯 ・ {fmt(resource.notify_from)}{" "}
-          杯から {fmt(resource.notify_step)} 杯ごとに通知
+            `推定 ${fmt(remaining)}${resource.unit} ・ `}
+          {`バッファ ${fmt(resource.buffer)}${servingUnit} ・ ${fmt(resource.notify_from)}${servingUnit}から ${fmt(resource.notify_step)}${servingUnit}ごとに通知`}
         </div>
       </div>
 
       <div className="text-sm tabular-nums">
-        直近1時間 {status.servings_last_hour} 杯
-        {hoursLeft != null && ` → 約 ${formatHours(hoursLeft)}で切れる見込み`}
+        直近1時間 {status.servings_last_hour}杯
+        {hoursLeft != null && ` → 約${formatHours(hoursLeft)}で切れる見込み`}
       </div>
 
       <div
@@ -192,7 +194,7 @@ function StockCard({
         )}
       >
         {hasCount && countedAt
-          ? `最終棚卸し ${countedAt.format("M/D HH:mm")}（${formatHours(hoursSinceCount)}前）・以降 ${status.servings} 杯`
+          ? `最終棚卸し ${countedAt.format("M/D HH:mm")}（${formatHours(hoursSinceCount)}前）・以降 ${status.servings}杯`
           : "まだ棚卸ししていません"}
       </div>
 
