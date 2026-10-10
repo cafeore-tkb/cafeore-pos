@@ -32,7 +32,7 @@ export function ItemsTab({
   /** 在庫対象と使用量が届いたか。届く前（読み込み中・失敗）は「未設定」と出さない */
   stockLoaded: boolean;
 }) {
-  // 「ホットカップ 1・ケニア豆 15g」のように並べる
+  // 「ホットカップ 1個・ケニア豆 15g」のように並べる
   const stockOf = useMemo(() => {
     const drafts = usageDrafts(stockUsages);
     const sorted = sortResources(resources);
@@ -40,9 +40,7 @@ export function ItemsTab({
       const amounts = drafts[itemId] ?? {};
       return sorted
         .filter((r) => amounts[r.id] !== undefined)
-        .map(
-          (r) => `${r.name} ${amounts[r.id]}${r.kind === "bean" ? r.unit : ""}`,
-        )
+        .map((r) => `${r.name} ${amounts[r.id]}${r.unit}`)
         .join("・");
     };
   }, [stockUsages, resources]);
