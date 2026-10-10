@@ -44,7 +44,7 @@ var jst = time.FixedZone("JST", 9*60*60)
 // caosBrewRequired は、その種類のカップが抽出の要るカップか（ドリッパーに置けるか）を種類の名前で決める。
 // 名前に others（グッズ）も milk（ミルク）も含まない種類は抽出が要る。CaOS で種類の名前を見るのはここだけにする。
 //
-// TODO: C1（#807 の makes_cup・needs_brew・senior_only・iced_brew）が main に入ったら、
+// TODO: C1（#855・#859 の makes_cup・needs_brew・senior_only・iced_brew）と CaOS3 のうち後から main に入る方で、
 // 名前で決めるのをやめ、種類の項目を読む形（ItemType.BrewRequired()）に戻す。
 func caosBrewRequired(typeName string) bool {
 	return !strings.Contains(typeName, "others") && !strings.Contains(typeName, "milk")
