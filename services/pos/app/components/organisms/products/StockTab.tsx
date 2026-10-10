@@ -344,7 +344,10 @@ function UsagesSection({
     const next = { ...draft };
     for (const item of sortedItems) {
       const amounts = next[item.id] ?? {};
-      if (cups.some((cup) => amounts[cup.id])) continue;
+      // 保存と同じく、空欄と 0 は「使わない」なのでカップが空とみなす
+      const used = toUsageInputs(amounts);
+      if (cups.some((cup) => used.some((u) => u.resource_id === cup.id)))
+        continue;
       empty++;
       const cupId = item.item_type.id && cupOfType.get(item.item_type.id);
       if (!cupId) continue;
