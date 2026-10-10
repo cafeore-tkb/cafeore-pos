@@ -1,4 +1,9 @@
-import type { ItemEntity, WithId } from "@cafeore/common";
+import type {
+  ItemEntity,
+  StockResource,
+  StockUsage,
+  WithId,
+} from "@cafeore/common";
 import { useMemo } from "react";
 import {
   Table,
@@ -8,14 +13,48 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { sortResources, usageDrafts } from "~/lib/stock";
 import { RowActions, type RowHandlers } from "./RowActions";
 import type { Usage } from "./usage";
 
 export function ItemsTab({
   items,
   usage,
+  resources,
+  stockUsages,
+  stockLoaded,
   ...handlers
-}: RowHandlers & { items: WithId<ItemEntity>[]; usage: Usage }) {
+}: RowHandlers & {
+  items: WithId<ItemEntity>[];
+  usage: Usage;
+  resources: StockResource[];
+  stockUsages: StockUsage[];
+  /** 在庫対象と使用量が届いたか。届く前（読み込み中・失敗）は「未設定」と出さない */
+  stockLoaded: boolean;
+}) {
+  // 「ホットカップ 1個・ケニア豆 15g」のように並べる
+  const stockOf = useMemo(() => {
+    const drafts = usageDrafts(stockUsages);
+    const sorted = sortResources(resources);
+    return (itemId: string) => {
+      const amounts = drafts[itemId] ?? {};
+      return sorted
+        .filter((r) => amounts[r.id] !== undefined)
+        .map((r) => `${r.name} ${amounts[r.id]}${r.unit}`)
+        .join("・");
+    };
+  }, [stockUsages, resources]);
+
+  // 使用量が入っているアイテムがあるタイプ。そうでないタイプ（グッズなど）は未設定でも目立たせない
+  const countedTypes = useMemo(() => {
+    const used = new Set(stockUsages.map((u) => u.item_id));
+    return new Set(
+      items
+        .filter((item) => used.has(item.id))
+        .map((item) => item.item_type.id),
+    );
+  }, [items, stockUsages]);
+
   const groups = useMemo(() => {
     const byType = new Map<string, WithId<ItemEntity>[]>();
     for (const item of items) {
@@ -54,7 +93,8 @@ export function ItemsTab({
               <TableRow>
                 <TableHead>名前</TableHead>
                 <TableHead className="w-32">略称</TableHead>
-                <TableHead className="w-48">使っているメニュー</TableHead>
+                <TableHead className="w-40">使っているメニュー</TableHead>
+                <TableHead className="w-52">在庫の使用量</TableHead>
                 <TableHead className="w-60">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -75,6 +115,11 @@ export function ItemsTab({
                     >
                       {menus.length === 0 ? "なし" : `${menus.length}件`}
                     </TableCell>
+                    <StockCell
+                      text={stockOf(item.id)}
+                      loaded={stockLoaded}
+                      warn={countedTypes.has(item.item_type.id)}
+                    />
                     <TableCell>
                       <RowActions id={item.id} {...handlers} />
                     </TableCell>
@@ -86,5 +131,33 @@ export function ItemsTab({
         </section>
       ))}
     </div>
+  );
+}
+
+function StockCell({
+  text,
+  loaded,
+  warn,
+}: {
+  text: string;
+  loaded: boolean;
+  warn: boolean;
+}) {
+  if (!loaded) {
+    return <TableCell />;
+  }
+  if (text) {
+    return (
+      <TableCell className="truncate text-sm" title={text}>
+        {text}
+      </TableCell>
+    );
+  }
+  return (
+    <TableCell
+      className={warn ? "text-amber-600 text-sm" : "text-muted-foreground"}
+    >
+      未設定
+    </TableCell>
   );
 }

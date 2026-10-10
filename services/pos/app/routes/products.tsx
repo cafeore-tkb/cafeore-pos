@@ -2,8 +2,10 @@ import {
   itemRepository,
   itemTypeRepository,
   menuRepository,
+  useInventory,
   useItemMaster,
   useMenuMaster,
+  useStockUsages,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
@@ -74,6 +76,9 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
+  const { statuses, isLoaded: inventoryLoaded } = useInventory();
+  const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
+  const { usages, isLoaded: usagesLoaded } = useStockUsages();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -167,6 +172,9 @@ export default function ProductsPage() {
               <ItemsTab
                 items={items}
                 usage={usageOfItems}
+                resources={resources}
+                stockUsages={usages}
+                stockLoaded={inventoryLoaded && usagesLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>
