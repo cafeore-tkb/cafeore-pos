@@ -18,6 +18,16 @@ const TYPE_HOT = "11111111-1111-4111-8111-111111111111";
 const ITEM_MILK = "22222222-2222-4222-8222-222222222222";
 const MENU_OLD = "33333333-3333-4333-8333-333333333333";
 
+const hotType = {
+  id: TYPE_HOT,
+  name: "hot",
+  display_name: "ホット",
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
+};
+
 const emptySnapshot: MasterSnapshot = {
   item_types: [],
   items: [],
@@ -26,13 +36,13 @@ const emptySnapshot: MasterSnapshot = {
 };
 
 const snapshot: MasterSnapshot = {
-  item_types: [{ id: TYPE_HOT, name: "hot", display_name: "ホット" }],
+  item_types: [hotType],
   items: [
     {
       id: ITEM_MILK,
       name: "ミルク",
       abbr: "ミ",
-      item_type: { id: TYPE_HOT, name: "hot", display_name: "ホット" },
+      item_type: hotType,
     },
   ],
   menus: [
@@ -73,7 +83,14 @@ describe("[unit] openapi-schemas.json", () => {
 
   test("columns follow the request schemas", () => {
     expect(MASTER_COLUMNS).toEqual({
-      item_types: ["name", "display_name"],
+      item_types: [
+        "name",
+        "display_name",
+        "makes_cup",
+        "needs_brew",
+        "senior_only",
+        "iced_brew",
+      ],
       items: ["name", "abbr", "item_type"],
       menus: ["name", "abbr", "price", "key"],
       menu_items: ["menu", "item", "quantity"],
@@ -284,7 +301,7 @@ describe("[unit] planMasterImport", () => {
         ...snapshot,
         item_types: [
           ...snapshot.item_types,
-          { id: MENU_OLD, name: "hot", display_name: "ホット2" },
+          { ...hotType, id: MENU_OLD, display_name: "ホット2" },
         ],
       },
     );
