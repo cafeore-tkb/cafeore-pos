@@ -1,7 +1,6 @@
 import {
   OrderEntity,
   cashierRepository,
-  orderRepository,
   orderSchema,
   stringToJSONSchema,
   useMenuMaster,
@@ -14,6 +13,7 @@ import {
   useSubmit,
 } from "react-router";
 import { z } from "zod";
+import { saveOrderInBackground } from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -34,16 +34,6 @@ export default function Cashier() {
     [isDeviceOnline, status],
   );
 
-  const submitPayload = useCallback(
-    (newOrder: OrderEntity) => {
-      submit(
-        { newOrder: JSON.stringify(newOrder.toOrder()) },
-        { method: "POST" },
-      );
-    },
-    [submit],
-  );
-
   const syncOrder = useCallback(
     (order: OrderEntity) => {
       submit({ syncOrder: JSON.stringify(order.toOrder()) }, { method: "PUT" });
@@ -57,7 +47,7 @@ export default function Cashier() {
       orders={orders}
       wsStatus={status}
       canSubmitOrder={canSubmitOrder}
-      submitPayload={submitPayload}
+      submitPayload={saveOrderInBackground}
       syncOrder={syncOrder}
     />
   );
@@ -67,38 +57,11 @@ export default function Cashier() {
 export const clientAction: ClientActionFunction = async (args) => {
   const method = args.request.method;
   switch (method) {
-    case "POST":
-      return submitOrderAction(args);
     case "PUT":
       return syncOrderAction(args);
     default:
       return new Response("Method not allowed", { status: 405 });
   }
-};
-
-export const submitOrderAction: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
-
-  const schema = z.object({
-    newOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { newOrder } = submission.value;
-  const order = OrderEntity.fromOrder(newOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
-  await cashierRepository.setSubmittedOrder(savedOrder);
-
-  return new Response("ok");
 };
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {

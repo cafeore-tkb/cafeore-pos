@@ -34,13 +34,19 @@ export const orderRepoFactory = (): OrderRepository => {
     return responseToOrderEntity(data);
   };
 
-  const create = async (order: OrderEntity): Promise<WithId<OrderEntity>> => {
+  const create = async (
+    order: OrderEntity,
+    idempotencyKey?: string,
+  ): Promise<WithId<OrderEntity>> => {
     const { data, error, response } = await client.POST("/api/orders", {
-      body: orderEntityToCreateRequest(order),
+      body: {
+        ...orderEntityToCreateRequest(order),
+        idempotency_key: idempotencyKey,
+      },
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to create item");
+      await throwApiError(response, "Failed to create order", error);
     }
 
     const returnedOrder = responseToOrderEntity(data);
@@ -51,11 +57,11 @@ export const orderRepoFactory = (): OrderRepository => {
   };
 
   return {
-    save: async (order) => {
+    save: async (order, options) => {
       if (hasId(order)) {
         return await update(order.id, order);
       }
-      return await create(order);
+      return await create(order, options?.idempotencyKey);
     },
 
     ready: async (id: string): Promise<void> => {
