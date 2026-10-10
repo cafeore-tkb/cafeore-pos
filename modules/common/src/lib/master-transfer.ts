@@ -271,6 +271,13 @@ const PENDING_ID = "00000000-0000-0000-0000-000000000000";
 
 const refKey = (table: MasterTable, name: string) => `${table}:${name}`;
 
+const ITEM_TYPE_FLAGS = [
+  "makes_cup",
+  "needs_brew",
+  "senior_only",
+  "iced_brew",
+] as const;
+
 // ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない。
 // CodeQL がガードと認めるよう、キーごとにその場で比べる
 const setAt = (
@@ -476,6 +483,18 @@ export const planMasterImport = (
       existing.item_types.has(n),
     );
     if (name !== null) creating.item_types.add(name);
+    // API では省略すると既定値（カップを作る・抽出が要る）になり、種類の扱いが入る前に書き出したファイルだと
+    // ミルクやグッズもカップになるので、取り込みでは必須にする
+    const missingFlags = ITEM_TYPE_FLAGS.filter(
+      (flag) => row.values[flag] == null,
+    );
+    if (missingFlags.length > 0) {
+      report(
+        row,
+        missingFlags.join(" / "),
+        "値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+      );
+    }
     addCall(
       {
         table: "item_types",
