@@ -33,6 +33,8 @@ const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
       assignee && !preferredBaristaId ? `（指名:${assignee}）` : "";
     for (const { item, quantity } of line.items) {
       // アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。
+      // needs_brew を見ないのは、このファイルは CaOS3（#862）でファイルごと消え、新しい CaOS は caos-board.ts（#861）の
+      // itemMakesCup などで決めるから。そちらを C1 の項目に置き換えるのは、C1 と CaOS3 のうち後から main に入る方でやる
       if (
         item.item_type.name === "others" ||
         item.item_type.name === "milk" ||

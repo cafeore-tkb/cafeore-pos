@@ -59,6 +59,13 @@ const snapshot: MasterSnapshot = {
 };
 
 // CSV と同じく値は文字列で渡す
+const hotFlags = {
+  makes_cup: "true",
+  needs_brew: "true",
+  senior_only: "false",
+  iced_brew: "false",
+};
+
 const rowsOf = (tables: Partial<Record<keyof MasterRows, object[]>>) => {
   const rows: MasterRows = {
     item_types: [],
@@ -182,7 +189,7 @@ describe("[unit] planMasterImport", () => {
           { menu: "w", item: "ミルク", quantity: "2" },
         ],
         items: [{ name: "エスプレッソ", abbr: "エ", item_type: "ice" }],
-        item_types: [{ name: "ice", display_name: "アイス" }],
+        item_types: [{ name: "ice", display_name: "アイス", ...hotFlags }],
         color_settings: [
           {
             target_type: "ItemType",
@@ -254,9 +261,9 @@ describe("[unit] planMasterImport", () => {
     const plan = planMasterImport(
       rowsOf({
         item_types: [
-          { name: "hot", display_name: "ホット" },
-          { name: "ice", display_name: "アイス" },
-          { name: "ice", display_name: "アイス2" },
+          { name: "hot", display_name: "ホット", ...hotFlags },
+          { name: "ice", display_name: "アイス", ...hotFlags },
+          { name: "ice", display_name: "アイス2", ...hotFlags },
         ],
         menus: [{ name: "旧", abbr: "旧", price: "400", key: "old" }],
         menu_items: [{ menu: "old", item: "ミルク", quantity: "1" }],
@@ -292,6 +299,38 @@ describe("[unit] planMasterImport", () => {
       "color_settings.csv 2行目・target_type: 「Menu」は使えません（Item / ItemType のどれか）",
       "color_settings.csv 2行目・color: 「red」が決まった形（^#[0-9a-fA-F]{6}$）になっていません",
     ]);
+  });
+
+  test("requires the item type flags that older exports do not have", () => {
+    const plan = planMasterImport(
+      rowsOf({
+        item_types: [
+          { name: "milk", display_name: "ミルク" },
+          { name: "goods", display_name: "グッズ", makes_cup: "true" },
+          {
+            name: "others",
+            display_name: "その他",
+            makes_cup: "false",
+            needs_brew: "false",
+            senior_only: "false",
+            iced_brew: "false",
+          },
+        ],
+      }),
+      emptySnapshot,
+    );
+    expect(plan.problems).toEqual([
+      "item_types.csv 2行目・makes_cup / needs_brew / senior_only / iced_brew: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+      "item_types.csv 3行目・needs_brew / senior_only / iced_brew: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+    ]);
+    expect(plan.calls[2].body).toEqual({
+      name: "others",
+      display_name: "その他",
+      makes_cup: false,
+      needs_brew: false,
+      senior_only: false,
+      iced_brew: false,
+    });
   });
 
   test("refuses ambiguous references to existing rows", () => {
@@ -339,6 +378,16 @@ describe("[unit] export", () => {
         },
       ],
     });
+    expect(tables.item_types).toEqual([
+      {
+        name: "hot",
+        display_name: "ホット",
+        makes_cup: true,
+        needs_brew: true,
+        senior_only: false,
+        iced_brew: false,
+      },
+    ]);
     expect(tables.menu_items).toEqual([
       { menu: "old", item: "ミルク", quantity: 2 },
     ]);

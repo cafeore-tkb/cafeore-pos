@@ -272,7 +272,8 @@ function UsagesSection({ resources }: { resources: StockResource[] }) {
   const sortedItems = useMemo(
     () =>
       [...items]
-        .filter((item) => item.item_type.name !== "others")
+        // カップを作らない種類（グッズなど）はカップも豆も使わない
+        .filter((item) => item.item_type.makes_cup)
         .sort(
           (a, b) =>
             a.item_type.display_name.localeCompare(
