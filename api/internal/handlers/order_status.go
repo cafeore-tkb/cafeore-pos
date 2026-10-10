@@ -24,10 +24,6 @@ import (
 
 var errOrderCupNotFound = errors.New("order cup not found")
 
-func sameTime(a, b *time.Time) bool {
-	return a != nil && b != nil && a.Equal(*b)
-}
-
 // 全カップに時刻が付いていれば一番遅い時刻を、1つでも欠けていれば nil を返す
 func allCupsAt(cups []models.OrderCup, at func(*models.OrderCup) *time.Time) *time.Time {
 	var latest *time.Time
@@ -73,7 +69,7 @@ func toggleOrderReady(order *models.Order, now time.Time) {
 	}
 	prev := order.ReadyAt
 	for i := range cups {
-		if cups[i].ServedAt == nil && sameTime(cups[i].ReadyAt, prev) {
+		if cups[i].ServedAt == nil && timeEqual(cups[i].ReadyAt, prev) {
 			cups[i].ReadyAt = nil
 		}
 	}
@@ -108,13 +104,13 @@ func toggleOrderServed(order *models.Order, now time.Time) {
 	prev := order.ServedAt
 	unserve := func(cup *models.OrderCup) {
 		// 提供と同時に付いた ready_at だけ外す
-		if sameTime(cup.ReadyAt, cup.ServedAt) {
+		if timeEqual(cup.ReadyAt, cup.ServedAt) {
 			cup.ReadyAt = nil
 		}
 		cup.ServedAt = nil
 	}
 	for i := range cups {
-		if sameTime(cups[i].ServedAt, prev) {
+		if timeEqual(cups[i].ServedAt, prev) {
 			unserve(&cups[i])
 		}
 	}
@@ -137,14 +133,39 @@ func findOrderCup(order *models.Order, cupID uuid.UUID) *models.OrderCup {
 	return nil
 }
 
+// markCupsReady は注文のカップのうち match に合うものを準備完了にし（もう準備完了のカップは時刻を変えない）、
+// 注文の状態をカップから決め直す。カップか注文の状態を変えたら true を返す。
+// カップの準備完了（PATCH /api/orders/:id/cups/:cupId/ready）と、CaOS の「次へ」で使う。
+func markCupsReady(order *models.Order, match func(*models.OrderCup) bool, now time.Time) bool {
+	matched, changed := false, false
+	for i := range order.OrderCups {
+		cup := &order.OrderCups[i]
+		if !match(cup) {
+			continue
+		}
+		matched = true
+		if cup.ReadyAt == nil {
+			cup.ReadyAt = &now
+			changed = true
+		}
+	}
+	if !matched {
+		return false
+	}
+	readyAt, servedAt := order.ReadyAt, order.ServedAt
+	syncOrderWithCups(order)
+	return changed || !timeEqual(readyAt, order.ReadyAt) || !timeEqual(servedAt, order.ServedAt)
+}
+
 // PATCH /api/orders/:id/cups/:cupId/ready の切り替え
 func toggleCupReady(order *models.Order, cup *models.OrderCup, now time.Time) {
 	if cup.ReadyAt == nil {
-		cup.ReadyAt = &now
-	} else {
-		// 準備完了でないカップは提供済みにもできない
-		cup.ReadyAt, cup.ServedAt = nil, nil
+		// cup は order.OrderCups の中を指す（findOrderCup）ので、ポインタで比べる
+		markCupsReady(order, func(c *models.OrderCup) bool { return c == cup }, now)
+		return
 	}
+	// 準備完了でないカップは提供済みにもできない
+	cup.ReadyAt, cup.ServedAt = nil, nil
 	syncOrderWithCups(order)
 }
 
@@ -156,16 +177,12 @@ func toggleCupServed(order *models.Order, cup *models.OrderCup, now time.Time) {
 			cup.ReadyAt = &now
 		}
 	} else {
-		if sameTime(cup.ReadyAt, cup.ServedAt) {
+		if timeEqual(cup.ReadyAt, cup.ServedAt) {
 			cup.ReadyAt = nil
 		}
 		cup.ServedAt = nil
 	}
 	syncOrderWithCups(order)
-}
-
-func timeEqual(a, b *time.Time) bool {
-	return (a == nil && b == nil) || sameTime(a, b)
 }
 
 // 変更前（before）から変わった注文・カップだけを保存する。

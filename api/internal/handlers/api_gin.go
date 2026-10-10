@@ -14,6 +14,12 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS が決めたことを注文のカップに書く
+	// (PUT /api/caos/cups)
+	WriteCaosCups(c *gin.Context)
+	// CaOS の「次へ」
+	// (POST /api/caos/drippers/{dripper}/next)
+	AdvanceCaosDripper(c *gin.Context, dripper int)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -150,6 +156,43 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// WriteCaosCups operation middleware
+func (siw *ServerInterfaceWrapper) WriteCaosCups(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.WriteCaosCups(c)
+}
+
+// AdvanceCaosDripper operation middleware
+func (siw *ServerInterfaceWrapper) AdvanceCaosDripper(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdvanceCaosDripper(c, dripper)
+}
 
 // GetCashierState operation middleware
 func (siw *ServerInterfaceWrapper) GetCashierState(c *gin.Context) {
@@ -984,6 +1027,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
+	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)

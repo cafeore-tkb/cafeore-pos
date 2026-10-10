@@ -38,7 +38,7 @@ func TestToggleCupServedUpdatesOrderOnlyWhenAllCupsServed(t *testing.T) {
 	}
 
 	toggleCupServed(order, &order.OrderCups[1], t2)
-	if cupStates(order) != "ss" || !sameTime(order.ServedAt, &t2) || !sameTime(order.ReadyAt, &t2) {
+	if cupStates(order) != "ss" || !timeEqual(order.ServedAt, &t2) || !timeEqual(order.ReadyAt, &t2) {
 		t.Fatalf("order must be served when all cups are served: %s %+v", cupStates(order), order)
 	}
 
@@ -53,11 +53,11 @@ func TestToggleCupServedKeepsEarlierReady(t *testing.T) {
 	t0, t1 := time.Now(), time.Now().Add(time.Minute)
 	toggleOrderReady(order, t0)
 	toggleCupServed(order, &order.OrderCups[0], t1)
-	if cupStates(order) != "sr" || !sameTime(order.ReadyAt, &t0) || order.ServedAt != nil {
+	if cupStates(order) != "sr" || !timeEqual(order.ReadyAt, &t0) || order.ServedAt != nil {
 		t.Fatalf("serving one cup of a calling order must keep it calling: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[0], t1)
-	if cupStates(order) != "rr" || !sameTime(order.ReadyAt, &t0) {
+	if cupStates(order) != "rr" || !timeEqual(order.ReadyAt, &t0) {
 		t.Fatalf("unserving must return the cup to ready: %s %+v", cupStates(order), order)
 	}
 }
@@ -70,7 +70,7 @@ func TestToggleCupReady(t *testing.T) {
 		t.Fatalf("partially ready order must not be ready: %s %+v", cupStates(order), order)
 	}
 	toggleCupReady(order, &order.OrderCups[1], t2)
-	if cupStates(order) != "rr" || !sameTime(order.ReadyAt, &t2) {
+	if cupStates(order) != "rr" || !timeEqual(order.ReadyAt, &t2) {
 		t.Fatalf("order must be ready when all cups are ready: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[0], t2)
@@ -86,10 +86,10 @@ func TestToggleOrderReadyAppliesToCups(t *testing.T) {
 	toggleCupReady(order, &order.OrderCups[0], t0)
 
 	toggleOrderReady(order, t1)
-	if cupStates(order) != "rr" || !sameTime(order.ReadyAt, &t1) {
+	if cupStates(order) != "rr" || !timeEqual(order.ReadyAt, &t1) {
 		t.Fatalf("ready order must make all cups ready: %s %+v", cupStates(order), order)
 	}
-	if !sameTime(order.OrderCups[0].ReadyAt, &t0) || !sameTime(order.OrderCups[1].ReadyAt, &t1) {
+	if !timeEqual(order.OrderCups[0].ReadyAt, &t0) || !timeEqual(order.OrderCups[1].ReadyAt, &t1) {
 		t.Fatalf("already ready cups keep their time, others get the order's time: %+v", order.OrderCups)
 	}
 
@@ -128,10 +128,10 @@ func TestToggleOrderServedAppliesToCups(t *testing.T) {
 	toggleCupServed(order, &order.OrderCups[0], t1)
 
 	toggleOrderServed(order, t2)
-	if cupStates(order) != "ss" || !sameTime(order.ServedAt, &t2) || !sameTime(order.ReadyAt, &t2) {
+	if cupStates(order) != "ss" || !timeEqual(order.ServedAt, &t2) || !timeEqual(order.ReadyAt, &t2) {
 		t.Fatalf("served order must serve all cups: %s %+v", cupStates(order), order)
 	}
-	if !sameTime(order.OrderCups[0].ServedAt, &t1) || !sameTime(order.OrderCups[1].ServedAt, &t2) {
+	if !timeEqual(order.OrderCups[0].ServedAt, &t1) || !timeEqual(order.OrderCups[1].ServedAt, &t2) {
 		t.Fatalf("already served cups keep their time: %+v", order.OrderCups)
 	}
 
@@ -148,7 +148,7 @@ func TestToggleOrderServedUndoReturnsToCalling(t *testing.T) {
 	toggleOrderReady(order, t0)
 	toggleOrderServed(order, t1)
 	toggleOrderServed(order, t1)
-	if cupStates(order) != "rr" || !sameTime(order.ReadyAt, &t0) || order.ServedAt != nil {
+	if cupStates(order) != "rr" || !timeEqual(order.ReadyAt, &t0) || order.ServedAt != nil {
 		t.Fatalf("undo must return to the calling state: %s %+v", cupStates(order), order)
 	}
 
@@ -166,7 +166,7 @@ func TestToggleOrderStatusWithoutCups(t *testing.T) {
 	order := &models.Order{}
 	now := time.Now()
 	toggleOrderServed(order, now)
-	if !sameTime(order.ServedAt, &now) || !sameTime(order.ReadyAt, &now) {
+	if !timeEqual(order.ServedAt, &now) || !timeEqual(order.ReadyAt, &now) {
 		t.Fatalf("order without cups must be served: %+v", order)
 	}
 	toggleOrderServed(order, now)
