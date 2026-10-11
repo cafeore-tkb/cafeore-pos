@@ -14,11 +14,20 @@
   // 公開したままにしたくない場合は、ここを false にして配信自体を止めること。
   "preview_urls": true,
 
-  // main（Worker のスクリプト）を持たない、静的アセットだけの Worker。
-  // react-router は ssr: false なので、出荷するのは build/client の中身だけ。
+  // 画面は静的アセット（react-router は ssr: false なので build/client の中身だけ）。
+  // スクリプトは API への中継だけを受け持つ（worker/index.ts の冒頭を参照）。
+  //
+  // 中継先は API_ORIGIN。デプロイの workflow が --var で渡すので、ここには書かない
+  // （ここに書くと、渡さなかったデプロイで古い値が残る）。
+  "main": "./worker/index.ts",
+
   "assets": {
     "directory": "./build/client",
+    "binding": "ASSETS",
     // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // この3つだけはアセットより先にスクリプトへ回す。無いと上のフォールバックで
+    // index.html が返り、API に届かない。**worker/index.ts の API_PATH と揃えること。**
+    "run_worker_first": ["/api/*", "/status", "/health"]
   }
 }
