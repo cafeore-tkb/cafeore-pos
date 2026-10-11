@@ -5,18 +5,146 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"cafeore-pos/api/internal/models"
 )
 
 // グッズだけの注文（カップが1つもできない注文）を、作成・編集のときに提供済みにする（Issue #733）。
-// POST / PUT /api/orders を本物の Postgres で通す。DB は在庫の消費のテスト（inventory_consumption_test.go）と
-// 同じものを使う：TEST_DATABASE_URL を渡したときだけ動く。
+// POST / PUT /api/orders を本物の Postgres で通す。TEST_DATABASE_URL を渡したときだけ動く。
+// 渡した DB の中身には触らず、テストごとに使い捨ての schema を作って終わったら消すので、
+// ほかの DB のテストと同じ DB を指しても壊し合わない。
+//
+//	TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres go test ./internal/handlers/ -run GoodsOnly
+//
+// TODO: #790 がマージされたら、この準備は #790 の api/internal/testdb（testdb.New）に寄せる
+// （TEST_DATABASE_URL を読む・無ければスキップ・CI では落とす、の決まりも testdb にまとまっている）。
+// 今はまだ testdb が無いので、ここで同じ形の準備をしている。CI に Postgres が無いうちは落とさずスキップする。
 
-func (e *inventoryEnv) orderAPI() *gin.Engine {
+type orderDBEnv struct {
+	t  *testing.T
+	db *gorm.DB
+}
+
+func newOrderDBEnv(t *testing.T) *orderDBEnv {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
+	}
+	e := &orderDBEnv{t: t, db: openTestSchema(t, dsn)}
+	e.must(e.db.AutoMigrate(models.All()...))
+	return e
+}
+
+// テストごとに使い捨ての schema を作って開き、終わったら消す。uuid_generate_v4() は DB の public に入れ、
+// search_path を「その schema,public」にして使う（#790 の testdb.New と同じ形）。
+func openTestSchema(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+	open := func(dsn string) *gorm.DB {
+		t.Helper()
+		db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}),
+			&gorm.Config{Logger: logger.Discard, DisableForeignKeyConstraintWhenMigrating: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		return db
+	}
+
+	admin := open(dsn)
+	// ほかのテスト（別のパッケージのテストのプロセスを含む）と同時に入れてもぶつからないよう、advisory lock で 1 つずつにする
+	if err := admin.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(0x7465737464627831)).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public`).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す
+	t.Cleanup(func() {
+		if err := admin.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
+			t.Errorf("failed to drop schema %s: %v", schema, err)
+		}
+	})
+	return open(withSearchPath(t, dsn, schema+",public"))
+}
+
+// 接続文字列に search_path を足す（どの接続もその schema を見るように）。URL でも key=value でもよい。
+func withSearchPath(t *testing.T, dsn, searchPath string) string {
+	t.Helper()
+	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+		return dsn + " search_path=" + searchPath
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", searchPath)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func (e *orderDBEnv) must(err error) {
+	e.t.Helper()
+	if err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func (e *orderDBEnv) itemType(name string) models.ItemType {
+	e.t.Helper()
+	it := models.ItemType{Name: name, DisplayName: name}
+	e.must(e.db.Create(&it).Error)
+	return it
+}
+
+// カップを作らない種類（グッズ）。種類の名前ではなく makes_cup で見分けるので、名前は others でなくてよい。
+func (e *orderDBEnv) goodsType(name string) models.ItemType {
+	e.t.Helper()
+	it := models.ItemType{Name: name, DisplayName: name, MakesCup: boolPtr(false), NeedsBrew: boolPtr(false)}
+	e.must(e.db.Create(&it).Error)
+	return it
+}
+
+func (e *orderDBEnv) item(name string, typ models.ItemType) models.Item {
+	e.t.Helper()
+	item := models.Item{Name: name, Abbr: name, ItemTypeID: typ.ID}
+	e.must(e.db.Create(&item).Error)
+	return item
+}
+
+func (e *orderDBEnv) menu(key string, items ...models.MenuItem) models.Menu {
+	e.t.Helper()
+	menu := models.Menu{Name: key, Abbr: key, Price: 500, Key: key}
+	e.must(e.db.Create(&menu).Error)
+	for _, mi := range items {
+		mi.MenuID = menu.ID
+		e.must(e.db.Create(&mi).Error)
+	}
+	return menu
+}
+
+func (e *orderDBEnv) orderAPI() *gin.Engine {
 	e.t.Helper()
 	gin.SetMode(gin.TestMode)
 	hub := NewHub()
@@ -28,7 +156,7 @@ func (e *inventoryEnv) orderAPI() *gin.Engine {
 	return r
 }
 
-func (e *inventoryEnv) sendOrder(r *gin.Engine, method, path string, body any, wantStatus int) models.OrderResponse {
+func (e *orderDBEnv) sendOrder(r *gin.Engine, method, path string, body any, wantStatus int) models.OrderResponse {
 	e.t.Helper()
 	data, err := json.Marshal(body)
 	e.must(err)
@@ -65,7 +193,7 @@ func updateRequest(resp models.OrderResponse, added ...models.Menu) models.Order
 }
 
 func TestCreateOrderServesGoodsOnlyOrder(t *testing.T) {
-	e := newInventoryEnv(t)
+	e := newOrderDBEnv(t)
 	r := e.orderAPI()
 	hot, milk, goodsType := e.itemType("hot"), e.itemType("milk"), e.goodsType("物販")
 	blend, iceMilk, bag := e.item("ブレンド", hot), e.item("アイスミルク", milk), e.item("ドリップバッグ", goodsType)
@@ -92,7 +220,7 @@ func TestCreateOrderServesGoodsOnlyOrder(t *testing.T) {
 }
 
 func TestUpdateOrderServesOrderThatBecomesGoodsOnly(t *testing.T) {
-	e := newInventoryEnv(t)
+	e := newOrderDBEnv(t)
 	r := e.orderAPI()
 	hot, goodsType := e.itemType("hot"), e.goodsType("物販")
 	blend, bag := e.item("ブレンド", hot), e.item("ドリップバッグ", goodsType)
