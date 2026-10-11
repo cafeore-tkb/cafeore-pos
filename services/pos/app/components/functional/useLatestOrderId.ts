@@ -25,19 +25,23 @@ const useOrderIdOverride = () => {
 
 /**
  * オーダーのIDの最大値と次のIDを取得する
+ * 保存がまだ届いていない（遅い・失敗した）注文と同じ番号にならないよう、このレジが最後に出した番号も数える
  * @param orders オーダーのリスト
- * @returns 次のID、手動指定値、およびオーバーライド用の setter（null で自動に戻す）
+ * @returns 次のID、手動指定値、オーバーライド用の setter（null で自動に戻す）、出した番号を覚える関数
  */
 const useLatestOrderId = (orders: WithId<OrderEntity>[] | undefined) => {
   const { manualOrderId, setOrderIdOverride } = useOrderIdOverride();
+  const [lastIssuedOrderId, setLastIssuedOrderId] = useState(0);
 
   const latestOrderId = useMemo(() => calcLatestOrderId(orders), [orders]);
-  const nextOrderId = manualOrderId ?? latestOrderId + 1;
+  const nextOrderId =
+    manualOrderId ?? Math.max(latestOrderId, lastIssuedOrderId) + 1;
 
   return {
     nextOrderId,
     manualOrderId,
     setOrderIdOverride,
+    markOrderIdIssued: setLastIssuedOrderId,
   };
 };
 
