@@ -41,7 +41,14 @@ export type EposBuilder = {
   addCut: (type: string) => unknown;
 };
 
-type EposPrinterDevice = EposBuilder & { send: () => unknown };
+/** プリンターの返事（ePOS の onreceive）。success が false なら code に理由（用紙切れなど） */
+type EposResponse = { success: boolean; code: string };
+
+type EposPrinterDevice = EposBuilder & {
+  send: () => unknown;
+  onreceive: ((response: EposResponse) => void) | null;
+  onerror: ((error: unknown) => void) | null;
+};
 
 type EposDevice = {
   DEVICE_TYPE_PRINTER: string;
@@ -78,6 +85,8 @@ export type EposPrinterConfig = {
   trailingFeedLines: number;
   /** 送った後に紙を切るか（レシート用のプリンター） */
   cut: boolean;
+  /** 送ってから返事を待つ時間（ミリ秒）。来なければ刷れなかったとみなし、つなぎ直すまで送らない */
+  responseTimeoutMs: number;
 };
 
 /** 今使っているプリンター（ラベル用） */
@@ -88,6 +97,7 @@ export const DEFAULT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   logoKey: [32, 32],
   trailingFeedLines: 7,
   cut: false,
+  responseTimeoutMs: 30_000,
 };
 
 /** レシート用のプリンター。刷るたびに紙を切る */
@@ -234,15 +244,51 @@ export const createEposPrinter = (
     });
   };
 
+  // 1 件ずつ送り、返事を待ってから次を送る（返事がどの印刷のものか取り違えないように）
+  const send = (job: PrintJob) =>
+    new Promise<boolean>((resolve) => {
+      const target = device;
+      if (!target) {
+        onStatusChange("disconnected");
+        console.error("Printer not connected");
+        resolve(false);
+        return;
+      }
+      const finish = (printed: boolean) => {
+        clearTimeout(timer);
+        target.onreceive = null;
+        target.onerror = null;
+        resolve(printed);
+      };
+      // 返事が来ないときは、つながりが切れたとみなす（つなぎ直すまで送らない）
+      const timer = setTimeout(() => {
+        console.error("ePOS print timed out");
+        disconnect();
+        onStatusChange("disconnected");
+        finish(false);
+      }, config.responseTimeoutMs);
+      target.onreceive = (response) => {
+        if (!response.success)
+          console.error("ePOS print failed:", response.code);
+        finish(response.success);
+      };
+      target.onerror = (error) => {
+        console.error("ePOS print error:", error);
+        finish(false);
+      };
+      try {
+        writeEposJob(target, job, config);
+        target.send();
+      } catch (error) {
+        console.error("ePOS print failed:", error);
+        finish(false);
+      }
+    });
+
+  let last = Promise.resolve(true);
   const print = (job: PrintJob) => {
-    if (!device) {
-      onStatusChange("disconnected");
-      console.error("Printer not connected");
-      return false;
-    }
-    writeEposJob(device, job, config);
-    device.send();
-    return true;
+    last = last.then(() => send(job));
+    return last;
   };
 
   return { connect, disconnect, print };
