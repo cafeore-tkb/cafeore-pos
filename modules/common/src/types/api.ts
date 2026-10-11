@@ -175,8 +175,17 @@ export interface paths {
      * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
      * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
      * 今日（日本時間）の注文の、抽出が要るカップだけ。
+     * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
      */
     post: operations["createCupEmergencies"];
+  };
+  "/api/cup-emergencies/{id}": {
+    /**
+     * 緊急（入れ直し）を取り消す
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+     * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     */
+    delete: operations["deleteCupEmergency"];
   };
   "/api/caos/lanes/{dripper}": {
     /**
@@ -814,6 +823,10 @@ export interface components {
     CupEmergencyCreateRequest: {
       /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
       order_cup_ids: string[];
+    };
+    CupEmergencyCreateResponse: {
+      /** @description 足した入れ直しの id（order_cup_ids と同じ順） */
+      ids: string[];
     };
     CaosNextRequest: {
       /**
@@ -1812,6 +1825,7 @@ export interface operations {
    * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
    * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
    * 今日（日本時間）の注文の、抽出が要るカップだけ。
+   * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
    */
   createCupEmergencies: {
     requestBody: {
@@ -1821,8 +1835,10 @@ export interface operations {
     };
     responses: {
       /** @description 足した */
-      204: {
-        content: never;
+      201: {
+        content: {
+          "application/json": components["schemas"]["CupEmergencyCreateResponse"];
+        };
       };
       /** @description 形の違うリクエスト・決まりに合わない（何も足さない）。error を画面にそのまま出す */
       400: {
@@ -1831,6 +1847,36 @@ export interface operations {
         };
       };
       /** @description カップが消えた（何も足さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急（入れ直し）を取り消す
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+   * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   */
+  deleteCupEmergency: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消した */
+      204: {
+        content: never;
+      };
+      /** @description 抽出を始めた入れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

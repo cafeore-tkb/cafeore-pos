@@ -254,6 +254,12 @@ type CupEmergencyCreateRequest struct {
 	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
 }
 
+// CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
+type CupEmergencyCreateResponse struct {
+	// Ids 足した入れ直しの id（order_cup_ids と同じ順）
+	Ids []openapi_types.UUID `json:"ids"`
+}
+
 // CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
 type CupEmergencyResponse struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`

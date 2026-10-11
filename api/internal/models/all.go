@@ -21,6 +21,7 @@ func All() []any {
 		&StockResource{},
 		&StockResourceItemType{},
 		&OrderStockUsage{},
+		&CupEmergencyStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
 		&DripperAssignee{},

@@ -296,7 +296,7 @@ func main() {
 	colorSettingHandler := handlers.NewColorSettingHandler(db, activity)
 	printerSettingHandler := handlers.NewPrinterSettingHandler(db)
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
-	caosHandler := handlers.NewCaosHandler(db, hub)
+	caosHandler := handlers.NewCaosHandler(db, hub, inventory)
 	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
 	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
 	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
@@ -395,6 +395,7 @@ func main() {
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
 		api.POST("/cup-emergencies", caosHandler.CreateCupEmergencies)
+		api.DELETE("/cup-emergencies/:id", caosHandler.DeleteCupEmergency)
 		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
 		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
 

@@ -111,7 +111,7 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 		for range hub.broadcast {
 		}
 	}()
-	f := &caosFixture{db: db, hub: hub, caos: NewCaosHandler(db, hub), orders: NewOrderHandler(db, hub, nil)}
+	f := &caosFixture{db: db, hub: hub, caos: NewCaosHandler(db, hub, nil), orders: NewOrderHandler(db, hub, nil)}
 	// 抽出が要るかは種類の needs_brew で決める（ミルクはカップを作るが抽出は要らない）
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	milk := models.ItemType{Name: "milk", DisplayName: "ミルク", NeedsBrew: boolPtr(false)}

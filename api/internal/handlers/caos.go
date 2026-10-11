@@ -48,12 +48,14 @@ var jst = time.FixedZone("JST", 9*60*60)
 type CaosHandler struct {
 	db  *gorm.DB
 	hub *Hub
+	// 緊急（入れ直し）で増減した在庫の通知
+	inventory *Inventory
 	// 今の時刻（テストで差し替える）。今日の範囲と、抽出の開始・終了の時刻に使う（iPad の時計は使わない）
 	now func() time.Time
 }
 
-func NewCaosHandler(db *gorm.DB, hub *Hub) *CaosHandler {
-	return &CaosHandler{db: db, hub: hub, now: time.Now}
+func NewCaosHandler(db *gorm.DB, hub *Hub, inventory *Inventory) *CaosHandler {
+	return &CaosHandler{db: db, hub: hub, inventory: inventory, now: time.Now}
 }
 
 // caosToday は今日（日本時間）の始まりと終わり。CaOS は作成日時がこの間の注文だけを見る。
@@ -728,6 +730,11 @@ func (h *CaosHandler) respond(c *gin.Context, orderIDs []uuid.UUID, err error) {
 	}
 	c.Status(http.StatusNoContent)
 	c.Writer.WriteHeaderNow()
+	h.publish(orderIDs)
+}
+
+// publish は書いた注文を配る（応答を書いてから呼ぶ）。
+func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
 	for _, id := range orderIDs {
 		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("caos: failed to publish order %s: %v", id, err)

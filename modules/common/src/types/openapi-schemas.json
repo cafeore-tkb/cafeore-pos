@@ -1008,6 +1008,20 @@
       }
     }
   },
+  "CupEmergencyCreateResponse": {
+    "type": "object",
+    "required": ["ids"],
+    "properties": {
+      "ids": {
+        "type": "array",
+        "description": "足した入れ直しの id（order_cup_ids と同じ順）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
   "CaosNextRequest": {
     "type": "object",
     "required": ["drip_id"],
