@@ -5,6 +5,7 @@ import { API_BASE_URL } from "./item";
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 export type SquareStatus = components["schemas"]["SquareStatusResponse"];
+export type SquareDevice = components["schemas"]["SquareDeviceResponse"];
 export type SquareCheckout = components["schemas"]["SquareCheckoutResponse"];
 export type SquarePaymentType = components["schemas"]["SquarePaymentType"];
 export type SquareCheckoutOutcome =
@@ -59,11 +60,13 @@ export const squareRepository = {
    * 端末に決済画面を出す
    *
    * idempotencyKey は決済ごとに1つ作り、再送では同じ値を使う（二重に画面が出ない）。
-   * 別の決済が進行中なら SquareCheckoutConflictError を投げる。
+   * 同じ端末で別の決済が進行中なら SquareCheckoutConflictError を投げる。
    * Square が受け付けなかったときは outcome が failed の決済依頼を返す。
    */
   async createCheckout(params: {
     idempotencyKey: string;
+    /** 決済画面を出す端末（ペアリング済みの端末の device_id） */
+    deviceId: string;
     amount: number;
     paymentType: SquarePaymentType;
     orderNumber: number | null;
@@ -73,6 +76,7 @@ export const squareRepository = {
       {
         body: {
           idempotency_key: params.idempotencyKey,
+          device_id: params.deviceId,
           amount: params.amount,
           payment_type: params.paymentType,
           order_number: params.orderNumber,
@@ -125,5 +129,59 @@ export const squareRepository = {
       throw new Error(errorMessage(error, "未登録の決済を取得できません"));
     }
     return data;
+  },
+
+  /** 登録した端末とペアリング待ちのコード（ペアリング待ちはサーバーが Square に問い合わせる） */
+  async listDevices(): Promise<SquareDevice[]> {
+    const { data, error } = await client.GET("/api/square/devices");
+    if (!data) {
+      throw new Error(errorMessage(error, "Square 端末の一覧を取得できません"));
+    }
+    return data;
+  },
+
+  /** 端末をペアリングするコードを発行する。返ってきた code を端末に入力する */
+  async pairDevice(name: string): Promise<SquareDevice> {
+    const { data, error } = await client.POST("/api/square/devices/pair", {
+      body: { name },
+    });
+    if (!data) {
+      throw new Error(errorMessage(error, "コードを発行できませんでした"));
+    }
+    return data;
+  },
+
+  /** ペアリングせずに device_id を登録する（Sandbox のテスト用 device_id など） */
+  async registerDevice(params: {
+    name: string;
+    deviceId: string;
+  }): Promise<SquareDevice> {
+    const { data, error } = await client.POST("/api/square/devices", {
+      body: { name: params.name, device_id: params.deviceId },
+    });
+    if (!data) {
+      throw new Error(errorMessage(error, "端末を登録できませんでした"));
+    }
+    return data;
+  },
+
+  /** Square でペアリング済みの端末のうち、まだ登録していないものを取り込む。取り込んだ端末を返す */
+  async importDevices(): Promise<SquareDevice[]> {
+    const { data, error } = await client.POST("/api/square/devices/import");
+    if (!data) {
+      throw new Error(errorMessage(error, "端末を取り込めませんでした"));
+    }
+    return data;
+  },
+
+  /** 端末を一覧から外す（端末は Square にサインインしたまま） */
+  async deleteDevice(id: string): Promise<void> {
+    const { error, response } = await client.DELETE(
+      "/api/square/devices/{id}",
+      { params: { path: { id } } },
+    );
+    if (!response.ok) {
+      throw new Error(errorMessage(error, "端末を外せませんでした"));
+    }
   },
 };

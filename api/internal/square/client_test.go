@@ -109,6 +109,38 @@ func TestGetPaymentReadsAmounts(t *testing.T) {
 	}
 }
 
+func TestListDeviceCodesFollowsCursor(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/devices/codes" {
+			t.Errorf("unexpected endpoint: %s %s", r.Method, r.URL.Path)
+		}
+		queries = append(queries, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("cursor") == "" {
+			_, _ = w.Write([]byte(`{"device_codes":[{"id":"c1","device_id":"d1","status":"PAIRED","product_type":"TERMINAL_API"}],"cursor":"next"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"device_codes":[{"id":"c2","device_id":"d2","status":"PAIRED","product_type":"TERMINAL_API"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	codes, err := NewClient(server.URL, "token").ListDeviceCodes(context.Background(), ListDeviceCodesParams{
+		ProductType: "TERMINAL_API", Status: "PAIRED",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(codes) != 2 || codes[0].ID != "c1" || codes[1].DeviceID != "d2" {
+		t.Fatalf("unexpected codes: %+v", codes)
+	}
+	// 空の項目（location_id）は送らず、2 ページ目は cursor を付けて取る。
+	want := []string{"product_type=TERMINAL_API&status=PAIRED", "cursor=next&product_type=TERMINAL_API&status=PAIRED"}
+	if len(queries) != 2 || queries[0] != want[0] || queries[1] != want[1] {
+		t.Fatalf("unexpected queries: %v", queries)
+	}
+}
+
 func TestErrorResponseIsReturnedAsAPIError(t *testing.T) {
 	client, _ := newTestServer(t, http.StatusBadRequest, `{"errors":[{"category":"INVALID_REQUEST_ERROR","code":"NOT_FOUND","detail":"Device not found","field":"device_id"}]}`)
 	_, err := client.GetTerminalCheckout(context.Background(), "abc")

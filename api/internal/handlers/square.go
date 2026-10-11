@@ -52,13 +52,16 @@ type squareAPI interface {
 	GetTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	CancelTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	GetPayment(ctx context.Context, paymentID string) (*square.Payment, error)
+	CreateDeviceCode(ctx context.Context, idempotencyKey string, code square.DeviceCode) (*square.DeviceCode, error)
+	GetDeviceCode(ctx context.Context, id string) (*square.DeviceCode, error)
+	ListDeviceCodes(ctx context.Context, params square.ListDeviceCodesParams) ([]square.DeviceCode, error)
 }
 
 // SquareConfig は環境変数から読む Square 連携の設定。
 type SquareConfig struct {
 	AccessToken         string // SQUARE_ACCESS_TOKEN
 	Environment         string // SQUARE_ENVIRONMENT（production / sandbox）
-	DeviceID            string // SQUARE_DEVICE_ID（ペアリングで得た端末の ID）
+	LocationID          string // SQUARE_LOCATION_ID（端末をペアリングする店舗。空ならアカウントの既定の店舗）
 	WebhookSignatureKey string // SQUARE_WEBHOOK_SIGNATURE_KEY
 	WebhookURL          string // SQUARE_WEBHOOK_URL（Developer Console に登録した通知 URL そのまま）
 }
@@ -67,7 +70,7 @@ type SquareHandler struct {
 	db                  *gorm.DB
 	client              squareAPI // 未設定なら nil
 	environment         string
-	deviceID            string
+	locationID          string
 	webhookSignatureKey string
 	webhookURL          string
 	now                 func() time.Time
@@ -75,7 +78,8 @@ type SquareHandler struct {
 
 // NewSquareHandler は設定から SquareHandler を作る。
 //
-// アクセストークンか端末 ID が無ければ連携を無効にする（エンドポイントは 503）。
+// アクセストークンが無ければ連携を無効にする（エンドポイントは 503）。決済に使う
+// 端末は環境変数ではなく DB（models.SquareDevice）に持ち、管理画面でペアリングする。
 // 環境の指定が不正なときだけエラーを返す。本番のつもりで sandbox に向けて
 // しまうと、決済したつもりで売上が立たないため、黙って既定値にしない。
 func NewSquareHandler(db *gorm.DB, config SquareConfig) (*SquareHandler, error) {
@@ -90,12 +94,12 @@ func NewSquareHandler(db *gorm.DB, config SquareConfig) (*SquareHandler, error) 
 	handler := &SquareHandler{
 		db:                  db,
 		environment:         environment,
-		deviceID:            config.DeviceID,
+		locationID:          config.LocationID,
 		webhookSignatureKey: config.WebhookSignatureKey,
 		webhookURL:          config.WebhookURL,
 		now:                 time.Now,
 	}
-	if config.AccessToken != "" && config.DeviceID != "" {
+	if config.AccessToken != "" {
 		handler.client = square.NewClient(baseURL, config.AccessToken)
 	}
 	return handler, nil
@@ -226,6 +230,7 @@ func toSquareCheckoutResponse(checkout *models.SquareCheckout, now time.Time) mo
 	}
 	return models.SquareCheckoutResponse{
 		Id:           openapi_types.UUID(checkout.ID),
+		DeviceId:     checkout.DeviceID,
 		CheckoutId:   checkout.CheckoutID,
 		Status:       checkout.Status,
 		Outcome:      squareCheckoutOutcome(checkout, now),
@@ -256,6 +261,9 @@ const squareIdempotencyKeyMaxLength = 64
 func validateSquareCheckoutRequest(req models.SquareCheckoutCreateRequest) error {
 	if req.IdempotencyKey == "" || len(req.IdempotencyKey) > squareIdempotencyKeyMaxLength {
 		return fmt.Errorf("idempotency_key は 1〜%d 文字にしてください", squareIdempotencyKeyMaxLength)
+	}
+	if req.DeviceId == "" {
+		return errors.New("device_id を指定してください（レジで Square 端末を選んでください）")
 	}
 	if req.Amount < 1 {
 		return errors.New("amount は 1 円以上にしてください")
@@ -351,7 +359,7 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 進行中かどうかは Square に問い合わせないと分からない。ロックを取る前に最新にしておく。
-	if err := h.refreshActiveCandidates(ctx); err != nil {
+	if err := h.refreshActiveCandidates(ctx, req.DeviceId); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -359,7 +367,7 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 	record := models.SquareCheckout{
 		ID:             uuid.New(),
 		IdempotencyKey: req.IdempotencyKey,
-		DeviceID:       h.deviceID,
+		DeviceID:       req.DeviceId,
 		Amount:         req.Amount,
 		PaymentType:    string(req.PaymentType),
 		Status:         squareStatusCreating,
@@ -386,15 +394,28 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 			return err
 		}
 
-		// 端末は 1 台なので、進行中の依頼があるうちは新しく出さない。
+		// 外した端末や、他で調べた device_id には出さない。
+		registered, err := isRegisteredSquareDevice(tx, req.DeviceId)
+		if err != nil {
+			return err
+		}
+		if !registered {
+			return errSquareDeviceNotRegistered
+		}
+
+		// 同じ端末に進行中の依頼があるうちは新しく出さない。
 		// 前の依頼の結果を見ないまま次を出すと、どちらで支払われたか分からなくなる。
-		active, err = findActiveCheckout(tx, h.now())
+		active, err = findActiveCheckout(tx, h.now(), req.DeviceId)
 		if err != nil || active != nil {
 			return err
 		}
 		// CREATING の行が、Square から応答が来るまでの間も次の依頼を止める。
 		return tx.Create(&record).Error
 	})
+	if errors.Is(err, errSquareDeviceNotRegistered) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -446,11 +467,12 @@ func buildTerminalCheckout(record *models.SquareCheckout) square.TerminalCheckou
 // 値に意味は無く、他で同じキーを使わなければよい（起動時のマイグレーションは 7_204_215_001）。
 const squareCheckoutLockKey = 7_204_215_002
 
-// activeCheckoutCandidates は、結果がまだ決まっていないかもしれない依頼を新しい順に返す。
-func activeCheckoutCandidates(db *gorm.DB, now time.Time) ([]models.SquareCheckout, error) {
+// activeCheckoutCandidates は、その端末で結果がまだ決まっていないかもしれない依頼を新しい順に返す。
+func activeCheckoutCandidates(db *gorm.DB, now time.Time, deviceID string) ([]models.SquareCheckout, error) {
 	var candidates []models.SquareCheckout
 	err := db.
-		Where("status NOT IN ? AND created_at > ?",
+		Where("device_id = ? AND status NOT IN ? AND created_at > ?",
+			deviceID,
 			[]string{squareStatusCompleted, squareStatusError},
 			now.Add(-(squareCheckoutDeadline + squareTimeoutGrace + time.Minute))).
 		Order("created_at DESC").
@@ -458,10 +480,10 @@ func activeCheckoutCandidates(db *gorm.DB, now time.Time) ([]models.SquareChecko
 	return candidates, err
 }
 
-// refreshActiveCandidates は進行中かもしれない依頼を Square に問い合わせて最新にする。
+// refreshActiveCandidates はその端末で進行中かもしれない依頼を Square に問い合わせて最新にする。
 // Square の応答待ちの間に作成のロックを持ち続けないよう、ロックの外で呼ぶ。
-func (h *SquareHandler) refreshActiveCandidates(ctx context.Context) error {
-	candidates, err := activeCheckoutCandidates(h.db, h.now())
+func (h *SquareHandler) refreshActiveCandidates(ctx context.Context, deviceID string) error {
+	candidates, err := activeCheckoutCandidates(h.db, h.now(), deviceID)
 	if err != nil {
 		return err
 	}
@@ -471,10 +493,10 @@ func (h *SquareHandler) refreshActiveCandidates(ctx context.Context) error {
 	return nil
 }
 
-// findActiveCheckout は結果がまだ決まっていない依頼を返す。無ければ nil。
+// findActiveCheckout はその端末で結果がまだ決まっていない依頼を返す。無ければ nil。
 // Square には問い合わせず、DB の記録だけで決める（先に refreshActiveCandidates で最新にしておく）。
-func findActiveCheckout(db *gorm.DB, now time.Time) (*models.SquareCheckout, error) {
-	candidates, err := activeCheckoutCandidates(db, now)
+func findActiveCheckout(db *gorm.DB, now time.Time, deviceID string) (*models.SquareCheckout, error) {
+	candidates, err := activeCheckoutCandidates(db, now, deviceID)
 	if err != nil {
 		return nil, err
 	}

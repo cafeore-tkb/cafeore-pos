@@ -2,6 +2,7 @@ import { type SquareCheckout, squareRepository } from "@cafeore/common";
 import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
 import { useState } from "react";
 import useSWR from "swr";
+import type { PairedSquareDevice } from "../functional/useSquareDevice";
 import { Button } from "../ui/button";
 import {
   Sheet,
@@ -22,6 +23,8 @@ const timeFormat = new Intl.DateTimeFormat("ja-JP", {
 });
 
 type Props = {
+  /** 端末の名前を出すのに使う。外された端末は device_id をそのまま出す */
+  devices: PairedSquareDevice[];
   /** 入力中の注文の請求額 */
   currentBillingAmount: number;
   /** 入力中の注文を今送れるか（商品があり、通信できる） */
@@ -37,6 +40,7 @@ type Props = {
  * 同じ注文を入力し直して、その決済に結び付けて送れる（Square で二重に決済しない）。
  */
 export const SquareUnlinkedNotice = ({
+  devices,
   currentBillingAmount,
   canSubmit,
   onSubmitWithCheckout,
@@ -93,6 +97,10 @@ export const SquareUnlinkedNotice = ({
                 <div className="flex justify-between text-stone-500">
                   <span>
                     {timeFormat.format(new Date(checkout.created_at))}
+                    {" ・ "}
+                    {devices.find(
+                      (device) => device.device_id === checkout.device_id,
+                    )?.name ?? checkout.device_id}
                   </span>
                   <span>
                     {squarePaymentTypeLabel[

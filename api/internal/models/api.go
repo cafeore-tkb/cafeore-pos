@@ -45,6 +45,13 @@ const (
 	Pending   SquareCheckoutOutcome = "pending"
 )
 
+// Defines values for SquareDeviceStatus.
+const (
+	EXPIRED  SquareDeviceStatus = "EXPIRED"
+	PAIRED   SquareDeviceStatus = "PAIRED"
+	UNPAIRED SquareDeviceStatus = "UNPAIRED"
+)
+
 // Defines values for SquarePaymentType.
 const (
 	CARDPRESENT SquarePaymentType = "CARD_PRESENT"
@@ -374,6 +381,9 @@ type SquareCheckoutCreateRequest struct {
 	// Amount 請求額（円）
 	Amount int `json:"amount"`
 
+	// DeviceId 決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id
+	DeviceId string `json:"device_id"`
+
 	// IdempotencyKey レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする
 	IdempotencyKey string `json:"idempotency_key"`
 
@@ -397,8 +407,11 @@ type SquareCheckoutResponse struct {
 	CancelReason *string `json:"cancel_reason"`
 
 	// CheckoutId Square の TerminalCheckout の id
-	CheckoutId   *string            `json:"checkout_id"`
-	CreatedAt    time.Time          `json:"created_at"`
+	CheckoutId *string   `json:"checkout_id"`
+	CreatedAt  time.Time `json:"created_at"`
+
+	// DeviceId 決済画面を出した端末
+	DeviceId     string             `json:"device_id"`
 	ErrorMessage *string            `json:"error_message"`
 	Id           openapi_types.UUID `json:"id"`
 
@@ -422,6 +435,48 @@ type SquareCheckoutResponse struct {
 	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// SquareDeviceCreateRequest defines model for SquareDeviceCreateRequest.
+type SquareDeviceCreateRequest struct {
+	DeviceId string `json:"device_id"`
+	Name     string `json:"name"`
+}
+
+// SquareDevicePairRequest defines model for SquareDevicePairRequest.
+type SquareDevicePairRequest struct {
+	// Name 管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る
+	Name string `json:"name"`
+}
+
+// SquareDeviceResponse defines model for SquareDeviceResponse.
+type SquareDeviceResponse struct {
+	// Code 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る
+	Code      *string   `json:"code"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DeviceId 端末の ID。決済の依頼に使う。PAIRED になるまで null
+	DeviceId *string            `json:"device_id"`
+	Id       openapi_types.UUID `json:"id"`
+
+	// Name 管理画面とレジで出す名前（例 レジ1）
+	Name string `json:"name"`
+
+	// PairBy コードの期限。これを過ぎると EXPIRED になる
+	PairBy *time.Time `json:"pair_by"`
+
+	// Status 端末のペアリングの状態（Square の Device Code の status）。
+	//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+	//   - PAIRED: ペアリング済み。決済に使える
+	//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+	Status    SquareDeviceStatus `json:"status"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
+// SquareDeviceStatus 端末のペアリングの状態（Square の Device Code の status）。
+//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+//   - PAIRED: ペアリング済み。決済に使える
+//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+type SquareDeviceStatus string
 
 // SquarePaymentType Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
 type SquarePaymentType string
@@ -581,6 +636,12 @@ type CreateOrderCommentJSONRequestBody = CommentCreateRequest
 
 // CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
 type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest
+
+// CreateSquareDeviceJSONRequestBody defines body for CreateSquareDevice for application/json ContentType.
+type CreateSquareDeviceJSONRequestBody = SquareDeviceCreateRequest
+
+// PairSquareDeviceJSONRequestBody defines body for PairSquareDevice for application/json ContentType.
+type PairSquareDeviceJSONRequestBody = SquareDevicePairRequest
 
 // ReceiveSquareWebhookJSONRequestBody defines body for ReceiveSquareWebhook for application/json ContentType.
 type ReceiveSquareWebhookJSONRequestBody = ReceiveSquareWebhookJSONBody

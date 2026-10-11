@@ -149,6 +149,21 @@ type ServerInterface interface {
 	// 決済依頼を取り消す
 	// (POST /api/square/checkouts/{id}/cancel)
 	CancelSquareCheckout(c *gin.Context, id openapi_types.UUID)
+	// Square 端末の一覧
+	// (GET /api/square/devices)
+	GetSquareDevices(c *gin.Context)
+	// device_id を直接登録する
+	// (POST /api/square/devices)
+	CreateSquareDevice(c *gin.Context)
+	// Square でペアリング済みの端末を取り込む
+	// (POST /api/square/devices/import)
+	ImportSquareDevices(c *gin.Context)
+	// 端末をペアリングするコード（Device Code）を発行する
+	// (POST /api/square/devices/pair)
+	PairSquareDevice(c *gin.Context)
+	// 端末を一覧から外す
+	// (DELETE /api/square/devices/{id})
+	DeleteSquareDevice(c *gin.Context, id openapi_types.UUID)
 	// Square 連携が使えるか
 	// (GET /api/square/status)
 	GetSquareStatus(c *gin.Context)
@@ -1036,6 +1051,82 @@ func (siw *ServerInterfaceWrapper) CancelSquareCheckout(c *gin.Context) {
 	siw.Handler.CancelSquareCheckout(c, id)
 }
 
+// GetSquareDevices operation middleware
+func (siw *ServerInterfaceWrapper) GetSquareDevices(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSquareDevices(c)
+}
+
+// CreateSquareDevice operation middleware
+func (siw *ServerInterfaceWrapper) CreateSquareDevice(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateSquareDevice(c)
+}
+
+// ImportSquareDevices operation middleware
+func (siw *ServerInterfaceWrapper) ImportSquareDevices(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ImportSquareDevices(c)
+}
+
+// PairSquareDevice operation middleware
+func (siw *ServerInterfaceWrapper) PairSquareDevice(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PairSquareDevice(c)
+}
+
+// DeleteSquareDevice operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSquareDevice(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteSquareDevice(c, id)
+}
+
 // GetSquareStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetSquareStatus(c *gin.Context) {
 
@@ -1147,6 +1238,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/square/checkouts/unlinked", wrapper.GetUnlinkedSquareCheckouts)
 	router.GET(options.BaseURL+"/api/square/checkouts/:id", wrapper.GetSquareCheckout)
 	router.POST(options.BaseURL+"/api/square/checkouts/:id/cancel", wrapper.CancelSquareCheckout)
+	router.GET(options.BaseURL+"/api/square/devices", wrapper.GetSquareDevices)
+	router.POST(options.BaseURL+"/api/square/devices", wrapper.CreateSquareDevice)
+	router.POST(options.BaseURL+"/api/square/devices/import", wrapper.ImportSquareDevices)
+	router.POST(options.BaseURL+"/api/square/devices/pair", wrapper.PairSquareDevice)
+	router.DELETE(options.BaseURL+"/api/square/devices/:id", wrapper.DeleteSquareDevice)
 	router.GET(options.BaseURL+"/api/square/status", wrapper.GetSquareStatus)
 	router.POST(options.BaseURL+"/api/square/webhook", wrapper.ReceiveSquareWebhook)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)
