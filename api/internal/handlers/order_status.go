@@ -197,7 +197,7 @@ func saveOrderStatus(tx *gorm.DB, before, order *models.Order) error {
 // 注文の行をロックしてから、明細とカップを読む。
 // 同じ注文への操作（状態の変更や編集）が重なっても、片方の変更が消えないようにする。
 func lockOrder(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
-	return lockOrderWith(tx.Preload("OrderMenus"), orderID)
+	return lockOrderWith(tx.Preload("OrderMenus.StockUsages"), orderID)
 }
 
 // 状態の変更ではカップしか使わないので、明細は読まない

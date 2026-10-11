@@ -70,7 +70,14 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 	item.ItemTypeID = itemTypeID
 
-	if err := h.db.Create(&item).Error; err != nil {
+	// アイテムの在庫も一緒に作る
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&item).Error; err != nil {
+			return err
+		}
+		stock := models.NewItemStockResource(item.ID)
+		return tx.Create(&stock).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -171,13 +178,22 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.Item{}, "id = ?", itemID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	// アイテムの在庫も一緒に論理削除する。消す前の注文で減った量は注文の側に残っているので変わらない
+	var affected int64
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&models.Item{}, "id = ?", itemID)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		return tx.Where("item_id = ?", itemID).Delete(&models.StockResource{}).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if result.RowsAffected == 0 {
+	if affected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
 	}

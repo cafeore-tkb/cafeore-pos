@@ -301,6 +301,7 @@
       "created_at",
       "billing_amount",
       "received",
+      "payment_method",
       "menus",
       "cups"
     ],
@@ -338,6 +339,9 @@
       },
       "discount_order_cups": {
         "type": "integer"
+      },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
       },
       "menus": {
         "type": "array",
@@ -384,6 +388,15 @@
       "discount_order_cups": {
         "type": "integer",
         "default": 0
+      },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
       },
       "menu_ids": {
         "type": "array",
@@ -644,27 +657,28 @@
   },
   "StockResourceKind": {
     "type": "string",
-    "enum": ["cup", "bean"],
-    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"]
+    "description": "item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ",
+    "enum": ["item", "cup"],
+    "x-enum-varnames": ["StockResourceKindItem", "StockResourceKindCup"],
+    "x-enum-descriptions": ["アイテム", "カップ"]
   },
   "StockResourceRequest": {
     "type": "object",
-    "required": [
-      "kind",
-      "name",
-      "unit",
-      "per_serving",
-      "notify_from",
-      "notify_step",
-      "buffer"
-    ],
+    "description": "name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400",
+    "required": ["unit", "per_serving", "notify_from", "notify_step", "buffer"],
     "properties": {
-      "kind": {
-        "$ref": "#/components/schemas/StockResourceKind"
-      },
       "name": {
         "type": "string",
+        "description": "カップの名前（カップでは必須）",
         "example": "ホットカップ"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "unit": {
         "type": "string",
@@ -674,42 +688,90 @@
       "per_serving": {
         "type": "number",
         "format": "double",
-        "description": "1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）",
+        "description": "1 回で減る量。残量を杯数に換算するのにも使う（豆 15、コースター 1、カップ 1）",
+        "minimum": 0,
+        "not": {
+          "enum": [0]
+        },
         "example": 1
       },
       "notify_from": {
         "type": "integer",
         "description": "残りがこの杯数を切ったら通知を始める",
+        "minimum": 0,
         "example": 500
       },
       "notify_step": {
         "type": "integer",
         "description": "notify_from から何杯減るごとに通知するか",
+        "minimum": 0,
         "example": 100
       },
       "buffer": {
         "type": "integer",
         "description": "最低限残したい杯数。これを切ると危険扱い",
+        "minimum": 0,
         "example": 100
       }
     }
   },
   "StockResourceResponse": {
-    "allOf": [
-      {
-        "$ref": "#/components/schemas/StockResourceRequest"
+    "type": "object",
+    "required": [
+      "id",
+      "kind",
+      "item_id",
+      "name",
+      "item_type_ids",
+      "unit",
+      "per_serving",
+      "notify_from",
+      "notify_step",
+      "buffer"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
       },
-      {
-        "type": "object",
-        "required": ["id"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          }
+      "kind": {
+        "$ref": "#/components/schemas/StockResourceKind"
+      },
+      "item_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "アイテムの在庫ならそのアイテム。カップは null"
+      },
+      "name": {
+        "type": "string",
+        "description": "アイテムの在庫ならアイテムの名前、カップならカップの名前"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類（アイテムの在庫は空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
         }
+      },
+      "unit": {
+        "type": "string"
+      },
+      "per_serving": {
+        "type": "number",
+        "format": "double"
+      },
+      "notify_from": {
+        "type": "integer"
+      },
+      "notify_step": {
+        "type": "integer"
+      },
+      "buffer": {
+        "type": "integer"
       }
-    ]
+    }
   },
   "InventoryLevel": {
     "type": "string",
@@ -854,25 +916,6 @@
       }
     }
   },
-  "StockUsage": {
-    "type": "object",
-    "required": ["item_id", "resource_id", "amount"],
-    "properties": {
-      "item_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "resource_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "amount": {
-        "type": "number",
-        "format": "double",
-        "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
-      }
-    }
-  },
   "InventoryRemindResponse": {
     "type": "object",
     "required": ["sent"],
@@ -882,6 +925,233 @@
       },
       "reason": {
         "type": "string"
+      }
+    }
+  },
+  "PaymentMethod": {
+    "type": "string",
+    "enum": ["cash", "square"],
+    "default": "cash",
+    "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
+  },
+  "SquarePaymentType": {
+    "type": "string",
+    "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
+    "description": "Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）"
+  },
+  "SquareCheckoutOutcome": {
+    "type": "string",
+    "enum": ["pending", "paid", "failed", "attention"],
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: まだ決まっていない。待つ\n  - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい\n  - failed: 取り消された・失敗した。お金は受け取っていない\n  - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある\n"
+  },
+  "SquareStatusResponse": {
+    "type": "object",
+    "required": ["enabled", "environment", "webhook_enabled"],
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "environment": {
+        "type": "string",
+        "description": "production か sandbox"
+      },
+      "webhook_enabled": {
+        "type": "boolean"
+      }
+    }
+  },
+  "SquareDeviceStatus": {
+    "type": "string",
+    "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+  },
+  "SquareDeviceResponse": {
+    "type": "object",
+    "required": ["id", "name", "status", "created_at", "updated_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string",
+        "description": "管理画面とレジで出す名前（例 レジ1）"
+      },
+      "status": {
+        "$ref": "#/components/schemas/SquareDeviceStatus"
+      },
+      "device_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末の ID。決済の依頼に使う。PAIRED になるまで null"
+      },
+      "code": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+      },
+      "pair_by": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "コードの期限。これを過ぎると EXPIRED になる"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareDevicePairRequest": {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る"
+      }
+    }
+  },
+  "SquareDeviceCreateRequest": {
+    "type": "object",
+    "required": ["name", "device_id"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      }
+    }
+  },
+  "SquareCheckoutCreateRequest": {
+    "type": "object",
+    "required": ["idempotency_key", "device_id", "amount", "payment_type"],
+    "properties": {
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id"
+      },
+      "idempotency_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "請求額（円）"
+      },
+      "payment_type": {
+        "$ref": "#/components/schemas/SquarePaymentType"
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true,
+        "description": "依頼時点の注文番号（端末のメモと照合の表示に使う）"
+      }
+    }
+  },
+  "SquareCheckoutResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "device_id",
+      "status",
+      "outcome",
+      "amount",
+      "payment_type",
+      "payment_ids",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "device_id": {
+        "type": "string",
+        "description": "決済画面を出した端末"
+      },
+      "checkout_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の TerminalCheckout の id"
+      },
+      "status": {
+        "type": "string",
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+      },
+      "outcome": {
+        "$ref": "#/components/schemas/SquareCheckoutOutcome"
+      },
+      "cancel_reason": {
+        "type": "string",
+        "nullable": true
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "paid_amount": {
+        "type": "integer",
+        "nullable": true,
+        "description": "完了後に Payments API で確かめた受取額（円）"
+      },
+      "payment_type": {
+        "type": "string"
+      },
+      "payment_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "error_message": {
+        "type": "string",
+        "nullable": true
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "この決済で作った注文。まだ無ければ null"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareCheckoutConflictResponse": {
+    "type": "object",
+    "required": ["error", "checkout"],
+    "properties": {
+      "error": {
+        "type": "string"
+      },
+      "checkout": {
+        "$ref": "#/components/schemas/SquareCheckoutResponse"
       }
     }
   }

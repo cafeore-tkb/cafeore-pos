@@ -4,7 +4,7 @@ import {
   type WithId,
   resolveItemColor,
 } from "@cafeore/common";
-import type { Board } from "./board";
+import { type Board, mapCards } from "./board";
 import { type DripCard, type UnsplitCard, splitIntoDripUnits } from "./cards";
 import { isBayId } from "./lanes";
 
@@ -90,17 +90,9 @@ export const ingestPosOrders = (
 
 // カードの背景色。商品の色の設定（画面 master。商品 → 種類の順）から引く。設定が無ければ付けない（白）。
 // 色の設定はあとから読み込まれたり変わったりするので、カードには持たず、出すたびに付ける。
-export const paintBoard = (board: Board, settings: ColorSetting[]): Board => {
-  const paint = <T extends DripCard>(card: T): T =>
+export const paintBoard = (board: Board, settings: ColorSetting[]): Board =>
+  mapCards(board, (card) =>
     card.item
       ? { ...card, color: resolveItemColor(settings, card.item, "master") }
-      : card;
-  return {
-    unassigned: board.unassigned.map(paint),
-    baristas: board.baristas.map((barista) => ({
-      ...barista,
-      queue: barista.queue.map(paint),
-      pastTickets: barista.pastTickets.map(paint),
-    })),
-  };
-};
+      : card,
+  );
