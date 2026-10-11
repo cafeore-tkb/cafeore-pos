@@ -59,7 +59,7 @@ export const putCaosLane = async (
   senior: boolean,
 ): Promise<CaosResult> =>
   send(
-    client.PUT("/api/caos/lanes/{dripper}", {
+    apiClient.PUT("/api/caos/lanes/{dripper}", {
       params: { path: { dripper } },
       body: { name, senior },
     }),
@@ -70,4 +70,4 @@ export const swapCaosLanes = async (
   first: number,
   second: number,
 ): Promise<CaosResult> =>
-  send(client.POST("/api/caos/lanes/swap", { body: { first, second } }));
+  send(apiClient.POST("/api/caos/lanes/swap", { body: { first, second } }));
