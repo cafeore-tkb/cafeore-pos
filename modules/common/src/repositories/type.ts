@@ -32,6 +32,11 @@ export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
        * サーバーはこれを注文の ID にし、すでにあれば作らずにその注文を返す。送り直しでは同じキーを渡す
        */
       idempotencyKey?: string;
+      /**
+       * 新しく作るときの、レジで確定した時刻。オフラインで溜めた注文や再送など、確定より後に送るときに渡す。
+       * 省略するとサーバーの今
+       */
+      createdAt?: Date;
     },
   ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;

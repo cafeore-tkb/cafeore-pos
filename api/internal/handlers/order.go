@@ -248,6 +248,18 @@ func createOrderOnce(hasKey bool, findExisting func() (*models.Order, error), cr
 	return nil, createErr
 }
 
+// orderCreatedAt は、作る注文の時刻を決める。レジが確定した時刻（created_at）があればそれを使う
+// （オフラインで溜めた注文を、つながってから送るとき）。無ければサーバーの今。
+// 端末の時計が進んでいても未来の注文にならないよう、今より後は今にする。
+// 古い時刻も断らない。断るとレジに残った注文がいつまでも送れず、サーバーの今にすると前の日の注文が
+// 今日の作るべき注文としてマスターや CaOS に出てしまうので、確定した時刻のまま残す
+func orderCreatedAt(requested *time.Time, now time.Time) time.Time {
+	if requested == nil || requested.After(now) {
+		return now
+	}
+	return *requested
+}
+
 // 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ。
 // 全部 0 の UUID は BeforeCreate が別の ID に振り直してしまい二重を防げないので、キーなしとして扱う
 func orderIDFromIdempotencyKey(key *openapi_types.UUID) (uuid.UUID, bool) {
@@ -272,12 +284,13 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	createdAt := orderCreatedAt(req.CreatedAt, time.Now())
 
 	// API型 → DB型に変換
 	order := models.Order{
 		ID:                orderID,
 		OrderId:           req.OrderId,
-		CreatedAt:         time.Now(),
+		CreatedAt:         createdAt,
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
 		DiscountOrderCups: 0,
@@ -302,9 +315,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		comments := make([]models.Comment, len(*req.Comments))
 		for i, commentReq := range *req.Comments {
 			comments[i] = models.Comment{
-				Author:    commentReq.Author,
-				Text:      commentReq.Text,
-				CreatedAt: time.Now(),
+				Author: commentReq.Author,
+				Text:   commentReq.Text,
+				// コメントの主キーは (order_id, created_at) なので、同じ注文のコメントは 1 マイクロ秒ずつずらす
+				// （Postgres の時刻はマイクロ秒まで）
+				CreatedAt: createdAt.Add(time.Duration(i) * time.Microsecond),
 			}
 		}
 		order.Comments = comments
