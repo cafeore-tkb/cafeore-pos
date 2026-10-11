@@ -29,6 +29,7 @@ import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
+import type { SquareDeviceSelection } from "../functional/useSquareDevice";
 import { useSquarePayment } from "../functional/useSquarePayment";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
@@ -41,6 +42,7 @@ import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
 import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
 import { ServiceDiscountButton } from "../organisms/ServiceDiscountButton";
+import { SquareDeviceSelect } from "../organisms/SquareDeviceSelect";
 import { SquarePaymentDialog } from "../organisms/SquarePaymentDialog";
 import { SquareUnlinkedNotice } from "../organisms/SquareUnlinkedNotice";
 import { SubmitSection } from "../organisms/SubmitSection";
@@ -51,8 +53,10 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   canSubmitOrder: boolean;
-  /** Square 連携が有効か。無効なら Square のボタンを出さない */
+  /** Square 連携が有効か。無効なら Square のボタンも端末の選択も出さない */
   squareEnabled: boolean;
+  /** このレジで使う Square 端末。決まっていなければ Square のボタンを出さない */
+  squareDevice: SquareDeviceSelection;
   submitPayload: (order: OrderEntity) => void;
   /** Square で支払い済みの注文を送る。登録できなければ reject する */
   submitSquarePayload: (
@@ -80,6 +84,7 @@ const CashierV2 = ({
   wsStatus,
   canSubmitOrder,
   squareEnabled,
+  squareDevice,
   submitPayload,
   submitSquarePayload,
   syncOrder,
@@ -146,6 +151,11 @@ const CashierV2 = ({
     proceedStatus();
   }, [inputStatus, canEnterSubmit, billingOk, proceedStatus]);
 
+  // Square のボタンは、このレジで使う端末が決まっているときだけ出す
+  const squareDeviceId = squareEnabled
+    ? (squareDevice.device?.device_id ?? null)
+    : null;
+
   // 確定欄で押せるボタン。↑↓キーはこの中で動く。
   const availableSubmitTargets = useMemo(() => {
     const targets: SubmitFocusTarget[] = [];
@@ -153,11 +163,11 @@ const CashierV2 = ({
     if (newOrder.menus.length > 0 && !hasReceivedInput) {
       targets.push("exactPayment");
     }
-    if (squareEnabled && newOrder.menus.length > 0) {
+    if (squareDeviceId !== null && newOrder.menus.length > 0) {
       targets.push(...SQUARE_PAYMENT_TYPES);
     }
     return targets;
-  }, [billingOk, newOrder, hasReceivedInput, squareEnabled]);
+  }, [billingOk, newOrder, hasReceivedInput, squareDeviceId]);
 
   const moveSubmitFocusBy = useCallback(
     (step: number) => {
@@ -273,12 +283,12 @@ const CashierV2 = ({
 
   const startSquarePayment = useCallback(
     (paymentType: SquarePaymentType) => {
-      if (!canEnterSubmit) {
+      if (!canEnterSubmit || squareDeviceId === null) {
         return;
       }
-      squarePayment.start(newOrder, paymentType);
+      squarePayment.start(newOrder, paymentType, squareDeviceId);
     },
-    [canEnterSubmit, squarePayment.start, newOrder],
+    [canEnterSubmit, squareDeviceId, squarePayment.start, newOrder],
   );
 
   const keyEventHandlers = useMemo(() => {
@@ -349,6 +359,7 @@ const CashierV2 = ({
           <div className="flex items-center space-x-2">
             {squareEnabled && (
               <SquareUnlinkedNotice
+                devices={squareDevice.devices}
                 currentBillingAmount={newOrder.billingAmount}
                 canSubmit={canEnterSubmit && !squarePaymentActive}
                 onSubmitWithCheckout={(checkout) => {
@@ -358,6 +369,15 @@ const CashierV2 = ({
                     );
                   });
                 }}
+              />
+            )}
+            {squareEnabled && (
+              <SquareDeviceSelect
+                devices={squareDevice.devices}
+                device={squareDevice.device}
+                missing={squareDevice.missing}
+                onSelect={squareDevice.select}
+                disabled={squarePaymentActive}
               />
             )}
             <PrinterStatus status={printer.status} />
@@ -498,7 +518,9 @@ const CashierV2 = ({
                 focus={inputStatus === "submit" && !squarePaymentActive}
                 focusTarget={submitFocusTarget}
                 availableTargets={availableSubmitTargets}
-                squarePaymentTypes={squareEnabled ? SQUARE_PAYMENT_TYPES : []}
+                squarePaymentTypes={
+                  squareDeviceId !== null ? SQUARE_PAYMENT_TYPES : []
+                }
                 onSquarePayment={startSquarePayment}
               />
             </fieldset>

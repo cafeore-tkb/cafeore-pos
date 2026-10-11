@@ -854,7 +854,9 @@ paths:
   /api/square/status:
     get:
       summary: Square 連携が使えるか
-      description: SQUARE_ACCESS_TOKEN と SQUARE_DEVICE_ID が揃っていれば enabled。フロントはこれを見て Square の決済ボタンを出す。
+      description: |
+        SQUARE_ACCESS_TOKEN があれば enabled。フロントはこれを見て Square の決済ボタンと端末の選択を出す。
+        決済に使う端末は GET /api/square/devices で取る（ペアリング済みの端末が無ければ決済できない）。
       operationId: getSquareStatus
       tags:
         - square
@@ -865,13 +867,164 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SquareStatusResponse'
+  /api/square/devices:
+    get:
+      summary: Square 端末の一覧
+      description: |
+        登録した端末と、ペアリング待ちのコード。古い順。
+        ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+        レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+      operationId: getSquareDevices
+      tags:
+        - square
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SquareDeviceResponse'
+    post:
+      summary: device_id を直接登録する
+      description: |
+        ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
+        ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+      operationId: createSquareDevice
+      tags:
+        - square
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SquareDeviceCreateRequest'
+      responses:
+        '201':
+          description: 登録した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareDeviceResponse'
+        '400':
+          description: 入力が不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: その device_id は登録済み
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/devices/pair:
+    post:
+      summary: 端末をペアリングするコード（Device Code）を発行する
+      description: |
+        返ってきた code を端末のサインイン画面（「デバイスコードでサインイン」）に入力すると、
+        GET /api/square/devices で status が PAIRED になり、device_id が入る。
+        Square のダッシュボードで発行したコードではペアリングできない（API で発行したコードが必要）。
+      operationId: pairSquareDevice
+      tags:
+        - square
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SquareDevicePairRequest'
+      responses:
+        '201':
+          description: 発行した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareDeviceResponse'
+        '400':
+          description: 入力が不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Square がコードを発行しなかった
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Square 連携が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/devices/import:
+    post:
+      summary: Square でペアリング済みの端末を取り込む
+      description: |
+        API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
+        管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+        同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
+        取り込んだ端末だけを返す（既に登録していた端末は含めない）。
+      operationId: importSquareDevices
+      tags:
+        - square
+      responses:
+        '200':
+          description: 取り込んだ端末
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SquareDeviceResponse'
+        '502':
+          description: Square から一覧を取れなかった
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Square 連携が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/devices/{id}:
+    delete:
+      summary: 端末を一覧から外す
+      description: |
+        レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+        外した端末は POST /api/square/devices/import で戻せる。
+      operationId: deleteSquareDevice
+      tags:
+        - square
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 外した
+        '404':
+          description: 見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/square/checkouts:
     post:
       summary: Square Terminal に決済画面を出す
       description: |
         決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
         同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
-        別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+        同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+        別の端末で進行中の決済依頼があっても出せる。
       operationId: createSquareCheckout
       tags:
         - square
@@ -895,13 +1048,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutResponse'
         '400':
-          description: 入力が不正
+          description: 入力が不正、または device_id がペアリング済みの端末として登録されていない
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: 別の決済依頼が進行中
+          description: 同じ端末で別の決済依頼が進行中
           content:
             application/json:
               schema:
@@ -1829,13 +1982,86 @@ components:
           description: production か sandbox
         webhook_enabled:
           type: boolean
+    SquareDeviceStatus:
+      type: string
+      enum: [UNPAIRED, PAIRED, EXPIRED]
+      description: |
+        端末のペアリングの状態（Square の Device Code の status）。
+          - UNPAIRED: コードを発行した。端末でまだ入力されていない
+          - PAIRED: ペアリング済み。決済に使える
+          - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+    SquareDeviceResponse:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: 管理画面とレジで出す名前（例 レジ1）
+        status:
+          $ref: '#/components/schemas/SquareDeviceStatus'
+        device_id:
+          type: string
+          nullable: true
+          description: 端末の ID。決済の依頼に使う。PAIRED になるまで null
+        code:
+          type: string
+          nullable: true
+          description: 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る
+        pair_by:
+          type: string
+          format: date-time
+          nullable: true
+          description: コードの期限。これを過ぎると EXPIRED になる
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SquareDevicePairRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: 管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る
+    SquareDeviceCreateRequest:
+      type: object
+      required:
+        - name
+        - device_id
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        device_id:
+          type: string
+          minLength: 1
+          maxLength: 255
     SquareCheckoutCreateRequest:
       type: object
       required:
         - idempotency_key
+        - device_id
         - amount
         - payment_type
       properties:
+        device_id:
+          type: string
+          minLength: 1
+          description: 決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id
         idempotency_key:
           type: string
           minLength: 1
@@ -1855,6 +2081,7 @@ components:
       type: object
       required:
         - id
+        - device_id
         - status
         - outcome
         - amount
@@ -1866,6 +2093,9 @@ components:
         id:
           type: string
           format: uuid
+        device_id:
+          type: string
+          description: 決済画面を出した端末
         checkout_id:
           type: string
           nullable: true

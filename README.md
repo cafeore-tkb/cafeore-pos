@@ -146,7 +146,7 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
 | `SQUARE_ACCESS_TOKEN` | 任意（Sandbox のトークン） | 未設定 | Square のアクセストークン（Secret Manager に置く） |
 | `SQUARE_ENVIRONMENT` | `sandbox` | 未設定 | `production` |
-| `SQUARE_DEVICE_ID` | Sandbox のテスト用 device_id | 未設定 | ペアリングで得た端末の device_id |
+| `SQUARE_LOCATION_ID` | 任意 | 未設定 | 任意（端末をペアリングする店舗。空ならアカウントの既定の店舗） |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
 | `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
 | `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
@@ -160,9 +160,14 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 
 レジの確定欄から Square Terminal に決済画面（カード・電子マネー・QR コード）を出す。
 **決済が先・注文が後**の順で、端末で支払いが終わってから注文を登録し、ラベルを印刷する。
-`SQUARE_ACCESS_TOKEN` と `SQUARE_DEVICE_ID` が無ければ無効で、レジに Square のボタンは出ない。
+`SQUARE_ACCESS_TOKEN` が無ければ無効で、レジに Square のボタンは出ない。
 
-- アクセストークンと端末 ID はサーバーだけが持つ。ブラウザから Square の API は呼ばない。
+- アクセストークンはサーバーだけが持つ。ブラウザから Square の API は呼ばない。
+- 端末は何台でも登録でき、DB（`square_devices`）に持つ。追加・取り込み・外すのは管理画面 `/square-devices` で行う。
+- どの端末に決済画面を出すかは**レジごとに固定**する。レジの画面右上で選んだ端末の device_id をブラウザ
+  （`localStorage` の `cafeore:square-device-id`）に覚える。端末が 1 台しか無く、まだ選んでいなければその端末を使う。
+  選んでいた端末が一覧から外されたら、残りが 1 台でも勝手には使わず、選び直すまで Square のボタンを出さない。
+- 進行中の決済は端末ごとに 1 件まで。別の端末で決済中でも、別のレジからは決済画面を出せる。
 - 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
   Webhook（`POST /api/square/webhook`、イベントは `terminal.checkout.created` と `terminal.checkout.updated`）は
   レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
@@ -171,16 +176,19 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 返金は Terminal API ではできない（日本）。Square の管理画面から行う。交通系 IC は返金できない。
 - 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
 
-端末のペアリング（初回に 1 回）:
+端末のペアリング（端末ごとに 1 回）:
 
-```sh
-cd api
-SQUARE_ACCESS_TOKEN=... SQUARE_ENVIRONMENT=production go run ./cmd/square-pair -name "レジ1"
-```
+1. 管理画面 `/square-devices`（トップの「マスタ設定」→「Square 端末」）で名前を入れて「コードを発行」を押す
+2. 端末のサインイン画面で「デバイスコードでサインイン」を選び、一覧に出たコードを入力する
+3. 一覧で「ペアリング済み」になったら、使うレジの画面右上でその端末を選ぶ
 
-表示されたコードを端末のサインイン画面に入力すると、最後に `SQUARE_DEVICE_ID` に入れる値が出る。
-ダッシュボードで発行したコードではペアリングできない。Sandbox では実機とペアリングできないので、
-Sandbox では Square が用意しているテスト用の device_id を使う（[一覧](https://developer.squareup.com/docs/devtools/sandbox/testing#terminal-api-checkouts)）。
+ダッシュボードで発行したコードではペアリングできない（API で発行したコードが要る）。
+以前の `go run ./cmd/square-pair` でペアリングした端末や、一覧から外した端末は「ペアリング済みの端末を取り込む」で戻せる
+（Square でペアリング済みのコードを一覧で取り、まだ登録していない端末を足す）。
+一覧から外しても端末は Square にサインインしたまま（API ではペアリングを解除できない）なので、使わないなら端末でサインアウトする。
+
+Sandbox では実機とペアリングできないので、管理画面の「device_id を直接登録する」で
+Square が用意しているテスト用の device_id を登録する（[一覧](https://developer.squareup.com/docs/devtools/sandbox/testing#terminal-api-checkouts)）。
 
 | 再現する状況 | device_id |
 | --- | --- |
@@ -267,7 +275,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
       ```sh
       gcloud logging read 'resource.type="cloud_run_revision"
-        AND resource.labels.service_name="cafeore-pos-git"
+        AND resource.labels.service_name=~"^cafeore-pos-(git|prod)$"
         AND textPayload:"auth(report-only)"' \
         --project project-5d6e656b-4871-46ff-96f --freshness 1h --format 'value(textPayload)'
       ```

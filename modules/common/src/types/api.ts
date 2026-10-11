@@ -167,16 +167,60 @@ export interface paths {
   "/api/square/status": {
     /**
      * Square 連携が使えるか
-     * @description SQUARE_ACCESS_TOKEN と SQUARE_DEVICE_ID が揃っていれば enabled。フロントはこれを見て Square の決済ボタンを出す。
+     * @description SQUARE_ACCESS_TOKEN があれば enabled。フロントはこれを見て Square の決済ボタンと端末の選択を出す。
+     * 決済に使う端末は GET /api/square/devices で取る（ペアリング済みの端末が無ければ決済できない）。
      */
     get: operations["getSquareStatus"];
+  };
+  "/api/square/devices": {
+    /**
+     * Square 端末の一覧
+     * @description 登録した端末と、ペアリング待ちのコード。古い順。
+     * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+     * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+     */
+    get: operations["getSquareDevices"];
+    /**
+     * device_id を直接登録する
+     * @description ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
+     * ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+     */
+    post: operations["createSquareDevice"];
+  };
+  "/api/square/devices/pair": {
+    /**
+     * 端末をペアリングするコード（Device Code）を発行する
+     * @description 返ってきた code を端末のサインイン画面（「デバイスコードでサインイン」）に入力すると、
+     * GET /api/square/devices で status が PAIRED になり、device_id が入る。
+     * Square のダッシュボードで発行したコードではペアリングできない（API で発行したコードが必要）。
+     */
+    post: operations["pairSquareDevice"];
+  };
+  "/api/square/devices/import": {
+    /**
+     * Square でペアリング済みの端末を取り込む
+     * @description API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
+     * 管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+     * 同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
+     * 取り込んだ端末だけを返す（既に登録していた端末は含めない）。
+     */
+    post: operations["importSquareDevices"];
+  };
+  "/api/square/devices/{id}": {
+    /**
+     * 端末を一覧から外す
+     * @description レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+     * 外した端末は POST /api/square/devices/import で戻せる。
+     */
+    delete: operations["deleteSquareDevice"];
   };
   "/api/square/checkouts": {
     /**
      * Square Terminal に決済画面を出す
      * @description 決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
      * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
-     * 別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+     * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+     * 別の端末で進行中の決済依頼があっても出せる。
      */
     post: operations["createSquareCheckout"];
   };
@@ -631,7 +675,46 @@ export interface components {
       environment: string;
       webhook_enabled: boolean;
     };
+    /**
+     * @description 端末のペアリングの状態（Square の Device Code の status）。
+     *   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+     *   - PAIRED: ペアリング済み。決済に使える
+     *   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+     *
+     * @enum {string}
+     */
+    SquareDeviceStatus: "UNPAIRED" | "PAIRED" | "EXPIRED";
+    SquareDeviceResponse: {
+      /** Format: uuid */
+      id: string;
+      /** @description 管理画面とレジで出す名前（例 レジ1） */
+      name: string;
+      status: components["schemas"]["SquareDeviceStatus"];
+      /** @description 端末の ID。決済の依頼に使う。PAIRED になるまで null */
+      device_id?: string | null;
+      /** @description 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る */
+      code?: string | null;
+      /**
+       * Format: date-time
+       * @description コードの期限。これを過ぎると EXPIRED になる
+       */
+      pair_by?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    SquareDevicePairRequest: {
+      /** @description 管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る */
+      name: string;
+    };
+    SquareDeviceCreateRequest: {
+      name: string;
+      device_id: string;
+    };
     SquareCheckoutCreateRequest: {
+      /** @description 決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id */
+      device_id: string;
       /** @description レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする */
       idempotency_key: string;
       /** @description 請求額（円） */
@@ -643,6 +726,8 @@ export interface components {
     SquareCheckoutResponse: {
       /** Format: uuid */
       id: string;
+      /** @description 決済画面を出した端末 */
+      device_id: string;
       /** @description Square の TerminalCheckout の id */
       checkout_id?: string | null;
       /** @description Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR */
@@ -1439,7 +1524,8 @@ export interface operations {
   };
   /**
    * Square 連携が使えるか
-   * @description SQUARE_ACCESS_TOKEN と SQUARE_DEVICE_ID が揃っていれば enabled。フロントはこれを見て Square の決済ボタンを出す。
+   * @description SQUARE_ACCESS_TOKEN があれば enabled。フロントはこれを見て Square の決済ボタンと端末の選択を出す。
+   * 決済に使う端末は GET /api/square/devices で取る（ペアリング済みの端末が無ければ決済できない）。
    */
   getSquareStatus: {
     responses: {
@@ -1452,10 +1538,151 @@ export interface operations {
     };
   };
   /**
+   * Square 端末の一覧
+   * @description 登録した端末と、ペアリング待ちのコード。古い順。
+   * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+   * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+   */
+  getSquareDevices: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"][];
+        };
+      };
+    };
+  };
+  /**
+   * device_id を直接登録する
+   * @description ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
+   * ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+   */
+  createSquareDevice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareDeviceCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 登録した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description 入力が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description その device_id は登録済み */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 端末をペアリングするコード（Device Code）を発行する
+   * @description 返ってきた code を端末のサインイン画面（「デバイスコードでサインイン」）に入力すると、
+   * GET /api/square/devices で status が PAIRED になり、device_id が入る。
+   * Square のダッシュボードで発行したコードではペアリングできない（API で発行したコードが必要）。
+   */
+  pairSquareDevice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareDevicePairRequest"];
+      };
+    };
+    responses: {
+      /** @description 発行した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description 入力が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square がコードを発行しなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square でペアリング済みの端末を取り込む
+   * @description API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
+   * 管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+   * 同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
+   * 取り込んだ端末だけを返す（既に登録していた端末は含めない）。
+   */
+  importSquareDevices: {
+    responses: {
+      /** @description 取り込んだ端末 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"][];
+        };
+      };
+      /** @description Square から一覧を取れなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 端末を一覧から外す
+   * @description レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+   * 外した端末は POST /api/square/devices/import で戻せる。
+   */
+  deleteSquareDevice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 外した */
+      204: {
+        content: never;
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
    * Square Terminal に決済画面を出す
    * @description 決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
    * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
-   * 別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+   * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+   * 別の端末で進行中の決済依頼があっても出せる。
    */
   createSquareCheckout: {
     requestBody: {
@@ -1476,13 +1703,13 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
         };
       };
-      /** @description 入力が不正 */
+      /** @description 入力が不正、または device_id がペアリング済みの端末として登録されていない */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 別の決済依頼が進行中 */
+      /** @description 同じ端末で別の決済依頼が進行中 */
       409: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];

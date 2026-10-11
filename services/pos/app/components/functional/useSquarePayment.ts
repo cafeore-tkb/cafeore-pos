@@ -31,6 +31,8 @@ export type SquarePaymentPhase =
 export type SquarePaymentState = {
   phase: SquarePaymentPhase;
   paymentType: SquarePaymentType;
+  /** 決済画面を出す端末。支払い中にレジの端末を選び直しても、これに出す */
+  deviceId: string;
   idempotencyKey: string;
   /** 決済を始めた時点の注文。支払い中に画面の注文が変わっても、これを送る */
   order: OrderEntity;
@@ -153,6 +155,7 @@ export const useSquarePayment = ({ onPaid }: Options) => {
       try {
         const checkout = await squareRepository.createCheckout({
           idempotencyKey: base.idempotencyKey,
+          deviceId: base.deviceId,
           amount: base.order.billingAmount,
           paymentType: base.paymentType,
           orderNumber: base.order.orderId,
@@ -194,13 +197,14 @@ export const useSquarePayment = ({ onPaid }: Options) => {
 
   /** 端末に決済画面を出す */
   const start = useCallback(
-    (order: OrderEntity, paymentType: SquarePaymentType) => {
+    (order: OrderEntity, paymentType: SquarePaymentType, deviceId: string) => {
       if (state !== null) {
         return;
       }
       void create({
         phase: "creating",
         paymentType,
+        deviceId,
         idempotencyKey: crypto.randomUUID(),
         order: order.clone(),
         checkout: null,

@@ -930,10 +930,89 @@
       }
     }
   },
+  "SquareDeviceStatus": {
+    "type": "string",
+    "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+  },
+  "SquareDeviceResponse": {
+    "type": "object",
+    "required": ["id", "name", "status", "created_at", "updated_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string",
+        "description": "管理画面とレジで出す名前（例 レジ1）"
+      },
+      "status": {
+        "$ref": "#/components/schemas/SquareDeviceStatus"
+      },
+      "device_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末の ID。決済の依頼に使う。PAIRED になるまで null"
+      },
+      "code": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+      },
+      "pair_by": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "コードの期限。これを過ぎると EXPIRED になる"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareDevicePairRequest": {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る"
+      }
+    }
+  },
+  "SquareDeviceCreateRequest": {
+    "type": "object",
+    "required": ["name", "device_id"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      }
+    }
+  },
   "SquareCheckoutCreateRequest": {
     "type": "object",
-    "required": ["idempotency_key", "amount", "payment_type"],
+    "required": ["idempotency_key", "device_id", "amount", "payment_type"],
     "properties": {
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id"
+      },
       "idempotency_key": {
         "type": "string",
         "minLength": 1,
@@ -959,6 +1038,7 @@
     "type": "object",
     "required": [
       "id",
+      "device_id",
       "status",
       "outcome",
       "amount",
@@ -971,6 +1051,10 @@
       "id": {
         "type": "string",
         "format": "uuid"
+      },
+      "device_id": {
+        "type": "string",
+        "description": "決済画面を出した端末"
       },
       "checkout_id": {
         "type": "string",

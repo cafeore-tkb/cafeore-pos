@@ -186,13 +186,14 @@ func TestValidateSquareCheckoutForOrder(t *testing.T) {
 }
 
 func TestValidateSquareCheckoutRequest(t *testing.T) {
-	valid := models.SquareCheckoutCreateRequest{IdempotencyKey: uuid.NewString(), Amount: 600, PaymentType: models.QRCODE}
+	valid := models.SquareCheckoutCreateRequest{IdempotencyKey: uuid.NewString(), DeviceId: "device-1", Amount: 600, PaymentType: models.QRCODE}
 	if err := validateSquareCheckoutRequest(valid); err != nil {
 		t.Fatal(err)
 	}
 	cases := map[string]func(*models.SquareCheckoutCreateRequest){
 		"empty key":          func(r *models.SquareCheckoutCreateRequest) { r.IdempotencyKey = "" },
 		"too long key":       func(r *models.SquareCheckoutCreateRequest) { r.IdempotencyKey = strings.Repeat("a", 65) },
+		"empty device id":    func(r *models.SquareCheckoutCreateRequest) { r.DeviceId = "" },
 		"zero amount":        func(r *models.SquareCheckoutCreateRequest) { r.Amount = 0 },
 		"negative amount":    func(r *models.SquareCheckoutCreateRequest) { r.Amount = -100 },
 		"unsupported type":   func(r *models.SquareCheckoutCreateRequest) { r.PaymentType = "PAYPAY" },
