@@ -120,7 +120,8 @@ export function ProductEditor({
 
   // アイテムを保存してから、savedStock（編集のときの、開いたときの在庫）から変えた値を送る。
   // 新規・複製は入れた値をすべて、アイテムと一緒に API が作った在庫に送る。
-  // 在庫だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
+  // 在庫だけ失敗したとき、編集はそのまま失敗にして入力を残す（やり直してもアイテムは増えない）。
+  // 新規・複製はやり直すとアイテムが重複するので、保存は済んだ扱いにして知らせる
   const saveItem = async (
     values: ItemFormValues,
     id: string | undefined,
@@ -130,6 +131,7 @@ export function ProductEditor({
     try {
       await saveItemStock(item.id, stockChanges(values.stock, savedStock));
     } catch (e) {
+      if (id) throw e;
       toast.error(
         `アイテムは保存しましたが、在庫の保存に失敗しました: ${
           e instanceof Error ? e.message : "不明なエラー"
