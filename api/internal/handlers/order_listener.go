@@ -25,8 +25,8 @@ const (
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
-// CaOS のドリッパーの担当者（caos_lanes_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, caosLanesChangedChannel}
+// CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -205,7 +205,7 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.masterState = true })
 	case cashierStateChangedChannel:
 		q.update(func(s *changeSet) { s.cashierState = true })
-	case caosLanesChangedChannel:
+	case dripperAssigneesChangedChannel:
 		q.update(func(s *changeSet) { s.caosLanes = true })
 	}
 }

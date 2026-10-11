@@ -704,14 +704,14 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）\n",
-    "enum": ["cashier", "cashier_order", "master", "serve", "caos_nominated"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）\n",
+    "enum": ["cashier", "cashier_order", "master", "serve", "nominated"],
     "x-enum-varnames": [
       "ColorScreenCashier",
       "ColorScreenCashierOrder",
       "ColorScreenMaster",
       "ColorScreenServe",
-      "ColorScreenCaosNominated"
+      "ColorScreenNominated"
     ],
     "x-enum-descriptions": [
       "レジ（ボタン）",

@@ -16,7 +16,7 @@ import (
 // （本番に直接作ったテーブル・列・トリガー・関数）。起動時に調べて /status に出し、
 // デプロイの CI が空でなければ落とす。
 //
-// 見るのはテーブル・列・トリガー・関数。CaOS（caos スキーマ）のものは今は対象外にしている。
+// 見るのはテーブル・列・トリガー・関数。
 func findSchemaDrift(db *gorm.DB) ([]string, error) {
 	expected := map[string]map[string]bool{}
 	for _, m := range models.All() {
@@ -78,17 +78,14 @@ func findSchemaDrift(db *gorm.DB) ([]string, error) {
 		}
 	}
 
-	// モデルからはトリガーも関数も作らないので、public にあれば全部ズレ。
-	// CaOS の関数（caos スキーマ）を呼ぶトリガーは対象外。拡張の関数（uuid-ossp など）も除く。
+	// モデルからはトリガーも関数も作らないので、public にあれば全部ズレ。拡張の関数（uuid-ossp など）は除く。
 	var triggers []string
 	if err := db.Raw(`
 		SELECT c.relname || '.' || t.tgname
 		FROM pg_trigger t
 		JOIN pg_class c ON c.oid = t.tgrelid
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		JOIN pg_proc p ON p.oid = t.tgfoid
-		JOIN pg_namespace pn ON pn.oid = p.pronamespace
-		WHERE NOT t.tgisinternal AND n.nspname = 'public' AND pn.nspname <> 'caos'`).
+		WHERE NOT t.tgisinternal AND n.nspname = 'public'`).
 		Scan(&triggers).Error; err != nil {
 		return nil, fmt.Errorf("failed to list triggers: %w", err)
 	}
