@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -98,12 +99,14 @@ func itemDeletedMessage(item *models.Item) string {
 
 // --- メニュー ---
 
-// 構成を「優勝ブレンド×1、トートバッグ×1」と並べる
+// 構成を「トートバッグ×1、優勝ブレンド×1」と並べる。DB から読む順は決まっていないので、
+// 変更前と後で並びだけ違って変更に見えないよう並べ替える
 func menuItemsText(menu *models.Menu) string {
 	parts := make([]string, 0, len(menu.MenuItems))
 	for _, mi := range menu.MenuItems {
 		parts = append(parts, fmt.Sprintf("%s×%d", mi.Item.Name, mi.Quantity))
 	}
+	slices.Sort(parts)
 	return strings.Join(parts, "、")
 }
 
