@@ -120,7 +120,7 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
 ### backend（Artifact Registry → Cloud Run）
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
-main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-git` を
+main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-prod` を
 そのイメージで更新する。**PR では本番に触らず、プレビュー用の別サービス**
 （既定 `cafeore-pos-preview`）へデプロイし、その URL を PR にコメントする。
 
