@@ -308,6 +308,18 @@ jobs:
             type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # どの PR・コミットのビルドかをイメージに焼き、/status から POS のトップページに出す。
+      # 本番は main のマージコミットから PR を引く（.github/scripts/build-info.sh）。
+      # 積んだ PR で別の PR の backend を使うときは、ここまで来ないので、画面には
+      # その持ち主の PR の番号が出る。
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v3
 
       - name: ビルドして push する
@@ -321,6 +333,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 最後のステージの ENV になるだけなので、go build のキャッシュは効いたまま
+          build-args: |
+            BUILD_PR=${{ steps.build_info.outputs.pr }}
+            BUILD_COMMIT=${{ steps.build_info.outputs.commit }}
           # 既定では provenance attestation が付いて OCI index になり、
           # 単一イメージを前提にしたツール（gcloud run deploy の一部経路など）が
           # 扱いを間違えることがある。Cloud Build が作っている既存イメージと
