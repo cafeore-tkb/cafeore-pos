@@ -174,10 +174,16 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("queued = %v, want [%v %v]", queued, cardE, cardB)
 	}
 
-	// 入れ直しとカップを 1 枚のカードにできる（同じ指名）。最大 2 杯
+	// 入れ直しは入れ直しどうしでだけ 1 枚のカードにできる（緊急でないカップと同じカードにすると、緊急の取り消しと食い違う）。最大 2 杯
 	o3 := f.createOrder(t, 3, line(f.blend))
 	o4 := f.createOrder(t, 4, line(f.blend))
-	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false)))
+	if code, body := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest || !strings.Contains(body, "緊急") {
+		t.Fatalf("a cup on an emergency card = %d: %s", code, body)
+	}
+	if code, body := f.addEmergencies(t, o3.OrderCups[0].ID); code != http.StatusCreated {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	f.mustPut(t, write([]uuid.UUID{f.emergencies(t, o3.OrderCups[0].ID)[0].ID}, unassigned, placed(1, cardE, false)))
 	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest {
 		t.Fatalf("third cup on a card = %d, want 400", code)
 	}

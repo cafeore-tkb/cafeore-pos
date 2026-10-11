@@ -294,25 +294,34 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ],
     });
 
-    // 指名の入れ直しは、同じ商品の、同じ指名か指名の無いカップと統合できる（カードはその指名のまま）
+    // 入れ直しは入れ直しどうしでだけ統合できる（緊急でないカップと同じカードにすると、緊急の取り消しと食い違う）。
+    // 指名は、同じ番号か片方だけ
     const nominated = cup({ item: blend, line: "line-2" });
     const free = cup({ item: blend, line: "line-3" });
+    const otherRedo = cup({
+      item: blend,
+      line: "line-4",
+      emergencies: [emergency("e3")],
+    });
     const withPeers = buildCaosCards(
       [
         order(2, [brewed, nominated], {
           dripper: { "line-1": 3, "line-2": 3 },
         }),
-        order(3, [free]),
+        order(3, [free, otherRedo]),
       ],
       DAY,
     );
-    const redoCard = withPeers.find((c) => ids(c)[0] === "e2");
-    const peer = withPeers.find((c) => ids(c)[0] === nominated.id);
-    const other = withPeers.find((c) => ids(c)[0] === free.id);
-    if (!redoCard || !peer || !other) throw new Error("cards");
-    expect(canMergeCards(redoCard, peer)).toBe(true);
-    expect(canMergeCards(other, redoCard)).toBe(true);
-    expect(mergeWrites(redoCard, peer, newId)).toHaveProperty("writes");
+    const cardOf = (id: string) => {
+      const card = withPeers.find((c) => ids(c)[0] === id);
+      if (!card) throw new Error(id);
+      return card;
+    };
+    const redoCard = cardOf("e2");
+    expect(canMergeCards(redoCard, cardOf(nominated.id))).toBe(false);
+    expect(canMergeCards(cardOf(free.id), redoCard)).toBe(false);
+    expect(canMergeCards(cardOf("e3"), redoCard)).toBe(true);
+    expect(mergeWrites(cardOf("e3"), redoCard, newId)).toHaveProperty("writes");
   });
 
   test("緊急の理由の候補：使った回数の多い順（同じなら名前の順）、理由の無いものは数えない", () => {
