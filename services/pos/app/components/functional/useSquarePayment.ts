@@ -19,6 +19,8 @@ export type SquarePaymentPhase =
   | "canceling"
   /** 支払い済み。注文をまだ送れていない（通信が切れているなど） */
   | "paid"
+  /** 支払い済み。注文を送って、登録できたかを待っている */
+  | "submitting"
   /** 取り消された・失敗した。お金は受け取っていない */
   | "failed"
   /** 受取額が合わないなど、人が Square の管理画面で確かめる必要がある */
@@ -40,10 +42,10 @@ export type SquarePaymentState = {
 
 type Options = {
   /**
-   * 支払いが確定したときに呼ぶ。注文を送れたら true を返す（ダイアログを閉じる）。
-   * false なら phase を paid にして、手で送り直せるようにする。
+   * 支払いが確定したときに呼ぶ。注文を登録できたら true で解決する（ダイアログを閉じる）。
+   * false か reject なら phase を paid に戻して、手で送り直せるようにする。
    */
-  onPaid: (checkout: SquareCheckout, order: OrderEntity) => boolean;
+  onPaid: (checkout: SquareCheckout, order: OrderEntity) => Promise<boolean>;
 };
 
 const cancelMessage = (checkout: SquareCheckout): string => {
@@ -76,6 +78,10 @@ export const useSquarePayment = ({ onPaid }: Options) => {
       if (prev === null || prev.checkout?.id !== checkout.id) {
         return prev;
       }
+      // 支払い済みは覆らない。遅れて届いた応答で、送信中の画面を戻さない
+      if (prev.phase === "paid" || prev.phase === "submitting") {
+        return prev;
+      }
       switch (checkout.outcome) {
         case "pending":
           return { ...prev, checkout };
@@ -99,7 +105,36 @@ export const useSquarePayment = ({ onPaid }: Options) => {
     });
   }, []);
 
+  // 支払い済みの注文を送る。登録できたら閉じ、できなければ paid に戻して送り直せるようにする。
+  const sendPaidOrder = useCallback(
+    async (checkout: SquareCheckout, order: OrderEntity) => {
+      setState((prev) =>
+        prev?.checkout?.id === checkout.id
+          ? { ...prev, phase: "submitting", message: null }
+          : prev,
+      );
+      let message: string | null = null;
+      try {
+        if (await onPaidRef.current(checkout, order)) {
+          setState((prev) =>
+            prev?.checkout?.id === checkout.id ? null : prev,
+          );
+          return;
+        }
+      } catch (error) {
+        message = `注文を登録できませんでした: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      setState((prev) =>
+        prev?.checkout?.id === checkout.id
+          ? { ...prev, phase: "paid", message }
+          : prev,
+      );
+    },
+    [],
+  );
+
   // 支払いが確定したら注文を送る。setState の外で呼ぶ（送信は副作用なので）。
+  // 自動で送るのは 1 回だけ。失敗したら「注文を送信」で送り直す。
   const settledRef = useRef<string | null>(null);
   useEffect(() => {
     if (state?.phase !== "paid" || state.checkout === null) {
@@ -109,10 +144,8 @@ export const useSquarePayment = ({ onPaid }: Options) => {
       return;
     }
     settledRef.current = state.checkout.id;
-    if (onPaidRef.current(state.checkout, state.order)) {
-      setState(null);
-    }
-  }, [state]);
+    void sendPaidOrder(state.checkout, state.order);
+  }, [state, sendPaidOrder]);
 
   const create = useCallback(
     async (base: SquarePaymentState) => {
@@ -198,10 +231,12 @@ export const useSquarePayment = ({ onPaid }: Options) => {
     try {
       applyCheckout(await squareRepository.cancelCheckout(target.id));
     } catch (error) {
+      // 応答を待つ間にポーリングで支払い済みなどに変わっていたら、そのままにする
+      // （canceling のときだけ waiting に戻す）
       if (error instanceof SquareCheckoutConflictError) {
         // 既に支払われていた・電子マネーで端末にエラーが出ているなど
         setState((prev) =>
-          prev === null
+          prev?.phase !== "canceling"
             ? prev
             : { ...prev, phase: "waiting", message: error.message },
         );
@@ -209,7 +244,7 @@ export const useSquarePayment = ({ onPaid }: Options) => {
         return;
       }
       setState((prev) =>
-        prev === null
+        prev?.phase !== "canceling"
           ? prev
           : {
               ...prev,
@@ -257,17 +292,22 @@ export const useSquarePayment = ({ onPaid }: Options) => {
     if (state?.phase !== "paid" || state.checkout === null) {
       return;
     }
-    if (onPaidRef.current(state.checkout, state.order)) {
-      setState(null);
-    }
-  }, [state]);
+    void sendPaidOrder(state.checkout, state.order);
+  }, [state, sendPaidOrder]);
 
   /**
    * ダイアログを閉じる。お金を受け取っていない・人が確かめる・結果がいつまでも
-   * 決まらない、のどれかのときだけ（どれに当たるかはダイアログが判断する）
+   * 決まらない・注文の登録に失敗した、のどれかのときだけ（どれに当たるかはダイアログが判断する）。
+   * 支払い済みで、まだ送ろうとしていない・送っている途中のときは閉じない。
    */
   const close = useCallback(() => {
-    setState((prev) => (prev !== null && prev.phase !== "paid" ? null : prev));
+    setState((prev) =>
+      prev === null ||
+      prev.phase === "submitting" ||
+      (prev.phase === "paid" && prev.message === null)
+        ? prev
+        : null,
+    );
   }, []);
 
   // 結果が決まるまで問い合わせ続ける

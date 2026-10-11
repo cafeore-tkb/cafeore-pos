@@ -1,8 +1,6 @@
 import {
   OrderEntity,
-  type OrderPayment,
   cashierRepository,
-  orderPaymentSchema,
   orderRepository,
   orderSchema,
   squareRepository,
@@ -45,16 +43,30 @@ export default function Cashier() {
   );
 
   const submitPayload = useCallback(
-    (newOrder: OrderEntity, payment?: OrderPayment) => {
+    (newOrder: OrderEntity) => {
       submit(
-        {
-          newOrder: JSON.stringify(newOrder.toOrder()),
-          ...(payment ? { payment: JSON.stringify(payment) } : {}),
-        },
+        { newOrder: JSON.stringify(newOrder.toOrder()) },
         { method: "POST" },
       );
     },
     [submit],
+  );
+
+  // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
+  // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
+  const submitSquarePayload = useCallback(
+    async (newOrder: OrderEntity, squareCheckoutId: string) => {
+      const savedOrder = await orderRepository.save(newOrder, {
+        method: "square",
+        squareCheckoutId,
+      });
+      // 注文は登録できている。ここで reject すると、レジが同じ決済で送り直して
+      // 断られるだけなので、ログに残すだけにする。
+      await cashierRepository.setSubmittedOrder(savedOrder).catch((err) => {
+        console.error("レジ状態の同期に失敗しました", err);
+      });
+    },
+    [],
   );
 
   const syncOrder = useCallback(
@@ -72,6 +84,7 @@ export default function Cashier() {
       canSubmitOrder={canSubmitOrder}
       squareEnabled={squareStatus?.enabled ?? false}
       submitPayload={submitPayload}
+      submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}
     />
   );
@@ -95,8 +108,6 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
 
   const schema = z.object({
     newOrder: stringToJSONSchema.pipe(orderSchema),
-    // 省略時は現金。Square のときは決済依頼の ID を一緒に送る。
-    payment: stringToJSONSchema.pipe(orderPaymentSchema).optional(),
   });
   const submission = parseWithZod(formData, {
     schema,
@@ -106,10 +117,10 @@ export const submitOrderAction: ClientActionFunction = async ({ request }) => {
     return submission.reply();
   }
 
-  const { newOrder, payment } = submission.value;
+  const { newOrder } = submission.value;
   const order = OrderEntity.fromOrder(newOrder);
 
-  const savedOrder = await orderRepository.save(order, payment);
+  const savedOrder = await orderRepository.save(order);
 
   // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
   await cashierRepository.setSubmittedOrder(savedOrder);

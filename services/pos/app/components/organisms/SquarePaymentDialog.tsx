@@ -34,6 +34,7 @@ const phaseTitle: Record<SquarePaymentPhase, string> = {
   waiting: "端末でお支払いください",
   canceling: "取り消しています",
   paid: "お支払いが完了しました",
+  submitting: "注文を登録しています",
   failed: "決済できませんでした",
   attention: "確認が必要です",
   conflict: "別の決済が進行中です",
@@ -73,11 +74,15 @@ export const SquarePaymentDialog = ({
     phase === "waiting" &&
     checkout !== null &&
     Date.now() - new Date(checkout.created_at).getTime() > STUCK_AFTER_MS;
+  // 支払い済みなのに注文の登録に失敗した。送り直しても通らないとき
+  // （登録できていたのに応答だけ失われた、など）のために閉じられるようにする。
+  const submitFailed = phase === "paid" && message !== null;
   const closable =
     phase === "failed" ||
     phase === "attention" ||
     phase === "conflict" ||
-    stuck;
+    stuck ||
+    submitFailed;
 
   return (
     <AlertDialog open>
@@ -91,7 +96,8 @@ export const SquarePaymentDialog = ({
           <AlertDialogTitle className="flex items-center gap-2 text-2xl">
             {(phase === "creating" ||
               phase === "waiting" ||
-              phase === "canceling") && (
+              phase === "canceling" ||
+              phase === "submitting") && (
               <UpdateIcon className="h-6 w-6 animate-spin" />
             )}
             {phase === "paid" && (
@@ -134,6 +140,12 @@ export const SquarePaymentDialog = ({
               {phase === "paid" && !canSubmitOrder && (
                 <p className="font-bold text-red-700 text-sm">
                   お金は受け取っています。通信が戻ったら「注文を送信」を押してください。現金で取り直さないでください。
+                </p>
+              )}
+              {submitFailed && canSubmitOrder && (
+                <p className="font-bold text-red-700 text-sm">
+                  お金は受け取っています。現金で取り直さず、「注文を送信」で送り直してください。送り直しても登録できないときは、閉じて注文の一覧を確かめてください。登録されていなければ、右上の「未登録の
+                  Square 決済」から登録できます。
                 </p>
               )}
               {phase === "failed" && (

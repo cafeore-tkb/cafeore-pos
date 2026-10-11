@@ -1,12 +1,12 @@
 import type {
   MenuEntity,
   OrderEntity,
-  OrderPayment,
   SquarePaymentType,
   WithId,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
 import { usePrinter } from "~/label/print-util";
@@ -53,7 +53,12 @@ type props = {
   canSubmitOrder: boolean;
   /** Square 連携が有効か。無効なら Square のボタンを出さない */
   squareEnabled: boolean;
-  submitPayload: (order: OrderEntity, payment?: OrderPayment) => void;
+  submitPayload: (order: OrderEntity) => void;
+  /** Square で支払い済みの注文を送る。登録できなければ reject する */
+  submitSquarePayload: (
+    order: OrderEntity,
+    squareCheckoutId: string,
+  ) => Promise<void>;
   syncOrder: (order: OrderEntity) => void;
 };
 
@@ -76,6 +81,7 @@ const CashierV2 = ({
   canSubmitOrder,
   squareEnabled,
   submitPayload,
+  submitSquarePayload,
   syncOrder,
 }: props) => {
   const newOrder = useAtomValue(editingOrderAtom);
@@ -173,79 +179,96 @@ const CashierV2 = ({
     }
   }, [inputStatus, canEnterSubmit, setInputStatus]);
 
-  /**
-   * 注文を送る。送れたら true
-   *
-   * square を渡したときは Square で支払い済み。決済を始めた時点の注文（square.order）を、
-   * 画面に出ている注文番号で送る。お預かりは請求額と同じにする。
-   */
-  const submitOrder = useCallback(
-    (options?: {
-      exactPayment?: boolean;
-      square?: { checkoutId: string; order: OrderEntity };
-    }): boolean => {
-      if (!canSubmitOrder) {
-        return false;
-      }
-      const base = options?.square?.order ?? newOrder;
-      if (
-        !options?.square &&
-        !options?.exactPayment &&
-        newOrder.getCharge() < 0
-      ) {
-        return false;
-      }
-      if (base.menus.length === 0) {
-        return false;
-      }
-      // 送信する直前に createdAt を更新する
+  /** 送る直前の注文を作る。createdAt を今にし、備考を足す */
+  const prepareSubmit = useCallback(
+    (base: OrderEntity) => {
       const submitOne = base.clone();
-      if (options?.square) {
-        submitOne.orderId = newOrder.orderId;
-        submitOne.received = submitOne.billingAmount;
-      } else if (options?.exactPayment) {
-        submitOne.received = submitOne.billingAmount;
-      }
       submitOne.nowCreated();
       goodsOnlyServed(submitOne);
-      // 備考を追加
       submitOne.addComment("cashier", descComment);
-      printer.printOrderLabel(submitOne);
-      submitPayload(
-        submitOne,
-        options?.square
-          ? { method: "square", squareCheckoutId: options.square.checkoutId }
-          : undefined,
-      );
+      return submitOne;
+    },
+    [descComment],
+  );
 
-      // オフライン時（手動番号指定時）は次の番号を自動設定
-      if (manualOrderId !== null && wsStatus !== "open") {
-        setOrderIdOverride(manualOrderId + 1);
+  /** 注文を送った後、次の注文を入力できるようにする */
+  const finishSubmit = useCallback(() => {
+    // オフライン時（手動番号指定時）は次の番号を自動設定
+    if (manualOrderId !== null && wsStatus !== "open") {
+      setOrderIdOverride(manualOrderId + 1);
+    }
+
+    resetAll();
+    setServiceActive(false);
+    playSound();
+  }, [
+    manualOrderId,
+    wsStatus,
+    setOrderIdOverride,
+    resetAll,
+    setServiceActive,
+    playSound,
+  ]);
+
+  const submitOrder = useCallback(
+    (exactPayment?: boolean) => {
+      if (!canSubmitOrder) {
+        return;
       }
-
-      resetAll();
-      setServiceActive(false);
-      playSound();
-      return true;
+      if (!exactPayment && newOrder.getCharge() < 0) {
+        return;
+      }
+      if (newOrder.menus.length === 0) {
+        return;
+      }
+      const submitOne = prepareSubmit(newOrder);
+      if (exactPayment) submitOne.received = submitOne.billingAmount;
+      printer.printOrderLabel(submitOne);
+      submitPayload(submitOne);
+      finishSubmit();
     },
     [
       canSubmitOrder,
       newOrder,
-      resetAll,
+      prepareSubmit,
       printer,
       submitPayload,
-      descComment,
-      playSound,
-      manualOrderId,
-      setOrderIdOverride,
-      wsStatus,
-      setServiceActive,
+      finishSubmit,
+    ],
+  );
+
+  /**
+   * Square で支払い済みの注文を送る。送れたら true
+   *
+   * 決済を始めた時点の注文（order）を、画面に出ている注文番号で送る。お預かりは請求額と同じにする。
+   * 現金と違い、登録できたと分かってから印刷し、入力を消す。登録に失敗したら reject する
+   * （お金は受け取っているので、呼ぶ側で支払い済みのまま送り直せるようにする）。
+   */
+  const submitSquareOrder = useCallback(
+    async (checkoutId: string, order: OrderEntity): Promise<boolean> => {
+      if (!canSubmitOrder || order.menus.length === 0) {
+        return false;
+      }
+      const submitOne = prepareSubmit(order);
+      submitOne.orderId = newOrder.orderId;
+      submitOne.received = submitOne.billingAmount;
+      await submitSquarePayload(submitOne, checkoutId);
+      printer.printOrderLabel(submitOne);
+      finishSubmit();
+      return true;
+    },
+    [
+      canSubmitOrder,
+      prepareSubmit,
+      newOrder,
+      submitSquarePayload,
+      printer,
+      finishSubmit,
     ],
   );
 
   const squarePayment = useSquarePayment({
-    onPaid: (checkout, order) =>
-      submitOrder({ square: { checkoutId: checkout.id, order } }),
+    onPaid: (checkout, order) => submitSquareOrder(checkout.id, order),
   });
 
   const startSquarePayment = useCallback(
@@ -328,11 +351,13 @@ const CashierV2 = ({
               <SquareUnlinkedNotice
                 currentBillingAmount={newOrder.billingAmount}
                 canSubmit={canEnterSubmit && !squarePaymentActive}
-                onSubmitWithCheckout={(checkout) =>
-                  submitOrder({
-                    square: { checkoutId: checkout.id, order: newOrder },
-                  })
-                }
+                onSubmitWithCheckout={(checkout) => {
+                  submitSquareOrder(checkout.id, newOrder).catch((error) => {
+                    toast.error(
+                      `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  });
+                }}
               />
             )}
             <PrinterStatus status={printer.status} />
@@ -468,7 +493,7 @@ const CashierV2 = ({
             >
               <SubmitSection
                 submitOrder={submitOrder}
-                onExactPayment={() => submitOrder({ exactPayment: true })}
+                onExactPayment={() => submitOrder(true)}
                 order={newOrder}
                 focus={inputStatus === "submit" && !squarePaymentActive}
                 focusTarget={submitFocusTarget}
