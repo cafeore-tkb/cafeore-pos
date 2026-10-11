@@ -55,6 +55,23 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 豆キューは在庫の画面（`/inventory`）と同じカード（`components/organisms/inventory/StockCard`）で、そこからの棚卸し・入荷は POS の在庫に記録します（実データテスト中は記録しません）。
 - API の URL は POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 
+## ドリッパーの担当者と交代
+
+- 「今そのドリッパーに誰がいるか」（名前と、上級生か）はサーバーが日本時間の日付ごとに持ちます（API の表 `caos_lanes`。`api/internal/handlers/caos_lanes.go`）。全部の iPad に共有の WebSocket の `{"type":"caos_lanes"}` で届き（今日の 6 つ全部）、列の見出しに「1st 山田★」のように出します（上級生に ★。担当者がいなければ番号だけ）。閲覧だけの画面（`/master-sheet/view`）も名前を出しますが、交代はできません。
+- 替えるのは人が CaOS で行います。各ドリッパーの見出しの「交代」から、名前を選ぶか入れて替えます（`PUT /api/caos/lanes/{dripper}`）。空き（担当者なし）にもでき、ほかのドリッパーの担当者と入れ替えもできます（`POST /api/caos/lanes/swap`）。押したらその場で替わります（抽出中かどうかは見ません。待機のカードも動きません）。
+- 替えるたびに、サーバーが交代の記録（表 `caos_lane_changes`。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か。入れ替えは 2 行）を足します。抽出の統計のためのもので、画面には出しません。
+- 名前の候補は sohosai-shift の予定から出します。今の枠・次の枠（本番の 30 分ごとの枠）と、オペ練の今と次のラウンドの、そのドリッパーの番目の人です。候補に無い人は自由に入れられます。予定どおりに自動で替えることはしません。
+- 上級生かは、sohosai-shift の上級生の名簿（`seniors`）に名前があるかで、交代した時点の判定をサーバーに持ちます。判定するのは画面で、サーバーは名簿を持たず、送られた値（`senior`）をそのまま信じます（`PUT /api/caos/cups` の上級生のみの確かめもこの値で行います）。
+- 上級生のみのカードは、担当者が上級生のドリッパーにしか置けません（画面の `seniorOnlyBlock` とサーバーの `PUT /api/caos/cups` の両方で確かめます。別のドリッパーへ置くときだけで、同じドリッパーの中の順番の入れ替えは確かめません。実データテストでは確かめません）。上級生でない人（担当者なしも）に替えるとき、そのドリッパーに上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめます。どのドリッパーにも上級生がいなければヘッダーに知らせます。
+- 画面は `hooks/useCaosLanes.tsx`（担当者と交代の流れ）・`hooks/useShiftFeed.ts`（予定の読み込み）・`components/LaneParts.tsx`（見出しの名前と「交代」・ヘッダーの知らせ）・`components/LaneDialogs.tsx`（交代・確認・合言葉）、決まりは `@cafeore/common` の `caosLanes.ts` と `caosShiftFeed.ts` です。
+
+### sohosai-shift の合言葉の入れ方
+
+1. sohosai-shift で CaOS へ配信し、合言葉を受け取ります。
+2. 各 iPad の CaOS のヘッダーの鍵のボタン（または「交代」の中の「合言葉」）を押し、合言葉を入れて「保存」します。その端末にだけ覚えます（`localStorage`。ビルドには入れません）。
+3. 予定は Firestore の REST（`https://firestore.googleapis.com/v1/projects/sohosai-shift/databases/(default)/documents/caosFeeds/{合言葉}`）で 5 分ごとに読み直します。
+4. 合言葉が無い・読めない端末でも、名前を入れれば交代できます（候補が出ないのと、上級生と判定できないだけです）。
+
 ## 実データ・テストプレイ
 
 - ヘッダーの「実データテスト」から、過去の祭の実注文を使ったテストプレイを開始できます。

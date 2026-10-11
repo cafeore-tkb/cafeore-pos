@@ -20,6 +20,7 @@ import { type Lane, laneActive, moveTargets } from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
@@ -247,7 +248,7 @@ export const AuxiliaryContent: React.FC<
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の今の抽出と待ちの件数
+  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
   return (
     <div className="grid grid-cols-2 gap-2">
       {lanes.map((lane) => {
@@ -257,7 +258,14 @@ export const AuxiliaryContent: React.FC<
             key={lane.id}
             className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs"
           >
-            <LaneBadge bayId={lane.id} />
+            <div className="flex items-center gap-2">
+              <LaneBadge bayId={lane.id} />
+              <LaneName
+                dripper={lane.id}
+                className="font-black text-[14px] text-slate-950"
+              />
+              <LaneChangeButton dripper={lane.id} className="ml-auto" />
+            </div>
             <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
               {current ? (
                 <div className="flex items-center justify-between gap-2">

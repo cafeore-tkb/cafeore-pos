@@ -16,6 +16,7 @@ import {
 import type React from "react";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 
 export type NavTab = "control" | AuxiliaryTab;
@@ -263,6 +264,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
+        <LaneHeaderStatus />
         <PosStatusBadge status={posStatus} />
         <button
           type="button"

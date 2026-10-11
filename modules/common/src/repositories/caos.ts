@@ -48,3 +48,26 @@ export const nextCaosDripper = async (
       body: { drip_id: dripId },
     }),
   );
+
+/**
+ * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
+ * 変えた結果は全部の画面に共有の WebSocket の {"type":"caos_lanes"} で届く
+ */
+export const putCaosLane = async (
+  dripper: number,
+  name: string,
+  senior: boolean,
+): Promise<CaosResult> =>
+  send(
+    apiClient.PUT("/api/caos/lanes/{dripper}", {
+      params: { path: { dripper } },
+      body: { name, senior },
+    }),
+  );
+
+/** 2 つのドリッパーの担当者を入れ替える（POST /api/caos/lanes/swap） */
+export const swapCaosLanes = async (
+  first: number,
+  second: number,
+): Promise<CaosResult> =>
+  send(apiClient.POST("/api/caos/lanes/swap", { body: { first, second } }));
