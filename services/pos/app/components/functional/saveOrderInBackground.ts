@@ -42,7 +42,6 @@ const notifySaveFailed = (
     description: error instanceof Error ? error.message : String(error),
     duration: Number.POSITIVE_INFINITY,
     dismissible: false,
-    richColors: true,
     action: {
       label: "再送",
       onClick: (event) => {
