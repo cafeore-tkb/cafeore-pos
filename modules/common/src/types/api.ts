@@ -167,7 +167,7 @@ export interface paths {
      * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
      * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
      * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
-     * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+     * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
      */
     put: operations["putCaosLane"];
   };
@@ -1736,7 +1736,7 @@ export interface operations {
    * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
    * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
    * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
-   * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+   * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
    */
   putCaosLane: {
     parameters: {
