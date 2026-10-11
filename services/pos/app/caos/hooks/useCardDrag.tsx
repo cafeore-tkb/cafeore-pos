@@ -152,6 +152,8 @@ export const useCardDrag = <S, T>(handlers: {
     // A mouse drag never scrolls, so only touch and pen leave the scroll axis to the browser.
     const scrollAxis = event.pointerType === "mouse" ? undefined : scroll;
     let dragging = false;
+    // 掴んだあと指が動いたか（長押しして動かさずに離したのはタップ）
+    let moved = false;
     const begin = () => {
       window.clearTimeout(holdTimer);
       dragging = true;
@@ -179,6 +181,7 @@ export const useCardDrag = <S, T>(handlers: {
         }
         begin();
       }
+      moved ||= Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
       // Move the ghost directly; the board re-renders only when the drop target changes.
       offset.current = { x: dx, y: dy };
       placeGhost();
@@ -193,10 +196,11 @@ export const useCardDrag = <S, T>(handlers: {
       if (!dragging) return;
       setDrag(null);
       setTarget(null);
-      suppressNextClick.current = true;
-      const dropTarget = dropped
-        ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
-        : null;
+      suppressNextClick.current = moved;
+      const dropTarget =
+        dropped && moved
+          ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
+          : null;
       if (dropTarget !== null) latest.current.onDrop(source, dropTarget);
     };
     const onUp = (upEvent: PointerEvent) => finish(upEvent, true);

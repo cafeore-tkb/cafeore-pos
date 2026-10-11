@@ -173,35 +173,33 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const renderEntry = (
     { card: ticket, state, rowIds }: SheetEntry,
     bayId: number,
-  ) => {
-    return (
-      <OrderCard
-        key={ticket.key}
-        card={ticket}
-        look={looks.get(ticket.key)}
-        size="sm"
-        note={rowIds.length > 1 ? "統合" : undefined}
-        onPointerDown={
-          state === "waiting"
-            ? (event) =>
-                drag.press(
-                  { kind: "ticket", ticket, fromBayId: bayId },
-                  event,
-                  "y",
-                )
-            : undefined
-        }
-        onClickCapture={drag.suppressClick}
-        onClick={
-          state === "waiting" ? () => onOpenTicketDetail(ticket) : undefined
-        }
-        className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-pan-y hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
-        dragging={dragCup?.key === ticket.key}
-      >
-        <PlaceTag label={places.get(ticket.key)} />
-      </OrderCard>
-    );
-  };
+  ) => (
+    <OrderCard
+      key={ticket.key}
+      card={ticket}
+      look={looks.get(ticket.key)}
+      size="sm"
+      note={rowIds.length > 1 ? "統合" : undefined}
+      onPointerDown={
+        state === "waiting"
+          ? (event) =>
+              drag.press(
+                { kind: "ticket", ticket, fromBayId: bayId },
+                event,
+                "y",
+              )
+          : undefined
+      }
+      onClickCapture={drag.suppressClick}
+      onClick={
+        state === "waiting" ? () => onOpenTicketDetail(ticket) : undefined
+      }
+      className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-pan-y hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      dragging={dragCup?.key === ticket.key}
+    >
+      <PlaceTag label={places.get(ticket.key)} />
+    </OrderCard>
+  );
 
   return (
     <section
@@ -247,34 +245,32 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 >
                   注文 No.
                 </th>
-                {columns.map(({ bay, lane }) => {
-                  return (
-                    <th
-                      key={bay.id}
-                      data-bay-target={bay.id}
-                      className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
-                        hoveredTarget === bay.id ? "bg-blue-100" : ""
-                      }`}
-                    >
-                      <DripperIndicator
-                        bayId={bay.id}
-                        status={lane}
-                        nominatedCups={pendingNominatedCups(
-                          unassignedOrders,
-                          bay.id,
-                        )}
-                        className="h-[60px] w-full"
+                {columns.map(({ bay, lane }) => (
+                  <th
+                    key={bay.id}
+                    data-bay-target={bay.id}
+                    className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
+                      hoveredTarget === bay.id ? "bg-blue-100" : ""
+                    }`}
+                  >
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
+                      )}
+                      className="h-[60px] w-full"
+                    />
+                    <div className="mt-1 flex min-w-0 items-center justify-center gap-1">
+                      <LaneName
+                        dripper={bay.id}
+                        className="font-black text-[13px]"
                       />
-                      <div className="mt-1 flex min-w-0 items-center justify-center gap-1">
-                        <LaneName
-                          dripper={bay.id}
-                          className="font-black text-[13px]"
-                        />
-                        <LaneChangeButton dripper={bay.id} compact />
-                      </div>
-                    </th>
-                  );
-                })}
+                      <LaneChangeButton dripper={bay.id} compact />
+                    </div>
+                  </th>
+                ))}
                 <th
                   className={`border-b-4 border-l-4 px-1 font-black text-[12px] ${LINE}`}
                 >

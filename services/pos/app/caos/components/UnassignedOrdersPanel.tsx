@@ -34,9 +34,18 @@ const UnassignedCard: React.FC<{
   selected: boolean;
   /** 置いた枠のスクロールの向き（無ければ枠はスクロールしない） */
   scroll?: "x" | "y";
-  readOnly: boolean;
+  readOnly?: boolean;
   className?: string;
-}> = ({ card, looks, pick, size, selected, scroll, readOnly, className }) => {
+}> = ({
+  card,
+  looks,
+  pick,
+  size,
+  selected,
+  scroll,
+  readOnly = false,
+  className = "",
+}) => {
   const isOpen = pick.isOpen(card);
   const isMergeCandidate = pick.canMergeWith(card);
   const touch = scroll && !isOpen ? TOUCH[scroll] : "touch-none";
@@ -54,7 +63,7 @@ const UnassignedCard: React.FC<{
       }
       onClickCapture={pick.drag.suppressClick}
       onClick={readOnly ? undefined : () => pick.tap(card)}
-      className={`${readOnly ? "touch-manipulation" : `cursor-grab active:cursor-grabbing ${touch}`} ${isOpen ? "z-40" : ""} ${className ?? ""}`}
+      className={`${readOnly ? "touch-manipulation" : `cursor-grab active:cursor-grabbing ${touch}`} ${isOpen ? "z-40" : ""} ${className}`}
       dragging={pick.drag.source?.key === card.key}
     >
       {isMergeCandidate && <MergeOverlay />}
@@ -259,7 +268,6 @@ export const OrderQueuePanel: React.FC<
                       size="sm"
                       selected={selected}
                       scroll="y"
-                      readOnly={false}
                       className="h-[50px] w-[150px]"
                     />
                   );

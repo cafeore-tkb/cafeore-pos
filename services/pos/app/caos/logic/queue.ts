@@ -76,24 +76,18 @@ const lanePhase = (
   return "brewing";
 };
 
-/**
- * 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・
- * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中・状態（phase）
- */
+/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・状態（phase） */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
   const remainingMs = current ? Math.max(0, brewMs(current) - elapsedMs) : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
-  const brewing = Boolean(lane.brewing);
   return {
     current,
     waiting,
     remainingMs,
     remainingSec,
-    soon: brewing && remainingSec <= SOON_SEC,
-    overtime: brewing && remainingSec === 0,
-    phase: lanePhase(current, brewing, remainingSec),
+    phase: lanePhase(current, Boolean(lane.brewing), remainingSec),
   };
 };
 
