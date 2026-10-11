@@ -14,6 +14,16 @@
   // 公開したままにしたくない場合は、ここを false にして配信自体を止めること。
   "preview_urls": true,
 
+  // Workers Logs。console.log などの出力と、リクエストごとの呼び出しログ
+  // （invocation_logs）をダッシュボードで検索できるように残す（persist）。
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true
+    }
+  },
+
   // 画面は静的アセット（react-router は ssr: false なので build/client の中身だけ）。
   // スクリプトは API への中継だけを受け持つ（worker/index.ts の冒頭を参照）。
   //
