@@ -111,11 +111,11 @@ func TestMasterStateMessage(t *testing.T) {
 
 func TestColorSettingMessages(t *testing.T) {
 	after := models.ColorSetting{Screen: "master", Color: "#7bf1a8"}
-	if got := colorSettingSavedMessage("ライチ", &models.ColorSetting{}, &after); got != "🆕 背景色を追加: ライチ（マスター）#7bf1a8 :e-add:" {
+	if got := colorSettingSavedMessage("ライチ", &models.ColorSetting{}, &after); got != "🆕 背景色を追加: マスターのライチ #7bf1a8 :e-add:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 	before := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#bedbff"}
-	if got := colorSettingSavedMessage("ライチ", &before, &after); got != "✏️ 背景色を変更: ライチ（マスター）#bedbff → #7bf1a8 :e-change:" {
+	if got := colorSettingSavedMessage("ライチ", &before, &after); got != "✏️ 背景色を変更: マスターのライチ #bedbff → #7bf1a8 :e-change:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 	same := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#7bf1a8"}
@@ -123,11 +123,11 @@ func TestColorSettingMessages(t *testing.T) {
 		t.Fatalf("expected no message, got %q", got)
 	}
 	deleted := models.ColorSetting{Screen: "serve", Color: "#fff085"}
-	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: ミルク（提供）#fff085 :e-delete:" {
+	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: 提供のミルク #fff085 :e-delete:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 	cashier := models.ColorSetting{Screen: "cashier_order", Color: "#fff085"}
-	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: ミルク（レジ（過去の注文））#fff085 :e-add:" {
+	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: レジ（過去の注文）のミルク #fff085 :e-add:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
