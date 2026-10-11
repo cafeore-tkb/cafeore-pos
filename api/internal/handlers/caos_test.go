@@ -693,18 +693,6 @@ func TestCaosConcurrentWrites(t *testing.T) {
 	}
 }
 
-// nextBroadcast は hub に溜まった次の配信を待って返す（Run しない hub で使う）。
-func nextBroadcast(t *testing.T, h *Hub) WSMessage {
-	t.Helper()
-	select {
-	case msg := <-h.broadcast:
-		return msg
-	case <-time.After(5 * time.Second):
-		t.Fatal("no broadcast")
-		return WSMessage{}
-	}
-}
-
 // broadcastOrders は hub に溜まった注文の配信を、しばらく届かなくなるまで読み、注文の ID を返す。
 func broadcastOrders(t *testing.T, h *Hub) map[uuid.UUID]bool {
 	t.Helper()

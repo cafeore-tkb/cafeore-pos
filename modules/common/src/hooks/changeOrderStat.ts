@@ -1,10 +1,14 @@
 import createClient from "openapi-fetch";
+import type { OrderStatType } from "../models/global";
 import { API_BASE_URL } from "../repositories";
 import type { paths } from "../types/api";
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
-export const updateMasterStatus = async (type: string) => {
+/**
+ * オーダーストップ・再開する。状態を書くのは API だけで、各画面には WebSocket の master_state で届く
+ */
+export const updateMasterStatus = async (type: OrderStatType) => {
   const { data, error, response } = await client.POST("/api/master-status", {
     body: {
       type,
