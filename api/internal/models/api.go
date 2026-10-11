@@ -396,10 +396,13 @@ type MenuUpdateRequest struct {
 
 // OrderCreateRequest defines model for OrderCreateRequest.
 type OrderCreateRequest struct {
-	BillingAmount     int                     `json:"billing_amount"`
-	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
-	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *int                    `json:"discount_order_id"`
+	BillingAmount int                     `json:"billing_amount"`
+	Comments      *[]CommentCreateRequest `json:"comments,omitempty"`
+
+	// CreatedAt レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
+	CreatedAt         *time.Time `json:"created_at,omitempty"`
+	DiscountOrderCups *int       `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *int       `json:"discount_order_id"`
 
 	// IdempotencyKey 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
 	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
@@ -491,6 +494,24 @@ type OrderUpdateRequest struct {
 
 // PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 type PaymentMethod string
+
+// PrinterSettingsResponse defines model for PrinterSettingsResponse.
+type PrinterSettingsResponse struct {
+	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+	LabelPrinterIp string `json:"label_printer_ip"`
+
+	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
+	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+}
+
+// PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
+type PrinterSettingsUpdateRequest struct {
+	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+	LabelPrinterIp string `json:"label_printer_ip"`
+
+	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
+	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+}
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
 type SquareCheckoutConflictResponse struct {
@@ -780,6 +801,9 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// UpdatePrinterSettingsJSONRequestBody defines body for UpdatePrinterSettings for application/json ContentType.
+type UpdatePrinterSettingsJSONRequestBody = PrinterSettingsUpdateRequest
 
 // CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
 type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest
