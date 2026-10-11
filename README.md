@@ -175,9 +175,10 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
   何度でも刷れ、再発行の印は付かない。
 - 中身は `services/pos/app/label/receipt.ts`、描き方は `receipt-canvas.ts`。太字やロゴの横並びをデザインどおりに
   刷るため、プリンターの文字ではなく、ブラウザの canvas で描いた白黒の画像を刷る（フォントは画面と同じ Noto Sans JP、
-  ロゴは `app/assets/receipt/ore-logo.svg`）。幅は **80mm の紙の印字幅 576 ドット**（203dpi の機種）に合わせてある。
-  58mm の紙や 180dpi の機種に替えるときは `RECEIPT_WIDTH` と寸法を見直す。プリンターの設定（紙を切るなど）は
-  `infra/epos.ts` の `RECEIPT_EPOS_PRINTER_CONFIG`。
+  ロゴは `app/assets/receipt/ore-logo.svg`）。寸法は幅 576 の座標で決めてあり、刷るときに紙の印字幅
+  （`RECEIPT_WIDTH`）に縮める。今は **TM-m30 の 58mm の紙（420 ドット）** に合わせてある。80mm の紙に替えるときは
+  `RECEIPT_WIDTH` を 576 にする（ほかの機種は印字幅のドット数を確かめる。広すぎると右端が切れる）。
+  プリンターの設定（紙を切るなど）は `infra/epos.ts` の `RECEIPT_EPOS_PRINTER_CONFIG`。
 
 ### Square Terminal 連携
 

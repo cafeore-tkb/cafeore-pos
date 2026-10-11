@@ -18,12 +18,22 @@ import {
  * 太字や大きさの違う文字、ロゴと文字の横並びをデザインどおりに刷るため、
  * プリンターの文字ではなく、画面で描いた白黒の画像を刷る。
  *
- * 単位はドット。80mm の紙の印字幅（576 ドット。203dpi の機種で 72mm）に合わせる。
- * 寸法はデザインのモック（紙の幅 80mm を 229px で描いたもの）の 1px を約 2.8 ドットとして写した。
+ * 寸法は幅 576 の座標で決めてある（デザインのモックの紙の幅 229px の 1px を約 2.8 として写した）。
+ * 描くときに紙の印字幅（RECEIPT_WIDTH ドット）に縮めるので、紙の幅を変えても比率は変わらない。
  */
 
-/** 紙の印字できる幅 */
-export const RECEIPT_WIDTH = 576;
+/**
+ * 紙の印字できる幅（ドット）
+ *
+ * TM-m30 で 58mm の紙なら 420 ドット（52.5mm）。80mm の紙なら 576 ドット（72mm）にする。
+ */
+export const RECEIPT_WIDTH = 420;
+
+/** 寸法を決めている座標の幅 */
+const DESIGN_WIDTH = 576;
+
+/** 座標を刷るドットに直す倍率 */
+const SCALE = RECEIPT_WIDTH / DESIGN_WIDTH;
 
 /** 画面と同じフォント（tailwind.css で読み込んでいる） */
 const FONT_FAMILY = '"Noto Sans JP Variable", sans-serif';
@@ -91,6 +101,7 @@ export const fitText = (
   return `${chars.join("")}…`;
 };
 
+/** width × height ドットの白い canvas */
 const createCanvas = (width: number, height: number) => {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -100,6 +111,16 @@ const createCanvas = (width: number, height: number) => {
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, width, height);
   return { canvas, ctx };
+};
+
+/** 座標で width × height の大きさを、刷るドットに縮めて描ける canvas */
+const createDesignCanvas = (width: number, height: number) => {
+  const created = createCanvas(
+    Math.round(width * SCALE),
+    Math.round(height * SCALE),
+  );
+  created.ctx.scale(SCALE, SCALE);
+  return created;
 };
 
 /** y を文字の縦の中心にして書く */
@@ -136,9 +157,10 @@ const drawDashedLine = (ctx: Ctx, x1: number, x2: number, y: number) => {
 };
 
 /**
- * ロゴを size × size で置く。細い線が残るよう、ロゴだけ別に白黒にしてから重ねる
+ * ロゴを座標で size × size の大きさに置く。細い線が残るよう、ロゴだけ別に白黒にしてから重ねる
  *
- * 重ねるときに画素がぼけないよう、置く位置は整数に丸める。
+ * 縮めながら重ねると画素がぼけて細い線が消えるので、刷るドットの大きさで白黒にし、
+ * 縮めずに整数のドットの位置へ置く。
  */
 const drawLogo = (
   ctx: Ctx,
@@ -147,14 +169,18 @@ const drawLogo = (
   y: number,
   size: number,
 ) => {
-  const { canvas, ctx: logoCtx } = createCanvas(size, size);
-  logoCtx.drawImage(logo, 0, 0, size, size);
+  const dots = Math.round(size * SCALE);
+  const { canvas, ctx: logoCtx } = createCanvas(dots, dots);
+  logoCtx.drawImage(logo, 0, 0, dots, dots);
   logoCtx.putImageData(
-    binarize(logoCtx.getImageData(0, 0, size, size), LOGO_THRESHOLD),
+    binarize(logoCtx.getImageData(0, 0, dots, dots), LOGO_THRESHOLD),
     0,
     0,
   );
-  ctx.drawImage(canvas, Math.round(x), Math.round(y));
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(canvas, Math.round(x * SCALE), Math.round(y * SCALE));
+  ctx.restore();
 };
 
 /** ロゴ・名前・読み。ロゴが無ければ名前と読みだけ置く */
@@ -190,7 +216,7 @@ const gap = (height: number): Block => ({ height });
 /** 部品を上から積んだ高さの canvas に描く */
 const stack = (width: number, blocks: Block[]) => {
   const height = blocks.reduce((sum, block) => sum + block.height, 0);
-  const { canvas, ctx } = createCanvas(width, height);
+  const { canvas, ctx } = createDesignCanvas(width, height);
   let top = 0;
   for (const block of blocks) {
     block.draw?.(ctx, top);
@@ -258,7 +284,7 @@ const CLAIM_NUMBER: TextStyle = { size: 140, weight: 800, align: "center" };
 
 const CLAIM_NOTE_LINES = ["この番号で", "お呼びいたします"];
 
-const contentRight = RECEIPT_WIDTH - PADDING_X;
+const contentRight = DESIGN_WIDTH - PADDING_X;
 
 /** 左に名前と個数、右に金額。名前が長ければ金額にかからないよう名前だけ切る */
 const drawRow = (
@@ -296,7 +322,7 @@ const rule: Block = {
 const issuerBlock = (logo: HTMLImageElement | null): Block => ({
   height: RECEIPT_LOGO_SIZE,
   draw: (ctx, top) => {
-    const x = (RECEIPT_WIDTH - issuerWidth(ctx, logo, RECEIPT_LOGO_SIZE)) / 2;
+    const x = (DESIGN_WIDTH - issuerWidth(ctx, logo, RECEIPT_LOGO_SIZE)) / 2;
     drawIssuer(ctx, logo, x, top, RECEIPT_LOGO_SIZE);
   },
 });
@@ -327,7 +353,7 @@ const claimNumberBlock = (claimNumber: string): Block => ({
     drawText(
       ctx,
       claimNumber,
-      RECEIPT_WIDTH / 2,
+      DESIGN_WIDTH / 2,
       top + NUMBER_LINE / 2,
       CLAIM_NUMBER,
     ),
@@ -379,7 +405,7 @@ export const drawOrderReceipt = async (
     gap(40),
   );
 
-  const { ctx } = stack(RECEIPT_WIDTH, blocks);
+  const { ctx } = stack(DESIGN_WIDTH, blocks);
   return toRasterImage(ctx);
 };
 
@@ -391,7 +417,7 @@ export const drawOrderReceipt = async (
  * 横長の高さが紙の印字幅になる。回すと左端（「領収書」の側）が先に出る。
  */
 const FORMAL_WIDTH = 1346;
-const FORMAL_HEIGHT = RECEIPT_WIDTH;
+const FORMAL_HEIGHT = DESIGN_WIDTH;
 const FORMAL_LOGO_SIZE = 185;
 
 const FORMAL_TITLE: TextStyle = { size: 56, weight: 700 };
@@ -425,7 +451,7 @@ export const drawFormalReceipt = async (
   ]);
   const logo = await loadLogo();
 
-  const { canvas, ctx } = createCanvas(FORMAL_WIDTH, FORMAL_HEIGHT);
+  const { canvas, ctx } = createDesignCanvas(FORMAL_WIDTH, FORMAL_HEIGHT);
   const right = FORMAL_WIDTH - PADDING_X;
 
   drawText(ctx, "領収書", PADDING_X, 67, FORMAL_TITLE);
