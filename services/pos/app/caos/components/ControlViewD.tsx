@@ -12,7 +12,7 @@ import {
   useSheetSelection,
 } from "../hooks/useSheetSelection";
 import { cardName, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
-import { clockLabel } from "../logic/format";
+import { cardPlaces, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   type SheetEntry,
@@ -23,10 +23,11 @@ import {
   orderCupsOf,
 } from "../logic/sheet";
 import {
+  DripperIndicator,
   EmptySlotButton,
-  LaneBadge,
   NextButton,
   PanelHeader,
+  PlaceTag,
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
@@ -34,6 +35,8 @@ import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。
+// 列の見出しはドリッパーの番号（列の状態）と担当者、「次へ」は表の下に固定（押す手で表を隠さない）。
+// 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 
 // 表の行は少なくともこれだけ（空の行で表の高さをそろえる）
 const MIN_ROWS = 8;
@@ -114,8 +117,9 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     [selectedOrderId, bays, unassignedOrders],
   );
   const targetRowId = selectedOrder?.orderNo ?? null;
-  // 列ごとの今（抽出中のカード・残り・まもなく）
-  const lanes = new Map(bays.map((bay) => [bay.id, laneStatus(bay, nowMs)]));
+  // 列ごとの今（抽出中のカード・残り・状態）と、表のカードの場所の札
+  const columns = bays.map((bay) => ({ bay, lane: laneStatus(bay, nowMs) }));
+  const places = cardPlaces(bays);
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 
   // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。
@@ -167,50 +171,40 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       : `${card} → 配置する枠を選択`;
   };
 
+  // 抽出中・待機・済は札（「3rd 抽出中」）で、残りはドリッパーの番号で出す
   const renderEntry = (
     { card: ticket, state, rowIds }: SheetEntry,
     bayId: number,
-    remainingSec: number,
-  ) => {
-    const brewingNote =
-      remainingSec > 0 ? `抽出中 残${clockLabel(remainingSec)}` : "抽出中";
-    return (
-      <OrderCard
-        key={ticket.key}
-        card={ticket}
-        look={looks.get(ticket.key)}
-        size="sm"
-        note={[
-          rowIds.length > 1 ? "統合" : "",
-          state === "current" ? brewingNote : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onPointerDown={
-          state === "waiting"
-            ? (event) =>
-                drag.press(
-                  { kind: "ticket", ticket, fromBayId: bayId },
-                  event,
-                  false,
-                )
-            : undefined
-        }
-        onClickCapture={drag.suppressClick}
-        onClick={() =>
-          state === "waiting"
-            ? onOpenTicketDetail(ticket)
-            : onOpenRebrew?.(ticket)
-        }
-        className={`h-[64px] shrink-0 ${state === "waiting" ? "cursor-pointer hover:ring-2 hover:ring-slate-400" : ""} ${
-          state === "waiting"
-            ? "cursor-grab touch-pan-y active:cursor-grabbing"
-            : ""
-        } ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
-        dragging={dragCup?.key === ticket.key}
-      />
-    );
-  };
+  ) => (
+    <OrderCard
+      key={ticket.key}
+      card={ticket}
+      look={looks.get(ticket.key)}
+      size="sm"
+      note={rowIds.length > 1 ? "統合" : undefined}
+      onPointerDown={
+        state === "waiting"
+          ? (event) =>
+              drag.press(
+                { kind: "ticket", ticket, fromBayId: bayId },
+                event,
+                "y",
+              )
+          : undefined
+      }
+      onClickCapture={drag.suppressClick}
+      // 抽出中・済のカードは入れ直し
+      onClick={() =>
+        state === "waiting"
+          ? onOpenTicketDetail(ticket)
+          : onOpenRebrew?.(ticket)
+      }
+      className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-pan-y hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      dragging={dragCup?.key === ticket.key}
+    >
+      <PlaceTag label={places.get(ticket.key)} />
+    </OrderCard>
+  );
 
   return (
     <section
@@ -249,42 +243,39 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
               ))}
               <col className="w-[52px]" />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-100">
+            <thead className="sticky top-0 z-30 bg-slate-100">
               <tr>
                 <th
                   className={`border-r-4 border-b-4 px-1 font-black text-[13px] ${LINE}`}
                 >
                   注文 No.
                 </th>
-                {bays.map((bay) => {
-                  const lane = lanes.get(bay.id);
-                  return (
-                    <th
-                      key={bay.id}
-                      data-bay-target={bay.id}
-                      className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
-                        hoveredTarget === bay.id ? "bg-blue-100" : ""
-                      }`}
-                    >
-                      <div className="flex min-w-0 items-center justify-center gap-1">
-                        <LaneBadge bayId={bay.id} />
-                        <LaneName
-                          dripper={bay.id}
-                          className="font-black text-[13px]"
-                        />
-                        <LaneChangeButton dripper={bay.id} compact />
-                      </div>
-                      <NextButton
-                        bayId={bay.id}
-                        active={Boolean(lane?.current)}
-                        soon={lane?.soon ?? false}
-                        remainingSec={lane?.remainingSec}
-                        onAdvance={onAdvanceBay}
-                        className="mt-1 h-8 w-full text-[11px]"
+                {columns.map(({ bay, lane }) => (
+                  <th
+                    key={bay.id}
+                    data-bay-target={bay.id}
+                    className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
+                      hoveredTarget === bay.id ? "bg-blue-100" : ""
+                    }`}
+                  >
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
+                      )}
+                      className="h-[60px] w-full"
+                    />
+                    <div className="mt-1 flex min-w-0 items-center justify-center gap-1">
+                      <LaneName
+                        dripper={bay.id}
+                        className="font-black text-[13px]"
                       />
-                    </th>
-                  );
-                })}
+                      <LaneChangeButton dripper={bay.id} compact />
+                    </div>
+                  </th>
+                ))}
                 <th
                   className={`border-b-4 border-l-4 px-1 font-black text-[12px] ${LINE}`}
                 >
@@ -329,30 +320,26 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         selectedOrder !== null &&
                         caosDripperAllowed(selectedOrder, bay.id);
                       const entries = cellEntries.map((entry) =>
-                        renderEntry(
-                          entry,
-                          bay.id,
-                          lanes.get(bay.id)?.remainingSec ?? 0,
-                        ),
+                        renderEntry(entry, bay.id),
                       );
                       return (
                         <td
                           key={bay.id}
                           rowSpan={cell?.rowSpan ?? 1}
                           data-bay-target={bay.id}
-                          className={`relative border-r-2 border-b-2 p-1 align-top ${LINE} ${cellTone(
+                          className={`relative border-r-2 border-b-2 px-1 pt-2.5 pb-1 align-top ${LINE} ${cellTone(
                             isDropColumn,
                             isRowLinked && cellEntries.length > 0,
                           )}`}
                         >
                           {(cell?.rowSpan ?? 1) > 1 ? (
                             <div
-                              className={`absolute inset-1 flex flex-col rounded-xl border-4 bg-white/60 p-1 ${LINE}`}
+                              className={`absolute inset-1 flex flex-col gap-2.5 rounded-xl border-4 bg-white/60 p-1 pt-2.5 ${LINE}`}
                             >
                               {entries}
                             </div>
                           ) : (
-                            <div className="flex min-h-[64px] flex-col gap-1">
+                            <div className="flex min-h-[60px] flex-col gap-2.5">
                               {entries}
                               {cell?.mergedStubs.map(
                                 ({ card: ticket, rowIds }) => (
@@ -369,7 +356,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   type="button"
                                   aria-label={`ドリッパー${dripperLabel(bay.id)}に配置`}
                                   onClick={() => picked.assignTo(bay.id)}
-                                  className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
+                                  className={`h-[60px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
                                     isDropColumn
                                       ? "border-blue-700 bg-blue-200 text-blue-800 ring-2 ring-blue-400"
                                       : "border-blue-600 bg-blue-50 text-blue-700"
@@ -430,6 +417,30 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 </tr>
               ))}
             </tbody>
+            {/* 次へ（表の下に固定） */}
+            <tfoot className="sticky bottom-0 z-30 bg-slate-100">
+              <tr>
+                <th
+                  className={`border-t-4 border-r-4 px-1 font-black text-[12px] ${LINE}`}
+                >
+                  次へ
+                </th>
+                {columns.map(({ bay, lane }) => (
+                  <td
+                    key={bay.id}
+                    className={`border-t-4 border-r-2 p-1 ${LINE}`}
+                  >
+                    <NextButton
+                      bayId={bay.id}
+                      active={Boolean(lane.current)}
+                      onAdvance={onAdvanceBay}
+                      className="h-12 w-full text-[15px]"
+                    />
+                  </td>
+                ))}
+                <td className={`border-t-4 border-l-4 ${LINE}`} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
@@ -498,7 +509,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                           drag.press(
                             { kind: "unassigned", order },
                             event,
-                            isSelected,
+                            isSelected ? undefined : "y",
                           )
                         }
                         onClickCapture={drag.suppressClick}

@@ -10,30 +10,25 @@ import {
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
-import { clockLabel } from "../logic/format";
-import { laneCards } from "../logic/lanes";
+import { laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
-import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
+import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { BayPad, CancelEmergencyButton, OrderCard } from "./OrderCard";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
+// 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
-// ドラッグで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う）。
+// 縦に引くか長押しで掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う）。
+// 横に払うとタイムラインのスクロール（カードの上でもスクロールできる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
-const STICKY_LEFT_WIDTH = 290; // 195px bay + 95px action
+// 左端の列（ドリッパーの番号と担当者）の幅
+const STICKY_LEFT_WIDTH = 168;
 // 90 seconds of past context remains visible to the left of NOW.
 const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
-
-// 列の残り時間（カードが無ければ「--:--」、予定を過ぎたら「継続中」）
-const remainingText = (lane: ReturnType<typeof laneStatus>) => {
-  if (!lane.current) return "--:--";
-  if (lane.overtime) return "継続中";
-  return clockLabel(lane.remainingSec);
-};
 
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
@@ -42,12 +37,10 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<
-    ControlViewProps,
-    "unassignedOrders" | "nextAvailable" | "onAssignToBay" | "onMergeOrders"
-  >
+  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay" | "onMergeOrders">
 > = ({
   lanes,
+  unassignedOrders,
   looks,
   selectedOrderId,
   onSelectOrder,
@@ -111,17 +104,20 @@ export const DispatchBoard: React.FC<
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       {scroll.isPastView && (
-        <div className="flex h-[28px] items-center gap-1 border-amber-200 border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
+        <div
+          style={{ left: STICKY_LEFT_WIDTH }}
+          className="absolute top-0 z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900"
+        >
           <RotateCcw className="h-3 w-3" />
           <span>過去の抽出履歴を表示中</span>
         </div>
       )}
 
-      {/* 選んだ注文（同じ注文のカードがどの列にあるか） */}
+      {/* 選んだ注文（同じ注文のカードがどの列にあるか）。目盛りの上に重ね、下の列をずらさない */}
       {selectedOrderId && (
-        <div className="flex h-[42px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 py-0.5 font-black font-mono text-[20px]">
+        <div className="absolute inset-x-0 top-0 z-[70] flex h-[30px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap">
+            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 font-black font-mono text-[17px]">
               <Sparkles className="h-3.5 w-3.5" />
               <span>{selectedOrderId}</span>
             </span>
@@ -134,7 +130,7 @@ export const DispatchBoard: React.FC<
           <button
             type="button"
             onClick={() => onSelectOrder(null)}
-            className="flex min-h-[34px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
+            className="flex h-[26px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
           >
             <X className="h-3.5 w-3.5" />
             <span>解除</span>
@@ -148,17 +144,14 @@ export const DispatchBoard: React.FC<
         className="touch-auto select-none overflow-x-auto overflow-y-hidden overscroll-x-contain"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
-        <div
-          className="relative"
-          style={{ width: `${STICKY_LEFT_WIDTH + timelineWidthPx}px` }}
-        >
+        <div className="relative w-max">
           {/* 時刻の目盛り */}
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
-            <div className="sticky left-0 isolate z-[60] flex h-full w-[290px] shrink-0 items-center border-slate-300 border-r bg-slate-50 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-              <span className="w-[95px] px-3 text-center">操作</span>
-              <span className="w-[195px] border-slate-200 border-l px-3">
-                ドリッパー / 抽出担当
-              </span>
+            <div
+              style={{ width: STICKY_LEFT_WIDTH }}
+              className="sticky left-0 isolate z-[60] flex h-full shrink-0 items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+            >
+              ドリッパー / 抽出担当
             </div>
             <div
               className="relative h-full"
@@ -184,6 +177,7 @@ export const DispatchBoard: React.FC<
                 </div>
               ))}
             </div>
+            {!readOnly && <NextColumn className="h-full bg-slate-50" />}
           </div>
 
           {/* 6 列 */}
@@ -191,83 +185,39 @@ export const DispatchBoard: React.FC<
             {lanes.map((bay) => {
               const lane = laneStatus(bay, nowMs);
               const { positioned, freeFromMs } = positionTickets(bay, nowMs);
-              const currentName = lane.current && cardName(lane.current);
 
               return (
                 <div
                   key={bay.id}
                   data-bay-target={bay.id}
-                  className="relative flex h-[72px] touch-manipulation items-center bg-white"
+                  className="relative flex h-[80px] touch-manipulation items-center bg-white"
                 >
-                  {/* 列の番号と、抽出中のカード・残り */}
-                  <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-slate-200 border-r bg-white px-2 py-1.5">
-                    <LaneBadge bayId={bay.id} />
-                    <div className="flex h-full min-w-0 flex-1 flex-col justify-center leading-none">
-                      {/* 担当者の名前と上級生の印（「1st 山田★」）、交代 */}
-                      <div className="flex min-w-0 items-center gap-1">
-                        <LaneName
-                          dripper={bay.id}
-                          className="font-black text-[12px] text-slate-950"
-                        />
-                        <LaneChangeButton
-                          dripper={bay.id}
-                          compact
-                          className="h-6"
-                        />
-                        {lane.current && (
-                          <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
-                            {orderLabel(lane.current)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 flex min-w-0 items-center gap-1">
-                        <span
-                          className="truncate font-bold text-[13px] text-slate-800"
-                          title={currentName}
-                        >
-                          {currentName || "待機中"}
-                        </span>
-                        {lane.current && (
-                          <span className="shrink-0 rounded bg-slate-950 px-1.5 py-0.5 font-black font-mono text-[12px] text-white">
-                            {lane.current.cups.length}杯
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className={`mt-1 flex items-baseline gap-1 font-black font-mono ${lane.soon ? "text-red-600" : "text-slate-950"}`}
-                      >
-                        {lane.current && !lane.overtime && (
-                          <span className="font-sans text-[9px] tracking-wide">
-                            残り
-                          </span>
-                        )}
-                        <span
-                          className={
-                            lane.overtime ? "text-[17px]" : "text-[21px]"
-                          }
-                        >
-                          {remainingText(lane)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 次へ */}
-                  <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-                    {!readOnly && (
-                      <NextButton
-                        bayId={bay.id}
-                        active={Boolean(lane.current)}
-                        soon={lane.soon}
-                        onAdvance={onAdvanceBay}
-                        className="min-h-[48px] w-full text-[15px]"
+                  {/* ドリッパーの番号（列の状態）と担当者・交代 */}
+                  <div
+                    style={{ width: STICKY_LEFT_WIDTH }}
+                    className="sticky left-0 isolate z-[51] flex shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+                  >
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
+                      )}
+                      className="h-[66px] w-[80px]"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                      <LaneName
+                        dripper={bay.id}
+                        className="max-w-full font-black text-[14px] text-slate-950"
                       />
-                    )}
+                      <LaneChangeButton dripper={bay.id} />
+                    </div>
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
                   <div
-                    className="relative h-[72px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
+                    className="relative h-[80px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
                     style={{ width: `${timelineWidthPx}px` }}
                   >
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
@@ -306,6 +256,7 @@ export const DispatchBoard: React.FC<
                                     drag.press(
                                       { card: ticket, bayId: bay.id },
                                       event,
+                                      "x",
                                     )
                                 : undefined
                             }
@@ -322,7 +273,7 @@ export const DispatchBoard: React.FC<
                                 onCloseTicketAction();
                               }
                             }}
-                            className={`h-full border-l-[5px] border-l-slate-400 hover:shadow-md ${isScheduled ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            className={`h-full hover:shadow-md ${isScheduled ? "cursor-grab touch-pan-x active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isActionOpen && (
@@ -368,6 +319,18 @@ export const DispatchBoard: React.FC<
                       </div>
                     )}
                   </div>
+
+                  {/* 次へ（右端に固定） */}
+                  {!readOnly && (
+                    <NextColumn className="self-stretch bg-white">
+                      <NextButton
+                        bayId={bay.id}
+                        active={Boolean(lane.current)}
+                        onAdvance={onAdvanceBay}
+                        className="h-[64px] w-full text-[17px]"
+                      />
+                    </NextColumn>
+                  )}
                 </div>
               );
             })}
@@ -384,7 +347,7 @@ export const DispatchBoard: React.FC<
             ))}
           {/* Drawn on the track so it marks the real time even while browsing away from NOW. */}
           <div
-            className="pointer-events-none absolute top-[44px] bottom-0 z-40 w-[2px] bg-red-500"
+            className="pointer-events-none absolute top-0 bottom-0 z-40 w-[2px] bg-red-500"
             style={{ left: `${STICKY_LEFT_WIDTH + nowX}px` }}
             aria-hidden="true"
           >
@@ -399,10 +362,21 @@ export const DispatchBoard: React.FC<
           <OrderCard
             card={drag.source.card}
             look={looks.get(drag.source.card.key)}
-            className="border-l-[5px] border-l-slate-400"
           />,
           dropTargetLabel(drag.target),
         )}
     </div>
   );
 };
+
+/** 右端に固定する「次へ」の列（目盛りの行は空） */
+const NextColumn: React.FC<{
+  className: string;
+  children?: React.ReactNode;
+}> = ({ className, children }) => (
+  <div
+    className={`sticky right-0 isolate z-50 flex w-[96px] shrink-0 items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
+  >
+    {children}
+  </div>
+);
