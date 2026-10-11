@@ -295,11 +295,11 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
    4. `curl https://<本番の Cloud Run の URL>/api/items` が 401 になること、レジで注文が通ること、
       表示用のアカウントで開いた画面からは書き込めない（403）ことを確かめる
 4. **LB と Cloud Armor（infra と Cloudflare）**。詳しくは infra の README の「LB と Cloud Armor」
-   1. infra で `api_lb_domain` と `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れて apply し、
-      DNS の A レコードを `terraform output api_lb_ip` に向ける（Cloudflare の DNS なら DNS only）。
-      証明書が発行されるまで数十分かかる
+   1. infra で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
+      LB のドメインは `pos-be-lb.cafeore.cafe`。Cloudflare の `cafeore` アカウントの `cafeore.cafe` に、A レコードを
+      `terraform output api_lb_ip` に向けて作る（DNS only）。証明書が発行されるまで数十分かかる
    2. Worker の secret に同じトークンを入れる（`cd services/pos && pnpm exec wrangler secret put PROXY_TOKEN`）
-   3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `terraform output api_lb_url` にして、
+   3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `https://pos-be-lb.cafeore.cafe`（`terraform output api_lb_url`）にして、
       「pos / deploy (Workers)」を手動実行する。Square の Webhook を使っているなら通知先も LB の URL に登録し直す
    4. POS を一通り操作して動くこと（WebSocket も）を確かめてから、infra で `api_lb_only = true` にして apply する。
       これで run.app にはインターネットから届かなくなる
