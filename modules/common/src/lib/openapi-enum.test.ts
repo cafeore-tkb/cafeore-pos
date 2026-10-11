@@ -12,8 +12,8 @@ describe("[unit] openapiEnumLabels", () => {
 
   test("在庫対象の種類の名前", () => {
     expect(openapiEnumLabels("StockResourceKind")).toEqual({
+      item: "アイテム",
       cup: "カップ",
-      bean: "豆",
     });
   });
 });
