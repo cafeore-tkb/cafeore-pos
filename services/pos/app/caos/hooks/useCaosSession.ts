@@ -4,7 +4,6 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
-  caosLane,
   dripperLabel,
   jstClock,
   mergeWrites,
@@ -62,11 +61,9 @@ export const useCaosSession = () => {
   const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
-  const [nextConfirm, setNextConfirm] = useState<{
-    bayId: number;
-    card: CaosCard;
-    elapsedSec: number;
-  } | null>(null);
+  const [nextConfirm, setNextConfirm] = useState<
+    ({ bayId: number } & NonNullable<ReturnType<typeof earlyNext>>) | null
+  >(null);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
@@ -247,11 +244,8 @@ export const useCaosSession = () => {
     advance: (bayId: number) => {
       const lane = lanes.find((l) => l.id === bayId);
       const early = lane && earlyNext(lane, nowMs);
-      if (early) {
-        setNextConfirm({ bayId, ...early });
-        return;
-      }
-      runNext(bayId, caosLane(cards, bayId).brewing?.dripId ?? null);
+      if (early) setNextConfirm({ bayId, ...early });
+      else runNext(bayId, lane?.brewing?.dripId ?? null);
     },
     /** 確かめている「次へ」（無ければ null） */
     nextConfirm,

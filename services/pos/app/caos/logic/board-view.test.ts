@@ -2,7 +2,7 @@ import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import { orderRows } from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
-import { laneStatus } from "./queue";
+import { earlyNext, laneStatus } from "./queue";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -127,6 +127,16 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(phase(125)).toBe("soon");
     expect(phase(200)).toBe("overtime");
     expect(phase(0, lanes[2])).toBe("empty");
+  });
+
+  test("「次へ」は始めてから 10 秒は押せず、抽出時間の半分までは押し間違いかを確かめる", () => {
+    const at = (sec: number) => T0.getTime() + sec * 1000;
+    expect(laneStatus(lanes[0], at(9)).nextLocked).toBe(true);
+    expect(laneStatus(lanes[0], at(10)).nextLocked).toBe(false);
+    // 1 杯は 135 秒なので、67 秒までは確かめる
+    expect(earlyNext(lanes[0], at(67))?.elapsedSec).toBe(67);
+    expect(earlyNext(lanes[0], at(68))).toBeNull();
+    expect(earlyNext(lanes[2], at(0))).toBeNull();
   });
 
   test("待機のカードがあり、まだ始めていない列は待機", () => {

@@ -424,9 +424,9 @@ export const assignWrites = (
   if (invalid) return { error: invalid };
   if (card.status !== "unassigned" && card.status !== "queued")
     return { error: "抽出中・終了のカードは動かせません" };
-  if (card.nominatedDripper !== null && card.nominatedDripper !== dripper)
+  if (!caosDripperAllowed(card, dripper))
     return {
-      error: `指名のあるカードは ${dripperLabel(card.nominatedDripper)} のドリッパーにしか置けません`,
+      error: `指名のあるカードは ${dripperLabel(card.nominatedDripper ?? dripper)} のドリッパーにしか置けません`,
     };
   const lane = caosLane(cards, dripper);
   const others = lane.queued.filter((other) => other.key !== card.key);
