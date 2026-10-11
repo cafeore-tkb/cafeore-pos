@@ -1,66 +1,39 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
 
 	"cafeore-pos/api/internal/models"
-	"cafeore-pos/api/internal/notify"
-	"cafeore-pos/api/internal/testdb"
 )
 
 // アイテムの在庫とカップが、注文を受けたときの設定で減ることを本物の Postgres で確かめる。
 func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
-	db := testdb.New(t)
+	api := newTestAPI(t)
+	db, inv := api.db, api.inv
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
-	hub := NewHub()
-	go hub.Run()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	inventory := NewInventoryHandler(inv)
-	router.POST("/resources", inventory.CreateStockResource)
-	router.PUT("/resources/:id", inventory.UpdateStockResource)
-	router.DELETE("/resources/:id", inventory.DeleteStockResource)
-	router.POST("/items", NewItemHandler(db, nil).CreateItem)
-	router.DELETE("/items/:id", NewItemHandler(db, nil).DeleteItem)
-	// 通知の判定は下で直接呼ぶので、注文からは呼ばない（nil）
-	orders := NewOrderHandler(db, hub, nil)
-	router.POST("/orders", orders.CreateOrder)
-	router.PUT("/orders/:id", orders.UpdateOrder)
 	call := func(method, path string, body any, want int, out any) {
 		t.Helper()
-		b, _ := json.Marshal(body)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, httptest.NewRequest(method, path, bytes.NewReader(b)))
-		if w.Code != want {
-			t.Fatalf("%s %s: %d %s", method, path, w.Code, w.Body.String())
-		}
+		res := api.do(method, "/api"+path, body).expect(want)
 		if out != nil {
-			must(json.Unmarshal(w.Body.Bytes(), out))
+			res.decode(out)
 		}
 	}
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
-	noCup := false
-	goods := models.ItemType{Name: "others", DisplayName: "グッズ", MakesCup: &noCup, NeedsBrew: &noCup}
-	must(db.Create(&hot).Error)
-	must(db.Create(&goods).Error)
+	goods := models.ItemType{Name: "others", DisplayName: "グッズ", MakesCup: boolPtr(false), NeedsBrew: boolPtr(false)}
+	api.create(&hot, &goods)
 
 	// アイテムを作ると、そのアイテムの在庫ができる
 	newItem := func(name string, itemType models.ItemType) (models.ItemResponse, models.StockResource) {
@@ -91,23 +64,23 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	cupName := "ホットカップ"
 	var cup models.StockResourceResponse
 	// グッズの種類を選んでも、グッズはカップを作らないので減らない
-	call(http.MethodPost, "/resources", stockRequest(&cupName, 1, hot.ID, goods.ID), http.StatusCreated, &cup)
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, hot.ID, goods.ID), http.StatusCreated, &cup)
 	if cup.Kind != models.StockResourceKindCup || cup.ItemId != nil || len(cup.ItemTypeIds) != 2 {
 		t.Fatalf("カップ = %+v", cup)
 	}
-	call(http.MethodPost, "/resources", stockRequest(nil, 1), http.StatusBadRequest, nil)
-	call(http.MethodPost, "/resources", stockRequest(&cupName, 1, hot.ID, hot.ID), http.StatusBadRequest, nil)
-	call(http.MethodPost, "/resources", stockRequest(&cupName, 1, uuid.New()), http.StatusBadRequest, nil)
+	call(http.MethodPost, "/inventory/resources", stockRequest(nil, 1), http.StatusBadRequest, nil)
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, hot.ID, hot.ID), http.StatusBadRequest, nil)
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, uuid.New()), http.StatusBadRequest, nil)
 	// アイテムの在庫は量と通知の段階だけ変える。名前・種類を送ると 400、消すのはアイテムを消すとき
 	rename := "別の名前"
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(&rename, 15), http.StatusBadRequest, nil)
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(nil, 15, hot.ID), http.StatusBadRequest, nil)
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), stockRequest(&rename, 15), http.StatusBadRequest, nil)
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), stockRequest(nil, 15, hot.ID), http.StatusBadRequest, nil)
 	var updated models.StockResourceResponse
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), itemStockRequest(15), http.StatusOK, &updated)
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), itemStockRequest(15), http.StatusOK, &updated)
 	if updated.Name != "ブレンド" || len(updated.ItemTypeIds) != 0 || updated.PerServing != 15 || uuid.UUID(*updated.ItemId) != uuid.UUID(blend.Id) {
 		t.Fatalf("アイテムの在庫の更新 = %+v", updated)
 	}
-	call(http.MethodDelete, "/resources/"+blendStock.ID.String(), nil, http.StatusBadRequest, nil)
+	call(http.MethodDelete, "/inventory/resources/"+blendStock.ID.String(), nil, http.StatusBadRequest, nil)
 
 	// 3 つの在庫それぞれ 1000 から数える
 	cupID := uuid.UUID(cup.Id)
@@ -118,7 +91,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	set := models.Menu{Name: "セット", Abbr: "セ", Price: 1000, Key: "s", MenuItems: []models.MenuItem{
 		{ItemID: uuid.UUID(blend.Id), Quantity: 2}, {ItemID: uuid.UUID(coaster.Id), Quantity: 1},
 	}}
-	must(db.Create(&set).Error)
+	api.create(&set)
 	order := func(lines ...models.MenuInfoCreate) models.OrderResponse {
 		t.Helper()
 		var resp models.OrderResponse
@@ -148,16 +121,16 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}
 
 	// あとで per_serving とカップの種類を変えても、前の注文の消費は変わらない
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), itemStockRequest(20), http.StatusOK, nil)
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), itemStockRequest(20), http.StatusOK, nil)
 	// 使う種類を省略した PUT では種類は今のまま
 	omitted := stockRequest(&cupName, 1)
 	omitted.ItemTypeIds = nil
 	var unchanged models.StockResourceResponse
-	call(http.MethodPut, "/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
 	if len(unchanged.ItemTypeIds) != 2 {
 		t.Fatalf("種類を省略した PUT の後の種類 = %v, want 2 つ", unchanged.ItemTypeIds)
 	}
-	call(http.MethodPut, "/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
 	order(newLine)
 	expect("変えた後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40, 4}, coasterStock.ID: {2, 2}, cupID: {2, 2}})
 
@@ -169,7 +142,8 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}, http.StatusOK, nil)
 	expect("編集した後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40 + 40, 6}, coasterStock.ID: {3, 3}, cupID: {2, 2}})
 
-	// 棚卸し・入荷・残り何回・通知の段階は今までどおり
+	// 棚卸し・入荷・残り何回・通知の段階は今までどおり。注文の後の通知の判定を待ってから、下で直接呼ぶ
+	api.waitBackground()
 	must(db.Create(&models.StockEvent{ResourceID: cupID, Kind: string(models.StockEventKindReceipt), Quantity: 5, CreatedAt: time.Now()}).Error)
 	must(db.Model(&models.StockResource{}).Where("id = ?", blendStock.ID).Update("notify_from", 50).Error)
 	snapshots, err := inv.snapshots(context.Background(), nil)
@@ -202,16 +176,13 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	if !deleted.DeletedAt.Valid {
 		t.Error("アイテムを消しても在庫が残っている")
 	}
-	var usages int64
-	must(db.Model(&models.OrderStockUsage{}).Where("resource_id = ?", blendStock.ID).Count(&usages).Error)
-	if usages != 3 {
+	if usages := api.count(&models.OrderStockUsage{}, "resource_id = ?", blendStock.ID); usages != 3 {
 		t.Errorf("消したアイテムの在庫の注文の行 = %d, want 3", usages)
 	}
 
 	// カップは消せる。使う種類の行も消す
-	call(http.MethodDelete, "/resources/"+cupID.String(), nil, http.StatusNoContent, nil)
-	var links int64
-	must(db.Model(&models.StockResourceItemType{}).Where("resource_id = ?", cupID).Count(&links).Error)
+	call(http.MethodDelete, "/inventory/resources/"+cupID.String(), nil, http.StatusNoContent, nil)
+	links := api.count(&models.StockResourceItemType{}, "resource_id = ?", cupID)
 	if err := db.First(&models.StockResource{}, "id = ?", cupID).Error; err != gorm.ErrRecordNotFound || links != 0 {
 		t.Errorf("消したカップ: err=%v 種類の行=%d", err, links)
 	}

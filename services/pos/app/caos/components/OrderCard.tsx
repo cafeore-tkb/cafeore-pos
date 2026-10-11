@@ -101,8 +101,8 @@ export const OrderCard: React.FC<
   const split = look?.split;
   // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
   // 豆の無い（商品のアイテムの在庫が無い）カードは区分だけ。狭いカードでは後ろが切れるので豆を先にする
-  const beans = look?.beans?.map((bean) => bean.name).join("・");
-  const badge = [beans, typeName].filter(Boolean).join(" / ");
+  const bean = look?.bean?.name;
+  const badge = [bean, typeName].filter(Boolean).join(" / ");
   return (
     <div
       {...props}
@@ -141,7 +141,7 @@ export const OrderCard: React.FC<
         </span>
         {badge && (
           <span
-            title={`豆：${beans || "なし"}　区分：${typeName || "なし"}`}
+            title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
             className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
           >
             {badge}

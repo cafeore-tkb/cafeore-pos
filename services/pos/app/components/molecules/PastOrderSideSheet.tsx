@@ -27,7 +27,7 @@ type CardOptions = {
   gray?: boolean; // カップを灰色にする。灰色でなければ過去の注文のカードの色の設定（cashier_order）で色を付ける
   cancellable?: boolean; // 提供取消のボタンを出す
   squareRefundable?: boolean; // Square で払った注文に返金のボタンを出す（返金すると注文は消える）
-  onPrintFormalReceipt?: (order: OrderEntity) => boolean; // 渡せば領収書のボタンを出す。プリンターに送れたら true
+  onPrintFormalReceipt?: (order: OrderEntity) => Promise<boolean>; // 渡せば領収書のボタンを出す。プリンターに送れたら true
 };
 
 type props = CardOptions & {
@@ -121,9 +121,9 @@ const PastOrderCard = ({
       orderRepository.serve(order.id).then(() => undefined),
     );
   };
-  const printFormalReceipt = () => {
+  const printFormalReceipt = async () => {
     if (!onPrintFormalReceipt) return;
-    if (onPrintFormalReceipt(order)) {
+    if (await onPrintFormalReceipt(order)) {
       toast(`No.${order.orderId} の領収書を印刷しました`);
     } else {
       toast.error(
