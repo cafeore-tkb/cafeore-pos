@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -30,13 +31,36 @@ type StatusResponse struct {
 	Database  string    `json:"database"`
 	// DB にあってモデルに無いもの（またはその逆）。手で DB を触った跡。空なら一致している。
 	// デプロイの CI が見て、空でなければ落とす（api-build.yml）。
-	SchemaDrift []string `json:"schema_drift"`
+	SchemaDrift []string  `json:"schema_drift"`
+	Build       BuildInfo `json:"build"`
+}
+
+// このサーバーがどの PR・コミットからビルドされたか。POS のトップページに出す。
+//
+// CI がイメージを作るときに環境変数 BUILD_PR・BUILD_COMMIT として焼き込む
+// （api/Dockerfile、api-build.yml）。ローカルで動かしたときは両方とも空。
+type BuildInfo struct {
+	// PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+	PR int `json:"pr,omitempty"`
+	// コミットの SHA。分からなければ省く
+	Commit string `json:"commit,omitempty"`
+}
+
+func buildInfoFromEnv() BuildInfo {
+	pr, err := strconv.Atoi(os.Getenv("BUILD_PR"))
+	if err != nil || pr <= 0 {
+		pr = 0
+	}
+	return BuildInfo{PR: pr, Commit: os.Getenv("BUILD_COMMIT")}
 }
 
 var db *gorm.DB
 
 // 起動時に調べたスキーマのズレ（findSchemaDrift）。
 var schemaDrift = []string{}
+
+// 起動時に読んだビルドの番号（buildInfoFromEnv）。
+var build BuildInfo
 
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
@@ -149,6 +173,7 @@ func statusHandler(c *gin.Context) {
 		Version:     "1.0.0",
 		Database:    dbStatus,
 		SchemaDrift: schemaDrift,
+		Build:       build,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -176,6 +201,7 @@ func healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":   "healthy",
 		"database": "connected",
+		"build":    build,
 	})
 }
 
@@ -187,6 +213,9 @@ func main() {
 			log.Println("Warning: .env file not found")
 		}
 	}
+
+	build = buildInfoFromEnv()
+	log.Printf("Build: pr=%d commit=%s", build.PR, build.Commit)
 
 	// データベース初期化
 	if err := initDB(); err != nil {

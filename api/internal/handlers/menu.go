@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -154,23 +153,17 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 
-	// 通知で変更前と比べるために読んでおく。読めなかったら空と比べた誤った差分になるので、通知だけしない
 	var before models.Menu
-	beforeErr := preloadMenu(h.db).First(&before, "id = ?", menuID).Error
-	if beforeErr != nil {
-		log.Printf("activity: failed to load menu %s before update: %v", menuID, beforeErr)
-	}
-
 	menu := models.Menu{ID: menuID}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&menu).Updates(map[string]any{
-			"name": request.Name, "abbr": request.Abbr, "price": request.Price, "key": request.Key,
-		})
-		if result.Error != nil {
-			return result.Error
+		// 通知で変更前と比べるため、行を押さえてから読む（同時の更新と差分が混ざらない）。無ければ 404
+		if err := preloadMenu(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&before, "id = ?", menuID).Error; err != nil {
+			return err
 		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+		if err := tx.Model(&menu).Updates(map[string]any{
+			"name": request.Name, "abbr": request.Abbr, "price": request.Price, "key": request.Key,
+		}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("menu_id = ?", menuID).Delete(&models.MenuItem{}).Error; err != nil {
 			return err
@@ -190,9 +183,7 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
-	if beforeErr == nil {
-		h.activity.Post(menuUpdatedMessage(&before, &menu))
-	}
+	h.activity.Post(menuUpdatedMessage(&before, &menu))
 }
 
 func (h *MenuHandler) DeleteMenu(c *gin.Context) {

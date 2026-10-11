@@ -269,6 +269,7 @@ func TestRemindMessage(t *testing.T) {
 	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
 	countedAt := now.Add(-80 * time.Minute)
 	counted := 1200.0
+	receivedAt := now.Add(-time.Hour)
 	snapshots := []stockSnapshot{
 		{
 			Resource:        models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15},
@@ -276,10 +277,13 @@ func TestRemindMessage(t *testing.T) {
 			BaseAt:          &countedAt,
 			CountedQuantity: &counted,
 		},
+		// 入荷だけで棚卸しをしていないもの
+		{Resource: models.StockResource{Kind: "cup", Name: "アイスカップ", Unit: "個", PerServing: 1}, Tracked: true, BaseAt: &receivedAt, Received: 300},
 		{Resource: models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}},
 	}
 	want := "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
 		"• ケニア: 残り約80回分（1200g）（最終確認 1時間20分前）\n" +
+		"• アイスカップ: 残り約300回分（300個）（最終確認 未実施）\n" +
 		"• ホットカップ: 未計測（最終確認 未実施）\n" +
 		"<https://pos.example.com/inventory|在庫ページを開く>"
 	if got := remindMessage(snapshots, now, "https://pos.example.com/"); got != want {

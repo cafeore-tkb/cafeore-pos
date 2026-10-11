@@ -82,6 +82,17 @@ const (
 	StockResourceKindItem StockResourceKind = "item"
 )
 
+// BuildInfo このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+// POS のトップページに、画面のビルドと並べて出す。
+// ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+type BuildInfo struct {
+	// Commit コミットの SHA。プレビューは PR の head のコミット。分からなければ省く
+	Commit *string `json:"commit,omitempty"`
+
+	// Pr PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+	Pr *int `json:"pr,omitempty"`
+}
+
 // CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
 // start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
 // dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
@@ -699,10 +710,14 @@ type SquareStatusResponse struct {
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
-	Database  string    `json:"database"`
-	Status    string    `json:"status"`
-	Timestamp time.Time `json:"timestamp"`
-	Version   string    `json:"version"`
+	// Build このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+	// POS のトップページに、画面のビルドと並べて出す。
+	// ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+	Build     *BuildInfo `json:"build,omitempty"`
+	Database  string     `json:"database"`
+	Status    string     `json:"status"`
+	Timestamp time.Time  `json:"timestamp"`
+	Version   string     `json:"version"`
 }
 
 // StockEventCreateRequest defines model for StockEventCreateRequest.

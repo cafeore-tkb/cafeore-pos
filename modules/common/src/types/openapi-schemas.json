@@ -18,6 +18,25 @@
       "database": {
         "type": "string",
         "example": "connected"
+      },
+      "build": {
+        "$ref": "#/components/schemas/BuildInfo"
+      }
+    }
+  },
+  "BuildInfo": {
+    "type": "object",
+    "description": "このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。\nPOS のトップページに、画面のビルドと並べて出す。\nローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。\n",
+    "properties": {
+      "pr": {
+        "type": "integer",
+        "description": "PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く",
+        "example": 889
+      },
+      "commit": {
+        "type": "string",
+        "description": "コミットの SHA。プレビューは PR の head のコミット。分からなければ省く",
+        "example": "90b89b2a1c3e4f5061728394a5b6c7d8e9f01234"
       }
     }
   },
