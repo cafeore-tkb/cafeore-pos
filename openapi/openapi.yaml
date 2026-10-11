@@ -333,6 +333,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/printer-settings:
+    get:
+      summary: プリンター設定取得
+      description: ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+      operationId: getPrinterSettings
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrinterSettingsResponse'
+    put:
+      summary: プリンター設定の更新
+      description: 全レジで共通。両方の IP アドレスをまとめて置き換える
+      operationId: updatePrinterSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrinterSettingsUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrinterSettingsResponse'
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -632,6 +667,8 @@ paths:
         - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
         - 今日（日本時間）の注文のカップだけ書ける
         - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+        - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+        - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
         - 抽出を始められる（start_brew）のは、そのカードのほかに抽出中・待機のカードが無いドリッパーだけ（待機があれば、始めるのは「次へ」で待機の先頭）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
       operationId: writeCaosCups
       tags:
@@ -1612,6 +1649,7 @@ components:
         - unit_price
         - menu
         - assignee
+        - dripper
       properties:
         id:
           type: string
@@ -1628,6 +1666,13 @@ components:
         assignee:
           type: string
           nullable: true
+          description: 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+          description: 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null
     # 注文の1杯。注文明細（メニュー）の構成品を数量分に展開したもの（グッズは含まない）
     OrderCupResponse:
       type: object
@@ -1693,6 +1738,7 @@ components:
       required:
         - menu_id
         - assignee
+        - dripper
       properties:
         order_menu_id:
           type: string
@@ -1704,6 +1750,13 @@ components:
         assignee:
           type: string
           nullable: true
+          description: 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う
+        dripper:
+          type: integer
+          minimum: 1
+          maximum: 6
+          nullable: true
+          description: 指名したドリッパーの番号（1〜6）。指名しない明細は null
     # レスポンス用（完全な情報）
     OrderResponse:
       type: object
@@ -1939,17 +1992,19 @@ components:
       description: |
         背景色を適用する画面。
         cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-        master・serve はマスター・提供画面のカップ
+        master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
       enum:
         - cashier
         - cashier_order
         - master
         - serve
+        - caos_nominated
       x-enum-varnames:
         - ColorScreenCashier
         - ColorScreenCashierOrder
         - ColorScreenMaster
         - ColorScreenServe
+        - ColorScreenCaosNominated
     ColorSettingResponse:
       type: object
       required:
@@ -1994,6 +2049,34 @@ components:
           type: string
           pattern: '^#[0-9a-fA-F]{6}$'
           example: "#bfdbfe"
+    PrinterSettingsResponse:
+      type: object
+      required:
+        - label_printer_ip
+        - receipt_printer_ip
+      properties:
+        label_printer_ip:
+          type: string
+          description: ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+          example: "192.168.77.2"
+        receipt_printer_ip:
+          type: string
+          description: レシート・領収書用のプリンターの IPv4 アドレス
+          example: "192.168.77.3"
+    PrinterSettingsUpdateRequest:
+      type: object
+      required:
+        - label_printer_ip
+        - receipt_printer_ip
+      properties:
+        label_printer_ip:
+          type: string
+          description: ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+          example: "192.168.77.2"
+        receipt_printer_ip:
+          type: string
+          description: レシート・領収書用のプリンターの IPv4 アドレス
+          example: "192.168.77.3"
     CashierStateResponse:
       type: object
       required:

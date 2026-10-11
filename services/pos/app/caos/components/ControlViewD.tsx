@@ -1,4 +1,8 @@
-import type { CaosCard } from "@cafeore/common";
+import {
+  type CaosCard,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { ClipboardList, Table2, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
@@ -9,7 +13,6 @@ import {
 } from "../hooks/useSheetSelection";
 import { cardName, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { laneOrdinal } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   type SheetEntry,
@@ -124,11 +127,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       ) {
         return "unassigned";
       }
-      return bayTargetAt(
-        clientX,
-        clientY,
-        source.kind === "ticket" ? source.fromBayId : undefined,
-      );
+      return bayTargetAt(clientX, clientY, {
+        from: source.kind === "ticket" ? source.fromBayId : undefined,
+        card: sourceCard(source),
+      });
     },
     onBegin: (source) => {
       if (source.kind === "unassigned") picked.select(source.order);
@@ -311,6 +313,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries ?? [];
                       const isDropColumn = hoveredTarget === bay.id;
+                      // 選んだカードを置ける枠（指名の番号のあるカードは、その番号の列だけ）
+                      const isTargetCell =
+                        isTargetRow &&
+                        selectedOrder !== null &&
+                        caosDripperAllowed(selectedOrder, bay.id);
                       const entries = cellEntries.map((entry) =>
                         renderEntry(
                           entry,
@@ -347,10 +354,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   </div>
                                 ),
                               )}
-                              {isTargetRow && (
+                              {isTargetCell && (
                                 <button
                                   type="button"
-                                  aria-label={`ドリッパー${laneOrdinal(bay.id)}に配置`}
+                                  aria-label={`ドリッパー${dripperLabel(bay.id)}に配置`}
                                   onClick={() => picked.assignTo(bay.id)}
                                   className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
                                     isDropColumn
@@ -504,7 +511,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       card={ticket}
                       look={looks.get(ticket.key)}
                       size="sm"
-                      note={`→ ${laneOrdinal(bayId)}`}
+                      note={`→ ${dripperLabel(bayId)}`}
                       className="h-[64px] opacity-50"
                     />
                   ))}

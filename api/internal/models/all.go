@@ -24,5 +24,6 @@ func All() []any {
 		&ColorSetting{},
 		&SquareCheckout{},
 		&SquareDevice{},
+		&PrinterSetting{},
 	}
 }

@@ -1,4 +1,4 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -11,7 +11,7 @@ import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { laneCards, laneOrdinal } from "../logic/lanes";
+import { laneCards } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
@@ -59,6 +59,7 @@ export const DispatchBoard: React.FC<
   onOpenEmptySlot,
   nowMs,
   timelineCommand,
+  readOnly = false,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -78,7 +79,7 @@ export const DispatchBoard: React.FC<
   // 待機のカードを別の列へ・待機のカードの前へ（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
-      dropTargetAt(x, y, { from: bayId, exceptKey: card.key }),
+      dropTargetAt(x, y, { from: bayId, card }),
     onDrop: ({ card }, target) => {
       onMoveTicket(card, target.bayId, target.place);
       onCloseTicketAction();
@@ -100,7 +101,7 @@ export const DispatchBoard: React.FC<
       .filter((card) => orderLabel(card) === selectedOrderId)
       .map(
         (card) =>
-          `ドリッパー ${laneOrdinal(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
+          `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
 
@@ -238,13 +239,15 @@ export const DispatchBoard: React.FC<
 
                   {/* 次へ */}
                   <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-                    <NextButton
-                      bayId={bay.id}
-                      active={Boolean(lane.current)}
-                      soon={lane.soon}
-                      onAdvance={onAdvanceBay}
-                      className="min-h-[48px] w-full text-[15px]"
-                    />
+                    {!readOnly && (
+                      <NextButton
+                        bayId={bay.id}
+                        active={Boolean(lane.current)}
+                        soon={lane.soon}
+                        onAdvance={onAdvanceBay}
+                        className="min-h-[48px] w-full text-[15px]"
+                      />
+                    )}
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
@@ -255,7 +258,9 @@ export const DispatchBoard: React.FC<
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
                       if (endMs <= range.startMs) return null;
-                      const isScheduled = ticket.status === "queued";
+                      // 動かせるのは待機のカードだけ（閲覧だけの画面では動かさない）
+                      const isScheduled =
+                        !readOnly && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
                       return (
@@ -304,6 +309,7 @@ export const DispatchBoard: React.FC<
                             {isActionOpen && (
                               <>
                                 <BayPad
+                                  card={ticket}
                                   currentBayId={bay.id}
                                   hoveredBay={drag.target?.bayId ?? null}
                                   onPick={(bayId, place) => {
@@ -322,16 +328,18 @@ export const DispatchBoard: React.FC<
                     })}
 
                     {/* 空きスロット（最後のカードの後ろ。NOW より前には置かない） */}
-                    <div
-                      style={{
-                        left: toX(freeFromMs) + 16,
-                      }}
-                    >
-                      <EmptySlotButton
-                        onClick={() => onOpenEmptySlot(bay.id)}
-                        className="h-full min-w-[130px]"
-                      />
-                    </div>
+                    {!readOnly && (
+                      <div
+                        style={{
+                          left: toX(freeFromMs) + 16,
+                        }}
+                      >
+                        <EmptySlotButton
+                          onClick={() => onOpenEmptySlot(bay.id)}
+                          className="h-full min-w-[130px]"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );

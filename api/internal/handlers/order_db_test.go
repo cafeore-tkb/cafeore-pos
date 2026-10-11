@@ -154,7 +154,7 @@ func TestUpdateOrderKeepsExistingLinesAndCups(t *testing.T) {
 	api.do(http.MethodPut, "/api/orders/"+created.Id.String(), models.OrderUpdateRequest{
 		Id: created.Id, OrderId: 1, BillingAmount: 1350, Received: 1350,
 		MenuIds: []models.MenuInfoCreate{
-			{MenuId: m.pairMenu.ID, OrderMenuId: &pairLine, Assignee: &assignee},
+			{MenuId: m.pairMenu.ID, OrderMenuId: &pairLine, Assignee: &assignee, Dripper: intPtr(2)},
 			menuLine(m.iceMenu),
 		},
 	}).expect(http.StatusOK).decode(&resp)
@@ -162,8 +162,9 @@ func TestUpdateOrderKeepsExistingLinesAndCups(t *testing.T) {
 	if resp.BillingAmount != 1350 || len(resp.Menus) != 2 {
 		t.Fatalf("order: %+v", resp)
 	}
-	// 既存の明細は ID と注文時の価格を引き継ぎ、担当者だけ変わる
-	if resp.Menus[0].Id != pairLine || resp.Menus[0].UnitPrice != 900 || resp.Menus[0].Assignee == nil || *resp.Menus[0].Assignee != "たくみ" {
+	// 既存の明細は ID と注文時の価格を引き継ぎ、指名だけ変わる
+	if resp.Menus[0].Id != pairLine || resp.Menus[0].UnitPrice != 900 || resp.Menus[0].Assignee == nil || *resp.Menus[0].Assignee != "たくみ" ||
+		resp.Menus[0].Dripper == nil || *resp.Menus[0].Dripper != 2 {
 		t.Errorf("kept line: %+v", resp.Menus[0])
 	}
 	if resp.Menus[1].MenuName != "アイスコーヒー" || resp.Menus[1].UnitPrice != 450 {

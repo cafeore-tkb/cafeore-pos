@@ -55,7 +55,7 @@ name: pr / cleanup
 #
 # pos-deploy-workers.yml が PR に書いた「POS のプレビュー」コメントを消す。
 # 上のとおり URL 自体は残るが、API に繋がらない URL をプレビューとして
-# 案内し続けないようにするため。mobile と backend のコメントは消していない。
+# 案内し続けないようにするため。backend のコメントは消していない。
 # コメントは目印で探すので、**pos-deploy-workers.yml の COMMENT_MARKER と
 # 必ず揃えること。** ずれると消えずに残る。
 

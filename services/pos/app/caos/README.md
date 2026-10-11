@@ -6,7 +6,7 @@
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに同じ盤面を映します。「次へ」・空きスロットは出さず、カードを押しても動かさず、盤面への書き込みも送りません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -44,8 +44,9 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 盤面は注文のカップ（`order_cups`）の列で持ちます。CaOS が決めたこと（ドリッパーの番号 `dripper`・ドリッパーの中の順番 `dripper_position`・同じカードで淹れるカップの印 `drip_id`・抽出の開始 `brew_started_at` と終了 `brew_finished_at`）をカップに書き、注文の応答（`OrderResponse` の `cups`）に載ります。CaOS 以外の画面は読みません。
 - カードの状態は時刻で決まります（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。マスター（`/master`）でカップを全部準備完了にしたカードも終わりです。
 - 抽出の開始・終了の時刻はサーバーの時刻で、サーバーが付けます（iPad の時計は使いません）。空いているドリッパーに置いてそのまま始めるときは、書き込みの after に時刻の代わりに「始める」の印（`start_brew`）を送ります。抽出中・終わりのカードは `PUT /api/caos/cups` では動かせません（終えるのは「次へ」）。
-- 画面は、POS の画面全体で共有している WebSocket（`/api/ws/orders`、root の `OrdersWSProvider`）の注文から、今日（日本時間。注文の作成日時で区切る）のカードを組み立てます（`@cafeore/common` の `buildCaosCards`）。未割当は、抽出が要り（商品の種類の「カップを作る」と「抽出が要る」が両方オン。`@cafeore/common` の `cupNeedsBrew`。API と同じ決まり）まだ準備完了でないカップを、注文ごと・商品ごと・指名ごとに最大2杯で組み立てます。注文の編集・削除で消えたカップはカードから抜けます。CaOS 用に別の接続は張りません。
-- カードの名前は商品の略称、区分は商品の種類の表示名をそのまま出します。カードの豆は、カードの商品のアイテムの在庫（`GET /api/inventory` の kind が item のもの）を引き、在庫対象の名前をそのまま出します（豆と区分はカードの札）。指名（明細の担当者。自由記述）は「（指名:名前）」、上級生のみのカードは「（上級生のみ）」を名前に添えます。統合できるのは同じ商品・同じ指名の 1 杯どうしだけです（`canMergeCards`）。
+- 画面は、POS の画面全体で共有している WebSocket（`/api/ws/orders`、root の `OrdersWSProvider`）の注文から、今日（日本時間。注文の作成日時で区切る）のカードを組み立てます（`@cafeore/common` の `buildCaosCards`）。未割当は、抽出が要り（商品の種類の「カップを作る」と「抽出が要る」が両方オン。`@cafeore/common` の `cupNeedsBrew`。API と同じ決まり）まだ準備完了でないカップを、注文ごと・商品ごと・指名の番号ごとに最大2杯で組み立てます。注文の編集・削除で消えたカップはカードから抜けます。CaOS 用に別の接続は張りません。
+- カードの名前は商品の略称、区分は商品の種類の表示名をそのまま出します。カードの豆は、カードの商品のアイテムの在庫（`GET /api/inventory` の kind が item のもの）を引き、在庫対象の名前をそのまま出します（豆と区分はカードの札）。指名は「（指名:2nd）」（番号の無い自由記述だけの古い明細は「（指名:名前）」）、上級生のみのカードは「（上級生のみ）」を名前に添えます。統合できるのは同じ商品・同じ指名の番号の 1 杯どうしだけです（`canMergeCards`）。
+- 指名は、レジで選んだドリッパーの番号（注文の明細の `dripper`。1st〜6th は 1〜6）です。番号のあるカードはその番号のドリッパーにだけ置けます（1〜6 のボタン・ドラッグ・D の「ここに配置」。`@cafeore/common` の `caosDripperAllowed`・`assignWrites`、サーバーの `PUT /api/caos/cups` の両方で確かめます）。指名のカードの色は、POS の色の設定の画面「CaOS（指名）」から引きます（無ければ「マスター」の色）。
 - 操作（割当・ドリッパーの移動・先頭へ・途中への差し込み・未割当に戻す・統合）は、カップの書く前と書いたあとの値を `PUT /api/caos/cups` で送ります（`assignWrites`・`unassignWrites`・`mergeWrites`）。書いたカップの注文は、つないでいる画面に配られます。ほかの iPad が先に書いていた（409）・決まりに合わない（400）ときは何も変わらず、理由が POS の通知（sonner の toast）で出ます。
 - 順番（`dripper_position`）は整数で、サーバーが決めます。画面が送るのは「どのドリッパーの、どのカードの前に入れるか」（after の `insert_before`。`null` なら最後）だけです。サーバーは前に入るカードの番号に入れ、そのドリッパーでそれより後ろの終わっていないカップを +1 します。列から抜けたカードの番号は詰めません。
 - 待機のカードの「先頭」ボタンで待機の先頭へ、待機のカードの上にドラッグして落とすとそのカードの前へ（同じ列の中の入れ替えにも使えます）、列や 1〜6 のボタンに落とすとその列の最後へ入ります。

@@ -1,25 +1,19 @@
-import createClient from "openapi-fetch";
+import { apiClient, throwApiError } from "../api/client";
 import {
   itemToCreateRequest,
   itemToUpdateRequest,
   responseToItemEntity,
-} from "../firebase-utils";
+} from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
 import type { ItemEntity } from "../models/item";
-import type { paths } from "../types/api";
 import type { ItemRepository } from "./type";
-
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 export const itemRepoFactory = (): ItemRepository => {
   const update = async (
     id: string,
     item: WithId<ItemEntity>,
   ): Promise<WithId<ItemEntity>> => {
-    const { data, error, response } = await client.PUT("/api/items/{id}", {
+    const { data, error, response } = await apiClient.PUT("/api/items/{id}", {
       params: {
         path: { id },
       },
@@ -27,19 +21,19 @@ export const itemRepoFactory = (): ItemRepository => {
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to update item");
+      throwApiError(response, error, "Failed to update item");
     }
 
     return responseToItemEntity(data);
   };
 
   const create = async (item: ItemEntity): Promise<WithId<ItemEntity>> => {
-    const { data, error, response } = await client.POST("/api/items", {
+    const { data, error, response } = await apiClient.POST("/api/items", {
       body: itemToCreateRequest(item),
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to create item");
+      throwApiError(response, error, "Failed to create item");
     }
 
     return responseToItemEntity(data);
@@ -54,19 +48,19 @@ export const itemRepoFactory = (): ItemRepository => {
     },
 
     delete: async (id: string): Promise<void> => {
-      const { error, response } = await client.DELETE("/api/items/{id}", {
+      const { error, response } = await apiClient.DELETE("/api/items/{id}", {
         params: {
           path: { id },
         },
       });
 
       if (error || !response.ok) {
-        await throwApiError(response, "Failed to delete item");
+        throwApiError(response, error, "Failed to delete item");
       }
     },
 
     findById: async (id) => {
-      const { data, error, response } = await client.GET("/api/items/{id}", {
+      const { data, error, response } = await apiClient.GET("/api/items/{id}", {
         params: {
           path: { id },
         },
@@ -77,17 +71,17 @@ export const itemRepoFactory = (): ItemRepository => {
       }
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch item");
+        throwApiError(response, error, "Failed to fetch item");
       }
 
       return responseToItemEntity(data);
     },
 
     findAll: async () => {
-      const { data, error, response } = await client.GET("/api/items");
+      const { data, error, response } = await apiClient.GET("/api/items");
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch items");
+        throwApiError(response, error, "Failed to fetch items");
       }
 
       return data.map(responseToItemEntity);
@@ -96,15 +90,3 @@ export const itemRepoFactory = (): ItemRepository => {
 };
 
 export const itemRepository: ItemRepository = itemRepoFactory();
-
-export async function throwApiError(
-  response: Response,
-  fallback: string,
-): Promise<never> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    throw new Error(body.error ?? fallback);
-  } catch {
-    throw new Error(fallback);
-  }
-}
