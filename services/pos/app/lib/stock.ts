@@ -62,7 +62,7 @@ export const stockChanges = (
     ),
   );
 
-/** アイテムの在庫の値を changes で変える。アイテムを作った直後でも引けるよう、在庫は取り直して探す */
+/** アイテムの在庫の値を changes で変える（無ければ何もしない）。アイテムを作った直後でも引けるよう、在庫は取り直して探す */
 export const saveItemStock = async (
   itemId: string,
   changes: Partial<StockAmounts>,
