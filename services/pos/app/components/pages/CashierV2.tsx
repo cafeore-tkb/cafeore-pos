@@ -1,6 +1,7 @@
 import type {
   MenuEntity,
   OrderEntity,
+  SquareCheckout,
   SquarePaymentType,
   WithId,
 } from "@cafeore/common";
@@ -246,38 +247,75 @@ const CashierV2 = ({
   );
 
   /**
+   * 端末に決済画面を出せた Square の決済と、そのとき先に印刷したシールの注文番号。
+   * 「未登録の Square 決済」から結び付けるときに、同じシールを刷り直さないために使う。
+   */
+  const prePrintedRef = useRef(new Map<string, number>());
+
+  /**
    * Square で支払い済みの注文を送る。送れたら true
    *
-   * 決済を始めた時点の注文（order）を、画面に出ている注文番号で送る。お預かりは請求額と同じにする。
-   * 現金と違い、登録できたと分かってから印刷し、入力を消す。登録に失敗したら reject する
+   * 注文（order）を、その注文番号のまま送る。お預かりは請求額と同じにする。
+   * 登録できたと分かってから入力を消す。print なら、そのとき印刷する。登録に失敗したら reject する
    * （お金は受け取っているので、呼ぶ側で支払い済みのまま送り直せるようにする）。
    */
   const submitSquareOrder = useCallback(
-    async (checkoutId: string, order: OrderEntity): Promise<boolean> => {
+    async (
+      checkoutId: string,
+      order: OrderEntity,
+      print: boolean,
+    ): Promise<boolean> => {
       if (!canSubmitOrder || order.menus.length === 0) {
         return false;
       }
       const submitOne = prepareSubmit(order);
-      submitOne.orderId = newOrder.orderId;
       submitOne.received = submitOne.billingAmount;
       await submitSquarePayload(submitOne, checkoutId);
-      printer.printOrderLabel(submitOne);
+      if (print) {
+        printer.printOrderLabel(submitOne);
+      }
       finishSubmit();
       return true;
     },
-    [
-      canSubmitOrder,
-      prepareSubmit,
-      newOrder,
-      submitSquarePayload,
-      printer,
-      finishSubmit,
-    ],
+    [canSubmitOrder, prepareSubmit, submitSquarePayload, printer, finishSubmit],
   );
 
+  // シールは端末に決済画面が出た時点で先に印刷し、支払いを待つ間に作り始められるようにする。
+  // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わったら
+  // キャンセルのシールを印刷する。
   const squarePayment = useSquarePayment({
-    onPaid: (checkout, order) => submitSquareOrder(checkout.id, order),
+    onStarted: (checkout, order) => {
+      prePrintedRef.current.set(checkout.id, order.orderId);
+      printer.printOrderLabel(order);
+    },
+    onCanceled: (_checkout, order) => printer.printCancelLabel(order),
+    onPaid: (checkout, order) => submitSquareOrder(checkout.id, order, false),
   });
+
+  /**
+   * 「未登録の Square 決済」を、入力中の注文で登録する。
+   * このレジで先にシールを印刷した決済なら、刷り直さず、シールと同じ番号で登録する。
+   * そうでなければ（別のレジで決済した・画面を開き直したなど）、今の番号で登録して印刷する。
+   */
+  const submitUnlinkedSquareOrder = useCallback(
+    (checkout: SquareCheckout) => {
+      const prePrintedOrderId = prePrintedRef.current.get(checkout.id);
+      const order = newOrder.clone();
+      if (prePrintedOrderId !== undefined) {
+        order.orderId = prePrintedOrderId;
+      }
+      submitSquareOrder(
+        checkout.id,
+        order,
+        prePrintedOrderId === undefined,
+      ).catch((error) => {
+        toast.error(
+          `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    },
+    [newOrder, submitSquareOrder],
+  );
 
   const startSquarePayment = useCallback(
     (paymentType: SquarePaymentType) => {
@@ -360,13 +398,7 @@ const CashierV2 = ({
                 devices={squareDevice.devices}
                 currentBillingAmount={newOrder.billingAmount}
                 canSubmit={canEnterSubmit && !squarePaymentActive}
-                onSubmitWithCheckout={(checkout) => {
-                  submitSquareOrder(checkout.id, newOrder).catch((error) => {
-                    toast.error(
-                      `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
-                    );
-                  });
-                }}
+                onSubmitWithCheckout={submitUnlinkedSquareOrder}
               />
             )}
             {squareEnabled && (
