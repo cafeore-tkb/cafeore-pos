@@ -157,14 +157,14 @@ func TestValidateStockEvent(t *testing.T) {
 
 func TestAlertMessage(t *testing.T) {
 	counted := 3000.0
-	bean := stockSnapshot{
-		Resource:         models.StockResource{Kind: "bean", Name: "ケニア豆", Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
+	kenya := stockSnapshot{
+		Resource:         models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
 		Tracked:          true,
 		CountedQuantity:  &counted,
 		Consumed:         1800, // 残り 1200g = 80 杯
 		ServingsLastHour: 12,
 	}
-	if got, want := alertMessage(bean), "⚠️ *ケニア豆* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
+	if got, want := alertMessage(kenya), "⚠️ *ケニア* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 
@@ -185,7 +185,7 @@ func TestRemindMessage(t *testing.T) {
 	counted := 1200.0
 	snapshots := []stockSnapshot{
 		{
-			Resource:        models.StockResource{Kind: "bean", Name: "ケニア豆", Unit: "g", PerServing: 15},
+			Resource:        models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15},
 			Tracked:         true,
 			BaseAt:          &countedAt,
 			CountedQuantity: &counted,
@@ -193,7 +193,7 @@ func TestRemindMessage(t *testing.T) {
 		{Resource: models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}},
 	}
 	want := "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
-		"• ケニア豆: 残り約80杯（1200g）（最終確認 1時間20分前）\n" +
+		"• ケニア: 残り約80杯（1200g）（最終確認 1時間20分前）\n" +
 		"• ホットカップ: 未計測（最終確認 未実施）\n" +
 		"<https://pos.example.com/inventory|在庫ページを開く>"
 	if got := remindMessage(snapshots, now, "https://pos.example.com/"); got != want {

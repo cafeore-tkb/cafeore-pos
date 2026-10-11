@@ -237,7 +237,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 
 	hub := NewHub()
 	go hub.Run()
-	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")
+	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
 	orderHandler := NewOrderHandler(db, hub, inventory)
 
 	gin.SetMode(gin.TestMode)

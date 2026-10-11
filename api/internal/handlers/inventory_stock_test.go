@@ -30,7 +30,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		}
 	}
 	must(db.AutoMigrate(models.All()...))
-	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")
+	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
 	hub := NewHub()
 	go hub.Run()
 	gin.SetMode(gin.TestMode)
@@ -39,8 +39,8 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	router.POST("/resources", inventory.CreateStockResource)
 	router.PUT("/resources/:id", inventory.UpdateStockResource)
 	router.DELETE("/resources/:id", inventory.DeleteStockResource)
-	router.POST("/items", NewItemHandler(db).CreateItem)
-	router.DELETE("/items/:id", NewItemHandler(db).DeleteItem)
+	router.POST("/items", NewItemHandler(db, nil).CreateItem)
+	router.DELETE("/items/:id", NewItemHandler(db, nil).DeleteItem)
 	// 通知の判定は下で直接呼ぶので、注文からは呼ばない（nil）
 	orders := NewOrderHandler(db, hub, nil)
 	router.POST("/orders", orders.CreateOrder)

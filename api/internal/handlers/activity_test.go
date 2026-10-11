@@ -45,26 +45,28 @@ func TestMenuUpdatedMessage(t *testing.T) {
 	}
 }
 
-func TestItemUsagesMessage(t *testing.T) {
-	cup, bean := uuid.New(), uuid.New()
-	resources := map[uuid.UUID]models.StockResource{
-		cup:  {Name: "ホットカップ", Unit: "個"},
-		bean: {Name: "ケニア豆", Unit: "g"},
-	}
-	usages := []models.ItemStockUsage{
-		{ResourceID: cup, Amount: 1},
-		{ResourceID: bean, Amount: 15},
-	}
-	if got := itemUsagesMessage("ケニア", usages, resources); got != "✏️ 使用量を変更: ケニア → ホットカップ 1個・ケニア豆 15g :e-take-inventory:" {
+func TestStockResourceMessages(t *testing.T) {
+	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15}
+	after := kenya
+	after.PerServing = 16
+	if got := stockResourceUpdatedMessage(&kenya, &after, "", ""); got != "✏️ 在庫対象を変更: ケニア（1杯あたり 15 → 16） :e-change:" {
 		t.Fatalf("unexpected: %q", got)
 	}
-	if got := itemUsagesMessage("ケニア", nil, resources); got != "✏️ 使用量を変更: ケニア → なし :e-take-inventory:" {
+
+	cup := models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}
+	if got := stockResourceCreatedMessage(&cup, "ブレンド・グルメ"); got != "🆕 在庫対象を追加: ホットカップ（カップ / 1杯 1個 / 使うタイプ ブレンド・グルメ） :e-add:" {
 		t.Fatalf("unexpected: %q", got)
+	}
+	if got := stockResourceUpdatedMessage(&cup, &cup, "ブレンド・グルメ", "ブレンド・グルメ・限定"); got != "✏️ 在庫対象を変更: ホットカップ（使うタイプ ブレンド・グルメ → ブレンド・グルメ・限定） :e-change:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if got := stockResourceUpdatedMessage(&cup, &cup, "ブレンド", "ブレンド"); got != "" {
+		t.Fatalf("expected no message, got %q", got)
 	}
 }
 
 func TestStockEventMessage(t *testing.T) {
-	bean := models.StockResource{Name: "ケニア豆", Unit: "g"}
+	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g"}
 	estimated, remaining := 1180.0, 2230.0
 
 	cases := []struct {
@@ -75,22 +77,22 @@ func TestStockEventMessage(t *testing.T) {
 		{
 			"receipt",
 			models.StockEvent{Kind: "receipt", Quantity: 1000, Note: "追加発注分"},
-			"📝 ケニア豆 +1000g（残り約2230g）「追加発注分」 :e-restock:",
+			"📝 ケニア +1000g（残り約2230g）「追加発注分」 :e-restock:",
 		},
 		{
 			"count",
 			models.StockEvent{Kind: "count", Quantity: 1200},
-			"📝 ケニア豆 1200g（推定 1180g、差 +20g） :e-take-inventory:",
+			"📝 ケニア 1200g（推定 1180g、差 +20g） :e-take-inventory:",
 		},
 		{
 			"adjust",
 			models.StockEvent{Kind: "adjust", Quantity: -50},
-			"📝 ケニア豆 -50g（残り約2230g） :e-take-inventory:",
+			"📝 ケニア -50g（残り約2230g） :e-take-inventory:",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := stockEventMessage(&bean, &tc.event, &estimated, &remaining); got != tc.want {
+			if got := stockEventMessage(&kenya, &tc.event, &estimated, &remaining); got != tc.want {
 				t.Fatalf("got  %q\nwant %q", got, tc.want)
 			}
 		})
@@ -98,7 +100,7 @@ func TestStockEventMessage(t *testing.T) {
 
 	// 残量が出せない（まだ棚卸しも入荷もない）ときは残りを付けない
 	event := models.StockEvent{Kind: "receipt", Quantity: 500}
-	if got := stockEventMessage(&bean, &event, nil, nil); got != "📝 ケニア豆 +500g :e-restock:" {
+	if got := stockEventMessage(&kenya, &event, nil, nil); got != "📝 ケニア +500g :e-restock:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
