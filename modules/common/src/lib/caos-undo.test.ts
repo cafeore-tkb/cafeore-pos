@@ -164,9 +164,10 @@ describe("unit: caos-undo", () => {
         },
       ],
     ]);
-    // まだ「次へ」の結果が届いていなければ（ほかの画面が先に変えたのと同じく）送らない
+    // まだ「次へ」の結果が届いていなければ送らず、もう一度押せるように知らせる
     expect(caosUndoCups(entry, board(brewing, queued))).toEqual({
-      error: "ほかの画面で先に変わったので戻せません",
+      error: "操作の結果がまだ届いていません。もう一度押してください",
+      arriving: true,
     });
   });
 
