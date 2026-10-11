@@ -120,7 +120,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 
 	exists, err := h.targetExists(&setting)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if !exists {
@@ -129,7 +129,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 	}
 
 	if err := upsertColorSetting(h.db, &setting).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *ColorSettingHandler) UpsertColorSetting(c *gin.Context) {
 	var saved models.ColorSetting
 	if err := h.db.First(&saved, "target_type = ? AND target_id = ? AND screen = ?",
 		setting.TargetType, setting.TargetID, setting.Screen).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toColorSettingResponse(&saved))
@@ -153,7 +153,7 @@ func (h *ColorSettingHandler) DeleteColorSetting(c *gin.Context) {
 
 	result := h.db.Delete(&models.ColorSetting{}, "id = ?", settingID)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {

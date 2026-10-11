@@ -3,10 +3,18 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
+
+// respondInternalError は 500 でエラー文を返し、同じものをサーバーのログにも残す。
+// 内部の人しか使わない API なので、開発中に原因が見えるよう応答にもエラー文を載せる。
+func respondInternalError(c *gin.Context, err error) {
+	log.Printf("internal error: %s %s: %v", c.Request.Method, c.FullPath(), err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+}
 
 // ハンドラで共通に使う、決まりに合わない書き込み（400）と、楽観ロックで断る書き込み（409）のエラー。
 
@@ -33,7 +41,7 @@ func conflictErrorf(format string, args ...any) error {
 }
 
 // respondError は err を応答に書き、書いたら true を返す（nil なら何もせず false）。
-// ruleError は 400、errConflict は 409、それ以外は 500。
+// ruleError は 400、errConflict は 409、それ以外は 500（respondInternalError でログにも残す）。
 func respondError(c *gin.Context, err error) bool {
 	var rule *ruleError
 	switch {
@@ -44,7 +52,7 @@ func respondError(c *gin.Context, err error) bool {
 	case errors.Is(err, errConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 	}
 	return true
 }

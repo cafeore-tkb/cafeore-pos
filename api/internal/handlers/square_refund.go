@@ -327,7 +327,7 @@ func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound s
 				Checkout: toSquareCheckoutResponse(record, h.now()),
 			})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			respondInternalError(c, err)
 		}
 		return
 	}

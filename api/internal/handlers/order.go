@@ -211,7 +211,7 @@ func ordersMessage(db *gorm.DB) (WSMessage, bool) {
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order
 	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -347,14 +347,15 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	existing, err := createOrderOnce(hasKey, findExisting, create)
 	if err != nil {
-		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
-			status = http.StatusBadRequest
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 		if errors.Is(err, errSquareCheckoutUnusable) {
-			status = http.StatusConflict
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	status := http.StatusCreated
@@ -367,7 +368,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	// 関連データをロードし、この注文だけを配信する
 	resp, err := publishOrder(h.db, h.hub, order.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -391,7 +392,7 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -465,20 +466,20 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		status, message := http.StatusInternalServerError, err.Error()
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			status, message = http.StatusNotFound, "Order not found"
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		case errors.Is(err, errInvalidOrderMenus):
-			status = http.StatusBadRequest
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			respondInternalError(c, err)
 		}
-		c.JSON(status, gin.H{"error": message})
 		return
 	}
 
 	resp, err := publishOrder(h.db, h.hub, orderID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, resp)
@@ -502,7 +503,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})

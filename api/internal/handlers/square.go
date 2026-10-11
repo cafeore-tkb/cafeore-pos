@@ -370,7 +370,7 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 
 	// 進行中かどうかは Square に問い合わせないと分からない。ロックを取る前に最新にしておく。
 	if err := h.refreshActiveCandidates(ctx, req.DeviceId); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -427,7 +427,7 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if existing != nil {
@@ -535,7 +535,7 @@ func (h *SquareHandler) findCheckout(c *gin.Context) (*models.SquareCheckout, bo
 			c.JSON(http.StatusNotFound, gin.H{"error": "Checkout not found"})
 			return nil, false
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return nil, false
 	}
 	return &record, true
@@ -596,7 +596,7 @@ func (h *SquareHandler) GetUnlinkedCheckouts(c *gin.Context) {
 			squareStatusCompleted, squareRefundCompleted).
 		Order("created_at DESC").
 		Find(&records).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	ctx := c.Request.Context()
@@ -648,7 +648,7 @@ func (h *SquareHandler) ReceiveWebhook(c *gin.Context) {
 			c.Status(http.StatusOK)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	applySquareCheckout(record, remote)

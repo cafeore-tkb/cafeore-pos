@@ -244,7 +244,7 @@ func (h *SquareHandler) GetDevices(c *gin.Context) {
 	ctx := c.Request.Context()
 	var pending []models.SquareDevice
 	if err := h.db.WithContext(ctx).Where("status = ?", squareDeviceUnpaired).Find(&pending).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	for i := range pending {
@@ -254,7 +254,7 @@ func (h *SquareHandler) GetDevices(c *gin.Context) {
 	// ペアリングし直した端末の古い行は refreshPairing で消えるので、読み直して返す。
 	var devices []models.SquareDevice
 	if err := h.db.WithContext(ctx).Order("created_at").Find(&devices).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toSquareDeviceResponses(devices))
@@ -302,7 +302,7 @@ func (h *SquareHandler) PairDevice(c *gin.Context) {
 		PairBy: parseSquareTime(code.PairBy),
 	}
 	if err := h.db.WithContext(ctx).Create(&device).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toSquareDeviceResponse(&device))
@@ -329,7 +329,7 @@ func (h *SquareHandler) CreateDevice(c *gin.Context) {
 
 	var count int64
 	if err := h.db.WithContext(ctx).Model(&models.SquareDevice{}).Where("device_id = ?", deviceID).Count(&count).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if count > 0 {
@@ -338,7 +338,7 @@ func (h *SquareHandler) CreateDevice(c *gin.Context) {
 	}
 	device := models.SquareDevice{Name: name, Status: squareDevicePaired, DeviceID: &deviceID}
 	if err := h.db.WithContext(ctx).Create(&device).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toSquareDeviceResponse(&device))
@@ -376,7 +376,7 @@ func (h *SquareHandler) ImportDevices(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toSquareDeviceResponses(imported))
@@ -393,7 +393,7 @@ func (h *SquareHandler) DeleteDevice(c *gin.Context) {
 	}
 	result := h.db.WithContext(c.Request.Context()).Delete(&models.SquareDevice{}, "id = ?", id)
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		respondInternalError(c, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {

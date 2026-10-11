@@ -342,7 +342,7 @@ func parseUUIDParam(c *gin.Context) (uuid.UUID, bool) {
 func (h *InventoryHandler) GetInventory(c *gin.Context) {
 	snapshots, err := h.inv.snapshots(c.Request.Context(), nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	responses := make([]models.InventoryStatus, len(snapshots))
@@ -374,7 +374,7 @@ func (h *InventoryHandler) CreateStockResource(c *gin.Context) {
 		Buffer:     req.Buffer,
 	}
 	if err := h.inv.db.Create(&resource).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toStockResourceResponse(&resource))
@@ -402,7 +402,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Resource not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -422,7 +422,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	resource.NotifyStep = req.NotifyStep
 	resource.Buffer = req.Buffer
 	if err := h.inv.db.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -447,7 +447,7 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		return res.Error
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if affected == 0 {
@@ -476,7 +476,7 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 	// 記録する直前の推定。棚卸しなら推定とのずれと、実測の1杯あたり使用量を返す。
 	before, err := h.inv.snapshots(c.Request.Context(), []uuid.UUID{id})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if len(before) == 0 {
@@ -494,7 +494,7 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		event.Note = *req.Note
 	}
 	if err := h.inv.db.Create(&event).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -539,7 +539,7 @@ func validateStockEvent(kind models.StockEventKind, quantity float64) string {
 func (h *InventoryHandler) GetStockUsages(c *gin.Context) {
 	var usages []models.ItemStockUsage
 	if err := h.inv.db.Find(&usages).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toStockUsageResponses(usages))
@@ -588,7 +588,7 @@ func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
 		return tx.Create(&usages).Error
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 
@@ -633,7 +633,7 @@ func (h *InventoryHandler) RemindInventory(c *gin.Context) {
 	var recentOrders int64
 	if err := h.inv.db.WithContext(ctx).Model(&models.Order{}).
 		Where("created_at > ?", now.Add(-remindActiveWindow)).Count(&recentOrders).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	if recentOrders == 0 {
@@ -643,7 +643,7 @@ func (h *InventoryHandler) RemindInventory(c *gin.Context) {
 
 	snapshots, err := h.inv.snapshots(ctx, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, err)
 		return
 	}
 	var stale []stockSnapshot
@@ -659,7 +659,9 @@ func (h *InventoryHandler) RemindInventory(c *gin.Context) {
 	}
 
 	if err := h.inv.slack.Send(ctx, remindMessage(stale, now, h.inv.posURL)); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		// 送信の失敗には Webhook の URL が入ることがあるので、応答には出さずにログにだけ出す
+		log.Printf("inventory: failed to send reminder: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to send reminder"})
 		return
 	}
 	c.JSON(http.StatusOK, models.InventoryRemindResponse{Sent: true})
