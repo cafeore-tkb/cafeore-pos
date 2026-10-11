@@ -144,7 +144,7 @@ export const NextAvailableChips: React.FC<{ nextAvailable: NextAvailable }> = ({
         key={item.bayId}
         className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
       >
-        #{item.bayId} {item.isStandby ? "待機" : clockLabel(item.seconds)}
+        #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
       </span>
     ))}
   </div>

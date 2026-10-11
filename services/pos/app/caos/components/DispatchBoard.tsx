@@ -25,6 +25,7 @@ import { BayPad, OrderCard } from "./OrderCard";
 // 横に払うとタイムラインのスクロール（カードの上でもスクロールできる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
+// 左端の列（ドリッパーの番号と担当者）の幅
 const STICKY_LEFT_WIDTH = 168;
 // 90 seconds of past context remains visible to the left of NOW.
 const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
@@ -101,7 +102,10 @@ export const DispatchBoard: React.FC<
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       {scroll.isPastView && (
-        <div className="absolute top-0 left-[168px] z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
+        <div
+          style={{ left: STICKY_LEFT_WIDTH }}
+          className="absolute top-0 z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900"
+        >
           <RotateCcw className="h-3 w-3" />
           <span>過去の抽出履歴を表示中</span>
         </div>
@@ -141,7 +145,10 @@ export const DispatchBoard: React.FC<
         <div className="relative w-max">
           {/* 時刻の目盛り */}
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
-            <div className="sticky left-0 isolate z-[60] flex h-full w-[168px] shrink-0 items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
+            <div
+              style={{ width: STICKY_LEFT_WIDTH }}
+              className="sticky left-0 isolate z-[60] flex h-full shrink-0 items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+            >
               ドリッパー / 抽出担当
             </div>
             <div
@@ -184,7 +191,10 @@ export const DispatchBoard: React.FC<
                   className="relative flex h-[80px] touch-manipulation items-center bg-white"
                 >
                   {/* ドリッパーの番号（列の状態）と担当者・交代 */}
-                  <div className="sticky left-0 isolate z-[51] flex w-[168px] shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
+                  <div
+                    style={{ width: STICKY_LEFT_WIDTH }}
+                    className="sticky left-0 isolate z-[51] flex shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+                  >
                     <DripperIndicator
                       bayId={bay.id}
                       status={lane}
