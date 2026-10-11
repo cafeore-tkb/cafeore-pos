@@ -83,7 +83,10 @@ func TestSquareRefundOutcome(t *testing.T) {
 		"requesting": {withRefund(squareRefundRequesting, nil), models.RefundPending},
 		"no response": {withRefund(squareRefundRequesting, func(r *models.SquareCheckout) {
 			r.RefundError = ptr("timeout")
-		}), models.RefundFailed},
+		}), models.RefundUnknown},
+		"server died while requesting": {withRefund(squareRefundRequesting, func(r *models.SquareCheckout) {
+			r.RefundRequestedAt = ptr(squareTestNow.Add(-(squareRefundRequestingStale + time.Second)))
+		}), models.RefundUnknown},
 		"pending":       {withRefund(squareRefundPending, nil), models.RefundPending},
 		"completed":     {withRefund(squareRefundCompleted, nil), models.RefundRefunded},
 		"failed":        {withRefund(squareRefundFailed, nil), models.RefundFailed},

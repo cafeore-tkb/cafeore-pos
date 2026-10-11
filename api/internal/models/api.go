@@ -65,6 +65,7 @@ const (
 	RefundNone     SquareRefundStatus = "none"
 	RefundPending  SquareRefundStatus = "pending"
 	RefundRefunded SquareRefundStatus = "refunded"
+	RefundUnknown  SquareRefundStatus = "unknown"
 )
 
 // Defines values for StockEventKind.
@@ -449,7 +450,8 @@ type SquareCheckoutResponse struct {
 	//   - none: 返金を頼んでいない
 	//   - pending: Square に頼んだ。結果を待っている
 	//   - refunded: 返金が終わった
-	//   - failed: Square が断った・失敗した、または応答が無く返金できたか分からない。もう一度頼める
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
 	RefundStatus SquareRefundStatus `json:"refund_status"`
 
 	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
@@ -506,7 +508,8 @@ type SquarePaymentType string
 //   - none: 返金を頼んでいない
 //   - pending: Square に頼んだ。結果を待っている
 //   - refunded: 返金が終わった
-//   - failed: Square が断った・失敗した、または応答が無く返金できたか分からない。もう一度頼める
+//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
 type SquareRefundStatus string
 
 // SquareStatusResponse defines model for SquareStatusResponse.

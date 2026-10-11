@@ -150,7 +150,8 @@ export const squareRepository = {
    * 支払い済みの決済を全額返金する。注文と結び付いていれば、その注文は消える
    *
    * Square が受け付ければ refund_status が pending か refunded の決済依頼を返す。
-   * Square が断った（交通系 IC など）・応答が無かったときは refund_status が failed の決済依頼を返す。
+   * Square が断った（交通系 IC など）ときは refund_status が failed、応答が無く返金できたか
+   * 分からないときは unknown の決済依頼を返す（unknown はもう一度呼ぶと確かめられる）。
    * 支払いを確かめられていない・返金を頼んでいる途中なら SquareCheckoutConflictError を投げる。
    */
   async refundCheckout(id: string): Promise<SquareCheckout> {

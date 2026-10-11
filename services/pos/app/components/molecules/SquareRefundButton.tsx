@@ -51,6 +51,12 @@ export const SquareRefundButton = ({
         );
         return;
       }
+      if (checkout.refund_status === "unknown") {
+        toast.error(
+          `返金できたか確かめられませんでした。もう一度押すと確かめます（二重には返金されません）: ${checkout.refund_error ?? ""}`,
+        );
+        return;
+      }
       toast.success(
         checkout.refund_status === "refunded"
           ? `${label} を返金しました`
@@ -90,8 +96,14 @@ export const SquareRefundButton = ({
               <p>
                 支払いに使ったカード・電子マネー・QR
                 コードへ全額を返します。取り消せません。
-                {deletesOrder && "注文は消えます。"}
+                {deletesOrder && "Square が受け付けたら注文は消えます。"}
               </p>
+              {deletesOrder && (
+                <p>
+                  あとで Square で返金が失敗したときは「未登録の Square
+                  決済」に理由付きで出ます。そこでもう一度返金するか、注文を登録し直してください。
+                </p>
+              )}
               <p>交通系 IC の支払いは Square でも返金できません。</p>
             </div>
           </AlertDialogDescription>

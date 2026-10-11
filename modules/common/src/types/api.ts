@@ -251,7 +251,10 @@ export interface paths {
      * 支払い済みの決済を全額返金する
      * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
      * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+     * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+     * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
      * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+     * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
      * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
      * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
      * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
@@ -699,11 +702,12 @@ export interface components {
      *   - none: 返金を頼んでいない
      *   - pending: Square に頼んだ。結果を待っている
      *   - refunded: 返金が終わった
-     *   - failed: Square が断った・失敗した、または応答が無く返金できたか分からない。もう一度頼める
+     *   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+     *   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
      *
      * @enum {string}
      */
-    SquareRefundStatus: "none" | "pending" | "refunded" | "failed";
+    SquareRefundStatus: "none" | "pending" | "refunded" | "failed" | "unknown";
     SquareStatusResponse: {
       enabled: boolean;
       /** @description production か sandbox */
@@ -1842,7 +1846,10 @@ export interface operations {
    * 支払い済みの決済を全額返金する
    * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
    * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+   * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+   * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
    * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+   * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
    * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
    * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
    * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。

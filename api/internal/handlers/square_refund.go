@@ -71,7 +71,7 @@ func squareRefundOutcome(checkout *models.SquareCheckout, now time.Time) models.
 	case squareRefundRequesting:
 		// 応答が無く、返金できたか分からない。頼み直すと確かめられる。
 		if squareRefundStale(checkout, now) {
-			return models.RefundFailed
+			return models.RefundUnknown
 		}
 		return models.RefundPending
 	default:
@@ -278,16 +278,35 @@ func (h *SquareHandler) refreshRefund(ctx context.Context, record *models.Square
 	status, message := squareRefundStatusOf(statuses)
 	record.RefundStatus = &status
 	record.RefundError = message
-	h.saveRefund(record)
+	h.saveRefund(record, squareRefundPending)
 }
 
-// saveRefund は返金の列だけを保存する（決済の状態の保存 save と書き込みがぶつからないように分けている）。
-func (h *SquareHandler) saveRefund(record *models.SquareCheckout) {
-	if err := h.db.Model(record).Select(
-		"RefundStatus", "RefundIDs", "RefundError", "UpdatedAt",
-	).Updates(record).Error; err != nil {
-		log.Printf("square: failed to save refund of checkout %s: %v", record.ID, err)
+// saveRefund は返金の列だけを、DB の記録が読んだときと同じ返金（状態が expected で、RefundKey が同じ）の
+// ままなら保存する。決済の状態の保存（save）とは列を分けている。
+//
+// ロックせずに読んだ記録を書き戻すので、その間に別のリクエストが進めた状態を古い内容で上書きしうる
+// （PENDING → FAILED の直後に頼み直して REQUESTING になったものを FAILED に戻すと、さらに別の
+// 頼み直しが通って二重に返金されうる）。保存できなかったら、record を DB の今の状態に読み直す。
+func (h *SquareHandler) saveRefund(record *models.SquareCheckout, expected string) {
+	query := h.db.Model(record).Where("refund_status = ?", expected)
+	if record.RefundKey != nil {
+		query = query.Where("refund_key = ?", *record.RefundKey)
 	}
+	result := query.Select("RefundStatus", "RefundIDs", "RefundError", "UpdatedAt").Updates(record)
+	if result.Error != nil {
+		log.Printf("square: failed to save refund of checkout %s: %v", record.ID, result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		return
+	}
+	log.Printf("square: refund of checkout %s changed elsewhere; not overwriting", record.ID)
+	var current models.SquareCheckout
+	if err := h.db.First(&current, "id = ?", record.ID).Error; err != nil {
+		log.Printf("square: failed to reload checkout %s: %v", record.ID, err)
+		return
+	}
+	*record = current
 }
 
 // refund は決済依頼を全額返金し、Square が受け付けたら結び付いた注文を消して応答する。
@@ -315,7 +334,7 @@ func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound s
 
 	if action != squareRefundAccepted {
 		h.requestRefunds(ctx, record)
-		h.saveRefund(record)
+		h.saveRefund(record, squareRefundRequesting)
 	}
 	if outcome := squareRefundOutcome(record, h.now()); outcome != models.RefundPending && outcome != models.RefundRefunded {
 		log.Printf("square: refund of checkout %s was not accepted (%s)", record.ID, outcome)
@@ -324,6 +343,9 @@ func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound s
 	}
 
 	// お金は返したので、注文は消す。消せなくても返金は取り消さない（もう一度呼ぶと注文だけを消す）。
+	// PENDING でも消す。あとで Square で失敗したら、決済は「未登録の Square 決済」に理由付きで出るので、
+	// そこで頼み直すか、注文を登録し直す。COMPLETED まで待つと、注文の付いた返金待ちを誰かが確かめて
+	// 消す仕組みが別に要る。
 	if record.OrderID != nil {
 		if err := h.orders.deleteOrder(*record.OrderID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{

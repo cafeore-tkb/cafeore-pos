@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -180,7 +181,7 @@ func TestSquareIntegrationRefundResponseLost(t *testing.T) {
 	env.fake.loseRefunds = 1
 
 	code, lost, raw := env.refundCheckout(checkout.Id.String())
-	if code != http.StatusBadGateway || lost.RefundStatus != models.RefundFailed || lost.RefundError == nil {
+	if code != http.StatusBadGateway || lost.RefundStatus != models.RefundUnknown || lost.RefundError == nil {
 		t.Fatalf("lost response: %d %v", code, raw)
 	}
 	// 結果が分からない間は注文に使えない。
@@ -276,5 +277,45 @@ func TestSquareIntegrationRefundUnknownAmount(t *testing.T) {
 	}
 	if len(env.fake.refundRequests) != 0 || env.orderCount() != 1 {
 		t.Fatalf("must neither refund nor delete the order: %d requests, %d orders", len(env.fake.refundRequests), env.orderCount())
+	}
+}
+
+// ロックせずに読んだ古い記録で、返金の状態を書き戻さない。Square で返金が失敗した直後に別のレジが
+// 頼み直している（REQUESTING）ものを FAILED に戻すと、さらに頼み直せて二重に返金されうる。
+func TestSquareIntegrationRefundRefreshDoesNotOverwrite(t *testing.T) {
+	env := newIntegrationEnv(t)
+	checkout := env.pay()
+	if code, refunded, raw := env.refundCheckout(checkout.Id.String()); code != http.StatusOK || refunded.RefundStatus != models.RefundPending {
+		t.Fatalf("refund: %d %v", code, raw)
+	}
+	var stale models.SquareCheckout
+	env.db.First(&stale, "id = ?", uuid.UUID(checkout.Id))
+
+	env.fake.mu.Lock()
+	env.fake.refunds["rf_1"].Status = "FAILED"
+	env.fake.mu.Unlock()
+	retryKey := uuid.New()
+	env.db.Model(&models.SquareCheckout{}).Where("id = ?", stale.ID).Updates(map[string]any{
+		"refund_status": squareRefundRequesting, "refund_key": retryKey, "refund_error": nil,
+	})
+
+	env.square.refreshRefund(context.Background(), &stale)
+	var stored models.SquareCheckout
+	env.db.First(&stored, "id = ?", stale.ID)
+	if stored.RefundStatus == nil || *stored.RefundStatus != squareRefundRequesting || stored.RefundKey == nil || *stored.RefundKey != retryKey {
+		t.Fatalf("stale refresh overwrote the retry: %+v", stored)
+	}
+	// 書き戻さなかった記録は、DB の今の状態に読み直す。
+	if stale.RefundStatus == nil || *stale.RefundStatus != squareRefundRequesting {
+		t.Fatalf("record must be reloaded: %+v", stale)
+	}
+
+	// 誰も変えていなければ、問い合わせの結果を保存する。
+	env.db.Model(&models.SquareCheckout{}).Where("id = ?", stale.ID).Update("refund_status", squareRefundPending)
+	env.db.First(&stale, "id = ?", stale.ID)
+	env.square.refreshRefund(context.Background(), &stale)
+	env.db.First(&stored, "id = ?", stale.ID)
+	if stored.RefundStatus == nil || *stored.RefundStatus != squareRefundFailed || stored.RefundError == nil {
+		t.Fatalf("refresh must save the result: %+v", stored)
 	}
 }

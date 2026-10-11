@@ -82,16 +82,19 @@ export const SquareUnlinkedNotice = ({
         </SheetHeader>
         <ul className="mt-4 space-y-3">
           {unlinked.map((checkout) => {
-            // 返金を頼んでいない・返金が失敗したものだけ、お金が手元にある
+            // 返金を頼んでいない・返金が失敗したものだけ、お金が手元にあると分かっている
             const notRefunded =
               checkout.refund_status === "none" ||
               checkout.refund_status === "failed";
+            const registrable = checkout.outcome === "paid" && notRefunded;
             const usable =
-              checkout.outcome === "paid" &&
-              notRefunded &&
+              registrable &&
               canSubmit &&
               currentBillingAmount === checkout.amount;
-            const refundable = checkout.paid_amount != null && notRefunded;
+            // 返金できたか分からない（unknown）ものは、もう一度頼むと確かめられる
+            const refundable =
+              checkout.paid_amount != null &&
+              (notRefunded || checkout.refund_status === "unknown");
             return (
               <li key={checkout.id} className="rounded border p-3 text-sm">
                 <div className="flex justify-between font-bold text-lg">
@@ -133,14 +136,19 @@ export const SquareUnlinkedNotice = ({
                     {checkout.refund_error ?? "Square が受け付けませんでした"}
                   </p>
                 )}
+                {checkout.refund_status === "unknown" && (
+                  <p className="mt-2 text-red-700 text-xs">
+                    Square
+                    から応答が無く、返金できたか確かめられていません。「もう一度返金」を押すと確かめます（二重には返金されません）。
+                  </p>
+                )}
                 {checkout.outcome !== "paid" && (
                   <p className="mt-2 text-red-700 text-xs">
                     受取額を確かめられていません。Square
                     の管理画面で確認してください。
                   </p>
                 )}
-                {(refundable ||
-                  (checkout.outcome === "paid" && notRefunded)) && (
+                {(refundable || registrable) && (
                   <div className="mt-2 flex flex-col items-end gap-1">
                     <div className="flex gap-2">
                       {refundable && (
@@ -152,12 +160,12 @@ export const SquareUnlinkedNotice = ({
                           }
                           onRefunded={() => void mutate()}
                         >
-                          {checkout.refund_status === "failed"
-                            ? "もう一度返金"
-                            : "返金"}
+                          {checkout.refund_status === "none"
+                            ? "返金"
+                            : "もう一度返金"}
                         </SquareRefundButton>
                       )}
-                      {checkout.outcome === "paid" && (
+                      {registrable && (
                         <Button
                           size="sm"
                           disabled={!usable}
@@ -171,7 +179,7 @@ export const SquareUnlinkedNotice = ({
                         </Button>
                       )}
                     </div>
-                    {checkout.outcome === "paid" && !usable && (
+                    {registrable && !usable && (
                       <span className="text-stone-400 text-xs">
                         入力中の注文（&yen;{currentBillingAmount}
                         ）と金額が合うと押せます

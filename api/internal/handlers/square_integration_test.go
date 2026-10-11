@@ -249,6 +249,7 @@ type integrationEnv struct {
 	db     *gorm.DB
 	router *gin.Engine
 	fake   *fakeSquare
+	square *SquareHandler
 	menuID uuid.UUID
 }
 
@@ -327,7 +328,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
 	api.POST("/square/webhook", squareHandler.ReceiveWebhook)
 
-	return &integrationEnv{t: t, db: db, router: router, fake: fake, menuID: menu.ID}
+	return &integrationEnv{t: t, db: db, router: router, fake: fake, square: squareHandler, menuID: menu.ID}
 }
 
 func (e *integrationEnv) call(method, path string, body any, headers map[string]string, out any) int {

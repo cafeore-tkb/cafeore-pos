@@ -921,14 +921,15 @@
   },
   "SquareRefundStatus": {
     "type": "string",
-    "enum": ["none", "pending", "refunded", "failed"],
+    "enum": ["none", "pending", "refunded", "failed", "unknown"],
     "x-enum-varnames": [
       "RefundNone",
       "RefundPending",
       "RefundRefunded",
-      "RefundFailed"
+      "RefundFailed",
+      "RefundUnknown"
     ],
-    "description": "返金（全額）の状態。\n  - none: 返金を頼んでいない\n  - pending: Square に頼んだ。結果を待っている\n  - refunded: 返金が終わった\n  - failed: Square が断った・失敗した、または応答が無く返金できたか分からない。もう一度頼める\n"
+    "description": "返金（全額）の状態。\n  - none: 返金を頼んでいない\n  - pending: Square に頼んだ。結果を待っている\n  - refunded: 返金が終わった\n  - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える\n  - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない\n"
   },
   "SquareStatusResponse": {
     "type": "object",
