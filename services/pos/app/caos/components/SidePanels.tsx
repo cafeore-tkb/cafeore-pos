@@ -231,7 +231,7 @@ export const TicketDetailPanel: React.FC<{
     {ticket.emergency && onCancelEmergency && (
       <TwoStepButton
         label="緊急を取り消す"
-        confirmLabel="取り消す"
+        confirmLabel="もう一度押すと緊急を取り消す"
         onConfirm={() => {
           onCancelEmergency(ticket);
           onClose();

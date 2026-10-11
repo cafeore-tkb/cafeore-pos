@@ -1,6 +1,6 @@
 import { type OrderEntity, assignmentDisplay } from "@cafeore/common";
 import { Siren } from "lucide-react";
-import { type ComponentProps, useId } from "react";
+import { type ComponentProps, useId, useState } from "react";
 import {
   type EmergencyCup,
   type EmergencyInitial,
@@ -31,16 +31,20 @@ export const EmergencyForm = ({
 }) => {
   const id = useId();
   const draft = useEmergencyDraft(orders, initial);
+  // 送っている間は確定させない（2 回押して入れ直しが倍にならないように）
+  const [sending, setSending] = useState(false);
   return (
     <form
       className="grid gap-4"
       onSubmit={async (event) => {
         event.preventDefault();
-        if (
-          draft.selected.length > 0 &&
-          (await onAdd(draft.selected, draft.reason))
-        )
-          onDone();
+        if (sending || draft.selected.length === 0) return;
+        setSending(true);
+        try {
+          if (await onAdd(draft.selected, draft.reason)) onDone();
+        } finally {
+          setSending(false);
+        }
       }}
     >
       <label htmlFor={`${id}-no`} className="grid gap-1 font-bold text-sm">
@@ -120,7 +124,7 @@ export const EmergencyForm = ({
       <Button
         type="submit"
         variant="destructive"
-        disabled={draft.selected.length === 0}
+        disabled={sending || draft.selected.length === 0}
         className="h-12 gap-2 font-bold text-base"
       >
         <EmergencyIcon className="h-5 w-5" />

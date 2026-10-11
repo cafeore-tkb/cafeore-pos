@@ -207,8 +207,10 @@ const EmergencyActions = ({
     </Button>
     {cancelableId && (
       <TwoStepButton
+        // 取り消す入れ直しが替わったら、1 回目からにする
+        key={cancelableId}
         label="取消"
-        confirmLabel="取り消す"
+        confirmLabel="緊急を取り消す"
         onConfirm={() => onCancel(cancelableId)}
         className="w-auto px-2"
       />

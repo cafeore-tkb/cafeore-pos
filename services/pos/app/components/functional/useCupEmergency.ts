@@ -55,10 +55,12 @@ export const useCupEmergency = () => {
 
   /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す） */
   const cancelEmergency = useCallback(async (ids: string[]) => {
-    for (const id of ids) {
+    for (const [done, id] of ids.entries()) {
       const { error } = await cancelCupEmergency(id);
       if (error !== undefined) {
-        toast.error(error);
+        toast.error(
+          done > 0 ? `${error}（${done} 杯は取り消しました）` : error,
+        );
         return;
       }
       cancelled.current.add(id);
@@ -80,11 +82,13 @@ const brewCupsOf = (order: OrderEntity) => {
     );
 };
 
-/** 注文番号の注文（同じ番号が複数あれば新しいもの） */
-const orderByNo = (orders: readonly OrderEntity[], orderNo: string) =>
-  orders
-    .filter((order) => String(order.orderId) === orderNo.trim())
+/** 注文番号の注文（数で比べるので「012」でもよい。同じ番号が複数あれば新しいもの） */
+const orderByNo = (orders: readonly OrderEntity[], orderNo: string) => {
+  const no = orderNo.trim() === "" ? Number.NaN : Number(orderNo);
+  return orders
+    .filter((order) => order.orderId === no)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+};
 
 /** 緊急の入力を開いたときの値（カップやカードから開けば、その注文番号とカップ） */
 export type EmergencyInitial = { orderNo: number; cupIds: string[] };

@@ -89,6 +89,8 @@ export const usePrinter = (
     try {
       await withPendingPrintsLock(async () => {
         for (const pending of readPendingPrints()) {
+          // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
+          if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
           if (await print(pending.job)) removePendingPrint(pending.id);
         }
       });
