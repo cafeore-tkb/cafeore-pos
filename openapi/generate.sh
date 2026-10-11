@@ -18,7 +18,7 @@ pnpm -F @cafeore/common generate:schemas
 echo "Go型を生成中..."
 mkdir -p ../api/internal/models
 mkdir -p ../api/internal/handlers
-oapi-codegen -generate types -package models openapi.yaml > ../api/internal/models/api.go
+oapi-codegen -generate types,skip-prune -package models openapi.yaml > ../api/internal/models/api.go
 oapi-codegen -generate gin -package handlers openapi.yaml > ../api/internal/handlers/api_gin.go
 echo "Go型を生成しました"
 

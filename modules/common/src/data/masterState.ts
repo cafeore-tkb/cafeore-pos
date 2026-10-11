@@ -2,7 +2,7 @@ import createClient from "openapi-fetch";
 // src/data/masterState.ts
 import useSWR from "swr";
 import { API_BASE_URL } from "../repositories";
-import type { paths } from "../types/api";
+import type { components, paths } from "../types/api";
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
@@ -11,17 +11,16 @@ export type MasterState = {
   type: string;
 };
 
-export const responseToMasterState = (res: {
-  created_at?: string;
-  createdAt?: string;
-  type: string;
-}): MasterState => {
+export const responseToMasterState = (
+  res: components["schemas"]["MasterStateResponse"],
+): MasterState => {
   return {
-    createdAt: res.createdAt ?? res.created_at ?? "",
+    createdAt: res.created_at,
     type: res.type,
   };
 };
 
+/** オーダーストップ・再開の記録を古い順に取得する */
 export const getMasterState = async (): Promise<MasterState[]> => {
   const { data, error, response } = await client.GET("/api/master-status", {});
 

@@ -144,9 +144,8 @@ const DiscountInput = memo(
                       key={`${idx}-${item.id}`}
                       className={cn(
                         "text-sm text-stone-600",
-                        (item.item_type.name === "milk" ||
-                          item.item_type.name === "others") &&
-                          "text-stone-400",
+                        // 割引の杯数に数えないもの（種類の「抽出が要る」が無いもの）は薄く出す
+                        !item.item_type.needs_brew && "text-stone-400",
                       )}
                     >
                       {item.name}

@@ -63,10 +63,15 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 
 ### フロントエンド（Cloudflare Workers）
 
-POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプトは持たず、
-`build/client` を静的アセットとして配信するだけの構成にしている
-（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
+POS と mobile はどちらも `ssr: false` の SPA。画面は `build/client` を静的アセットとして
+配信する（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
+
+POS だけは Worker のスクリプトを持ち、`/api/*`・`/status`・`/health` を Cloud Run の API へ
+中継する（`services/pos/worker/index.ts`。理由は [API の認証](#api-の認証cloudflare-access)）。
+中継先は本番のデプロイのときだけ `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
+PR のプレビューでは渡さないので、プレビューの URL の `/api` は 503 を返す
+（プレビューの画面は Cloud Run を直接呼ぶので使わない）。
 
 main への push と手動実行では本番へ `wrangler deploy` する。PR（`preview` ラベル付きのみ）では
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
@@ -109,11 +114,13 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 | `cafeore-mobile` | `services/mobile` |
 
 ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
+POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
+渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
 
 ### backend（Artifact Registry → Cloud Run）
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
-main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-git` を
+main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-prod` を
 そのイメージで更新する。**PR では本番に触らず、プレビュー用の別サービス**
 （既定 `cafeore-pos-preview`）へデプロイし、その URL を PR にコメントする。
 
@@ -131,18 +138,216 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（`DATABASE_URL` がセッションプーラーなので不要）。トランザクションプーラー（ポート 6543）に変えたら、直接接続かセッションプーラーの接続文字列 |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
 | `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
 | `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
+| `SQUARE_ACCESS_TOKEN` | 任意（Sandbox のトークン） | 未設定 | Square のアクセストークン（Secret Manager に置く） |
+| `SQUARE_ENVIRONMENT` | `sandbox` | 未設定 | `production` |
+| `SQUARE_LOCATION_ID` | 任意 | 未設定 | 任意（端末をペアリングする店舗。空ならアカウントの既定の店舗） |
+| `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
+| `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
+| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
+| `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
+| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
+### Square Terminal 連携
+
+レジの確定欄から Square Terminal に決済画面（カード・電子マネー・QR コード）を出す。
+**決済が先・注文が後**の順で、端末で支払いが終わってから注文を登録し、ラベルを印刷する。
+`SQUARE_ACCESS_TOKEN` が無ければ無効で、レジに Square のボタンは出ない。
+
+- アクセストークンはサーバーだけが持つ。ブラウザから Square の API は呼ばない。
+- 端末は何台でも登録でき、DB（`square_devices`）に持つ。追加・取り込み・外すのは管理画面 `/square-devices` で行う。
+- どの端末に決済画面を出すかは**レジごとに固定**する。レジの画面右上で選んだ端末の device_id をブラウザ
+  （`localStorage` の `cafeore:square-device-id`）に覚える。端末が 1 台しか無く、まだ選んでいなければその端末を使う。
+  選んでいた端末が一覧から外されたら、残りが 1 台でも勝手には使わず、選び直すまで Square のボタンを出さない。
+- 進行中の決済は端末ごとに 1 件まで。別の端末で決済中でも、別のレジからは決済画面を出せる。
+- 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
+  Webhook（`POST /api/square/webhook`、イベントは `terminal.checkout.created` と `terminal.checkout.updated`）は
+  レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
+- 支払い済みなのに注文が無い決済（決済中にレジが落ちた、注文の送信に失敗した、Square で払った注文を消した）は
+  レジの右上に「未登録の Square 決済」として出る。同じ商品を入力して「この決済で登録」を押すと、二重に決済せずに注文を送れる。
+  注文にしないなら、そこから返金もできる（下の返金を参照）。
+- 決済が終わっても端末にレシート受け取り画面（印刷・メール・SMS）は出さない（`skip_receipt_screen`）。
+  レシートを求められたら Square データ（管理画面）から出す。端末から出すなら Terminal API の
+  [Issue receipts](https://developer.squareup.com/docs/terminal-api/advanced-features/issue-receipts) を使う（未実装）。
+- 返金は全額だけで、レジの「過去の注文」（Square で払った注文）と「未登録の Square 決済」の「返金」から行う。
+  - Terminal API の返金はカナダの Interac 専用で日本では使えないので、Refunds API（`POST /v2/refunds`）で返す。
+    返金先は支払いに使ったカード・電子マネー・QR コード。決済から 1 年を過ぎると返金できない。
+  - 交通系 IC は Square でも返金できない。Square が断ったら、注文は残してレジにエラーを出す。
+  - Square が受け付けたら（結果待ちの PENDING でも）注文を消す（現金の注文を消すときと同じく、在庫の記録も戻る）。返金の結果は Square で後から決まることがあり、
+    決まるまでは「未登録の Square 決済」に返金待ちとして出る。結果は一覧を開いたとき（30 秒おき）にサーバーが Square に問い合わせ、
+    返金が終わると一覧から消える。
+  - あとで Square で返金が失敗したら、お金は戻っていないのに注文は消えている。決済は「未登録の Square 決済」に理由付きで出るので、
+    もう一度返金するか、「この決済で登録」で注文を作り直す（作り直した注文は新しい注文になり、カップの提供状態は戻らない）。
+    COMPLETED まで待って消さないのは、注文の付いた返金待ちを誰かが確かめて消す仕組みが別に要るため。
+  - Square から応答が無かったときは「返金できたか確かめられていない」（`unknown`）として出る。もう一度返金を押すと、同じ
+    idempotency_key で頼み直して確かめる。分かるまでその決済では注文を作れない。
+  - 同時に押されても、応答が失われて押し直しても、二重には返金しない（決済依頼を行ロックして 1 件ずつ通し、
+    頼み直しは同じ idempotency_key を使う。頼む前に決済を取り直し、処理中の返金や返金済みの額があればそれに従う）。
+  - Square の管理画面で返金した決済は、返金を押すと Square に頼まずに返金済みとして扱う。一部だけ返金した決済は API からは返金せず、残りは管理画面から返す。
+  - 返金した・返金待ちの決済では注文を作れない（返金が失敗したものは作れる）。
+- 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
+
+端末のペアリング（端末ごとに 1 回）:
+
+1. 管理画面 `/square-devices`（トップの「マスタ設定」→「Square 端末」）で名前を入れて「コードを発行」を押す
+2. 端末のサインイン画面で「デバイスコードでサインイン」を選び、一覧に出たコードを入力する
+3. 一覧で「ペアリング済み」になったら、使うレジの画面右上でその端末を選ぶ
+
+ダッシュボードで発行したコードではペアリングできない（API で発行したコードが要る）。
+以前の `go run ./cmd/square-pair` でペアリングした端末や、一覧から外した端末は「ペアリング済みの端末を取り込む」で戻せる
+（Square でペアリング済みのコードを一覧で取り、まだ登録していない端末を足す）。
+一覧から外しても端末は Square にサインインしたまま（API ではペアリングを解除できない）なので、使わないなら端末でサインアウトする。
+
+Sandbox では実機とペアリングできないので、管理画面の「device_id を直接登録する」で
+Square が用意しているテスト用の device_id を登録する（[一覧](https://developer.squareup.com/docs/devtools/sandbox/testing#terminal-api-checkouts)）。
+
+| 再現する状況 | device_id |
+| --- | --- |
+| カード決済が成功 | `9fa747a2-25ff-48ee-b078-04381f7c828f` |
+| 電子マネー（FeliCa）が成功 | `19a01fbd-3dcd-4d9f-a499-a641684af745` |
+| QR コード（PayPay）が成功（Sandbox の店舗が日本所在のとき） | `cae0ee02-f83b-11ec-b939-0242ac120002` |
+| お客さんが取り消す | `841100b9-ee60-4537-9bcf-e30b2ba5e215` |
+| 時間切れ | `0a956d49-619a-4530-8e5e-8eac603ffc5e` |
+
+本番の端末では最後に少額（1 円から）で確かめる。
+
+DB と偽の Square サーバーで通しで確かめるテストもある（CI では DB が無いのでスキップされる）:
+
+```sh
+cd api
+SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?sslmode=disable" \
+  go test ./internal/handlers -run Integration -v
+```
+
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。
+
+### API の認証（Cloudflare Access）
+
+**`AUTH_MODE` を `cloudflare-access` にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
+URL は POS の JS に入っているので、画面を開けば分かる（秘密ではない）。CORS は止めにならない
+（Origin を付けない curl などには効かない）。
+
+```
+ブラウザ ─→ Cloudflare Access ─→ POS の Worker ─→ LB ＋ Cloud Armor ─→ Cloud Run（api）
+             （ログイン）          （/api を中継。     （トークンを照合）    （JWT を検証）
+                                   トークンを付ける）
+```
+
+- POS（`cafeore-pos.cafeorepos.workers.dev`）を Access で守る。ログインしないと画面も開けない
+- Access はログインした端末のリクエストに JWT（`Cf-Access-Jwt-Assertion`）を付ける。Worker はそれごと
+  `/api` を Cloud Run に中継し、api が署名・発行元・AUD・期限を確かめる（`api/internal/auth`）。
+  WebSocket（`/api/ws/orders`）も同じ道を通る
+- Worker は中継するときに、secret の `PROXY_TOKEN` を `X-Cafeore-Proxy-Token` ヘッダーに付ける。Cloud Run の手前の
+  LB の Cloud Armor がそれを照らし合わせ、合わないものを Cloud Run に届く前に 403 にする（infra の `gcp/api_edge.tf`）。
+  JWT は Bearer トークンなので、盗まれると Cloud Run を直接叩いて期限まで使い回せ、Access でセッションを
+  取り消しても効かない。トークンは GitHub と Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  `PROXY_TOKEN` は本番のデプロイのたびに、GitHub の secret の `LB_PROXY_TOKEN` から入れ直す（`pos-deploy-workers`）。
+  JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
+- api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
+  GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
+- `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
+  書き込みは開かない（`api/cmd/server/main.go`）
+- 次は Access を通らずに来るので、`/api` のグループの外に置いて自前で確かめている
+
+  | 呼び出し元 | ルート | 通り道（LB を置いた後） | 確かめ方 |
+  | --- | --- | --- | --- |
+  | Cloud Scheduler | `POST /api/inventory/remind` | run.app に直接（同じプロジェクトなので「内部」として届く） | Google の ID トークン |
+  | Square | `POST /api/square/webhook` | LB（Cloud Armor はトークンなしで通す） | Webhook の署名 |
+  | デプロイの CI・POS の接続確認 | `GET /status`・`GET /health` | LB（CI は `GCP_API_LB_URL`）・Worker | 認証しない（稼働状況だけ） |
+
+- Worker 経由でも、ブラウザの `Origin`（`https://cafeore-pos.cafeorepos.workers.dev`）はそのまま API に届き、
+  CORS で照らし合わされる。同じオリジンになったからといって `FRONTEND_ORIGINS` から消すと、書き込みと
+  WebSocket が 403 になる
+- Access のセッションが切れると、API への fetch と WebSocket が Access のログイン画面へ飛ばされて
+  失敗し続ける。POS は `/status` が 401 になったら（`X-Requested-With` を付けているので、セッション切れの
+  ときは Access が 401 を返す）画面を読み込み直して Access のログインへ戻す（`useOnlineStatus`）。
+  続けて読み込み直すのは 1 分に 1 回まで
+
+#### 切り替える手順
+
+順番を守ること。どの段階でも、前の段階に戻せば元に戻る。
+
+**本番の Cloud Run は `cafeore-pos-git` から `cafeore-pos-prod` へ移している途中**（infra の README
+「本番サービスの改名」）。認証の設定が渡るのは新しい `cafeore-pos-prod` だけで、旧サービスは
+**消すまで誰でも叩ける**（DB は同じ）。中継先には新しいサービスの URL を使い、保護が完成するのは
+旧サービスを消してから。
+
+1. **Cloudflare（ダッシュボードで手作業）**
+   1. Workers を Paid プランにする。`/api` が Worker を通るとリクエストに数えられ、無料枠（1 日 10 万。
+      リセットは日本時間 9 時）を超えるとその日は Worker が失敗し、POS が止まる。`/status` の
+      10 秒ごとの確認だけで端末 1 台あたり 1 日 8,640 になる
+   2. Zero Trust を有効にしてチーム名を決める（`<チーム名>.cloudflareaccess.com`）。
+      ログイン方法はワンタイム PIN（メール）で足りる
+   3. Workers & Pages → `cafeore-pos` → Settings → Domains & Routes で、workers.dev の
+      「Enable Cloudflare Access」を押す。ポリシーでスタッフ用と表示用のメールだけを許す。
+      セッションの長さは学祭の期間より長くする（途中で切れると、その端末でログインし直しになる）
+   4. Access → Applications でそのアプリケーションの AUD タグを控える
+
+   ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
+2. **GitHub（このリポジトリの Variables）**
+   1. `WORKERS_API_ORIGIN` に `cafeore-pos-prod` の URL（infra の `terraform output prod_service_url`）を入れ、
+      Actions の「pos / deploy (Workers)」を手動実行する
+   2. ログインしたブラウザで `https://cafeore-pos.cafeorepos.workers.dev/status` を開き、JSON が返ることを確かめる
+   3. `VITE_API_BASE_URL` を `https://cafeore-pos.cafeorepos.workers.dev` にして、もう一度手動実行する。
+      これで画面が Worker 経由で API を呼ぶ
+3. **infra（HCP Terraform の workspace variables）**。詳しくは infra の README の「API の認証」
+   1. `api_auth_mode = "cloudflare-access-report-only"` と、チームのドメイン・AUD・メールを入れて apply する
+   2. POS を一通り操作し（レジ・マスター・提供・呼び出し画面）、Cloud Run のログに弾くはずだったものが
+      出ないことを確かめる。出ているものは Access を通らずに Cloud Run を直接叩いている
+
+      ```sh
+      gcloud logging read 'resource.type="cloud_run_revision"
+        AND resource.labels.service_name=~"^cafeore-pos-(git|prod)$"
+        AND textPayload:"auth(report-only)"' \
+        --project project-5d6e656b-4871-46ff-96f --freshness 1h --format 'value(textPayload)'
+      ```
+
+   3. `api_auth_mode = "cloudflare-access"` にして apply する
+   4. `curl https://<本番の Cloud Run の URL>/api/items` が 401 になること、レジで注文が通ること、
+      表示用のアカウントで開いた画面からは書き込めない（403）ことを確かめる
+4. **LB と Cloud Armor（infra と Cloudflare）**。詳しくは infra の README の「LB と Cloud Armor」
+   1. infra で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
+      LB のドメインは `pos-be-lb.cafeore.cafe`。Cloudflare の `cafeore` アカウントの `cafeore.cafe` に、A レコードを
+      `terraform output api_lb_ip` に向けて作る（DNS only）。証明書が発行されるまで数十分かかる
+   2. このリポジトリの Secrets の `LB_PROXY_TOKEN` に同じトークンを入れる。本番のデプロイで Worker の `PROXY_TOKEN` になる
+   3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `https://pos-be-lb.cafeore.cafe`（`terraform output api_lb_url`）にして、
+      「pos / deploy (Workers)」を手動実行する。Square の Webhook を使っているなら通知先も LB の URL に登録し直す
+   4. POS を一通り操作して動くこと（WebSocket も）を確かめてから、infra で `api_lb_only = true` にして apply する。
+      これで run.app にはインターネットから届かなくなる
+
+戻すとき（後の段階から順に）:
+- LB を外す: infra で `api_lb_only = false` を apply し（run.app がまた開く）、`WORKERS_API_ORIGIN` と
+  `GCP_API_LB_URL` を Cloud Run の URL に戻して手動実行する
+- 認証だけを外す: `api_auth_mode = "off"` で apply（新しいリビジョンが立った時点で戻る）
+- 中継もやめる: `VITE_API_BASE_URL` を Cloud Run の URL に戻して手動実行し、Access を無効にする
+
+#### `cloudflare-access` にすると止まるもの
+
+Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログで、使われているかどうかが分かる。
+
+- **CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）**。別のリポジトリに Cloud Run の URL が直書きされていて、
+  WebSocket で注文を直接読んでいる（infra の README「本番サービスの改名」）。Access のログインは POS の
+  workers.dev に付くもので、別のサイト（github.io）からの通信には付けにくいので、そのままでは通せない。
+  POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く。続けて使うならそちらに寄せる
+- `modules/common/src/scripts` の書き出し（`download-orders` など）。手元から Cloud Run を直接呼ぶ
+- mobile（停止中）。再開するなら POS と同じ構成が要る
+
+人ではない相手を通したいときは、Access のサービストークンを作り、その Client ID を `AUTH_STAFF_EMAILS`
+か `AUTH_VIEWER_EMAILS` に入れる（api はメールの代わりに JWT の `common_name` を見る）。呼ぶ側は Worker の
+URL に `CF-Access-Client-Id` と `CF-Access-Client-Secret` を付ける。
+
+プレビュー（`cafeore-pos-preview` と PR の Worker のバージョン）は今までどおり認証しない。DB は PR ごとの
+Neon のブランチで、本番のデータは入っていない。
 
 ### DB のスキーマ
 
@@ -153,9 +358,61 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
 - 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
+  - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
+  - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る（手元での流し方は下の「backend のテスト」）
+
+列を足したとき、既存の行には列の既定値（`default:` タグ）が入る。行ごとに違う値が要るときは、
+`api/cmd/server/migrate.go` の商品の種類の項目（`itemTypeBackfills`。`makes_cup` は others だけ false など）のように、
+その列がまだ DB に無いときだけ、AutoMigrate で足した直後に同じトランザクションで 1 回だけ入れる。
+そのあと値を変えるのは画面や API の仕事。
 
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
+
+### backend のテスト
+
+```bash
+cd api && go test ./...
+```
+
+本物の Postgres を使うテストの接続先は、どれも **`TEST_DATABASE_URL` の 1 つだけ**で渡す。
+無ければそのテストはスキップされる（CI では落とす）。手元では、たとえば `api/compose.yaml` の Postgres を立てて渡す。
+
+```bash
+docker compose -f api/compose.yaml up -d db
+```
+
+```bash
+cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
+```
+
+- 渡した DB の既存の schema・データには触らない。テストごとに使い捨ての schema か database を作り、終わったら消す
+- **接続するロールには CREATEDB が要る**（起動時のマイグレーションのテストが使い捨ての database を作るため）。
+  `compose.yaml` や CI の `postgres` ユーザーは持っている
+- 拡張の `uuid-ossp` を渡した DB の public に入れる（無ければ作る）
+- 本物の DB を使うテストを足すときは **`api/internal/testdb` を使い、別の環境変数を作らない**。
+  ふつうは `testdb.New(t)`（使い捨ての schema にモデルからテーブルを作る）、public スキーマが前提のものは
+  `testdb.NewDatabase`（使い捨ての database）
+
+### 注文・オーダーストップ・レジの状態の配信（LISTEN / NOTIFY）
+
+Cloud Run のインスタンスは、それぞれ自分につないでいる画面にしか WebSocket で配れない。ほかのインスタンスで変わった注文・オーダーストップ・レジの状態も届くよう、DB の通知（`LISTEN` / `NOTIFY`）でインスタンス同士が知らせ合う（`internal/handlers/order_listener.go`）。
+
+| チャンネル | 何が変わったか | 通知の中身 |
+| --- | --- | --- |
+| `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
+| `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
+| `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
+
+- 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
+- ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。3 つのチャンネルは 1 本の接続でまとめて待ち受ける
+- API を通さない書き換え（SQL で直接直すなど）は配られない。本番 DB は手で触らない
+- 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文・オーダーストップ・レジの状態を配り直す
+- LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）や Neon の pooler では通知が届かない（エラーにもならない）。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
+- 待ち受けを始めたら自分宛てに確認の通知を送り、10 秒で届かなければ `WARNING: orders_changed の確認の通知が…` をログに出す。届けば `orders_changed: notifications are delivered`
+- 配り終わる前に同じ注文（またはオーダーストップ・レジの状態）の通知が重なれば 1 回の読み直しにまとめる。レジはキー入力のたびに状態を保存するので、ほかのインスタンスにはまとめた最新の状態だけが届くことがある
+- 本番の Cloud Run は CPU をリクエストの処理中だけ割り当てる（`infra` の `cpu_idle = true`。`--no-cpu-throttling` にはしていない）。画面が WebSocket でつないでいる間はリクエストの処理中なので、そのインスタンスは通知を受けて配れる。画面がつないでいないインスタンスは待ち受けが止まったり接続が切れたりしうるが、配る相手がいないので困らない。画面がつなぐと全注文・オーダーストップ・レジの状態を受け取り、待ち受けも 30 秒通知が無ければ接続を確かめ、切れていれば張り直して全部を配り直す。常時割り当てに変えるなら、この前提ごと見直すこと
 
 ### PR ごとの Neon ブランチ
 
@@ -303,6 +560,9 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
+| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
+| `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
@@ -310,6 +570,11 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。
+
+POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub の `LB_PROXY_TOKEN` から
+本番のデプロイのたびに `wrangler deploy --secrets-file` で入れ直す。Worker に置いておくだけだと、
+PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
+`LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
