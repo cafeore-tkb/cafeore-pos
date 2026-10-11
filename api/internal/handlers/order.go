@@ -56,13 +56,6 @@ func normalizeAssignee(assignee *string) *string {
 	return &trimmed
 }
 
-func sameAssignee(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
 // 指名はドリッパーの番号（1〜caosDrippers）が必須で、自由記述は番号に添えるだけ。
 // 番号より前の注文の明細（番号が無く自由記述だけの指名）は、変えずに残すときだけ通す。
 // 番号の付いた明細から番号だけを外して自由記述を残すことはできない。
@@ -73,7 +66,7 @@ func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) e
 		}
 		return nil
 	}
-	if assignee != nil && (old == nil || old.Dripper != nil || !sameAssignee(assignee, normalizeAssignee(old.Assignee))) {
+	if assignee != nil && (old == nil || old.Dripper != nil || !ptrEqual(assignee, normalizeAssignee(old.Assignee))) {
 		return errInvalidOrderMenus
 	}
 	return nil
@@ -97,25 +90,24 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 		menuID := uuid.UUID(request.MenuId)
 		assignee := normalizeAssignee(request.Assignee)
 		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: assignee, Dripper: request.Dripper}
+		var prev *models.OrderMenu // 残す既存の明細（新しい明細なら nil）
 		if request.OrderMenuId != nil {
 			old, ok := byID[uuid.UUID(*request.OrderMenuId)]
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
-			if err := validateAssignment(request.Dripper, assignee, &old); err != nil {
-				return nil, err
-			}
+			prev = &old
 			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
-			if err := validateAssignment(request.Dripper, assignee, nil); err != nil {
-				return nil, err
-			}
 			menu, ok := masters[menuID]
 			if !ok {
 				return nil, errInvalidOrderMenus
 			}
 			line.MenuName, line.UnitPrice = menu.Name, menu.Price
+		}
+		if err := validateAssignment(request.Dripper, assignee, prev); err != nil {
+			return nil, err
 		}
 		lines = append(lines, line)
 	}
