@@ -3,61 +3,72 @@ import {
   type CaosPlace,
   readableTextColor,
 } from "@cafeore/common";
-import { Check } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import type React from "react";
 import {
   type CardLook,
-  cardName,
+  cardItemName,
+  cardNominee,
   cardTypeName,
   orderLabel,
+  orderNoLabel,
 } from "../logic/cards";
 import { moveTargets } from "../logic/lanes";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
+// いちばん大きく「何が何杯か」（商品の略称と杯数）、次に注文番号と分けた注文の「1/2・計4杯」を出す。
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
+//
+// 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中・同じ注文）は地の色に頼らず、
+// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」、
+// ほかの場所にも同じ注文があるときは注文番号を青い札に）。商品の色が意味の色と近くても見分けられる。
 
 const SIZES = {
   // 管制盤 C・D と割当のパネル
   sm: {
     pad: "px-1.5 py-1",
-    no: "text-[16px]",
-    cups: "px-1 py-0.5 text-[10px]",
-    name: "text-[12px]",
+    name: "text-[14px]",
+    cups: "px-0.5 text-[13px]",
+    meta: "text-[11px]",
   },
   // 管制盤 A のタイムライン
   md: {
-    pad: "px-2 py-1.5",
-    no: "text-[22px]",
-    cups: "py-1 px-2 text-[15px]",
-    name: "text-[14px]",
+    pad: "px-2 py-1",
+    name: "text-[19px]",
+    cups: "px-1.5 text-[17px]",
+    meta: "text-[12px]",
   },
   // 管制盤 A の未割当
   lg: {
     pad: "px-2 py-1",
-    no: "text-[25px]",
-    cups: "py-1 px-2.5 text-[17px]",
-    name: "text-[15px]",
+    name: "text-[20px]",
+    cups: "px-1.5 text-[18px]",
+    meta: "text-[13px]",
   },
-  // 管制盤 C の未割当・詳細のパネル
+  // 詳細のパネル
   xl: {
     pad: "p-4",
-    no: "text-[32px]",
-    cups: "py-1 px-2.5 text-[20px]",
-    name: "text-[18px]",
+    name: "text-[26px]",
+    cups: "px-2 text-[22px]",
+    meta: "text-[15px]",
   },
 };
 
-// 色。終わったカードは薄い灰色。それ以外は色の設定の色（look.color。画面 master）で塗り、色の無いカードは白。
+// 地と枠。終わったカードは薄い灰色。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
 // 文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
-const surfaceOf = (done: boolean, color: string | undefined) => {
+// 指名のカードは黒い点線の太い枠（地の色が近くても枠の形で分かる）
+const surfaceOf = (done: boolean, nominated: boolean, color?: string) => {
   if (done)
     return {
-      className: "border-slate-200 bg-slate-100 text-slate-500 opacity-50",
+      className:
+        "border-2 border-slate-200 bg-slate-100 text-slate-500 opacity-50",
     };
   const backgroundColor = color ?? "#ffffff";
   return {
-    className: "border-slate-300",
+    className: nominated
+      ? "border-[3px] border-slate-900 border-dashed"
+      : "border-2 border-slate-300",
     style: { backgroundColor, color: readableTextColor(backgroundColor) },
   };
 };
@@ -94,9 +105,10 @@ export const OrderCard: React.FC<
 }) => {
   const text = SIZES[size];
   const done = card.status === "done";
-  const surface = surfaceOf(done, look?.color);
+  const nominee = cardNominee(card);
+  const surface = surfaceOf(done, nominee !== "", look?.color);
   const fade = dragging ? "opacity-30" : "";
-  const name = cardName(card);
+  const name = cardItemName(card);
   const typeName = cardTypeName(card);
   const split = look?.split;
   // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
@@ -107,20 +119,24 @@ export const OrderCard: React.FC<
     <div
       {...props}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center rounded-lg border-2 transition-[box-shadow,border-color] ${text.pad} ${surface.className} ${selected ? "z-10 border-amber-500 shadow-lg ring-4 ring-amber-400" : "shadow-xs"} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
     >
       {children}
-      <div
-        className={`flex min-w-0 items-center gap-1 overflow-hidden ${fade}`}
-      >
-        {/* 注文番号。分けた注文は濃く、1 枚だけの注文は少し薄く */}
+      {selected && (
+        <span className="-top-3 absolute left-2 z-20 rounded-full bg-amber-500 px-2 py-0.5 font-black text-[10px] text-white leading-none shadow-xs">
+          選択中
+        </span>
+      )}
+      {/* 何が何杯か */}
+      <div className={`flex min-w-0 items-center gap-1 leading-none ${fade}`}>
         <span
-          className={`shrink-0 font-black font-mono leading-none tracking-tight ${text.no} ${split ? "" : "opacity-75"}`}
+          className={`min-w-0 truncate font-black tracking-tight ${text.name}`}
+          title={name}
         >
-          {orderLabel(card)}
+          {name}
         </span>
         <span
-          className={`shrink-0 whitespace-nowrap rounded-md border font-black font-mono leading-none ${text.cups} ${cupsClass(card.cups.length)}`}
+          className={`shrink-0 whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
         >
           {card.cups.length}杯
         </span>
@@ -130,32 +146,50 @@ export const OrderCard: React.FC<
           </Check>
         )}
       </div>
+      {/* 注文番号・分けた注文の位置と合計・上級生のみ・豆と区分 */}
       <div
-        className={`mt-1 flex min-w-0 items-center gap-1 overflow-hidden ${fade}`}
+        className={`flex min-w-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
         <span
-          className={`max-w-[65%] shrink-0 truncate font-bold leading-tight tracking-tight ${text.name}`}
-          title={name}
+          className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${split ? "bg-blue-700 text-white" : "bg-black/10"}`}
+          title={split ? "同じ注文のカードがほかにもあります" : undefined}
         >
-          {name}
+          {orderLabel(card)}
         </span>
-        {badge && (
-          <span
-            title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
-            className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
-          >
-            {badge}
+        {nominee && (
+          <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
+            指名 {nominee}
           </span>
         )}
         {split && (
-          <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 font-black font-mono text-[10px] text-slate-700">
-            {split.index}/{split.total}・計{split.cups}杯
+          <span className="shrink-0 whitespace-nowrap rounded border border-blue-700 bg-white px-1 py-0.5 font-bold text-blue-800">
+            <span className="font-black font-mono">
+              {split.index}/{split.total}
+            </span>
+            ・計{split.cups}杯
+          </span>
+        )}
+        {card.seniorOnly && (
+          <span
+            title="上級生のみ"
+            className="inline-flex shrink-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
+          >
+            <Star className="h-3 w-3 fill-current" />
+            上級生
+          </span>
+        )}
+        {badge && (
+          <span
+            title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
+            className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+          >
+            {badge}
           </span>
         )}
       </div>
       {note && (
         <div
-          className={`mt-0.5 truncate font-bold text-[10px] leading-tight ${dragging ? "opacity-30" : "opacity-80"}`}
+          className={`truncate font-bold text-[11px] leading-tight ${dragging ? "opacity-30" : "opacity-80"}`}
         >
           {note}
         </div>
@@ -163,6 +197,23 @@ export const OrderCard: React.FC<
     </div>
   );
 };
+
+/** 統合した跡。ほかの注文と統合して、もとの場所から無くなったカードの代わりに薄く残す（「#011 → #010+#011 に統合」） */
+export const MergedTrace: React.FC<{
+  orderNo: number;
+  /** 統合したカードの注文番号の表示（orderLabel） */
+  into: string;
+  className?: string;
+}> = ({ orderNo, into, className = "" }) => (
+  <div
+    className={`flex min-w-0 flex-col justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-100 px-2 py-1 text-slate-500 leading-none ${className}`}
+  >
+    <span className="font-black font-mono text-[14px]">
+      #{orderNoLabel(orderNo)}
+    </span>
+    <span className="truncate font-bold text-[11px]">→ {into} に統合</span>
+  </div>
+);
 
 // 1〜6 のボタンの色（ドラッグで指の下は青。指名の番号でないボタンは押せない）
 const padTone = (bayId: number, hoveredBay: number | null) =>

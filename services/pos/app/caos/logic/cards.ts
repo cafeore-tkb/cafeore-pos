@@ -24,16 +24,23 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/** カードの商品の名前（略称 abbr をそのまま。統合したカードも同じ商品なので 1 つ） */
+export const cardItemName = (card: CaosCard) =>
+  unique(card.cups.map((cup) => cup.item.abbr)).join("・");
+
+/** カードの指名（「2nd」。番号の無い古い明細は自由記述）。指名なしは空 */
+export const cardNominee = (card: CaosCard) =>
+  unique(card.cups.flatMap((cup) => cup.nominee ?? [])).join("・");
+
 /**
- * カードの名前。商品の略称（abbr）をそのまま。指名は「（指名:2nd）」（番号の無い古い明細は自由記述）、
+ * カードの名前（文で出すところ）。商品の略称に、指名は「（指名:2nd）」、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える
- * （上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ）
  */
 export const cardName = (card: CaosCard) => {
-  const nominees = unique(card.cups.flatMap((cup) => cup.nominee ?? []));
+  const nominee = cardNominee(card);
   return [
-    unique(card.cups.map((cup) => cup.item.abbr)).join("・"),
-    nominees.length ? `（指名:${nominees.join("・")}）` : "",
+    cardItemName(card),
+    nominee ? `（指名:${nominee}）` : "",
     card.seniorOnly ? "（上級生のみ）" : "",
   ].join("");
 };
@@ -115,16 +122,36 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
   return groups;
 };
 
-/** 格子の置き場所。注文ごとに行を改め、1 行に perRow 枚まで（gridColumn・gridRow は 1 始まり） */
-export const placeByOrder = (cards: readonly CaosCard[], perRow: number) => {
-  let nextRow = 1;
-  return [...groupByOrder(cards).values()].flatMap((group) => {
-    const placed = group.map((card, index) => ({
-      card,
-      gridColumn: (index % perRow) + 1,
-      gridRow: nextRow + Math.floor(index / perRow),
+/** 注文の行の 1 枚。mergedInto は、ほかの注文と統合したカードを、小さくないほうの注文の行に残した跡（統合したカードの orderLabel） */
+export interface OrderRowEntry {
+  card: CaosCard;
+  mergedInto?: string;
+}
+
+/**
+ * カードを注文番号の行にまとめる（注文番号の順、行の中は注文の中の並び）。
+ * 統合したカードはいちばん小さい注文番号の行に置き、ほかの注文の行には跡（mergedInto）を残す
+ */
+export const orderRows = (cards: readonly CaosCard[]) => {
+  const rows = new Map<number, OrderRowEntry[]>();
+  for (const card of cards) {
+    const [first, ...others] = cardOrderNos(card);
+    rows.set(first, [...(rows.get(first) ?? []), { card }]);
+    for (const no of others)
+      rows.set(no, [
+        ...(rows.get(no) ?? []),
+        { card, mergedInto: orderLabel(card) },
+      ]);
+  }
+  const positionIn = (orderNo: number, { card }: OrderRowEntry) =>
+    card.cups.find((cup) => cup.orderNo === orderNo)?.position ?? 0;
+  return [...rows]
+    .sort(([a], [b]) => a - b)
+    .map(([orderNo, entries]) => ({
+      orderNo,
+      entries: entries.sort(
+        (a, b) => positionIn(orderNo, a) - positionIn(orderNo, b),
+      ),
     }));
-    nextRow += Math.ceil(group.length / perRow);
-    return placed;
-  });
 };
+export type OrderRow = ReturnType<typeof orderRows>[number];

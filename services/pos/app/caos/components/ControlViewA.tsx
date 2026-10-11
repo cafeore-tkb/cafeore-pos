@@ -1,14 +1,14 @@
 import type React from "react";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { DispatchBoard } from "./DispatchBoard";
-import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
+import { UnassignedStrip } from "./UnassignedOrdersPanel";
 
-// 管制盤 A：上にタイムライン、下に未割当の横帯
+// 管制盤 A：上にタイムライン、下に未割当の横帯（残りの高さを全部使う）
 export const ControlViewA: React.FC<ControlViewProps> = (props) => (
   <div className="flex h-full min-h-0 flex-col gap-2">
     <DispatchBoard {...props} />
-    <div className="relative z-[70] h-[196px] min-h-0 overflow-visible">
-      <UnassignedOrdersPanel
+    <div className="relative z-[70] min-h-[188px] flex-1 overflow-visible">
+      <UnassignedStrip
         orders={props.unassignedOrders}
         looks={props.looks}
         nextAvailable={props.nextAvailable}

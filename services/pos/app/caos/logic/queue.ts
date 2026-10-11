@@ -58,8 +58,27 @@ export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
 };
 
 /**
+ * 列の状態（ドリッパーの番号の色で出す）。
+ * 空き：カードが無い／待機：待機のカードがあり、まだ始めていない（「次へ」で始める）／抽出中／
+ * まもなく：残りが SOON_SEC 以下／継続中：予定を過ぎても「次へ」が押されていない
+ */
+export type LanePhase = "empty" | "waiting" | "brewing" | "soon" | "overtime";
+
+const lanePhase = (
+  current: CaosCard | undefined,
+  brewing: boolean,
+  remainingSec: number,
+): LanePhase => {
+  if (!current) return "empty";
+  if (!brewing) return "waiting";
+  if (remainingSec === 0) return "overtime";
+  if (remainingSec <= SOON_SEC) return "soon";
+  return "brewing";
+};
+
+/**
  * 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・
- * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中
+ * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中・状態（phase）
  */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
@@ -74,8 +93,11 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
     remainingSec,
     soon: brewing && remainingSec <= SOON_SEC,
     overtime: brewing && remainingSec === 0,
+    phase: lanePhase(current, brewing, remainingSec),
   };
 };
+
+export type LaneStatus = ReturnType<typeof laneStatus>;
 
 // ドリッパーが待機まで淹れ終えるまでのミリ秒（入れ替えの時間を含む）
 const laneWaitMs = (lane: Lane, nowMs: number) => {
