@@ -95,6 +95,8 @@ export const useCaosSession = () => {
       toast.error(result.error);
       return false;
     }
+    // 今と同じ場所に置き直したなど、変わるものが無ければ送らず、音も鳴らさない
+    if (result.writes.length === 0) return true;
     return playOnSuccess(source.runWrites(result.writes), () =>
       soundManager.playDispatch(),
     );
