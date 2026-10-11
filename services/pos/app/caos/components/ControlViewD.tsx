@@ -274,6 +274,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         bayId={bay.id}
                         active={Boolean(lane?.current)}
                         soon={lane?.soon ?? false}
+                        locked={lane?.nextLocked}
                         remainingSec={lane?.remainingSec}
                         onAdvance={onAdvanceBay}
                         className="mt-1 h-8 w-full text-[11px]"

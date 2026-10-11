@@ -242,6 +242,7 @@ func lockOrderWith(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
 }
 
 // 注文とカップの状態を1トランザクションで変更し、変更後の注文を返して配信する。
+// 準備完了になったカップが CaOS の抽出中のカードにあれば、そのあとでそのカードの「次へ」を進める（advanceReadyCaosCards）。
 func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *models.Order, now time.Time) error) {
 	orderID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -249,12 +250,14 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 
+	var before, order models.Order
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		order, err := lockOrderWith(tx, orderID)
+		var err error
+		order, err = lockOrderWith(tx, orderID)
 		if err != nil {
 			return err
 		}
-		before := order
+		before = order
 		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
 		// DB に保存される精度にそろえておくと、保存前後で時刻を比べられる
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
@@ -280,6 +283,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+	advanceReadyCaosCards(h.db, h.hub, &before, &order)
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

@@ -1,4 +1,4 @@
-import { type CaosCard, caosBrewSec } from "@cafeore/common";
+import { type CaosCard, caosBrewSec, caosNextLocked } from "@cafeore/common";
 import { type Lane, laneActive } from "./lanes";
 
 // ドリッパーの列の時刻（エポックのミリ秒。日付を含むので、日をまたいでもそのまま続く）。
@@ -59,7 +59,7 @@ export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
 
 /**
  * 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・
- * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中
+ * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中・「次へ」をまだ押せない（始めてすぐ。@cafeore/common の caosNextLocked）
  */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
@@ -74,7 +74,21 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
     remainingSec,
     soon: brewing && remainingSec <= SOON_SEC,
     overtime: brewing && remainingSec === 0,
+    nextLocked: caosNextLocked(lane.brewing, nowMs),
   };
+};
+
+/**
+ * 押し間違いかもしれない「次へ」（隣の列を押したなど）：抽出中のカードが、抽出時間の半分もたっていない。
+ * そのときは抽出中のカードと、始めてからの秒を返す（画面で確かめてから進める）。ほかは null
+ */
+export const earlyNext = (lane: Lane, nowMs: number) => {
+  const card = lane.brewing;
+  if (!card?.startedAt) return null;
+  const elapsedMs = nowMs - card.startedAt.getTime();
+  return elapsedMs < brewMs(card) / 2
+    ? { card, elapsedSec: Math.floor(elapsedMs / 1000) }
+    : null;
 };
 
 // ドリッパーが待機まで淹れ終えるまでのミリ秒（入れ替えの時間を含む）

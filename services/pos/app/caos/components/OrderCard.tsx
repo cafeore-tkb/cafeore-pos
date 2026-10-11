@@ -10,6 +10,7 @@ import {
   cardName,
   cardTypeName,
   orderLabel,
+  orderNoLabel,
 } from "../logic/cards";
 import { moveTargets } from "../logic/lanes";
 
@@ -209,33 +210,64 @@ export const BayPad: React.FC<{
   ));
 };
 
-// 統合できる相手のカードに重ねる「統合する」（管制盤 A・D の未割当）
+// 統合できる相手のカードに重ねる「統合する」（管制盤 A・C・D の未割当）。
+// 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
 export const MergeOverlay: React.FC = () => (
-  <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-md border-2 border-blue-500 bg-blue-50/90 p-1">
-    <span className="inline-flex min-h-[42px] items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-black text-[16px] text-white shadow-md">
-      <svg
-        className="h-5 w-7 shrink-0"
-        viewBox="0 0 25.04 19.03"
-        aria-hidden="true"
+  <>
+    <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-blue-500 bg-blue-50/90" />
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center p-1">
+      <span className="pointer-events-auto inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-black text-[16px] text-white shadow-md">
+        <svg
+          className="h-5 w-7 shrink-0"
+          viewBox="0 0 25.04 19.03"
+          aria-hidden="true"
+        >
+          <path
+            fill="currentColor"
+            d="M3.04,12.26c-.63-.55-1.04-1.35-1.04-2.26V2h12v1h0,0v.03h2v-1.03c0-1.1-.9-2-2-2H2C.9,0,0,.9,0,2v8c0,2.07,1.27,3.86,3.07,4.61-.02-.19-.03-.39-.03-.58v-1.77Z"
+          />
+          <path
+            fill="currentColor"
+            d="M20.04,4.03H6.04c-1.1,0-2,.9-2,2v8c0,.3.04.6.09.88.07.37.16.72.3,1.06.76,1.79,2.54,3.06,4.61,3.06h6c2.76,0,5-2.24,5-5,2.76,0,5-2.24,5-5s-2.24-5-5-5ZM18.04,14.03c0,1.65-1.35,3-3,3h-6c-.9,0-1.69-.4-2.24-1.03-.26-.29-.45-.63-.58-1-.11-.31-.18-.63-.18-.97V6.03h12v8ZM20.04,12.03v-6c1.65,0,3,1.35,3,3s-1.35,3-3,3Z"
+          />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9.15,11.51h5.76M12.03,8.51v5.76"
+          />
+        </svg>
+        統合する
+      </span>
+    </div>
+  </>
+);
+
+/** 統合の解除。2 杯のカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children か、詳細のパネルに置く */
+export const SplitCupButtons: React.FC<{
+  card: CaosCard;
+  onSplit: (cupId: string) => void;
+  className?: string;
+}> = ({
+  card,
+  onSplit,
+  className = "-translate-y-1/2 absolute top-1/2 right-1 z-[75]",
+}) => (
+  <div className={`flex gap-1 ${className}`}>
+    {card.cups.map((cup) => (
+      <button
+        key={cup.id}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSplit(cup.id);
+        }}
+        className="min-h-[32px] touch-manipulation whitespace-nowrap rounded-md border-2 border-red-300 bg-white px-2 font-black font-mono text-[12px] text-red-700 shadow-sm active:bg-red-50"
       >
-        <path
-          fill="currentColor"
-          d="M3.04,12.26c-.63-.55-1.04-1.35-1.04-2.26V2h12v1h0,0v.03h2v-1.03c0-1.1-.9-2-2-2H2C.9,0,0,.9,0,2v8c0,2.07,1.27,3.86,3.07,4.61-.02-.19-.03-.39-.03-.58v-1.77Z"
-        />
-        <path
-          fill="currentColor"
-          d="M20.04,4.03H6.04c-1.1,0-2,.9-2,2v8c0,.3.04.6.09.88.07.37.16.72.3,1.06.76,1.79,2.54,3.06,4.61,3.06h6c2.76,0,5-2.24,5-5,2.76,0,5-2.24,5-5s-2.24-5-5-5ZM18.04,14.03c0,1.65-1.35,3-3,3h-6c-.9,0-1.69-.4-2.24-1.03-.26-.29-.45-.63-.58-1-.11-.31-.18-.63-.18-.97V6.03h12v8ZM20.04,12.03v-6c1.65,0,3,1.35,3,3s-1.35,3-3,3Z"
-        />
-        <path
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          d="M9.15,11.51h5.76M12.03,8.51v5.76"
-        />
-      </svg>
-      統合する
-    </span>
+        #{orderNoLabel(cup.orderNo)} 外す
+      </button>
+    ))}
   </div>
 );

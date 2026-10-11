@@ -94,7 +94,7 @@ export const cardLooks = (
       card.key,
       {
         color:
-          (card.cups[0].nominatedDripper !== null
+          (card.nominatedDripper !== null
             ? resolveItemColor(settings, card.cups[0].item, "nominated")
             : undefined) ??
           resolveItemColor(settings, card.cups[0].item, "master"),

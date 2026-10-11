@@ -16,7 +16,8 @@ import { OrderCard } from "./OrderCard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行（抽出中・待機・次へ）、右に未割当の縦リスト。
-// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す）。未割当のカードを待機のカードの上に落とすと、そのカードの前へ
+// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）。未割当のカードを待機のカードの上に落とすと、そのカードの前へ
+// （統合できる待機・抽出中のカードの上（待機は右の部分）なら統合）
 export const ControlViewC: React.FC<ControlViewProps> = ({
   lanes,
   unassignedOrders,
@@ -29,6 +30,8 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   onOpenTicketDetail,
   onOpenEmptySlot,
   onAssignToBay,
+  onMergeOrders,
+  onSplitCup,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-2 gap-2"
@@ -66,10 +69,11 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                     card={current}
                     look={looks.get(current.key)}
                     size="sm"
+                    data-merge-target={current.key}
+                    data-ticket-label={orderLabel(current)}
                     // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード
                     {...(current.status === "queued" && {
                       "data-queued-ticket": current.key,
-                      "data-ticket-label": orderLabel(current),
                       onClick: () => onOpenTicketDetail(current),
                     })}
                     className={`${current.status === "queued" ? "cursor-pointer hover:ring-2 hover:ring-blue-400" : ""} ${lane.soon ? "ring-2 ring-red-400 ring-inset" : ""}`}
@@ -88,6 +92,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       look={looks.get(ticket.key)}
                       size="sm"
                       data-queued-ticket={ticket.key}
+                      data-merge-target={ticket.key}
                       data-ticket-label={orderLabel(ticket)}
                       onClick={() => onOpenTicketDetail(ticket)}
                       className="min-w-[180px] flex-1 cursor-pointer border-l-4 border-l-blue-500 hover:ring-2 hover:ring-blue-400"
@@ -105,6 +110,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                   bayId={bay.id}
                   active={Boolean(current)}
                   soon={lane.soon}
+                  locked={lane.nextLocked}
                   onAdvance={onAdvanceBay}
                   className="min-w-0 overflow-hidden text-[12px]"
                 />
@@ -119,11 +125,14 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
       <UnassignedOrdersPanel
         layout="sidebar"
         orders={unassignedOrders}
+        lanes={lanes}
         looks={looks}
         nextAvailable={nextAvailable}
         selectedOrderId={selectedOrderId}
         onSelectOrder={onSelectOrder}
         onAssignToBay={onAssignToBay}
+        onMergeOrders={onMergeOrders}
+        onSplitCup={onSplitCup}
       />
     </aside>
   </section>

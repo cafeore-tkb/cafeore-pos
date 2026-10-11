@@ -165,6 +165,15 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
       advanceCaosPracticeDripper(orders, 1, brewing?.dripId ?? null, at(150))
         .error,
     ).toContain("もう終わっています");
+    // 始めてから 10 秒は「次へ」を押せない（二度押し）
+    expect(
+      advanceCaosPracticeDripper(
+        orders,
+        1,
+        lane.brewing?.dripId ?? null,
+        at(149),
+      ).error,
+    ).toBe("始めてから 10 秒は「次へ」を押せません");
   });
 
   test("番号は最後なら最大＋1、途中・先頭なら前に入るカードの番号にし、後ろをずらす", () => {
@@ -258,7 +267,7 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(caosLane(cardsOf(orders), 4).brewing?.cups).toHaveLength(2);
   });
 
-  test("待機どうしの統合は、相手のカードと同じ番号にし、ほかはずらさない", () => {
+  test("待機どうしの統合は、入るカードと同じ番号にし、ほかはずらさない", () => {
     let orders = ordersOf([hot], [hot], [hot], [hot]);
     for (const _ of [0, 1, 2, 3])
       orders = assign(orders, unassigned(orders)[0], 1, at(0));
@@ -268,8 +277,23 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(queued.map((card) => card.cups.length)).toStrictEqual([1, 2]);
     expect(queued.map((card) => card.dripperPosition)).toStrictEqual([
       a.dripperPosition,
-      b.dripperPosition,
+      c.dripperPosition,
     ]);
+  });
+
+  test("抽出中のカードに 1 杯を足すと、開始の時刻はそのカードのまま", () => {
+    let orders = ordersOf([hot], [hot]);
+    orders = assign(orders, unassigned(orders)[0], 2, at(0));
+    const brewing = caosLane(cardsOf(orders), 2).brewing;
+    if (!brewing) throw new Error("not brewing");
+    orders = apply(
+      orders,
+      mergeWrites(unassigned(orders)[0], brewing, newId),
+      at(30),
+    );
+    const after = caosLane(cardsOf(orders), 2).brewing;
+    expect(after?.cups).toHaveLength(2);
+    expect(after?.startedAt).toStrictEqual(at(0));
   });
 
   test("上級生のみのカードは、本番と同じくどのドリッパーにも置ける", () => {

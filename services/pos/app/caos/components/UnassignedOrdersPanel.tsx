@@ -1,4 +1,9 @@
-import { type CaosCard, type CaosPlace, canMergeCards } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  canMergeCards,
+  canSplitCard,
+} from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
@@ -15,27 +20,33 @@ import {
   placeByOrder,
   totalCups,
 } from "../logic/cards";
+import { type Lane, laneActive } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader } from "./BoardParts";
-import { BayPad, MergeOverlay, OrderCard } from "./OrderCard";
+import { BayPad, MergeOverlay, OrderCard, SplitCupButtons } from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の縦リスト）。
 // カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる
-// （待機のカードの上に落とすと、そのカードの前へ）。
-// 1 杯のカードを開くと、統合できる 1 杯のカードに「統合する」が出る（onMergeOrders を渡したときだけ）。
+// （待機のカードの上に落とすと、そのカードの前へ。統合できる待機・抽出中のカードの上なら統合）。
+// 1 杯のカードを開くと、統合できる 1 杯のカードに「統合する」が出る（onMergeOrders を渡したときだけ）。2 杯のカードを開くと「外す」が出る。
 export const UnassignedOrdersPanel: React.FC<{
   orders: CaosCard[];
+  /** ドリッパーの列（ドラッグで統合する相手を引く） */
+  lanes?: Lane[];
   looks: CardLooks;
   nextAvailable: NextAvailable;
   layout?: "strip" | "sidebar";
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  onMergeOrders?: (firstKey: string, secondKey: string) => void;
+  onMergeOrders?: (firstKey: string, intoKey: string) => void;
+  /** 統合の解除（2 杯のカードから 1 杯を外す） */
+  onSplitCup?: (card: CaosCard, cupId: string) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
 }> = ({
   orders,
+  lanes = [],
   looks,
   nextAvailable,
   layout = "strip",
@@ -43,6 +54,7 @@ export const UnassignedOrdersPanel: React.FC<{
   onSelectOrder,
   onAssignToBay,
   onMergeOrders,
+  onSplitCup,
   readOnly = false,
 }) => {
   const isSidebar = layout === "sidebar";
@@ -53,13 +65,22 @@ export const UnassignedOrdersPanel: React.FC<{
     setOpenUid(null);
   };
   const drag = useCardDrag<CaosCard, DropTarget>({
-    targetAt: (order, x, y) => dropTargetAt(x, y, { card: order }),
+    targetAt: (order, x, y) =>
+      dropTargetAt(x, y, {
+        card: order,
+        cards: onMergeOrders ? lanes.flatMap(laneActive) : [],
+      }),
     onBegin: (order) => {
       // Same as tapping another card: switching cards drops the old selection.
       if (openUid && openUid !== order.key) onSelectOrder(null);
       setOpenUid(order.key);
     },
-    onDrop: (order, target) => assign(order, target.bayId, target.place),
+    onDrop: (order, target) => {
+      if (target.mergeKey) {
+        onMergeOrders?.(order.key, target.mergeKey);
+        setOpenUid(null);
+      } else assign(order, target.bayId, target.place);
+    },
   });
 
   // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）を押したときは、そのカードのタップやドラッグで決める
@@ -149,6 +170,15 @@ export const UnassignedOrdersPanel: React.FC<{
                   card={order}
                   hoveredBay={drag.target?.bayId ?? null}
                   onPick={(bayId) => assign(order, bayId)}
+                />
+              )}
+              {isOpen && onSplitCup && canSplitCard(order) && (
+                <SplitCupButtons
+                  card={order}
+                  onSplit={(cupId) => {
+                    onSplitCup(order, cupId);
+                    setOpenUid(null);
+                  }}
                 />
               )}
               {isSelected && (

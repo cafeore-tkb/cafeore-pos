@@ -1,6 +1,17 @@
-import { dripperLabel } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { NextAvailable } from "../logic/queue";
 
@@ -41,23 +52,36 @@ const nextTone = (active: boolean, soon: boolean) => {
   return "bg-emerald-700 text-white";
 };
 
-/** 「次へ」（抽出中のカードを終えて待機の先頭を始める）。まもなく終わる列は黄色。remainingSec を渡すと残り時間も出す */
+/**
+ * 「次へ」（抽出中のカードを終えて待機の先頭を始める）。まもなく終わる列は黄色。remainingSec を渡すと残り時間も出す。
+ * locked のあいだ（抽出を始めてすぐ。二度押しを防ぐ）は押せない
+ */
 export const NextButton: React.FC<{
   bayId: number;
   /** 抽出中のカードがある */
   active: boolean;
   /** まもなく終わる */
   soon: boolean;
+  /** まだ押せない（抽出を始めてすぐ） */
+  locked?: boolean;
   remainingSec?: number;
   onAdvance: (bayId: number) => void;
   className?: string;
-}> = ({ bayId, active, soon, remainingSec, onAdvance, className = "" }) => (
+}> = ({
+  bayId,
+  active,
+  soon,
+  locked = false,
+  remainingSec,
+  onAdvance,
+  className = "",
+}) => (
   <button
     type="button"
-    disabled={!active}
+    disabled={!active || locked}
     onClick={() => onAdvance(bayId)}
     title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
-    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${nextTone(active, soon)} ${className}`}
+    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${nextTone(active, soon)} ${locked ? "opacity-40" : ""} ${className}`}
   >
     {active && remainingSec !== undefined && (
       <span className="font-mono">
@@ -67,6 +91,33 @@ export const NextButton: React.FC<{
     <span>{active ? "次へ" : "待機"}</span>
     {active && <ArrowRightCircle className="h-4 w-4 shrink-0" />}
   </button>
+);
+
+/** 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）を確かめる。［やめる］［次へ進める］ */
+export const NextConfirmDialog: React.FC<{
+  bayId: number;
+  card: CaosCard;
+  elapsedSec: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ bayId, card, elapsedSec, onCancel, onConfirm }) => (
+  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {dripperLabel(bayId)} の {orderLabel(card)} を終えますか？
+        </AlertDialogTitle>
+        <AlertDialogDescription className="font-black text-[16px] text-slate-950">
+          始めてからまだ {clockLabel(elapsedSec)}{" "}
+          です。押す列を間違えていませんか？
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>やめる</AlertDialogCancel>
+        <AlertDialogAction onClick={onConfirm}>次へ進める</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 );
 
 /** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
