@@ -379,7 +379,12 @@ const CashierV2 = ({
               />
             )}
             <PrinterStatus status={printer.status} />
-            <PastOrderSideSheet orders={orders} author="cashier" withGoods />
+            <PastOrderSideSheet
+              orders={orders}
+              author="cashier"
+              withGoods
+              squareRefundable={squareEnabled}
+            />
           </div>
         </div>
         <div className="flex gap-5 px-2">

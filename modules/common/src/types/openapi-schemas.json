@@ -978,6 +978,18 @@
     "enum": ["pending", "paid", "failed", "attention"],
     "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: まだ決まっていない。待つ\n  - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい\n  - failed: 取り消された・失敗した。お金は受け取っていない\n  - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある\n"
   },
+  "SquareRefundStatus": {
+    "type": "string",
+    "enum": ["none", "pending", "refunded", "failed", "unknown"],
+    "x-enum-varnames": [
+      "RefundNone",
+      "RefundPending",
+      "RefundRefunded",
+      "RefundFailed",
+      "RefundUnknown"
+    ],
+    "description": "返金（全額）の状態。\n  - none: 返金を頼んでいない\n  - pending: Square に頼んだ。結果を待っている\n  - refunded: 返金が終わった\n  - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える\n  - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない\n"
+  },
   "SquareStatusResponse": {
     "type": "object",
     "required": ["enabled", "environment", "webhook_enabled"],
@@ -1108,6 +1120,7 @@
       "amount",
       "payment_type",
       "payment_ids",
+      "refund_status",
       "created_at",
       "updated_at"
     ],
@@ -1166,6 +1179,14 @@
         "format": "uuid",
         "nullable": true,
         "description": "この決済で作った注文。まだ無ければ null"
+      },
+      "refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "refund_error": {
+        "type": "string",
+        "nullable": true,
+        "description": "返金を断られた・確かめられなかったときの Square のエラー"
       },
       "created_at": {
         "type": "string",

@@ -249,6 +249,7 @@ export const responseToOrderEntity = (
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
     })),
+    paymentMethod: response.payment_method,
   };
   return OrderEntity.fromOrder(order);
 };

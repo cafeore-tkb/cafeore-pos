@@ -59,6 +59,15 @@ const (
 	QRCODE      SquarePaymentType = "QR_CODE"
 )
 
+// Defines values for SquareRefundStatus.
+const (
+	RefundFailed   SquareRefundStatus = "failed"
+	RefundNone     SquareRefundStatus = "none"
+	RefundPending  SquareRefundStatus = "pending"
+	RefundRefunded SquareRefundStatus = "refunded"
+	RefundUnknown  SquareRefundStatus = "unknown"
+)
+
 // Defines values for StockEventKind.
 const (
 	StockEventKindAdjust  StockEventKind = "adjust"
@@ -470,6 +479,17 @@ type SquareCheckoutResponse struct {
 	PaymentIds  []string `json:"payment_ids"`
 	PaymentType string   `json:"payment_type"`
 
+	// RefundError 返金を断られた・確かめられなかったときの Square のエラー
+	RefundError *string `json:"refund_error"`
+
+	// RefundStatus 返金（全額）の状態。
+	//   - none: 返金を頼んでいない
+	//   - pending: Square に頼んだ。結果を待っている
+	//   - refunded: 返金が終わった
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+	RefundStatus SquareRefundStatus `json:"refund_status"`
+
 	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
 	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -519,6 +539,14 @@ type SquareDeviceStatus string
 
 // SquarePaymentType Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
 type SquarePaymentType string
+
+// SquareRefundStatus 返金（全額）の状態。
+//   - none: 返金を頼んでいない
+//   - pending: Square に頼んだ。結果を待っている
+//   - refunded: 返金が終わった
+//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+type SquareRefundStatus string
 
 // SquareStatusResponse defines model for SquareStatusResponse.
 type SquareStatusResponse struct {

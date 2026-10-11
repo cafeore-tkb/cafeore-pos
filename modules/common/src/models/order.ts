@@ -7,6 +7,10 @@ const AUTHORS = ["cashier", "master", "serve", "others"] as const;
 
 export type Author = (typeof AUTHORS)[number];
 
+const PAYMENT_METHODS = ["cash", "square"] as const;
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
 export const commentSchema = z.object({
   author: z.enum(AUTHORS),
   text: z.string(),
@@ -31,6 +35,8 @@ export const orderSchema = z.object({
   estimateTime: z.number(), // seconds
   // サーバーが作った1杯ずつのカップ。保存前の注文には無い
   cups: z.array(cupSchema).optional(),
+  // サーバーに保存された支払い方法。保存前の注文には無い
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -40,6 +46,7 @@ export type Order = z.infer<typeof orderSchema>;
  *
  * Square は「決済が先・注文が後」なので、注文を送るときには決済依頼の ID が分かっている。
  * 注文そのもの（OrderEntity）には持たせず、作成のときだけ一緒に送る。
+ * 保存した注文の支払い方法は、サーバーが返したものを OrderEntity.paymentMethod で読める。
  */
 export const orderPaymentSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("cash") }),
@@ -111,6 +118,7 @@ export class OrderEntity implements Order {
     private _discount: number,
     private _estimateTime: number,
     private readonly _cups: Cup[],
+    private readonly _paymentMethod: PaymentMethod | undefined,
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -131,6 +139,7 @@ export class OrderEntity implements Order {
       0,
       -1,
       [],
+      undefined,
     );
   }
 
@@ -156,6 +165,7 @@ export class OrderEntity implements Order {
       order.discount,
       order.estimateTime,
       order.cups ?? [],
+      order.paymentMethod,
     );
   }
 
@@ -245,6 +255,10 @@ export class OrderEntity implements Order {
 
   get cups() {
     return this._cups;
+  }
+
+  get paymentMethod() {
+    return this._paymentMethod;
   }
 
   // --------------------------------------------------
@@ -435,6 +449,7 @@ export class OrderEntity implements Order {
       discount: this.discount,
       estimateTime: this.estimateTime,
       cups: this.cups,
+      paymentMethod: this.paymentMethod,
     };
   }
 

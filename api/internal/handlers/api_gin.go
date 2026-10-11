@@ -137,6 +137,9 @@ type ServerInterface interface {
 	// オーダーを提供完了にする
 	// (PATCH /api/orders/{id}/served)
 	MarkOrderServe(c *gin.Context, id openapi_types.UUID)
+	// 注文に使った Square の決済を全額返金し、注文を消す
+	// (POST /api/orders/{id}/square-refund)
+	RefundOrderSquarePayment(c *gin.Context, id openapi_types.UUID)
 	// Square Terminal に決済画面を出す
 	// (POST /api/square/checkouts)
 	CreateSquareCheckout(c *gin.Context)
@@ -149,6 +152,9 @@ type ServerInterface interface {
 	// 決済依頼を取り消す
 	// (POST /api/square/checkouts/{id}/cancel)
 	CancelSquareCheckout(c *gin.Context, id openapi_types.UUID)
+	// 支払い済みの決済を全額返金する
+	// (POST /api/square/checkouts/{id}/refund)
+	RefundSquareCheckout(c *gin.Context, id openapi_types.UUID)
 	// Square 端末の一覧
 	// (GET /api/square/devices)
 	GetSquareDevices(c *gin.Context)
@@ -977,6 +983,30 @@ func (siw *ServerInterfaceWrapper) MarkOrderServe(c *gin.Context) {
 	siw.Handler.MarkOrderServe(c, id)
 }
 
+// RefundOrderSquarePayment operation middleware
+func (siw *ServerInterfaceWrapper) RefundOrderSquarePayment(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundOrderSquarePayment(c, id)
+}
+
 // CreateSquareCheckout operation middleware
 func (siw *ServerInterfaceWrapper) CreateSquareCheckout(c *gin.Context) {
 
@@ -1049,6 +1079,30 @@ func (siw *ServerInterfaceWrapper) CancelSquareCheckout(c *gin.Context) {
 	}
 
 	siw.Handler.CancelSquareCheckout(c, id)
+}
+
+// RefundSquareCheckout operation middleware
+func (siw *ServerInterfaceWrapper) RefundSquareCheckout(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundSquareCheckout(c, id)
 }
 
 // GetSquareDevices operation middleware
@@ -1234,10 +1288,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
+	router.POST(options.BaseURL+"/api/orders/:id/square-refund", wrapper.RefundOrderSquarePayment)
 	router.POST(options.BaseURL+"/api/square/checkouts", wrapper.CreateSquareCheckout)
 	router.GET(options.BaseURL+"/api/square/checkouts/unlinked", wrapper.GetUnlinkedSquareCheckouts)
 	router.GET(options.BaseURL+"/api/square/checkouts/:id", wrapper.GetSquareCheckout)
 	router.POST(options.BaseURL+"/api/square/checkouts/:id/cancel", wrapper.CancelSquareCheckout)
+	router.POST(options.BaseURL+"/api/square/checkouts/:id/refund", wrapper.RefundSquareCheckout)
 	router.GET(options.BaseURL+"/api/square/devices", wrapper.GetSquareDevices)
 	router.POST(options.BaseURL+"/api/square/devices", wrapper.CreateSquareDevice)
 	router.POST(options.BaseURL+"/api/square/devices/import", wrapper.ImportSquareDevices)

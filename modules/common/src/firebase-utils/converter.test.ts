@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { OrderEntity } from "../models/order";
 import {
   type OrderResponse,
   orderEntityToCreateRequest,
@@ -99,6 +100,17 @@ describe("[unit] order snapshot conversion", () => {
     });
     expect(square.payment_method).toBe("square");
     expect(square.square_checkout_id).toBe(checkoutId);
+  });
+
+  test("keeps the saved payment method through cloning", () => {
+    expect(responseToOrderEntity(response).paymentMethod).toBe("cash");
+    const order = responseToOrderEntity({
+      ...response,
+      payment_method: "square",
+    });
+    expect(order.paymentMethod).toBe("square");
+    expect(order.clone().paymentMethod).toBe("square");
+    expect(OrderEntity.createNew({ orderId: 1 }).paymentMethod).toBeUndefined();
   });
 
   test("converts each cup's ready and served status", () => {

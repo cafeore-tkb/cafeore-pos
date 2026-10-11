@@ -259,7 +259,7 @@ func main() {
 	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
 	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
 	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
-	squareHandler, err := handlers.NewSquareHandler(db, handlers.SquareConfig{
+	squareHandler, err := handlers.NewSquareHandler(db, orderHandler, handlers.SquareConfig{
 		AccessToken:         os.Getenv("SQUARE_ACCESS_TOKEN"),
 		Environment:         os.Getenv("SQUARE_ENVIRONMENT"),
 		LocationID:          os.Getenv("SQUARE_LOCATION_ID"),
@@ -365,6 +365,9 @@ func main() {
 		square.GET("/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
 		square.GET("/checkouts/:id", squareHandler.GetCheckout)
 		square.POST("/checkouts/:id/cancel", squareHandler.CancelCheckout)
+		square.POST("/checkouts/:id/refund", squareHandler.RefundCheckout)
+		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
+		api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
 	}
 
 	// サーバー起動

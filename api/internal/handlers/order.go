@@ -497,15 +497,24 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	// オーダーアイテムの関連も削除
-	var order models.Order
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	if err := h.deleteOrder(orderID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+}
+
+// deleteOrder は注文を明細・カップごと消し、画面へ配る。Square の返金（SquareHandler）からも使う。
+// 注文が無ければ gorm.ErrRecordNotFound を返す。
+func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
+	// オーダーアイテムの関連も削除
+	var order models.Order
+	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
+		return err
 	}
 
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
@@ -529,18 +538,16 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		rowsAffected = result.RowsAffected
 		return result.Error
 	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-		return
+		return gorm.ErrRecordNotFound
 	}
 
 	publishOrderDeleted(h.db, h.hub, orderID)
-	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 	go h.inventory.CheckAlerts(resources)
+	return nil
 }
 
 var upgrader = websocket.Upgrader{
