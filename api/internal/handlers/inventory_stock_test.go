@@ -84,21 +84,14 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 
 	// 3 つの在庫それぞれ 1000 から数える
 	cupID := uuid.UUID(cup.Id)
-	for _, id := range []uuid.UUID{blendStock.ID, coasterStock.ID, cupID} {
-		must(db.Create(&models.StockEvent{ResourceID: id, Kind: string(models.StockEventKindCount), Quantity: 1000, CreatedAt: time.Now().Add(-time.Hour)}).Error)
+	cupStock := models.StockResource{ID: cupID}
+	for _, r := range []models.StockResource{blendStock, coasterStock, cupStock} {
+		api.seedStockEvent(r, models.StockEventKindCount, 1000, time.Now().Add(-time.Hour))
 	}
 	// ブレンド 2 杯とコースター 1 個のセット
-	set := models.Menu{Name: "セット", Abbr: "セ", Price: 1000, Key: "s", MenuItems: []models.MenuItem{
-		{ItemID: uuid.UUID(blend.Id), Quantity: 2}, {ItemID: uuid.UUID(coaster.Id), Quantity: 1},
-	}}
-	api.create(&set)
-	order := func(lines ...models.MenuInfoCreate) models.OrderResponse {
-		t.Helper()
-		var resp models.OrderResponse
-		call(http.MethodPost, "/orders", models.OrderCreateRequest{OrderId: 1, BillingAmount: 1000, Received: 1000, MenuIds: lines}, http.StatusCreated, &resp)
-		return resp
-	}
-	newLine := models.MenuInfoCreate{MenuId: set.ID}
+	set := api.seedMenu("セット", "s", 1000,
+		models.MenuItem{ItemID: uuid.UUID(blend.Id), Quantity: 2}, models.MenuItem{ItemID: uuid.UUID(coaster.Id), Quantity: 1})
+	newLine := menuLine(set)
 	expect := func(label string, want map[uuid.UUID][2]float64) {
 		t.Helper()
 		snapshots, err := inv.snapshots(context.Background(), nil)
@@ -114,7 +107,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}
 
 	// 注文で、アイテムの在庫は per_serving × 数、カップはカップを作るアイテムの数だけ減る
-	first := order(newLine)
+	first := api.createOrder(1, set)
 	expect("1 つめ", map[uuid.UUID][2]float64{blendStock.ID: {30, 2}, coasterStock.ID: {1, 1}, cupID: {2, 2}})
 	if got := inv.ResourceIDsForOrder(uuid.UUID(first.Id)); len(got) != 3 {
 		t.Errorf("1 つめの注文の在庫対象 = %v, want 3 つ", got)
@@ -130,8 +123,14 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	if len(unchanged.ItemTypeIds) != 2 {
 		t.Fatalf("種類を省略した PUT の後の種類 = %v, want 2 つ", unchanged.ItemTypeIds)
 	}
+	// 種類を消すと、カップの使う種類からも外れる（送り返しても 400 にならない）
+	call(http.MethodDelete, "/item-types/"+goods.ID.String(), nil, http.StatusOK, nil)
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
+	if len(unchanged.ItemTypeIds) != 1 || unchanged.ItemTypeIds[0] != hot.ID {
+		t.Fatalf("種類を消した後の種類 = %v, want ホットだけ", unchanged.ItemTypeIds)
+	}
 	call(http.MethodPut, "/inventory/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
-	order(newLine)
+	api.createOrder(1, set)
 	expect("変えた後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40, 4}, coasterStock.ID: {2, 2}, cupID: {2, 2}})
 
 	// 前の注文を編集しても、残した明細はその時点の量のまま。足した明細は今の設定で減る
@@ -144,7 +143,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 
 	// 棚卸し・入荷・残り何回・通知の段階は今までどおり。注文の後の通知の判定を待ってから、下で直接呼ぶ
 	api.waitBackground()
-	must(db.Create(&models.StockEvent{ResourceID: cupID, Kind: string(models.StockEventKindReceipt), Quantity: 5, CreatedAt: time.Now()}).Error)
+	api.seedStockEvent(cupStock, models.StockEventKindReceipt, 5, time.Now())
 	must(db.Model(&models.StockResource{}).Where("id = ?", blendStock.ID).Update("notify_from", 50).Error)
 	snapshots, err := inv.snapshots(context.Background(), nil)
 	must(err)
@@ -162,10 +161,8 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		}
 	}
 	must(inv.checkAlerts(context.Background(), []uuid.UUID{blendStock.ID}))
-	var notified models.StockResource
-	must(db.First(&notified, "id = ?", blendStock.ID).Error)
-	if notified.LastAlertThreshold == nil || *notified.LastAlertThreshold != 46 {
-		t.Errorf("通知した段階 = %v, want 46", notified.LastAlertThreshold)
+	if got := api.lastAlertThreshold(blendStock); got == nil || *got != 46 {
+		t.Errorf("通知した段階 = %v, want 46", got)
 	}
 
 	// アイテムを消すと在庫も消える。消す前の注文の消費は注文の側に残る
