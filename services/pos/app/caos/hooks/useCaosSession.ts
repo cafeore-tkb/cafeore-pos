@@ -13,11 +13,13 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
+import { waitingCupsByBean } from "../logic/beans";
 import { cardLooks, totalCups } from "../logic/cards";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
+import { useBeanInventory } from "./useBeanInventory";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
@@ -72,6 +74,7 @@ export const useCaosSession = () => {
   });
   const source = test.session ? test : live;
   const { colorSettings } = useColorSettings();
+  const { beanIndex, ...beanStock } = useBeanInventory();
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -83,8 +86,13 @@ export const useCaosSession = () => {
     [cards],
   );
   const looks = useMemo(
-    () => cardLooks(cards, colorSettings),
-    [cards, colorSettings],
+    () => cardLooks(cards, colorSettings, beanIndex),
+    [cards, colorSettings, beanIndex],
+  );
+  // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
+  const beanWaitingCups = useMemo(
+    () => (test.session ? undefined : waitingCupsByBean(cards, beanIndex)),
+    [cards, beanIndex, test.session],
   );
 
   // 画面のカードのキーから、今の盤面のカードを引く
@@ -109,7 +117,7 @@ export const useCaosSession = () => {
     lanes,
     /** 未割当（注文番号の順） */
     unassigned,
-    /** カードの色と、分けた注文の中の位置 */
+    /** カードの色・豆と、分けた注文の中の位置 */
     looks,
     nextAvailable: nextAvailableBays(lanes, nowMs),
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
@@ -121,6 +129,12 @@ export const useCaosSession = () => {
     nowMs,
     /** ヘッダーの時刻（日本時間の「10:05:09」） */
     timeLabel: jstClock(nowMs),
+    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
+    beans: {
+      ...beanStock,
+      waitingCups: beanWaitingCups,
+      onRecorded: test.session ? undefined : beanStock.onRecorded,
+    },
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,

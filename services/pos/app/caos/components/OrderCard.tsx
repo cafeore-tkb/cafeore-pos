@@ -72,7 +72,7 @@ export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
     /** 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards） */
     card: CaosCard;
-    /** 色と、分けた注文の中の位置（logic/cards.ts の cardLooks） */
+    /** 色・豆と、分けた注文の中の位置（logic/cards.ts の cardLooks） */
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
@@ -99,6 +99,10 @@ export const OrderCard: React.FC<
   const name = cardName(card);
   const typeName = cardTypeName(card);
   const split = look?.split;
+  // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
+  // 豆の無い（在庫の設定に「商品 → 豆」が無い）カードは区分だけ。狭いカードでは後ろが切れるので豆を先にする
+  const beans = look?.beans?.map((bean) => bean.name).join("・");
+  const badge = [beans, typeName].filter(Boolean).join(" / ");
   return (
     <div
       {...props}
@@ -135,13 +139,12 @@ export const OrderCard: React.FC<
         >
           {name}
         </span>
-        {/* 区分は商品の種類の表示名をそのまま出す */}
-        {typeName && (
+        {badge && (
           <span
-            title={`区分：${typeName}`}
+            title={`豆：${beans || "なし"}　区分：${typeName || "なし"}`}
             className="min-w-0 shrink truncate rounded bg-black/10 px-1.5 py-0.5 font-bold text-[10px] leading-none"
           >
-            {typeName}
+            {badge}
           </span>
         )}
         {split && (

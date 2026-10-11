@@ -28,7 +28,8 @@ import (
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。カップを置くドリッパーの advisory lock は
 // 注文の行より先に取り、列の番号を決めて書き終えるまで・抽出を始めるドリッパーが空いているかを確かめるまで、同じドリッパーへの書き込みを待たせる。
-// 書いたカップの注文（番号をずらしたカップの注文も）は今の注文の配信（1 件ずつ）で、このインスタンスにつないでいる画面へ届く（publishOrder）。
+// 書いたカップの注文（番号をずらしたカップの注文も）は今の注文の配信（1 件ずつ）で、このインスタンスにつないでいる画面へ届き、
+// ほかのインスタンスにも DB の通知で知らせる（publishOrder）。
 
 const (
 	// ドリッパーの数。番号は 1〜caosDrippers
@@ -40,15 +41,6 @@ const (
 )
 
 var jst = time.FixedZone("JST", 9*60*60)
-
-// caosBrewRequired は、その種類のカップが抽出の要るカップか（ドリッパーに置けるか）を種類の名前で決める。
-// 名前に others（グッズ）も milk（ミルク）も含まない種類は抽出が要る。CaOS で種類の名前を見るのはここだけにする。
-//
-// TODO: C1（#855・#859 の makes_cup・needs_brew・senior_only・iced_brew）と CaOS3 のうち後から main に入る方で、
-// 名前で決めるのをやめ、種類の項目を読む形（ItemType.BrewRequired()）に戻す。
-func caosBrewRequired(typeName string) bool {
-	return !strings.Contains(typeName, "others") && !strings.Contains(typeName, "milk")
-}
 
 type CaosHandler struct {
 	db  *gorm.DB
@@ -424,7 +416,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				if w.Before.BrewStartedAt != nil || w.Before.BrewFinishedAt != nil {
 					return ruleErrorf("抽出中・終わりのカードは動かせません")
 				}
-				if (w.After.Dripper != nil || w.After.DripId != nil) && !caosBrewRequired(item.ItemType.Name) {
+				if (w.After.Dripper != nil || w.After.DripId != nil) && !item.ItemType.BrewRequired() {
 					return ruleErrorf("抽出の要らないカップ（%s）はドリッパーに置けません", item.Name)
 				}
 			}

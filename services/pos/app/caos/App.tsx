@@ -99,6 +99,7 @@ export default function App() {
           <AuxiliarySheet tab={panel.tab} onClose={selection.closeAuxiliary}>
             <AuxiliaryContent
               tab={panel.tab}
+              beans={session.beans}
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
