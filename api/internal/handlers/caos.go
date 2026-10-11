@@ -41,15 +41,6 @@ const (
 
 var jst = time.FixedZone("JST", 9*60*60)
 
-// caosBrewRequired は、その種類のカップが抽出の要るカップか（ドリッパーに置けるか）を種類の名前で決める。
-// 名前に others（グッズ）も milk（ミルク）も含まない種類は抽出が要る。CaOS で種類の名前を見るのはここだけにする。
-//
-// TODO: C1（#855・#859 の makes_cup・needs_brew・senior_only・iced_brew）と CaOS3 のうち後から main に入る方で、
-// 名前で決めるのをやめ、種類の項目を読む形（ItemType.BrewRequired()）に戻す。
-func caosBrewRequired(typeName string) bool {
-	return !strings.Contains(typeName, "others") && !strings.Contains(typeName, "milk")
-}
-
 type CaosHandler struct {
 	db  *gorm.DB
 	hub *Hub
@@ -424,7 +415,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				if w.Before.BrewStartedAt != nil || w.Before.BrewFinishedAt != nil {
 					return ruleErrorf("抽出中・終わりのカードは動かせません")
 				}
-				if (w.After.Dripper != nil || w.After.DripId != nil) && !caosBrewRequired(item.ItemType.Name) {
+				if (w.After.Dripper != nil || w.After.DripId != nil) && !item.ItemType.BrewRequired() {
 					return ruleErrorf("抽出の要らないカップ（%s）はドリッパーに置けません", item.Name)
 				}
 			}

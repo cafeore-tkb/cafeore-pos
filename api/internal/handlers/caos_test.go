@@ -93,18 +93,6 @@ func caosTestSearchPath(t *testing.T, dsn, searchPath string) string {
 	return u.String()
 }
 
-// 抽出が要るかは種類の名前で決める（本番の DB の種類の名前で確かめる）
-func TestCaosBrewRequired(t *testing.T) {
-	for name, want := range map[string]bool{
-		"brend": true, "gourmet": true, "hot": true, "ice": true, "iceOre": true, "limited": true,
-		"milk": false, "others": false,
-	} {
-		if got := caosBrewRequired(name); got != want {
-			t.Errorf("caosBrewRequired(%q) = %v, want %v", name, got, want)
-		}
-	}
-}
-
 type caosFixture struct {
 	db     *gorm.DB
 	hub    *Hub
@@ -124,9 +112,9 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 		}
 	}()
 	f := &caosFixture{db: db, hub: hub, caos: NewCaosHandler(db, hub), orders: NewOrderHandler(db, hub, nil)}
-	// 抽出が要るかは種類の名前で決める（caosBrewRequired。milk は要らない）
+	// 抽出が要るかは種類の needs_brew で決める（ミルクはカップを作るが抽出は要らない）
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
-	milk := models.ItemType{Name: "milk", DisplayName: "ミルク"}
+	milk := models.ItemType{Name: "milk", DisplayName: "ミルク", NeedsBrew: boolPtr(false)}
 	f.blend = models.Item{Name: "ブレンド", Abbr: "ブ", ItemType: hot}
 	f.milk = models.Item{Name: "アイスミルク", Abbr: "ミ", ItemType: milk}
 	f.menu = models.Menu{Name: "ブレンド", Abbr: "ブ", Price: 500, Key: "blend-" + uuid.NewString()}
