@@ -1,4 +1,8 @@
-import { type PracticeDataOrder, jstClock } from "@cafeore/common";
+import {
+  type PracticeDataOrder,
+  dripperLabel,
+  jstClock,
+} from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -19,7 +23,7 @@ import {
   deltaGrade,
 } from "../logic/analytics";
 import type { CardLooks } from "../logic/cards";
-import { type Lane, laneOrdinal } from "../logic/lanes";
+import type { Lane } from "../logic/lanes";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
@@ -408,7 +412,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-950">
-                  {laneOrdinal(result.bayId)}
+                  {dripperLabel(result.bayId)}
                 </span>
               </div>
               <div className="mt-2 flex items-end gap-3">

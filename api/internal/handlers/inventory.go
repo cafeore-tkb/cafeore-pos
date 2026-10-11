@@ -379,10 +379,10 @@ func (h *InventoryHandler) CreateStockResource(c *gin.Context) {
 		Buffer:     req.Buffer,
 	}
 	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&resource).Error; err != nil || req.ItemTypeIds == nil {
+		if err := tx.Create(&resource).Error; err != nil {
 			return err
 		}
-		return replaceCupItemTypes(tx, &resource, *req.ItemTypeIds)
+		return replaceCupItemTypes(tx, &resource, req.ItemTypeIds)
 	})
 	if err != nil {
 		c.JSON(stockResourceErrorStatus(err), gin.H{"error": err.Error()})
@@ -439,11 +439,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 		if err := tx.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
 			return err
 		}
-		// 使う種類を省略したら今のまま（アイテムの在庫では送れない）
-		if req.ItemTypeIds == nil {
-			return nil
-		}
-		return replaceCupItemTypes(tx, &resource, *req.ItemTypeIds)
+		return replaceCupItemTypes(tx, &resource, req.ItemTypeIds)
 	})
 	if err != nil {
 		c.JSON(stockResourceErrorStatus(err), gin.H{"error": err.Error()})
@@ -463,10 +459,14 @@ func stockResourceErrorStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
-// カップを使うアイテムの種類を、本文のとおりに置き換える。無い種類や重複があれば errInvalidCupItemTypes。
-func replaceCupItemTypes(tx *gorm.DB, resource *models.StockResource, ids []openapi_types.UUID) error {
-	resource.ItemTypes = make([]models.StockResourceItemType, len(ids))
-	for i, id := range ids {
+// カップを使うアイテムの種類を、本文のとおりに置き換える。省略（nil）なら今のまま（アイテムの在庫では送れない）。
+// 無い種類や重複があれば errInvalidCupItemTypes。
+func replaceCupItemTypes(tx *gorm.DB, resource *models.StockResource, ids *[]openapi_types.UUID) error {
+	if ids == nil {
+		return nil
+	}
+	resource.ItemTypes = make([]models.StockResourceItemType, len(*ids))
+	for i, id := range *ids {
 		resource.ItemTypes[i] = models.StockResourceItemType{ResourceID: resource.ID, ItemTypeID: id}
 	}
 	if err := tx.Where("resource_id = ?", resource.ID).Delete(&models.StockResourceItemType{}).Error; err != nil {
@@ -476,7 +476,7 @@ func replaceCupItemTypes(tx *gorm.DB, resource *models.StockResource, ids []open
 		return nil
 	}
 	var found int64
-	if err := tx.Model(&models.ItemType{}).Where("id IN ?", ids).Count(&found).Error; err != nil {
+	if err := tx.Model(&models.ItemType{}).Where("id IN ?", *ids).Count(&found).Error; err != nil {
 		return err
 	}
 	if found != int64(len(resource.ItemTypes)) {

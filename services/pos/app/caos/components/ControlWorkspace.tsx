@@ -51,6 +51,8 @@ export interface ControlViewProps {
   /** 未割当のカードをドリッパーへ。place が { beforeKey } ならそのカードの前へ（ドラッグで途中に落としたとき） */
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onMergeOrders: (firstKey: string, secondKey: string) => void;
+  /** 閲覧だけの画面（/master-sheet/view）。「次へ」・空きスロットを出さず、カードを押しても動かさない */
+  readOnly?: boolean;
 }
 
 const VIEWS: Record<ControlViewMode, React.FC<ControlViewProps>> = {

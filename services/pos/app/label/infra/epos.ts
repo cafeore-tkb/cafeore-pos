@@ -1,5 +1,9 @@
 import type { Label, PrintJob, TextLine } from "../document";
-import type { LabelPrinter, PrinterConnectionStatus } from "./printer";
+import type {
+  CreateLabelPrinter,
+  LabelPrinter,
+  PrinterConnectionStatus,
+} from "./printer";
 
 /**
  * Epson ePOS SDK（public/epos-2.27.0.js、root.tsx で読み込む）のうち、ここで使うところだけの型
@@ -8,7 +12,11 @@ import type { LabelPrinter, PrinterConnectionStatus } from "./printer";
  */
 export type EposBuilder = {
   FEED_CURRENT_TOF: string;
+  ALIGN_LEFT: string;
+  ALIGN_CENTER: string;
+  CUT_FEED: string;
   addTextLang: (lang: string) => unknown;
+  addTextAlign: (align: string) => unknown;
   addTextSize: (width: number, height: number) => unknown;
   addText: (text: string) => unknown;
   addPageBegin: () => unknown;
@@ -18,6 +26,7 @@ export type EposBuilder = {
   addLogo: (key1: number, key2: number) => unknown;
   addFeedLine: (line: number) => unknown;
   addFeedPosition: (position: string) => unknown;
+  addCut: (type: string) => unknown;
 };
 
 type EposPrinterDevice = EposBuilder & { send: () => unknown };
@@ -35,6 +44,7 @@ type EposDevice = {
     options: { crypto: boolean; buffer: boolean },
     callback: (device: EposPrinterDevice | null, result: string) => void,
   ) => void;
+  disconnect: () => void;
 };
 
 declare global {
@@ -54,15 +64,26 @@ export type EposPrinterConfig = {
   logoKey: readonly [number, number];
   /** 最後のシールを刷った後に送る行数 */
   trailingFeedLines: number;
+  /** 送った後に紙を切るか（レシート用のプリンター） */
+  cut: boolean;
 };
 
-/** 今使っているプリンター */
+/** 今使っているプリンター（ラベル用） */
 export const DEFAULT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   address: "192.168.77.2",
   port: 8008,
   deviceId: "local_printer",
   logoKey: [32, 32],
   trailingFeedLines: 7,
+  cut: false,
+};
+
+/** レシート用のプリンター。刷るたびに紙を切る */
+export const RECEIPT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
+  ...DEFAULT_EPOS_PRINTER_CONFIG,
+  address: "192.168.77.3",
+  trailingFeedLines: 1,
+  cut: true,
 };
 
 const writeLine = (builder: EposBuilder, line: TextLine) => {
@@ -82,9 +103,12 @@ const writeLabel = (
   config: Pick<EposPrinterConfig, "logoKey">,
 ) => {
   if (label.type === "flow") {
+    const center = label.align === "center";
+    if (center) builder.addTextAlign(builder.ALIGN_CENTER);
     for (const line of label.lines) {
       writeLine(builder, line);
     }
+    if (center) builder.addTextAlign(builder.ALIGN_LEFT);
     return;
   }
 
@@ -108,7 +132,7 @@ const writeLabel = (
 export const writeEposJob = (
   builder: EposBuilder,
   job: PrintJob,
-  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeedLines">,
+  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeedLines" | "cut">,
 ) => {
   builder.addTextLang("ja");
   builder.addTextSize(2, 2);
@@ -116,6 +140,7 @@ export const writeEposJob = (
     writeLabel(builder, label, config);
   }
   builder.addFeedLine(config.trailingFeedLines);
+  if (config.cut) builder.addCut(builder.CUT_FEED);
 };
 
 /**
@@ -128,27 +153,47 @@ export const createEposPrinter = (
   config: EposPrinterConfig = DEFAULT_EPOS_PRINTER_CONFIG,
 ): LabelPrinter => {
   let device: EposPrinterDevice | null = null;
+  let ePosDev: EposDevice | null = null;
+  // つなぐ・やめるたびに増やす。古いつなぎかけの応答は、これが変わっていたら捨てる
+  let generation = 0;
+
+  const disconnect = () => {
+    generation += 1;
+    device = null;
+    // つなぎかけ・つなぎ損ねたものも切る。SDK が投げても画面は止めない
+    try {
+      ePosDev?.disconnect();
+    } catch (error) {
+      console.error("ePOSDevice disconnect failed:", error);
+    }
+    ePosDev = null;
+  };
 
   const connect = () => {
+    const current = generation + 1;
+    generation = current;
     onStatusChange("connecting");
     if (!window.epson) {
       onStatusChange("disconnected");
       console.error("ePOSDevice not found");
       return;
     }
-    const ePosDev = new window.epson.ePOSDevice();
+    const dev = new window.epson.ePOSDevice();
+    ePosDev = dev;
 
-    ePosDev.connect(config.address, config.port, (result) => {
+    dev.connect(config.address, config.port, (result) => {
+      if (current !== generation) return;
       if (result !== "OK" && result !== "SSL_CONNECT_OK") {
         onStatusChange("disconnected");
         console.error("ePOSDevice connect failed:", result);
         return;
       }
-      ePosDev.createDevice(
+      dev.createDevice(
         config.deviceId,
-        ePosDev.DEVICE_TYPE_PRINTER,
+        dev.DEVICE_TYPE_PRINTER,
         { crypto: true, buffer: false },
         (devobj, retcode) => {
+          if (current !== generation) return;
           if (retcode === "OK" && devobj) {
             device = devobj;
             onStatusChange("connected");
@@ -165,11 +210,21 @@ export const createEposPrinter = (
     if (!device) {
       onStatusChange("disconnected");
       console.error("Printer not connected");
-      return;
+      return false;
     }
     writeEposJob(device, job, config);
     device.send();
+    return true;
   };
 
-  return { connect, print };
+  return { connect, disconnect, print };
 };
+
+/** address のプリンターを作る（ほかは base の設定のまま） */
+export const eposPrinterAt =
+  (
+    address: string,
+    base: EposPrinterConfig = DEFAULT_EPOS_PRINTER_CONFIG,
+  ): CreateLabelPrinter =>
+  (onStatusChange) =>
+    createEposPrinter(onStatusChange, { ...base, address });

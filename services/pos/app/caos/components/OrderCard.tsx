@@ -164,34 +164,37 @@ export const OrderCard: React.FC<
   );
 };
 
-// 1〜6 のボタンの色（ドラッグで指の下は青）
+// 1〜6 のボタンの色（ドラッグで指の下は青。指名の番号でないボタンは押せない）
 const padTone = (bayId: number, hoveredBay: number | null) =>
   hoveredBay === bayId
     ? "border-white bg-blue-500 text-white"
-    : "border-slate-300 bg-white text-slate-950";
+    : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
 // 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの待機の先頭へ）。
+// 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
 // ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
+  card: CaosCard;
   /** 待機カードの今のドリッパー */
   currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
   /** place は「先頭」のボタンなら "front"（今のドリッパーの待機の先頭へ） */
   onPick: (bayId: number, place?: CaosPlace) => void;
-}> = ({ currentBayId, hoveredBay, onPick }) => {
-  const targets = moveTargets(currentBayId ?? null);
+}> = ({ card, currentBayId, hoveredBay, onPick }) => {
+  const targets = moveTargets(card, currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
   return [targets.slice(0, half), targets.slice(half)].map((row, index) => (
     <div
       key={row[0].bayId}
       className={`${index === 0 ? "-top-[38px]" : "-bottom-[38px]"} absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl`}
     >
-      {row.map(({ bayId, place }) => (
+      {row.map(({ bayId, place, disabled }) => (
         <button
           key={bayId}
           type="button"
+          disabled={disabled}
           data-bay-target={bayId}
           onClick={(event) => {
             event.stopPropagation();

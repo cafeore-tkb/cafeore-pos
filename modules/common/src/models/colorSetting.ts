@@ -6,12 +6,14 @@ export const colorTargetTypes = ["Item", "ItemType"] as const;
  * - cashier: レジのメニューのボタン
  * - cashier_order: レジの過去の注文のカード
  * - master・serve: マスター・提供画面のカップ
+ * - caos_nominated: CaOS の指名のカード（無ければ master の色）
  */
 export const colorScreens = [
   "cashier",
   "cashier_order",
   "master",
   "serve",
+  "caos_nominated",
 ] as const;
 
 export const colorSettingSchema = z.object({

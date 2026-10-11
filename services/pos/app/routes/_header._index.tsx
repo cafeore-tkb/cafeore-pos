@@ -48,9 +48,9 @@ const sections: Section[] = [
         to: "/cashier",
         title: "レジ",
         audience: "staff",
-        where: "レジ担当（ラベルプリンターと接続）",
+        where: "レジ担当（ラベル・レシートのプリンターと接続）",
         description:
-          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルが印刷されます。",
+          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルとレシートが印刷されます。",
       },
       {
         kind: "master",
@@ -78,6 +78,15 @@ const sections: Section[] = [
         where: "ドリップの割り振り担当（iPad 横向き）",
         description:
           "未割当の注文をドリッパー1〜6に割り当て、抽出の進み具合をタイムラインで管理。過去の祭の注文でテストプレイもできます。",
+      },
+      {
+        kind: "master-sheet-view",
+        to: "/master-sheet/view",
+        title: "CaOS（閲覧のみ）",
+        audience: "staff",
+        where: "盤面を映しておく画面・様子を見たい人の端末",
+        description:
+          "CaOS の盤面をタイムラインで映すだけ。注文と抽出がリアルタイムに流れます。操作はできないので、どの端末で開いても盤面は変わりません。",
       },
     ],
   },
@@ -151,6 +160,11 @@ const sections: Section[] = [
   },
 ];
 
+const settingLinks = [
+  { to: "/square-devices", label: "Square 端末" },
+  { to: "/printer-settings", label: "プリンター" },
+];
+
 export default function Index() {
   return (
     <div className="mx-auto max-w-6xl space-y-10 px-4 py-6 font-noto">
@@ -179,16 +193,21 @@ export default function Index() {
 
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border p-4">
-          <h2 className="font-bold">Square 端末</h2>
-          <p className="mt-1 mb-3 text-muted-foreground text-sm">
-            レジで使う Square Terminal を登録します
+          <h2 className="font-bold">マスタ設定</h2>
+          <p className="mt-1 text-muted-foreground text-sm">
+            Square 端末・プリンターを設定します
           </p>
-          <Link
-            to="/square-devices"
-            className="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
-          >
-            Square 端末の設定
-          </Link>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {settingLinks.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
         </div>
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">オーダーデータ書き出し</h2>
