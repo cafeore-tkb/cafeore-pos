@@ -307,8 +307,11 @@ type OrderCreateRequest struct {
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int                    `json:"discount_order_id"`
-	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
-	OrderId           int                     `json:"order_id"`
+
+	// IdempotencyKey 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
+	MenuIds        []MenuInfoCreate    `json:"menu_ids"`
+	OrderId        int                 `json:"order_id"`
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
