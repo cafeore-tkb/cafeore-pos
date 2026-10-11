@@ -35,6 +35,22 @@ export const orderSchema = z.object({
 
 export type Order = z.infer<typeof orderSchema>;
 
+/**
+ * 注文の支払い方法
+ *
+ * Square は「決済が先・注文が後」なので、注文を送るときには決済依頼の ID が分かっている。
+ * 注文そのもの（OrderEntity）には持たせず、作成のときだけ一緒に送る。
+ */
+export const orderPaymentSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal("cash") }),
+  z.object({
+    method: z.literal("square"),
+    squareCheckoutId: z.string().uuid(),
+  }),
+]);
+
+export type OrderPayment = z.infer<typeof orderPaymentSchema>;
+
 type OrderStatus = "preparing" | "calling" | "served";
 
 const ORDER_TO_CUP_STATUS: Record<OrderStatus, CupStatus> = {
@@ -237,13 +253,10 @@ export class OrderEntity implements Order {
 
   /**
    * コーヒーの数を取得する
-   * @returns 割引の対象となるコーヒーの数
+   * @returns 割引の対象となるコーヒー（種類の「抽出が要る」が付いたもの）
    */
   getCoffeeCups() {
-    return this.getItems().filter(
-      (item) =>
-        item.item_type.name !== "milk" && item.item_type.name !== "others",
-    );
+    return this.getItems().filter((item) => item.item_type.needs_brew);
   }
 
   getItems() {
@@ -260,8 +273,9 @@ export class OrderEntity implements Order {
     );
   }
 
+  /** 種類の「カップを作る」が付いたもの（サーバーがカップを作るものと同じ） */
   getDrinkCups() {
-    return this.getItems().filter((item) => item.item_type.name !== "others");
+    return this.getItems().filter((item) => item.item_type.makes_cup);
   }
 
   /**

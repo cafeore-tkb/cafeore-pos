@@ -297,7 +297,8 @@ func (a *testAPI) seedMaster() testMaster {
 	a.t.Helper()
 	m := testMaster{hotType: models.ItemType{ID: uuid.New(), Name: "hot", DisplayName: "ホット"}}
 	iceType := models.ItemType{ID: uuid.New(), Name: "ice", DisplayName: "アイス"}
-	goodsType := models.ItemType{ID: uuid.New(), Name: goodsItemTypeName, DisplayName: "グッズ"}
+	// グッズは種類の名前ではなく makes_cup で見分ける
+	goodsType := models.ItemType{ID: uuid.New(), Name: "others", DisplayName: "グッズ", MakesCup: boolPtr(false), NeedsBrew: boolPtr(false)}
 	m.blend = models.Item{ID: uuid.New(), Name: "ブレンド", Abbr: "ブ", ItemTypeID: m.hotType.ID}
 	m.iced = models.Item{ID: uuid.New(), Name: "アイスコーヒー", Abbr: "ア", ItemTypeID: iceType.ID}
 	m.sticker = models.Item{ID: uuid.New(), Name: "ステッカー", Abbr: "ス", ItemTypeID: goodsType.ID}

@@ -176,7 +176,15 @@
   },
   "ItemTypeResponse": {
     "type": "object",
-    "required": ["id", "name", "display_name"],
+    "required": [
+      "id",
+      "name",
+      "display_name",
+      "makes_cup",
+      "needs_brew",
+      "senior_only",
+      "iced_brew"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -187,6 +195,22 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false"
       }
     }
   },
@@ -199,6 +223,25 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "default": true,
+        "description": "省略したら true"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら makes_cup と同じ。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
       }
     }
   },
@@ -215,6 +258,22 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       }
     }
   },
@@ -301,6 +360,7 @@
       "created_at",
       "billing_amount",
       "received",
+      "payment_method",
       "menus",
       "cups"
     ],
@@ -338,6 +398,9 @@
       },
       "discount_order_cups": {
         "type": "integer"
+      },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
       },
       "menus": {
         "type": "array",
@@ -385,6 +448,15 @@
         "type": "integer",
         "default": 0
       },
+      "payment_method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      },
       "menu_ids": {
         "type": "array",
         "items": {
@@ -396,6 +468,11 @@
         "items": {
           "$ref": "#/components/schemas/CommentCreateRequest"
         }
+      },
+      "idempotency_key": {
+        "type": "string",
+        "format": "uuid",
+        "description": "送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る"
       }
     }
   },
@@ -882,6 +959,233 @@
       },
       "reason": {
         "type": "string"
+      }
+    }
+  },
+  "PaymentMethod": {
+    "type": "string",
+    "enum": ["cash", "square"],
+    "default": "cash",
+    "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
+  },
+  "SquarePaymentType": {
+    "type": "string",
+    "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
+    "description": "Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）"
+  },
+  "SquareCheckoutOutcome": {
+    "type": "string",
+    "enum": ["pending", "paid", "failed", "attention"],
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: まだ決まっていない。待つ\n  - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい\n  - failed: 取り消された・失敗した。お金は受け取っていない\n  - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある\n"
+  },
+  "SquareStatusResponse": {
+    "type": "object",
+    "required": ["enabled", "environment", "webhook_enabled"],
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "environment": {
+        "type": "string",
+        "description": "production か sandbox"
+      },
+      "webhook_enabled": {
+        "type": "boolean"
+      }
+    }
+  },
+  "SquareDeviceStatus": {
+    "type": "string",
+    "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+  },
+  "SquareDeviceResponse": {
+    "type": "object",
+    "required": ["id", "name", "status", "created_at", "updated_at"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string",
+        "description": "管理画面とレジで出す名前（例 レジ1）"
+      },
+      "status": {
+        "$ref": "#/components/schemas/SquareDeviceStatus"
+      },
+      "device_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末の ID。決済の依頼に使う。PAIRED になるまで null"
+      },
+      "code": {
+        "type": "string",
+        "nullable": true,
+        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+      },
+      "pair_by": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "コードの期限。これを過ぎると EXPIRED になる"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareDevicePairRequest": {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る"
+      }
+    }
+  },
+  "SquareDeviceCreateRequest": {
+    "type": "object",
+    "required": ["name", "device_id"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      }
+    }
+  },
+  "SquareCheckoutCreateRequest": {
+    "type": "object",
+    "required": ["idempotency_key", "device_id", "amount", "payment_type"],
+    "properties": {
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id"
+      },
+      "idempotency_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "請求額（円）"
+      },
+      "payment_type": {
+        "$ref": "#/components/schemas/SquarePaymentType"
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true,
+        "description": "依頼時点の注文番号（端末のメモと照合の表示に使う）"
+      }
+    }
+  },
+  "SquareCheckoutResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "device_id",
+      "status",
+      "outcome",
+      "amount",
+      "payment_type",
+      "payment_ids",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "device_id": {
+        "type": "string",
+        "description": "決済画面を出した端末"
+      },
+      "checkout_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の TerminalCheckout の id"
+      },
+      "status": {
+        "type": "string",
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+      },
+      "outcome": {
+        "$ref": "#/components/schemas/SquareCheckoutOutcome"
+      },
+      "cancel_reason": {
+        "type": "string",
+        "nullable": true
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "paid_amount": {
+        "type": "integer",
+        "nullable": true,
+        "description": "完了後に Payments API で確かめた受取額（円）"
+      },
+      "payment_type": {
+        "type": "string"
+      },
+      "payment_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "error_message": {
+        "type": "string",
+        "nullable": true
+      },
+      "order_number": {
+        "type": "integer",
+        "nullable": true
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "この決済で作った注文。まだ無ければ null"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "SquareCheckoutConflictResponse": {
+    "type": "object",
+    "required": ["error", "checkout"],
+    "properties": {
+      "error": {
+        "type": "string"
+      },
+      "checkout": {
+        "$ref": "#/components/schemas/SquareCheckoutResponse"
       }
     }
   }
