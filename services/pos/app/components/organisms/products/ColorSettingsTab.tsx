@@ -15,8 +15,10 @@ import {
   TableRow,
 } from "~/components/ui/table";
 
+// 画面の表示名（openapi.yaml の x-enum-descriptions）
+const screenLabels = openapiEnumLabels("ColorScreen");
+
 export function ColorSettingsTab() {
-  const screenLabels = openapiEnumLabels("ColorScreen");
   const { items, itemTypes, isLoading, error } = useItemMaster();
   const {
     colorSettings,
