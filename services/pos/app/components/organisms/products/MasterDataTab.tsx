@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { downloadBlob } from "~/lib/download";
 
 type Status =
   | { kind: "idle" }
@@ -44,14 +45,6 @@ const getTimestamp = (): string => {
   const now = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-};
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
 };
 
 const errorText = (e: unknown, fallback: string) =>

@@ -15,6 +15,7 @@ import {
 } from "@cafeore/common";
 import { useMemo } from "react";
 import { Button } from "~/components/ui/button";
+import { downloadBlob } from "~/lib/download";
 import { cn } from "~/lib/utils";
 
 /** メニューに入っている品目の数（2 つ以上ならセット） */
@@ -83,15 +84,10 @@ export const MenuPlanEditor = ({
     });
 
   const exportPlan = () => {
-    const blob = new Blob([JSON.stringify(plan, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "rehearsal-menu-plan.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([JSON.stringify(plan, null, 2)], { type: "application/json" }),
+      "rehearsal-menu-plan.json",
+    );
   };
   const importPlan = async (file: File | undefined) => {
     if (!file) return;
