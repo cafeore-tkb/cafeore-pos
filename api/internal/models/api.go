@@ -175,10 +175,10 @@ type InventoryStatus struct {
 	RemainingServings *float64              `json:"remaining_servings"`
 	Resource          StockResourceResponse `json:"resource"`
 
-	// Servings counted_at 以降に売れた杯数
+	// Servings counted_at 以降に売れた回数
 	Servings int `json:"servings"`
 
-	// ServingsLastHour 直近1時間に売れた杯数
+	// ServingsLastHour 直近1時間に売れた回数
 	ServingsLastHour int `json:"servings_last_hour"`
 }
 
@@ -507,7 +507,7 @@ type StockEventCreateRequest struct {
 
 // StockEventCreateResponse defines model for StockEventCreateResponse.
 type StockEventCreateResponse struct {
-	// ActualPerServing 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+	// ActualPerServing 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
 	ActualPerServing *float64 `json:"actual_per_serving"`
 
 	// Estimated 記録する直前の推定残量（count のときの答え合わせ用）
@@ -533,7 +533,7 @@ type StockResourceKind string
 
 // StockResourceRequest name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400
 type StockResourceRequest struct {
-	// Buffer 最低限残したい杯数。これを切ると危険扱い
+	// Buffer 最低限残したい回数。これを切ると危険扱い
 	Buffer int `json:"buffer"`
 
 	// ItemTypeIds このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）
@@ -542,13 +542,13 @@ type StockResourceRequest struct {
 	// Name カップの名前（カップでは必須）
 	Name *string `json:"name,omitempty"`
 
-	// NotifyFrom 残りがこの杯数を切ったら通知を始める
+	// NotifyFrom 残りがこの回数を切ったら通知を始める
 	NotifyFrom int `json:"notify_from"`
 
-	// NotifyStep notify_from から何杯減るごとに通知するか
+	// NotifyStep notify_from から何回減るごとに通知するか
 	NotifyStep int `json:"notify_step"`
 
-	// PerServing 1 回で減る量。残量を杯数に換算するのにも使う（豆 15、コースター 1、カップ 1）
+	// PerServing 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
 	PerServing float64 `json:"per_serving"`
 
 	// Unit 数える単位（個 / g）
