@@ -67,7 +67,7 @@ const CashierV2 = ({
   const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
   const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
   const [UISession, renewUISession] = useUISession();
-  const { nextOrderId, manualOrderId, setOrderIdOverride } =
+  const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
@@ -159,6 +159,7 @@ const CashierV2 = ({
       submitOne.addComment("cashier", descComment);
       printer.printOrderLabel(submitOne);
       submitPayload(submitOne);
+      markOrderIdIssued(submitOne.orderId);
 
       // オフライン時（手動番号指定時）は次の番号を自動設定
       if (manualOrderId !== null && wsStatus !== "open") {
@@ -179,6 +180,7 @@ const CashierV2 = ({
       playSound,
       manualOrderId,
       setOrderIdOverride,
+      markOrderIdIssued,
       wsStatus,
       setServiceActive,
     ],
