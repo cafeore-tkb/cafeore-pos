@@ -727,6 +727,12 @@ type ReplaceStockUsagesJSONBody = []StockUsage
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
+// WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
+type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
+type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
+
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 

@@ -132,7 +132,7 @@ func TestCreateOrderServesGoodsOnlyOrder(t *testing.T) {
 	if len(resp.Cups) != 0 {
 		t.Fatalf("goods only order must not have cups: %+v", resp.Cups)
 	}
-	if !sameTime(resp.ReadyAt, &resp.CreatedAt) || !sameTime(resp.ServedAt, &resp.CreatedAt) {
+	if !timeEqual(resp.ReadyAt, &resp.CreatedAt) || !timeEqual(resp.ServedAt, &resp.CreatedAt) {
 		t.Fatalf("goods only order must be served at created_at: ready=%v served=%v created=%v", resp.ReadyAt, resp.ServedAt, resp.CreatedAt)
 	}
 
@@ -175,7 +175,7 @@ func TestUpdateOrderServesOrderThatBecomesGoodsOnly(t *testing.T) {
 	// 提供済みのグッズだけの注文を編集しても、提供の時刻は変わらない
 	servedAt := *resp.ServedAt
 	resp = e.sendOrder(r, http.MethodPut, "/api/orders/"+resp.Id.String(), updateRequest(resp), http.StatusOK)
-	if !sameTime(resp.ServedAt, &servedAt) {
+	if !timeEqual(resp.ServedAt, &servedAt) {
 		t.Fatalf("served goods only order must keep served_at: %v, want %v", resp.ServedAt, servedAt)
 	}
 }
