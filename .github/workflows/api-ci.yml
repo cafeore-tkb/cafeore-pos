@@ -40,7 +40,7 @@ jobs:
           go-version-file: 'api/go.mod'
       - run: go test -v ./...
 
-  # PR では api-build もイメージをビルドするが、merge_group で走るのはこちらだけ。
+  # Go のビルドだけを見る。イメージ全体は下の image で見る。
   build:
     runs-on: ubuntu-latest
     steps:
@@ -49,3 +49,28 @@ jobs:
         with:
           go-version-file: 'api/go.mod'
       - run: go build -v ./cmd/server
+
+  # Dockerfile からイメージが作れるかを見る。push はしない。
+  #
+  # api-build も PR でイメージを作るが、preview ラベルが付いた PR だけなので、
+  # ラベルの無い PR では Dockerfile の壊れや、go.mod とベースイメージの
+  # Go のバージョンのずれに main へのマージ（本番デプロイ）まで気づけない。
+  # ここでは全 PR と merge_group で作る。設定は api-build と揃えている。
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: イメージをビルドする（push しない）
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          # main の api-build が書いたキャッシュを読むだけにする。PR から書くと
+          # PR ごとにキャッシュが積み上がり、リポジトリの上限を圧迫するため。
+          cache-from: type=gha

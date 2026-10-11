@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { type ColorSetting, resolveItemColor } from "./colorSetting";
+import {
+  type ColorSetting,
+  readableTextColor,
+  resolveItemColor,
+} from "./colorSetting";
 
 const ITEM_ID = "11111111-1111-4111-8111-111111111111";
 const TYPE_ID = "22222222-2222-4222-8222-222222222222";
@@ -49,5 +53,19 @@ describe("[unit] resolveItemColor", () => {
   test("target type is not confused when ids collide", () => {
     const sameId = { id: TYPE_ID, item_type: { id: ITEM_ID } };
     expect(resolveItemColor([typeMaster], sameId, "master")).toBeUndefined();
+  });
+});
+
+describe("[unit] readableTextColor", () => {
+  test("light backgrounds use black text", () => {
+    expect(readableTextColor("#ffffff")).toBe("#000000");
+    expect(readableTextColor("#bfdbfe")).toBe("#000000");
+    expect(readableTextColor("#FDE047")).toBe("#000000");
+  });
+
+  test("dark backgrounds use white text", () => {
+    expect(readableTextColor("#000000")).toBe("#ffffff");
+    expect(readableTextColor("#6b7280")).toBe("#ffffff");
+    expect(readableTextColor("#1d4ed8")).toBe("#ffffff");
   });
 });
