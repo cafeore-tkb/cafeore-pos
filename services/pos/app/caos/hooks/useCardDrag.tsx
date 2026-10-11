@@ -1,4 +1,8 @@
-import type { CaosPlace } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  caosDripperAllowed,
+} from "@cafeore/common";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,11 +21,12 @@ const isBayButton = (element: Element): element is HTMLElement =>
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
  * 列は from（移す前のドリッパー。運んでいるカード自身がその列の中にある）を飛ばして探す。
+ * 運んでいるカード（card）を置けないドリッパー（指名の番号でない列。caosDripperAllowed）は null
  */
 export const bayTargetAt = (
   clientX: number,
   clientY: number,
-  from?: number,
+  { from, card }: { from?: number; card?: CaosCard } = {},
 ) => {
   const elements = document.elementsFromPoint(clientX, clientY);
   const bayOf = (element: HTMLElement | null | undefined) =>
@@ -38,6 +43,7 @@ export const bayTargetAt = (
           }),
       );
   if (!isBayId(bayId) || bayId === from) return null;
+  if (card && !caosDripperAllowed(card, bayId)) return null;
   return bayId;
 };
 
@@ -54,24 +60,25 @@ export interface DropTarget {
 
 /**
  * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）、待機のカード（data-queued-ticket）の上ならそのカードの前
- * （同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。運んでいるカード自身（exceptKey）は飛ばす
+ * （同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。運んでいるカード（card）自身は飛ばし、置けない列は null
  */
 export const dropTargetAt = (
   clientX: number,
   clientY: number,
-  { from, exceptKey }: { from?: number; exceptKey?: string } = {},
+  { from, card }: { from?: number; card?: CaosCard } = {},
 ): DropTarget | null => {
   const elements = document.elementsFromPoint(clientX, clientY);
   if (!elements.some(isBayButton)) {
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;
-      if (!ticket || !key || key === exceptKey) continue;
+      if (!ticket || !key || key === card?.key) continue;
       const bayId = Number(
         ticket.parentElement?.closest<HTMLElement>("[data-bay-target]")?.dataset
           .bayTarget,
       );
-      if (!isBayId(bayId)) return null;
+      if (!isBayId(bayId) || (card && !caosDripperAllowed(card, bayId)))
+        return null;
       return {
         bayId,
         place: { beforeKey: key },
@@ -79,7 +86,7 @@ export const dropTargetAt = (
       };
     }
   }
-  const bayId = bayTargetAt(clientX, clientY, from);
+  const bayId = bayTargetAt(clientX, clientY, { from, card });
   return bayId === null ? null : { bayId };
 };
 

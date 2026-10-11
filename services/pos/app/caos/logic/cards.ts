@@ -25,15 +25,15 @@ export const orderLabel = (card: CaosCard) =>
     .join("+");
 
 /**
- * カードの名前。商品の略称（abbr）をそのまま。指名（明細の担当者。自由記述）は「（指名:名前）」、
+ * カードの名前。商品の略称（abbr）をそのまま。指名は「（指名:2nd）」（番号の無い古い明細は自由記述）、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える
- * （ドリッパーの指名は CaOS6 で明細の dripper から、上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ）
+ * （上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ）
  */
 export const cardName = (card: CaosCard) => {
-  const nominee = card.cups[0].nominee;
+  const nominees = unique(card.cups.flatMap((cup) => cup.nominee ?? []));
   return [
     unique(card.cups.map((cup) => cup.item.abbr)).join("・"),
-    nominee ? `（指名:${nominee}）` : "",
+    nominees.length ? `（指名:${nominees.join("・")}）` : "",
     card.seniorOnly ? "（上級生のみ）" : "",
   ].join("");
 };
@@ -55,7 +55,7 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・在庫の設定の豆と、分けた注文の中の位置） */
 export interface CardLook {
-  /** 背景色（#RRGGBB）。商品の色の設定（画面 master。商品 → 種類の順）。無ければ白 */
+  /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 caos_nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
   split?: CardSplit;
@@ -93,7 +93,11 @@ export const cardLooks = (
     cards.map((card) => [
       card.key,
       {
-        color: resolveItemColor(settings, card.cups[0].item, "master"),
+        color:
+          (card.cups[0].nominatedDripper !== null
+            ? resolveItemColor(settings, card.cups[0].item, "caos_nominated")
+            : undefined) ??
+          resolveItemColor(settings, card.cups[0].item, "master"),
         split: splitOf(card),
         beans: cardBeans(card, beanIndex),
       },

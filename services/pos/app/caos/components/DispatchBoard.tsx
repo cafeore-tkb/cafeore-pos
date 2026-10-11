@@ -1,4 +1,4 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -11,11 +11,12 @@ import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { laneCards, laneOrdinal } from "../logic/lanes";
+import { laneCards } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { BayPad, OrderCard } from "./OrderCard";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
@@ -79,7 +80,7 @@ export const DispatchBoard: React.FC<
   // 待機のカードを別の列へ・待機のカードの前へ（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
-      dropTargetAt(x, y, { from: bayId, exceptKey: card.key }),
+      dropTargetAt(x, y, { from: bayId, card }),
     onDrop: ({ card }, target) => {
       onMoveTicket(card, target.bayId, target.place);
       onCloseTicketAction();
@@ -101,7 +102,7 @@ export const DispatchBoard: React.FC<
       .filter((card) => orderLabel(card) === selectedOrderId)
       .map(
         (card) =>
-          `ドリッパー ${laneOrdinal(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
+          `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
 
@@ -200,11 +201,23 @@ export const DispatchBoard: React.FC<
                   <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-slate-200 border-r bg-white px-2 py-1.5">
                     <LaneBadge bayId={bay.id} />
                     <div className="flex h-full min-w-0 flex-1 flex-col justify-center leading-none">
-                      {lane.current && (
-                        <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
-                          {orderLabel(lane.current)}
-                        </span>
-                      )}
+                      {/* 担当者の名前と上級生の印（「1st 山田★」）、交代 */}
+                      <div className="flex min-w-0 items-center gap-1">
+                        <LaneName
+                          dripper={bay.id}
+                          className="font-black text-[12px] text-slate-950"
+                        />
+                        <LaneChangeButton
+                          dripper={bay.id}
+                          compact
+                          className="h-6"
+                        />
+                        {lane.current && (
+                          <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
+                            {orderLabel(lane.current)}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-1 flex min-w-0 items-center gap-1">
                         <span
                           className="truncate font-bold text-[13px] text-slate-800"
@@ -309,6 +322,7 @@ export const DispatchBoard: React.FC<
                             {isActionOpen && (
                               <>
                                 <BayPad
+                                  card={ticket}
                                   currentBayId={bay.id}
                                   hoveredBay={drag.target?.bayId ?? null}
                                   onPick={(bayId, place) => {
