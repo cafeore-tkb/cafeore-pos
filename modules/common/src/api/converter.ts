@@ -1,12 +1,4 @@
-import {
-  type DocumentData,
-  type FirestoreDataConverter,
-  type QueryDocumentSnapshot,
-  type SnapshotOptions,
-  Timestamp,
-} from "firebase/firestore";
-import _ from "lodash";
-import type { ZodType, ZodTypeDef } from "zod";
+// API（openapi）のデータとモデルの間の変換
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
@@ -21,58 +13,8 @@ import {
   type OrderComment,
   OrderEntity,
   type OrderPayment,
-  orderSchema,
 } from "../models/order";
 import type { components } from "../types/api";
-
-// 入力の型は出力と違ってよい（既定値のある項目は、古いドキュメントに無くても読める。カップの CaOS の列など）
-export const converter = <T>(
-  schema: ZodType<T, ZodTypeDef, unknown>,
-): FirestoreDataConverter<T> => {
-  return {
-    toFirestore: (data: T) => {
-      // Zod のパースを挟まないと、Entityオブジェクトのgetter/setterは無視され
-      // privateプロパティがFirestoreに保存されてしまう
-      const parsedData = schema.parse(data);
-      // id は ドキュメントには含めない
-      const dataWithoutId = _.omit(parsedData as object, "id");
-      return dataWithoutId;
-    },
-    fromFirestore: (
-      snapshot: QueryDocumentSnapshot,
-      options: SnapshotOptions,
-    ) => {
-      const data = snapshot.data(options);
-      // id は Firestore のドキュメント ID を使う
-      const dataWithId = { ...data, id: snapshot.id };
-      const dateParsedData = parseDateProperty(dataWithId);
-      return schema.parse(dateParsedData);
-    },
-  };
-};
-
-// 通常の Firestore のデータは上記 Zod によってパースできるが
-// Firestore の Timestamp はパースできないため、個別でパースする
-
-// この関数の型注釈は若干嘘
-const parseDateProperty = (data: DocumentData): DocumentData => {
-  const parsedData = _.mapValues(data, (value) =>
-    // firestore 固有の Timestamp 型を Date に変換
-    value instanceof Timestamp ? value.toDate() : value,
-  );
-  const recursivelyParsedData = _.mapValues(parsedData, (value) => {
-    // 再帰的にパースする
-    switch (Object.prototype.toString.call(value)) {
-      case "[object Object]":
-        return parseDateProperty(value);
-      case "[object Array]":
-        return (value as Array<DocumentData>).map((v) => parseDateProperty(v));
-      default:
-        return value;
-    }
-  });
-  return recursivelyParsedData;
-};
 
 /**
  * openapi のデータを ItemEntity に変換する
@@ -158,23 +100,6 @@ export const menuToUpdateRequest = (
   id: menu.id,
   ...menuToCreateRequest(menu),
 });
-
-/**
- * Firestore のデータを OrderEntity に変換する
- */
-export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
-  toFirestore: converter(orderSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ): WithId<OrderEntity> => {
-    const convertedData = converter(orderSchema.required()).fromFirestore(
-      snapshot,
-      options,
-    );
-    return OrderEntity.fromOrder(convertedData);
-  },
-};
 
 export type OrderResponse = components["schemas"]["OrderResponse"];
 type MenuInfo = components["schemas"]["MenuInfo"];

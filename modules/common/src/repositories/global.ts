@@ -1,12 +1,8 @@
-import createClient from "openapi-fetch";
-import { cashierStateToUpdateRequest } from "../firebase-utils/converter";
+import { apiClient, throwApiError } from "../api/client";
+import { cashierStateToUpdateRequest } from "../api/converter";
 import type { WithId } from "../lib/typeguard";
 import type { GlobalCashierState } from "../models/global";
 import type { OrderEntity } from "../models/order";
-import type { paths } from "../types/api";
-import { API_BASE_URL, throwApiError } from "./item";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 export type CashierStateRepo = {
   set: (state: GlobalCashierState) => Promise<void>;
@@ -28,11 +24,11 @@ export const cashierStateRepoFactory = (): CashierStateRepo => {
   let latest: GlobalCashierState | undefined;
 
   const put = async (state: GlobalCashierState) => {
-    const { error, response } = await client.PUT("/api/cashier-state", {
+    const { error, response } = await apiClient.PUT("/api/cashier-state", {
       body: cashierStateToUpdateRequest(state),
     });
     if (error || !response.ok) {
-      await throwApiError(response, "レジ状態の更新に失敗しました");
+      throwApiError(response, error, "レジ状態の更新に失敗しました");
     }
   };
 
