@@ -1,13 +1,9 @@
-import createClient from "openapi-fetch";
+import { apiClient } from "../api/client";
 import type { CaosCupsWrite } from "../lib/caos-board";
-import type { paths } from "../types/api";
-import { API_BASE_URL } from "./item";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
 // 書いた結果は、書いた注文の配信（{"type":"order"}）で全部の画面に届く。
 // ルールに合わない（400）・ほかの端末が先に書いた（409）ときは何も変わらず、その理由（error）を返す。画面にそのまま出す。
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 type CaosResult = { error?: undefined } | { error: string };
 
@@ -36,7 +32,7 @@ export const putCaosCups = async (
 ): Promise<CaosResult> =>
   writes.length === 0
     ? {}
-    : send(client.PUT("/api/caos/cups", { body: { writes } }));
+    : send(apiClient.PUT("/api/caos/cups", { body: { writes } }));
 
 /**
  * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
@@ -47,8 +43,31 @@ export const nextCaosDripper = async (
   dripId: string | null,
 ): Promise<CaosResult> =>
   send(
-    client.POST("/api/caos/drippers/{dripper}/next", {
+    apiClient.POST("/api/caos/drippers/{dripper}/next", {
       params: { path: { dripper } },
       body: { drip_id: dripId },
     }),
   );
+
+/**
+ * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
+ * 変えた結果は全部の画面に共有の WebSocket の {"type":"caos_lanes"} で届く
+ */
+export const putCaosLane = async (
+  dripper: number,
+  name: string,
+  senior: boolean,
+): Promise<CaosResult> =>
+  send(
+    apiClient.PUT("/api/caos/lanes/{dripper}", {
+      params: { path: { dripper } },
+      body: { name, senior },
+    }),
+  );
+
+/** 2 つのドリッパーの担当者を入れ替える（POST /api/caos/lanes/swap） */
+export const swapCaosLanes = async (
+  first: number,
+  second: number,
+): Promise<CaosResult> =>
+  send(apiClient.POST("/api/caos/lanes/swap", { body: { first, second } }));

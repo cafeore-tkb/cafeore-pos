@@ -101,7 +101,7 @@ func initDB() error {
 
 // CORS で許可する origin。FRONTEND_ORIGINS にカンマ区切りで入れる。
 //
-// 本番は Cloudflare Workers 上の pos / mobile。プレビューはデプロイごとに
+// 本番は Cloudflare Workers 上の pos。プレビューはデプロイごとに
 // URL が変わって列挙できないので "*" を入れている（infra の
 // cloud_run_preview.tf を参照）。未設定ならローカル開発用のポートだけ許可する。
 func getAllowedOrigins() []string {
@@ -265,6 +265,7 @@ func main() {
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub, activity)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db, activity)
+	printerSettingHandler := handlers.NewPrinterSettingHandler(db)
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caosHandler := handlers.NewCaosHandler(db, hub)
 	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
@@ -360,8 +361,12 @@ func main() {
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
+		api.GET("/printer-settings", printerSettingHandler.GetPrinterSettings)
+		api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
+		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
+		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
 
 		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
 		// 表示用の端末が決済を待つことは無いので

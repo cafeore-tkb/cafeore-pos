@@ -20,6 +20,12 @@ type ServerInterface interface {
 	// CaOS の「次へ」
 	// (POST /api/caos/drippers/{dripper}/next)
 	AdvanceCaosDripper(c *gin.Context, dripper int)
+	// CaOS の 2 つのドリッパーの担当者を入れ替える
+	// (POST /api/caos/lanes/swap)
+	SwapCaosLanes(c *gin.Context)
+	// CaOS のドリッパーの担当者を替える（交代）
+	// (PUT /api/caos/lanes/{dripper})
+	PutCaosLane(c *gin.Context, dripper int)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -140,6 +146,12 @@ type ServerInterface interface {
 	// 注文に使った Square の決済を全額返金し、注文を消す
 	// (POST /api/orders/{id}/square-refund)
 	RefundOrderSquarePayment(c *gin.Context, id openapi_types.UUID)
+	// プリンター設定取得
+	// (GET /api/printer-settings)
+	GetPrinterSettings(c *gin.Context)
+	// プリンター設定の更新
+	// (PUT /api/printer-settings)
+	UpdatePrinterSettings(c *gin.Context)
 	// Square Terminal に決済画面を出す
 	// (POST /api/square/checkouts)
 	CreateSquareCheckout(c *gin.Context)
@@ -225,6 +237,43 @@ func (siw *ServerInterfaceWrapper) AdvanceCaosDripper(c *gin.Context) {
 	}
 
 	siw.Handler.AdvanceCaosDripper(c, dripper)
+}
+
+// SwapCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) SwapCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SwapCaosLanes(c)
+}
+
+// PutCaosLane operation middleware
+func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCaosLane(c, dripper)
 }
 
 // GetCashierState operation middleware
@@ -1018,6 +1067,32 @@ func (siw *ServerInterfaceWrapper) RefundOrderSquarePayment(c *gin.Context) {
 	siw.Handler.RefundOrderSquarePayment(c, id)
 }
 
+// GetPrinterSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetPrinterSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPrinterSettings(c)
+}
+
+// UpdatePrinterSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePrinterSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdatePrinterSettings(c)
+}
+
 // CreateSquareCheckout operation middleware
 func (siw *ServerInterfaceWrapper) CreateSquareCheckout(c *gin.Context) {
 
@@ -1260,6 +1335,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
+	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
+	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
@@ -1300,6 +1377,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
 	router.POST(options.BaseURL+"/api/orders/:id/square-refund", wrapper.RefundOrderSquarePayment)
+	router.GET(options.BaseURL+"/api/printer-settings", wrapper.GetPrinterSettings)
+	router.PUT(options.BaseURL+"/api/printer-settings", wrapper.UpdatePrinterSettings)
 	router.POST(options.BaseURL+"/api/square/checkouts", wrapper.CreateSquareCheckout)
 	router.GET(options.BaseURL+"/api/square/checkouts/unlinked", wrapper.GetUnlinkedSquareCheckouts)
 	router.GET(options.BaseURL+"/api/square/checkouts/:id", wrapper.GetSquareCheckout)

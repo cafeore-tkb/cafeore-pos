@@ -16,8 +16,10 @@ export type PrinterConnectionStatus =
 export type LabelPrinter = {
   /** つなぐ。つながり具合は、作るときに渡した onStatusChange で知らせる */
   connect: () => void;
-  /** 刷る。つながっていなければ刷らず、disconnected を知らせる */
-  print: (job: PrintJob) => void;
+  /** つなぐのをやめる。つなぎかけのものも含め、以後のつながり具合は知らせない */
+  disconnect: () => void;
+  /** 刷る。つながっていなければ刷らず、disconnected を知らせる。プリンターに送れたら true */
+  print: (job: PrintJob) => boolean;
 };
 
 /** プリンターを作る。onStatusChange でつながり具合を知らせる */

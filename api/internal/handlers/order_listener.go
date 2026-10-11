@@ -25,7 +25,8 @@ const (
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel}
+// CaOS のドリッパーの担当者（caos_lanes_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, caosLanesChangedChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -75,7 +76,7 @@ func notifyCashierStateChanged(db *gorm.DB) {
 	notifyChanged(db, cashierStateChangedChannel, instanceID)
 }
 
-// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態が変わるたびに、
+// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の担当者が変わるたびに、
 // DB から読み直して配信する。
 //
 // 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
@@ -183,6 +184,7 @@ type changeSet struct {
 	allOrders    bool // true なら orderIDs は見ずに全注文を配り直す
 	masterState  bool
 	cashierState bool
+	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
 }
 
 func newPendingChanges() *pendingChanges {
@@ -203,6 +205,8 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.masterState = true })
 	case cashierStateChangedChannel:
 		q.update(func(s *changeSet) { s.cashierState = true })
+	case caosLanesChangedChannel:
+		q.update(func(s *changeSet) { s.caosLanes = true })
 	}
 }
 
@@ -222,6 +226,7 @@ func (q *pendingChanges) addAll() {
 		s.allOrders = true
 		s.masterState = true
 		s.cashierState = true
+		s.caosLanes = true
 	})
 }
 
@@ -281,6 +286,9 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		if s.cashierState {
 			broadcastCashierState(h.db, h.hub)
+		}
+		if s.caosLanes {
+			broadcastCaosLanes(h.db, h.hub, time.Now())
 		}
 		if failed.allOrders || len(failed.orderIDs) > 0 {
 			select {

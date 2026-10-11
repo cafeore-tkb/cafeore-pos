@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import { type OrderEntity, assignmentLabelText } from "@cafeore/common";
 import type { Label, PrintJob, TextLine, TextRun, TextSize } from "./document";
 
 type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
@@ -19,6 +19,10 @@ const line = (text: string, size: TextSize): TextLine => [
  * （俺ブレが正式名称だと入らない、ブレンで切りたくないため）
  */
 const shortName = (name: string) => (name.length < 8 ? name : name.slice(0, 6));
+
+/** 指名の行（ラベルに印刷する指名。無ければ空白） */
+const assignmentLine = (assignment: string | null) =>
+  assignment ? `指名： ${assignment}` : "　";
 
 /** カップに貼るシール（1 杯につき 1 枚） */
 const cupLabel = (
@@ -46,7 +50,7 @@ const cupLabel = (
       type: "text",
       x: 0,
       y: 204,
-      line: line(item.assignee ? `指名： ${item.assignee}` : "　", [1, 1]),
+      line: line(assignmentLine(assignmentLabelText(item)), [1, 1]),
     },
     { type: "logo", x: 230, y: 204 },
   ],
@@ -65,12 +69,16 @@ const summaryLabel = (order: OrderEntity): Label => {
     ],
   ];
 
-  const assignedMenus = order.menus.filter((menu) => menu.assignee !== null);
-  const unassignedMenus = order.menus.filter((menu) => menu.assignee === null);
+  const assignedMenus = order.menus.filter(
+    (menu) => assignmentLabelText(menu) !== null,
+  );
+  const unassignedMenus = order.menus.filter(
+    (menu) => assignmentLabelText(menu) === null,
+  );
 
   for (const menu of assignedMenus) {
     lines.push(line(menu.name, [1, 1]));
-    lines.push(line(`  指名：${menu.assignee}`, [1, 1]));
+    lines.push(line(`  指名：${assignmentLabelText(menu)}`, [1, 1]));
   }
 
   for (let i = 0; i < unassignedMenus.length; i += 2) {
