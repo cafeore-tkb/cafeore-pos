@@ -10,7 +10,6 @@ import {
   caosLane,
   cupNeedsBrew,
   cupSeniorOnly,
-  itemMakesCup,
   mergeWrites,
   unassignWrites,
 } from "./caos-board";
@@ -20,15 +19,18 @@ import { jstDate } from "./jst";
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = jstDate(NOW.getTime());
 
-// 抽出が要るか・上級生のみかは種類の名前で決める（cupNeedsBrew・cupSeniorOnly。本番の DB の種類の名前で作る）
-const type = (name: string): Cup["item"]["item_type"] => ({
+// 抽出が要るか・上級生のみかは種類の項目で決める（cupNeedsBrew・cupSeniorOnly）。既定は POS の新しい種類と同じ
+const type = (
+  name: string,
+  flags: Partial<Cup["item"]["item_type"]> = {},
+): Cup["item"]["item_type"] => ({
   name,
   display_name: name,
-  makes_cup: itemMakesCup(name),
-  needs_brew: itemMakesCup(name) && !name.includes("milk"),
-  senior_only:
-    itemMakesCup(name) && !name.includes("milk") && name.includes("limited"),
-  iced_brew: name.includes("ice"),
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
+  ...flags,
 });
 const blend = {
   id: "item-blend",
@@ -42,25 +44,25 @@ const kenya = {
   abbr: "ケ",
   item_type: type("hot"),
 };
-// 種類の名前に milk・others を含むカップは抽出が要らない
+// ミルクはカップを作るが抽出は要らない。グッズはカップを作らない
 const milk = {
   id: "item-milk",
   name: "アイスミルク",
   abbr: "ミ",
-  item_type: type("milk"),
+  item_type: type("milk", { needs_brew: false }),
 };
 const goods = {
   id: "item-goods",
   name: "グッズ",
   abbr: "グ",
-  item_type: type("others"),
+  item_type: type("others", { makes_cup: false, needs_brew: false }),
 };
-// 種類の名前に limited を含むカップは上級生のみ
+// 上級生だけが淹れる種類
 const seniorOnly = {
   id: "item-sp",
   name: "スペシャル",
   abbr: "限",
-  item_type: type("limited"),
+  item_type: type("limited", { senior_only: true }),
 };
 
 let seq = 0;
@@ -205,44 +207,24 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(cards.map((c) => c.orderNo)).toEqual([2]);
   });
 
-  // TODO: C1（種類の makes_cup・needs_brew・senior_only）が入ったら、名前で決める前提ごとこのテストを消す
-  test("カップを作るか・抽出が要るか・上級生のみかは種類の名前（部分一致）で決める", () => {
-    const names = [
-      "brend",
-      "gourmet",
-      "hot",
-      "ice",
-      "iceOre",
-      "limited",
-      "milk",
-      "others",
-    ];
-    const of = (name: string) => ({
-      item: { id: name, name, abbr: name, item_type: type(name) },
+  test("抽出が要るか・上級生のみかは種類の名前でなく項目で決める", () => {
+    const of = (item_type: Cup["item"]["item_type"]) => ({
+      item: { id: "x", name: "x", abbr: "x", item_type },
     });
-    expect(names.filter(itemMakesCup)).toEqual([
-      "brend",
-      "gourmet",
-      "hot",
-      "ice",
-      "iceOre",
-      "limited",
-      "milk",
-    ]);
-    expect(names.filter((name) => cupNeedsBrew(of(name)))).toEqual([
-      "brend",
-      "gourmet",
-      "hot",
-      "ice",
-      "iceOre",
-      "limited",
-    ]);
-    expect(names.filter((name) => cupSeniorOnly(of(name)))).toEqual([
-      "limited",
-    ]);
+    // 名前が milk でも抽出が要る種類なら要る。名前が hot でも抽出が要らない種類なら要らない
+    expect(cupNeedsBrew(of(type("milk")))).toBe(true);
+    expect(cupNeedsBrew(of(type("hot", { needs_brew: false })))).toBe(false);
+    // カップを作らない種類は抽出も要らない
+    expect(cupNeedsBrew(of(type("hot", { makes_cup: false })))).toBe(false);
+    // 上級生のみは senior_only の種類だけ（名前が limited でも項目が false なら違う）。抽出が要らなければ違う
+    expect(cupSeniorOnly(of(type("limited")))).toBe(false);
+    expect(cupSeniorOnly(of(type("hot", { senior_only: true })))).toBe(true);
+    expect(
+      cupSeniorOnly(of(type("hot", { senior_only: true, needs_brew: false }))),
+    ).toBe(false);
   });
 
-  test("上級生のみは種類の名前に limited を含むカップのカードに出す", () => {
+  test("上級生のみは上級生だけが淹れる種類のカップのカードに出す", () => {
     const cards = buildCaosCards(
       [order(1, [cup({ item: seniorOnly }), cup({ item: blend })])],
       DAY,

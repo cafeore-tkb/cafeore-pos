@@ -14,8 +14,36 @@ const createdMs = (order: { createdAt: string }) =>
   new Date(order.createdAt).getTime();
 
 /**
- * 実データの注文（時刻の順）を練習の盤面の注文にする。商品の種類は POS の商品の種類（itemTypes。DB）から名前で引き、
- * 表示名と ID（色の設定を引く）を付ける。POS に無い種類は名前のまま
+ * 実データの品物に、商品の種類の設定（itemType：カップを作る・抽出が要る・上級生のみ）を付ける。
+ * 注文したときの設定があればそれ、無ければ POS の今の商品の種類（itemTypes。DB）から名前で引く。
+ * どちらにも無い品物は付けない（練習ではカップにせず、実績の杯数にも数えない）
+ */
+export const withPracticeItemTypes = (
+  orders: PracticeDataOrder[],
+  itemTypes: readonly ItemType[],
+): PracticeDataOrder[] => {
+  const typeOf = new Map(itemTypes.map((type) => [type.name, type]));
+  return orders.map((order) => ({
+    ...order,
+    items: order.items.map((item) => {
+      const type = typeOf.get(item.type);
+      if (item.itemType || !type) return item;
+      return {
+        ...item,
+        itemType: {
+          display_name: type.display_name,
+          makes_cup: type.makes_cup,
+          needs_brew: type.needs_brew,
+          senior_only: type.senior_only,
+        },
+      };
+    }),
+  }));
+};
+
+/**
+ * 実データの注文（時刻の順。withPracticeItemTypes で種類の設定を付けたもの）を練習の盤面の注文にする。
+ * POS の商品の種類（itemTypes。DB）に同じ名前の種類があれば、ID（色の設定を引く）とアイスかを付ける
  */
 export const toPracticeOrders = (
   orders: PracticeDataOrder[],
@@ -28,7 +56,13 @@ export const toPracticeOrders = (
       ...practice,
       cups: practice.cups.map((cup) => {
         const type = typeOf.get(cup.item.item_type.name);
-        return type ? { ...cup, item: { ...cup.item, item_type: type } } : cup;
+        if (!type) return cup;
+        const item_type = {
+          ...cup.item.item_type,
+          id: type.id,
+          iced_brew: type.iced_brew,
+        };
+        return { ...cup, item: { ...cup.item, item_type } };
       }),
     };
   });

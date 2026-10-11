@@ -15,6 +15,7 @@ import {
   ordersInPeriod,
   practiceSalesOrders,
   toPracticeOrders,
+  withPracticeItemTypes,
 } from "../logic/historical";
 
 /** 実データテスト。時間帯（startMs〜endMs）・練習の時計の今（currentMs）と、時間帯の注文（時刻の順） */
@@ -40,7 +41,7 @@ export const useTestPlay = ({
   onTimeUp,
 }: {
   historicalOrders: PracticeDataOrder[];
-  /** POS の商品の種類（練習のカップの種類の表示名と ID を引く） */
+  /** POS の商品の種類（実データの品物の種類の設定と、練習のカップの種類の ID を引く） */
   itemTypes: readonly ItemType[];
   isRunning: boolean;
   simSpeed: number;
@@ -134,10 +135,10 @@ export const useTestPlay = ({
     /** 時間帯（startMs から durationMinutes 分）でテストを始める */
     start: (sessionStartMs: number, durationMinutes: 30 | 60) => {
       const sessionEndMs = sessionStartMs + durationMinutes * 60_000;
-      const inPeriod = ordersInPeriod(
-        historicalOrders,
-        sessionStartMs,
-        sessionEndMs,
+      // 品物に種類の設定を付けてから、盤面（カップにするか・抽出が要るか）と実績（杯数）に使う
+      const inPeriod = withPracticeItemTypes(
+        ordersInPeriod(historicalOrders, sessionStartMs, sessionEndMs),
+        itemTypes,
       );
       replace(toPracticeOrders(inPeriod, itemTypes));
       setSession({
