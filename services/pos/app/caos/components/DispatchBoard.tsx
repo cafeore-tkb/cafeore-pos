@@ -59,6 +59,7 @@ export const DispatchBoard: React.FC<
   onOpenEmptySlot,
   nowMs,
   timelineCommand,
+  readOnly = false,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -238,13 +239,15 @@ export const DispatchBoard: React.FC<
 
                   {/* 次へ */}
                   <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-                    <NextButton
-                      bayId={bay.id}
-                      active={Boolean(lane.current)}
-                      soon={lane.soon}
-                      onAdvance={onAdvanceBay}
-                      className="min-h-[48px] w-full text-[15px]"
-                    />
+                    {!readOnly && (
+                      <NextButton
+                        bayId={bay.id}
+                        active={Boolean(lane.current)}
+                        soon={lane.soon}
+                        onAdvance={onAdvanceBay}
+                        className="min-h-[48px] w-full text-[15px]"
+                      />
+                    )}
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
@@ -255,7 +258,9 @@ export const DispatchBoard: React.FC<
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
                       if (endMs <= range.startMs) return null;
-                      const isScheduled = ticket.status === "queued";
+                      // 動かせるのは待機のカードだけ（閲覧だけの画面では動かさない）
+                      const isScheduled =
+                        !readOnly && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
                       return (
@@ -322,16 +327,18 @@ export const DispatchBoard: React.FC<
                     })}
 
                     {/* 空きスロット（最後のカードの後ろ。NOW より前には置かない） */}
-                    <div
-                      style={{
-                        left: toX(freeFromMs) + 16,
-                      }}
-                    >
-                      <EmptySlotButton
-                        onClick={() => onOpenEmptySlot(bay.id)}
-                        className="h-full min-w-[130px]"
-                      />
-                    </div>
+                    {!readOnly && (
+                      <div
+                        style={{
+                          left: toX(freeFromMs) + 16,
+                        }}
+                      >
+                        <EmptySlotButton
+                          onClick={() => onOpenEmptySlot(bay.id)}
+                          className="h-full min-w-[130px]"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
