@@ -5,7 +5,7 @@ import {
   cupNeedsBrew,
   frequentEmergencyReasons,
 } from "@cafeore/common";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { eposPrinterAt } from "~/label/infra/epos";
 import { removePendingPrint } from "~/label/pending-prints";
@@ -27,6 +27,8 @@ export const useCupEmergency = () => {
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
   );
   const { printCupLabel } = printer;
+  // この端末で取り消した入れ直し。刷っている間に取り消したら、刷れずに残ったシールも消す
+  const cancelled = useRef(new Set<string>());
 
   /** 足せたら true。断られたら理由を通知で出す */
   const addEmergency = useCallback(
@@ -41,7 +43,10 @@ export const useCupEmergency = () => {
       }
       toast(`入れ直しを ${cups.length} 杯足しました`);
       cups.forEach(({ order, cupId }, i) => {
-        void printCupLabel(order, cupId, result.data.ids[i]);
+        const id = result.data.ids[i];
+        void printCupLabel(order, cupId, id).then(() => {
+          if (cancelled.current.has(id)) removePendingPrint(id);
+        });
       });
       return true;
     },
@@ -56,6 +61,7 @@ export const useCupEmergency = () => {
         toast.error(error);
         return;
       }
+      cancelled.current.add(id);
       removePendingPrint(id);
     }
     toast(`入れ直しを ${ids.length} 杯取り消しました`);
