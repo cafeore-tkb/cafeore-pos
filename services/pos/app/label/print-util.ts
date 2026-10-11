@@ -42,8 +42,12 @@ const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
   }, [printer]);
 
   const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
+  const reconnect = useCallback(() => {
+    printer.disconnect();
+    printer.connect();
+  }, [printer]);
 
-  return { status, printer, print };
+  return { status, print, reconnect };
 };
 
 /** 刷れなかったシールを送り直す間隔（ミリ秒） */
@@ -63,7 +67,7 @@ const countPendingPrints = () => readPendingPrints().length;
 export const usePrinter = (
   createPrinter: CreateLabelPrinter = createEposPrinter,
 ) => {
-  const { status, printer, print } = useConnectedPrinter(createPrinter);
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   const pendingCount = useSyncExternalStore(
     subscribePendingPrints,
     countPendingPrints,
@@ -96,13 +100,9 @@ export const usePrinter = (
 
   /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る） */
   const retry = useCallback(() => {
-    if (status === "connected") {
-      void sendPending();
-    } else if (status === "disconnected") {
-      printer.disconnect();
-      printer.connect();
-    }
-  }, [status, sendPending, printer]);
+    if (status === "connected") void sendPending();
+    else if (status === "disconnected") reconnect();
+  }, [status, sendPending, reconnect]);
 
   useEffect(() => {
     if (status === "connected" && pendingCount > 0) void sendPending();

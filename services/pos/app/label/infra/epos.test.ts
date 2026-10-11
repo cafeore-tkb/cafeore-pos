@@ -310,6 +310,28 @@ describe("[unit] createEposPrinter", () => {
     vi.useRealTimers();
   });
 
+  test("返事を待つ間にやめていたら、時間切れでも知らせない", async () => {
+    vi.useFakeTimers();
+    const { builder } = recordingBuilder(null);
+    const { disconnect } = stubEpson(builder);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+    const printed = printer.print(job);
+    await vi.advanceTimersByTimeAsync(0); // 送るまで進める
+    printer.disconnect();
+    await vi.advanceTimersByTimeAsync(
+      DEFAULT_EPOS_PRINTER_CONFIG.responseTimeoutMs,
+    );
+
+    expect(await printed).toBe(false);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["connecting", "connected"]);
+    vi.useRealTimers();
+  });
+
   test("前の印刷の返事を待ってから次を送る", async () => {
     const { builder, calls } = recordingBuilder(null);
     stubEpson(builder);
