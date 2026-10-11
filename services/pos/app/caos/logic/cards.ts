@@ -32,6 +32,10 @@ export const cardItemName = (card: CaosCard) =>
 export const cardNominee = (card: CaosCard) =>
   unique(card.cups.flatMap((cup) => cup.nominee ?? [])).join("・");
 
+/** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
+export const emergencyReasons = (card: CaosCard) =>
+  unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
+
 /**
  * カードの名前（文で出すところ）。商品の略称に、指名は「（指名:2nd）」、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える
@@ -77,17 +81,20 @@ export const cardLooks = (
   settings: ColorSetting[],
   beanIndex: BeanIndex,
 ): CardLooks => {
-  // 1 注文だけのカードを、注文ごとに注文の中の並び（カップの position）で並べる（割り当てても番号が変わらないように）
+  // 1 注文だけのカードを、注文ごとに注文の中の並び（カップの position）で並べる（割り当てても番号が変わらないように）。
+  // 入れ直しのカードは注文の分け方に入れない
+  const inSplit = (card: CaosCard) =>
+    cardOrderNos(card).length === 1 && !card.emergency;
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (cardOrderNos(card).length > 1) continue;
+    if (!inSplit(card)) continue;
     const orderId = card.cups[0].orderId;
     byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
   for (const parts of byOrder.values())
     parts.sort((a, b) => a.cups[0].position - b.cups[0].position);
   const splitOf = (card: CaosCard): CardSplit | undefined => {
-    if (cardOrderNos(card).length > 1) return undefined;
+    if (!inSplit(card)) return undefined;
     const parts = byOrder.get(card.cups[0].orderId) ?? [card];
     if (parts.length <= 1) return undefined;
     return {
@@ -130,27 +137,38 @@ export interface OrderRowEntry {
 
 /**
  * カードを注文番号の行にまとめる（注文番号の順、行の中は注文の中の並び）。
- * 統合したカードはいちばん小さい注文番号の行に置き、ほかの注文の行には跡（mergedInto）を残す
+ * 統合したカードはいちばん小さい注文番号の行に置き、ほかの注文の行には跡（mergedInto）を残す。
+ * 未割当の入れ直し（緊急）のカードは、注文ごとの別の行（emergency）にして先頭に置く（buildCaosCards の未割当の並びと同じ）
  */
 export const orderRows = (cards: readonly CaosCard[]) => {
-  const rows = new Map<number, OrderRowEntry[]>();
+  const rows = new Map<
+    string,
+    { orderNo: number; emergency: boolean; entries: OrderRowEntry[] }
+  >();
+  const add = (orderNo: number, emergency: boolean, entry: OrderRowEntry) => {
+    const key = `${emergency}:${orderNo}`;
+    const row = rows.get(key) ?? { orderNo, emergency, entries: [] };
+    row.entries.push(entry);
+    rows.set(key, row);
+  };
   for (const card of cards) {
+    const emergency = card.emergency && card.status === "unassigned";
     const [first, ...others] = cardOrderNos(card);
-    rows.set(first, [...(rows.get(first) ?? []), { card }]);
+    add(first, emergency, { card });
     for (const no of others)
-      rows.set(no, [
-        ...(rows.get(no) ?? []),
-        { card, mergedInto: orderLabel(card) },
-      ]);
+      add(no, emergency, { card, mergedInto: orderLabel(card) });
   }
   const positionIn = (orderNo: number, { card }: OrderRowEntry) =>
     card.cups.find((cup) => cup.orderNo === orderNo)?.position ?? 0;
-  return [...rows]
-    .sort(([a], [b]) => a - b)
-    .map(([orderNo, entries]) => ({
-      orderNo,
-      entries: entries.sort(
-        (a, b) => positionIn(orderNo, a) - positionIn(orderNo, b),
+  return [...rows.values()]
+    .sort(
+      (a, b) =>
+        Number(b.emergency) - Number(a.emergency) || a.orderNo - b.orderNo,
+    )
+    .map((row) => ({
+      ...row,
+      entries: row.entries.sort(
+        (a, b) => positionIn(row.orderNo, a) - positionIn(row.orderNo, b),
       ),
     }));
 };

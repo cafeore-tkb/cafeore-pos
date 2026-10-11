@@ -13,7 +13,7 @@ import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
   readPendingPrints,
@@ -75,8 +75,8 @@ export const usePrinter = (
   );
 
   const printJob = useCallback(
-    async (job: PrintJob) => {
-      if (!(await print(job))) addPendingPrint(job);
+    async (job: PrintJob, pendingId?: string) => {
+      if (!(await print(job))) addPendingPrint(job, pendingId);
     },
     [print],
   );
@@ -89,6 +89,8 @@ export const usePrinter = (
     try {
       await withPendingPrintsLock(async () => {
         for (const pending of readPendingPrints()) {
+          // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
+          if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
           if (await print(pending.job)) removePendingPrint(pending.id);
         }
       });
@@ -119,7 +121,16 @@ export const usePrinter = (
     [printJob],
   );
 
-  return { status, pendingCount, retry, printOrderLabel };
+  /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
+  const printCupLabel = useCallback(
+    async (order: OrderEntity, cupId: string, emergencyId: string) => {
+      const job = cupLabelJob(order, cupId);
+      if (job) await printJob(job, emergencyId);
+    },
+    [printJob],
+  );
+
+  return { status, pendingCount, retry, printOrderLabel, printCupLabel };
 };
 
 /**

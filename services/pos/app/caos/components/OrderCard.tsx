@@ -5,11 +5,13 @@ import {
 } from "@cafeore/common";
 import { Check, Star } from "lucide-react";
 import type React from "react";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import {
   type CardLook,
   cardItemName,
   cardNominee,
   cardTypeName,
+  emergencyReasons,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
@@ -22,7 +24,7 @@ import { moveTargets } from "../logic/lanes";
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中・同じ注文）は地の色に頼らず、
 // 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」、
-// ほかの場所にも同じ注文があるときは注文番号を青い札に）。商品の色が意味の色と近くても見分けられる。
+// ほかの場所にも同じ注文があるときは注文番号を青い札に、入れ直しは赤い「緊急」の札と理由）。商品の色が意味の色と近くても見分けられる。
 
 const SIZES = {
   // 管制盤 C・D と割当のパネル
@@ -109,6 +111,7 @@ export const OrderCard: React.FC<
   const surface = surfaceOf(done, nominee !== "", look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
+  const reasons = emergencyReasons(card);
   const typeName = cardTypeName(card);
   const split = look?.split;
   // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
@@ -142,13 +145,20 @@ export const OrderCard: React.FC<
         >
           {card.cups.length}杯
         </span>
+        {card.emergency && (
+          <span
+            className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
+          >
+            緊急
+          </span>
+        )}
         {done && (
           <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">
             <title>完了</title>
           </Check>
         )}
       </div>
-      {/* 注文番号・分けた注文の位置と合計・上級生のみ・豆と区分 */}
+      {/* 注文番号・指名・分けた注文の位置と合計・上級生のみ・緊急の理由か豆と区分 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
@@ -180,13 +190,23 @@ export const OrderCard: React.FC<
             上級生
           </span>
         )}
-        {badge && (
+        {/* 入れ直し（緊急）は理由を、ほかは豆と区分を出す */}
+        {reasons ? (
           <span
-            title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
-            className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+            title={reasons}
+            className="ml-auto min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700"
           >
-            {badge}
+            {reasons}
           </span>
+        ) : (
+          badge && (
+            <span
+              title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
+              className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+            >
+              {badge}
+            </span>
+          )
         )}
       </div>
       {note && (
@@ -261,6 +281,18 @@ export const BayPad: React.FC<{
     </div>
   ));
 };
+
+// 入れ直し（緊急）のカードの「取り消す」。開いた未割当・待機のカードに重ねる（2 回押しで決める）
+export const CancelEmergencyButton: React.FC<{ onConfirm: () => void }> = ({
+  onConfirm,
+}) => (
+  <TwoStepButton
+    label="取り消す"
+    confirmLabel="緊急を取り消す"
+    onConfirm={onConfirm}
+    className="absolute right-1 bottom-1 z-[85] h-7 w-auto px-2 text-xs"
+  />
+);
 
 // 統合できる相手のカードに重ねる「統合する」（管制盤 A・D の未割当）
 export const MergeOverlay: React.FC = () => (

@@ -126,8 +126,9 @@ export interface paths {
   "/api/caos/cups": {
     /**
      * CaOS が決めたことを注文のカップに書く
-     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
      * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+     * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
      * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
      * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
      *
@@ -159,12 +160,32 @@ export interface paths {
   "/api/caos/drippers/{dripper}/next": {
     /**
      * CaOS の「次へ」
-     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
      * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
      * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
+  };
+  "/api/cup-emergencies": {
+    /**
+     * カップを緊急（入れ直し）にする
+     * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+     * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+     * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+     * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+     * 今日（日本時間）の注文の、抽出が要るカップだけ。
+     * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+     */
+    post: operations["createCupEmergencies"];
+  };
+  "/api/cup-emergencies/{id}": {
+    /**
+     * 緊急（入れ直し）を取り消す
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+     * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     */
+    delete: operations["deleteCupEmergency"];
   };
   "/api/caos/lanes/{dripper}": {
     /**
@@ -546,6 +567,25 @@ export interface components {
        * @description CaOS で抽出を終えた時刻
        */
       brew_finished_at: string | null;
+      /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
+      emergencies: components["schemas"]["CupEmergencyResponse"][];
+    };
+    /** @description 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ） */
+    CupEmergencyResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      created_at: string;
+      /** @description 入れ直す理由（足したときに書いたもの。無ければ空） */
+      reason: string;
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -781,6 +821,16 @@ export interface components {
     };
     CaosCupsWriteRequest: {
       writes: components["schemas"]["CaosCupsWrite"][];
+    };
+    CupEmergencyCreateRequest: {
+      /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
+      order_cup_ids: string[];
+      /** @description 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける */
+      reason?: string;
+    };
+    CupEmergencyCreateResponse: {
+      /** @description 足した入れ直しの id（order_cup_ids と同じ順） */
+      ids: string[];
     };
     CaosNextRequest: {
       /**
@@ -1680,8 +1730,9 @@ export interface operations {
   };
   /**
    * CaOS が決めたことを注文のカップに書く
-   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
    * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+   * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
    * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
    * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
    *
@@ -1735,7 +1786,7 @@ export interface operations {
   };
   /**
    * CaOS の「次へ」
-   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
    * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
    * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -1764,6 +1815,72 @@ export interface operations {
         };
       };
       /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * カップを緊急（入れ直し）にする
+   * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+   * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+   * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+   * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+   * 今日（日本時間）の注文の、抽出が要るカップだけ。
+   * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+   */
+  createCupEmergencies: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CupEmergencyCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 足した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CupEmergencyCreateResponse"];
+        };
+      };
+      /** @description 形の違うリクエスト・決まりに合わない（何も足さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description カップが消えた（何も足さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急（入れ直し）を取り消す
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+   * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   */
+  deleteCupEmergency: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消した */
+      204: {
+        content: never;
+      };
+      /** @description 抽出を始めた入れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

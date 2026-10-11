@@ -96,6 +96,7 @@ export const toCaosPracticeOrder = (
       dripId: null,
       brewStartedAt: null,
       brewFinishedAt: null,
+      emergencies: [],
     });
   });
   return {

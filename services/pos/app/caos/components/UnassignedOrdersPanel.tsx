@@ -17,7 +17,13 @@ import {
 import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
-import { BayPad, MergeOverlay, MergedTrace, OrderCard } from "./OrderCard";
+import {
+  BayPad,
+  CancelEmergencyButton,
+  MergeOverlay,
+  MergedTrace,
+  OrderCard,
+} from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は useUnassignedPick。
 // どちらも注文番号の順に注文ごとにまとめ、ほかの注文と統合したカードはもとの注文の場所に跡（MergedTrace）を残す。
@@ -25,7 +31,7 @@ import { BayPad, MergeOverlay, MergedTrace, OrderCard } from "./OrderCard";
 // スクロールする列のカードは、スクロールの向きの指の動きをスクロールに任せる（useCardDrag の press の scroll）
 const TOUCH = { x: "touch-pan-x", y: "touch-pan-y" } as const;
 
-/** 未割当の 1 枚。開くと上下に 1〜6 のボタン、統合できる相手には「統合する」を重ねる */
+/** 未割当の 1 枚。開くと上下に 1〜6 のボタン（入れ直しのカードは「取り消す」も）、統合できる相手には「統合する」を重ねる */
 const UnassignedCard: React.FC<{
   card: CaosCard;
   looks: CardLooks;
@@ -73,6 +79,9 @@ const UnassignedCard: React.FC<{
           hoveredBay={pick.drag.target?.bayId ?? null}
           onPick={(bayId) => pick.assign(card, bayId)}
         />
+      )}
+      {isOpen && card.emergency && pick.cancelEmergency && (
+        <CancelEmergencyButton onConfirm={() => pick.cancelEmergency?.(card)} />
       )}
     </OrderCard>
   );
@@ -126,6 +135,8 @@ type UnassignedProps = {
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onMergeOrders?: (firstKey: string, secondKey: string) => void;
+  /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
+  onCancelEmergency?: (card: CaosCard) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
 };
@@ -148,9 +159,9 @@ export const UnassignedStrip: React.FC<
         <NextAvailableChips nextAvailable={nextAvailable} />
       </PanelHeader>
       <div className="flex min-h-0 flex-1 flex-wrap content-start p-1">
-        {rows.map(({ orderNo, entries }) => (
+        {rows.map(({ orderNo, emergency, entries }) => (
           <div
-            key={orderNo}
+            key={`${emergency}:${orderNo}`}
             className="flex h-1/2 p-0.5"
             style={{
               width: `${(Math.min(entries.length, STRIP_COLUMNS) / STRIP_COLUMNS) * 100}%`,
@@ -210,13 +221,16 @@ const PLACED_FADE: Record<CaosCard["status"], string> = {
   done: "opacity-30 grayscale",
 };
 
-/** まだ淹れ終わっていない最初の注文から後ろの、注文番号の行（ドリッパーに置いたカードも含む） */
+/** 未割当の入れ直しの行と、まだ淹れ終わっていない最初の注文から後ろの、注文番号の行（ドリッパーに置いたカードも含む） */
 const liveRows = (cards: readonly CaosCard[]) => {
   const rows = orderRows(cards);
-  const first = rows.findIndex((row) =>
-    row.entries.some(({ card }) => card.status !== "done"),
+  const first = rows.findIndex(
+    (row) =>
+      !row.emergency && row.entries.some(({ card }) => card.status !== "done"),
   );
-  return first < 0 ? [] : rows.slice(first);
+  return rows.filter(
+    (row, index) => row.emergency || (first >= 0 && index >= first),
+  );
 };
 
 /**
@@ -238,13 +252,18 @@ export const OrderQueuePanel: React.FC<
         </span>
       </PanelHeader>
       <div className="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto overscroll-contain px-2 pt-1 pb-8">
-        {rows.map(({ orderNo, entries }) => (
+        {rows.map(({ orderNo, emergency, entries }) => (
           <div
-            key={orderNo}
+            key={`${emergency}:${orderNo}`}
             className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
           >
-            <span className="flex w-11 shrink-0 items-center justify-center font-black font-mono text-[17px] text-slate-700">
+            <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
               {orderNoLabel(orderNo)}
+              {emergency && (
+                <span className="mt-1 font-sans text-[11px] text-red-600">
+                  緊急
+                </span>
+              )}
             </span>
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
               {entries.map(({ card, mergedInto }) => {

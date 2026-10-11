@@ -40,6 +40,7 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 		Preload("OrderCups", func(db *gorm.DB) *gorm.DB { return db.Order("order_cups.position") }).
 		Preload("OrderCups.Item", unscoped).
 		Preload("OrderCups.Item.ItemType", unscoped).
+		Preload("OrderCups.Emergencies", func(db *gorm.DB) *gorm.DB { return db.Order("created_at, id") }).
 		Preload("Comments")
 }
 
@@ -168,8 +169,22 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	return lines, buildOrderCups(orderID, lines, existing, menus), nil
 }
 
-// 明細 1 行で減る在庫。アイテムの在庫はアイテムの数 × per_serving、カップはカップを作る（種類の makes_cup。
-// order_cups と同じ isCupItem）アイテムの数 × per_serving。
+// アイテム 1 つで減る在庫対象：そのアイテムの在庫と、カップを作る（種類の makes_cup。order_cups と同じ isCupItem）アイテムなら
+// その種類を使うカップ。注文の明細と緊急（入れ直し）で使う。
+func itemStockResources(item models.Item, resources []models.StockResource) []models.StockResource {
+	var used []models.StockResource
+	for _, r := range resources {
+		if (r.ItemID != nil && *r.ItemID == item.ID) ||
+			(r.Kind == string(models.StockResourceKindCup) && isCupItem(item) && slices.ContainsFunc(r.ItemTypes, func(t models.StockResourceItemType) bool {
+				return t.ItemTypeID == item.ItemTypeID
+			})) {
+			used = append(used, r)
+		}
+	}
+	return used
+}
+
+// 明細 1 行で減る在庫。在庫対象（itemStockResources）ごとに、アイテムの数 × per_serving。
 // 同じ在庫対象（同じ種類のアイテムが 2 つあるセットのカップなど）は 1 行にまとめる。
 func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, resources []models.StockResource) []models.OrderStockUsage {
 	usages := []models.OrderStockUsage{}
@@ -185,15 +200,8 @@ func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, res
 		usages[i].Amount += float64(quantity) * r.PerServing
 	}
 	for _, mi := range menu.MenuItems {
-		for _, r := range resources {
-			switch {
-			case r.ItemID != nil && *r.ItemID == mi.ItemID:
-				add(r, mi.Quantity)
-			case r.Kind == string(models.StockResourceKindCup) && isCupItem(mi.Item) && slices.ContainsFunc(r.ItemTypes, func(t models.StockResourceItemType) bool {
-				return t.ItemTypeID == mi.Item.ItemTypeID
-			}):
-				add(r, mi.Quantity)
-			}
+		for _, r := range itemStockResources(mi.Item, resources) {
+			add(r, mi.Quantity)
 		}
 	}
 	return usages
@@ -530,6 +538,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
 		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
 		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
+		beforeCups := order.OrderCups
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
@@ -562,9 +571,21 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// 引き継いだカップは同じ ID・状態のまま入れ直す
 		if len(orderCups) > 0 {
-			return tx.Omit(clause.Associations).Create(&orderCups).Error
+			if err := tx.Omit(clause.Associations).Create(&orderCups).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		// 外した明細のカップの入れ直しも消す
+		var removed []uuid.UUID
+		for _, cup := range beforeCups {
+			if !slices.ContainsFunc(orderCups, func(kept models.OrderCup) bool { return kept.ID == cup.ID }) {
+				removed = append(removed, cup.ID)
+			}
+		}
+		if len(removed) == 0 {
+			return nil
+		}
+		return deleteCupEmergencies(tx, "order_cup_id IN ?", removed)
 	})
 	if err != nil {
 		status, message := http.StatusInternalServerError, err.Error()
@@ -634,6 +655,10 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+			return err
+		}
+		// カップの入れ直しも消す
+		if err := deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID)); err != nil {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {

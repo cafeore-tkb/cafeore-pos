@@ -28,6 +28,8 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   onSelectOrder,
   onAdvanceBay,
   onOpenTicketDetail,
+  onOpenRebrew,
+  onCancelEmergency,
   onOpenEmptySlot,
   onAssignToBay,
 }) => (
@@ -74,12 +76,14 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       card={current}
                       look={looks.get(current.key)}
                       size="sm"
-                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード
-                      {...(current.status === "queued" && {
-                        "data-queued-ticket": current.key,
-                        "data-ticket-label": orderLabel(current),
-                        onClick: () => onOpenTicketDetail(current),
-                      })}
+                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
+                      {...(current.status === "queued"
+                        ? {
+                            "data-queued-ticket": current.key,
+                            "data-ticket-label": orderLabel(current),
+                            onClick: () => onOpenTicketDetail(current),
+                          }
+                        : { onClick: () => onOpenRebrew?.(current) })}
                       className={
                         current.status === "queued"
                           ? "cursor-pointer hover:ring-2 hover:ring-blue-400"
@@ -133,6 +137,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
         selectedOrderId={selectedOrderId}
         onSelectOrder={onSelectOrder}
         onAssignToBay={onAssignToBay}
+        onCancelEmergency={onCancelEmergency}
       />
     </aside>
   </section>

@@ -8,6 +8,8 @@ import {
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
+import { EmergencyForm } from "~/components/molecules/EmergencyForm";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
   type CardLook,
@@ -170,7 +172,8 @@ export const AssignPanel: React.FC<{
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す。パネルの外を押すと閉じる
+// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す・入れ直し（緊急）の取り消し。
+// パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<{
   ticket: CaosCard;
   look?: CardLook;
@@ -178,6 +181,8 @@ export const TicketDetailPanel: React.FC<{
   onClose: () => void;
   onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onReturnToUnassigned: (card: CaosCard) => void;
+  /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+  onCancelEmergency?: (card: CaosCard) => void;
 }> = ({
   ticket,
   look,
@@ -185,6 +190,7 @@ export const TicketDetailPanel: React.FC<{
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
+  onCancelEmergency,
 }) => (
   <SidePanel
     title="未開始オーダーの移動"
@@ -222,12 +228,61 @@ export const TicketDetailPanel: React.FC<{
       <Undo2 className="h-5 w-5" />
       未割り当に戻す
     </button>
+    {ticket.emergency && onCancelEmergency && (
+      <TwoStepButton
+        label="緊急を取り消す"
+        confirmLabel="もう一度押すと緊急を取り消す"
+        onConfirm={() => {
+          onCancelEmergency(ticket);
+          onClose();
+        }}
+        className="mt-3 h-12 font-black text-base"
+      />
+    )}
     <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
       <ArrowRight className="h-4 w-4" />
       抽出開始後はここから変更できません
     </p>
   </SidePanel>
 );
+
+// 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードの注文とカップを選んでおく
+// （注文をまたいで統合したカードは、先頭のカップの注文）。ヘッダーから開けば番号から入れる。
+// 確定すると、未割当のいちばん上に入れ直しのカードが出て、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る。パネルの外を押すと閉じる
+export const RebrewPanel: React.FC<
+  Omit<React.ComponentProps<typeof EmergencyForm>, "initial" | "onDone"> & {
+    card?: CaosCard;
+    look?: CardLook;
+    onClose: () => void;
+  }
+> = ({ card, look, onClose, ...form }) => {
+  const first = card?.cups[0];
+  return (
+    <SidePanel
+      title="緊急（入れ直し）"
+      onClose={onClose}
+      onOutsidePress={onClose}
+    >
+      {card && (
+        <div className="mb-4">
+          <OrderCard card={card} look={look} size="xl" />
+        </div>
+      )}
+      <EmergencyForm
+        {...form}
+        initial={
+          first && {
+            orderNo: first.orderNo,
+            cupIds: card.cups
+              .filter((cup) => cup.orderId === first.orderId)
+              .map((cup) => cup.cupId),
+          }
+        }
+        onDone={onClose}
+      />
+    </SidePanel>
+  );
+};
 
 // 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルで開く
 export type AuxiliaryTab = "bays" | "beans" | "analytics";

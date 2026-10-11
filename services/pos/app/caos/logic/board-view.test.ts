@@ -21,7 +21,10 @@ const item = {
 } as Cup["item"];
 
 type CupPlace = Partial<
-  Pick<Cup, "dripper" | "dripId" | "dripperPosition" | "brewStartedAt">
+  Pick<
+    Cup,
+    "dripper" | "dripId" | "dripperPosition" | "brewStartedAt" | "emergencies"
+  >
 >;
 
 const order = (
@@ -48,6 +51,7 @@ const order = (
     dripId: null,
     brewStartedAt: null,
     brewFinishedAt: null,
+    emergencies: [],
     ...place,
   })),
 });
@@ -75,6 +79,32 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       { orderNo: 2, entries: ["cups:cup-2-0"] },
       { orderNo: 3, entries: ["m"] },
       { orderNo: 4, entries: ["#003+#004"] },
+    ]);
+  });
+
+  test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
+    const emergency = {
+      id: "e1",
+      createdAt: T0,
+      reason: "こぼした",
+      dripper: null,
+      dripperPosition: null,
+      dripId: null,
+      brewStartedAt: null,
+      brewFinishedAt: null,
+    };
+    const rows = orderRows(
+      buildCaosCards([
+        order(2, [{}]),
+        order(7, [{ emergencies: [emergency] }]),
+      ]),
+    );
+    expect(
+      rows.map(({ orderNo, emergency }) => ({ orderNo, emergency })),
+    ).toEqual([
+      { orderNo: 7, emergency: true },
+      { orderNo: 2, emergency: false },
+      { orderNo: 7, emergency: false },
     ]);
   });
 

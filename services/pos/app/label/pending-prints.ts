@@ -58,8 +58,12 @@ const stored = () => {
 export const readPendingPrints = () =>
   [...stored(), ...memory.values()].sort((a, b) => a.at - b.at);
 
-export const addPendingPrint = (job: PrintJob) => {
-  const print = { id: crypto.randomUUID(), at: Date.now(), job };
+/** id は後で消すときの目印（緊急のシールは入れ直しの id。取り消したら消す）。無ければ新しく作る */
+export const addPendingPrint = (
+  job: PrintJob,
+  id: string = crypto.randomUUID(),
+) => {
+  const print = { id, at: Date.now(), job };
   try {
     localStorage.setItem(
       PREFIX + print.id,
