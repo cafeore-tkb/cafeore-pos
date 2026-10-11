@@ -10,8 +10,8 @@ interface BeanQueueViewProps {
   error: unknown;
   /** 盤面で待っている（未割当・待機・抽出中の）杯数（在庫対象の ID ごと。logic/beans.ts の waitingCupsByBean。無い豆は 0 杯）。実データテスト中は出さない */
   waitingCups?: Map<string, number>;
-  /** 棚卸し・入荷を記録したあとに呼ぶ（在庫を取り直す） */
-  onRecorded: () => void;
+  /** 棚卸し・入荷を記録したあとに呼ぶ（在庫を取り直す）。実データテスト中は渡さず、記録の欄を出さない */
+  onRecorded?: () => void;
 }
 
 // 豆のパネル。POS の在庫（/inventory）の豆を、在庫の画面と同じカードで出す（棚卸し・入荷もここから記録できる）。

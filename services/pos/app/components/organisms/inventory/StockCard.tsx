@@ -35,14 +35,14 @@ const minutesLabel = (minutes: number) => {
 };
 
 // 在庫対象 1 つのカード（残量と、棚卸し・入荷の記録の欄）。在庫の画面（/inventory）と CaOS の豆キューで使う。
-// children はカードのいちばん下に足す行（豆キューの「盤面に◯杯」など）。
+// children はカードのいちばん下に足す行（豆キューの「盤面に◯杯」など）。onRecorded を渡さなければ記録の欄を出さない（見るだけ）。
 export function StockCard({
   status,
   onRecorded,
   children,
 }: {
   status: InventoryStatus;
-  onRecorded: () => void;
+  onRecorded?: () => void;
   children?: ReactNode;
 }) {
   const { resource } = status;
@@ -103,7 +103,7 @@ export function StockCard({
           `${resource.name} に ${kind === "count" ? "実数" : "入荷"} ${fmt(quantity)}${resource.unit} を記録しました`,
         );
       }
-      onRecorded();
+      onRecorded?.();
     } catch (e) {
       toast(e instanceof Error ? e.message : "記録に失敗しました");
     } finally {
@@ -168,38 +168,40 @@ export function StockCard({
           : "まだ棚卸ししていません"}
       </div>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Input
-            type="number"
-            inputMode="decimal"
-            min={0}
-            placeholder={isCup ? "個数" : "グラム"}
-            value={value}
+      {onRecorded && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder={isCup ? "個数" : "グラム"}
+              value={value}
+              disabled={submitting}
+              onChange={(e) => setValue(e.target.value)}
+              className="pr-8"
+            />
+            <span className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-3 text-muted-foreground text-sm">
+              {resource.unit}
+            </span>
+          </div>
+          <Button
+            type="button"
             disabled={submitting}
-            onChange={(e) => setValue(e.target.value)}
-            className="pr-8"
-          />
-          <span className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-3 text-muted-foreground text-sm">
-            {resource.unit}
-          </span>
+            onClick={() => void record("count")}
+          >
+            実数で更新
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={submitting}
+            onClick={() => void record("receipt")}
+          >
+            入荷を追加
+          </Button>
         </div>
-        <Button
-          type="button"
-          disabled={submitting}
-          onClick={() => void record("count")}
-        >
-          実数で更新
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={submitting}
-          onClick={() => void record("receipt")}
-        >
-          入荷を追加
-        </Button>
-      </div>
+      )}
       {children}
     </div>
   );

@@ -89,8 +89,12 @@ export const useCaosSession = () => {
       unassigned: totalCups(board.unassigned),
       waiting: totalCups(board.baristas.flatMap((barista) => barista.queue)),
     },
-    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
-    beans: { ...beanStock, waitingCups: beanWaitingCups },
+    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
+    beans: {
+      ...beanStock,
+      waitingCups: beanWaitingCups,
+      onRecorded: test.session ? undefined : beanStock.onRecorded,
+    },
     nowSec,
     timeLabel: timeOfDayLabel(nowSec),
     isRunning,
