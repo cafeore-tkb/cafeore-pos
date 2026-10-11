@@ -584,15 +584,36 @@ jobs:
             echo "$drift"
             npx --yes neonctl@3 branches reset "$NEON_BRANCH" --parent \
               --project-id "$NEON_PROJECT_ID" || exit $?
-            # 新しいリビジョンが起動時に作り直したブランチへマイグレーションを流す
+            # 新しいリビジョンが起動時に作り直したブランチへマイグレーションを流す（マイグレーションは
+            # listen の前なので、リビジョンが準備できていれば済んでいる）。同じイメージ・同じ環境変数だと
+            # 新しいリビジョンができないことがあるので、実行ごとに変わる名前を付けて必ず作らせる
+            # （プレビューのサービスはほかの PR と共有なので、待つのもこの名前のリビジョン）
+            suffix="pr$PR_NUMBER-reset-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             gcloud run deploy "$CLOUD_RUN_PREVIEW_SERVICE" \
               --project="$GCP_PROJECT_ID" \
               --region="$GCP_REGION" \
               --image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST" \
               --no-traffic \
               --tag="pr-$PR_NUMBER" \
+              --revision-suffix="$suffix" \
               --update-env-vars "DATABASE_URL=$NEON_DB_URL" \
               --quiet || exit $?
+            # タグが新しいリビジョンに付いてから確かめる（前のリビジョンの /status を見ないように）
+            describe() {
+              gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
+                --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format=json
+            }
+            revision="$CLOUD_RUN_PREVIEW_SERVICE-$suffix"
+            for i in $(seq 1 30); do
+              tagged=$(describe | jq -r --arg t "pr-$PR_NUMBER" \
+                'first(.status.traffic[]? | select(.tag == $t) | .revisionName) // empty')
+              [ "$tagged" = "$revision" ] && break
+              sleep 5
+            done
+            if [ "$tagged" != "$revision" ]; then
+              echo "::error::タグ pr-$PR_NUMBER が新しいリビジョン $revision に付かなかった（今は ${tagged:-なし}）"
+              exit 1
+            fi
             drift=$(schema_drift) || exit 1
           fi
           if [ -n "$drift" ]; then
