@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
+import { BuildInfo } from "~/components/organisms/top/BuildInfo";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -210,6 +211,8 @@ export default function Index() {
           <DownloadButton />
         </div>
       </section>
+
+      <BuildInfo />
     </div>
   );
 }
