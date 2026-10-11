@@ -94,6 +94,22 @@ const summaryLabel = (order: OrderEntity): Label => {
 };
 
 /**
+ * カップ 1 杯のシール（緊急で入れ直したカップに貼る）。注文で刷るカップのシールと同じ中身で、
+ * 「2/3」はその注文の抽出が要るカップの中の順番。注文にそのカップが無ければ null
+ */
+export const cupLabelJob = (
+  order: OrderEntity,
+  cupId: string,
+): PrintJob | null => {
+  const cups = order.getCups().filter((cup) => cup.item_type.needs_brew);
+  const index = cups.findIndex((cup) => cup.cupId === cupId);
+  if (index < 0) return null;
+  return {
+    labels: [cupLabel(order.orderId, index + 1, cups.length, cups[index])],
+  };
+};
+
+/**
  * 注文で刷るシール
  *
  * 抽出が要るもの 1 杯ごとにカップに貼るシールを刷り、最後に引換券に貼るシールを 1 枚刷る。

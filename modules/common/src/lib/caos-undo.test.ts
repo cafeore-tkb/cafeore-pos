@@ -36,6 +36,7 @@ const cup = (id: string, init: Partial<Cup> = {}): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  emergencies: [],
   ...init,
 });
 
@@ -50,6 +51,10 @@ const order = (no: number, cups: Cup[]): CaosOrderInput => ({
   })),
   cups,
 });
+
+// カップを 1 杯ずつ別の注文にした盤面
+const board = (...cups: Cup[]) =>
+  buildCaosCards(cups.map((c, i) => order(i + 1, [c])));
 
 const nullState = {
   dripper: null,
@@ -74,7 +79,7 @@ describe("unit: caos-undo", () => {
       dripId: "d1",
       brewStartedAt: T1,
     });
-    expect(caosUndoCups(entry, [after])).toEqual({
+    expect(caosUndoCups(entry, board(after))).toEqual({
       cups: [
         {
           cup_id: "a",
@@ -101,11 +106,13 @@ describe("unit: caos-undo", () => {
     const entry = undoOfWrites(cards, result.writes);
     const placed = { dripper: 2, dripperPosition: 1, dripId: "d1" };
 
-    expect(caosUndoCups(entry, [cup("a", { ...placed, dripper: 3 })])).toEqual({
+    expect(
+      caosUndoCups(entry, board(cup("a", { ...placed, dripper: 3 }))),
+    ).toEqual({
       error: "ほかの画面で先に変わったので戻せません",
     });
     expect(
-      caosUndoCups(entry, [cup("a", { ...placed, servedAt: T2 })]),
+      caosUndoCups(entry, board(cup("a", { ...placed, servedAt: T2 }))),
     ).toEqual({ error: "提供済みになったカップがあるので戻せません" });
     expect(caosUndoCups(entry, [])).toEqual({
       error:
@@ -127,7 +134,7 @@ describe("unit: caos-undo", () => {
 
     const finished = { ...brewing, brewFinishedAt: T1, readyAt: T1 };
     const started = { ...queued, brewStartedAt: T1 };
-    const sent = caosUndoCups(entry, [finished, started]);
+    const sent = caosUndoCups(entry, board(finished, started));
     if ("error" in sent) throw new Error(sent.error);
     expect(sent.cups.map((c) => [c.cup_id, c.restore])).toEqual([
       [
@@ -158,8 +165,55 @@ describe("unit: caos-undo", () => {
       ],
     ]);
     // まだ「次へ」の結果が届いていなければ（ほかの画面が先に変えたのと同じく）送らない
-    expect(caosUndoCups(entry, [brewing, queued])).toEqual({
+    expect(caosUndoCups(entry, board(brewing, queued))).toEqual({
       error: "ほかの画面で先に変わったので戻せません",
     });
+  });
+
+  test("入れ直しの「次へ」を戻す：入れ直しは準備完了を持たないので、終えても準備完了は見ない", () => {
+    const emergency = {
+      id: "e1",
+      createdAt: NOW,
+      reason: "",
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+      brewFinishedAt: null,
+    };
+    const served = cup("a", { readyAt: NOW, servedAt: NOW });
+    const entry = undoOfNext(board({ ...served, emergencies: [emergency] }), 1);
+    const finished = {
+      ...served,
+      emergencies: [{ ...emergency, brewFinishedAt: T1 }],
+    };
+    const sent = caosUndoCups(entry, board(finished));
+    if ("error" in sent) throw new Error(sent.error);
+    expect(sent.cups.map((c) => [c.cup_id, c.restore.ready_at])).toEqual([
+      ["e1", null],
+    ]);
+  });
+
+  test("先頭へを戻す：番号がずれる列の待機のカードも前の番号に戻す", () => {
+    const a = cup("a", { dripper: 1, dripperPosition: 1, dripId: "da" });
+    const b = cup("b", { dripper: 1, dripperPosition: 2, dripId: "db" });
+    const cards = board(a, b);
+    const result = assignWrites(cards, cards[1], 1, {
+      place: "front",
+      newId: () => "x",
+    });
+    if ("error" in result) throw new Error(result.error);
+    const entry = undoOfWrites(cards, result.writes);
+    const sent = caosUndoCups(
+      entry,
+      board({ ...a, dripperPosition: 2 }, { ...b, dripperPosition: 1 }),
+    );
+    if ("error" in sent) throw new Error(sent.error);
+    expect(
+      sent.cups.map((c) => [c.cup_id, c.restore.state.dripper_position]),
+    ).toEqual([
+      ["b", 2],
+      ["a", 1],
+    ]);
   });
 });

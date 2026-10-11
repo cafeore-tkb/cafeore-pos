@@ -44,6 +44,12 @@ type ServerInterface interface {
 	// 背景色設定削除
 	// (DELETE /api/color-settings/{id})
 	DeleteColorSetting(c *gin.Context, id openapi_types.UUID)
+	// カップを緊急（入れ直し）にする
+	// (POST /api/cup-emergencies)
+	CreateCupEmergencies(c *gin.Context)
+	// 緊急（入れ直し）を取り消す
+	// (DELETE /api/cup-emergencies/{id})
+	DeleteCupEmergency(c *gin.Context, id openapi_types.UUID)
 	// 在庫の残量一覧
 	// (GET /api/inventory)
 	GetInventory(c *gin.Context)
@@ -366,6 +372,43 @@ func (siw *ServerInterfaceWrapper) DeleteColorSetting(c *gin.Context) {
 	}
 
 	siw.Handler.DeleteColorSetting(c, id)
+}
+
+// CreateCupEmergencies operation middleware
+func (siw *ServerInterfaceWrapper) CreateCupEmergencies(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCupEmergencies(c)
+}
+
+// DeleteCupEmergency operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCupEmergency(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCupEmergency(c, id)
 }
 
 // GetInventory operation middleware
@@ -1359,6 +1402,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
+	router.POST(options.BaseURL+"/api/cup-emergencies", wrapper.CreateCupEmergencies)
+	router.DELETE(options.BaseURL+"/api/cup-emergencies/:id", wrapper.DeleteCupEmergency)
 	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
 	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)
 	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)

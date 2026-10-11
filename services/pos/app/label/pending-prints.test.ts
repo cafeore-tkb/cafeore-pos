@@ -48,6 +48,18 @@ describe("[unit] pending-prints", () => {
     expect(a.job).toEqual(job);
   });
 
+  test("id を渡すと、その id で残し、その id で消せる（取り消した緊急のシール）", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const { addPendingPrint, readPendingPrints, removePendingPrint } =
+      await load();
+    addPendingPrint(job, "emergency-1");
+    addPendingPrint(job);
+    removePendingPrint("emergency-1");
+
+    expect(readPendingPrints().map((p) => p.id)).not.toContain("emergency-1");
+    expect(readPendingPrints()).toHaveLength(1);
+  });
+
   test("壊れたもの・ほかのキーは読まない", async () => {
     const storage = fakeStorage();
     storage.setItem("cafeore:pending-label-print:x", "{");

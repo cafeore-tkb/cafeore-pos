@@ -38,12 +38,14 @@ export const useLiveBoard = ({
   );
   // 「次へ」を送っている途中の列（応答が届く前の二度押しを止める）
   const pendingNext = useRef(new Set<number>());
-  // 「1つ戻す」は押したときに届いている注文と比べる
-  const ordersRef = useRef(orders);
-  ordersRef.current = orders;
+  // 「1つ戻す」は押したときの盤面と比べる
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
 
   return {
     status,
+    /** 注文（緊急のシールの中身を作る） */
+    orders,
     cards,
     /** 書き込みを送る。API が書けたら true になる */
     runWrites: (writes: CaosCupsWrite[]) => putCaosCups(writes).then(succeeded),
@@ -55,12 +57,9 @@ export const useLiveBoard = ({
         .then(succeeded)
         .finally(() => pendingNext.current.delete(dripper));
     },
-    /** 操作（entry）を「1つ戻す」処理。届いている注文のカップがその操作のあとのままなら、操作の前の値に書き戻す */
+    /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
     undoRun: (entry: CaosUndoEntry) => () => {
-      const request = caosUndoCups(
-        entry,
-        (ordersRef.current ?? []).flatMap((order) => order.cups),
-      );
+      const request = caosUndoCups(entry, cardsRef.current);
       if ("error" in request) return succeeded(request);
       return undoCaosCups(request.cups).then(succeeded);
     },
