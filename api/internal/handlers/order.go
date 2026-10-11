@@ -133,7 +133,8 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	return lines, buildOrderCups(orderID, lines, existing, menus), nil
 }
 
-// 明細 1 行で減る在庫。アイテムの在庫はアイテムの数 × per_serving、カップはカップを作るアイテムの数 × per_serving。
+// 明細 1 行で減る在庫。アイテムの在庫はアイテムの数 × per_serving、カップはカップを作る（種類の makes_cup。
+// order_cups と同じ isCupItem）アイテムの数 × per_serving。
 // 同じ在庫対象（同じ種類のアイテムが 2 つあるセットのカップなど）は 1 行にまとめる。
 func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, resources []models.StockResource) []models.OrderStockUsage {
 	usages := []models.OrderStockUsage{}
