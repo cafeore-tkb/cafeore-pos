@@ -547,7 +547,7 @@ export interface components {
        * @example ホットカップ
        */
       name?: string;
-      /** @description このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る */
+      /** @description このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空） */
       item_type_ids?: string[];
       /**
        * @description 数える単位（個 / g）

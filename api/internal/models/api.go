@@ -536,7 +536,7 @@ type StockResourceRequest struct {
 	// Buffer 最低限残したい杯数。これを切ると危険扱い
 	Buffer int `json:"buffer"`
 
-	// ItemTypeIds このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る
+	// ItemTypeIds このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）
 	ItemTypeIds *[]openapi_types.UUID `json:"item_type_ids,omitempty"`
 
 	// Name カップの名前（カップでは必須）

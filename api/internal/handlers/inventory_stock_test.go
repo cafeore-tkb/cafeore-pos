@@ -79,6 +79,8 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	coaster, coasterStock := newItem("コースター", goods)
 
 	stockRequest := func(name *string, perServing float64, itemTypes ...uuid.UUID) models.StockResourceRequest {
+		// 種類が無いときも空の配列で送る（省略すると今のまま）
+		itemTypes = append([]uuid.UUID{}, itemTypes...)
 		return models.StockResourceRequest{Name: name, ItemTypeIds: &itemTypes, Unit: "g", PerServing: perServing, NotifyFrom: 10, NotifyStep: 2, Buffer: 3}
 	}
 	cupName := "ホットカップ"
@@ -140,6 +142,14 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 
 	// あとで per_serving とカップの種類を変えても、前の注文の消費は変わらない
 	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(nil, 20), http.StatusOK, nil)
+	// 使う種類を省略した PUT では種類は今のまま
+	omitted := stockRequest(&cupName, 1)
+	omitted.ItemTypeIds = nil
+	var unchanged models.StockResourceResponse
+	call(http.MethodPut, "/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
+	if len(unchanged.ItemTypeIds) != 2 {
+		t.Fatalf("種類を省略した PUT の後の種類 = %v, want 2 つ", unchanged.ItemTypeIds)
+	}
 	call(http.MethodPut, "/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
 	order(newLine)
 	expect("変えた後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40, 4}, coasterStock.ID: {2, 2}, cupID: {2, 2}})
