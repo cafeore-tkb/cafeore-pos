@@ -50,11 +50,6 @@ type Options = {
    */
   onStarted: (checkout: SquareCheckout, order: OrderEntity) => void;
   /**
-   * onStarted の後、お金を受け取らずに終わった（取り消し・時間切れ・端末のエラー）ときに 1 回だけ呼ぶ。
-   * 受取額が合わない・結果が分からないまま閉じた、のときは後で支払い済みになりうるので呼ばない。
-   */
-  onCanceled: (checkout: SquareCheckout, order: OrderEntity) => void;
-  /**
    * 支払いが確定したときに呼ぶ。注文を登録できたら true で解決する（ダイアログを閉じる）。
    * false か reject なら phase を paid に戻して、手で送り直せるようにする。
    */
@@ -78,18 +73,12 @@ const cancelMessage = (checkout: SquareCheckout): string => {
  * Square Terminal での決済を進める
  *
  * 決済が先・注文が後。start で端末に決済画面を出し（出せたら onStarted）、完了するまで
- * 問い合わせ続け、支払いが確定したら onPaid に注文を渡す。お金を受け取らずに終わったら onCanceled。
+ * 問い合わせ続け、支払いが確定したら onPaid に注文を渡す。
  */
-export const useSquarePayment = ({
-  onStarted,
-  onCanceled,
-  onPaid,
-}: Options) => {
+export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
   const [state, setState] = useState<SquarePaymentState | null>(null);
   const onStartedRef = useRef(onStarted);
   onStartedRef.current = onStarted;
-  const onCanceledRef = useRef(onCanceled);
-  onCanceledRef.current = onCanceled;
   const onPaidRef = useRef(onPaid);
   onPaidRef.current = onPaid;
 
@@ -168,23 +157,6 @@ export const useSquarePayment = ({
     void sendPaidOrder(state.checkout, state.order);
   }, [state, sendPaidOrder]);
 
-  // 決済画面を出した決済が、お金を受け取らずに終わったら知らせる。1 回だけ
-  const canceledRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      state?.phase !== "failed" ||
-      !state.started ||
-      state.checkout === null
-    ) {
-      return;
-    }
-    if (canceledRef.current === state.checkout.id) {
-      return;
-    }
-    canceledRef.current = state.checkout.id;
-    onCanceledRef.current(state.checkout, state.order);
-  }, [state]);
-
   const create = useCallback(
     async (base: SquarePaymentState) => {
       setState({ ...base, phase: "creating", message: null });
@@ -196,7 +168,7 @@ export const useSquarePayment = ({
           paymentType: base.paymentType,
           orderNumber: base.order.orderId,
         });
-        // 送り直しで、もう終わった決済が返ってくることがある。取り消し済みなら始めない
+        // 送り直しで、もう終わった決済が返ってくることがある。取り消し済みなら始めない（印刷しない）
         const started = checkout.outcome !== "failed";
         setState((prev) =>
           prev?.idempotencyKey === base.idempotencyKey

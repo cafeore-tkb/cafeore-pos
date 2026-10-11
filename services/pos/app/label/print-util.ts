@@ -112,30 +112,5 @@ export const usePrinter = () => {
     rawPrinter.print();
   };
 
-  // 先に印刷したシールの決済が、お金を受け取らずに終わったときのシール。カップのシールと同じ大きさの 1 枚
-  const printCancelLabel = (order: OrderEntity) => {
-    rawPrinter.init();
-    const cups = order.getCoffeeCups().length;
-
-    rawPrinter.feedCurrentTop();
-    rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 24, 570, 230);
-    rawPrinter.addPagePosition(0, 48);
-    rawPrinter.addHeader(order.orderId, null);
-    rawPrinter.addPagePosition(0, 156);
-    rawPrinter.addLine("キャンセル", [3, 3]);
-    rawPrinter.addPagePosition(0, 204);
-    rawPrinter.addLine(
-      cups > 0
-        ? `シール（カップ${cups}枚・引換券）は使わない`
-        : "引換券のシールは使わない",
-      [1, 1],
-    );
-    rawPrinter.addPageEnd();
-
-    rawPrinter.addFeed(7);
-    rawPrinter.print();
-  };
-
-  return { status: rawPrinter.status, printOrderLabel, printCancelLabel };
+  return { status: rawPrinter.status, printOrderLabel };
 };

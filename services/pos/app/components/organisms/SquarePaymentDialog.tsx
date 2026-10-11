@@ -128,9 +128,7 @@ export const SquarePaymentDialog = ({
                 </p>
               )}
               {phase === "waiting" && started && (
-                <p className="text-sm text-stone-500">
-                  シールは印刷しました。お金を受け取らずに終わったら、キャンセルのシールを印刷します。
-                </p>
+                <p className="text-sm text-stone-500">シールは印刷しました。</p>
               )}
               {phase === "waiting" && paymentType === "FELICA_ALL" && (
                 <p className="text-sm text-stone-500">
@@ -160,9 +158,8 @@ export const SquarePaymentDialog = ({
               )}
               {phase === "failed" && started && (
                 <p className="font-bold text-sm">
-                  キャンセルのシールを印刷しました。先に印刷した No.
-                  {order.orderId}
-                  のシールは使わないでください。
+                  先に印刷した No.{order.orderId}
+                  のシールは、同じ注文で会計し直すならそのまま使います（刷り直しません）。注文をやめる・変えるときは使わないでください。
                 </p>
               )}
               {message && <p className="text-red-700 text-sm">{message}</p>}

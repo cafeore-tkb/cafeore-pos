@@ -66,6 +66,15 @@ type props = {
   syncOrder: (order: OrderEntity) => void;
 };
 
+/** シールの中身が同じかを比べるためのキー（番号・合計・商品と指名） */
+const labelKey = (order: OrderEntity) =>
+  JSON.stringify([
+    order.orderId,
+    order.total,
+    order.menus.map((menu) => [menu.name, menu.assignee]),
+    order.getCoffeeCups().map((cup) => [cup.name, cup.assignee]),
+  ]);
+
 /** 確定欄に出す Square の決済手段（上から順） */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
   "CARD_PRESENT",
@@ -121,6 +130,24 @@ const CashierV2 = ({
 
   const printer = usePrinter();
 
+  /**
+   * 印刷したが、まだ登録していない注文のシールのキー。
+   * Square の決済がお金を受け取らずに終わった後、同じ注文で会計し直すときは刷り直さない
+   * （先に印刷したシールをそのまま使う）。注文を消したとき・登録したときに忘れる。
+   */
+  const unregisteredLabelKeyRef = useRef<string | null>(null);
+  const printOrderLabel = useCallback(
+    (order: OrderEntity) => {
+      const key = labelKey(order);
+      if (unregisteredLabelKeyRef.current === key) {
+        return;
+      }
+      unregisteredLabelKeyRef.current = key;
+      printer.printOrderLabel(order);
+    },
+    [printer],
+  );
+
   usePreventNumberKeyUpDown();
 
   /**
@@ -132,6 +159,7 @@ const CashierV2 = ({
   }, [nextOrderId, dispatchOrder]);
 
   const resetAll = useCallback(() => {
+    unregisteredLabelKeyRef.current = null;
     dispatchOrder({ type: "clear" });
     setHasReceivedInput(false);
     resetStatus();
@@ -232,7 +260,7 @@ const CashierV2 = ({
       }
       const submitOne = prepareSubmit(newOrder);
       if (exactPayment) submitOne.received = submitOne.billingAmount;
-      printer.printOrderLabel(submitOne);
+      printOrderLabel(submitOne);
       submitPayload(submitOne);
       finishSubmit();
     },
@@ -240,7 +268,7 @@ const CashierV2 = ({
       canSubmitOrder,
       newOrder,
       prepareSubmit,
-      printer,
+      printOrderLabel,
       submitPayload,
       finishSubmit,
     ],
@@ -272,23 +300,28 @@ const CashierV2 = ({
       submitOne.received = submitOne.billingAmount;
       await submitSquarePayload(submitOne, checkoutId);
       if (print) {
-        printer.printOrderLabel(submitOne);
+        printOrderLabel(submitOne);
       }
       finishSubmit();
       return true;
     },
-    [canSubmitOrder, prepareSubmit, submitSquarePayload, printer, finishSubmit],
+    [
+      canSubmitOrder,
+      prepareSubmit,
+      submitSquarePayload,
+      printOrderLabel,
+      finishSubmit,
+    ],
   );
 
   // シールは端末に決済画面が出た時点で先に印刷し、支払いを待つ間に作り始められるようにする。
-  // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わったら
-  // キャンセルのシールを印刷する。
+  // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わっても
+  // 印刷はしない（ダイアログで知らせる）。
   const squarePayment = useSquarePayment({
     onStarted: (checkout, order) => {
       prePrintedRef.current.set(checkout.id, order.orderId);
-      printer.printOrderLabel(order);
+      printOrderLabel(order);
     },
-    onCanceled: (_checkout, order) => printer.printCancelLabel(order),
     onPaid: (checkout, order) => submitSquareOrder(checkout.id, order, false),
   });
 
