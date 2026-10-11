@@ -63,10 +63,15 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 
 ### フロントエンド（Cloudflare Workers）
 
-POS と mobile はどちらも `ssr: false` の SPA。Worker のスクリプトは持たず、
-`build/client` を静的アセットとして配信するだけの構成にしている
-（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
+POS と mobile はどちらも `ssr: false` の SPA。画面は `build/client` を静的アセットとして
+配信する（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
+
+POS だけは Worker のスクリプトを持ち、`/api/*`・`/status`・`/health` を Cloud Run の API へ
+中継する（`services/pos/worker/index.ts`。理由は [API の認証](#api-の認証cloudflare-access)）。
+中継先は本番のデプロイのときだけ `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
+PR のプレビューでは渡さないので、プレビューの URL の `/api` は 503 を返す
+（プレビューの画面は Cloud Run を直接呼ぶので使わない）。
 
 main への push と手動実行では本番へ `wrangler deploy` する。PR（`preview` ラベル付きのみ）では
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
@@ -109,6 +114,8 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 | `cafeore-mobile` | `services/mobile` |
 
 ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
+POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
+渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
 
 ### backend（Artifact Registry → Cloud Run）
 
@@ -142,6 +149,9 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | `SQUARE_DEVICE_ID` | Sandbox のテスト用 device_id | 未設定 | ペアリングで得た端末の device_id |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
 | `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
+| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
+| `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
+| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -192,6 +202,99 @@ SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。
+
+### API の認証（Cloudflare Access）
+
+**`AUTH_MODE` を `cloudflare-access` にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
+URL は POS の JS に入っているので、画面を開けば分かる（秘密ではない）。CORS は止めにならない
+（Origin を付けない curl などには効かない）。
+
+```
+ブラウザ ─→ Cloudflare Access ─→ POS の Worker ─→ Cloud Run（api）
+             （ログイン）          （/api を中継）    （JWT を検証）
+```
+
+- POS（`cafeore-pos.cafeorepos.workers.dev`）を Access で守る。ログインしないと画面も開けない
+- Access はログインした端末のリクエストに JWT（`Cf-Access-Jwt-Assertion`）を付ける。Worker はそれごと
+  `/api` を Cloud Run に中継し、api が署名・発行元・AUD・期限を確かめる（`api/internal/auth`）。
+  WebSocket（`/api/ws/orders`）も同じ道を通る
+- api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
+  GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
+- `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
+  書き込みは開かない（`api/cmd/server/main.go`）
+- 次は Access を通らずに Cloud Run に直接来るので、`/api` のグループの外に置いて自前で確かめている
+
+  | 呼び出し元 | ルート | 確かめ方 |
+  | --- | --- | --- |
+  | Cloud Scheduler | `POST /api/inventory/remind` | Google の ID トークン |
+  | Square | `POST /api/square/webhook` | Webhook の署名 |
+  | デプロイの CI・POS の接続確認 | `GET /status`・`GET /health` | 認証しない（稼働状況だけ） |
+
+- Worker 経由でも、ブラウザの `Origin`（`https://cafeore-pos.cafeorepos.workers.dev`）はそのまま API に届き、
+  CORS で照らし合わされる。同じオリジンになったからといって `FRONTEND_ORIGINS` から消すと、書き込みと
+  WebSocket が 403 になる
+- Access のセッションが切れると、API への fetch と WebSocket が Access のログイン画面へ飛ばされて
+  失敗し続ける。POS は `/status` が 401 になったら（`X-Requested-With` を付けているので、セッション切れの
+  ときは Access が 401 を返す）画面を読み込み直して Access のログインへ戻す（`useOnlineStatus`）。
+  続けて読み込み直すのは 1 分に 1 回まで
+
+#### 切り替える手順
+
+順番を守ること。どの段階でも、前の段階に戻せば元に戻る。
+
+1. **Cloudflare（ダッシュボードで手作業）**
+   1. Workers を Paid プランにする。`/api` が Worker を通るとリクエストに数えられ、無料枠（1 日 10 万。
+      リセットは日本時間 9 時）を超えるとその日は Worker が失敗し、POS が止まる。`/status` の
+      10 秒ごとの確認だけで端末 1 台あたり 1 日 8,640 になる
+   2. Zero Trust を有効にしてチーム名を決める（`<チーム名>.cloudflareaccess.com`）。
+      ログイン方法はワンタイム PIN（メール）で足りる
+   3. Workers & Pages → `cafeore-pos` → Settings → Domains & Routes で、workers.dev の
+      「Enable Cloudflare Access」を押す。ポリシーでスタッフ用と表示用のメールだけを許す。
+      セッションの長さは学祭の期間より長くする（途中で切れると、その端末でログインし直しになる）
+   4. Access → Applications でそのアプリケーションの AUD タグを控える
+
+   ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
+2. **GitHub（このリポジトリの Variables）**
+   1. `WORKERS_API_ORIGIN` に本番の Cloud Run の URL（今の `VITE_API_BASE_URL` と同じ値）を入れ、
+      Actions の「pos / deploy (Workers)」を手動実行する
+   2. ログインしたブラウザで `https://cafeore-pos.cafeorepos.workers.dev/status` を開き、JSON が返ることを確かめる
+   3. `VITE_API_BASE_URL` を `https://cafeore-pos.cafeorepos.workers.dev` にして、もう一度手動実行する。
+      これで画面が Worker 経由で API を呼ぶ
+3. **infra（HCP Terraform の workspace variables）**。詳しくは infra の README の「API の認証」
+   1. `api_auth_mode = "cloudflare-access-report-only"` と、チームのドメイン・AUD・メールを入れて apply する
+   2. POS を一通り操作し（レジ・マスター・提供・呼び出し画面）、Cloud Run のログに弾くはずだったものが
+      出ないことを確かめる。出ているものは Access を通らずに Cloud Run を直接叩いている
+
+      ```sh
+      gcloud logging read 'resource.type="cloud_run_revision"
+        AND resource.labels.service_name="cafeore-pos-git"
+        AND textPayload:"auth(report-only)"' \
+        --project project-5d6e656b-4871-46ff-96f --freshness 1h --format 'value(textPayload)'
+      ```
+
+   3. `api_auth_mode = "cloudflare-access"` にして apply する
+   4. `curl https://<本番の Cloud Run の URL>/api/items` が 401 になること、レジで注文が通ること、
+      表示用のアカウントで開いた画面からは書き込めない（403）ことを確かめる
+
+戻すとき:
+- 認証だけを外す: `api_auth_mode = "off"` で apply（新しいリビジョンが立った時点で戻る）
+- 中継もやめる: `VITE_API_BASE_URL` を Cloud Run の URL に戻して手動実行し、Access を無効にする
+
+#### `cloudflare-access` にすると止まるもの
+
+Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログで、使われているかどうかが分かる。
+
+- **CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）**。WebSocket で注文を直接読んでいる。
+  POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く
+- `modules/common/src/scripts` の書き出し（`download-orders` など）。手元から Cloud Run を直接呼ぶ
+- mobile（停止中）。再開するなら POS と同じ構成が要る
+
+人ではない相手を通したいときは、Access のサービストークンを作り、その Client ID を `AUTH_STAFF_EMAILS`
+か `AUTH_VIEWER_EMAILS` に入れる（api はメールの代わりに JWT の `common_name` を見る）。呼ぶ側は Worker の
+URL に `CF-Access-Client-Id` と `CF-Access-Client-Secret` を付ける。
+
+プレビュー（`cafeore-pos-preview` と PR の Worker のバージョン）は今までどおり認証しない。DB は PR ごとの
+Neon のブランチで、本番のデータは入っていない。
 
 ### DB のスキーマ
 
@@ -352,6 +455,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
+| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
