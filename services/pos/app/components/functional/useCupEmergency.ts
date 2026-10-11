@@ -84,7 +84,7 @@ const brewCupsOf = (order: OrderEntity) => {
 
 /** 注文番号の注文（数で比べるので「012」でもよい。同じ番号が複数あれば新しいもの） */
 const orderByNo = (orders: readonly OrderEntity[], orderNo: string) => {
-  const no = orderNo.trim() === "" ? Number.NaN : Number(orderNo);
+  const no = /^\d+$/.test(orderNo.trim()) ? Number(orderNo) : Number.NaN;
   return orders
     .filter((order) => order.orderId === no)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
