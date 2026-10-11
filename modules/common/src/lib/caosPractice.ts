@@ -55,6 +55,21 @@ export interface CaosPracticeSourceOrder {
   items: readonly CaosPracticeSourceItem[];
 }
 
+// 実データの品物の種類。実データには種類の項目が無いので、種類の名前から決める（本番と同じく itemMakesCup・cupNeedsBrew・
+// cupSeniorOnly の名前の決まり）。POS に同じ名前の種類があれば、画面（services/pos の logic/historical.ts）がその種類に置き換える
+const practiceItemType = (name: string): Cup["item"]["item_type"] => {
+  const makesCup = itemMakesCup(name);
+  const needsBrew = makesCup && !name.includes("milk");
+  return {
+    name,
+    display_name: name,
+    makes_cup: makesCup,
+    needs_brew: needsBrew,
+    senior_only: needsBrew && name.includes("limited"),
+    iced_brew: false,
+  };
+};
+
 /**
  * 実データの注文を、練習の盤面の注文にする。グッズ以外の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
  * 抽出の要らないカップ（ミルクなど）もカップにはなるが、本番と同じく buildCaosCards がカードにしない。
@@ -76,7 +91,7 @@ export const toCaosPracticeOrder = (
         id: item.id || `name:${item.name}`,
         name: item.name,
         abbr: item.abbr || item.name,
-        item_type: { name: item.type, display_name: item.type },
+        item_type: practiceItemType(item.type),
       },
       readyAt: null,
       servedAt: null,
