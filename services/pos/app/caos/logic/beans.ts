@@ -1,23 +1,25 @@
-import type {
-  InventoryStatus,
-  ItemEntity,
-  StockResource,
-  WithId,
+import {
+  type CaosCard,
+  type InventoryStatus,
+  type ItemEntity,
+  type StockResource,
+  type WithId,
+  cupNeedsBrew,
 } from "@cafeore/common";
-import { type Board, mapCards } from "./board";
-import { isDripItem } from "./posOrders";
 
 // カードの豆。カードの商品のアイテムの在庫（POS の在庫）を引く。名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。
 
 /** 商品 ID → その商品の在庫 */
-type BeanIndex = Map<string, StockResource[]>;
+export type BeanIndex = ReadonlyMap<string, StockResource[]>;
 
-/** 豆キューに出す在庫。抽出が要るアイテム（logic/posOrders.ts の isDripItem）の在庫だけ。グッズなどは出さない */
+/** 豆キューに出す在庫。抽出が要る（種類の needs_brew。盤面のカードと同じ cupNeedsBrew）アイテムの在庫だけ。ミルクやグッズは出さない */
 export const dripItemStatuses = (
   statuses: readonly InventoryStatus[],
   items: readonly WithId<ItemEntity>[],
 ) => {
-  const dripItemIds = new Set(items.filter(isDripItem).map((item) => item.id));
+  const dripItemIds = new Set(
+    items.filter((item) => cupNeedsBrew({ item })).map((item) => item.id),
+  );
   return statuses.filter(
     ({ resource }) => resource.item_id && dripItemIds.has(resource.item_id),
   );
@@ -27,31 +29,27 @@ export const dripItemStatuses = (
 export const buildBeanIndex = (
   statuses: readonly InventoryStatus[],
 ): BeanIndex => {
-  const index: BeanIndex = new Map();
+  const index = new Map<string, StockResource[]>();
   for (const { resource } of statuses) {
     if (resource.item_id) index.set(resource.item_id, [resource]);
   }
   return index;
 };
 
-// 盤面のカードに豆を付ける。在庫の設定はあとから読み込まれたり変わったりするので、カードには持たず、出すたびに付ける
-// （logic/posOrders.ts の paintBoard と同じ）。設定が無い商品と、商品の無いカード（実データテスト）はそのまま。
-export const attachBeans = (board: Board, index: BeanIndex): Board =>
-  mapCards(board, (card) => {
-    const beans = card.item?.id && index.get(card.item.id);
-    return beans ? { ...card, beans } : card;
-  });
+/** カードの豆。カードのカップは同じ商品なので、先頭のカップの商品で引く。設定が無い商品は undefined */
+export const cardBeans = (card: CaosCard, index: BeanIndex) =>
+  index.get(card.cups[0].item.id);
 
 /** 豆（在庫対象の ID）ごとの、盤面で待っている（未割当・待機・抽出中の）杯数。待っていない豆は入らない */
-export const waitingCupsByBean = (board: Board): Map<string, number> => {
+export const waitingCupsByBean = (
+  cards: readonly CaosCard[],
+  index: BeanIndex,
+): Map<string, number> => {
   const cups = new Map<string, number>();
-  const waiting = [
-    ...board.unassigned,
-    ...board.baristas.flatMap((barista) => barista.queue),
-  ];
-  for (const card of waiting) {
-    for (const bean of card.beans ?? []) {
-      cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
+  for (const card of cards) {
+    if (card.status === "done") continue;
+    for (const bean of cardBeans(card, index) ?? []) {
+      cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cups.length);
     }
   }
   return cups;
