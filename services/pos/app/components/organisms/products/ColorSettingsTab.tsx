@@ -20,7 +20,7 @@ const screenLabels: Record<ColorScreen, string> = {
   cashier_order: "レジ（過去の注文）",
   master: "マスター",
   serve: "提供",
-  caos_nominated: "CaOS（指名）",
+  nominated: "CaOS（指名）",
 };
 
 export function ColorSettingsTab() {
