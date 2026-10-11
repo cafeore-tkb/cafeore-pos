@@ -112,7 +112,7 @@ func TestSnapshotLevel(t *testing.T) {
 		Tracked:         true,
 		CountedQuantity: &counted,
 		Received:        0,
-		Consumed:        1650, // 残り 1350g = 90 杯
+		Consumed:        1650, // 残り 1350g = 90 回
 	}
 	if got := *s.RemainingServings(); got != 90 {
 		t.Fatalf("remaining servings = %v", got)
@@ -120,7 +120,7 @@ func TestSnapshotLevel(t *testing.T) {
 	if s.Level() != models.InventoryLevelWarning {
 		t.Errorf("level = %v", s.Level())
 	}
-	s.Consumed = 2600 // 400g = 26.7 杯
+	s.Consumed = 2600 // 400g = 26.7 回
 	if s.Level() != models.InventoryLevelCritical {
 		t.Errorf("level = %v", s.Level())
 	}
@@ -161,10 +161,10 @@ func TestAlertMessage(t *testing.T) {
 		Resource:         models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
 		Tracked:          true,
 		CountedQuantity:  &counted,
-		Consumed:         1800, // 残り 1200g = 80 杯
+		Consumed:         1800, // 残り 1200g = 80 回
 		ServingsLastHour: 12,
 	}
-	if got, want := alertMessage(kenya), "⚠️ *ケニア* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
+	if got, want := alertMessage(kenya), "⚠️ *ケニア* 残り約80回分（1200g）\n　直近1時間 12回 → 約6時間40分で切れる見込み"; got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 
@@ -174,7 +174,7 @@ func TestAlertMessage(t *testing.T) {
 		Tracked:         true,
 		CountedQuantity: &cups,
 	}
-	if got, want := alertMessage(cup), "🚨 *アイスカップ* 残り約90個（バッファ100個を切りました）"; got != want {
+	if got, want := alertMessage(cup), "🚨 *アイスカップ* 残り約90回分（90個）（バッファ100回を切りました）"; got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 }
@@ -193,7 +193,7 @@ func TestRemindMessage(t *testing.T) {
 		{Resource: models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}},
 	}
 	want := "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
-		"• ケニア: 残り約80杯（1200g）（最終確認 1時間20分前）\n" +
+		"• ケニア: 残り約80回分（1200g）（最終確認 1時間20分前）\n" +
 		"• ホットカップ: 未計測（最終確認 未実施）\n" +
 		"<https://pos.example.com/inventory|在庫ページを開く>"
 	if got := remindMessage(snapshots, now, "https://pos.example.com/"); got != want {

@@ -21,7 +21,7 @@ type stockSnapshot struct {
 	CountedQuantity *float64
 	// 基準点以降の入荷・調整（棚卸しが無いときは最初の入荷も含む）
 	Received float64
-	// 基準点以降の注文での消費量と杯数
+	// 基準点以降の注文での消費量と回数
 	Consumed         float64
 	Servings         int
 	ServingsLastHour int
@@ -89,7 +89,7 @@ func (s stockSnapshot) Level() models.InventoryLevel {
 	}
 }
 
-// 残り杯数が属する通知の閾値。from, from-step, from-2step, …, 0 のうち
+// 残り回数が属する通知の閾値。from, from-step, from-2step, …, 0 のうち
 // remaining 以上で最小のもの。from より多く残っていれば nil。
 //
 // 例（from=500, step=100）: 520 → nil, 500 → 500, 450 → 500, 399 → 400, -3 → 0
@@ -134,16 +134,13 @@ func formatQuantity(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
-// 「残り約N杯（Mg）」。カップは1杯 = 1個なので「残り約N個」
+// 「残り約N回分（Mg）」
 func describeRemaining(s stockSnapshot) string {
 	r, rs := s.Remaining(), s.RemainingServings()
 	if r == nil || rs == nil {
 		return "未計測"
 	}
-	if s.Resource.Kind == string(models.StockResourceKindCup) {
-		return fmt.Sprintf("残り約%.0f個", math.Floor(*rs))
-	}
-	return fmt.Sprintf("残り約%.0f杯（%s%s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
+	return fmt.Sprintf("残り約%.0f回分（%s%s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
 }
 
 // 直近1時間のペースで、あと何時間もつか。
@@ -153,10 +150,10 @@ func describePace(s stockSnapshot) string {
 		return ""
 	}
 	if *rs <= 0 {
-		return fmt.Sprintf("直近1時間 %d杯", s.ServingsLastHour)
+		return fmt.Sprintf("直近1時間 %d回", s.ServingsLastHour)
 	}
 	hours := *rs / float64(s.ServingsLastHour)
-	return fmt.Sprintf("直近1時間 %d杯 → 約%sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
+	return fmt.Sprintf("直近1時間 %d回 → 約%sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
 }
 
 func formatDuration(d time.Duration) string {
@@ -176,12 +173,7 @@ func alertMessage(s stockSnapshot) string {
 	suffix := ""
 	if s.Level() == models.InventoryLevelCritical {
 		icon = "🚨"
-		// バッファは杯数で持つが、カップは1杯 = 1個なので残量と同じく個で出す
-		unit := "杯"
-		if s.Resource.Kind == string(models.StockResourceKindCup) {
-			unit = "個"
-		}
-		suffix = fmt.Sprintf("（バッファ%d%sを切りました）", s.Resource.Buffer, unit)
+		suffix = fmt.Sprintf("（バッファ%d回を切りました）", s.Resource.Buffer)
 	}
 	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.DisplayName(), describeRemaining(s), suffix)}
 	if pace := describePace(s); pace != "" {
