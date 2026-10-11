@@ -163,6 +163,9 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
   レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
 - 支払い済みなのに注文が無い決済（決済中にレジが落ちた、注文の送信に失敗した、Square で払った注文を消した）は
   レジの右上に「未登録の Square 決済」として出る。同じ商品を入力して「この決済で登録」を押すと、二重に決済せずに注文を送れる。
+- 決済が終わっても端末にレシート受け取り画面（印刷・メール・SMS）は出さない（`skip_receipt_screen`）。
+  レシートを求められたら Square データ（管理画面）から出す。端末から出すなら Terminal API の
+  [Issue receipts](https://developer.squareup.com/docs/terminal-api/advanced-features/issue-receipts) を使う（未実装）。
 - 返金は Terminal API ではできない（日本）。Square の管理画面から行う。交通系 IC は返金できない。
 - 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
 

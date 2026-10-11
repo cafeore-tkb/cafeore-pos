@@ -450,12 +450,17 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 
 // buildTerminalCheckout は Square に送る checkout を組み立てる。
 // reference_id にこちらの ID を入れておき、応答が失われても Webhook から行を引けるようにする。
+// 決済後のレシート受け取り画面（印刷・メール・SMS）は出さず、すぐ次の客に回せるようにする。
 func buildTerminalCheckout(record *models.SquareCheckout) square.TerminalCheckout {
+	skipReceiptScreen := true
 	checkout := square.TerminalCheckout{
-		AmountMoney:   square.Money{Amount: int64(record.Amount), Currency: "JPY"},
-		ReferenceID:   record.ID.String(),
-		DeviceOptions: square.DeviceCheckoutOptions{DeviceID: record.DeviceID},
-		PaymentType:   record.PaymentType,
+		AmountMoney: square.Money{Amount: int64(record.Amount), Currency: "JPY"},
+		ReferenceID: record.ID.String(),
+		DeviceOptions: square.DeviceCheckoutOptions{
+			DeviceID:          record.DeviceID,
+			SkipReceiptScreen: &skipReceiptScreen,
+		},
+		PaymentType: record.PaymentType,
 	}
 	if record.OrderNumber != nil {
 		checkout.Note = fmt.Sprintf("No.%d", *record.OrderNumber)
