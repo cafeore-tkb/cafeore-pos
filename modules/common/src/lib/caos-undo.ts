@@ -41,7 +41,7 @@ type UndoCupJSON = components["schemas"]["CaosUndoCup"];
 const boardCups = (cards: readonly CaosCard[]) =>
   new Map(cards.flatMap((card) => card.cups.map((cup) => [cup.id, cup])));
 
-const restoreOf = (cup: CaosBoardCup): UndoCupState => ({
+const stateOf = (cup: CaosBoardCup): UndoCupState => ({
   ...cup.state,
   readyAt: cup.readyAt,
 });
@@ -49,7 +49,7 @@ const restoreOf = (cup: CaosBoardCup): UndoCupState => ({
 // そのまま残るはずのカップ（番号だけがずれうる）
 const unchanged = (cup: CaosBoardCup) => ({
   id: cup.id,
-  restore: restoreOf(cup),
+  restore: stateOf(cup),
   expect: {
     dripper: cup.state.dripper,
     dripId: cup.state.dripId,
@@ -85,7 +85,7 @@ export const undoOfWrites = (
           return [
             {
               id,
-              restore: restoreOf(cup),
+              restore: stateOf(cup),
               expect: {
                 dripper: write.after.dripper,
                 dripId: write.after.drip_id,
@@ -114,7 +114,7 @@ export const undoOfNext = (
   const entry = (card: CaosCard | undefined, finished: boolean) =>
     (card?.cups ?? []).map((cup) => ({
       id: cup.id,
-      restore: restoreOf(cup),
+      restore: stateOf(cup),
       expect: {
         dripper,
         dripId: card?.dripId ?? null,
@@ -139,6 +139,9 @@ const undoStateJSON = (state: UndoCupState) => ({
   ready_at: state.readyAt?.toISOString() ?? null,
 });
 
+const sameUndoState = (a: UndoCupState, b: UndoCupState) =>
+  JSON.stringify(undoStateJSON(a)) === JSON.stringify(undoStateJSON(b));
+
 /**
  * 覚えた操作から POST /api/caos/undo に送るカップを作る。cards は今の盤面のカード。
  * 消えた・提供済み・ほかの画面で変わったカップがあれば、送らずに理由を返す
@@ -146,8 +149,18 @@ const undoStateJSON = (state: UndoCupState) => ({
 export const caosUndoCups = (
   entry: CaosUndoEntry,
   cards: readonly CaosCard[],
-): { cups: UndoCupJSON[] } | { error: string } => {
+): { cups: UndoCupJSON[] } | { error: string; arriving?: true } => {
   const byId = boardCups(cards);
+  // 操作の結果がまだ盤面に届いていない（全部のカップが前の値のまま）。少し待てば戻せる
+  const arriving = entry.cups.every(({ id, restore }) => {
+    const now = byId.get(id);
+    return now !== undefined && sameUndoState(stateOf(now), restore);
+  });
+  if (arriving)
+    return {
+      error: "操作の結果がまだ届いていません。もう一度押してください",
+      arriving: true,
+    };
   const out: UndoCupJSON[] = [];
   for (const { id, restore, expect } of entry.cups) {
     const now = byId.get(id);
@@ -162,7 +175,7 @@ export const caosUndoCups = (
       return { error: "ほかの画面で先に変わったので戻せません" };
     out.push({
       cup_id: id,
-      current: undoStateJSON({ ...now.state, readyAt: now.readyAt }),
+      current: undoStateJSON(stateOf(now)),
       restore: undoStateJSON(restore),
     });
   }

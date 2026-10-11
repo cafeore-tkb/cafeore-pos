@@ -4,11 +4,12 @@ import { toast } from "sonner";
 // 操作のあと「1つ戻す」が押せる秒
 const UNDO_SEC = 10;
 
-/** 戻す処理。戻せたら true（断られたら理由を通知で出して false） */
-export type UndoRun = () => boolean | Promise<boolean>;
+/** 戻す処理。戻せたら true、断られたら理由を通知で出して false。"retry" なら覚えたままにする（もう一度押せる） */
+export type UndoRun = () => UndoResult | Promise<UndoResult>;
+type UndoResult = boolean | "retry";
 
 // 「1つ戻す」。この画面が最後にした操作を 1 つだけ、UNDO_SEC 秒のあいだ覚える（画面のメモリだけ。再読み込みで消える）。
-// nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。戻したら（断られても）忘れる。
+// nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。戻したら（断られても）忘れる（結果がまだ届いていないときは覚えたまま）。
 export const useCaosUndo = (nowMs: number) => {
   const [last, setLast] = useState<{
     label: string;
@@ -38,13 +39,14 @@ export const useCaosUndo = (nowMs: number) => {
       running.current = true;
       setPending(true);
       void Promise.resolve(action.run())
-        .then((ok) => {
-          if (ok) toast.success(`「${action.label}」を戻しました`);
+        .then((result) => {
+          if (result === true) toast.success(`「${action.label}」を戻しました`);
+          if (result !== "retry")
+            setLast((current) => (current === action ? null : current));
         })
         .finally(() => {
           running.current = false;
           setPending(false);
-          setLast((current) => (current === action ? null : current));
         });
     },
   };

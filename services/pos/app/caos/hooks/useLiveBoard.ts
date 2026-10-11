@@ -60,6 +60,10 @@ export const useLiveBoard = ({
     /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
     undoRun: (entry: CaosUndoEntry) => () => {
       const request = caosUndoCups(entry, cardsRef.current);
+      if ("error" in request && request.arriving) {
+        toast(request.error);
+        return "retry";
+      }
       if ("error" in request) return succeeded(request);
       return undoCaosCups(request.cups).then(succeeded);
     },
