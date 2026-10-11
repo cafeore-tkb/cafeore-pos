@@ -396,10 +396,13 @@ type MenuUpdateRequest struct {
 
 // OrderCreateRequest defines model for OrderCreateRequest.
 type OrderCreateRequest struct {
-	BillingAmount     int                     `json:"billing_amount"`
-	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
-	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *int                    `json:"discount_order_id"`
+	BillingAmount int                     `json:"billing_amount"`
+	Comments      *[]CommentCreateRequest `json:"comments,omitempty"`
+
+	// CreatedAt レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
+	CreatedAt         *time.Time `json:"created_at,omitempty"`
+	DiscountOrderCups *int       `json:"discount_order_cups,omitempty"`
+	DiscountOrderId   *int       `json:"discount_order_id"`
 
 	// IdempotencyKey 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
 	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`

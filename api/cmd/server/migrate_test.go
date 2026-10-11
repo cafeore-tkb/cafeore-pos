@@ -238,8 +238,8 @@ type oldItemStockUsage struct {
 
 func (oldItemStockUsage) TableName() string { return "item_stock_usages" }
 
-// 前の形の DB に migrate を流すと、アイテムの在庫ができ、前の注文で減った量が埋まり、使用量の表と豆が消える。
-// もう一度流しても何も変わらない。
+// 前の形の DB（種類の項目も無い）に migrate を流すと、種類の項目の最初の値が入り、アイテムの在庫ができ、
+// 前の注文で減った量が埋まり、使用量の表と豆が消える。もう一度流しても何も変わらない。
 func TestMigrateSplitsStockIntoItemsAndCups(t *testing.T) {
 	db := testdb.NewDatabase(t, nil)
 	must := func(err error) {
@@ -250,18 +250,19 @@ func TestMigrateSplitsStockIntoItemsAndCups(t *testing.T) {
 	}
 	// 前の形のテーブルの ID の既定値に uuid_generate_v4() が要る
 	must(db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
-	old := []any{&oldStockResource{}, &oldItemStockUsage{}}
+	old := []any{&itemTypeBeforeFlags{}, &oldStockResource{}, &oldItemStockUsage{}}
 	for _, m := range models.All() {
 		switch m.(type) {
-		case *models.StockResource, *models.StockResourceItemType, *models.OrderStockUsage:
+		case *models.ItemType, *models.StockResource, *models.StockResourceItemType, *models.OrderStockUsage:
 		default:
 			old = append(old, m)
 		}
 	}
 	must(db.AutoMigrate(old...))
 
-	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
+	hot := itemTypeBeforeFlags{ID: uuid.New(), Name: "hot", DisplayName: "ホット"}
 	must(db.Create(&hot).Error)
+	must(db.Create(&itemTypeBeforeFlags{ID: uuid.New(), Name: "others", DisplayName: "グッズ"}).Error)
 	blend := models.Item{Name: "ブレンド", Abbr: "ブ", ItemTypeID: hot.ID}
 	gone := models.Item{Name: "販売終了", Abbr: "終", ItemTypeID: hot.ID}
 	must(db.Create(&blend).Error)
@@ -294,6 +295,9 @@ func TestMigrateSplitsStockIntoItemsAndCups(t *testing.T) {
 		if len(usages) != 1 || usages[0].OrderMenuID != line.ID || usages[0].OrderID != order.ID ||
 			usages[0].ResourceID != cup.ID || usages[0].Servings != 2 || usages[0].Amount != 2 {
 			t.Errorf("前の注文で減った量 = %+v, want カップ 2", usages)
+		}
+		if flags := readItemTypeFlags(t, db); flags["hot"] != (itemTypeFlags{MakesCup: true, NeedsBrew: true}) || flags["others"] != (itemTypeFlags{}) {
+			t.Errorf("種類の項目 = %+v", flags)
 		}
 		var beanEvents int64
 		must(db.Model(&models.StockEvent{}).Where("resource_id = ?", bean.ID).Count(&beanEvents).Error)

@@ -9,8 +9,8 @@ import {
   caosDripperError,
   caosLane,
   cupNeedsBrew,
-  itemMakesCup,
 } from "./caos-board";
+import type { PracticeDataItemType } from "./caosPracticeData";
 
 // CaOS の実データテスト（練習）の盤面。ブラウザの中だけで動かし、サーバー・本番の盤面・注文・在庫には触らない。
 //
@@ -21,7 +21,7 @@ import {
 // （api/internal/handlers/caos.go の writeCups・placeCaosCups・advance と、同じ確かめ方・同じ理由の文。
 // サーバーを使わずに練習するため、わざと 2 か所に持つ。決まりや文を変えるときは両方そろえること）。
 // ドリッパーの列の分け方は、API の splitCaosLane と同じ結果になる本番の caosLane をそのまま使う。
-//   - 抽出が要るかは本番と同じく種類の名前で決める（cupNeedsBrew）。上級生のみのカードは本番と同じく、どのドリッパーにも置ける
+//   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。上級生のみのカードは本番と同じく、どのドリッパーにも置ける
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
 
@@ -45,6 +45,8 @@ export interface CaosPracticeSourceItem {
   abbr?: string;
   /** 商品の種類の名前（item_type の name） */
   type: string;
+  /** 商品の種類の設定（注文したときの設定か、POS の今の種類から引いたもの）。無ければカップにしない */
+  itemType?: PracticeDataItemType;
 }
 
 /** 練習に使う実データの注文（使う項目だけ） */
@@ -56,7 +58,7 @@ export interface CaosPracticeSourceOrder {
 }
 
 /**
- * 実データの注文を、練習の盤面の注文にする。グッズ以外の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
+ * 実データの注文を、練習の盤面の注文にする。カップを作る種類（itemType の makes_cup）の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
  * 抽出の要らないカップ（ミルクなど）もカップにはなるが、本番と同じく buildCaosCards がカードにしない。
  * 指名は実データに無いので、どのカップも指名なし（明細の assignee は null）。ID は練習の中だけのもの
  */
@@ -67,7 +69,9 @@ export const toCaosPracticeOrder = (
   const id = `practice-${index}`;
   const cups: Cup[] = [];
   order.items.forEach((item, position) => {
-    if (!itemMakesCup(item.type)) return;
+    // 種類の設定が分からない品物は、ミルクやグッズを抽出の要るカップにしないよう、カップにしない
+    const type = item.itemType;
+    if (!type?.makes_cup) return;
     const cupId = `${id}-${position}`;
     cups.push({
       id: cupId,
@@ -76,7 +80,14 @@ export const toCaosPracticeOrder = (
         id: item.id || `name:${item.name}`,
         name: item.name,
         abbr: item.abbr || item.name,
-        item_type: { name: item.type, display_name: item.type },
+        item_type: {
+          name: item.type,
+          display_name: type.display_name || item.type,
+          makes_cup: type.makes_cup,
+          needs_brew: type.needs_brew,
+          senior_only: type.senior_only,
+          iced_brew: false,
+        },
       },
       readyAt: null,
       servedAt: null,
