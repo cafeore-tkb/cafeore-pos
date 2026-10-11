@@ -31,8 +31,9 @@ import { useTestPlay } from "./useTestPlay";
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
 
-// タイマーの速さ（ヘッダーで押すたびに次へ）
+// 実データテストの時計の速さ（ヘッダーで押すたびに次へ）。テストは最も速い 10x で始める
 const SIM_SPEEDS = [1, 2, 5, 10];
+const TEST_START_SPEED = SIM_SPEEDS[SIM_SPEEDS.length - 1];
 
 // 新しいカード（dripId）の ID
 const newDripId = () => crypto.randomUUID();
@@ -56,7 +57,7 @@ const playOnSuccess = (sent: boolean | Promise<boolean>, play: () => void) => {
 // assignWrites・unassignWrites・mergeWrites で同じ。違うのは送り先だけ。
 export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
+  const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
@@ -147,6 +148,8 @@ export const useCaosSession = () => {
       waitingCups: beanWaitingCups,
       onRecorded: test.session ? undefined : beanStock.onRecorded,
     },
+    /** 実データテストの時計（一時停止・速さ・やめる）を出すか。本番の盤面は実時間なので出さない */
+    simulating: Boolean(test.session),
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,
@@ -238,6 +241,7 @@ export const useCaosSession = () => {
       start: (startMs: number, durationMinutes: 30 | 60) => {
         test.start(startMs, durationMinutes);
         setIsRunning(true);
+        setSimSpeed(TEST_START_SPEED);
       },
       finish: () => {
         test.finish();

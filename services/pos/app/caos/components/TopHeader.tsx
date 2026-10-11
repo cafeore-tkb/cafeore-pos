@@ -41,6 +41,8 @@ interface TopHeaderProps {
   totalWaitingCups: number;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  /** 実データテストの時計（一時停止・速さ・やめる）を出すか */
+  simulating: boolean;
   isRunning: boolean;
   onTogglePlay: () => void;
   simSpeed: number;
@@ -110,6 +112,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   totalWaitingCups,
   soundEnabled,
   onToggleSound,
+  simulating,
   isRunning,
   onTogglePlay,
   simSpeed,
@@ -188,37 +191,43 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <div className="font-bold font-mono text-[#0f172a] text-[26px] leading-none tracking-tight">
             {timeStr}
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
-            <button
-              type="button"
-              onClick={onTogglePlay}
-              title={isRunning ? "一時停止" : "タイマー再開"}
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
-            >
-              {isRunning ? (
-                <Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onCycleSpeed}
-              title="シミュレーション速度切替"
-              className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
-            >
-              {simSpeed}x
-            </button>
-            <button
-              type="button"
-              onClick={onResetData}
-              title="初期状態にリセット"
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1 empty:hidden">
+            {simulating && (
+              <>
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  title={isRunning ? "一時停止" : "タイマー再開"}
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
+                >
+                  {isRunning ? (
+                    <Pause className="h-3.5 w-3.5" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCycleSpeed}
+                  title="シミュレーション速度切替"
+                  className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
+                >
+                  {simSpeed}x
+                </button>
+                <button
+                  type="button"
+                  onClick={onResetData}
+                  title="初期状態にリセット"
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
             {showTimelineControls && (
-              <div className="ml-1 flex items-center gap-1 border-slate-300 border-l pl-1">
+              <div
+                className={`flex items-center gap-1 ${simulating ? "ml-1 border-slate-300 border-l pl-1" : ""}`}
+              >
                 <button
                   type="button"
                   onClick={() => onTimelineNavigate("back")}
