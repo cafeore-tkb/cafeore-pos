@@ -1,4 +1,4 @@
-import type { Label, PrintJob, TextLine } from "../document";
+import type { Label, PrintJob, RasterImage, TextLine } from "../document";
 import type {
   CreateLabelPrinter,
   LabelPrinter,
@@ -15,6 +15,8 @@ export type EposBuilder = {
   ALIGN_LEFT: string;
   ALIGN_CENTER: string;
   CUT_FEED: string;
+  COLOR_1: string;
+  MODE_MONO: string;
   addTextLang: (lang: string) => unknown;
   addTextAlign: (align: string) => unknown;
   addTextSize: (width: number, height: number) => unknown;
@@ -24,6 +26,16 @@ export type EposBuilder = {
   addPageArea: (x: number, y: number, width: number, height: number) => unknown;
   addPagePosition: (x: number, y: number) => unknown;
   addLogo: (key1: number, key2: number) => unknown;
+  /** context からは getImageData で画素（data・width・height）を読むだけ */
+  addImage: (
+    context: { getImageData: () => RasterImage },
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    color: string,
+    mode: string,
+  ) => unknown;
   addFeedLine: (line: number) => unknown;
   addFeedPosition: (position: string) => unknown;
   addCut: (type: string) => unknown;
@@ -102,6 +114,22 @@ const writeLabel = (
   label: Label,
   config: Pick<EposPrinterConfig, "logoKey">,
 ) => {
+  if (label.type === "image") {
+    const { image } = label;
+    builder.addTextAlign(builder.ALIGN_CENTER);
+    builder.addImage(
+      { getImageData: () => image },
+      0,
+      0,
+      image.width,
+      image.height,
+      builder.COLOR_1,
+      builder.MODE_MONO,
+    );
+    builder.addTextAlign(builder.ALIGN_LEFT);
+    return;
+  }
+
   if (label.type === "flow") {
     const center = label.align === "center";
     if (center) builder.addTextAlign(builder.ALIGN_CENTER);
