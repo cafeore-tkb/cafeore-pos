@@ -536,6 +536,11 @@ export interface components {
        * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
        */
       idempotency_key?: string;
+      /**
+       * Format: date-time
+       * @description レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。12 時間より前の時刻は 400
+       */
+      created_at?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
