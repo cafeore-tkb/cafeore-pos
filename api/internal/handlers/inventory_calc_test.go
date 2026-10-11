@@ -112,7 +112,7 @@ func TestSnapshotLevel(t *testing.T) {
 		Tracked:         true,
 		CountedQuantity: &counted,
 		Received:        0,
-		Consumed:        1650, // 残り 1350g = 90 杯
+		Consumed:        1650, // 残り 1350g = 90 回
 	}
 	if got := *s.RemainingServings(); got != 90 {
 		t.Fatalf("remaining servings = %v", got)
@@ -120,7 +120,7 @@ func TestSnapshotLevel(t *testing.T) {
 	if s.Level() != models.InventoryLevelWarning {
 		t.Errorf("level = %v", s.Level())
 	}
-	s.Consumed = 2600 // 400g = 26.7 杯
+	s.Consumed = 2600 // 400g = 26.7 回
 	if s.Level() != models.InventoryLevelCritical {
 		t.Errorf("level = %v", s.Level())
 	}
