@@ -267,13 +267,13 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	f := newCaosFixture(t, db)
 	// 同じプロセスの中ではインスタンスの ID が同じなので、送った通知は別の接続で受けて確かめる
-	other := listenAsOtherInstance(t, dsn, caosLanesChangedChannel)
+	other := listenAsOtherInstance(t, dsn, dripperAssigneesChangedChannel)
 	f.mustPutLane(t, 2, "山田", true)
-	expectNotification(t, other, caosLanesChangedChannel)
+	expectNotification(t, other, dripperAssigneesChangedChannel)
 	if code, _ := f.swapLanes(t, 2, 3); code != http.StatusOK {
 		t.Fatalf("swap = %d", code)
 	}
-	expectNotification(t, other, caosLanesChangedChannel)
+	expectNotification(t, other, dripperAssigneesChangedChannel)
 
 	// ほかのインスタンスで替わったら、通知を受けて今日の担当者を読み直して配る。つないだときにも配り直す
 	hub := NewHub()
@@ -295,7 +295,7 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 		Updates(map[string]any{"name": "佐藤", "senior": false}).Error; err != nil {
 		t.Fatal(err)
 	}
-	sendNotify(t, db, caosLanesChangedChannel, uuid.NewString())
+	sendNotify(t, db, dripperAssigneesChangedChannel, uuid.NewString())
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCaosLanes || laneNames(*msg.CaosLanes) != "1: 2: 3:佐藤 4: 5: 6:" {
 		t.Fatalf("broadcast = %+v", msg)
 	}
@@ -308,12 +308,12 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 
 func TestPendingChangesCaosLanes(t *testing.T) {
 	q := newPendingChanges()
-	q.add(caosLanesChangedChannel, instanceID)
+	q.add(dripperAssigneesChangedChannel, instanceID)
 	if s := q.take(); s.caosLanes {
 		t.Fatal("own notification was queued")
 	}
-	q.add(caosLanesChangedChannel, uuid.NewString())
-	q.add(caosLanesChangedChannel, uuid.NewString())
+	q.add(dripperAssigneesChangedChannel, uuid.NewString())
+	q.add(dripperAssigneesChangedChannel, uuid.NewString())
 	if s := q.take(); !s.caosLanes || s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want caos lanes only", s)
 	}
