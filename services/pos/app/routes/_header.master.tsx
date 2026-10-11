@@ -16,11 +16,13 @@ import {
 } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
-import { useCupEmergency } from "~/components/functional/useCupEmergency";
+import {
+  type EmergencyInitial,
+  useCupEmergency,
+} from "~/components/functional/useCupEmergency";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import {
   EmergencyIcon,
-  type EmergencyInitial,
   EmergencySheet,
 } from "~/components/molecules/EmergencyForm";
 import { InputComment } from "~/components/molecules/InputComment";

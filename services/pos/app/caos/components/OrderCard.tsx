@@ -99,6 +99,7 @@ export const OrderCard: React.FC<
   const surface = surfaceOf(done, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardName(card);
+  const reasons = emergencyReasons(card);
   const typeName = cardTypeName(card);
   const split = look?.split;
   // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
@@ -134,10 +135,10 @@ export const OrderCard: React.FC<
               緊急
             </span>
             <span
-              title={emergencyReasons(card)}
+              title={reasons}
               className="min-w-0 truncate font-bold text-[11px] text-red-700"
             >
-              {emergencyReasons(card)}
+              {reasons}
             </span>
           </>
         )}

@@ -80,13 +80,16 @@ const orderByNo = (orders: readonly OrderEntity[], orderNo: string) =>
     .filter((order) => String(order.orderId) === orderNo.trim())
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 
+/** 緊急の入力を開いたときの値（カップやカードから開けば、その注文番号とカップ） */
+export type EmergencyInitial = { orderNo: number; cupIds: string[] };
+
 /**
  * 緊急の入力：注文番号・入れ直すカップ・理由。initial はカップやカードから開いたときの注文番号とカップ。
  * 番号を変えると、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。理由の候補はよく使う順（frequentEmergencyReasons）
  */
 export const useEmergencyDraft = (
   orders: readonly OrderEntity[],
-  initial?: { orderNo: number; cupIds: string[] },
+  initial?: EmergencyInitial,
 ) => {
   const [orderNo, setOrderNo] = useState(
     initial ? String(initial.orderNo) : "",
@@ -117,7 +120,7 @@ export const useEmergencyDraft = (
     reason,
     setReason,
     reasons,
-    /** 入れ直すカップ（addEmergency に渡す） */
+    /** 入れ直すカップ（addEmergency に渡す。理由は reason） */
     selected: order
       ? cups
           .filter((cup) => picked.includes(cup.cupId))
@@ -125,5 +128,3 @@ export const useEmergencyDraft = (
       : [],
   };
 };
-
-export type EmergencyDraft = ReturnType<typeof useEmergencyDraft>;

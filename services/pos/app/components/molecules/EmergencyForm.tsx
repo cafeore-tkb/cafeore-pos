@@ -1,9 +1,9 @@
 import { type OrderEntity, assignmentDisplay } from "@cafeore/common";
 import { Siren } from "lucide-react";
-import { useId } from "react";
+import { type ComponentProps, useId } from "react";
 import {
   type EmergencyCup,
-  type EmergencyDraft,
+  type EmergencyInitial,
   useEmergencyDraft,
 } from "../functional/useCupEmergency";
 import { Button } from "../ui/button";
@@ -15,22 +15,32 @@ export const EmergencyIcon = Siren;
 
 /**
  * 緊急（入れ直し）の入力：注文番号・入れ直すカップ・理由（よく使うものを押すか、自由に書く）。マスターと CaOS で同じもの。
- * 状態は useEmergencyDraft。確定すると onSubmit（足して、そのカップのシールを刷る）
+ * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ）。
+ * 確定すると onAdd（足して、そのカップのシールを刷る）、足せたら onDone
  */
 export const EmergencyForm = ({
-  draft,
-  onSubmit,
+  orders,
+  initial,
+  onAdd,
+  onDone,
 }: {
-  draft: EmergencyDraft;
-  onSubmit: () => void;
+  orders: readonly OrderEntity[];
+  initial?: EmergencyInitial;
+  onAdd: (cups: EmergencyCup[], reason: string) => Promise<boolean>;
+  onDone: () => void;
 }) => {
   const id = useId();
+  const draft = useEmergencyDraft(orders, initial);
   return (
     <form
       className="grid gap-4"
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
-        if (draft.selected.length > 0) onSubmit();
+        if (
+          draft.selected.length > 0 &&
+          (await onAdd(draft.selected, draft.reason))
+        )
+          onDone();
       }}
     >
       <label htmlFor={`${id}-no`} className="grid gap-1 font-bold text-sm">
@@ -120,35 +130,19 @@ export const EmergencyForm = ({
   );
 };
 
-/** 緊急の入力を開いたときの値（カップから開けば、その注文番号とカップ） */
-export type EmergencyInitial = { orderNo: number; cupIds: string[] };
-
 /** マスターの緊急の入力（右から出す）。足せたら閉じる */
 export const EmergencySheet = ({
-  orders,
-  initial,
-  onAdd,
   onClose,
-}: {
-  orders: readonly OrderEntity[];
-  initial?: EmergencyInitial;
-  onAdd: (cups: EmergencyCup[], reason: string) => Promise<boolean>;
+  ...form
+}: Omit<ComponentProps<typeof EmergencyForm>, "onDone"> & {
   onClose: () => void;
-}) => {
-  const draft = useEmergencyDraft(orders, initial);
-  return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="overflow-y-auto">
-        <SheetHeader className="mb-4">
-          <SheetTitle>緊急（入れ直し）</SheetTitle>
-        </SheetHeader>
-        <EmergencyForm
-          draft={draft}
-          onSubmit={async () => {
-            if (await onAdd(draft.selected, draft.reason.trim())) onClose();
-          }}
-        />
-      </SheetContent>
-    </Sheet>
-  );
-};
+}) => (
+  <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <SheetContent className="overflow-y-auto">
+      <SheetHeader className="mb-4">
+        <SheetTitle>緊急（入れ直し）</SheetTitle>
+      </SheetHeader>
+      <EmergencyForm {...form} onDone={onClose} />
+    </SheetContent>
+  </Sheet>
+);
