@@ -23,7 +23,8 @@ const nominatedBayId = (assignee: string) => {
 };
 
 // 抽出が要るアイテムか。アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。
-// TODO: C1（#855）の商品の種類の「抽出が要る」が入ったら、それに置き換える
+// needs_brew を見ないのは、このファイルは CaOS3（#862）でファイルごと消え、新しい CaOS は caos-board.ts（#861）の
+// itemMakesCup などで決めるから。そちらを C1 の項目に置き換えるのは、C1 と CaOS3 のうち後から main に入る方でやる
 export const isDripItem = (item: ItemEntity) =>
   !(
     item.item_type.name === "others" ||

@@ -59,6 +59,15 @@ const (
 	QRCODE      SquarePaymentType = "QR_CODE"
 )
 
+// Defines values for SquareRefundStatus.
+const (
+	RefundFailed   SquareRefundStatus = "failed"
+	RefundNone     SquareRefundStatus = "none"
+	RefundPending  SquareRefundStatus = "pending"
+	RefundRefunded SquareRefundStatus = "refunded"
+	RefundUnknown  SquareRefundStatus = "unknown"
+)
+
 // Defines values for StockEventKind.
 const (
 	StockEventKindAdjust  StockEventKind = "adjust"
@@ -71,6 +80,54 @@ const (
 	StockResourceKindCup  StockResourceKind = "cup"
 	StockResourceKindItem StockResourceKind = "item"
 )
+
+// CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+// dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+type CaosCupAfter struct {
+	DripId  *openapi_types.UUID `json:"drip_id"`
+	Dripper *int                `json:"dripper"`
+
+	// InsertBefore dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
+	// dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+	InsertBefore *openapi_types.UUID `json:"insert_before"`
+
+	// StartBrew 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今
+	StartBrew bool `json:"start_brew"`
+}
+
+// CaosCupState カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+type CaosCupState struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *int                `json:"dripper_position"`
+}
+
+// CaosCupsWrite カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+// 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+type CaosCupsWrite struct {
+	// After CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+	// start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+	// dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+	After CaosCupAfter `json:"after"`
+
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
+}
+
+// CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
+type CaosCupsWriteRequest struct {
+	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosNextRequest defines model for CaosNextRequest.
+type CaosNextRequest struct {
+	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+	DripId *openapi_types.UUID `json:"drip_id"`
+}
 
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
@@ -200,21 +257,57 @@ type ItemResponse struct {
 // ItemTypeCreateRequest defines model for ItemTypeCreateRequest.
 type ItemTypeCreateRequest struct {
 	DisplayName string `json:"display_name"`
-	Name        string `json:"name"`
+
+	// IcedBrew 省略したら false。needs_brew が false のときに true は 400
+	IcedBrew *bool `json:"iced_brew,omitempty"`
+
+	// MakesCup 省略したら true
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら makes_cup と同じ。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら false。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemTypeResponse defines model for ItemTypeResponse.
 type ItemTypeResponse struct {
-	DisplayName string             `json:"display_name"`
-	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+	DisplayName string `json:"display_name"`
+
+	// IcedBrew この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false
+	IcedBrew bool               `json:"iced_brew"`
+	Id       openapi_types.UUID `json:"id"`
+
+	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
+	MakesCup bool   `json:"makes_cup"`
+	Name     string `json:"name"`
+
+	// NeedsBrew この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false
+	NeedsBrew bool `json:"needs_brew"`
+
+	// SeniorOnly この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false
+	SeniorOnly bool `json:"senior_only"`
 }
 
 // ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
 type ItemTypeUpdateRequest struct {
-	DisplayName string             `json:"display_name"`
-	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
+	DisplayName string `json:"display_name"`
+
+	// IcedBrew 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	IcedBrew *bool              `json:"iced_brew,omitempty"`
+	Id       openapi_types.UUID `json:"id"`
+
+	// MakesCup 省略したら今の値のまま
+	MakesCup *bool  `json:"makes_cup,omitempty"`
+	Name     string `json:"name"`
+
+	// NeedsBrew 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400
+	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// SeniorOnly 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
 
 // ItemUpdateRequest defines model for ItemUpdateRequest.
@@ -307,8 +400,11 @@ type OrderCreateRequest struct {
 	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
 	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int                    `json:"discount_order_id"`
-	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
-	OrderId           int                     `json:"order_id"`
+
+	// IdempotencyKey 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
+	MenuIds        []MenuInfoCreate    `json:"menu_ids"`
+	OrderId        int                 `json:"order_id"`
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
@@ -320,8 +416,22 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	Id   openapi_types.UUID `json:"id"`
-	Item ItemResponse       `json:"item"`
+	// BrewFinishedAt CaOS で抽出を終えた時刻
+	BrewFinishedAt *time.Time `json:"brew_finished_at"`
+
+	// BrewStartedAt CaOS で抽出を始めた時刻
+	BrewStartedAt *time.Time `json:"brew_started_at"`
+
+	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+	DripId *openapi_types.UUID `json:"drip_id"`
+
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	Dripper *int `json:"dripper"`
+
+	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
+	DripperPosition *int               `json:"dripper_position"`
+	Id              openapi_types.UUID `json:"id"`
+	Item            ItemResponse       `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -331,6 +441,18 @@ type OrderCupResponse struct {
 
 	// ServedAt このカップを提供した時刻。未提供なら null
 	ServedAt *time.Time `json:"served_at"`
+}
+
+// OrderListItem defines model for OrderListItem.
+type OrderListItem struct {
+	BillingAmount     int                `json:"billing_amount"`
+	CreatedAt         time.Time          `json:"created_at"`
+	DiscountOrderCups *int               `json:"discount_order_cups,omitempty"`
+	Id                openapi_types.UUID `json:"id"`
+	OrderId           int                `json:"order_id"`
+	ReadyAt           *time.Time         `json:"ready_at"`
+	Received          *int               `json:"received,omitempty"`
+	ServedAt          *time.Time         `json:"served_at"`
 }
 
 // OrderResponse defines model for OrderResponse.
@@ -431,6 +553,17 @@ type SquareCheckoutResponse struct {
 	PaymentIds  []string `json:"payment_ids"`
 	PaymentType string   `json:"payment_type"`
 
+	// RefundError 返金を断られた・確かめられなかったときの Square のエラー
+	RefundError *string `json:"refund_error"`
+
+	// RefundStatus 返金（全額）の状態。
+	//   - none: 返金を頼んでいない
+	//   - pending: Square に頼んだ。結果を待っている
+	//   - refunded: 返金が終わった
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+	RefundStatus SquareRefundStatus `json:"refund_status"`
+
 	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
 	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -480,6 +613,14 @@ type SquareDeviceStatus string
 
 // SquarePaymentType Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
 type SquarePaymentType string
+
+// SquareRefundStatus 返金（全額）の状態。
+//   - none: 返金を頼んでいない
+//   - pending: Square に頼んだ。結果を待っている
+//   - refunded: 返金が終わった
+//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+type SquareRefundStatus string
 
 // SquareStatusResponse defines model for SquareStatusResponse.
 type SquareStatusResponse struct {
@@ -579,6 +720,12 @@ type StockResourceResponse struct {
 
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
+
+// WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
+type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
+type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

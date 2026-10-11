@@ -32,7 +32,7 @@ import (
 	"cafeore-pos/api/internal/square"
 )
 
-// fakeSquare は Terminal API・Payments API・Devices API のうち使う部分だけを真似る。
+// fakeSquare は Terminal API・Payments API・Refunds API・Devices API のうち使う部分だけを真似る。
 type fakeSquare struct {
 	mu        sync.Mutex
 	checkouts map[string]*square.TerminalCheckout
@@ -40,6 +40,12 @@ type fakeSquare struct {
 	created   []map[string]any
 	codes     map[string]*square.DeviceCode
 	codeOrder []string // ListDeviceCodes で返す順
+
+	refunds         map[string]*square.PaymentRefund
+	refundKeys      map[string]string // idempotency_key → 返金の ID
+	refundRequests  []map[string]any  // POST /v2/refunds に届いた本文
+	declinePayments map[string]bool   // 返金を断る決済（交通系 IC など）
+	loseRefunds     int               // この回数だけ、返金を作ってから応答を 500 にする（応答が失われた）
 }
 
 func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
@@ -47,6 +53,10 @@ func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
 		checkouts: map[string]*square.TerminalCheckout{},
 		payments:  map[string]*square.Payment{},
 		codes:     map[string]*square.DeviceCode{},
+
+		refunds:         map[string]*square.PaymentRefund{},
+		refundKeys:      map[string]string{},
+		declinePayments: map[string]bool{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
 	t.Cleanup(server.Close)
@@ -131,6 +141,51 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(http.StatusOK, map[string]any{"payment": payment})
+	case r.Method == http.MethodPost && path == "/v2/refunds":
+		var body struct {
+			IdempotencyKey string       `json:"idempotency_key"`
+			PaymentID      string       `json:"payment_id"`
+			AmountMoney    square.Money `json:"amount_money"`
+			Reason         string       `json:"reason"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		var generic map[string]any
+		_ = json.Unmarshal(raw, &generic)
+		f.refundRequests = append(f.refundRequests, generic)
+		if id, ok := f.refundKeys[body.IdempotencyKey]; ok {
+			writeJSON(http.StatusOK, map[string]any{"refund": f.refunds[id]})
+			return
+		}
+		payment, ok := f.payments[body.PaymentID]
+		if !ok {
+			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
+			return
+		}
+		if f.declinePayments[body.PaymentID] {
+			writeJSON(http.StatusBadRequest, map[string]any{"errors": []square.Error{{Code: "REFUND_DECLINED", Detail: "cannot refund"}}})
+			return
+		}
+		refund := &square.PaymentRefund{
+			ID: fmt.Sprintf("rf_%d", len(f.refunds)+1), Status: "PENDING",
+			AmountMoney: body.AmountMoney, PaymentID: body.PaymentID, Reason: body.Reason,
+		}
+		f.refunds[refund.ID] = refund
+		f.refundKeys[body.IdempotencyKey] = refund.ID
+		payment.RefundIDs = append(payment.RefundIDs, refund.ID)
+		if f.loseRefunds > 0 {
+			f.loseRefunds--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
+		writeJSON(http.StatusOK, map[string]any{"refund": refund})
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/refunds/"):
+		refund, ok := f.refunds[strings.TrimPrefix(path, "/v2/refunds/")]
+		if !ok {
+			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
+			return
+		}
+		writeJSON(http.StatusOK, map[string]any{"refund": refund})
 	default:
 		writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
 	}
@@ -145,6 +200,19 @@ func (f *fakeSquare) complete(checkoutID string, paid int64) {
 	checkout := f.checkouts[checkoutID]
 	checkout.Status = squareStatusCompleted
 	checkout.PaymentIDs = []string{paymentID}
+}
+
+// completeRefund は Square で返金が終わった状態にする。
+func (f *fakeSquare) completeRefund(refundID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	refund := f.refunds[refundID]
+	refund.Status = "COMPLETED"
+	payment := f.payments[refund.PaymentID]
+	if payment.RefundedMoney == nil {
+		payment.RefundedMoney = &square.Money{Currency: "JPY"}
+	}
+	payment.RefundedMoney.Amount += refund.AmountMoney.Amount
 }
 
 func (f *fakeSquare) addCode(code *square.DeviceCode) {
@@ -181,6 +249,7 @@ type integrationEnv struct {
 	db     *gorm.DB
 	router *gin.Engine
 	fake   *fakeSquare
+	square *SquareHandler
 	menuID uuid.UUID
 }
 
@@ -225,8 +294,13 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 		t.Fatal(err)
 	}
 
+	hub := NewHub()
+	go hub.Run()
+	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
+	orderHandler := NewOrderHandler(db, hub, inventory)
+
 	fake, server := newFakeSquare(t)
-	squareHandler, err := NewSquareHandler(db, SquareConfig{
+	squareHandler, err := NewSquareHandler(db, orderHandler, SquareConfig{
 		AccessToken: "token", Environment: "sandbox",
 		WebhookSignatureKey: integrationWebhookKey, WebhookURL: integrationWebhookURL,
 	})
@@ -234,11 +308,6 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 		t.Fatal(err)
 	}
 	squareHandler.client = square.NewClient(server.URL, "token")
-
-	hub := NewHub()
-	go hub.Run()
-	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
-	orderHandler := NewOrderHandler(db, hub, inventory)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -255,9 +324,11 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.GET("/square/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
 	api.GET("/square/checkouts/:id", squareHandler.GetCheckout)
 	api.POST("/square/checkouts/:id/cancel", squareHandler.CancelCheckout)
+	api.POST("/square/checkouts/:id/refund", squareHandler.RefundCheckout)
+	api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
 	api.POST("/square/webhook", squareHandler.ReceiveWebhook)
 
-	return &integrationEnv{t: t, db: db, router: router, fake: fake, menuID: menu.ID}
+	return &integrationEnv{t: t, db: db, router: router, fake: fake, square: squareHandler, menuID: menu.ID}
 }
 
 func (e *integrationEnv) call(method, path string, body any, headers map[string]string, out any) int {
