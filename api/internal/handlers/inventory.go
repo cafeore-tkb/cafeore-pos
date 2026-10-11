@@ -110,17 +110,16 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 		scanFrom = hourAgo
 	}
 
-	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。
-	// 量は注文を受けたときに残したもの（order_stock_usages）で数える。
+	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。緊急（入れ直し）も同じ。
+	// 量は受けたときに残したもの（stockUsages）で数える。
 	err := db.Raw(`
 		SELECT
 			COALESCE(SUM(u.amount) FILTER (WHERE `+consumedAfter+`), 0) AS consumed,
 			COALESCE(SUM(u.servings) FILTER (WHERE `+consumedAfter+`), 0) AS servings,
-			COALESCE(SUM(u.servings) FILTER (WHERE o.created_at > @hour_ago), 0) AS servings_last_hour
-		FROM orders o
-		JOIN order_stock_usages u ON u.order_id = o.id
+			COALESCE(SUM(u.servings) FILTER (WHERE u.created_at > @hour_ago), 0) AS servings_last_hour
+		FROM `+stockUsages+` u
 		WHERE u.resource_id = @resource_id
-			AND o.created_at > @scan_from`,
+			AND u.created_at > @scan_from`,
 		map[string]any{
 			"resource_id":  s.Resource.ID,
 			"since":        since,
@@ -136,7 +135,16 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	return nil
 }
 
-const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
+const consumedAfter = `u.created_at > @since OR (u.created_at > @pending_from AND (u.ready_at IS NULL OR u.ready_at > @since))`
+
+// 在庫の消費：注文の明細（受けた時刻・作った時刻は注文の created_at・ready_at）と、
+// 緊急（入れ直し）（足した時刻と、入れ直しの抽出を終えた時刻）。
+const stockUsages = `(
+	SELECT u.resource_id, u.servings, u.amount, o.created_at, o.ready_at
+	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
+	UNION ALL
+	SELECT u.resource_id, u.servings, u.amount, e.created_at, e.brew_finished_at
+	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id)`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
 // Slack への送信で応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。

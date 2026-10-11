@@ -12,7 +12,7 @@ type props = {
 export const PendingPrints = memo(
   ({ count, onRetry }: props) =>
     count > 0 && (
-      <div className="flex items-center gap-2 font-bold text-red-600">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap font-bold text-red-600">
         未印刷 {count} 件
         <Button type="button" size="sm" variant="outline" onClick={onRetry}>
           もう一度刷る

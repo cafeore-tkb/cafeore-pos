@@ -17,7 +17,7 @@ import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { BayPad, OrderCard } from "./OrderCard";
+import { BayPad, CancelEmergencyButton, OrderCard } from "./OrderCard";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
@@ -53,6 +53,8 @@ export const DispatchBoard: React.FC<
   onSelectOrder,
   onAdvanceBay,
   onOpenTicketPad,
+  onOpenRebrew,
+  onCancelEmergency,
   actionTicketKey,
   onMoveTicket,
   onReturnToUnassigned,
@@ -309,7 +311,11 @@ export const DispatchBoard: React.FC<
                             }
                             onClickCapture={drag.suppressClick}
                             onClick={() => {
-                              if (!isScheduled) return;
+                              // 抽出中・終わりのカードは入れ直し（閲覧だけの画面では渡されない）
+                              if (!isScheduled) {
+                                onOpenRebrew?.(ticket);
+                                return;
+                              }
                               if (!isActionOpen) onOpenTicketPad(ticket);
                               else {
                                 onReturnToUnassigned(ticket);
@@ -333,6 +339,14 @@ export const DispatchBoard: React.FC<
                                 <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
                                   <X className="h-10 w-10 stroke-[3] text-red-600/35" />
                                 </div>
+                                {ticket.emergency && onCancelEmergency && (
+                                  <CancelEmergencyButton
+                                    onConfirm={() => {
+                                      onCancelEmergency(ticket);
+                                      onCloseTicketAction();
+                                    }}
+                                  />
+                                )}
                               </>
                             )}
                           </OrderCard>

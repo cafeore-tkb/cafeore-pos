@@ -17,7 +17,12 @@ import {
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader } from "./BoardParts";
-import { BayPad, MergeOverlay, OrderCard } from "./OrderCard";
+import {
+  BayPad,
+  CancelEmergencyButton,
+  MergeOverlay,
+  OrderCard,
+} from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の縦リスト）。
 // カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる
@@ -32,6 +37,8 @@ export const UnassignedOrdersPanel: React.FC<{
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onMergeOrders?: (firstKey: string, secondKey: string) => void;
+  /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
+  onCancelEmergency?: (card: CaosCard) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
 }> = ({
@@ -43,6 +50,7 @@ export const UnassignedOrdersPanel: React.FC<{
   onSelectOrder,
   onAssignToBay,
   onMergeOrders,
+  onCancelEmergency,
   readOnly = false,
 }) => {
   const isSidebar = layout === "sidebar";
@@ -149,6 +157,14 @@ export const UnassignedOrdersPanel: React.FC<{
                   card={order}
                   hoveredBay={drag.target?.bayId ?? null}
                   onPick={(bayId) => assign(order, bayId)}
+                />
+              )}
+              {isOpen && order.emergency && onCancelEmergency && (
+                <CancelEmergencyButton
+                  onConfirm={() => {
+                    onCancelEmergency(order);
+                    setOpenUid(null);
+                  }}
                 />
               )}
               {isSelected && (

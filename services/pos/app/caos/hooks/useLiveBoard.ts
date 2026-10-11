@@ -38,6 +38,8 @@ export const useLiveBoard = ({
 
   return {
     status,
+    /** 注文（緊急のシールの中身を作る） */
+    orders,
     cards,
     /** 書き込みを送る。API が書けたら true になる */
     runWrites: (writes: CaosCupsWrite[]) => putCaosCups(writes).then(succeeded),
