@@ -598,7 +598,7 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
-      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない */
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む） */
       dripper: number | null;
       /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
       dripper_position: number | null;

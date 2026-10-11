@@ -23,7 +23,7 @@ type OrderCup struct {
 	ServedAt *time.Time
 
 	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）だけ。
-	// 注文の応答（OrderResponse の cups）に載せるが、CaOS 以外の画面は読まない。
+	// 注文の応答（OrderResponse の cups）に載せるが、CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）。
 	// 注文の編集では、ほかの列と同じく引き継いだカップは同じ値のまま入れ直す（新しい明細のカップは未割当）。
 	//
 	// カード（1 回のドリップ。最大 2 杯）は DripID が同じカップの組。状態は列の値で決まる：
