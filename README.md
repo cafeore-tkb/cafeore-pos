@@ -129,6 +129,20 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
 
+### ビルドの番号
+
+POS のトップページの一番下に、画面と API がどの PR・コミットのビルドかを
+`画面 #889 · 90b89b2　API #889 · 90b89b2` の形で出す。デプロイが反映されたか、
+画面と API が食い違っていないかを確かめるのに使う。
+
+- 番号は `pos-deploy-workers` と `api-build` が `.github/scripts/build-info.sh` で決める。
+  PR ではその PR と head のコミット、main ではマージコミットとそれをマージした PR
+- 画面はビルド時に `VITE_BUILD_PR`・`VITE_BUILD_COMMIT` として焼き込む
+- API はイメージの環境変数 `BUILD_PR`・`BUILD_COMMIT` に焼き込み（`api/Dockerfile`）、
+  `/status` と `/health` の `build` で返す。画面はこれを `/status` から読む
+- 積んだ PR で別の PR の backend を使うときは、API にはその持ち主の PR の番号が出る
+- ローカルのビルドでは「ローカル」と出る
+
 ### backend の環境変数
 
 | 変数 | ローカル | プレビュー | 本番 |
@@ -437,7 +451,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
 | `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
-| `caos_lanes_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `caos_lanes`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
+| `caos_lanes_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `dripper_assignees`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
 - ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。全部のチャンネルを 1 本の接続でまとめて待ち受ける
