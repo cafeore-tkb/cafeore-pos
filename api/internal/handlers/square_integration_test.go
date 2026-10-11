@@ -387,3 +387,61 @@ func TestSquareIntegrationWebhook(t *testing.T) {
 		t.Fatalf("unknown checkout: %d", code)
 	}
 }
+
+// 同時に押されても、端末に出す依頼は 1 件だけ。同じキーの同時再送も 500 にせず、同じ依頼を返す。
+func TestSquareIntegrationConcurrentCreate(t *testing.T) {
+	env := newIntegrationEnv(t)
+	const requests = 8
+	sameKey := uuid.NewString()
+	codes := make([]int, requests)
+	bodies := make([]string, requests)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range requests {
+		key := uuid.NewString()
+		if i%2 == 0 {
+			key = sameKey
+		}
+		encoded, _ := json.Marshal(map[string]any{
+			"idempotency_key": key, "amount": 600, "payment_type": "CARD_PRESENT", "order_number": 12,
+		})
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			req := httptest.NewRequest(http.MethodPost, "/api/square/checkouts", bytes.NewReader(encoded))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			env.router.ServeHTTP(rec, req)
+			codes[i] = rec.Code
+			bodies[i] = rec.Body.String()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var rows []models.SquareCheckout
+	env.db.Find(&rows)
+	if len(rows) != 1 || len(env.fake.created) != 1 {
+		t.Fatalf("expected exactly one checkout, got %d rows and %d sent to Square (codes %v)", len(rows), len(env.fake.created), codes)
+	}
+	created := 0
+	for i, code := range codes {
+		switch code {
+		case http.StatusCreated, http.StatusOK:
+			var checkout models.SquareCheckoutResponse
+			if err := json.Unmarshal([]byte(bodies[i]), &checkout); err != nil || uuid.UUID(checkout.Id) != rows[0].ID {
+				t.Fatalf("request %d returned another checkout: %s", i, bodies[i])
+			}
+			if code == http.StatusCreated {
+				created++
+			}
+		case http.StatusConflict:
+		default:
+			t.Fatalf("request %d: %d %s", i, code, bodies[i])
+		}
+	}
+	if created != 1 {
+		t.Fatalf("expected one 201, got codes %v", codes)
+	}
+}

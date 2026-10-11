@@ -350,29 +350,9 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	// 同じ idempotency_key の再送には、作り直さず同じものを返す。
-	var existing models.SquareCheckout
-	err := h.db.Where("idempotency_key = ?", req.IdempotencyKey).First(&existing).Error
-	if err == nil {
-		h.refresh(ctx, &existing)
-		c.JSON(http.StatusOK, toSquareCheckoutResponse(&existing, h.now()))
-		return
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// 進行中かどうかは Square に問い合わせないと分からない。ロックを取る前に最新にしておく。
+	if err := h.refreshActiveCandidates(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 端末は 1 台なので、進行中の依頼があるうちは新しく出さない。
-	// 前の依頼の結果を見ないまま次を出すと、どちらで支払われたか分からなくなる。
-	if active, err := h.findActiveCheckout(ctx); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	} else if active != nil {
-		c.JSON(http.StatusConflict, models.SquareCheckoutConflictResponse{
-			Error:    "別の決済が進行中です。端末で終わらせるか、取り消してください",
-			Checkout: toSquareCheckoutResponse(active, h.now()),
-		})
 		return
 	}
 
@@ -386,8 +366,49 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 		PaymentIDs:     []string{},
 		OrderNumber:    req.OrderNumber,
 	}
-	if err := h.db.Create(&record).Error; err != nil {
+	var existing, active *models.SquareCheckout
+	// 確かめてから行を作るまでを 1 件ずつ通す。別々に確かめると、同時に押された
+	// 依頼がどちらも通って端末に 2 件出る。同じキーの同時再送も一意制約違反にならず、
+	// 後の方は先に作られた行を受け取る。
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", squareCheckoutLockKey).Error; err != nil {
+			return err
+		}
+
+		// 同じ idempotency_key の再送には、作り直さず同じものを返す。
+		var found models.SquareCheckout
+		err := tx.Where("idempotency_key = ?", req.IdempotencyKey).First(&found).Error
+		if err == nil {
+			existing = &found
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		// 端末は 1 台なので、進行中の依頼があるうちは新しく出さない。
+		// 前の依頼の結果を見ないまま次を出すと、どちらで支払われたか分からなくなる。
+		active, err = findActiveCheckout(tx, h.now())
+		if err != nil || active != nil {
+			return err
+		}
+		// CREATING の行が、Square から応答が来るまでの間も次の依頼を止める。
+		return tx.Create(&record).Error
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing != nil {
+		h.refresh(ctx, existing)
+		c.JSON(http.StatusOK, toSquareCheckoutResponse(existing, h.now()))
+		return
+	}
+	if active != nil {
+		c.JSON(http.StatusConflict, models.SquareCheckoutConflictResponse{
+			Error:    "別の決済が進行中です。端末で終わらせるか、取り消してください",
+			Checkout: toSquareCheckoutResponse(active, h.now()),
+		})
 		return
 	}
 
@@ -421,23 +442,45 @@ func buildTerminalCheckout(record *models.SquareCheckout) square.TerminalCheckou
 	return checkout
 }
 
-// findActiveCheckout は結果がまだ決まっていない依頼を返す。無ければ nil。
-func (h *SquareHandler) findActiveCheckout(ctx context.Context) (*models.SquareCheckout, error) {
-	now := h.now()
+// 決済依頼の作成を 1 件ずつ通すための advisory lock のキー。
+// 値に意味は無く、他で同じキーを使わなければよい（起動時のマイグレーションは 7_204_215_001）。
+const squareCheckoutLockKey = 7_204_215_002
+
+// activeCheckoutCandidates は、結果がまだ決まっていないかもしれない依頼を新しい順に返す。
+func activeCheckoutCandidates(db *gorm.DB, now time.Time) ([]models.SquareCheckout, error) {
 	var candidates []models.SquareCheckout
-	if err := h.db.
+	err := db.
 		Where("status NOT IN ? AND created_at > ?",
 			[]string{squareStatusCompleted, squareStatusError},
 			now.Add(-(squareCheckoutDeadline + squareTimeoutGrace + time.Minute))).
 		Order("created_at DESC").
-		Find(&candidates).Error; err != nil {
+		Find(&candidates).Error
+	return candidates, err
+}
+
+// refreshActiveCandidates は進行中かもしれない依頼を Square に問い合わせて最新にする。
+// Square の応答待ちの間に作成のロックを持ち続けないよう、ロックの外で呼ぶ。
+func (h *SquareHandler) refreshActiveCandidates(ctx context.Context) error {
+	candidates, err := activeCheckoutCandidates(h.db, h.now())
+	if err != nil {
+		return err
+	}
+	for i := range candidates {
+		h.refresh(ctx, &candidates[i])
+	}
+	return nil
+}
+
+// findActiveCheckout は結果がまだ決まっていない依頼を返す。無ければ nil。
+// Square には問い合わせず、DB の記録だけで決める（先に refreshActiveCandidates で最新にしておく）。
+func findActiveCheckout(db *gorm.DB, now time.Time) (*models.SquareCheckout, error) {
+	candidates, err := activeCheckoutCandidates(db, now)
+	if err != nil {
 		return nil, err
 	}
 	for i := range candidates {
-		candidate := &candidates[i]
-		h.refresh(ctx, candidate)
-		if squareCheckoutOutcome(candidate, h.now()) == models.Pending {
-			return candidate, nil
+		if squareCheckoutOutcome(&candidates[i], now) == models.Pending {
+			return &candidates[i], nil
 		}
 	}
 	return nil, nil
