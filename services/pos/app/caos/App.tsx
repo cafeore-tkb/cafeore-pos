@@ -75,6 +75,10 @@ export default function App() {
           onOpenEmergency={
             session.emergency ? () => selection.openRebrew() : undefined
           }
+          undoLabel={session.undo.label}
+          undoSecondsLeft={session.undo.secondsLeft}
+          undoPending={session.undo.pending}
+          onUndo={session.undo.run}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
