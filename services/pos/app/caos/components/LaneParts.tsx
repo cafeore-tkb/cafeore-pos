@@ -67,6 +67,16 @@ export const LaneChangeButton: React.FC<{
 // ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（上級生のみのカードをどこにも置けない）。
 // 操作の画面では、この端末の sohosai-shift の合言葉の設定も開ける。
 
+// 合言葉のボタンの色（合言葉が無ければ点線、読めなければ赤）
+const keyTone = ({
+  feedKey,
+  error,
+}: { feedKey: string; error: string | null }) => {
+  if (!feedKey) return "border-slate-300 border-dashed bg-white text-slate-400";
+  if (error) return "border-red-200 bg-red-50 text-red-600";
+  return "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700";
+};
+
 export const LaneHeaderStatus: React.FC = () => {
   const { hasSenior, editable, openSettings, shiftFeed } = useCaosLanes();
   return (
@@ -91,7 +101,7 @@ export const LaneHeaderStatus: React.FC = () => {
           onClick={openSettings}
           title="sohosai-shift の合言葉（この端末の設定）"
           aria-label="sohosai-shift の合言葉"
-          className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border ${shiftFeed.feedKey ? (shiftFeed.error ? "border-red-200 bg-red-50 text-red-600" : "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700") : "border-slate-300 border-dashed bg-white text-slate-400"}`}
+          className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border ${keyTone(shiftFeed)}`}
         >
           <KeyRound className="h-4 w-4" />
         </button>

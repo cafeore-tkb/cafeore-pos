@@ -27,7 +27,13 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
-import { SeniorMark } from "./LaneParts";
+import {
+  type ShiftFeedTone,
+  noCandidateReason,
+  shiftFeedStatus,
+  typedSeniorNote,
+} from "../logic/shiftFeed";
+import { LaneName, SeniorMark } from "./LaneParts";
 
 // ドリッパーの「交代」。sohosai-shift の予定（今の枠・次の枠・オペ練の今と次のラウンド）の、そのドリッパーの番目の人を候補に出す。
 // 候補に無い人は自由に入れられ、空き（担当者なし）にもできる。ほかのドリッパーの担当者との入れ替えもここから。
@@ -47,10 +53,7 @@ interface LaneChangeDialogProps {
 
 const PersonName: React.FC<{ lane: CaosLane }> = ({ lane }) =>
   lane.name ? (
-    <span className="inline-flex min-w-0 items-center gap-0.5">
-      <span className="truncate">{lane.name}</span>
-      {lane.senior && <SeniorMark />}
-    </span>
+    <LaneName dripper={lane.dripper} />
   ) : (
     <span className="text-slate-400">担当者なし</span>
   );
@@ -65,7 +68,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   onOpenSettings,
   onClose,
 }) => {
-  const { feed, feedKey, error, loading } = shiftFeed;
+  const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
   const ordinal = dripperLabel(lane.dripper);
   const candidates = useMemo(
@@ -74,13 +77,6 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   );
   const typedName = typed.trim();
   const typedSenior = isSeniorName(feed, typedName);
-  const feedNote = !feedKey
-    ? "この端末に sohosai-shift の合言葉が入っていないので、候補は出ません（名前を入れて交代できます）"
-    : !feed
-      ? loading
-        ? "予定を読んでいます…"
-        : `予定を読めません${error ? `：${error}` : ""}`
-      : "今の枠・次の枠・オペ練に、この番目の人がいません";
 
   return (
     <div
@@ -153,7 +149,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
               </div>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-bold text-[12px] text-slate-500">
-                {feedNote}
+                {noCandidateReason(shiftFeed)}
               </p>
             )}
           </section>
@@ -188,11 +184,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
             </form>
             {typedName && (
               <p className="mt-1.5 font-bold text-[12px] text-slate-500">
-                {typedSenior
-                  ? "上級生です（上級生のみのカードを淹れられます）"
-                  : feed
-                    ? "sohosai-shift の上級生の名簿にありません（上級生のみのカードを淹れられません）"
-                    : "上級生の名簿が無いので、上級生のみのカードを淹れられない人として扱います"}
+                {typedSeniorNote(typedSenior, feed)}
               </p>
             )}
           </section>
@@ -301,6 +293,13 @@ const formatDateTime = (value: string | number | null) => {
   });
 };
 
+// 読み込みの様子の文字色
+const STATUS_TEXT: Record<ShiftFeedTone, string> = {
+  ok: "text-emerald-700",
+  error: "text-red-700",
+  none: "text-slate-600",
+};
+
 const maskKey = (key: string) =>
   key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "保存済み";
 
@@ -313,24 +312,11 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
   shiftFeed,
   onClose,
 }) => {
-  const { feedKey, feed, loading, error, fetchedAt } = shiftFeed;
+  const { feedKey, feed, loading, fetchedAt } = shiftFeed;
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
 
-  const status = !feedKey
-    ? { tone: "slate", text: "合言葉を入れていません（名前の候補は出ません）" }
-    : loading && !feed
-      ? { tone: "slate", text: "読んでいます…" }
-      : error
-        ? {
-            tone: "red",
-            text: feed
-              ? `読み直せません：${error}（前に読んだ予定を使っています）`
-              : `読めません：${error}`,
-          }
-        : feed
-          ? { tone: "emerald", text: "読めました" }
-          : { tone: "slate", text: "まだ読んでいません" };
+  const status = shiftFeedStatus(shiftFeed);
 
   return (
     <div
@@ -403,7 +389,7 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
           <section className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[13px]">
             <output
               data-feed-status={status.tone}
-              className={`block font-black ${status.tone === "emerald" ? "text-emerald-700" : status.tone === "red" ? "text-red-700" : "text-slate-600"}`}
+              className={`block font-black ${STATUS_TEXT[status.tone]}`}
             >
               {status.text}
             </output>

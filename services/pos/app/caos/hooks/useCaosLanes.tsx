@@ -92,13 +92,8 @@ export const CaosLanesProvider = ({
     else setConfirm({ warnings, run });
   };
 
-  const laneOf = (dripper: number) =>
-    lanes.find((lane) => lane.dripper === dripper) ?? {
-      dripper,
-      name: "",
-      senior: false,
-      updated_at: null,
-    };
+  // lanes は 6 つ全部を番号の順に持つ（todaysCaosLanes）
+  const laneOf = (dripper: number) => lanes[dripper - 1];
 
   const value: CaosLanesContextValue = {
     lanes,
