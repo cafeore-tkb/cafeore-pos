@@ -365,6 +365,24 @@ export interface components {
       version: string;
       /** @example connected */
       database: string;
+      build?: components["schemas"]["BuildInfo"];
+    };
+    /**
+     * @description このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+     * POS のトップページに、画面のビルドと並べて出す。
+     * ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+     */
+    BuildInfo: {
+      /**
+       * @description PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+       * @example 889
+       */
+      pr?: number;
+      /**
+       * @description コミットの SHA。プレビューは PR の head のコミット。分からなければ省く
+       * @example 90b89b2a1c3e4f5061728394a5b6c7d8e9f01234
+       */
+      commit?: string;
     };
     ItemResponse: {
       /** Format: uuid */
