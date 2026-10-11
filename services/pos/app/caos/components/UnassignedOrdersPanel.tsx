@@ -1,11 +1,16 @@
+import { type CaosCard, type CaosPlace, canMergeCards } from "@cafeore/common";
 import { ClipboardList, Sparkles } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
+import {
+  type DropTarget,
+  dropTargetAt,
+  dropTargetLabel,
+  useCardDrag,
+} from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
-  type DripCard,
-  canMergeDripUnits,
+  type CardLooks,
   orderLabel,
   placeByOrder,
   totalCups,
@@ -15,18 +20,21 @@ import { NextAvailableChips, PanelHeader } from "./BoardParts";
 import { BayPad, MergeOverlay, OrderCard } from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の縦リスト）。
-// カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる。
+// カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる
+// （待機のカードの上に落とすと、そのカードの前へ）。
 // 1 杯のカードを開くと、統合できる 1 杯のカードに「統合する」が出る（onMergeOrders を渡したときだけ）。
 export const UnassignedOrdersPanel: React.FC<{
-  orders: DripCard[];
+  orders: CaosCard[];
+  looks: CardLooks;
   nextAvailable: NextAvailable;
   layout?: "strip" | "sidebar";
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
-  onAssignToBay: (order: DripCard, bayId: number) => void;
-  onMergeOrders?: (firstUid: string, secondUid: string) => void;
+  onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
+  onMergeOrders?: (firstKey: string, secondKey: string) => void;
 }> = ({
   orders,
+  looks,
   nextAvailable,
   layout = "strip",
   selectedOrderId,
@@ -36,19 +44,19 @@ export const UnassignedOrdersPanel: React.FC<{
 }) => {
   const isSidebar = layout === "sidebar";
   const [openUid, setOpenUid] = useState<string | null>(null);
-  const openOrder = orders.find((order) => order.ticketUid === openUid);
-  const assign = (order: DripCard, bayId: number) => {
-    onAssignToBay(order, bayId);
+  const openOrder = orders.find((order) => order.key === openUid);
+  const assign = (order: CaosCard, bayId: number, place?: CaosPlace) => {
+    onAssignToBay(order, bayId, place);
     setOpenUid(null);
   };
-  const drag = useCardDrag<DripCard, number>({
-    targetAt: (order, x, y) => bayTargetAt(x, y, order),
+  const drag = useCardDrag<CaosCard, DropTarget>({
+    targetAt: (_order, x, y) => dropTargetAt(x, y),
     onBegin: (order) => {
       // Same as tapping another card: switching cards drops the old selection.
-      if (openUid && openUid !== order.ticketUid) onSelectOrder(null);
-      setOpenUid(order.ticketUid);
+      if (openUid && openUid !== order.key) onSelectOrder(null);
+      setOpenUid(order.key);
     },
-    onDrop: assign,
+    onDrop: (order, target) => assign(order, target.bayId, target.place),
   });
 
   // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）を押したときは、そのカードのタップやドラッグで決める
@@ -64,7 +72,7 @@ export const UnassignedOrdersPanel: React.FC<{
 
   // 縦のリストは注文ごとに行を改め、1 行に 3 枚まで。横帯は先頭の 12 枚
   const placed: Array<{
-    card: DripCard;
+    card: CaosCard;
     gridColumn?: number;
     gridRow?: number;
   }> = isSidebar
@@ -86,21 +94,22 @@ export const UnassignedOrdersPanel: React.FC<{
         className={`grid min-h-0 flex-1 ${isSidebar ? "auto-rows-[112px] grid-cols-3 content-start gap-2 overflow-auto px-3 py-10" : "grid-cols-6 grid-rows-2 gap-1.5 p-2"}`}
       >
         {placed.map(({ card: order, gridColumn, gridRow }, index) => {
-          const uid = order.ticketUid;
+          const uid = order.key;
           const isOpen = openUid === uid;
           const isSelected = selectedOrderId === orderLabel(order);
           const isMergeCandidate = Boolean(
-            onMergeOrders && openOrder && canMergeDripUnits(openOrder, order),
+            onMergeOrders && openOrder && canMergeCards(openOrder, order),
           );
           // 横帯では注文の切れ目に印を付ける
           const isOrderBoundary =
             !isSidebar &&
             index > 0 &&
-            placed[index - 1].card.orderNos[0] !== order.orderNos[0];
+            placed[index - 1].card.orderNo !== order.orderNo;
           return (
             <OrderCard
               key={uid}
               card={order}
+              look={looks.get(uid)}
               size={isSidebar ? "xl" : "lg"}
               selected={isSelected}
               data-unassigned-uid={uid}
@@ -122,7 +131,7 @@ export const UnassignedOrdersPanel: React.FC<{
               }}
               style={{ gridColumn, gridRow }}
               className={`cursor-grab hover:shadow-md active:cursor-grabbing ${isSidebar && !isOpen ? "touch-pan-y" : "touch-none"} ${isOpen ? "z-40" : ""}`}
-              dragging={drag.source?.ticketUid === uid}
+              dragging={drag.source?.key === uid}
             >
               {isOrderBoundary && (
                 <span
@@ -133,8 +142,7 @@ export const UnassignedOrdersPanel: React.FC<{
               {isMergeCandidate && <MergeOverlay />}
               {isOpen && (
                 <BayPad
-                  card={order}
-                  hoveredBay={drag.target}
+                  hoveredBay={drag.target?.bayId ?? null}
                   onPick={(bayId) => assign(order, bayId)}
                 />
               )}
@@ -156,8 +164,12 @@ export const UnassignedOrdersPanel: React.FC<{
       </div>
       {drag.source &&
         drag.ghost(
-          <OrderCard card={drag.source} size={isSidebar ? "xl" : "lg"} />,
-          drag.target ? `→ ${drag.target}` : null,
+          <OrderCard
+            card={drag.source}
+            look={looks.get(drag.source.key)}
+            size={isSidebar ? "xl" : "lg"}
+          />,
+          dropTargetLabel(drag.target),
         )}
     </section>
   );
