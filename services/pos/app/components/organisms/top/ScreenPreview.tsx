@@ -1,5 +1,6 @@
 import { FaCheck, FaCoffee } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
+import { LuHourglass } from "react-icons/lu";
 import logoSVG from "~/assets/cafeore.svg";
 import { cn } from "~/lib/utils";
 
@@ -258,49 +259,59 @@ function CashierMiniPreview() {
 }
 
 function CallscreenPreview() {
+  // 呼び出しがある間の画面（お呼び出し中・ドリップ中・準備中の 3 段）。呼び出しが無い間は CM を流す
   return (
-    <div className="flex h-full flex-col p-[0.3em]">
-      <div className="flex h-[66%]">
-        <div className="flex w-[40%] items-center justify-center border-r">
-          <div className="rounded-xl px-[1em] py-[0.4em] shadow-[0.3em_0.3em_0.6em_rgba(0,0,0,0.25)]">
-            <span className="font-extrabold text-[3em] text-theme-primary">
-              38
-            </span>
-          </div>
-        </div>
-        <div className="w-[60%] p-[0.5em]">
-          <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
-            <HiBell />
-            お呼び出し中
-            <HiBell />
-          </div>
-          <div className="mt-[0.5em] grid grid-cols-3 gap-[0.4em]">
-            {[35, 36, 38].map((n) => (
-              <div
-                key={n}
-                className="rounded-md border py-[0.2em] text-center font-bold text-[1.4em] text-theme-primary shadow-sm"
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="border-t p-[0.5em]">
+    <div className="flex h-full flex-col gap-[0.3em] p-[0.3em]">
+      <div className="flex h-[58%] flex-col gap-[0.3em] px-[0.3em]">
         <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
-          <FaCoffee />
-          ドリップ中
+          <HiBell />
+          お呼び出し中
+          <HiBell />
         </div>
-        <div className="mt-[0.4em] grid grid-cols-8 gap-[0.3em]">
-          {[39, 40, 41, 42, 43].map((n) => (
+        <div className="grid flex-1 grid-cols-3 gap-[0.4em]">
+          {[38, 36, 35].map((n) => (
             <div
               key={n}
-              className="rounded border py-[0.1em] text-center font-bold text-[0.8em] text-theme-primary"
+              className="flex items-center justify-center rounded-md border font-extrabold text-[2.6em] text-theme-primary shadow-sm"
             >
               {n}
             </div>
           ))}
         </div>
+      </div>
+      <div className="flex flex-1 flex-col gap-[0.3em] px-[0.3em]">
+        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-theme-deep py-[0.25em] font-bold text-[0.8em] text-white">
+          <FaCoffee />
+          ドリップ中
+        </div>
+        <div className="grid flex-1 grid-cols-2 gap-[0.4em]">
+          {[
+            { n: 39, dripper: "1st" },
+            { n: 40, dripper: "3rd" },
+          ].map(({ n, dripper }) => (
+            <div
+              key={n}
+              className="flex flex-col items-center justify-center rounded-md border text-theme-primary shadow-sm"
+            >
+              <span className="font-extrabold text-[1.6em] leading-none">
+                {n}
+              </span>
+              <span className="text-[0.5em]">{dripper} ドリッパー</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-[0.4em] bg-theme-deep px-[0.5em] py-[0.3em] text-white">
+        <LuHourglass />
+        <span className="font-bold text-[0.7em]">準備中</span>
+        {[41, 42, 43].map((n) => (
+          <span
+            key={n}
+            className="rounded bg-white px-[0.4em] font-bold text-[0.7em] text-theme-primary"
+          >
+            {n}
+          </span>
+        ))}
       </div>
     </div>
   );
