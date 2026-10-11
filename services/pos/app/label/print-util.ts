@@ -62,7 +62,7 @@ const countPendingPrints = () => readPendingPrints().length;
  * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
  *
  * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
- * つながったらすぐ、残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
+ * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
  */
 export const usePrinter = (
   createPrinter: CreateLabelPrinter = createEposPrinter,
@@ -103,9 +103,10 @@ export const usePrinter = (
     else if (status === "disconnected") reconnect();
   }, [status, sendPending, reconnect]);
 
+  // つながったらすぐ送る（開き直したときの残りも）。あとは残っているあいだ一定の間隔で
   useEffect(() => {
-    if (status === "connected" && pendingCount > 0) void sendPending();
-  }, [status, pendingCount, sendPending]);
+    if (status === "connected") void sendPending();
+  }, [status, sendPending]);
 
   useEffect(() => {
     if (pendingCount === 0) return;
