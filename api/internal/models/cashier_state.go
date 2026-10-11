@@ -12,9 +12,8 @@ import (
 
 // CashierStateID は cashier_states に唯一存在する行の ID。
 //
-// レジは 1 台しか無い前提で、Firestore 時代の global/cashier-state と同じく
-// 単一ドキュメントとして扱う。フロント側の globalCashierStateSchema の
-// id リテラルと揃えること。
+// レジは 1 台しか無い前提で、単一の行として扱う。フロント側の
+// globalCashierStateSchema の id リテラルと揃えること。
 const CashierStateID = "cashier-state"
 
 // JSONB は jsonb カラムに JSON をそのまま出し入れするための型。
