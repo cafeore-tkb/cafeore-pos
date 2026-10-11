@@ -24,6 +24,18 @@ export class SquareCheckoutConflictError extends Error {
   }
 }
 
+/**
+ * サーバーが決済依頼の作成を断った（4xx）ときのエラー。決済依頼は作られていない
+ *
+ * これ以外のエラー（通信エラー・5xx など）は、サーバーに届いて作られたかもしれない。
+ */
+export class SquareCheckoutRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SquareCheckoutRejectedError";
+  }
+}
+
 const errorMessage = (error: unknown, fallback: string): string => {
   if (
     typeof error === "object" &&
@@ -81,8 +93,10 @@ export const squareRepository = {
    * 端末に決済画面を出す
    *
    * idempotencyKey は決済ごとに1つ作り、再送では同じ値を使う（二重に画面が出ない）。
-   * 同じ端末で別の決済が進行中なら SquareCheckoutConflictError を投げる。
-   * Square が受け付けなかったときは outcome が failed の決済依頼を返す。
+   * 同じ端末で別の決済が進行中なら SquareCheckoutConflictError、サーバーが断ったら
+   * SquareCheckoutRejectedError を投げる。それ以外のエラーは、作られたか分からない（同じ値で送り直す）。
+   * Square が断ったときは outcome が failed、Square から答えが無かったときは outcome が pending の
+   * 決済依頼を返す（pending なら作られたかをサーバーが確かめるので、getCheckout で待つ）。
    */
   async createCheckout(params: {
     idempotencyKey: string;
@@ -110,11 +124,26 @@ export const squareRepository = {
     if (response.status === 409 && isConflict(error)) {
       throw new SquareCheckoutConflictError(error.error, error.checkout);
     }
-    // 502 は Square が断ったとき。本文は決済依頼そのもの（error_message 付き）。
-    if (response.status === 502 && error && "id" in error) {
+    // 502 は Square が断った・答えが無かったとき。本文は決済依頼そのもの（error_message 付き）。
+    // ロードバランサーが返す 502 など、本文が決済依頼でないものは除く
+    if (
+      response.status === 502 &&
+      typeof error === "object" &&
+      error !== null &&
+      "id" in error
+    ) {
       return error as SquareCheckout;
     }
-    throw new Error(errorMessage(error, "決済を開始できませんでした"));
+    const message = errorMessage(error, "決済を開始できませんでした");
+    // 入力が不正・端末が登録されていないなど。408 は届いたか分からないので除く
+    if (
+      response.status >= 400 &&
+      response.status < 500 &&
+      response.status !== 408
+    ) {
+      throw new SquareCheckoutRejectedError(message);
+    }
+    throw new Error(`${message}（HTTP ${response.status}）`);
   },
 
   /** 決済依頼の最新の状態（未確定ならサーバーが Square に問い合わせる） */

@@ -1429,7 +1429,7 @@
       },
       "status": {
         "type": "string",
-        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前と、作られたかを確かめている間は CREATING、Square が断った・届いていなかったら ERROR"
       },
       "outcome": {
         "$ref": "#/components/schemas/SquareCheckoutOutcome"
@@ -1457,7 +1457,8 @@
       },
       "error_message": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "依頼に失敗したときの Square のエラー。outcome が pending なら、状態や受取額を Square で確かめられていない理由（確かめられたら消える）"
       },
       "order_number": {
         "type": "integer",

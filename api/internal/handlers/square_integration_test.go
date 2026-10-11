@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,6 +50,10 @@ type fakeSquare struct {
 
 	failCheckoutGets int // この回数だけ、checkout の取得を 500 にする
 	failPaymentGets  int // この回数だけ、決済の取得を 500 にする
+	loseCreates      int // この回数だけ、checkout を作ってから応答を 500 にする（応答が失われた）
+	dropCreates      int // この回数だけ、checkout を作らずに 500 にする（届かなかった）
+	rejectCreates    int // この回数だけ、checkout を作らずに 400 にする（断った）
+	searches         int // 検索が呼ばれた回数
 }
 
 func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
@@ -105,7 +110,35 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(http.StatusOK, map[string]any{"device_codes": codes})
+	case r.Method == http.MethodPost && path == "/v2/terminals/checkouts/search":
+		f.searches++
+		var body struct {
+			Query struct {
+				Filter struct {
+					DeviceID string `json:"device_id"`
+				} `json:"filter"`
+			} `json:"query"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		checkouts := []*square.TerminalCheckout{}
+		for _, checkout := range f.checkouts {
+			if checkout.DeviceOptions.DeviceID == body.Query.Filter.DeviceID {
+				checkouts = append(checkouts, checkout)
+			}
+		}
+		writeJSON(http.StatusOK, map[string]any{"checkouts": checkouts})
 	case r.Method == http.MethodPost && path == "/v2/terminals/checkouts":
+		if f.dropCreates > 0 {
+			f.dropCreates--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
+		if f.rejectCreates > 0 {
+			f.rejectCreates--
+			writeJSON(http.StatusBadRequest, map[string]any{"errors": []square.Error{{Code: "INVALID_VALUE", Detail: "device is not available"}}})
+			return
+		}
 		var body struct {
 			IdempotencyKey string                  `json:"idempotency_key"`
 			Checkout       square.TerminalCheckout `json:"checkout"`
@@ -119,6 +152,11 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 		checkout.ID = "chk_" + strings.ReplaceAll(body.IdempotencyKey, "-", "")[:12]
 		checkout.Status = squareStatusPending
 		f.checkouts[checkout.ID] = &checkout
+		if f.loseCreates > 0 {
+			f.loseCreates--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
 		writeJSON(http.StatusOK, map[string]any{"checkout": checkout})
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/terminals/checkouts/"):
 		if f.failCheckoutGets > 0 {
@@ -515,32 +553,125 @@ func TestSquareIntegrationReportsSyncErrors(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("create: %d", code)
 	}
-	get := func() models.SquareCheckoutResponse {
-		t.Helper()
-		var got models.SquareCheckoutResponse
-		if code := env.call(http.MethodGet, "/api/square/checkouts/"+checkout.Id.String(), nil, nil, &got); code != http.StatusOK {
-			t.Fatalf("get: %d %+v", code, got)
-		}
-		return got
-	}
-
 	env.fake.failCheckoutGets = 1
-	if got := get(); got.Outcome != models.Pending || got.ErrorMessage == nil ||
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Pending || got.ErrorMessage == nil ||
 		!strings.Contains(*got.ErrorMessage, "決済の状態を問い合わせられません") {
 		t.Fatalf("checkout lookup failed: %+v", got)
 	}
-	if got := get(); got.Outcome != models.Pending || got.ErrorMessage != nil {
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Pending || got.ErrorMessage != nil {
 		t.Fatalf("checkout lookup recovered: %+v", got)
 	}
 
 	env.fake.complete(*checkout.CheckoutId, 600)
 	env.fake.failPaymentGets = 1
-	if got := get(); got.Outcome != models.Pending || got.ErrorMessage == nil ||
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Pending || got.ErrorMessage == nil ||
 		!strings.Contains(*got.ErrorMessage, "受け取った額を Square で確かめられません") {
 		t.Fatalf("payment lookup failed: %+v", got)
 	}
-	if got := get(); got.Outcome != models.Paid || got.ErrorMessage != nil {
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Paid || got.ErrorMessage != nil {
 		t.Fatalf("payment lookup recovered: %+v", got)
+	}
+}
+
+func (e *integrationEnv) getCheckout(id uuid.UUID) models.SquareCheckoutResponse {
+	e.t.Helper()
+	var got models.SquareCheckoutResponse
+	if code := e.call(http.MethodGet, "/api/square/checkouts/"+id.String(), nil, nil, &got); code != http.StatusOK {
+		e.t.Fatalf("get: %d %+v", code, got)
+	}
+	return got
+}
+
+// 作成の応答が失われても失敗にせず、Square を検索して見つけた checkout で続ける。
+func TestSquareIntegrationCreateResponseLost(t *testing.T) {
+	env := newIntegrationEnv(t)
+	env.fake.loseCreates = 1
+	code, checkout, _ := env.createCheckout(uuid.NewString(), 600)
+	if code != http.StatusBadGateway || checkout.Outcome != models.Pending || checkout.CheckoutId != nil ||
+		checkout.ErrorMessage == nil || !strings.Contains(*checkout.ErrorMessage, "答えがありません") {
+		t.Fatalf("create: %d %+v", code, checkout)
+	}
+
+	// 決済画面が出ているかもしれないうちは、同じ端末に次の依頼を出さない。
+	if code, _, conflict := env.createCheckout(uuid.NewString(), 600); code != http.StatusConflict || conflict.Checkout.Id != checkout.Id {
+		t.Fatalf("next checkout while unknown: %d %+v", code, conflict)
+	}
+
+	got := env.getCheckout(checkout.Id)
+	if got.Outcome != models.Pending || got.CheckoutId == nil || got.Status != squareStatusPending || got.ErrorMessage != nil {
+		t.Fatalf("found by search: %+v", got)
+	}
+	env.fake.complete(*got.CheckoutId, 600)
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Paid {
+		t.Fatalf("paid: %+v", got)
+	}
+	if code, out := env.createOrder(12, 600, &checkout.Id); code != http.StatusCreated {
+		t.Fatalf("order: %d %v", code, out)
+	}
+}
+
+// 作成の依頼が Square に届いていなければ、少し待って失敗にする（お金は受け取っていない）。
+func TestSquareIntegrationCreateNeverReached(t *testing.T) {
+	env := newIntegrationEnv(t)
+	env.fake.dropCreates = 1
+	code, checkout, _ := env.createCheckout(uuid.NewString(), 600)
+	if code != http.StatusBadGateway || checkout.Outcome != models.Pending {
+		t.Fatalf("create: %d %+v", code, checkout)
+	}
+	// 見つからなくても、すぐには失敗にしない（Square で処理が遅れているかもしれない）。
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Pending {
+		t.Fatalf("right after: %+v", got)
+	}
+
+	env.square.now = func() time.Time { return time.Now().Add(squareCreatingStale + time.Second) }
+	got := env.getCheckout(checkout.Id)
+	if got.Outcome != models.Failed || got.Status != squareStatusError || got.ErrorMessage == nil ||
+		!strings.Contains(*got.ErrorMessage, "届いていませんでした") {
+		t.Fatalf("after stale: %+v", got)
+	}
+	searches := env.fake.searches
+	if got := env.getCheckout(checkout.Id); got.Outcome != models.Failed || env.fake.searches != searches {
+		t.Fatalf("failed checkout must not be searched again: %+v (searches %d -> %d)", got, searches, env.fake.searches)
+	}
+	if code, _, _ := env.createCheckout(uuid.NewString(), 600); code != http.StatusCreated {
+		t.Fatalf("next checkout: %d", code)
+	}
+}
+
+// Square が断ったら、すぐに失敗にする。
+func TestSquareIntegrationCreateRejected(t *testing.T) {
+	env := newIntegrationEnv(t)
+	env.fake.rejectCreates = 1
+	code, checkout, _ := env.createCheckout(uuid.NewString(), 600)
+	if code != http.StatusBadGateway || checkout.Outcome != models.Failed || checkout.Status != squareStatusError ||
+		checkout.ErrorMessage == nil || !strings.Contains(*checkout.ErrorMessage, "device is not available") {
+		t.Fatalf("create: %d %+v", code, checkout)
+	}
+	if env.fake.searches != 0 {
+		t.Fatalf("rejected checkout must not be searched: %d", env.fake.searches)
+	}
+}
+
+// 応答が失われたままレジが離れても、支払われていれば「未登録の Square 決済」に出る。
+func TestSquareIntegrationCreateResponseLostThenPaid(t *testing.T) {
+	env := newIntegrationEnv(t)
+	env.fake.loseCreates = 1
+	code, checkout, _ := env.createCheckout(uuid.NewString(), 600)
+	if code != http.StatusBadGateway || checkout.Outcome != models.Pending {
+		t.Fatalf("create: %d %+v", code, checkout)
+	}
+	for id, remote := range env.fake.checkouts {
+		if remote.ReferenceID == checkout.Id.String() {
+			env.fake.complete(id, 600)
+		}
+	}
+
+	var unlinked []models.SquareCheckoutResponse
+	if code := env.call(http.MethodGet, "/api/square/checkouts/unlinked", nil, nil, &unlinked); code != http.StatusOK {
+		t.Fatalf("unlinked: %d", code)
+	}
+	if len(unlinked) != 1 || unlinked[0].Id != checkout.Id || unlinked[0].Outcome != models.Paid {
+		t.Fatalf("unlinked: %+v", unlinked)
 	}
 }
 

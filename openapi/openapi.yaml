@@ -1259,7 +1259,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutConflictResponse'
         '502':
-          description: Square が依頼を受け付けなかった
+          description: |
+            Square が依頼を断った（outcome が failed）、または Square から答えが無かった（outcome が pending）。
+            答えが無かったときは決済画面が出ているかもしれない。サーバーが Square を検索して確かめるので、GET で結果を待つ。
           content:
             application/json:
               schema:
@@ -2698,7 +2700,7 @@ components:
           description: Square の TerminalCheckout の id
         status:
           type: string
-          description: Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+          description: Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前と、作られたかを確かめている間は CREATING、Square が断った・届いていなかったら ERROR
         outcome:
           $ref: '#/components/schemas/SquareCheckoutOutcome'
         cancel_reason:
@@ -2719,6 +2721,7 @@ components:
         error_message:
           type: string
           nullable: true
+          description: 依頼に失敗したときの Square のエラー。outcome が pending なら、状態や受取額を Square で確かめられていない理由（確かめられたら消える）
         order_number:
           type: integer
           nullable: true

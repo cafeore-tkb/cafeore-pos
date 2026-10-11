@@ -41,8 +41,9 @@ const (
 	// 変わることがある（Take One-Off Payments に記載）。TIMED_OUT のときは
 	// この猶予が過ぎるまで「未確定」として扱い、現金での取り直しを止める。
 	squareTimeoutGrace = time.Minute
-	// CREATING のまま残っている行（Square を呼ぶ前後でサーバーが落ちた）を
-	// 失敗とみなすまでの時間。
+	// CREATING のまま残っている行（作成の依頼に Square から答えが無かった・Square を呼ぶ
+	// 前後でサーバーが落ちた）は、Square で作られたかを検索で確かめる。見つからないまま
+	// この時間が過ぎたら、届かなかった（決済画面は出ていない）とみなす。
 	squareCreatingStale = time.Minute
 )
 
@@ -50,6 +51,7 @@ const (
 type squareAPI interface {
 	CreateTerminalCheckout(ctx context.Context, idempotencyKey string, checkout square.TerminalCheckout) (*square.TerminalCheckout, error)
 	GetTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
+	SearchTerminalCheckouts(ctx context.Context, params square.SearchTerminalCheckoutsParams) ([]square.TerminalCheckout, error)
 	CancelTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	GetPayment(ctx context.Context, paymentID string) (*square.Payment, error)
 	RefundPayment(ctx context.Context, idempotencyKey, paymentID string, amount square.Money, reason string) (*square.PaymentRefund, error)
@@ -141,13 +143,9 @@ func squareCheckoutOutcome(checkout *models.SquareCheckout, now time.Time) model
 		return models.Failed
 	case squareStatusError:
 		return models.Failed
-	case squareStatusCreating:
-		if now.After(checkout.CreatedAt.Add(squareCreatingStale)) {
-			return models.Failed
-		}
-		return models.Pending
 	default:
-		// PENDING / IN_PROGRESS / CANCEL_REQUESTED と、知らない値
+		// PENDING / IN_PROGRESS / CANCEL_REQUESTED と、知らない値。CREATING も、Square で
+		// 作られていないと確かめられる（ERROR にする）までは決済画面が出ているかもしれない。
 		return models.Pending
 	}
 }
@@ -155,7 +153,8 @@ func squareCheckoutOutcome(checkout *models.SquareCheckout, now time.Time) model
 // squareCheckoutNeedsRefresh は Square に問い合わせ直す必要があるかを返す。
 func squareCheckoutNeedsRefresh(checkout *models.SquareCheckout, now time.Time) bool {
 	if checkout.CheckoutID == nil {
-		return false
+		// 作成の依頼に答えが無かった。Square で作られたかを検索で確かめる
+		return checkout.Status == squareStatusCreating
 	}
 	switch checkout.Status {
 	case squareStatusCompleted:
@@ -177,6 +176,9 @@ func applySquareCheckout(record *models.SquareCheckout, remote *square.TerminalC
 	if record.Status == squareStatusCompleted && remote.Status != squareStatusCompleted {
 		return
 	}
+	// Square から状態を受け取れたので、前に確かめられなかった理由は消す
+	// （COMPLETED で受取額を確かめられなければ verifyPayments が入れ直す）
+	record.ErrorMessage = nil
 	if remote.Status != "" {
 		record.Status = remote.Status
 	}
@@ -296,19 +298,52 @@ func (h *SquareHandler) refresh(ctx context.Context, record *models.SquareChecko
 		return
 	}
 	if record.Status != squareStatusCompleted {
-		remote, err := h.client.GetTerminalCheckout(ctx, *record.CheckoutID)
+		remote, err := h.fetchCheckout(ctx, record)
 		if err != nil {
-			log.Printf("square: failed to get checkout %s: %v", *record.CheckoutID, err)
+			log.Printf("square: failed to get checkout for %s: %v", record.ID, err)
 			// 応答にだけ載せ、保存はしない。問い合わせている間に Webhook が更新した行を、
 			// 読み込んだときの古い状態で上書きしないように。
 			message := "Square に決済の状態を問い合わせられません: " + err.Error()
 			record.ErrorMessage = &message
 			return
 		}
+		if remote == nil {
+			// 作成の依頼が Square に届いていない。少し待っても見つからなければ失敗にする
+			if h.now().After(record.CreatedAt.Add(squareCreatingStale)) {
+				message := "決済の依頼が Square に届いていませんでした"
+				record.Status = squareStatusError
+				record.ErrorMessage = &message
+				h.save(record)
+			}
+			return
+		}
 		applySquareCheckout(record, remote)
 	}
 	h.verifyPayments(ctx, record)
 	h.save(record)
+}
+
+// fetchCheckout は記録に当たる Square の checkout を取る。作成の応答を受け取れず
+// checkout_id が分からないときは、端末と作成時刻で検索し、reference_id（記録の ID）で探す。
+// 見つからなければ nil を返す。
+func (h *SquareHandler) fetchCheckout(ctx context.Context, record *models.SquareCheckout) (*square.TerminalCheckout, error) {
+	if record.CheckoutID != nil {
+		return h.client.GetTerminalCheckout(ctx, *record.CheckoutID)
+	}
+	checkouts, err := h.client.SearchTerminalCheckouts(ctx, square.SearchTerminalCheckoutsParams{
+		DeviceID: record.DeviceID,
+		// サーバーと Square の時計のずれを見込んで、少し前から探す
+		CreatedFrom: record.CreatedAt.Add(-time.Minute),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range checkouts {
+		if checkouts[i].ReferenceID == record.ID.String() {
+			return &checkouts[i], nil
+		}
+	}
+	return nil, nil
 }
 
 // verifyPayments は COMPLETED の決済について、実際に受け取った額を Payments API で確かめる。
@@ -453,9 +488,17 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 	remote, err := h.client.CreateTerminalCheckout(ctx, req.IdempotencyKey, buildTerminalCheckout(&record))
 	if err != nil {
 		log.Printf("square: failed to create checkout %s: %v", record.ID, err)
-		message := err.Error()
-		record.Status = squareStatusError
-		record.ErrorMessage = &message
+		if squareRejected(err) {
+			// Square が断った。決済画面は出ていない
+			message := err.Error()
+			record.Status = squareStatusError
+			record.ErrorMessage = &message
+		} else {
+			// 答えが無い・Square 側のエラー。作られて決済画面が出ているかもしれないので、
+			// 失敗にせず CREATING のまま残し、問い合わせのたびに検索で確かめる（refresh）。
+			message := "Square から答えがありません。決済画面が出たかを確かめています: " + err.Error()
+			record.ErrorMessage = &message
+		}
 		h.save(&record)
 		c.JSON(http.StatusBadGateway, toSquareCheckoutResponse(&record, h.now()))
 		return
@@ -463,6 +506,16 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 	applySquareCheckout(&record, remote)
 	h.save(&record)
 	c.JSON(http.StatusCreated, toSquareCheckoutResponse(&record, h.now()))
+}
+
+// squareRejected は、Square が依頼を受け付けずに断った（何も作っていない）と分かるエラーかを返す。
+// 答えが無い・5xx・408 のときは Square で処理されたかもしれないので false。
+func squareRejected(err error) bool {
+	var apiErr *square.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 && apiErr.StatusCode != http.StatusRequestTimeout
 }
 
 // buildTerminalCheckout は Square に送る checkout を組み立てる。
@@ -570,7 +623,7 @@ func (h *SquareHandler) CancelCheckout(c *gin.Context) {
 	}
 	if record.CheckoutID == nil {
 		c.JSON(http.StatusConflict, models.SquareCheckoutConflictResponse{
-			Error:    "Square に届いていない依頼は取り消せません",
+			Error:    "Square で作られたかを確かめている依頼は取り消せません。端末の画面を確認してください",
 			Checkout: toSquareCheckoutResponse(record, h.now()),
 		})
 		return
@@ -597,6 +650,18 @@ func (h *SquareHandler) CancelCheckout(c *gin.Context) {
 //
 // 返金が終わったものは出さない。返金の結果待ちのものは、ここで Square に問い合わせて最新にする。
 func (h *SquareHandler) GetUnlinkedCheckouts(c *gin.Context) {
+	ctx := c.Request.Context()
+	// 作成の応答を受け取れなかった依頼は、Square で作られて支払われていないかを先に確かめる。
+	// 支払われていれば COMPLETED として保存され、下で拾う。
+	var unresolved []models.SquareCheckout
+	if err := h.db.Where("status = ? AND checkout_id IS NULL", squareStatusCreating).Find(&unresolved).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range unresolved {
+		h.refresh(ctx, &unresolved[i])
+	}
+
 	var records []models.SquareCheckout
 	if err := h.db.
 		Where("status = ? AND order_id IS NULL AND (refund_status IS NULL OR refund_status <> ?)",
@@ -606,7 +671,6 @@ func (h *SquareHandler) GetUnlinkedCheckouts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx := c.Request.Context()
 	responses := make([]models.SquareCheckoutResponse, 0, len(records))
 	for i := range records {
 		h.refresh(ctx, &records[i])

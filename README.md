@@ -195,6 +195,12 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
   レジがサーバーに、サーバーが Square に問い合わせられないとき（受取額を確かめられないときも）は、問い合わせを続けたまま理由をダイアログに出す。
   未確定の決済の `error_message` がその理由で、確かめられたら消える。
+- 決済画面を出す依頼に答えが無かったとき（通信が切れた、Square から応答が無い・5xx）は、決済画面が出ているかもしれないので失敗にしない。
+  レジは同じ `idempotency_key` で数秒おきに送り直し、サーバーは Square の checkout を端末と作成時刻で検索して
+  `reference_id` で照らし合わせる（`POST /v2/terminals/checkouts/search`）。見つかればそのまま続け、1 分探しても無ければ
+  「届いていなかった」として失敗にする。断られた（4xx）ときだけ、すぐ失敗にする。
+  確かめている間はダイアログにそう出す。レジからは取り消せないので、端末の画面を確かめてから閉じられる。
+  閉じた後に支払われていたら、「未登録の Square 決済」を開いたときにサーバーが検索して見つけ、そこに出す。
   なお、電子マネーで端末にエラーが出たときは、Square の checkout は `IN_PROGRESS` か `PENDING` のまま
   （[Develop for Japan](https://developer.squareup.com/docs/international-development/japan)）なので、
   レジからは失敗と分からない。端末の画面で確かめ、端末で取り消してもらう。

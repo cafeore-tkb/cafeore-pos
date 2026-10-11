@@ -194,6 +194,53 @@ func (c *Client) GetTerminalCheckout(ctx context.Context, checkoutID string) (*T
 	return &out.Checkout, nil
 }
 
+// SearchTerminalCheckoutsParams は SearchTerminalCheckouts の絞り込み。
+type SearchTerminalCheckoutsParams struct {
+	DeviceID    string
+	CreatedFrom time.Time // この時刻以降に作られたもの
+}
+
+// SearchTerminalCheckouts は条件に合う checkout を、ページを辿って全て取る
+// （POST /v2/terminals/checkouts/search）。Square が返すのは作成から 30 日までのもの。
+func (c *Client) SearchTerminalCheckouts(ctx context.Context, params SearchTerminalCheckoutsParams) ([]TerminalCheckout, error) {
+	type timeRange struct {
+		StartAt string `json:"start_at"`
+	}
+	type filter struct {
+		DeviceID  string    `json:"device_id,omitempty"`
+		CreatedAt timeRange `json:"created_at"`
+	}
+	type query struct {
+		Filter filter `json:"filter"`
+	}
+	checkouts := []TerminalCheckout{}
+	cursor := ""
+	for {
+		body := struct {
+			Query  query  `json:"query"`
+			Cursor string `json:"cursor,omitempty"`
+		}{
+			Query: query{Filter: filter{
+				DeviceID:  params.DeviceID,
+				CreatedAt: timeRange{StartAt: params.CreatedFrom.UTC().Format(time.RFC3339)},
+			}},
+			Cursor: cursor,
+		}
+		var out struct {
+			Checkouts []TerminalCheckout `json:"checkouts"`
+			Cursor    string             `json:"cursor"`
+		}
+		if err := c.do(ctx, http.MethodPost, "/v2/terminals/checkouts/search", body, &out); err != nil {
+			return nil, err
+		}
+		checkouts = append(checkouts, out.Checkouts...)
+		if out.Cursor == "" {
+			return checkouts, nil
+		}
+		cursor = out.Cursor
+	}
+}
+
 // CancelTerminalCheckout は PENDING / IN_PROGRESS の checkout を取り消す
 // （POST /v2/terminals/checkouts/{checkout_id}/cancel）。
 func (c *Client) CancelTerminalCheckout(ctx context.Context, checkoutID string) (*TerminalCheckout, error) {

@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -72,10 +75,12 @@ func TestSquareCheckoutOutcome(t *testing.T) {
 		"creating just now": {
 			squareRecord(squareStatusCreating, func(r *models.SquareCheckout) { r.CreatedAt = squareTestNow }), models.Pending,
 		},
+		// 作成の依頼に答えが無かったものは、Square に無いと確かめる（ERROR にする）まで待つ。
 		"creating stale": {
 			squareRecord(squareStatusCreating, func(r *models.SquareCheckout) {
+				r.CheckoutID = nil
 				r.CreatedAt = squareTestNow.Add(-(squareCreatingStale + time.Second))
-			}), models.Failed,
+			}), models.Pending,
 		},
 	}
 	for name, tc := range cases {
@@ -90,6 +95,12 @@ func TestSquareCheckoutOutcome(t *testing.T) {
 func TestSquareCheckoutNeedsRefresh(t *testing.T) {
 	if squareCheckoutNeedsRefresh(squareRecord(squareStatusPending, func(r *models.SquareCheckout) { r.CheckoutID = nil }), squareTestNow) {
 		t.Fatal("a checkout unknown to Square cannot be refreshed")
+	}
+	if !squareCheckoutNeedsRefresh(squareRecord(squareStatusCreating, func(r *models.SquareCheckout) { r.CheckoutID = nil }), squareTestNow) {
+		t.Fatal("a checkout whose creation got no answer must be searched for")
+	}
+	if squareCheckoutNeedsRefresh(squareRecord(squareStatusError, func(r *models.SquareCheckout) { r.CheckoutID = nil }), squareTestNow) {
+		t.Fatal("a checkout Square rejected is final")
 	}
 	if !squareCheckoutNeedsRefresh(squareRecord(squareStatusInProgress, nil), squareTestNow) {
 		t.Fatal("in-progress checkout must be refreshed")
@@ -113,10 +124,16 @@ func TestSquareCheckoutNeedsRefresh(t *testing.T) {
 }
 
 func TestApplySquareCheckout(t *testing.T) {
-	record := squareRecord(squareStatusCreating, func(r *models.SquareCheckout) { r.CheckoutID = nil })
+	record := squareRecord(squareStatusCreating, func(r *models.SquareCheckout) {
+		r.CheckoutID = nil
+		r.ErrorMessage = ptr("Square から答えがありません")
+	})
 	applySquareCheckout(record, &square.TerminalCheckout{ID: "chk-1", Status: squareStatusInProgress})
 	if record.CheckoutID == nil || *record.CheckoutID != "chk-1" || record.Status != squareStatusInProgress {
 		t.Fatalf("unexpected record: %+v", record)
+	}
+	if record.ErrorMessage != nil {
+		t.Fatalf("an answer from Square must clear the previous error: %v", *record.ErrorMessage)
 	}
 
 	applySquareCheckout(record, &square.TerminalCheckout{ID: "chk-1", Status: squareStatusCompleted, PaymentIDs: []string{"p1"}})
@@ -128,6 +145,28 @@ func TestApplySquareCheckout(t *testing.T) {
 	applySquareCheckout(record, &square.TerminalCheckout{ID: "chk-1", Status: squareStatusCanceled, CancelReason: squareCancelReasonTimedOut})
 	if record.Status != squareStatusCompleted || record.CancelReason != nil {
 		t.Fatalf("completed checkout must not regress: %+v", record)
+	}
+}
+
+func TestSquareRejected(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want bool
+	}{
+		"bad request":     {&square.APIError{StatusCode: http.StatusBadRequest}, true},
+		"not found":       {&square.APIError{StatusCode: http.StatusNotFound}, true},
+		"rate limited":    {&square.APIError{StatusCode: http.StatusTooManyRequests}, true},
+		"request timeout": {&square.APIError{StatusCode: http.StatusRequestTimeout}, false},
+		"server error":    {&square.APIError{StatusCode: http.StatusInternalServerError}, false},
+		"no answer":       {context.DeadlineExceeded, false},
+		"wrapped":         {fmt.Errorf("wrapped: %w", &square.APIError{StatusCode: http.StatusBadRequest}), true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := squareRejected(tc.err); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

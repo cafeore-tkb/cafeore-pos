@@ -2,6 +2,7 @@ import {
   type OrderEntity,
   type SquareCheckout,
   SquareCheckoutConflictError,
+  SquareCheckoutRejectedError,
   type SquarePaymentType,
   squareRepository,
 } from "@cafeore/common";
@@ -9,9 +10,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /** 端末の状態を問い合わせる間隔 */
 const POLL_INTERVAL_MS = 1500;
+/** 決済依頼がサーバーに届いたか分からないときに、送り直す間隔 */
+const RESEND_INTERVAL_MS = 3000;
 
 export type SquarePaymentPhase =
-  /** 端末に決済画面を出すよう依頼している */
+  /** 端末に決済画面を出すよう依頼している（syncError があれば、届いたか分からず送り直している） */
   | "creating"
   /** お客さんの操作を待っている */
   | "waiting"
@@ -37,21 +40,22 @@ export type SquarePaymentState = {
   /** 決済を始めた時点の注文。支払い中に画面の注文が変わっても、これを送る */
   order: OrderEntity;
   checkout: SquareCheckout | null;
-  /** 端末に決済画面を出せた（onStarted を呼んだ） */
+  /** 端末に決済画面を出せた（Square が受け付けた。onStarted を呼んだ） */
   started: boolean;
   /** 進行中だった別の決済（phase が conflict のとき） */
   conflicting: SquareCheckout | null;
   message: string | null;
   /**
-   * 結果を確かめられていない理由（レジがサーバーに、サーバーが Square に問い合わせられないなど）。
-   * 結果がまだ決まっていない間だけ使い、次に確かめられたら消える
+   * 結果を確かめられていない理由（依頼がサーバーに届いたか分からない、サーバーが Square に
+   * 問い合わせられないなど）。結果がまだ決まっていない間だけ使い、次に確かめられたら消える
    */
   syncError: string | null;
 };
 
 type Options = {
   /**
-   * 端末に決済画面が出たときに 1 回だけ呼ぶ。支払いを待つ間にシールを先に印刷するのに使う。
+   * 端末に決済画面が出た（Square が受け付けた）と分かったときに 1 回だけ呼ぶ。支払いを待つ間に
+   * シールを先に印刷するのに使う。作成の答えが無く後から分かったときは、支払い済みの後で呼ぶこともある。
    */
   onStarted: (checkout: SquareCheckout, order: OrderEntity) => void;
   /**
@@ -82,6 +86,8 @@ const cancelMessage = (checkout: SquareCheckout): string => {
  */
 export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
   const [state, setState] = useState<SquarePaymentState | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const onStartedRef = useRef(onStarted);
   onStartedRef.current = onStarted;
   const onPaidRef = useRef(onPaid);
@@ -175,9 +181,13 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
     void sendPaidOrder(state.checkout, state.order);
   }, [state, sendPaidOrder]);
 
+  // 決済依頼を送っている間は、送り直さない
+  const sendingRef = useRef(false);
   const create = useCallback(
     async (base: SquarePaymentState) => {
+      // syncError は残す（届いたか分からないまま送り直しているときに、表示を消さない）
       setState({ ...base, phase: "creating", message: null });
+      sendingRef.current = true;
       try {
         const checkout = await squareRepository.createCheckout({
           idempotencyKey: base.idempotencyKey,
@@ -186,16 +196,12 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
           paymentType: base.paymentType,
           orderNumber: base.order.orderId,
         });
-        // 送り直しで、もう終わった決済が返ってくることがある。取り消し済みなら始めない（印刷しない）
-        const started = checkout.outcome !== "failed";
+        // 印刷（onStarted）は、Square が受け付けたと分かってから下の effect で行う
         setState((prev) =>
           prev?.idempotencyKey === base.idempotencyKey
-            ? { ...prev, checkout, phase: "waiting", started }
+            ? { ...prev, checkout, phase: "waiting", syncError: null }
             : prev,
         );
-        if (started) {
-          onStartedRef.current(checkout, base.order);
-        }
         applyCheckout(checkout);
       } catch (error) {
         if (error instanceof SquareCheckoutConflictError) {
@@ -211,20 +217,81 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
           );
           return;
         }
-        // 通信エラーなど。同じ idempotencyKey で送り直せば二重にはならない。
+        const reason = error instanceof Error ? error.message : String(error);
+        if (error instanceof SquareCheckoutRejectedError) {
+          // サーバーが断った。決済依頼は作られていない
+          setState((prev) =>
+            prev?.idempotencyKey === base.idempotencyKey
+              ? {
+                  ...prev,
+                  phase: "failed",
+                  message: `端末に送れませんでした: ${reason}`,
+                  syncError: null,
+                }
+              : prev,
+          );
+          return;
+        }
+        // 通信エラーなど。サーバーに届いて、端末に決済画面が出ているかもしれないので、
+        // 失敗にはしない。同じ idempotencyKey なら二重にはならないので、答えが返るまで送り直す。
         setState((prev) =>
           prev?.idempotencyKey === base.idempotencyKey
             ? {
                 ...prev,
-                phase: "failed",
-                message: `端末に送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
+                syncError: `サーバーに届いたか確かめられません: ${reason}`,
               }
             : prev,
         );
+      } finally {
+        sendingRef.current = false;
       }
     },
     [applyCheckout],
   );
+
+  // 決済依頼がサーバーに届いたか分からないうちは、同じ idempotencyKey で送り直し続ける
+  const resendKey =
+    state?.phase === "creating" && state.syncError !== null
+      ? state.idempotencyKey
+      : null;
+  useEffect(() => {
+    if (resendKey === null) {
+      return;
+    }
+    const timer = setInterval(() => {
+      const current = stateRef.current;
+      if (
+        sendingRef.current ||
+        current?.idempotencyKey !== resendKey ||
+        current.phase !== "creating"
+      ) {
+        return;
+      }
+      void create(current);
+    }, RESEND_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [resendKey, create]);
+
+  // Square が受け付けた（checkout_id がある）と分かったら、1 回だけ onStarted を呼ぶ（シールを印刷する）。
+  // 作成の答えが無く、後から見つかったときもここで呼ぶ。お金を受け取らずに終わったものでは呼ばない。
+  const startedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const checkout = state?.checkout;
+    if (
+      !state ||
+      state.started ||
+      !checkout?.checkout_id ||
+      (checkout.outcome !== "pending" && checkout.outcome !== "paid") ||
+      startedRef.current === checkout.id
+    ) {
+      return;
+    }
+    startedRef.current = checkout.id;
+    setState((prev) =>
+      prev?.checkout?.id === checkout.id ? { ...prev, started: true } : prev,
+    );
+    onStartedRef.current(checkout, state.order);
+  }, [state]);
 
   /** 端末に決済画面を出す */
   const start = useCallback(
@@ -247,14 +314,6 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
     },
     [state, create],
   );
-
-  /** 端末に届かなかったとき、同じ依頼を送り直す */
-  const retry = useCallback(() => {
-    if (state === null || state.checkout !== null) {
-      return;
-    }
-    void create(state);
-  }, [state, create]);
 
   /** 進行中の決済を取り消す */
   const cancel = useCallback(async () => {
@@ -334,7 +393,8 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
 
   /**
    * ダイアログを閉じる。お金を受け取っていない・人が確かめる・結果がいつまでも
-   * 決まらない・注文の登録に失敗した、のどれかのときだけ（どれに当たるかはダイアログが判断する）。
+   * 決まらない・端末に決済画面が出たか分からない・注文の登録に失敗した、のどれかのときだけ
+   * （どれに当たるかはダイアログが判断する）。
    * 支払い済みで、まだ送ろうとしていない・送っている途中のときは閉じない。
    */
   const close = useCallback(() => {
@@ -388,7 +448,6 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
     state,
     active: state !== null,
     start,
-    retry,
     cancel,
     cancelConflicting,
     submitPaid,

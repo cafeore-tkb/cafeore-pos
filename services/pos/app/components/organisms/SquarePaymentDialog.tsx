@@ -44,7 +44,6 @@ type Props = {
   state: SquarePaymentState | null;
   canSubmitOrder: boolean;
   onCancel: () => void;
-  onRetry: () => void;
   onCancelConflicting: () => void;
   onSubmitPaid: () => void;
   onClose: () => void;
@@ -59,7 +58,6 @@ export const SquarePaymentDialog = ({
   state,
   canSubmitOrder,
   onCancel,
-  onRetry,
   onCancelConflicting,
   onSubmitPaid,
   onClose,
@@ -78,12 +76,18 @@ export const SquarePaymentDialog = ({
   // 支払い済みなのに注文の登録に失敗した。送り直しても通らないとき
   // （登録できていたのに応答だけ失われた、など）のために閉じられるようにする。
   const submitFailed = phase === "paid" && message !== null;
+  // 端末に決済画面が出たか分からない（依頼がサーバーに届いたか、Square で作られたかを確かめている）。
+  // レジからは取り消せないので、端末の画面を確かめたうえで閉じられるようにする。
+  const unconfirmed =
+    (phase === "creating" && syncError !== null) ||
+    (phase === "waiting" && checkout !== null && checkout.checkout_id == null);
   const closable =
     phase === "failed" ||
     phase === "attention" ||
     phase === "conflict" ||
     stuck ||
-    submitFailed;
+    submitFailed ||
+    unconfirmed;
 
   return (
     <AlertDialog open>
@@ -122,7 +126,7 @@ export const SquarePaymentDialog = ({
                 <span>請求額</span>
                 <span>&yen;{order.billingAmount}</span>
               </div>
-              {phase === "waiting" && (
+              {phase === "waiting" && !unconfirmed && (
                 <p className="text-sm text-stone-500">
                   端末の画面でお客さんに操作してもらってください。5
                   分で自動的に取り消されます。
@@ -164,14 +168,25 @@ export const SquarePaymentDialog = ({
                 </p>
               )}
               {message && <p className="text-red-700 text-sm">{message}</p>}
-              {(phase === "waiting" || phase === "canceling") && syncError && (
-                <div className="space-y-1 text-red-700 text-sm">
-                  <p className="font-bold">
+              {unconfirmed && (
+                <p className="font-bold text-red-700 text-sm">
+                  端末に決済画面が出たか分かりません。確かめられるまで続けます。閉じるときは、先に端末の画面を確認し、決済画面が出ていたら端末で取り消してください。閉じた後に支払いが確定したら、右上の「未登録の
+                  Square 決済」に出ます。
+                </p>
+              )}
+              {(phase === "waiting" || phase === "canceling") &&
+                !unconfirmed &&
+                syncError && (
+                  <p className="font-bold text-red-700 text-sm">
                     決済の結果を確かめられていません。端末の画面を確認してください（確かめられるまで問い合わせ続けます）。
                   </p>
-                  <p>{syncError}</p>
-                </div>
-              )}
+                )}
+              {(phase === "creating" ||
+                phase === "waiting" ||
+                phase === "canceling") &&
+                syncError && (
+                  <p className="text-red-700 text-sm">{syncError}</p>
+                )}
               {stuck && (
                 <p className="font-bold text-red-700 text-sm">
                   結果を確かめられません。端末と Square
@@ -190,13 +205,10 @@ export const SquarePaymentDialog = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2">
-          {phase === "waiting" && (
+          {phase === "waiting" && !unconfirmed && (
             <Button variant="destructive" onClick={onCancel}>
               取り消す
             </Button>
-          )}
-          {phase === "failed" && checkout === null && (
-            <Button onClick={onRetry}>もう一度送る</Button>
           )}
           {phase === "conflict" && (
             <Button variant="destructive" onClick={onCancelConflicting}>

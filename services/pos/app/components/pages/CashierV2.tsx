@@ -628,7 +628,6 @@ const CashierV2 = ({
           state={squarePayment.state}
           canSubmitOrder={canSaveNow}
           onCancel={squarePayment.cancel}
-          onRetry={squarePayment.retry}
           onCancelConflicting={squarePayment.cancelConflicting}
           onSubmitPaid={squarePayment.submitPaid}
           onClose={squarePayment.close}

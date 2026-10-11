@@ -28,11 +28,11 @@ type SquareCheckout struct {
 	DeviceID       string     `gorm:"not null"`
 	Amount         int        `gorm:"not null"` // 円
 	PaymentType    string     `gorm:"not null"`
-	Status         string     `gorm:"not null"` // Square の status。依頼前は CREATING、依頼に失敗したら ERROR
+	Status         string     `gorm:"not null"` // Square の status。依頼前と、作られたかを確かめている間は CREATING。Square が断った・届いていなかったら ERROR
 	CancelReason   *string    // Square の cancel_reason
 	PaymentIDs     []string   `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
 	PaidAmount     *int       // 完了後に Payments API で確かめた受取額（円）
-	ErrorMessage   *string    // 依頼に失敗したときの Square のエラー。または受取額を確かめられない理由（確かめられたら消す）
+	ErrorMessage   *string    // 依頼に失敗したときの Square のエラー。未確定なら、作られたか・受取額を確かめられていない理由（確かめられたら消す）
 	OrderNumber    *int       // 依頼時点の注文番号（表示用。注文と結び付けるのは OrderID）
 	OrderID        *uuid.UUID `gorm:"type:uuid;uniqueIndex"`
 	// 返金を頼んでいなければ空。REQUESTING（Square に頼んでいる間）/ PENDING / COMPLETED / FAILED

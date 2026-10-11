@@ -1015,7 +1015,7 @@ export interface components {
       device_id: string;
       /** @description Square の TerminalCheckout の id */
       checkout_id?: string | null;
-      /** @description Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR */
+      /** @description Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前と、作られたかを確かめている間は CREATING、Square が断った・届いていなかったら ERROR */
       status: string;
       outcome: components["schemas"]["SquareCheckoutOutcome"];
       cancel_reason?: string | null;
@@ -1024,6 +1024,7 @@ export interface components {
       paid_amount?: number | null;
       payment_type: string;
       payment_ids: string[];
+      /** @description 依頼に失敗したときの Square のエラー。outcome が pending なら、状態や受取額を Square で確かめられていない理由（確かめられたら消える） */
       error_message?: string | null;
       order_number?: number | null;
       /**
@@ -2196,7 +2197,10 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
         };
       };
-      /** @description Square が依頼を受け付けなかった */
+      /**
+       * @description Square が依頼を断った（outcome が failed）、または Square から答えが無かった（outcome が pending）。
+       * 答えが無かったときは決済画面が出ているかもしれない。サーバーが Square を検索して確かめるので、GET で結果を待つ。
+       */
       502: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutResponse"];

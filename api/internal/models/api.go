@@ -599,7 +599,9 @@ type SquareCheckoutResponse struct {
 	CreatedAt  time.Time `json:"created_at"`
 
 	// DeviceId 決済画面を出した端末
-	DeviceId     string             `json:"device_id"`
+	DeviceId string `json:"device_id"`
+
+	// ErrorMessage 依頼に失敗したときの Square のエラー。outcome が pending なら、状態や受取額を Square で確かめられていない理由（確かめられたら消える）
 	ErrorMessage *string            `json:"error_message"`
 	Id           openapi_types.UUID `json:"id"`
 
@@ -630,7 +632,7 @@ type SquareCheckoutResponse struct {
 	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
 	RefundStatus SquareRefundStatus `json:"refund_status"`
 
-	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前と、作られたかを確かめている間は CREATING、Square が断った・届いていなかったら ERROR
 	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

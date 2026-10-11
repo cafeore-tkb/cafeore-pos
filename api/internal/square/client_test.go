@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type recordedRequest struct {
@@ -181,6 +182,45 @@ func TestListDeviceCodesFollowsCursor(t *testing.T) {
 	want := []string{"product_type=TERMINAL_API&status=PAIRED", "cursor=next&product_type=TERMINAL_API&status=PAIRED"}
 	if len(queries) != 2 || queries[0] != want[0] || queries[1] != want[1] {
 		t.Fatalf("unexpected queries: %v", queries)
+	}
+}
+
+func TestSearchTerminalCheckoutsFollowsCursor(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/terminals/checkouts/search" {
+			t.Errorf("unexpected endpoint: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		if body["cursor"] == nil {
+			_, _ = w.Write([]byte(`{"checkouts":[{"id":"chk1","reference_id":"r1","status":"PENDING"}],"cursor":"next"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"checkouts":[{"id":"chk2","reference_id":"r2","status":"COMPLETED"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	from := time.Date(2026, 11, 7, 21, 0, 0, 0, time.FixedZone("JST", 9*60*60))
+	checkouts, err := NewClient(server.URL, "token").SearchTerminalCheckouts(context.Background(), SearchTerminalCheckoutsParams{
+		DeviceID: "dev", CreatedFrom: from,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checkouts) != 2 || checkouts[0].ReferenceID != "r1" || checkouts[1].ID != "chk2" {
+		t.Fatalf("unexpected checkouts: %+v", checkouts)
+	}
+	if len(bodies) != 2 || bodies[1]["cursor"] != "next" {
+		t.Fatalf("unexpected requests: %v", bodies)
+	}
+	filter := bodies[0]["query"].(map[string]any)["filter"].(map[string]any)
+	createdAt := filter["created_at"].(map[string]any)
+	if filter["device_id"] != "dev" || createdAt["start_at"] != "2026-11-07T12:00:00Z" {
+		t.Fatalf("unexpected filter: %v", filter)
 	}
 }
 
