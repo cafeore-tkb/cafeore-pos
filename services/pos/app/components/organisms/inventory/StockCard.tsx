@@ -3,6 +3,7 @@ import {
   type InventoryStatus,
   type StockEventKind,
   inventoryRepository,
+  openapiEnumLabels,
 } from "@cafeore/common";
 import dayjs from "dayjs";
 import { type ReactNode, useState } from "react";
@@ -49,7 +50,6 @@ export function StockCard({
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isCup = resource.kind === "cup";
   const level = LEVELS[status.level];
   const remaining = status.remaining ?? null;
   const servings = status.remaining_servings ?? null;
@@ -92,7 +92,7 @@ export function StockCard({
       if (kind === "count" && result.estimated != null) {
         const diff = quantity - result.estimated;
         const perServing =
-          result.actual_per_serving != null && !isCup
+          result.actual_per_serving != null
             ? ` / 実測 ${fmt(result.actual_per_serving, 1)}${resource.unit}/杯`
             : "";
         toast(`${resource.name} を棚卸ししました`, {
@@ -122,7 +122,7 @@ export function StockCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-            {isCup ? "カップ" : "豆"}
+            {openapiEnumLabels("StockResourceKind")[resource.kind]}
           </span>
           <h2 className="font-semibold text-lg">{resource.name}</h2>
         </div>
@@ -138,14 +138,10 @@ export function StockCard({
 
       <div>
         <div className="font-bold text-3xl tabular-nums">
-          {servings == null
-            ? "—"
-            : `${fmt(Math.floor(servings))} ${isCup ? "個" : "杯"}`}
+          {servings == null ? "—" : `${fmt(Math.floor(servings))} 杯`}
         </div>
         <div className="text-muted-foreground text-sm tabular-nums">
-          {remaining != null &&
-            !isCup &&
-            `推定 ${fmt(remaining)} ${resource.unit} ・ `}
+          {remaining != null && `推定 ${fmt(remaining)} ${resource.unit} ・ `}
           バッファ {fmt(resource.buffer)} 杯 ・ {fmt(resource.notify_from)}{" "}
           杯から {fmt(resource.notify_step)} 杯ごとに通知
         </div>
@@ -175,7 +171,7 @@ export function StockCard({
               type="number"
               inputMode="decimal"
               min={0}
-              placeholder={isCup ? "個数" : "グラム"}
+              placeholder="数量"
               value={value}
               disabled={submitting}
               onChange={(e) => setValue(e.target.value)}

@@ -1,12 +1,29 @@
-import type { InventoryStatus, StockResource } from "@cafeore/common";
+import type {
+  InventoryStatus,
+  ItemEntity,
+  StockResource,
+  WithId,
+} from "@cafeore/common";
 import { type Board, mapCards } from "./board";
+import { isDripItem } from "./posOrders";
 
 // カードの豆。カードの商品のアイテムの在庫（POS の在庫）を引く。名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。
 
 /** 商品 ID → その商品の在庫 */
 type BeanIndex = Map<string, StockResource[]>;
 
-/** statuses はアイテムの在庫（kind が item）だけ */
+/** 豆キューに出す在庫。抽出が要るアイテム（logic/posOrders.ts の isDripItem）の在庫だけ。グッズなどは出さない */
+export const dripItemStatuses = (
+  statuses: readonly InventoryStatus[],
+  items: readonly WithId<ItemEntity>[],
+) => {
+  const dripItemIds = new Set(items.filter(isDripItem).map((item) => item.id));
+  return statuses.filter(
+    ({ resource }) => resource.item_id && dripItemIds.has(resource.item_id),
+  );
+};
+
+/** statuses は dripItemStatuses で絞ったもの */
 export const buildBeanIndex = (
   statuses: readonly InventoryStatus[],
 ): BeanIndex => {

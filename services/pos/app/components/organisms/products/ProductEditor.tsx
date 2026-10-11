@@ -3,9 +3,7 @@ import {
   type ItemType,
   MenuEntity,
   type StockResource,
-  type StockUsage,
   type WithId,
-  inventoryRepository,
   itemRepository,
   itemTypeRepository,
   menuRepository,
@@ -28,7 +26,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
-import { cupByItemType, toUsageInputs, usageDrafts } from "~/lib/stock";
+import {
+  type StockAmounts,
+  saveItemStock,
+  stockAmounts,
+  stockChanges,
+} from "~/lib/stock";
 import { copyName } from "~/lib/utils";
 
 export type ProductKind = "menu" | "item" | "itemType";
@@ -60,9 +63,6 @@ type Props = {
   items: WithId<ItemEntity>[];
   itemTypes: ItemType[];
   resources: StockResource[];
-  usages: StockUsage[];
-  /** 在庫対象と使用量を読み終えるまで、アイテムのフォームの代わりに出す文 */
-  stockNotice: string | null;
 };
 
 export function ProductEditor({
@@ -73,8 +73,6 @@ export function ProductEditor({
   items,
   itemTypes,
   resources,
-  usages,
-  stockNotice,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -120,17 +118,22 @@ export function ProductEditor({
     }
   };
 
-  // アイテムを保存してから使用量を置き換える。新規で空なら送らない。
-  // 使用量だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
-  const saveItem = async (values: ItemFormValues, id: string | undefined) => {
+  // アイテムを保存してから、savedStock（編集のときの今の在庫）から変えた値を送る。
+  // 新規・複製は入れた値をすべて、アイテムと一緒に API が作った在庫に送る。
+  // 在庫だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
+  const saveItem = async (
+    values: ItemFormValues,
+    id: string | undefined,
+    savedStock?: StockAmounts,
+  ) => {
     const item = await itemRepository.save(toItemEntity(values, itemTypes, id));
-    const inputs = toUsageInputs(values.usages);
-    if (id || inputs.length > 0) {
+    const changes = stockChanges(values.stock, savedStock);
+    if (Object.keys(changes).length > 0) {
       try {
-        await inventoryRepository.replaceItemUsages(item.id, inputs);
+        await saveItemStock(item.id, changes);
       } catch (e) {
         toast.error(
-          `アイテムは保存しましたが、使用量の保存に失敗しました: ${
+          `アイテムは保存しましたが、在庫の保存に失敗しました: ${
             e instanceof Error ? e.message : "不明なエラー"
           }。編集から直してください`,
         );
@@ -227,10 +230,8 @@ export function ProductEditor({
     if (kind === "item") {
       const source = items.find((item) => item.id === id);
       if (mode !== "new" && !source) return null;
-      // フォームは使用量を最初の描画でしか読まないので、届くまで出さない
-      if (stockNotice) {
-        return <p className="text-muted-foreground text-sm">{stockNotice}</p>;
-      }
+      const sourceStock =
+        source && resources.find((r) => r.item_id === source.id);
       const initialItem =
         source &&
         (isEdit
@@ -245,19 +246,19 @@ export function ProductEditor({
           key={formKey}
           initialItem={initialItem}
           itemTypes={itemTypes}
-          resources={resources}
-          // 編集・複製は元の使用量を入れる
-          initialUsages={
-            source ? (usageDrafts(usages)[source.id] ?? {}) : undefined
-          }
-          cupByType={cupByItemType(items, usages, resources)}
+          // 編集・複製は元の在庫の値を入れる
+          initialStock={sourceStock && stockAmounts(sourceStock)}
           submitting={submitting}
           onCreateItemType={createItemType}
           menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
           onSubmit={(values, menu) =>
             menu
               ? saveItemWithMenu(values, menu)
-              : save(() => saveItem(values, isEdit ? id : undefined))
+              : save(() =>
+                  isEdit
+                    ? saveItem(values, id, sourceStock)
+                    : saveItem(values, undefined),
+                )
           }
         />
       );

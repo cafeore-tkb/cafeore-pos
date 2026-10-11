@@ -354,17 +354,17 @@ function DashboardPreview() {
 
 function InventoryPreview() {
   const resources = [
-    { kind: "豆", name: "ブラジル", value: "64 杯", level: "ok" },
-    { kind: "豆", name: "エチオピア", value: "18 杯", level: "warning" },
-    { kind: "カップ", name: "ホット用", value: "120 個", level: "ok" },
-    { kind: "カップ", name: "アイス用", value: "9 個", level: "critical" },
+    { kind: "アイテム", name: "ブラジル", value: "64 杯", level: "ok" },
+    { kind: "アイテム", name: "エチオピア", value: "18 杯", level: "warning" },
+    { kind: "カップ", name: "ホット用", value: "120 杯", level: "ok" },
+    { kind: "カップ", name: "アイス用", value: "9 杯", level: "critical" },
   ] as const;
   return (
     <div className="flex h-full flex-col px-[1em] py-[0.8em]">
       <div className="flex items-center justify-between">
         <span className="font-semibold text-[1.2em]">在庫</span>
         <span className="text-[0.6em] text-stone-500 underline">
-          在庫対象・使用量の設定 →
+          在庫の設定 →
         </span>
       </div>
       <div className="mt-[0.6em] grid flex-1 grid-cols-2 gap-[0.5em]">
@@ -480,14 +480,14 @@ function ProductsPreview() {
           </div>
         </div>
         <div className="rounded border bg-white p-[0.4em]">
-          <div className="font-semibold">在庫の使用量</div>
+          <div className="font-semibold">在庫</div>
           <div className="mt-[0.2em] flex justify-between">
-            <span>ホットカップ</span>
-            <span>1 個</span>
+            <span>単位</span>
+            <span>g</span>
           </div>
           <div className="flex justify-between">
-            <span>ケニア豆</span>
-            <span>15 g</span>
+            <span>1回の量</span>
+            <span>15</span>
           </div>
         </div>
         <span className="mt-auto self-end rounded bg-stone-900 px-[0.8em] py-[0.2em] text-white">

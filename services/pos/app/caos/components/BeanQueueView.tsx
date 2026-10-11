@@ -4,7 +4,7 @@ import type React from "react";
 import { StockCard } from "~/components/organisms/inventory/StockCard";
 
 interface BeanQueueViewProps {
-  /** POS のアイテムの在庫（kind が item）の残量。API の値をそのまま出す */
+  /** POS の在庫のうち、抽出が要るアイテムの在庫の残量。API の値をそのまま出す */
   statuses: InventoryStatus[];
   isLoading: boolean;
   /** 在庫（残量）を読めなかったときのエラー */

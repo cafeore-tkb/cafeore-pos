@@ -1,4 +1,10 @@
-import type { ItemEntity, StockResource, WithId } from "@cafeore/common";
+import {
+  type ItemEntity,
+  type StockResource,
+  type StockResourceInput,
+  type WithId,
+  inventoryRepository,
+} from "@cafeore/common";
 
 /** アイテムの在庫の 1 回の量と、そのアイテムのタイプを使うカップ（「15g・ホットカップ」） */
 export const itemStockSummary = (
@@ -12,4 +18,56 @@ export const itemStockSummary = (
   return [stock && `${stock.per_serving}${stock.unit}`, ...cups]
     .filter(Boolean)
     .join("・");
+};
+
+/** アイテムの在庫でもカップでも入れる値。アイテムの在庫にはこれだけを送る（名前はアイテムの名前） */
+export type StockAmounts = Pick<
+  StockResourceInput,
+  "unit" | "per_serving" | "notify_from" | "notify_step" | "buffer"
+>;
+
+export const stockFields: { key: keyof StockAmounts; label: string }[] = [
+  { key: "unit", label: "単位" },
+  { key: "per_serving", label: "1回の量" },
+  { key: "notify_from", label: "通知開始" },
+  { key: "notify_step", label: "間隔" },
+  { key: "buffer", label: "バッファ" },
+];
+
+/** 入力欄の文字を値にする。単位のほかは数 */
+export const parseStockField = (key: keyof StockAmounts, raw: string) =>
+  key === "unit" ? raw : Number(raw);
+
+export const stockAmounts = (r: StockAmounts): StockAmounts => ({
+  unit: r.unit,
+  per_serving: r.per_serving,
+  notify_from: r.notify_from,
+  notify_step: r.notify_step,
+  buffer: r.buffer,
+});
+
+/** draft のうち saved と違う値。saved が無ければ draft すべて */
+export const stockChanges = (
+  draft: Partial<StockAmounts>,
+  saved?: StockAmounts,
+): Partial<StockAmounts> =>
+  Object.fromEntries(
+    Object.entries(draft).filter(
+      ([key, value]) => saved?.[key as keyof StockAmounts] !== value,
+    ),
+  );
+
+/** アイテムの在庫の値を changes で変える。アイテムを作った直後でも引けるよう、在庫は取り直して探す */
+export const saveItemStock = async (
+  itemId: string,
+  changes: Partial<StockAmounts>,
+) => {
+  if (Object.keys(changes).length === 0) return;
+  const statuses = await inventoryRepository.getStatuses();
+  const stock = statuses.find((s) => s.resource.item_id === itemId)?.resource;
+  if (!stock) throw new Error("アイテムの在庫が見つかりません");
+  await inventoryRepository.updateResource(stock.id, {
+    ...stockAmounts(stock),
+    ...changes,
+  });
 };

@@ -136,7 +136,7 @@ const sections: Section[] = [
         audience: "admin",
         where: "祭の前の準備・メニューの変更",
         description:
-          "メニュー・アイテム・タイプ・背景色と、豆やカップの在庫対象・1杯あたりの使用量を編集。CSV / JSON で取り込み・書き出しもできます。",
+          "メニュー・アイテム・タイプ・背景色と、アイテムごとの在庫の量・カップを編集。CSV / JSON で取り込み・書き出しもできます。",
       },
       {
         kind: "rehearsal",
@@ -178,6 +178,18 @@ export default function Index() {
       ))}
 
       <section className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border p-4">
+          <h2 className="font-bold">Square 端末</h2>
+          <p className="mt-1 mb-3 text-muted-foreground text-sm">
+            レジで使う Square Terminal を登録します
+          </p>
+          <Link
+            to="/square-devices"
+            className="rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+          >
+            Square 端末の設定
+          </Link>
+        </div>
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">オーダーデータ書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">
