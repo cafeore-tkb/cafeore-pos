@@ -5,7 +5,7 @@ import {
   responseToOrderEntity,
 } from "../firebase-utils/converter";
 import { type WithId, hasId } from "../lib/typeguard";
-import type { OrderEntity, OrderPayment } from "../models/order";
+import type { OrderEntity } from "../models/order";
 import type { paths } from "../types/api";
 import { API_BASE_URL, throwApiError } from "./item";
 import type { OrderRepository } from "./type";
@@ -36,10 +36,17 @@ export const orderRepoFactory = (): OrderRepository => {
 
   const create = async (
     order: OrderEntity,
-    payment?: OrderPayment,
+    options?: Parameters<OrderRepository["save"]>[1],
   ): Promise<WithId<OrderEntity>> => {
     const { data, error, response } = await client.POST("/api/orders", {
-      body: orderEntityToCreateRequest(order, payment),
+      body: {
+        ...orderEntityToCreateRequest(
+          order,
+          options?.method ? options : undefined,
+        ),
+        idempotency_key: options?.idempotencyKey,
+        created_at: options?.createdAt?.toISOString(),
+      },
     });
 
     if (error || !response.ok) {
@@ -54,11 +61,11 @@ export const orderRepoFactory = (): OrderRepository => {
   };
 
   return {
-    save: async (order, payment) => {
+    save: async (order, options) => {
       if (hasId(order)) {
         return await update(order.id, order);
       }
-      return await create(order, payment);
+      return await create(order, options);
     },
 
     ready: async (id: string): Promise<void> => {

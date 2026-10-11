@@ -1,6 +1,6 @@
+import { type CaosCard, canMergeCards } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type DripCard, canMergeDripUnits, orderLabel } from "../logic/cards";
-import { canPlaceOn } from "../logic/lanes";
+import { cardOrderNos, orderLabel } from "../logic/cards";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。
@@ -11,17 +11,16 @@ export const useSheetSelection = ({
   onAssign,
   onMerge,
 }: {
-  unassigned: DripCard[];
+  unassigned: CaosCard[];
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
-  onAssign: (card: DripCard, bayId: number) => void;
+  onAssign: (card: CaosCard, bayId: number) => void;
   onMerge: (firstUid: string, secondUid: string) => void;
 }) => {
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   // 統合して、盤面から統合したカードが届くのを待っている注文番号
   const [mergingNos, setMergingNos] = useState<number[] | null>(null);
-  const selected =
-    unassigned.find((card) => card.ticketUid === selectedUid) ?? null;
+  const selected = unassigned.find((card) => card.key === selectedUid) ?? null;
 
   useEffect(() => {
     if (selectedUid && !selected) setSelectedUid(null);
@@ -34,8 +33,8 @@ export const useSheetSelection = ({
       setSelectedUid(null);
   }, [selected, selectedOrderId]);
 
-  const select = (card: DripCard) => {
-    setSelectedUid(card.ticketUid);
+  const select = (card: CaosCard) => {
+    setSelectedUid(card.key);
     onSelectOrder(orderLabel(card));
   };
   const clear = () => {
@@ -49,16 +48,16 @@ export const useSheetSelection = ({
     if (!mergingNos) return;
     const merged = unassigned.find(
       (card) =>
-        card.orderNos.length > 1 &&
-        mergingNos.every((no) => card.orderNos.includes(no)),
+        cardOrderNos(card).length > 1 &&
+        mergingNos.every((no) => cardOrderNos(card).includes(no)),
     );
     if (!merged) return;
     setMergingNos(null);
-    setSelectedUid(merged.ticketUid);
+    setSelectedUid(merged.key);
     onSelectOrder(orderLabel(merged));
     requestAnimationFrame(() => {
       document
-        .querySelector(`[data-sheet-cup="${CSS.escape(merged.ticketUid)}"]`)
+        .querySelector(`[data-sheet-cup="${CSS.escape(merged.key)}"]`)
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   }, [mergingNos, unassigned, onSelectOrder]);
@@ -68,24 +67,22 @@ export const useSheetSelection = ({
     select,
     clear,
     /** 選んだカードなら外し、ほかのカードなら選ぶ */
-    toggle: (card: DripCard) => {
-      if (card.ticketUid === selectedUid) clear();
+    toggle: (card: CaosCard) => {
+      if (card.key === selectedUid) clear();
       else select(card);
     },
     /** 選んだカードと統合できる */
-    canMergeWith: (card: DripCard) =>
-      Boolean(selected && canMergeDripUnits(selected, card)),
-    mergeWith: (card: DripCard) => {
-      if (!selected || !canMergeDripUnits(selected, card)) return;
-      onMerge(selected.ticketUid, card.ticketUid);
-      setMergingNos([...selected.orderNos, ...card.orderNos]);
+    canMergeWith: (card: CaosCard) =>
+      Boolean(selected && canMergeCards(selected, card)),
+    mergeWith: (card: CaosCard) => {
+      if (!selected || !canMergeCards(selected, card)) return;
+      onMerge(selected.key, card.key);
+      setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
       clear();
     },
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */
-    canAssignTo: (bayId: number) =>
-      Boolean(selected && canPlaceOn(selected, bayId)),
     assignTo: (bayId: number) => {
-      if (!selected || !canPlaceOn(selected, bayId)) return;
+      if (!selected) return;
       onAssign(selected, bayId);
       clear();
     },
