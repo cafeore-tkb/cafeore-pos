@@ -52,7 +52,8 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
-  canSubmitOrder: boolean;
+  /** 今すぐ保存できるか（つながっているか）。Square の会計はこのときだけ */
+  canSaveNow: boolean;
   /** Square 連携が有効か。無効なら Square のボタンも端末の選択も出さない */
   squareEnabled: boolean;
   /** このレジで使う Square 端末。決まっていなければ Square のボタンを出さない */
@@ -91,7 +92,7 @@ const CashierV2 = ({
   items,
   orders,
   wsStatus,
-  canSubmitOrder,
+  canSaveNow,
   squareEnabled,
   squareDevice,
   submitPayload,
@@ -112,6 +113,12 @@ const CashierV2 = ({
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
+  // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
+  // オフラインの注文はこの端末に溜まり、つながったらまとめて送る（submitPayload）
+  const canSubmitOrder = canSaveNow || manualOrderId !== null;
+  // 番号を手で付ける必要があるのは、今すぐ保存できないとき（つなぎ始めの connecting は待つ）。
+  // 端末がオフラインでも、切れたことに気づくまで WebSocket は open のままのことがあるので、wsStatus だけでは見ない
+  const isNeedManualOrderId = !canSaveNow && wsStatus !== "connecting";
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
   const [hasReceivedInput, setHasReceivedInput] = useState(false);
@@ -191,11 +198,11 @@ const CashierV2 = ({
     if (newOrder.menus.length > 0 && !hasReceivedInput) {
       targets.push("exactPayment");
     }
-    if (squareDeviceId !== null && newOrder.menus.length > 0) {
+    if (canSaveNow && squareDeviceId !== null && newOrder.menus.length > 0) {
       targets.push(...SQUARE_PAYMENT_TYPES);
     }
     return targets;
-  }, [billingOk, newOrder, hasReceivedInput, squareDeviceId]);
+  }, [billingOk, newOrder, hasReceivedInput, squareDeviceId, canSaveNow]);
 
   const moveSubmitFocusBy = useCallback(
     (step: number) => {
@@ -231,7 +238,7 @@ const CashierV2 = ({
   /** 注文を送った後、次の注文を入力できるようにする */
   const finishSubmit = useCallback(() => {
     // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && wsStatus !== "open") {
+    if (manualOrderId !== null && !canSaveNow) {
       setOrderIdOverride(manualOrderId + 1);
     }
 
@@ -240,7 +247,7 @@ const CashierV2 = ({
     playSound();
   }, [
     manualOrderId,
-    wsStatus,
+    canSaveNow,
     setOrderIdOverride,
     resetAll,
     setServiceActive,
@@ -295,7 +302,7 @@ const CashierV2 = ({
       order: OrderEntity,
       print: boolean,
     ): Promise<boolean> => {
-      if (!canSubmitOrder || order.menus.length === 0) {
+      if (!canSaveNow || order.menus.length === 0) {
         return false;
       }
       const submitOne = prepareSubmit(order);
@@ -308,7 +315,7 @@ const CashierV2 = ({
       return true;
     },
     [
-      canSubmitOrder,
+      canSaveNow,
       prepareSubmit,
       submitSquarePayload,
       printOrderLabel,
@@ -413,9 +420,7 @@ const CashierV2 = ({
         <div className="flex justify-between">
           <OrderIdDisplay
             orderId={newOrder.orderId}
-            isNeedManualOrderId={
-              wsStatus !== "connecting" && wsStatus !== "open"
-            }
+            isNeedManualOrderId={isNeedManualOrderId}
             manualOrderId={manualOrderId}
             onOrderIdOverride={setOrderIdOverride}
           />
@@ -589,7 +594,9 @@ const CashierV2 = ({
                 focusTarget={submitFocusTarget}
                 availableTargets={availableSubmitTargets}
                 squarePaymentTypes={
-                  squareDeviceId !== null ? SQUARE_PAYMENT_TYPES : []
+                  canSaveNow && squareDeviceId !== null
+                    ? SQUARE_PAYMENT_TYPES
+                    : []
                 }
                 onSquarePayment={startSquarePayment}
               />
@@ -598,7 +605,7 @@ const CashierV2 = ({
         </div>
         <SquarePaymentDialog
           state={squarePayment.state}
-          canSubmitOrder={canSubmitOrder}
+          canSubmitOrder={canSaveNow}
           onCancel={squarePayment.cancel}
           onRetry={squarePayment.retry}
           onCancelConflicting={squarePayment.cancelConflicting}
