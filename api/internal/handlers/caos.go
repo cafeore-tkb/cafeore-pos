@@ -226,6 +226,79 @@ func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
 	return nil
 }
 
+// readCaosUnitItems は書くカップ（入れ直しも）と、その注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
+// 商品（行の ID ごと。入れ直しは入れ直したカップの商品）を読む。どれかが消えていれば 409。
+// 後から削除した商品・種類のカップも、注文の応答と同じく読む
+func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]caosUnit, []uuid.UUID, map[uuid.UUID]models.Item, error) {
+	found, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(found) != len(cupIDs) {
+		return nil, nil, nil, conflictErrorf("カップが消えました（注文が編集・削除されたかもしれません）")
+	}
+	var orderIDs, sourceIDs []uuid.UUID
+	for _, c := range found {
+		orderIDs = append(orderIDs, c.OrderID)
+		sourceIDs = append(sourceIDs, c.CupID)
+	}
+	unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
+	var sources []models.OrderCup
+	if err := tx.Preload("Item", unscoped).Preload("Item.ItemType", unscoped).
+		Find(&sources, "id IN ?", sourceIDs).Error; err != nil {
+		return nil, nil, nil, err
+	}
+	sourceItem := make(map[uuid.UUID]models.Item, len(sources))
+	for _, c := range sources {
+		sourceItem[c.ID] = c.Item
+	}
+	items := make(map[uuid.UUID]models.Item, len(found))
+	for _, c := range found {
+		items[c.ID] = sourceItem[c.CupID]
+	}
+	return found, orderIDs, items, nil
+}
+
+// caosNominations は注文（orderIDs）の明細の指名のドリッパーの番号（明細の ID ごと。無指名は nil。自由記述 assignee だけの古い明細も指名なし）。
+// 注文の行をロックしてから読む
+func caosNominations(tx *gorm.DB, orderIDs []uuid.UUID) (map[uuid.UUID]*int, error) {
+	var lines []models.OrderMenu
+	if err := tx.Select("id", "dripper").Find(&lines, "order_id IN ?", orderIDs).Error; err != nil {
+		return nil, err
+	}
+	nominated := make(map[uuid.UUID]*int, len(lines))
+	for _, line := range lines {
+		nominated[line.ID] = line.Dripper
+	}
+	return nominated, nil
+}
+
+// checkCaosCards は、書いたカード（dripIDs）の全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯かを確かめる
+func checkCaosCards(tx *gorm.DB, dripIDs []uuid.UUID) error {
+	for _, id := range sortedUnique(dripIDs, compareUUID) {
+		cups, err := readCaosUnits(tx, "c.drip_id = ?", id)
+		if err != nil {
+			return err
+		}
+		if len(cups) > caosMaxCups {
+			return ruleErrorf("1 枚のカードは %d 杯までです", caosMaxCups)
+		}
+		for i := range cups {
+			if !sameCaosState(&cups[i].OrderCup, caosCupState(&cups[0].OrderCup)) {
+				return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
+			}
+			// 入れ直しは行の ID と入れ直したカップの ID が違う。入れ直しと緊急でないカップは同じカードにしない（緊急の取り消しと食い違う）
+			if (cups[i].ID == cups[i].CupID) != (cups[0].ID == cups[0].CupID) {
+				return ruleErrorf("緊急（入れ直し）と緊急でないカップは同じカードにできません")
+			}
+		}
+		if err := checkCaosCardNomination(tx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------- ドリッパーの列
 
 // ドリッパーの中のカード（同じ drip_id のカップ）
@@ -437,29 +510,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		if err := lockCaosDrippers(tx, placing); err != nil {
 			return err
 		}
-		// どの注文のカップか（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）
-		found, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
+		found, lockIDs, itemOf, err := readCaosUnitItems(tx, cupIDs)
 		if err != nil {
 			return err
-		}
-		if len(found) != len(cupIDs) {
-			return conflictErrorf("カップが消えました（注文が編集・削除されたかもしれません）")
-		}
-		var lockIDs, sourceIDs []uuid.UUID
-		for _, c := range found {
-			lockIDs = append(lockIDs, c.OrderID)
-			sourceIDs = append(sourceIDs, c.CupID)
-		}
-		// 抽出の要る商品か・上級生のみか（入れ直しは入れ直したカップの商品）。後から削除した商品・種類のカップも、注文の応答と同じく読む
-		unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
-		var sources []models.OrderCup
-		if err := tx.Preload("Item", unscoped).Preload("Item.ItemType", unscoped).
-			Find(&sources, "id IN ?", sourceIDs).Error; err != nil {
-			return err
-		}
-		itemOf := make(map[uuid.UUID]models.Item, len(sources))
-		for _, c := range sources {
-			itemOf[c.ID] = c.Item
 		}
 		// 書かないカップの注文もロックする：
 		//   - 途中に入れるドリッパーの終わっていないカップ。番号を +1 するので（注文の編集はカップを同じ値で入れ直すので、
@@ -481,20 +534,15 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		// 上級生のみのカップをほかのドリッパーへ置くなら、今日の担当者が上級生のドリッパー（caos_lanes.go）
 		seniorOnly := make(map[uuid.UUID]bool, len(found))
 		for _, c := range found {
-			seniorOnly[c.ID] = itemOf[c.CupID].ItemType.SeniorOnlyBrew()
+			seniorOnly[c.ID] = itemOf[c.ID].ItemType.SeniorOnlyBrew()
 		}
 		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
 		if err != nil {
 			return err
 		}
-		// 明細の指名のドリッパーの番号（無指名は nil。自由記述 assignee だけの古い明細も指名なし）。注文の行をロックしてから読む
-		var lines []models.OrderMenu
-		if err := tx.Select("id", "dripper").Find(&lines, "order_id IN ?", lockIDs).Error; err != nil {
+		nominated, err := caosNominations(tx, lockIDs)
+		if err != nil {
 			return err
-		}
-		nominated := make(map[uuid.UUID]*int, len(lines))
-		for _, line := range lines {
-			nominated[line.ID] = line.Dripper
 		}
 		// 今の値（注文の行をロックしてから読む）
 		locked, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
@@ -512,7 +560,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				if !ok {
 					return conflictErrorf("カップが消えました（注文が編集されたかもしれません）")
 				}
-				item := itemOf[cup.CupID]
+				item := itemOf[id]
 				if !sameCaosState(&cup.OrderCup, w.Before) {
 					return conflictErrorf("ほかの端末で先に変わりました。もう一度操作してください")
 				}
@@ -560,27 +608,8 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			}
 		}
 
-		// 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、緊急かどうかがそろい、最大 2 杯か
-		for _, id := range sortedUnique(dripIDs, compareUUID) {
-			cups, err := readCaosUnits(tx, "c.drip_id = ?", id)
-			if err != nil {
-				return err
-			}
-			if len(cups) > caosMaxCups {
-				return ruleErrorf("1 枚のカードは %d 杯までです", caosMaxCups)
-			}
-			for i := range cups {
-				if !sameCaosState(&cups[i].OrderCup, caosCupState(&cups[0].OrderCup)) {
-					return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
-				}
-				// 入れ直しは行の ID と入れ直したカップの ID が違う。入れ直しと緊急でないカップは同じカードにしない（緊急の取り消しと食い違う）
-				if (cups[i].ID == cups[i].CupID) != (cups[0].ID == cups[0].CupID) {
-					return ruleErrorf("緊急（入れ直し）と緊急でないカップは同じカードにできません")
-				}
-			}
-			if err := checkCaosCardNomination(tx, id); err != nil {
-				return err
-			}
+		if err := checkCaosCards(tx, dripIDs); err != nil {
+			return err
 		}
 		for id := range changed {
 			orderIDs = append(orderIDs, id)

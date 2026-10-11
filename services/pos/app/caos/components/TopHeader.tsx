@@ -41,6 +41,8 @@ interface TopHeaderProps {
   totalWaitingCups: number;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  /** 実データテストの時計（一時停止・速さ・やめる）を出すか */
+  simulating: boolean;
   isRunning: boolean;
   onTogglePlay: () => void;
   simSpeed: number;
@@ -57,6 +59,12 @@ interface TopHeaderProps {
   labelPrinter: { pendingCount: number; retry: () => void };
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
+  /** 「1つ戻す」で戻せる操作の名前。戻せなければ null */
+  undoLabel: string | null;
+  /** 戻せる残りの秒 */
+  undoSecondsLeft: number;
+  undoPending: boolean;
+  onUndo: () => void;
 }
 
 // 注文の接続の札（文字・枠・点の色）
@@ -110,6 +118,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   totalWaitingCups,
   soundEnabled,
   onToggleSound,
+  simulating,
   isRunning,
   onTogglePlay,
   simSpeed,
@@ -124,6 +133,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   posStatus,
   labelPrinter,
   onOpenEmergency,
+  undoLabel,
+  undoSecondsLeft,
+  undoPending,
+  onUndo,
 }) => {
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
@@ -188,37 +201,43 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <div className="font-bold font-mono text-[#0f172a] text-[26px] leading-none tracking-tight">
             {timeStr}
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
-            <button
-              type="button"
-              onClick={onTogglePlay}
-              title={isRunning ? "一時停止" : "タイマー再開"}
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
-            >
-              {isRunning ? (
-                <Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onCycleSpeed}
-              title="シミュレーション速度切替"
-              className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
-            >
-              {simSpeed}x
-            </button>
-            <button
-              type="button"
-              onClick={onResetData}
-              title="初期状態にリセット"
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1 empty:hidden">
+            {simulating && (
+              <>
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  title={isRunning ? "一時停止" : "タイマー再開"}
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
+                >
+                  {isRunning ? (
+                    <Pause className="h-3.5 w-3.5" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCycleSpeed}
+                  title="シミュレーション速度切替"
+                  className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
+                >
+                  {simSpeed}x
+                </button>
+                <button
+                  type="button"
+                  onClick={onResetData}
+                  title="初期状態にリセット"
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
             {showTimelineControls && (
-              <div className="ml-1 flex items-center gap-1 border-slate-300 border-l pl-1">
+              <div
+                className={`flex items-center gap-1 ${simulating ? "ml-1 border-slate-300 border-l pl-1" : ""}`}
+              >
                 <button
                   type="button"
                   onClick={() => onTimelineNavigate("back")}
@@ -303,16 +322,31 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
           </span>
         </button>
-        {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
+        {/* 1つ戻す。この画面が最後にした操作を、10 秒のあいだ戻せる。押せるあいだは濃くし、何を戻すかと残りの秒を出す */}
         <button
           type="button"
-          disabled
-          title="1つ戻すは準備中です"
-          aria-label="1つ戻す"
-          className="flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-2 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          disabled={!undoLabel || undoPending}
+          onClick={onUndo}
+          title={
+            undoLabel ? `「${undoLabel}」を戻す` : "戻せる操作はありません"
+          }
+          aria-label={undoLabel ? `1つ戻す：${undoLabel}` : "1つ戻す"}
+          className="flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-slate-900 bg-slate-900 px-2 font-black text-white text-xs shadow-xs transition-colors hover:bg-slate-700 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Undo2 className="h-4 w-4" />
-          <span>戻す</span>
+          <span className="flex min-w-0 flex-col items-start leading-tight">
+            <span>
+              戻す
+              {undoLabel && (
+                <span className="font-mono">（{undoSecondsLeft}）</span>
+              )}
+            </span>
+            {undoLabel && (
+              <span className="max-w-[8rem] truncate font-bold text-[10px]">
+                {undoLabel}
+              </span>
+            )}
+          </span>
         </button>
 
         <button

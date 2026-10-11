@@ -79,7 +79,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
               実績でテストプレイ
             </h2>
             <p className="mt-1 font-medium text-[12px] text-slate-500">
-              過去の祭の実際の注文を、選択した速度で再生します（1xは実時間と同じ）。本番の盤面・注文・在庫には混ざりません
+              過去の祭の実際の注文を10倍速で再生します（注文が届く時刻・抽出・タイムラインが全部同じ速さで進みます。速さと一時停止はヘッダーで変えられます）。本番の盤面・注文・在庫には混ざりません
             </p>
           </div>
           <button

@@ -26,7 +26,8 @@ export const EmergencyForm = ({
 }: {
   orders: readonly OrderEntity[];
   initial?: EmergencyInitial;
-  onAdd: (cups: EmergencyCup[], reason: string) => Promise<boolean>;
+  /** 足した入れ直しの id。断られたら null */
+  onAdd: (cups: EmergencyCup[], reason: string) => Promise<string[] | null>;
   onDone: () => void;
 }) => {
   const id = useId();

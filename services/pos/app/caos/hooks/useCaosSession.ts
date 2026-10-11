@@ -11,21 +11,27 @@ import {
   seniorOnlyBlock,
   splitWrites,
   unassignWrites,
+  undoOfNext,
+  undoOfWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useCupEmergency } from "~/components/functional/useCupEmergency";
+import {
+  type EmergencyCup,
+  useCupEmergency,
+} from "~/components/functional/useCupEmergency";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { waitingCupsByBean } from "../logic/beans";
-import { cardLooks, totalCups } from "../logic/cards";
+import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
+import { type UndoRun, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
@@ -33,22 +39,20 @@ import { useTestPlay } from "./useTestPlay";
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
 
-// タイマーの速さ（ヘッダーで押すたびに次へ）
+// 実データテストの時計の速さ（ヘッダーで押すたびに次へ）。テストは最も速い 10x で始める
 const SIM_SPEEDS = [1, 2, 5, 10];
+const TEST_START_SPEED = SIM_SPEEDS[SIM_SPEEDS.length - 1];
 
 // 新しいカード（dripId）の ID
 const newDripId = () => crypto.randomUUID();
 
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
-const NOT_FOUND = { error: "カードが見つかりません" };
+const NOT_FOUND = "カードが見つかりません";
 
-// 送った操作が成功したら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らす。断られたら鳴らさない。
-// 送れたか（練習で断られた・「次へ」の二度押しは false）を返す
-const playOnSuccess = (sent: boolean | Promise<boolean>, play: () => void) => {
-  void Promise.resolve(sent).then((ok) => {
-    if (ok) play();
-  });
-  return sent !== false;
+// 操作を断った理由を POS の通知で出す
+const fail = (error: string) => {
+  toast.error(error);
+  return false;
 };
 
 // CaOS の盤面・時刻・実データテストをまとめる。画面（App）はこれを呼んで部品に渡すだけ。
@@ -58,7 +62,7 @@ const playOnSuccess = (sent: boolean | Promise<boolean>, play: () => void) => {
 // assignWrites・unassignWrites・mergeWrites で同じ。違うのは送り先だけ。
 export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
+  const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
   const [nextConfirm, setNextConfirm] = useState<
@@ -92,7 +96,9 @@ export const useCaosSession = () => {
     printer: labelPrinter,
     addEmergency,
     cancelEmergency,
+    restoreEmergencies,
   } = useCupEmergency();
+  const undo = useCaosUndo(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -118,20 +124,36 @@ export const useCaosSession = () => {
   // 本番では、上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
   const seniorBlock = (card: CaosCard, dripper: number) =>
     test.session ? null : seniorOnlyBlock(card, dripper, people);
-  // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らす
+  // 送った操作が通ったら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
+  // 断られたら何もしない。送れたか（練習で断られた・「次へ」の二度押しは false）を返す
+  const onSuccess = (
+    sent: boolean | Promise<boolean>,
+    label: string,
+    undoRun: UndoRun,
+    play: () => void,
+  ) => {
+    void Promise.resolve(sent).then((ok) => {
+      if (!ok) return;
+      play();
+      undo.remember(label, undoRun);
+    });
+    return sent !== false;
+  };
+  // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らし、「1つ戻す」に覚える
   const runNext = (bayId: number, seen: string | null) =>
-    playOnSuccess(source.runNext(bayId, seen), () =>
-      soundManager.playComplete(),
+    onSuccess(
+      source.runNext(bayId, seen),
+      `次へ ${dripperLabel(bayId)}`,
+      source.undoRun(undoOfNext(cards, bayId)),
+      () => soundManager.playComplete(),
     );
-  // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）
-  const write = (result: CaosWritesResult) => {
-    if ("error" in result) {
-      toast.error(result.error);
-      return false;
-    }
+  // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
+  const write = (result: CaosWritesResult, label: string) => {
+    if ("error" in result) return fail(result.error);
     // 今と同じ場所に置き直したなど、変わるものが無ければ送らず、音も鳴らさない
     if (result.writes.length === 0) return true;
-    return playOnSuccess(source.runWrites(result.writes), () =>
+    const undoRun = source.undoRun(undoOfWrites(cards, result.writes));
+    return onSuccess(source.runWrites(result.writes), label, undoRun, () =>
       soundManager.playDispatch(),
     );
   };
@@ -161,6 +183,8 @@ export const useCaosSession = () => {
       waitingCups: beanWaitingCups,
       onRecorded: test.session ? undefined : beanStock.onRecorded,
     },
+    /** 実データテストの時計（一時停止・速さ・やめる）を出すか。本番の盤面は実時間なので出さない */
+    simulating: Boolean(test.session),
     isRunning,
     toggleRunning: () => setIsRunning((value) => !value),
     simSpeed,
@@ -177,16 +201,37 @@ export const useCaosSession = () => {
      *   - orders：番号から入れ直すカップを選ぶ注文
      *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
+     * どちらも「1つ戻す」で戻せる（足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直す。シールは刷り直さない）
      */
     emergency: test.session
       ? null
       : {
           orders: live.orders ?? [],
-          add: addEmergency,
-          cancel: (card: CaosCard) =>
-            cancelEmergency(
-              card.cups.filter((cup) => cup.emergency).map((cup) => cup.id),
-            ),
+          add: async (cups: EmergencyCup[], reason: string) => {
+            const ids = await addEmergency(cups, reason);
+            if (ids) {
+              const nos = new Set(cups.map((cup) => cup.order.orderId));
+              undo.remember(
+                `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`,
+                () => cancelEmergency(ids),
+              );
+            }
+            return ids;
+          },
+          cancel: (card: CaosCard) => {
+            const cups = card.cups.filter((cup) => cup.emergency);
+            void cancelEmergency(cups.map((cup) => cup.id)).then((ok) => {
+              if (!ok) return;
+              undo.remember(`緊急の取り消し ${orderLabel(card)}`, () =>
+                restoreEmergencies(
+                  cups.map((cup) => ({
+                    cupId: cup.cupId,
+                    reason: cup.emergencyReason,
+                  })),
+                ),
+              );
+            });
+          },
         },
     soundEnabled,
     toggleSound: () => {
@@ -196,34 +241,48 @@ export const useCaosSession = () => {
     /** 割当・ドリッパーの移動・順番の入れ替え（place が "front" なら待機の先頭、{ beforeKey } ならそのカードの前、無ければ最後）。順番の数はサーバー（練習なら練習の盤面）が決める */
     place: (key: string, bayId: number, place?: CaosPlace) => {
       const card = cardOf(key);
-      if (!card) return write(NOT_FOUND);
+      if (!card) return fail(NOT_FOUND);
       const blocked = seniorBlock(card, bayId);
+      if (blocked) return fail(blocked);
+      const action =
+        card.status === "unassigned"
+          ? "割当"
+          : card.dripper === bayId
+            ? "並べ替え"
+            : "移動";
       return write(
-        blocked
-          ? { error: blocked }
-          : assignWrites(cards, card, bayId, { place, newId: newDripId }),
+        assignWrites(cards, card, bayId, { place, newId: newDripId }),
+        `${action} ${orderLabel(card)} → ${dripperLabel(bayId)}`,
       );
     },
     /** 待機のカードを未割当に戻す */
     returnToUnassigned: (key: string) => {
       const card = cardOf(key);
-      return write(card ? unassignWrites(card) : NOT_FOUND);
+      if (!card) return fail(NOT_FOUND);
+      return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
     /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
     merge: (firstKey: string, intoKey: string) => {
       const card = cardOf(firstKey);
       const into = cardOf(intoKey);
-      if (!card || !into) return write(NOT_FOUND);
+      if (!card || !into) return fail(NOT_FOUND);
       const blocked =
         into.dripper === null ? null : seniorBlock(card, into.dripper);
+      if (blocked) return fail(blocked);
       return write(
-        blocked ? { error: blocked } : mergeWrites(card, into, newDripId),
+        mergeWrites(card, into, newDripId),
+        `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
       );
     },
     /** 統合の解除：2 杯のカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
       const card = cardOf(key);
-      return write(card ? splitWrites(card, cupId, newDripId) : NOT_FOUND);
+      const cup = card?.cups.find((c) => c.id === cupId);
+      if (!card || !cup) return fail(NOT_FOUND);
+      return write(
+        splitWrites(card, cupId, newDripId),
+        `外す #${orderNoLabel(cup.orderNo)}`,
+      );
     },
     /** ドリッパー from の待機を全部 to へ（置けないカードは残して知らせる） */
     moveQueue: (from: number, to: number) => {
@@ -234,7 +293,10 @@ export const useCaosSession = () => {
         toast(
           `指名・上級生のみで ${dripperLabel(to)} に置けないカード ${result.kept} 枚は残しました`,
         );
-      return write(result);
+      return write(
+        result,
+        `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`,
+      );
     },
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
@@ -255,8 +317,16 @@ export const useCaosSession = () => {
       setNextConfirm(null);
     },
     cancelNext: () => setNextConfirm(null),
+    /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
+    undo: {
+      label: undo.label,
+      secondsLeft: undo.secondsLeft,
+      pending: undo.pending,
+      run: undo.undo,
+    },
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
+      undo.forget();
       test.clear();
       setIsRunning(true);
       soundManager.playDispatch();
@@ -276,8 +346,10 @@ export const useCaosSession = () => {
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
+        undo.forget();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
+        setSimSpeed(TEST_START_SPEED);
       },
       finish: () => {
         test.finish();

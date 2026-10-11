@@ -30,7 +30,7 @@ export const useCupEmergency = () => {
   // この端末で取り消した入れ直し。刷っている間に取り消したら、刷れずに残ったシールも消す
   const cancelled = useRef(new Set<string>());
 
-  /** 足せたら true。断られたら理由を通知で出す */
+  /** 足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
     async (cups: EmergencyCup[], reason: string) => {
       const result = await addCupEmergencies(
@@ -39,7 +39,7 @@ export const useCupEmergency = () => {
       );
       if (result.error !== undefined) {
         toast.error(result.error);
-        return false;
+        return null;
       }
       toast(`入れ直しを ${cups.length} 杯足しました`);
       cups.forEach(({ order, cupId }, i) => {
@@ -48,12 +48,12 @@ export const useCupEmergency = () => {
           if (cancelled.current.has(id)) removePendingPrint(id);
         });
       });
-      return true;
+      return result.data.ids;
     },
     [printCupLabel],
   );
 
-  /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す） */
+  /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */
   const cancelEmergency = useCallback(async (ids: string[]) => {
     for (const [done, id] of ids.entries()) {
       const { error } = await cancelCupEmergency(id);
@@ -61,15 +61,34 @@ export const useCupEmergency = () => {
         toast.error(
           done > 0 ? `${error}（${done} 杯は取り消しました）` : error,
         );
-        return;
+        return false;
       }
       cancelled.current.add(id);
       removePendingPrint(id);
     }
     toast(`入れ直しを ${ids.length} 杯取り消しました`);
+    return true;
   }, []);
 
-  return { printer, addEmergency, cancelEmergency };
+  /** 取り消した入れ直しを、同じカップ・同じ理由で足し直す（CaOS の「1つ戻す」。シールは刷り直さない）。足せたら true */
+  const restoreEmergencies = useCallback(
+    async (cups: { cupId: string; reason: string }[]) => {
+      for (const reason of new Set(cups.map((cup) => cup.reason))) {
+        const { error } = await addCupEmergencies(
+          cups.filter((cup) => cup.reason === reason).map((cup) => cup.cupId),
+          reason,
+        );
+        if (error !== undefined) {
+          toast.error(error);
+          return false;
+        }
+      }
+      return true;
+    },
+    [],
+  );
+
+  return { printer, addEmergency, cancelEmergency, restoreEmergencies };
 };
 
 /** 注文の抽出が要るカップ（表示の値つき。緊急で入れ直せるカップ） */

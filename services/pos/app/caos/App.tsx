@@ -51,6 +51,7 @@ export default function App() {
           totalWaitingCups={session.cups.waiting}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
+          simulating={session.simulating}
           isRunning={session.isRunning}
           onTogglePlay={session.toggleRunning}
           simSpeed={session.simSpeed}
@@ -75,6 +76,10 @@ export default function App() {
           onOpenEmergency={
             session.emergency ? () => selection.openRebrew() : undefined
           }
+          undoLabel={session.undo.label}
+          undoSecondsLeft={session.undo.secondsLeft}
+          undoPending={session.undo.pending}
+          onUndo={session.undo.run}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">

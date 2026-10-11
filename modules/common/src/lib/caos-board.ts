@@ -361,7 +361,10 @@ const UNASSIGNED_AFTER: CaosCupAfter = {
   start_brew: false,
 };
 
-const beforeJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
+/** カップの CaOS の値を API の形（書き込みの before・「1つ戻す」の値）にする */
+export const caosStateJSON = (
+  state: CaosCupState,
+): CaosCupsWrite["before"] => ({
   dripper: state.dripper,
   dripper_position: state.dripperPosition,
   drip_id: state.dripId,
@@ -371,7 +374,7 @@ const beforeJSON = (state: CaosCupState): CaosCupsWrite["before"] => ({
 
 const writeOf = (card: CaosCard, after: CaosCupAfter): CaosCupsWrite => ({
   cup_ids: card.cups.map((cup) => cup.id),
-  before: beforeJSON(card.state),
+  before: caosStateJSON(card.state),
   after,
 });
 
@@ -528,7 +531,7 @@ export const splitWrites = (
     writes: [
       {
         cup_ids: [cupId],
-        before: beforeJSON(card.state),
+        before: caosStateJSON(card.state),
         after: {
           ...UNASSIGNED_AFTER,
           drip_id: card.dripId === null ? newId() : null,

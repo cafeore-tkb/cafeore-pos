@@ -396,6 +396,7 @@ func main() {
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
 		api.POST("/cup-emergencies", caosHandler.CreateCupEmergencies)
 		api.DELETE("/cup-emergencies/:id", caosHandler.DeleteCupEmergency)
+		api.POST("/caos/undo", caosHandler.UndoCaosCups)
 		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
 		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
 

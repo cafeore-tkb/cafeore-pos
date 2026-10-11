@@ -809,6 +809,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/caos/undo:
+    post:
+      summary: CaOS の「1つ戻す」
+      description: |
+        CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
+        cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
+        全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
+        PUT /api/caos/cups と違い、抽出中・終わりのカップと準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる）。
+        戻すのは前の値なので、restore の時刻（brew_started_at・brew_finished_at・ready_at）は current と同じか null だけ（違えば 400）。提供済みのカップは戻さない（409）。
+        書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
+        書いたカップの注文は PUT と同じく配る。
+      operationId: undoCaosCups
+      tags:
+        - caos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosUndoRequest'
+      responses:
+        '204':
+          description: 書き戻した
+        '400':
+          description: 形の違うリクエスト・書き戻した結果が決まりに合わない（何も書かない）。error を画面にそのまま出す
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 今の値が current と違う・提供済み・抽出中が 2 枚になる（何も書かない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/caos/lanes/{dripper}:
     put:
       summary: CaOS のドリッパーの担当者を替える（交代）
@@ -2435,6 +2470,37 @@ components:
           format: uuid
           nullable: true
           description: 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+    CaosUndoCupState:
+      type: object
+      description: 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+      required: [state, ready_at]
+      properties:
+        state:
+          $ref: '#/components/schemas/CaosCupState'
+        ready_at:
+          type: string
+          format: date-time
+          nullable: true
+    CaosUndoCup:
+      type: object
+      required: [cup_id, current, restore]
+      properties:
+        cup_id:
+          type: string
+          format: uuid
+        current:
+          $ref: '#/components/schemas/CaosUndoCupState'
+        restore:
+          $ref: '#/components/schemas/CaosUndoCupState'
+    CaosUndoRequest:
+      type: object
+      required: [cups]
+      properties:
+        cups:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CaosUndoCup'
     CaosLane:
       type: object
       description: ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
