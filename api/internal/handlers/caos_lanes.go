@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -56,12 +55,10 @@ func loadCaosLanes(db *gorm.DB, day string) (models.CaosLanes, bool, error) {
 	for i := range lanes.Lanes {
 		lanes.Lanes[i] = models.CaosLane{Dripper: i + 1}
 	}
+	// dripper は 1〜6（表の CHECK）。名前が空なら senior も false で書いてある（PutCaosLane）
 	for _, r := range rows {
-		if r.Dripper < 1 || r.Dripper > caosDrippers {
-			continue
-		}
 		at := r.UpdatedAt
-		lanes.Lanes[r.Dripper-1] = models.CaosLane{Dripper: r.Dripper, Name: r.Name, Senior: r.Senior && r.Name != "", UpdatedAt: &at}
+		lanes.Lanes[r.Dripper-1] = models.CaosLane{Dripper: r.Dripper, Name: r.Name, Senior: r.Senior, UpdatedAt: &at}
 	}
 	return lanes, len(rows) > 0, nil
 }
@@ -126,7 +123,7 @@ func (h *CaosHandler) PutCaosLane(c *gin.Context) {
 	}
 	name := strings.TrimSpace(req.Name)
 	if utf8.RuneCountInString(name) > caosMaxLaneName {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("名前は %d 文字までです", caosMaxLaneName)})
+		respondError(c, ruleErrorf("名前は %d 文字までです", caosMaxLaneName))
 		return
 	}
 	h.writeLanes(c, func(models.CaosLanes) []models.CaosLane {
