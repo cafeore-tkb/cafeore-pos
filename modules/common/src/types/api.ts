@@ -140,6 +140,8 @@ export interface paths {
      * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+     * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+     * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
      * - 抽出を始められる（start_brew）のは、そのカードのほかに抽出中・待機のカードが無いドリッパーだけ（待機があれば、始めるのは「次へ」で待機の先頭）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
      */
     put: operations["writeCaosCups"];
@@ -451,7 +453,10 @@ export interface components {
       /** @description 注文時点のメニュー価格 */
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
+      /** @description 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderCupResponse: {
       /** Format: uuid */
@@ -500,7 +505,10 @@ export interface components {
       order_menu_id?: string;
       /** Format: uuid */
       menu_id: string;
+      /** @description 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderResponse: {
       /** Format: uuid */
@@ -610,11 +618,16 @@ export interface components {
     /**
      * @description 背景色を適用する画面。
      * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-     * master・serve はマスター・提供画面のカップ
+     * master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
      *
      * @enum {string}
      */
-    ColorScreen: "cashier" | "cashier_order" | "master" | "serve";
+    ColorScreen:
+      | "cashier"
+      | "cashier_order"
+      | "master"
+      | "serve"
+      | "caos_nominated";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
@@ -1591,6 +1604,8 @@ export interface operations {
    * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+   * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+   * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
    * - 抽出を始められる（start_brew）のは、そのカードのほかに抽出中・待機のカードが無いドリッパーだけ（待機があれば、始めるのは「次へ」で待機の先頭）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
    */
   writeCaosCups: {

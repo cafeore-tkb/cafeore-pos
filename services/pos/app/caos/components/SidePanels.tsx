@@ -1,4 +1,10 @@
-import { type CaosCard, type CaosPlace, caosBrewSec } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  caosBrewSec,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
@@ -10,12 +16,7 @@ import {
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import {
-  type Lane,
-  laneActive,
-  laneOrdinal,
-  moveTargets,
-} from "../logic/lanes";
+import { type Lane, laneActive, moveTargets } from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
@@ -92,16 +93,19 @@ export const AssignPanel: React.FC<{
   const selectedOrder = unassignedOrders.find(
     (order) => order.key === selectedOrderUid,
   );
+  // 指名の番号のあるカードは、その番号のドリッパーだけ選べる
+  const allowed = (id: number) =>
+    !selectedOrder || caosDripperAllowed(selectedOrder, id);
 
   return (
     <SidePanel
-      title={`ドリッパー ${laneOrdinal(bayId)} にオーダー割当`}
+      title={`ドリッパー ${dripperLabel(bayId)} にオーダー割当`}
       onClose={onClose}
       footer={
         <PanelFooter onCancel={onClose}>
           <button
             type="button"
-            disabled={!selectedOrder}
+            disabled={!selectedOrder || !allowed(selectedBayId)}
             onClick={() => {
               if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
@@ -146,8 +150,9 @@ export const AssignPanel: React.FC<{
           <button
             key={lane.id}
             type="button"
+            disabled={!allowed(lane.id)}
             onClick={() => setSelectedBayId(lane.id)}
-            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left ${
+            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left disabled:opacity-30 ${
               selectedBayId === lane.id
                 ? "border-emerald-600 bg-emerald-50 shadow-xs ring-1 ring-emerald-600"
                 : "border-slate-200 hover:bg-slate-50"
@@ -190,15 +195,16 @@ export const TicketDetailPanel: React.FC<{
       他のドリッパーへ移動・先頭へ
     </h3>
     <div className="grid grid-cols-3 gap-2">
-      {moveTargets(currentBayId).map(({ bayId, place }) => (
+      {moveTargets(ticket, currentBayId).map(({ bayId, place, disabled }) => (
         <button
           key={bayId}
           type="button"
+          disabled={disabled}
           onClick={() => {
             onMoveTicket(ticket, bayId, place);
             onClose();
           }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white"
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
         >
           {place ? `${bayId} 先頭へ` : bayId}
         </button>

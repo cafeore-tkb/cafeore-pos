@@ -1,4 +1,4 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -11,7 +11,7 @@ import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { laneCards, laneOrdinal } from "../logic/lanes";
+import { laneCards } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
@@ -79,7 +79,7 @@ export const DispatchBoard: React.FC<
   // 待機のカードを別の列へ・待機のカードの前へ（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
-      dropTargetAt(x, y, { from: bayId, exceptKey: card.key }),
+      dropTargetAt(x, y, { from: bayId, card }),
     onDrop: ({ card }, target) => {
       onMoveTicket(card, target.bayId, target.place);
       onCloseTicketAction();
@@ -101,7 +101,7 @@ export const DispatchBoard: React.FC<
       .filter((card) => orderLabel(card) === selectedOrderId)
       .map(
         (card) =>
-          `ドリッパー ${laneOrdinal(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
+          `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
 
@@ -309,6 +309,7 @@ export const DispatchBoard: React.FC<
                             {isActionOpen && (
                               <>
                                 <BayPad
+                                  card={ticket}
                                   currentBayId={bay.id}
                                   hoveredBay={drag.target?.bayId ?? null}
                                   onPick={(bayId, place) => {

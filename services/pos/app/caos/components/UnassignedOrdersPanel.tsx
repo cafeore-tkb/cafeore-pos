@@ -53,7 +53,7 @@ export const UnassignedOrdersPanel: React.FC<{
     setOpenUid(null);
   };
   const drag = useCardDrag<CaosCard, DropTarget>({
-    targetAt: (_order, x, y) => dropTargetAt(x, y),
+    targetAt: (order, x, y) => dropTargetAt(x, y, { card: order }),
     onBegin: (order) => {
       // Same as tapping another card: switching cards drops the old selection.
       if (openUid && openUid !== order.key) onSelectOrder(null);
@@ -146,6 +146,7 @@ export const UnassignedOrdersPanel: React.FC<{
               {isMergeCandidate && <MergeOverlay />}
               {isOpen && (
                 <BayPad
+                  card={order}
                   hoveredBay={drag.target?.bayId ?? null}
                   onPick={(bayId) => assign(order, bayId)}
                 />

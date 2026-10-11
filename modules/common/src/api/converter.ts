@@ -80,6 +80,7 @@ export const responseToMenuEntity = (
       quantity,
     })),
     assignee: null,
+    dripper: null,
   });
 
 const menuItemsToRequest = (menu: MenuEntity) =>
@@ -118,6 +119,7 @@ export const responseToOrderEntity = (
         name: cur.menu_name,
         price: cur.unit_price,
         assignee: cur.assignee,
+        dripper: cur.dripper ?? null,
       });
       acc.push(menu);
       return acc;
@@ -190,7 +192,11 @@ export const orderEntityToCreateRequest = (
   payment: OrderPayment = { method: "cash" },
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
-    acc.push({ assignee: cur.assignee, menu_id: cur.id });
+    acc.push({
+      assignee: cur.assignee,
+      dripper: cur.dripper,
+      menu_id: cur.id,
+    });
     return acc;
   }, []);
   return {
@@ -214,6 +220,7 @@ export const orderToUpdateRequest = (
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({
       assignee: cur.assignee,
+      dripper: cur.dripper,
       menu_id: cur.id,
       order_menu_id: cur.orderMenuId,
     });

@@ -60,7 +60,7 @@ export interface CaosPracticeSourceOrder {
 /**
  * 実データの注文を、練習の盤面の注文にする。カップを作る種類（itemType の makes_cup）の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
  * 抽出の要らないカップ（ミルクなど）もカップにはなるが、本番と同じく buildCaosCards がカードにしない。
- * 指名は実データに無いので、どのカップも指名なし（明細の assignee は null）。ID は練習の中だけのもの
+ * 指名は実データに無いので、どのカップも指名なし（明細の dripper・assignee は null）。ID は練習の中だけのもの
  */
 export const toCaosPracticeOrder = (
   order: CaosPracticeSourceOrder,
@@ -104,6 +104,7 @@ export const toCaosPracticeOrder = (
     createdAt: new Date(order.createdAt),
     menus: cups.map((cup) => ({
       orderMenuId: cup.orderMenuId,
+      dripper: null,
       assignee: null,
     })),
     cups,
