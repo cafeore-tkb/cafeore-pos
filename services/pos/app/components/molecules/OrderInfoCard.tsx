@@ -23,6 +23,7 @@ export type CupView = ReturnType<OrderEntity["getItems"]>[number] & {
   served?: boolean; // 提供済。薄くする
   busy?: boolean; // 応答待ち
   onClick?: () => void; // 押せるカップだけ
+  action?: React.ReactNode; // カップの下に出すボタン（マスターの緊急など）
 };
 
 type props = {
@@ -93,54 +94,58 @@ export function OrderInfoCard({
             )}
           >
             {cups.map((cup, idx) => (
-              <CupButton
+              <div
                 key={cup.cupId ?? `${idx}-${cup.id}`}
-                busy={!!cup.busy}
-                onClick={cup.onClick}
+                className="grid grid-rows-[1fr_auto]"
               >
-                <Card
-                  className={cn(
-                    "h-full p-3 transition-all duration-200",
-                    cup.gray && "bg-gray-200 text-gray-500",
-                    cup.servable &&
-                      "shadow-md ring-4 ring-green-500 ring-offset-2",
-                    cup.served && "opacity-50",
-                  )}
-                  style={cupStyle(cup)}
-                >
-                  <h3 className="text-center font-bold text-3xl">{cup.abbr}</h3>
-                  {cup.servable && (
-                    <p
-                      key="servable"
-                      className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
-                    >
-                      <LuCheck
-                        className="h-3.5 w-3.5 shrink-0"
-                        strokeWidth={3}
-                      />
-                      提供可能
-                    </p>
-                  )}
-                  {cup.served && (
-                    <p
-                      key="served"
-                      className="fade-in animate-in text-center font-bold text-xs duration-200"
-                    >
-                      提供済
-                    </p>
-                  )}
-                  {assignmentDisplay(cup) && (
-                    <p
-                      className={cn(
-                        order.status === "preparing" && "text-red-500",
-                        "font-bold text-sm",
-                      )}
-                    >
-                      指名:{assignmentDisplay(cup)}
-                    </p>
-                  )}
-                </Card>
-              </CupButton>
+                <CupButton busy={!!cup.busy} onClick={cup.onClick}>
+                  <Card
+                    className={cn(
+                      "h-full p-3 transition-all duration-200",
+                      cup.gray && "bg-gray-200 text-gray-500",
+                      cup.servable &&
+                        "shadow-md ring-4 ring-green-500 ring-offset-2",
+                      cup.served && "opacity-50",
+                    )}
+                    style={cupStyle(cup)}
+                  >
+                    <h3 className="text-center font-bold text-3xl">
+                      {cup.abbr}
+                    </h3>
+                    {cup.servable && (
+                      <p
+                        key="servable"
+                        className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-green-700 text-xs duration-200"
+                      >
+                        <LuCheck
+                          className="h-3.5 w-3.5 shrink-0"
+                          strokeWidth={3}
+                        />
+                        提供可能
+                      </p>
+                    )}
+                    {cup.served && (
+                      <p
+                        key="served"
+                        className="fade-in animate-in text-center font-bold text-xs duration-200"
+                      >
+                        提供済
+                      </p>
+                    )}
+                    {assignmentDisplay(cup) && (
+                      <p
+                        className={cn(
+                          order.status === "preparing" && "text-red-500",
+                          "font-bold text-sm",
+                        )}
+                      >
+                        指名:{assignmentDisplay(cup)}
+                      </p>
+                    )}
+                  </Card>
+                </CupButton>
+                {cup.action}
+              </div>
             ))}
           </div>
           <CommentList order={order} />

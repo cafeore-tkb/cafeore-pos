@@ -166,6 +166,20 @@ export const responseToOrderEntity = (
       brewFinishedAt: cup.brew_finished_at
         ? new Date(cup.brew_finished_at)
         : null,
+      emergencies: (cup.emergencies ?? []).map((emergency) => ({
+        id: emergency.id,
+        createdAt: new Date(emergency.created_at),
+        reason: emergency.reason,
+        dripper: emergency.dripper,
+        dripperPosition: emergency.dripper_position,
+        dripId: emergency.drip_id,
+        brewStartedAt: emergency.brew_started_at
+          ? new Date(emergency.brew_started_at)
+          : null,
+        brewFinishedAt: emergency.brew_finished_at
+          ? new Date(emergency.brew_finished_at)
+          : null,
+      })),
     })),
     paymentMethod: response.payment_method,
   };
