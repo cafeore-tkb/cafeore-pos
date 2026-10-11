@@ -23,6 +23,8 @@ const recordingBuilder = () => {
     ALIGN_LEFT: "left",
     ALIGN_CENTER: "center",
     CUT_FEED: "cut_feed",
+    COLOR_1: "color_1",
+    MODE_MONO: "mono",
     addTextLang: record("addTextLang"),
     addTextAlign: record("addTextAlign"),
     addTextSize: record("addTextSize"),
@@ -32,6 +34,10 @@ const recordingBuilder = () => {
     addPageArea: record("addPageArea"),
     addPagePosition: record("addPagePosition"),
     addLogo: record("addLogo"),
+    // 画像は context から読める画素を覚える
+    addImage: (context, ...args) => {
+      calls.push(["addImage", context.getImageData(), ...args]);
+    },
     addFeedLine: record("addFeedLine"),
     addFeedPosition: record("addFeedPosition"),
     addCut: record("addCut"),
@@ -120,6 +126,31 @@ describe("[unit] writeEposJob", () => {
       ["addTextSize", 2, 2],
       ["addText", "領収書\n"],
       ["addText", "\n"],
+      ["addTextAlign", "left"],
+      ["addFeedLine", 1],
+      ["addCut", "cut_feed"],
+    ]);
+  });
+
+  test("画像は中央に寄せて白黒で刷り、左寄せに戻す", () => {
+    const { builder, calls } = recordingBuilder();
+    const image = {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]),
+    };
+
+    writeEposJob(
+      builder,
+      { labels: [{ type: "image", image }] },
+      { logoKey: [32, 32], trailingFeedLines: 1, cut: true },
+    );
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ["addTextAlign", "center"],
+      ["addImage", image, 0, 0, 2, 1, "color_1", "mono"],
       ["addTextAlign", "left"],
       ["addFeedLine", 1],
       ["addCut", "cut_feed"],

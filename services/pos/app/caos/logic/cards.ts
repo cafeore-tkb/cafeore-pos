@@ -4,7 +4,7 @@ import {
   type StockResource,
   resolveItemColor,
 } from "@cafeore/common";
-import { type BeanIndex, cardBeans } from "./beans";
+import { type BeanIndex, cardBean } from "./beans";
 
 // カード（1 回のドリップ。最大 2 杯）の見せ方。カードは注文のカップから組み立てたもの（@cafeore/common の buildCaosCards の CaosCard）を
 // そのまま使い、名前・注文番号・色・分割の表示はここで引く。
@@ -60,7 +60,7 @@ export interface CardLook {
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
   split?: CardSplit;
   /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts で引く。在庫が無い商品には付かない */
-  beans?: StockResource[];
+  bean?: StockResource;
 }
 export type CardLooks = ReadonlyMap<string, CardLook>;
 
@@ -99,7 +99,7 @@ export const cardLooks = (
             : undefined) ??
           resolveItemColor(settings, card.cups[0].item, "master"),
         split: splitOf(card),
-        beans: cardBeans(card, beanIndex),
+        bean: cardBean(card, beanIndex),
       },
     ]),
   );
