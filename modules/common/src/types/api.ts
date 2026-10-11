@@ -165,7 +165,7 @@ export interface paths {
      * CaOS のドリッパーの担当者を替える（交代）
      * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
      * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
      * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
      * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
      */
@@ -659,16 +659,11 @@ export interface components {
     /**
      * @description 背景色を適用する画面。
      * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-     * master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+     * master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
      *
      * @enum {string}
      */
-    ColorScreen:
-      | "cashier"
-      | "cashier_order"
-      | "master"
-      | "serve"
-      | "caos_nominated";
+    ColorScreen: "cashier" | "cashier_order" | "master" | "serve" | "nominated";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
@@ -1752,7 +1747,7 @@ export interface operations {
    * CaOS のドリッパーの担当者を替える（交代）
    * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
    * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
    * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
    * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
    */

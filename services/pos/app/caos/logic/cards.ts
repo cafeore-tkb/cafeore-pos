@@ -55,7 +55,7 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・在庫の設定の豆と、分けた注文の中の位置） */
 export interface CardLook {
-  /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 caos_nominated、無ければ master。商品 → 種類の順）。無ければ白 */
+  /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
   split?: CardSplit;
@@ -95,7 +95,7 @@ export const cardLooks = (
       {
         color:
           (card.cups[0].nominatedDripper !== null
-            ? resolveItemColor(settings, card.cups[0].item, "caos_nominated")
+            ? resolveItemColor(settings, card.cups[0].item, "nominated")
             : undefined) ??
           resolveItemColor(settings, card.cups[0].item, "master"),
         split: splitOf(card),

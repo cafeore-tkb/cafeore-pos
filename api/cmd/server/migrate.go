@@ -77,6 +77,12 @@ func migrate(db *gorm.DB) error {
 				return fmt.Errorf("failed to backfill item_types.%s: %w", b.column, err)
 			}
 		}
+
+		for _, sql := range valueRenames {
+			if err := tx.Exec(sql).Error; err != nil {
+				return fmt.Errorf("failed to rename values: %w", err)
+			}
+		}
 		return nil
 	})
 }
@@ -102,6 +108,15 @@ var tableRenames = []struct {
 		`ALTER INDEX idx_caos_lane_changes_day RENAME TO idx_dripper_assignee_changes_day`,
 		`ALTER SEQUENCE caos_lane_changes_id_seq RENAME TO dripper_assignee_changes_id_seq`,
 	}},
+}
+
+// 名前を変えた、DB に入る値。前の名前の行が無ければ何も変えないので、起動のたびに流す
+// （デプロイの切り替えの間に前の版のインスタンスが前の名前で書いても、次の起動で直る）。
+var valueRenames = []string{
+	// 色の設定の画面（2026-10。caos_nominated → nominated）。同じ対象に今の名前の行があれば、前の名前の行は消す（一意制約）
+	`UPDATE color_settings o SET screen = 'nominated' WHERE screen = 'caos_nominated' AND NOT EXISTS (
+		SELECT 1 FROM color_settings n WHERE n.target_type = o.target_type AND n.target_id = o.target_id AND n.screen = 'nominated')`,
+	`DELETE FROM color_settings WHERE screen = 'caos_nominated'`,
 }
 
 type itemTypeBackfill struct {
