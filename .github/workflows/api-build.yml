@@ -549,7 +549,13 @@ jobs:
       - name: DB のスキーマがモデルとずれていないか確かめる
         if: ${{ steps.deploy.outputs.url != '' }}
         env:
-          URL: ${{ steps.deploy.outputs.url }}
+          # 本番は Cloud Run の入口を LB だけに絞ると（infra の api_lb_only）、ここ（GitHub の
+          # runner）から run.app に届かなくなる。GCP_API_LB_URL（infra の output api_lb_url）が
+          # あれば LB を通して見る。/status は Cloud Armor がトークンなしで通す。
+          # PR のプレビューは今までどおり Cloud Run のタグの URL を見る。
+          URL: >-
+            ${{ (github.event_name != 'pull_request' && vars.GCP_API_LB_URL)
+                || steps.deploy.outputs.url }}
         run: |
           body=""
           for i in $(seq 1 10); do

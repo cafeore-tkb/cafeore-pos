@@ -218,25 +218,31 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 （Origin を付けない curl などには効かない）。
 
 ```
-ブラウザ ─→ Cloudflare Access ─→ POS の Worker ─→ Cloud Run（api）
-             （ログイン）          （/api を中継）    （JWT を検証）
+ブラウザ ─→ Cloudflare Access ─→ POS の Worker ─→ LB ＋ Cloud Armor ─→ Cloud Run（api）
+             （ログイン）          （/api を中継。     （トークンを照合）    （JWT を検証）
+                                   トークンを付ける）
 ```
 
 - POS（`cafeore-pos.cafeorepos.workers.dev`）を Access で守る。ログインしないと画面も開けない
 - Access はログインした端末のリクエストに JWT（`Cf-Access-Jwt-Assertion`）を付ける。Worker はそれごと
   `/api` を Cloud Run に中継し、api が署名・発行元・AUD・期限を確かめる（`api/internal/auth`）。
   WebSocket（`/api/ws/orders`）も同じ道を通る
+- Worker は中継するときに、secret の `PROXY_TOKEN` を `X-Cafeore-Proxy-Token` ヘッダーに付ける。Cloud Run の手前の
+  LB の Cloud Armor がそれを照らし合わせ、合わないものを Cloud Run に届く前に 403 にする（infra の `gcp/api_edge.tf`）。
+  JWT は Bearer トークンなので、盗まれると Cloud Run を直接叩いて期限まで使い回せ、Access でセッションを
+  取り消しても効かない。トークンは Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
 - api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
   GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
 - `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
   書き込みは開かない（`api/cmd/server/main.go`）
-- 次は Access を通らずに Cloud Run に直接来るので、`/api` のグループの外に置いて自前で確かめている
+- 次は Access を通らずに来るので、`/api` のグループの外に置いて自前で確かめている
 
-  | 呼び出し元 | ルート | 確かめ方 |
-  | --- | --- | --- |
-  | Cloud Scheduler | `POST /api/inventory/remind` | Google の ID トークン |
-  | Square | `POST /api/square/webhook` | Webhook の署名 |
-  | デプロイの CI・POS の接続確認 | `GET /status`・`GET /health` | 認証しない（稼働状況だけ） |
+  | 呼び出し元 | ルート | 通り道（LB を置いた後） | 確かめ方 |
+  | --- | --- | --- | --- |
+  | Cloud Scheduler | `POST /api/inventory/remind` | run.app に直接（同じプロジェクトなので「内部」として届く） | Google の ID トークン |
+  | Square | `POST /api/square/webhook` | LB（Cloud Armor はトークンなしで通す） | Webhook の署名 |
+  | デプロイの CI・POS の接続確認 | `GET /status`・`GET /health` | LB（CI は `GCP_API_LB_URL`）・Worker | 認証しない（稼働状況だけ） |
 
 - Worker 経由でも、ブラウザの `Origin`（`https://cafeore-pos.cafeorepos.workers.dev`）はそのまま API に届き、
   CORS で照らし合わされる。同じオリジンになったからといって `FRONTEND_ORIGINS` から消すと、書き込みと
@@ -288,8 +294,19 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
    3. `api_auth_mode = "cloudflare-access"` にして apply する
    4. `curl https://<本番の Cloud Run の URL>/api/items` が 401 になること、レジで注文が通ること、
       表示用のアカウントで開いた画面からは書き込めない（403）ことを確かめる
+4. **LB と Cloud Armor（infra と Cloudflare）**。詳しくは infra の README の「LB と Cloud Armor」
+   1. infra で `api_lb_domain` と `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れて apply し、
+      DNS の A レコードを `terraform output api_lb_ip` に向ける（Cloudflare の DNS なら DNS only）。
+      証明書が発行されるまで数十分かかる
+   2. Worker の secret に同じトークンを入れる（`cd services/pos && pnpm exec wrangler secret put PROXY_TOKEN`）
+   3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `terraform output api_lb_url` にして、
+      「pos / deploy (Workers)」を手動実行する。Square の Webhook を使っているなら通知先も LB の URL に登録し直す
+   4. POS を一通り操作して動くこと（WebSocket も）を確かめてから、infra で `api_lb_only = true` にして apply する。
+      これで run.app にはインターネットから届かなくなる
 
-戻すとき:
+戻すとき（後の段階から順に）:
+- LB を外す: infra で `api_lb_only = false` を apply し（run.app がまた開く）、`WORKERS_API_ORIGIN` と
+  `GCP_API_LB_URL` を Cloud Run の URL に戻して手動実行する
 - 認証だけを外す: `api_auth_mode = "off"` で apply（新しいリビジョンが立った時点で戻る）
 - 中継もやめる: `VITE_API_BASE_URL` を Cloud Run の URL に戻して手動実行し、Access を無効にする
 
@@ -470,7 +487,8 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
-| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
@@ -478,6 +496,9 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。
+
+POS の Worker の `PROXY_TOKEN` は GitHub ではなく Worker の secret に置く（`wrangler secret put PROXY_TOKEN`）。
+secret はデプロイし直しても消えない。
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
