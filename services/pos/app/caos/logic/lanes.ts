@@ -3,7 +3,9 @@ import {
   DRIPPER_NUMBERS,
   caosDripperAllowed,
   caosLane,
+  dripperLabel,
 } from "@cafeore/common";
+import { totalCups } from "./cards";
 
 // 列（ドリッパー 1〜6。番号は @cafeore/common の DRIPPER_NUMBERS）。列は「1st」〜「6th」と番号だけで呼ぶ（dripperLabel）。
 // 担当者（名前・上級生のみのカードを淹れられる上級生か）は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
@@ -35,3 +37,29 @@ export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
     place: bayId === currentBayId ? ("front" as const) : undefined,
     disabled: !caosDripperAllowed(card, bayId),
   }));
+
+/** そのドリッパーをまだ待っている指名の杯数（未割当のうち、指名の番号がそのドリッパーのカード） */
+export const pendingNominatedCups = (
+  unassigned: readonly CaosCard[],
+  dripper: number,
+) =>
+  totalCups(
+    unassigned.filter((card) => card.cups[0].nominatedDripper === dripper),
+  );
+
+/** ドリッパーに置いたカードの場所（「3rd 抽出中」「3rd 2番目」「3rd 済」）。キーはカードの key */
+export const cardPlaces = (lanes: readonly Lane[]) =>
+  new Map(
+    lanes.flatMap((lane) => {
+      const label = dripperLabel(lane.id);
+      return [
+        ...lane.done.map((card) => [card.key, `${label} 済`] as const),
+        ...(lane.brewing
+          ? [[lane.brewing.key, `${label} 抽出中`] as const]
+          : []),
+        ...lane.queued.map(
+          (card, index) => [card.key, `${label} ${index + 1}番目`] as const,
+        ),
+      ];
+    }),
+  );

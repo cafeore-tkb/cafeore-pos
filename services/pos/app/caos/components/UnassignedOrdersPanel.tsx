@@ -1,38 +1,136 @@
-import { type CaosCard, type CaosPlace, canMergeCards } from "@cafeore/common";
-import { ClipboardList, Sparkles } from "lucide-react";
+import type { CaosCard, CaosPlace } from "@cafeore/common";
+import { ClipboardList } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { dropTargetLabel } from "../hooks/useCardDrag";
 import {
-  type DropTarget,
-  dropTargetAt,
-  dropTargetLabel,
-  useCardDrag,
-} from "../hooks/useCardDrag";
-import { useOutsidePress } from "../hooks/useOutsidePress";
+  type UnassignedPick,
+  useUnassignedPick,
+} from "../hooks/useUnassignedPick";
 import {
   type CardLooks,
+  type OrderRowEntry,
   orderLabel,
-  placeByOrder,
+  orderNoLabel,
+  orderRows,
   totalCups,
 } from "../logic/cards";
+import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
-import { NextAvailableChips, PanelHeader } from "./BoardParts";
+import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
   MergeOverlay,
+  MergedTrace,
   OrderCard,
 } from "./OrderCard";
 
-// 未割当（管制盤 A の下の横帯と、管制盤 C の右の縦リスト）。
-// カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる
-// （待機のカードの上に落とすと、そのカードの前へ）。
-// 1 杯のカードを開くと、統合できる 1 杯のカードに「統合する」が出る（onMergeOrders を渡したときだけ）。
-export const UnassignedOrdersPanel: React.FC<{
+// 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は useUnassignedPick。
+// どちらも注文番号の順に注文ごとにまとめ、ほかの注文と統合したカードはもとの注文の場所に跡（MergedTrace）を残す。
+
+// スクロールする列のカードは、スクロールの向きの指の動きをスクロールに任せる（useCardDrag の press の scroll）
+const TOUCH = { x: "touch-pan-x", y: "touch-pan-y" } as const;
+
+/** 未割当の 1 枚。開くと上下に 1〜6 のボタン（入れ直しのカードは「取り消す」も）、統合できる相手には「統合する」を重ねる */
+const UnassignedCard: React.FC<{
+  card: CaosCard;
+  looks: CardLooks;
+  pick: UnassignedPick;
+  size: "sm" | "lg";
+  selected: boolean;
+  /** 置いた枠のスクロールの向き（無ければ枠はスクロールしない） */
+  scroll?: "x" | "y";
+  readOnly?: boolean;
+  className?: string;
+}> = ({
+  card,
+  looks,
+  pick,
+  size,
+  selected,
+  scroll,
+  readOnly = false,
+  className = "",
+}) => {
+  const isOpen = pick.isOpen(card);
+  const isMergeCandidate = pick.canMergeWith(card);
+  const touch = scroll && !isOpen ? TOUCH[scroll] : "touch-none";
+  return (
+    <OrderCard
+      card={card}
+      look={looks.get(card.key)}
+      size={size}
+      selected={selected}
+      data-unassigned-uid={card.key}
+      onPointerDown={
+        readOnly || isMergeCandidate
+          ? undefined
+          : (event) => pick.drag.press(card, event, isOpen ? undefined : scroll)
+      }
+      onClickCapture={pick.drag.suppressClick}
+      onClick={readOnly ? undefined : () => pick.tap(card)}
+      className={`${readOnly ? "touch-manipulation" : `cursor-grab active:cursor-grabbing ${touch}`} ${isOpen ? "z-40" : ""} ${className}`}
+      dragging={pick.drag.source?.key === card.key}
+    >
+      {isMergeCandidate && <MergeOverlay />}
+      {isOpen && (
+        <BayPad
+          card={card}
+          hoveredBay={pick.drag.target?.bayId ?? null}
+          onPick={(bayId) => pick.assign(card, bayId)}
+        />
+      )}
+      {isOpen && card.emergency && pick.cancelEmergency && (
+        <CancelEmergencyButton onConfirm={() => pick.cancelEmergency?.(card)} />
+      )}
+    </OrderCard>
+  );
+};
+
+/** 運んでいるカードの写し（指に付いて動く） */
+const DragGhost: React.FC<{
+  pick: UnassignedPick;
+  looks: CardLooks;
+  size: "sm" | "lg";
+}> = ({ pick, looks, size }) =>
+  pick.drag.source &&
+  pick.drag.ghost(
+    <OrderCard
+      card={pick.drag.source}
+      look={looks.get(pick.drag.source.key)}
+      size={size}
+    />,
+    dropTargetLabel(pick.drag.target),
+  );
+
+const EmptyNote: React.FC = () => (
+  <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
+    レジからのオーダーを待っています
+  </div>
+);
+
+// 横帯は 6 列 × 2 段
+const STRIP_COLUMNS = 6;
+const STRIP_LINES = 2;
+
+/** 横帯に出す注文（注文番号の順に、跡を含めて 2 段に収まるだけ。注文は段をまたがせず、収まらない注文は次の段へ） */
+const stripRows = (orders: readonly CaosCard[]) => {
+  let line = 0;
+  let column = 0;
+  return orderRows(orders).filter(({ entries }) => {
+    const width = Math.min(entries.length, STRIP_COLUMNS);
+    if (column + width > STRIP_COLUMNS) {
+      line += 1;
+      column = 0;
+    }
+    column += width;
+    return line < STRIP_LINES;
+  });
+};
+
+type UnassignedProps = {
   orders: CaosCard[];
   looks: CardLooks;
-  nextAvailable: NextAvailable;
-  layout?: "strip" | "sidebar";
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
@@ -41,157 +139,176 @@ export const UnassignedOrdersPanel: React.FC<{
   onCancelEmergency?: (card: CaosCard) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
-}> = ({
-  orders,
-  looks,
-  nextAvailable,
-  layout = "strip",
-  selectedOrderId,
-  onSelectOrder,
-  onAssignToBay,
-  onMergeOrders,
-  onCancelEmergency,
-  readOnly = false,
-}) => {
-  const isSidebar = layout === "sidebar";
-  const [openUid, setOpenUid] = useState<string | null>(null);
-  const openOrder = orders.find((order) => order.key === openUid);
-  const assign = (order: CaosCard, bayId: number, place?: CaosPlace) => {
-    onAssignToBay(order, bayId, place);
-    setOpenUid(null);
-  };
-  const drag = useCardDrag<CaosCard, DropTarget>({
-    targetAt: (order, x, y) => dropTargetAt(x, y, { card: order }),
-    onBegin: (order) => {
-      // Same as tapping another card: switching cards drops the old selection.
-      if (openUid && openUid !== order.key) onSelectOrder(null);
-      setOpenUid(order.key);
-    },
-    onDrop: (order, target) => assign(order, target.bayId, target.place),
-  });
+};
 
-  // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）を押したときは、そのカードのタップやドラッグで決める
-  // （縦のリストでは、別のカードを押したのがスクロールのこともある）
-  useOutsidePress(
-    openUid !== null,
-    (target) => Boolean(target.closest("[data-unassigned-uid]")),
-    () => {
-      setOpenUid(null);
-      onSelectOrder(null);
-    },
-  );
-
-  // 縦のリストは注文ごとに行を改め、1 行に 3 枚まで。横帯は先頭の 12 枚
-  const placed: Array<{
-    card: CaosCard;
-    gridColumn?: number;
-    gridRow?: number;
-  }> = isSidebar
-    ? placeByOrder(orders, 3)
-    : orders.slice(0, 12).map((card) => ({ card }));
-
+/**
+ * 管制盤 A の下の横帯（6 列 × 2 段）。注文ごとにまとめ、2 枚以上の注文は青い枠で囲む（同じ注文がほかにもあるときだけ囲う）
+ */
+export const UnassignedStrip: React.FC<
+  UnassignedProps & { nextAvailable: NextAvailable }
+> = ({ nextAvailable, readOnly = false, ...props }) => {
+  const { orders, looks, selectedOrderId } = props;
+  const pick = useUnassignedPick(props);
+  const rows = stripRows(orders);
   return (
-    <section
-      className={`flex h-full flex-col rounded-lg border border-slate-300 bg-white shadow-xs ${isSidebar ? "overflow-hidden" : ""}`}
-    >
+    <section className="flex h-full flex-col rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="未割当">
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
           {orders.length} 件 / {totalCups(orders)} 杯
         </span>
-        {!isSidebar && <NextAvailableChips nextAvailable={nextAvailable} />}
+        <NextAvailableChips nextAvailable={nextAvailable} />
       </PanelHeader>
-
-      <div
-        className={`grid min-h-0 flex-1 ${isSidebar ? "auto-rows-[112px] grid-cols-3 content-start gap-2 overflow-auto px-3 py-10" : "grid-cols-6 grid-rows-2 gap-1.5 p-2"}`}
-      >
-        {placed.map(({ card: order, gridColumn, gridRow }, index) => {
-          const uid = order.key;
-          const isOpen = openUid === uid;
-          const isSelected = selectedOrderId === orderLabel(order);
-          const isMergeCandidate = Boolean(
-            onMergeOrders && openOrder && canMergeCards(openOrder, order),
-          );
-          // 横帯では注文の切れ目に印を付ける
-          const isOrderBoundary =
-            !isSidebar &&
-            index > 0 &&
-            placed[index - 1].card.orderNo !== order.orderNo;
-          return (
-            <OrderCard
-              key={uid}
-              card={order}
-              look={looks.get(uid)}
-              size={isSidebar ? "xl" : "lg"}
-              selected={isSelected}
-              data-unassigned-uid={uid}
-              // A closed card in the scrolling list leaves vertical movement to scrolling.
-              onPointerDown={
-                readOnly || isMergeCandidate
-                  ? undefined
-                  : (event) => drag.press(order, event, !isSidebar || isOpen)
-              }
-              onClickCapture={drag.suppressClick}
-              onClick={() => {
-                if (readOnly) return;
-                if (isMergeCandidate && openUid && onMergeOrders) {
-                  onMergeOrders(openUid, uid);
-                  setOpenUid(null);
-                  return;
-                }
-                onSelectOrder(orderLabel(order));
-                setOpenUid(uid);
-              }}
-              style={{ gridColumn, gridRow }}
-              className={`${readOnly ? "" : "cursor-grab hover:shadow-md active:cursor-grabbing"} ${isSidebar && !isOpen ? "touch-pan-y" : "touch-none"} ${isOpen ? "z-40" : ""}`}
-              dragging={drag.source?.key === uid}
+      <div className="flex min-h-0 flex-1 flex-wrap content-start p-1">
+        {rows.map(({ orderNo, emergency, entries }) => (
+          <div
+            key={`${emergency}:${orderNo}`}
+            className="flex h-1/2 p-0.5"
+            style={{
+              width: `${(Math.min(entries.length, STRIP_COLUMNS) / STRIP_COLUMNS) * 100}%`,
+            }}
+          >
+            <div
+              className={`flex min-w-0 flex-1 gap-1 ${entries.length > 1 ? "rounded-xl border-2 border-blue-600 bg-blue-50 p-0.5" : ""}`}
             >
-              {isOrderBoundary && (
-                <span
-                  className="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full bg-slate-500"
-                  aria-hidden="true"
+              {entries.map((entry) => (
+                <StripEntry
+                  key={entry.card.key}
+                  orderNo={orderNo}
+                  entry={entry}
+                  pick={pick}
+                  looks={looks}
+                  selectedOrderId={selectedOrderId}
+                  readOnly={readOnly}
                 />
-              )}
-              {isMergeCandidate && <MergeOverlay />}
-              {isOpen && (
-                <BayPad
-                  card={order}
-                  hoveredBay={drag.target?.bayId ?? null}
-                  onPick={(bayId) => assign(order, bayId)}
-                />
-              )}
-              {isOpen && order.emergency && onCancelEmergency && (
-                <CancelEmergencyButton
-                  onConfirm={() => {
-                    onCancelEmergency(order);
-                    setOpenUid(null);
-                  }}
-                />
-              )}
-              {isSelected && (
-                <div className="-top-2.5 absolute left-2 z-20 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 font-bold text-[9px] text-white shadow-xs">
-                  <Sparkles className="h-2.5 w-2.5" />
-                  <span>連動選択中</span>
-                </div>
-              )}
-            </OrderCard>
-          );
-        })}
-
-        {orders.length === 0 && (
-          <div className="col-span-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
-            レジからのオーダーを待っています
+              ))}
+            </div>
           </div>
-        )}
+        ))}
+        {orders.length === 0 && <EmptyNote />}
       </div>
-      {drag.source &&
-        drag.ghost(
-          <OrderCard
-            card={drag.source}
-            look={looks.get(drag.source.key)}
-            size={isSidebar ? "xl" : "lg"}
-          />,
-          dropTargetLabel(drag.target),
-        )}
+      <DragGhost pick={pick} looks={looks} size="lg" />
+    </section>
+  );
+};
+
+const StripEntry: React.FC<{
+  orderNo: number;
+  entry: OrderRowEntry;
+  pick: UnassignedPick;
+  looks: CardLooks;
+  selectedOrderId: string | null;
+  readOnly: boolean;
+}> = ({ orderNo, entry, pick, looks, selectedOrderId, readOnly }) =>
+  entry.mergedInto ? (
+    <MergedTrace orderNo={orderNo} into={entry.mergedInto} className="flex-1" />
+  ) : (
+    <UnassignedCard
+      card={entry.card}
+      looks={looks}
+      pick={pick}
+      size="lg"
+      selected={selectedOrderId === orderLabel(entry.card)}
+      readOnly={readOnly}
+      className="flex-1"
+    />
+  );
+
+// 注文の列で、ドリッパーに置いたカードの薄さ（未割当は濃く、待機・抽出中・済の順に薄く、灰色にする）
+const PLACED_FADE: Record<CaosCard["status"], string> = {
+  unassigned: "",
+  queued: "opacity-70 grayscale",
+  brewing: "opacity-50 grayscale",
+  done: "opacity-30 grayscale",
+};
+
+/** 未割当の入れ直しの行と、まだ淹れ終わっていない最初の注文から後ろの、注文番号の行（ドリッパーに置いたカードも含む） */
+const liveRows = (cards: readonly CaosCard[]) => {
+  const rows = orderRows(cards);
+  const first = rows.findIndex(
+    (row) =>
+      !row.emergency && row.entries.some(({ card }) => card.status !== "done"),
+  );
+  return rows.filter(
+    (row, index) => row.emergency || (first >= 0 && index >= first),
+  );
+};
+
+/**
+ * 管制盤 C の右の注文の列。注文番号の行ごとに、未割当のカードと、ドリッパーに置いたカード（灰色に薄く、
+ * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。10 注文くらいが一度に見える高さ
+ */
+export const OrderQueuePanel: React.FC<
+  Omit<UnassignedProps, "onMergeOrders" | "readOnly"> & { lanes: Lane[] }
+> = ({ lanes, ...props }) => {
+  const { orders, looks, selectedOrderId } = props;
+  const pick = useUnassignedPick(props);
+  const places = cardPlaces(lanes);
+  const rows = liveRows([...orders, ...lanes.flatMap(laneCards)]);
+  return (
+    <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+      <PanelHeader icon={ClipboardList} title="注文">
+        <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
+          未割当 {orders.length} 件 / {totalCups(orders)} 杯
+        </span>
+      </PanelHeader>
+      <div className="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto overscroll-contain px-2 pt-1 pb-8">
+        {rows.map(({ orderNo, emergency, entries }) => (
+          <div
+            key={`${emergency}:${orderNo}`}
+            className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
+          >
+            <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
+              {orderNoLabel(orderNo)}
+              {emergency && (
+                <span className="mt-1 font-sans text-[11px] text-red-600">
+                  緊急
+                </span>
+              )}
+            </span>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+              {entries.map(({ card, mergedInto }) => {
+                const selected = selectedOrderId === orderLabel(card);
+                if (mergedInto)
+                  return (
+                    <MergedTrace
+                      key={card.key}
+                      orderNo={orderNo}
+                      into={mergedInto}
+                      className="h-[50px] w-[150px]"
+                    />
+                  );
+                if (card.status === "unassigned")
+                  return (
+                    <UnassignedCard
+                      key={card.key}
+                      card={card}
+                      looks={looks}
+                      pick={pick}
+                      size="sm"
+                      selected={selected}
+                      scroll="y"
+                      className="h-[50px] w-[150px]"
+                    />
+                  );
+                return (
+                  <div key={card.key} className="relative h-[50px] w-[150px]">
+                    <OrderCard
+                      card={card}
+                      look={looks.get(card.key)}
+                      size="sm"
+                      selected={selected}
+                      className={`h-full ${PLACED_FADE[card.status]}`}
+                    />
+                    <PlaceTag label={places.get(card.key)} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <EmptyNote />}
+      </div>
+      <DragGhost pick={pick} looks={looks} size="sm" />
     </section>
   );
 };
