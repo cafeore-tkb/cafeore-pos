@@ -11,4 +11,6 @@ type OrderMenu struct {
 	UnitPrice int    `gorm:"not null"`
 
 	Menu Menu `gorm:"foreignKey:MenuID;references:ID"`
+	// この明細で減る在庫。注文を受けたときに決めて、編集しても引き継ぐ
+	StockUsages []OrderStockUsage `gorm:"foreignKey:OrderMenuID;references:ID"`
 }

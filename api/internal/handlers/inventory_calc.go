@@ -183,7 +183,7 @@ func alertMessage(s stockSnapshot) string {
 		}
 		suffix = fmt.Sprintf("（バッファ%d%sを切りました）", s.Resource.Buffer, unit)
 	}
-	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.Name, describeRemaining(s), suffix)}
+	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.DisplayName(), describeRemaining(s), suffix)}
 	if pace := describePace(s); pace != "" {
 		lines = append(lines, "　"+pace)
 	}
@@ -197,7 +197,7 @@ func remindMessage(snapshots []stockSnapshot, now time.Time, posURL string) stri
 		if s.CountedQuantity != nil && s.BaseAt != nil {
 			last = formatDuration(now.Sub(*s.BaseAt)) + "前"
 		}
-		lines = append(lines, fmt.Sprintf("• %s: %s（最終確認 %s）", s.Resource.Name, describeRemaining(s), last))
+		lines = append(lines, fmt.Sprintf("• %s: %s（最終確認 %s）", s.Resource.DisplayName(), describeRemaining(s), last))
 	}
 	if posURL != "" {
 		lines = append(lines, fmt.Sprintf("<%s/inventory|在庫ページを開く>", strings.TrimRight(posURL, "/")))

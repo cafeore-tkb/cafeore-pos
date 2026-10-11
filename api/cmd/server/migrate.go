@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"cafeore-pos/api/internal/models"
 
@@ -43,44 +42,77 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
-		if err := migrateItemStockUsageHistory(tx); err != nil {
-			return fmt.Errorf("failed to migrate item_stock_usages: %w", err)
+		splitStock, err := prepareItemStockMigration(tx)
+		if err != nil {
+			return fmt.Errorf("failed to prepare stock_resources: %w", err)
 		}
 
 		if err := tx.AutoMigrate(models.All()...); err != nil {
 			return fmt.Errorf("failed to migrate database: %w", err)
 		}
+
+		if splitStock {
+			if err := migrateItemStock(tx); err != nil {
+				return fmt.Errorf("failed to migrate item stock: %w", err)
+			}
+		}
 		return nil
 	})
 }
 
-// 使用量を履歴で持つようにしたとき（2026-10）の一度だけの移行。AutoMigrate は NOT NULL の列を既存の行に
-// 足せず、主キーも付け替えないので、ここで valid_from を足して主キーを (item_id, resource_id, valid_from) にする。
-// 既存の行は、それより前のどの注文にも効くよう、十分に古い時刻から有効にする。valid_to は AutoMigrate が足す。
-// 表が無い（空の DB）か、もう valid_from があれば何もしない。
-func migrateItemStockUsageHistory(tx *gorm.DB) error {
-	usage := &models.ItemStockUsage{}
+// 在庫をアイテムの在庫とカップの 2 種類にしたとき（2026-10）の一度だけの移行。stock_resources に item_id が無ければ流す。
+// AutoMigrate は check を名前で見て付け替えないので、ここで kind の check を外す（AutoMigrate が新しい check を付ける）。
+// 豆（kind bean）はアイテムに結べないので、棚卸し・入荷の記録ごと消す。
+func prepareItemStockMigration(tx *gorm.DB) (bool, error) {
 	m := tx.Migrator()
-	if !m.HasTable(usage) || m.HasColumn(usage, "valid_from") {
-		return nil
+	resource := &models.StockResource{}
+	if m.HasColumn(resource, "item_id") {
+		return false, nil
 	}
-	var pkey string
-	if err := tx.Raw(`SELECT conname FROM pg_constraint WHERE conrelid = 'item_stock_usages'::regclass AND contype = 'p'`).
-		Scan(&pkey).Error; err != nil {
+	if !m.HasTable(resource) {
+		return true, nil
+	}
+	for _, sql := range []string{
+		`ALTER TABLE stock_resources DROP CONSTRAINT IF EXISTS chk_stock_resources_kind`,
+		`DELETE FROM stock_events WHERE resource_id IN (SELECT id FROM stock_resources WHERE kind = 'bean')`,
+		`DELETE FROM stock_resources WHERE kind = 'bean'`,
+	} {
+		if err := tx.Exec(sql).Error; err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// AutoMigrate の後に、今のアイテムそれぞれの在庫を作る。使用量の表（item_stock_usages）があれば、
+// 前からある注文で減った量をその表から 1 回だけ埋めて、表を消す。カップの使う種類は空で始める。
+func migrateItemStock(tx *gorm.DB) error {
+	var items []models.Item
+	if err := tx.Find(&items).Error; err != nil {
 		return err
 	}
-	sqls := []string{
-		`ALTER TABLE item_stock_usages ADD COLUMN valid_from timestamptz NOT NULL DEFAULT '1970-01-01T00:00:00Z'`,
-		`ALTER TABLE item_stock_usages ALTER COLUMN valid_from DROP DEFAULT`,
-	}
-	if pkey != "" {
-		sqls = append(sqls, `ALTER TABLE item_stock_usages DROP CONSTRAINT "`+strings.ReplaceAll(pkey, `"`, `""`)+`"`)
-	}
-	sqls = append(sqls, `ALTER TABLE item_stock_usages ADD PRIMARY KEY (item_id, resource_id, valid_from)`)
-	for _, sql := range sqls {
-		if err := tx.Exec(sql).Error; err != nil {
+	if len(items) > 0 {
+		resources := make([]models.StockResource, len(items))
+		for i, item := range items {
+			resources[i] = models.NewItemStockResource(item.ID)
+		}
+		if err := tx.Create(&resources).Error; err != nil {
 			return err
 		}
 	}
-	return nil
+	if !tx.Migrator().HasTable("item_stock_usages") {
+		return nil
+	}
+	// 消した豆の行は stock_resources と結んで落とす
+	if err := tx.Exec(`
+		INSERT INTO order_stock_usages (order_menu_id, resource_id, order_id, servings, amount)
+		SELECT om.id, u.resource_id, om.order_id, SUM(mi.quantity), SUM(mi.quantity * u.amount)
+		FROM order_menus om
+		JOIN menu_items mi ON mi.menu_id = om.menu_id
+		JOIN item_stock_usages u ON u.item_id = mi.item_id
+		JOIN stock_resources r ON r.id = u.resource_id
+		GROUP BY om.id, u.resource_id, om.order_id`).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`DROP TABLE item_stock_usages`).Error
 }

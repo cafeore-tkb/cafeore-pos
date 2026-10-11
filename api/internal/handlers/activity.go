@@ -163,50 +163,31 @@ func colorSettingDeletedMessage(target string, setting *models.ColorSetting) str
 
 // 在庫対象の種類の名前。openapi.yaml の StockResourceKind の x-enum-descriptions と同じにする（TestEnumLabelsMatchOpenAPI で確かめる）
 var stockKindLabels = map[string]string{
+	string(models.StockResourceKindItem): "アイテム",
 	string(models.StockResourceKindCup):  "カップ",
-	string(models.StockResourceKindBean): "豆",
 }
 
-func stockResourceCreatedMessage(r *models.StockResource) string {
-	return tagged(fmt.Sprintf("🆕 在庫対象を追加: %s（%s / 1杯 %s%s）", r.Name, stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit), tagAdd)
+// 作れるのはカップだけ（アイテムの在庫はアイテムと一緒にでき、アイテムの追加として通知する）。itemTypes は使う種類の名前
+func stockResourceCreatedMessage(r *models.StockResource, itemTypes string) string {
+	return tagged(fmt.Sprintf("🆕 在庫対象を追加: %s（%s / 1杯 %s%s / 使うタイプ %s）", r.DisplayName(), stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit, itemTypes), tagAdd)
 }
 
-func stockResourceUpdatedMessage(before, after *models.StockResource) string {
-	return updatedMessage("在庫対象", after.Name, describeChanges(
-		change{"種類", stockKindLabels[before.Kind], stockKindLabels[after.Kind]},
-		change{"名前", before.Name, after.Name},
+// typesBefore・typesAfter は使う種類の名前。比べないときは両方空
+func stockResourceUpdatedMessage(before, after *models.StockResource, typesBefore, typesAfter string) string {
+	return updatedMessage("在庫対象", after.DisplayName(), describeChanges(
+		change{"名前", before.DisplayName(), after.DisplayName()},
 		change{"単位", before.Unit, after.Unit},
 		change{"1杯あたり", formatNumber(before.PerServing), formatNumber(after.PerServing)},
 		change{"通知開始", strconv.Itoa(before.NotifyFrom), strconv.Itoa(after.NotifyFrom)},
 		change{"間隔", strconv.Itoa(before.NotifyStep), strconv.Itoa(after.NotifyStep)},
 		change{"バッファ", strconv.Itoa(before.Buffer), strconv.Itoa(after.Buffer)},
+		change{"使うタイプ", typesBefore, typesAfter},
 	))
 }
 
+// 消せるのはカップだけ（アイテムの在庫はアイテムと一緒に消え、アイテムの削除として通知する）
 func stockResourceDeletedMessage(r *models.StockResource) string {
-	return tagged(fmt.Sprintf("🗑️ 在庫対象を削除: %s", r.Name), tagDelete)
-}
-
-// --- 使用量 ---
-
-// 「ホットカップ 1個・ケニア豆 15g」と並べる。resources に無いものは飛ばす
-func usagesText(usages []models.ItemStockUsage, resources map[uuid.UUID]models.StockResource) string {
-	parts := make([]string, 0, len(usages))
-	for _, u := range usages {
-		r, ok := resources[u.ResourceID]
-		if !ok {
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s %s%s", r.Name, formatNumber(u.Amount), r.Unit))
-	}
-	if len(parts) == 0 {
-		return "なし"
-	}
-	return strings.Join(parts, "・")
-}
-
-func itemUsagesMessage(itemName string, usages []models.ItemStockUsage, resources map[uuid.UUID]models.StockResource) string {
-	return tagged(fmt.Sprintf("✏️ 使用量を変更: %s → %s", itemName, usagesText(usages, resources)), tagInventory)
+	return tagged(fmt.Sprintf("🗑️ 在庫対象を削除: %s", r.DisplayName()), tagDelete)
 }
 
 // --- 棚卸し・入荷・調整 ---
@@ -222,13 +203,13 @@ func signed(v float64) string {
 func stockEventMessage(r *models.StockResource, e *models.StockEvent, estimated, remaining *float64) string {
 	var text string
 	if e.Kind == string(models.StockEventKindCount) {
-		text = fmt.Sprintf("📝 %s %s%s", r.Name, formatNumber(e.Quantity), r.Unit)
+		text = fmt.Sprintf("📝 %s %s%s", r.DisplayName(), formatNumber(e.Quantity), r.Unit)
 		if estimated != nil {
 			text += fmt.Sprintf("（推定 %s%s、差 %s%s）", formatNumber(*estimated), r.Unit, signed(e.Quantity-*estimated), r.Unit)
 		}
 	} else {
 		// 入荷・調整は差分なので、記録したあとの残りを添える
-		text = fmt.Sprintf("📝 %s %s%s", r.Name, signed(e.Quantity), r.Unit)
+		text = fmt.Sprintf("📝 %s %s%s", r.DisplayName(), signed(e.Quantity), r.Unit)
 		if remaining != nil {
 			text += fmt.Sprintf("（残り約%s%s）", formatNumber(*remaining), r.Unit)
 		}

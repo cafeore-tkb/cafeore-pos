@@ -12,7 +12,6 @@ export type StockResourceKind = components["schemas"]["StockResourceKind"];
 export type StockEventKind = components["schemas"]["StockEventKind"];
 export type StockEventResult =
   components["schemas"]["StockEventCreateResponse"];
-export type StockUsage = components["schemas"]["StockUsage"];
 
 export const inventoryRepository = {
   getStatuses: async (): Promise<InventoryStatus[]> => {
@@ -75,13 +74,5 @@ export const inventoryRepository = {
       await throwApiError(response, "Failed to record stock event");
     }
     return data as StockEventResult;
-  },
-
-  getUsages: async (): Promise<StockUsage[]> => {
-    const { data, error, response } = await client.GET("/api/inventory/usages");
-    if (error || !response.ok || !data) {
-      await throwApiError(response, "Failed to fetch stock usages");
-    }
-    return data ?? [];
   },
 };
