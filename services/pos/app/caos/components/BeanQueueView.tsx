@@ -57,7 +57,8 @@ const BeanStockList: React.FC<BeanQueueViewProps> = ({
           >
             {waitingCups && (
               <div className="text-sm tabular-nums">
-                盤面に {waitingCups.get(status.resource.id) ?? 0} 杯
+                盤面に {waitingCups.get(status.resource.id) ?? 0}{" "}
+                杯（残量から引き済み）
               </div>
             )}
           </StockCard>
