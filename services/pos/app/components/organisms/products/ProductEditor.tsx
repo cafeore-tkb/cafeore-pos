@@ -237,7 +237,6 @@ export function ProductEditor({
         ? source
         : {
             ...source,
-            id: undefined,
             display_name: copyName(source.display_name),
           });
     return (

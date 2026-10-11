@@ -23,5 +23,8 @@ func All() []any {
 		&ColorSetting{},
 		&CaosLaneRow{},
 		&CaosLaneChangeRow{},
+		&SquareCheckout{},
+		&SquareDevice{},
+		&PrinterSetting{},
 	}
 }

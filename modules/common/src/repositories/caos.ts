@@ -5,34 +5,38 @@ import { API_BASE_URL } from "./item";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
 // 書いた結果は、書いた注文の配信（{"type":"order"}）で全部の画面に届く。
-// ルールに合わない・ほかの端末が先に書いた（409）ときは何も変わらず、その理由（error）を返す。画面にそのまま出す。
+// ルールに合わない（400）・ほかの端末が先に書いた（409）ときは何も変わらず、その理由（error）を返す。画面にそのまま出す。
 
 const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 type CaosResult = { error?: undefined } | { error: string };
 
-const failed = (status: number, error?: { error?: string }) => ({
-  error:
-    error?.error ||
-    (status === 409
-      ? "ほかの端末で先に変わりました。もう一度操作してください"
-      : `操作に失敗しました（${status}）`),
-});
-
-/** カップに CaOS の値を書く（PUT /api/caos/cups）。writes は 1 つのトランザクションで書く */
-export const putCaosCups = async (
-  writes: CaosCupsWrite[],
+// 送って、断られたら理由を返す（PUT と「次へ」で同じ）
+const send = async (
+  request: Promise<{ error?: { error?: string }; response: Response }>,
 ): Promise<CaosResult> => {
-  if (writes.length === 0) return {};
   try {
-    const { error, response } = await client.PUT("/api/caos/cups", {
-      body: { writes },
-    });
-    return response.ok ? {} : failed(response.status, error);
+    const { error, response } = await request;
+    if (response.ok) return {};
+    return {
+      error:
+        error?.error ||
+        (response.status === 409
+          ? "ほかの端末で先に変わりました。もう一度操作してください"
+          : `操作に失敗しました（${response.status}）`),
+    };
   } catch {
     return { error: "cafeore-pos につながりません" };
   }
 };
+
+/** カップに CaOS の値を書く（PUT /api/caos/cups）。writes は 1 つのトランザクションで書く */
+export const putCaosCups = async (
+  writes: CaosCupsWrite[],
+): Promise<CaosResult> =>
+  writes.length === 0
+    ? {}
+    : send(client.PUT("/api/caos/cups", { body: { writes } }));
 
 /**
  * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
@@ -41,14 +45,33 @@ export const putCaosCups = async (
 export const nextCaosDripper = async (
   dripper: number,
   dripId: string | null,
-): Promise<CaosResult> => {
-  try {
-    const { error, response } = await client.POST(
-      "/api/caos/drippers/{dripper}/next",
-      { params: { path: { dripper } }, body: { drip_id: dripId } },
-    );
-    return response.ok ? {} : failed(response.status, error);
-  } catch {
-    return { error: "cafeore-pos につながりません" };
-  }
-};
+): Promise<CaosResult> =>
+  send(
+    client.POST("/api/caos/drippers/{dripper}/next", {
+      params: { path: { dripper } },
+      body: { drip_id: dripId },
+    }),
+  );
+
+/**
+ * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
+ * 変えた結果は全部の画面に共有の WebSocket の {"type":"caos_lanes"} で届く
+ */
+export const putCaosLane = async (
+  dripper: number,
+  name: string,
+  senior: boolean,
+): Promise<CaosResult> =>
+  send(
+    client.PUT("/api/caos/lanes/{dripper}", {
+      params: { path: { dripper } },
+      body: { name, senior },
+    }),
+  );
+
+/** 2 つのドリッパーの担当者を入れ替える（POST /api/caos/lanes/swap） */
+export const swapCaosLanes = async (
+  first: number,
+  second: number,
+): Promise<CaosResult> =>
+  send(client.POST("/api/caos/lanes/swap", { body: { first, second } }));

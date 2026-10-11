@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import {
-  DEFAULT_ITEM_TYPE_FLAGS,
+  EMPTY_ITEM_TYPE,
   ItemTypeFlagFields,
   type ItemTypeFormValues,
 } from "./itemTypeForm";
@@ -236,12 +236,7 @@ function NewItemType({
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
-  const emptyValues: ItemTypeFormValues = {
-    name: "",
-    display_name: "",
-    ...DEFAULT_ITEM_TYPE_FLAGS,
-  };
-  const [values, setValues] = useState<ItemTypeFormValues>(emptyValues);
+  const [values, setValues] = useState<ItemTypeFormValues>(EMPTY_ITEM_TYPE);
   const [creating, setCreating] = useState(false);
 
   if (!open) {
@@ -265,7 +260,7 @@ function NewItemType({
     setCreating(true);
     try {
       await onCreate(values);
-      setValues(emptyValues);
+      setValues(EMPTY_ITEM_TYPE);
       setOpen(false);
     } catch {
       // 失敗は onCreate 側でトーストに出る。入力は残してやり直せるようにする
@@ -314,11 +309,7 @@ function NewItemType({
           />
         </div>
       </div>
-      <ItemTypeFlagFields
-        compact
-        value={values}
-        onChange={(flags) => setValues((prev) => ({ ...prev, ...flags }))}
-      />
+      <ItemTypeFlagFields compact value={values} onChange={setValues} />
       <div className="flex justify-end gap-2">
         <Button
           type="button"

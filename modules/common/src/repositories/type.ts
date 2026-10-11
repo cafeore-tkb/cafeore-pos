@@ -2,7 +2,7 @@ import type { WithId } from "../lib/typeguard";
 import type { ColorSetting } from "../models/colorSetting";
 import type { ItemEntity, ItemType } from "../models/item";
 import type { MenuEntity } from "../models/menu";
-import type { OrderEntity } from "../models/order";
+import type { OrderEntity, OrderPayment } from "../models/order";
 
 export type BaseRepository<T extends { id?: unknown }> = {
   save(data: T): Promise<WithId<T>>;
@@ -23,7 +23,22 @@ export type ColorSettingRepository = {
   findAll(): Promise<WithId<ColorSetting>[]>;
 };
 
-export type OrderRepository = BaseRepository<OrderEntity> & {
+export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
+  save(
+    order: OrderEntity,
+    options?: ({ method?: undefined } | OrderPayment) & {
+      /**
+       * 新しく作るときの、送り直しで同じ注文を二重に作らないためのキー（UUID）。
+       * サーバーはこれを注文の ID にし、すでにあれば作らずにその注文を返す。送り直しでは同じキーを渡す
+       */
+      idempotencyKey?: string;
+      /**
+       * 新しく作るときの、レジで確定した時刻。オフラインで溜めた注文や再送など、確定より後に送るときに渡す。
+       * 省略するとサーバーの今
+       */
+      createdAt?: Date;
+    },
+  ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
   // カップ（1杯）単位の準備完了・提供済みの切り替え。切り替え後の注文を返す。

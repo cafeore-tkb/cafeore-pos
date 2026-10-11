@@ -36,8 +36,9 @@ type OrderCup struct {
 
 	// ドリッパーの番号（1〜6。画面では 1st〜6th）。指名の番号と同じもの
 	Dripper *int `gorm:"type:smallint;check:order_cups_dripper_check,dripper BETWEEN 1 AND 6"`
-	// そのドリッパーの中の順番（小さいほど先。ふつうは注文番号。間に入れるときは前後の間の値）
-	DripperPosition *float64 `gorm:"type:double precision"`
+	// そのドリッパーの中の順番（小さいほど先）。サーバーが決める：最後に入れるときは終わっていないカップの最大＋1、
+	// 途中に入れるときは前に入るカードの番号にし、それより後ろ（番号がそれ以上）の終わっていないカップを +1 する。抜けた番号は詰めない
+	DripperPosition *int `gorm:"type:integer"`
 	// 同じカードで淹れるカップをまとめる印（統合したら同じ値）
 	DripID *uuid.UUID `gorm:"type:uuid;index"`
 	// 抽出を始めた時刻・終えた時刻

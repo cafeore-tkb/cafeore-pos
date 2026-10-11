@@ -1,120 +1,94 @@
-import { type OrderEntity, assignmentLabelText } from "@cafeore/common";
-import { useRawPrinter } from "./printer";
+import type { OrderEntity } from "@cafeore/common";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PrintJob } from "./document";
+import { createEposPrinter } from "./infra/epos";
+import type {
+  CreateLabelPrinter,
+  PrinterConnectionStatus,
+} from "./infra/printer";
+import { orderLabelJob } from "./order-label";
+import {
+  type ReceiptPayment,
+  formalReceiptJob,
+  orderReceiptJob,
+} from "./receipt";
 
-type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
+/**
+ * プリンターにつないでおき、印刷データを刷る
+ *
+ * createPrinter が変わったら（IP アドレスを変えたときなど）、前のプリンターを切ってつなぎ直す。
+ * 呼ぶ側は、同じプリンターの間は同じ createPrinter を渡す（useMemo などで）。
+ */
+const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
+  const [status, setStatus] = useState<"init" | PrinterConnectionStatus>(
+    "init",
+  );
+  const printer = useMemo(() => createPrinter(setStatus), [createPrinter]);
 
-export const usePrinter = () => {
-  const rawPrinter = useRawPrinter();
+  useEffect(() => {
+    printer.connect();
+    return () => printer.disconnect();
+  }, [printer]);
 
-  const printSingleItemLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
-    console.log(item.name);
-    rawPrinter.addHeader(orderId, null);
-    rawPrinter.addLine(item.name, [1, 2]);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    const assignment = assignmentLabelText(item);
-    if (assignment) {
-      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addFeed(1);
-  };
+  const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
 
-  // 追加で番号と注文を載せたラベルを印刷
-  const printOrderSummaryLabel = (order: OrderEntity) => {
-    rawPrinter.addHeader(order.orderId, order.total);
+  return { status, print };
+};
 
-    const assignedMenus = order.menus.filter(
-      (menu) => assignmentLabelText(menu) !== null,
-    );
-    const unassignedMenus = order.menus.filter(
-      (menu) => assignmentLabelText(menu) === null,
-    );
+/**
+ * シールのプリンター
+ *
+ * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
+ * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
+ */
+export const usePrinter = (
+  createPrinter: CreateLabelPrinter = createEposPrinter,
+) => {
+  const { status, print } = useConnectedPrinter(createPrinter);
 
-    for (const menu of assignedMenus) {
-      rawPrinter.addLine(menu.name, [1, 1]);
-      rawPrinter.addLine(`  指名：${assignmentLabelText(menu)}`, [1, 1]);
-    }
+  const printOrderLabel = useCallback(
+    (order: OrderEntity) => {
+      print(orderLabelJob(order));
+    },
+    [print],
+  );
 
-    for (let i = 0; i < unassignedMenus.length; i += 2) {
-      // アイテム名が8文字以上のときは6文字だけ取り出す
-      // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
-      const item1 =
-        unassignedMenus[i].name.length < 8
-          ? unassignedMenus[i].name
-          : unassignedMenus[i].name.slice(0, 6);
-      const item2 = unassignedMenus[i + 1]
-        ? unassignedMenus[i + 1].name.length < 8
-          ? unassignedMenus[i + 1].name
-          : unassignedMenus[i + 1].name.slice(0, 6)
-        : null;
+  return { status, printOrderLabel };
+};
 
-      if (item2) {
-        // 2つある場合は横に並べる
-        const line = `${item1.padEnd(8, " ")}${item2}`;
-        rawPrinter.addLine(line, [1, 1]);
-      } else {
-        // 1つだけの場合
-        rawPrinter.addLine(item1, [1, 1]);
+/**
+ * レシートと領収書のプリンター
+ *
+ * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
+ */
+export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
+  const { status, print } = useConnectedPrinter(createPrinter);
+
+  // 印刷データを作るところも try の中に入れる（作れなくても会計の流れに例外を出さない）
+  const printSafely = useCallback(
+    (buildJob: () => PrintJob) => {
+      try {
+        return print(buildJob());
+      } catch (error) {
+        console.error("レシート用のプリンターで印刷できませんでした", error);
+        return false;
       }
-    }
-  };
+    },
+    [print],
+  );
 
-  const printLogoLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
-    rawPrinter.feedCurrentTop();
-    rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 24, 570, 230);
+  /** 会計のたびに刷るレシート */
+  const printReceipt = useCallback(
+    (order: OrderEntity, payment: ReceiptPayment) =>
+      printSafely(() => orderReceiptJob(order, payment)),
+    [printSafely],
+  );
 
-    const y = 48;
-    rawPrinter.addPagePosition(0, 48);
-    rawPrinter.addHeader(orderId, null);
-    rawPrinter.addPagePosition(0, 108);
-    rawPrinter.addLine(item.name, [1, 2]);
-    rawPrinter.addPagePosition(0, 156);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    rawPrinter.addPagePosition(0, 204);
-    const assignment = assignmentLabelText(item);
-    if (assignment) {
-      rawPrinter.addLine(`指名： ${assignment}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addPagePosition(230, 204);
-    rawPrinter.addLogo();
-    rawPrinter.addPageEnd();
-  };
-  const printOrderLabel = (order: OrderEntity) => {
-    rawPrinter.init();
-    const coffees = order.getCoffeeCups();
+  /** 求められたときだけ刷る領収書 */
+  const printFormalReceipt = useCallback(
+    (order: OrderEntity) => printSafely(() => formalReceiptJob(order)),
+    [printSafely],
+  );
 
-    console.log(coffees);
-
-    // 各アイテムのラベルを印刷
-    for (const [idx, item] of coffees.entries()) {
-      printLogoLabel(
-        order.orderId,
-        idx + 1,
-        order.getCoffeeCups().length,
-        item,
-      );
-    }
-
-    // 引換券に貼るラベルを印刷
-    printOrderSummaryLabel(order);
-
-    rawPrinter.addFeed(7);
-    rawPrinter.print();
-  };
-
-  return { status: rawPrinter.status, printOrderLabel };
+  return { status, printReceipt, printFormalReceipt };
 };

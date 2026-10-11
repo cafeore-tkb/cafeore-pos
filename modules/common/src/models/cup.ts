@@ -15,8 +15,8 @@ export const cupSchema = z.object({
   // 読み方は lib/caos-board.ts（状態は時刻で決まる）。前に保存したデータには無いので、無ければ未割当
   /** ドリッパーの番号（1〜6）。未割当なら null */
   dripper: z.number().int().nullable().default(null),
-  /** ドリッパーの中の順番（小さいほど先） */
-  dripperPosition: z.number().nullable().default(null),
+  /** ドリッパーの中の順番（整数。小さいほど先。サーバーが決める） */
+  dripperPosition: z.number().int().nullable().default(null),
   /** 同じカードで淹れるカップの印 */
   dripId: z.string().nullable().default(null),
   /** 抽出を始めた時刻 */
