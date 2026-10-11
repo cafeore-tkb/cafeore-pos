@@ -1,5 +1,6 @@
 import {
   type CaosBoardCup,
+  type CaosCard,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
@@ -82,7 +83,11 @@ export const useCaosSession = () => {
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
   // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
-  const { printer: labelPrinter, addEmergency } = useCupEmergency();
+  const {
+    printer: labelPrinter,
+    addEmergency,
+    cancelEmergency,
+  } = useCupEmergency();
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -166,6 +171,13 @@ export const useCaosSession = () => {
               const order = live.orders?.find((o) => o.id === cup.orderId);
               return order ? [{ order, cupId: cup.cupId }] : [];
             }),
+          ),
+    /** 入れ直しのカード（未割当・待機）の入れ直しを取り消す。実データテスト中は null */
+    cancelEmergency: test.session
+      ? null
+      : (card: CaosCard) =>
+          cancelEmergency(
+            card.cups.filter((cup) => cup.emergency).map((cup) => cup.id),
           ),
     soundEnabled,
     toggleSound: () => {

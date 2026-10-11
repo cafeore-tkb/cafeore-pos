@@ -75,8 +75,8 @@ export const usePrinter = (
   );
 
   const printJob = useCallback(
-    async (job: PrintJob) => {
-      if (!(await print(job))) addPendingPrint(job);
+    async (job: PrintJob, pendingId?: string) => {
+      if (!(await print(job))) addPendingPrint(job, pendingId);
     },
     [print],
   );
@@ -119,11 +119,11 @@ export const usePrinter = (
     [printJob],
   );
 
-  /** 緊急で入れ直したカップのシールを 1 枚刷る */
+  /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
   const printCupLabel = useCallback(
-    async (order: OrderEntity, cupId: string) => {
+    async (order: OrderEntity, cupId: string, emergencyId: string) => {
       const job = cupLabelJob(order, cupId);
-      if (job) await printJob(job);
+      if (job) await printJob(job, emergencyId);
     },
     [printJob],
   );

@@ -9,6 +9,7 @@ import {
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
   type CardLook,
@@ -172,7 +173,8 @@ export const AssignPanel: React.FC<{
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す。パネルの外を押すと閉じる
+// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す・入れ直し（緊急）の取り消し。
+// パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<{
   ticket: CaosCard;
   look?: CardLook;
@@ -180,6 +182,8 @@ export const TicketDetailPanel: React.FC<{
   onClose: () => void;
   onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onReturnToUnassigned: (card: CaosCard) => void;
+  /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+  onCancelEmergency?: (card: CaosCard) => void;
 }> = ({
   ticket,
   look,
@@ -187,6 +191,7 @@ export const TicketDetailPanel: React.FC<{
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
+  onCancelEmergency,
 }) => (
   <SidePanel
     title="未開始オーダーの移動"
@@ -224,6 +229,17 @@ export const TicketDetailPanel: React.FC<{
       <Undo2 className="h-5 w-5" />
       未割り当に戻す
     </button>
+    {ticket.emergency && onCancelEmergency && (
+      <TwoStepButton
+        label="緊急を取り消す"
+        confirmLabel="取り消す"
+        onConfirm={() => {
+          onCancelEmergency(ticket);
+          onClose();
+        }}
+        className="mt-3 h-12 font-black text-base"
+      />
+    )}
     <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
       <ArrowRight className="h-4 w-4" />
       抽出開始後はここから変更できません

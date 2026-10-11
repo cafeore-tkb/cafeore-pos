@@ -5,6 +5,7 @@ import {
 } from "@cafeore/common";
 import { Check } from "lucide-react";
 import type React from "react";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import {
   type CardLook,
   cardName,
@@ -215,6 +216,18 @@ export const BayPad: React.FC<{
     </div>
   ));
 };
+
+// 入れ直し（緊急）のカードの「取り消す」。開いた未割当・待機のカードに重ねる（2 回押しで決める）
+export const CancelEmergencyButton: React.FC<{ onConfirm: () => void }> = ({
+  onConfirm,
+}) => (
+  <TwoStepButton
+    label="取り消す"
+    confirmLabel="緊急を取り消す"
+    onConfirm={onConfirm}
+    className="absolute right-1 bottom-1 z-[85] h-7 w-auto px-2 text-xs"
+  />
+);
 
 // 統合できる相手のカードに重ねる「統合する」（管制盤 A・D の未割当）
 export const MergeOverlay: React.FC = () => (

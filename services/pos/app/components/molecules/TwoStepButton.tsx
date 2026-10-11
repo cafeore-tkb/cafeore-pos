@@ -1,14 +1,22 @@
 import { useState } from "react";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
 /**
- * マスターのカップの緊急ボタン。押し間違えないよう、1 回目で「入れ直す」に変え、もう一度押したら入れ直す
- * （ほかを押すと戻る）
+ * 押し間違えないよう 2 回押して決めるボタン（マスターの緊急・緊急の取り消し、CaOS の入れ直しの取り消し）。
+ * 1 回目で confirmLabel に変え、もう一度押したら onConfirm（ほかを押すと戻る）。
+ * カードの中に置いても、カードを押したことにはしない
  */
-export const EmergencyCupButton = ({
+export const TwoStepButton = ({
+  label,
+  confirmLabel,
   onConfirm,
+  className,
 }: {
+  label: string;
+  confirmLabel: string;
   onConfirm: () => void;
+  className?: string;
 }) => {
   const [armed, setArmed] = useState(false);
   return (
@@ -16,14 +24,15 @@ export const EmergencyCupButton = ({
       type="button"
       size="sm"
       variant={armed ? "destructive" : "outline"}
-      className="mt-1 w-full"
+      className={cn("w-full", className)}
       onBlur={() => setArmed(false)}
-      onClick={() => {
+      onClick={(event) => {
+        event.stopPropagation();
         if (armed) onConfirm();
         setArmed(!armed);
       }}
     >
-      {armed ? "入れ直す" : "緊急"}
+      {armed ? confirmLabel : label}
     </Button>
   );
 };

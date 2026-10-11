@@ -89,6 +89,7 @@ export default function App() {
             onOpenTicketPad={selection.openTicket}
             onOpenTicketDetail={selection.openDetail}
             onOpenRebrew={session.rebrew ? selection.openRebrew : undefined}
+            onCancelEmergency={session.cancelEmergency ?? undefined}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
@@ -120,6 +121,7 @@ export default function App() {
           onClose={selection.closeDetail}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
+          onCancelEmergency={session.cancelEmergency ?? undefined}
         />
       )}
 

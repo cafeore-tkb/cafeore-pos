@@ -28,6 +28,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   onAdvanceBay,
   onOpenTicketDetail,
   onOpenRebrew,
+  onCancelEmergency,
   onOpenEmptySlot,
   onAssignToBay,
 }) => (
@@ -127,6 +128,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
         selectedOrderId={selectedOrderId}
         onSelectOrder={onSelectOrder}
         onAssignToBay={onAssignToBay}
+        onCancelEmergency={onCancelEmergency}
       />
     </aside>
   </section>
