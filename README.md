@@ -250,6 +250,11 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
 順番を守ること。どの段階でも、前の段階に戻せば元に戻る。
 
+**本番の Cloud Run は `cafeore-pos-git` から `cafeore-pos-prod` へ移している途中**（infra の README
+「本番サービスの改名」）。認証の設定が渡るのは新しい `cafeore-pos-prod` だけで、旧サービスは
+**消すまで誰でも叩ける**（DB は同じ）。中継先には新しいサービスの URL を使い、保護が完成するのは
+旧サービスを消してから。
+
 1. **Cloudflare（ダッシュボードで手作業）**
    1. Workers を Paid プランにする。`/api` が Worker を通るとリクエストに数えられ、無料枠（1 日 10 万。
       リセットは日本時間 9 時）を超えるとその日は Worker が失敗し、POS が止まる。`/status` の
@@ -263,7 +268,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
    ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
 2. **GitHub（このリポジトリの Variables）**
-   1. `WORKERS_API_ORIGIN` に本番の Cloud Run の URL（今の `VITE_API_BASE_URL` と同じ値）を入れ、
+   1. `WORKERS_API_ORIGIN` に `cafeore-pos-prod` の URL（infra の `terraform output prod_service_url`）を入れ、
       Actions の「pos / deploy (Workers)」を手動実行する
    2. ログインしたブラウザで `https://cafeore-pos.cafeorepos.workers.dev/status` を開き、JSON が返ることを確かめる
    3. `VITE_API_BASE_URL` を `https://cafeore-pos.cafeorepos.workers.dev` にして、もう一度手動実行する。
@@ -292,8 +297,10 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
 Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログで、使われているかどうかが分かる。
 
-- **CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）**。WebSocket で注文を直接読んでいる。
-  POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く
+- **CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）**。別のリポジトリに Cloud Run の URL が直書きされていて、
+  WebSocket で注文を直接読んでいる（infra の README「本番サービスの改名」）。Access のログインは POS の
+  workers.dev に付くもので、別のサイト（github.io）からの通信には付けにくいので、そのままでは通せない。
+  POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く。続けて使うならそちらに寄せる
 - `modules/common/src/scripts` の書き出し（`download-orders` など）。手元から Cloud Run を直接呼ぶ
 - mobile（停止中）。再開するなら POS と同じ構成が要る
 
