@@ -64,10 +64,11 @@ export const usePrinter = (
 export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
   const { status, print } = useConnectedPrinter(createPrinter);
 
+  // 印刷データを作るところも try の中に入れる（作れなくても会計の流れに例外を出さない）
   const printSafely = useCallback(
-    (job: PrintJob) => {
+    (buildJob: () => PrintJob) => {
       try {
-        return print(job);
+        return print(buildJob());
       } catch (error) {
         console.error("レシート用のプリンターで印刷できませんでした", error);
         return false;
@@ -79,13 +80,13 @@ export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
   /** 会計のたびに刷るレシート */
   const printReceipt = useCallback(
     (order: OrderEntity, payment: ReceiptPayment) =>
-      printSafely(orderReceiptJob(order, payment)),
+      printSafely(() => orderReceiptJob(order, payment)),
     [printSafely],
   );
 
   /** 求められたときだけ刷る領収書 */
   const printFormalReceipt = useCallback(
-    (order: OrderEntity) => printSafely(formalReceiptJob(order)),
+    (order: OrderEntity) => printSafely(() => formalReceiptJob(order)),
     [printSafely],
   );
 
