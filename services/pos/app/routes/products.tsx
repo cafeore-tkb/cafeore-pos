@@ -5,7 +5,6 @@ import {
   useInventory,
   useItemMaster,
   useMenuMaster,
-  useStockUsages,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
@@ -84,29 +83,8 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
-  const {
-    statuses,
-    isLoaded: inventoryLoaded,
-    error: inventoryError,
-    mutateInventory,
-  } = useInventory();
+  const { statuses } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
-  const {
-    usages,
-    isLoaded: usagesLoaded,
-    error: usagesError,
-    mutateUsages,
-  } = useStockUsages();
-  // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまうので、届くまでフォームを出さない。
-  // 一度届いたあとの再取得の失敗では止めない（入力中のフォームを消さない）
-  const stockLoaded = inventoryLoaded && usagesLoaded;
-  const stockNotice = (() => {
-    if (stockLoaded) return null;
-    if (inventoryError || usagesError) {
-      return "在庫の使用量を読み込めませんでした。ページを読み込み直してください";
-    }
-    return "在庫の使用量を読み込んでいます…";
-  })();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -211,8 +189,6 @@ export default function ProductsPage() {
                 items={items}
                 usage={usageOfItems}
                 resources={resources}
-                stockUsages={usages}
-                stockLoaded={stockLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>
