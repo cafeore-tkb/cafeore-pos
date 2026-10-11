@@ -129,6 +129,20 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
 
+### ビルドの番号
+
+POS のトップページの一番下に、画面と API がどの PR・コミットのビルドかを
+`画面 #889 · 90b89b2　API #889 · 90b89b2` の形で出す。デプロイが反映されたか、
+画面と API が食い違っていないかを確かめるのに使う。
+
+- 番号は `pos-deploy-workers` と `api-build` が `.github/scripts/build-info.sh` で決める。
+  PR ではその PR と head のコミット、main ではマージコミットとそれをマージした PR
+- 画面はビルド時に `VITE_BUILD_PR`・`VITE_BUILD_COMMIT` として焼き込む
+- API はイメージの環境変数 `BUILD_PR`・`BUILD_COMMIT` に焼き込み（`api/Dockerfile`）、
+  `/status` と `/health` の `build` で返す。画面はこれを `/status` から読む
+- 積んだ PR で別の PR の backend を使うときは、API にはその持ち主の PR の番号が出る
+- ローカルのビルドでは「ローカル」と出る
+
 ### backend の環境変数
 
 | 変数 | ローカル | プレビュー | 本番 |
