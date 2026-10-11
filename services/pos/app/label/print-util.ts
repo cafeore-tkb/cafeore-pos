@@ -1,109 +1,104 @@
-import {
-  type CupLabel,
-  type Label,
-  type OrderEntity,
-  type OrderSummaryLabel,
-  emergencyLabels,
-  orderLabels,
-} from "@cafeore/common";
-import { useRef } from "react";
-import { useRawPrinter } from "./printer";
+import type { OrderEntity } from "@cafeore/common";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PrintJob } from "./document";
+import { createEposPrinter } from "./infra/epos";
+import type {
+  CreateLabelPrinter,
+  PrinterConnectionStatus,
+} from "./infra/printer";
+import { orderLabelJob } from "./order-label";
+import type { ReceiptPayment } from "./receipt";
+import { formalReceiptJob, orderReceiptJob } from "./receipt-canvas";
 
-// ラベルの中身は @cafeore/common の label.ts で作り、ここでプリンターの命令にする。
-// レジの会計のラベルも緊急のシールも同じ作り方なので、緊急で出すシールは本物と全く同じになる。
-// 印刷は同じ iPad の中の待ち行列で 1 件ずつ送り、前の印刷の返事を待ってから次を送る
-// （会計のラベルと緊急のシールが重なっても、命令が混ざったり抜けたりしない）。
+/**
+ * プリンターにつないでおき、印刷データを刷る
+ *
+ * createPrinter が変わったら（IP アドレスを変えたときなど）、前のプリンターを切ってつなぎ直す。
+ * 呼ぶ側は、同じプリンターの間は同じ createPrinter を渡す（useMemo などで）。
+ */
+const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
+  const [status, setStatus] = useState<"init" | PrinterConnectionStatus>(
+    "init",
+  );
+  const printer = useMemo(() => createPrinter(setStatus), [createPrinter]);
 
-export const usePrinter = () => {
-  const rawPrinter = useRawPrinter();
-  // 待ち行列の最後の印刷
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  useEffect(() => {
+    printer.connect();
+    return () => printer.disconnect();
+  }, [printer]);
 
-  // カップに貼るシール
-  const addCupLabel = (label: CupLabel) => {
-    rawPrinter.feedCurrentTop();
-    rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 24, 570, 230);
+  const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
 
-    rawPrinter.addPagePosition(0, 48);
-    rawPrinter.addHeader(label.orderNo, null);
-    rawPrinter.addPagePosition(0, 108);
-    rawPrinter.addLine(label.name, [1, 2]);
-    rawPrinter.addPagePosition(0, 156);
-    rawPrinter.addLine(`${label.index}/${label.total}`, [2, 1]);
-    rawPrinter.addPagePosition(0, 204);
-    if (label.assignee) {
-      rawPrinter.addLine(`指名： ${label.assignee}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addPagePosition(230, 204);
-    rawPrinter.addLogo();
-    rawPrinter.addPageEnd();
-  };
+  return { status, print };
+};
 
-  // 引換券に貼るシール（番号と注文）
-  const addSummaryLabel = (label: OrderSummaryLabel) => {
-    rawPrinter.addHeader(label.orderNo, label.total);
-    for (const { name, assignee } of label.assigned) {
-      rawPrinter.addLine(name, [1, 1]);
-      rawPrinter.addLine(`  指名：${assignee}`, [1, 1]);
-    }
-    for (const line of label.lines) {
-      rawPrinter.addLine(line, [1, 1]);
-    }
-  };
+/**
+ * シールのプリンター
+ *
+ * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
+ * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
+ */
+export const usePrinter = (
+  createPrinter: CreateLabelPrinter = createEposPrinter,
+) => {
+  const { status, print } = useConnectedPrinter(createPrinter);
 
-  // 緊急の目印のシール（「緊急」とだけ書く）。カップのシールと同じ大きさの 1 枚
-  const addEmergencyLabel = () => {
-    rawPrinter.feedCurrentTop();
-    rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 24, 570, 230);
-    rawPrinter.addPagePosition(0, 170);
-    rawPrinter.addLine("緊急", [4, 4]);
-    rawPrinter.addPageEnd();
-  };
+  const printOrderLabel = useCallback(
+    (order: OrderEntity) => {
+      print(orderLabelJob(order));
+    },
+    [print],
+  );
 
-  const addLabel = (label: Label) => {
-    switch (label.type) {
-      case "cup":
-        addCupLabel(label);
-        return;
-      case "summary":
-        addSummaryLabel(label);
-        return;
-      case "emergency":
-        addEmergencyLabel();
-        return;
-    }
-  };
+  return { status, printOrderLabel };
+};
 
-  /** ラベルを待ち行列に入れて印刷する。印刷できたかを返す */
-  const printLabels = (labels: Label[]): Promise<boolean> => {
-    const job = () => {
-      rawPrinter.init();
-      for (const label of labels) addLabel(label);
-      rawPrinter.addFeed(7);
-      return rawPrinter.print();
-    };
-    const run = queueRef.current.then(job, job);
-    queueRef.current = run.catch(() => false);
-    return run;
-  };
-
-  /** レジの会計のラベル（カップごとのシールと、引換券に貼るシール）。保存を待たずにすぐ印刷する */
-  const printOrderLabel = (order: OrderEntity) => {
-    void printLabels(orderLabels(order));
-  };
+/**
+ * レシートと領収書のプリンター
+ *
+ * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
+ * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
+ */
+export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
+  const { status, print } = useConnectedPrinter(createPrinter);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   /**
-   * 緊急のシール：「緊急」のシール → そのカップの本物と全く同じシール。印刷できたかを返す
-   * （シールの無いカップは印刷せず false）
+   * 印刷データはすぐ作り始め、刷るのは頼まれた順にする
+   *
+   * buildJob は async 関数を渡す（同期で投げない）。作れなくても会計の流れに例外は出さない。
    */
-  const printEmergencyLabel = (order: OrderEntity, cupId: string) => {
-    const labels = emergencyLabels(order, cupId);
-    return labels ? printLabels(labels) : Promise.resolve(false);
-  };
+  const printSafely = useCallback(
+    (buildJob: () => Promise<PrintJob>) => {
+      const job = buildJob();
+      // 刷る番が来る前に失敗しても未処理の reject にしない（下の try で拾う）
+      job.catch(() => {});
+      const printed = queue.current.then(async () => {
+        try {
+          return print(await job);
+        } catch (error) {
+          console.error("レシート用のプリンターで印刷できませんでした", error);
+          return false;
+        }
+      });
+      queue.current = printed;
+      return printed;
+    },
+    [print],
+  );
 
-  return { status: rawPrinter.status, printOrderLabel, printEmergencyLabel };
+  /** 会計のたびに刷るレシート */
+  const printReceipt = useCallback(
+    (order: OrderEntity, payment: ReceiptPayment) =>
+      printSafely(() => orderReceiptJob(order, payment)),
+    [printSafely],
+  );
+
+  /** 求められたときだけ刷る領収書 */
+  const printFormalReceipt = useCallback(
+    (order: OrderEntity) => printSafely(() => formalReceiptJob(order)),
+    [printSafely],
+  );
+
+  return { status, printReceipt, printFormalReceipt };
 };

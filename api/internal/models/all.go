@@ -21,7 +21,10 @@ func All() []any {
 		&ItemStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
-		&CaosLaneRow{},
-		&CaosLaneChangeRow{},
+		&DripperAssignee{},
+		&DripperAssigneeChange{},
+		&SquareCheckout{},
+		&SquareDevice{},
+		&PrinterSetting{},
 	}
 }

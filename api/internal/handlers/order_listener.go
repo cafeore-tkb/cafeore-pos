@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,6 +42,9 @@ const listenProbeTimeout = 10 * time.Second
 // Cloud Run は画面がつないでいないインスタンスの CPU を絞るので、その間に接続が
 // 黙って切れていることがある。画面がつないで CPU が戻ったら、この確認で気づいて張り直す。
 const listenPingInterval = 30 * time.Second
+
+// 注文の読み直しに失敗したら、この時間をおいて積み直す（DB が一時的に落ちても、ほかのインスタンスの画面を古いままにしない）。
+const publishRetryDelay = time.Second
 
 // notifyChanged は、channel のものが変わったことをほかのインスタンスへ知らせる。
 //
@@ -129,24 +131,14 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 	// エラーにならないのに通知だけが届かない。変更の通知と同じ経路（h.db）で自分宛てに
 	// 確認の通知を送り、届かなければ警告して設定ミスに気づけるようにする。
 	// どのチャンネルも同じ接続で待ち受けているので、確認は orders_changed の1つで足りる。
-	connCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	probe := listenProbePrefix + instanceID + " " + uuid.NewString()
-	var probed atomic.Bool
-	go func() {
-		select {
-		case <-connCtx.Done():
-		case <-time.After(listenProbeTimeout):
-			if !probed.Load() {
-				log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
-					"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
-					ordersChangedChannel, listenProbeTimeout)
-			}
-		}
-	}()
-	if err := h.db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, probe).Error; err != nil {
-		log.Printf("failed to send %s probe: %v", ordersChangedChannel, err)
-	}
+	probe := listenProbePrefix + uuid.NewString()
+	probeTimeout := time.AfterFunc(listenProbeTimeout, func() {
+		log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
+			"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
+			ordersChangedChannel, listenProbeTimeout)
+	})
+	defer probeTimeout.Stop()
+	notifyChanged(h.db, ordersChangedChannel, probe)
 
 	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全部を配り直す
 	changes.addAll()
@@ -169,7 +161,7 @@ func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, change
 		}
 		switch {
 		case n.Channel == ordersChangedChannel && n.Payload == probe:
-			probed.Store(true)
+			probeTimeout.Stop()
 			log.Printf("%s: notifications are delivered", ordersChangedChannel)
 		case n.Channel == ordersChangedChannel && strings.HasPrefix(n.Payload, listenProbePrefix):
 			// ほかのインスタンスの確認の通知
@@ -221,7 +213,7 @@ func (q *pendingChanges) add(channel, payload string) {
 // 変わった注文を積む。形の分からない通知は、何が変わったか分からないので全注文を配り直す。
 func (q *pendingChanges) addOrder(rawOrderID string) {
 	orderID, err := uuid.Parse(rawOrderID)
-	if rawOrderID == "" || err != nil {
+	if err != nil {
 		q.update(func(s *changeSet) { s.allOrders = true })
 		return
 	}
@@ -260,7 +252,17 @@ func (q *pendingChanges) take() changeSet {
 	return s
 }
 
-// 積まれた変更を、DB から読み直して配信する。ctx が終わると戻る。
+// 失敗した変更を積み直す。
+func (q *pendingChanges) requeue(failed changeSet) {
+	q.update(func(s *changeSet) {
+		s.allOrders = s.allOrders || failed.allOrders
+		for id := range failed.orderIDs {
+			s.orderIDs[id] = struct{}{}
+		}
+	})
+}
+
+// 積まれた変更を、DB から読み直して配信する。注文の読み直しに失敗したら、少しおいて積み直す。ctx が終わると戻る。
 func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChanges) {
 	for {
 		select {
@@ -269,12 +271,16 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		case <-changes.wake:
 		}
 		s := changes.take()
-		if s.allOrders {
-			h.publishAllOrders()
+		failed := changeSet{orderIDs: map[uuid.UUID]struct{}{}}
+		if s.allOrders && !h.publishAllOrders() {
+			failed.allOrders = true
 		}
 		for id := range s.orderIDs {
-			h.publishChangedOrder(id)
+			if !h.publishChangedOrder(id) {
+				failed.orderIDs[id] = struct{}{}
+			}
 		}
+		// オーダーストップ・レジの状態は、まだ記録が無いときも読めない（ok = false）ので積み直さない
 		if s.masterState {
 			broadcastMasterState(h.db, h.hub)
 		}
@@ -284,26 +290,41 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		if s.caosLanes {
 			broadcastCaosLanes(h.db, h.hub, time.Now())
 		}
+		if failed.allOrders || len(failed.orderIDs) > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(publishRetryDelay):
+			}
+			changes.requeue(failed)
+		}
 	}
 }
 
-// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。
-func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) {
+// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) bool {
 	_, err := broadcastOrder(h.db, h.hub, orderID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		broadcastOrderDeleted(h.hub, orderID)
 	case err != nil:
 		log.Printf("failed to publish order %s: %v", orderID, err)
+		return false
 	}
+	return true
 }
 
-func (h *OrderHandler) publishAllOrders() {
-	_ = h.hub.Publish(func() (WSMessage, error) {
+// 全注文を読み直して配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishAllOrders() bool {
+	err := h.hub.Publish(func() (WSMessage, error) {
 		msg, ok := ordersMessage(h.db)
 		if !ok {
 			return WSMessage{}, errors.New("failed to load orders")
 		}
 		return msg, nil
 	})
+	if err != nil {
+		log.Printf("failed to publish all orders: %v", err)
+	}
+	return err == nil
 }

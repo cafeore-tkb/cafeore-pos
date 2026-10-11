@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 /**
- * 指名できるドリッパーの番号。1st〜6th を 1〜6 で持つ
+ * ドリッパーの番号。1st〜6th を 1〜6 で持つ。台数（6）はここだけで決める
+ * （指名の番号も CaOS の列も同じ番号。サーバーは api/internal/handlers/caos.go の caosDrippers）
  */
-export const DRIPPER_NUMBERS = [1, 2, 3, 4, 5, 6] as const;
+export const DRIPPER_NUMBERS: readonly number[] = [1, 2, 3, 4, 5, 6];
 
 export const dripperSchema = z
   .number()

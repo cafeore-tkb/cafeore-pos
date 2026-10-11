@@ -22,9 +22,12 @@ type ItemType struct {
 	// ミルクやグッズは false。MakesCup が false なら false にする（API で検査する）。
 	// 読むときは BrewRequired を使う。
 	NeedsBrew *bool `gorm:"not null;default:true"`
-	// この種類のアイテムは上級生だけが淹れる（限定）。NeedsBrew が false なら false にする（API で検査する）。
-	// 既定値が false なのでゼロ値を省かれても困らず、ポインタにしなくてよい。読むときは SeniorOnlyBrew を使う。
+	// この種類のアイテムは上級生だけが淹れる。NeedsBrew が false なら false にする（API で検査する）。
+	// 既定値が false なのでゼロ値を省かれても困らず、ポインタにしなくてよい。
 	SeniorOnly bool `gorm:"not null;default:false"`
+	// この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。
+	// NeedsBrew が false なら false にする（API で検査する）。既定値が false なのでポインタにしなくてよい。
+	IcedBrew bool `gorm:"not null;default:false"`
 }
 
 func (item_type *ItemType) BeforeCreate(tx *gorm.DB) error {
@@ -44,7 +47,7 @@ func (item_type ItemType) BrewRequired() bool {
 	return item_type.CreatesCup() && (item_type.NeedsBrew == nil || *item_type.NeedsBrew)
 }
 
-// SeniorOnlyBrew は SeniorOnly の値。抽出しない種類は限定にもならない。
+// SeniorOnlyBrew は上級生だけが淹れるカップか（抽出が要り、SeniorOnly の種類。画面の cupSeniorOnly と同じ決まり）。
 func (item_type ItemType) SeniorOnlyBrew() bool {
 	return item_type.BrewRequired() && item_type.SeniorOnly
 }

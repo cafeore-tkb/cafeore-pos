@@ -8,5 +8,5 @@ export * from "./inventory";
 export * from "./colorSetting";
 export * from "./masterTransfer";
 export * from "./caos";
-export * from "./caosEmergency";
-export * from "./caosLanes";
+export * from "./square";
+export * from "./printerSetting";

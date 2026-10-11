@@ -1,5 +1,8 @@
+import type { OrderEntity, WithId } from "@cafeore/common";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import type { PosOrder } from "../utils/posOrders";
+
+// cafeore-pos の注文。POS の画面と同じく、共有の WebSocket から届いた OrderEntity を使う。
+type PosOrder = WithId<OrderEntity>;
 
 export type PosConnectionStatus =
   | "off"
@@ -19,14 +22,11 @@ export const usePosOrders = (
 } => {
   const { orders, isOrdersLoaded, status } = useOrdersWSContext();
   if (!enabled) return { orders: null, status: "off" };
+  // 最初の注文が届くまでは、つながっていても「接続中」と出す（空の盤面を「注文なし」に見せない）
+  if (!isOrdersLoaded) return { orders: null, status: "connecting" };
   return {
-    orders: isOrdersLoaded ? orders : null,
+    orders,
     // 共有の接続は切れると自動でつなぎ直すので、closed は「再接続中」と出す
-    status:
-      status === "open"
-        ? "open"
-        : status === "connecting"
-          ? "connecting"
-          : "reconnecting",
+    status: status === "closed" ? "reconnecting" : status,
   };
 };

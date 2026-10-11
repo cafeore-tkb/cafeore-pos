@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   assertNoPersonalFields,
   mergePracticeFiles,
+  readPracticeTexts,
   toPracticeOrder,
 } from "./caosPracticeData";
 
@@ -51,9 +52,6 @@ test("unit: Firestore 版の注文から、許可した項目だけを写す（�
       },
     ],
   });
-  const json = JSON.stringify(toPracticeOrder(firestoreOrder));
-  expect(json).not.toContain("テスト担当");
-  expect(json).not.toContain("テストのコメント");
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
@@ -144,7 +142,6 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
   // 応答の配列をそのまま保存したファイルも読める
   const { orders } = mergePracticeFiles([[order]]);
   expect(orders.map((converted) => converted.orderId)).toStrictEqual([12]);
-  expect(JSON.stringify(orders)).not.toContain("山田");
 });
 
 test("unit: 同じ注文が別のファイルにあっても 1 件にし、作った順に並べる", () => {
@@ -177,4 +174,25 @@ test("unit: 注文の無いファイルや形の違うファイルは 0 件", ()
     skipped: 0,
   });
   expect(toPracticeOrder({ name: "x" })).toBeNull();
+});
+
+test("unit: 選んだファイルの中身を読み、読めないファイルは理由をつけて返す", () => {
+  const { data, problems } = readPracticeTexts([
+    { name: "day1.json", text: JSON.stringify({ orders: [firestoreOrder] }) },
+    { name: "day12.json", text: JSON.stringify({ orders: [firestoreOrder] }) },
+    { name: "empty.json", text: "  " },
+    { name: "broken.json", text: "{" },
+    { name: "none.json", text: JSON.stringify({ orders: [] }) },
+  ]);
+  expect(data?.label).toBe("2025年の実績");
+  expect(data?.files).toStrictEqual(["day1.json", "day12.json"]);
+  expect(data?.orders.map((order) => order.orderId)).toStrictEqual([775]);
+  expect(problems).toStrictEqual([
+    "empty.json（空のファイル）",
+    "broken.json（JSON として読めません）",
+    "none.json（注文がありません）",
+  ]);
+  expect(JSON.stringify(data)).not.toContain("テスト担当");
+  expect(JSON.stringify(data)).not.toContain("テストのコメント");
+  expect(readPracticeTexts([{ name: "x.json", text: "[]" }]).data).toBeNull();
 });

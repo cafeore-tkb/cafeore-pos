@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -30,13 +31,36 @@ type StatusResponse struct {
 	Database  string    `json:"database"`
 	// DB にあってモデルに無いもの（またはその逆）。手で DB を触った跡。空なら一致している。
 	// デプロイの CI が見て、空でなければ落とす（api-build.yml）。
-	SchemaDrift []string `json:"schema_drift"`
+	SchemaDrift []string  `json:"schema_drift"`
+	Build       BuildInfo `json:"build"`
+}
+
+// このサーバーがどの PR・コミットからビルドされたか。POS のトップページに出す。
+//
+// CI がイメージを作るときに環境変数 BUILD_PR・BUILD_COMMIT として焼き込む
+// （api/Dockerfile、api-build.yml）。ローカルで動かしたときは両方とも空。
+type BuildInfo struct {
+	// PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+	PR int `json:"pr,omitempty"`
+	// コミットの SHA。分からなければ省く
+	Commit string `json:"commit,omitempty"`
+}
+
+func buildInfoFromEnv() BuildInfo {
+	pr, err := strconv.Atoi(os.Getenv("BUILD_PR"))
+	if err != nil || pr <= 0 {
+		pr = 0
+	}
+	return BuildInfo{PR: pr, Commit: os.Getenv("BUILD_COMMIT")}
 }
 
 var db *gorm.DB
 
 // 起動時に調べたスキーマのズレ（findSchemaDrift）。
 var schemaDrift = []string{}
+
+// 起動時に読んだビルドの番号（buildInfoFromEnv）。
+var build BuildInfo
 
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
@@ -101,7 +125,7 @@ func initDB() error {
 
 // CORS で許可する origin。FRONTEND_ORIGINS にカンマ区切りで入れる。
 //
-// 本番は Cloudflare Workers 上の pos / mobile。プレビューはデプロイごとに
+// 本番は Cloudflare Workers 上の pos。プレビューはデプロイごとに
 // URL が変わって列挙できないので "*" を入れている（infra の
 // cloud_run_preview.tf を参照）。未設定ならローカル開発用のポートだけ許可する。
 func getAllowedOrigins() []string {
@@ -149,6 +173,7 @@ func statusHandler(c *gin.Context) {
 		Version:     "1.0.0",
 		Database:    dbStatus,
 		SchemaDrift: schemaDrift,
+		Build:       build,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -176,6 +201,7 @@ func healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":   "healthy",
 		"database": "connected",
+		"build":    build,
 	})
 }
 
@@ -187,6 +213,9 @@ func main() {
 			log.Println("Warning: .env file not found")
 		}
 	}
+
+	build = buildInfoFromEnv()
+	log.Printf("Build: pr=%d commit=%s", build.PR, build.Commit)
 
 	// データベース初期化
 	if err := initDB(); err != nil {
@@ -247,26 +276,64 @@ func main() {
 	// ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更も POS の画面へ届けるため、
 	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
-	listenCtx, stopListening := context.WithCancel(context.Background())
-	defer stopListening()
 	listenDSN := os.Getenv("DATABASE_LISTEN_URL")
 	if listenDSN == "" {
 		listenDSN = os.Getenv("DATABASE_URL")
 	}
-	go orderHandler.ListenChanges(listenCtx, listenDSN)
+	go orderHandler.ListenChanges(context.Background(), listenDSN)
 	commentHandler := handlers.NewCommentHandler(db, hub)
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
+	printerSettingHandler := handlers.NewPrinterSettingHandler(db)
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caosHandler := handlers.NewCaosHandler(db, hub)
+	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
+	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
+	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
+	squareHandler, err := handlers.NewSquareHandler(db, orderHandler, handlers.SquareConfig{
+		AccessToken:         os.Getenv("SQUARE_ACCESS_TOKEN"),
+		Environment:         os.Getenv("SQUARE_ENVIRONMENT"),
+		LocationID:          os.Getenv("SQUARE_LOCATION_ID"),
+		WebhookSignatureKey: os.Getenv("SQUARE_WEBHOOK_SIGNATURE_KEY"),
+		WebhookURL:          os.Getenv("SQUARE_WEBHOOK_URL"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to configure Square: %v", err)
+	}
+
+	// API を叩ける相手。AUTH_MODE=cloudflare-access のときは、Cloudflare Access を
+	// 通ってきた（Cf-Access-Jwt-Assertion の JWT が正しい）許可リストの相手だけ。
+	// 本番では POS の Worker が /api を中継し、Access がその手前でログインさせる
+	// （README の「API の認証」を参照）。off のときは今までどおり誰でも叩ける。
+	// cloudflare-access-report-only は確かめるが弾かず、弾くはずだったものをログに出す。
+	authz, err := auth.AuthorizerFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("Failed to configure auth: %v", err)
+	}
+	switch {
+	case authz == nil:
+		log.Println("Warning: AUTH_MODE is off. Anyone who knows the URL can call the API")
+	case authz.ReportOnly():
+		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
+	}
 
 	// エンドポイント
+	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、
+	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。
 	r.GET("/status", statusHandler)
 	r.GET("/health", healthHandler)
 
+	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access を通らず
+	// Cloud Run に直接来る（Google の ID トークンと Webhook の署名で確かめる）。
+	// /api のグループに入れると Access の認証が掛かって届かなくなる。
+	r.POST("/api/inventory/remind", inventoryHandler.RemindInventory)
+	r.POST("/api/square/webhook", squareHandler.ReceiveWebhook)
+
 	// API エンドポイント
-	api := r.Group("/api")
+	// GET は表示用の端末（呼び出し画面など）も、それ以外はスタッフの端末だけ。
+	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
+	api := r.Group("/api", authz.RequireByMethod())
 	{
 		api.GET("/items", itemHandler.GetItems)
 		api.POST("/items", itemHandler.CreateItem)
@@ -313,18 +380,32 @@ func main() {
 		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
 		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
 		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
-		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
+		api.GET("/printer-settings", printerSettingHandler.GetPrinterSettings)
+		api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
-		// 緊急（入れ直し）と緊急のシール
-		api.POST("/caos/emergency", caosHandler.MarkCaosEmergency)
-		api.POST("/orders/:id/cups/:cupId/emergency-label/claim", caosHandler.ClaimEmergencyLabel)
-		api.POST("/orders/:id/cups/:cupId/emergency-label/release", caosHandler.ReleaseEmergencyLabel)
 		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
 		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
+
+		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
+		// 表示用の端末が決済を待つことは無いので
+		square := api.Group("/square", authz.Require(auth.RoleStaff))
+		square.GET("/status", squareHandler.GetStatus)
+		square.GET("/devices", squareHandler.GetDevices)
+		square.POST("/devices", squareHandler.CreateDevice)
+		square.POST("/devices/pair", squareHandler.PairDevice)
+		square.POST("/devices/import", squareHandler.ImportDevices)
+		square.DELETE("/devices/:id", squareHandler.DeleteDevice)
+		square.POST("/checkouts", squareHandler.CreateCheckout)
+		square.GET("/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
+		square.GET("/checkouts/:id", squareHandler.GetCheckout)
+		square.POST("/checkouts/:id/cancel", squareHandler.CancelCheckout)
+		square.POST("/checkouts/:id/refund", squareHandler.RefundCheckout)
+		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
+		api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
 	}
 
 	// サーバー起動

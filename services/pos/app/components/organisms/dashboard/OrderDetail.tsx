@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import { type OrderEntity, orderElapsedTime } from "@cafeore/common";
 import dayjs from "dayjs";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { cn } from "~/lib/utils";
@@ -66,7 +66,6 @@ export const OrderDetail: React.FC<OrderDetailProps> = ({ order }) => {
 
 const diffTime = (order: OrderEntity) => {
   if (order.servedAt == null) return "未提供";
-  return dayjs(dayjs(order.servedAt).diff(dayjs(order.createdAt))).format(
-    "m:ss",
-  );
+  const { m, ss } = orderElapsedTime(order);
+  return `${m}:${ss}`;
 };

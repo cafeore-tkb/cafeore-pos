@@ -172,17 +172,8 @@ export default function Rehearsal() {
   const [menusError, setMenusError] = useState(false);
   const [plan, setPlan] = useState<MenuPlan | null>(null);
 
-  const {
-    orders: posOrders,
-    isOrdersLoaded,
-    masterState,
-  } = useOrdersWSContext();
-  // オーダーストップは API から WebSocket で届いた最新を優先する。
-  // 接続してから一度も変わっていなければ届かないので、ヘッダーと同じ Firestore の値を使う
-  const firestoreOperational = useOrderStat();
-  const isOperational = masterState
-    ? masterState.type !== "stop"
-    : firestoreOperational;
+  const { orders: posOrders, isOrdersLoaded } = useOrdersWSContext();
+  const isOperational = useOrderStat();
 
   useEffect(() => {
     setParams(loadStored());

@@ -1,32 +1,31 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
-import type { Item } from "./item";
+import type { Item, ItemType } from "./item";
 import { MenuEntity } from "./menu";
 import { shouldSplitOrder } from "./recommendation";
 
-const hot = {
+const hot: ItemType = {
   id: "t1",
   name: "hot",
   display_name: "ホット",
   makes_cup: true,
   needs_brew: true,
   senior_only: false,
+  iced_brew: false,
 };
 const milk = {
+  ...hot,
   id: "t2",
   name: "milk",
   display_name: "ミルク",
-  makes_cup: true,
   needs_brew: false,
-  senior_only: false,
 };
 const others = {
+  ...milk,
   id: "t3",
   name: "others",
   display_name: "その他",
   makes_cup: false,
-  needs_brew: false,
-  senior_only: false,
 };
 
 const blendA: WithId<Item> = {

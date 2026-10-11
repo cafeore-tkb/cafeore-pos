@@ -1,5 +1,5 @@
 // CaOS の実データテストのデータ。利用者が画面で選んだ注文 JSON を、ブラウザの中でこの形にする
-// （読み込んだデータはサーバーにも配信にも出さない。練習の盤面もブラウザの中だけで動かす。./caosPractice）。
+// （読み込んだデータはサーバーにも配信にも出さない。リポジトリにも入れない）。
 //
 // 入れる項目は下の toPracticeOrder で決めた分だけ（許可したものだけを写す）。
 // 担当者名・指名（assignee）・コメント（comments）・お預かり（received）・Firestore の文書 ID などは写さない。
@@ -15,6 +15,8 @@
 //         cups: [{ order_menu_id, item }], comments }]
 //     （配列のままでも、{ orders: [...] } でもよい）
 
+import { jstDate } from "./jst";
+
 /** 実データの注文の品物（1 杯・1 個ずつ）。id は実績データの商品の ID（無いデータもある） */
 export interface PracticeDataItem {
   id: string;
@@ -24,10 +26,7 @@ export interface PracticeDataItem {
   price: number;
   /** 商品の種類の名前（POS の item_type の name と同じ。2024・2025 年は hot・ice・iceOre・milk・others）。無いデータは "" */
   type: string;
-  /**
-   * 注文したときの商品の種類の設定（cafeore-pos の注文にだけある）。DB に同じ名前の種類が無いときに使う
-   * （どう決めるかは ./caosPractice の practiceItemType）
-   */
+  /** 注文したときの商品の種類の設定（cafeore-pos の注文にだけある） */
   itemType?: PracticeDataItemType;
 }
 
@@ -78,7 +77,7 @@ const text = (value: unknown): string =>
 const bool = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 
-/** cafeore-pos の注文の品物の種類の設定。無ければ undefined（API の列の既定値は ./caosPractice で入れる） */
+/** cafeore-pos の注文の品物の種類の設定。無ければ undefined */
 const itemTypeOf = (type: unknown): PracticeDataItemType | undefined => {
   if (!isObject(type)) return undefined;
   if (
@@ -295,4 +294,69 @@ export const assertNoPersonalFields = (orders: unknown[]) => {
       }
     }
   }
+};
+
+/** 読み込んだ実データ（名前とコメントを落とした後） */
+export interface PracticeDataset {
+  /** どのデータか（例「2025年の実績」）。画面の表示に使う */
+  label: string;
+  /** 読み込んだファイルの名前（表示用） */
+  files: string[];
+  orders: PracticeDataOrder[];
+  /** 読めなかった注文の数 */
+  skipped: number;
+}
+
+/** 選んだファイルの名前と中身（文字列） */
+export interface PracticeFileText {
+  name: string;
+  text: string;
+}
+
+const labelOf = (orders: PracticeDataOrder[]) => {
+  const years = Array.from(
+    new Set(
+      orders.map((order) => jstDate(Date.parse(order.createdAt)).slice(0, 4)),
+    ),
+  ).sort();
+  return `${years.join("・")}年の実績`;
+};
+
+/**
+ * 選んだファイル（day1・day2・day12 など）の中身を読み、同じ注文は 1 件にまとめる。
+ * problems は読めなかったファイル（中身が JSON でない・空・注文が無い）。1 件も読めなければ data は null
+ */
+export const readPracticeTexts = (
+  files: PracticeFileText[],
+): { data: PracticeDataset | null; problems: string[] } => {
+  const jsons: unknown[] = [];
+  const names: string[] = [];
+  const problems: string[] = [];
+  for (const file of files) {
+    if (file.text.trim() === "") {
+      problems.push(`${file.name}（空のファイル）`);
+      continue;
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(file.text);
+    } catch {
+      problems.push(`${file.name}（JSON として読めません）`);
+      continue;
+    }
+    if (mergePracticeFiles([json]).orders.length === 0) {
+      problems.push(`${file.name}（注文がありません）`);
+      continue;
+    }
+    jsons.push(json);
+    names.push(file.name);
+  }
+  const { orders, skipped } = mergePracticeFiles(jsons);
+  if (orders.length === 0) return { data: null, problems };
+  // 念のため：写してはいけない項目が入っていたら使わない
+  assertNoPersonalFields(orders);
+  return {
+    data: { label: labelOf(orders), files: names, orders, skipped },
+    problems,
+  };
 };

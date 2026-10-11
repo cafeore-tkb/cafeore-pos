@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -43,9 +44,6 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 
 var errInvalidOrderMenus = errors.New("invalid order menus")
 
-// ドリッパーの番号は 1st〜6th の 1〜6
-const maxDripper = 6
-
 // 空白だけの自由記述は指名なしとして扱う
 func normalizeAssignee(assignee *string) *string {
 	if assignee == nil {
@@ -58,24 +56,17 @@ func normalizeAssignee(assignee *string) *string {
 	return &trimmed
 }
 
-func sameAssignee(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
-// 指名はドリッパーの番号が必須で、自由記述は番号に添えるだけ。
+// 指名はドリッパーの番号（1〜caosDrippers）が必須で、自由記述は番号に添えるだけ。
 // 番号より前の注文の明細（番号が無く自由記述だけの指名）は、変えずに残すときだけ通す。
 // 番号の付いた明細から番号だけを外して自由記述を残すことはできない。
 func validateAssignment(dripper *int, assignee *string, old *models.OrderMenu) error {
 	if dripper != nil {
-		if *dripper < 1 || *dripper > maxDripper {
+		if *dripper < 1 || *dripper > caosDrippers {
 			return errInvalidOrderMenus
 		}
 		return nil
 	}
-	if assignee != nil && (old == nil || old.Dripper != nil || !sameAssignee(assignee, normalizeAssignee(old.Assignee))) {
+	if assignee != nil && (old == nil || old.Dripper != nil || !ptrEqual(assignee, normalizeAssignee(old.Assignee))) {
 		return errInvalidOrderMenus
 	}
 	return nil
@@ -99,25 +90,24 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 		menuID := uuid.UUID(request.MenuId)
 		assignee := normalizeAssignee(request.Assignee)
 		line := models.OrderMenu{ID: uuid.New(), OrderID: orderID, MenuID: menuID, Assignee: assignee, Dripper: request.Dripper}
+		var prev *models.OrderMenu // 残す既存の明細（新しい明細なら nil）
 		if request.OrderMenuId != nil {
 			old, ok := byID[uuid.UUID(*request.OrderMenuId)]
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
-			if err := validateAssignment(request.Dripper, assignee, &old); err != nil {
-				return nil, err
-			}
+			prev = &old
 			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
-			if err := validateAssignment(request.Dripper, assignee, nil); err != nil {
-				return nil, err
-			}
 			menu, ok := masters[menuID]
 			if !ok {
 				return nil, errInvalidOrderMenus
 			}
 			line.MenuName, line.UnitPrice = menu.Name, menu.Price
+		}
+		if err := validateAssignment(request.Dripper, assignee, prev); err != nil {
+			return nil, err
 		}
 		lines = append(lines, line)
 	}
@@ -173,6 +163,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
 		DiscountOrderCups: &order.DiscountOrderCups,
+		PaymentMethod:     orderPaymentMethod(order),
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 		Cups:              make([]models.OrderCupResponse, 0, len(order.OrderCups)),
 	}
@@ -201,6 +192,38 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// 列を足す前の行（payment_method が空）は現金として返す。
+func orderPaymentMethod(order *models.Order) models.PaymentMethod {
+	if order.PaymentMethod == string(models.Square) {
+		return models.Square
+	}
+	return models.Cash
+}
+
+// squareCheckoutIDForOrder は作成リクエストの支払い方法を確かめ、Square の決済依頼の ID を返す。
+// 現金なら nil。
+func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID, error) {
+	method := models.Cash
+	if req.PaymentMethod != nil {
+		method = *req.PaymentMethod
+	}
+	switch method {
+	case models.Cash:
+		if req.SquareCheckoutId != nil {
+			return nil, errors.New("square_checkout_id は payment_method が square のときだけ指定できます")
+		}
+		return nil, nil
+	case models.Square:
+		if req.SquareCheckoutId == nil {
+			return nil, errors.New("payment_method が square のときは square_checkout_id が必要です")
+		}
+		id := uuid.UUID(*req.SquareCheckoutId)
+		return &id, nil
+	default:
+		return nil, fmt.Errorf("payment_method %q には対応していません", method)
+	}
 }
 
 // 全オーダーを WSMessage にする。取得に失敗したら ok = false
@@ -236,6 +259,51 @@ func (h *OrderHandler) GetOrders(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
+// 冪等キー付きの作成で、その注文がすでにあれば作らずに返す（作ったときは nil）。
+// 応答が届かずにクライアントが送り直しても、注文が二重にできないようにする。
+// 同じキーの作成が同時に走ると後の方は主キーの重複で失敗するので、そのときも先にできた注文を返す。
+func createOrderOnce(hasKey bool, findExisting func() (*models.Order, error), create func() error) (*models.Order, error) {
+	if !hasKey {
+		return nil, create()
+	}
+	existing, err := findExisting()
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	createErr := create()
+	if createErr == nil {
+		return nil, nil
+	}
+	if existing, err := findExisting(); err == nil && existing != nil {
+		return existing, nil
+	}
+	return nil, createErr
+}
+
+// orderCreatedAt は、作る注文の時刻を決める。レジが確定した時刻（created_at）があればそれを使う
+// （オフラインで溜めた注文を、つながってから送るとき）。無ければサーバーの今。
+// 端末の時計が進んでいても未来の注文にならないよう、今より後は今にする。
+// 古い時刻も断らない。断るとレジに残った注文がいつまでも送れず、サーバーの今にすると前の日の注文が
+// 今日の作るべき注文としてマスターや CaOS に出てしまうので、確定した時刻のまま残す
+func orderCreatedAt(requested *time.Time, now time.Time) time.Time {
+	if requested == nil || requested.After(now) {
+		return now
+	}
+	return *requested
+}
+
+// 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ。
+// 全部 0 の UUID は BeforeCreate が別の ID に振り直してしまい二重を防げないので、キーなしとして扱う
+func orderIDFromIdempotencyKey(key *openapi_types.UUID) (uuid.UUID, bool) {
+	if key == nil || uuid.UUID(*key) == uuid.Nil {
+		return uuid.New(), false
+	}
+	return uuid.UUID(*key), true
+}
+
 // POST /api/orders - オーダー作成
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	var req models.CreateOrderJSONRequestBody
@@ -245,14 +313,28 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	orderID, hasKey := orderIDFromIdempotencyKey(req.IdempotencyKey)
+	squareCheckoutID, err := squareCheckoutIDForOrder(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	createdAt := orderCreatedAt(req.CreatedAt, time.Now())
+
 	// API型 → DB型に変換
 	order := models.Order{
-		ID:                uuid.New(),
+		ID:                orderID,
 		OrderId:           req.OrderId,
-		CreatedAt:         time.Now(),
+		CreatedAt:         createdAt,
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
 		DiscountOrderCups: 0,
+		PaymentMethod:     string(models.Cash),
+	}
+	if squareCheckoutID != nil {
+		// 端末で請求額ちょうどを受け取っているので、お預かりは請求額と同じ。
+		order.PaymentMethod = string(models.Square)
+		order.Received = req.BillingAmount
 	}
 
 	if req.DiscountOrderId != nil {
@@ -268,9 +350,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		comments := make([]models.Comment, len(*req.Comments))
 		for i, commentReq := range *req.Comments {
 			comments[i] = models.Comment{
-				Author:    commentReq.Author,
-				Text:      commentReq.Text,
-				CreatedAt: time.Now(),
+				Author: commentReq.Author,
+				Text:   commentReq.Text,
+				// コメントの主キーは (order_id, created_at) なので、同じ注文のコメントは 1 マイクロ秒ずつずらす
+				// （Postgres の時刻はマイクロ秒まで）
+				CreatedAt: createdAt.Add(time.Duration(i) * time.Microsecond),
 			}
 		}
 		order.Comments = comments
@@ -281,30 +365,63 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		lines, cups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &models.Order{})
-		if err != nil {
-			return err
+	findExisting := func() (*models.Order, error) {
+		var existing models.Order
+		err := preloadOrder(h.db).Where("id = ?", order.ID).Take(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
 		}
-		order.OrderMenus, order.OrderCups = lines, cups
-		return tx.Create(&order).Error
-	}); err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	}
+	create := func() error {
+		return h.db.Transaction(func(tx *gorm.DB) error {
+			lines, cups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &models.Order{})
+			if err != nil {
+				return err
+			}
+			order.OrderMenus, order.OrderCups = lines, cups
+			// グッズだけの注文は作るものが無いので、作った時点で準備完了・提供済みにする
+			serveCuplessOrder(&order, order.CreatedAt)
+			if err := tx.Create(&order).Error; err != nil {
+				return err
+			}
+			if squareCheckoutID != nil {
+				return linkSquareCheckout(tx, *squareCheckoutID, &order, time.Now())
+			}
+			return nil
+		})
+	}
+
+	existing, err := createOrderOnce(hasKey, findExisting, create)
+	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
 		}
+		if errors.Is(err, errSquareCheckoutUnusable) {
+			status = http.StatusConflict
+		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	status := http.StatusCreated
+	if existing != nil {
+		// 保存済みの注文を返すときも配信と残量の確認をする。前の作成が配信の前に失敗していても、
+		// 送り直しで済ませるため。配信は同じ注文の置き換え、確認は通知済みなら送らないので、重ねても変わらない
+		status = http.StatusOK
+	}
 
-	// 関連データをロードし、作った注文だけを配信する
+	// 関連データをロードし、この注文だけを配信する
 	resp, err := publishOrder(h.db, h.hub, order.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(status, resp)
 	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
 }
 
@@ -363,10 +480,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// カップのある注文の状態はカップから決め直す。リクエストの ready_at / served_at は
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
-		// カップの無い注文（グッズだけの注文）だけリクエストの値を使う。
+		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
+		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
+		serveCuplessOrder(&order, time.Now())
 		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
 			"order_id":            req.OrderId,
 			"ready_at":            order.ReadyAt,
@@ -428,15 +547,24 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	// オーダーアイテムの関連も削除
-	var order models.Order
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	if err := h.deleteOrder(orderID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+}
+
+// deleteOrder は注文を明細・カップごと消し、画面へ配る。Square の返金（SquareHandler）からも使う。
+// 注文が無ければ gorm.ErrRecordNotFound を返す。
+func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
+	// オーダーアイテムの関連も削除
+	var order models.Order
+	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
+		return err
 	}
 
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
@@ -459,22 +587,25 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
+		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して
+		// 「支払い済みなのに注文が無い」一覧（GET /api/square/checkouts/unlinked）に戻す。
+		if err := tx.Model(&models.SquareCheckout{}).Where("order_id = ?", order.ID).Update("order_id", nil).Error; err != nil {
+			return err
+		}
 		result := tx.Delete(&models.Order{}, "id = ?", orderID)
 		rowsAffected = result.RowsAffected
 		return result.Error
 	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-		return
+		return gorm.ErrRecordNotFound
 	}
 
 	publishOrderDeleted(h.db, h.hub, orderID)
-	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 	go h.inventory.CheckAlerts(resources)
+	return nil
 }
 
 var upgrader = websocket.Upgrader{
