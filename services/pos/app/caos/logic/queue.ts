@@ -3,16 +3,17 @@ import { type Lane, laneActive } from "./lanes";
 
 // ドリッパーの列の時刻（エポックのミリ秒。日付を含むので、日をまたいでもそのまま続く）。
 // 抽出の開始・終了はカップの時刻（サーバーが付ける）で、待機の予定時刻は毎回ここで計算する。
-
-/** 前の抽出が終わってから次の抽出を始めるまでの入れ替えの時間（秒） */
-const CHANGEOVER_SEC = 15;
+// 「次へ」は前のカードを終えると同時に次のカードを始めるので、カードの時間（cardBrewSec）は入れ替えの時間も含み、待機は前のカードの終わりから続けて置く。
 /** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
 const SOON_SEC = 15;
 /** 抽出中が無い列の待機の先頭を置く、今から先の秒（「次へ」で始める） */
 const START_SOON_SEC = 10;
 
-// カードの抽出時間（ミリ秒）
-const brewMs = (card: CaosCard) => caosBrewSec(card.cups.length) * 1000;
+/** カードの時間（秒。入れ替えを含む）。抽出時間の実測（全列共通の lane.brewTimes）にその杯数があれば実測、無ければ初めの値 */
+export const cardBrewSec = (lane: Lane, card: CaosCard) =>
+  caosBrewSec(card.cups.length, lane.brewTimes);
+
+const brewMs = (lane: Lane, card: CaosCard) => cardBrewSec(lane, card) * 1000;
 
 // 抽出中のカードの開始（開始の時刻はサーバーが付ける）
 const brewStartMs = (card: CaosCard, nowMs: number) =>
@@ -28,12 +29,12 @@ interface CardTime {
 /**
  * 列のカード（終わり・抽出中・待機の順）と、その開始・終了の時刻。
  * 終わったカードはカップの時刻、抽出中のカードは開始の時刻から抽出時間のぶん（「次へ」を押すまで今まで伸ばす）、
- * 待機は前のカードの終わりから入れ替えの時間を空けて置く。抽出中が無いときは、待機の先頭を少し先に置く
+ * 待機は前のカードの終わりから続けて置く。抽出中が無いときは、待機の先頭を少し先に置く
  */
 export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
   const done = lane.done.map((card): CardTime => {
     const endMs = card.finishedAt?.getTime() ?? nowMs;
-    const startMs = card.startedAt?.getTime() ?? endMs - brewMs(card);
+    const startMs = card.startedAt?.getTime() ?? endMs - brewMs(lane, card);
     return { card, startMs, endMs };
   });
   let current: CardTime | undefined;
@@ -42,16 +43,14 @@ export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
     current = {
       card: lane.brewing,
       startMs,
-      endMs: Math.max(startMs + brewMs(lane.brewing), nowMs),
+      endMs: Math.max(startMs + brewMs(lane, lane.brewing), nowMs),
     };
   }
   let cursor = current?.endMs ?? nowMs;
   const queued = lane.queued.map((card, index): CardTime => {
     const startMs =
-      !current && index === 0
-        ? nowMs + START_SOON_SEC * 1000
-        : cursor + CHANGEOVER_SEC * 1000;
-    cursor = startMs + brewMs(card);
+      !current && index === 0 ? nowMs + START_SOON_SEC * 1000 : cursor;
+    cursor = startMs + brewMs(lane, card);
     return { card, startMs, endMs: cursor };
   });
   return [...done, ...(current ? [current] : []), ...queued];
@@ -80,7 +79,9 @@ const lanePhase = (
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
-  const remainingMs = current ? Math.max(0, brewMs(current) - elapsedMs) : 0;
+  const remainingMs = current
+    ? Math.max(0, brewMs(lane, current) - elapsedMs)
+    : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
   return {
     current,
@@ -93,14 +94,11 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
 
 export type LaneStatus = ReturnType<typeof laneStatus>;
 
-// ドリッパーが待機まで淹れ終えるまでのミリ秒（入れ替えの時間を含む）
+// ドリッパーが待機まで淹れ終えるまでのミリ秒
 const laneWaitMs = (lane: Lane, nowMs: number) => {
   const { current, waiting, remainingMs } = laneStatus(lane, nowMs);
   if (!current) return 0;
-  return waiting.reduce(
-    (sum, card) => sum + brewMs(card) + CHANGEOVER_SEC * 1000,
-    remainingMs,
-  );
+  return waiting.reduce((sum, card) => sum + brewMs(lane, card), remainingMs);
 };
 
 // 次に空くドリッパー（空くまでの秒の短い順に 3 つ）。管制盤 A・C の「次に空く」

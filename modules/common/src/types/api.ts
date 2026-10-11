@@ -167,6 +167,15 @@ export interface paths {
      */
     post: operations["advanceCaosDripper"];
   };
+  "/api/caos/brew-times": {
+    /**
+     * CaOS の抽出時間の実測
+     * @description 「次へ」で終えたカード（同じ drip_id のカップと入れ直し。brew_started_at と brew_finished_at のあるもの）の時間（終えた時刻 − 始めた時刻。「次へ」は前を終えると同時に次を始めるので、入れ替えの時間も含む）を、
+     * 杯数ごとに、終えたのが新しいカードから最大 30 枚の中央値で返す。日はまたいで数える。CaOS の画面は予定の時刻（タイムライン・残り・次に空くドリッパー）にこれを使う。
+     * 終えたカードが 5 枚に足りない杯数は返さない（画面は初めの値を使う。押し間違えてすぐ終えたカードで予定を狂わせないため）。読むだけで、ロックしない。
+     */
+    get: operations["getCaosBrewTimes"];
+  };
   "/api/cup-emergencies": {
     /**
      * カップを緊急（入れ直し）にする
@@ -851,6 +860,15 @@ export interface components {
        * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
        */
       drip_id: string | null;
+    };
+    /** @description 杯数ごとの抽出時間の実測 */
+    CaosBrewTime: {
+      /** @description 1 枚のカードの杯数 */
+      cups: number;
+      /** @description 抽出時間（秒）の中央値（四捨五入） */
+      sec: number;
+      /** @description 中央値に使ったカードの数 */
+      samples: number;
     };
     /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了） */
     CaosUndoCupState: {
@@ -1846,6 +1864,22 @@ export interface operations {
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の抽出時間の実測
+   * @description 「次へ」で終えたカード（同じ drip_id のカップと入れ直し。brew_started_at と brew_finished_at のあるもの）の時間（終えた時刻 − 始めた時刻。「次へ」は前を終えると同時に次を始めるので、入れ替えの時間も含む）を、
+   * 杯数ごとに、終えたのが新しいカードから最大 30 枚の中央値で返す。日はまたいで数える。CaOS の画面は予定の時刻（タイムライン・残り・次に空くドリッパー）にこれを使う。
+   * 終えたカードが 5 枚に足りない杯数は返さない（画面は初めの値を使う。押し間違えてすぐ終えたカードで予定を狂わせないため）。読むだけで、ロックしない。
+   */
+  getCaosBrewTimes: {
+    responses: {
+      /** @description 杯数の順 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewTime"][];
         };
       };
     };

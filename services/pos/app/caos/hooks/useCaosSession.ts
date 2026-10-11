@@ -12,6 +12,7 @@ import {
   unassignWrites,
   undoOfNext,
   undoOfWrites,
+  useCaosBrewTimes,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -98,7 +99,9 @@ export const useCaosSession = () => {
   const { cards } = source;
   const nowMs = test.session?.currentMs ?? realTime.getTime();
 
-  const lanes = useMemo(() => boardLanes(cards), [cards]);
+  // 予定の時刻（タイムライン・残り・次に空く）は抽出時間の実測で立てる（実データテストも同じ）
+  const brewTimes = useCaosBrewTimes();
+  const lanes = useMemo(() => boardLanes(cards, brewTimes), [cards, brewTimes]);
   const unassigned = useMemo(
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],

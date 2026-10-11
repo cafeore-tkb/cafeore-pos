@@ -1,4 +1,4 @@
-import { jstClock, useColorSettings } from "@cafeore/common";
+import { jstClock, useCaosBrewTimes, useColorSettings } from "@cafeore/common";
 import { Eye } from "lucide-react";
 import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
@@ -21,7 +21,8 @@ export default function ReadOnlyBoard() {
   const { cards, status } = useLiveBoard({ enabled: true, nowMs });
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
-  const lanes = useMemo(() => boardLanes(cards), [cards]);
+  const brewTimes = useCaosBrewTimes();
+  const lanes = useMemo(() => boardLanes(cards, brewTimes), [cards, brewTimes]);
   const unassigned = useMemo(
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],

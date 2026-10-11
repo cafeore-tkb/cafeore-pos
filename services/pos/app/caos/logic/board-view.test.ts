@@ -67,7 +67,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     order(4, [{ dripId: "m" }]),
     order(5, [{ dripper: 1, dripId: "d5", dripperPosition: 2 }]),
   ]);
-  const lanes = boardLanes(cards);
+  const lanes = boardLanes(cards, []);
   const unassigned = cards.filter((card) => card.status === "unassigned");
 
   test("統合したカードは小さい注文の行に置き、もう一方の注文の行に跡を残す", () => {
@@ -123,8 +123,9 @@ describe("[unit] CaOS の盤面の見せ方", () => {
   test("列の状態（空き・抽出中・まもなく・継続中）", () => {
     const phase = (sec: number, lane = lanes[0]) =>
       laneStatus(lane, T0.getTime() + sec * 1000).phase;
+    // 1 杯の初めの値は 150 秒（抽出と入れ替え）
     expect(phase(0)).toBe("brewing");
-    expect(phase(125)).toBe("soon");
+    expect(phase(140)).toBe("soon");
     expect(phase(200)).toBe("overtime");
     expect(phase(0, lanes[2])).toBe("empty");
   });
@@ -134,6 +135,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       buildCaosCards([
         order(6, [{ dripper: 1, dripId: "d6", dripperPosition: 1 }]),
       ]),
+      [],
     );
     expect(laneStatus(lane, T0.getTime()).phase).toBe("waiting");
   });

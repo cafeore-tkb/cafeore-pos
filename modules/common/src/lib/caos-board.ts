@@ -31,8 +31,16 @@ export const caosDripperError = (dripper: number) =>
 /** 1 枚のカード（1 回のドリップ）で淹れる最大の杯数 */
 export const CAOS_MAX_CUPS = 2;
 
-/** 1 枚のカードの抽出時間（秒）。全ドリッパー同じ（1 杯 135 秒・2 杯 195 秒） */
-export const caosBrewSec = (cups: number) => (cups > 1 ? 195 : 135);
+/** 杯数ごとの抽出時間の実測（GET /api/caos/brew-times。「次へ」で終えたカードの中央値） */
+export type CaosBrewTimes = components["schemas"]["CaosBrewTime"][];
+
+/**
+ * 1 枚のカードの抽出時間（秒）。全ドリッパー同じ。実測（measured）にその杯数があれば実測、
+ * 無ければ（終えたカードがまだ少ない）初めの値（1 杯 150 秒・2 杯 210 秒。抽出と、次のカードとの入れ替えの 15 秒）。
+ * 「次へ」は前のカードを終えると同時に次を始めるので、実測も入れ替えの時間を含む
+ */
+export const caosBrewSec = (cups: number, measured: CaosBrewTimes = []) =>
+  measured.find((time) => time.cups === cups)?.sec ?? (cups > 1 ? 210 : 150);
 
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 

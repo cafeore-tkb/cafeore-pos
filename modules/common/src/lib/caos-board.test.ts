@@ -379,9 +379,12 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("抽出時間", () => {
-    expect(caosBrewSec(1)).toBe(135);
-    expect(caosBrewSec(2)).toBe(195);
+  test("抽出時間：実測があればその杯数の実測、無ければ初めの値", () => {
+    expect(caosBrewSec(1)).toBe(150);
+    expect(caosBrewSec(2)).toBe(210);
+    const measured = [{ cups: 1, sec: 170, samples: 12 }];
+    expect(caosBrewSec(1, measured)).toBe(170);
+    expect(caosBrewSec(2, measured)).toBe(210);
   });
 });
 

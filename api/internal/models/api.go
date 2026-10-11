@@ -93,6 +93,18 @@ type BuildInfo struct {
 	Pr *int `json:"pr,omitempty"`
 }
 
+// CaosBrewTime 杯数ごとの抽出時間の実測
+type CaosBrewTime struct {
+	// Cups 1 枚のカードの杯数
+	Cups int `json:"cups"`
+
+	// Samples 中央値に使ったカードの数
+	Samples int `json:"samples"`
+
+	// Sec 抽出時間（秒）の中央値（四捨五入）
+	Sec int `json:"sec"`
+}
+
 // CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
 // start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
 // dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）

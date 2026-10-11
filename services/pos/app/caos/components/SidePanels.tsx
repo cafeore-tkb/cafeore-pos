@@ -1,7 +1,6 @@
 import {
   type CaosCard,
   type CaosPlace,
-  caosBrewSec,
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
@@ -19,6 +18,7 @@ import {
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type Lane, laneActive, moveTargets } from "../logic/lanes";
+import { cardBrewSec } from "../logic/queue";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
@@ -93,6 +93,8 @@ export const AssignPanel: React.FC<{
     unassignedOrders[0]?.key ?? "",
   );
   const [selectedBayId, setSelectedBayId] = useState(bayId);
+  // lanes は 6 列全部を番号の順に持つ（boardLanes）
+  const selectedLane = lanes[selectedBayId - 1];
   const selectedOrder = unassignedOrders.find(
     (order) => order.key === selectedOrderUid,
   );
@@ -137,7 +139,7 @@ export const AssignPanel: React.FC<{
               look={looks.get(order.key)}
               size="sm"
               selected={selectedOrderUid === order.key}
-              note={`標準予測: ${clockLabel(caosBrewSec(order.cups.length))}`}
+              note={`予測: ${clockLabel(cardBrewSec(selectedLane, order))}`}
               onClick={() => setSelectedOrderUid(order.key)}
               className="cursor-pointer"
             />

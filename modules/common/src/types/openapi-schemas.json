@@ -1044,6 +1044,25 @@
       }
     }
   },
+  "CaosBrewTime": {
+    "type": "object",
+    "description": "杯数ごとの抽出時間の実測",
+    "required": ["cups", "sec", "samples"],
+    "properties": {
+      "cups": {
+        "type": "integer",
+        "description": "1 枚のカードの杯数"
+      },
+      "sec": {
+        "type": "integer",
+        "description": "抽出時間（秒）の中央値（四捨五入）"
+      },
+      "samples": {
+        "type": "integer",
+        "description": "中央値に使ったカードの数"
+      }
+    }
+  },
   "CaosUndoCupState": {
     "type": "object",
     "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）",

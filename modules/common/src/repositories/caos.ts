@@ -1,5 +1,5 @@
-import { apiClient } from "../api/client";
-import type { CaosCupsWrite } from "../lib/caos-board";
+import { apiClient, throwApiError } from "../api/client";
+import type { CaosBrewTimes, CaosCupsWrite } from "../lib/caos-board";
 import type { components } from "../types/api";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
@@ -110,3 +110,11 @@ export const swapCaosLanes = async (
   second: number,
 ): Promise<CaosResult> =>
   send(apiClient.POST("/api/caos/lanes/swap", { body: { first, second } }));
+
+/** 杯数ごとの抽出時間の実測（GET /api/caos/brew-times）。終えたカードがまだ少ない杯数は入っていない */
+export const getCaosBrewTimes = async (): Promise<CaosBrewTimes> => {
+  const { data, error, response } = await apiClient.GET("/api/caos/brew-times");
+  if (error || !response.ok)
+    throwApiError(response, error, "Failed to fetch CaOS brew times");
+  return data ?? [];
+};
