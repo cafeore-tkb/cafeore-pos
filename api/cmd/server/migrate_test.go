@@ -1,73 +1,105 @@
 package main
 
 import (
-	"net/url"
-	"os"
+	"context"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"cafeore-pos/api/internal/testdb"
 
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-// 起動時のマイグレーション（migrate.go）を本物の Postgres で走らせる。TEST_DATABASE_URL を渡したときだけ動く。
-// migrate は本番と同じく public スキーマを前提にしているので、テストごとに使い捨ての空の database を作って流し、
-// 終わったら消す。渡した DB の中身には触らないので、ほかの DB のテストと同じ DB を指しても壊し合わない。
-// 接続するロールには CREATEDB が要る。
+// 本物の Postgres で、起動時のマイグレーションを確かめる。
 //
-//	TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres go test ./cmd/server/ -run Migrate
+// プレビューは preview ラベルの付いた PR にしか出ないので、ラベルの無い PR は
+// main へのデプロイまで AutoMigrate が通るか分からない。ここで先に確かめる。
 //
-// TODO: #790 がマージされたら、この準備は #790 の api/internal/testdb（testdb.NewDatabase）に寄せる
-// （TEST_DATABASE_URL を読む・無ければスキップ・CI では落とす、の決まりも testdb にまとまっている）。
-// 今はまだ testdb が無いので、ここで同じ形の準備をしている。CI に Postgres が無いうちは落とさずスキップする。
+// migrate も findSchemaDrift も本番と同じく public スキーマを前提にしているので、
+// handlers の結合テスト（testdb.New）のような schema 分けではなく、テストごとに
+// 使い捨ての database（testdb.NewDatabase）を作って流す。渡した DB の中身には触らないので、
+// go test ./... で handlers のテストと並行に走っても壊し合わない。
 
-func openMigrateTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
-	}
-	open := func(dsn string) *gorm.DB {
-		t.Helper()
-		db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{Logger: logger.Discard})
-		if err != nil {
-			t.Fatal(err)
-		}
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = sqlDB.Close() })
-		return db
+// 空の DB に反映でき、反映したあとの DB がモデルとずれていないこと。
+// 2 回目の起動では何も変えないこと（毎回 ALTER が走ると、デプロイのたびにテーブルをロックする）。
+func TestMigrateFromEmpty(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
 	}
 
-	admin := open(dsn)
-	name := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	mustExec(t, admin, "CREATE DATABASE "+name)
-	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す。
-	// 閉じ忘れた接続があっても消せるよう FORCE を付ける
-	t.Cleanup(func() {
-		if err := admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)").Error; err != nil {
-			t.Errorf("failed to drop database %s: %v", name, err)
-		}
-	})
-	return open(withDatabase(t, dsn, name))
-}
-
-// 接続文字列の database を差し替える。URL でも key=value でもよい。
-func withDatabase(t *testing.T, dsn, name string) string {
-	t.Helper()
-	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
-		return dsn + " dbname=" + name
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
 	}
-	u, err := url.Parse(dsn)
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた（起動のたびに走る）:\n%s", strings.Join(ddl, "\n"))
+	}
+
+	drift, err := findSchemaDrift(db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u.Path = "/" + name
-	return u.String()
+	if len(drift) > 0 {
+		t.Errorf("migrate したばかりの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
+// Cloud Run が同時に複数のインスタンスを起動しても、全部起動できること。
+func TestMigrateConcurrently(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	const instances = 3
+	errs := make(chan error, instances)
+	for range instances {
+		go func() { errs <- migrate(db.WithContext(ctx)) }()
+	}
+	for range instances {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1 つずつ走っていれば、全部のテーブルがそろい、ズレも無い
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("同時に migrate したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
+var (
+	ddlPattern = regexp.MustCompile(`(?i)^\s*(CREATE|ALTER|DROP)\s`)
+	// migrate が毎回流す。入っていれば何もしないので数えない
+	noopDDLPattern = regexp.MustCompile(`(?i)^\s*CREATE EXTENSION IF NOT EXISTS\s`)
+)
+
+// GORM が流した SQL のうち、スキーマを変えるものだけを覚えておく logger。
+// 1 つの goroutine の migrate にだけ使う。
+type ddlRecorder struct {
+	ddl []string
+}
+
+func (r *ddlRecorder) LogMode(logger.LogLevel) logger.Interface { return r }
+func (r *ddlRecorder) Info(context.Context, string, ...any)     {}
+func (r *ddlRecorder) Warn(context.Context, string, ...any)     {}
+func (r *ddlRecorder) Error(context.Context, string, ...any)    {}
+
+func (r *ddlRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	if sql, _ := fc(); ddlPattern.MatchString(sql) && !noopDDLPattern.MatchString(sql) {
+		r.ddl = append(r.ddl, sql)
+	}
 }
 
 func mustExec(t *testing.T, db *gorm.DB, sql string, args ...any) {
@@ -109,7 +141,7 @@ func readItemTypeFlags(t *testing.T, db *gorm.DB) map[string]itemTypeFlags {
 
 // 項目の列を足したときだけ、既存の種類に今までの扱いと同じ値を入れる
 func TestMigrateBackfillsItemTypeFlags(t *testing.T) {
-	db := openMigrateTestDB(t)
+	db := testdb.NewDatabase(t, nil)
 	if err := db.AutoMigrate(&itemTypeBeforeFlags{}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +204,7 @@ func TestMigrateBackfillsItemTypeFlags(t *testing.T) {
 
 // 表が無い（空の DB）ときは backfill は走らず、列の既定値で作るだけ
 func TestMigrateEmptyDatabase(t *testing.T) {
-	db := openMigrateTestDB(t)
+	db := testdb.NewDatabase(t, nil)
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}

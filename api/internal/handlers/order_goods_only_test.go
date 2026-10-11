@@ -5,30 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/testdb"
 )
 
 // グッズだけの注文（カップが1つもできない注文）を、作成・編集のときに提供済みにする（Issue #733）。
-// POST / PUT /api/orders を本物の Postgres で通す。TEST_DATABASE_URL を渡したときだけ動く。
-// 渡した DB の中身には触らず、テストごとに使い捨ての schema を作って終わったら消すので、
-// ほかの DB のテストと同じ DB を指しても壊し合わない。
+// POST / PUT /api/orders を本物の Postgres（testdb.New の使い捨ての schema）で通す。
+// TEST_DATABASE_URL が無ければスキップする（CI では落とす）。
 //
 //	TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres go test ./internal/handlers/ -run GoodsOnly
-//
-// TODO: #790 がマージされたら、この準備は #790 の api/internal/testdb（testdb.New）に寄せる
-// （TEST_DATABASE_URL を読む・無ければスキップ・CI では落とす、の決まりも testdb にまとまっている）。
-// 今はまだ testdb が無いので、ここで同じ形の準備をしている。CI に Postgres が無いうちは落とさずスキップする。
 
 type orderDBEnv struct {
 	t  *testing.T
@@ -37,71 +27,7 @@ type orderDBEnv struct {
 
 func newOrderDBEnv(t *testing.T) *orderDBEnv {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL がないので、DB を使うテストは飛ばす")
-	}
-	e := &orderDBEnv{t: t, db: openTestSchema(t, dsn)}
-	e.must(e.db.AutoMigrate(models.All()...))
-	return e
-}
-
-// テストごとに使い捨ての schema を作って開き、終わったら消す。uuid_generate_v4() は DB の public に入れ、
-// search_path を「その schema,public」にして使う（#790 の testdb.New と同じ形）。
-func openTestSchema(t *testing.T, dsn string) *gorm.DB {
-	t.Helper()
-	open := func(dsn string) *gorm.DB {
-		t.Helper()
-		db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}),
-			&gorm.Config{Logger: logger.Discard, DisableForeignKeyConstraintWhenMigrating: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = sqlDB.Close() })
-		return db
-	}
-
-	admin := open(dsn)
-	// ほかのテスト（別のパッケージのテストのプロセスを含む）と同時に入れてもぶつからないよう、advisory lock で 1 つずつにする
-	if err := admin.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(0x7465737464627831)).Error; err != nil {
-			return err
-		}
-		return tx.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public`).Error
-	}); err != nil {
-		t.Fatal(err)
-	}
-	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatal(err)
-	}
-	// t.Cleanup は後に登録したものから走るので、下で開く接続を閉じてから消す
-	t.Cleanup(func() {
-		if err := admin.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
-			t.Errorf("failed to drop schema %s: %v", schema, err)
-		}
-	})
-	return open(withSearchPath(t, dsn, schema+",public"))
-}
-
-// 接続文字列に search_path を足す（どの接続もその schema を見るように）。URL でも key=value でもよい。
-func withSearchPath(t *testing.T, dsn, searchPath string) string {
-	t.Helper()
-	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
-		return dsn + " search_path=" + searchPath
-	}
-	u, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := u.Query()
-	q.Set("search_path", searchPath)
-	u.RawQuery = q.Encode()
-	return u.String()
+	return &orderDBEnv{t: t, db: testdb.New(t)}
 }
 
 func (e *orderDBEnv) must(err error) {
