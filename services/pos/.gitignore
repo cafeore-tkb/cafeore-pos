@@ -11,3 +11,6 @@ node_modules
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+
+# wrangler dev が作るローカルの状態
+.wrangler
