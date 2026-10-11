@@ -118,7 +118,7 @@ export function ProductEditor({
     }
   };
 
-  // アイテムを保存してから、savedStock（編集のときの今の在庫）から変えた値を送る。
+  // アイテムを保存してから、savedStock（編集のときの、開いたときの在庫）から変えた値を送る。
   // 新規・複製は入れた値をすべて、アイテムと一緒に API が作った在庫に送る。
   // 在庫だけ失敗したときは、やり直しでアイテムが重複しないよう保存は済んだ扱いにして知らせる
   const saveItem = async (
@@ -253,7 +253,7 @@ export function ProductEditor({
               ? saveItemWithMenu(values, menu)
               : save(() =>
                   isEdit
-                    ? saveItem(values, id, sourceStock)
+                    ? saveItem(values, id, values.savedStock)
                     : saveItem(values, undefined),
                 )
           }

@@ -24,6 +24,8 @@ export type ItemFormValues = {
   itemTypeId: string;
   /** そのアイテムの在庫の値。新規で入れていないものは入らない（API の既定のまま） */
   stock: Partial<StockAmounts>;
+  /** 開いたときの在庫の値（initialStock）。編集ではこれと比べて変えた値だけ送る */
+  savedStock?: StockAmounts;
 };
 
 /** アイテムと同じ名前・略称で、そのアイテム 1 つだけのメニュー */
@@ -68,7 +70,9 @@ export function ItemForm({
     itemTypeId: initialItemTypeId,
   });
   const [stock, setStock] = useState<Partial<StockAmounts>>(initialStock ?? {});
-  const values: ItemFormValues = { ...fields, stock };
+  // 開いている間に一覧が取り直されても、比べる元は開いたときの値のまま
+  const [savedStock] = useState(initialStock);
+  const values: ItemFormValues = { ...fields, stock, savedStock };
 
   const [menu, setMenu] = useState<MenuDraft>({
     enabled: false,
