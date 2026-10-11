@@ -874,6 +874,7 @@ paths:
         登録した端末と、ペアリング待ちのコード。古い順。
         ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
         レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+        ペアリングを解除した端末（REVOKED）も、外すまでは一覧に残る。
       operationId: getSquareDevices
       tags:
         - square
@@ -891,6 +892,7 @@ paths:
       description: |
         ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
         ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+        ペアリングを解除した（REVOKED の）device_id は、その行を消して登録し直す。
       operationId: createSquareDevice
       tags:
         - square
@@ -914,7 +916,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: その device_id は登録済み
+          description: その device_id は登録済み（REVOKED 以外）
           content:
             application/json:
               schema:
@@ -966,6 +968,8 @@ paths:
       description: |
         API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
         管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+        ペアリングを解除した端末（REVOKED）は登録済みとして扱い、戻さない
+        （端末でサインアウトしても、Square ではコードが PAIRED のまま残るため）。
         同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
         取り込んだ端末だけを返す（既に登録していた端末は含めない）。
       operationId: importSquareDevices
@@ -996,8 +1000,9 @@ paths:
     delete:
       summary: 端末を一覧から外す
       description: |
-        レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
-        外した端末は POST /api/square/devices/import で戻せる。
+        行を消す。レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+        外した端末は POST /api/square/devices/import で戻せる。ペアリングを解除した端末（REVOKED）を外すと、
+        取り込みで戻ってくるようになる。
       operationId: deleteSquareDevice
       tags:
         - square
@@ -1013,6 +1018,53 @@ paths:
           description: 外した
         '404':
           description: 見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/square/devices/{id}/unpair:
+    post:
+      summary: 端末のペアリングを解除する
+      description: |
+        ペアリング済み（PAIRED）の端末を REVOKED にし、決済の依頼を出さないようにする。
+        レジでも選べなくなる。行は残し、POST /api/square/devices/import で戻らないようにする。
+
+        Square には API でペアリングを解除する手段が無い。端末は Square にサインインしたままなので、
+        端末で「設定」→「サインアウト」を選んでサインアウトする（管理画面に手順を出す）。
+        もう一度使うときは、コードを発行してペアリングし直す（REVOKED の行は消える）。
+
+        既に REVOKED なら何もせずに返す。
+      operationId: unpairSquareDevice
+      tags:
+        - square
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 解除した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareDeviceResponse'
+        '400':
+          description: id が不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 見つからない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: ペアリング済みでない（ペアリング待ち・期限切れのコードは外す）
           content:
             application/json:
               schema:
@@ -1984,12 +2036,13 @@ components:
           type: boolean
     SquareDeviceStatus:
       type: string
-      enum: [UNPAIRED, PAIRED, EXPIRED]
+      enum: [UNPAIRED, PAIRED, EXPIRED, REVOKED]
       description: |
-        端末のペアリングの状態（Square の Device Code の status）。
+        端末のペアリングの状態。REVOKED 以外は Square の Device Code の status と同じ。
           - UNPAIRED: コードを発行した。端末でまだ入力されていない
           - PAIRED: ペアリング済み。決済に使える
           - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+          - REVOKED: 管理画面でペアリングを解除した。決済には使わず、取り込みでも戻さない
     SquareDeviceResponse:
       type: object
       required:
@@ -2010,7 +2063,7 @@ components:
         device_id:
           type: string
           nullable: true
-          description: 端末の ID。決済の依頼に使う。PAIRED になるまで null
+          description: 端末の ID。決済の依頼に使う。PAIRED になるまで null（REVOKED にしても残す）
         code:
           type: string
           nullable: true
