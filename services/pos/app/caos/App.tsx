@@ -49,6 +49,7 @@ export default function App() {
           totalWaitingCups={session.cups.waiting}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
+          simulating={session.simulating}
           isRunning={session.isRunning}
           onTogglePlay={session.toggleRunning}
           simSpeed={session.simSpeed}
