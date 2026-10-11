@@ -111,6 +111,47 @@ func TestGetPaymentReadsAmounts(t *testing.T) {
 	}
 }
 
+func TestGetPaymentReadsRefunds(t *testing.T) {
+	client, _ := newTestServer(t, http.StatusOK, `{"payment":{"id":"p1","status":"COMPLETED","total_money":{"amount":600,"currency":"JPY"},"refunded_money":{"amount":600,"currency":"JPY"},"refund_ids":["r1"]}}`)
+	payment, err := client.GetPayment(context.Background(), "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.RefundedMoney == nil || payment.RefundedMoney.Amount != 600 || len(payment.RefundIDs) != 1 || payment.RefundIDs[0] != "r1" {
+		t.Fatalf("unexpected payment: %+v", payment)
+	}
+}
+
+func TestRefundPaymentSendsExpectedRequest(t *testing.T) {
+	client, recorded := newTestServer(t, http.StatusOK, `{"refund":{"id":"r1","status":"PENDING","amount_money":{"amount":600,"currency":"JPY"},"payment_id":"p1","reason":"No.12 の返金"}}`)
+	refund, err := client.RefundPayment(context.Background(), "key-1", "p1", Money{Amount: 600, Currency: "JPY"}, "No.12 の返金")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refund.ID != "r1" || refund.Status != "PENDING" || refund.PaymentID != "p1" {
+		t.Fatalf("unexpected refund: %+v", refund)
+	}
+	if recorded.method != http.MethodPost || recorded.path != "/v2/refunds" || recorded.version != APIVersion {
+		t.Fatalf("unexpected request: %+v", recorded)
+	}
+	amount, _ := recorded.body["amount_money"].(map[string]any)
+	if recorded.body["idempotency_key"] != "key-1" || recorded.body["payment_id"] != "p1" ||
+		amount["amount"] != float64(600) || amount["currency"] != "JPY" || recorded.body["reason"] != "No.12 の返金" {
+		t.Fatalf("unexpected body: %v", recorded.body)
+	}
+}
+
+func TestGetPaymentRefund(t *testing.T) {
+	client, recorded := newTestServer(t, http.StatusOK, `{"refund":{"id":"r1","status":"COMPLETED","amount_money":{"amount":600,"currency":"JPY"},"payment_id":"p1"}}`)
+	refund, err := client.GetPaymentRefund(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded.method != http.MethodGet || recorded.path != "/v2/refunds/r1" || refund.Status != "COMPLETED" {
+		t.Fatalf("unexpected: %+v %+v", recorded, refund)
+	}
+}
+
 func TestListDeviceCodesFollowsCursor(t *testing.T) {
 	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

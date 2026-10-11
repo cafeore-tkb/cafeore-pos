@@ -67,7 +67,7 @@ export const SquarePaymentDialog = ({
   if (state === null) {
     return null;
   }
-  const { phase, order, paymentType, checkout, message } = state;
+  const { phase, order, paymentType, checkout, message, started } = state;
   // 結果がいつまでも決まらない（受取額を確かめられないなど）ときの逃げ道。
   // 閉じた後に支払いが確定したら「未登録の Square 決済」に出る。
   const stuck =
@@ -127,6 +127,9 @@ export const SquarePaymentDialog = ({
                   分で自動的に取り消されます。
                 </p>
               )}
+              {phase === "waiting" && started && (
+                <p className="text-sm text-stone-500">シールは印刷しました。</p>
+              )}
               {phase === "waiting" && paymentType === "FELICA_ALL" && (
                 <p className="text-sm text-stone-500">
                   電子マネーで端末にエラーが出たときは、レジからは取り消せません。端末の画面で取り消してください。
@@ -151,6 +154,12 @@ export const SquarePaymentDialog = ({
               {phase === "failed" && (
                 <p className="text-sm">
                   お金は受け取っていません。もう一度端末で決済するか、現金で受け取ってください。
+                </p>
+              )}
+              {phase === "failed" && started && (
+                <p className="font-bold text-sm">
+                  先に印刷した No.{order.orderId}
+                  のシールは、同じ注文で会計し直すならそのまま使います（刷り直しません）。注文をやめる・変えるときは使わないでください。
                 </p>
               )}
               {message && <p className="text-red-700 text-sm">{message}</p>}
