@@ -11,11 +11,11 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenCaosNominated ColorScreen = "caos_nominated"
-	ColorScreenCashier       ColorScreen = "cashier"
-	ColorScreenCashierOrder  ColorScreen = "cashier_order"
-	ColorScreenMaster        ColorScreen = "master"
-	ColorScreenServe         ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenNominated    ColorScreen = "nominated"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -184,7 +184,7 @@ type CashierStateUpdateRequest struct {
 
 // ColorScreen 背景色を適用する画面。
 // cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -194,7 +194,7 @@ type ColorSettingResponse struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -210,7 +210,7 @@ type ColorSettingUpsertRequest struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID

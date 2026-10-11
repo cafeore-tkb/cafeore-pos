@@ -304,3 +304,50 @@ func TestMigrateRenamesTables(t *testing.T) {
 		t.Errorf("名前を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
 	}
 }
+
+func readColorSettings(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var rows []string
+	if err := db.Raw("SELECT target_type || ' ' || screen || ' ' || color FROM color_settings ORDER BY 1").Scan(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(rows, ",")
+}
+
+// 色の設定の画面の前の名前（caos_nominated）は今の名前（nominated）に変わる。同じ対象に今の名前の行があれば、前の名前の行は消える。
+// 2 回目は何も変えず、スキーマも変えない
+func TestMigrateRenamesColorScreen(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	item, itemType := uuid.New(), uuid.New()
+	mustExec(t, db, `INSERT INTO color_settings (id, target_type, target_id, screen, color, created_at, updated_at) VALUES
+		(?, 'Item', ?, 'caos_nominated', '#111111', now(), now()),
+		(?, 'Item', ?, 'master', '#222222', now(), now()),
+		(?, 'ItemType', ?, 'caos_nominated', '#333333', now(), now()),
+		(?, 'ItemType', ?, 'nominated', '#444444', now(), now())`,
+		uuid.New(), item, uuid.New(), item, uuid.New(), itemType, uuid.New(), itemType)
+
+	const want = "Item master #222222,Item nominated #111111,ItemType nominated #444444"
+	rec.ddl = nil
+	for range 2 {
+		if err := migrate(db); err != nil {
+			t.Fatal(err)
+		}
+		if got := readColorSettings(t, db); got != want {
+			t.Errorf("color_settings = %s, want %s", got, want)
+		}
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("値を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
