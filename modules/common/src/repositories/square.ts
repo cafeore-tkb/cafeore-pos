@@ -10,6 +10,7 @@ export type SquareCheckout = components["schemas"]["SquareCheckoutResponse"];
 export type SquarePaymentType = components["schemas"]["SquarePaymentType"];
 export type SquareCheckoutOutcome =
   components["schemas"]["SquareCheckoutOutcome"];
+export type SquareRefundStatus = components["schemas"]["SquareRefundStatus"];
 
 /**
  * 決済依頼が進行中・取り消せないなど、API が 409 を返したときのエラー
@@ -45,6 +46,29 @@ const isConflict = (
   error !== null &&
   "checkout" in error &&
   typeof error.checkout === "object";
+
+const refundResult = (
+  data: SquareCheckout | undefined,
+  error: unknown,
+  response: Response,
+): SquareCheckout => {
+  if (data) {
+    return data;
+  }
+  if (response.status === 409 && isConflict(error)) {
+    throw new SquareCheckoutConflictError(error.error, error.checkout);
+  }
+  // 502 は Square が断った・応答が無かったとき。本文は決済依頼そのもの（refund_error 付き）。
+  if (
+    response.status === 502 &&
+    typeof error === "object" &&
+    error !== null &&
+    "id" in error
+  ) {
+    return error as SquareCheckout;
+  }
+  throw new Error(errorMessage(error, "返金できませんでした"));
+};
 
 export const squareRepository = {
   /** Square 連携が使えるか（未設定ならレジは Square のボタンを出さない） */
@@ -120,6 +144,30 @@ export const squareRepository = {
       throw new SquareCheckoutConflictError(error.error, error.checkout);
     }
     throw new Error(errorMessage(error, "決済を取り消せませんでした"));
+  },
+
+  /**
+   * 支払い済みの決済を全額返金する。注文と結び付いていれば、その注文は消える
+   *
+   * Square が受け付ければ refund_status が pending か refunded の決済依頼を返す。
+   * Square が断った（交通系 IC など）・応答が無かったときは refund_status が failed の決済依頼を返す。
+   * 支払いを確かめられていない・返金を頼んでいる途中なら SquareCheckoutConflictError を投げる。
+   */
+  async refundCheckout(id: string): Promise<SquareCheckout> {
+    const { data, error, response } = await client.POST(
+      "/api/square/checkouts/{id}/refund",
+      { params: { path: { id } } },
+    );
+    return refundResult(data, error, response);
+  },
+
+  /** 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ） */
+  async refundOrder(orderId: string): Promise<SquareCheckout> {
+    const { data, error, response } = await client.POST(
+      "/api/orders/{id}/square-refund",
+      { params: { path: { id: orderId } } },
+    );
+    return refundResult(data, error, response);
   },
 
   /** 支払い済みなのに注文と結び付いていない決済依頼（照合用） */

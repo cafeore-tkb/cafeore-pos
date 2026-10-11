@@ -228,6 +228,7 @@ export interface paths {
     /**
      * 支払い済みなのに注文と結び付いていない決済依頼
      * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+     * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
      */
     get: operations["getUnlinkedSquareCheckouts"];
   };
@@ -244,6 +245,25 @@ export interface paths {
      * @description PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
      */
     post: operations["cancelSquareCheckout"];
+  };
+  "/api/square/checkouts/{id}/refund": {
+    /**
+     * 支払い済みの決済を全額返金する
+     * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+     * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+     * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+     * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+     * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+     */
+    post: operations["refundSquareCheckout"];
+  };
+  "/api/orders/{id}/square-refund": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文を消す
+     * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     */
+    post: operations["refundOrderSquarePayment"];
   };
   "/api/square/webhook": {
     /**
@@ -669,6 +689,16 @@ export interface components {
      * @enum {string}
      */
     SquareCheckoutOutcome: "pending" | "paid" | "failed" | "attention";
+    /**
+     * @description 返金（全額）の状態。
+     *   - none: 返金を頼んでいない
+     *   - pending: Square に頼んだ。結果を待っている
+     *   - refunded: 返金が終わった
+     *   - failed: Square が断った・失敗した、または応答が無く返金できたか分からない。もう一度頼める
+     *
+     * @enum {string}
+     */
+    SquareRefundStatus: "none" | "pending" | "refunded" | "failed";
     SquareStatusResponse: {
       enabled: boolean;
       /** @description production か sandbox */
@@ -746,6 +776,9 @@ export interface components {
        * @description この決済で作った注文。まだ無ければ null
        */
       order_id?: string | null;
+      refund_status: components["schemas"]["SquareRefundStatus"];
+      /** @description 返金を断られた・確かめられなかったときの Square のエラー */
+      refund_error?: string | null;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -1732,6 +1765,7 @@ export interface operations {
   /**
    * 支払い済みなのに注文と結び付いていない決済依頼
    * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+   * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
    */
   getUnlinkedSquareCheckouts: {
     responses: {
@@ -1795,6 +1829,109 @@ export interface operations {
       409: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 支払い済みの決済を全額返金する
+   * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+   * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+   * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+   * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+   * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+   */
+  refundSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す
+   * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   */
+  refundOrderSquarePayment: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付け、注文を消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
