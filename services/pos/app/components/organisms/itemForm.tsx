@@ -170,14 +170,14 @@ export function ItemForm({
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          {stockFields.map(({ key, label }) => (
+          {stockFields.map(({ key, label, type }) => (
             <div key={key} className="grid content-start gap-1">
               <Label htmlFor={`${id}-stock-${key}`} className="text-xs">
                 {label}
               </Label>
               <Input
                 id={`${id}-stock-${key}`}
-                type={key === "unit" ? "text" : "number"}
+                type={type}
                 min={0}
                 step="any"
                 value={stock[key] ?? ""}

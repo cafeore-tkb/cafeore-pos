@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { stockFields } from "~/lib/stock";
+import { type StockAmounts, stockFields } from "~/lib/stock";
 
 type Props = {
   resources: StockResource[];
@@ -23,8 +23,10 @@ type Props = {
   onChanged: () => void;
 };
 
+// 見出しは在庫対象の種類の表示名（openapi.yaml の x-enum-descriptions）
+const kindLabels = openapiEnumLabels("StockResourceKind");
+
 export function StockTab({ resources, itemTypes, onChanged }: Props) {
-  const kindLabels = openapiEnumLabels("StockResourceKind");
   return (
     <div className="flex flex-col gap-10">
       <section className="flex flex-col gap-3">
@@ -46,15 +48,14 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
           </p>
         </div>
         <Table>
-          <ResourceHeader name="アイテム" />
+          <ResourceHeader names={["アイテム"]} />
           <TableBody>
             {resources
-              .filter((r) => r.item_id != null)
+              .filter((r) => r.kind === "item")
               .map((resource) => (
-                <ResourceRow
+                <ItemStockRow
                   key={resource.id}
                   resource={resource}
-                  itemTypes={itemTypes}
                   onChanged={onChanged}
                 />
               ))}
@@ -70,19 +71,19 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
           </p>
         </div>
         <Table>
-          <ResourceHeader name="名前" withItemTypes />
+          <ResourceHeader names={["名前", "使うタイプ"]} />
           <TableBody>
             {resources
-              .filter((r) => r.item_id == null)
+              .filter((r) => r.kind === "cup")
               .map((resource) => (
-                <ResourceRow
+                <CupRow
                   key={resource.id}
                   resource={resource}
                   itemTypes={itemTypes}
                   onChanged={onChanged}
                 />
               ))}
-            <ResourceRow itemTypes={itemTypes} onChanged={onChanged} />
+            <CupRow itemTypes={itemTypes} onChanged={onChanged} />
           </TableBody>
         </Table>
       </section>
@@ -90,18 +91,14 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
   );
 }
 
-function ResourceHeader({
-  name,
-  withItemTypes = false,
-}: {
-  name: string;
-  withItemTypes?: boolean;
-}) {
+/** names は量の欄より前の列の見出し */
+function ResourceHeader({ names }: { names: string[] }) {
   return (
     <TableHeader>
       <TableRow>
-        <TableHead>{name}</TableHead>
-        {withItemTypes && <TableHead>使うタイプ</TableHead>}
+        {names.map((name) => (
+          <TableHead key={name}>{name}</TableHead>
+        ))}
         {stockFields.map(({ key, label }) => (
           <TableHead key={key} className="w-24">
             {label}
@@ -113,7 +110,54 @@ function ResourceHeader({
   );
 }
 
-function ResourceRow({
+/** 単位・1回の量・通知の段階の入力欄 */
+function StockFieldCells({
+  form,
+  onChange,
+}: {
+  form: StockAmounts;
+  onChange: (key: keyof StockAmounts, raw: string) => void;
+}) {
+  return stockFields.map(({ key, type }) => (
+    <TableCell key={key}>
+      <Input
+        type={type}
+        min={0}
+        value={String(form[key])}
+        onChange={(e) => onChange(key, e.target.value)}
+      />
+    </TableCell>
+  ));
+}
+
+/** アイテムの在庫。名前はアイテムの名前で、消すのはアイテムを消すとき */
+function ItemStockRow({
+  resource,
+  onChanged,
+}: {
+  resource: StockResource;
+  onChanged: () => void;
+}) {
+  const { form, setStockField, busy, save } = useStockResourceForm(
+    resource,
+    onChanged,
+  );
+  return (
+    <TableRow>
+      <TableCell>
+        <span className="font-medium">{form.name}</span>
+      </TableCell>
+      <StockFieldCells form={form} onChange={setStockField} />
+      <TableCell>
+        <Button type="button" disabled={busy} onClick={() => void save()}>
+          保存
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function CupRow({
   resource,
   itemTypes,
   onChanged,
@@ -123,76 +167,52 @@ function ResourceRow({
   itemTypes: ItemType[];
   onChanged: () => void;
 }) {
-  const {
-    form,
-    setName,
-    setStockField,
-    toggleItemType,
-    busy,
-    isCup,
-    save,
-    remove,
-  } = useStockResourceForm(resource, onChanged);
+  const { form, setName, setStockField, toggleItemType, busy, save, remove } =
+    useStockResourceForm(resource, onChanged);
 
   return (
     <TableRow>
       <TableCell>
-        {isCup ? (
-          <Input
-            value={form.name ?? ""}
-            placeholder={resource ? "" : "新しいカップ"}
-            onChange={(e) => setName(e.target.value)}
-          />
-        ) : (
-          <span className="font-medium">{form.name}</span>
-        )}
+        <Input
+          value={form.name ?? ""}
+          placeholder={resource ? "" : "新しいカップ"}
+          onChange={(e) => setName(e.target.value)}
+        />
       </TableCell>
-      {isCup && (
-        <TableCell>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {/* カップを作らないタイプ（makes_cup が false）は選んでもカップが減らないので出さない。もう選んであれば外せるよう出す */}
-            {itemTypes
-              .filter(
-                (itemType) =>
-                  itemType.makes_cup ||
-                  form.item_type_ids?.includes(itemType.id ?? ""),
-              )
-              .map((itemType) => (
-                <label
-                  key={itemType.id}
-                  className="flex items-center gap-1 whitespace-nowrap text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
-                    checked={
-                      form.item_type_ids?.includes(itemType.id ?? "") ?? false
-                    }
-                    onChange={() => toggleItemType(itemType.id ?? "")}
-                  />
-                  {itemType.display_name}
-                </label>
-              ))}
-          </div>
-        </TableCell>
-      )}
-      {stockFields.map(({ key }) => (
-        <TableCell key={key}>
-          <Input
-            type={key === "unit" ? "text" : "number"}
-            min={0}
-            value={String(form[key])}
-            onChange={(e) => setStockField(key, e.target.value)}
-          />
-        </TableCell>
-      ))}
+      <TableCell>
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {/* カップを作らないタイプ（makes_cup が false）は選んでもカップが減らないので出さない。もう選んであれば外せるよう出す */}
+          {itemTypes
+            .filter(
+              (itemType) =>
+                itemType.makes_cup ||
+                form.item_type_ids?.includes(itemType.id ?? ""),
+            )
+            .map((itemType) => (
+              <label
+                key={itemType.id}
+                className="flex items-center gap-1 whitespace-nowrap text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={
+                    form.item_type_ids?.includes(itemType.id ?? "") ?? false
+                  }
+                  onChange={() => toggleItemType(itemType.id ?? "")}
+                />
+                {itemType.display_name}
+              </label>
+            ))}
+        </div>
+      </TableCell>
+      <StockFieldCells form={form} onChange={setStockField} />
       <TableCell>
         <div className="flex gap-2">
           <Button type="button" disabled={busy} onClick={() => void save()}>
             {resource ? "保存" : "追加"}
           </Button>
-          {/* 消せるのはカップだけ。アイテムの在庫はアイテムを消すと消える */}
-          {resource && isCup && (
+          {resource && (
             <Button
               type="button"
               variant="destructive"
