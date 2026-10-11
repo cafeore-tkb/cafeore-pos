@@ -1,10 +1,20 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
 
+// カップ・抽出などの判定は種類の名前で決め打ちせず、下の項目（API の値）を使う。
+// 項目の無い古いデータは既定値で補わずに弾く（ミルクやグッズをコーヒーとして数えないように）。
 export const itemTypeSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   display_name: z.string(),
+  /** 1杯ずつカップを作る（マスター・提供画面に出る）。グッズは false */
+  makes_cup: z.boolean(),
+  /** 抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。ミルクやグッズは false */
+  needs_brew: z.boolean(),
+  /** 上級生だけが淹れる */
+  senior_only: z.boolean(),
+  /** アイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない） */
+  iced_brew: z.boolean(),
 });
 
 export const itemSchema = z.object({

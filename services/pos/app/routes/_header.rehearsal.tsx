@@ -172,17 +172,8 @@ export default function Rehearsal() {
   const [menusError, setMenusError] = useState(false);
   const [plan, setPlan] = useState<MenuPlan | null>(null);
 
-  const {
-    orders: posOrders,
-    isOrdersLoaded,
-    masterState,
-  } = useOrdersWSContext();
-  // オーダーストップは API から WebSocket で届いた最新を優先する。
-  // 接続してから一度も変わっていなければ届かないので、ヘッダーと同じ Firestore の値を使う
-  const firestoreOperational = useOrderStat();
-  const isOperational = masterState
-    ? masterState.type !== "stop"
-    : firestoreOperational;
+  const { orders: posOrders, isOrdersLoaded } = useOrdersWSContext();
+  const isOperational = useOrderStat();
 
   useEffect(() => {
     setParams(loadStored());
@@ -251,14 +242,14 @@ export default function Rehearsal() {
     );
   }, [params, plan, profileKey, durationMin, level, seed]);
 
-  // セットに入っている物販の数。セットを引いた注文は、そのぶん別の物販を引かない
+  // セットに入っている物販（種類の「カップを作る」が無いもの）の数。セットを引いた注文は、そのぶん別の物販を引かない
   const goodsInMenu = useMemo(
     () =>
       Object.fromEntries(
         (menus ?? []).map((menu) => [
           menu.id,
           menu.items
-            .filter(({ item }) => item.item_type.name === "others")
+            .filter(({ item }) => !item.item_type.makes_cup)
             .reduce((sum, { quantity }) => sum + quantity, 0),
         ]),
       ),

@@ -1,4 +1,5 @@
 import type { ItemType } from "@cafeore/common";
+import { FLAG_FIELDS } from "~/components/organisms/itemTypeForm";
 import {
   Table,
   TableBody,
@@ -9,6 +10,12 @@ import {
 } from "~/components/ui/table";
 import { RowActions, type RowHandlers } from "./RowActions";
 import type { Usage } from "./usage";
+
+// 種類の項目のうちオンのものを、入力のスイッチと同じ名前で並べる
+const flagLabels = (itemType: ItemType) =>
+  FLAG_FIELDS.filter((field) => itemType[field.key]).map(
+    (field) => field.label,
+  );
 
 export function ItemTypesTab({
   itemTypes,
@@ -21,6 +28,7 @@ export function ItemTypesTab({
         <TableRow>
           <TableHead>表示名</TableHead>
           <TableHead>内部名</TableHead>
+          <TableHead>扱い</TableHead>
           <TableHead className="w-32">アイテム数</TableHead>
           <TableHead className="w-60">操作</TableHead>
         </TableRow>
@@ -41,6 +49,9 @@ export function ItemTypesTab({
               </TableCell>
               <TableCell className="font-mono text-muted-foreground text-sm">
                 {itemType.name}
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sm">
+                {flagLabels(itemType).join("・") || "—"}
               </TableCell>
               <TableCell
                 className="text-muted-foreground"
