@@ -23,8 +23,8 @@ export const useStockResourceForm = (
   resource: StockResource | undefined,
   onChanged: () => void,
 ) => {
-  // アイテムの在庫はアイテムに結ばれている。名前はアイテムの名前で、使うタイプは持たない
-  const isCup = resource?.item_id == null;
+  // アイテムの在庫の名前はアイテムの名前で、使うタイプは持たない
+  const isCup = !resource || resource.kind === "cup";
   const initial = (): StockResourceInput =>
     resource ? { ...resource } : { ...newCup };
   const [form, setForm] = useState<StockResourceInput>(initial);
@@ -102,7 +102,6 @@ export const useStockResourceForm = (
     setStockField,
     toggleItemType,
     busy,
-    isCup,
     save,
     remove,
   };

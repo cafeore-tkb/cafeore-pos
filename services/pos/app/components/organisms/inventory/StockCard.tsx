@@ -35,6 +35,9 @@ const minutesLabel = (minutes: number) => {
   return m === 0 || h >= 10 ? `${h} 時間` : `${h} 時間 ${m} 分`;
 };
 
+// 札は在庫対象の種類の表示名（openapi.yaml の x-enum-descriptions）
+const kindLabels = openapiEnumLabels("StockResourceKind");
+
 // 在庫対象 1 つのカード（残量と、棚卸し・入荷の記録の欄）。在庫の画面（/inventory）と CaOS の豆キューで使う。
 // children はカードのいちばん下に足す行（豆キューの「盤面に◯杯」など）。onRecorded を渡さなければ記録の欄を出さない（見るだけ）。
 export function StockCard({
@@ -122,7 +125,7 @@ export function StockCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-            {openapiEnumLabels("StockResourceKind")[resource.kind]}
+            {kindLabels[resource.kind]}
           </span>
           <h2 className="font-semibold text-lg">{resource.name}</h2>
         </div>

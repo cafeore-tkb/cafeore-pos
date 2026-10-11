@@ -31,12 +31,17 @@ export type StockAmounts = Pick<
   "unit" | "per_serving" | "notify_from" | "notify_step" | "buffer"
 >;
 
-export const stockFields: { key: keyof StockAmounts; label: string }[] = [
-  { key: "unit", label: "単位" },
-  { key: "per_serving", label: "1回の量" },
-  { key: "notify_from", label: "通知開始" },
-  { key: "notify_step", label: "間隔" },
-  { key: "buffer", label: "バッファ" },
+/** 入力欄。単位のほかは数 */
+export const stockFields: {
+  key: keyof StockAmounts;
+  label: string;
+  type: "text" | "number";
+}[] = [
+  { key: "unit", label: "単位", type: "text" },
+  { key: "per_serving", label: "1回の量", type: "number" },
+  { key: "notify_from", label: "通知開始", type: "number" },
+  { key: "notify_step", label: "間隔", type: "number" },
+  { key: "buffer", label: "バッファ", type: "number" },
 ];
 
 /** 入力欄の文字を値にする。単位のほかは数 */
