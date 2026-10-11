@@ -719,6 +719,38 @@
       }
     }
   },
+  "PrinterSettingsResponse": {
+    "type": "object",
+    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "properties": {
+      "label_printer_ip": {
+        "type": "string",
+        "description": "ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.2"
+      },
+      "receipt_printer_ip": {
+        "type": "string",
+        "description": "レシート・領収書用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.3"
+      }
+    }
+  },
+  "PrinterSettingsUpdateRequest": {
+    "type": "object",
+    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "properties": {
+      "label_printer_ip": {
+        "type": "string",
+        "description": "ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.2"
+      },
+      "receipt_printer_ip": {
+        "type": "string",
+        "description": "レシート・領収書用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.3"
+      }
+    }
+  },
   "CashierStateResponse": {
     "type": "object",
     "required": ["editting_order", "submitted_order_id", "updated_at"],

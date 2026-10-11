@@ -48,9 +48,9 @@ const sections: Section[] = [
         to: "/cashier",
         title: "レジ",
         audience: "staff",
-        where: "レジ担当（ラベルプリンターと接続）",
+        where: "レジ担当（ラベル・レシートのプリンターと接続）",
         description:
-          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルが印刷されます。",
+          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルとレシートが印刷されます。",
       },
       {
         kind: "master",
@@ -146,6 +146,7 @@ const settingLinks = [
   { to: "/products", label: "商品管理" },
   { to: "/inventory/settings", label: "在庫の設定" },
   { to: "/square-devices", label: "Square 端末" },
+  { to: "/printer-settings", label: "プリンター" },
 ];
 
 export default function Index() {
@@ -178,7 +179,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            メニュー・商品・在庫の通知条件・Square 端末を設定します
+            メニュー・商品・在庫の通知条件・Square 端末・プリンターを設定します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (
