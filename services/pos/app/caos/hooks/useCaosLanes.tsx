@@ -22,7 +22,8 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 // ドリッパーの担当者（名前と上級生か）。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
 // 共有の WebSocket の {"type":"caos_lanes"} で全部の画面にそろう。
 //
-// 各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
+// 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
+// 閲覧だけの画面（/master-sheet/view）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、自動では替えない。
 // 上級生でない人（担当者なしも）にするドリッパーに上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめる。
 // ［変える］ならそのまま替え、カードも残す。断られた理由は POS の通知（sonner）で出す。
@@ -30,6 +31,8 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 interface CaosLanesContextValue {
   /** 今日の 6 つ（ドリッパーの番号の順） */
   lanes: CaosLane[];
+  /** 交代できる（操作の画面） */
+  editable: boolean;
   /** 上級生の担当者がいるか（いなければ上級生のみのカードをどこにも置けない） */
   hasSenior: boolean;
   openChange: (dripper: number) => void;
@@ -48,15 +51,17 @@ export const useCaosLanes = () => {
 type Confirm = { warnings: string[]; run: () => void };
 
 export const CaosLanesProvider = ({
+  editable = false,
   children,
 }: {
+  editable?: boolean;
   children: React.ReactNode;
 }) => {
   const { caosLanes, orders } = useOrdersWSContext();
   // 日が変わったら前の日の担当者は使わない（1 分ごとに今日を確かめる）
   const today = jstDate(useCurrentTime(60_000).getTime());
   const lanes = todaysCaosLanes(caosLanes, today);
-  const shiftFeed = useShiftFeed();
+  const shiftFeed = useShiftFeed(editable);
 
   const [changing, setChanging] = useState<{
     dripper: number;
@@ -97,6 +102,7 @@ export const CaosLanesProvider = ({
 
   const value: CaosLanesContextValue = {
     lanes,
+    editable,
     hasSenior: lanes.some((lane) => lane.senior),
     openChange: (dripper) => setChanging({ dripper, nowMs: Date.now() }),
     openSettings: () => setSettingsOpen(true),

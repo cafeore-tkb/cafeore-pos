@@ -21,7 +21,7 @@ export default function MasterSheet() {
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
       {/* ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
-      <CaosLanesProvider>
+      <CaosLanesProvider editable>
         <CaosApp />
       </CaosLanesProvider>
     </div>

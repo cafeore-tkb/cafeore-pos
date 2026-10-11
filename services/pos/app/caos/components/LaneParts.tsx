@@ -37,13 +37,14 @@ export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
   );
 };
 
-/** 「交代」のボタン。compact なら印だけ（幅の狭い見出し） */
+/** 「交代」のボタン。閲覧だけの画面では出さない。compact なら印だけ（幅の狭い見出し） */
 export const LaneChangeButton: React.FC<{
   dripper: number;
   compact?: boolean;
   className?: string;
 }> = ({ dripper, compact = false, className = "" }) => {
-  const { openChange } = useCaosLanes();
+  const { editable, openChange } = useCaosLanes();
+  if (!editable) return null;
   return (
     <button
       type="button"
@@ -64,10 +65,10 @@ export const LaneChangeButton: React.FC<{
 };
 
 // ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（上級生のみのカードをどこにも置けない）。
-// この端末の sohosai-shift の合言葉の設定も開ける。
+// 操作の画面では、この端末の sohosai-shift の合言葉の設定も開ける。
 
 export const LaneHeaderStatus: React.FC = () => {
-  const { hasSenior, openSettings, shiftFeed } = useCaosLanes();
+  const { hasSenior, editable, openSettings, shiftFeed } = useCaosLanes();
   return (
     <>
       {!hasSenior && (
@@ -84,15 +85,17 @@ export const LaneHeaderStatus: React.FC = () => {
           </span>
         </output>
       )}
-      <button
-        type="button"
-        onClick={openSettings}
-        title="sohosai-shift の合言葉（この端末の設定）"
-        aria-label="sohosai-shift の合言葉"
-        className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border ${shiftFeed.feedKey ? (shiftFeed.error ? "border-red-200 bg-red-50 text-red-600" : "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700") : "border-slate-300 border-dashed bg-white text-slate-400"}`}
-      >
-        <KeyRound className="h-4 w-4" />
-      </button>
+      {editable && (
+        <button
+          type="button"
+          onClick={openSettings}
+          title="sohosai-shift の合言葉（この端末の設定）"
+          aria-label="sohosai-shift の合言葉"
+          className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border ${shiftFeed.feedKey ? (shiftFeed.error ? "border-red-200 bg-red-50 text-red-600" : "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700") : "border-slate-300 border-dashed bg-white text-slate-400"}`}
+        >
+          <KeyRound className="h-4 w-4" />
+        </button>
+      )}
     </>
   );
 };

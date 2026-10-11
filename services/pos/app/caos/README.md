@@ -6,7 +6,7 @@
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに同じ盤面を映します。「次へ」・空きスロットは出さず、カードを押しても動かさず、盤面への書き込みも送りません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -57,7 +57,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 
 ## ドリッパーの担当者と交代
 
-- 「今そのドリッパーに誰がいるか」（名前と、上級生か）はサーバーが日本時間の日付ごとに持ちます（API の表 `caos_lanes`。`api/internal/handlers/caos_lanes.go`）。全部の iPad に共有の WebSocket の `{"type":"caos_lanes"}` で届き（今日の 6 つ全部）、列の見出しに「1st 山田★」のように出します（上級生に ★。担当者がいなければ番号だけ）。
+- 「今そのドリッパーに誰がいるか」（名前と、上級生か）はサーバーが日本時間の日付ごとに持ちます（API の表 `caos_lanes`。`api/internal/handlers/caos_lanes.go`）。全部の iPad に共有の WebSocket の `{"type":"caos_lanes"}` で届き（今日の 6 つ全部）、列の見出しに「1st 山田★」のように出します（上級生に ★。担当者がいなければ番号だけ）。閲覧だけの画面（`/master-sheet/view`）も名前を出しますが、交代はできません。
 - 替えるのは人が CaOS で行います。各ドリッパーの見出しの「交代」から、名前を選ぶか入れて替えます（`PUT /api/caos/lanes/{dripper}`）。空き（担当者なし）にもでき、ほかのドリッパーの担当者と入れ替えもできます（`POST /api/caos/lanes/swap`）。押したらその場で替わります（抽出中かどうかは見ません。待機のカードも動きません）。
 - 替えるたびに、サーバーが交代の記録（表 `caos_lane_changes`。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か。入れ替えは 2 行）を足します。抽出の統計のためのもので、画面には出しません。
 - 名前の候補は sohosai-shift の予定から出します。今の枠・次の枠（本番の 30 分ごとの枠）と、オペ練の今と次のラウンドの、そのドリッパーの番目の人です。候補に無い人は自由に入れられます。予定どおりに自動で替えることはしません。

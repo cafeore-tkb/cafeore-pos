@@ -80,6 +80,20 @@ const POS_STATUS: Record<
   },
 };
 
+/** 注文の接続の札（閲覧だけの画面（ReadOnlyBoard）でも使う） */
+export const PosStatusBadge: React.FC<{ status: PosConnectionStatus }> = ({
+  status,
+}) => (
+  <output
+    aria-label={`cafeore-pos ${POS_STATUS[status].label}`}
+    title={`cafeore-posの注文: ${POS_STATUS[status].label}`}
+    className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${POS_STATUS[status].box}`}
+  >
+    <Database className="h-4 w-4" />
+    <span className={`h-2 w-2 rounded-full ${POS_STATUS[status].dot}`} />
+  </output>
+);
+
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   controlViewMode,
@@ -252,16 +266,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex items-center gap-2">
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
-        <output
-          aria-label={`cafeore-pos ${POS_STATUS[posStatus].label}`}
-          title={`cafeore-posの注文: ${POS_STATUS[posStatus].label}`}
-          className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${POS_STATUS[posStatus].box}`}
-        >
-          <Database className="h-4 w-4" />
-          <span
-            className={`h-2 w-2 rounded-full ${POS_STATUS[posStatus].dot}`}
-          />
-        </output>
+        <PosStatusBadge status={posStatus} />
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}

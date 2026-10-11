@@ -16,6 +16,7 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => (
         onSelectOrder={props.onSelectOrder}
         onAssignToBay={props.onAssignToBay}
         onMergeOrders={props.onMergeOrders}
+        readOnly={props.readOnly}
       />
     </div>
   </div>

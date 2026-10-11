@@ -46,8 +46,11 @@ export interface ShiftFeedState {
   reload: () => void;
 }
 
-export const useShiftFeed = (): ShiftFeedState => {
-  const [feedKey, setFeedKey] = useState(readStoredKey);
+/** enabled が false（閲覧だけの画面）なら読まない */
+export const useShiftFeed = (enabled: boolean): ShiftFeedState => {
+  const [feedKey, setFeedKey] = useState(() =>
+    enabled ? readStoredKey() : "",
+  );
   const [feed, setFeed] = useState<ShiftFeed | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
