@@ -24,6 +24,10 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
+export const emergencyReasons = (card: CaosCard) =>
+  unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
+
 /**
  * カードの名前。商品の略称（abbr）をそのまま。指名は「（指名:2nd）」（番号の無い古い明細は自由記述）、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える

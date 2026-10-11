@@ -8,7 +8,7 @@ import {
   updateMasterStatus,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
@@ -16,11 +16,13 @@ import {
 } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
-import {
-  type EmergencyCup,
-  useCupEmergency,
-} from "~/components/functional/useCupEmergency";
+import { useCupEmergency } from "~/components/functional/useCupEmergency";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import {
+  EmergencyIcon,
+  type EmergencyInitial,
+  EmergencySheet,
+} from "~/components/molecules/EmergencyForm";
 import { InputComment } from "~/components/molecules/InputComment";
 import {
   OrderInfoCard,
@@ -42,6 +44,8 @@ export default function FielsOfMaster() {
   const submit = useSubmit();
   const isOperational = useOrderStat();
   const { printer, addEmergency, cancelEmergency } = useCupEmergency();
+  // 開いている緊急の入力（ヘッダーから開けば番号から入れる）
+  const [emergency, setEmergency] = useState<EmergencyInitial | "byNumber">();
 
   const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
@@ -67,7 +71,7 @@ export default function FielsOfMaster() {
     <div className="p-4 font-sans">
       <div className="flex justify-between pb-4">
         <h1 className="w-1/3 text-3xl">マスター</h1>
-        <div className="flex w-1/3 justify-center">
+        <div className="flex w-1/3 justify-center gap-3">
           <Button
             type="button"
             className={cn(isOperational ? "bg-red-700" : "bg-sky-700")}
@@ -76,6 +80,15 @@ export default function FielsOfMaster() {
             }
           >
             {isOperational ? "オーダーストップする" : "オーダー再開する"}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            className="gap-1.5"
+            onClick={() => setEmergency("byNumber")}
+          >
+            <EmergencyIcon className="h-4 w-4" />
+            番号で緊急
           </Button>
         </div>
         <div className="flex w-1/3 items-center justify-end gap-3">
@@ -96,13 +109,21 @@ export default function FielsOfMaster() {
               <MasterOrderCard
                 key={order.id}
                 order={order}
-                onEmergency={addEmergency}
+                onEmergency={setEmergency}
                 onCancelEmergency={(id) => cancelEmergency([id])}
               />
             )
           );
         })}
       </div>
+      {emergency && (
+        <EmergencySheet
+          orders={orders ?? []}
+          initial={emergency === "byNumber" ? undefined : emergency}
+          onAdd={addEmergency}
+          onClose={() => setEmergency(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -115,7 +136,7 @@ const MasterOrderCard = ({
   onCancelEmergency,
 }: {
   order: WithId<OrderEntity>;
-  onEmergency: (cups: EmergencyCup[]) => void;
+  onEmergency: (initial: EmergencyInitial) => void;
   onCancelEmergency: (emergencyId: string) => void;
 }) => {
   const calling = order.status === "calling";
@@ -142,7 +163,9 @@ const MasterOrderCard = ({
                   (emergency) => emergency.brewStartedAt === null,
                 )?.id
             }
-            onEmergency={() => onEmergency([{ order, cupId }])}
+            onEmergency={() =>
+              onEmergency({ orderNo: order.orderId, cupIds: [cupId] })
+            }
             onCancel={onCancelEmergency}
           />
         ),
@@ -159,7 +182,7 @@ const MasterOrderCard = ({
   );
 };
 
-// カップの下の緊急と、その取り消し（どちらも 2 回押しで決める）
+// カップの下の緊急（入力を開く）と、まだ抽出を始めていない入れ直しの取り消し（2 回押しで決める。1 行に並べてカップの高さをそろえる）
 const EmergencyActions = ({
   cancelableId,
   onEmergency,
@@ -169,17 +192,23 @@ const EmergencyActions = ({
   onEmergency: () => void;
   onCancel: (emergencyId: string) => void;
 }) => (
-  <div className="mt-1 grid gap-1">
-    <TwoStepButton
-      label="緊急"
-      confirmLabel="入れ直す"
-      onConfirm={onEmergency}
-    />
+  <div className="mt-1 flex gap-1">
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="flex-1 gap-1 border-red-600 font-bold text-red-700 hover:bg-red-50 hover:text-red-800"
+      onClick={onEmergency}
+    >
+      <EmergencyIcon className="h-4 w-4" />
+      緊急
+    </Button>
     {cancelableId && (
       <TwoStepButton
-        label="緊急を取り消す"
+        label="取消"
         confirmLabel="取り消す"
         onConfirm={() => onCancel(cancelableId)}
+        className="w-auto px-2"
       />
     )}
   </div>

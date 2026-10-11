@@ -1,5 +1,4 @@
 import {
-  type CaosBoardCup,
   type CaosCard,
   type CaosPlace,
   type CaosWritesResult,
@@ -160,25 +159,21 @@ export const useCaosSession = () => {
     /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
     labelPrinter,
     /**
-     * 抽出中・終わりのカードのカップを入れ直す（緊急）。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る。
-     * 実データテスト中は入れ直さない（null。練習の盤面には入れ直しが無い）
+     * 緊急（入れ直し）。実データテスト中は null（練習の盤面には入れ直しが無い）
+     *   - orders：番号から入れ直すカップを選ぶ注文
+     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る
+     *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
      */
-    rebrew: test.session
+    emergency: test.session
       ? null
-      : (cups: CaosBoardCup[]) =>
-          addEmergency(
-            cups.flatMap((cup) => {
-              const order = live.orders?.find((o) => o.id === cup.orderId);
-              return order ? [{ order, cupId: cup.cupId }] : [];
-            }),
-          ),
-    /** 入れ直しのカード（未割当・待機）の入れ直しを取り消す。実データテスト中は null */
-    cancelEmergency: test.session
-      ? null
-      : (card: CaosCard) =>
-          cancelEmergency(
-            card.cups.filter((cup) => cup.emergency).map((cup) => cup.id),
-          ),
+      : {
+          orders: live.orders ?? [],
+          add: addEmergency,
+          cancel: (card: CaosCard) =>
+            cancelEmergency(
+              card.cups.filter((cup) => cup.emergency).map((cup) => cup.id),
+            ),
+        },
     soundEnabled,
     toggleSound: () => {
       soundManager.enabled = !soundEnabled;

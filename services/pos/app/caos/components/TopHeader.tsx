@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
@@ -54,6 +55,8 @@ interface TopHeaderProps {
   posStatus: PosConnectionStatus;
   /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
   labelPrinter: { pendingCount: number; retry: () => void };
+  /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
+  onOpenEmergency?: () => void;
 }
 
 // 注文の接続の札（文字・枠・点の色）
@@ -120,6 +123,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onEndTestPlay,
   posStatus,
   labelPrinter,
+  onOpenEmergency,
 }) => {
   return (
     <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
@@ -274,6 +278,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           count={labelPrinter.pendingCount}
           onRetry={labelPrinter.retry}
         />
+        {onOpenEmergency && (
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="flex h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg bg-red-600 px-3 font-black text-[13px] text-white shadow-xs hover:bg-red-700"
+          >
+            <EmergencyIcon className="h-4 w-4" />
+            緊急
+          </button>
+        )}
         <PosStatusBadge status={posStatus} />
         <button
           type="button"

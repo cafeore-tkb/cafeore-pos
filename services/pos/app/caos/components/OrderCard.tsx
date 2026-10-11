@@ -10,6 +10,7 @@ import {
   type CardLook,
   cardName,
   cardTypeName,
+  emergencyReasons,
   orderLabel,
 } from "../logic/cards";
 import { moveTargets } from "../logic/lanes";
@@ -126,11 +127,19 @@ export const OrderCard: React.FC<
           {card.cups.length}杯
         </span>
         {card.emergency && (
-          <span
-            className={`shrink-0 whitespace-nowrap rounded-md border border-red-700 bg-red-600 font-black text-white leading-none ${text.cups}`}
-          >
-            緊急
-          </span>
+          <>
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-md border border-red-700 bg-red-600 font-black text-white leading-none ${text.cups}`}
+            >
+              緊急
+            </span>
+            <span
+              title={emergencyReasons(card)}
+              className="min-w-0 truncate font-bold text-[11px] text-red-700"
+            >
+              {emergencyReasons(card)}
+            </span>
+          </>
         )}
         {done && (
           <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">

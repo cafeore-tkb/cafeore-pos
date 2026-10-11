@@ -5,12 +5,12 @@ import { orderLabel } from "../logic/cards";
 
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
- * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は抽出中・終わりのカードの入れ直し、
+ * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、auxiliary は補助のタブ
  */
 type OpenPanel =
   | { kind: "detail"; key: string }
-  | { kind: "rebrew"; key: string }
+  | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | null;
@@ -44,7 +44,7 @@ export const useBoardSelection = (
   useEffect(() => {
     if (ticketKey && !scheduled) setPanel(null);
   }, [ticketKey, scheduled]);
-  // 入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じる
+  // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じる
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
     ? cards.find(
@@ -69,9 +69,14 @@ export const useBoardSelection = (
     panel,
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
-    /** 入れ直しのパネルを開いている、抽出中・終わりのカード */
-    rebrewing,
-    openRebrew: (card: CaosCard) => setPanel({ kind: "rebrew", key: card.key }),
+    /** 緊急の入力を開いていれば、開いたカード（ヘッダーから開いたなら card は無い） */
+    rebrew:
+      panel?.kind === "rebrew" && (rebrewKey === null || rebrewing)
+        ? { card: rebrewing }
+        : null,
+    /** 緊急の入力を開く（card は抽出中・終わりのカード。無ければ番号から） */
+    openRebrew: (card?: CaosCard) =>
+      setPanel({ kind: "rebrew", key: card?.key ?? null }),
     closeRebrew: () => close("rebrew"),
     openTicket: (card: CaosCard) => setPanel({ kind: "detail", key: card.key }),
     /** 詳細のパネルを開き、その注文を選ぶ */
