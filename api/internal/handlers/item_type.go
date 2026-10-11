@@ -6,19 +6,22 @@ import (
 	"net/http"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ItemTypeHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewItemTypeHandler(db *gorm.DB) *ItemTypeHandler {
-	return &ItemTypeHandler{db: db}
+func NewItemTypeHandler(db *gorm.DB, activity *notify.Activity) *ItemTypeHandler {
+	return &ItemTypeHandler{db: db, activity: activity}
 }
 
 func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
@@ -110,6 +113,7 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeCreatedMessage(&itemType))
 }
 
 // GET /api/item-types/:id - idからアイテムタイプ取得
@@ -162,6 +166,8 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 		return
 	}
 
+	before := itemType
+
 	// 更新
 	itemType.Name = req.Name
 	itemType.DisplayName = req.DisplayName
@@ -182,6 +188,7 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemTypeResponse(&itemType))
+	h.activity.Post(itemTypeUpdatedMessage(&before, &itemType))
 }
 
 // DELETE /api/item-types/:id - アイテムタイプ削除
@@ -194,16 +201,28 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	// カップを使う種類からも外す。消した種類はカップを作らないので、残すと保存し直せない ID だけが残る
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.ItemType
+	var affected int64
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", itemTypeID)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		return tx.Where("item_type_id = ?", itemTypeID).Delete(&models.StockResourceItemType{}).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if result.RowsAffected == 0 {
+	if affected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+	h.activity.Post(itemTypeDeletedMessage(&deleted))
 }

@@ -10,3 +10,4 @@ export * from "./caosLanes";
 export * from "./caosShiftFeed";
 export * from "./jst";
 export * from "./caosPractice";
+export * from "./openapi-enum";

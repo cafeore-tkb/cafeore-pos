@@ -99,7 +99,7 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 				return nil, errInvalidOrderMenus
 			}
 			prev = &old
-			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
+			line.ID, line.MenuName, line.UnitPrice, line.StockUsages = old.ID, old.MenuName, old.UnitPrice, old.StockUsages
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
 			menu, ok := masters[menuID]
@@ -150,7 +150,54 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	if err != nil {
 		return nil, nil, err
 	}
+	// 新しい明細で減る在庫を、今の在庫の設定で決めて残す。既存の明細は前に決めたものを引き継ぐ
+	if len(ids) > 0 {
+		var resources []models.StockResource
+		if err := db.Preload("ItemTypes").Find(&resources).Error; err != nil {
+			return nil, nil, err
+		}
+		menuByID := make(map[uuid.UUID]models.Menu, len(menus))
+		for _, menu := range menus {
+			menuByID[menu.ID] = menu
+		}
+		for i, request := range requests {
+			if request.OrderMenuId == nil {
+				lines[i].StockUsages = buildOrderStockUsages(orderID, lines[i].ID, menuByID[lines[i].MenuID], resources)
+			}
+		}
+	}
 	return lines, buildOrderCups(orderID, lines, existing, menus), nil
+}
+
+// 明細 1 行で減る在庫。アイテムの在庫はアイテムの数 × per_serving、カップはカップを作る（種類の makes_cup。
+// order_cups と同じ isCupItem）アイテムの数 × per_serving。
+// 同じ在庫対象（同じ種類のアイテムが 2 つあるセットのカップなど）は 1 行にまとめる。
+func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, resources []models.StockResource) []models.OrderStockUsage {
+	usages := []models.OrderStockUsage{}
+	index := map[uuid.UUID]int{}
+	add := func(r models.StockResource, quantity int) {
+		i, ok := index[r.ID]
+		if !ok {
+			i = len(usages)
+			index[r.ID] = i
+			usages = append(usages, models.OrderStockUsage{OrderMenuID: orderMenuID, ResourceID: r.ID, OrderID: orderID})
+		}
+		usages[i].Servings += quantity
+		usages[i].Amount += float64(quantity) * r.PerServing
+	}
+	for _, mi := range menu.MenuItems {
+		for _, r := range resources {
+			switch {
+			case r.ItemID != nil && *r.ItemID == mi.ItemID:
+				add(r, mi.Quantity)
+			case r.Kind == string(models.StockResourceKindCup) && isCupItem(mi.Item) && slices.ContainsFunc(r.ItemTypes, func(t models.StockResourceItemType) bool {
+				return t.ItemTypeID == mi.Item.ItemTypeID
+			}):
+				add(r, mi.Quantity)
+			}
+		}
+	}
+	return usages
 }
 
 // DB models → API models 変換関数
@@ -506,6 +553,10 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
+			return err
+		}
+		// 明細と一緒に、その明細で減る在庫も入れ直す
 		if len(orderMenus) > 0 {
 			if err := tx.Create(&orderMenus).Error; err != nil {
 				return err
@@ -585,7 +636,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
-	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
+	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
@@ -605,6 +656,9 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
 			return err
 		}
 		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して

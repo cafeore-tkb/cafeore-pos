@@ -152,6 +152,7 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
+| `SLACK_ACTIVITY_WEBHOOK_URL` | 未設定（`SLACK_WEBHOOK_URL` に流す） | 未設定 | 任意。商品の登録・変更・削除、棚卸し・入荷、オーダーストップの通知を別のチャンネルに分けるときだけ |
 | `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
 | `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
@@ -393,7 +394,7 @@ Neon のブランチで、本番のデータは入っていない。
 - API は起動時に `AutoMigrate` でモデルを DB へ反映する（`api/cmd/server/migrate.go`）。本番・プレビュー・ローカルとも同じ
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
-- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる
 - PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
   - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
   - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る（手元での流し方は下の「backend のテスト」）
@@ -440,7 +441,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
 | `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
-| `caos_lanes_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `dripper_assignees`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
+| `dripper_assignees_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `dripper_assignees`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
 - ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。全部のチャンネルを 1 本の接続でまとめて待ち受ける

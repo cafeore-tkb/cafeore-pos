@@ -8,16 +8,19 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type MenuHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewMenuHandler(db *gorm.DB) *MenuHandler {
-	return &MenuHandler{db: db}
+func NewMenuHandler(db *gorm.DB, activity *notify.Activity) *MenuHandler {
+	return &MenuHandler{db: db, activity: activity}
 }
 
 func toMenuResponse(menu *models.Menu) models.MenuResponse {
@@ -128,6 +131,7 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toMenuResponse(&menu))
+	h.activity.Post(menuCreatedMessage(&menu))
 }
 
 func (h *MenuHandler) UpdateMenu(c *gin.Context) {
@@ -149,16 +153,17 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 
+	var before models.Menu
 	menu := models.Menu{ID: menuID}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&menu).Updates(map[string]any{
-			"name": request.Name, "abbr": request.Abbr, "price": request.Price, "key": request.Key,
-		})
-		if result.Error != nil {
-			return result.Error
+		// 通知で変更前と比べるため、行を押さえてから読む（同時の更新と差分が混ざらない）。無ければ 404
+		if err := preloadMenu(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&before, "id = ?", menuID).Error; err != nil {
+			return err
 		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+		if err := tx.Model(&menu).Updates(map[string]any{
+			"name": request.Name, "abbr": request.Abbr, "price": request.Price, "key": request.Key,
+		}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("menu_id = ?", menuID).Delete(&models.MenuItem{}).Error; err != nil {
 			return err
@@ -178,6 +183,7 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMenuResponse(&menu))
+	h.activity.Post(menuUpdatedMessage(&before, &menu))
 }
 
 func (h *MenuHandler) DeleteMenu(c *gin.Context) {
@@ -187,7 +193,9 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.Menu{}, "id = ?", menuID)
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.Menu
+	result := h.db.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", menuID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -197,4 +205,5 @@ func (h *MenuHandler) DeleteMenu(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+	h.activity.Post(menuDeletedMessage(&deleted))
 }
