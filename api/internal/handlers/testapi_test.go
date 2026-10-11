@@ -70,6 +70,7 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	masterStateHandler := NewMasterStateHandler(db, hub)
 	cashierStateHandler := NewCashierStateHandler(db, hub)
 	colorSettingHandler := NewColorSettingHandler(db)
+	printerSettingHandler := NewPrinterSettingHandler(db)
 
 	api := r.Group("/api")
 	api.GET("/items", itemHandler.GetItems)
@@ -121,6 +122,8 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 	api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 	api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
+	api.GET("/printer-settings", printerSettingHandler.GetPrinterSettings)
+	api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
 }
 
 type testResponse struct {
