@@ -19,13 +19,13 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// 本物の Postgres が要るので、TEST_DATABASE_URL を渡したときだけ走らせる。
+// 本物の Postgres が要るので、LISTEN_TEST_DATABASE_URL を渡したときだけ走らせる。
 // 中のテーブルは作り直すので、捨ててよい DB を渡すこと。
 func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
+	dsn := os.Getenv("LISTEN_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
+		t.Skip("LISTEN_TEST_DATABASE_URL is not set")
 	}
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -33,16 +33,15 @@ func openListenTestDB(t *testing.T) (*gorm.DB, string) {
 		t.Fatal(err)
 	}
 	for _, sql := range []string{
+		`DROP SCHEMA public CASCADE`,
+		`CREATE SCHEMA public`,
 		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`,
-		`DROP TABLE IF EXISTS order_cups, order_menus, comments, orders, menu_items, menus, items, item_types, master_states, cashier_states CASCADE`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := db.AutoMigrate(&models.ItemType{}, &models.Item{}, &models.Menu{}, &models.MenuItem{},
-		&models.Order{}, &models.Comment{}, &models.OrderMenu{}, &models.OrderCup{},
-		&models.MasterState{}, &models.CashierState{}); err != nil {
+	if err := db.AutoMigrate(models.All()...); err != nil {
 		t.Fatal(err)
 	}
 	return db, dsn
@@ -117,7 +116,7 @@ func TestListenChangesPublishesOtherInstancesOrders(t *testing.T) {
 	if err := db.Exec(`UPDATE order_cups SET ready_at = now() WHERE order_id = ? AND position = 0`, orderID).Error; err != nil {
 		t.Fatal(err)
 	}
-	notifyFromOtherInstance(t, db, orderID.String())
+	sendNotify(t, db, ordersChangedChannel, uuid.NewString()+" "+orderID.String())
 	msg = nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeOrder || msg.Order.Cups[0].ReadyAt == nil {
 		t.Fatalf("broadcast = %+v, want order with first cup ready", msg)
@@ -135,30 +134,27 @@ func TestListenChangesPublishesOtherInstancesOrders(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	notifyFromOtherInstance(t, db, orderID.String())
+	sendNotify(t, db, ordersChangedChannel, uuid.NewString()+" "+orderID.String())
 	msg = nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeOrderDeleted || msg.OrderID == nil || *msg.OrderID != orderID {
 		t.Fatalf("broadcast = %+v, want order_deleted %s", msg, orderID)
 	}
 
 	// ほかのインスタンスの確認の通知では何も配らない
-	if err := db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, listenProbePrefix+uuid.NewString()+" x").Error; err != nil {
-		t.Fatal(err)
-	}
+	sendNotify(t, db, ordersChangedChannel, listenProbePrefix+uuid.NewString())
 	noBroadcast(t, hub)
 
 	// 形の分からない通知なら全注文を配り直す
-	if err := db.Exec(`SELECT pg_notify('orders_changed', '')`).Error; err != nil {
-		t.Fatal(err)
-	}
+	sendNotify(t, db, ordersChangedChannel, "")
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
 		t.Fatalf("broadcast = %s, want orders", msg.Type)
 	}
 }
 
-func notifyFromOtherInstance(t *testing.T, db *gorm.DB, orderID string) {
+// channel に payload を通知する。ほかのインスタンスのふりをするときは、payload を別のインスタンス ID から始める
+func sendNotify(t *testing.T, db *gorm.DB, channel, payload string) {
 	t.Helper()
-	if err := db.Exec("SELECT pg_notify(?, ?)", ordersChangedChannel, uuid.NewString()+" "+orderID).Error; err != nil {
+	if err := db.Exec("SELECT pg_notify(?, ?)", channel, payload).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -173,14 +169,6 @@ func callHandler(t *testing.T, handler gin.HandlerFunc, method, body string) *ht
 	c.Request.Header.Set("Content-Type", "application/json")
 	handler(c)
 	return w
-}
-
-// ほかのインスタンスが送ったように、別のインスタンス ID で状態の変更を通知する
-func notifyStateFromOtherInstance(t *testing.T, db *gorm.DB, channel string) {
-	t.Helper()
-	if err := db.Exec("SELECT pg_notify(?, ?)", channel, uuid.NewString()).Error; err != nil {
-		t.Fatal(err)
-	}
 }
 
 // ほかのインスタンスの代わりに channels を待ち受ける接続
@@ -250,7 +238,7 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	if err := db.Create(&models.MasterState{Type: "operational", CreatedAt: time.Now()}).Error; err != nil {
 		t.Fatal(err)
 	}
-	notifyStateFromOtherInstance(t, db, masterStateChangedChannel)
+	sendNotify(t, db, masterStateChangedChannel, uuid.NewString())
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeMasterState || msg.MasterState.Type != "operational" {
 		t.Fatalf("broadcast = %+v, want master_state operational", msg)
 	}
@@ -273,7 +261,7 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 		Update("submitted_order_id", submitted).Error; err != nil {
 		t.Fatal(err)
 	}
-	notifyStateFromOtherInstance(t, db, cashierStateChangedChannel)
+	sendNotify(t, db, cashierStateChangedChannel, uuid.NewString())
 	msg := nextBroadcast(t, hub)
 	if msg.Type != WSMessageTypeCashierState || msg.CashierState.SubmittedOrderId == nil ||
 		uuid.UUID(*msg.CashierState.SubmittedOrderId) != submitted {
@@ -375,5 +363,26 @@ func TestPendingChangesCoalesces(t *testing.T) {
 	q.addAll()
 	if s := q.take(); !s.allOrders || !s.masterState || !s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want everything", s)
+	}
+}
+
+func TestPendingChangesRequeue(t *testing.T) {
+	q := newPendingChanges()
+	a, b := uuid.New(), uuid.New()
+	other := uuid.NewString()
+
+	// 失敗した注文を積み直すと、その間に届いた通知とまとめて取り出せる
+	q.add(ordersChangedChannel, other+" "+a.String())
+	q.requeue(changeSet{orderIDs: map[uuid.UUID]struct{}{a: {}, b: {}}})
+	<-q.wake
+	s := q.take()
+	if s.allOrders || len(s.orderIDs) != 2 {
+		t.Fatalf("take() = %+v; want orders a and b", s)
+	}
+
+	// 全注文の読み直しに失敗したら、全注文を配り直すよう積み直す
+	q.requeue(changeSet{allOrders: true})
+	if s := q.take(); !s.allOrders || s.masterState || s.cashierState {
+		t.Fatalf("take() = %+v; want all orders only", s)
 	}
 }

@@ -1,4 +1,5 @@
 import type { ItemType } from "@cafeore/common";
+import { FLAG_FIELDS } from "~/components/organisms/itemTypeForm";
 import {
   Table,
   TableBody,
@@ -10,14 +11,11 @@ import {
 import { RowActions, type RowHandlers } from "./RowActions";
 import type { Usage } from "./usage";
 
-// 種類の項目を一覧で見分けられるように短く出す
+// 種類の項目のうちオンのものを、入力のスイッチと同じ名前で並べる
 const flagLabels = (itemType: ItemType) =>
-  [
-    itemType.makes_cup ? "カップ" : "カップなし",
-    itemType.makes_cup && (itemType.needs_brew ? "抽出" : "抽出なし"),
-    itemType.senior_only && "限定",
-    itemType.iced_brew && "アイス",
-  ].filter((label) => label !== false);
+  FLAG_FIELDS.filter((field) => itemType[field.key]).map(
+    (field) => field.label,
+  );
 
 export function ItemTypesTab({
   itemTypes,
@@ -53,7 +51,7 @@ export function ItemTypesTab({
                 {itemType.name}
               </TableCell>
               <TableCell className="text-muted-foreground text-sm">
-                {flagLabels(itemType).join("・")}
+                {flagLabels(itemType).join("・") || "—"}
               </TableCell>
               <TableCell
                 className="text-muted-foreground"

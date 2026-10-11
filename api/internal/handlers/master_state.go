@@ -64,7 +64,8 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, state)
+	// GET と同じ形で返す。models.MasterState は json タグが無く、そのままだと "Type" のような大文字のキーになる
+	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
 	broadcastMasterState(h.db, h.hub)
 	// ほかのインスタンスにつないでいる画面にも届くよう、DB の通知で知らせる（order_listener.go）
 	notifyMasterStateChanged(h.db)

@@ -79,15 +79,6 @@ const sections: Section[] = [
         description:
           "未割当の注文をドリッパー1〜6に割り当て、抽出の進み具合をタイムラインで管理。過去の祭の注文でテストプレイもできます。",
       },
-      {
-        kind: "master-sheet-view",
-        to: "/master-sheet/view",
-        title: "CaOS（閲覧のみ）",
-        audience: "staff",
-        where: "盤面を映しておく画面・様子を見たい人の端末",
-        description:
-          "CaOS の盤面をタイムラインで映すだけ。注文と抽出がリアルタイムに流れます。操作はできないので、どの端末で開いても盤面は変わりません。",
-      },
     ],
   },
   {
@@ -154,6 +145,7 @@ const sections: Section[] = [
 const settingLinks = [
   { to: "/products", label: "商品管理" },
   { to: "/inventory/settings", label: "在庫の設定" },
+  { to: "/square-devices", label: "Square 端末" },
 ];
 
 export default function Index() {
@@ -186,7 +178,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            メニュー・商品・在庫の通知条件を編集します
+            メニュー・商品・在庫の通知条件・Square 端末を設定します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (

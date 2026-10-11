@@ -7,21 +7,24 @@ import {
   buildCaosCards,
   canMergeCards,
   caosBrewSec,
-  caosClockLabel,
-  caosDurationLabel,
+  caosDripperAllowed,
   caosLane,
-  caosTimeOfDayLabel,
+  cupNeedsBrew,
+  cupSeniorOnly,
   mergeWrites,
-  planCaosLane,
   unassignWrites,
 } from "./caos-board";
 import laneCases from "./caos-lane-cases.json";
-import { jstDate, jstDayStart } from "./jst";
+import { jstDate } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = jstDate(NOW.getTime());
 
-const type = (name: string, flags: Partial<Cup["item"]["item_type"]> = {}) => ({
+// 抽出が要るか・上級生のみかは種類の項目で決める（cupNeedsBrew・cupSeniorOnly）。既定は POS の新しい種類と同じ
+const type = (
+  name: string,
+  flags: Partial<Cup["item"]["item_type"]> = {},
+): Cup["item"]["item_type"] => ({
   name,
   display_name: name,
   makes_cup: true,
@@ -42,18 +45,25 @@ const kenya = {
   abbr: "ケ",
   item_type: type("hot"),
 };
-// 抽出が要るかは種類の項目で決める（名前が hot でも needs_brew が false なら出さない）
+// ミルクはカップを作るが抽出は要らない。グッズはカップを作らない
 const milk = {
   id: "item-milk",
   name: "アイスミルク",
   abbr: "ミ",
-  item_type: type("hot", { needs_brew: false }),
+  item_type: type("milk", { needs_brew: false }),
 };
-const limited = {
+const goods = {
+  id: "item-goods",
+  name: "グッズ",
+  abbr: "グ",
+  item_type: type("others", { makes_cup: false, needs_brew: false }),
+};
+// 上級生だけが淹れる種類
+const seniorOnly = {
   id: "item-sp",
-  name: "限定",
+  name: "スペシャル",
   abbr: "限",
-  item_type: type("ice", { senior_only: true }),
+  item_type: type("limited", { senior_only: true }),
 };
 
 let seq = 0;
@@ -109,6 +119,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         cup({ item: blend }),
         cup({ item: kenya }),
         cup({ item: milk }),
+        cup({ item: goods }),
         cup({ item: blend, line: "line-2" }),
         cup({ item: blend, line: "line-3" }),
         cup({ item: blend, line: "line-4" }),
@@ -198,7 +209,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("今日（日本時間）の注文だけを見る", () => {
+  test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {
     const yesterday = new Date("2026-10-07T14:59:59Z"); // 日本時間 10/7 23:59:59
     const midnight = new Date("2026-10-07T15:00:00Z"); // 日本時間 10/8 0:00
     const cards = buildCaosCards(
@@ -211,80 +222,37 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(cards.map((c) => c.orderNo)).toEqual([2]);
   });
 
-  test("限定は種類の senior_only の印をそのまま出す（種類の名前は見ない）", () => {
+  test("抽出が要るか・上級生のみかは種類の名前でなく項目で決める", () => {
+    const of = (item_type: Cup["item"]["item_type"]) => ({
+      item: { id: "x", name: "x", abbr: "x", item_type },
+    });
+    // 名前が milk でも抽出が要る種類なら要る。名前が hot でも抽出が要らない種類なら要らない
+    expect(cupNeedsBrew(of(type("milk")))).toBe(true);
+    expect(cupNeedsBrew(of(type("hot", { needs_brew: false })))).toBe(false);
+    // カップを作らない種類は抽出も要らない
+    expect(cupNeedsBrew(of(type("hot", { makes_cup: false })))).toBe(false);
+    // 上級生のみは senior_only の種類だけ（名前が limited でも項目が false なら違う）。抽出が要らなければ違う
+    expect(cupSeniorOnly(of(type("limited")))).toBe(false);
+    expect(cupSeniorOnly(of(type("hot", { senior_only: true })))).toBe(true);
+    expect(
+      cupSeniorOnly(of(type("hot", { senior_only: true, needs_brew: false }))),
+    ).toBe(false);
+  });
+
+  test("上級生のみは上級生だけが淹れる種類のカップのカードに出す", () => {
     const cards = buildCaosCards(
-      [order(1, [cup({ item: limited }), cup({ item: blend })])],
+      [order(1, [cup({ item: seniorOnly }), cup({ item: blend })])],
       DAY,
     );
     expect(cards.map((c) => [c.cups[0].item.name, c.seniorOnly])).toEqual([
       ["ブレンド", false],
-      ["限定", true],
+      ["スペシャル", true],
     ]);
   });
 
-  test("今日の区切りは端末の時刻帯によらず日本時間の 0 時", () => {
-    expect(jstDate(Date.parse("2026-10-07T14:59:59Z"))).toBe("2026-10-07");
-    expect(jstDate(Date.parse("2026-10-07T15:00:00Z"))).toBe("2026-10-08");
-    expect(jstDayStart(NOW.getTime())).toBe(Date.parse("2026-10-07T15:00:00Z"));
-  });
-
-  test("抽出時間と表示", () => {
+  test("抽出時間", () => {
     expect(caosBrewSec(1)).toBe(135);
     expect(caosBrewSec(2)).toBe(195);
-    expect(caosDurationLabel(caosBrewSec(2))).toBe("3分15秒");
-    expect(caosClockLabel(65)).toBe("01:05");
-    expect(caosClockLabel(725)).toBe("12:05");
-    expect(caosTimeOfDayLabel(10 * 3600 + 5 * 60 + 9)).toBe("10:05:09");
-    // 24 時を越えたら 0 時に戻す
-    expect(caosTimeOfDayLabel(24 * 3600 + 61)).toBe("00:01:01");
-  });
-});
-
-describe("[unit] CaOS のドリッパーの予定時刻（planCaosLane）", () => {
-  test("抽出中のカードは始めた時刻から抽出時間で終わる見込み", () => {
-    expect(planCaosLane(1000, { startSec: 950, durationSec: 195 }, [])).toEqual(
-      {
-        brewing: { startSec: 950, endSec: 1145, remainingSec: 145 },
-        queued: [],
-      },
-    );
-  });
-
-  test("抽出時間を過ぎたら今終わる見込みで、残りは 0", () => {
-    expect(
-      planCaosLane(1200, { startSec: 950, durationSec: 195 }, [135]),
-    ).toEqual({
-      brewing: { startSec: 950, endSec: 1200, remainingSec: 0 },
-      queued: [{ startSec: 1215, endSec: 1350 }],
-    });
-  });
-
-  test("待機カードは入れ替えの 15 秒を挟んで順に始める", () => {
-    expect(
-      planCaosLane(1000, { startSec: 1000, durationSec: 135 }, [195, 135])
-        .queued,
-    ).toEqual([
-      { startSec: 1150, endSec: 1345 },
-      { startSec: 1360, endSec: 1495 },
-    ]);
-  });
-
-  test("抽出中が無いときは、先頭を今から 10 秒後に始める", () => {
-    expect(planCaosLane(1000, undefined, [135, 195])).toEqual({
-      brewing: undefined,
-      queued: [
-        { startSec: 1010, endSec: 1145 },
-        { startSec: 1160, endSec: 1355 },
-      ],
-    });
-  });
-
-  test("開始時刻が分からない抽出中のカードは今から始めた見込み", () => {
-    expect(planCaosLane(1000, { durationSec: 135 }, []).brewing).toEqual({
-      startSec: 1000,
-      endSec: 1135,
-      remainingSec: 135,
-    });
   });
 });
 
@@ -357,7 +325,7 @@ describe("[unit] CaOS の書き込み", () => {
     return card;
   };
 
-  test("割当：未割当を待機に入れる（注文番号の順）。空いているドリッパーならそのまま始める（時刻はサーバーが付ける）", () => {
+  test("割当：未割当を待機の最後に入れる（insert_before は null。番号はサーバーが決める）。空いているドリッパーならそのまま始める（時刻はサーバーが付ける）", () => {
     const cards = board();
     const card = find(cards, (c) => c.orderNo === 5);
     expect(assignWrites(cards, card, 1, { newId })).toEqual({
@@ -373,8 +341,8 @@ describe("[unit] CaOS の書き込み", () => {
           },
           after: {
             dripper: 1,
-            dripper_position: 5,
             drip_id: expect.stringMatching(/^drip-/),
+            insert_before: null,
             start_brew: false,
           },
         },
@@ -385,46 +353,88 @@ describe("[unit] CaOS の書き込み", () => {
     if (!("writes" in idle)) throw new Error(idle.error);
     expect(idle.writes[0].after).toEqual({
       dripper: 3,
-      dripper_position: 5,
       drip_id: expect.stringMatching(/^drip-/),
+      insert_before: null,
       start_brew: true,
     });
     expect(idle.writes[0].after).not.toHaveProperty("brew_started_at");
+    // 順番の数は送らない
+    expect(idle.writes[0].after).not.toHaveProperty("dripper_position");
   });
 
-  test("順番：待機の index 番目に入るよう前後の間の値にする。同じドリッパーで index が無ければ何もしない", () => {
+  test("順番：どのカードの前に入れるか（insert_before）だけを送る。先頭は先頭のカードの前、途中はそのカードの前、無ければ最後", () => {
     const cards = board();
+    const q2 = find(cards, (c) => c.dripId === "q2");
     const q3 = find(cards, (c) => c.dripId === "q3");
-    const front = assignWrites(cards, q3, 1, { index: 0, newId });
-    expect("writes" in front && front.writes[0].after).toMatchObject({
+    const afterOf = (result: ReturnType<typeof assignWrites>) => {
+      if (!("writes" in result)) throw new Error(result.error);
+      return result.writes[0]?.after;
+    };
+    // 先頭：待機の先頭（q2）の前。抽出中のカードの前ではない
+    const front = assignWrites(cards, q3, 1, { place: "front", newId });
+    expect(afterOf(front)).toEqual({
       dripper: 1,
-      dripper_position: 1,
       drip_id: "q3",
+      insert_before: "q2",
+      start_brew: false,
     });
     expect("writes" in front && front.writes[0].before).toMatchObject({
       dripper: 1,
       dripper_position: 3,
       drip_id: "q3",
     });
+    // 途中：未割当のカードを q3 の前（q2 と q3 の間）へ
     const card = find(cards, (c) => c.orderNo === 5);
-    const middle = assignWrites(cards, card, 1, { index: 1, newId });
-    expect("writes" in middle && middle.writes[0].after.dripper_position).toBe(
-      2.5,
-    );
-    expect(assignWrites(cards, q3, 1, { newId })).toEqual({
+    expect(
+      afterOf(
+        assignWrites(cards, card, 1, { place: { beforeKey: "q3" }, newId }),
+      ),
+    ).toMatchObject({ dripper: 1, insert_before: "q3", start_brew: false });
+    // 最後：insert_before は null（同じドリッパーの中でも）
+    expect(afterOf(assignWrites(cards, q2, 1, { newId }))).toMatchObject({
+      dripper: 1,
+      drip_id: "q2",
+      insert_before: null,
+    });
+    // 別のドリッパーの先頭：待機が無ければ最後と同じ（空いていれば始める）
+    expect(
+      afterOf(assignWrites(cards, q2, 2, { place: "front", newId })),
+    ).toEqual({
+      dripper: 2,
+      drip_id: "q2",
+      insert_before: null,
+      start_brew: true,
+    });
+    // 今と同じ場所なら何も書かない（最後のカードを最後へ・すぐ後ろのカードの前へ・先頭のカードを先頭へ）
+    expect(assignWrites(cards, q3, 1, { newId })).toEqual({ writes: [] });
+    expect(
+      assignWrites(cards, q2, 1, { place: { beforeKey: "q3" }, newId }),
+    ).toEqual({ writes: [] });
+    expect(assignWrites(cards, q2, 1, { place: "front", newId })).toEqual({
       writes: [],
     });
+    // 前に入れるカードがそのドリッパーの待機に無い（抽出中・ほかのドリッパー）
+    expect(
+      assignWrites(cards, card, 1, { place: { beforeKey: "brewing" }, newId }),
+    ).toHaveProperty("error");
+    expect(
+      assignWrites(cards, card, 2, { place: { beforeKey: "q3" }, newId }),
+    ).toHaveProperty("error");
   });
 
   test("指名の番号のカードはその番号のドリッパーにだけ置ける。自由記述だけの古い明細はどこにでも。抽出中は動かせない", () => {
     const cards = board();
     const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
     expect(named.cups[0].nominee).toBe("4th");
-    expect(assignWrites(cards, named, 1, { newId })).toHaveProperty("error");
+    expect(caosDripperAllowed(named, 1)).toBe(false);
+    expect(assignWrites(cards, named, 1, { newId })).toEqual({
+      error: "指名のあるカードは 4th のドリッパーにしか置けません",
+    });
     expect(assignWrites(cards, named, 4, { newId })).toHaveProperty("writes");
     expect(assignWrites(cards, named, 7, { newId })).toHaveProperty("error");
     const old = find(cards, (c) => c.cups.some((x) => x.nominee === "4"));
     expect(old.cups.map((x) => x.nominatedDripper)).toEqual([null, null]);
+    expect(caosDripperAllowed(old, 1)).toBe(true);
     expect(assignWrites(cards, old, 1, { newId })).toHaveProperty("writes");
     expect(
       assignWrites(
@@ -442,8 +452,8 @@ describe("[unit] CaOS の書き込み", () => {
     const result = unassignWrites(q2);
     expect("writes" in result && result.writes[0].after).toEqual({
       dripper: null,
-      dripper_position: null,
       drip_id: null,
+      insert_before: null,
       start_brew: false,
     });
     expect(
@@ -451,7 +461,7 @@ describe("[unit] CaOS の書き込み", () => {
     ).toHaveProperty("error");
   });
 
-  test("統合：1 杯どうし・同じ商品・同じ指名の番号。未割当は新しい dripId、待機は相手を同じ値にする", () => {
+  test("統合：1 杯どうし・同じ商品・同じ指名の番号。未割当は新しい dripId、待機は相手を card のカードに入れる（相手を先に書く）", () => {
     const cards = board();
     const o5 = find(cards, (c) => c.orderNo === 5);
     const o6 = find(cards, (c) => c.orderNo === 6);
@@ -464,8 +474,9 @@ describe("[unit] CaOS の書き込み", () => {
       DAY,
     )[0];
     expect(canMergeCards(named, named7)).toBe(true);
-    const o2cup = buildCaosCards([order(8, [cup({ item: blend })])], DAY)[0];
-    const merged = mergeWrites(o2cup, o5, newId);
+    const o8 = buildCaosCards([order(8, [cup({ item: blend })])], DAY)[0];
+    expect(canMergeCards(o8, o5)).toBe(true);
+    const merged = mergeWrites(o8, o5, newId);
     if (!("writes" in merged)) throw new Error(merged.error);
     expect(merged.writes.map((w) => w.after.drip_id)).toEqual([
       merged.writes[0].after.drip_id,
@@ -477,13 +488,19 @@ describe("[unit] CaOS の書き込み", () => {
     const q3 = find(cards, (c) => c.dripId === "q3");
     const queued = mergeWrites(q2, q3, newId);
     if (!("writes" in queued)) throw new Error(queued.error);
+    // 番号は送らない。サーバーが q2 のカードと同じ番号にする（ほかはずらさない）
     const q2After = {
       dripper: q2.dripper,
-      dripper_position: q2.dripperPosition,
       drip_id: "q2",
+      insert_before: null,
       start_brew: false,
     };
     expect(queued.writes).toEqual([
+      {
+        cup_ids: ids(q3),
+        before: expect.objectContaining({ drip_id: "q3" }),
+        after: q2After,
+      },
       {
         cup_ids: ids(q2),
         before: {
@@ -495,40 +512,7 @@ describe("[unit] CaOS の書き込み", () => {
         },
         after: q2After,
       },
-      {
-        cup_ids: ids(q3),
-        before: expect.objectContaining({ drip_id: "q3" }),
-        after: q2After,
-      },
     ]);
     expect(mergeWrites(q2, o5, newId)).toHaveProperty("error"); // 待機と未割当
-  });
-
-  test("書き込みの結果を組み立て直すと、統合したカードは 1 枚になる", () => {
-    const cards = board();
-    const o4 = buildCaosCards([order(4, [cup({ item: blend })])], DAY)[0];
-    const o5 = find(cards, (c) => c.orderNo === 5);
-    const merged = mergeWrites(o4, o5, () => "merged");
-    if (!("writes" in merged)) throw new Error(merged.error);
-    const apply = (input: CaosOrderInput): CaosOrderInput => ({
-      ...input,
-      cups: input.cups.map((c) =>
-        merged.writes.some((w) => w.cup_ids.includes(c.id))
-          ? { ...c, dripId: "merged" }
-          : c,
-      ),
-    });
-    const o4cup = o4.cups[0];
-    const o5cup = o5.cups[0];
-    const after = buildCaosCards(
-      [
-        apply(order(4, [{ ...cup({ item: blend }), id: o4cup.id }])),
-        apply(order(5, [{ ...cup({ item: blend }), id: o5cup.id }])),
-      ],
-      DAY,
-    );
-    expect(after.map((c) => [c.key, c.cups.map((x) => x.orderNo)])).toEqual([
-      ["merged", [4, 5]],
-    ]);
   });
 });

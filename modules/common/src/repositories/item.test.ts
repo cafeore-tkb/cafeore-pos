@@ -3,10 +3,17 @@ import type { Firestore } from "firebase/firestore";
 import { beforeAll, describe, expect, test } from "vitest";
 import firebasejson from "../../firebase.json";
 import type { WithId } from "../lib/typeguard";
-import { ItemEntity } from "../models/item";
+import { ItemEntity, type ItemType } from "../models/item";
 
 import { itemRepoFactory } from "./item";
 import type { ItemRepository } from "./type";
+
+const coffee: Omit<ItemType, "id" | "name" | "display_name"> = {
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  iced_brew: false,
+};
 
 describe("[db] itemRepository", async () => {
   // To use this environment, firebase emulator must be running.
@@ -40,10 +47,7 @@ describe("[db] itemRepository", async () => {
         id: "1",
         name: "hot",
         display_name: "ホット",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
-        iced_brew: false,
+        ...coffee,
       },
     });
     savedItemHoge = await itemRepository.save(item);
@@ -64,9 +68,7 @@ describe("[db] itemRepository", async () => {
         id: "2",
         name: "ice",
         display_name: "アイス",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
+        ...coffee,
         iced_brew: true,
       },
     });
@@ -83,10 +85,7 @@ describe("[db] itemRepository", async () => {
         id: "3",
         name: "ore",
         display_name: "オレ",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
-        iced_brew: false,
+        ...coffee,
       },
     });
     const savedItem = await itemRepository.save(item);
@@ -102,10 +101,8 @@ describe("[db] itemRepository", async () => {
         id: "4",
         name: "milk",
         display_name: "ミルク",
-        makes_cup: true,
+        ...coffee,
         needs_brew: false,
-        senior_only: false,
-        iced_brew: false,
       },
     });
     const savedItem = await itemRepository.save(item);

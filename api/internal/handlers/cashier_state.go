@@ -137,7 +137,7 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "id", optional: true, spec: valueSpec{kind: kindString}},
 			{name: "name", spec: valueSpec{kind: kindString}},
 			{name: "display_name", spec: valueSpec{kind: kindString}},
-			// 古いレジ状態には無い（無ければフロントの zod が既定値を入れる）
+			// 古いレジ状態には無いので受け付ける（フロントは項目の無いレジ状態を読み込みで弾く）
 			{name: "makes_cup", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
@@ -301,7 +301,9 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		ID:               models.CashierStateID,
 		EdittingOrder:    models.JSONB(raw),
 		SubmittedOrderID: (*uuid.UUID)(req.SubmittedOrderId),
-		UpdatedAt:        time.Now(),
+		// DB に保存される精度（マイクロ秒）にそろえる。保存した内容を読み直さずに返す・配信するので、
+		// そろえないと GET や再接続時の初期データと updated_at が食い違う
+		UpdatedAt: time.Now().Truncate(time.Microsecond),
 	}
 
 	resp, err := h.saveAndBroadcast(&state)

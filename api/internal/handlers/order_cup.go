@@ -73,7 +73,6 @@ func buildOrderCups(orderID uuid.UUID, lines []models.OrderMenu, existing *model
 
 // 削除済みの item（読み込めなかったもの）と、カップを作らない種類（グッズなど）の item はカップにしない。
 // 種類が読み込めなかったとき（削除済みの種類）は、列の既定値と同じくカップを作るとみなす。
-// 在庫の消費（inventory.go の orderItemsSQL）も、同じ決まりでカップにならないものを見分ける。
 func isCupItem(item models.Item) bool {
 	if item.ID == uuid.Nil || item.DeletedAt.Valid {
 		return false
