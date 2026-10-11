@@ -101,17 +101,17 @@ export const DispatchBoard: React.FC<
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       {scroll.isPastView && (
-        <div className="flex h-[28px] items-center gap-1 border-amber-200 border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
+        <div className="absolute top-0 left-[168px] z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
           <RotateCcw className="h-3 w-3" />
           <span>過去の抽出履歴を表示中</span>
         </div>
       )}
 
-      {/* 選んだ注文（同じ注文のカードがどの列にあるか） */}
+      {/* 選んだ注文（同じ注文のカードがどの列にあるか）。目盛りの上に重ね、下の列をずらさない */}
       {selectedOrderId && (
-        <div className="flex h-[42px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 py-0.5 font-black font-mono text-[20px]">
+        <div className="absolute inset-x-0 top-0 z-[70] flex h-[30px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap">
+            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 font-black font-mono text-[17px]">
               <Sparkles className="h-3.5 w-3.5" />
               <span>{selectedOrderId}</span>
             </span>
@@ -124,7 +124,7 @@ export const DispatchBoard: React.FC<
           <button
             type="button"
             onClick={() => onSelectOrder(null)}
-            className="flex min-h-[34px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
+            className="flex h-[26px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
           >
             <X className="h-3.5 w-3.5" />
             <span>解除</span>

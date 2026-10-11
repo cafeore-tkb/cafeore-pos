@@ -128,7 +128,9 @@ export const OrderCard: React.FC<
         </span>
       )}
       {/* 何が何杯か */}
-      <div className={`flex min-w-0 items-center gap-1 leading-none ${fade}`}>
+      <div
+        className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
+      >
         <span
           className={`min-w-0 truncate font-black tracking-tight ${text.name}`}
           title={name}
@@ -148,7 +150,7 @@ export const OrderCard: React.FC<
       </div>
       {/* 注文番号・分けた注文の位置と合計・上級生のみ・豆と区分 */}
       <div
-        className={`flex min-w-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
         <span
           className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${split ? "bg-blue-700 text-white" : "bg-black/10"}`}

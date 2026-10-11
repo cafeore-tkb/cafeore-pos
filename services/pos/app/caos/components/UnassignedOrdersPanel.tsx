@@ -148,7 +148,7 @@ export const UnassignedStrip: React.FC<
             }}
           >
             <div
-              className={`flex min-w-0 flex-1 gap-1 ${entries.length > 1 ? "rounded-xl border-2 border-blue-600 bg-blue-50 p-1" : ""}`}
+              className={`flex min-w-0 flex-1 gap-1 ${entries.length > 1 ? "rounded-xl border-2 border-blue-600 bg-blue-50 p-0.5" : ""}`}
             >
               {entries.map((entry) => (
                 <StripEntry
