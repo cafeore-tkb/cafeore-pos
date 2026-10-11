@@ -157,14 +157,14 @@ func TestValidateStockEvent(t *testing.T) {
 
 func TestAlertMessage(t *testing.T) {
 	counted := 3000.0
-	bean := stockSnapshot{
+	kenya := stockSnapshot{
 		Resource:         models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
 		Tracked:          true,
 		CountedQuantity:  &counted,
 		Consumed:         1800, // 残り 1200g = 80 杯
 		ServingsLastHour: 12,
 	}
-	if got, want := alertMessage(bean), "⚠️ *ケニア* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
+	if got, want := alertMessage(kenya), "⚠️ *ケニア* 残り約80杯（1200g）\n　直近1時間 12杯 → 約6時間40分で切れる見込み"; got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 

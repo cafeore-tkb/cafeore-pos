@@ -66,7 +66,7 @@ func TestStockResourceMessages(t *testing.T) {
 }
 
 func TestStockEventMessage(t *testing.T) {
-	bean := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g"}
+	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g"}
 	estimated, remaining := 1180.0, 2230.0
 
 	cases := []struct {
@@ -92,7 +92,7 @@ func TestStockEventMessage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := stockEventMessage(&bean, &tc.event, &estimated, &remaining); got != tc.want {
+			if got := stockEventMessage(&kenya, &tc.event, &estimated, &remaining); got != tc.want {
 				t.Fatalf("got  %q\nwant %q", got, tc.want)
 			}
 		})
@@ -100,7 +100,7 @@ func TestStockEventMessage(t *testing.T) {
 
 	// 残量が出せない（まだ棚卸しも入荷もない）ときは残りを付けない
 	event := models.StockEvent{Kind: "receipt", Quantity: 500}
-	if got := stockEventMessage(&bean, &event, nil, nil); got != "📝 ケニア +500g :e-restock:" {
+	if got := stockEventMessage(&kenya, &event, nil, nil); got != "📝 ケニア +500g :e-restock:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
