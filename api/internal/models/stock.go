@@ -71,6 +71,15 @@ type OrderStockUsage struct {
 	Amount   float64 `gorm:"type:double precision;not null"`
 }
 
+// 緊急（入れ直し。CupEmergency）1 回で在庫対象がどれだけ減るか。OrderStockUsage と同じく、足したときの在庫の設定で決めて残す。
+// 入れ直しを取り消したら（入れ直しを消すときは）いっしょに消す。
+type CupEmergencyStockUsage struct {
+	CupEmergencyID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ResourceID     uuid.UUID `gorm:"type:uuid;primaryKey;index"`
+	Servings       int       `gorm:"not null"`
+	Amount         float64   `gorm:"type:double precision;not null"`
+}
+
 // 棚卸し（count）・入荷（receipt）・調整（adjust）の記録。
 // count は実数で残量を置き換え、receipt / adjust は差分として足す。
 type StockEvent struct {

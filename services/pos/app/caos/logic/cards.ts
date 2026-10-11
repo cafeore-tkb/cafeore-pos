@@ -24,6 +24,10 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
+export const emergencyReasons = (card: CaosCard) =>
+  unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
+
 /**
  * カードの名前。商品の略称（abbr）をそのまま。指名は「（指名:2nd）」（番号の無い古い明細は自由記述）、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える
@@ -70,17 +74,20 @@ export const cardLooks = (
   settings: ColorSetting[],
   beanIndex: BeanIndex,
 ): CardLooks => {
-  // 1 注文だけのカードを、注文ごとに注文の中の並び（カップの position）で並べる（割り当てても番号が変わらないように）
+  // 1 注文だけのカードを、注文ごとに注文の中の並び（カップの position）で並べる（割り当てても番号が変わらないように）。
+  // 入れ直しのカードは注文の分け方に入れない
+  const inSplit = (card: CaosCard) =>
+    cardOrderNos(card).length === 1 && !card.emergency;
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (cardOrderNos(card).length > 1) continue;
+    if (!inSplit(card)) continue;
     const orderId = card.cups[0].orderId;
     byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
   for (const parts of byOrder.values())
     parts.sort((a, b) => a.cups[0].position - b.cups[0].position);
   const splitOf = (card: CaosCard): CardSplit | undefined => {
-    if (cardOrderNos(card).length > 1) return undefined;
+    if (!inSplit(card)) return undefined;
     const parts = byOrder.get(card.cups[0].orderId) ?? [card];
     if (parts.length <= 1) return undefined;
     return {

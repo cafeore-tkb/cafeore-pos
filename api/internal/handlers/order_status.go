@@ -283,7 +283,7 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
-	advanceReadyCaosCards(h.db, h.hub, &before, &order)
+	advanceReadyCaosCards(NewCaosHandler(h.db, h.hub, h.inventory), &before, &order)
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

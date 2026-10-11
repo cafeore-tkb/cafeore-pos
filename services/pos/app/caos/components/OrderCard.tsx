@@ -5,10 +5,12 @@ import {
 } from "@cafeore/common";
 import { Check } from "lucide-react";
 import type React from "react";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import {
   type CardLook,
   cardName,
   cardTypeName,
+  emergencyReasons,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
@@ -98,6 +100,7 @@ export const OrderCard: React.FC<
   const surface = surfaceOf(done, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardName(card);
+  const reasons = emergencyReasons(card);
   const typeName = cardTypeName(card);
   const split = look?.split;
   // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
@@ -125,6 +128,21 @@ export const OrderCard: React.FC<
         >
           {card.cups.length}杯
         </span>
+        {card.emergency && (
+          <>
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-md border border-red-700 bg-red-600 font-black text-white leading-none ${text.cups}`}
+            >
+              緊急
+            </span>
+            <span
+              title={reasons}
+              className="min-w-0 truncate font-bold text-[11px] text-red-700"
+            >
+              {reasons}
+            </span>
+          </>
+        )}
         {done && (
           <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">
             <title>完了</title>
@@ -210,6 +228,18 @@ export const BayPad: React.FC<{
   ));
 };
 
+// 入れ直し（緊急）のカードの「取り消す」。開いた未割当・待機のカードに重ねる（2 回押しで決める）
+export const CancelEmergencyButton: React.FC<{ onConfirm: () => void }> = ({
+  onConfirm,
+}) => (
+  <TwoStepButton
+    label="取り消す"
+    confirmLabel="緊急を取り消す"
+    onConfirm={onConfirm}
+    className="absolute right-1 bottom-1 z-[85] h-7 w-auto px-2 text-xs"
+  />
+);
+
 // 統合できる相手のカードに重ねる「統合する」（管制盤 A・C・D の未割当）。
 // 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
 export const MergeOverlay: React.FC = () => (
@@ -245,16 +275,15 @@ export const MergeOverlay: React.FC = () => (
   </>
 );
 
-/** 統合の解除。2 杯のカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children か、詳細のパネルに置く */
+/**
+ * 統合の解除。2 杯のカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children
+ * （注文番号の行を隠さないよう下の行に重ねる）か、詳細のパネルに置く
+ */
 export const SplitCupButtons: React.FC<{
   card: CaosCard;
   onSplit: (cupId: string) => void;
   className?: string;
-}> = ({
-  card,
-  onSplit,
-  className = "-translate-y-1/2 absolute top-1/2 right-1 z-[75]",
-}) => (
+}> = ({ card, onSplit, className = "absolute bottom-1 left-1 z-[75]" }) => (
   <div className={`flex gap-1 ${className}`}>
     {card.cups.map((cup) => (
       <button

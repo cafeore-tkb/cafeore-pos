@@ -1,7 +1,7 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import type { Label, TextLine } from "./document";
-import { orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 
 const hotType: ItemType = {
   id: "1",
@@ -121,5 +121,44 @@ describe("[unit] orderLabelJob", () => {
       " ブレンド    俺のブレンド",
       " ラテ",
     ]);
+  });
+});
+
+describe("[unit] cupLabelJob", () => {
+  test("保存した注文のカップ 1 杯のシールは、注文で刷ったそのカップのシールと同じ（「2/2」は抽出が要るカップの中の順番）", () => {
+    const order = orderOf(7, [
+      menu("ブレンド", hotType, null),
+      menu("クッキー", goodsType, null),
+      menu("カフェオレ", hotType, "やまだ"),
+    ]);
+    // サーバーが作ったカップ（カップを作る種類だけ）と同じ形にする
+    const lines = order.menus.map((m) => ({
+      ...m.toMenu(),
+      orderMenuId: crypto.randomUUID(),
+    }));
+    const saved = OrderEntity.fromOrder({
+      ...order.toOrder(),
+      menus: lines,
+      cups: lines
+        .filter((line) => line.items[0].item.item_type.makes_cup)
+        .map((line) => ({
+          id: `cup-${line.name}`,
+          orderMenuId: line.orderMenuId,
+          item: { ...line.items[0].item, id: line.name },
+          readyAt: null,
+          servedAt: null,
+          dripper: null,
+          dripperPosition: null,
+          dripId: null,
+          brewStartedAt: null,
+          brewFinishedAt: null,
+          emergencies: [],
+        })),
+    });
+
+    expect(cupLabelJob(saved, "cup-カフェオレ")).toEqual({
+      labels: [orderLabelJob(order).labels[1]],
+    });
+    expect(cupLabelJob(saved, "cup-クッキー")).toBeNull();
   });
 });

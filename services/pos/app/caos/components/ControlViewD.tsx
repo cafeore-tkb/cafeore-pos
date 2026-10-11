@@ -30,7 +30,7 @@ import {
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { MergeOverlay, OrderCard } from "./OrderCard";
+import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。
@@ -83,6 +83,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onSelectOrder,
   onAdvanceBay,
   onOpenTicketDetail,
+  onOpenRebrew,
+  onCancelEmergency,
   onOpenEmptySlot,
   onAssignToBay,
   onMoveTicket,
@@ -195,8 +197,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             : undefined
         }
         onClickCapture={drag.suppressClick}
-        onClick={
-          state === "waiting" ? () => onOpenTicketDetail(ticket) : undefined
+        onClick={() =>
+          state === "waiting"
+            ? onOpenTicketDetail(ticket)
+            : onOpenRebrew?.(ticket)
         }
         className={`h-[64px] shrink-0 ${state === "waiting" ? "cursor-pointer hover:ring-2 hover:ring-slate-400" : ""} ${
           state === "waiting"
@@ -509,6 +513,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         dragging={dragCup?.key === uid}
                       >
                         {isMergeCandidate && <MergeOverlay />}
+                        {isSelected && order.emergency && onCancelEmergency && (
+                          <CancelEmergencyButton
+                            onConfirm={() => {
+                              onCancelEmergency(order);
+                              picked.clear();
+                            }}
+                          />
+                        )}
                       </OrderCard>
                     );
                   })}

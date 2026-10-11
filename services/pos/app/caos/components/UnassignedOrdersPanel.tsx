@@ -23,7 +23,13 @@ import {
 import { type Lane, laneActive } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader } from "./BoardParts";
-import { BayPad, MergeOverlay, OrderCard, SplitCupButtons } from "./OrderCard";
+import {
+  BayPad,
+  CancelEmergencyButton,
+  MergeOverlay,
+  OrderCard,
+  SplitCupButtons,
+} from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の縦リスト）。
 // カードをタップすると上下に 1〜6 のボタンが開き、押すか、指を離さずなぞるか、列へドラッグして割り当てる
@@ -42,6 +48,8 @@ export const UnassignedOrdersPanel: React.FC<{
   onMergeOrders?: (firstKey: string, intoKey: string) => void;
   /** 統合の解除（2 杯のカードから 1 杯を外す） */
   onSplitCup?: (card: CaosCard, cupId: string) => void;
+  /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
+  onCancelEmergency?: (card: CaosCard) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
 }> = ({
@@ -55,6 +63,7 @@ export const UnassignedOrdersPanel: React.FC<{
   onAssignToBay,
   onMergeOrders,
   onSplitCup,
+  onCancelEmergency,
   readOnly = false,
 }) => {
   const isSidebar = layout === "sidebar";
@@ -177,6 +186,14 @@ export const UnassignedOrdersPanel: React.FC<{
                   card={order}
                   onSplit={(cupId) => {
                     onSplitCup(order, cupId);
+                    setOpenUid(null);
+                  }}
+                />
+              )}
+              {isOpen && order.emergency && onCancelEmergency && (
+                <CancelEmergencyButton
+                  onConfirm={() => {
+                    onCancelEmergency(order);
                     setOpenUid(null);
                   }}
                 />
