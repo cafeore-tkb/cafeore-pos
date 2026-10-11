@@ -248,6 +248,7 @@ export const createEposPrinter = (
   const send = (job: PrintJob) =>
     new Promise<boolean>((resolve) => {
       const target = device;
+      const current = generation;
       if (!target) {
         onStatusChange("disconnected");
         console.error("Printer not connected");
@@ -260,11 +261,13 @@ export const createEposPrinter = (
         target.onerror = null;
         resolve(printed);
       };
-      // 返事が来ないときは、つながりが切れたとみなす（つなぎ直すまで送らない）
+      // 返事が来ないときは、つながりが切れたとみなす（つなぎ直すまで送らない）。その間にやめた・つなぎ直したなら何もしない
       const timer = setTimeout(() => {
         console.error("ePOS print timed out");
-        disconnect();
-        onStatusChange("disconnected");
+        if (current === generation) {
+          disconnect();
+          onStatusChange("disconnected");
+        }
         finish(false);
       }, config.responseTimeoutMs);
       target.onreceive = (response) => {

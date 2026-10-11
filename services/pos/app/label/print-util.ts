@@ -42,8 +42,12 @@ const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
   }, [printer]);
 
   const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
+  const reconnect = useCallback(() => {
+    printer.disconnect();
+    printer.connect();
+  }, [printer]);
 
-  return { status, printer, print };
+  return { status, print, reconnect };
 };
 
 /** 刷れなかったシールを送り直す間隔（ミリ秒） */
@@ -63,7 +67,7 @@ const countPendingPrints = () => readPendingPrints().length;
 export const usePrinter = (
   createPrinter: CreateLabelPrinter = createEposPrinter,
 ) => {
-  const { status, printer, print } = useConnectedPrinter(createPrinter);
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   const pendingCount = useSyncExternalStore(
     subscribePendingPrints,
     countPendingPrints,
@@ -77,7 +81,7 @@ export const usePrinter = (
     [print],
   );
 
-  // 残りを古い順に送る。刷れなかったら（プリンターがまだ直っていない）そこでやめ、次の機会に続きから送る
+  // 残りを古い順に送り、刷れたものを消す（刷れなかったものは残して次を送る。1 件のせいで後ろが刷れなくならないように）
   const sending = useRef(false);
   const sendPending = useCallback(async () => {
     if (sending.current) return;
@@ -85,8 +89,7 @@ export const usePrinter = (
     try {
       await withPendingPrintsLock(async () => {
         for (const pending of readPendingPrints()) {
-          if (!(await print(pending.job))) return;
-          removePendingPrint(pending.id);
+          if (await print(pending.job)) removePendingPrint(pending.id);
         }
       });
     } finally {
@@ -96,13 +99,9 @@ export const usePrinter = (
 
   /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る） */
   const retry = useCallback(() => {
-    if (status === "connected") {
-      void sendPending();
-    } else if (status === "disconnected") {
-      printer.disconnect();
-      printer.connect();
-    }
-  }, [status, sendPending, printer]);
+    if (status === "connected") void sendPending();
+    else if (status === "disconnected") reconnect();
+  }, [status, sendPending, reconnect]);
 
   useEffect(() => {
     if (status === "connected" && pendingCount > 0) void sendPending();

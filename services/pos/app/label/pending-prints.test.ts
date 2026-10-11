@@ -3,12 +3,16 @@ import type { PrintJob } from "./document";
 
 const job: PrintJob = { labels: [{ type: "flow", lines: [] }] };
 
-// 覚えている値（memory）がモジュールにあるので、毎回読み込み直す
+// localStorage に書けなかったもの（memory）がモジュールにあるので、毎回読み込み直す
 const load = () => import("./pending-prints");
 
 const fakeStorage = () => {
   const items = new Map<string, string>();
   return {
+    get length() {
+      return items.size;
+    },
+    key: (i: number) => [...items.keys()][i] ?? null,
     getItem: (key: string) => items.get(key) ?? null,
     setItem: (key: string, value: string) => void items.set(key, value),
     removeItem: (key: string) => void items.delete(key),
@@ -27,18 +31,32 @@ describe("[unit] pending-prints", () => {
     vi.unstubAllGlobals();
   });
 
-  test("localStorage に残し、読み込み直しても残っている。消したものは消える", async () => {
-    vi.stubGlobal("localStorage", fakeStorage());
+  test("localStorage に 1 件ずつ残し、読み込み直しても古い順に残っている。消したものは消える", async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
     const first = await load();
     first.addPendingPrint(job);
     first.addPendingPrint(job);
-    const [kept, removed] = first.readPendingPrints();
-    first.removePendingPrint(removed.id);
+    first.addPendingPrint(job);
+    const [a, b, c] = first.readPendingPrints();
+    first.removePendingPrint(b.id);
 
     vi.resetModules();
     const reopened = await load();
-    expect(reopened.readPendingPrints()).toEqual([kept]);
-    expect(kept.job).toEqual(job);
+    expect(reopened.readPendingPrints().map((p) => p.id)).toEqual([a.id, c.id]);
+    expect(storage.length).toBe(2);
+    expect(a.job).toEqual(job);
+  });
+
+  test("壊れたもの・ほかのキーは読まない", async () => {
+    const storage = fakeStorage();
+    storage.setItem("cafeore:pending-label-print:x", "{");
+    storage.setItem("cafeore:pending-label-print:y", '{"at":1,"job":{}}');
+    storage.setItem("other", '{"at":1,"job":{"labels":[]}}');
+    vi.stubGlobal("localStorage", storage);
+    const { readPendingPrints } = await load();
+
+    expect(readPendingPrints()).toEqual([]);
   });
 
   test("変わったら知らせる", async () => {
@@ -54,10 +72,15 @@ describe("[unit] pending-prints", () => {
   });
 
   test("localStorage が使えなければメモリだけで持つ", async () => {
+    const fail = () => {
+      throw new Error("SecurityError");
+    };
     vi.stubGlobal("localStorage", {
-      getItem: () => {
-        throw new Error("SecurityError");
+      get length() {
+        return fail();
       },
+      setItem: fail,
+      removeItem: fail,
     });
     const { addPendingPrint, readPendingPrints, removePendingPrint } =
       await load();
@@ -68,7 +91,7 @@ describe("[unit] pending-prints", () => {
     expect(readPendingPrints()).toHaveLength(1);
   });
 
-  test("書けなくなったら、書いてあったものを消してメモリに移る", async () => {
+  test("書けなくなったら、そのあとの分はメモリに持ち、書いてあった分と合わせて読む", async () => {
     const storage = fakeStorage();
     vi.stubGlobal("localStorage", storage);
     const { addPendingPrint, readPendingPrints } = await load();
@@ -79,6 +102,6 @@ describe("[unit] pending-prints", () => {
     addPendingPrint(job);
 
     expect(readPendingPrints()).toHaveLength(2);
-    expect(storage.getItem("cafeore:pending-label-prints")).toBeNull();
+    expect(storage.length).toBe(1);
   });
 });
