@@ -238,14 +238,16 @@ func (c *Client) GetPayment(ctx context.Context, paymentID string) (*Payment, er
 // --------------------------------------------------
 
 type DeviceCode struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name,omitempty"`
-	Code        string `json:"code,omitempty"`
-	DeviceID    string `json:"device_id,omitempty"`
-	ProductType string `json:"product_type"`
-	LocationID  string `json:"location_id,omitempty"`
-	Status      string `json:"status,omitempty"`
-	PairBy      string `json:"pair_by,omitempty"`
+	ID              string `json:"id,omitempty"`
+	Name            string `json:"name,omitempty"`
+	Code            string `json:"code,omitempty"`
+	DeviceID        string `json:"device_id,omitempty"`
+	ProductType     string `json:"product_type"`
+	LocationID      string `json:"location_id,omitempty"`
+	Status          string `json:"status,omitempty"`
+	PairBy          string `json:"pair_by,omitempty"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	StatusChangedAt string `json:"status_changed_at,omitempty"`
 }
 
 type deviceCodeEnvelope struct {
@@ -272,4 +274,46 @@ func (c *Client) GetDeviceCode(ctx context.Context, id string) (*DeviceCode, err
 		return nil, err
 	}
 	return &out.DeviceCode, nil
+}
+
+// ListDeviceCodesParams は ListDeviceCodes の絞り込み。空の項目は送らない。
+type ListDeviceCodesParams struct {
+	LocationID  string
+	ProductType string
+	Status      string
+}
+
+// ListDeviceCodes は API で発行したコードを、ページを辿って全て取る（GET /v2/devices/codes）。
+func (c *Client) ListDeviceCodes(ctx context.Context, params ListDeviceCodesParams) ([]DeviceCode, error) {
+	codes := []DeviceCode{}
+	cursor := ""
+	for {
+		query := url.Values{}
+		for key, value := range map[string]string{
+			"location_id":  params.LocationID,
+			"product_type": params.ProductType,
+			"status":       params.Status,
+			"cursor":       cursor,
+		} {
+			if value != "" {
+				query.Set(key, value)
+			}
+		}
+		path := "/v2/devices/codes"
+		if encoded := query.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		var out struct {
+			DeviceCodes []DeviceCode `json:"device_codes"`
+			Cursor      string       `json:"cursor"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+			return nil, err
+		}
+		codes = append(codes, out.DeviceCodes...)
+		if out.Cursor == "" {
+			return codes, nil
+		}
+		cursor = out.Cursor
+	}
 }

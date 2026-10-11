@@ -17,6 +17,7 @@ import {
 import useSWR from "swr";
 import { z } from "zod";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import { useSquareDevice } from "~/components/functional/useSquareDevice";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -41,6 +42,9 @@ export default function Cashier() {
     "square-status",
     squareRepository.getStatus,
   );
+  const squareEnabled = squareStatus?.enabled ?? false;
+  // 決済画面を出す端末はレジごとに固定する（このブラウザに覚える）
+  const squareDevice = useSquareDevice(squareEnabled);
 
   const submitPayload = useCallback(
     (newOrder: OrderEntity) => {
@@ -82,7 +86,8 @@ export default function Cashier() {
       orders={orders}
       wsStatus={status}
       canSubmitOrder={canSubmitOrder}
-      squareEnabled={squareStatus?.enabled ?? false}
+      squareEnabled={squareEnabled}
+      squareDevice={squareDevice}
       submitPayload={submitPayload}
       submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}
