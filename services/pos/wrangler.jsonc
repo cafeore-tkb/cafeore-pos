@@ -16,10 +16,18 @@
 
   // 画面は静的アセット（react-router は ssr: false なので build/client の中身だけ）。
   // スクリプトは API への中継だけを受け持つ（worker/index.ts の冒頭を参照）。
-  //
-  // 中継先は API_ORIGIN。デプロイの workflow が --var で渡すので、ここには書かない
-  // （ここに書くと、渡さなかったデプロイで古い値が残る）。
   "main": "./worker/index.ts",
+
+  // 中継先は API_ORIGIN（本番の Cloud Run の URL）。
+  //
+  // --var API_ORIGIN:... を渡したデプロイでは、そちらが優先される（デプロイの
+  // workflow は Variables の WORKERS_API_ORIGIN があるときだけ渡す）。
+  //
+  // 注意: --var を渡さない wrangler versions upload（PR のプレビュー）と
+  // wrangler dev にもこの値が入るので、それらの /api も本番の API へ中継される。
+  "vars": {
+    "API_ORIGIN": "https://cafeore-pos-prod-185193732958.asia-northeast1.run.app"
+  },
 
   "assets": {
     "directory": "./build/client",
