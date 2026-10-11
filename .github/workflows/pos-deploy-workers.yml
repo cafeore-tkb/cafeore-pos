@@ -2,8 +2,9 @@ name: pos / deploy (Workers)
 
 # POS フロントをビルドして Cloudflare Workers へデプロイする。
 #
-# ssr: false の SPA なので、Worker のスクリプトは持たず build/client を
-# 静的アセットとして配信するだけ（設定は services/pos/wrangler.jsonc）。
+# ssr: false の SPA なので、画面は build/client を静的アセットとして配信する
+# （設定は services/pos/wrangler.jsonc）。Worker のスクリプトは /api などを
+# Cloud Run の API へ中継するだけ（services/pos/worker/index.ts）。
 #
 # main への push と手動実行では本番へ deploy する。
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
@@ -216,6 +217,10 @@ jobs:
           # Worker がまだ存在しないときに限り、PR でも wrangler deploy に
           # フォールバックする。詳しくは下のスクリプト内のコメントを参照。
           AUTO_DEPLOY_IF_NOT_EXIST: ${{ vars.WORKERS_AUTO_DEPLOY_IF_NOT_EXIST }}
+          # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
+          # README の「API の認証」を参照。
+          API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           set -uo pipefail
 
@@ -261,9 +266,29 @@ jobs:
             mode="versions-upload"
           fi
 
+          # 本番の Worker にだけ中継先を渡す。PR のプレビューでは渡さない
+          # （プレビューの画面は、焼き込んだプレビュー用 backend の URL を直接呼ぶ）。
+          #
+          # 画面が API を Worker 経由で呼ぶ設定（VITE_API_BASE_URL が workers.dev）なのに
+          # 中継先が無いと、本番の POS が API に届かなくなる。その組み合わせでは出さない。
+          var_args=()
+          if [ "$mode" = "deploy" ]; then
+            if [ -n "$API_ORIGIN" ]; then
+              var_args=(--var "API_ORIGIN:$API_ORIGIN")
+            else
+              case "$VITE_API_BASE_URL" in
+                *.workers.dev*)
+                  echo "::error::VITE_API_BASE_URL が Worker を向いているのに WORKERS_API_ORIGIN が無い。このままだと POS が API に届かない"
+                  exit 1
+                  ;;
+              esac
+              echo "::warning::WORKERS_API_ORIGIN が無いので、Worker は /api を中継しない"
+            fi
+          fi
+
           status=0
           if [ "$mode" = "deploy" ]; then
-            out=$(pnpm exec wrangler deploy 2>&1) || status=$?
+            out=$(pnpm exec wrangler deploy "${var_args[@]}" 2>&1) || status=$?
           else
             out=$(pnpm exec wrangler versions upload \
               --tag "pr-$PR_NUMBER" \
