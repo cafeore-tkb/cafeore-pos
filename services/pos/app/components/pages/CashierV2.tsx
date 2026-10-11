@@ -110,7 +110,7 @@ const CashierV2 = ({
   const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
   const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
   const [UISession, renewUISession] = useUISession();
-  const { nextOrderId, manualOrderId, setOrderIdOverride } =
+  const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
@@ -262,6 +262,7 @@ const CashierV2 = ({
       if (exactPayment) submitOne.received = submitOne.billingAmount;
       printOrderLabel(submitOne);
       submitPayload(submitOne);
+      markOrderIdIssued(submitOne.orderId);
       finishSubmit();
     },
     [
@@ -271,6 +272,7 @@ const CashierV2 = ({
       printOrderLabel,
       submitPayload,
       finishSubmit,
+      markOrderIdIssued,
     ],
   );
 

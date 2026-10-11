@@ -76,7 +76,17 @@ export const toCaosPracticeOrder = (
         id: item.id || `name:${item.name}`,
         name: item.name,
         abbr: item.abbr || item.name,
-        item_type: { name: item.type, display_name: item.type },
+        item_type: {
+          name: item.type,
+          display_name: item.type,
+          makes_cup: itemMakesCup(item.type),
+          needs_brew: itemMakesCup(item.type) && !item.type.includes("milk"),
+          senior_only:
+            itemMakesCup(item.type) &&
+            !item.type.includes("milk") &&
+            item.type.includes("limited"),
+          iced_brew: item.type.includes("ice"),
+        },
       },
       readyAt: null,
       servedAt: null,

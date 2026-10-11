@@ -21,7 +21,15 @@ const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = jstDate(NOW.getTime());
 
 // 抽出が要るか・上級生のみかは種類の名前で決める（cupNeedsBrew・cupSeniorOnly。本番の DB の種類の名前で作る）
-const type = (name: string) => ({ name, display_name: name });
+const type = (name: string): Cup["item"]["item_type"] => ({
+  name,
+  display_name: name,
+  makes_cup: itemMakesCup(name),
+  needs_brew: itemMakesCup(name) && !name.includes("milk"),
+  senior_only:
+    itemMakesCup(name) && !name.includes("milk") && name.includes("limited"),
+  iced_brew: name.includes("ice"),
+});
 const blend = {
   id: "item-blend",
   name: "ブレンド",
