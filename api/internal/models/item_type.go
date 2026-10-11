@@ -46,3 +46,8 @@ func (item_type ItemType) CreatesCup() bool {
 func (item_type ItemType) BrewRequired() bool {
 	return item_type.CreatesCup() && (item_type.NeedsBrew == nil || *item_type.NeedsBrew)
 }
+
+// SeniorOnlyBrew は上級生だけが淹れるカップか（抽出が要り、SeniorOnly の種類。画面の cupSeniorOnly と同じ決まり）。
+func (item_type ItemType) SeniorOnlyBrew() bool {
+	return item_type.BrewRequired() && item_type.SeniorOnly
+}

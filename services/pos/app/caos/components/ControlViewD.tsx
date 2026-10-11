@@ -29,6 +29,7 @@ import {
   PanelHeader,
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { MergeOverlay, OrderCard } from "./OrderCard";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
@@ -261,8 +262,13 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         hoveredTarget === bay.id ? "bg-blue-100" : ""
                       }`}
                     >
-                      <div className="flex justify-center">
+                      <div className="flex min-w-0 items-center justify-center gap-1">
                         <LaneBadge bayId={bay.id} />
+                        <LaneName
+                          dripper={bay.id}
+                          className="font-black text-[13px]"
+                        />
+                        <LaneChangeButton dripper={bay.id} compact />
                       </div>
                       <NextButton
                         bayId={bay.id}

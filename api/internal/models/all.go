@@ -22,6 +22,8 @@ func All() []any {
 		&OrderStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
+		&CaosLaneRow{},
+		&CaosLaneChangeRow{},
 		&SquareCheckout{},
 		&SquareDevice{},
 		&PrinterSetting{},

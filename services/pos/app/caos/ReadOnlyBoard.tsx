@@ -3,6 +3,7 @@ import { Eye } from "lucide-react";
 import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { ControlViewA } from "./components/ControlViewA";
+import { LaneHeaderStatus } from "./components/LaneParts";
 import { PosStatusBadge } from "./components/TopHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { useLiveBoard } from "./hooks/useLiveBoard";
@@ -50,6 +51,8 @@ export default function ReadOnlyBoard() {
           </span>{" "}
           杯
         </span>
+        {/* 上級生のドリッパーが無いときの知らせ（担当者は表示だけ） */}
+        <LaneHeaderStatus />
         <PosStatusBadge status={status} />
       </header>
       <div className="min-h-0 flex-1">

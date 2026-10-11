@@ -16,6 +16,7 @@ import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { BayPad, OrderCard } from "./OrderCard";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
@@ -200,11 +201,23 @@ export const DispatchBoard: React.FC<
                   <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-slate-200 border-r bg-white px-2 py-1.5">
                     <LaneBadge bayId={bay.id} />
                     <div className="flex h-full min-w-0 flex-1 flex-col justify-center leading-none">
-                      {lane.current && (
-                        <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
-                          {orderLabel(lane.current)}
-                        </span>
-                      )}
+                      {/* 担当者の名前と上級生の印（「1st 山田★」）、交代 */}
+                      <div className="flex min-w-0 items-center gap-1">
+                        <LaneName
+                          dripper={bay.id}
+                          className="font-black text-[12px] text-slate-950"
+                        />
+                        <LaneChangeButton
+                          dripper={bay.id}
+                          compact
+                          className="h-6"
+                        />
+                        {lane.current && (
+                          <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
+                            {orderLabel(lane.current)}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-1 flex min-w-0 items-center gap-1">
                         <span
                           className="truncate font-bold text-[13px] text-slate-800"

@@ -11,6 +11,7 @@ import {
   PanelHeader,
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
@@ -51,7 +52,14 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
               data-bay-target={bay.id}
               className={`relative isolate flex min-h-0 flex-col gap-1 overflow-hidden p-1.5 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
             >
-              <LaneBadge bayId={bay.id} />
+              <div className="flex min-w-0 items-center gap-1.5">
+                <LaneBadge bayId={bay.id} />
+                <LaneName
+                  dripper={bay.id}
+                  className="font-black text-[13px] text-slate-950"
+                />
+                <LaneChangeButton dripper={bay.id} />
+              </div>
               <div className="grid min-h-0 flex-1 grid-cols-[180px_minmax(0,1fr)_52px] items-stretch gap-1.5">
                 {current ? (
                   <OrderCard
