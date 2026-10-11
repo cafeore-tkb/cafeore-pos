@@ -1,4 +1,4 @@
-import type { CaosCard, CaosPlace } from "@cafeore/common";
+import { type CaosCard, type CaosPlace, canSplitCard } from "@cafeore/common";
 import { ClipboardList } from "lucide-react";
 import type React from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
@@ -14,7 +14,7 @@ import {
   orderRows,
   totalCups,
 } from "../logic/cards";
-import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
+import { type Lane, cardPlaces, laneActive, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
 import {
@@ -23,6 +23,7 @@ import {
   MergeOverlay,
   MergedTrace,
   OrderCard,
+  SplitCupButtons,
 } from "./OrderCard";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は useUnassignedPick。
@@ -80,6 +81,12 @@ const UnassignedCard: React.FC<{
           onPick={(bayId) => pick.assign(card, bayId)}
         />
       )}
+      {isOpen && pick.split && canSplitCard(card) && (
+        <SplitCupButtons
+          card={card}
+          onSplit={(cupId) => pick.split?.(card, cupId)}
+        />
+      )}
       {isOpen && card.emergency && pick.cancelEmergency && (
         <CancelEmergencyButton onConfirm={() => pick.cancelEmergency?.(card)} />
       )}
@@ -134,7 +141,12 @@ type UnassignedProps = {
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  onMergeOrders?: (firstKey: string, secondKey: string) => void;
+  /** ドリッパーの列（ドラッグで統合する相手を引く） */
+  lanes?: Lane[];
+  /** 1 杯のカード（firstKey）を統合できる 1 杯のカード（intoKey）に入れる */
+  onMergeOrders?: (firstKey: string, intoKey: string) => void;
+  /** 統合の解除（2 杯のカードから 1 杯を外す） */
+  onSplitCup?: (card: CaosCard, cupId: string) => void;
   /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
   onCancelEmergency?: (card: CaosCard) => void;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
@@ -148,7 +160,10 @@ export const UnassignedStrip: React.FC<
   UnassignedProps & { nextAvailable: NextAvailable }
 > = ({ nextAvailable, readOnly = false, ...props }) => {
   const { orders, looks, selectedOrderId } = props;
-  const pick = useUnassignedPick(props);
+  const pick = useUnassignedPick({
+    ...props,
+    placed: props.lanes?.flatMap(laneActive),
+  });
   const rows = stripRows(orders);
   return (
     <section className="flex h-full flex-col rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -238,10 +253,13 @@ const liveRows = (cards: readonly CaosCard[]) => {
  * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。10 注文くらいが一度に見える高さ
  */
 export const OrderQueuePanel: React.FC<
-  Omit<UnassignedProps, "onMergeOrders" | "readOnly"> & { lanes: Lane[] }
+  Omit<UnassignedProps, "readOnly"> & { lanes: Lane[] }
 > = ({ lanes, ...props }) => {
   const { orders, looks, selectedOrderId } = props;
-  const pick = useUnassignedPick(props);
+  const pick = useUnassignedPick({
+    ...props,
+    placed: lanes.flatMap(laneActive),
+  });
   const places = cardPlaces(lanes);
   const rows = liveRows([...orders, ...lanes.flatMap(laneCards)]);
   return (

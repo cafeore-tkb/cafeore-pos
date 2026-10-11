@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NextConfirmDialog } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -104,6 +105,7 @@ export default function App() {
             onOpenEmptySlot={selection.openAssignSlot}
             onAssignToBay={selection.assign}
             onMergeOrders={selection.merge}
+            onSplitCup={selection.split}
           />
         </main>
 
@@ -115,6 +117,7 @@ export default function App() {
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
+              onMoveQueue={session.moveQueue}
               {...testPlay.analytics}
             />
           </AuxiliarySheet>
@@ -129,6 +132,7 @@ export default function App() {
           onClose={selection.closeDetail}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
+          onSplitCup={selection.split}
           onCancelEmergency={session.emergency?.cancel}
         />
       )}
@@ -141,6 +145,14 @@ export default function App() {
           orders={session.emergency.orders}
           onClose={selection.closeRebrew}
           onAdd={session.emergency.add}
+        />
+      )}
+
+      {session.nextConfirm && (
+        <NextConfirmDialog
+          {...session.nextConfirm}
+          onCancel={session.cancelNext}
+          onConfirm={session.confirmNext}
         />
       )}
 

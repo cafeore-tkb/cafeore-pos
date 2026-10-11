@@ -22,7 +22,8 @@ export const useBoardSelection = (
   actions: {
     place: (key: string, bayId: number, place?: CaosPlace) => boolean;
     returnToUnassigned: (key: string) => boolean;
-    merge: (firstKey: string, secondKey: string) => boolean;
+    merge: (firstKey: string, intoKey: string) => boolean;
+    split: (key: string, cupId: string) => boolean;
   },
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
@@ -108,7 +109,10 @@ export const useBoardSelection = (
       thenDeselect(actions.place(card.key, bayId, place)),
     returnToUnassigned: (card: CaosCard) =>
       thenDeselect(actions.returnToUnassigned(card.key)),
-    merge: (firstKey: string, secondKey: string) =>
-      thenDeselect(actions.merge(firstKey, secondKey)),
+    merge: (firstKey: string, intoKey: string) =>
+      thenDeselect(actions.merge(firstKey, intoKey)),
+    /** 統合の解除（2 杯のカードから cupId の 1 杯を外す） */
+    split: (card: CaosCard, cupId: string) =>
+      thenDeselect(actions.split(card.key, cupId)),
   };
 };

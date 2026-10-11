@@ -1,4 +1,4 @@
-import { type CaosCard, dripperLabel } from "@cafeore/common";
+import { type CaosCard, canSplitCard, dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -10,18 +10,24 @@ import {
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import { cardName, orderLabel } from "../logic/cards";
-import { laneCards, pendingNominatedCups } from "../logic/lanes";
+import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { BayPad, CancelEmergencyButton, OrderCard } from "./OrderCard";
+import {
+  BayPad,
+  CancelEmergencyButton,
+  OrderCard,
+  SplitCupButtons,
+} from "./OrderCard";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
-// 縦に引くか長押しで掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う）。
+// 縦に引くか長押しで掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う。
+// 統合できる待機・抽出中のカードの上（待機は右の部分）に落とすと統合）。2 杯のカードを開くと「外す」（統合の解除）が出る。
 // 横に払うとタイムラインのスクロール（カードの上でもスクロールできる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -37,7 +43,7 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay" | "onMergeOrders">
+  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay">
 > = ({
   lanes,
   unassignedOrders,
@@ -53,6 +59,8 @@ export const DispatchBoard: React.FC<
   onReturnToUnassigned,
   onCloseTicketAction,
   onOpenEmptySlot,
+  onMergeOrders,
+  onSplitCup,
   nowMs,
   timelineCommand,
   readOnly = false,
@@ -72,12 +80,17 @@ export const DispatchBoard: React.FC<
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機のカードを別の列へ・待機のカードの前へ（今の列そのものと、指名以外の列には置けない）
+  // 待機のカードを別の列へ・待機のカードの前へ・統合（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
-      dropTargetAt(x, y, { from: bayId, card }),
+      dropTargetAt(x, y, {
+        from: bayId,
+        card,
+        cards: lanes.flatMap(laneActive),
+      }),
     onDrop: ({ card }, target) => {
-      onMoveTicket(card, target.bayId, target.place);
+      if (target.mergeKey) onMergeOrders(card.key, target.mergeKey);
+      else onMoveTicket(card, target.bayId, target.place);
       onCloseTicketAction();
     },
   });
@@ -249,6 +262,12 @@ export const DispatchBoard: React.FC<
                             data-queued-ticket={
                               isScheduled ? ticket.key : undefined
                             }
+                            // 待機・抽出中のカードは、ドラッグで落とすと統合の相手になる
+                            data-merge-target={
+                              !readOnly && ticket.status !== "done"
+                                ? ticket.key
+                                : undefined
+                            }
                             data-ticket-label={orderLabel(ticket)}
                             onPointerDown={
                               isScheduled
@@ -290,6 +309,15 @@ export const DispatchBoard: React.FC<
                                 <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
                                   <X className="h-10 w-10 stroke-[3] text-red-600/35" />
                                 </div>
+                                {canSplitCard(ticket) && (
+                                  <SplitCupButtons
+                                    card={ticket}
+                                    onSplit={(cupId) => {
+                                      onSplitCup(ticket, cupId);
+                                      onCloseTicketAction();
+                                    }}
+                                  />
+                                )}
                                 {ticket.emergency && onCancelEmergency && (
                                   <CancelEmergencyButton
                                     onConfirm={() => {
@@ -326,6 +354,7 @@ export const DispatchBoard: React.FC<
                       <NextButton
                         bayId={bay.id}
                         active={Boolean(lane.current)}
+                        locked={lane.nextLocked}
                         onAdvance={onAdvanceBay}
                         className="h-[64px] w-full text-[17px]"
                       />

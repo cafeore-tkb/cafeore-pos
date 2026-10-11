@@ -4,11 +4,12 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
-  caosLane,
   dripperLabel,
   jstClock,
   mergeWrites,
+  moveQueueWrites,
   seniorOnlyBlock,
+  splitWrites,
   unassignWrites,
   undoOfNext,
   undoOfWrites,
@@ -26,7 +27,7 @@ import { waitingCupsByBean } from "../logic/beans";
 import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
-import { nextAvailableBays } from "../logic/queue";
+import { earlyNext, nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
@@ -63,6 +64,10 @@ export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
+  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
+  const [nextConfirm, setNextConfirm] = useState<
+    ({ bayId: number } & NonNullable<ReturnType<typeof earlyNext>>) | null
+  >(null);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
@@ -116,6 +121,9 @@ export const useCaosSession = () => {
 
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
+  // 本番では、上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
+  const seniorBlock = (card: CaosCard, dripper: number) =>
+    test.session ? null : seniorOnlyBlock(card, dripper, people);
   // 送った操作が通ったら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
   // 断られたら何もしない。送れたか（練習で断られた・「次へ」の二度押しは false）を返す
   const onSuccess = (
@@ -131,6 +139,14 @@ export const useCaosSession = () => {
     });
     return sent !== false;
   };
+  // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らし、「1つ戻す」に覚える
+  const runNext = (bayId: number, seen: string | null) =>
+    onSuccess(
+      source.runNext(bayId, seen),
+      `次へ ${dripperLabel(bayId)}`,
+      source.undoRun(undoOfNext(cards, bayId)),
+      () => soundManager.playComplete(),
+    );
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
   const write = (result: CaosWritesResult, label: string) => {
     if ("error" in result) return fail(result.error);
@@ -226,9 +242,7 @@ export const useCaosSession = () => {
     place: (key: string, bayId: number, place?: CaosPlace) => {
       const card = cardOf(key);
       if (!card) return fail(NOT_FOUND);
-      const blocked = test.session
-        ? null
-        : seniorOnlyBlock(card, bayId, people);
+      const blocked = seniorBlock(card, bayId);
       if (blocked) return fail(blocked);
       const action =
         card.status === "unassigned"
@@ -247,30 +261,62 @@ export const useCaosSession = () => {
       if (!card) return fail(NOT_FOUND);
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
-    /** 1 杯のカードどうしを 2 杯の同時抽出にまとめる */
-    merge: (firstKey: string, secondKey: string) => {
+    /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
+    merge: (firstKey: string, intoKey: string) => {
       const card = cardOf(firstKey);
-      const withCard = cardOf(secondKey);
-      if (!card || !withCard) return fail(NOT_FOUND);
+      const into = cardOf(intoKey);
+      if (!card || !into) return fail(NOT_FOUND);
+      const blocked =
+        into.dripper === null ? null : seniorBlock(card, into.dripper);
+      if (blocked) return fail(blocked);
       return write(
-        mergeWrites(card, withCard, newDripId),
-        `統合 ${orderLabel(card)}・${orderLabel(withCard)}`,
+        mergeWrites(card, into, newDripId),
+        `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
+      );
+    },
+    /** 統合の解除：2 杯のカードから cupId の 1 杯を外して未割当に戻す */
+    split: (key: string, cupId: string) => {
+      const card = cardOf(key);
+      const cup = card?.cups.find((c) => c.id === cupId);
+      if (!card || !cup) return fail(NOT_FOUND);
+      return write(
+        splitWrites(card, cupId, newDripId),
+        `外す #${orderNoLabel(cup.orderNo)}`,
+      );
+    },
+    /** ドリッパー from の待機を全部 to へ（置けないカードは残して知らせる） */
+    moveQueue: (from: number, to: number) => {
+      const result = moveQueueWrites(cards, from, to, (card) =>
+        seniorBlock(card, to),
+      );
+      if ("kept" in result && result.kept > 0)
+        toast(
+          `指名・上級生のみで ${dripperLabel(to)} に置けないカード ${result.kept} 枚は残しました`,
+        );
+      return write(
+        result,
+        `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`,
       );
     },
     /**
-     * 「次へ」。画面が抽出中と見ているカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める
+     * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
+     * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める。
+     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず nextConfirm で確かめる
      */
     advance: (bayId: number) => {
-      const seen = caosLane(cards, bayId).brewing?.dripId ?? null;
-      const undoRun = source.undoRun(undoOfNext(cards, bayId));
-      return onSuccess(
-        source.runNext(bayId, seen),
-        `次へ ${dripperLabel(bayId)}`,
-        undoRun,
-        () => soundManager.playComplete(),
-      );
+      const lane = lanes.find((l) => l.id === bayId);
+      const early = lane && earlyNext(lane, nowMs);
+      if (early) setNextConfirm({ bayId, ...early });
+      else runNext(bayId, lane?.brewing?.dripId ?? null);
     },
+    /** 確かめている「次へ」（無ければ null） */
+    nextConfirm,
+    /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
+    confirmNext: () => {
+      if (nextConfirm) runNext(nextConfirm.bayId, nextConfirm.card.dripId);
+      setNextConfirm(null);
+    },
+    cancelNext: () => setNextConfirm(null),
     /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
     undo: {
       label: undo.label,

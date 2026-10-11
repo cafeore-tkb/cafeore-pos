@@ -433,6 +433,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     <NextButton
                       bayId={bay.id}
                       active={Boolean(lane.current)}
+                      locked={lane.nextLocked}
                       onAdvance={onAdvanceBay}
                       className="h-12 w-full text-[15px]"
                     />

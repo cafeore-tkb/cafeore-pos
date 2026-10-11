@@ -10,12 +10,14 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => (
     <div className="relative z-[70] h-[190px] overflow-visible">
       <UnassignedStrip
         orders={props.unassignedOrders}
+        lanes={props.lanes}
         looks={props.looks}
         nextAvailable={props.nextAvailable}
         selectedOrderId={props.selectedOrderId}
         onSelectOrder={props.onSelectOrder}
         onAssignToBay={props.onAssignToBay}
         onMergeOrders={props.onMergeOrders}
+        onSplitCup={props.onSplitCup}
         onCancelEmergency={props.onCancelEmergency}
         readOnly={props.readOnly}
       />

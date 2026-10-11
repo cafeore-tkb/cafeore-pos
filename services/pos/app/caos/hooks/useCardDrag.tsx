@@ -1,6 +1,7 @@
 import {
   type CaosCard,
   type CaosPlace,
+  canMergeCards,
   caosDripperAllowed,
 } from "@cafeore/common";
 import type React from "react";
@@ -52,26 +53,55 @@ export const bayTargetAt = (
 
 /**
  * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機のカードの前（{ beforeKey }）。
- * place が無ければ、その列の待機の最後へ
+ * place が無ければ、その列の待機の最後へ。mergeKey があれば、そのカード（待機・抽出中）に統合する
  */
 export interface DropTarget {
   bayId: number;
   place?: CaosPlace;
-  /** 前に入れるカードの表示（注文番号） */
+  /** 統合する相手のカード（key） */
+  mergeKey?: string;
+  /** 前に入れる・統合する相手のカードの表示（注文番号） */
   beforeLabel?: string;
 }
 
+// 待機のカードの上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
+const MERGE_FROM = 0.4;
+
 /**
- * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）、待機のカード（data-queued-ticket）の上ならそのカードの前
- * （同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。運んでいるカード（card）自身は飛ばし、置けない列は null
+ * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
+ * 運んでいるカード（card）を統合できる（canMergeCards。cards から引く）なら統合（待機のカードは右の部分だけ）、
+ * 待機のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
+ * 運んでいるカード自身は飛ばし、置けない列は null
  */
 export const dropTargetAt = (
   clientX: number,
   clientY: number,
-  { from, card }: { from?: number; card?: CaosCard } = {},
+  {
+    from,
+    card,
+    cards = [],
+  }: { from?: number; card?: CaosCard; cards?: readonly CaosCard[] } = {},
 ): DropTarget | null => {
   const elements = document.elementsFromPoint(clientX, clientY);
   if (!elements.some(isBayButton)) {
+    for (const element of elements) {
+      const target = element.closest<HTMLElement>("[data-merge-target]");
+      const into = cards.find(
+        (other) => other.key === target?.dataset.mergeTarget,
+      );
+      if (!target || !into || !card || !canMergeCards(card, into)) continue;
+      const rect = target.getBoundingClientRect();
+      if (
+        into.status === "queued" &&
+        clientX < rect.left + rect.width * MERGE_FROM
+      )
+        break;
+      return {
+        bayId: into.dripper ?? 0,
+        mergeKey: into.key,
+        beforeLabel: target.dataset.ticketLabel,
+      };
+    }
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;
@@ -93,9 +123,10 @@ export const dropTargetAt = (
   return bayId === null ? null : { bayId };
 };
 
-/** 落とす先の札（「→ 3」・「→ 3 #012 の前」） */
+/** 落とす先の札（「→ 3」・「→ 3 #012 の前」・「→ 3 #012 と統合」） */
 export const dropTargetLabel = (target: DropTarget | null) => {
   if (!target) return null;
+  if (target.mergeKey) return `→ ${target.bayId} ${target.beforeLabel} と統合`;
   return target.beforeLabel
     ? `→ ${target.bayId} ${target.beforeLabel} の前`
     : `→ ${target.bayId}`;

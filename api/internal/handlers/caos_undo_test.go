@@ -78,6 +78,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 	for _, id := range []uuid.UUID{o1.OrderCups[0].ID, o1.OrderCups[1].ID, cup2} {
 		beforeNext[id] = f.undoState(t, id)
 	}
+	f.wait()
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
@@ -94,6 +95,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 		t.Fatalf("cup = %+v, want brewing and not ready", cup)
 	}
 	// 戻したあとも「次へ」が押せる
+	f.wait()
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next after undo = %d", code)
 	}
@@ -110,6 +112,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 
 	// 提供済みになったカップは戻さない
 	beforeServe := map[uuid.UUID]map[string]any{cup2: f.undoState(t, cup2)}
+	f.wait()
 	if code := f.next(t, 1, &card2); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
@@ -122,9 +125,11 @@ func TestCaosUndoOnDB(t *testing.T) {
 
 	// 「次へ」で空いたドリッパーでほかのカードが始まっていたら、終えたカードを抽出中に戻せない
 	beforeLast := map[uuid.UUID]map[string]any{cup3: f.undoState(t, cup3)}
+	f.wait()
 	if code := f.next(t, 3, nil); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
+	f.wait()
 	if code := f.next(t, 3, &card3); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}

@@ -1,6 +1,7 @@
 import {
   type CaosCard,
   type CaosPlace,
+  canSplitCard,
   caosBrewSec,
   caosDripperAllowed,
   dripperLabel,
@@ -23,7 +24,7 @@ import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { OrderCard } from "./OrderCard";
+import { OrderCard, SplitCupButtons } from "./OrderCard";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
 // onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
@@ -172,7 +173,8 @@ export const AssignPanel: React.FC<{
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す・入れ直し（緊急）の取り消し。
+// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す・統合の解除（2 杯のカードの 1 杯を外す）・
+// 入れ直し（緊急）の取り消し。
 // パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<{
   ticket: CaosCard;
@@ -181,6 +183,7 @@ export const TicketDetailPanel: React.FC<{
   onClose: () => void;
   onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onReturnToUnassigned: (card: CaosCard) => void;
+  onSplitCup: (card: CaosCard, cupId: string) => void;
   /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
   onCancelEmergency?: (card: CaosCard) => void;
 }> = ({
@@ -190,6 +193,7 @@ export const TicketDetailPanel: React.FC<{
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
+  onSplitCup,
   onCancelEmergency,
 }) => (
   <SidePanel
@@ -228,6 +232,21 @@ export const TicketDetailPanel: React.FC<{
       <Undo2 className="h-5 w-5" />
       未割り当に戻す
     </button>
+    {canSplitCard(ticket) && (
+      <>
+        <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+          統合を解除（外した 1 杯は未割当へ）
+        </h3>
+        <SplitCupButtons
+          card={ticket}
+          onSplit={(cupId) => {
+            onSplitCup(ticket, cupId);
+            onClose();
+          }}
+          className="grid grid-cols-2"
+        />
+      </>
+    )}
     {ticket.emergency && onCancelEmergency && (
       <TwoStepButton
         label="緊急を取り消す"
@@ -298,12 +317,14 @@ export const AuxiliaryContent: React.FC<
     tab: AuxiliaryTab;
     /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
+    /** ドリッパー from の待機を全部 to へ移す（閲覧だけの画面では渡さない） */
+    onMoveQueue?: (from: number, to: number) => void;
   } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, beans, lanes, ...analytics }) => {
+> = ({ tab, beans, lanes, onMoveQueue, ...analytics }) => {
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
+  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数。待機のカードはまとめて別のドリッパーへ移せる
   return (
     <div className="grid grid-cols-2 gap-2">
       {lanes.map((lane) => {
@@ -337,6 +358,28 @@ export const AuxiliaryContent: React.FC<
               <div className="mt-1 font-bold text-[11px] text-slate-500">
                 待ち {waiting.length}件
               </div>
+              {onMoveQueue && lane.queued.length > 0 && (
+                <div className="mt-2">
+                  <div className="font-bold text-[11px] text-slate-500">
+                    待機 {lane.queued.length}件をまとめて移す
+                  </div>
+                  <div className="mt-1 grid grid-cols-5 gap-1">
+                    {lanes
+                      .filter((other) => other.id !== lane.id)
+                      .map((other) => (
+                        <button
+                          key={other.id}
+                          type="button"
+                          data-move-queue={`${lane.id}-${other.id}`}
+                          onClick={() => onMoveQueue(lane.id, other.id)}
+                          className="h-9 touch-manipulation rounded-md border border-slate-300 bg-white font-black font-mono text-[14px] text-slate-800 active:bg-slate-900 active:text-white"
+                        >
+                          {other.id}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           </article>
         );

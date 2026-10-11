@@ -4,6 +4,7 @@ import {
   type CaosOrderInput,
   assignWrites,
   buildCaosCards,
+  mergeWrites,
 } from "./caos-board";
 import { caosUndoCups, undoOfNext, undoOfWrites } from "./caos-undo";
 
@@ -97,6 +98,33 @@ describe("unit: caos-undo", () => {
         },
       ],
     });
+  });
+
+  test("抽出中のカードへの統合を戻す：入れたカップは抽出中（開始の時刻はそのカードのもの）とみて、未割当に戻す", () => {
+    const brewing = cup("a", {
+      dripper: 3,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+    });
+    const cards = board(brewing, cup("b"));
+    const [loose, into] = cards; // 未割当が先に並ぶ
+    const result = mergeWrites(loose, into, () => "unused");
+    if ("error" in result) throw new Error(result.error);
+    const entry = undoOfWrites(cards, result.writes);
+    const joined = cup("b", {
+      dripper: 3,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+    });
+    const undo = caosUndoCups(entry, board(brewing, joined));
+    // 抽出中のカードのカップは、今の値のまま送る
+    if (!("cups" in undo)) throw new Error(undo.error);
+    expect(undo.cups.map((c) => [c.cup_id, c.restore])).toEqual([
+      ["b", { state: nullState, ready_at: null }],
+      ["a", undo.cups[1].current],
+    ]);
   });
 
   test("ほかの画面があとで変えた・提供済み・消えたカップは送らない", () => {

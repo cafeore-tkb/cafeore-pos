@@ -1,6 +1,7 @@
 import type { Cup } from "../models/cup";
 import {
   CAOS_MAX_CUPS,
+  CAOS_NEXT_COOLDOWN_SEC,
   type CaosCard,
   type CaosCupState,
   type CaosCupsWrite,
@@ -8,6 +9,7 @@ import {
   buildCaosCards,
   caosDripperError,
   caosLane,
+  caosNextLocked,
   cupNeedsBrew,
 } from "./caos-board";
 import type { PracticeDataItemType } from "./caosPracticeData";
@@ -167,7 +169,8 @@ const allCups = (orders: CaosPracticeOrder[]) =>
 
 /**
  * 書くカップを置く番号を決める（サーバーの placeCaosCups）。番号をずらすときは、ここで後ろのカップを +1 する。
- *   - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じ。ずらさない
+ *   - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号と抽出の開始の時刻はそのカードと同じ。ずらさない。
+ *     終わったカードには入れない
  *   - insert_before が無ければ最後：そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
  *   - insert_before があれば、そのカード（そのドリッパーの待機）の番号 p に入れる。番号が p 以上の終わっていないカップを全部 +1 する
  */
@@ -175,7 +178,9 @@ const placeCups = (
   orders: CaosPracticeOrder[],
   write: CaosCupsWrite,
   dripper: number,
-): { position: number; error?: undefined } | { error: string } => {
+):
+  | { position: number; startedAt: Date | null; error?: undefined }
+  | { error: string } => {
   const writing = new Set(write.cup_ids);
   const cups = allCups(orders).filter((cup) => !writing.has(cup.id));
   const joined = cups.find((cup) => cup.dripId === write.after.drip_id);
@@ -184,9 +189,14 @@ const placeCups = (
       return {
         error: "ほかのカードに入れるときは、前に入れるカードは決められません",
       };
+    if (joined.brewFinishedAt !== null)
+      return { error: "終わったカードには入れられません" };
     if (joined.dripperPosition === null)
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
-    return { position: joined.dripperPosition };
+    return {
+      position: joined.dripperPosition,
+      startedAt: joined.brewStartedAt,
+    };
   }
 
   const lane = cups.filter(
@@ -195,6 +205,7 @@ const placeCups = (
   if (write.after.insert_before === null)
     return {
       position: Math.max(0, ...lane.map((cup) => cup.dripperPosition ?? 0)) + 1,
+      startedAt: null,
     };
 
   const p = lane.find(
@@ -212,7 +223,7 @@ const placeCups = (
     if (cup.dripperPosition !== null && cup.dripperPosition >= p)
       cup.dripperPosition += 1;
   }
-  return { position: p };
+  return { position: p, startedAt: null };
 };
 
 /**
@@ -277,16 +288,18 @@ export const applyCaosPracticeWrites = (
         };
     }
     let position: number | null = null;
+    let startedAt = write.after.start_brew ? new Date(now) : null;
     if (dripper !== null) {
       const placed = placeCups(next, write, dripper);
       if (placed.error !== undefined) return { error: placed.error };
       position = placed.position;
+      startedAt = startedAt ?? placed.startedAt;
     }
     for (const cup of cups) {
       cup.dripper = dripper;
       cup.dripperPosition = position;
       cup.dripId = write.after.drip_id;
-      cup.brewStartedAt = write.after.start_brew ? new Date(now) : null;
+      cup.brewStartedAt = startedAt;
       cup.brewFinishedAt = null;
     }
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
@@ -307,7 +320,8 @@ export const applyCaosPracticeWrites = (
 
 /**
  * 「次へ」。抽出中のカードを終え（終了の時刻を付け、そのカップを準備完了にする）、待機の先頭を始める。
- * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。時刻は now（練習の時計の今）
+ * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。始めてから CAOS_NEXT_COOLDOWN_SEC 秒は断る。
+ * 時刻は now（練習の時計の今）
  */
 export const advanceCaosPracticeDripper = (
   orders: readonly CaosPracticeOrder[],
@@ -326,6 +340,10 @@ export const advanceCaosPracticeDripper = (
     };
   if (seenDripId === null && cur)
     return { error: "抽出中のカードがあります（画面が古いかもしれません）" };
+  if (caosNextLocked(cur, now.getTime()))
+    return {
+      error: `始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は「次へ」を押せません`,
+    };
   const head = queued[0];
   if (!cur && !head)
     return { error: "このドリッパーには抽出中・待機のカードがありません" };

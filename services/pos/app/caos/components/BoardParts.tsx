@@ -1,6 +1,17 @@
-import { dripperLabel } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
@@ -97,17 +108,22 @@ export const DripperIndicator: React.FC<{
   );
 };
 
-/** 「次へ」（抽出中のカードを終えて待機の先頭を始める）。押せないとき（カードが無い）は薄い枠だけ。列の状態はドリッパーの番号に出す */
+/**
+ * 「次へ」（抽出中のカードを終えて待機の先頭を始める）。押せないとき（カードが無い・locked）は薄い枠だけ。列の状態はドリッパーの番号に出す。
+ * locked のあいだ（抽出を始めてすぐ。二度押しを防ぐ）は押せない
+ */
 export const NextButton: React.FC<{
   bayId: number;
   /** 抽出中か待機のカードがある */
   active: boolean;
+  /** まだ押せない（抽出を始めてすぐ） */
+  locked?: boolean;
   onAdvance: (bayId: number) => void;
   className?: string;
-}> = ({ bayId, active, onAdvance, className = "" }) => (
+}> = ({ bayId, active, locked = false, onAdvance, className = "" }) => (
   <button
     type="button"
-    disabled={!active}
+    disabled={!active || locked}
     onClick={() => onAdvance(bayId)}
     title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
     className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg border-2 font-black shadow-xs active:scale-95 enabled:border-orange-700 enabled:bg-orange-600 enabled:text-white disabled:border-slate-200 disabled:border-dashed disabled:bg-white disabled:text-slate-300 disabled:shadow-none ${className}`}
@@ -115,6 +131,33 @@ export const NextButton: React.FC<{
     次へ
     {active && <ArrowRightCircle className="h-4 w-4 shrink-0" />}
   </button>
+);
+
+/** 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）を確かめる。［やめる］［次へ進める］ */
+export const NextConfirmDialog: React.FC<{
+  bayId: number;
+  card: CaosCard;
+  elapsedSec: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ bayId, card, elapsedSec, onCancel, onConfirm }) => (
+  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {dripperLabel(bayId)} の {orderLabel(card)} を終えますか？
+        </AlertDialogTitle>
+        <AlertDialogDescription className="font-black text-[16px] text-slate-950">
+          始めてからまだ {clockLabel(elapsedSec)}{" "}
+          です。押す列を間違えていませんか？
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>やめる</AlertDialogCancel>
+        <AlertDialogAction onClick={onConfirm}>次へ進める</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 );
 
 /** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */

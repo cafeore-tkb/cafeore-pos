@@ -17,7 +17,8 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
-// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す）。未割当のカードを待機のカードの上に落とすと、そのカードの前へ
+// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）。未割当のカードを待機のカードの上に落とすと、そのカードの前へ
+// （統合できる待機・抽出中のカードの上（待機は右の部分）なら統合）
 export const ControlViewC: React.FC<ControlViewProps> = ({
   lanes,
   unassignedOrders,
@@ -32,6 +33,8 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   onCancelEmergency,
   onOpenEmptySlot,
   onAssignToBay,
+  onMergeOrders,
+  onSplitCup,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
@@ -76,11 +79,12 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       card={current}
                       look={looks.get(current.key)}
                       size="sm"
+                      data-merge-target={current.key}
+                      data-ticket-label={orderLabel(current)}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
                       {...(current.status === "queued"
                         ? {
                             "data-queued-ticket": current.key,
-                            "data-ticket-label": orderLabel(current),
                             onClick: () => onOpenTicketDetail(current),
                           }
                         : { onClick: () => onOpenRebrew?.(current) })}
@@ -97,6 +101,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                   <NextButton
                     bayId={bay.id}
                     active={Boolean(current)}
+                    locked={lane.nextLocked}
                     onAdvance={onAdvanceBay}
                     className="text-[15px]"
                   />
@@ -109,6 +114,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                         look={looks.get(ticket.key)}
                         size="sm"
                         data-queued-ticket={ticket.key}
+                        data-merge-target={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
                         onClick={() => onOpenTicketDetail(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
@@ -131,12 +137,14 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
 
     <aside className="min-h-0 min-w-0">
       <OrderQueuePanel
-        lanes={lanes}
         orders={unassignedOrders}
+        lanes={lanes}
         looks={looks}
         selectedOrderId={selectedOrderId}
         onSelectOrder={onSelectOrder}
         onAssignToBay={onAssignToBay}
+        onMergeOrders={onMergeOrders}
+        onSplitCup={onSplitCup}
         onCancelEmergency={onCancelEmergency}
       />
     </aside>

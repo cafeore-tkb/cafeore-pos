@@ -58,6 +58,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	o2 := f.createOrder(t, 2, line(f.blend))
 	card1 := uuid.New()
 	f.mustPut(t, write(ids(o1.OrderCups[0]), unassigned, placed(1, card1, true)))
+	f.wait()
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
@@ -116,6 +117,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if cup := f.cup(t, o1.OrderCups[0].ID); !sameCaosState(&cup, caosCupState(&first)) {
 		t.Fatalf("placing the emergency changed the cup: %+v", cup)
 	}
+	f.wait()
 	if code := f.next(t, 2, &emergencyCard); code != http.StatusNoContent {
 		t.Fatalf("next of the emergency = %d", code)
 	}
@@ -135,6 +137,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	e2 := f.emergencies(t, o2.OrderCups[0].ID)[0].ID
 	card3 := uuid.New()
 	f.mustPut(t, write([]uuid.UUID{e2}, unassigned, placed(4, card3, true)))
+	f.wait()
 	if code := f.next(t, 4, &card3); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
@@ -171,10 +174,16 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("queued = %v, want [%v %v]", queued, cardE, cardB)
 	}
 
-	// 入れ直しとカップを 1 枚のカードにできる（同じ指名）。最大 2 杯
+	// 入れ直しは入れ直しどうしでだけ 1 枚のカードにできる（緊急でないカップと同じカードにすると、緊急の取り消しと食い違う）。最大 2 杯
 	o3 := f.createOrder(t, 3, line(f.blend))
 	o4 := f.createOrder(t, 4, line(f.blend))
-	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false)))
+	if code, body := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest || !strings.Contains(body, "緊急") {
+		t.Fatalf("a cup on an emergency card = %d: %s", code, body)
+	}
+	if code, body := f.addEmergencies(t, o3.OrderCups[0].ID); code != http.StatusCreated {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	f.mustPut(t, write([]uuid.UUID{f.emergencies(t, o3.OrderCups[0].ID)[0].ID}, unassigned, placed(1, cardE, false)))
 	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest {
 		t.Fatalf("third cup on a card = %d, want 400", code)
 	}

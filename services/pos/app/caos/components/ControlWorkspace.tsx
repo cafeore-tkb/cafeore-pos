@@ -54,7 +54,10 @@ export interface ControlViewProps {
   onOpenEmptySlot: (bayId: number) => void;
   /** 未割当のカードをドリッパーへ。place が { beforeKey } ならそのカードの前へ（ドラッグで途中に落としたとき） */
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  onMergeOrders: (firstKey: string, secondKey: string) => void;
+  /** 1 杯のカード（firstKey）を、統合できる 1 杯のカード（intoKey。未割当・待機・抽出中）に入れる */
+  onMergeOrders: (firstKey: string, intoKey: string) => void;
+  /** 統合の解除（未割当・待機の 2 杯のカードから cupId の 1 杯を外して未割当に戻す） */
+  onSplitCup: (card: CaosCard, cupId: string) => void;
   /** 閲覧だけの画面（/master-sheet/view）。「次へ」・空きスロットを出さず、カードを押しても動かさない */
   readOnly?: boolean;
 }

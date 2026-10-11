@@ -43,18 +43,18 @@ export const todaysCaosLanes = (
  * カードをそのドリッパーへ置けない理由（上級生のみのカードで、担当者が上級生でない）。置けるなら null。lanes は todaysCaosLanes の担当者。
  * サーバーと同じく、別のドリッパーへ置くときだけ確かめる（同じドリッパーの中の順番の入れ替えは確かめない。
  * 担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）。
- * 指名（カップの nominatedDripper）のほかのドリッパーへ置けないのは assignWrites が確かめる。両方が効くので、
- * 指名のドリッパーの担当者が上級生でない上級生のみのカードは、どこにも置けない（担当者を上級生に替えれば置ける）
+ * 指名（カードの nominatedDripper）のほかのドリッパーへ置けないのは assignWrites が確かめる。両方が効くので、
+ * 指名のドリッパーの担当者が上級生でない上級生のみのカードは、どこにも置けない（上級生のみが指名より強い。担当者を上級生に替えれば置ける）
  */
 export const seniorOnlyBlock = (
-  card: Pick<CaosCard, "seniorOnly" | "dripper" | "cups">,
+  card: Pick<CaosCard, "seniorOnly" | "dripper" | "nominatedDripper">,
   dripper: number,
   lanes: readonly CaosLane[],
 ): string | null => {
   if (!card.seniorOnly || card.dripper === dripper) return null;
   if (lanes.some((lane) => lane.dripper === dripper && lane.senior))
     return null;
-  if (card.cups[0]?.nominatedDripper === dripper)
+  if (card.nominatedDripper === dripper)
     return `上級生のみのカードは上級生のドリッパーにしか置けません（指名の ${dripperLabel(dripper)} の担当者は上級生ではありません。担当者を上級生に替えると置けます）`;
   return `上級生のみのカードは上級生のドリッパーにしか置けません（${dripperLabel(dripper)} の担当者は上級生ではありません）`;
 };
