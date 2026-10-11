@@ -122,7 +122,7 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
   return groups;
 };
 
-/** 注文の行の 1 枚。mergedInto は、ほかの注文と統合したカードを、小さくないほうの注文の行に残した跡（統合したカードの orderLabel） */
+/** 注文の行の 1 枚。mergedInto は、統合したカードをいちばん小さい注文番号の行に置いたとき、ほかの注文の行に残す跡（統合したカードの orderLabel） */
 export interface OrderRowEntry {
   card: CaosCard;
   mergedInto?: string;
