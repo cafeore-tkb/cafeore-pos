@@ -1,7 +1,7 @@
 import {
-  type ColorScreen,
   colorScreens,
   findColorSetting,
+  openapiEnumLabels,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -15,13 +15,8 @@ import {
   TableRow,
 } from "~/components/ui/table";
 
-const screenLabels: Record<ColorScreen, string> = {
-  cashier: "レジ（ボタン）",
-  cashier_order: "レジ（過去の注文）",
-  master: "マスター",
-  serve: "提供",
-  nominated: "CaOS（指名）",
-};
+// 画面の表示名（openapi.yaml の x-enum-descriptions）
+const screenLabels = openapiEnumLabels("ColorScreen");
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
