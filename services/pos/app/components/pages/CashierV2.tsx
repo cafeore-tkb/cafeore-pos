@@ -20,7 +20,6 @@ import {
   cashierMenuOpenAtom,
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
-import { goodsOnlyServed } from "../functional/goodsOnlyServed";
 import {
   type SubmitFocusTarget,
   moveSubmitFocus,
@@ -194,7 +193,6 @@ const CashierV2 = ({
     (base: OrderEntity) => {
       const submitOne = base.clone();
       submitOne.nowCreated();
-      goodsOnlyServed(submitOne);
       submitOne.addComment("cashier", descComment);
       return submitOne;
     },

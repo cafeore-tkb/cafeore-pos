@@ -40,12 +40,13 @@ func newTestServer(t *testing.T, status int, response string) (*Client, *recorde
 }
 
 func TestCreateTerminalCheckoutSendsExpectedRequest(t *testing.T) {
+	skipReceiptScreen := true
 	client, recorded := newTestServer(t, http.StatusOK, `{"checkout":{"id":"08YceKh7B3ZqO","amount_money":{"amount":600,"currency":"JPY"},"reference_id":"ref","device_options":{"device_id":"dev"},"status":"PENDING","payment_type":"FELICA_ALL"}}`)
 	checkout, err := client.CreateTerminalCheckout(context.Background(), "key-1", TerminalCheckout{
 		AmountMoney:   Money{Amount: 600, Currency: "JPY"},
 		ReferenceID:   "ref",
 		Note:          "No.12",
-		DeviceOptions: DeviceCheckoutOptions{DeviceID: "dev"},
+		DeviceOptions: DeviceCheckoutOptions{DeviceID: "dev", SkipReceiptScreen: &skipReceiptScreen},
 		PaymentType:   "FELICA_ALL",
 	})
 	if err != nil {
@@ -67,6 +68,7 @@ func TestCreateTerminalCheckoutSendsExpectedRequest(t *testing.T) {
 	amount, _ := sent["amount_money"].(map[string]any)
 	device, _ := sent["device_options"].(map[string]any)
 	if amount["amount"] != float64(600) || amount["currency"] != "JPY" || device["device_id"] != "dev" ||
+		device["skip_receipt_screen"] != true ||
 		sent["payment_type"] != "FELICA_ALL" || sent["reference_id"] != "ref" || sent["note"] != "No.12" {
 		t.Fatalf("unexpected checkout body: %v", sent)
 	}
