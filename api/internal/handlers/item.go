@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -136,8 +135,9 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		return
 	}
 
+	// 通知で変更前と比べるため、タイプ込みで読んでおく
 	var item models.Item
-	if err := h.db.First(&item, "id = ?", itemID).Error; err != nil {
+	if err := h.db.Preload("ItemType").First(&item, "id = ?", itemID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 			return
@@ -145,13 +145,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// 通知で変更前と比べるため、タイプ込みで別に読んでおく（Save に関連を渡さないよう item とは分ける）。
-	// 読めなかったら空と比べた誤った差分になるので、通知だけしない
-	var before models.Item
-	beforeErr := h.db.Preload("ItemType").First(&before, "id = ?", itemID).Error
-	if beforeErr != nil {
-		log.Printf("activity: failed to load item %s before update: %v", itemID, beforeErr)
-	}
+	before := item
 
 	// 更新
 	item.Name = req.Name
@@ -166,7 +160,8 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 	item.ItemTypeID = itemTypeID
 
-	if err := h.db.Save(&item).Error; err != nil {
+	// 読んだタイプを関連として書き戻さない
+	if err := h.db.Omit(clause.Associations).Save(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -178,9 +173,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemResponse(&item))
-	if beforeErr == nil {
-		h.activity.Post(itemUpdatedMessage(&before, &item))
-	}
+	h.activity.Post(itemUpdatedMessage(&before, &item))
 }
 
 // DELETE /api/items/:id - アイテム削除
