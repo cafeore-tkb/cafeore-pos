@@ -1029,27 +1029,28 @@
   },
   "StockResourceKind": {
     "type": "string",
-    "enum": ["cup", "bean"],
-    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"]
+    "description": "item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ",
+    "enum": ["item", "cup"],
+    "x-enum-varnames": ["StockResourceKindItem", "StockResourceKindCup"],
+    "x-enum-descriptions": ["アイテム", "カップ"]
   },
   "StockResourceRequest": {
     "type": "object",
-    "required": [
-      "kind",
-      "name",
-      "unit",
-      "per_serving",
-      "notify_from",
-      "notify_step",
-      "buffer"
-    ],
+    "description": "name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400",
+    "required": ["unit", "per_serving", "notify_from", "notify_step", "buffer"],
     "properties": {
-      "kind": {
-        "$ref": "#/components/schemas/StockResourceKind"
-      },
       "name": {
         "type": "string",
+        "description": "カップの名前（カップでは必須）",
         "example": "ホットカップ"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "unit": {
         "type": "string",
@@ -1059,42 +1060,90 @@
       "per_serving": {
         "type": "number",
         "format": "double",
-        "description": "1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）",
+        "description": "1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）",
+        "minimum": 0,
+        "not": {
+          "enum": [0]
+        },
         "example": 1
       },
       "notify_from": {
         "type": "integer",
-        "description": "残りがこの杯数を切ったら通知を始める",
+        "description": "残りがこの回数を切ったら通知を始める",
+        "minimum": 0,
         "example": 500
       },
       "notify_step": {
         "type": "integer",
-        "description": "notify_from から何杯減るごとに通知するか",
+        "description": "notify_from から何回減るごとに通知するか",
+        "minimum": 0,
         "example": 100
       },
       "buffer": {
         "type": "integer",
-        "description": "最低限残したい杯数。これを切ると危険扱い",
+        "description": "最低限残したい回数。これを切ると危険扱い",
+        "minimum": 0,
         "example": 100
       }
     }
   },
   "StockResourceResponse": {
-    "allOf": [
-      {
-        "$ref": "#/components/schemas/StockResourceRequest"
+    "type": "object",
+    "required": [
+      "id",
+      "kind",
+      "item_id",
+      "name",
+      "item_type_ids",
+      "unit",
+      "per_serving",
+      "notify_from",
+      "notify_step",
+      "buffer"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
       },
-      {
-        "type": "object",
-        "required": ["id"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          }
+      "kind": {
+        "$ref": "#/components/schemas/StockResourceKind"
+      },
+      "item_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "アイテムの在庫ならそのアイテム。カップは null"
+      },
+      "name": {
+        "type": "string",
+        "description": "アイテムの在庫ならアイテムの名前、カップならカップの名前"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類（アイテムの在庫は空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
         }
+      },
+      "unit": {
+        "type": "string"
+      },
+      "per_serving": {
+        "type": "number",
+        "format": "double"
+      },
+      "notify_from": {
+        "type": "integer"
+      },
+      "notify_step": {
+        "type": "integer"
+      },
+      "buffer": {
+        "type": "integer"
       }
-    ]
+    }
   },
   "InventoryLevel": {
     "type": "string",
@@ -1147,7 +1196,7 @@
       },
       "servings": {
         "type": "integer",
-        "description": "counted_at 以降に売れた杯数"
+        "description": "counted_at 以降に売れた回数"
       },
       "remaining": {
         "type": "number",
@@ -1161,7 +1210,7 @@
       },
       "servings_last_hour": {
         "type": "integer",
-        "description": "直近1時間に売れた杯数"
+        "description": "直近1時間に売れた回数"
       }
     }
   },
@@ -1235,26 +1284,7 @@
         "type": "number",
         "format": "double",
         "nullable": true,
-        "description": "前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）"
-      }
-    }
-  },
-  "StockUsage": {
-    "type": "object",
-    "required": ["item_id", "resource_id", "amount"],
-    "properties": {
-      "item_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "resource_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "amount": {
-        "type": "number",
-        "format": "double",
-        "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
+        "description": "前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）"
       }
     }
   },

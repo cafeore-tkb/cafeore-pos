@@ -4,7 +4,7 @@ import {
   type StockResource,
   resolveItemColor,
 } from "@cafeore/common";
-import { type BeanIndex, cardBeans } from "./beans";
+import { type BeanIndex, cardBean } from "./beans";
 
 // カード（1 回のドリップ。最大 2 杯）の見せ方。カードは注文のカップから組み立てたもの（@cafeore/common の buildCaosCards の CaosCard）を
 // そのまま使い、名前・注文番号・色・分割の表示はここで引く。
@@ -53,18 +53,18 @@ export interface CardSplit {
   cups: number;
 }
 
-/** カードの見せ方（色の設定の色・在庫の設定の豆と、分けた注文の中の位置） */
+/** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文の中の位置） */
 export interface CardLook {
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
   split?: CardSplit;
-  /** 豆（POS の在庫対象のうち kind が bean）。在庫の設定の「商品 → 豆」から引く（logic/beans.ts）。設定が無い商品には付かない */
-  beans?: StockResource[];
+  /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts で引く。在庫が無い商品には付かない */
+  bean?: StockResource;
 }
 export type CardLooks = ReadonlyMap<string, CardLook>;
 
-/** カードごとの見せ方（キーはカードの key）。色の設定と在庫の設定はあとから読み込まれたり変わったりするので、出すたびに引く */
+/** カードごとの見せ方（キーはカードの key）。色の設定と在庫はあとから読み込まれたり変わったりするので、出すたびに引く */
 export const cardLooks = (
   cards: readonly CaosCard[],
   settings: ColorSetting[],
@@ -99,7 +99,7 @@ export const cardLooks = (
             : undefined) ??
           resolveItemColor(settings, card.cups[0].item, "master"),
         split: splitOf(card),
-        beans: cardBeans(card, beanIndex),
+        bean: cardBean(card, beanIndex),
       },
     ]),
   );

@@ -116,8 +116,6 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
 	api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
 	api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-	api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
-	api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
 	api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 	api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 	api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)

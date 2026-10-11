@@ -11,7 +11,10 @@ export interface paths {
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
-    /** アイテム作成 */
+    /**
+     * アイテム作成
+     * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+     */
     post: operations["createItem"];
   };
   "/api/items/{id}": {
@@ -19,7 +22,10 @@ export interface paths {
     get: operations["getItem"];
     /** アイテム情報更新 */
     put: operations["updateItem"];
-    /** アイテム削除 */
+    /**
+     * アイテム削除
+     * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+     */
     delete: operations["deleteItem"];
   };
   "/api/menus": {
@@ -188,18 +194,27 @@ export interface paths {
   "/api/inventory": {
     /**
      * 在庫の残量一覧
-     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
      */
     get: operations["getInventory"];
   };
   "/api/inventory/resources": {
-    /** 在庫対象の作成 */
+    /**
+     * カップの作成
+     * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+     */
     post: operations["createStockResource"];
   };
   "/api/inventory/resources/{id}": {
-    /** 在庫対象の更新 */
+    /**
+     * 在庫対象の更新
+     * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+     */
     put: operations["updateStockResource"];
-    /** 在庫対象の削除 */
+    /**
+     * カップの削除
+     * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+     */
     delete: operations["deleteStockResource"];
   };
   "/api/inventory/resources/{id}/events": {
@@ -208,12 +223,6 @@ export interface paths {
      * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
      */
     post: operations["createStockEvent"];
-  };
-  "/api/inventory/usages": {
-    /** アイテム1杯あたりの使用量一覧 */
-    get: operations["getStockUsages"];
-    /** アイテム1杯あたりの使用量をまとめて置き換える */
-    put: operations["replaceStockUsages"];
   };
   "/api/inventory/remind": {
     /**
@@ -816,12 +825,20 @@ export interface components {
       /** @example Invalid order ID format */
       error: string;
     };
-    /** @enum {string} */
-    StockResourceKind: "cup" | "bean";
+    /**
+     * @description item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
+     * @enum {string}
+     */
+    StockResourceKind: "item" | "cup";
+    /** @description name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400 */
     StockResourceRequest: {
-      kind: components["schemas"]["StockResourceKind"];
-      /** @example ホットカップ */
-      name: string;
+      /**
+       * @description カップの名前（カップでは必須）
+       * @example ホットカップ
+       */
+      name?: string;
+      /** @description このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空） */
+      item_type_ids?: string[];
       /**
        * @description 数える単位（個 / g）
        * @example 個
@@ -829,29 +846,45 @@ export interface components {
       unit: string;
       /**
        * Format: double
-       * @description 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+       * @description 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
        * @example 1
        */
       per_serving: number;
       /**
-       * @description 残りがこの杯数を切ったら通知を始める
+       * @description 残りがこの回数を切ったら通知を始める
        * @example 500
        */
       notify_from: number;
       /**
-       * @description notify_from から何杯減るごとに通知するか
+       * @description notify_from から何回減るごとに通知するか
        * @example 100
        */
       notify_step: number;
       /**
-       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @description 最低限残したい回数。これを切ると危険扱い
        * @example 100
        */
       buffer: number;
     };
-    StockResourceResponse: components["schemas"]["StockResourceRequest"] & {
+    StockResourceResponse: {
       /** Format: uuid */
       id: string;
+      kind: components["schemas"]["StockResourceKind"];
+      /**
+       * Format: uuid
+       * @description アイテムの在庫ならそのアイテム。カップは null
+       */
+      item_id: string | null;
+      /** @description アイテムの在庫ならアイテムの名前、カップならカップの名前 */
+      name: string;
+      /** @description このカップを使うアイテムの種類（アイテムの在庫は空） */
+      item_type_ids: string[];
+      unit: string;
+      /** Format: double */
+      per_serving: number;
+      notify_from: number;
+      notify_step: number;
+      buffer: number;
     };
     /**
      * @description untracked は棚卸し・入荷がまだ一度も無い
@@ -878,13 +911,13 @@ export interface components {
        * @description counted_at 以降の注文での消費量
        */
       consumed: number;
-      /** @description counted_at 以降に売れた杯数 */
+      /** @description counted_at 以降に売れた回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた杯数 */
+      /** @description 直近1時間に売れた回数 */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -916,20 +949,9 @@ export interface components {
       estimated?: number | null;
       /**
        * Format: double
-       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       * @description 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
        */
       actual_per_serving?: number | null;
-    };
-    StockUsage: {
-      /** Format: uuid */
-      item_id: string;
-      /** Format: uuid */
-      resource_id: string;
-      /**
-       * Format: double
-       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
-       */
-      amount: number;
     };
     InventoryRemindResponse: {
       sent: boolean;
@@ -1091,7 +1113,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム作成 */
+  /**
+   * アイテム作成
+   * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+   */
   createItem: {
     requestBody: {
       content: {
@@ -1144,7 +1169,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム削除 */
+  /**
+   * アイテム削除
+   * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+   */
   deleteItem: {
     parameters: {
       path: {
@@ -1833,7 +1861,7 @@ export interface operations {
   };
   /**
    * 在庫の残量一覧
-   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
    */
   getInventory: {
     responses: {
@@ -1845,7 +1873,10 @@ export interface operations {
       };
     };
   };
-  /** 在庫対象の作成 */
+  /**
+   * カップの作成
+   * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+   */
   createStockResource: {
     requestBody: {
       content: {
@@ -1859,9 +1890,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 名前が空、または item_type_ids の種類が無い・重複 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の更新 */
+  /**
+   * 在庫対象の更新
+   * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+   */
   updateStockResource: {
     parameters: {
       path: {
@@ -1880,9 +1920,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 値が正しくない。アイテムの在庫に name・item_type_ids を送った */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の削除 */
+  /**
+   * カップの削除
+   * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+   */
   deleteStockResource: {
     parameters: {
       path: {
@@ -1893,6 +1942,12 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
+      };
+      /** @description アイテムの在庫は消せない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -1916,33 +1971,6 @@ export interface operations {
       201: {
         content: {
           "application/json": components["schemas"]["StockEventCreateResponse"];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量一覧 */
-  getStockUsages: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量をまとめて置き換える */
-  replaceStockUsages: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StockUsage"][];
-      };
-    };
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
         };
       };
     };

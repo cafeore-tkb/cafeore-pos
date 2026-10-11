@@ -13,16 +13,15 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // 在庫（残量の計算・通知・リマインド）の結合テスト（Postgres を使う）
 
-// ブレンド豆。1 杯 15g、残り 60 杯から 20 杯ごとに通知し、10 杯を切ったら危険
+// ブレンドの在庫を豆の g で数える。1 回 15g、残り 60 回から 20 回ごとに通知し、10 回を切ったら危険
 func (a *testAPI) seedBeans(m testMaster) models.StockResource {
 	a.t.Helper()
-	beans := models.StockResource{ID: uuid.New(), Kind: "bean", Name: "ブレンド豆", Unit: "g", PerServing: 15, NotifyFrom: 60, NotifyStep: 20, Buffer: 10}
-	a.create(&beans, &models.ItemStockUsage{ItemID: m.blend.ID, ResourceID: beans.ID, Amount: 15})
+	beans := models.StockResource{ID: uuid.New(), Kind: string(models.StockResourceKindItem), ItemID: &m.blend.ID, Unit: "g", PerServing: 15, NotifyFrom: 60, NotifyStep: 20, Buffer: 10}
+	a.create(&beans)
 	return beans
 }
 
@@ -31,13 +30,17 @@ func (a *testAPI) seedStockEvent(resource models.StockResource, kind models.Stoc
 	a.create(&models.StockEvent{ResourceID: resource.ID, Kind: string(kind), Quantity: quantity, CreatedAt: at})
 }
 
-// 注文を直接 DB に入れる。API で作ると、応答のあとに在庫の通知の判定が走ってしまう
+// 注文を直接 DB に入れる。API で作ると、応答のあとに在庫の通知の判定が走ってしまう。
+// 明細と減る在庫は、注文を受けたときと同じ loadOrderMenus で作る
 func (a *testAPI) seedOrder(menu models.Menu, createdAt time.Time, readyAt *time.Time) {
 	a.t.Helper()
 	order := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: createdAt, ReadyAt: readyAt, BillingAmount: menu.Price, Received: menu.Price}
-	line := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: menu.ID, MenuName: menu.Name, UnitPrice: menu.Price}
 	a.create(&order)
-	if err := a.db.Omit(clause.Associations).Create(&line).Error; err != nil {
+	lines, _, err := loadOrderMenus(a.db, order.ID, []models.MenuInfoCreate{menuLine(menu)}, &models.Order{})
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	if err := a.db.Omit("Menu").Create(&lines).Error; err != nil {
 		a.t.Fatal(err)
 	}
 }
@@ -79,10 +82,12 @@ func TestStockResourceCRUD(t *testing.T) {
 	m := api.seedMaster()
 
 	req := validStockResourceRequest()
-	req.Name = "  ブレンド豆  "
+	name := "  ホットカップ  "
+	req.Name = &name
+	req.ItemTypeIds = &[]openapi_types.UUID{m.hotType.ID}
 	var created models.StockResourceResponse
 	api.do(http.MethodPost, "/api/inventory/resources", req).expect(http.StatusCreated).decode(&created)
-	if created.Name != "ブレンド豆" || created.Kind != models.StockResourceKindBean || created.PerServing != 15 {
+	if created.Name != "ホットカップ" || created.Kind != models.StockResourceKindCup || created.PerServing != 1 || len(created.ItemTypeIds) != 1 {
 		t.Fatalf("created: %+v", created)
 	}
 	invalid := validStockResourceRequest()
@@ -91,7 +96,7 @@ func TestStockResourceCRUD(t *testing.T) {
 	api.do(http.MethodPost, "/api/inventory/resources", `{`).expect(http.StatusBadRequest)
 
 	// まだ棚卸しも入荷も無いので、残量は出せない
-	status := api.inventory()["ブレンド豆"]
+	status := api.inventory()["ホットカップ"]
 	if status.Level != models.InventoryLevelUntracked || status.Remaining != nil {
 		t.Fatalf("untracked: %+v", status)
 	}
@@ -102,10 +107,11 @@ func TestStockResourceCRUD(t *testing.T) {
 	api.setLastAlertThreshold(resource, &threshold)
 
 	// 名前だけの編集では通知の記録を残す（通知済みの警告を再送しない）
-	req.Name = "ブレンド豆（深煎り）"
+	renamed := "ホットカップ（大）"
+	req.Name = &renamed
 	var updated models.StockResourceResponse
 	api.do(http.MethodPut, base, req).expect(http.StatusOK).decode(&updated)
-	if updated.Name != "ブレンド豆（深煎り）" {
+	if updated.Name != "ホットカップ（大）" {
 		t.Fatalf("updated: %+v", updated)
 	}
 	if got := api.lastAlertThreshold(resource); got == nil || *got != 60 {
@@ -126,13 +132,12 @@ func TestStockResourceCRUD(t *testing.T) {
 	api.do(http.MethodPut, base, invalid).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, base, `{`).expect(http.StatusBadRequest)
 
-	// 削除すると、使用量の設定も消える
-	api.create(&models.ItemStockUsage{ItemID: m.blend.ID, ResourceID: resource.ID, Amount: 15})
+	// 削除すると、使う種類の設定も消える
 	api.do(http.MethodDelete, base, nil).expect(http.StatusNoContent)
-	if n := api.count(&models.ItemStockUsage{}, "resource_id = ?", resource.ID); n != 0 {
-		t.Errorf("%d usages left", n)
+	if n := api.count(&models.StockResourceItemType{}, "resource_id = ?", resource.ID); n != 0 {
+		t.Errorf("%d item types left", n)
 	}
-	if _, ok := api.inventory()["ブレンド豆（深煎り）"]; ok {
+	if _, ok := api.inventory()["ホットカップ（大）"]; ok {
 		t.Error("deleted resource must not be listed")
 	}
 	api.do(http.MethodDelete, base, nil).expect(http.StatusNotFound)
@@ -153,10 +158,10 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 	readyAt := now.Add(-80 * time.Minute)
 	api.seedOrder(m.blendMenu, now.Add(-90*time.Minute), &readyAt)
 	api.seedOrder(m.pairMenu, now.Add(-30*time.Minute), nil)
-	// 豆を使わないメニューは数えない
+	// ブレンドを使わないメニューは数えない
 	api.seedOrder(m.iceMenu, now.Add(-10*time.Minute), nil)
 
-	status := api.inventory()["ブレンド豆"]
+	status := api.inventory()["ブレンド"]
 	if status.Received != 1000 || status.Consumed != 45 || status.Servings != 3 || status.ServingsLastHour != 2 {
 		t.Fatalf("status: %+v", status)
 	}
@@ -182,7 +187,7 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 	api.waitBackground()
 
 	// 棚卸しが新しい基準点になる。まだ作っていないペアセットは、棚卸しのあとに作るので消費に数える
-	status = api.inventory()["ブレンド豆"]
+	status = api.inventory()["ブレンド"]
 	if !floatPtrEq(status.CountedQuantity, 900) || status.Consumed != 30 || !floatPtrEq(status.Remaining, 870) {
 		t.Fatalf("after count: %+v", status)
 	}
@@ -196,7 +201,7 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 		t.Fatalf("receipt must not estimate: %+v", received)
 	}
 	api.waitBackground()
-	if status := api.inventory()["ブレンド豆"]; !floatPtrEq(status.Remaining, 1370) {
+	if status := api.inventory()["ブレンド"]; !floatPtrEq(status.Remaining, 1370) {
 		t.Fatalf("after receipt: %+v", status)
 	}
 }
@@ -218,68 +223,10 @@ func TestCreateStockEventRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestReplaceStockUsages(t *testing.T) {
-	api := newTestAPI(t)
-	m := api.seedMaster()
-	beans := api.seedBeans(m)
-	cups := models.StockResource{ID: uuid.New(), Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1}
-	api.create(&cups)
-
-	var usages []models.StockUsage
-	api.do(http.MethodGet, "/api/inventory/usages", nil).expect(http.StatusOK).decode(&usages)
-	if len(usages) != 1 || usages[0].ItemId != openapi_types.UUID(m.blend.ID) || usages[0].Amount != 15 {
-		t.Fatalf("usages: %+v", usages)
-	}
-
-	// 丸ごと置き換える。ブレンドの豆の量を変え、カップを足す
-	next := []models.StockUsage{
-		{ItemId: openapi_types.UUID(m.blend.ID), ResourceId: openapi_types.UUID(beans.ID), Amount: 18},
-		{ItemId: openapi_types.UUID(m.blend.ID), ResourceId: openapi_types.UUID(cups.ID), Amount: 1},
-		{ItemId: openapi_types.UUID(m.iced.ID), ResourceId: openapi_types.UUID(cups.ID), Amount: 1},
-	}
-	api.do(http.MethodPut, "/api/inventory/usages", next).expect(http.StatusOK).decode(&usages)
-	if len(usages) != 3 {
-		t.Fatalf("replaced: %+v", usages)
-	}
-	api.waitBackground()
-	api.do(http.MethodGet, "/api/inventory/usages", nil).expect(http.StatusOK).decode(&usages)
-	if len(usages) != 3 {
-		t.Fatalf("saved: %+v", usages)
-	}
-	var blendBeans models.ItemStockUsage
-	if err := api.db.First(&blendBeans, "item_id = ? AND resource_id = ?", m.blend.ID, beans.ID).Error; err != nil || blendBeans.Amount != 18 {
-		t.Fatalf("blend beans: %+v %v", blendBeans, err)
-	}
-
-	cases := map[string]any{
-		"zero amount": []models.StockUsage{{ItemId: openapi_types.UUID(m.blend.ID), ResourceId: openapi_types.UUID(beans.ID), Amount: 0}},
-		"duplicate pair": []models.StockUsage{
-			{ItemId: openapi_types.UUID(m.blend.ID), ResourceId: openapi_types.UUID(beans.ID), Amount: 15},
-			{ItemId: openapi_types.UUID(m.blend.ID), ResourceId: openapi_types.UUID(beans.ID), Amount: 16},
-		},
-		"broken json": `{`,
-	}
-	for name, body := range cases {
-		if res := api.do(http.MethodPut, "/api/inventory/usages", body); res.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, want 400: %s", name, res.Code, res.Body)
-		}
-	}
-	// 失敗したら何も変えない
-	if n := api.count(&models.ItemStockUsage{}, ""); n != 3 {
-		t.Fatalf("%d usages", n)
-	}
-
-	// 空にすれば全部消える
-	api.do(http.MethodPut, "/api/inventory/usages", []models.StockUsage{}).expect(http.StatusOK)
-	if n := api.count(&models.ItemStockUsage{}, ""); n != 0 {
-		t.Fatalf("%d usages left", n)
-	}
-}
-
 // -------------------------------------------------------------------
 // 通知
 
-// 1000g 入荷したあと、ペアセット 4 つ（8 杯 = 120g）で残り 58.7 杯。60 杯の閾値を切っている
+// 1000g 入荷したあと、ペアセット 4 つ（8 杯 = 120g）で残り 58.7 回。60 回の閾値を切っている
 func (a *testAPI) seedBeansBelowThreshold() (testMaster, models.StockResource) {
 	a.t.Helper()
 	m := a.seedMaster()
@@ -301,7 +248,7 @@ func TestCheckAlertsNotifiesOncePerThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := api.slack.sent()
-	if len(sent) != 1 || !strings.Contains(sent[0], "*ブレンド豆* 残り約 58 杯（880 g）") {
+	if len(sent) != 1 || !strings.Contains(sent[0], "*ブレンド* 残り約 58 回分（880 g）") {
 		t.Fatalf("sent: %q", sent)
 	}
 	if got := api.lastAlertThreshold(beans); got == nil || *got != 60 {
@@ -316,14 +263,14 @@ func TestCheckAlertsNotifiesOncePerThreshold(t *testing.T) {
 		t.Fatalf("sent %d messages", n)
 	}
 
-	// 次の閾値（40 杯）を切ったらまた送る。ペアセット 10 個（20 杯）で残り 38.7 杯
+	// 次の閾値（40 回）を切ったらまた送る。ペアセット 10 個（20 杯）で残り 38.7 回
 	for range 10 {
 		api.seedOrder(m.pairMenu, time.Now().Add(-10*time.Minute), nil)
 	}
 	if err := api.inv.checkAlerts(ctx, []uuid.UUID{beans.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if sent := api.slack.sent(); len(sent) != 2 || !strings.Contains(sent[1], "残り約 38 杯") {
+	if sent := api.slack.sent(); len(sent) != 2 || !strings.Contains(sent[1], "残り約 38 回分") {
 		t.Fatalf("sent: %q", sent)
 	}
 	if got := api.lastAlertThreshold(beans); got == nil || *got != 40 {
@@ -386,7 +333,7 @@ func TestCheckAlertsDoesNotNotifyWhenAnotherCheckClaimed(t *testing.T) {
 func TestCheckAlertsDoesNotResetWhenAnotherCheckClaimed(t *testing.T) {
 	api := newTestAPI(t)
 	_, beans := api.seedBeansBelowThreshold()
-	// 前は 40 杯で通知していたが、今は 58 杯（60 杯の閾値）に戻っている
+	// 前は 40 回で通知していたが、今は 58 回（60 回の閾値）に戻っている
 	threshold := 40
 	api.setLastAlertThreshold(beans, &threshold)
 	interleaveAlertClaim(t, api, beans, 20)
@@ -434,14 +381,14 @@ func TestCreateOrderTriggersStockAlert(t *testing.T) {
 	m, beans := api.seedBeansBelowThreshold()
 	// 別の在庫対象（この注文では使わない）も閾値を切っている
 	cups := models.StockResource{ID: uuid.New(), Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1, NotifyFrom: 100, NotifyStep: 50}
-	api.create(&cups, &models.ItemStockUsage{ItemID: m.iced.ID, ResourceID: cups.ID, Amount: 1})
+	api.create(&cups, &models.StockResourceItemType{ResourceID: cups.ID, ItemTypeID: m.iced.ItemTypeID})
 	api.seedStockEvent(cups, models.StockEventKindCount, 10, time.Now())
 
 	api.createOrder(1, m.blendMenu)
 
 	select {
 	case msg := <-api.slack.received:
-		if !strings.Contains(msg, "ブレンド豆") || strings.Contains(msg, "カップ") {
+		if !strings.Contains(msg, "ブレンド") || strings.Contains(msg, "カップ") {
 			t.Fatalf("message: %q", msg)
 		}
 	case <-time.After(3 * time.Second):
@@ -516,7 +463,7 @@ func TestRemindInventory(t *testing.T) {
 		t.Fatalf("must send: %+v", body)
 	}
 	sent := api.slack.sent()
-	if len(sent) != 1 || !strings.Contains(sent[0], "• ブレンド豆: 残り約 59 杯（885 g）（最終確認 2 時間前）") ||
+	if len(sent) != 1 || !strings.Contains(sent[0], "• ブレンド: 残り約 59 回分（885 g）（最終確認 2 時間前）") ||
 		!strings.Contains(sent[0], "• カップ: 未計測（最終確認 未実施）") ||
 		!strings.HasSuffix(sent[0], "<https://pos.example.com/inventory|在庫ページを開く>") {
 		t.Fatalf("sent: %q", sent)

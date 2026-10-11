@@ -378,8 +378,6 @@ func main() {
 		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
 		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
 		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
-		api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)

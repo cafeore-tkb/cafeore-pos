@@ -108,11 +108,11 @@ func deref2(p *float64) any {
 func TestSnapshotLevel(t *testing.T) {
 	counted := 3000.0
 	s := stockSnapshot{
-		Resource:        models.StockResource{Kind: "bean", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
+		Resource:        models.StockResource{Kind: "item", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
 		Tracked:         true,
 		CountedQuantity: &counted,
 		Received:        0,
-		Consumed:        1650, // 残り 1350g = 90 杯
+		Consumed:        1650, // 残り 1350g = 90 回
 	}
 	if got := *s.RemainingServings(); got != 90 {
 		t.Fatalf("remaining servings = %v", got)
@@ -120,7 +120,7 @@ func TestSnapshotLevel(t *testing.T) {
 	if s.Level() != models.InventoryLevelWarning {
 		t.Errorf("level = %v", s.Level())
 	}
-	s.Consumed = 2600 // 400g = 26.7 杯
+	s.Consumed = 2600 // 400g = 26.7 回
 	if s.Level() != models.InventoryLevelCritical {
 		t.Errorf("level = %v", s.Level())
 	}
@@ -184,11 +184,11 @@ func TestFormatDuration(t *testing.T) {
 	}
 }
 
-// 豆 1000g・1杯 15g を数えた直後の在庫。consumed だけ消費した状態にする
+// 豆 1000g・1 回 15g を数えた直後の在庫。consumed だけ消費した状態にする
 func beanSnapshot(consumed float64, lastHour int) stockSnapshot {
 	counted := 1000.0
 	return stockSnapshot{
-		Resource:         models.StockResource{Kind: "bean", Name: "ブレンド豆", Unit: "g", PerServing: 15, NotifyFrom: 60, NotifyStep: 20, Buffer: 10},
+		Resource:         models.StockResource{Kind: "item", Name: "ブレンド豆", Unit: "g", PerServing: 15, NotifyFrom: 60, NotifyStep: 20, Buffer: 10},
 		Tracked:          true,
 		CountedQuantity:  &counted,
 		Consumed:         consumed,
@@ -207,12 +207,11 @@ func TestDescribeRemaining(t *testing.T) {
 		s    stockSnapshot
 		want string
 	}{
-		{"untracked", stockSnapshot{Resource: models.StockResource{Kind: "bean", PerServing: 15}}, "未計測"},
-		// 杯数は切り捨てる（66.6 杯 → 66 杯）
-		{"bean", beanSnapshot(0, 0), "残り約 66 杯（1000 g）"},
-		{"bean fraction", beanSnapshot(0.5, 0), "残り約 66 杯（999.5 g）"},
-		// カップは量を出さず個数だけ
-		{"cup", cups, "残り約 120 個"},
+		{"untracked", stockSnapshot{Resource: models.StockResource{Kind: "item", PerServing: 15}}, "未計測"},
+		// 回数は切り捨てる（66.6 回 → 66 回）
+		{"bean", beanSnapshot(0, 0), "残り約 66 回分（1000 g）"},
+		{"bean fraction", beanSnapshot(0.5, 0), "残り約 66 回分（999.5 g）"},
+		{"cup", cups, "残り約 120 回分（120.6 個）"},
 	}
 	for _, c := range cases {
 		if got := describeRemaining(c.s); got != c.want {
@@ -229,11 +228,11 @@ func TestDescribePace(t *testing.T) {
 	}{
 		{"untracked", stockSnapshot{ServingsLastHour: 10}, ""},
 		{"no orders in last hour", beanSnapshot(0, 0), ""},
-		// 残り 30 杯を 1 時間 20 杯で使うと 1.5 時間
-		{"pace", beanSnapshot(550, 20), "直近1時間 20 杯 → 約 1 時間 30 分で切れる見込み"},
+		// 残り 30 回を 1 時間 20 回で使うと 1.5 時間
+		{"pace", beanSnapshot(550, 20), "直近1時間 20 回 → 約 1 時間 30 分で切れる見込み"},
 		// 使い切ったあとは見込みを出さない
-		{"empty", beanSnapshot(1000, 20), "直近1時間 20 杯"},
-		{"over", beanSnapshot(1200, 20), "直近1時間 20 杯"},
+		{"empty", beanSnapshot(1000, 20), "直近1時間 20 回"},
+		{"over", beanSnapshot(1200, 20), "直近1時間 20 回"},
 	}
 	for _, c := range cases {
 		if got := describePace(c.s); got != c.want {
@@ -243,14 +242,14 @@ func TestDescribePace(t *testing.T) {
 }
 
 func TestAlertMessage(t *testing.T) {
-	// 残り 30 杯（warning）。直近の注文が無ければペースの行は付かない
-	if got, want := alertMessage(beanSnapshot(550, 0)), ":warning: *ブレンド豆* 残り約 30 杯（450 g）"; got != want {
+	// 残り 30 回（warning）。直近の注文が無ければペースの行は付かない
+	if got, want := alertMessage(beanSnapshot(550, 0)), ":warning: *ブレンド豆* 残り約 30 回分（450 g）"; got != want {
 		t.Errorf("warning: got %q, want %q", got, want)
 	}
-	// 残り 10 杯（critical）。バッファを切ったことと、ペースを 2 行目に出す
+	// 残り 10 回（critical）。バッファを切ったことと、ペースを 2 行目に出す
 	got := alertMessage(beanSnapshot(850, 20))
-	want := ":rotating_light: *ブレンド豆* 残り約 10 杯（150 g）（バッファ 10 杯を切りました）\n" +
-		"　直近1時間 20 杯 → 約 30 分で切れる見込み"
+	want := ":rotating_light: *ブレンド豆* 残り約 10 回分（150 g）（バッファ 10 回を切りました）\n" +
+		"　直近1時間 20 回 → 約 30 分で切れる見込み"
 	if got != want {
 		t.Errorf("critical: got %q, want %q", got, want)
 	}
@@ -269,12 +268,12 @@ func TestRemindMessage(t *testing.T) {
 		BaseAt:   &receivedAt,
 		Received: 300,
 	}
-	untracked := stockSnapshot{Resource: models.StockResource{Kind: "bean", Name: "新しい豆", PerServing: 15}}
+	untracked := stockSnapshot{Resource: models.StockResource{Kind: "item", Name: "新しい豆", PerServing: 15}}
 
 	got := remindMessage([]stockSnapshot{counted, received, untracked}, now, "https://pos.example.com/")
 	want := ":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
-		"• ブレンド豆: 残り約 66 杯（1000 g）（最終確認 2 時間 15 分前）\n" +
-		"• カップ: 残り約 300 個（最終確認 未実施）\n" +
+		"• ブレンド豆: 残り約 66 回分（1000 g）（最終確認 2 時間 15 分前）\n" +
+		"• カップ: 残り約 300 回分（300 個）（最終確認 未実施）\n" +
 		"• 新しい豆: 未計測（最終確認 未実施）\n" +
 		"<https://pos.example.com/inventory|在庫ページを開く>"
 	if got != want {
