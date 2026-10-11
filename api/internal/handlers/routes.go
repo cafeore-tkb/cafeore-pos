@@ -12,7 +12,8 @@ import (
 // （RegisterHandlers）は、パスの id を UUID に変換できないと独自の形の 400 を返す・
 // ハンドラーの引数の形が違う・WebSocket など openapi に無いルートを扱えない、ので使わない。
 // openapi.yaml との食い違いは cmd/server/routes_test.go で確かめる。
-func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory) {
+// square は環境変数から作るので main.go で作って渡す（無効なら status が enabled: false を返す）。
+func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory, square *SquareHandler) {
 	item := NewItemHandler(db)
 	menu := NewMenuHandler(db)
 	itemType := NewItemTypeHandler(db)
@@ -74,5 +75,17 @@ func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory) 
 		api.GET("/color-settings", colorSetting.GetColorSettings)
 		api.PUT("/color-settings", colorSetting.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSetting.DeleteColorSetting)
+
+		api.GET("/square/status", square.GetStatus)
+		api.GET("/square/devices", square.GetDevices)
+		api.POST("/square/devices", square.CreateDevice)
+		api.POST("/square/devices/pair", square.PairDevice)
+		api.POST("/square/devices/import", square.ImportDevices)
+		api.DELETE("/square/devices/:id", square.DeleteDevice)
+		api.POST("/square/checkouts", square.CreateCheckout)
+		api.GET("/square/checkouts/unlinked", square.GetUnlinkedCheckouts)
+		api.GET("/square/checkouts/:id", square.GetCheckout)
+		api.POST("/square/checkouts/:id/cancel", square.CancelCheckout)
+		api.POST("/square/webhook", square.ReceiveWebhook)
 	}
 }

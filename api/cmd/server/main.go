@@ -244,8 +244,22 @@ func main() {
 		remindAuth,
 		os.Getenv("POS_BASE_URL"),
 	)
+	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
+	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
+	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
+	squareHandler, err := handlers.NewSquareHandler(db, handlers.SquareConfig{
+		AccessToken:         os.Getenv("SQUARE_ACCESS_TOKEN"),
+		Environment:         os.Getenv("SQUARE_ENVIRONMENT"),
+		LocationID:          os.Getenv("SQUARE_LOCATION_ID"),
+		WebhookSignatureKey: os.Getenv("SQUARE_WEBHOOK_SIGNATURE_KEY"),
+		WebhookURL:          os.Getenv("SQUARE_WEBHOOK_URL"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to configure Square: %v", err)
+	}
+
 	registerStatusRoutes(r)
-	handlers.RegisterRoutes(r, db, hub, inventory)
+	handlers.RegisterRoutes(r, db, hub, inventory, squareHandler)
 
 	// サーバー起動
 	port := os.Getenv("PORT")

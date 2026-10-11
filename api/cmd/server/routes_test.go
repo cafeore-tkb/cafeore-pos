@@ -64,7 +64,7 @@ func TestRegisterRoutesMatchesOpenAPI(t *testing.T) {
 	r := gin.New()
 	// ハンドラーは登録するだけで呼ばないので、DB などは nil のままでよい
 	registerStatusRoutes(r)
-	handlers.RegisterRoutes(r, nil, nil, nil)
+	handlers.RegisterRoutes(r, nil, nil, nil, nil)
 
 	registered := map[string]bool{}
 	for _, route := range r.Routes() {
