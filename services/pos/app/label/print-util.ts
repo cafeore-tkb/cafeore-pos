@@ -81,7 +81,7 @@ export const usePrinter = (
     [print],
   );
 
-  // 残りを古い順に送る。刷れなかったら（プリンターがまだ直っていない）そこでやめ、次の機会に続きから送る
+  // 残りを古い順に送り、刷れたものを消す（刷れなかったものは残して次を送る。1 件のせいで後ろが刷れなくならないように）
   const sending = useRef(false);
   const sendPending = useCallback(async () => {
     if (sending.current) return;
@@ -89,8 +89,7 @@ export const usePrinter = (
     try {
       await withPendingPrintsLock(async () => {
         for (const pending of readPendingPrints()) {
-          if (!(await print(pending.job))) return;
-          removePendingPrint(pending.id);
+          if (await print(pending.job)) removePendingPrint(pending.id);
         }
       });
     } finally {
