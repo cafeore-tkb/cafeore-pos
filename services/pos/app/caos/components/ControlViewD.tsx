@@ -83,6 +83,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onSelectOrder,
   onAdvanceBay,
   onOpenTicketDetail,
+  onOpenRebrew,
   onOpenEmptySlot,
   onAssignToBay,
   onMoveTicket,
@@ -195,8 +196,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             : undefined
         }
         onClickCapture={drag.suppressClick}
-        onClick={
-          state === "waiting" ? () => onOpenTicketDetail(ticket) : undefined
+        onClick={() =>
+          state === "waiting"
+            ? onOpenTicketDetail(ticket)
+            : onOpenRebrew?.(ticket)
         }
         className={`h-[64px] shrink-0 ${state === "waiting" ? "cursor-pointer hover:ring-2 hover:ring-slate-400" : ""} ${
           state === "waiting"

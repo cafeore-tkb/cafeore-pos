@@ -13,7 +13,7 @@ import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
   readPendingPrints,
@@ -119,7 +119,16 @@ export const usePrinter = (
     [printJob],
   );
 
-  return { status, pendingCount, retry, printOrderLabel };
+  /** 緊急で入れ直したカップのシールを 1 枚刷る */
+  const printCupLabel = useCallback(
+    async (order: OrderEntity, cupId: string) => {
+      const job = cupLabelJob(order, cupId);
+      if (job) await printJob(job);
+    },
+    [printJob],
+  );
+
+  return { status, pendingCount, retry, printOrderLabel, printCupLabel };
 };
 
 /**

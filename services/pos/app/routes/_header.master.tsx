@@ -2,6 +2,7 @@ import {
   type OrderEntity,
   type OrderStatType,
   type WithId,
+  cupNeedsBrew,
   orderRepository,
   orderStatTypes,
   updateMasterStatus,
@@ -15,13 +16,19 @@ import {
 } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
+import {
+  type EmergencyCup,
+  useCupEmergency,
+} from "~/components/functional/useCupEmergency";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import { EmergencyCupButton } from "~/components/molecules/EmergencyCupButton";
 import { InputComment } from "~/components/molecules/InputComment";
 import {
   OrderInfoCard,
   WaitingLabel,
 } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -34,6 +41,7 @@ export default function FielsOfMaster() {
   const { orders } = useOrdersWSContext();
   const submit = useSubmit();
   const isOperational = useOrderStat();
+  const { printer, addEmergency } = useCupEmergency();
 
   const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
@@ -71,6 +79,7 @@ export default function FielsOfMaster() {
           </Button>
         </div>
         <div className="flex w-1/3 items-center justify-end gap-3">
+          <PendingPrints count={printer.pendingCount} onRetry={printer.retry} />
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
             orders={orders?.filter((order) => order.servedAt !== null)}
@@ -84,7 +93,11 @@ export default function FielsOfMaster() {
         {orders?.map((order) => {
           return (
             order.servedAt === null && (
-              <MasterOrderCard key={order.id} order={order} />
+              <MasterOrderCard
+                key={order.id}
+                order={order}
+                onEmergency={addEmergency}
+              />
             )
           );
         })}
@@ -93,19 +106,33 @@ export default function FielsOfMaster() {
   );
 }
 
-// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）
-const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）。
+// 抽出が要るカップには緊急（入れ直し）のボタンを付ける
+const MasterOrderCard = ({
+  order,
+  onEmergency,
+}: {
+  order: WithId<OrderEntity>;
+  onEmergency: (cups: EmergencyCup[]) => void;
+}) => {
   const calling = order.status === "calling";
+  const brewCupIds = new Set(order.cups.filter(cupNeedsBrew).map((c) => c.id));
   return (
     <OrderInfoCard
       order={order}
       timing="present"
       colorScreen="master"
       grayed={calling}
-      cups={order.getCups().map((cup) => ({
+      cups={order.getCups().map(({ cupId, ...cup }) => ({
         ...cup,
+        cupId,
         // 呼び出し中の注文のカップと、準備完了・提供済みのカップは灰色にする
         gray: calling || cup.status !== "preparing",
+        action: cupId && brewCupIds.has(cupId) && (
+          <EmergencyCupButton
+            onConfirm={() => onEmergency([{ order, cupId }])}
+          />
+        ),
       }))}
     >
       <InputComment

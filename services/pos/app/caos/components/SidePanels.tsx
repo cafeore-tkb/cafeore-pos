@@ -1,4 +1,5 @@
 import {
+  type CaosBoardCup,
   type CaosCard,
   type CaosPlace,
   caosBrewSec,
@@ -14,6 +15,7 @@ import {
   type CardLooks,
   cardName,
   orderLabel,
+  orderNoLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type Lane, laneActive, moveTargets } from "../logic/lanes";
@@ -228,6 +230,70 @@ export const TicketDetailPanel: React.FC<{
     </p>
   </SidePanel>
 );
+
+// 抽出中・終わりのカードの入れ直し（緊急）。入れ直すカップを選んで確定すると、未割当のいちばん上に入れ直しのカードが出て、
+// そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る。パネルの外を押すと閉じる
+export const RebrewPanel: React.FC<{
+  card: CaosCard;
+  look?: CardLook;
+  onClose: () => void;
+  onRebrew: (cups: CaosBoardCup[]) => void;
+}> = ({ card, look, onClose, onRebrew }) => {
+  const [picked, setPicked] = useState(() => card.cups.map((cup) => cup.id));
+  const cups = card.cups.filter((cup) => picked.includes(cup.id));
+  return (
+    <SidePanel
+      title="入れ直し（緊急）"
+      onClose={onClose}
+      onOutsidePress={onClose}
+      footer={
+        <PanelFooter onCancel={onClose}>
+          <button
+            type="button"
+            disabled={cups.length === 0}
+            onClick={() => {
+              onRebrew(cups);
+              onClose();
+            }}
+            className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg bg-red-700 px-4 font-bold text-white text-xs shadow-xs hover:bg-red-800 disabled:opacity-50"
+          >
+            {cups.length}杯を入れ直す
+          </button>
+        </PanelFooter>
+      }
+    >
+      <OrderCard card={card} look={look} size="xl" />
+      <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+        入れ直すカップ
+      </h3>
+      <div className="grid gap-2">
+        {card.cups.map((cup) => (
+          <button
+            key={cup.id}
+            type="button"
+            aria-pressed={picked.includes(cup.id)}
+            onClick={() =>
+              setPicked((ids) =>
+                ids.includes(cup.id)
+                  ? ids.filter((id) => id !== cup.id)
+                  : [...ids, cup.id],
+              )
+            }
+            className="flex min-h-[52px] touch-manipulation items-center gap-3 rounded-xl border-2 border-slate-300 bg-white px-4 text-left font-black text-[16px] aria-pressed:border-red-600 aria-pressed:bg-red-50"
+          >
+            <span className="font-mono">#{orderNoLabel(cup.orderNo)}</span>
+            <span>{cup.item.name}</span>
+            {cup.nominee && (
+              <span className="text-[13px] text-slate-500">
+                指名:{cup.nominee}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </SidePanel>
+  );
+};
 
 // 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルで開く
 export type AuxiliaryTab = "bays" | "beans" | "analytics";

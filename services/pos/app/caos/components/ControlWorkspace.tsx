@@ -39,6 +39,8 @@ export interface ControlViewProps {
   onOpenTicketPad: (card: CaosCard) => void;
   /** 待機のカードの詳細を開き、その注文を選ぶ（管制盤 C・D） */
   onOpenTicketDetail: (card: CaosCard) => void;
+  /** 抽出中・終わりのカードの入れ直し（緊急）のパネルを開く。無ければ（閲覧だけ・実データテスト中）抽出中・終わりのカードは押せない */
+  onOpenRebrew?: (card: CaosCard) => void;
   /** 待機のカードを別のドリッパーへ。place が "front" なら待機の先頭へ、{ beforeKey } ならそのカードの前へ（同じドリッパーの中の入れ替えにも使う） */
   onMoveTicket: (
     card: CaosCard,

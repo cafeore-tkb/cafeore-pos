@@ -50,6 +50,19 @@ export const nextCaosDripper = async (
   );
 
 /**
+ * カップを緊急（入れ直し）にする（POST /api/cup-emergencies）。1 杯につき入れ直しを 1 つ足す（同じカップに何度でも）。
+ * 入れ直しはカップの emergencies に入り、CaOS で未割当の入れ直しのカードになる
+ */
+export const addCupEmergencies = async (
+  cupIds: string[],
+): Promise<CaosResult> =>
+  send(
+    apiClient.POST("/api/cup-emergencies", {
+      body: { order_cup_ids: cupIds },
+    }),
+  );
+
+/**
  * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
  * 変えた結果は全部の画面に共有の WebSocket の {"type":"caos_lanes"} で届く
  */

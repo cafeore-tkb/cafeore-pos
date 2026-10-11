@@ -78,6 +78,7 @@ const cup = ({ line = "line-1", ...init }: CupInit): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  emergencies: [],
   ...init,
 });
 
@@ -207,6 +208,85 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ["m", "unassigned", [1, 2]],
       ["n", "unassigned", [3]],
     ]);
+  });
+
+  test("緊急（入れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの入れ直しも出し、入れ直しは準備完了で終わりにしない", () => {
+    const start = new Date(NOW.getTime() - 60_000);
+    const emergency = (
+      id: string,
+      at: Partial<Cup["emergencies"][number]> = {},
+    ) => ({
+      id,
+      createdAt: NOW,
+      dripper: null,
+      dripperPosition: null,
+      dripId: null,
+      brewStartedAt: null,
+      brewFinishedAt: null,
+      ...at,
+    });
+    // 1 杯目は準備完了（最初の抽出は終わり）で、入れ直しが 2 回。1 回目は 3 番で抽出中、2 回目は未割当
+    const brewed = cup({
+      item: blend,
+      readyAt: NOW,
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "first",
+      brewStartedAt: start,
+      brewFinishedAt: NOW,
+      emergencies: [
+        emergency("e1", {
+          dripper: 3,
+          dripperPosition: 1,
+          dripId: "redo",
+          brewStartedAt: start,
+        }),
+        emergency("e2"),
+      ],
+    });
+    const cards = buildCaosCards(
+      [
+        order(1, [cup({ item: kenya })]),
+        order(2, [brewed], { dripper: { "line-1": 3 } }),
+      ],
+      DAY,
+    );
+    expect(
+      cards.map((c) => [c.orderNo, c.status, c.emergency, c.dripper, ids(c)]),
+    ).toEqual([
+      [2, "unassigned", true, null, ["e2"]],
+      [1, "unassigned", false, null, [cards[1].cups[0].id]],
+      [2, "done", false, 1, [brewed.id]],
+      [2, "brewing", true, 3, ["e1"]],
+    ]);
+    // 入れ直しは入れ直したカップの商品・指名で、書き込みの cup_ids は入れ直しの ID、before は入れ直しの列
+    const redo = cards[0];
+    expect(redo.cups[0]).toMatchObject({
+      cupId: brewed.id,
+      item: blend,
+      nominatedDripper: 3,
+    });
+    expect(caosDripperAllowed(redo, 2)).toBe(false);
+    expect(assignWrites(cards, redo, 3, { newId })).toEqual({
+      writes: [
+        {
+          cup_ids: ["e2"],
+          before: {
+            dripper: null,
+            dripper_position: null,
+            drip_id: null,
+            brew_started_at: null,
+            brew_finished_at: null,
+          },
+          after: {
+            dripper: 3,
+            drip_id: expect.any(String),
+            insert_before: null,
+            start_brew: false,
+          },
+        },
+      ],
+    });
   });
 
   test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {

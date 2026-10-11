@@ -8,6 +8,7 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
+  RebrewPanel,
   TicketDetailPanel,
 } from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
@@ -69,6 +70,7 @@ export default function App() {
             selection.openAuxiliary("analytics");
           }}
           posStatus={session.posStatus}
+          labelPrinter={session.labelPrinter}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
@@ -86,6 +88,7 @@ export default function App() {
             onAdvanceBay={session.advance}
             onOpenTicketPad={selection.openTicket}
             onOpenTicketDetail={selection.openDetail}
+            onOpenRebrew={session.rebrew ? selection.openRebrew : undefined}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
@@ -117,6 +120,16 @@ export default function App() {
           onClose={selection.closeDetail}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
+        />
+      )}
+
+      {selection.rebrewing && session.rebrew && (
+        <RebrewPanel
+          key={selection.rebrewing.key}
+          card={selection.rebrewing}
+          look={looks.get(selection.rebrewing.key)}
+          onClose={selection.closeRebrew}
+          onRebrew={session.rebrew}
         />
       )}
 

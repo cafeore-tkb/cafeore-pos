@@ -1,4 +1,5 @@
 import {
+  type CaosBoardCup,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
@@ -13,6 +14,7 @@ import {
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useCupEmergency } from "~/components/functional/useCupEmergency";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { waitingCupsByBean } from "../logic/beans";
 import { cardLooks, totalCups } from "../logic/cards";
@@ -79,6 +81,8 @@ export const useCaosSession = () => {
   const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
+  // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
+  const { printer: labelPrinter, addEmergency } = useCupEmergency();
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -148,6 +152,21 @@ export const useCaosSession = () => {
           SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
       ),
     posStatus: live.status,
+    /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+    labelPrinter,
+    /**
+     * 抽出中・終わりのカードのカップを入れ直す（緊急）。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る。
+     * 実データテスト中は入れ直さない（null。練習の盤面には入れ直しが無い）
+     */
+    rebrew: test.session
+      ? null
+      : (cups: CaosBoardCup[]) =>
+          addEmergency(
+            cups.flatMap((cup) => {
+              const order = live.orders?.find((o) => o.id === cup.orderId);
+              return order ? [{ order, cupId: cup.cupId }] : [];
+            }),
+          ),
     soundEnabled,
     toggleSound: () => {
       soundManager.enabled = !soundEnabled;

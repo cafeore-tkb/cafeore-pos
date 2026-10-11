@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
@@ -51,6 +52,8 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+  labelPrinter: { pendingCount: number; retry: () => void };
 }
 
 // 注文の接続の札（文字・枠・点の色）
@@ -116,6 +119,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  labelPrinter,
 }) => {
   return (
     <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
@@ -266,6 +270,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex items-center gap-2">
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
+        <PendingPrints
+          count={labelPrinter.pendingCount}
+          onRetry={labelPrinter.retry}
+        />
         <PosStatusBadge status={posStatus} />
         <button
           type="button"

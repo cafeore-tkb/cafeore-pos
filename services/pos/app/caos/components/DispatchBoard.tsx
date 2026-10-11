@@ -53,6 +53,7 @@ export const DispatchBoard: React.FC<
   onSelectOrder,
   onAdvanceBay,
   onOpenTicketPad,
+  onOpenRebrew,
   actionTicketKey,
   onMoveTicket,
   onReturnToUnassigned,
@@ -309,7 +310,11 @@ export const DispatchBoard: React.FC<
                             }
                             onClickCapture={drag.suppressClick}
                             onClick={() => {
-                              if (!isScheduled) return;
+                              // 抽出中・終わりのカードは入れ直し（閲覧だけの画面では渡されない）
+                              if (!isScheduled) {
+                                onOpenRebrew?.(ticket);
+                                return;
+                              }
                               if (!isActionOpen) onOpenTicketPad(ticket);
                               else {
                                 onReturnToUnassigned(ticket);

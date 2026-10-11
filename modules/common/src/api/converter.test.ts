@@ -63,6 +63,7 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   drip_id: null,
   brew_started_at: null,
   brew_finished_at: null,
+  emergencies: [],
 });
 
 describe("[unit] order snapshot conversion", () => {
