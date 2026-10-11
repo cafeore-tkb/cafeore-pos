@@ -559,22 +559,22 @@ export interface components {
       unit: string;
       /**
        * Format: double
-       * @description 1 回で減る量。残量を杯数に換算するのにも使う（豆 15、コースター 1、カップ 1）
+       * @description 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
        * @example 1
        */
       per_serving: number;
       /**
-       * @description 残りがこの杯数を切ったら通知を始める
+       * @description 残りがこの回数を切ったら通知を始める
        * @example 500
        */
       notify_from: number;
       /**
-       * @description notify_from から何杯減るごとに通知するか
+       * @description notify_from から何回減るごとに通知するか
        * @example 100
        */
       notify_step: number;
       /**
-       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @description 最低限残したい回数。これを切ると危険扱い
        * @example 100
        */
       buffer: number;
@@ -624,13 +624,13 @@ export interface components {
        * @description counted_at 以降の注文での消費量
        */
       consumed: number;
-      /** @description counted_at 以降に売れた杯数 */
+      /** @description counted_at 以降に売れた回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた杯数 */
+      /** @description 直近1時間に売れた回数 */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -662,7 +662,7 @@ export interface components {
       estimated?: number | null;
       /**
        * Format: double
-       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       * @description 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
        */
       actual_per_serving?: number | null;
     };

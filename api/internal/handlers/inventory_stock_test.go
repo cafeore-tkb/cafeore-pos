@@ -170,7 +170,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}, http.StatusOK, nil)
 	expect("編集した後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40 + 40, 6}, coasterStock.ID: {3, 3}, cupID: {2, 2}})
 
-	// 棚卸し・入荷・残り何杯・通知の段階は今までどおり
+	// 棚卸し・入荷・残り何回・通知の段階は今までどおり
 	must(db.Create(&models.StockEvent{ResourceID: cupID, Kind: string(models.StockEventKindReceipt), Quantity: 5, CreatedAt: time.Now()}).Error)
 	must(db.Model(&models.StockResource{}).Where("id = ?", blendStock.ID).Update("notify_from", 50).Error)
 	snapshots, err := inv.snapshots(context.Background(), nil)
@@ -182,9 +182,9 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 				t.Errorf("カップの残り = %v（数えた %v・入荷 %v）", *s.Remaining(), *s.CountedQuantity, s.Received)
 			}
 		case blendStock.ID:
-			// 残り 890g ÷ 20g = 44.5 杯。通知を始める 50 杯を切ったので warning
+			// 残り 890g ÷ 20g = 44.5 回。通知を始める 50 回を切ったので warning
 			if *s.RemainingServings() != 44.5 || s.Level() != models.InventoryLevelWarning {
-				t.Errorf("ブレンドの残り = %v 杯（%v）", *s.RemainingServings(), s.Level())
+				t.Errorf("ブレンドの残り = %v 回（%v）", *s.RemainingServings(), s.Level())
 			}
 		}
 	}

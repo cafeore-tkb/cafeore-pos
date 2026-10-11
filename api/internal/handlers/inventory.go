@@ -534,7 +534,7 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		return
 	}
 
-	// 記録する直前の推定。棚卸しなら推定とのずれと、実測の1杯あたり使用量を返す。
+	// 記録する直前の推定。棚卸しなら推定とのずれと、実測の1回あたり使用量を返す。
 	before, err := h.inv.snapshots(c.Request.Context(), []uuid.UUID{id})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
