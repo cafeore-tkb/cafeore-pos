@@ -359,8 +359,6 @@ Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログ
   WebSocket で注文を直接読んでいる（infra の README「本番サービスの改名」）。Access のログインは POS の
   workers.dev に付くもので、別のサイト（github.io）からの通信には付けにくいので、そのままでは通せない。
   POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く。続けて使うならそちらに寄せる
-- `modules/common/src/scripts` の書き出し（`download-orders` など）。手元から Cloud Run を直接呼ぶ
-- mobile（停止中）。再開するなら POS と同じ構成が要る
 
 人ではない相手を通したいときは、Access のサービストークンを作り、その Client ID を `AUTH_STAFF_EMAILS`
 か `AUTH_VIEWER_EMAILS` に入れる（api はメールの代わりに JWT の `common_name` を見る）。呼ぶ側は Worker の
