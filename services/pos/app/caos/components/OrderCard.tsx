@@ -337,8 +337,12 @@ export const SplitCupButtons: React.FC<{
   card: CaosCard;
   onSplit: (cupId: string) => void;
   className?: string;
-}> = ({ card, onSplit, className = "absolute bottom-1 left-1 z-[75]" }) => (
-  <div className={`flex gap-1 ${className}`}>
+}> = ({
+  card,
+  onSplit,
+  className = "absolute bottom-1 left-1 z-[75] flex",
+}) => (
+  <div className={`gap-1 ${className}`}>
     {card.cups.map((cup) => (
       <button
         key={cup.id}
