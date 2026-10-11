@@ -16,6 +16,7 @@ import {
 } from "~/components/ui/table";
 
 export function ColorSettingsTab() {
+  const screenLabels = openapiEnumLabels("ColorScreen");
   const { items, itemTypes, isLoading, error } = useItemMaster();
   const {
     colorSettings,
@@ -44,9 +45,7 @@ export function ColorSettingsTab() {
             <TableRow>
               <TableHead>タイプ</TableHead>
               {colorScreens.map((screen) => (
-                <TableHead key={screen}>
-                  {openapiEnumLabels("ColorScreen")[screen]}
-                </TableHead>
+                <TableHead key={screen}>{screenLabels[screen]}</TableHead>
               ))}
             </TableRow>
           </TableHeader>
@@ -86,9 +85,7 @@ export function ColorSettingsTab() {
               <TableHead>名前</TableHead>
               <TableHead>種別</TableHead>
               {colorScreens.map((screen) => (
-                <TableHead key={screen}>
-                  {openapiEnumLabels("ColorScreen")[screen]}
-                </TableHead>
+                <TableHead key={screen}>{screenLabels[screen]}</TableHead>
               ))}
             </TableRow>
           </TableHeader>
