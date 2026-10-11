@@ -271,7 +271,7 @@ export function ProductEditor({
       (isEdit
         ? source
         : {
-            name: source.name,
+            ...source,
             display_name: copyName(source.display_name),
           });
     return (

@@ -150,22 +150,29 @@ function ResourceRow({
       {isCup && (
         <TableCell>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {itemTypes.map((itemType) => (
-              <label
-                key={itemType.id}
-                className="flex items-center gap-1 whitespace-nowrap text-sm"
-              >
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={
-                    form.item_type_ids?.includes(itemType.id ?? "") ?? false
-                  }
-                  onChange={() => toggleItemType(itemType.id ?? "")}
-                />
-                {itemType.display_name}
-              </label>
-            ))}
+            {/* カップを作らないタイプ（makes_cup が false）は選んでもカップが減らないので出さない。もう選んであれば外せるよう出す */}
+            {itemTypes
+              .filter(
+                (itemType) =>
+                  itemType.makes_cup ||
+                  form.item_type_ids?.includes(itemType.id ?? ""),
+              )
+              .map((itemType) => (
+                <label
+                  key={itemType.id}
+                  className="flex items-center gap-1 whitespace-nowrap text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-primary"
+                    checked={
+                      form.item_type_ids?.includes(itemType.id ?? "") ?? false
+                    }
+                    onChange={() => toggleItemType(itemType.id ?? "")}
+                  />
+                  {itemType.display_name}
+                </label>
+              ))}
           </div>
         </TableCell>
       )}

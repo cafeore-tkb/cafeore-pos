@@ -2,6 +2,7 @@ import {
   type OrderEntity,
   type WithId,
   orderRepository,
+  squareRepository,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { usePendingStatus } from "~/lib/usePendingStatus";
@@ -17,12 +18,14 @@ import {
 } from "../ui/sheet";
 import { InputComment } from "./InputComment";
 import { OrderInfoCard, WaitingLabel } from "./OrderInfoCard";
+import { SquareRefundButton } from "./SquareRefundButton";
 
 type CardOptions = {
   author: "cashier" | "master" | "serve"; // コメントの書き手
   withGoods?: boolean; // カップを作らない商品（グッズなど）も出す
   gray?: boolean; // カップを灰色にする。灰色でなければ過去の注文のカードの色の設定（cashier_order）で色を付ける
   cancellable?: boolean; // 提供取消のボタンを出す
+  squareRefundable?: boolean; // Square で払った注文に返金のボタンを出す（返金すると注文は消える）
 };
 
 type props = CardOptions & {
@@ -105,6 +108,7 @@ const PastOrderCard = ({
   withGoods,
   gray,
   cancellable,
+  squareRefundable,
 }: CardOptions & { order: WithId<OrderEntity> }) => {
   // 提供取消も、応答待ちの間は押せなくし、失敗したらトーストを出す
   const pending = usePendingStatus<boolean>(order);
@@ -140,6 +144,15 @@ const PastOrderCard = ({
           >
             提供取消
           </Button>
+        </div>
+      )}
+      {squareRefundable && order.paymentMethod === "square" && (
+        <div className="mt-2 flex justify-end">
+          <SquareRefundButton
+            label={`No.${order.orderId}（¥${order.billingAmount}）`}
+            deletesOrder
+            refund={() => squareRepository.refundOrder(order.id)}
+          />
         </div>
       )}
     </OrderInfoCard>
