@@ -8,6 +8,7 @@ import (
 
 	"cafeore-pos/api/internal/models"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -143,5 +144,77 @@ func TestOrderResponseIncludesCups(t *testing.T) {
 	}
 	if toOrderResponse(&models.Order{}).Cups == nil {
 		t.Fatal("empty cups must serialize as []")
+	}
+}
+
+func TestCreateOrderOnceReturnsExistingOrder(t *testing.T) {
+	saved := &models.Order{ID: uuid.New(), OrderId: 7}
+	errCreate := errors.New("duplicate key")
+	cases := []struct {
+		name         string
+		hasKey       bool
+		found        []*models.Order // findExisting が呼ばれるたびに返す注文
+		createErr    error
+		wantExisting *models.Order
+		wantErr      error
+		wantCreates  int
+	}{
+		{name: "キーなしは毎回作る", hasKey: false, wantCreates: 1},
+		{name: "キーなしの作成失敗はそのまま返す", hasKey: false, createErr: errCreate, wantErr: errCreate, wantCreates: 1},
+		{name: "新しいキーなら作る", hasKey: true, found: []*models.Order{nil}, wantCreates: 1},
+		{name: "保存済みのキーなら作らずに返す", hasKey: true, found: []*models.Order{saved}, wantExisting: saved},
+		{name: "同時に作られて重複したら先の注文を返す", hasKey: true, found: []*models.Order{nil, saved}, createErr: errCreate, wantExisting: saved, wantCreates: 1},
+		{name: "作れず既存も無ければ作成のエラーを返す", hasKey: true, found: []*models.Order{nil, nil}, createErr: errInvalidOrderMenus, wantErr: errInvalidOrderMenus, wantCreates: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			finds, creates := 0, 0
+			find := func() (*models.Order, error) {
+				if finds >= len(tc.found) {
+					t.Fatal("findExisting called too many times")
+				}
+				finds++
+				return tc.found[finds-1], nil
+			}
+			create := func() error {
+				creates++
+				return tc.createErr
+			}
+			existing, err := createOrderOnce(tc.hasKey, find, create)
+			if existing != tc.wantExisting || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) {
+				t.Fatalf("got (%v, %v), want (%v, %v)", existing, err, tc.wantExisting, tc.wantErr)
+			}
+			if creates != tc.wantCreates {
+				t.Fatalf("create called %d times, want %d", creates, tc.wantCreates)
+			}
+		})
+	}
+}
+
+func TestOrderIDFromIdempotencyKey(t *testing.T) {
+	key := uuid.New()
+	nilKey := uuid.Nil
+	cases := []struct {
+		name    string
+		key     *openapi_types.UUID
+		wantKey bool
+	}{
+		{name: "キーなしは新しい ID", key: nil, wantKey: false},
+		{name: "全部 0 のキーはキーなしと同じ", key: &nilKey, wantKey: false},
+		{name: "キーはそのまま ID にする", key: &key, wantKey: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, hasKey := orderIDFromIdempotencyKey(tc.key)
+			if hasKey != tc.wantKey {
+				t.Fatalf("hasKey = %v, want %v", hasKey, tc.wantKey)
+			}
+			if id == uuid.Nil {
+				t.Fatal("order ID must not be the zero UUID")
+			}
+			if tc.wantKey && id != *tc.key {
+				t.Fatalf("id = %v, want %v", id, *tc.key)
+			}
+		})
 	}
 }
