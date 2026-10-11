@@ -60,7 +60,7 @@ const unchanged = (cup: CaosBoardCup) => ({
 });
 
 /**
- * PUT /api/caos/cups の操作（割当・移動・順番の入れ替え・未割当に戻す・統合）を戻すもの。
+ * PUT /api/caos/cups の操作（割当・移動・順番の入れ替え・未割当に戻す・統合・統合の解除・まとめて移す）を戻すもの。
  * cards は操作したときに画面が見ていたカード（書き込みの before と同じもの）。
  * カードの前に入れる書き込みは、サーバーがその列の後ろのカップの番号を +1 するので、列の待機のカップも前の番号に戻す
  */
@@ -70,9 +70,12 @@ export const undoOfWrites = (
 ): CaosUndoEntry => {
   const cups = boardCups(cards);
   const written = new Set(writes.flatMap((write) => write.cup_ids));
-  // 抽出中のカードに統合したカップは、サーバーがそのカードの開始の時刻を写す（始めたとみる）
-  const brewing = new Set(
-    cards.flatMap((card) => (card.status === "brewing" ? [card.dripId] : [])),
+  // 統合で入った抽出中のカード（書き込みには入らない）。入れたカップは、サーバーがそのカードの開始の時刻を写す（始めたとみる）。
+  // そのカードのカップもそのまま送る（サーバーは、戻すカップのカードにほかのカップがあれば断るので）
+  const joinedBrewing = cards.filter(
+    (card) =>
+      card.status === "brewing" &&
+      writes.some((write) => write.after.drip_id === card.dripId),
   );
   const shifted = writes.flatMap(({ after }) => {
     if (after.insert_before === null || after.dripper === null) return [];
@@ -94,7 +97,10 @@ export const undoOfWrites = (
                 dripper: write.after.dripper,
                 dripId: write.after.drip_id,
                 started:
-                  write.after.start_brew || brewing.has(write.after.drip_id),
+                  write.after.start_brew ||
+                  joinedBrewing.some(
+                    (card) => card.dripId === write.after.drip_id,
+                  ),
                 finished: false,
                 ready: cup.readyAt !== null,
               },
@@ -103,6 +109,7 @@ export const undoOfWrites = (
         }),
       ),
       ...shifted.map(unchanged),
+      ...joinedBrewing.flatMap((card) => card.cups).map(unchanged),
     ],
   };
 };

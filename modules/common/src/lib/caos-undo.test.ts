@@ -119,9 +119,12 @@ describe("unit: caos-undo", () => {
       brewStartedAt: NOW,
     });
     const undo = caosUndoCups(entry, board(brewing, joined));
-    expect(
-      "cups" in undo && undo.cups.map((c) => [c.cup_id, c.restore]),
-    ).toEqual([["b", { state: nullState, ready_at: null }]]);
+    // 抽出中のカードのカップは、今の値のまま送る
+    if (!("cups" in undo)) throw new Error(undo.error);
+    expect(undo.cups.map((c) => [c.cup_id, c.restore])).toEqual([
+      ["b", { state: nullState, ready_at: null }],
+      ["a", undo.cups[1].current],
+    ]);
   });
 
   test("ほかの画面があとで変えた・提供済み・消えたカップは送らない", () => {
