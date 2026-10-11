@@ -645,8 +645,9 @@ paths:
     put:
       summary: CaOS が決めたことを注文のカップに書く
       description: |
-        CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+        CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
         割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+        cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
         writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
         書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
 
@@ -700,7 +701,7 @@ paths:
     post:
       summary: CaOS の「次へ」
       description: |
-        そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+        そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
         同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
         抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
         drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -733,6 +734,39 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/cup-emergencies:
+    post:
+      summary: カップを緊急（入れ直し）にする
+      description: |
+        カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+        入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+        （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+        足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+        今日（日本時間）の注文の、抽出が要るカップだけ。
+      operationId: createCupEmergencies
+      tags:
+        - caos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CupEmergencyCreateRequest'
+      responses:
+        '204':
+          description: 足した
+        '400':
+          description: 形の違うリクエスト・決まりに合わない（何も足さない）。error を画面にそのまま出す
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: カップが消えた（何も足さない）
           content:
             application/json:
               schema:
@@ -1790,6 +1824,7 @@ components:
         - drip_id
         - brew_started_at
         - brew_finished_at
+        - emergencies
       properties:
         id:
           type: string
@@ -1835,6 +1870,49 @@ components:
           format: date-time
           nullable: true
           description: CaOS で抽出を終えた時刻
+        emergencies:
+          type: array
+          description: このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
+          items:
+            $ref: '#/components/schemas/CupEmergencyResponse'
+    CupEmergencyResponse:
+      type: object
+      description: 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
+      required:
+        - id
+        - created_at
+        - dripper
+        - dripper_position
+        - drip_id
+        - brew_started_at
+        - brew_finished_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        dripper:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 6
+        dripper_position:
+          type: integer
+          nullable: true
+        drip_id:
+          type: string
+          format: uuid
+          nullable: true
+        brew_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        brew_finished_at:
+          type: string
+          format: date-time
+          nullable: true
     # Create用のMenuInfo
     MenuInfoCreate:
       type: object
@@ -2290,6 +2368,17 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/CaosCupsWrite'
+    CupEmergencyCreateRequest:
+      type: object
+      required: [order_cup_ids]
+      properties:
+        order_cup_ids:
+          type: array
+          minItems: 1
+          description: 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
+          items:
+            type: string
+            format: uuid
     CaosNextRequest:
       type: object
       required: [drip_id]

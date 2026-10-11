@@ -1027,10 +1027,10 @@ func TestSplitCaosLaneCases(t *testing.T) {
 	}
 	for _, tc := range file.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			var rows []caosLaneCup
+			var rows []caosUnit
 			for _, c := range tc.Cups {
 				dripper, pos, id := 1, c.DripperPosition, c.DripID
-				rows = append(rows, caosLaneCup{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
+				rows = append(rows, caosUnit{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
 					ID: uuid.New(), Dripper: &dripper, DripperPosition: &pos, DripID: &id,
 					BrewStartedAt: timeIf(c.Started), BrewFinishedAt: timeIf(c.Finished), ReadyAt: timeIf(c.Ready),
 				}})

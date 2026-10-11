@@ -15,6 +15,7 @@ func All() []any {
 		&Comment{},
 		&OrderMenu{},
 		&OrderCup{},
+		&CupEmergency{},
 		&MasterState{},
 		&CashierState{},
 		&StockResource{},

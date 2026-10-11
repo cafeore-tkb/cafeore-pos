@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 		Preload("OrderCups", func(db *gorm.DB) *gorm.DB { return db.Order("order_cups.position") }).
 		Preload("OrderCups.Item", unscoped).
 		Preload("OrderCups.Item.ItemType", unscoped).
+		Preload("OrderCups.Emergencies", func(db *gorm.DB) *gorm.DB { return db.Order("created_at, id") }).
 		Preload("Comments")
 }
 
@@ -482,6 +484,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
 		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
 		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
+		beforeCups := order.OrderCups
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
@@ -510,9 +513,21 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// 引き継いだカップは同じ ID・状態のまま入れ直す
 		if len(orderCups) > 0 {
-			return tx.Omit(clause.Associations).Create(&orderCups).Error
+			if err := tx.Omit(clause.Associations).Create(&orderCups).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		// 外した明細のカップの入れ直しも消す（外部キーが無いので。models.CupEmergency）
+		var removed []uuid.UUID
+		for _, cup := range beforeCups {
+			if !slices.ContainsFunc(orderCups, func(kept models.OrderCup) bool { return kept.ID == cup.ID }) {
+				removed = append(removed, cup.ID)
+			}
+		}
+		if len(removed) == 0 {
+			return nil
+		}
+		return tx.Where("order_cup_id IN ?", removed).Delete(&models.CupEmergency{}).Error
 	})
 	if err != nil {
 		status, message := http.StatusInternalServerError, err.Error()
@@ -582,6 +597,11 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
+			return err
+		}
+		// カップの入れ直しも消す（外部キーが無いので。models.CupEmergency）
+		if err := tx.Where("order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID)).
+			Delete(&models.CupEmergency{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
