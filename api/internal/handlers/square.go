@@ -288,7 +288,8 @@ func validateSquareCheckoutRequest(req models.SquareCheckoutCreateRequest) error
 // --------------------------------------------------
 
 // refresh は未確定の記録を Square に問い合わせて最新にし、保存する。
-// 問い合わせに失敗しても記録は返す（レジは次のポーリングで再試行する）。
+// 問い合わせに失敗しても記録は返す（レジは次のポーリングで再試行する）。失敗の理由は
+// ErrorMessage に入れ、レジが「結果を確かめられていない」と出せるようにする。
 func (h *SquareHandler) refresh(ctx context.Context, record *models.SquareCheckout) {
 	h.refreshRefund(ctx, record)
 	if !h.enabled() || !squareCheckoutNeedsRefresh(record, h.now()) {
@@ -298,6 +299,10 @@ func (h *SquareHandler) refresh(ctx context.Context, record *models.SquareChecko
 		remote, err := h.client.GetTerminalCheckout(ctx, *record.CheckoutID)
 		if err != nil {
 			log.Printf("square: failed to get checkout %s: %v", *record.CheckoutID, err)
+			// 応答にだけ載せ、保存はしない。問い合わせている間に Webhook が更新した行を、
+			// 読み込んだときの古い状態で上書きしないように。
+			message := "Square に決済の状態を問い合わせられません: " + err.Error()
+			record.ErrorMessage = &message
 			return
 		}
 		applySquareCheckout(record, remote)
@@ -316,13 +321,15 @@ func (h *SquareHandler) verifyPayments(ctx context.Context, record *models.Squar
 		payment, err := h.client.GetPayment(ctx, paymentID)
 		if err != nil {
 			log.Printf("square: failed to get payment %s: %v", paymentID, err)
+			message := "受け取った額を Square で確かめられません: " + err.Error()
+			record.ErrorMessage = &message
 			return
 		}
 		payments = append(payments, payment)
 	}
 	paid, err := squarePaidAmount(payments)
 	if err != nil {
-		message := err.Error()
+		message := "受け取った額を Square で確かめられません: " + err.Error()
 		record.ErrorMessage = &message
 		return
 	}

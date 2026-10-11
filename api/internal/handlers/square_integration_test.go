@@ -46,6 +46,9 @@ type fakeSquare struct {
 	refundRequests  []map[string]any  // POST /v2/refunds に届いた本文
 	declinePayments map[string]bool   // 返金を断る決済（交通系 IC など）
 	loseRefunds     int               // この回数だけ、返金を作ってから応答を 500 にする（応答が失われた）
+
+	failCheckoutGets int // この回数だけ、checkout の取得を 500 にする
+	failPaymentGets  int // この回数だけ、決済の取得を 500 にする
 }
 
 func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
@@ -118,6 +121,11 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 		f.checkouts[checkout.ID] = &checkout
 		writeJSON(http.StatusOK, map[string]any{"checkout": checkout})
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/terminals/checkouts/"):
+		if f.failCheckoutGets > 0 {
+			f.failCheckoutGets--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
 		checkout, ok := f.checkouts[strings.TrimPrefix(path, "/v2/terminals/checkouts/")]
 		if !ok {
 			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
@@ -135,6 +143,11 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 		checkout.CancelReason = "SELLER_CANCELED"
 		writeJSON(http.StatusOK, map[string]any{"checkout": checkout})
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/payments/"):
+		if f.failPaymentGets > 0 {
+			f.failPaymentGets--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
 		payment, ok := f.payments[strings.TrimPrefix(path, "/v2/payments/")]
 		if !ok {
 			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
@@ -492,6 +505,42 @@ func TestSquareIntegrationCancel(t *testing.T) {
 	// 取り消した後は次の依頼を出せる。
 	if code, _, _ := env.createCheckout(uuid.NewString(), 600); code != http.StatusCreated {
 		t.Fatalf("next checkout after cancel: %d", code)
+	}
+}
+
+// Square に問い合わせられないうちは、未確定のまま理由を error_message で返し、確かめられたら消す。
+func TestSquareIntegrationReportsSyncErrors(t *testing.T) {
+	env := newIntegrationEnv(t)
+	code, checkout, _ := env.createCheckout(uuid.NewString(), 600)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	get := func() models.SquareCheckoutResponse {
+		t.Helper()
+		var got models.SquareCheckoutResponse
+		if code := env.call(http.MethodGet, "/api/square/checkouts/"+checkout.Id.String(), nil, nil, &got); code != http.StatusOK {
+			t.Fatalf("get: %d %+v", code, got)
+		}
+		return got
+	}
+
+	env.fake.failCheckoutGets = 1
+	if got := get(); got.Outcome != models.Pending || got.ErrorMessage == nil ||
+		!strings.Contains(*got.ErrorMessage, "決済の状態を問い合わせられません") {
+		t.Fatalf("checkout lookup failed: %+v", got)
+	}
+	if got := get(); got.Outcome != models.Pending || got.ErrorMessage != nil {
+		t.Fatalf("checkout lookup recovered: %+v", got)
+	}
+
+	env.fake.complete(*checkout.CheckoutId, 600)
+	env.fake.failPaymentGets = 1
+	if got := get(); got.Outcome != models.Pending || got.ErrorMessage == nil ||
+		!strings.Contains(*got.ErrorMessage, "受け取った額を Square で確かめられません") {
+		t.Fatalf("payment lookup failed: %+v", got)
+	}
+	if got := get(); got.Outcome != models.Paid || got.ErrorMessage != nil {
+		t.Fatalf("payment lookup recovered: %+v", got)
 	}
 }
 

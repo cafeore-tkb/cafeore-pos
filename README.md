@@ -193,6 +193,11 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
   選んでいた端末が一覧から外されたら、残りが 1 台でも勝手には使わず、選び直すまで Square のボタンを出さない。
 - 進行中の決済は端末ごとに 1 件まで。別の端末で決済中でも、別のレジからは決済画面を出せる。
 - 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
+  レジがサーバーに、サーバーが Square に問い合わせられないとき（受取額を確かめられないときも）は、問い合わせを続けたまま理由をダイアログに出す。
+  未確定の決済の `error_message` がその理由で、確かめられたら消える。
+  なお、電子マネーで端末にエラーが出たときは、Square の checkout は `IN_PROGRESS` か `PENDING` のまま
+  （[Develop for Japan](https://developer.squareup.com/docs/international-development/japan)）なので、
+  レジからは失敗と分からない。端末の画面で確かめ、端末で取り消してもらう。
   Webhook（`POST /api/square/webhook`、イベントは `terminal.checkout.created` と `terminal.checkout.updated`）は
   レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
 - 支払い済みなのに注文が無い決済（決済中にレジが落ちた、注文の送信に失敗した、Square で払った注文を消した）は

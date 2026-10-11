@@ -67,7 +67,8 @@ export const SquarePaymentDialog = ({
   if (state === null) {
     return null;
   }
-  const { phase, order, paymentType, checkout, message, started } = state;
+  const { phase, order, paymentType, checkout, message, started, syncError } =
+    state;
   // 結果がいつまでも決まらない（受取額を確かめられないなど）ときの逃げ道。
   // 閉じた後に支払いが確定したら「未登録の Square 決済」に出る。
   const stuck =
@@ -163,6 +164,14 @@ export const SquarePaymentDialog = ({
                 </p>
               )}
               {message && <p className="text-red-700 text-sm">{message}</p>}
+              {(phase === "waiting" || phase === "canceling") && syncError && (
+                <div className="space-y-1 text-red-700 text-sm">
+                  <p className="font-bold">
+                    決済の結果を確かめられていません。端末の画面を確認してください（確かめられるまで問い合わせ続けます）。
+                  </p>
+                  <p>{syncError}</p>
+                </div>
+              )}
               {stuck && (
                 <p className="font-bold text-red-700 text-sm">
                   結果を確かめられません。端末と Square

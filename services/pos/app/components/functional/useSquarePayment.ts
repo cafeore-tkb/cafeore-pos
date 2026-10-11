@@ -42,6 +42,11 @@ export type SquarePaymentState = {
   /** 進行中だった別の決済（phase が conflict のとき） */
   conflicting: SquareCheckout | null;
   message: string | null;
+  /**
+   * 結果を確かめられていない理由（レジがサーバーに、サーバーが Square に問い合わせられないなど）。
+   * 結果がまだ決まっていない間だけ使い、次に確かめられたら消える
+   */
+  syncError: string | null;
 };
 
 type Options = {
@@ -94,13 +99,19 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
       }
       switch (checkout.outcome) {
         case "pending":
-          return { ...prev, checkout };
+          // 未確定の決済の error_message は、サーバーが Square に問い合わせられなかった理由
+          return {
+            ...prev,
+            checkout,
+            syncError: checkout.error_message ?? null,
+          };
         case "failed":
           return {
             ...prev,
             checkout,
             phase: "failed",
             message: cancelMessage(checkout),
+            syncError: null,
           };
         case "attention":
           return {
@@ -108,9 +119,16 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
             checkout,
             phase: "attention",
             message: `受け取った額（${checkout.paid_amount ?? "不明"} 円）が請求額（${checkout.amount} 円）と合いません。Square の管理画面で確かめてください`,
+            syncError: null,
           };
         case "paid":
-          return { ...prev, checkout, phase: "paid", message: null };
+          return {
+            ...prev,
+            checkout,
+            phase: "paid",
+            message: null,
+            syncError: null,
+          };
       }
     });
   }, []);
@@ -224,6 +242,7 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
         started: false,
         conflicting: null,
         message: null,
+        syncError: null,
       });
     },
     [state, create],
@@ -345,8 +364,18 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
           applyCheckout(checkout);
         }
       } catch (error) {
-        // 一時的な通信エラーは次の問い合わせで回復する
+        // 問い合わせは続ける（一時的な通信エラーなら次で回復する）。回復するまで画面に出す
         console.error(error);
+        if (stopped) {
+          return;
+        }
+        const syncError = `決済の状態を取得できません: ${error instanceof Error ? error.message : String(error)}`;
+        setState((prev) =>
+          prev?.checkout?.id === checkoutId &&
+          (prev.phase === "waiting" || prev.phase === "canceling")
+            ? { ...prev, syncError }
+            : prev,
+        );
       }
     }, POLL_INTERVAL_MS);
     return () => {
