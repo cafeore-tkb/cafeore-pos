@@ -250,7 +250,8 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 - Worker は中継するときに、secret の `PROXY_TOKEN` を `X-Cafeore-Proxy-Token` ヘッダーに付ける。Cloud Run の手前の
   LB の Cloud Armor がそれを照らし合わせ、合わないものを Cloud Run に届く前に 403 にする（infra の `gcp/api_edge.tf`）。
   JWT は Bearer トークンなので、盗まれると Cloud Run を直接叩いて期限まで使い回せ、Access でセッションを
-  取り消しても効かない。トークンは Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  取り消しても効かない。トークンは GitHub と Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  `PROXY_TOKEN` は本番のデプロイのたびに、GitHub の secret の `LB_PROXY_TOKEN` から入れ直す（`pos-deploy-workers`）。
   JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
 - api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
   GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
@@ -318,7 +319,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
    1. infra で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
       LB のドメインは `pos-be-lb.cafeore.cafe`。Cloudflare の `cafeore` アカウントの `cafeore.cafe` に、A レコードを
       `terraform output api_lb_ip` に向けて作る（DNS only）。証明書が発行されるまで数十分かかる
-   2. Worker の secret に同じトークンを入れる（`cd services/pos && pnpm exec wrangler secret put PROXY_TOKEN`）
+   2. このリポジトリの Secrets の `LB_PROXY_TOKEN` に同じトークンを入れる。本番のデプロイで Worker の `PROXY_TOKEN` になる
    3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `https://pos-be-lb.cafeore.cafe`（`terraform output api_lb_url`）にして、
       「pos / deploy (Workers)」を手動実行する。Square の Webhook を使っているなら通知先も LB の URL に登録し直す
    4. POS を一通り操作して動くこと（WebSocket も）を確かめてから、infra で `api_lb_only = true` にして apply する。
@@ -532,6 +533,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
 | `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
@@ -541,8 +543,10 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。
 
-POS の Worker の `PROXY_TOKEN` は GitHub ではなく Worker の secret に置く（`wrangler secret put PROXY_TOKEN`）。
-secret はデプロイし直しても消えない。
+POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub の `LB_PROXY_TOKEN` から
+本番のデプロイのたびに `wrangler deploy --secrets-file` で入れ直す。Worker に置いておくだけだと、
+PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
+`LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /

@@ -20,8 +20,9 @@ interface Env {
   // 中継先の API（Cloud Run）のオリジン。デプロイの workflow が --var で渡す。
   // 無いとき（PR のプレビュー）は中継しない。プレビューのフロントは Cloud Run を直接呼ぶ。
   API_ORIGIN?: string;
-  // Cloud Armor と照らし合わせるトークン（wrangler secret put PROXY_TOKEN）。
-  // infra の api_proxy_token と同じ値。無いときは付けない（LB を置く前）。
+  // Cloud Armor と照らし合わせるトークン。infra の api_proxy_token と同じ値。
+  // デプロイの workflow が GitHub の secret の LB_PROXY_TOKEN から --secrets-file で入れる。
+  // 無いときは付けない。
   PROXY_TOKEN?: string;
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
