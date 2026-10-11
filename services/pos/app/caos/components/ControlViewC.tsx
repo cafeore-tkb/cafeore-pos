@@ -1,9 +1,10 @@
+import { caosClockLabel } from "@cafeore/common";
 import { ArrowRightCircle, CircleDot, RotateCcw } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
 import type { Barista, OrderTicket, UnassignedOrder } from "../types";
 import { laneOrdinal } from "../utils/lanes";
-import { queueWaitSeconds } from "../utils/orderQueue";
+import { activeRemainingSec, queueWaitSeconds } from "../utils/orderQueue";
 import { DripperOrderCard } from "./DripperOrderCard";
 import { UnassignedOrdersPanel } from "./UnassignedOrdersPanel";
 
@@ -19,20 +20,6 @@ export interface ControlViewCProps {
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
 }
-
-const remainingSeconds = (barista: Barista, currentTimeSec: number) => {
-  const current = barista.queue[0];
-  if (!current) return 0;
-  if (current.timeRemainingSec !== undefined) return current.timeRemainingSec;
-  if (current.endTimeSec !== undefined)
-    return Math.max(0, current.endTimeSec - currentTimeSec);
-  return current.totalDurationSec;
-};
-
-const formatRemaining = (seconds: number) => {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-};
 
 const dripperLabelGroups = [
   {
@@ -98,7 +85,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
                 className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
               >
                 #{item.bayNumber}{" "}
-                {item.isStandby ? "待機" : formatRemaining(item.seconds)}
+                {item.isStandby ? "待機" : caosClockLabel(item.seconds)}
               </span>
             ))}
           </div>
@@ -108,7 +95,7 @@ export const ControlViewC: React.FC<ControlViewCProps> = ({
           {sortedBaristas.map((barista) => {
             const current = barista.queue[0];
             const waitingQueue = barista.queue.slice(1);
-            const seconds = remainingSeconds(barista, simTimeSec);
+            const seconds = activeRemainingSec(barista, simTimeSec);
             const isImminent = Boolean(current && seconds <= 30);
             const isLinked = Boolean(
               selectedOrderId &&

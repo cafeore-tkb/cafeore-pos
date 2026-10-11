@@ -23,10 +23,13 @@ export const useInventory = () => {
   };
 };
 
-export const useStockUsages = () => {
+// 開いたままの画面（CaOS など）で設定の変更を拾いたいときは refreshInterval を渡す。
+// 在庫の設定の画面は自分で mutateUsages するので、既定では取り直さない。
+export const useStockUsages = (options?: { refreshInterval?: number }) => {
   const { data, error, isLoading, mutate } = useSWR(
     STOCK_USAGES_KEY,
     inventoryRepository.getUsages,
+    { refreshInterval: options?.refreshInterval },
   );
 
   return {

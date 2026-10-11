@@ -1,3 +1,4 @@
+import { caosClockLabel } from "@cafeore/common";
 import { ArrowRightCircle, Plus } from "lucide-react";
 import type React from "react";
 import type { Barista, OrderTicket } from "../types";
@@ -18,6 +19,8 @@ interface BayLaneRowProps {
   pixelsPerSec: number;
   timelineWidthPx: number;
   simTimeSec: number;
+  /** 閲覧だけの画面（/master-sheet/view）。「次へ」と空きスロットを出さない */
+  readOnly?: boolean;
 }
 
 export const BayLaneRow: React.FC<BayLaneRowProps> = ({
@@ -34,6 +37,7 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
   pixelsPerSec,
   timelineWidthPx,
   simTimeSec,
+  readOnly = false,
 }) => {
   // Determine if active ticket is imminent (<15s or flagged imminent)
   const activeTicket = barista.queue[0];
@@ -47,11 +51,8 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
       activeTicket.status === "brewing" &&
       activeTicket.timeRemainingSec === 0,
   );
-  const formatRemaining = (seconds?: number) => {
-    if (seconds === undefined) return "--:--";
-    const safeSeconds = Math.max(0, seconds);
-    return `${Math.floor(safeSeconds / 60)}:${(safeSeconds % 60).toString().padStart(2, "0")}`;
-  };
+  const formatRemaining = (seconds?: number) =>
+    seconds === undefined ? "--:--" : caosClockLabel(seconds);
 
   // Combine past completed tickets and current queue for full timeline view
   const allTickets: OrderTicket[] = [
@@ -62,17 +63,13 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
     ...barista.queue,
   ];
 
-  let queueCursorSec: number | null = null;
+  // 開始・終了は盤面で決めた時刻をそのまま使う（cafeore-pos の盤面は live/board.ts の planCaosLane）。
+  // 終了が無いカードは開始から抽出時間、開始が無いカード（準備完了で終わったカード）は終了から抽出時間を引く
   const positionedTickets = allTickets.map((ticket) => {
-    let startSec = ticket.startTimeSec ?? timelineStartSec + 855;
-    if (queueCursorSec !== null && ticket.status !== "completed")
-      startSec = Math.max(startSec, queueCursorSec + 15);
-    const plannedEndSec = startSec + ticket.totalDurationSec;
-    const endSec =
-      ticket === activeTicket
-        ? Math.max(plannedEndSec, simTimeSec)
-        : plannedEndSec;
-    if (ticket.status !== "completed") queueCursorSec = endSec;
+    const startSec =
+      ticket.startTimeSec ??
+      (ticket.endTimeSec ?? simTimeSec) - ticket.totalDurationSec;
+    const endSec = ticket.endTimeSec ?? startSec + ticket.totalDurationSec;
     return { ticket, startSec, endSec };
   });
 
@@ -139,16 +136,18 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
 
       {/* 2. Operation - immediately to the right of the dripper */}
       <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-[#cbd5e1] border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-        <button
-          id={`bay-action-btn-${barista.id}`}
-          disabled={barista.queue.length === 0}
-          onClick={() => onAdvanceBay(barista.id)}
-          className={`flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg font-black text-[15px] shadow-xs active:scale-95 ${barista.queue.length === 0 ? "bg-slate-200 text-slate-500" : isImminent ? "bg-amber-500 text-slate-950 ring-2 ring-amber-200" : "bg-[#006c4a] text-white"}`}
-          title={`${laneOrdinal(barista.bayNumber)}の現在の抽出を確定して次へ`}
-        >
-          <span>{barista.queue.length === 0 ? "待機" : "次へ"}</span>
-          <ArrowRightCircle className="h-5 w-5" />
-        </button>
+        {!readOnly && (
+          <button
+            id={`bay-action-btn-${barista.id}`}
+            disabled={barista.queue.length === 0}
+            onClick={() => onAdvanceBay(barista.id)}
+            className={`flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-1.5 rounded-lg font-black text-[15px] shadow-xs active:scale-95 ${barista.queue.length === 0 ? "bg-slate-200 text-slate-500" : isImminent ? "bg-amber-500 text-slate-950 ring-2 ring-amber-200" : "bg-[#006c4a] text-white"}`}
+            title={`${laneOrdinal(barista.bayNumber)}の現在の抽出を確定して次へ`}
+          >
+            <span>{barista.queue.length === 0 ? "待機" : "次へ"}</span>
+            <ArrowRightCircle className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* 3. Timeline Track with Ticket Queue scaled by duration */}
@@ -190,20 +189,22 @@ export const BayLaneRow: React.FC<BayLaneRowProps> = ({
         })}
 
         {/* Empty Slot Button positioned after the last scheduled ticket */}
-        <div
-          className="absolute top-1.5 bottom-1.5"
-          style={{ left: `${emptySlotLeftPx}px` }}
-        >
-          <button
-            id={`empty-slot-bay-${barista.id}`}
-            onClick={() => onOpenEmptySlot(barista.id)}
-            className="group flex h-full min-w-[130px] cursor-pointer touch-manipulation select-none items-center justify-center gap-1.5 rounded-lg border-2 border-[#cbd5e1] border-dashed bg-[#f8fafc] px-3 font-bold text-[#64748b] text-[12.5px] transition-all hover:border-blue-400 hover:text-blue-600 active:bg-blue-100/70"
-            title="タップして未割当オーダーをこのドリッパーに割り当て"
+        {!readOnly && (
+          <div
+            className="absolute top-1.5 bottom-1.5"
+            style={{ left: `${emptySlotLeftPx}px` }}
           >
-            <Plus className="h-4 w-4 text-slate-500 transition-transform group-hover:scale-110" />
-            <span>空きスロット</span>
-          </button>
-        </div>
+            <button
+              id={`empty-slot-bay-${barista.id}`}
+              onClick={() => onOpenEmptySlot(barista.id)}
+              className="group flex h-full min-w-[130px] cursor-pointer touch-manipulation select-none items-center justify-center gap-1.5 rounded-lg border-2 border-[#cbd5e1] border-dashed bg-[#f8fafc] px-3 font-bold text-[#64748b] text-[12.5px] transition-all hover:border-blue-400 hover:text-blue-600 active:bg-blue-100/70"
+              title="タップして未割当オーダーをこのドリッパーに割り当て"
+            >
+              <Plus className="h-4 w-4 text-slate-500 transition-transform group-hover:scale-110" />
+              <span>空きスロット</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

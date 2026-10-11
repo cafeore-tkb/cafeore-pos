@@ -8,7 +8,21 @@ export type BeanCode =
   | "MILK"
   | "SP";
 
+// カードの豆。POS の在庫対象（kind が bean）の ID と名前をそのまま持つ
+export interface CardBean {
+  id: string;
+  name: string;
+}
+
 export interface OrderTicket {
+  /** 背景色（#RRGGBB。色の設定の画面 master、無ければ白）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
+  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
+  itemKey?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  beans?: CardBean[];
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   id: string; // e.g. "#152"
   ticketUid?: string; // unique identifier for React keys, e.g. "152-1", "152-2"
   itemIndex?: number; // e.g. 1 (of 2 items in order #152)
@@ -36,8 +50,8 @@ export interface OrderTicket {
   timeRemainingSec?: number; // for brewing
   totalDurationSec: number;
   scheduledTimeStr?: string; // e.g. "2:05"
-  startTimeSec?: number; // sim time in seconds when this drip starts
-  endTimeSec?: number; // sim time in seconds when this drip ends
+  startTimeSec?: number; // 抽出の開始（盤面の秒。その日の 0:00 からの秒）
+  endTimeSec?: number; // 抽出の終了（盤面の秒）
   completedAtSec?: number; // for historical completed drip
   seniorOnly?: boolean; // 限定（種類の senior_only）。上級生だけが淹れる
 }
@@ -53,6 +67,14 @@ export interface Barista {
 }
 
 export interface UnassignedOrder {
+  /** 背景色（#RRGGBB。色の設定の画面 master、無ければ白）。cafeore-pos の盤面のカードにだけ付く */
+  color?: string;
+  /** 商品の ID（盤面のカードにだけ付く）。あれば名前は API の商品の略称をそのまま出す */
+  itemKey?: string;
+  /** 豆。商品の在庫の使用量（item_stock_usages）から引いた在庫対象（盤面のカードにだけ付く） */
+  beans?: CardBean[];
+  /** 区分。商品の種類の表示名（display_name）をそのまま（盤面のカードにだけ付く） */
+  typeName?: string;
   id: string; // e.g. "#162"
   ticketUid?: string; // unique identifier e.g. "162-1", "162-2"
   itemIndex?: number;

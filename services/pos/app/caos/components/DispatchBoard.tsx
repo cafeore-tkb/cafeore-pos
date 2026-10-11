@@ -1,3 +1,4 @@
+import { caosTimeOfDayLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -18,6 +19,8 @@ interface DispatchBoardProps {
   onOpenEmptySlot: (bayId: number) => void;
   simTimeSec: number;
   timelineCommand: { direction: "back" | "now" | "forward"; id: number } | null;
+  /** 閲覧だけの画面。各列の「次へ」と空きスロットを出さない */
+  readOnly?: boolean;
 }
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -42,6 +45,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   onOpenEmptySlot,
   simTimeSec,
   timelineCommand,
+  readOnly = false,
 }) => {
   // Build a rolling timeline that runs 12 hours ahead of the current hour. It starts
   // one hour back so drips spanning the top of the hour keep their real position.
@@ -147,16 +151,15 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   // Generate timeline markers every 1 minute, with major labels every 5 minutes
   const timeMarkers = [];
   for (let sec = timelineStartSec; sec <= timelineEndSec; sec += 60) {
-    const clockSec = ((sec % 86400) + 86400) % 86400;
-    const m = Math.floor(clockSec / 60) % 60;
-    const h = Math.floor(clockSec / 3600);
+    const timeStr = caosTimeOfDayLabel(sec).slice(0, 5); // 「10:05」
+    const m = Number(timeStr.slice(3));
     const isMajor = m % 5 === 0;
     const left = (sec - timelineStartSec) * PIXELS_PER_SEC;
 
     timeMarkers.push({
       sec,
-      timeStr: `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
-      minuteStr: `:${m.toString().padStart(2, "0")}`,
+      timeStr,
+      minuteStr: timeStr.slice(2),
       isMajor,
       isHour: m === 0,
       left,
@@ -303,6 +306,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   onReturnToUnassigned={onReturnToUnassigned}
                   onCloseTicketAction={onCloseTicketAction}
                   onOpenEmptySlot={onOpenEmptySlot}
+                  readOnly={readOnly}
                   timelineStartSec={timelineStartSec}
                   pixelsPerSec={PIXELS_PER_SEC}
                   timelineWidthPx={timelineWidthPx}

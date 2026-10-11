@@ -28,6 +28,8 @@ interface ControlViewAProps {
   onOpenEmptySlot: (bayId: number) => void;
   onAssignToBay: (order: UnassignedOrder, bayId: number) => void;
   onMergeOrders: (firstUid: string, secondUid: string) => void;
+  /** 閲覧だけの画面（/master-sheet/view）。各列の「次へ」と空きスロットを出さない */
+  readOnly?: boolean;
 }
 
 export const ControlViewA: React.FC<ControlViewAProps> = ({
@@ -47,6 +49,7 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
   onOpenEmptySlot,
   onAssignToBay,
   onMergeOrders,
+  readOnly = false,
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-2">
     <DispatchBoard
@@ -62,6 +65,7 @@ export const ControlViewA: React.FC<ControlViewAProps> = ({
       onOpenEmptySlot={onOpenEmptySlot}
       simTimeSec={currentTimeSec}
       timelineCommand={timelineCommand}
+      readOnly={readOnly}
     />
 
     <div className="relative z-[70] h-[196px] min-h-0 overflow-visible">

@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
 import type React from "react";
 import type { OrderTicket } from "../types";
-import { MENU_PRESENTATION } from "../utils/menuPresentation";
+import { cardSurface } from "../utils/menuPresentation";
+import { BeanBadge } from "./BeanBadge";
 
 interface DripperOrderCardProps {
   kind: "current" | "waiting";
@@ -12,17 +13,21 @@ interface DripperOrderCardProps {
   onClick?: () => void;
 }
 
-const cardTheme = (ticket: OrderTicket) => {
-  const menu = MENU_PRESENTATION[ticket.beanCode];
+const cardTheme = (
+  ticket: OrderTicket,
+): { card: string; id: string; style?: React.CSSProperties } => {
+  const surface = cardSurface(ticket);
   if (ticket.preferredBaristaId) {
     return {
       card: "border-violet-300 bg-violet-50 text-slate-900",
       id: "text-violet-700",
     };
   }
+  // 色の設定の色（画面 master。無ければ白）
   return {
-    card: `${menu.cardClass} ${menu.family === "premium" ? "text-white" : "text-slate-900"}`,
-    id: menu.family === "premium" ? "text-white" : "text-slate-600",
+    card: surface.className,
+    id: surface.colored ? "" : surface.dark ? "text-white" : "text-slate-600",
+    style: surface.style,
   };
 };
 
@@ -42,6 +47,7 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
       type="button"
       disabled={!onClick}
       onClick={onClick}
+      style={theme?.style}
       className={`flex h-full min-w-[180px] flex-col justify-center overflow-hidden rounded-lg border px-2.5 py-1.5 text-left shadow-xs transition-colors ${
         ticket && theme
           ? `${theme.card} ${isImminent ? "ring-2 ring-red-400 ring-inset" : ""}`
@@ -60,9 +66,12 @@ export const DripperOrderCard: React.FC<DripperOrderCardProps> = ({
               {ticket.cupCount}杯
             </span>
           </div>
-          <div className="mt-1 w-full truncate font-bold text-[11px]">
-            {queuePosition ? `${queuePosition}. ` : ""}
-            {ticket.beanName}
+          <div className="mt-1 flex w-full min-w-0 items-center gap-1">
+            <span className="truncate font-bold text-[11px]">
+              {queuePosition ? `${queuePosition}. ` : ""}
+              {ticket.beanName}
+            </span>
+            <BeanBadge card={ticket} />
           </div>
         </>
       ) : (

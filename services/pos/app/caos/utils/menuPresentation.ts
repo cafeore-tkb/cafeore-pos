@@ -1,3 +1,4 @@
+import { readableTextColor } from "@cafeore/common";
 import type { BeanCode } from "../types";
 
 export type MenuFamily = "signature" | "gourmet" | "finish" | "premium";
@@ -85,6 +86,29 @@ export const MENU_PRESENTATION: Record<BeanCode, MenuPresentation> = {
     badgeClass: "bg-emerald-200 text-emerald-950",
     accent: "#047857",
   },
+};
+
+// カードの見た目。cafeore-pos の盤面のカードは、色の設定の色（color。無ければ白）で塗り、
+// 文字色は背景色から決める（POS と共通の readableTextColor）。colored のカードの中の文字は色を継ぐ。
+// 色を持たないカード（実データテスト）は、今までどおり豆ごとの色。
+export const cardSurface = (card: { beanCode: BeanCode; color?: string }) => {
+  if (card.color) {
+    const color = readableTextColor(card.color);
+    return {
+      className: "border-slate-300",
+      style: { backgroundColor: card.color, color },
+      dark: color === "#ffffff",
+      colored: true,
+    };
+  }
+  const menu = MENU_PRESENTATION[card.beanCode];
+  const dark = menu.family === "premium";
+  return {
+    className: `${menu.cardClass} ${dark ? "text-white" : "text-slate-900"}`,
+    style: undefined,
+    dark,
+    colored: false,
+  };
 };
 
 export const MENU_GROUPS: {

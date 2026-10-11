@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useRef } from "react";
 import type { OrderTicket } from "../types";
 import { moveTargets } from "../utils/lanes";
+import { BeanBadge } from "./BeanBadge";
 
 interface TicketDetailModalProps {
   ticket: OrderTicket | null;
@@ -46,6 +47,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {ticket.id}
               </span>
               <span className="font-bold text-[18px]">{ticket.beanName}</span>
+              <BeanBadge card={ticket} className="text-[12px]" />
               <span className="rounded-md bg-slate-950 px-2.5 py-1 font-black font-mono text-[17px] text-white">
                 {ticket.cupCount}杯
               </span>
