@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 // 操作のあと「1つ戻す」が押せる秒
@@ -16,6 +16,8 @@ export const useCaosUndo = (nowMs: number) => {
     run: UndoRun;
   } | null>(null);
   const [pending, setPending] = useState(false);
+  // 二度押し（画面が変わる前に続けて押した）で 2 回送らない
+  const running = useRef(false);
   const secondsLeft = last
     ? Math.min(UNDO_SEC, Math.ceil(UNDO_SEC - (nowMs - last.atMs) / 1000))
     : 0;
@@ -32,13 +34,15 @@ export const useCaosUndo = (nowMs: number) => {
       setLast({ label, atMs: Date.now(), run }),
     forget: () => setLast(null),
     undo: () => {
-      if (!action || pending) return;
+      if (!action || running.current) return;
+      running.current = true;
       setPending(true);
       void Promise.resolve(action.run())
         .then((ok) => {
           if (ok) toast.success(`「${action.label}」を戻しました`);
         })
         .finally(() => {
+          running.current = false;
           setPending(false);
           setLast((current) => (current === action ? null : current));
         });
