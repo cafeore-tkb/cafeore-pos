@@ -248,6 +248,19 @@ func main() {
 	masterStateHandler := handlers.NewMasterStateHandler(db, hub)
 	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
 	colorSettingHandler := handlers.NewColorSettingHandler(db)
+	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
+	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
+	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
+	squareHandler, err := handlers.NewSquareHandler(db, handlers.SquareConfig{
+		AccessToken:         os.Getenv("SQUARE_ACCESS_TOKEN"),
+		Environment:         os.Getenv("SQUARE_ENVIRONMENT"),
+		LocationID:          os.Getenv("SQUARE_LOCATION_ID"),
+		WebhookSignatureKey: os.Getenv("SQUARE_WEBHOOK_SIGNATURE_KEY"),
+		WebhookURL:          os.Getenv("SQUARE_WEBHOOK_URL"),
+	})
+	if err != nil {
+		log.Fatalf("Failed to configure Square: %v", err)
+	}
 
 	// エンドポイント
 	r.GET("/status", statusHandler)
@@ -299,12 +312,22 @@ func main() {
 		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
 		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
 		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-		api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
-		api.PUT("/inventory/usages/:id", inventoryHandler.ReplaceItemStockUsages)
 		api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
+
+		api.GET("/square/status", squareHandler.GetStatus)
+		api.GET("/square/devices", squareHandler.GetDevices)
+		api.POST("/square/devices", squareHandler.CreateDevice)
+		api.POST("/square/devices/pair", squareHandler.PairDevice)
+		api.POST("/square/devices/import", squareHandler.ImportDevices)
+		api.DELETE("/square/devices/:id", squareHandler.DeleteDevice)
+		api.POST("/square/checkouts", squareHandler.CreateCheckout)
+		api.GET("/square/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
+		api.GET("/square/checkouts/:id", squareHandler.GetCheckout)
+		api.POST("/square/checkouts/:id/cancel", squareHandler.CancelCheckout)
+		api.POST("/square/webhook", squareHandler.ReceiveWebhook)
 	}
 
 	// サーバー起動

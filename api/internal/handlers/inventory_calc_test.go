@@ -108,7 +108,7 @@ func deref2(p *float64) any {
 func TestSnapshotLevel(t *testing.T) {
 	counted := 3000.0
 	s := stockSnapshot{
-		Resource:        models.StockResource{Kind: "bean", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
+		Resource:        models.StockResource{Kind: "item", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
 		Tracked:         true,
 		CountedQuantity: &counted,
 		Received:        0,
