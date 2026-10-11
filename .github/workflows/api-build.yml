@@ -9,13 +9,14 @@ name: api / build & deploy
 # push 先は Terraform で新しく作った Docker リポジトリ（既定 cafeore-pos）で、
 # Cloud Build が使っている cloud-run-source-deploy とは別物。
 #
-# ## Cloud Build と同じサービスを更新する
+# ## デプロイ先は cafeore-pos-prod
 #
-# デプロイ先の Cloud Run サービス cafeore-pos-git は、既存の Cloud Build
-# トリガー（infra の cloud_build.tf）も更新している。あちらの発火条件は
-# **disable-auth ブランチへの push** なので普段はぶつからないが、
-# disable-auth に push すると、そちらのビルドで上書きされる。
-# 移行が済んだら Cloud Build トリガーを止めること。
+# 本番のデプロイ先は Cloud Run サービス cafeore-pos-prod（infra の cloud_run.tf）。
+# 旧本番の cafeore-pos-git からは、Cloud Run のサービス名を変えられないため作り直して
+# 移した。旧サービスは切り替えが済んだら消す（cafeore-tkb/infra#23、infra の README
+# 「本番サービスの改名」）。
+# 既存の Cloud Build トリガー（infra の cloud_build.tf、disable-auth ブランチへの push）は
+# 旧サービスを向いたままなので、cafeore-pos-prod を上書きすることはない。
 #
 # PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へ、
 # **リビジョンタグ付き・トラフィックなし**でデプロイする。PR ごとに
@@ -261,7 +262,7 @@ jobs:
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
       AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
       IMAGE_NAME: api
-      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
+      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-prod' }}
       CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
       COMMENT_MARKER: '<!-- cafeore-preview: api -->'
       # Neon のプレビュー用ブランチ。NEON_PROJECT_ID が未設定なら丸ごとスキップする。
