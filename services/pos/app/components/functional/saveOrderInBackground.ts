@@ -1,12 +1,18 @@
 import {
-  type OrderEntity,
+  type Order,
+  OrderEntity,
   cashierRepository,
+  cashierStateWireSchema,
   orderRepository,
 } from "@cafeore/common";
 import { toast } from "sonner";
+import { z } from "zod";
 
 // 応答が返らないまま、失敗に気づけないことがないよう、保存を待つ時間の上限
 const SAVE_TIMEOUT_MS = 10_000;
+
+// 保存に失敗した注文を、読み込み直しても再送できるようこの端末に残す。idempotencyKey → 注文
+const FAILED_ORDERS_KEY = "cashier-failed-orders";
 
 /**
  * レジで確定した注文を、画面を待たせずに裏で保存する (#732)
@@ -17,18 +23,48 @@ const SAVE_TIMEOUT_MS = 10_000;
  */
 const saveOrderInBackground = (order: OrderEntity) => {
   const idempotencyKey = newKey();
-  const save = () =>
-    withTimeout(
-      orderRepository.save(order, { idempotencyKey }),
-      SAVE_TIMEOUT_MS,
-    );
+  const save = saver(order, idempotencyKey);
   save().then(
     // cashier-mini の「ご注文ありがとうございました」の表示用
     (savedOrder) =>
       cashierRepository.setSubmittedOrder(savedOrder).catch(console.error),
-    (error) => notifySaveFailed(order.orderId, error, save),
+    (error) => {
+      if (idempotencyKey) {
+        updateFailedOrders((orders) => ({
+          ...orders,
+          [idempotencyKey]: order.toOrder(),
+        }));
+      }
+      notifySaveFailed(order.orderId, error, save);
+    },
   );
 };
+
+/**
+ * 前に開いていたときに保存できなかった注文を、同じキーで再送できるトーストに出し直す
+ */
+const notifyStoredFailedOrders = () => {
+  for (const [idempotencyKey, order] of Object.entries(readFailedOrders())) {
+    notifySaveFailed(
+      order.orderId,
+      "読み込み直す前に保存できなかった注文です",
+      saver(OrderEntity.fromOrder(order), idempotencyKey),
+      idempotencyKey,
+    );
+  }
+};
+
+// 保存できたら端末に残した分も消す
+const saver = (order: OrderEntity, idempotencyKey: string | undefined) => () =>
+  withTimeout(
+    orderRepository.save(order, { idempotencyKey }),
+    SAVE_TIMEOUT_MS,
+  ).then((savedOrder) => {
+    if (idempotencyKey) {
+      updateFailedOrders(({ [idempotencyKey]: _, ...rest }) => rest);
+    }
+    return savedOrder;
+  });
 
 const notifySaveFailed = (
   orderId: number,
@@ -57,7 +93,36 @@ const notifySaveFailed = (
   });
 };
 
-// randomUUID は https か localhost でしか使えない。使えないときはキーを付けずに保存する
+// JSON では Date が ISO 文字列になるので、レジ状態と同じ wire スキーマで戻す
+const failedOrdersSchema = z.record(
+  z.string(),
+  cashierStateWireSchema.shape.edittingOrder,
+);
+
+// 使えない・壊れた値なら、残っていないものとして扱う（そのときは今までどおりトーストだけ）
+const readFailedOrders = () => {
+  try {
+    return failedOrdersSchema.parse(
+      JSON.parse(localStorage.getItem(FAILED_ORDERS_KEY) ?? "{}"),
+    );
+  } catch (error) {
+    console.error(error);
+    return {};
+  }
+};
+
+const updateFailedOrders = (
+  update: (orders: Record<string, Order>) => Record<string, Order>,
+) => {
+  try {
+    const orders = update(readFailedOrders());
+    localStorage.setItem(FAILED_ORDERS_KEY, JSON.stringify(orders));
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+// randomUUID は https か localhost でしか使えない。使えないときはキーを付けずに保存し、端末にも残さない
 const newKey = () =>
   typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : undefined;
 
@@ -70,4 +135,4 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
     promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 
-export { saveOrderInBackground };
+export { notifyStoredFailedOrders, saveOrderInBackground };

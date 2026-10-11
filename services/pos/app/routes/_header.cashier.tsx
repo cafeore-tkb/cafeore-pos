@@ -6,14 +6,17 @@ import {
   useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
   useSubmit,
 } from "react-router";
 import { z } from "zod";
-import { saveOrderInBackground } from "~/components/functional/saveOrderInBackground";
+import {
+  notifyStoredFailedOrders,
+  saveOrderInBackground,
+} from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -33,6 +36,8 @@ export default function Cashier() {
     () => isDeviceOnline && status === "open",
     [isDeviceOnline, status],
   );
+
+  useEffect(notifyStoredFailedOrders, []);
 
   const syncOrder = useCallback(
     (order: OrderEntity) => {
