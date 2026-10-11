@@ -91,7 +91,7 @@ export default function CasherMini() {
           />
           <h1
             className={cn(
-              "text-center font-zen text-6xl text-[#b09860] opacity-0 duration-1000 ease-in-out",
+              "text-center font-zen text-6xl text-theme-gold opacity-0 duration-1000 ease-in-out",
               logoShown && "mt-5 text-5xl opacity-100 duration-500",
             )}
           >

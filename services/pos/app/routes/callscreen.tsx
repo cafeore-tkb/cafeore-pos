@@ -5,20 +5,19 @@ import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import {
   BOARD_W,
-  CallingBanner,
-  CmFallback,
+  BrewingIndicator,
+  CallScreenBackdrop,
   DripBand,
-  DripBanner,
-  GRAD_CALLING,
-  GRAD_PLATE,
   PlateBoard,
   type PlateItem,
   PreparingBar,
   STAGE_H,
   STAGE_W,
+  SectionHeading,
   dripBandLayout,
   layoutPlates,
   sectionHeights,
+  stageContentStyle,
 } from "./callscreen.components";
 import {
   useCallVisibility,
@@ -35,7 +34,7 @@ export const meta: MetaFunction = () => {
 
 /**
  * 待機中に流す CM。services/pos/public/ にこの名前で置く（16:9。H.264 の mp4 ならどのブラウザでも流せる）。
- * 置いていない・読めない間は、代わりにロゴの待機画面を出す
+ * 置いていない・読めない間は、代わりに呼び出し画面と同じ地（ロゴ入り）を出す
  */
 const CM_SRC = "/callscreen-cm.mp4";
 /** 呼び出しが無くなってから CM に戻るまでの時間 */
@@ -167,7 +166,7 @@ export default function FieldsOfCallScreen() {
           }}
         >
           {cmUnavailable ? (
-            <CmFallback logo={logoSVG} />
+            <CallScreenBackdrop logo={logoSVG} />
           ) : (
             <video
               ref={videoRef}
@@ -211,7 +210,7 @@ export default function FieldsOfCallScreen() {
                 flexDirection: "column",
               }}
             >
-              <PreparingBar orderIds={preparing} />
+              <PreparingBar orderIds={preparing} overlay />
             </div>
           )}
         </div>
@@ -221,58 +220,45 @@ export default function FieldsOfCallScreen() {
           style={{
             position: "absolute",
             inset: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            padding: "8px",
-            boxSizing: "border-box",
-            background: "#fff",
             opacity: showCall ? 1 : 0,
             pointerEvents: showCall ? "auto" : "none",
             transition: "opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
-          <div
-            style={{
-              flexShrink: 0,
-              height: `${heights.calling}px`,
-              padding: "0 16px",
-              boxSizing: "border-box",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <CallingBanner />
-            <PlateBoard
-              plates={callingPlates}
-              gradient={GRAD_CALLING}
-              isFlashing={isFlashing}
-            />
-          </div>
-
-          {hasDrip && (
+          <CallScreenBackdrop logo={logoSVG} subdued />
+          <div style={stageContentStyle}>
             <div
-              style={{
-                flexShrink: 0,
-                height: `${heights.drip}px`,
-                padding: "0 16px",
-                boxSizing: "border-box",
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
+              className="flex shrink-0 flex-col gap-4"
+              style={{ height: `${heights.calling}px` }}
             >
-              <DripBanner />
+              <SectionHeading ja="お呼び出し中" en="Now Calling" />
               <PlateBoard
-                plates={drippingPlates}
-                gradient={GRAD_PLATE}
+                plates={callingPlates}
+                tone="calling"
                 isFlashing={isFlashing}
               />
             </div>
-          )}
 
-          {hasPrep && <PreparingBar orderIds={preparing} />}
+            {hasDrip && (
+              <div
+                className="flex shrink-0 flex-col gap-4"
+                style={{ height: `${heights.drip}px` }}
+              >
+                <SectionHeading
+                  ja="ドリップ中"
+                  en="Brewing"
+                  indicator={<BrewingIndicator />}
+                />
+                <PlateBoard
+                  plates={drippingPlates}
+                  tone="drip"
+                  isFlashing={isFlashing}
+                />
+              </div>
+            )}
+
+            {hasPrep && <PreparingBar orderIds={preparing} />}
+          </div>
         </div>
       </div>
 

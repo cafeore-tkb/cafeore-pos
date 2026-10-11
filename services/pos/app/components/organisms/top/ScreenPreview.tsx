@@ -1,6 +1,5 @@
-import { FaCheck, FaCoffee } from "react-icons/fa";
+import { FaCheck } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
-import { LuHourglass } from "react-icons/lu";
 import logoSVG from "~/assets/cafeore.svg";
 import { cn } from "~/lib/utils";
 
@@ -260,30 +259,32 @@ function CashierMiniPreview() {
 
 function CallscreenPreview() {
   // 呼び出しがある間の画面（お呼び出し中・ドリップ中・準備中の 3 段）。呼び出しが無い間は CM を流す
+  const heading = (ja: string, en: string) => (
+    <div className="flex items-center gap-[0.4em]">
+      <span className="font-zen text-[0.8em] tracking-[0.2em]">{ja}</span>
+      <span className="font-zen text-[0.4em] text-theme-gold uppercase tracking-[0.3em]">
+        {en}
+      </span>
+      <div className="h-px flex-1 bg-linear-to-r from-theme-gold/60 to-transparent" />
+    </div>
+  );
   return (
-    <div className="flex h-full flex-col gap-[0.3em] p-[0.3em]">
-      <div className="flex h-[58%] flex-col gap-[0.3em] px-[0.3em]">
-        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
-          <HiBell />
-          お呼び出し中
-          <HiBell />
-        </div>
+    <div className="flex h-full flex-col gap-[0.4em] bg-[radial-gradient(120%_100%_at_18%_0%,var(--color-theme-primary),var(--color-theme-deep)_50%,color-mix(in_oklch,var(--color-theme-deep)_55%,black))] p-[0.6em] text-white">
+      <div className="flex h-[52%] flex-col gap-[0.3em]">
+        {heading("お呼び出し中", "Now Calling")}
         <div className="grid flex-1 grid-cols-3 gap-[0.4em]">
           {[38, 36, 35].map((n) => (
             <div
               key={n}
-              className="flex items-center justify-center rounded-md border font-extrabold text-[2.6em] text-theme-primary shadow-sm"
+              className="flex items-center justify-center rounded-md border border-theme-gold/50 bg-white/10 font-semibold font-zen text-[2.4em]"
             >
               {n}
             </div>
           ))}
         </div>
       </div>
-      <div className="flex flex-1 flex-col gap-[0.3em] px-[0.3em]">
-        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-theme-deep py-[0.25em] font-bold text-[0.8em] text-white">
-          <FaCoffee />
-          ドリップ中
-        </div>
+      <div className="flex flex-1 flex-col gap-[0.3em]">
+        {heading("ドリップ中", "Brewing")}
         <div className="grid flex-1 grid-cols-2 gap-[0.4em]">
           {[
             { n: 39, dripper: "1st" },
@@ -291,23 +292,24 @@ function CallscreenPreview() {
           ].map(({ n, dripper }) => (
             <div
               key={n}
-              className="flex flex-col items-center justify-center rounded-md border text-theme-primary shadow-sm"
+              className="flex flex-col items-center justify-center rounded-md border border-white/15 bg-white/[0.07]"
             >
-              <span className="font-extrabold text-[1.6em] leading-none">
+              <span className="font-semibold font-zen text-[1.5em] leading-none">
                 {n}
               </span>
-              <span className="text-[0.5em]">{dripper} ドリッパー</span>
+              <span className="text-[0.45em] text-theme-gold">
+                {dripper} ドリッパー
+              </span>
             </div>
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-[0.4em] bg-theme-deep px-[0.5em] py-[0.3em] text-white">
-        <LuHourglass />
-        <span className="font-bold text-[0.7em]">準備中</span>
+      <div className="flex items-center gap-[0.4em] rounded-md border border-white/10 bg-white/[0.03] px-[0.5em] py-[0.3em]">
+        <span className="font-zen text-[0.7em]">準備中</span>
         {[41, 42, 43].map((n) => (
           <span
             key={n}
-            className="rounded bg-white px-[0.4em] font-bold text-[0.7em] text-theme-primary"
+            className="rounded border border-white/15 px-[0.4em] font-zen text-[0.7em] text-white/80"
           >
             {n}
           </span>
