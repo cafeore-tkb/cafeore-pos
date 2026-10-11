@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // 在庫（残量の計算・通知・リマインド）の結合テスト（Postgres を使う）
@@ -32,25 +31,17 @@ func (a *testAPI) seedStockEvent(resource models.StockResource, kind models.Stoc
 }
 
 // 注文を直接 DB に入れる。API で作ると、応答のあとに在庫の通知の判定が走ってしまう。
-// 減る在庫は注文を受けたときと同じく、今の在庫の設定で決めて残す
+// 明細と減る在庫は、注文を受けたときと同じ loadOrderMenus で作る
 func (a *testAPI) seedOrder(menu models.Menu, createdAt time.Time, readyAt *time.Time) {
 	a.t.Helper()
 	order := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: createdAt, ReadyAt: readyAt, BillingAmount: menu.Price, Received: menu.Price}
-	line := models.OrderMenu{ID: uuid.New(), OrderID: order.ID, MenuID: menu.ID, MenuName: menu.Name, UnitPrice: menu.Price}
 	a.create(&order)
-	if err := a.db.Omit(clause.Associations).Create(&line).Error; err != nil {
+	lines, _, err := loadOrderMenus(a.db, order.ID, []models.MenuInfoCreate{menuLine(menu)}, &models.Order{})
+	if err != nil {
 		a.t.Fatal(err)
 	}
-	var full models.Menu
-	var resources []models.StockResource
-	if err := preloadMenu(a.db).First(&full, "id = ?", menu.ID).Error; err != nil {
+	if err := a.db.Omit("Menu").Create(&lines).Error; err != nil {
 		a.t.Fatal(err)
-	}
-	if err := a.db.Preload("ItemTypes").Find(&resources).Error; err != nil {
-		a.t.Fatal(err)
-	}
-	if usages := buildOrderStockUsages(order.ID, line.ID, full, resources); len(usages) > 0 {
-		a.create(&usages)
 	}
 }
 

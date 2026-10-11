@@ -310,3 +310,95 @@ func TestMigrateSplitsStockIntoItemsAndCups(t *testing.T) {
 		t.Error("kind bean を作れてしまう")
 	}
 }
+
+// 名前を変える前のドリッパーの担当者と交代の記録（#833 で入れた形）
+type caosLaneBeforeRename struct {
+	Day       string    `gorm:"type:date;primaryKey;autoIncrement:false"`
+	Dripper   int       `gorm:"type:smallint;primaryKey;autoIncrement:false;check:caos_lanes_dripper_check,dripper BETWEEN 1 AND 6"`
+	Name      string    `gorm:"not null"`
+	Senior    bool      `gorm:"not null;default:false"`
+	UpdatedAt time.Time `gorm:"not null"`
+}
+
+func (caosLaneBeforeRename) TableName() string { return "caos_lanes" }
+
+type caosLaneChangeBeforeRename struct {
+	ID        int64     `gorm:"primaryKey"`
+	ChangedAt time.Time `gorm:"not null"`
+	Day       string    `gorm:"type:date;not null;index"`
+	Dripper   int       `gorm:"type:smallint;not null;check:caos_lane_changes_dripper_check,dripper BETWEEN 1 AND 6"`
+	PrevName  string    `gorm:"not null"`
+	Name      string    `gorm:"not null"`
+	Senior    bool      `gorm:"not null;default:false"`
+}
+
+func (caosLaneChangeBeforeRename) TableName() string { return "caos_lane_changes" }
+
+// 前の名前の表は、行を残したまま今の名前に変わる。2 回目は何もせず、モデルともずれない
+func TestMigrateRenamesTables(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := db.AutoMigrate(&caosLaneBeforeRename{}, &caosLaneChangeBeforeRename{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Create(&caosLaneBeforeRename{Day: "2026-10-11", Dripper: 1, Name: "山田", Senior: true, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&caosLaneChangeBeforeRename{ChangedAt: now, Day: "2026-10-11", Dripper: 1, Name: "山田", Senior: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	var lanes, changes []string
+	if err := db.Raw("SELECT day::text || ' ' || dripper || ' ' || name || ' ' || senior FROM dripper_assignees").Scan(&lanes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw("SELECT id || ' ' || dripper || ' ' || prev_name || '>' || name FROM dripper_assignee_changes").Scan(&changes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(lanes, ",") + " / " + strings.Join(changes, ","); got != "2026-10-11 1 山田 true / 1 1 >山田" {
+		t.Errorf("rows after rename = %s", got)
+	}
+	// 連番は前の表の続きから
+	mustExec(t, db, "INSERT INTO dripper_assignee_changes (changed_at, day, dripper, prev_name, name) VALUES (now(), '2026-10-11', 1, '山田', '佐藤')")
+	var maxID int64
+	if err := db.Raw("SELECT max(id) FROM dripper_assignee_changes").Scan(&maxID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if maxID != 2 {
+		t.Errorf("next id = %d, want 2", maxID)
+	}
+
+	// 表・索引・制約・連番に前の名前が残らない
+	var left []string
+	if err := db.Raw(`
+		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relname LIKE '%caos%'
+		UNION ALL
+		SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+		WHERE n.nspname = 'public' AND conname LIKE '%caos%'`).Scan(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(left) > 0 {
+		t.Errorf("前の名前が残っている: %v", left)
+	}
+
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("名前を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}

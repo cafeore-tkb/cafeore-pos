@@ -42,11 +42,23 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
+		// AutoMigrate は表の名前を変えず新しい表を作ってしまうので、名前を変えた表は先に変えておく。
+		m := tx.Migrator()
+		for _, r := range tableRenames {
+			if !m.HasTable(r.from) || m.HasTable(r.to) {
+				continue
+			}
+			for _, sql := range r.sql {
+				if err := tx.Exec(sql).Error; err != nil {
+					return fmt.Errorf("failed to rename %s to %s: %w", r.from, r.to, err)
+				}
+			}
+		}
+
 		// AutoMigrate は足した列の全行に列の既定値を入れるだけなので、種類ごとに違う最初の値は
 		// 列を足した直後に入れる。列がもう DB にあれば走らない（あとで画面や API で変えた値を戻さない）。
 		// 表が無い（空の DB）ときは行も無いので要らない。
 		itemType := &models.ItemType{}
-		m := tx.Migrator()
 		var backfills []itemTypeBackfill
 		if m.HasTable(itemType) {
 			for _, b := range itemTypeBackfills {
@@ -135,6 +147,29 @@ func migrateItemStock(tx *gorm.DB) error {
 		return err
 	}
 	return tx.Exec(`DROP TABLE item_stock_usages`).Error
+}
+
+// 名前を変えた表。前の名前（from）の表があって今の名前（to）の表が無いときだけ sql を流す。
+// 表と一緒に、前の名前の入った主キー・CHECK・索引・連番の名前も、空の DB に AutoMigrate で作るときと同じ名前に変える
+// （CHECK と索引は名前で有無を見るので、変えないと AutoMigrate が同じものをもう 1 つ作る）。
+var tableRenames = []struct {
+	from, to string
+	sql      []string
+}{
+	// ドリッパーの担当者（2026-10）
+	{from: "caos_lanes", to: "dripper_assignees", sql: []string{
+		`ALTER TABLE caos_lanes RENAME TO dripper_assignees`,
+		`ALTER TABLE dripper_assignees RENAME CONSTRAINT caos_lanes_pkey TO dripper_assignees_pkey`,
+		`ALTER TABLE dripper_assignees RENAME CONSTRAINT caos_lanes_dripper_check TO dripper_assignees_dripper_check`,
+	}},
+	// ドリッパーの担当者の交代の記録（2026-10）
+	{from: "caos_lane_changes", to: "dripper_assignee_changes", sql: []string{
+		`ALTER TABLE caos_lane_changes RENAME TO dripper_assignee_changes`,
+		`ALTER TABLE dripper_assignee_changes RENAME CONSTRAINT caos_lane_changes_pkey TO dripper_assignee_changes_pkey`,
+		`ALTER TABLE dripper_assignee_changes RENAME CONSTRAINT caos_lane_changes_dripper_check TO dripper_assignee_changes_dripper_check`,
+		`ALTER INDEX idx_caos_lane_changes_day RENAME TO idx_dripper_assignee_changes_day`,
+		`ALTER SEQUENCE caos_lane_changes_id_seq RENAME TO dripper_assignee_changes_id_seq`,
+	}},
 }
 
 type itemTypeBackfill struct {
