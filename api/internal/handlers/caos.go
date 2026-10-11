@@ -643,9 +643,10 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 		brewing, queued := splitCaosLane(rows)
 		var cur, head *caosLaneCard
 		if auto {
+			// ロックしてから読んだ列（終わっていないカードだけ）。ほかの端末の「次へ」で先に終わっていれば何もしない
 			cur = &caosLaneCard{dripID: *seen}
 			for _, r := range rows {
-				if ptrEqual(r.DripID, seen) && r.BrewStartedAt != nil {
+				if ptrEqual(r.DripID, seen) && r.BrewStartedAt != nil && r.BrewFinishedAt == nil {
 					cur.cups = append(cur.cups, r)
 				}
 			}
