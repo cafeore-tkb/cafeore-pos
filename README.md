@@ -250,7 +250,8 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 - Worker は中継するときに、secret の `PROXY_TOKEN` を `X-Cafeore-Proxy-Token` ヘッダーに付ける。Cloud Run の手前の
   LB の Cloud Armor がそれを照らし合わせ、合わないものを Cloud Run に届く前に 403 にする（infra の `gcp/api_edge.tf`）。
   JWT は Bearer トークンなので、盗まれると Cloud Run を直接叩いて期限まで使い回せ、Access でセッションを
-  取り消しても効かない。トークンは Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  取り消しても効かない。トークンは GitHub と Worker の secret にしか無くブラウザに出ないので、それを塞げる。
+  `PROXY_TOKEN` は本番のデプロイのたびに、GitHub の secret の `LB_PROXY_TOKEN` から入れ直す（`pos-deploy-workers`）。
   JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
 - api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
   GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
@@ -318,7 +319,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
    1. infra で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
       LB のドメインは `pos-be-lb.cafeore.cafe`。Cloudflare の `cafeore` アカウントの `cafeore.cafe` に、A レコードを
       `terraform output api_lb_ip` に向けて作る（DNS only）。証明書が発行されるまで数十分かかる
-   2. Worker の secret に同じトークンを入れる（`cd services/pos && pnpm exec wrangler secret put PROXY_TOKEN`）
+   2. このリポジトリの Secrets の `LB_PROXY_TOKEN` に同じトークンを入れる。本番のデプロイで Worker の `PROXY_TOKEN` になる
    3. Variables の `WORKERS_API_ORIGIN` と `GCP_API_LB_URL` を `https://pos-be-lb.cafeore.cafe`（`terraform output api_lb_url`）にして、
       「pos / deploy (Workers)」を手動実行する。Square の Webhook を使っているなら通知先も LB の URL に登録し直す
    4. POS を一通り操作して動くこと（WebSocket も）を確かめてから、infra で `api_lb_only = true` にして apply する。
@@ -357,6 +358,9 @@ Neon のブランチで、本番のデータは入っていない。
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
 - 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
+  - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
+  - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る（手元での流し方は下の「backend のテスト」）
 
 列を足したとき、既存の行には列の既定値（`default:` タグ）が入る。行ごとに違う値が要るときは、
 `api/cmd/server/migrate.go` の商品の種類の項目（`itemTypeBackfills`。`makes_cup` は others だけ false など）のように、
@@ -365,6 +369,31 @@ Neon のブランチで、本番のデータは入っていない。
 
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
+
+### backend のテスト
+
+```bash
+cd api && go test ./...
+```
+
+本物の Postgres を使うテストの接続先は、どれも **`TEST_DATABASE_URL` の 1 つだけ**で渡す。
+無ければそのテストはスキップされる（CI では落とす）。手元では、たとえば `api/compose.yaml` の Postgres を立てて渡す。
+
+```bash
+docker compose -f api/compose.yaml up -d db
+```
+
+```bash
+cd api && TEST_DATABASE_URL='postgres://postgres:example@localhost:5432/postgres?sslmode=disable' go test ./...
+```
+
+- 渡した DB の既存の schema・データには触らない。テストごとに使い捨ての schema か database を作り、終わったら消す
+- **接続するロールには CREATEDB が要る**（起動時のマイグレーションのテストが使い捨ての database を作るため）。
+  `compose.yaml` や CI の `postgres` ユーザーは持っている
+- 拡張の `uuid-ossp` を渡した DB の public に入れる（無ければ作る）
+- 本物の DB を使うテストを足すときは **`api/internal/testdb` を使い、別の環境変数を作らない**。
+  ふつうは `testdb.New(t)`（使い捨ての schema にモデルからテーブルを作る）、public スキーマが前提のものは
+  `testdb.NewDatabase`（使い捨ての database）
 
 ### 注文・オーダーストップ・レジの状態の配信（LISTEN / NOTIFY）
 
@@ -532,6 +561,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
 | `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
@@ -541,8 +571,10 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。
 
-POS の Worker の `PROXY_TOKEN` は GitHub ではなく Worker の secret に置く（`wrangler secret put PROXY_TOKEN`）。
-secret はデプロイし直しても消えない。
+POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub の `LB_PROXY_TOKEN` から
+本番のデプロイのたびに `wrangler deploy --secrets-file` で入れ直す。Worker に置いておくだけだと、
+PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
+`LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
 GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /

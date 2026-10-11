@@ -22,5 +22,28 @@ type OrderCup struct {
 	ReadyAt  *time.Time
 	ServedAt *time.Time
 
+	// CaOS（ドリップ管制）が決めたこと。書くのは handlers/caos.go（PUT /api/caos/cups と「次へ」）だけ。
+	// 注文の応答（OrderResponse の cups）に載せるが、CaOS 以外の画面は読まない。
+	// 注文の編集では、ほかの列と同じく引き継いだカップは同じ値のまま入れ直す（新しい明細のカップは未割当）。
+	//
+	// カード（1 回のドリップ。最大 2 杯）は DripID が同じカップの組。状態は列の値で決まる：
+	//   - Dripper が nil：未割当（DripID があれば統合した未割当）
+	//   - Dripper あり・BrewStartedAt が nil：そのドリッパーの待機
+	//   - BrewStartedAt あり・BrewFinishedAt が nil：抽出中（1 つのドリッパーで同時に 1 枚）
+	//   - BrewFinishedAt あり：終わり
+	// どのカップも準備完了（ReadyAt あり）になったカード（マスターで準備完了にした）も終わりとみなす。
+	// 同じ DripID のカップは、Dripper・DripperPosition・BrewStartedAt・BrewFinishedAt も同じ値を持つ（PUT で確かめる）。
+
+	// ドリッパーの番号（1〜6。画面では 1st〜6th）。指名の番号と同じもの
+	Dripper *int `gorm:"type:smallint;check:order_cups_dripper_check,dripper BETWEEN 1 AND 6"`
+	// そのドリッパーの中の順番（小さいほど先）。サーバーが決める：最後に入れるときは終わっていないカップの最大＋1、
+	// 途中に入れるときは前に入るカードの番号にし、それより後ろ（番号がそれ以上）の終わっていないカップを +1 する。抜けた番号は詰めない
+	DripperPosition *int `gorm:"type:integer"`
+	// 同じカードで淹れるカップをまとめる印（統合したら同じ値）
+	DripID *uuid.UUID `gorm:"type:uuid;index"`
+	// 抽出を始めた時刻・終えた時刻
+	BrewStartedAt  *time.Time
+	BrewFinishedAt *time.Time
+
 	Item Item `gorm:"foreignKey:ItemID;references:ID"`
 }
