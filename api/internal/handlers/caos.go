@@ -23,7 +23,8 @@ import (
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     順番の数（dripper_position）と抽出の時刻は画面から受け取らない。画面は「どのカードの前に入れるか」（after の insert_before）だけを送り、
-//     番号はサーバーが決める（placeCaosCups）。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる
+//     番号はサーバーが決める（placeCaosCups）。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
+//     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。カップを置くドリッパーの advisory lock は
@@ -32,7 +33,7 @@ import (
 // ほかのインスタンスにも DB の通知で知らせる（publishOrder）。
 
 const (
-	// ドリッパーの数。番号は 1〜caosDrippers
+	// ドリッパーの数。番号は 1〜caosDrippers（1st〜6th）。注文の明細の指名の番号（order_menus.dripper）も同じ範囲
 	caosDrippers = 6
 	// 1 枚のカード（1 回のドリップ）で淹れる最大の杯数
 	caosMaxCups = 2
@@ -162,6 +163,23 @@ func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Ti
 		orders[id] = &order
 	}
 	return orders, nil
+}
+
+// checkCaosCardNomination は 1 枚のカードのカップの指名（明細のドリッパーの番号。無指名も 1 つの値）がそろっているかを確かめる。
+// 指名の違うカップを統合すると、どのドリッパーにも置けないカードになるので断る
+func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
+	var nominations int64
+	if err := tx.Raw(`
+		SELECT COUNT(DISTINCT COALESCE(m.dripper, 0))
+		FROM order_cups c
+		JOIN order_menus m ON m.id = c.order_menu_id
+		WHERE c.drip_id = ?`, dripID).Scan(&nominations).Error; err != nil {
+		return err
+	}
+	if nominations > 1 {
+		return ruleErrorf("指名の違うカップは同じカードにできません")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------- ドリッパーの列
@@ -400,6 +418,24 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		for id := range orders {
 			changed[id] = true
 		}
+		// 上級生のみのカップをほかのドリッパーへ置くなら、今日の担当者が上級生のドリッパー（caos_lanes.go）
+		seniorOnly := make(map[uuid.UUID]bool, len(found))
+		for _, c := range found {
+			seniorOnly[c.ID] = c.Item.ItemType.SeniorOnlyBrew()
+		}
+		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
+		if err != nil {
+			return err
+		}
+		// 明細の指名のドリッパーの番号（無指名は nil。自由記述 assignee だけの古い明細も指名なし）。注文の行をロックしてから読む
+		var lines []models.OrderMenu
+		if err := tx.Select("id", "dripper").Find(&lines, "order_id IN ?", lockIDs).Error; err != nil {
+			return err
+		}
+		nominated := make(map[uuid.UUID]*int, len(lines))
+		for _, line := range lines {
+			nominated[line.ID] = line.Dripper
+		}
 
 		for _, w := range writes {
 			for _, id := range w.CupIds {
@@ -418,6 +454,12 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				}
 				if (w.After.Dripper != nil || w.After.DripId != nil) && !item.ItemType.BrewRequired() {
 					return ruleErrorf("抽出の要らないカップ（%s）はドリッパーに置けません", item.Name)
+				}
+				if n := nominated[cup.OrderMenuID]; w.After.Dripper != nil && n != nil && *n != *w.After.Dripper {
+					return ruleErrorf("指名のあるカップは %d 番のドリッパーにしか置けません", *n)
+				}
+				if err := checkSeniorOnly(w, item, seniors); err != nil {
+					return err
 				}
 			}
 			// 抽出を始められるのは、空いている（このカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ
@@ -447,7 +489,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			}
 		}
 
-		// 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か
+		// 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か
 		for _, id := range sortedUnique(dripIDs, compareUUID) {
 			var cups []models.OrderCup
 			if err := tx.Where("drip_id = ?", id).Find(&cups).Error; err != nil {
@@ -461,6 +503,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 					return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
 				}
 			}
+			if err := checkCaosCardNomination(tx, id); err != nil {
+				return err
+			}
 		}
 		for id := range changed {
 			orderIDs = append(orderIDs, id)
@@ -468,6 +513,23 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		return nil
 	})
 	return orderIDs, err
+}
+
+// checkCaosDripper はドリッパーの番号が 1〜caosDrippers かを確かめる（400）。
+func checkCaosDripper(dripper int) error {
+	if dripper < 1 || dripper > caosDrippers {
+		return ruleErrorf("ドリッパーは 1〜%d です", caosDrippers)
+	}
+	return nil
+}
+
+// caosDripperParam はパスのドリッパーの番号を読む。違えば 400 を書いて false。
+func caosDripperParam(c *gin.Context) (int, bool) {
+	dripper, err := strconv.Atoi(c.Param("dripper"))
+	if err != nil {
+		dripper = 0
+	}
+	return dripper, !respondError(c, checkCaosDripper(dripper))
 }
 
 // PUT /api/caos/cups - CaOS が決めたこと（ドリッパー・順番・カード・抽出の開始）をカップに書く
@@ -576,9 +638,8 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) ([]uuid.UUID, error)
 
 // POST /api/caos/drippers/:dripper/next - 「次へ」。結果は書いた注文の配信で届くので、応答は 204（PUT と同じ）
 func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
-	dripper, err := strconv.Atoi(c.Param("dripper"))
-	if err != nil || dripper < 1 || dripper > caosDrippers {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ドリッパーは 1〜%d です", caosDrippers)})
+	dripper, ok := caosDripperParam(c)
+	if !ok {
 		return
 	}
 	var req models.CaosNextRequest
@@ -587,6 +648,7 @@ func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
 		return
 	}
 	var orderIDs []uuid.UUID
+	var err error
 	for range caosAttempts {
 		orderIDs, err = h.advance(dripper, req.DripId)
 		// ロックする前に読んだカップが変わっていた（注文の編集などと重なった）ときだけ読み直す

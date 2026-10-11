@@ -9,8 +9,7 @@ Run `pnpm i` to install dependencies.
 |--|--|
 |`pnpm i`| Install dependencies|
 |`pnpm pos` (`dev`\|`build`\|`preview`\|`typecheck`)| Run commands in `services/pos`|
-|~~`pnpm mobile`~~ （停止中）| `services/mobile` 用。再開するときは `package.json` の `//mobile` を `mobile` に戻す|
-|`pnpm common` (`typecheck`\|`test:`(`unit`\|`db`)) | Run commands in `modules/common`|
+|`pnpm common` (`typecheck`\|`test:unit`) | Run commands in `modules/common`|
 
 ## CI / CD
 
@@ -19,10 +18,9 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `mobile-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`mobile-ci` は停止中。`api-ci` は Docker イメージのビルドも見る。push はしない） |
+| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `mobile-deploy-workers` | `services/mobile` | 同上（**停止中**。手動実行のみ） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
@@ -63,11 +61,11 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 
 ### フロントエンド（Cloudflare Workers）
 
-POS と mobile はどちらも `ssr: false` の SPA。画面は `build/client` を静的アセットとして
-配信する（`services/*/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
+POS は `ssr: false` の SPA。画面は `build/client` を静的アセットとして
+配信する（`services/pos/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
 
-POS だけは Worker のスクリプトを持ち、`/api/*`・`/status`・`/health` を Cloud Run の API へ
+Worker のスクリプトで `/api/*`・`/status`・`/health` を Cloud Run の API へ
 中継する（`services/pos/worker/index.ts`。理由は [API の認証](#api-の認証cloudflare-access)）。
 中継先は本番のデプロイのときだけ `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
 PR のプレビューでは渡さないので、プレビューの URL の `/api` は 503 を返す
@@ -79,7 +77,6 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 
 PR ではプレビュー URL を**コメントで貼る**。2回目以降は新しいコメントを足さず、
 同じコメントを書き換える（本文に埋めた目印で自分のコメントを探している）。
-POS と mobile は目印が別なので、それぞれ1件ずつ独立して更新される。
 
 PR のビルドでは、**その PR のリビジョンの URL をビルド前に確定させて**
 `VITE_API_BASE_URL` に焼き込む。
@@ -111,9 +108,8 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 | Worker 名 | 対象 |
 |--|--|
 | `cafeore-pos` | `services/pos` |
-| `cafeore-mobile` | `services/mobile` |
 
-ローカルからは `pnpm pos deploy` / `pnpm mobile deploy` で同じことができる。
+ローカルからは `pnpm pos deploy` で同じことができる。
 POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
 渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
 
@@ -158,6 +154,29 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
 
+### プリンター（ラベル・レシート）
+
+レジのブラウザが Epson のプリンター（ePOS-Print）へ直接つなぐ（SDK は `services/pos/public/epos-2.27.0.js`）。
+サーバーはプリンターにつながず、IP アドレスを持っておくだけ。
+
+| プリンター | 刷るもの | 既定の IP アドレス |
+| --- | --- | --- |
+| ラベル用 | カップに貼るシール（注文を送ったとき。Square は決済画面が出たとき） | `192.168.77.2` |
+| レシート用 | レシート（会計のたび）と領収書（求められたときだけ） | `192.168.77.3` |
+
+- IP アドレスは管理画面 `/printer-settings`（トップの「マスタ設定」→「プリンター」）で設定する。**全レジで共通**で、
+  DB（`printer_settings` の 1 行）に持つ。一度も保存していなければ上の既定値を使う。
+- 開いているレジには、再読み込みしたとき（またはタブに戻って設定を取り直したとき）に反映される。値が変わったらつなぎ直す。
+- レジは最後に取れた設定をブラウザ（`localStorage` の `cafeore:printer-settings`）に覚えておく。API に届かないとき
+  （と、取れるまでの間）はそれ、無ければ既定値でつなぐ。API が落ちていてもラベルとレシートは刷れる。
+- レシートは現金なら送信したとき、Square なら注文を登録できたときに刷る。明細・割引・合計と、現金ならお預り・お釣り、
+  Square なら決済手段を載せる。
+- 領収書はレジの「過去の注文」の「領収書」を押したときだけ刷る。宛名は手書きの空欄、但し書きは「お品代として」、
+  金額は請求額（割引後）、日付は注文を受けた日。何度でも刷れ、再発行の印は付かない。
+- 文面は `services/pos/app/label/receipt.ts`（シールと同じく印刷データ `PrintJob` を作るだけ）。用紙の幅（58mm / 80mm）に
+  よらず収まるよう 32 桁（全角 16 文字）で組み、中央に寄せて刷る。プリンターの設定（紙を切るなど）は `infra/epos.ts` の
+  `RECEIPT_EPOS_PRINTER_CONFIG`。
+
 ### Square Terminal 連携
 
 レジの確定欄から Square Terminal に決済画面（カード・電子マネー・QR コード）を出す。
@@ -177,7 +196,8 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
   レジの右上に「未登録の Square 決済」として出る。同じ商品を入力して「この決済で登録」を押すと、二重に決済せずに注文を送れる。
   注文にしないなら、そこから返金もできる（下の返金を参照）。
 - 決済が終わっても端末にレシート受け取り画面（印刷・メール・SMS）は出さない（`skip_receipt_screen`）。
-  レシートを求められたら Square データ（管理画面）から出す。端末から出すなら Terminal API の
+  レシートは注文を登録できたときにレジがレシート用のプリンターで刷る（[プリンター](#プリンターラベルレシート)を参照）。
+  端末から出すなら Terminal API の
   [Issue receipts](https://developer.squareup.com/docs/terminal-api/advanced-features/issue-receipts) を使う（未実装）。
 - 返金は全額だけで、レジの「過去の注文」（Square で払った注文）と「未登録の Square 決済」の「返金」から行う。
   - Terminal API の返金はカナダの Interac 専用で日本では使えないので、Refunds API（`POST /v2/refunds`）で返す。
@@ -340,8 +360,6 @@ Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログ
   WebSocket で注文を直接読んでいる（infra の README「本番サービスの改名」）。Access のログインは POS の
   workers.dev に付くもので、別のサイト（github.io）からの通信には付けにくいので、そのままでは通せない。
   POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く。続けて使うならそちらに寄せる
-- `modules/common/src/scripts` の書き出し（`download-orders` など）。手元から Cloud Run を直接呼ぶ
-- mobile（停止中）。再開するなら POS と同じ構成が要る
 
 人ではない相手を通したいときは、Access のサービストークンを作り、その Client ID を `AUTH_STAFF_EMAILS`
 か `AUTH_VIEWER_EMAILS` に入れる（api はメールの代わりに JWT の `common_name` を見る）。呼ぶ側は Worker の
@@ -405,11 +423,12 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
 | `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
+| `caos_lanes_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `caos_lanes`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
-- ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。3 つのチャンネルは 1 本の接続でまとめて待ち受ける
+- ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。全部のチャンネルを 1 本の接続でまとめて待ち受ける
 - API を通さない書き換え（SQL で直接直すなど）は配られない。本番 DB は手で触らない
-- 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文・オーダーストップ・レジの状態を配り直す
+- 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文・オーダーストップ・レジの状態・CaOS の今日の担当者（今日に替えていれば）を配り直す
 - LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）や Neon の pooler では通知が届かない（エラーにもならない）。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
 - 待ち受けを始めたら自分宛てに確認の通知を送り、10 秒で届かなければ `WARNING: orders_changed の確認の通知が…` をログに出す。届けば `orders_changed: notifications are delivered`
 - 配り終わる前に同じ注文（またはオーダーストップ・レジの状態）の通知が重なれば 1 回の読み直しにまとめる。レジはキー入力のたびに状態を保存するので、ほかのインスタンスにはまとめた最新の状態だけが届くことがある
@@ -555,11 +574,11 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
-| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` / `mobile-deploy-workers` |
+| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
 | `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
@@ -567,7 +586,6 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
-| `VITE_SOHOSAI_VOTE_URL` | Variables | `mobile-deploy-workers` |
 
 `VITE_*` は静的ファイルに焼き込まれるので**ブラウザから読める**。未設定だと
 空文字が焼き込まれる。

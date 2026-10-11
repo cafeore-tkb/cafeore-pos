@@ -129,10 +129,11 @@ func menuDeletedMessage(menu *models.Menu) string {
 
 // 画面の名前。openapi.yaml の ColorScreen の x-enum-descriptions と同じにする（TestEnumLabelsMatchOpenAPI で確かめる）
 var colorScreenLabels = map[string]string{
-	string(models.ColorScreenCashier):      "レジ（ボタン）",
-	string(models.ColorScreenCashierOrder): "レジ（過去の注文）",
-	string(models.ColorScreenMaster):       "マスター",
-	string(models.ColorScreenServe):        "提供",
+	string(models.ColorScreenCashier):       "レジ（ボタン）",
+	string(models.ColorScreenCashierOrder):  "レジ（過去の注文）",
+	string(models.ColorScreenMaster):        "マスター",
+	string(models.ColorScreenServe):         "提供",
+	string(models.ColorScreenCaosNominated): "CaOS（指名）",
 }
 
 // 画面の名前。知らない画面はそのままの値で出す

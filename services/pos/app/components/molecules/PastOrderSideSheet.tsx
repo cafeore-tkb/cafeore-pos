@@ -5,6 +5,7 @@ import {
   squareRepository,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { usePendingStatus } from "~/lib/usePendingStatus";
 import { Button } from "../ui/button";
 import {
@@ -26,6 +27,7 @@ type CardOptions = {
   gray?: boolean; // カップを灰色にする。灰色でなければ過去の注文のカードの色の設定（cashier_order）で色を付ける
   cancellable?: boolean; // 提供取消のボタンを出す
   squareRefundable?: boolean; // Square で払った注文に返金のボタンを出す（返金すると注文は消える）
+  onPrintFormalReceipt?: (order: OrderEntity) => boolean; // 渡せば領収書のボタンを出す。プリンターに送れたら true
 };
 
 type props = CardOptions & {
@@ -109,6 +111,7 @@ const PastOrderCard = ({
   gray,
   cancellable,
   squareRefundable,
+  onPrintFormalReceipt,
 }: CardOptions & { order: WithId<OrderEntity> }) => {
   // 提供取消も、応答待ちの間は押せなくし、失敗したらトーストを出す
   const pending = usePendingStatus<boolean>(order);
@@ -117,6 +120,16 @@ const PastOrderCard = ({
     pending.run("served", false, () =>
       orderRepository.serve(order.id).then(() => undefined),
     );
+  };
+  const printFormalReceipt = () => {
+    if (!onPrintFormalReceipt) return;
+    if (onPrintFormalReceipt(order)) {
+      toast(`No.${order.orderId} の領収書を印刷しました`);
+    } else {
+      toast.error(
+        "レシート用のプリンターにつながっていないため、領収書を印刷できません",
+      );
+    }
   };
   return (
     <OrderInfoCard
@@ -143,6 +156,17 @@ const PastOrderCard = ({
             className="h-10 bg-gray-700 text-sm hover:bg-gray-600"
           >
             提供取消
+          </Button>
+        </div>
+      )}
+      {onPrintFormalReceipt && (
+        <div className="mt-2 flex justify-end">
+          <Button
+            variant="outline"
+            onClick={printFormalReceipt}
+            className="h-10 text-sm"
+          >
+            領収書
           </Button>
         </div>
       )}

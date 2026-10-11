@@ -18,7 +18,7 @@ export const commentSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  id: z.string().optional(), // Firestore のドキュメント ID
+  id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
   createdAt: z.date(),
   readyAt: z.date().nullable(),
@@ -282,6 +282,7 @@ export class OrderEntity implements Order {
           abbr: item.abbr,
           item_type: item.item_type,
           assignee: menu.assignee,
+          dripper: menu.dripper,
         })),
       ),
     );
@@ -314,12 +315,21 @@ export class OrderEntity implements Order {
       name: cup.item.name,
       abbr: cup.item.abbr,
       item_type: cup.item.item_type,
-      assignee:
-        this.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)
-          ?.assignee ?? null,
+      ...this.cupAssignment(cup.orderMenuId),
       cupId: cup.id,
       status: getCupStatus(cup),
     }));
+  }
+
+  /**
+   * カップを含む注文明細の指名
+   */
+  private cupAssignment(orderMenuId: string) {
+    const menu = this.menus.find((menu) => menu.orderMenuId === orderMenuId);
+    return {
+      assignee: menu?.assignee ?? null,
+      dripper: menu?.dripper ?? null,
+    };
   }
 
   /**

@@ -1,7 +1,7 @@
+import { dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
 import { clockLabel } from "../logic/format";
-import { laneOrdinal } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 
 // 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号・「次へ」・空きスロット・次に空く）
@@ -30,7 +30,7 @@ export const PanelHeader: React.FC<{
 /** 列の番号（1st〜6th）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
   <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
-    {laneOrdinal(bayId)}
+    {dripperLabel(bayId)}
   </span>
 );
 
@@ -56,7 +56,7 @@ export const NextButton: React.FC<{
     type="button"
     disabled={!active}
     onClick={() => onAdvance(bayId)}
-    title={`${laneOrdinal(bayId)}の現在の抽出を確定して次へ`}
+    title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
     className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${nextTone(active, soon)} ${className}`}
   >
     {active && remainingSec !== undefined && (
