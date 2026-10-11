@@ -1,22 +1,22 @@
 import type {
+  CaosCard,
   InventoryStatus,
   StockResource,
   StockUsage,
 } from "@cafeore/common";
-import { type Board, mapCards } from "./board";
 
 // カードの豆。POS の在庫の設定（/inventory/settings）の「商品ごとの使用量」で、商品が使う豆の在庫対象を引く。
 // 名前で豆を決めない。豆の名前は在庫対象の名前をそのまま出す。
 
 /** 商品 ID → その商品が使う豆（在庫対象のうち kind が bean のもの） */
-type BeanIndex = Map<string, StockResource[]>;
+export type BeanIndex = ReadonlyMap<string, StockResource[]>;
 
 /** beanStatuses は在庫のうち豆（kind が bean）だけ */
 export const buildBeanIndex = (
   beanStatuses: readonly InventoryStatus[],
   usages: readonly StockUsage[],
 ): BeanIndex => {
-  const index: BeanIndex = new Map();
+  const index = new Map<string, StockResource[]>();
   // 並びは在庫の画面と同じ（API の在庫対象の順）
   for (const { resource } of beanStatuses) {
     for (const usage of usages) {
@@ -27,24 +27,20 @@ export const buildBeanIndex = (
   return index;
 };
 
-// 盤面のカードに豆を付ける。在庫の設定はあとから読み込まれたり変わったりするので、カードには持たず、出すたびに付ける
-// （logic/posOrders.ts の paintBoard と同じ）。設定が無い商品と、商品の無いカード（実データテスト）はそのまま。
-export const attachBeans = (board: Board, index: BeanIndex): Board =>
-  mapCards(board, (card) => {
-    const beans = card.item?.id && index.get(card.item.id);
-    return beans ? { ...card, beans } : card;
-  });
+/** カードの豆。カードのカップは同じ商品なので、先頭のカップの商品で引く。設定が無い商品は undefined */
+export const cardBeans = (card: CaosCard, index: BeanIndex) =>
+  index.get(card.cups[0].item.id);
 
 /** 豆（在庫対象の ID）ごとの、盤面で待っている（未割当・待機・抽出中の）杯数。待っていない豆は入らない */
-export const waitingCupsByBean = (board: Board): Map<string, number> => {
+export const waitingCupsByBean = (
+  cards: readonly CaosCard[],
+  index: BeanIndex,
+): Map<string, number> => {
   const cups = new Map<string, number>();
-  const waiting = [
-    ...board.unassigned,
-    ...board.baristas.flatMap((barista) => barista.queue),
-  ];
-  for (const card of waiting) {
-    for (const bean of card.beans ?? []) {
-      cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cupCount);
+  for (const card of cards) {
+    if (card.status === "done") continue;
+    for (const bean of cardBeans(card, index) ?? []) {
+      cups.set(bean.id, (cups.get(bean.id) ?? 0) + card.cups.length);
     }
   }
   return cups;

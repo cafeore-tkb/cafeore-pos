@@ -41,6 +41,7 @@ export const orderRepoFactory = (): OrderRepository => {
           options?.method ? options : undefined,
         ),
         idempotency_key: options?.idempotencyKey,
+        created_at: options?.createdAt?.toISOString(),
       },
     });
 

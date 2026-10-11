@@ -63,6 +63,18 @@ export interface paths {
     /** 背景色設定削除 */
     delete: operations["deleteColorSetting"];
   };
+  "/api/printer-settings": {
+    /**
+     * プリンター設定取得
+     * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+     */
+    get: operations["getPrinterSettings"];
+    /**
+     * プリンター設定の更新
+     * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+     */
+    put: operations["updatePrinterSettings"];
+  };
   "/api/orders": {
     /** オーダー一覧取得 */
     get: operations["getOrders"];
@@ -536,6 +548,11 @@ export interface components {
        * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
        */
       idempotency_key?: string;
+      /**
+       * Format: date-time
+       * @description レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
+       */
+      created_at?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -621,6 +638,30 @@ export interface components {
       screen: components["schemas"]["ColorScreen"];
       /** @example #bfdbfe */
       color: string;
+    };
+    PrinterSettingsResponse: {
+      /**
+       * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+       * @example 192.168.77.2
+       */
+      label_printer_ip: string;
+      /**
+       * @description レシート・領収書用のプリンターの IPv4 アドレス
+       * @example 192.168.77.3
+       */
+      receipt_printer_ip: string;
+    };
+    PrinterSettingsUpdateRequest: {
+      /**
+       * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+       * @example 192.168.77.2
+       */
+      label_printer_ip: string;
+      /**
+       * @description レシート・領収書用のプリンターの IPv4 アドレス
+       * @example 192.168.77.3
+       */
+      receipt_printer_ip: string;
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1242,6 +1283,45 @@ export interface operations {
       };
       /** @description 背景色設定が見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * プリンター設定取得
+   * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+   */
+  getPrinterSettings: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrinterSettingsResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * プリンター設定の更新
+   * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+   */
+  updatePrinterSettings: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrinterSettingsUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrinterSettingsResponse"];
+        };
+      };
+      /** @description リクエストが不正 */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
