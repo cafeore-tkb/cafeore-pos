@@ -29,7 +29,14 @@ export const useRawPrinter = () => {
     const ePosDev = new window.epson.ePOSDevice();
     ePosDeviceRef.current = ePosDev;
 
-    ePosDev.connect("192.168.77.2", 8008, (data) => {
+    // Windows PC ごとの設定。?printer=relay / ?printer=direct で切り替える。
+    const mode = new URLSearchParams(window.location.search).get("printer");
+    if (mode === "relay" || mode === "direct") {
+      window.localStorage.setItem("cafeore.printerMode", mode);
+    }
+    const relay =
+      window.localStorage.getItem("cafeore.printerMode") === "relay";
+    const onConnect = (data) => {
       if (data === "OK" || data === "SSL_CONNECT_OK") {
         ePosDev.createDevice(
           "local_printer",
@@ -49,7 +56,16 @@ export const useRawPrinter = () => {
         setStatus("disconnected");
         console.log(data);
       }
-    });
+    };
+    if (relay) {
+      // ePOS-Print HTTP API を使い、Socket.IO 接続を行わない。
+      // SDK は 8008 以外のポート指定で HTTPS を選ぶ。
+      ePosDev.connect("127.0.0.1:18443", 18443, onConnect, {
+        eposprint: true,
+      });
+    } else {
+      ePosDev.connect("192.168.77.2", 8008, onConnect);
+    }
   };
 
   /**
