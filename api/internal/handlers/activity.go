@@ -169,7 +169,7 @@ var stockKindLabels = map[string]string{
 
 // 作れるのはカップだけ（アイテムの在庫はアイテムと一緒にでき、アイテムの追加として通知する）。itemTypes は使う種類の名前
 func stockResourceCreatedMessage(r *models.StockResource, itemTypes string) string {
-	return tagged(fmt.Sprintf("🆕 在庫対象を追加: %s（%s / 1杯 %s%s / 使うタイプ %s）", r.DisplayName(), stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit, itemTypes), tagAdd)
+	return tagged(fmt.Sprintf("🆕 在庫対象を追加: %s（%s / 1回 %s%s / 使うタイプ %s）", r.DisplayName(), stockKindLabels[r.Kind], formatNumber(r.PerServing), r.Unit, itemTypes), tagAdd)
 }
 
 // typesBefore・typesAfter は使う種類の名前。比べないときは両方空
@@ -177,7 +177,7 @@ func stockResourceUpdatedMessage(before, after *models.StockResource, typesBefor
 	return updatedMessage("在庫対象", after.DisplayName(), describeChanges(
 		change{"名前", before.DisplayName(), after.DisplayName()},
 		change{"単位", before.Unit, after.Unit},
-		change{"1杯あたり", formatNumber(before.PerServing), formatNumber(after.PerServing)},
+		change{"1回あたり", formatNumber(before.PerServing), formatNumber(after.PerServing)},
 		change{"通知開始", strconv.Itoa(before.NotifyFrom), strconv.Itoa(after.NotifyFrom)},
 		change{"間隔", strconv.Itoa(before.NotifyStep), strconv.Itoa(after.NotifyStep)},
 		change{"バッファ", strconv.Itoa(before.Buffer), strconv.Itoa(after.Buffer)},

@@ -49,12 +49,12 @@ func TestStockResourceMessages(t *testing.T) {
 	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15}
 	after := kenya
 	after.PerServing = 16
-	if got := stockResourceUpdatedMessage(&kenya, &after, "", ""); got != "✏️ 在庫対象を変更: ケニア（1杯あたり 15 → 16） :e-change:" {
+	if got := stockResourceUpdatedMessage(&kenya, &after, "", ""); got != "✏️ 在庫対象を変更: ケニア（1回あたり 15 → 16） :e-change:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 
 	cup := models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}
-	if got := stockResourceCreatedMessage(&cup, "ブレンド・グルメ"); got != "🆕 在庫対象を追加: ホットカップ（カップ / 1杯 1個 / 使うタイプ ブレンド・グルメ） :e-add:" {
+	if got := stockResourceCreatedMessage(&cup, "ブレンド・グルメ"); got != "🆕 在庫対象を追加: ホットカップ（カップ / 1回 1個 / 使うタイプ ブレンド・グルメ） :e-add:" {
 		t.Fatalf("unexpected: %q", got)
 	}
 	if got := stockResourceUpdatedMessage(&cup, &cup, "ブレンド・グルメ", "ブレンド・グルメ・限定"); got != "✏️ 在庫対象を変更: ホットカップ（使うタイプ ブレンド・グルメ → ブレンド・グルメ・限定） :e-change:" {
