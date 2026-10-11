@@ -248,20 +248,16 @@ func createOrderOnce(hasKey bool, findExisting func() (*models.Order, error), cr
 	return nil, createErr
 }
 
-// 注文の時刻として受け付ける古さの上限。オフラインで溜めた注文を、その日のうちに送る分には足りる
-const maxOrderCreatedAtAge = 12 * time.Hour
-
 // orderCreatedAt は、作る注文の時刻を決める。レジが確定した時刻（created_at）があればそれを使う
 // （オフラインで溜めた注文を、つながってから送るとき）。無ければサーバーの今。
-// 端末の時計が進んでいても未来の注文にならないよう、今より後は今にする。古すぎる時刻は間違いとして断る
-func orderCreatedAt(requested *time.Time, now time.Time) (time.Time, error) {
+// 端末の時計が進んでいても未来の注文にならないよう、今より後は今にする。
+// 古い時刻も断らない。断るとレジに残った注文がいつまでも送れず、サーバーの今にすると前の日の注文が
+// 今日の作るべき注文としてマスターや CaOS に出てしまうので、確定した時刻のまま残す
+func orderCreatedAt(requested *time.Time, now time.Time) time.Time {
 	if requested == nil || requested.After(now) {
-		return now, nil
+		return now
 	}
-	if now.Sub(*requested) > maxOrderCreatedAtAge {
-		return time.Time{}, fmt.Errorf("created_at is more than %v before now", maxOrderCreatedAtAge)
-	}
-	return *requested, nil
+	return *requested
 }
 
 // 冪等キーは作る注文の ID にそのまま使い、主キーで二重登録を防ぐ。
@@ -288,11 +284,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	createdAt, err := orderCreatedAt(req.CreatedAt, time.Now())
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+	createdAt := orderCreatedAt(req.CreatedAt, time.Now())
 
 	// API型 → DB型に変換
 	order := models.Order{
@@ -323,9 +315,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		comments := make([]models.Comment, len(*req.Comments))
 		for i, commentReq := range *req.Comments {
 			comments[i] = models.Comment{
-				Author:    commentReq.Author,
-				Text:      commentReq.Text,
-				CreatedAt: createdAt,
+				Author: commentReq.Author,
+				Text:   commentReq.Text,
+				// コメントの主キーは (order_id, created_at) なので、同じ注文のコメントは 1 マイクロ秒ずつずらす
+				// （Postgres の時刻はマイクロ秒まで）
+				CreatedAt: createdAt.Add(time.Duration(i) * time.Microsecond),
 			}
 		}
 		order.Comments = comments

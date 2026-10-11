@@ -399,7 +399,7 @@ type OrderCreateRequest struct {
 	BillingAmount int                     `json:"billing_amount"`
 	Comments      *[]CommentCreateRequest `json:"comments,omitempty"`
 
-	// CreatedAt レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。12 時間より前の時刻は 400
+	// CreatedAt レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
 	CreatedAt         *time.Time `json:"created_at,omitempty"`
 	DiscountOrderCups *int       `json:"discount_order_cups,omitempty"`
 	DiscountOrderId   *int       `json:"discount_order_id"`
