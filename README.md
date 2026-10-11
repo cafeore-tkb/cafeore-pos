@@ -113,7 +113,7 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 ### backend（Artifact Registry → Cloud Run）
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
-main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-git` を
+main への push と手動実行では、続けて Cloud Run サービス `cafeore-pos-prod` を
 そのイメージで更新する。**PR では本番に触らず、プレビュー用の別サービス**
 （既定 `cafeore-pos-preview`）へデプロイし、その URL を PR にコメントする。
 
@@ -131,15 +131,76 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（`DATABASE_URL` がセッションプーラーなので不要）。トランザクションプーラー（ポート 6543）に変えたら、直接接続かセッションプーラーの接続文字列 |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
 | `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
 | `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
+| `SQUARE_ACCESS_TOKEN` | 任意（Sandbox のトークン） | 未設定 | Square のアクセストークン（Secret Manager に置く） |
+| `SQUARE_ENVIRONMENT` | `sandbox` | 未設定 | `production` |
+| `SQUARE_LOCATION_ID` | 任意 | 未設定 | 任意（端末をペアリングする店舗。空ならアカウントの既定の店舗） |
+| `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
+| `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
+
+### Square Terminal 連携
+
+レジの確定欄から Square Terminal に決済画面（カード・電子マネー・QR コード）を出す。
+**決済が先・注文が後**の順で、端末で支払いが終わってから注文を登録し、ラベルを印刷する。
+`SQUARE_ACCESS_TOKEN` が無ければ無効で、レジに Square のボタンは出ない。
+
+- アクセストークンはサーバーだけが持つ。ブラウザから Square の API は呼ばない。
+- 端末は何台でも登録でき、DB（`square_devices`）に持つ。追加・取り込み・外すのは管理画面 `/square-devices` で行う。
+- どの端末に決済画面を出すかは**レジごとに固定**する。レジの画面右上で選んだ端末の device_id をブラウザ
+  （`localStorage` の `cafeore:square-device-id`）に覚える。端末が 1 台しか無く、まだ選んでいなければその端末を使う。
+  選んでいた端末が一覧から外されたら、残りが 1 台でも勝手には使わず、選び直すまで Square のボタンを出さない。
+- 進行中の決済は端末ごとに 1 件まで。別の端末で決済中でも、別のレジからは決済画面を出せる。
+- 結果はレジが `GET /api/square/checkouts/{id}` を数秒おきに呼んで待つ（未確定ならサーバーが Square に問い合わせる）。
+  Webhook（`POST /api/square/webhook`、イベントは `terminal.checkout.created` と `terminal.checkout.updated`）は
+  レジが落ちていても記録を最新にしておくためのもの。署名（`x-square-hmacsha256-signature`）が合わなければ 403。
+- 支払い済みなのに注文が無い決済（決済中にレジが落ちた、注文の送信に失敗した、Square で払った注文を消した）は
+  レジの右上に「未登録の Square 決済」として出る。同じ商品を入力して「この決済で登録」を押すと、二重に決済せずに注文を送れる。
+- 決済が終わっても端末にレシート受け取り画面（印刷・メール・SMS）は出さない（`skip_receipt_screen`）。
+  レシートを求められたら Square データ（管理画面）から出す。端末から出すなら Terminal API の
+  [Issue receipts](https://developer.squareup.com/docs/terminal-api/advanced-features/issue-receipts) を使う（未実装）。
+- 返金は Terminal API ではできない（日本）。Square の管理画面から行う。交通系 IC は返金できない。
+- 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
+
+端末のペアリング（端末ごとに 1 回）:
+
+1. 管理画面 `/square-devices`（トップの「マスタ設定」→「Square 端末」）で名前を入れて「コードを発行」を押す
+2. 端末のサインイン画面で「デバイスコードでサインイン」を選び、一覧に出たコードを入力する
+3. 一覧で「ペアリング済み」になったら、使うレジの画面右上でその端末を選ぶ
+
+ダッシュボードで発行したコードではペアリングできない（API で発行したコードが要る）。
+以前の `go run ./cmd/square-pair` でペアリングした端末や、一覧から外した端末は「ペアリング済みの端末を取り込む」で戻せる
+（Square でペアリング済みのコードを一覧で取り、まだ登録していない端末を足す）。
+一覧から外しても端末は Square にサインインしたまま（API ではペアリングを解除できない）なので、使わないなら端末でサインアウトする。
+
+Sandbox では実機とペアリングできないので、管理画面の「device_id を直接登録する」で
+Square が用意しているテスト用の device_id を登録する（[一覧](https://developer.squareup.com/docs/devtools/sandbox/testing#terminal-api-checkouts)）。
+
+| 再現する状況 | device_id |
+| --- | --- |
+| カード決済が成功 | `9fa747a2-25ff-48ee-b078-04381f7c828f` |
+| 電子マネー（FeliCa）が成功 | `19a01fbd-3dcd-4d9f-a499-a641684af745` |
+| QR コード（PayPay）が成功（Sandbox の店舗が日本所在のとき） | `cae0ee02-f83b-11ec-b939-0242ac120002` |
+| お客さんが取り消す | `841100b9-ee60-4537-9bcf-e30b2ba5e215` |
+| 時間切れ | `0a956d49-619a-4530-8e5e-8eac603ffc5e` |
+
+本番の端末では最後に少額（1 円から）で確かめる。
+
+DB と偽の Square サーバーで通しで確かめるテストもある（CI では DB が無いのでスキップされる）:
+
+```sh
+cd api
+SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?sslmode=disable" \
+  go test ./internal/handlers -run Integration -v
+```
 
 **`FRONTEND_ORIGINS` から漏れた origin はブラウザから API を叩けない。**
 フロントのデプロイ先を増やしたら infra 側にも足すこと。
@@ -156,6 +217,25 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 
 `AutoMigrate` は足すのが基本で、**列の削除や名前の変更はしない**。モデルから消した列は DB に残る。
 それが必要になったら、その変更だけ別途やり方を相談すること。
+
+### 注文・オーダーストップ・レジの状態の配信（LISTEN / NOTIFY）
+
+Cloud Run のインスタンスは、それぞれ自分につないでいる画面にしか WebSocket で配れない。ほかのインスタンスで変わった注文・オーダーストップ・レジの状態も届くよう、DB の通知（`LISTEN` / `NOTIFY`）でインスタンス同士が知らせ合う（`internal/handlers/order_listener.go`）。
+
+| チャンネル | 何が変わったか | 通知の中身 |
+| --- | --- | --- |
+| `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
+| `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
+| `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
+
+- 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
+- ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。3 つのチャンネルは 1 本の接続でまとめて待ち受ける
+- API を通さない書き換え（SQL で直接直すなど）は配られない。本番 DB は手で触らない
+- 待ち受けを始めたとき（つなぎ直したときを含む）は、取りこぼしに備えて全注文・オーダーストップ・レジの状態を配り直す
+- LISTEN は接続を保ったまま待つので、Supabase のトランザクションプーラー（ポート 6543）や Neon の pooler では通知が届かない（エラーにもならない）。`DATABASE_URL` がそれなら、`DATABASE_LISTEN_URL` に直接接続かセッションプーラーの接続文字列を入れる
+- 待ち受けを始めたら自分宛てに確認の通知を送り、10 秒で届かなければ `WARNING: orders_changed の確認の通知が…` をログに出す。届けば `orders_changed: notifications are delivered`
+- 配り終わる前に同じ注文（またはオーダーストップ・レジの状態）の通知が重なれば 1 回の読み直しにまとめる。レジはキー入力のたびに状態を保存するので、ほかのインスタンスにはまとめた最新の状態だけが届くことがある
+- 本番の Cloud Run は CPU をリクエストの処理中だけ割り当てる（`infra` の `cpu_idle = true`。`--no-cpu-throttling` にはしていない）。画面が WebSocket でつないでいる間はリクエストの処理中なので、そのインスタンスは通知を受けて配れる。画面がつないでいないインスタンスは待ち受けが止まったり接続が切れたりしうるが、配る相手がいないので困らない。画面がつなぐと全注文・オーダーストップ・レジの状態を受け取り、待ち受けも 30 秒通知が無ければ接続を確かめ、切れていれば張り直して全部を配り直す。常時割り当てに変えるなら、この前提ごと見直すこと
 
 ### PR ごとの Neon ブランチ
 

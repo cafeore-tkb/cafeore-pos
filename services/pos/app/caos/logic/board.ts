@@ -30,6 +30,19 @@ export interface Board {
 
 export type BoardChange = Board | null;
 
+/** 盤面のカード（未割当・ドリッパーの待ちと終わり）すべてに fn をかける。並びと置き場所は変えない */
+export const mapCards = (
+  board: Board,
+  fn: <T extends DripCard>(card: T) => T,
+): Board => ({
+  unassigned: board.unassigned.map(fn),
+  baristas: board.baristas.map((barista) => ({
+    ...barista,
+    queue: barista.queue.map(fn),
+    pastTickets: barista.pastTickets.map(fn),
+  })),
+});
+
 export const emptyBoard = (): Board => ({
   baristas: makeLaneBaristas(),
   unassigned: [],

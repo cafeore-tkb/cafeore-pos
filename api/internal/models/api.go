@@ -31,6 +31,34 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for PaymentMethod.
+const (
+	Cash   PaymentMethod = "cash"
+	Square PaymentMethod = "square"
+)
+
+// Defines values for SquareCheckoutOutcome.
+const (
+	Attention SquareCheckoutOutcome = "attention"
+	Failed    SquareCheckoutOutcome = "failed"
+	Paid      SquareCheckoutOutcome = "paid"
+	Pending   SquareCheckoutOutcome = "pending"
+)
+
+// Defines values for SquareDeviceStatus.
+const (
+	EXPIRED  SquareDeviceStatus = "EXPIRED"
+	PAIRED   SquareDeviceStatus = "PAIRED"
+	UNPAIRED SquareDeviceStatus = "UNPAIRED"
+)
+
+// Defines values for SquarePaymentType.
+const (
+	CARDPRESENT SquarePaymentType = "CARD_PRESENT"
+	FELICAALL   SquarePaymentType = "FELICA_ALL"
+	QRCODE      SquarePaymentType = "QR_CODE"
+)
+
 // Defines values for StockEventKind.
 const (
 	StockEventKindAdjust  StockEventKind = "adjust"
@@ -284,7 +312,13 @@ type OrderCreateRequest struct {
 	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
 	MenuIds        []MenuInfoCreate    `json:"menu_ids"`
 	OrderId        int                 `json:"order_id"`
-	Received       int                 `json:"received"`
+
+	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
+	Received      int            `json:"received"`
+
+	// SquareCheckoutId payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
+	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
 }
 
 // OrderCupResponse defines model for OrderCupResponse.
@@ -315,9 +349,12 @@ type OrderResponse struct {
 	Id                openapi_types.UUID `json:"id"`
 	Menus             []MenuInfo         `json:"menus"`
 	OrderId           int                `json:"order_id"`
-	ReadyAt           *time.Time         `json:"ready_at"`
-	Received          int                `json:"received"`
-	ServedAt          *time.Time         `json:"served_at"`
+
+	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	PaymentMethod PaymentMethod `json:"payment_method"`
+	ReadyAt       *time.Time    `json:"ready_at"`
+	Received      int           `json:"received"`
+	ServedAt      *time.Time    `json:"served_at"`
 }
 
 // OrderUpdateRequest defines model for OrderUpdateRequest.
@@ -331,6 +368,129 @@ type OrderUpdateRequest struct {
 	ReadyAt           *time.Time         `json:"ready_at"`
 	Received          int                `json:"received"`
 	ServedAt          *time.Time         `json:"served_at"`
+}
+
+// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+type PaymentMethod string
+
+// SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
+type SquareCheckoutConflictResponse struct {
+	Checkout SquareCheckoutResponse `json:"checkout"`
+	Error    string                 `json:"error"`
+}
+
+// SquareCheckoutCreateRequest defines model for SquareCheckoutCreateRequest.
+type SquareCheckoutCreateRequest struct {
+	// Amount 請求額（円）
+	Amount int `json:"amount"`
+
+	// DeviceId 決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id
+	DeviceId string `json:"device_id"`
+
+	// IdempotencyKey レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする
+	IdempotencyKey string `json:"idempotency_key"`
+
+	// OrderNumber 依頼時点の注文番号（端末のメモと照合の表示に使う）
+	OrderNumber *int `json:"order_number"`
+
+	// PaymentType Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
+	PaymentType SquarePaymentType `json:"payment_type"`
+}
+
+// SquareCheckoutOutcome レジが次に何をすべきかをサーバーが判定したもの。
+//   - pending: まだ決まっていない。待つ
+//   - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい
+//   - failed: 取り消された・失敗した。お金は受け取っていない
+//   - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある
+type SquareCheckoutOutcome string
+
+// SquareCheckoutResponse defines model for SquareCheckoutResponse.
+type SquareCheckoutResponse struct {
+	Amount       int     `json:"amount"`
+	CancelReason *string `json:"cancel_reason"`
+
+	// CheckoutId Square の TerminalCheckout の id
+	CheckoutId *string   `json:"checkout_id"`
+	CreatedAt  time.Time `json:"created_at"`
+
+	// DeviceId 決済画面を出した端末
+	DeviceId     string             `json:"device_id"`
+	ErrorMessage *string            `json:"error_message"`
+	Id           openapi_types.UUID `json:"id"`
+
+	// OrderId この決済で作った注文。まだ無ければ null
+	OrderId     *openapi_types.UUID `json:"order_id"`
+	OrderNumber *int                `json:"order_number"`
+
+	// Outcome レジが次に何をすべきかをサーバーが判定したもの。
+	//   - pending: まだ決まっていない。待つ
+	//   - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい
+	//   - failed: 取り消された・失敗した。お金は受け取っていない
+	//   - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある
+	Outcome SquareCheckoutOutcome `json:"outcome"`
+
+	// PaidAmount 完了後に Payments API で確かめた受取額（円）
+	PaidAmount  *int     `json:"paid_amount"`
+	PaymentIds  []string `json:"payment_ids"`
+	PaymentType string   `json:"payment_type"`
+
+	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+	Status    string    `json:"status"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SquareDeviceCreateRequest defines model for SquareDeviceCreateRequest.
+type SquareDeviceCreateRequest struct {
+	DeviceId string `json:"device_id"`
+	Name     string `json:"name"`
+}
+
+// SquareDevicePairRequest defines model for SquareDevicePairRequest.
+type SquareDevicePairRequest struct {
+	// Name 管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る
+	Name string `json:"name"`
+}
+
+// SquareDeviceResponse defines model for SquareDeviceResponse.
+type SquareDeviceResponse struct {
+	// Code 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る
+	Code      *string   `json:"code"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DeviceId 端末の ID。決済の依頼に使う。PAIRED になるまで null
+	DeviceId *string            `json:"device_id"`
+	Id       openapi_types.UUID `json:"id"`
+
+	// Name 管理画面とレジで出す名前（例 レジ1）
+	Name string `json:"name"`
+
+	// PairBy コードの期限。これを過ぎると EXPIRED になる
+	PairBy *time.Time `json:"pair_by"`
+
+	// Status 端末のペアリングの状態（Square の Device Code の status）。
+	//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+	//   - PAIRED: ペアリング済み。決済に使える
+	//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+	Status    SquareDeviceStatus `json:"status"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
+// SquareDeviceStatus 端末のペアリングの状態（Square の Device Code の status）。
+//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+//   - PAIRED: ペアリング済み。決済に使える
+//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+type SquareDeviceStatus string
+
+// SquarePaymentType Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
+type SquarePaymentType string
+
+// SquareStatusResponse defines model for SquareStatusResponse.
+type SquareStatusResponse struct {
+	Enabled bool `json:"enabled"`
+
+	// Environment production か sandbox
+	Environment    string `json:"environment"`
+	WebhookEnabled bool   `json:"webhook_enabled"`
 }
 
 // StatusResponse defines model for StatusResponse.
@@ -426,6 +586,9 @@ type StockUsage struct {
 // ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
 type ReplaceStockUsagesJSONBody = []StockUsage
 
+// ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
+type ReceiveSquareWebhookJSONBody = map[string]interface{}
+
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 
@@ -473,3 +636,15 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
+type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest
+
+// CreateSquareDeviceJSONRequestBody defines body for CreateSquareDevice for application/json ContentType.
+type CreateSquareDeviceJSONRequestBody = SquareDeviceCreateRequest
+
+// PairSquareDeviceJSONRequestBody defines body for PairSquareDevice for application/json ContentType.
+type PairSquareDeviceJSONRequestBody = SquareDevicePairRequest
+
+// ReceiveSquareWebhookJSONRequestBody defines body for ReceiveSquareWebhook for application/json ContentType.
+type ReceiveSquareWebhookJSONRequestBody = ReceiveSquareWebhookJSONBody
