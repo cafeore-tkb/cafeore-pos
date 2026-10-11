@@ -142,7 +142,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 
 // 入れ直しのカードも、順番・統合・指名・上級生のみはカップと同じ決まり
 func TestCupEmergencyCardRulesOnDB(t *testing.T) {
-	db, _ := openListenTestDB(t)
+	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
 	o1 := f.createOrder(t, 1, line(f.blend), line(f.blend))
 	o2 := f.createOrder(t, 2, line(f.blend))
