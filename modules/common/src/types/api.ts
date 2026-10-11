@@ -164,6 +164,118 @@ export interface paths {
      */
     put: operations["updateCashierState"];
   };
+  "/api/square/status": {
+    /**
+     * Square 連携が使えるか
+     * @description SQUARE_ACCESS_TOKEN があれば enabled。フロントはこれを見て Square の決済ボタンと端末の選択を出す。
+     * 決済に使う端末は GET /api/square/devices で取る（ペアリング済みの端末が無ければ決済できない）。
+     */
+    get: operations["getSquareStatus"];
+  };
+  "/api/square/devices": {
+    /**
+     * Square 端末の一覧
+     * @description 登録した端末と、ペアリング待ちのコード。古い順。
+     * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+     * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+     */
+    get: operations["getSquareDevices"];
+    /**
+     * device_id を直接登録する
+     * @description ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
+     * ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+     */
+    post: operations["createSquareDevice"];
+  };
+  "/api/square/devices/pair": {
+    /**
+     * 端末をペアリングするコード（Device Code）を発行する
+     * @description 返ってきた code を端末のサインイン画面（「デバイスコードでサインイン」）に入力すると、
+     * GET /api/square/devices で status が PAIRED になり、device_id が入る。
+     * Square のダッシュボードで発行したコードではペアリングできない（API で発行したコードが必要）。
+     */
+    post: operations["pairSquareDevice"];
+  };
+  "/api/square/devices/import": {
+    /**
+     * Square でペアリング済みの端末を取り込む
+     * @description API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
+     * 管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+     * 同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
+     * 取り込んだ端末だけを返す（既に登録していた端末は含めない）。
+     */
+    post: operations["importSquareDevices"];
+  };
+  "/api/square/devices/{id}": {
+    /**
+     * 端末を一覧から外す
+     * @description レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+     * 外した端末は POST /api/square/devices/import で戻せる。
+     */
+    delete: operations["deleteSquareDevice"];
+  };
+  "/api/square/checkouts": {
+    /**
+     * Square Terminal に決済画面を出す
+     * @description 決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
+     * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
+     * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+     * 別の端末で進行中の決済依頼があっても出せる。
+     */
+    post: operations["createSquareCheckout"];
+  };
+  "/api/square/checkouts/unlinked": {
+    /**
+     * 支払い済みなのに注文と結び付いていない決済依頼
+     * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+     * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+     */
+    get: operations["getUnlinkedSquareCheckouts"];
+  };
+  "/api/square/checkouts/{id}": {
+    /**
+     * 決済依頼の状態を取る
+     * @description 未確定なら Square に問い合わせて最新にしてから返す。レジはこれを数秒おきに呼んで完了を待つ。
+     */
+    get: operations["getSquareCheckout"];
+  };
+  "/api/square/checkouts/{id}/cancel": {
+    /**
+     * 決済依頼を取り消す
+     * @description PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
+     */
+    post: operations["cancelSquareCheckout"];
+  };
+  "/api/square/checkouts/{id}/refund": {
+    /**
+     * 支払い済みの決済を全額返金する
+     * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+     * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+     * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+     * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+     * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+     * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+     * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+     * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+     */
+    post: operations["refundSquareCheckout"];
+  };
+  "/api/orders/{id}/square-refund": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文を消す
+     * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     */
+    post: operations["refundOrderSquarePayment"];
+  };
+  "/api/square/webhook": {
+    /**
+     * Square からの Webhook（terminal.checkout.created / terminal.checkout.updated）
+     * @description x-square-hmacsha256-signature ヘッダーの署名が合わなければ 403。
+     * （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+     */
+    post: operations["receiveSquareWebhook"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -235,16 +347,49 @@ export interface components {
       id: string;
       name: string;
       display_name: string;
+      /** @description この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false */
+      makes_cup: boolean;
+      /** @description この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false */
+      needs_brew: boolean;
+      /** @description この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false */
+      senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
       display_name: string;
+      /**
+       * @description 省略したら true
+       * @default true
+       */
+      makes_cup?: boolean;
+      /** @description 省略したら makes_cup と同じ。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
       id: string;
       name: string;
       display_name: string;
+      /** @description 省略したら今の値のまま */
+      makes_cup?: boolean;
+      /** @description 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**
@@ -303,6 +448,7 @@ export interface components {
       received: number;
       discount_order_id?: number | null;
       discount_order_cups?: number;
+      payment_method: components["schemas"]["PaymentMethod"];
       menus: components["schemas"]["MenuInfo"][];
       /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
       cups: components["schemas"]["OrderCupResponse"][];
@@ -321,8 +467,19 @@ export interface components {
       discount_order_id?: number | null;
       /** @default 0 */
       discount_order_cups?: number;
+      payment_method?: components["schemas"]["PaymentMethod"];
+      /**
+       * Format: uuid
+       * @description payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
+       */
+      square_checkout_id?: string | null;
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
+      /**
+       * Format: uuid
+       * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+       */
+      idempotency_key?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -551,6 +708,127 @@ export interface components {
     InventoryRemindResponse: {
       sent: boolean;
       reason?: string;
+    };
+    /**
+     * @description 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+     * @default cash
+     * @enum {string}
+     */
+    PaymentMethod: "cash" | "square";
+    /**
+     * @description Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
+     * @enum {string}
+     */
+    SquarePaymentType: "CARD_PRESENT" | "FELICA_ALL" | "QR_CODE";
+    /**
+     * @description レジが次に何をすべきかをサーバーが判定したもの。
+     *   - pending: まだ決まっていない。待つ
+     *   - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい
+     *   - failed: 取り消された・失敗した。お金は受け取っていない
+     *   - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある
+     *
+     * @enum {string}
+     */
+    SquareCheckoutOutcome: "pending" | "paid" | "failed" | "attention";
+    /**
+     * @description 返金（全額）の状態。
+     *   - none: 返金を頼んでいない
+     *   - pending: Square に頼んだ。結果を待っている
+     *   - refunded: 返金が終わった
+     *   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+     *   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+     *
+     * @enum {string}
+     */
+    SquareRefundStatus: "none" | "pending" | "refunded" | "failed" | "unknown";
+    SquareStatusResponse: {
+      enabled: boolean;
+      /** @description production か sandbox */
+      environment: string;
+      webhook_enabled: boolean;
+    };
+    /**
+     * @description 端末のペアリングの状態（Square の Device Code の status）。
+     *   - UNPAIRED: コードを発行した。端末でまだ入力されていない
+     *   - PAIRED: ペアリング済み。決済に使える
+     *   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
+     *
+     * @enum {string}
+     */
+    SquareDeviceStatus: "UNPAIRED" | "PAIRED" | "EXPIRED";
+    SquareDeviceResponse: {
+      /** Format: uuid */
+      id: string;
+      /** @description 管理画面とレジで出す名前（例 レジ1） */
+      name: string;
+      status: components["schemas"]["SquareDeviceStatus"];
+      /** @description 端末の ID。決済の依頼に使う。PAIRED になるまで null */
+      device_id?: string | null;
+      /** @description 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る */
+      code?: string | null;
+      /**
+       * Format: date-time
+       * @description コードの期限。これを過ぎると EXPIRED になる
+       */
+      pair_by?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    SquareDevicePairRequest: {
+      /** @description 管理画面とレジで出す名前。Square の管理画面にもコードの名前として出る */
+      name: string;
+    };
+    SquareDeviceCreateRequest: {
+      name: string;
+      device_id: string;
+    };
+    SquareCheckoutCreateRequest: {
+      /** @description 決済画面を出す端末。GET /api/square/devices で PAIRED の行の device_id */
+      device_id: string;
+      /** @description レジが決済ごとに作る一意な値（UUID）。再送しても二重に決済画面が出ないようにする */
+      idempotency_key: string;
+      /** @description 請求額（円） */
+      amount: number;
+      payment_type: components["schemas"]["SquarePaymentType"];
+      /** @description 依頼時点の注文番号（端末のメモと照合の表示に使う） */
+      order_number?: number | null;
+    };
+    SquareCheckoutResponse: {
+      /** Format: uuid */
+      id: string;
+      /** @description 決済画面を出した端末 */
+      device_id: string;
+      /** @description Square の TerminalCheckout の id */
+      checkout_id?: string | null;
+      /** @description Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR */
+      status: string;
+      outcome: components["schemas"]["SquareCheckoutOutcome"];
+      cancel_reason?: string | null;
+      amount: number;
+      /** @description 完了後に Payments API で確かめた受取額（円） */
+      paid_amount?: number | null;
+      payment_type: string;
+      payment_ids: string[];
+      error_message?: string | null;
+      order_number?: number | null;
+      /**
+       * Format: uuid
+       * @description この決済で作った注文。まだ無ければ null
+       */
+      order_id?: string | null;
+      refund_status: components["schemas"]["SquareRefundStatus"];
+      /** @description 返金を断られた・確かめられなかったときの Square のエラー */
+      refund_error?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    SquareCheckoutConflictResponse: {
+      error: string;
+      checkout: components["schemas"]["SquareCheckoutResponse"];
     };
   };
   responses: never;
@@ -1313,6 +1591,420 @@ export interface operations {
       };
       /** @description editting_order に必須のキーが無い、または型が違う */
       400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square 連携が使えるか
+   * @description SQUARE_ACCESS_TOKEN があれば enabled。フロントはこれを見て Square の決済ボタンと端末の選択を出す。
+   * 決済に使う端末は GET /api/square/devices で取る（ペアリング済みの端末が無ければ決済できない）。
+   */
+  getSquareStatus: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareStatusResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square 端末の一覧
+   * @description 登録した端末と、ペアリング待ちのコード。古い順。
+   * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+   * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
+   */
+  getSquareDevices: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"][];
+        };
+      };
+    };
+  };
+  /**
+   * device_id を直接登録する
+   * @description ペアリングせずに、分かっている device_id をそのまま登録する。Sandbox では実機と
+   * ペアリングできないので、Square が用意しているテスト用の device_id を登録するのに使う。
+   */
+  createSquareDevice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareDeviceCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 登録した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description 入力が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description その device_id は登録済み */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 端末をペアリングするコード（Device Code）を発行する
+   * @description 返ってきた code を端末のサインイン画面（「デバイスコードでサインイン」）に入力すると、
+   * GET /api/square/devices で status が PAIRED になり、device_id が入る。
+   * Square のダッシュボードで発行したコードではペアリングできない（API で発行したコードが必要）。
+   */
+  pairSquareDevice: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareDevicePairRequest"];
+      };
+    };
+    responses: {
+      /** @description 発行した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description 入力が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square がコードを発行しなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square でペアリング済みの端末を取り込む
+   * @description API で発行したコードのうち PAIRED のものを Square から取り、まだ登録していない端末を登録する。
+   * 管理画面を作る前にペアリングした端末や、一覧から外した端末を戻すのに使う。
+   * 同じ端末に複数のコードがあるときは、最後にペアリングしたコードの名前を使う。
+   * 取り込んだ端末だけを返す（既に登録していた端末は含めない）。
+   */
+  importSquareDevices: {
+    responses: {
+      /** @description 取り込んだ端末 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"][];
+        };
+      };
+      /** @description Square から一覧を取れなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 端末を一覧から外す
+   * @description レジで選べなくなるだけで、端末は Square にサインインしたまま（API ではペアリングを解除できない）。
+   * 外した端末は POST /api/square/devices/import で戻せる。
+   */
+  deleteSquareDevice: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 外した */
+      204: {
+        content: never;
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square Terminal に決済画面を出す
+   * @description 決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
+   * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
+   * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
+   * 別の端末で進行中の決済依頼があっても出せる。
+   */
+  createSquareCheckout: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareCheckoutCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 同じ idempotency_key の決済依頼が既にある */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 作成した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 入力が不正、または device_id がペアリング済みの端末として登録されていない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 同じ端末で別の決済依頼が進行中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description Square が依頼を受け付けなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 支払い済みなのに注文と結び付いていない決済依頼
+   * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+   * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+   */
+  getUnlinkedSquareCheckouts: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"][];
+        };
+      };
+    };
+  };
+  /**
+   * 決済依頼の状態を取る
+   * @description 未確定なら Square に問い合わせて最新にしてから返す。レジはこれを数秒おきに呼んで完了を待つ。
+   */
+  getSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 決済依頼を取り消す
+   * @description PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
+   */
+  cancelSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消しを依頼した（IN_PROGRESS だったときは CANCEL_REQUESTED を経て CANCELED になる） */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が取り消しを受け付けなかった（既に完了しているなど） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 支払い済みの決済を全額返金する
+   * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+   * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+   * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+   * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+   * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+   * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+   * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+   * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+   */
+  refundSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す
+   * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   */
+  refundOrderSquarePayment: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付け、注文を消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square からの Webhook（terminal.checkout.created / terminal.checkout.updated）
+   * @description x-square-hmacsha256-signature ヘッダーの署名が合わなければ 403。
+   * （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
+   */
+  receiveSquareWebhook: {
+    requestBody: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description 受け取った */
+      200: {
+        content: never;
+      };
+      /** @description 署名が合わない */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Webhook の署名鍵が設定されていない */
+      503: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

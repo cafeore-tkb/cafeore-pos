@@ -77,7 +77,23 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 }
 
 // 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
+// ほかのインスタンスにも DB の通知で知らせる（order_listener.go）。
+// 通知は自分の配信の成否に関わらず送る。DB にはもう書けていて、受けた側は注文 ID から読み直すだけなので、
+// ここでの読み直しが一時的に失敗しても、ほかのインスタンスの画面は新しい状態になる。
 func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
+	resp, err := broadcastOrder(db, hub, orderID)
+	notifyOrderChanged(db, orderID)
+	return resp, err
+}
+
+// 注文の削除を配信し、ほかのインスタンスにも知らせる。
+func publishOrderDeleted(db *gorm.DB, hub *Hub, orderID uuid.UUID) {
+	broadcastOrderDeleted(hub, orderID)
+	notifyOrderChanged(db, orderID)
+}
+
+// 注文を読み直して、このインスタンスにつないでいる画面へだけ配る。
+func broadcastOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
 	var resp models.OrderResponse
 	err := hub.Publish(func() (WSMessage, error) {
 		var order models.Order
@@ -90,7 +106,7 @@ func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderRespons
 	return resp, err
 }
 
-func publishOrderDeleted(hub *Hub, orderID uuid.UUID) {
+func broadcastOrderDeleted(hub *Hub, orderID uuid.UUID) {
 	_ = hub.Publish(func() (WSMessage, error) {
 		return WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &orderID}, nil
 	})

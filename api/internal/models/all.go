@@ -21,5 +21,7 @@ func All() []any {
 		&ItemStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
+		&SquareCheckout{},
+		&SquareDevice{},
 	}
 }
