@@ -36,12 +36,15 @@ export const orderRepoFactory = (): OrderRepository => {
 
   const create = async (
     order: OrderEntity,
-    idempotencyKey?: string,
+    options?: Parameters<OrderRepository["save"]>[1],
   ): Promise<WithId<OrderEntity>> => {
     const { data, error, response } = await client.POST("/api/orders", {
       body: {
-        ...orderEntityToCreateRequest(order),
-        idempotency_key: idempotencyKey,
+        ...orderEntityToCreateRequest(
+          order,
+          options?.method ? options : undefined,
+        ),
+        idempotency_key: options?.idempotencyKey,
       },
     });
 
@@ -61,7 +64,7 @@ export const orderRepoFactory = (): OrderRepository => {
       if (hasId(order)) {
         return await update(order.id, order);
       }
-      return await create(order, options?.idempotencyKey);
+      return await create(order, options);
     },
 
     ready: async (id: string): Promise<void> => {

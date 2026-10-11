@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -127,6 +128,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
 		DiscountOrderCups: &order.DiscountOrderCups,
+		PaymentMethod:     orderPaymentMethod(order),
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 		Cups:              make([]models.OrderCupResponse, 0, len(order.OrderCups)),
 	}
@@ -155,6 +157,38 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// 列を足す前の行（payment_method が空）は現金として返す。
+func orderPaymentMethod(order *models.Order) models.PaymentMethod {
+	if order.PaymentMethod == string(models.Square) {
+		return models.Square
+	}
+	return models.Cash
+}
+
+// squareCheckoutIDForOrder は作成リクエストの支払い方法を確かめ、Square の決済依頼の ID を返す。
+// 現金なら nil。
+func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID, error) {
+	method := models.Cash
+	if req.PaymentMethod != nil {
+		method = *req.PaymentMethod
+	}
+	switch method {
+	case models.Cash:
+		if req.SquareCheckoutId != nil {
+			return nil, errors.New("square_checkout_id は payment_method が square のときだけ指定できます")
+		}
+		return nil, nil
+	case models.Square:
+		if req.SquareCheckoutId == nil {
+			return nil, errors.New("payment_method が square のときは square_checkout_id が必要です")
+		}
+		id := uuid.UUID(*req.SquareCheckoutId)
+		return &id, nil
+	default:
+		return nil, fmt.Errorf("payment_method %q には対応していません", method)
+	}
 }
 
 // 全オーダーを WSMessage にする。取得に失敗したら ok = false
@@ -233,6 +267,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	orderID, hasKey := orderIDFromIdempotencyKey(req.IdempotencyKey)
+	squareCheckoutID, err := squareCheckoutIDForOrder(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// API型 → DB型に変換
 	order := models.Order{
@@ -242,6 +281,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
 		DiscountOrderCups: 0,
+		PaymentMethod:     string(models.Cash),
+	}
+	if squareCheckoutID != nil {
+		// 端末で請求額ちょうどを受け取っているので、お預かりは請求額と同じ。
+		order.PaymentMethod = string(models.Square)
+		order.Received = req.BillingAmount
 	}
 
 	if req.DiscountOrderId != nil {
@@ -288,7 +333,15 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 				return err
 			}
 			order.OrderMenus, order.OrderCups = lines, cups
-			return tx.Create(&order).Error
+			// グッズだけの注文は作るものが無いので、作った時点で準備完了・提供済みにする
+			serveCuplessOrder(&order, order.CreatedAt)
+			if err := tx.Create(&order).Error; err != nil {
+				return err
+			}
+			if squareCheckoutID != nil {
+				return linkSquareCheckout(tx, *squareCheckoutID, &order, time.Now())
+			}
+			return nil
 		})
 	}
 
@@ -297,6 +350,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
+		}
+		if errors.Is(err, errSquareCheckoutUnusable) {
+			status = http.StatusConflict
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -374,10 +430,12 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// カップのある注文の状態はカップから決め直す。リクエストの ready_at / served_at は
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
-		// カップの無い注文（グッズだけの注文）だけリクエストの値を使う。
+		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
+		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
+		serveCuplessOrder(&order, time.Now())
 		if err := tx.Model(&models.Order{}).Where("id = ?", order.ID).Updates(map[string]any{
 			"order_id":            req.OrderId,
 			"ready_at":            order.ReadyAt,
@@ -439,15 +497,24 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	// オーダーアイテムの関連も削除
-	var order models.Order
-	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	if err := h.deleteOrder(orderID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+}
+
+// deleteOrder は注文を明細・カップごと消し、画面へ配る。Square の返金（SquareHandler）からも使う。
+// 注文が無ければ gorm.ErrRecordNotFound を返す。
+func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
+	// オーダーアイテムの関連も削除
+	var order models.Order
+	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
+		return err
 	}
 
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
@@ -456,28 +523,39 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&models.Order{}, "id = ?", order.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // ほかで先に消された（下で 404 にする）
+		}
+		if err != nil {
+			return err
+		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
+		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して
+		// 「支払い済みなのに注文が無い」一覧（GET /api/square/checkouts/unlinked）に戻す。
+		if err := tx.Model(&models.SquareCheckout{}).Where("order_id = ?", order.ID).Update("order_id", nil).Error; err != nil {
+			return err
+		}
 		result := tx.Delete(&models.Order{}, "id = ?", orderID)
 		rowsAffected = result.RowsAffected
 		return result.Error
 	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-		return
+		return gorm.ErrRecordNotFound
 	}
 
-	publishOrderDeleted(h.hub, orderID)
-	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
+	publishOrderDeleted(h.db, h.hub, orderID)
 	go h.inventory.CheckAlerts(resources)
+	return nil
 }
 
 var upgrader = websocket.Upgrader{

@@ -1,7 +1,9 @@
 import {
   OrderEntity,
   cashierRepository,
+  orderRepository,
   orderSchema,
+  squareRepository,
   stringToJSONSchema,
   useMenuMaster,
 } from "@cafeore/common";
@@ -12,12 +14,14 @@ import {
   type MetaFunction,
   useSubmit,
 } from "react-router";
+import useSWR from "swr";
 import { z } from "zod";
 import {
   notifyStoredFailedOrders,
   saveOrderInBackground,
 } from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import { useSquareDevice } from "~/components/functional/useSquareDevice";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -38,6 +42,31 @@ export default function Cashier() {
   );
 
   useEffect(notifyStoredFailedOrders, []);
+  // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
+  const { data: squareStatus } = useSWR(
+    "square-status",
+    squareRepository.getStatus,
+  );
+  const squareEnabled = squareStatus?.enabled ?? false;
+  // 決済画面を出す端末はレジごとに固定する（このブラウザに覚える）
+  const squareDevice = useSquareDevice(squareEnabled);
+
+  // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
+  // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
+  const submitSquarePayload = useCallback(
+    async (newOrder: OrderEntity, squareCheckoutId: string) => {
+      const savedOrder = await orderRepository.save(newOrder, {
+        method: "square",
+        squareCheckoutId,
+      });
+      // 注文は登録できている。ここで reject すると、レジが同じ決済で送り直して
+      // 断られるだけなので、ログに残すだけにする。
+      await cashierRepository.setSubmittedOrder(savedOrder).catch((err) => {
+        console.error("レジ状態の同期に失敗しました", err);
+      });
+    },
+    [],
+  );
 
   const syncOrder = useCallback(
     (order: OrderEntity) => {
@@ -52,7 +81,10 @@ export default function Cashier() {
       orders={orders}
       wsStatus={status}
       canSubmitOrder={canSubmitOrder}
+      squareEnabled={squareEnabled}
+      squareDevice={squareDevice}
       submitPayload={saveOrderInBackground}
+      submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}
     />
   );

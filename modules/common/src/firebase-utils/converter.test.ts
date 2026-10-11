@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { OrderEntity } from "../models/order";
 import {
   type OrderResponse,
   orderEntityToCreateRequest,
@@ -12,6 +13,7 @@ const response: OrderResponse = {
   created_at: "2026-09-11T00:00:00Z",
   billing_amount: 500,
   received: 1000,
+  payment_method: "cash",
   menus: [
     {
       id: "00000000-0000-4000-8000-000000000002",
@@ -35,6 +37,10 @@ const response: OrderResponse = {
                 id: "00000000-0000-4000-8000-000000000005",
                 name: "hot",
                 display_name: "ホット",
+                makes_cup: true,
+                needs_brew: true,
+                senior_only: false,
+                iced_brew: false,
               },
             },
           },
@@ -51,6 +57,11 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   item: response.menus[0].menu.items[0].item,
   ready_at: null,
   served_at: null,
+  dripper: null,
+  dripper_position: null,
+  drip_id: null,
+  brew_started_at: null,
+  brew_finished_at: null,
 });
 
 describe("[unit] order snapshot conversion", () => {
@@ -79,6 +90,32 @@ describe("[unit] order snapshot conversion", () => {
     expect(orderEntityToCreateRequest(order).menu_ids[0]).not.toHaveProperty(
       "order_menu_id",
     );
+  });
+
+  test("create request carries the payment method", () => {
+    const order = responseToOrderEntity(response).clone();
+    const cash = orderEntityToCreateRequest(order);
+    expect(cash.payment_method).toBe("cash");
+    expect(cash.square_checkout_id).toBeNull();
+
+    const checkoutId = "00000000-0000-4000-8000-000000000009";
+    const square = orderEntityToCreateRequest(order, {
+      method: "square",
+      squareCheckoutId: checkoutId,
+    });
+    expect(square.payment_method).toBe("square");
+    expect(square.square_checkout_id).toBe(checkoutId);
+  });
+
+  test("keeps the saved payment method through cloning", () => {
+    expect(responseToOrderEntity(response).paymentMethod).toBe("cash");
+    const order = responseToOrderEntity({
+      ...response,
+      payment_method: "square",
+    });
+    expect(order.paymentMethod).toBe("square");
+    expect(order.clone().paymentMethod).toBe("square");
+    expect(OrderEntity.createNew({ orderId: 1 }).paymentMethod).toBeUndefined();
   });
 
   test("converts each cup's ready and served status", () => {

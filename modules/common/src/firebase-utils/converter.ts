@@ -6,15 +6,13 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import _ from "lodash";
-import type { ZodSchema } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
   type GlobalCashierState,
-  MasterStateEntity,
   cashierStateWireSchema,
   globalCashierStateSchema,
-  globalMasterStateSchema,
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import { MenuEntity } from "../models/menu";
@@ -22,12 +20,14 @@ import {
   type Order,
   type OrderComment,
   OrderEntity,
+  type OrderPayment,
   orderSchema,
 } from "../models/order";
 import type { components } from "../types/api";
 
+// 入力の型は出力と違ってよい（既定値のある項目は、古いドキュメントに無くても読める。カップの CaOS の列など）
 export const converter = <T>(
-  schema: ZodSchema<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
 ): FirestoreDataConverter<T> => {
   return {
     toFirestore: (data: T) => {
@@ -175,21 +175,6 @@ export const orderConverter: FirestoreDataConverter<WithId<OrderEntity>> = {
   },
 };
 
-export const masterStateConverter: FirestoreDataConverter<MasterStateEntity> = {
-  toFirestore: converter(globalMasterStateSchema).toFirestore,
-  fromFirestore: (
-    snapshot: QueryDocumentSnapshot,
-    options: SnapshotOptions,
-  ) => {
-    const convertedData = converter(globalMasterStateSchema).fromFirestore(
-      snapshot,
-      options,
-    );
-
-    return MasterStateEntity.fromMasterState(convertedData);
-  },
-};
-
 export type OrderResponse = components["schemas"]["OrderResponse"];
 type MenuInfo = components["schemas"]["MenuInfo"];
 type CommentResponse = components["schemas"]["CommentResponse"];
@@ -247,7 +232,15 @@ export const responseToOrderEntity = (
       item: responseToItemEntity(cup.item).toItem(),
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
+      dripper: cup.dripper,
+      dripperPosition: cup.dripper_position,
+      dripId: cup.drip_id,
+      brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
+      brewFinishedAt: cup.brew_finished_at
+        ? new Date(cup.brew_finished_at)
+        : null,
     })),
+    paymentMethod: response.payment_method,
   };
   return OrderEntity.fromOrder(order);
 };
@@ -269,6 +262,7 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 // OrderEntity を CreateRequest に変換
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
+  payment: OrderPayment = { method: "cash" },
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({ assignee: cur.assignee, menu_id: cur.id });
@@ -280,6 +274,9 @@ export const orderEntityToCreateRequest = (
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
+    payment_method: payment.method,
+    square_checkout_id:
+      payment.method === "square" ? payment.squareCheckoutId : null,
     menu_ids: menuIds,
     comments: order.comments,
   };

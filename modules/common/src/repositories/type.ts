@@ -2,7 +2,7 @@ import type { WithId } from "../lib/typeguard";
 import type { ColorSetting } from "../models/colorSetting";
 import type { ItemEntity, ItemType } from "../models/item";
 import type { MenuEntity } from "../models/menu";
-import type { OrderEntity } from "../models/order";
+import type { OrderEntity, OrderPayment } from "../models/order";
 
 export type BaseRepository<T extends { id?: unknown }> = {
   save(data: T): Promise<WithId<T>>;
@@ -26,7 +26,7 @@ export type ColorSettingRepository = {
 export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
   save(
     order: OrderEntity,
-    options?: {
+    options?: ({ method?: undefined } | OrderPayment) & {
       /**
        * 新しく作るときの、送り直しで同じ注文を二重に作らないためのキー（UUID）。
        * サーバーはこれを注文の ID にし、すでにあれば作らずにその注文を返す。送り直しでは同じキーを渡す
