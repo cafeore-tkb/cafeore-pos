@@ -51,8 +51,6 @@ export type OrderReceipt = {
   total: string;
   /** 現金ならお預り・お釣り、Square なら決済手段 */
   payments: ReceiptRow[];
-  /** 引換券番号として大きく載せる注文番号 */
-  claimNumber: string;
 };
 
 /** 求められたときだけ刷る領収書の中身 */
@@ -140,7 +138,6 @@ export const orderReceipt = (
     adjustments,
     total: yen(order.billingAmount),
     payments,
-    claimNumber: `${order.orderId}`,
   };
 };
 

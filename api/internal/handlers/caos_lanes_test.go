@@ -30,7 +30,7 @@ func (f *caosFixture) getLanes(t *testing.T) models.CaosLanes {
 // laneChanges は今日の交代の記録を足した順に「ドリッパー:前→後」（上級生なら後ろに *）で並べる。
 func (f *caosFixture) laneChanges(t *testing.T) string {
 	t.Helper()
-	var rows []models.CaosLaneChangeRow
+	var rows []models.DripperAssigneeChange
 	if err := f.db.Where("day = ?", caosDayString(time.Now())).Order("id").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestCaosLanesOnDB(t *testing.T) {
 		t.Fatal("caos_lanes message without any lane")
 	}
 	// 前の日の担当者は今日に出ない
-	if err := db.Create(&models.CaosLaneRow{Day: caosDayString(time.Now().AddDate(0, 0, -1)), Dripper: 1, Name: "昨日", Senior: true, UpdatedAt: time.Now()}).Error; err != nil {
+	if err := db.Create(&models.DripperAssignee{Day: caosDayString(time.Now().AddDate(0, 0, -1)), Dripper: 1, Name: "昨日", Senior: true, UpdatedAt: time.Now()}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if got := laneNames(f.getLanes(t)); got != "1: 2: 3: 4: 5: 6:" {
@@ -156,7 +156,7 @@ func TestCaosLanesOnDB(t *testing.T) {
 		t.Fatalf("lane changes = %s, want %s", got, changes)
 	}
 	// 時刻は担当者の updated_at と同じ（サーバーの時刻）
-	var last models.CaosLaneChangeRow
+	var last models.DripperAssigneeChange
 	if err := db.Order("id DESC").First(&last).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 	}
 	noBroadcast(t, hub)
 
-	if err := db.Model(&models.CaosLaneRow{}).Where("day = ? AND dripper = 3", caosDayString(time.Now())).
+	if err := db.Model(&models.DripperAssignee{}).Where("day = ? AND dripper = 3", caosDayString(time.Now())).
 		Updates(map[string]any{"name": "佐藤", "senior": false}).Error; err != nil {
 		t.Fatal(err)
 	}

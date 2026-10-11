@@ -194,13 +194,22 @@ func (h *ItemTypeHandler) DeleteItemType(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.ItemType{}, "id = ?", itemTypeID)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	// カップを使う種類からも外す。消した種類はカップを作らないので、残すと保存し直せない ID だけが残る
+	var affected int64
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&models.ItemType{}, "id = ?", itemTypeID)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		return tx.Where("item_type_id = ?", itemTypeID).Delete(&models.StockResourceItemType{}).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if result.RowsAffected == 0 {
+	if affected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
 	}

@@ -62,7 +62,6 @@ describe("[unit] orderReceipt", () => {
         { label: "お預り", amount: "￥1,500" },
         { label: "お釣り", amount: "￥250" },
       ],
-      claimNumber: "123",
     });
   });
 
