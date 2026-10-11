@@ -53,18 +53,18 @@ export interface CardSplit {
   cups: number;
 }
 
-/** カードの見せ方（色の設定の色・在庫の設定の豆と、分けた注文の中の位置） */
+/** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文の中の位置） */
 export interface CardLook {
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
   split?: CardSplit;
-  /** 豆（POS の在庫対象のうち kind が bean）。在庫の設定の「商品 → 豆」から引く（logic/beans.ts）。設定が無い商品には付かない */
+  /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts で引く。在庫が無い商品には付かない */
   beans?: StockResource[];
 }
 export type CardLooks = ReadonlyMap<string, CardLook>;
 
-/** カードごとの見せ方（キーはカードの key）。色の設定と在庫の設定はあとから読み込まれたり変わったりするので、出すたびに引く */
+/** カードごとの見せ方（キーはカードの key）。色の設定と在庫はあとから読み込まれたり変わったりするので、出すたびに引く */
 export const cardLooks = (
   cards: readonly CaosCard[],
   settings: ColorSetting[],
