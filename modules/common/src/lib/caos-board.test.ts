@@ -20,20 +20,15 @@ import { jstDate } from "./jst";
 const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
 const DAY = jstDate(NOW.getTime());
 
-// 抽出が要るか・上級生のみかは種類の名前で決める（cupNeedsBrew・cupSeniorOnly。本番の DB の種類の名前で作る）。
-// 種類の項目（makes_cup など）は名前と食い違わない値にしておく
-type ItemTypeFlags = Pick<
-  Cup["item"]["item_type"],
-  "makes_cup" | "needs_brew" | "senior_only" | "iced_brew"
->;
-const type = (name: string, flags: Partial<ItemTypeFlags> = {}) => ({
+// 抽出が要るか・上級生のみかは種類の名前で決める（cupNeedsBrew・cupSeniorOnly。本番の DB の種類の名前で作る）
+const type = (name: string): Cup["item"]["item_type"] => ({
   name,
   display_name: name,
-  makes_cup: true,
-  needs_brew: true,
-  senior_only: false,
-  iced_brew: false,
-  ...flags,
+  makes_cup: itemMakesCup(name),
+  needs_brew: itemMakesCup(name) && !name.includes("milk"),
+  senior_only:
+    itemMakesCup(name) && !name.includes("milk") && name.includes("limited"),
+  iced_brew: name.includes("ice"),
 });
 const blend = {
   id: "item-blend",
@@ -52,20 +47,20 @@ const milk = {
   id: "item-milk",
   name: "アイスミルク",
   abbr: "ミ",
-  item_type: type("milk", { needs_brew: false }),
+  item_type: type("milk"),
 };
 const goods = {
   id: "item-goods",
   name: "グッズ",
   abbr: "グ",
-  item_type: type("others", { makes_cup: false, needs_brew: false }),
+  item_type: type("others"),
 };
 // 種類の名前に limited を含むカップは上級生のみ
 const seniorOnly = {
   id: "item-sp",
   name: "スペシャル",
   abbr: "限",
-  item_type: type("limited", { senior_only: true }),
+  item_type: type("limited"),
 };
 
 let seq = 0;

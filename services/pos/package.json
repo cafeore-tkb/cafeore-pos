@@ -8,6 +8,7 @@
     "dev": "react-router dev",
     "preview": "vite preview",
     "typecheck": "react-router typegen && tsc",
+    "test:unit": "vitest run -t unit",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

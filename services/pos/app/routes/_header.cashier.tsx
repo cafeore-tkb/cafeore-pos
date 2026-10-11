@@ -8,7 +8,7 @@ import {
   useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
@@ -16,6 +16,10 @@ import {
 } from "react-router";
 import useSWR from "swr";
 import { z } from "zod";
+import {
+  notifyStoredFailedOrders,
+  saveOrderInBackground,
+} from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { useSquareDevice } from "~/components/functional/useSquareDevice";
 import { CashierV2 } from "~/components/pages/CashierV2";
@@ -37,6 +41,7 @@ export default function Cashier() {
     [isDeviceOnline, status],
   );
 
+  useEffect(notifyStoredFailedOrders, []);
   // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
   const { data: squareStatus } = useSWR(
     "square-status",
@@ -45,16 +50,6 @@ export default function Cashier() {
   const squareEnabled = squareStatus?.enabled ?? false;
   // 決済画面を出す端末はレジごとに固定する（このブラウザに覚える）
   const squareDevice = useSquareDevice(squareEnabled);
-
-  const submitPayload = useCallback(
-    (newOrder: OrderEntity) => {
-      submit(
-        { newOrder: JSON.stringify(newOrder.toOrder()) },
-        { method: "POST" },
-      );
-    },
-    [submit],
-  );
 
   // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
   // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
@@ -88,7 +83,7 @@ export default function Cashier() {
       canSubmitOrder={canSubmitOrder}
       squareEnabled={squareEnabled}
       squareDevice={squareDevice}
-      submitPayload={submitPayload}
+      submitPayload={saveOrderInBackground}
       submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}
     />
@@ -99,38 +94,11 @@ export default function Cashier() {
 export const clientAction: ClientActionFunction = async (args) => {
   const method = args.request.method;
   switch (method) {
-    case "POST":
-      return submitOrderAction(args);
     case "PUT":
       return syncOrderAction(args);
     default:
       return new Response("Method not allowed", { status: 405 });
   }
-};
-
-export const submitOrderAction: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
-
-  const schema = z.object({
-    newOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { newOrder } = submission.value;
-  const order = OrderEntity.fromOrder(newOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
-  await cashierRepository.setSubmittedOrder(savedOrder);
-
-  return new Response("ok");
 };
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {

@@ -24,12 +24,15 @@ export type ColorSettingRepository = {
 };
 
 export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
-  /**
-   * 注文を保存する。payment は新規作成のときだけ使う（省略時は現金）。
-   */
   save(
     order: OrderEntity,
-    payment?: OrderPayment,
+    options?: ({ method?: undefined } | OrderPayment) & {
+      /**
+       * 新しく作るときの、送り直しで同じ注文を二重に作らないためのキー（UUID）。
+       * サーバーはこれを注文の ID にし、すでにあれば作らずにその注文を返す。送り直しでは同じキーを渡す
+       */
+      idempotencyKey?: string;
+    },
   ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
