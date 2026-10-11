@@ -353,7 +353,7 @@ export const AuxiliaryContent: React.FC<
                   </span>
                 </div>
               ) : (
-                <span className="font-bold text-slate-400">待機中</span>
+                <span className="font-bold text-slate-400">空き</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
                 待ち {waiting.length}件

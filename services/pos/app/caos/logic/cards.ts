@@ -24,20 +24,27 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/** カードの商品の名前（略称 abbr をそのまま。統合したカードも同じ商品なので 1 つ） */
+export const cardItemName = (card: CaosCard) =>
+  unique(card.cups.map((cup) => cup.item.abbr)).join("・");
+
+/** カードの指名（「2nd」。番号の無い古い明細は自由記述）。指名なしは空 */
+export const cardNominee = (card: CaosCard) =>
+  unique(card.cups.flatMap((cup) => cup.nominee ?? [])).join("・");
+
 /** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
 export const emergencyReasons = (card: CaosCard) =>
   unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
 
 /**
- * カードの名前。商品の略称（abbr）をそのまま。指名は「（指名:2nd）」（番号の無い古い明細は自由記述）、
+ * カードの名前（文で出すところ）。商品の略称に、指名は「（指名:2nd）」、
  * 上級生のみ（@cafeore/common の cupSeniorOnly）は「（上級生のみ）」を添える
- * （上級生の列だけにするのは列の担当者を持ってから（CaOS7）。今は印だけ）
  */
 export const cardName = (card: CaosCard) => {
-  const nominees = unique(card.cups.flatMap((cup) => cup.nominee ?? []));
+  const nominee = cardNominee(card);
   return [
-    unique(card.cups.map((cup) => cup.item.abbr)).join("・"),
-    nominees.length ? `（指名:${nominees.join("・")}）` : "",
+    cardItemName(card),
+    nominee ? `（指名:${nominee}）` : "",
     card.seniorOnly ? "（上級生のみ）" : "",
   ].join("");
 };
@@ -122,16 +129,47 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
   return groups;
 };
 
-/** 格子の置き場所。注文ごとに行を改め、1 行に perRow 枚まで（gridColumn・gridRow は 1 始まり） */
-export const placeByOrder = (cards: readonly CaosCard[], perRow: number) => {
-  let nextRow = 1;
-  return [...groupByOrder(cards).values()].flatMap((group) => {
-    const placed = group.map((card, index) => ({
-      card,
-      gridColumn: (index % perRow) + 1,
-      gridRow: nextRow + Math.floor(index / perRow),
+/** 注文の行の 1 枚。mergedInto は、統合したカードをいちばん小さい注文番号の行に置いたとき、ほかの注文の行に残す跡（統合したカードの orderLabel） */
+export interface OrderRowEntry {
+  card: CaosCard;
+  mergedInto?: string;
+}
+
+/**
+ * カードを注文番号の行にまとめる（注文番号の順、行の中は注文の中の並び）。
+ * 統合したカードはいちばん小さい注文番号の行に置き、ほかの注文の行には跡（mergedInto）を残す。
+ * 未割当の入れ直し（緊急）のカードは、注文ごとの別の行（emergency）にして先頭に置く（buildCaosCards の未割当の並びと同じ）
+ */
+export const orderRows = (cards: readonly CaosCard[]) => {
+  const rows = new Map<
+    string,
+    { orderNo: number; emergency: boolean; entries: OrderRowEntry[] }
+  >();
+  const add = (orderNo: number, emergency: boolean, entry: OrderRowEntry) => {
+    const key = `${emergency}:${orderNo}`;
+    const row = rows.get(key) ?? { orderNo, emergency, entries: [] };
+    row.entries.push(entry);
+    rows.set(key, row);
+  };
+  for (const card of cards) {
+    const emergency = card.emergency && card.status === "unassigned";
+    const [first, ...others] = cardOrderNos(card);
+    add(first, emergency, { card });
+    for (const no of others)
+      add(no, emergency, { card, mergedInto: orderLabel(card) });
+  }
+  const positionIn = (orderNo: number, { card }: OrderRowEntry) =>
+    card.cups.find((cup) => cup.orderNo === orderNo)?.position ?? 0;
+  return [...rows.values()]
+    .sort(
+      (a, b) =>
+        Number(b.emergency) - Number(a.emergency) || a.orderNo - b.orderNo,
+    )
+    .map((row) => ({
+      ...row,
+      entries: row.entries.sort(
+        (a, b) => positionIn(row.orderNo, a) - positionIn(row.orderNo, b),
+      ),
     }));
-    nextRow += Math.ceil(group.length / perRow);
-    return placed;
-  });
 };
+export type OrderRow = ReturnType<typeof orderRows>[number];

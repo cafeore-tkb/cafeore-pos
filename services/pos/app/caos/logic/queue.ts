@@ -58,25 +58,42 @@ export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
 };
 
 /**
- * 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・
- * まもなく（残りが SOON_SEC 以下）・予定を過ぎて継続中・「次へ」をまだ押せない（始めてすぐ。@cafeore/common の caosNextLocked）
+ * 列の状態（ドリッパーの番号の色で出す）。
+ * 空き：カードが無い／待機：待機のカードがあり、まだ始めていない（「次へ」で始める）／抽出中／
+ * まもなく：残りが SOON_SEC 以下／継続中：予定を過ぎても「次へ」が押されていない
  */
+export type LanePhase = "empty" | "waiting" | "brewing" | "soon" | "overtime";
+
+const lanePhase = (
+  current: CaosCard | undefined,
+  brewing: boolean,
+  remainingSec: number,
+): LanePhase => {
+  if (!current) return "empty";
+  if (!brewing) return "waiting";
+  if (remainingSec === 0) return "overtime";
+  if (remainingSec <= SOON_SEC) return "soon";
+  return "brewing";
+};
+
+/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・状態（phase） */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
   const remainingMs = current ? Math.max(0, brewMs(current) - elapsedMs) : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
-  const brewing = Boolean(lane.brewing);
   return {
     current,
     waiting,
     remainingMs,
     remainingSec,
-    soon: brewing && remainingSec <= SOON_SEC,
-    overtime: brewing && remainingSec === 0,
+    phase: lanePhase(current, Boolean(lane.brewing), remainingSec),
+    /** 「次へ」をまだ押せない（抽出を始めてすぐ。@cafeore/common の caosNextLocked） */
     nextLocked: caosNextLocked(lane.brewing, nowMs),
   };
 };
+
+export type LaneStatus = ReturnType<typeof laneStatus>;
 
 /**
  * 押し間違いかもしれない「次へ」（隣の列を押したなど）：抽出中のカードが、抽出時間の半分もたっていない。
