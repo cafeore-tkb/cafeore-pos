@@ -150,6 +150,7 @@ export const caosUndoCups = (
   entry: CaosUndoEntry,
   cards: readonly CaosCard[],
 ): { cups: UndoCupJSON[] } | { error: string; arriving?: true } => {
+  if (entry.cups.length === 0) return { error: "戻せる操作がありません" };
   const byId = boardCups(cards);
   // 操作の結果がまだ盤面に届いていない（全部のカップが前の値のまま）。少し待てば戻せる
   const arriving = entry.cups.every(({ id, restore }) => {
@@ -179,6 +180,5 @@ export const caosUndoCups = (
       restore: undoStateJSON(restore),
     });
   }
-  if (out.length === 0) return { error: "戻せる操作がありません" };
   return { cups: out };
 };
