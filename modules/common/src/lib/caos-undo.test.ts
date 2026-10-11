@@ -1,28 +1,17 @@
 import { describe, expect, test } from "vitest";
 import type { Cup } from "../models/cup";
 import {
-  type CaosCupsWrite,
   type CaosOrderInput,
   assignWrites,
   buildCaosCards,
-  caosDay,
-  mergeWrites,
-  unassignWrites,
 } from "./caos-board";
-import {
-  CAOS_SERVER_NOW,
-  type CaosUndoCupJSON,
-  caosObservedCups,
-  resolveUndo,
-  undoOfNext,
-  undoOfWrites,
-} from "./caos-undo";
+import { caosUndoCups, undoOfNext, undoOfWrites } from "./caos-undo";
 
-const NOW = new Date("2026-10-08T03:00:00Z"); // 日本時間 12:00
-const DAY = caosDay(NOW);
-const SERVER = new Date("2026-10-08T03:00:05.123Z"); // サーバーが付けた時刻
+const NOW = new Date("2026-10-08T03:00:00Z");
+const T1 = new Date("2026-10-08T03:01:00Z");
+const T2 = new Date("2026-10-08T03:03:00Z");
 
-const blend = {
+const blend: Cup["item"] = {
   id: "item-blend",
   name: "ブレンド",
   abbr: "ブ",
@@ -32,13 +21,13 @@ const blend = {
     makes_cup: true,
     needs_brew: true,
     senior_only: false,
+    iced_brew: false,
   },
 };
 
-let seq = 0;
-const cup = (init: Partial<Cup> = {}): Cup => ({
-  id: `cup-${++seq}`,
-  orderMenuId: "line-1",
+const cup = (id: string, init: Partial<Cup> = {}): Cup => ({
+  id,
+  orderMenuId: `line-${id}`,
   item: blend,
   readyAt: null,
   servedAt: null,
@@ -47,13 +36,6 @@ const cup = (init: Partial<Cup> = {}): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
-  emergencyAt: null,
-  emergencyDripper: null,
-  emergencyDripperPosition: null,
-  emergencyDripId: null,
-  emergencyBrewStartedAt: null,
-  emergencyBrewFinishedAt: null,
-  emergencyPrintedAt: null,
   ...init,
 });
 
@@ -61,264 +43,123 @@ const order = (no: number, cups: Cup[]): CaosOrderInput => ({
   id: `order-${no}`,
   orderId: no,
   createdAt: NOW,
-  menus: [{ orderMenuId: "line-1", dripper: null, assignee: null }],
+  menus: cups.map((c) => ({
+    orderMenuId: c.orderMenuId,
+    dripper: null,
+    assignee: null,
+  })),
   cups,
 });
 
-let idSeq = 0;
-const newId = () => `drip-${++idSeq}`;
-
-// サーバーの PUT /api/caos/cups と同じに書く（始める印には SERVER の時刻を付ける。緊急のカップは入れ直しの列に書く）
-const applyWrites = (
-  orders: CaosOrderInput[],
-  writes: readonly CaosCupsWrite[],
-): CaosOrderInput[] =>
-  orders.map((o) => ({
-    ...o,
-    cups: o.cups.map((c) => {
-      const w = writes.find((w) => w.cup_ids.includes(c.id));
-      if (!w) return c;
-      const brewStartedAt = w.after.start_brew ? SERVER : null;
-      return c.emergencyAt !== null
-        ? {
-            ...c,
-            emergencyDripper: w.after.dripper,
-            emergencyDripperPosition: w.after.dripper_position,
-            emergencyDripId: w.after.drip_id,
-            emergencyBrewStartedAt: brewStartedAt,
-            emergencyBrewFinishedAt: null,
-          }
-        : {
-            ...c,
-            dripper: w.after.dripper,
-            dripperPosition: w.after.dripper_position,
-            dripId: w.after.drip_id,
-            brewStartedAt,
-            brewFinishedAt: null,
-          };
-    }),
-  }));
-
-const cupsOf = (orders: CaosOrderInput[]) =>
-  new Map(orders.flatMap((o) => o.cups.map((c) => [c.id, c])));
-
-const resolved = (r: ReturnType<typeof resolveUndo>): CaosUndoCupJSON[] => {
-  if ("error" in r) throw new Error(r.error);
-  return r.cups;
+const nullState = {
+  dripper: null,
+  dripper_position: null,
+  drip_id: null,
+  brew_started_at: null,
+  brew_finished_at: null,
 };
 
-describe("[unit] CaOS の「1つ戻す」", () => {
-  test("割当（空いているドリッパーで始めた）：current は書いた値とサーバーの時刻、restore は前の値（未割当）", () => {
-    const orders = [order(1, [cup(), cup()])];
-    const cards = buildCaosCards(orders, DAY);
-    const result = assignWrites(cards, cards[0], 2, { newId });
+describe("unit: caos-undo", () => {
+  test("割当を戻す：届いた値がその割当のままなら、今の値と前の値（未割当）を送る", () => {
+    const before = [cup("a")];
+    const cards = buildCaosCards([order(1, before)]);
+    const result = assignWrites(cards, cards[0], 2, { newId: () => "d1" });
     if ("error" in result) throw new Error(result.error);
-    const entry = undoOfWrites("assign", "割当", cards, result.writes);
-    expect(entry?.cups.map((c) => c.written.brewStartedAt)).toEqual([
-      CAOS_SERVER_NOW,
-      CAOS_SERVER_NOW,
-    ]);
-    const after = applyWrites(orders, result.writes);
-    const cups = resolved(
-      resolveUndo(
-        entry ?? { kind: "assign", label: "", cups: [] },
-        caosObservedCups(after),
-      ),
-    );
-    expect(cups).toHaveLength(2);
-    const byId = cupsOf(after);
-    for (const c of cups) {
-      const now = byId.get(c.cup_id);
-      // 送る current は、サーバーが書いた今の値そのもの
-      expect(c.current).toEqual({
-        dripper: 2,
-        dripper_position: now?.dripperPosition,
-        drip_id: now?.dripId,
-        brew_started_at: SERVER.toISOString(),
-        brew_finished_at: null,
-        ready_at: null,
-        served_at: null,
-        emergency_at: null,
-      });
-      expect(c.restore).toEqual({
-        dripper: null,
-        dripper_position: null,
-        drip_id: null,
-        brew_started_at: null,
-        brew_finished_at: null,
-        ready_at: null,
-        served_at: null,
-        emergency_at: null,
-      });
-    }
-  });
+    const entry = undoOfWrites(cards, result.writes);
 
-  test("未割当に戻す・統合も、書いたカップを前の値に戻す", () => {
-    const queued = { dripper: 1, dripperPosition: 1, dripId: "q1" };
-    const orders = [
-      order(1, [cup({ ...queued, brewStartedAt: null })]),
-      order(2, [cup()]),
-      order(3, [cup()]),
-      // 1 番は抽出中があるので、移動しても始めない
-      order(4, [
-        cup({
-          dripper: 1,
-          dripperPosition: 0,
-          dripId: "b1",
-          brewStartedAt: NOW,
-        }),
-      ]),
-    ];
-    const cards = buildCaosCards(orders, DAY);
-    const q = cards.find((c) => c.dripId === "q1");
-    if (!q) throw new Error("no card");
-
-    const unassign = unassignWrites(q);
-    if ("error" in unassign) throw new Error(unassign.error);
-    const entry = undoOfWrites(
-      "unassign",
-      "未割当に戻す",
-      cards,
-      unassign.writes,
-    );
-    const [back] = resolved(
-      resolveUndo(
-        entry ?? { kind: "unassign", label: "", cups: [] },
-        caosObservedCups(applyWrites(orders, unassign.writes)),
-      ),
-    );
-    expect(back.current.dripper).toBeNull();
-    expect(back.restore).toMatchObject({
-      dripper: 1,
-      dripper_position: 1,
-      drip_id: "q1",
-    });
-
-    const [a, b] = cards.filter((c) => c.status === "unassigned");
-    const merge = mergeWrites(a, b, newId);
-    if ("error" in merge) throw new Error(merge.error);
-    const merged = undoOfWrites("merge", "統合", cards, merge.writes);
-    const both = resolved(
-      resolveUndo(
-        merged ?? { kind: "merge", label: "", cups: [] },
-        caosObservedCups(applyWrites(orders, merge.writes)),
-      ),
-    );
-    expect(both.map((c) => c.current.drip_id)).toEqual([
-      merge.writes[0].after.drip_id,
-      merge.writes[0].after.drip_id,
-    ]);
-    expect(both.map((c) => c.restore.drip_id)).toEqual([null, null]);
-  });
-
-  test("次へ：終えたカードは抽出中に、始めたカードは待機に戻す。準備完了はこの「次へ」で付けたカップだけ外す", () => {
-    const readyBefore = new Date(NOW.getTime() - 10_000);
-    const brewing = {
-      dripper: 3,
-      dripperPosition: 1,
-      dripId: "x",
-      brewStartedAt: NOW,
-    };
-    const x1 = cup(brewing);
-    const x2 = cup({ ...brewing, readyAt: readyBefore }); // マスターで先に準備完了にしていた
-    const y = cup({ dripper: 3, dripperPosition: 2, dripId: "y" });
-    const orders = [order(1, [x1, x2]), order(2, [y])];
-    const cards = buildCaosCards(orders, DAY);
-    const entry = undoOfNext("3番の次へ", cards, "x", "y");
-    if (!entry) throw new Error("no entry");
-
-    // サーバーの「次へ」のあと
-    const after = orders.map((o) => ({
-      ...o,
-      cups: o.cups.map((c) =>
-        c.dripId === "x"
-          ? { ...c, brewFinishedAt: SERVER, readyAt: c.readyAt ?? SERVER }
-          : { ...c, brewStartedAt: SERVER },
-      ),
-    }));
-    const cups = resolved(resolveUndo(entry, caosObservedCups(after)));
-    const of = (id: string) => cups.find((c) => c.cup_id === id);
-    expect(of(x1.id)?.current).toMatchObject({
-      brew_finished_at: SERVER.toISOString(),
-      ready_at: SERVER.toISOString(),
-    });
-    expect(of(x1.id)?.restore).toMatchObject({
-      brew_started_at: NOW.toISOString(),
-      brew_finished_at: null,
-      ready_at: null,
-    });
-    // 先に準備完了だったカップは、準備完了のまま
-    expect(of(x2.id)?.current.ready_at).toBe(readyBefore.toISOString());
-    expect(of(x2.id)?.restore.ready_at).toBe(readyBefore.toISOString());
-    expect(of(y.id)?.current.brew_started_at).toBe(SERVER.toISOString());
-    expect(of(y.id)?.restore.brew_started_at).toBeNull();
-
-    // 画面の知らないカードを終えた・始めたなら覚えない
-    expect(undoOfNext("", cards, "unknown", null)).toBeNull();
-    expect(undoOfNext("", cards, null, null)).toBeNull();
-  });
-
-  test("送れないとき：カップが消えた・サーバーの時刻がまだ（ほかの画面で変わった）", () => {
-    const orders = [order(1, [cup()])];
-    const cards = buildCaosCards(orders, DAY);
-    const result = assignWrites(cards, cards[0], 1, { newId });
-    if ("error" in result) throw new Error(result.error);
-    const entry = undoOfWrites("assign", "割当", cards, result.writes);
-    if (!entry) throw new Error("no entry");
-    expect(resolveUndo(entry, new Map())).toEqual({
-      error: expect.stringContaining("カップが消えた"),
-    });
-    // 始めたはずの時刻が無い（ほかの画面が未割当に戻した、など）
-    expect(resolveUndo(entry, caosObservedCups(orders))).toEqual({
-      error: "ほかの画面で先に変わったので戻せません",
-    });
-    // 見ていないカップを書いた書き込みは覚えない
-    expect(undoOfWrites("assign", "割当", [], result.writes)).toBeNull();
-  });
-
-  test("緊急（入れ直し）のカード：比べる・戻す値は入れ直しの列、emergency_at は比べるだけで戻さない", () => {
-    const emergencyAt = new Date(NOW.getTime() - 60_000);
-    const firstStarted = new Date(NOW.getTime() - 300_000);
-    const firstFinished = new Date(NOW.getTime() - 120_000);
-    // 最初の抽出（2nd・first）の列が残ったまま緊急にしたカップ
-    const rebrew = cup({
+    // サーバーが番号と始めた時刻を付けて書いた
+    const after = cup("a", {
       dripper: 2,
       dripperPosition: 1,
-      dripId: "first",
-      brewStartedAt: firstStarted,
-      brewFinishedAt: firstFinished,
-      readyAt: NOW,
-      emergencyAt,
+      dripId: "d1",
+      brewStartedAt: T1,
     });
-    const orders = [order(1, [rebrew])];
-    const cards = buildCaosCards(orders, DAY);
-    expect(cards[0].emergency).toBe(true);
-    const result = assignWrites(cards, cards[0], 4, { newId });
+    expect(caosUndoCups(entry, [after])).toEqual({
+      cups: [
+        {
+          cup_id: "a",
+          current: {
+            state: {
+              dripper: 2,
+              dripper_position: 1,
+              drip_id: "d1",
+              brew_started_at: T1.toISOString(),
+              brew_finished_at: null,
+            },
+            ready_at: null,
+          },
+          restore: { state: nullState, ready_at: null },
+        },
+      ],
+    });
+  });
+
+  test("ほかの画面があとで変えた・提供済み・消えたカップは送らない", () => {
+    const cards = buildCaosCards([order(1, [cup("a")])]);
+    const result = assignWrites(cards, cards[0], 2, { newId: () => "d1" });
     if ("error" in result) throw new Error(result.error);
-    const entry = undoOfWrites("assign", "割当", cards, result.writes);
-    if (!entry) throw new Error("no entry");
-    const after = applyWrites(orders, result.writes);
-    expect(after[0].cups[0]).toMatchObject({ dripper: 2, dripId: "first" });
-    const [back] = resolved(resolveUndo(entry, caosObservedCups(after)));
-    expect(back.current).toEqual({
-      dripper: 4,
-      dripper_position: result.writes[0].after.dripper_position,
-      drip_id: result.writes[0].after.drip_id,
-      brew_started_at: SERVER.toISOString(),
-      brew_finished_at: null,
-      ready_at: NOW.toISOString(),
-      served_at: null,
-      emergency_at: emergencyAt.toISOString(),
+    const entry = undoOfWrites(cards, result.writes);
+    const placed = { dripper: 2, dripperPosition: 1, dripId: "d1" };
+
+    expect(caosUndoCups(entry, [cup("a", { ...placed, dripper: 3 })])).toEqual({
+      error: "ほかの画面で先に変わったので戻せません",
     });
-    expect(back.restore).toEqual({
-      dripper: null,
-      dripper_position: null,
-      drip_id: null,
-      brew_started_at: null,
-      brew_finished_at: null,
-      ready_at: NOW.toISOString(),
-      served_at: null,
-      emergency_at: emergencyAt.toISOString(),
+    expect(
+      caosUndoCups(entry, [cup("a", { ...placed, servedAt: T2 })]),
+    ).toEqual({ error: "提供済みになったカップがあるので戻せません" });
+    expect(caosUndoCups(entry, [])).toEqual({
+      error:
+        "カップが消えたので戻せません（注文が編集・削除されたかもしれません）",
+    });
+  });
+
+  test("次へを戻す：終えたカードは抽出中・準備完了なしに、始めたカードは待機に戻す", () => {
+    const brewing = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+    });
+    const queued = cup("b", { dripper: 1, dripperPosition: 2, dripId: "d2" });
+    const cards = buildCaosCards([order(1, [brewing]), order(2, [queued])]);
+    const entry = undoOfNext(cards, 1);
+    expect(entry.cups.map((c) => c.id)).toEqual(["a", "b"]);
+
+    const finished = { ...brewing, brewFinishedAt: T1, readyAt: T1 };
+    const started = { ...queued, brewStartedAt: T1 };
+    const sent = caosUndoCups(entry, [finished, started]);
+    if ("error" in sent) throw new Error(sent.error);
+    expect(sent.cups.map((c) => [c.cup_id, c.restore])).toEqual([
+      [
+        "a",
+        {
+          state: {
+            dripper: 1,
+            dripper_position: 1,
+            drip_id: "d1",
+            brew_started_at: NOW.toISOString(),
+            brew_finished_at: null,
+          },
+          ready_at: null,
+        },
+      ],
+      [
+        "b",
+        {
+          state: {
+            dripper: 1,
+            dripper_position: 2,
+            drip_id: "d2",
+            brew_started_at: null,
+            brew_finished_at: null,
+          },
+          ready_at: null,
+        },
+      ],
+    ]);
+    // まだ「次へ」の結果が届いていなければ（ほかの画面が先に変えたのと同じく）送らない
+    expect(caosUndoCups(entry, [brewing, queued])).toEqual({
+      error: "ほかの画面で先に変わったので戻せません",
     });
   });
 });

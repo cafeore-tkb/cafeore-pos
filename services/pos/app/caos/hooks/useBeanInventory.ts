@@ -1,34 +1,24 @@
-import { useInventory, useStockUsages } from "@cafeore/common";
+import { useInventory, useItemMaster } from "@cafeore/common";
 import { useMemo } from "react";
-import { buildBeanIndex } from "../utils/beans";
+import { buildBeanIndex, dripItemStatuses } from "../logic/beans";
 
 // 豆の在庫は POS の在庫（GET /api/inventory）をそのまま使う。CaOS では在庫を持たず、減らしもしない。
-// - beanStatuses：在庫対象のうち豆（kind が bean）の残量。豆のパネルに出す
-// - beanIndex：商品 ID → 豆（在庫の設定の「商品ごとの使用量」）。カードがどの豆かを決める
-// 使用量の取得に失敗すると全カードの豆が「なし」になるので、エラー・読み込み中は残量と合わせて返す。
-// 使用量も残量と同じ間隔で取り直し、開いたあとの設定の変更をカードに反映する。
-const USAGES_REFRESH_MS = 30 * 1000;
-
+// - statuses：抽出が要るアイテムの在庫の残量。豆キューに出す（棚卸し・入荷の記録は POS に書く）
+// - beanIndex：商品 ID → その商品の在庫。カードの豆を決める
 export const useBeanInventory = () => {
-  const {
+  const inventory = useInventory();
+  const { items } = useItemMaster();
+  const statuses = useMemo(
+    () => dripItemStatuses(inventory.statuses, items),
+    [inventory.statuses, items],
+  );
+  const beanIndex = useMemo(() => buildBeanIndex(statuses), [statuses]);
+  return {
     statuses,
-    error: statusesError,
-    isLoading: statusesLoading,
-  } = useInventory();
-  const {
-    usages,
-    error: usagesError,
-    isLoading: usagesLoading,
-  } = useStockUsages({ refreshInterval: USAGES_REFRESH_MS });
-  const error = statusesError ?? usagesError;
-  const isLoading = statusesLoading || usagesLoading;
-  const beanStatuses = useMemo(
-    () => statuses.filter((status) => status.resource.kind === "bean"),
-    [statuses],
-  );
-  const beanIndex = useMemo(
-    () => buildBeanIndex(statuses, usages),
-    [statuses, usages],
-  );
-  return { beanStatuses, beanIndex, error, isLoading };
+    beanIndex,
+    inventoryError: inventory.error,
+    isLoading: inventory.isLoading,
+    // 豆キューで棚卸し・入荷を記録したら残量を取り直す
+    onRecorded: () => void inventory.mutateInventory(),
+  };
 };

@@ -1,13 +1,37 @@
-import { API_BASE_URL } from "@cafeore/common";
+import { API_BASE_URL, apiClient } from "@cafeore/common";
 import { useEffect, useState } from "react";
 
 const HEALTH_CHECK_INTERVAL_MS = 10_000;
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
-const STATUS_CHECK_URL = `${API_BASE_URL.replace(/\/$/, "")}/status`;
 const backendHostname = new URL(API_BASE_URL).hostname;
 const IS_LOCAL_BACKEND = ["localhost", "127.0.0.1", "::1"].includes(
   backendHostname,
 );
+// Access のセッション切れで再読み込みした時刻。続けて読み込み直さないために覚えておく
+const ACCESS_RELOAD_KEY = "cafeore:access-reload-at";
+const ACCESS_RELOAD_INTERVAL_MS = 60_000;
+
+// 本番は API を POS の Worker が中継していて（同じオリジン）、その手前に
+// Cloudflare Access がいる。セッションが切れると Access が API への fetch と
+// WebSocket をログイン画面へ飛ばすので、通信は失敗し続け、画面は自分では戻らない。
+//
+// /status は API では認証しないので、ここが 401 になるのは Access のセッション切れ
+// だけ（X-Requested-With を付けると、Access は飛ばさずに 401 を返す）。そのときは
+// 画面を読み込み直して Access のログインへ戻す。
+const reloadForAccessLogin = () => {
+  try {
+    const last = Number(sessionStorage.getItem(ACCESS_RELOAD_KEY) ?? 0);
+    // 読み込み直してもまだ 401 なら、セッション切れ以外の何か。繰り返さない
+    if (Date.now() - last < ACCESS_RELOAD_INTERVAL_MS) {
+      return;
+    }
+    sessionStorage.setItem(ACCESS_RELOAD_KEY, String(Date.now()));
+  } catch {
+    // sessionStorage が使えないときは、続けて読み込み直さないよう諦める
+    return;
+  }
+  window.location.reload();
+};
 
 type OnlineStatus = {
   isDeviceOnline: boolean;
@@ -30,6 +54,9 @@ export const useOnlineStatus = () => {
     let disposed = false;
     let controller: AbortController | undefined;
     let requestId = 0;
+    // window はビルド時（SPA の index.html の生成）には無いので、ここで見る
+    const isBehindAccess =
+      new URL(API_BASE_URL).origin === window.location.origin;
 
     const checkBackendConnection = async () => {
       controller?.abort();
@@ -43,14 +70,21 @@ export const useOnlineStatus = () => {
       );
 
       try {
-        const response = await fetch(STATUS_CHECK_URL, {
+        const { data, response } = await apiClient.GET("/status", {
           cache: "no-store",
           signal: currentController.signal,
+          // 別オリジン（ローカル・プレビュー）に付けると CORS の preflight が要るので、
+          // Worker 経由のときだけ付ける
+          headers: isBehindAccess
+            ? { "X-Requested-With": "XMLHttpRequest" }
+            : undefined,
         });
-        if (!response.ok) {
+        if (isBehindAccess && response.status === 401) {
+          reloadForAccessLogin();
+        }
+        if (!data) {
           throw new Error(`Status check failed: ${response.status}`);
         }
-        const data = (await response.json()) as { database?: unknown };
 
         if (!disposed && currentRequestId === requestId) {
           setOnlineStatus({

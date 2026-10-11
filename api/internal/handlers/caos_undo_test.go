@@ -3,7 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
+	"slices"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -12,262 +12,122 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// 「1つ戻す」（POST /api/caos/undo）の DB のテスト。LISTEN_TEST_DATABASE_URL を渡したときだけ走る。
-
-// undoState は DB の今のカップの値（CaOS の列・準備完了・提供済み）。画面が覚える「その操作で書いた値」「操作の前の値」と同じ形
+// undoState は DB の今のカップの値と準備完了（「1つ戻す」の current・restore に送る形）。
 func (f *caosFixture) undoState(t *testing.T, id uuid.UUID) map[string]any {
 	t.Helper()
-	cup := f.cup(t, id)
-	s := stateJSON(cupCaosState(&cup))
-	s["ready_at"], s["served_at"], s["emergency_at"] = cup.ReadyAt, cup.ServedAt, cup.EmergencyAt
-	return s
+	return map[string]any{"state": f.state(t, id), "ready_at": f.cup(t, id).ReadyAt}
 }
 
-func (f *caosFixture) undoStates(t *testing.T, cups []uuid.UUID) map[uuid.UUID]map[string]any {
-	t.Helper()
-	out := map[uuid.UUID]map[string]any{}
-	for _, id := range cups {
-		out[id] = f.undoState(t, id)
-	}
-	return out
-}
-
-// undo は current（その操作で書いた値）から restore（操作の前の値）に書き戻す。
-func (f *caosFixture) undo(t *testing.T, current, restore map[uuid.UUID]map[string]any) (int, string) {
+// undo は POST /api/caos/undo を呼ぶ。restore はカップごとの操作の前の値（undoState）、current は DB の今の値
+func (f *caosFixture) undo(t *testing.T, restore map[uuid.UUID]map[string]any) (int, string) {
 	t.Helper()
 	var cups []map[string]any
-	for id, cur := range current {
-		cups = append(cups, map[string]any{"cup_id": id, "current": cur, "restore": restore[id]})
+	for id, r := range restore {
+		cups = append(cups, map[string]any{"cup_id": id, "current": f.undoState(t, id), "restore": r})
 	}
 	body, _ := json.Marshal(map[string]any{"cups": cups})
-	w := callHandler(t, f.caos.UndoCaosCups, http.MethodPost, string(body))
+	w := callWithParams(t, f.caos.UndoCaosCups, http.MethodPost, string(body), nil)
 	return w.Code, w.Body.String()
 }
 
-func (f *caosFixture) markCup(t *testing.T, handler gin.HandlerFunc, order models.Order, cup models.OrderCup) {
-	t.Helper()
-	if w := callWithParams(t, handler, http.MethodPatch, "", gin.Params{{Key: "id", Value: order.ID.String()}, {Key: "cupId", Value: cup.ID.String()}}); w.Code != http.StatusOK {
-		t.Fatalf("PATCH cup = %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestCaosUndoWritesOnDB(t *testing.T) {
-	db, _ := openListenTestDB(t)
+func TestCaosUndoOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
-	o1 := f.createOrder(t, 1, line(f.blend))
+	o1 := f.createOrder(t, 1, line(f.blend, f.blend), line(f.milk))
 	o2 := f.createOrder(t, 2, line(f.blend))
-	cup1, cup2 := ids(o1.OrderCups[0]), ids(o2.OrderCups[0])
-
-	// 空いているドリッパーに置いて始めた割当を戻す（抽出中のカードも、自分が書いた値のままなら戻せる）
-	before := f.undoStates(t, cup1)
-	card1 := uuid.New()
-	f.mustPut(t, write(cup1, unassigned, placed(1, 1, card1, true)))
-	wrote := f.undoStates(t, cup1)
-	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
-		t.Fatalf("undo assign = %d: %s", code, body)
-	}
-	if cup := f.cup(t, cup1[0]); cup.Dripper != nil || cup.DripID != nil || cup.BrewStartedAt != nil {
-		t.Fatalf("cup = %+v, want unassigned", cup)
-	}
-	// 同じものをもう一度戻そうとしても、今の値が書いた値と違うので断る
-	if code, _ := f.undo(t, wrote, before); code != http.StatusConflict {
-		t.Fatalf("second undo = %d, want 409", code)
-	}
-
-	// 割当のあと、ほかの画面が同じカードを動かしていたら断る（ほかの画面の操作を消さない）
-	f.mustPut(t, write(cup2, unassigned, placed(2, 2, uuid.New(), true)))
-	before = f.undoStates(t, cup1)
-	f.mustPut(t, write(cup1, unassigned, placed(2, 3, card1, false)))
-	wrote = f.undoStates(t, cup1)
-	f.mustPut(t, write(cup1, f.state(t, cup1[0]), placed(3, 3, card1, true))) // ほかの iPad が 3 番へ
-	code, body := f.undo(t, wrote, before)
-	if code != http.StatusConflict || !strings.Contains(body, "ほかの画面") {
-		t.Fatalf("undo after another screen = %d %s, want 409", code, body)
-	}
-	if cup := f.cup(t, cup1[0]); cup.Dripper == nil || *cup.Dripper != 3 {
-		t.Fatalf("cup = %+v, want left on dripper 3", cup)
-	}
-
-	// 割当のあと、マスターで準備完了にされていたら断る
 	o3 := f.createOrder(t, 3, line(f.blend))
-	cup3 := ids(o3.OrderCups[0])
-	before = f.undoStates(t, cup3)
-	f.mustPut(t, write(cup3, unassigned, placed(2, 4, uuid.New(), false)))
-	wrote = f.undoStates(t, cup3)
-	f.markCup(t, f.orders.MarkOrderCupReady, o3, o3.OrderCups[0])
-	if code, body := f.undo(t, wrote, before); code != http.StatusConflict || !strings.Contains(body, "準備完了") {
-		t.Fatalf("undo after ready = %d %s, want 409", code, body)
-	}
-
-	// 提供済みは書き戻せない（形の違うリクエスト）
-	served := f.undoState(t, cup3[0])
-	served["served_at"] = served["ready_at"]
-	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup3[0]: f.undoState(t, cup3[0])}, map[uuid.UUID]map[string]any{cup3[0]: served}); code != http.StatusBadRequest {
-		t.Fatalf("undo to served = %d, want 400", code)
-	}
-}
-
-func TestCaosUndoNextOnDB(t *testing.T) {
-	db, _ := openListenTestDB(t)
-	f := newCaosFixture(t, db)
-	o1 := f.createOrder(t, 1, line(f.blend, f.blend))
-	o2 := f.createOrder(t, 2, line(f.blend))
-	card1, card2 := uuid.New(), uuid.New()
-	f.mustPut(t,
-		write(ids(o1.OrderCups...), unassigned, placed(1, 1, card1, true)),
-		write(ids(o2.OrderCups[0]), unassigned, placed(1, 2, card2, false)),
-	)
-	all := append(ids(o1.OrderCups...), o2.OrderCups[0].ID)
-
-	// 「次へ」を戻す：終えたカードを抽出中に戻して準備完了を外し、始めたカードを待機に戻す
-	before := f.undoStates(t, all)
-	if code, _ := f.next(t, 1, &card1); code != http.StatusOK {
-		t.Fatalf("next = %d", code)
-	}
-	wrote := f.undoStates(t, all)
-	var order models.Order
-	if err := db.First(&order, "id = ?", o1.ID).Error; err != nil || order.ReadyAt == nil {
-		t.Fatalf("order = %+v, want ready after next", order)
-	}
-	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
-		t.Fatalf("undo next = %d: %s", code, body)
-	}
-	for _, id := range ids(o1.OrderCups...) {
-		if cup := f.cup(t, id); cup.ReadyAt != nil || cup.BrewFinishedAt != nil || cup.BrewStartedAt == nil {
-			t.Fatalf("cup = %+v, want brewing again", cup)
+	cup1, cup2, cup3 := o1.OrderCups[0].ID, o2.OrderCups[0].ID, o3.OrderCups[0].ID
+	card1, card2, card3 := uuid.New(), uuid.New(), uuid.New()
+	expectLane := func(dripper int, wantBrewing []uuid.UUID, wantQueued ...uuid.UUID) {
+		t.Helper()
+		if brewing, queued := f.lane(t, dripper); !slices.Equal(brewing, wantBrewing) || !slices.Equal(queued, wantQueued) {
+			t.Fatalf("dripper %d = %v / %v, want %v / %v", dripper, brewing, queued, wantBrewing, wantQueued)
 		}
 	}
-	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
-		t.Fatalf("cup = %+v, want queued again", cup)
+
+	// 割当（空いているドリッパーで始めた）を戻すと未割当に戻り、抽出の開始の時刻も消える
+	before1 := map[uuid.UUID]map[string]any{o1.OrderCups[0].ID: f.undoState(t, o1.OrderCups[0].ID), o1.OrderCups[1].ID: f.undoState(t, o1.OrderCups[1].ID)}
+	f.mustPut(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(1, card1, true)))
+	expectLane(1, []uuid.UUID{card1})
+	if code, body := f.undo(t, before1); code != http.StatusNoContent {
+		t.Fatalf("undo assign = %d: %s", code, body)
 	}
-	var undone models.Order
-	if err := db.First(&undone, "id = ?", o1.ID).Error; err != nil || undone.ReadyAt != nil {
-		t.Fatalf("order = %+v, want not ready after undo", undone)
+	if cup := f.cup(t, cup1); cup.Dripper != nil || cup.DripID != nil || cup.BrewStartedAt != nil {
+		t.Fatalf("cup = %+v, want unassigned", cup)
 	}
-	// 戻したあとも「次へ」は今までどおり押せる
-	if code, _ := f.next(t, 1, &card1); code != http.StatusOK {
+	expectLane(1, nil)
+
+	// 戻す時刻は今のままか消すだけ（新しい時刻は書けない）。ドリッパーの無いカップに順番は書けない
+	f.mustPut(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(1, card1, true)))
+	forged := f.undoState(t, cup1)
+	forged["ready_at"] = "2020-01-01T00:00:00Z"
+	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: forged}); code != http.StatusBadRequest {
+		t.Fatalf("undo to a new time = %d, want 400", code)
+	}
+	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: {"state": map[string]any{"dripper": nil, "dripper_position": 1, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}, "ready_at": nil}}); code != http.StatusBadRequest {
+		t.Fatalf("undo to a position without a dripper = %d, want 400", code)
+	}
+
+	// 「次へ」を戻すと、終えたカードは抽出中に戻って準備完了が外れ、始めたカードは待機に戻る
+	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, card2, false)))
+	beforeNext := map[uuid.UUID]map[string]any{}
+	for _, id := range []uuid.UUID{o1.OrderCups[0].ID, o1.OrderCups[1].ID, cup2} {
+		beforeNext[id] = f.undoState(t, id)
+	}
+	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
+	}
+	expectLane(1, []uuid.UUID{card2})
+	var order models.Order
+	if err := db.First(&order, "id = ?", o1.ID).Error; err != nil || order.ReadyAt != nil {
+		t.Fatalf("order = %+v, want not ready (the milk is left)", order)
+	}
+	if code, body := f.undo(t, beforeNext); code != http.StatusNoContent {
+		t.Fatalf("undo next = %d: %s", code, body)
+	}
+	expectLane(1, []uuid.UUID{card1}, card2)
+	if cup := f.cup(t, cup1); cup.ReadyAt != nil || cup.BrewFinishedAt != nil || cup.BrewStartedAt == nil {
+		t.Fatalf("cup = %+v, want brewing and not ready", cup)
+	}
+	// 戻したあとも「次へ」が押せる
+	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next after undo = %d", code)
 	}
 
-	// 「次へ」のあと提供済みにされていたら断る（提供の操作を消さない）
-	wrote = f.undoStates(t, all)
-	f.markCup(t, f.orders.MarkOrderCupServed, o1, o1.OrderCups[0])
-	code, body := f.undo(t, wrote, before)
-	if code != http.StatusConflict || !strings.Contains(body, "提供済み") {
-		t.Fatalf("undo after served = %d %s, want 409", code, body)
+	// ほかの端末があとで変えていたら断り、何も書かない（画面の見ている値が古い）
+	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(2, card3, false)))
+	stale := map[string]any{"cup_id": cup3, "current": f.undoState(t, cup3), "restore": map[string]any{"state": unassigned, "ready_at": nil}}
+	f.mustPut(t, write(ids(o3.OrderCups[0]), f.state(t, cup3), placed(3, card3, false)))
+	body, _ := json.Marshal(map[string]any{"cups": []any{stale}})
+	if w := callWithParams(t, f.caos.UndoCaosCups, http.MethodPost, string(body), nil); w.Code != http.StatusConflict {
+		t.Fatalf("undo after another write = %d, want 409", w.Code)
 	}
-	if cup := f.cup(t, o1.OrderCups[1].ID); cup.ReadyAt == nil || cup.BrewFinishedAt == nil {
-		t.Fatalf("cup = %+v, want left finished", cup)
-	}
+	expectLane(3, nil, card3)
 
-	// 「次へ」のあと、ほかの画面がもう一度「次へ」を押していたら断る
-	o3 := f.createOrder(t, 3, line(f.blend))
-	card3 := uuid.New()
-	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(2, 1, card3, true)))
-	before = f.undoStates(t, ids(o3.OrderCups[0]))
-	if code, _ := f.next(t, 2, &card3); code != http.StatusOK {
+	// 提供済みになったカップは戻さない
+	beforeServe := map[uuid.UUID]map[string]any{cup2: f.undoState(t, cup2)}
+	if code := f.next(t, 1, &card2); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
-	wrote = f.undoStates(t, ids(o3.OrderCups[0]))
-	// 空いたドリッパーにほかの画面が置いて始めたら、終えたカードを抽出中に戻すと 2 枚になるので断る
+	if w := callWithParams(t, f.orders.MarkOrderCupServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o2.ID.String()}, {Key: "cupId", Value: cup2.String()}}); w.Code != http.StatusOK {
+		t.Fatalf("PATCH cup served = %d: %s", w.Code, w.Body.String())
+	}
+	if code, _ := f.undo(t, beforeServe); code != http.StatusConflict {
+		t.Fatalf("undo after served = %d, want 409", code)
+	}
+
+	// 「次へ」で空いたドリッパーでほかのカードが始まっていたら、終えたカードを抽出中に戻せない
+	beforeLast := map[uuid.UUID]map[string]any{cup3: f.undoState(t, cup3)}
+	if code := f.next(t, 3, nil); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
+	}
+	if code := f.next(t, 3, &card3); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
+	}
 	o4 := f.createOrder(t, 4, line(f.blend))
-	f.mustPut(t, write(ids(o4.OrderCups[0]), unassigned, placed(2, 2, uuid.New(), true)))
-	if code, body := f.undo(t, wrote, before); code != http.StatusConflict || !strings.Contains(body, "抽出中") {
-		t.Fatalf("undo with another brewing card = %d %s, want 409", code, body)
-	}
-	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewFinishedAt == nil || cup.ReadyAt == nil {
-		t.Fatalf("cup = %+v, want left finished", cup)
-	}
-}
-
-// 戻した結果が指名（CaOS7）・限定（CaOS8）の決まりに反するなら断る。緊急（CaOS10）のカップは入れ直しのカードで戻す
-func TestCaosUndoRulesOnDB(t *testing.T) {
-	db, _ := openListenTestDB(t)
-	f := newCaosFixture(t, db)
-	special := models.ItemType{Name: "special-" + uuid.NewString(), DisplayName: "特別", SeniorOnly: true}
-	geisha := models.Item{Name: "ゲイシャ", Abbr: "ゲ", ItemType: special}
-	if err := db.Create(&geisha).Error; err != nil {
-		t.Fatal(err)
-	}
-	f.mustPutLane(t, 1, "山田", true)
-	f.mustPutLane(t, 2, "高橋", true)
-
-	// 限定：1 番から 2 番へ移したあと、1 番の担当者が上級生でない人に替わっていたら、1 番へは戻せない
-	limited := f.createOrder(t, 1, line(geisha))
-	cupL := ids(limited.OrderCups[0])
-	cardL := uuid.New()
-	f.mustPut(t, write(cupL, unassigned, placed(1, 1, cardL, false)))
-	before := f.undoStates(t, cupL)
-	f.mustPut(t, write(cupL, f.state(t, cupL[0]), placed(2, 1, cardL, false)))
-	wrote := f.undoStates(t, cupL)
-	f.mustPutLane(t, 1, "佐藤", false)
-	if code, body := f.undo(t, wrote, before); code != http.StatusUnprocessableEntity || !strings.Contains(body, "上級生") {
-		t.Fatalf("undo a limited cup to a non-senior = %d %s, want 422", code, body)
-	}
-	if cup := f.cup(t, cupL[0]); *cup.Dripper != 2 {
-		t.Fatalf("cup = %+v, want left on 2", cup)
-	}
-	// 担当者を上級生に戻せば戻せる
-	f.mustPutLane(t, 1, "山田", true)
-	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
-		t.Fatalf("undo a limited cup to a senior = %d %s", code, body)
-	}
-	// 同じドリッパーの中の順番を戻すのは、担当者が上級生でなくてもできる（PUT /api/caos/cups と同じ）
-	before = f.undoStates(t, cupL)
-	f.mustPut(t, write(cupL, f.state(t, cupL[0]), placed(1, 0.5, cardL, false)))
-	wrote = f.undoStates(t, cupL)
-	f.mustPutLane(t, 1, "佐藤", false)
-	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
-		t.Fatalf("undo a reorder in the same dripper = %d %s", code, body)
-	}
-
-	// 指名：未割当に戻したあと、注文の明細の指名が替わっていたら、元のドリッパーへは戻せない
-	nominated := f.createOrder(t, 2, line(f.blend))
-	cupN := ids(nominated.OrderCups[0])
-	f.mustPut(t, write(cupN, unassigned, placed(2, 2, uuid.New(), false)))
-	before = f.undoStates(t, cupN)
-	f.mustPut(t, write(cupN, f.state(t, cupN[0]), toUnassigned))
-	wrote = f.undoStates(t, cupN)
-	if err := db.Model(&models.OrderMenu{}).Where("id = ?", nominated.OrderMenus[0].ID).Update("dripper", 3).Error; err != nil {
-		t.Fatal(err)
-	}
-	if code, body := f.undo(t, wrote, before); code != http.StatusUnprocessableEntity || !strings.Contains(body, "指名のあるカップは 3 番") {
-		t.Fatalf("undo a nominated cup to another dripper = %d %s, want 422", code, body)
-	}
-
-	// 緊急：操作のあとで緊急にされたカップは戻さない
-	plain := f.createOrder(t, 3, line(f.blend))
-	cupP := ids(plain.OrderCups[0])
-	cardP := uuid.New()
-	f.mustPut(t, write(cupP, unassigned, placed(4, 1, cardP, true)))
-	before = f.undoStates(t, cupP)
-	if code, _ := f.next(t, 4, &cardP); code != http.StatusOK {
-		t.Fatalf("next = %d", code)
-	}
-	wrote = f.undoStates(t, cupP)
-	f.mustEmergency(t, false, cupP[0])
-	if code, body := f.undo(t, wrote, before); code != http.StatusConflict || !strings.Contains(body, "緊急") {
-		t.Fatalf("undo after emergency = %d %s, want 409", code, body)
-	}
-	// 入れ直しのカードの割当は戻せる（入れ直しの列 emergency_* を書き戻し、最初の抽出の列はそのまま）
-	first := f.cup(t, cupP[0])
-	before = f.undoStates(t, cupP)
-	rebrew := uuid.New()
-	f.mustPut(t, write(cupP, f.state(t, cupP[0]), placed(4, 2, rebrew, true)))
-	wrote = f.undoStates(t, cupP)
-	if code, body := f.undo(t, wrote, before); code != http.StatusNoContent {
-		t.Fatalf("undo a rebrew assign = %d %s", code, body)
-	}
-	if cup := f.cup(t, cupP[0]); cup.EmergencyAt == nil || cup.EmergencyDripID != nil || cup.EmergencyDripper != nil ||
-		cup.EmergencyDripperPosition != nil || cup.EmergencyBrewStartedAt != nil ||
-		!ptrEqual(cup.Dripper, first.Dripper) || !ptrEqual(cup.DripID, &cardP) ||
-		!timeEqual(cup.BrewStartedAt, first.BrewStartedAt) || !timeEqual(cup.BrewFinishedAt, first.BrewFinishedAt) || cup.BrewFinishedAt == nil {
-		t.Fatalf("rebrew cup after undo = %+v", cup)
-	}
-	// 緊急を書き戻すのは形の違うリクエスト
-	notEmergency := f.undoState(t, cupP[0])
-	notEmergency["emergency_at"] = nil
-	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cupP[0]: f.undoState(t, cupP[0])}, map[uuid.UUID]map[string]any{cupP[0]: notEmergency}); code != http.StatusBadRequest {
-		t.Fatalf("undo an emergency = %d, want 400", code)
+	f.mustPut(t, write(ids(o4.OrderCups[0]), unassigned, placed(3, uuid.New(), true)))
+	beforeLast[cup3]["state"].(map[string]any)["brew_started_at"] = f.cup(t, cup3).BrewStartedAt
+	if code, _ := f.undo(t, beforeLast); code != http.StatusConflict {
+		t.Fatalf("undo next onto a busy dripper = %d, want 409", code)
 	}
 }

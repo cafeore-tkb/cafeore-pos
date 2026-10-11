@@ -1,82 +1,41 @@
-import createClient from "openapi-fetch";
+import { apiClient, throwApiError } from "../api/client";
 import { type WithId, hasId } from "../lib/typeguard";
 import type { ItemType } from "../models/item";
-import type { components, paths } from "../types/api";
-import { API_BASE_URL, throwApiError } from "./item";
 import type { ItemTypeRepository } from "./type";
 
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
-
-// OpenAPI型のエイリアス
-type ItemTypeResponse = components["schemas"]["ItemTypeResponse"];
-type ItemTypeCreateRequest = components["schemas"]["ItemTypeCreateRequest"];
-type ItemTypeUpdateRequest = components["schemas"]["ItemTypeUpdateRequest"];
-
-// ItemTypeResponse を ItemType に変換
-const responseToItemType = (response: ItemTypeResponse): WithId<ItemType> => {
-  return {
-    id: response.id,
-    name: response.name,
-    display_name: response.display_name,
-    makes_cup: response.makes_cup,
-    needs_brew: response.needs_brew,
-    senior_only: response.senior_only,
-  };
-};
-// ItemType を CreateRequest に変換
-const itemTypeToCreateRequest = (itemType: ItemType): ItemTypeCreateRequest => {
-  return {
-    name: itemType.name,
-    display_name: itemType.display_name,
-    makes_cup: itemType.makes_cup,
-    needs_brew: itemType.needs_brew,
-    senior_only: itemType.senior_only,
-  };
-};
-
-// Item を UpdateRequest に変換
-const itemTypeToUpdateRequest = (
-  itemType: WithId<ItemType>,
-): ItemTypeUpdateRequest => {
-  return {
-    id: itemType.id,
-    name: itemType.name,
-    display_name: itemType.display_name,
-    makes_cup: itemType.makes_cup,
-    needs_brew: itemType.needs_brew,
-    senior_only: itemType.senior_only,
-  };
-};
-
+// ItemType と API の種類のリクエスト・レスポンスは同じ形なので、変換せずにそのまま送り受けする
 export const itemTypeRepoFactory = (): ItemTypeRepository => {
   const update = async (
     id: string,
     itemType: WithId<ItemType>,
   ): Promise<WithId<ItemType>> => {
-    const { data, error, response } = await client.PUT("/api/item-types/{id}", {
-      params: {
-        path: { id },
+    const { data, error, response } = await apiClient.PUT(
+      "/api/item-types/{id}",
+      {
+        params: {
+          path: { id },
+        },
+        body: itemType,
       },
-      body: itemTypeToUpdateRequest(itemType),
-    });
+    );
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to update item");
+      throwApiError(response, error, "Failed to update item type");
     }
 
-    return responseToItemType(data);
+    return data;
   };
 
   const create = async (itemType: ItemType): Promise<WithId<ItemType>> => {
-    const { data, error, response } = await client.POST("/api/item-types", {
-      body: itemTypeToCreateRequest(itemType),
+    const { data, error, response } = await apiClient.POST("/api/item-types", {
+      body: itemType,
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to create item");
+      throwApiError(response, error, "Failed to create item type");
     }
 
-    return responseToItemType(data);
+    return data;
   };
 
   return {
@@ -88,19 +47,22 @@ export const itemTypeRepoFactory = (): ItemTypeRepository => {
     },
 
     delete: async (id: string): Promise<void> => {
-      const { error, response } = await client.DELETE("/api/item-types/{id}", {
-        params: {
-          path: { id },
+      const { error, response } = await apiClient.DELETE(
+        "/api/item-types/{id}",
+        {
+          params: {
+            path: { id },
+          },
         },
-      });
+      );
 
       if (error || !response.ok) {
-        await throwApiError(response, "Failed to delete itemType");
+        throwApiError(response, error, "Failed to delete item type");
       }
     },
 
     findById: async (id) => {
-      const { data, error, response } = await client.GET(
+      const { data, error, response } = await apiClient.GET(
         "/api/item-types/{id}",
         {
           params: {
@@ -114,20 +76,20 @@ export const itemTypeRepoFactory = (): ItemTypeRepository => {
       }
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch item");
+        throwApiError(response, error, "Failed to fetch item type");
       }
 
-      return responseToItemType(data);
+      return data;
     },
 
     findAll: async () => {
-      const { data, error, response } = await client.GET("/api/item-types");
+      const { data, error, response } = await apiClient.GET("/api/item-types");
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch items");
+        throwApiError(response, error, "Failed to fetch item types");
       }
 
-      return data.map(responseToItemType);
+      return data;
     },
   };
 };

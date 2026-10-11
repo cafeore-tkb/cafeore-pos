@@ -1,75 +1,47 @@
-import {
-  type CaosOrderInput,
-  type CaosUndoEntry,
-  caosObservedCups,
-  resolveUndo,
-  undoCaosCups,
-} from "@cafeore/common";
-import { useCallback, useRef, useState } from "react";
+import { useState } from "react";
+import { toast } from "sonner";
 
-// 「1つ戻す」。この画面（この iPad の /master-sheet）が最後にした CaOS の操作を 1 つだけ覚える（画面のメモリだけ。再読み込みで消える）。
-// 戻すときは、その操作で自分が書いた値のときだけ書き戻す（サーバーが確かめる）。ほかの画面（ほかの iPad・マスター・提供）が
-// あとで同じカップを変えていたら断られ、その理由を出す。ほかの画面の操作は戻さない。
+// 操作のあと「1つ戻す」が押せる秒
+const UNDO_SEC = 10;
 
-/** 戻す処理。操作の種類ごとに作る（カップを書いた操作は rememberCups、それ以外は remember にそのまま渡す） */
-export interface CaosUndoAction {
-  /** 画面に出す名前（「次へ（3番）」など） */
-  label: string;
-  /** 戻す。断られたら理由（error）を返す。retry なら、もう一度押せる（つながらない、など） */
-  run: () => Promise<{ error?: string; retry?: boolean }>;
-}
+/** 戻す処理。戻せたら true（断られたら理由を通知で出して false） */
+export type UndoRun = () => boolean | Promise<boolean>;
 
-export const useCaosUndo = (orders: readonly CaosOrderInput[] | null) => {
-  // 戻すときは、押したときに届いている注文（カップの今の値）を使う
-  const ordersRef = useRef(orders);
-  ordersRef.current = orders;
-  const [last, setLast] = useState<CaosUndoAction | null>(null);
+// 「1つ戻す」。この画面が最後にした操作を 1 つだけ、UNDO_SEC 秒のあいだ覚える（画面のメモリだけ。再読み込みで消える）。
+// nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。戻したら（断られても）忘れる。
+export const useCaosUndo = (nowMs: number) => {
+  const [last, setLast] = useState<{
+    label: string;
+    atMs: number;
+    run: UndoRun;
+  } | null>(null);
   const [pending, setPending] = useState(false);
-  const pendingRef = useRef(false);
+  const secondsLeft = last
+    ? Math.min(UNDO_SEC, Math.ceil(UNDO_SEC - (nowMs - last.atMs) / 1000))
+    : 0;
+  const action = secondsLeft > 0 ? last : null;
 
-  /** 最後の操作を覚える（null なら、最後の操作は戻せないので、前の操作も戻さない） */
-  const remember = useCallback(
-    (action: CaosUndoAction | null) => setLast(action),
-    [],
-  );
-
-  /** カップを書いた操作（割当・移動・先頭へ・未割当に戻す・統合・次へ）を覚える */
-  const rememberCups = useCallback(
-    (entry: CaosUndoEntry | null) =>
-      setLast(
-        entry && {
-          label: entry.label,
-          run: async () => {
-            const resolved = resolveUndo(
-              entry,
-              caosObservedCups(ordersRef.current ?? []),
-            );
-            if ("error" in resolved)
-              return { error: resolved.error, retry: false };
-            return undoCaosCups(resolved.cups);
-          },
-        },
-      ),
-    [],
-  );
-
-  /** 最後の操作を戻す。断られたら理由を返す */
-  const undo = async (): Promise<string | null> => {
-    const action = last;
-    if (!action || pendingRef.current) return null;
-    pendingRef.current = true;
-    setPending(true);
-    try {
-      const { error, retry } = await action.run();
-      // 戻せた・もう戻せない（ほかの画面が変えた）なら忘れる。そのあいだに次の操作をしていたら、そちらを残す
-      if (!error || !retry)
-        setLast((current) => (current === action ? null : current));
-      return error ?? null;
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+  return {
+    /** 戻せる操作の名前（「割当 #038 → 2nd」）。戻せなければ null */
+    label: action?.label ?? null,
+    /** 戻せる残りの秒 */
+    secondsLeft,
+    pending,
+    /** 通った操作を覚える（前の操作は戻せなくなる） */
+    remember: (label: string, run: UndoRun) =>
+      setLast({ label, atMs: Date.now(), run }),
+    forget: () => setLast(null),
+    undo: () => {
+      if (!action || pending) return;
+      setPending(true);
+      void Promise.resolve(action.run())
+        .then((ok) => {
+          if (ok) toast.success(`「${action.label}」を戻しました`);
+        })
+        .finally(() => {
+          setPending(false);
+          setLast((current) => (current === action ? null : current));
+        });
+    },
   };
-
-  return { label: last?.label ?? null, pending, remember, rememberCups, undo };
 };

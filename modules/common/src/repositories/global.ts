@@ -1,17 +1,8 @@
-import { type Firestore, doc, getDoc, setDoc } from "firebase/firestore";
-import createClient from "openapi-fetch";
-import {
-  cashierStateToUpdateRequest,
-  masterStateConverter,
-} from "../firebase-utils/converter";
-import { prodDB } from "../firebase-utils/firebase";
+import { apiClient, throwApiError } from "../api/client";
+import { cashierStateToUpdateRequest } from "../api/converter";
 import type { WithId } from "../lib/typeguard";
-import type { GlobalCashierState, MasterStateEntity } from "../models/global";
+import type { GlobalCashierState } from "../models/global";
 import type { OrderEntity } from "../models/order";
-import type { paths } from "../types/api";
-import { API_BASE_URL, throwApiError } from "./item";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 export type CashierStateRepo = {
   set: (state: GlobalCashierState) => Promise<void>;
@@ -20,11 +11,6 @@ export type CashierStateRepo = {
    * まだ一度も set していなければ、確定した注文を編集中注文として送る
    */
   setSubmittedOrder: (order: WithId<OrderEntity>) => Promise<void>;
-};
-
-export type MasterStateRepo = {
-  get: () => Promise<MasterStateEntity | undefined>;
-  set: (state: MasterStateEntity) => Promise<void>;
 };
 
 // レジの編集中注文と直前に確定した注文 ID。
@@ -38,11 +24,11 @@ export const cashierStateRepoFactory = (): CashierStateRepo => {
   let latest: GlobalCashierState | undefined;
 
   const put = async (state: GlobalCashierState) => {
-    const { error, response } = await client.PUT("/api/cashier-state", {
+    const { error, response } = await apiClient.PUT("/api/cashier-state", {
       body: cashierStateToUpdateRequest(state),
     });
     if (error || !response.ok) {
-      await throwApiError(response, "レジ状態の更新に失敗しました");
+      throwApiError(response, error, "レジ状態の更新に失敗しました");
     }
   };
 
@@ -65,26 +51,4 @@ export const cashierStateRepoFactory = (): CashierStateRepo => {
   };
 };
 
-export const masterStateRepoFactory = (db: Firestore): MasterStateRepo => {
-  return {
-    get: async () => {
-      const docRef = doc(db, "global", "master-state").withConverter(
-        masterStateConverter,
-      );
-      const docSnap = await getDoc(docRef);
-      const data = docSnap.data();
-      if (data?.id === "master-state") {
-        return data;
-      }
-    },
-    set: async (state) => {
-      const docRef = doc(db, "global", "master-state").withConverter(
-        masterStateConverter,
-      );
-      await setDoc(docRef, state);
-    },
-  };
-};
-
 export const cashierRepository = cashierStateRepoFactory();
-export const masterRepository = masterStateRepoFactory(prodDB);

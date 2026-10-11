@@ -18,10 +18,14 @@ func All() []any {
 		&MasterState{},
 		&CashierState{},
 		&StockResource{},
-		&ItemStockUsage{},
+		&StockResourceItemType{},
+		&OrderStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
-		&CaosLaneRow{},
-		&CaosLaneChangeRow{},
+		&DripperAssignee{},
+		&DripperAssigneeChange{},
+		&SquareCheckout{},
+		&SquareDevice{},
+		&PrinterSetting{},
 	}
 }

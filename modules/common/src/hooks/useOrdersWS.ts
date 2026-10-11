@@ -1,11 +1,12 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import { type MasterState, responseToMasterState } from "../data";
+import { apiWebSocketUrl } from "../api/client";
 import {
   type OrderResponse,
   responseToCashierState,
   responseToOrderEntity,
-} from "../firebase-utils";
+} from "../api/converter";
+import { type MasterState, responseToMasterState } from "../data";
 import type { WithId } from "../lib";
 import type { CaosLanes } from "../lib/caosLanes";
 import {
@@ -23,9 +24,10 @@ type WSMessage =
   // 作成・変更された1件の注文
   | { type: "order"; order: OrderResponse }
   | { type: "order_deleted"; order_id: string }
+  // 最新のオーダーストップの状態。接続直後と切り替えのたびに届く
   | {
       type: "master_state";
-      master_state: { created_at: string; type: string };
+      master_state: components["schemas"]["MasterStateResponse"];
     }
   | {
       type: "cashier_state";
@@ -41,6 +43,8 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 export const useOrdersWS = () => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
+  // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま。
+  // 切断しても null に戻さず、最後に受け取った状態を保つ（つなぎ直すとサーバーが最新を送ってくる）
   const [masterState, setMasterState] = useState<MasterState | null>(null);
   // レジの編集中注文。API にまだ無ければサーバーは何も流さないので null のまま
   const [cashierState, setCashierState] = useState<CashierStateEntity | null>(
@@ -51,12 +55,6 @@ export const useOrdersWS = () => {
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
-    const apiBaseUrl =
-      import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-    const wsUrl = apiBaseUrl
-      .replace("http://", "ws://")
-      .replace("https://", "wss://");
-
     const handleMessage = (e: MessageEvent) => {
       try {
         const data: WSMessage = JSON.parse(e.data);
@@ -107,7 +105,7 @@ export const useOrdersWS = () => {
 
     // 切れたら自動でつなぎ直す。サーバーは接続直後に現在の状態を送ってくるので、それで再同期される
     const connection = createReconnectingWebSocket({
-      url: `${wsUrl}/api/ws/orders`,
+      url: apiWebSocketUrl("/api/ws/orders"),
       onMessage: handleMessage,
       onStatusChange: setStatus,
     });

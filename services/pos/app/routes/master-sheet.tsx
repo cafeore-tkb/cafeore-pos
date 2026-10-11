@@ -1,7 +1,7 @@
 import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
 import "~/caos/caos.css";
-import { CaosLanesProvider } from "~/caos/lanes/CaosLanesContext";
+import { CaosLanesProvider } from "~/caos/hooks/useCaosLanes";
 
 export const meta: MetaFunction = () => {
   return [

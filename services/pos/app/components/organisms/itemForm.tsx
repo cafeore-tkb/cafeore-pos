@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { type StockAmounts, parseStockField, stockFields } from "~/lib/stock";
 import {
-  DEFAULT_ITEM_TYPE_FLAGS,
+  EMPTY_ITEM_TYPE,
   ItemTypeFlagFields,
   type ItemTypeFormValues,
 } from "./itemTypeForm";
@@ -21,6 +22,10 @@ export type ItemFormValues = {
   name: string;
   abbr: string;
   itemTypeId: string;
+  /** そのアイテムの在庫の値。新規で入れていないものは入らない（API の既定のまま） */
+  stock: Partial<StockAmounts>;
+  /** 開いたときの在庫の値（initialStock）。編集ではこれと比べて変えた値だけ送る */
+  savedStock?: StockAmounts;
 };
 
 /** アイテムと同じ名前・略称で、そのアイテム 1 つだけのメニュー */
@@ -31,6 +36,8 @@ type MenuDraft = { enabled: boolean; price: string; key: string };
 type Props = {
   initialItem?: ItemEntity;
   itemTypes: ItemType[];
+  /** 編集・複製の元のアイテムの在庫の値 */
+  initialStock?: StockAmounts;
   onSubmit: (
     values: ItemFormValues,
     menu: SameNameMenu | null,
@@ -45,6 +52,7 @@ type Props = {
 export function ItemForm({
   initialItem,
   itemTypes,
+  initialStock,
   onSubmit,
   onCreateItemType,
   menuKeysInUse,
@@ -56,11 +64,15 @@ export function ItemForm({
     return itemTypes[0]?.id ?? "";
   }, [initialItem, itemTypes]);
 
-  const [values, setValues] = useState<ItemFormValues>({
+  const [fields, setFields] = useState<Omit<ItemFormValues, "stock">>({
     name: initialItem?.name ?? "",
     abbr: initialItem?.abbr ?? "",
     itemTypeId: initialItemTypeId,
   });
+  const [stock, setStock] = useState<Partial<StockAmounts>>(initialStock ?? {});
+  // 開いている間に一覧が取り直されても、比べる元は開いたときの値のまま
+  const [savedStock] = useState(initialStock);
+  const values: ItemFormValues = { ...fields, stock, savedStock };
 
   const [menu, setMenu] = useState<MenuDraft>({
     enabled: false,
@@ -71,12 +83,15 @@ export function ItemForm({
   const menuKeyTaken =
     menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
 
-  const updateField = (key: keyof ItemFormValues, value: string) => {
-    setValues((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+  const updateField = (key: keyof typeof fields, value: string) => {
+    setFields((prev) => ({ ...prev, [key]: value }));
   };
+
+  // 空欄にした値は送らない（今の値・新規は既定のまま）
+  const setStockField = (key: keyof StockAmounts, raw: string) =>
+    setStock(({ [key]: _, ...rest }) =>
+      raw === "" ? rest : { ...rest, [key]: parseStockField(key, raw) },
+    );
 
   return (
     <form
@@ -149,6 +164,32 @@ export function ItemForm({
             if (created.id) updateField("itemTypeId", created.id);
           }}
         />
+      </div>
+
+      <div className="grid gap-3 rounded-md border p-3">
+        <div className="grid gap-1">
+          <p className="font-medium text-sm">在庫</p>
+          <p className="text-muted-foreground text-xs">
+            注文のたびに「1回の量」を在庫から引きます。通知の段階は在庫タブと同じです。空欄の値は今のまま（新規は既定）です
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {stockFields.map(({ key, label, type }) => (
+            <div key={key} className="grid content-start gap-1">
+              <Label htmlFor={`${id}-stock-${key}`} className="text-xs">
+                {label}
+              </Label>
+              <Input
+                id={`${id}-stock-${key}`}
+                type={type}
+                min={0}
+                step="any"
+                value={stock[key] ?? ""}
+                onChange={(e) => setStockField(key, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {menuKeysInUse && (
@@ -236,12 +277,7 @@ function NewItemType({
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
-  const emptyValues: ItemTypeFormValues = {
-    name: "",
-    display_name: "",
-    ...DEFAULT_ITEM_TYPE_FLAGS,
-  };
-  const [values, setValues] = useState<ItemTypeFormValues>(emptyValues);
+  const [values, setValues] = useState<ItemTypeFormValues>(EMPTY_ITEM_TYPE);
   const [creating, setCreating] = useState(false);
 
   if (!open) {
@@ -265,7 +301,7 @@ function NewItemType({
     setCreating(true);
     try {
       await onCreate(values);
-      setValues(emptyValues);
+      setValues(EMPTY_ITEM_TYPE);
       setOpen(false);
     } catch {
       // 失敗は onCreate 側でトーストに出る。入力は残してやり直せるようにする
@@ -314,11 +350,7 @@ function NewItemType({
           />
         </div>
       </div>
-      <ItemTypeFlagFields
-        compact
-        value={values}
-        onChange={(flags) => setValues((prev) => ({ ...prev, ...flags }))}
-      />
+      <ItemTypeFlagFields compact value={values} onChange={setValues} />
       <div className="flex justify-end gap-2">
         <Button
           type="button"

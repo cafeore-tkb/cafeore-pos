@@ -1,15 +1,19 @@
-import {
-  type MenuEntity,
-  type OrderEntity,
-  type WithId,
-  orderRepository,
+import type {
+  MenuEntity,
+  OrderEntity,
+  PrinterSettings,
+  SquareCheckout,
+  SquarePaymentType,
+  WithId,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
-import { usePrinter } from "~/label/print-util";
-import { useEmergencyLabels } from "~/label/useEmergencyLabels";
+import { RECEIPT_EPOS_PRINTER_CONFIG, eposPrinterAt } from "~/label/infra/epos";
+import { orderLabelJob } from "~/label/order-label";
+import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
 import {
   applyCashierOrderActionAtom,
@@ -20,22 +24,31 @@ import {
   cashierMenuOpenAtom,
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
-import { goodsOnlyServed } from "../functional/goodsOnlyServed";
+import {
+  type SubmitFocusTarget,
+  moveSubmitFocus,
+} from "../functional/submitFocus";
 import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
+import type { SquareDeviceSelection } from "../functional/useSquareDevice";
+import { useSquarePayment } from "../functional/useSquarePayment";
 import { useUISession } from "../functional/useUISession";
 import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
+import { PendingPrints } from "../molecules/PendingPrints";
 import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
 import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
 import { ServiceDiscountButton } from "../organisms/ServiceDiscountButton";
+import { SquareDeviceSelect } from "../organisms/SquareDeviceSelect";
+import { SquarePaymentDialog } from "../organisms/SquarePaymentDialog";
+import { SquareUnlinkedNotice } from "../organisms/SquareUnlinkedNotice";
 import { SubmitSection } from "../organisms/SubmitSection";
 import { Label } from "../ui/label";
 
@@ -43,10 +56,32 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
-  canSubmitOrder: boolean;
+  /** 今すぐ保存できるか（つながっているか）。Square の会計はこのときだけ */
+  canSaveNow: boolean;
+  /** Square 連携が有効か。無効なら Square のボタンも端末の選択も出さない */
+  squareEnabled: boolean;
+  /** このレジで使う Square 端末。決まっていなければ Square のボタンを出さない */
+  squareDevice: SquareDeviceSelection;
+  /** つなぐプリンター（ラベル用・レシート用）の IP アドレス */
+  printerAddresses: PrinterSettings;
   submitPayload: (order: OrderEntity) => void;
+  /** Square で支払い済みの注文を送る。登録できなければ reject する */
+  submitSquarePayload: (
+    order: OrderEntity,
+    squareCheckoutId: string,
+  ) => Promise<void>;
   syncOrder: (order: OrderEntity) => void;
 };
+
+/** シールの中身が同じかを比べるためのキー（刷る印刷データそのもの） */
+const labelKey = (order: OrderEntity) => JSON.stringify(orderLabelJob(order));
+
+/** 確定欄に出す Square の決済手段（上から順） */
+const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
+  "CARD_PRESENT",
+  "FELICA_ALL",
+  "QR_CODE",
+];
 
 /**
  * キャッシャー画面のコンポーネント
@@ -57,8 +92,12 @@ const CashierV2 = ({
   items,
   orders,
   wsStatus,
-  canSubmitOrder,
+  canSaveNow,
+  squareEnabled,
+  squareDevice,
+  printerAddresses,
   submitPayload,
+  submitSquarePayload,
   syncOrder,
 }: props) => {
   const newOrder = useAtomValue(editingOrderAtom);
@@ -73,14 +112,19 @@ const CashierV2 = ({
   const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
   const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
   const [UISession, renewUISession] = useUISession();
-  const { nextOrderId, manualOrderId, setOrderIdOverride } =
+  const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
+  // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
+  // オフラインの注文はこの端末に溜まり、つながったらまとめて送る（submitPayload）
+  const canSubmitOrder = canSaveNow || manualOrderId !== null;
+  // 番号を手で付ける必要があるのは、今すぐ保存できないとき（つなぎ始めの connecting は待つ）。
+  // 端末がオフラインでも、切れたことに気づくまで WebSocket は open のままのことがあるので、wsStatus だけでは見ない
+  const isNeedManualOrderId = !canSaveNow && wsStatus !== "connecting";
   const soundRef = useRef<HTMLAudioElement>(null);
   const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
   const [hasReceivedInput, setHasReceivedInput] = useState(false);
-  const [submitFocusTarget, setSubmitFocusTarget] = useState<
-    "submit" | "exactPayment"
-  >("submit");
+  const [submitFocusTarget, setSubmitFocusTarget] =
+    useState<SubmitFocusTarget>("submit");
   const dispatchOrder = useCallback(
     (action: OrderAction) => {
       applyOrderAction({ action, syncOrder });
@@ -88,30 +132,41 @@ const CashierV2 = ({
     [applyOrderAction, syncOrder],
   );
 
-  // 過去の注文を取得（全注文）
-  const servedOrders = useMemo(
-    () =>
-      orders
-        ? orders
-            .slice()
-            .sort((a, b) => b.orderId - a.orderId) // 注文番号の降順（新しい順）
-        : [],
-    [orders],
-  );
-
-  // 過去の注文からのコメント追加機能
-  const addComment = async (servedOrder: OrderEntity, descComment: string) => {
-    if (servedOrder.id)
-      orderRepository.addComment(servedOrder.id, "cashier", descComment);
-  };
-
   const playSound = useCallback(() => {
     soundRef.current?.play();
   }, []);
 
-  const printer = usePrinter();
-  // 緊急（入れ直し）になったカップの緊急のシールを、このレジのプリンターで印刷する
-  useEmergencyLabels(orders, printer);
+  // プリンターの IP アドレスが変わったら、つなぎ直す
+  const labelPrinterIp = printerAddresses.label_printer_ip;
+  const printer = usePrinter(
+    useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
+  );
+  // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る
+  const receiptPrinterIp = printerAddresses.receipt_printer_ip;
+  const receiptPrinter = useReceiptPrinter(
+    useMemo(
+      () => eposPrinterAt(receiptPrinterIp, RECEIPT_EPOS_PRINTER_CONFIG),
+      [receiptPrinterIp],
+    ),
+  );
+
+  /**
+   * 印刷したが、まだ登録していない注文のシールのキー。
+   * Square の決済がお金を受け取らずに終わった後、同じ注文で会計し直すときは刷り直さない
+   * （先に印刷したシールをそのまま使う）。注文を消したとき・登録したときに忘れる。
+   */
+  const unregisteredLabelKeyRef = useRef<string | null>(null);
+  const printOrderLabel = useCallback(
+    (order: OrderEntity) => {
+      const key = labelKey(order);
+      if (unregisteredLabelKeyRef.current === key) {
+        return;
+      }
+      unregisteredLabelKeyRef.current = key;
+      printer.printOrderLabel(order);
+    },
+    [printer],
+  );
 
   usePreventNumberKeyUpDown();
 
@@ -124,6 +179,7 @@ const CashierV2 = ({
   }, [nextOrderId, dispatchOrder]);
 
   const resetAll = useCallback(() => {
+    unregisteredLabelKeyRef.current = null;
     dispatchOrder({ type: "clear" });
     setHasReceivedInput(false);
     resetStatus();
@@ -143,16 +199,33 @@ const CashierV2 = ({
     proceedStatus();
   }, [inputStatus, canEnterSubmit, billingOk, proceedStatus]);
 
-  const focusSubmitAction = useCallback(
-    (target: "submit" | "exactPayment") => {
-      if (
-        inputStatus === "submit" &&
-        !(target === "exactPayment" && hasReceivedInput)
-      ) {
-        setSubmitFocusTarget(target);
+  // Square のボタンは、このレジで使う端末が決まっているときだけ出す
+  const squareDeviceId = squareEnabled
+    ? (squareDevice.device?.device_id ?? null)
+    : null;
+
+  // 確定欄で押せるボタン。↑↓キーはこの中で動く。
+  const availableSubmitTargets = useMemo(() => {
+    const targets: SubmitFocusTarget[] = [];
+    if (billingOk) targets.push("submit");
+    if (newOrder.menus.length > 0 && !hasReceivedInput) {
+      targets.push("exactPayment");
+    }
+    if (canSaveNow && squareDeviceId !== null && newOrder.menus.length > 0) {
+      targets.push(...SQUARE_PAYMENT_TYPES);
+    }
+    return targets;
+  }, [billingOk, newOrder, hasReceivedInput, squareDeviceId, canSaveNow]);
+
+  const moveSubmitFocusBy = useCallback(
+    (step: number) => {
+      if (inputStatus === "submit") {
+        setSubmitFocusTarget((prev) =>
+          moveSubmitFocus(prev, availableSubmitTargets, step),
+        );
       }
     },
-    [inputStatus, hasReceivedInput],
+    [inputStatus, availableSubmitTargets],
   );
 
   /**
@@ -163,6 +236,36 @@ const CashierV2 = ({
       setInputStatus("received");
     }
   }, [inputStatus, canEnterSubmit, setInputStatus]);
+
+  /** 送る直前の注文を作る。createdAt を今にし、備考を足す */
+  const prepareSubmit = useCallback(
+    (base: OrderEntity) => {
+      const submitOne = base.clone();
+      submitOne.nowCreated();
+      submitOne.addComment("cashier", descComment);
+      return submitOne;
+    },
+    [descComment],
+  );
+
+  /** 注文を送った後、次の注文を入力できるようにする */
+  const finishSubmit = useCallback(() => {
+    // オフライン時（手動番号指定時）は次の番号を自動設定
+    if (manualOrderId !== null && !canSaveNow) {
+      setOrderIdOverride(manualOrderId + 1);
+    }
+
+    resetAll();
+    setServiceActive(false);
+    playSound();
+  }, [
+    manualOrderId,
+    canSaveNow,
+    setOrderIdOverride,
+    resetAll,
+    setServiceActive,
+    playSound,
+  ]);
 
   const submitOrder = useCallback(
     (exactPayment?: boolean) => {
@@ -175,57 +278,137 @@ const CashierV2 = ({
       if (newOrder.menus.length === 0) {
         return;
       }
-      // 送信する直前に createdAt を更新する
-      const submitOne = newOrder.clone();
+      const submitOne = prepareSubmit(newOrder);
       if (exactPayment) submitOne.received = submitOne.billingAmount;
-      submitOne.nowCreated();
-      goodsOnlyServed(submitOne);
-      // 備考を追加
-      submitOne.addComment("cashier", descComment);
-      printer.printOrderLabel(submitOne);
+      printOrderLabel(submitOne);
+      receiptPrinter.printReceipt(submitOne, { method: "cash" });
       submitPayload(submitOne);
-
-      // オフライン時（手動番号指定時）は次の番号を自動設定
-      if (manualOrderId !== null && wsStatus !== "open") {
-        setOrderIdOverride(manualOrderId + 1);
-      }
-
-      resetAll();
-      setServiceActive(false);
-      playSound();
+      markOrderIdIssued(submitOne.orderId);
+      finishSubmit();
     },
     [
       canSubmitOrder,
       newOrder,
-      resetAll,
-      printer,
+      prepareSubmit,
+      printOrderLabel,
+      receiptPrinter,
       submitPayload,
-      descComment,
-      playSound,
-      manualOrderId,
-      setOrderIdOverride,
-      wsStatus,
-      setServiceActive,
+      finishSubmit,
+      markOrderIdIssued,
     ],
+  );
+
+  /**
+   * 端末に決済画面を出せた Square の決済と、そのとき先に印刷したシールの注文番号。
+   * 「未登録の Square 決済」から結び付けるときに、同じシールを刷り直さないために使う。
+   */
+  const prePrintedRef = useRef(new Map<string, number>());
+
+  /**
+   * Square で支払い済みの注文を送る。送れたら true
+   *
+   * 注文（order）を、その注文番号のまま送る。お預かりは請求額と同じにする。
+   * 登録できたと分かってから入力を消し、レシートを刷る。print なら、そのときシールも印刷する。
+   * 登録に失敗したら reject する（お金は受け取っているので、呼ぶ側で支払い済みのまま送り直せるようにする）。
+   */
+  const submitSquareOrder = useCallback(
+    async (
+      checkout: SquareCheckout,
+      order: OrderEntity,
+      print: boolean,
+    ): Promise<boolean> => {
+      if (!canSaveNow || order.menus.length === 0) {
+        return false;
+      }
+      const submitOne = prepareSubmit(order);
+      submitOne.received = submitOne.billingAmount;
+      await submitSquarePayload(submitOne, checkout.id);
+      if (print) {
+        printOrderLabel(submitOne);
+      }
+      receiptPrinter.printReceipt(submitOne, {
+        method: "square",
+        paymentType: checkout.payment_type,
+      });
+      finishSubmit();
+      return true;
+    },
+    [
+      canSaveNow,
+      prepareSubmit,
+      submitSquarePayload,
+      printOrderLabel,
+      receiptPrinter,
+      finishSubmit,
+    ],
+  );
+
+  // シールは端末に決済画面が出た時点で先に印刷し、支払いを待つ間に作り始められるようにする。
+  // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わっても
+  // 印刷はしない（ダイアログで知らせる）。
+  const squarePayment = useSquarePayment({
+    onStarted: (checkout, order) => {
+      prePrintedRef.current.set(checkout.id, order.orderId);
+      printOrderLabel(order);
+    },
+    onPaid: (checkout, order) => submitSquareOrder(checkout, order, false),
+  });
+
+  /**
+   * 「未登録の Square 決済」を、入力中の注文で登録する。
+   * このレジで先にシールを印刷した決済なら、刷り直さず、シールと同じ番号で登録する。
+   * そうでなければ（別のレジで決済した・画面を開き直したなど）、今の番号で登録して印刷する。
+   */
+  const submitUnlinkedSquareOrder = useCallback(
+    (checkout: SquareCheckout) => {
+      const prePrintedOrderId = prePrintedRef.current.get(checkout.id);
+      const order = newOrder.clone();
+      if (prePrintedOrderId !== undefined) {
+        order.orderId = prePrintedOrderId;
+      }
+      submitSquareOrder(checkout, order, prePrintedOrderId === undefined).catch(
+        (error) => {
+          toast.error(
+            `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        },
+      );
+    },
+    [newOrder, submitSquareOrder],
+  );
+
+  const startSquarePayment = useCallback(
+    (paymentType: SquarePaymentType) => {
+      if (!canEnterSubmit || squareDeviceId === null) {
+        return;
+      }
+      squarePayment.start(newOrder, paymentType, squareDeviceId);
+    },
+    [canEnterSubmit, squareDeviceId, squarePayment.start, newOrder],
   );
 
   const keyEventHandlers = useMemo(() => {
     return {
       ArrowRight: proceedStatusGuarded,
       ArrowLeft: previousStatus,
-      ArrowUp: () => focusSubmitAction("submit"),
-      ArrowDown: () => focusSubmitAction("exactPayment"),
+      ArrowUp: () => moveSubmitFocusBy(-1),
+      ArrowDown: () => moveSubmitFocusBy(1),
       Escape: () => {
         resetAll();
       },
     };
-  }, [proceedStatusGuarded, previousStatus, focusSubmitAction, resetAll]);
+  }, [proceedStatusGuarded, previousStatus, moveSubmitFocusBy, resetAll]);
 
   /**
    * OK
    */
+  const squarePaymentActive = squarePayment.active;
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      // 決済中は注文を変えられないようにする（Esc で注文が消えるのも防ぐ）
+      if (squarePaymentActive) {
+        return;
+      }
       const key = event.key;
       for (const [keyName, keyHandler] of Object.entries(keyEventHandlers)) {
         if (key === keyName) {
@@ -237,7 +420,7 @@ const CashierV2 = ({
     return () => {
       window.removeEventListener("keydown", handler);
     };
-  }, [keyEventHandlers]);
+  }, [keyEventHandlers, squarePaymentActive]);
 
   const itemMenu = (
     <ItemButtons
@@ -255,9 +438,7 @@ const CashierV2 = ({
         <div className="flex justify-between">
           <OrderIdDisplay
             orderId={newOrder.orderId}
-            isNeedManualOrderId={
-              wsStatus !== "connecting" && wsStatus !== "open"
-            }
+            isNeedManualOrderId={isNeedManualOrderId}
             manualOrderId={manualOrderId}
             onOrderIdOverride={setOrderIdOverride}
           />
@@ -270,12 +451,37 @@ const CashierV2 = ({
             <Label htmlFor="menu-button">メニュー表示</Label>
           </div>
           <div className="flex items-center space-x-2">
-            <PrinterStatus status={printer.status} />
+            {squareEnabled && (
+              <SquareUnlinkedNotice
+                devices={squareDevice.devices}
+                currentBillingAmount={newOrder.billingAmount}
+                canSubmit={canEnterSubmit && !squarePaymentActive}
+                onSubmitWithCheckout={submitUnlinkedSquareOrder}
+              />
+            )}
+            {squareEnabled && (
+              <SquareDeviceSelect
+                devices={squareDevice.devices}
+                device={squareDevice.device}
+                missing={squareDevice.missing}
+                onSelect={squareDevice.select}
+                disabled={squarePaymentActive}
+              />
+            )}
+            <div className="flex flex-col">
+              <PrinterStatus name="ラベル" status={printer.status} />
+              <PrinterStatus name="レシート" status={receiptPrinter.status} />
+              <PendingPrints
+                count={printer.pendingCount}
+                onRetry={printer.retry}
+              />
+            </div>
             <PastOrderSideSheet
-              orders={servedOrders}
-              cardUser={"cashier"}
-              cardTiming={"all"}
-              comment={addComment}
+              orders={orders}
+              author="cashier"
+              withGoods
+              squareRefundable={squareEnabled}
+              onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
             />
           </div>
         </div>
@@ -410,15 +616,28 @@ const CashierV2 = ({
                 submitOrder={submitOrder}
                 onExactPayment={() => submitOrder(true)}
                 order={newOrder}
-                focus={inputStatus === "submit"}
+                focus={inputStatus === "submit" && !squarePaymentActive}
                 focusTarget={submitFocusTarget}
-                exactPaymentDisabled={
-                  newOrder.menus.length === 0 || hasReceivedInput
+                availableTargets={availableSubmitTargets}
+                squarePaymentTypes={
+                  canSaveNow && squareDeviceId !== null
+                    ? SQUARE_PAYMENT_TYPES
+                    : []
                 }
+                onSquarePayment={startSquarePayment}
               />
             </fieldset>
           </div>
         </div>
+        <SquarePaymentDialog
+          state={squarePayment.state}
+          canSubmitOrder={canSaveNow}
+          onCancel={squarePayment.cancel}
+          onRetry={squarePayment.retry}
+          onCancelConflicting={squarePayment.cancelConflicting}
+          onSubmitPaid={squarePayment.submitPaid}
+          onClose={squarePayment.close}
+        />
         <audio src={bellTwice} ref={soundRef}>
           <track kind="captions" />
         </audio>

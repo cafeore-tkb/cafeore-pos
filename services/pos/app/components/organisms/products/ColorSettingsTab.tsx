@@ -1,8 +1,7 @@
 import {
-  type ColorScreen,
-  type ItemType,
   colorScreens,
   findColorSetting,
+  openapiEnumLabels,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -16,17 +15,8 @@ import {
   TableRow,
 } from "~/components/ui/table";
 
-const screenLabels: Record<ColorScreen, string> = {
-  cashier: "レジ（ボタン）",
-  cashier_order: "レジ（過去の注文）",
-  master: "マスター",
-  serve: "提供",
-};
-
-// カップを作らない種類（グッズなど）はマスター・提供画面に出ない（OrderEntity.getDrinkCups で除かれる）ので、
-// それ以外の画面（レジのボタン・レジの過去の注文）だけ設定できる
-const isShownOnScreen = (itemType: ItemType, screen: ColorScreen) =>
-  (screen !== "master" && screen !== "serve") || itemType.makes_cup;
+// 画面の表示名（openapi.yaml の x-enum-descriptions）
+const screenLabels = openapiEnumLabels("ColorScreen");
 
 export function ColorSettingsTab() {
   const { items, itemTypes, isLoading, error } = useItemMaster();
@@ -69,22 +59,18 @@ export function ColorSettingsTab() {
                 </TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(itemType, screen) ? (
-                      <ColorSettingCell
-                        targetType="ItemType"
-                        targetId={itemType.id}
-                        screen={screen}
-                        setting={findColorSetting(
-                          colorSettings,
-                          "ItemType",
-                          itemType.id,
-                          screen,
-                        )}
-                        onChanged={mutateColorSettings}
-                      />
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    <ColorSettingCell
+                      targetType="ItemType"
+                      targetId={itemType.id}
+                      screen={screen}
+                      setting={findColorSetting(
+                        colorSettings,
+                        "ItemType",
+                        itemType.id,
+                        screen,
+                      )}
+                      onChanged={mutateColorSettings}
+                    />
                   </TableCell>
                 ))}
               </TableRow>
@@ -112,22 +98,18 @@ export function ColorSettingsTab() {
                 <TableCell>{item.item_type.display_name}</TableCell>
                 {colorScreens.map((screen) => (
                   <TableCell key={screen}>
-                    {isShownOnScreen(item.item_type, screen) ? (
-                      <ColorSettingCell
-                        targetType="Item"
-                        targetId={item.id}
-                        screen={screen}
-                        setting={findColorSetting(
-                          colorSettings,
-                          "Item",
-                          item.id,
-                          screen,
-                        )}
-                        onChanged={mutateColorSettings}
-                      />
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    <ColorSettingCell
+                      targetType="Item"
+                      targetId={item.id}
+                      screen={screen}
+                      setting={findColorSetting(
+                        colorSettings,
+                        "Item",
+                        item.id,
+                        screen,
+                      )}
+                      onChanged={mutateColorSettings}
+                    />
                   </TableCell>
                 ))}
               </TableRow>

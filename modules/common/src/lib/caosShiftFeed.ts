@@ -1,15 +1,15 @@
-import { CAOS_DRIPPERS } from "./caos-board";
-import { jstDate } from "./jstDay";
+import { DRIPPER_NUMBERS } from "../models/dripper";
+import { jstClock, jstDate } from "./jst";
 
 // sohosai-shift（シフト作成ツール）が CaOS へ配信する担当者の予定（Firestore の caosFeeds/{合言葉}）を読む。
 // 合言葉を知っていればログインなしで読める（Firestore の REST）。合言葉はビルドに入れず、各 iPad の CaOS の設定で入れて端末に覚える。
-// CaOS はこれを「交代」のときの名前の候補と、上級生（限定を淹れられる人）の判定にだけ使う。予定の時刻どおりに自動で替えることはしない。
+// CaOS はこれを「交代」のときの名前の候補と、上級生の判定にだけ使う。予定の時刻どおりに自動で替えることはしない。
 //
 // 中身（Firestore の REST の形で届くのを、ここで普通の値に直す）：
 //   drippers：本番の 30 分ごとの枠。キーは枠の開始（日本時間 "YYYY-MM-DD HH:MM"）、値は 1st〜6th の氏名（空きは ""）
 //   drills：オペ練の回ごと（回 id → {title, date, start, minutes, gap, rounds, drippers}）。
 //           ラウンド k の開始は start + (k-1)×(minutes+gap) 分、終わりは開始＋minutes 分。drippers のキーはラウンドの番号（"1"〜）
-//   seniors：上級生（限定を淹れられる人）の氏名
+//   seniors：上級生の氏名
 
 /** 本番の枠の長さ（分） */
 const SHIFT_SLOT_MINUTES = 30;
@@ -98,9 +98,7 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 /** 1st〜6th の氏名（前後の空白を落とし、6 人分にそろえる） */
 const asLaneNames = (value: unknown): string[] => {
   const names = Array.isArray(value) ? value : [];
-  return Array.from({ length: CAOS_DRIPPERS }, (_, i) =>
-    asString(names[i]).trim(),
-  );
+  return DRIPPER_NUMBERS.map((_, i) => asString(names[i]).trim());
 };
 
 const asNameTable = (value: unknown): Record<string, string[]> =>
@@ -182,7 +180,7 @@ export const fetchShiftFeed = async (
 
 const normalizeName = (name: string) => name.normalize("NFKC").trim();
 
-/** 上級生（限定を淹れられる人）か。予定の seniors に名前があれば上級生。予定が無ければ false */
+/** 上級生か。予定の seniors に名前があれば上級生。予定が無ければ false */
 export const isSeniorName = (feed: ShiftFeed | null, name: string) => {
   const target = normalizeName(name);
   if (!feed || !target) return false;
@@ -196,15 +194,12 @@ const jstMs = (date: string, time: string) =>
     : Number.NaN;
 
 /** 日本時間の時刻 HH:MM */
-const clockOf = (ms: number) =>
-  new Date(ms + 9 * 60 * MINUTE_MS).toISOString().slice(11, 16);
+const clockOf = (ms: number) => jstClock(ms).slice(0, 5);
 
 /** 予定の 1 つ（本番の枠か、オペ練のラウンド） */
 export interface ShiftPeriod {
   /** 画面に出す呼び方（例「今の枠 11:00〜11:30」「第2回オペ練 次のR2 13:25〜13:45」） */
   label: string;
-  startMs: number;
-  endMs: number;
   /** 1st〜6th の氏名 */
   names: string[];
 }
@@ -265,8 +260,6 @@ export const currentShiftPeriods = (
   ) =>
     periods.push({
       label: `${label} ${range(p.startMs, p.endMs)}`,
-      startMs: p.startMs,
-      endMs: p.endMs,
       names: p.names,
     });
   if (currentSlot) push("今の枠", currentSlot);
