@@ -225,7 +225,7 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 
 	// このインスタンスでオーダーストップしたときは、その場で 1 回だけ配り（自分の通知では配り直さない）、
 	// ほかのインスタンスへ通知する
-	if w := callHandler(t, NewMasterStateHandler(db, hub).UpdateMasterStatus, http.MethodPost, `{"type":"stop"}`); w.Code != http.StatusCreated {
+	if w := callHandler(t, NewMasterStateHandler(db, hub, nil).UpdateMasterStatus, http.MethodPost, `{"type":"stop"}`); w.Code != http.StatusCreated {
 		t.Fatalf("POST master-status = %d: %s", w.Code, w.Body)
 	}
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeMasterState || msg.MasterState.Type != "stop" {

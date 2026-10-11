@@ -37,6 +37,8 @@ type Inventory struct {
 	slack      *notify.Slack
 	remindAuth RemindAuth
 	posURL     string
+	// 在庫対象の変更と、棚卸し・入荷・調整の記録を流す
+	activity *notify.Activity
 }
 
 // POST /api/inventory/remind を叩いてよい相手。どちらか一方を満たせば通す。
@@ -48,8 +50,8 @@ type RemindAuth struct {
 	CronSecret string
 }
 
-func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string) *Inventory {
-	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL}
+func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string, activity *notify.Activity) *Inventory {
+	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL, activity: activity}
 }
 
 // ids が nil なら削除されていない在庫対象すべて。
@@ -389,6 +391,7 @@ func (h *InventoryHandler) CreateStockResource(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toStockResourceResponse(&resource))
+	h.inv.activity.Post(stockResourceCreatedMessage(&resource, h.inv.itemTypeNames(resource.ItemTypes)))
 }
 
 // PUT /api/inventory/resources/:id - 在庫対象の更新
@@ -421,6 +424,7 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
 	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
 	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
+	before := resource
 	columns := []string{"unit", "per_serving", "notify_from", "notify_step", "buffer"}
 	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
 		resource.LastAlertThreshold = nil
@@ -448,6 +452,30 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
 	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
+	// 使う種類は送られたときだけ比べる（省略したときは今のまま）
+	var typesBefore, typesAfter string
+	if req.ItemTypeIds != nil {
+		typesBefore, typesAfter = h.inv.itemTypeNames(before.ItemTypes), h.inv.itemTypeNames(resource.ItemTypes)
+	}
+	h.inv.activity.Post(stockResourceUpdatedMessage(&before, &resource, typesBefore, typesAfter))
+}
+
+// 通知に出す、カップを使う種類の名前を「ブレンド・グルメ」と並べる。消えた種類も名前で出したいので論理削除も含めて探す
+func (inv *Inventory) itemTypeNames(types []models.StockResourceItemType) string {
+	ids := make([]uuid.UUID, len(types))
+	for i, t := range types {
+		ids[i] = t.ItemTypeID
+	}
+	var names []string
+	if len(ids) > 0 {
+		if err := inv.db.Unscoped().Model(&models.ItemType{}).Where("id IN ?", ids).Order("name").Pluck("display_name", &names).Error; err != nil {
+			log.Printf("activity: failed to load item types: %v", err)
+		}
+	}
+	if len(names) == 0 {
+		return "なし"
+	}
+	return strings.Join(names, "・")
 }
 
 var errInvalidCupItemTypes = errors.New("item_type_ids must be existing and unique item types")
@@ -505,17 +533,24 @@ func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "item stock is deleted with its item"})
 		return
 	}
+	// 同時に消したときに二重に通知しないよう、消せたときだけ通知する
+	var deleted bool
 	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_id = ?", id).Delete(&models.StockResourceItemType{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&resource).Error
+		res := tx.Delete(&resource)
+		deleted = res.RowsAffected > 0
+		return res.Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.Status(http.StatusNoContent)
+	if deleted {
+		h.inv.activity.Post(stockResourceDeletedMessage(&resource))
+	}
 }
 
 // POST /api/inventory/resources/:id/events - 棚卸し・入荷・調整の記録
@@ -569,8 +604,22 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		}
 	}
 
+	// 記録した直後の残量で通知する。応答の後に裏で数えると、その間の注文の分だけずれ、
+	// 終了時（activity.Close）より後に Post して欠けることもあるので、ハンドラーの中で送る
+	h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
 	c.JSON(http.StatusCreated, resp)
 	go h.inv.CheckAlerts([]uuid.UUID{id})
+}
+
+func (inv *Inventory) postStockEvent(resource models.StockResource, event models.StockEvent, estimated *float64) {
+	var remaining *float64
+	after, err := inv.snapshots(context.Background(), []uuid.UUID{resource.ID})
+	if err != nil {
+		log.Printf("activity: failed to calculate remaining of %s: %v", resource.DisplayName(), err)
+	} else if len(after) > 0 {
+		remaining = after[0].Remaining()
+	}
+	inv.activity.Post(stockEventMessage(&resource, &event, estimated, remaining))
 }
 
 // 記録の種類と数量の組み合わせを検証し、不正なら 400 で返す文言を返す。

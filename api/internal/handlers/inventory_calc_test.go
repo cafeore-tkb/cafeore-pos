@@ -169,13 +169,13 @@ func TestFormatDuration(t *testing.T) {
 		d    time.Duration
 		want string
 	}{
-		{0, "0 分"},
-		{59 * time.Minute, "59 分"},
-		{59*time.Minute + 31*time.Second, "1 時間"}, // 分に丸めてから時間にする
-		{90 * time.Minute, "1 時間 30 分"},
-		{9*time.Hour + 59*time.Minute, "9 時間 59 分"},
-		{10 * time.Hour, "10 時間"},
-		{10*time.Hour + 30*time.Minute, "10 時間"}, // 10 時間を超えたら分は出さない
+		{0, "0分"},
+		{59 * time.Minute, "59分"},
+		{59*time.Minute + 31*time.Second, "1時間"}, // 分に丸めてから時間にする
+		{90 * time.Minute, "1時間30分"},
+		{9*time.Hour + 59*time.Minute, "9時間59分"},
+		{10 * time.Hour, "10時間"},
+		{10*time.Hour + 30*time.Minute, "10時間"}, // 10 時間を超えたら分は出さない
 	}
 	for _, c := range cases {
 		if got := formatDuration(c.d); got != c.want {
@@ -209,9 +209,9 @@ func TestDescribeRemaining(t *testing.T) {
 	}{
 		{"untracked", stockSnapshot{Resource: models.StockResource{Kind: "item", PerServing: 15}}, "未計測"},
 		// 回数は切り捨てる（66.6 回 → 66 回）
-		{"bean", beanSnapshot(0, 0), "残り約 66 回分（1000 g）"},
-		{"bean fraction", beanSnapshot(0.5, 0), "残り約 66 回分（999.5 g）"},
-		{"cup", cups, "残り約 120 回分（120.6 個）"},
+		{"bean", beanSnapshot(0, 0), "残り約66回分（1000g）"},
+		{"bean fraction", beanSnapshot(0.5, 0), "残り約66回分（999.5g）"},
+		{"cup", cups, "残り約120回分（120.6個）"},
 	}
 	for _, c := range cases {
 		if got := describeRemaining(c.s); got != c.want {
@@ -229,10 +229,10 @@ func TestDescribePace(t *testing.T) {
 		{"untracked", stockSnapshot{ServingsLastHour: 10}, ""},
 		{"no orders in last hour", beanSnapshot(0, 0), ""},
 		// 残り 30 回を 1 時間 20 回で使うと 1.5 時間
-		{"pace", beanSnapshot(550, 20), "直近1時間 20 回 → 約 1 時間 30 分で切れる見込み"},
+		{"pace", beanSnapshot(550, 20), "直近1時間 20回 → 約1時間30分で切れる見込み"},
 		// 使い切ったあとは見込みを出さない
-		{"empty", beanSnapshot(1000, 20), "直近1時間 20 回"},
-		{"over", beanSnapshot(1200, 20), "直近1時間 20 回"},
+		{"empty", beanSnapshot(1000, 20), "直近1時間 20回"},
+		{"over", beanSnapshot(1200, 20), "直近1時間 20回"},
 	}
 	for _, c := range cases {
 		if got := describePace(c.s); got != c.want {
@@ -242,46 +242,56 @@ func TestDescribePace(t *testing.T) {
 }
 
 func TestAlertMessage(t *testing.T) {
-	// 残り 30 回（warning）。直近の注文が無ければペースの行は付かない
-	if got, want := alertMessage(beanSnapshot(550, 0)), ":warning: *ブレンド豆* 残り約 30 回分（450 g）"; got != want {
-		t.Errorf("warning: got %q, want %q", got, want)
+	counted := 3000.0
+	kenya := stockSnapshot{
+		Resource:         models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30},
+		Tracked:          true,
+		CountedQuantity:  &counted,
+		Consumed:         1800, // 残り 1200g = 80 回
+		ServingsLastHour: 12,
 	}
-	// 残り 10 回（critical）。バッファを切ったことと、ペースを 2 行目に出す
-	got := alertMessage(beanSnapshot(850, 20))
-	want := ":rotating_light: *ブレンド豆* 残り約 10 回分（150 g）（バッファ 10 回を切りました）\n" +
-		"　直近1時間 20 回 → 約 30 分で切れる見込み"
-	if got != want {
-		t.Errorf("critical: got %q, want %q", got, want)
+	if got, want := alertMessage(kenya), "⚠️ *ケニア* 残り約80回分（1200g）\n　直近1時間 12回 → 約6時間40分で切れる見込み"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+
+	cups := 90.0
+	cup := stockSnapshot{
+		Resource:        models.StockResource{Kind: "cup", Name: "アイスカップ", Unit: "個", PerServing: 1, NotifyFrom: 500, NotifyStep: 100, Buffer: 100},
+		Tracked:         true,
+		CountedQuantity: &cups,
+	}
+	if got, want := alertMessage(cup), "🚨 *アイスカップ* 残り約90回分（90個）（バッファ100回を切りました）"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
 	}
 }
 
 func TestRemindMessage(t *testing.T) {
-	now := time.Date(2026, 11, 3, 14, 0, 0, 0, time.UTC)
-	counted := beanSnapshot(0, 0)
-	countedAt := now.Add(-2*time.Hour - 15*time.Minute)
-	counted.BaseAt = &countedAt
-	// 入荷だけで棚卸しをしていないもの
+	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
+	countedAt := now.Add(-80 * time.Minute)
+	counted := 1200.0
 	receivedAt := now.Add(-time.Hour)
-	received := stockSnapshot{
-		Resource: models.StockResource{Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1},
-		Tracked:  true,
-		BaseAt:   &receivedAt,
-		Received: 300,
+	snapshots := []stockSnapshot{
+		{
+			Resource:        models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15},
+			Tracked:         true,
+			BaseAt:          &countedAt,
+			CountedQuantity: &counted,
+		},
+		// 入荷だけで棚卸しをしていないもの
+		{Resource: models.StockResource{Kind: "cup", Name: "アイスカップ", Unit: "個", PerServing: 1}, Tracked: true, BaseAt: &receivedAt, Received: 300},
+		{Resource: models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}},
 	}
-	untracked := stockSnapshot{Resource: models.StockResource{Kind: "item", Name: "新しい豆", PerServing: 15}}
-
-	got := remindMessage([]stockSnapshot{counted, received, untracked}, now, "https://pos.example.com/")
-	want := ":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
-		"• ブレンド豆: 残り約 66 回分（1000 g）（最終確認 2 時間 15 分前）\n" +
-		"• カップ: 残り約 300 回分（300 個）（最終確認 未実施）\n" +
-		"• 新しい豆: 未計測（最終確認 未実施）\n" +
+	want := "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。\n" +
+		"• ケニア: 残り約80回分（1200g）（最終確認 1時間20分前）\n" +
+		"• アイスカップ: 残り約300回分（300個）（最終確認 未実施）\n" +
+		"• ホットカップ: 未計測（最終確認 未実施）\n" +
 		"<https://pos.example.com/inventory|在庫ページを開く>"
-	if got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	if got := remindMessage(snapshots, now, "https://pos.example.com/"); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
 	}
 
 	// POS の URL が無ければリンクを付けない
-	if got := remindMessage(nil, now, ""); got != ":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。" {
+	if got := remindMessage(nil, now, ""); got != "⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。" {
 		t.Errorf("without url: %q", got)
 	}
 }

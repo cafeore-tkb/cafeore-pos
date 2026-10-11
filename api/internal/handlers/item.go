@@ -8,16 +8,19 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/notify"
 )
 
 type ItemHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	activity *notify.Activity
 }
 
-func NewItemHandler(db *gorm.DB) *ItemHandler {
-	return &ItemHandler{db: db}
+func NewItemHandler(db *gorm.DB, activity *notify.Activity) *ItemHandler {
+	return &ItemHandler{db: db, activity: activity}
 }
 
 // DB models → API models 変換関数
@@ -89,6 +92,7 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toItemResponse(&item))
+	h.activity.Post(itemCreatedMessage(&item))
 }
 
 // GET /api/items/:id - アイテム取得
@@ -131,8 +135,9 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		return
 	}
 
+	// 通知で変更前と比べるため、タイプ込みで読んでおく
 	var item models.Item
-	if err := h.db.First(&item, "id = ?", itemID).Error; err != nil {
+	if err := h.db.Preload("ItemType").First(&item, "id = ?", itemID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 			return
@@ -140,6 +145,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	before := item
 
 	// 更新
 	item.Name = req.Name
@@ -154,7 +160,8 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 	item.ItemTypeID = itemTypeID
 
-	if err := h.db.Save(&item).Error; err != nil {
+	// 読んだタイプを関連として書き戻さない
+	if err := h.db.Omit(clause.Associations).Save(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -166,6 +173,7 @@ func (h *ItemHandler) UpdateItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toItemResponse(&item))
+	h.activity.Post(itemUpdatedMessage(&before, &item))
 }
 
 // DELETE /api/items/:id - アイテム削除
@@ -179,9 +187,11 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	}
 
 	// アイテムの在庫も一緒に論理削除する。消す前の注文で減った量は注文の側に残っているので変わらない
+	// 消した行は通知に名前を出すために RETURNING で受け取る
+	var deleted models.Item
 	var affected int64
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&models.Item{}, "id = ?", itemID)
+		result := tx.Clauses(clause.Returning{}).Delete(&deleted, "id = ?", itemID)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -199,4 +209,5 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+	h.activity.Post(itemDeletedMessage(&deleted))
 }

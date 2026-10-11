@@ -712,6 +712,13 @@
       "ColorScreenMaster",
       "ColorScreenServe",
       "ColorScreenNominated"
+    ],
+    "x-enum-descriptions": [
+      "レジ（ボタン）",
+      "レジ（過去の注文）",
+      "マスター",
+      "提供",
+      "CaOS（指名）"
     ]
   },
   "ColorSettingResponse": {

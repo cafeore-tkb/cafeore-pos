@@ -2094,6 +2094,13 @@ components:
         - ColorScreenMaster
         - ColorScreenServe
         - ColorScreenNominated
+      # 画面に出す名前。POS（openapiEnumLabels）と API の Slack の通知（colorScreenLabels）はここに合わせる
+      x-enum-descriptions:
+        - レジ（ボタン）
+        - レジ（過去の注文）
+        - マスター
+        - 提供
+        - CaOS（指名）
     ColorSettingResponse:
       type: object
       required:
@@ -2354,7 +2361,7 @@ components:
       description: item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
       enum: [item, cup]
       x-enum-varnames: [StockResourceKindItem, StockResourceKindCup]
-      # 画面に出す名前
+      # 画面に出す名前。POS（openapiEnumLabels）と API の Slack の通知（stockKindLabels）はここに合わせる
       x-enum-descriptions: [アイテム, カップ]
     StockResourceRequest:
       type: object

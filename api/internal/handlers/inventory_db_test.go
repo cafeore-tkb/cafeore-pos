@@ -248,7 +248,7 @@ func TestCheckAlertsNotifiesOncePerThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := api.slack.sent()
-	if len(sent) != 1 || !strings.Contains(sent[0], "*ブレンド* 残り約 58 回分（880 g）") {
+	if len(sent) != 1 || !strings.Contains(sent[0], "*ブレンド* 残り約58回分（880g）") {
 		t.Fatalf("sent: %q", sent)
 	}
 	if got := api.lastAlertThreshold(beans); got == nil || *got != 60 {
@@ -270,7 +270,7 @@ func TestCheckAlertsNotifiesOncePerThreshold(t *testing.T) {
 	if err := api.inv.checkAlerts(ctx, []uuid.UUID{beans.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if sent := api.slack.sent(); len(sent) != 2 || !strings.Contains(sent[1], "残り約 38 回分") {
+	if sent := api.slack.sent(); len(sent) != 2 || !strings.Contains(sent[1], "残り約38回分") {
 		t.Fatalf("sent: %q", sent)
 	}
 	if got := api.lastAlertThreshold(beans); got == nil || *got != 40 {
@@ -463,7 +463,7 @@ func TestRemindInventory(t *testing.T) {
 		t.Fatalf("must send: %+v", body)
 	}
 	sent := api.slack.sent()
-	if len(sent) != 1 || !strings.Contains(sent[0], "• ブレンド: 残り約 59 回分（885 g）（最終確認 2 時間前）") ||
+	if len(sent) != 1 || !strings.Contains(sent[0], "• ブレンド: 残り約59回分（885g）（最終確認 2時間前）") ||
 		!strings.Contains(sent[0], "• カップ: 未計測（最終確認 未実施）") ||
 		!strings.HasSuffix(sent[0], "<https://pos.example.com/inventory|在庫ページを開く>") {
 		t.Fatalf("sent: %q", sent)
