@@ -2,6 +2,7 @@ import {
   itemRepository,
   itemTypeRepository,
   menuRepository,
+  useInventory,
   useItemMaster,
   useMenuMaster,
 } from "@cafeore/common";
@@ -74,15 +75,23 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
+  const { statuses, mutateInventory } = useInventory();
+  const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const usageOfItems = useMemo(() => itemUsage(menus), [menus]);
   const usageOfItemTypes = useMemo(() => itemTypeUsage(items), [items]);
 
-  // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す
+  // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す。
+  // アイテムを作る・消すとその在庫もできる・消えるので、在庫も一緒に取り直す
   const refresh = () =>
-    Promise.all([mutateMenus(), mutateItems(), mutateItemTypes()]);
+    Promise.all([
+      mutateMenus(),
+      mutateItems(),
+      mutateItemTypes(),
+      mutateInventory(),
+    ]);
 
   const handlersFor = (kind: ProductKind): RowHandlers => ({
     onEdit: (id) => setEditing({ kind, mode: "edit", id }),
@@ -167,6 +176,7 @@ export default function ProductsPage() {
               <ItemsTab
                 items={items}
                 usage={usageOfItems}
+                resources={resources}
                 {...handlersFor("item")}
               />
             </TabsContent>
