@@ -1,4 +1,4 @@
-// Package square は Square の REST API（Terminal / Payments / Devices）を呼ぶ最小限のクライアント。
+// Package square は Square の REST API（Terminal / Payments / Refunds / Devices）を呼ぶ最小限のクライアント。
 //
 // 公式 SDK は使わず net/http で呼ぶ。使う API が少なく、レスポンスも必要な
 // フィールドだけ読めば足りるため。
@@ -214,12 +214,17 @@ func (c *Client) CancelTerminalCheckout(ctx context.Context, checkoutID string) 
 // amount_money はチップを含まない額、total_money はチップを含む額。
 // チップは受け付けない（tip_settings.allow_tipping の既定は false）ので、
 // 依頼額と比べるのは amount_money。
+//
+// refunded_money は完了した返金の合計（返金が無ければ省かれる）、refund_ids は
+// 処理中のものも含めた返金の ID。
 type Payment struct {
-	ID          string `json:"id"`
-	Status      string `json:"status"`
-	AmountMoney Money  `json:"amount_money"`
-	TotalMoney  Money  `json:"total_money"`
-	SourceType  string `json:"source_type"`
+	ID            string   `json:"id"`
+	Status        string   `json:"status"`
+	AmountMoney   Money    `json:"amount_money"`
+	TotalMoney    Money    `json:"total_money"`
+	RefundedMoney *Money   `json:"refunded_money,omitempty"`
+	RefundIDs     []string `json:"refund_ids,omitempty"`
+	SourceType    string   `json:"source_type"`
 }
 
 // GetPayment は決済の詳細を取る（GET /v2/payments/{payment_id}）。
@@ -231,6 +236,52 @@ func (c *Client) GetPayment(ctx context.Context, paymentID string) (*Payment, er
 		return nil, err
 	}
 	return &out.Payment, nil
+}
+
+// --------------------------------------------------
+// Refunds API
+// --------------------------------------------------
+
+// PaymentRefund は Square の PaymentRefund オブジェクトのうち使うフィールド。
+// status は PENDING / COMPLETED / REJECTED / FAILED。
+type PaymentRefund struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	AmountMoney Money  `json:"amount_money"`
+	PaymentID   string `json:"payment_id"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type refundEnvelope struct {
+	Refund PaymentRefund `json:"refund"`
+}
+
+// RefundPayment は決済を返金する（POST /v2/refunds）。
+//
+// Terminal API の返金（CreateTerminalRefund）はカナダの Interac 専用なので、日本の
+// 端末で受けた決済もこちらで返す。返金先は元の決済手段（カード・電子マネー・QR）。
+// idempotencyKey は 45 文字まで。同じキーの再送には、Square は同じ返金を返す。
+func (c *Client) RefundPayment(ctx context.Context, idempotencyKey, paymentID string, amount Money, reason string) (*PaymentRefund, error) {
+	body := struct {
+		IdempotencyKey string `json:"idempotency_key"`
+		PaymentID      string `json:"payment_id"`
+		AmountMoney    Money  `json:"amount_money"`
+		Reason         string `json:"reason,omitempty"`
+	}{IdempotencyKey: idempotencyKey, PaymentID: paymentID, AmountMoney: amount, Reason: reason}
+	var out refundEnvelope
+	if err := c.do(ctx, http.MethodPost, "/v2/refunds", body, &out); err != nil {
+		return nil, err
+	}
+	return &out.Refund, nil
+}
+
+// GetPaymentRefund は返金の現在の状態を取る（GET /v2/refunds/{refund_id}）。
+func (c *Client) GetPaymentRefund(ctx context.Context, refundID string) (*PaymentRefund, error) {
+	var out refundEnvelope
+	if err := c.do(ctx, http.MethodGet, "/v2/refunds/"+url.PathEscape(refundID), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out.Refund, nil
 }
 
 // --------------------------------------------------
