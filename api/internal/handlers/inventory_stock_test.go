@@ -20,16 +20,14 @@ import (
 )
 
 // アイテムの在庫とカップが、注文を受けたときの設定で減ることを本物の Postgres で確かめる。
-// TEST_DATABASE_URL を渡したときだけ動く（internal/testdb）。
 func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
-	db := testdb.Open(t)
+	db := testdb.New(t)
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	must(db.AutoMigrate(models.All()...))
 	inv := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
 	hub := NewHub()
 	go hub.Run()
@@ -59,7 +57,8 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}
 
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
-	goods := models.ItemType{Name: goodsItemTypeName, DisplayName: "グッズ"}
+	noCup := false
+	goods := models.ItemType{Name: "others", DisplayName: "グッズ", MakesCup: &noCup, NeedsBrew: &noCup}
 	must(db.Create(&hot).Error)
 	must(db.Create(&goods).Error)
 

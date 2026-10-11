@@ -111,6 +111,43 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/cups": {
+    /**
+     * CaOS が決めたことを注文のカップに書く
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+     * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+     * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+     *
+     * 順番（dripper_position。整数）はサーバーが決める。画面は after の insert_before（どのカードの前に入れるか）だけを送る：
+     * - insert_before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+     * - insert_before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+     * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
+     * - 列から抜けたカードの番号は空いたまま（詰めない）
+     *
+     * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+     * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+     *
+     * 確かめること：
+     * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+     * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
+     * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
+     * - 今日（日本時間）の注文のカップだけ書ける
+     * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+     * - 抽出を始められる（start_brew）のは、そのカードのほかに抽出中・待機のカードが無いドリッパーだけ（待機があれば、始めるのは「次へ」で待機の先頭）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+     */
+    put: operations["writeCaosCups"];
+  };
+  "/api/caos/drippers/{dripper}/next": {
+    /**
+     * CaOS の「次へ」
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+     * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+     * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+     * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+     */
+    post: operations["advanceCaosDripper"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -237,6 +274,7 @@ export interface paths {
     /**
      * 支払い済みなのに注文と結び付いていない決済依頼
      * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+     * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
      */
     get: operations["getUnlinkedSquareCheckouts"];
   };
@@ -253,6 +291,28 @@ export interface paths {
      * @description PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
      */
     post: operations["cancelSquareCheckout"];
+  };
+  "/api/square/checkouts/{id}/refund": {
+    /**
+     * 支払い済みの決済を全額返金する
+     * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+     * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+     * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+     * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+     * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+     * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+     * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+     * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+     */
+    post: operations["refundSquareCheckout"];
+  };
+  "/api/orders/{id}/square-refund": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文を消す
+     * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     */
+    post: operations["refundOrderSquarePayment"];
   };
   "/api/square/webhook": {
     /**
@@ -333,16 +393,49 @@ export interface components {
       id: string;
       name: string;
       display_name: string;
+      /** @description この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false */
+      makes_cup: boolean;
+      /** @description この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false */
+      needs_brew: boolean;
+      /** @description この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false */
+      senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
       display_name: string;
+      /**
+       * @description 省略したら true
+       * @default true
+       */
+      makes_cup?: boolean;
+      /** @description 省略したら makes_cup と同じ。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
       id: string;
       name: string;
       display_name: string;
+      /** @description 省略したら今の値のまま */
+      makes_cup?: boolean;
+      /** @description 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**
@@ -376,6 +469,25 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない */
+      dripper: number | null;
+      /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
+      dripper_position: number | null;
+      /**
+       * Format: uuid
+       * @description CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+       */
+      drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を始めた時刻
+       */
+      brew_started_at: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を終えた時刻
+       */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -428,6 +540,11 @@ export interface components {
       square_checkout_id?: string | null;
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
+      /**
+       * Format: uuid
+       * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+       */
+      idempotency_key?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -533,6 +650,54 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
+    CaosCupState: {
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
+    };
+    /**
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
+     * start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
+     * dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+     */
+    CaosCupAfter: {
+      dripper: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /**
+       * Format: uuid
+       * @description dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。先頭に割り込むときは先頭のカードの drip_id。
+       * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+       */
+      insert_before: string | null;
+      /** @description 抽出を始める（空いているドリッパーに置いてそのまま始める）。時刻はサーバーの今 */
+      start_brew: boolean;
+    };
+    /**
+     * @description カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+     * 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない（終えるのは「次へ」）
+     */
+    CaosCupsWrite: {
+      cup_ids: string[];
+      before: components["schemas"]["CaosCupState"];
+      after: components["schemas"]["CaosCupAfter"];
+    };
+    CaosCupsWriteRequest: {
+      writes: components["schemas"]["CaosCupsWrite"][];
+    };
+    CaosNextRequest: {
+      /**
+       * Format: uuid
+       * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+       */
+      drip_id: string | null;
     };
     ErrorResponse: {
       /** @example Invalid order ID format */
@@ -691,6 +856,17 @@ export interface components {
      * @enum {string}
      */
     SquareCheckoutOutcome: "pending" | "paid" | "failed" | "attention";
+    /**
+     * @description 返金（全額）の状態。
+     *   - none: 返金を頼んでいない
+     *   - pending: Square に頼んだ。結果を待っている
+     *   - refunded: 返金が終わった
+     *   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+     *   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+     *
+     * @enum {string}
+     */
+    SquareRefundStatus: "none" | "pending" | "refunded" | "failed" | "unknown";
     SquareStatusResponse: {
       enabled: boolean;
       /** @description production か sandbox */
@@ -768,6 +944,9 @@ export interface components {
        * @description この決済で作った注文。まだ無ければ null
        */
       order_id?: string | null;
+      refund_status: components["schemas"]["SquareRefundStatus"];
+      /** @description 返金を断られた・確かめられなかったときの Square のエラー */
+      refund_error?: string | null;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -1338,6 +1517,93 @@ export interface operations {
       };
     };
   };
+  /**
+   * CaOS が決めたことを注文のカップに書く
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+   * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+   * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+   *
+   * 順番（dripper_position。整数）はサーバーが決める。画面は after の insert_before（どのカードの前に入れるか）だけを送る：
+   * - insert_before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+   * - insert_before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+   * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
+   * - 列から抜けたカードの番号は空いたまま（詰めない）
+   *
+   * 抽出の時刻は画面から送らない。空いているドリッパーに置いてそのまま始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
+   * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。終えるのは「次へ」だけ。
+   *
+   * 確かめること：
+   * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+   * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
+   * - 抽出中・終わりのカップ（brew_started_at のあるカップ）は書けない
+   * - 今日（日本時間）の注文のカップだけ書ける
+   * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+   * - 抽出を始められる（start_brew）のは、そのカードのほかに抽出中・待機のカードが無いドリッパーだけ（待機があれば、始めるのは「次へ」で待機の先頭）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+   */
+  writeCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosCupsWriteRequest"];
+      };
+    };
+    responses: {
+      /** @description 書いた */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト・決まりに合わない（何も書かない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description before が今の値と違う（何も書かない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の「次へ」
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+   * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+   * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+   * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+   */
+  advanceCaosDripper: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosNextRequest"];
+      };
+    };
+    responses: {
+      /** @description 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る） */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /** マスターステート取得 */
   getMasterState: {
     responses: {
@@ -1760,6 +2026,7 @@ export interface operations {
   /**
    * 支払い済みなのに注文と結び付いていない決済依頼
    * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+   * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
    */
   getUnlinkedSquareCheckouts: {
     responses: {
@@ -1823,6 +2090,112 @@ export interface operations {
       409: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 支払い済みの決済を全額返金する
+   * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+   * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+   * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+   * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+   * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+   * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+   * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+   * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+   */
+  refundSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す
+   * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   */
+  refundOrderSquarePayment: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付け、注文を消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
