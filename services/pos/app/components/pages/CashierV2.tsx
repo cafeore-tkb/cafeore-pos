@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
+import { orderLabelJob } from "~/label/order-label";
 import { usePrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
 import {
@@ -66,14 +67,8 @@ type props = {
   syncOrder: (order: OrderEntity) => void;
 };
 
-/** シールの中身が同じかを比べるためのキー（番号・合計・商品と指名） */
-const labelKey = (order: OrderEntity) =>
-  JSON.stringify([
-    order.orderId,
-    order.total,
-    order.menus.map((menu) => [menu.name, menu.assignee]),
-    order.getCoffeeCups().map((cup) => [cup.name, cup.assignee]),
-  ]);
+/** シールの中身が同じかを比べるためのキー（刷る印刷データそのもの） */
+const labelKey = (order: OrderEntity) => JSON.stringify(orderLabelJob(order));
 
 /** 確定欄に出す Square の決済手段（上から順） */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
