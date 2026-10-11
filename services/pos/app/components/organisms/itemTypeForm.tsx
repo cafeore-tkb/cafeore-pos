@@ -21,7 +21,7 @@ export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
 
 // parent が外れているあいだは押せず、外すとこちらも外れる（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
 // API も同じ組み合わせしか受け付けない
-const FLAG_FIELDS: {
+export const FLAG_FIELDS: {
   key: FlagKey;
   parent?: FlagKey;
   label: string;
