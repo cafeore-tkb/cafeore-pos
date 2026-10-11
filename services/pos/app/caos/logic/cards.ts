@@ -1,3 +1,5 @@
+import type { StockResource } from "@cafeore/common";
+
 // カード（1 回のドリップ。最大 2 杯）。未割当のカードも、ドリッパーのカードも同じ形。
 // cafeore-pos の注文から組み立てる（logic/posOrders.ts）。実データテストのカードは logic/historical.ts。
 export interface DripCard {
@@ -18,6 +20,8 @@ export interface DripCard {
   color?: string;
   /** 区分。商品の種類の表示名（display_name）をそのまま（cafeore-pos の注文のカードにだけ付く） */
   typeName?: string;
+  /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts の attachBeans で付ける。在庫が無い商品には付かない */
+  beans?: StockResource[];
   /** 指名のドリッパー（1〜6） */
   preferredBaristaId?: number;
   /** 統合できる相手を決めるキー。同じキーの 1 杯どうしだけ統合できる（注文のカードは商品と指名） */

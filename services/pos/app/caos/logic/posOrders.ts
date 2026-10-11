@@ -1,10 +1,11 @@
 import {
   type ColorSetting,
+  type ItemEntity,
   type OrderEntity,
   type WithId,
   resolveItemColor,
 } from "@cafeore/common";
-import type { Board } from "./board";
+import { type Board, mapCards } from "./board";
 import { type DripCard, type UnsplitCard, splitIntoDripUnits } from "./cards";
 import { isBayId } from "./lanes";
 
@@ -21,6 +22,15 @@ const nominatedBayId = (assignee: string) => {
   return Number.isInteger(bayId) && isBayId(bayId) ? bayId : undefined;
 };
 
+// 抽出が要るアイテムか。アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。
+// TODO: C1（#855）の商品の種類の「抽出が要る」が入ったら、それに置き換える
+export const isDripItem = (item: ItemEntity) =>
+  !(
+    item.item_type.name === "others" ||
+    item.item_type.name === "milk" ||
+    item.name.includes("アイスミルク")
+  );
+
 // 注文をカードにする。同じ商品・同じ指名の杯をまとめ、最大 2 杯ずつに分ける。
 // 名前は商品の略称（abbr）、区分は商品の種類の表示名（display_name）をそのまま出す。
 const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
@@ -32,13 +42,7 @@ const posOrderToDripUnits = (order: PosOrder): DripCard[] => {
     const unmatchedAssignee =
       assignee && !preferredBaristaId ? `（指名:${assignee}）` : "";
     for (const { item, quantity } of line.items) {
-      // アイスミルクとグッズは抽出しないので、ドリップ管制に載せない。
-      if (
-        item.item_type.name === "others" ||
-        item.item_type.name === "milk" ||
-        item.name.includes("アイスミルク")
-      )
-        continue;
+      if (!isDripItem(item)) continue;
       const mergeKey = `${item.id}-${assignee ?? ""}`;
       const current = grouped.get(mergeKey);
       if (current) {
@@ -90,17 +94,9 @@ export const ingestPosOrders = (
 
 // カードの背景色。商品の色の設定（画面 master。商品 → 種類の順）から引く。設定が無ければ付けない（白）。
 // 色の設定はあとから読み込まれたり変わったりするので、カードには持たず、出すたびに付ける。
-export const paintBoard = (board: Board, settings: ColorSetting[]): Board => {
-  const paint = <T extends DripCard>(card: T): T =>
+export const paintBoard = (board: Board, settings: ColorSetting[]): Board =>
+  mapCards(board, (card) =>
     card.item
       ? { ...card, color: resolveItemColor(settings, card.item, "master") }
-      : card;
-  return {
-    unassigned: board.unassigned.map(paint),
-    baristas: board.baristas.map((barista) => ({
-      ...barista,
-      queue: barista.queue.map(paint),
-      pastTickets: barista.pastTickets.map(paint),
-    })),
-  };
-};
+      : card,
+  );

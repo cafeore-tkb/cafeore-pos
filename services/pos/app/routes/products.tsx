@@ -5,7 +5,6 @@ import {
   useInventory,
   useItemMaster,
   useMenuMaster,
-  useStockUsages,
 } from "@cafeore/common";
 import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
@@ -84,29 +83,8 @@ export default function ProductsPage() {
     mutateItems,
     mutateItemTypes,
   } = useItemMaster();
-  const {
-    statuses,
-    isLoaded: inventoryLoaded,
-    error: inventoryError,
-    mutateInventory,
-  } = useInventory();
+  const { statuses, mutateInventory } = useInventory();
   const resources = useMemo(() => statuses.map((s) => s.resource), [statuses]);
-  const {
-    usages,
-    isLoaded: usagesLoaded,
-    error: usagesError,
-    mutateUsages,
-  } = useStockUsages();
-  // 在庫対象と使用量が届く前にアイテムを保存すると、使用量を空で置き換えてしまうので、届くまでフォームを出さない。
-  // 一度届いたあとの再取得の失敗では止めない（入力中のフォームを消さない）
-  const stockLoaded = inventoryLoaded && usagesLoaded;
-  const stockNotice = (() => {
-    if (stockLoaded) return null;
-    if (inventoryError || usagesError) {
-      return "在庫の使用量を読み込めませんでした。ページを読み込み直してください";
-    }
-    return "在庫の使用量を読み込んでいます…";
-  })();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -114,13 +92,12 @@ export default function ProductsPage() {
   const usageOfItemTypes = useMemo(() => itemTypeUsage(items), [items]);
 
   // メニューはアイテムを、アイテムはタイプを含んで返るので、どれを変えても全部取り直す。
-  // アイテムを消すと使用量も消え、取り込みでは在庫対象もできるので一緒に取り直す
+  // アイテムを作る・消すとその在庫もできる・消えるので、在庫も一緒に取り直す
   const refresh = () =>
     Promise.all([
       mutateMenus(),
       mutateItems(),
       mutateItemTypes(),
-      mutateUsages(),
       mutateInventory(),
     ]);
 
@@ -146,9 +123,7 @@ export default function ProductsPage() {
           name: items.find((item) => item.id === id)?.name ?? "",
           usedByLabel: "メニュー",
           usedBy: usageOfItems.get(id) ?? [],
-          note: usages.some((usage) => usage.item_id === id)
-            ? "在庫の使用量の設定も一緒に消えます。"
-            : undefined,
+          note: "このアイテムの在庫も一緒に消えます。",
           run,
         });
       } else {
@@ -170,7 +145,7 @@ export default function ProductsPage() {
       <div className="space-y-1">
         <h1 className="font-semibold text-2xl tracking-tight">商品管理</h1>
         <p className="text-muted-foreground text-sm">
-          メニュー、構成アイテム、アイテムタイプ、背景色、在庫対象と使用量を管理します。まとめて取り込み・書き出しもできます
+          メニュー、構成アイテム、アイテムタイプ、背景色、在庫を管理します。まとめて取り込み・書き出しもできます
         </p>
       </div>
 
@@ -211,8 +186,6 @@ export default function ProductsPage() {
                 items={items}
                 usage={usageOfItems}
                 resources={resources}
-                stockUsages={usages}
-                stockLoaded={stockLoaded}
                 {...handlersFor("item")}
               />
             </TabsContent>
@@ -228,13 +201,9 @@ export default function ProductsPage() {
             </TabsContent>
             <TabsContent value="stock" className="mt-4">
               <StockTab
-                items={items}
                 resources={resources}
-                usages={usages}
-                onResourcesChanged={() =>
-                  void Promise.all([mutateInventory(), mutateUsages()])
-                }
-                onUsagesChanged={mutateUsages}
+                itemTypes={itemTypes}
+                onChanged={() => void mutateInventory()}
               />
             </TabsContent>
             <TabsContent value="master-data" className="mt-4">
@@ -252,8 +221,6 @@ export default function ProductsPage() {
         items={items}
         itemTypes={itemTypes}
         resources={resources}
-        usages={usages}
-        stockNotice={stockNotice}
       />
       <DeleteDialog
         target={deleteTarget}

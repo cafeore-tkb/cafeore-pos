@@ -18,8 +18,11 @@ func All() []any {
 		&MasterState{},
 		&CashierState{},
 		&StockResource{},
-		&ItemStockUsage{},
+		&StockResourceItemType{},
+		&OrderStockUsage{},
 		&StockEvent{},
 		&ColorSetting{},
+		&SquareCheckout{},
+		&SquareDevice{},
 	}
 }

@@ -4,7 +4,6 @@ package handlers
 import (
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -75,7 +74,14 @@ func (h *ItemHandler) CreateItem(c *gin.Context) {
 	}
 	item.ItemTypeID = itemTypeID
 
-	if err := h.db.Create(&item).Error; err != nil {
+	// アイテムの在庫も一緒に作る
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&item).Error; err != nil {
+			return err
+		}
+		stock := models.NewItemStockResource(item.ID)
+		return tx.Create(&stock).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -187,8 +193,7 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 		return
 	}
 
-	// アイテムは論理削除なので、使用量も行は消さずに今有効な行を閉じる。消す前の注文は消す前の使用量で数え続ける。
-	// 先にアイテムを消して行を押さえ、同時の使用量の置き換え（ReplaceItemStockUsages）と重ならないようにする
+	// アイテムの在庫も一緒に論理削除する。消す前の注文で減った量は注文の側に残っているので変わらない
 	// 消した行は通知に名前を出すために RETURNING で受け取る
 	var deleted models.Item
 	var affected int64
@@ -198,9 +203,7 @@ func (h *ItemHandler) DeleteItem(c *gin.Context) {
 			return result.Error
 		}
 		affected = result.RowsAffected
-		return tx.Model(&models.ItemStockUsage{}).
-			Where("item_id = ? AND valid_to IS NULL", itemID).
-			Update("valid_to", time.Now()).Error
+		return tx.Where("item_id = ?", itemID).Delete(&models.StockResource{}).Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

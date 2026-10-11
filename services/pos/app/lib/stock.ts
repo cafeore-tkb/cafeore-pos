@@ -1,55 +1,73 @@
-import type { StockResource, StockUsage } from "@cafeore/common";
+import {
+  type ItemEntity,
+  type StockResource,
+  type StockResourceInput,
+  type WithId,
+  inventoryRepository,
+} from "@cafeore/common";
 
-/**
- * タイプ（ID）ごとに、そのタイプのアイテムにいちばん多く入っているカップ（ID）。
- * 新しいアイテムや、カップが空のアイテムに入れる初期値にだけ使う。
- * タイプの名前やカップの名前で決め打ちせず、いま DB に入っている使用量から決める
- */
-export const cupByItemType = (
-  items: { id?: string; item_type: { id?: string } }[],
-  usages: { item_id: string; resource_id: string }[],
+/** アイテムの在庫の 1 回の量と、そのアイテムのタイプを使うカップ（「15g・ホットカップ」） */
+export const itemStockSummary = (
+  item: WithId<ItemEntity>,
   resources: StockResource[],
-): Map<string, string> => {
-  const cups = resources.filter((r) => r.kind === "cup");
-  const typeOf = new Map(items.map((item) => [item.id, item.item_type.id]));
-  const counts = new Map<string, Map<string, number>>();
-  for (const { item_id, resource_id } of usages) {
-    const typeId = typeOf.get(item_id);
-    if (!typeId || !cups.some((cup) => cup.id === resource_id)) continue;
-    const byCup = counts.get(typeId) ?? new Map<string, number>();
-    byCup.set(resource_id, (byCup.get(resource_id) ?? 0) + 1);
-    counts.set(typeId, byCup);
-  }
-  // 同数ならカップの並び順で先のもの
-  return new Map(
-    [...counts].map(([typeId, byCup]) => {
-      const max = Math.max(...byCup.values());
-      const cup = cups.find((c) => byCup.get(c.id) === max);
-      return [typeId, cup?.id ?? ""];
-    }),
-  );
+) => {
+  const stock = resources.find((r) => r.item_id === item.id);
+  const cups = resources
+    .filter((r) => r.item_type_ids.some((id) => id === item.item_type.id))
+    .map((r) => r.name);
+  return [stock && `${stock.per_serving}${stock.unit}`, ...cups]
+    .filter(Boolean)
+    .join("・");
 };
 
-/** カップを先に、その後に豆を並べる */
-export const sortResources = (resources: StockResource[]) => [
-  ...resources.filter((r) => r.kind === "cup"),
-  ...resources.filter((r) => r.kind === "bean"),
+/** アイテムの在庫でもカップでも入れる値。アイテムの在庫にはこれだけを送る（名前はアイテムの名前） */
+export type StockAmounts = Pick<
+  StockResourceInput,
+  "unit" | "per_serving" | "notify_from" | "notify_step" | "buffer"
+>;
+
+export const stockFields: { key: keyof StockAmounts; label: string }[] = [
+  { key: "unit", label: "単位" },
+  { key: "per_serving", label: "1回の量" },
+  { key: "notify_from", label: "通知開始" },
+  { key: "notify_step", label: "間隔" },
+  { key: "buffer", label: "バッファ" },
 ];
 
-/** アイテムの ID → 在庫対象の ID → 量（入力の形） */
-export const usageDrafts = (usages: StockUsage[]) => {
-  const drafts: Record<string, Record<string, string>> = {};
-  for (const { item_id, resource_id, amount } of usages) {
-    drafts[item_id] = { ...drafts[item_id], [resource_id]: String(amount) };
-  }
-  return drafts;
-};
+/** 入力欄の文字を値にする。単位のほかは数 */
+export const parseStockField = (key: keyof StockAmounts, raw: string) =>
+  key === "unit" ? raw : Number(raw);
 
-/** 入力中の量（在庫対象の ID → 文字列）を API の形にする。空欄と 0 以下は使わない扱い */
-export const toUsageInputs = (draft: Record<string, string>) =>
-  Object.entries(draft).flatMap(([resource_id, value]) => {
-    const amount = Number(value);
-    return value.trim() !== "" && Number.isFinite(amount) && amount > 0
-      ? [{ resource_id, amount }]
-      : [];
+export const stockAmounts = (r: StockAmounts): StockAmounts => ({
+  unit: r.unit,
+  per_serving: r.per_serving,
+  notify_from: r.notify_from,
+  notify_step: r.notify_step,
+  buffer: r.buffer,
+});
+
+/** draft のうち saved と違う値。saved が無ければ draft すべて */
+export const stockChanges = (
+  draft: Partial<StockAmounts>,
+  saved?: StockAmounts,
+): Partial<StockAmounts> =>
+  Object.fromEntries(
+    Object.entries(draft).filter(
+      ([key, value]) => saved?.[key as keyof StockAmounts] !== value,
+    ),
+  );
+
+/** アイテムの在庫の値を changes で変える。アイテムを作った直後でも引けるよう、在庫は取り直して探す */
+export const saveItemStock = async (
+  itemId: string,
+  changes: Partial<StockAmounts>,
+) => {
+  if (Object.keys(changes).length === 0) return;
+  const statuses = await inventoryRepository.getStatuses();
+  const stock = statuses.find((s) => s.resource.item_id === itemId)?.resource;
+  if (!stock) throw new Error("アイテムの在庫が見つかりません");
+  await inventoryRepository.updateResource(stock.id, {
+    ...stockAmounts(stock),
+    ...changes,
   });
+};

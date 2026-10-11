@@ -3,7 +3,9 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,7 +66,7 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 			if !ok || old.OrderID != orderID || old.MenuID != menuID {
 				return nil, errInvalidOrderMenus
 			}
-			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
+			line.ID, line.MenuName, line.UnitPrice, line.StockUsages = old.ID, old.MenuName, old.UnitPrice, old.StockUsages
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
 			menu, ok := masters[menuID]
@@ -112,7 +114,54 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	if err != nil {
 		return nil, nil, err
 	}
+	// 新しい明細で減る在庫を、今の在庫の設定で決めて残す。既存の明細は前に決めたものを引き継ぐ
+	if len(ids) > 0 {
+		var resources []models.StockResource
+		if err := db.Preload("ItemTypes").Find(&resources).Error; err != nil {
+			return nil, nil, err
+		}
+		menuByID := make(map[uuid.UUID]models.Menu, len(menus))
+		for _, menu := range menus {
+			menuByID[menu.ID] = menu
+		}
+		for i, request := range requests {
+			if request.OrderMenuId == nil {
+				lines[i].StockUsages = buildOrderStockUsages(orderID, lines[i].ID, menuByID[lines[i].MenuID], resources)
+			}
+		}
+	}
 	return lines, buildOrderCups(orderID, lines, existing, menus), nil
+}
+
+// 明細 1 行で減る在庫。アイテムの在庫はアイテムの数 × per_serving、カップはカップを作るアイテムの数 × per_serving。
+// 同じ在庫対象（同じ種類のアイテムが 2 つあるセットのカップなど）は 1 行にまとめる。
+func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, resources []models.StockResource) []models.OrderStockUsage {
+	usages := []models.OrderStockUsage{}
+	index := map[uuid.UUID]int{}
+	add := func(r models.StockResource, quantity int) {
+		i, ok := index[r.ID]
+		if !ok {
+			i = len(usages)
+			index[r.ID] = i
+			usages = append(usages, models.OrderStockUsage{OrderMenuID: orderMenuID, ResourceID: r.ID, OrderID: orderID})
+		}
+		usages[i].Servings += quantity
+		usages[i].Amount += float64(quantity) * r.PerServing
+	}
+	for _, mi := range menu.MenuItems {
+		for _, r := range resources {
+			switch {
+			case r.ItemID != nil && *r.ItemID == mi.ItemID:
+				add(r, mi.Quantity)
+			// TODO(C1 #855): カップを作るかは item_type.makes_cup に置き換える
+			case r.Kind == string(models.StockResourceKindCup) && isCupItem(mi.Item) && slices.ContainsFunc(r.ItemTypes, func(t models.StockResourceItemType) bool {
+				return t.ItemTypeID == mi.Item.ItemTypeID
+			}):
+				add(r, mi.Quantity)
+			}
+		}
+	}
+	return usages
 }
 
 // DB models → API models 変換関数
@@ -127,6 +176,7 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
 		DiscountOrderCups: &order.DiscountOrderCups,
+		PaymentMethod:     orderPaymentMethod(order),
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 		Cups:              make([]models.OrderCupResponse, 0, len(order.OrderCups)),
 	}
@@ -155,6 +205,38 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// 列を足す前の行（payment_method が空）は現金として返す。
+func orderPaymentMethod(order *models.Order) models.PaymentMethod {
+	if order.PaymentMethod == string(models.Square) {
+		return models.Square
+	}
+	return models.Cash
+}
+
+// squareCheckoutIDForOrder は作成リクエストの支払い方法を確かめ、Square の決済依頼の ID を返す。
+// 現金なら nil。
+func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID, error) {
+	method := models.Cash
+	if req.PaymentMethod != nil {
+		method = *req.PaymentMethod
+	}
+	switch method {
+	case models.Cash:
+		if req.SquareCheckoutId != nil {
+			return nil, errors.New("square_checkout_id は payment_method が square のときだけ指定できます")
+		}
+		return nil, nil
+	case models.Square:
+		if req.SquareCheckoutId == nil {
+			return nil, errors.New("payment_method が square のときは square_checkout_id が必要です")
+		}
+		id := uuid.UUID(*req.SquareCheckoutId)
+		return &id, nil
+	default:
+		return nil, fmt.Errorf("payment_method %q には対応していません", method)
+	}
 }
 
 // 全オーダーを WSMessage にする。取得に失敗したら ok = false
@@ -199,6 +281,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	squareCheckoutID, err := squareCheckoutIDForOrder(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// API型 → DB型に変換
 	order := models.Order{
 		ID:                uuid.New(),
@@ -207,6 +295,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		BillingAmount:     req.BillingAmount,
 		Received:          req.Received,
 		DiscountOrderCups: 0,
+		PaymentMethod:     string(models.Cash),
+	}
+	if squareCheckoutID != nil {
+		// 端末で請求額ちょうどを受け取っているので、お預かりは請求額と同じ。
+		order.PaymentMethod = string(models.Square)
+		order.Received = req.BillingAmount
 	}
 
 	if req.DiscountOrderId != nil {
@@ -241,11 +335,20 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			return err
 		}
 		order.OrderMenus, order.OrderCups = lines, cups
-		return tx.Create(&order).Error
+		if err := tx.Create(&order).Error; err != nil {
+			return err
+		}
+		if squareCheckoutID != nil {
+			return linkSquareCheckout(tx, *squareCheckoutID, &order, time.Now())
+		}
+		return nil
 	}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, errInvalidOrderMenus) {
 			status = http.StatusBadRequest
+		}
+		if errors.Is(err, errSquareCheckoutUnusable) {
+			status = http.StatusConflict
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
@@ -338,6 +441,10 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
+			return err
+		}
+		// 明細と一緒に、その明細で減る在庫も入れ直す
 		if len(orderMenus) > 0 {
 			if err := tx.Create(&orderMenus).Error; err != nil {
 				return err
@@ -396,13 +503,21 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
-	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
+	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
+			return err
+		}
+		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して
+		// 「支払い済みなのに注文が無い」一覧（GET /api/square/checkouts/unlinked）に戻す。
+		if err := tx.Model(&models.SquareCheckout{}).Where("order_id = ?", order.ID).Update("order_id", nil).Error; err != nil {
 			return err
 		}
 		result := tx.Delete(&models.Order{}, "id = ?", orderID)
