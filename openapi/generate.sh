@@ -19,9 +19,8 @@ echo "Go型を生成中..."
 # 型だけを生成する。ルートは api/internal/handlers/routes.go に手書きで登録し、
 # openapi.yaml と食い違っていないかは api/cmd/server/routes_test.go で確かめる。
 mkdir -p ../api/internal/models
-oapi-codegen -generate types -package models openapi.yaml > ../api/internal/models/api.go
+oapi-codegen -generate types,skip-prune -package models openapi.yaml > ../api/internal/models/api.go
 echo "Go型を生成しました"
 
 echo ""
 echo "型生成が完了しました！"
-```

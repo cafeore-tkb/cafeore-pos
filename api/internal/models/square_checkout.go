@@ -17,6 +17,10 @@ import (
 // Square 側の ID（CheckoutID）は依頼が通るまで分からないため、先にこちらで
 // 行を作り、その ID を reference_id として Square に渡す。応答が失われても
 // Webhook の reference_id から行を引ける。
+//
+// 返金は全額だけで、Refunds API で決済（PaymentIDs）ごとに返す。RefundKey は
+// 返金を頼むたびに作り直し、決済ごとの idempotency_key はここから作る。
+// 応答が失われて頼み直すときは同じキーを使うので、二重に返金されない。
 type SquareCheckout struct {
 	ID             uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
 	IdempotencyKey string     `gorm:"not null;uniqueIndex"`
@@ -31,8 +35,14 @@ type SquareCheckout struct {
 	ErrorMessage   *string    // 依頼や確認に失敗したときの Square のエラー
 	OrderNumber    *int       // 依頼時点の注文番号（表示用。注文と結び付けるのは OrderID）
 	OrderID        *uuid.UUID `gorm:"type:uuid;uniqueIndex"`
-	CreatedAt      time.Time  `gorm:"not null"`
-	UpdatedAt      time.Time  `gorm:"not null"`
+	// 返金を頼んでいなければ空。REQUESTING（Square に頼んでいる間）/ PENDING / COMPLETED / FAILED
+	RefundStatus      *string
+	RefundKey         *uuid.UUID `gorm:"type:uuid"`
+	RefundIDs         []string   `gorm:"type:jsonb;serializer:json;not null;default:'[]'"` // Square の PaymentRefund.id
+	RefundError       *string    // 返金を断られた・確かめられなかったときの Square のエラー
+	RefundRequestedAt *time.Time
+	CreatedAt         time.Time `gorm:"not null"`
+	UpdatedAt         time.Time `gorm:"not null"`
 }
 
 func (checkout *SquareCheckout) BeforeCreate(tx *gorm.DB) error {

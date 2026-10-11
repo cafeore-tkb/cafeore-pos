@@ -69,17 +69,22 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
+	// GET と同じ形で返す。models.MasterState は json タグが無く、そのままだと "Type" のような大文字のキーになる
 	c.JSON(http.StatusCreated, toMasterStateResponse(&state))
-	h.broadcastMasterState()
+	broadcastMasterState(h.db, h.hub)
+	// ほかのインスタンスにつないでいる画面にも届くよう、DB の通知で知らせる（order_listener.go）
+	notifyMasterStateChanged(h.db)
 }
 
-// 最新の状態を読み直して配信する。同時に切り替えられても、読み込みと配信を1つずつ行うので
-// 最後に届くのは DB の最新になる
-func (h *MasterStateHandler) broadcastMasterState() {
-	err := h.hub.Publish(func() (WSMessage, error) {
-		msg, ok := masterStateMessage(h.db)
+// 最新のオーダーストップの状態を読み直して、このインスタンスにつないでいる画面へだけ配る。
+//
+// ほかのインスタンスからの通知で配り直すときも使う。Publish で読み込みから配信までを
+// 1つずつ行い、POST での配信と通知での配信が入れ違って古い状態が後から届かないようにする。
+func broadcastMasterState(db *gorm.DB, hub *Hub) {
+	err := hub.Publish(func() (WSMessage, error) {
+		msg, ok := masterStateMessage(db)
 		if !ok {
-			return WSMessage{}, errors.New("master state not found")
+			return WSMessage{}, errors.New("no master state")
 		}
 		return msg, nil
 	})

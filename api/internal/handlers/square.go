@@ -52,6 +52,8 @@ type squareAPI interface {
 	GetTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	CancelTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	GetPayment(ctx context.Context, paymentID string) (*square.Payment, error)
+	RefundPayment(ctx context.Context, idempotencyKey, paymentID string, amount square.Money, reason string) (*square.PaymentRefund, error)
+	GetPaymentRefund(ctx context.Context, refundID string) (*square.PaymentRefund, error)
 	CreateDeviceCode(ctx context.Context, idempotencyKey string, code square.DeviceCode) (*square.DeviceCode, error)
 	GetDeviceCode(ctx context.Context, id string) (*square.DeviceCode, error)
 	ListDeviceCodes(ctx context.Context, params square.ListDeviceCodesParams) ([]square.DeviceCode, error)
@@ -68,7 +70,8 @@ type SquareConfig struct {
 
 type SquareHandler struct {
 	db                  *gorm.DB
-	client              squareAPI // 未設定なら nil
+	orders              *OrderHandler // 返金した決済の注文を消すのに使う
+	client              squareAPI     // 未設定なら nil
 	environment         string
 	locationID          string
 	webhookSignatureKey string
@@ -82,7 +85,7 @@ type SquareHandler struct {
 // 端末は環境変数ではなく DB（models.SquareDevice）に持ち、管理画面でペアリングする。
 // 環境の指定が不正なときだけエラーを返す。本番のつもりで sandbox に向けて
 // しまうと、決済したつもりで売上が立たないため、黙って既定値にしない。
-func NewSquareHandler(db *gorm.DB, config SquareConfig) (*SquareHandler, error) {
+func NewSquareHandler(db *gorm.DB, orders *OrderHandler, config SquareConfig) (*SquareHandler, error) {
 	baseURL, err := square.BaseURLFor(config.Environment)
 	if err != nil {
 		return nil, err
@@ -93,6 +96,7 @@ func NewSquareHandler(db *gorm.DB, config SquareConfig) (*SquareHandler, error) 
 	}
 	handler := &SquareHandler{
 		db:                  db,
+		orders:              orders,
 		environment:         environment,
 		locationID:          config.LocationID,
 		webhookSignatureKey: config.WebhookSignatureKey,
@@ -209,6 +213,9 @@ func validateSquareCheckoutForOrder(checkout *models.SquareCheckout, billingAmou
 	if checkout.OrderID != nil {
 		return errors.New("この決済は既に別の注文に使われています")
 	}
+	if !squareRefundAllowsOrder(checkout) {
+		return errors.New("この決済は返金したか、返金を頼んでいます")
+	}
 	if outcome := squareCheckoutOutcome(checkout, now); outcome != models.Paid {
 		return fmt.Errorf("この決済はまだ支払い済みになっていません（%s）", outcome)
 	}
@@ -242,6 +249,8 @@ func toSquareCheckoutResponse(checkout *models.SquareCheckout, now time.Time) mo
 		ErrorMessage: checkout.ErrorMessage,
 		OrderNumber:  checkout.OrderNumber,
 		OrderId:      orderID,
+		RefundStatus: squareRefundOutcome(checkout, now),
+		RefundError:  checkout.RefundError,
 		CreatedAt:    checkout.CreatedAt,
 		UpdatedAt:    checkout.UpdatedAt,
 	}
@@ -281,6 +290,7 @@ func validateSquareCheckoutRequest(req models.SquareCheckoutCreateRequest) error
 // refresh は未確定の記録を Square に問い合わせて最新にし、保存する。
 // 問い合わせに失敗しても記録は返す（レジは次のポーリングで再試行する）。
 func (h *SquareHandler) refresh(ctx context.Context, record *models.SquareCheckout) {
+	h.refreshRefund(ctx, record)
 	if !h.enabled() || !squareCheckoutNeedsRefresh(record, h.now()) {
 		return
 	}
@@ -450,12 +460,17 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 
 // buildTerminalCheckout は Square に送る checkout を組み立てる。
 // reference_id にこちらの ID を入れておき、応答が失われても Webhook から行を引けるようにする。
+// 決済後のレシート受け取り画面（印刷・メール・SMS）は出さず、すぐ次の客に回せるようにする。
 func buildTerminalCheckout(record *models.SquareCheckout) square.TerminalCheckout {
+	skipReceiptScreen := true
 	checkout := square.TerminalCheckout{
-		AmountMoney:   square.Money{Amount: int64(record.Amount), Currency: "JPY"},
-		ReferenceID:   record.ID.String(),
-		DeviceOptions: square.DeviceCheckoutOptions{DeviceID: record.DeviceID},
-		PaymentType:   record.PaymentType,
+		AmountMoney: square.Money{Amount: int64(record.Amount), Currency: "JPY"},
+		ReferenceID: record.ID.String(),
+		DeviceOptions: square.DeviceCheckoutOptions{
+			DeviceID:          record.DeviceID,
+			SkipReceiptScreen: &skipReceiptScreen,
+		},
+		PaymentType: record.PaymentType,
 	}
 	if record.OrderNumber != nil {
 		checkout.Note = fmt.Sprintf("No.%d", *record.OrderNumber)
@@ -572,20 +587,25 @@ func (h *SquareHandler) CancelCheckout(c *gin.Context) {
 }
 
 // GET /api/square/checkouts/unlinked
+//
+// 返金が終わったものは出さない。返金の結果待ちのものは、ここで Square に問い合わせて最新にする。
 func (h *SquareHandler) GetUnlinkedCheckouts(c *gin.Context) {
 	var records []models.SquareCheckout
 	if err := h.db.
-		Where("status = ? AND order_id IS NULL", squareStatusCompleted).
+		Where("status = ? AND order_id IS NULL AND (refund_status IS NULL OR refund_status <> ?)",
+			squareStatusCompleted, squareRefundCompleted).
 		Order("created_at DESC").
 		Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx := c.Request.Context()
-	responses := make([]models.SquareCheckoutResponse, len(records))
+	responses := make([]models.SquareCheckoutResponse, 0, len(records))
 	for i := range records {
 		h.refresh(ctx, &records[i])
-		responses[i] = toSquareCheckoutResponse(&records[i], h.now())
+		if response := toSquareCheckoutResponse(&records[i], h.now()); response.RefundStatus != models.RefundRefunded {
+			responses = append(responses, response)
+		}
 	}
 	c.JSON(http.StatusOK, responses)
 }

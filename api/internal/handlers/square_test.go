@@ -223,6 +223,9 @@ func TestBuildTerminalCheckout(t *testing.T) {
 		checkout.Note != "No.42" || checkout.ReferenceID != record.ID.String() {
 		t.Fatalf("unexpected checkout: %+v", checkout)
 	}
+	if skip := checkout.DeviceOptions.SkipReceiptScreen; skip == nil || !*skip {
+		t.Fatalf("receipt screen must be skipped: %+v", checkout.DeviceOptions)
+	}
 	// reference_id は最大 40 文字。UUID（36 文字）なら収まる。
 	if len(checkout.ReferenceID) > 40 {
 		t.Fatalf("reference_id too long: %q", checkout.ReferenceID)

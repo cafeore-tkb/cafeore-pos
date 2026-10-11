@@ -244,10 +244,19 @@ func main() {
 		remindAuth,
 		os.Getenv("POS_BASE_URL"),
 	)
+	// ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更も POS の画面へ届けるため、
+	// DB の通知を待ち受ける。
+	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
+	listenDSN := os.Getenv("DATABASE_LISTEN_URL")
+	if listenDSN == "" {
+		listenDSN = os.Getenv("DATABASE_URL")
+	}
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
+	go orderHandler.ListenChanges(context.Background(), listenDSN)
 	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
 	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
 	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
-	squareHandler, err := handlers.NewSquareHandler(db, handlers.SquareConfig{
+	squareHandler, err := handlers.NewSquareHandler(db, orderHandler, handlers.SquareConfig{
 		AccessToken:         os.Getenv("SQUARE_ACCESS_TOKEN"),
 		Environment:         os.Getenv("SQUARE_ENVIRONMENT"),
 		LocationID:          os.Getenv("SQUARE_LOCATION_ID"),
@@ -258,8 +267,26 @@ func main() {
 		log.Fatalf("Failed to configure Square: %v", err)
 	}
 
+	// API を叩ける相手。AUTH_MODE=cloudflare-access のときは、Cloudflare Access を
+	// 通ってきた（Cf-Access-Jwt-Assertion の JWT が正しい）許可リストの相手だけ。
+	// 本番では POS の Worker が /api を中継し、Access がその手前でログインさせる
+	// （README の「API の認証」を参照）。off のときは今までどおり誰でも叩ける。
+	// cloudflare-access-report-only は確かめるが弾かず、弾くはずだったものをログに出す。
+	authz, err := auth.AuthorizerFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("Failed to configure auth: %v", err)
+	}
+	switch {
+	case authz == nil:
+		log.Println("Warning: AUTH_MODE is off. Anyone who knows the URL can call the API")
+	case authz.ReportOnly():
+		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
+	}
+
+	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、
+	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。
 	registerStatusRoutes(r)
-	handlers.RegisterRoutes(r, db, hub, inventory, squareHandler)
+	handlers.RegisterRoutes(r, authz, db, hub, inventory, orderHandler, squareHandler)
 
 	// サーバー起動
 	port := os.Getenv("PORT")

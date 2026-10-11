@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"cafeore-pos/api/internal/auth"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -12,19 +14,30 @@ import (
 // （RegisterHandlers）は、パスの id を UUID に変換できないと独自の形の 400 を返す・
 // ハンドラーの引数の形が違う・WebSocket など openapi に無いルートを扱えない、ので使わない。
 // openapi.yaml との食い違いは cmd/server/routes_test.go で確かめる。
-// square は環境変数から作るので main.go で作って渡す（無効なら status が enabled: false を返す）。
-func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory, square *SquareHandler) {
+// order（DB の通知の待ち受けと Square でも使う）と square（環境変数から作る。無効なら status が
+// enabled: false を返す）は main.go で作って渡す。
+// authz が nil（AUTH_MODE=off）なら誰でも叩ける。
+func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub, inventory *Inventory, order *OrderHandler, square *SquareHandler) {
 	item := NewItemHandler(db)
 	menu := NewMenuHandler(db)
 	itemType := NewItemTypeHandler(db)
-	order := NewOrderHandler(db, hub, inventory)
 	comment := NewCommentHandler(db, hub)
 	masterState := NewMasterStateHandler(db, hub)
 	cashierState := NewCashierStateHandler(db, hub)
 	inv := NewInventoryHandler(inventory)
 	colorSetting := NewColorSettingHandler(db)
+	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
+	caos := NewCaosHandler(db, hub)
 
-	api := r.Group("/api")
+	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access を通らず
+	// Cloud Run に直接来る（Google の ID トークンと Webhook の署名で確かめる）。
+	// /api のグループに入れると Access の認証が掛かって届かなくなる。
+	r.POST("/api/inventory/remind", inv.RemindInventory)
+	r.POST("/api/square/webhook", square.ReceiveWebhook)
+
+	// GET は表示用の端末（呼び出し画面など）も、それ以外はスタッフの端末だけ。
+	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
+	api := r.Group("/api", authz.RequireByMethod())
 	{
 		api.GET("/items", item.GetItems)
 		api.POST("/items", item.CreateItem)
@@ -71,21 +84,27 @@ func RegisterRoutes(r gin.IRouter, db *gorm.DB, hub *Hub, inventory *Inventory, 
 		api.POST("/inventory/resources/:id/events", inv.CreateStockEvent)
 		api.GET("/inventory/usages", inv.GetStockUsages)
 		api.PUT("/inventory/usages", inv.ReplaceStockUsages)
-		api.POST("/inventory/remind", inv.RemindInventory)
 		api.GET("/color-settings", colorSetting.GetColorSettings)
 		api.PUT("/color-settings", colorSetting.UpsertColorSetting)
 		api.DELETE("/color-settings/:id", colorSetting.DeleteColorSetting)
+		api.PUT("/caos/cups", caos.WriteCaosCups)
+		api.POST("/caos/drippers/:dripper/next", caos.AdvanceCaosDripper)
 
-		api.GET("/square/status", square.GetStatus)
-		api.GET("/square/devices", square.GetDevices)
-		api.POST("/square/devices", square.CreateDevice)
-		api.POST("/square/devices/pair", square.PairDevice)
-		api.POST("/square/devices/import", square.ImportDevices)
-		api.DELETE("/square/devices/:id", square.DeleteDevice)
-		api.POST("/square/checkouts", square.CreateCheckout)
-		api.GET("/square/checkouts/unlinked", square.GetUnlinkedCheckouts)
-		api.GET("/square/checkouts/:id", square.GetCheckout)
-		api.POST("/square/checkouts/:id/cancel", square.CancelCheckout)
-		api.POST("/square/webhook", square.ReceiveWebhook)
+		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
+		// 表示用の端末が決済を待つことは無いので
+		sq := api.Group("/square", authz.Require(auth.RoleStaff))
+		sq.GET("/status", square.GetStatus)
+		sq.GET("/devices", square.GetDevices)
+		sq.POST("/devices", square.CreateDevice)
+		sq.POST("/devices/pair", square.PairDevice)
+		sq.POST("/devices/import", square.ImportDevices)
+		sq.DELETE("/devices/:id", square.DeleteDevice)
+		sq.POST("/checkouts", square.CreateCheckout)
+		sq.GET("/checkouts/unlinked", square.GetUnlinkedCheckouts)
+		sq.GET("/checkouts/:id", square.GetCheckout)
+		sq.POST("/checkouts/:id/cancel", square.CancelCheckout)
+		sq.POST("/checkouts/:id/refund", square.RefundCheckout)
+		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
+		api.POST("/orders/:id/square-refund", square.RefundOrder)
 	}
 }
