@@ -313,6 +313,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries ?? [];
                       const isDropColumn = hoveredTarget === bay.id;
+                      // 選んだカードを置ける枠（指名の番号のあるカードは、その番号の列だけ）
+                      const isTargetCell =
+                        isTargetRow &&
+                        selectedOrder !== null &&
+                        caosDripperAllowed(selectedOrder, bay.id);
                       const entries = cellEntries.map((entry) =>
                         renderEntry(
                           entry,
@@ -349,22 +354,20 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   </div>
                                 ),
                               )}
-                              {isTargetRow &&
-                                selectedOrder &&
-                                caosDripperAllowed(selectedOrder, bay.id) && (
-                                  <button
-                                    type="button"
-                                    aria-label={`ドリッパー${dripperLabel(bay.id)}に配置`}
-                                    onClick={() => picked.assignTo(bay.id)}
-                                    className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
-                                      isDropColumn
-                                        ? "border-blue-700 bg-blue-200 text-blue-800 ring-2 ring-blue-400"
-                                        : "border-blue-600 bg-blue-50 text-blue-700"
-                                    }`}
-                                  >
-                                    ここに配置
-                                  </button>
-                                )}
+                              {isTargetCell && (
+                                <button
+                                  type="button"
+                                  aria-label={`ドリッパー${dripperLabel(bay.id)}に配置`}
+                                  onClick={() => picked.assignTo(bay.id)}
+                                  className={`h-[64px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
+                                    isDropColumn
+                                      ? "border-blue-700 bg-blue-200 text-blue-800 ring-2 ring-blue-400"
+                                      : "border-blue-600 bg-blue-50 text-blue-700"
+                                  }`}
+                                >
+                                  ここに配置
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
