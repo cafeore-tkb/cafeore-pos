@@ -16,10 +16,10 @@ export default function InventoryPage() {
     return (
       <div className="p-4">
         在庫対象がまだありません。
-        <Link className="underline" to="/inventory/settings">
-          設定
+        <Link className="underline" to="/products">
+          商品管理
         </Link>
-        からカップや豆を追加してください。
+        でアイテムやカップを追加してください。
       </div>
     );
   }

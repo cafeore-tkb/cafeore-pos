@@ -11,11 +11,11 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenCaosNominated ColorScreen = "caos_nominated"
-	ColorScreenCashier       ColorScreen = "cashier"
-	ColorScreenCashierOrder  ColorScreen = "cashier_order"
-	ColorScreenMaster        ColorScreen = "master"
-	ColorScreenServe         ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenNominated    ColorScreen = "nominated"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -78,8 +78,8 @@ const (
 
 // Defines values for StockResourceKind.
 const (
-	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
+	StockResourceKindItem StockResourceKind = "item"
 )
 
 // BuildInfo このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
@@ -195,7 +195,7 @@ type CashierStateUpdateRequest struct {
 
 // ColorScreen 背景色を適用する画面。
 // cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -205,7 +205,7 @@ type ColorSettingResponse struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -221,7 +221,7 @@ type ColorSettingUpsertRequest struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -280,10 +280,10 @@ type InventoryStatus struct {
 	RemainingServings *float64              `json:"remaining_servings"`
 	Resource          StockResourceResponse `json:"resource"`
 
-	// Servings counted_at 以降に売れた杯数
+	// Servings counted_at 以降に売れた回数
 	Servings int `json:"servings"`
 
-	// ServingsLastHour 直近1時間に売れた杯数
+	// ServingsLastHour 直近1時間に売れた回数
 	ServingsLastHour int `json:"servings_last_hour"`
 }
 
@@ -729,7 +729,7 @@ type StockEventCreateRequest struct {
 
 // StockEventCreateResponse defines model for StockEventCreateResponse.
 type StockEventCreateResponse struct {
-	// ActualPerServing 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+	// ActualPerServing 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
 	ActualPerServing *float64 `json:"actual_per_serving"`
 
 	// Estimated 記録する直前の推定残量（count のときの答え合わせ用）
@@ -750,23 +750,27 @@ type StockEventResponse struct {
 	ResourceId openapi_types.UUID `json:"resource_id"`
 }
 
-// StockResourceKind defines model for StockResourceKind.
+// StockResourceKind item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
 type StockResourceKind string
 
-// StockResourceRequest defines model for StockResourceRequest.
+// StockResourceRequest name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400
 type StockResourceRequest struct {
-	// Buffer 最低限残したい杯数。これを切ると危険扱い
-	Buffer int               `json:"buffer"`
-	Kind   StockResourceKind `json:"kind"`
-	Name   string            `json:"name"`
+	// Buffer 最低限残したい回数。これを切ると危険扱い
+	Buffer int `json:"buffer"`
 
-	// NotifyFrom 残りがこの杯数を切ったら通知を始める
+	// ItemTypeIds このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）
+	ItemTypeIds *[]openapi_types.UUID `json:"item_type_ids,omitempty"`
+
+	// Name カップの名前（カップでは必須）
+	Name *string `json:"name,omitempty"`
+
+	// NotifyFrom 残りがこの回数を切ったら通知を始める
 	NotifyFrom int `json:"notify_from"`
 
-	// NotifyStep notify_from から何杯減るごとに通知するか
+	// NotifyStep notify_from から何回減るごとに通知するか
 	NotifyStep int `json:"notify_step"`
 
-	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	// PerServing 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
 	PerServing float64 `json:"per_serving"`
 
 	// Unit 数える単位（個 / g）
@@ -775,35 +779,25 @@ type StockResourceRequest struct {
 
 // StockResourceResponse defines model for StockResourceResponse.
 type StockResourceResponse struct {
-	// Buffer 最低限残したい杯数。これを切ると危険扱い
 	Buffer int                `json:"buffer"`
 	Id     openapi_types.UUID `json:"id"`
-	Kind   StockResourceKind  `json:"kind"`
-	Name   string             `json:"name"`
 
-	// NotifyFrom 残りがこの杯数を切ったら通知を始める
-	NotifyFrom int `json:"notify_from"`
+	// ItemId アイテムの在庫ならそのアイテム。カップは null
+	ItemId *openapi_types.UUID `json:"item_id"`
 
-	// NotifyStep notify_from から何杯減るごとに通知するか
-	NotifyStep int `json:"notify_step"`
+	// ItemTypeIds このカップを使うアイテムの種類（アイテムの在庫は空）
+	ItemTypeIds []openapi_types.UUID `json:"item_type_ids"`
 
-	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	// Kind item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
+	Kind StockResourceKind `json:"kind"`
+
+	// Name アイテムの在庫ならアイテムの名前、カップならカップの名前
+	Name       string  `json:"name"`
+	NotifyFrom int     `json:"notify_from"`
+	NotifyStep int     `json:"notify_step"`
 	PerServing float64 `json:"per_serving"`
-
-	// Unit 数える単位（個 / g）
-	Unit string `json:"unit"`
+	Unit       string  `json:"unit"`
 }
-
-// StockUsage defines model for StockUsage.
-type StockUsage struct {
-	// Amount アイテム1杯で使う量（カップ 1、豆 15 など）
-	Amount     float64            `json:"amount"`
-	ItemId     openapi_types.UUID `json:"item_id"`
-	ResourceId openapi_types.UUID `json:"resource_id"`
-}
-
-// ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
-type ReplaceStockUsagesJSONBody = []StockUsage
 
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
@@ -834,9 +828,6 @@ type UpdateStockResourceJSONRequestBody = StockResourceRequest
 
 // CreateStockEventJSONRequestBody defines body for CreateStockEvent for application/json ContentType.
 type CreateStockEventJSONRequestBody = StockEventCreateRequest
-
-// ReplaceStockUsagesJSONRequestBody defines body for ReplaceStockUsages for application/json ContentType.
-type ReplaceStockUsagesJSONRequestBody = ReplaceStockUsagesJSONBody
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest

@@ -29,12 +29,12 @@ import (
 // 替えるのは CaOS の画面からだけ（sohosai-shift の予定は画面が候補に出すだけで、サーバーは読まない）。上級生かも画面が
 // sohosai-shift の名簿で判定して送り、そのまま持つ。PUT /api/caos/cups は、上級生のみのカップを置くときにこの値を確かめる（caos.go）。
 //
-// 変えたら今日の 6 つを {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは caos_lanes_changed で知らせる
+// 変えたら今日の 6 つを {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは dripper_assignees_changed で知らせる
 // （注文と同じ形。受けたインスタンスは DB から読み直して配る。order_listener.go）。
 
 const (
 	// 担当者が変わったことをインスタンス同士で知らせるチャンネル。通知の中身は "<送ったインスタンスの ID>"
-	caosLanesChangedChannel = "caos_lanes_changed"
+	dripperAssigneesChangedChannel = "dripper_assignees_changed"
 	// 担当者の名前の長さ（文字）の上限
 	caosMaxLaneName = 40
 	// 担当者の書き込みと、上級生のみのカップを置く書き込みを順番にする advisory lock
@@ -89,7 +89,7 @@ func broadcastCaosLanes(db *gorm.DB, hub *Hub, now time.Time) {
 
 // 担当者が変わったことをほかのインスタンスへ知らせる。
 func notifyCaosLanesChanged(db *gorm.DB) {
-	notifyChanged(db, caosLanesChangedChannel, instanceID)
+	notifyChanged(db, dripperAssigneesChangedChannel, instanceID)
 }
 
 func lockCaosLanes(tx *gorm.DB) error {

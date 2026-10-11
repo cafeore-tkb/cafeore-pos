@@ -9,7 +9,6 @@ export type StockResourceKind = components["schemas"]["StockResourceKind"];
 export type StockEventKind = components["schemas"]["StockEventKind"];
 export type StockEventResult =
   components["schemas"]["StockEventCreateResponse"];
-export type StockUsage = components["schemas"]["StockUsage"];
 
 export const inventoryRepository = {
   getStatuses: async (): Promise<InventoryStatus[]> => {
@@ -70,27 +69,6 @@ export const inventoryRepository = {
     );
     if (error || !response.ok || !data) {
       throwApiError(response, error, "Failed to record stock event");
-    }
-    return data;
-  },
-
-  getUsages: async (): Promise<StockUsage[]> => {
-    const { data, error, response } = await apiClient.GET(
-      "/api/inventory/usages",
-    );
-    if (error || !response.ok || !data) {
-      throwApiError(response, error, "Failed to fetch stock usages");
-    }
-    return data;
-  },
-
-  replaceUsages: async (usages: StockUsage[]): Promise<StockUsage[]> => {
-    const { data, error, response } = await apiClient.PUT(
-      "/api/inventory/usages",
-      { body: usages },
-    );
-    if (error || !response.ok || !data) {
-      throwApiError(response, error, "Failed to save stock usages");
     }
     return data;
   },
