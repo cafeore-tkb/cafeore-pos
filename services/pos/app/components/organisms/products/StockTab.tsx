@@ -1,4 +1,8 @@
-import type { ItemType, StockResource } from "@cafeore/common";
+import {
+  type ItemType,
+  type StockResource,
+  openapiEnumLabels,
+} from "@cafeore/common";
 import { Link } from "react-router";
 import { useStockResourceForm } from "~/components/functional/useStockResourceForm";
 import { Button } from "~/components/ui/button";
@@ -20,12 +24,13 @@ type Props = {
 };
 
 export function StockTab({ resources, itemTypes, onChanged }: Props) {
+  const kindLabels = openapiEnumLabels("StockResourceKind");
   return (
     <div className="flex flex-col gap-10">
       <section className="flex flex-col gap-3">
         <div>
           <div className="flex items-baseline justify-between gap-4">
-            <h2 className="font-semibold text-lg">アイテムの在庫</h2>
+            <h2 className="font-semibold text-lg">{kindLabels.item}の在庫</h2>
             <Link
               to="/inventory"
               className="text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
@@ -35,9 +40,9 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
           </div>
           <p className="text-muted-foreground text-sm">
             アイテムを作ると一緒にでき、アイテムを消すと消えます。注文のたびに「1回の量」を引きます。
-            通知は残りが「通知開始」を切ったときと、そこから「間隔」杯減るごとに
+            通知は残りが「通知開始」を切ったときと、そこから「間隔」回減るごとに
             Slack
-            に送ります。「バッファ」を切ると危険扱いになります（いずれも杯数）。
+            に送ります。「バッファ」を切ると危険扱いになります（いずれも回数）。
           </p>
         </div>
         <Table>
@@ -59,7 +64,7 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
 
       <section className="flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-lg">カップ</h2>
+          <h2 className="font-semibold text-lg">{kindLabels.cup}</h2>
           <p className="text-muted-foreground text-sm">
             チェックしたタイプのアイテムが 1 つ売れるごとに「1回の量」を引きます
           </p>

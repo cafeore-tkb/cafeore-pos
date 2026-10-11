@@ -354,10 +354,15 @@ function DashboardPreview() {
 
 function InventoryPreview() {
   const resources = [
-    { kind: "アイテム", name: "ブラジル", value: "64 杯", level: "ok" },
-    { kind: "アイテム", name: "エチオピア", value: "18 杯", level: "warning" },
-    { kind: "カップ", name: "ホット用", value: "120 杯", level: "ok" },
-    { kind: "カップ", name: "アイス用", value: "9 杯", level: "critical" },
+    { kind: "アイテム", name: "ブラジル", value: "64 回分", level: "ok" },
+    {
+      kind: "アイテム",
+      name: "エチオピア",
+      value: "18 回分",
+      level: "warning",
+    },
+    { kind: "カップ", name: "ホット用", value: "120 回分", level: "ok" },
+    { kind: "カップ", name: "アイス用", value: "9 回分", level: "critical" },
   ] as const;
   return (
     <div className="flex h-full flex-col px-[1em] py-[0.8em]">
