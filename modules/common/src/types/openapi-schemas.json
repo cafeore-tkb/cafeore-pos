@@ -426,7 +426,8 @@
       "dripper_position",
       "drip_id",
       "brew_started_at",
-      "brew_finished_at"
+      "brew_finished_at",
+      "reason"
     ],
     "properties": {
       "id": {
@@ -436,6 +437,10 @@
       "created_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "reason": {
+        "type": "string",
+        "description": "入れ直す理由（足したときに書いたもの。無ければ空）"
       },
       "dripper": {
         "type": "integer",
@@ -1005,6 +1010,11 @@
           "type": "string",
           "format": "uuid"
         }
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける"
       }
     }
   },

@@ -169,6 +169,7 @@ export const responseToOrderEntity = (
       emergencies: (cup.emergencies ?? []).map((emergency) => ({
         id: emergency.id,
         createdAt: new Date(emergency.created_at),
+        reason: emergency.reason,
         dripper: emergency.dripper,
         dripperPosition: emergency.dripper_position,
         dripId: emergency.drip_id,

@@ -77,6 +77,8 @@ export interface CaosBoardCup {
   cupId: string;
   /** 緊急（入れ直し） */
   emergency: boolean;
+  /** 入れ直す理由（カップと、理由の無い入れ直しは空） */
+  emergencyReason: string;
   orderId: string;
   orderNo: number;
   /** 注文の中の並び（0 始まり） */
@@ -278,6 +280,7 @@ export const buildCaosCards = (
           ...base,
           id: cup.id,
           emergency: false,
+          emergencyReason: "",
           readyAt: cup.readyAt,
           servedAt: cup.servedAt,
           state: cupState(cup),
@@ -286,6 +289,7 @@ export const buildCaosCards = (
           ...base,
           id: emergency.id,
           emergency: true,
+          emergencyReason: emergency.reason,
           readyAt: null,
           servedAt: null,
           state: cupState(emergency),
@@ -372,6 +376,22 @@ export interface CaosAssignOptions {
   /** 新しいカードの dripId を作る */
   newId: () => string;
 }
+
+/** 注文の入れ直しの理由を、よく使う順に limit 個（緊急の理由の候補。理由の無いものは数えない） */
+export const frequentEmergencyReasons = (
+  orders: readonly { cups: readonly Pick<Cup, "emergencies">[] }[],
+  limit = 5,
+): string[] => {
+  const counts = new Map<string, number>();
+  for (const order of orders)
+    for (const cup of order.cups)
+      for (const { reason } of cup.emergencies)
+        if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || compareStr(a[0], b[0]))
+    .slice(0, limit)
+    .map(([reason]) => reason);
+};
 
 /** カードを置けるドリッパーか。指名の番号のあるカードは、その番号のドリッパーだけ（サーバーも同じ決まりで断る） */
 export const caosDripperAllowed = (card: CaosCard, dripper: number) => {

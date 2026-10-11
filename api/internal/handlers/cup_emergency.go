@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -22,7 +25,15 @@ func (h *CaosHandler) CreateCupEmergencies(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "order_cup_ids は空にせず、同じカップを 2 回入れないでください"})
 		return
 	}
-	rows, orderIDs, resourceIDs, err := h.addEmergencies(req.OrderCupIds)
+	var reason string
+	if req.Reason != nil {
+		reason = strings.TrimSpace(*req.Reason)
+	}
+	if utf8.RuneCountInString(reason) > cupEmergencyReasonMax {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("理由は %d 文字までです", cupEmergencyReasonMax)})
+		return
+	}
+	rows, orderIDs, resourceIDs, err := h.addEmergencies(req.OrderCupIds, reason)
 	if respondError(c, err) {
 		return
 	}
@@ -35,10 +46,13 @@ func (h *CaosHandler) CreateCupEmergencies(c *gin.Context) {
 	h.checkStockAlerts(resourceIDs)
 }
 
-// addEmergencies は cupIDs のカップに入れ直しを 1 つずつ足し（cupIDs と同じ順）、入れ直しで減る在庫を残す。
+// 入れ直す理由の長さ（文字。OpenAPI の maxLength と同じ）
+const cupEmergencyReasonMax = 100
+
+// addEmergencies は cupIDs のカップに理由 reason の入れ直しを 1 つずつ足し（cupIDs と同じ順）、入れ直しで減る在庫を残す。
 // 足したカップの注文と、減らした在庫対象の ID も返す。
 // 今日の注文の、抽出が要るカップだけ。注文の行をロックしてから足す（注文の編集・CaOS の書き込みと同じ順番）。
-func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID) (rows []models.CupEmergency, orderIDs, resourceIDs []uuid.UUID, err error) {
+func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []models.CupEmergency, orderIDs, resourceIDs []uuid.UUID, err error) {
 	now := h.now()
 	start, end := caosToday(now)
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -77,7 +91,7 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID) (rows []models.CupEmerg
 			if findOrderCup(orders[cup.OrderID], cup.ID) == nil {
 				return conflictErrorf("カップが消えました（注文が編集されたかもしれません）")
 			}
-			row := models.CupEmergency{ID: uuid.New(), OrderCupID: cup.ID, CreatedAt: now}
+			row := models.CupEmergency{ID: uuid.New(), OrderCupID: cup.ID, CreatedAt: now, Reason: reason}
 			rows = append(rows, row)
 			for _, r := range itemStockResources(cup.Item, resources) {
 				usages = append(usages, models.CupEmergencyStockUsage{CupEmergencyID: row.ID, ResourceID: r.ID, Servings: 1, Amount: r.PerServing})

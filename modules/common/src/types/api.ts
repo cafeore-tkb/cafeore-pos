@@ -576,6 +576,8 @@ export interface components {
       id: string;
       /** Format: date-time */
       created_at: string;
+      /** @description 入れ直す理由（足したときに書いたもの。無ければ空） */
+      reason: string;
       dripper: number | null;
       dripper_position: number | null;
       /** Format: uuid */
@@ -823,6 +825,8 @@ export interface components {
     CupEmergencyCreateRequest: {
       /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
       order_cup_ids: string[];
+      /** @description 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける */
+      reason?: string;
     };
     CupEmergencyCreateResponse: {
       /** @description 足した入れ直しの id（order_cup_ids と同じ順） */

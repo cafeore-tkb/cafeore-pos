@@ -398,3 +398,30 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 		t.Fatalf("stock usages after deleting the order = %d (%v)", left, err)
 	}
 }
+
+// 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない
+func TestCupEmergencyReasonOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o := f.createOrder(t, 1, line(f.blend, f.blend))
+	post := func(reason string) int {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"order_cup_ids": ids(o.OrderCups...), "reason": reason})
+		return callWithParams(t, f.caos.CreateCupEmergencies, http.MethodPost, string(body), nil).Code
+	}
+	if code := post(strings.Repeat("あ", cupEmergencyReasonMax+1)); code != http.StatusBadRequest {
+		t.Fatalf("too long = %d, want 400", code)
+	}
+	if code := post("  こぼした "); code != http.StatusCreated {
+		t.Fatalf("POST = %d", code)
+	}
+	var order models.Order
+	if err := preloadOrder(db).First(&order, "id = ?", o.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, cup := range toOrderResponse(&order).Cups {
+		if len(cup.Emergencies) != 1 || cup.Emergencies[0].Reason != "こぼした" {
+			t.Fatalf("emergencies = %+v", cup.Emergencies)
+		}
+	}
+}

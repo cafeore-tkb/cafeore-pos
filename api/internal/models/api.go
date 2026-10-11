@@ -252,6 +252,9 @@ type CommentResponse struct {
 type CupEmergencyCreateRequest struct {
 	// OrderCupIds 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
 	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
+
+	// Reason 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+	Reason *string `json:"reason,omitempty"`
 }
 
 // CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
@@ -269,6 +272,9 @@ type CupEmergencyResponse struct {
 	Dripper         *int                `json:"dripper"`
 	DripperPosition *int                `json:"dripper_position"`
 	Id              openapi_types.UUID  `json:"id"`
+
+	// Reason 入れ直す理由（足したときに書いたもの。無ければ空）
+	Reason string `json:"reason"`
 }
 
 // ErrorResponse defines model for ErrorResponse.

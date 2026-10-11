@@ -16,6 +16,8 @@ type CupEmergency struct {
 	ID         uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	OrderCupID uuid.UUID `gorm:"type:uuid;not null;index"`
 	CreatedAt  time.Time `gorm:"not null"`
+	// 入れ直す理由（足したときに書いたもの。無ければ空）
+	Reason string `gorm:"not null;default:''"`
 
 	Dripper         *int       `gorm:"type:smallint;check:cup_emergencies_dripper_check,dripper BETWEEN 1 AND 6"`
 	DripperPosition *int       `gorm:"type:integer"`

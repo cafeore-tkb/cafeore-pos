@@ -11,6 +11,7 @@ import {
   caosLane,
   cupNeedsBrew,
   cupSeniorOnly,
+  frequentEmergencyReasons,
   mergeWrites,
   unassignWrites,
 } from "./caos-board";
@@ -218,6 +219,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ) => ({
       id,
       createdAt: NOW,
+      reason: "",
       dripper: null,
       dripperPosition: null,
       dripId: null,
@@ -287,6 +289,53 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         },
       ],
     });
+
+    // 指名の入れ直しは、同じ指名・同じ商品のカップと統合できる（指名の無いカップとはできない）
+    const nominated = cup({ item: blend, line: "line-2" });
+    const free = cup({ item: blend, line: "line-3" });
+    const withPeers = buildCaosCards(
+      [
+        order(2, [brewed, nominated], {
+          dripper: { "line-1": 3, "line-2": 3 },
+        }),
+        order(3, [free]),
+      ],
+      DAY,
+    );
+    const redoCard = withPeers.find((c) => ids(c)[0] === "e2");
+    const peer = withPeers.find((c) => ids(c)[0] === nominated.id);
+    const other = withPeers.find((c) => ids(c)[0] === free.id);
+    if (!redoCard || !peer || !other) throw new Error("cards");
+    expect(canMergeCards(redoCard, peer)).toBe(true);
+    expect(canMergeCards(redoCard, other)).toBe(false);
+    expect(mergeWrites(redoCard, peer, newId)).toHaveProperty("writes");
+  });
+
+  test("緊急の理由の候補：使った回数の多い順（同じなら名前の順）、理由の無いものは数えない", () => {
+    const withReasons = (...reasons: string[]) =>
+      cup({
+        item: blend,
+        emergencies: reasons.map((reason, i) => ({
+          id: `e-${reason}-${i}`,
+          createdAt: NOW,
+          reason,
+          dripper: null,
+          dripperPosition: null,
+          dripId: null,
+          brewStartedAt: null,
+          brewFinishedAt: null,
+        })),
+      });
+    const orders = [
+      { cups: [withReasons("こぼした", ""), withReasons("味が薄い")] },
+      { cups: [withReasons("こぼした", "温度")] },
+    ];
+    expect(frequentEmergencyReasons(orders)).toEqual([
+      "こぼした",
+      "味が薄い",
+      "温度",
+    ]);
+    expect(frequentEmergencyReasons(orders, 1)).toEqual(["こぼした"]);
   });
 
   test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {

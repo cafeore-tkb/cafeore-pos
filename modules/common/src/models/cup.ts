@@ -8,6 +8,8 @@ import { itemSchema } from "./item";
 export const cupEmergencySchema = z.object({
   id: z.string(),
   createdAt: z.date(),
+  /** 入れ直す理由（無ければ空） */
+  reason: z.string(),
   dripper: z.number().int().nullable(),
   dripperPosition: z.number().int().nullable(),
   dripId: z.string().nullable(),

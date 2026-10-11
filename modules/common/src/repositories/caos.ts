@@ -57,12 +57,13 @@ export const nextCaosDripper = async (
 
 /**
  * カップを緊急（入れ直し）にする（POST /api/cup-emergencies）。1 杯につき入れ直しを 1 つ足す（同じカップに何度でも）。
- * 入れ直しはカップの emergencies に入り、CaOS で未割当の入れ直しのカードになる。data.ids は足した入れ直しの id（cupIds と同じ順）
+ * reason は入れ直す理由（空なら理由なし）。入れ直しはカップの emergencies に入り、CaOS で未割当の入れ直しのカードになる。
+ * data.ids は足した入れ直しの id（cupIds と同じ順）
  */
-export const addCupEmergencies = async (cupIds: string[]) =>
+export const addCupEmergencies = async (cupIds: string[], reason: string) =>
   send(
     apiClient.POST("/api/cup-emergencies", {
-      body: { order_cup_ids: cupIds },
+      body: { order_cup_ids: cupIds, reason },
     }),
   );
 

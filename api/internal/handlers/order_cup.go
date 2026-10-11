@@ -84,7 +84,7 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 	emergencies := make([]models.CupEmergencyResponse, 0, len(cup.Emergencies))
 	for _, e := range cup.Emergencies {
 		emergencies = append(emergencies, models.CupEmergencyResponse{
-			Id: e.ID, CreatedAt: e.CreatedAt,
+			Id: e.ID, CreatedAt: e.CreatedAt, Reason: e.Reason,
 			Dripper: e.Dripper, DripperPosition: e.DripperPosition, DripId: e.DripID,
 			BrewStartedAt: e.BrewStartedAt, BrewFinishedAt: e.BrewFinishedAt,
 		})
