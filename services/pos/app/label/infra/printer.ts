@@ -18,8 +18,11 @@ export type LabelPrinter = {
   connect: () => void;
   /** つなぐのをやめる。つなぎかけのものも含め、以後のつながり具合は知らせない */
   disconnect: () => void;
-  /** 刷る。つながっていなければ刷らず、disconnected を知らせる。プリンターに送れたら true */
-  print: (job: PrintJob) => boolean;
+  /**
+   * 刷る。前に頼んだものを刷り終えてから送る。プリンターが刷れたと返したら true。
+   * つながっていない（disconnected を知らせる）・失敗を返した・返事が来なかったら false
+   */
+  print: (job: PrintJob) => Promise<boolean>;
 };
 
 /** プリンターを作る。onStatusChange でつながり具合を知らせる */
