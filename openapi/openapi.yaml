@@ -687,6 +687,7 @@ paths:
   /api/inventory/resources/{id}:
     put:
       summary: 在庫対象の更新
+      description: アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
       operationId: updateStockResource
       tags:
         - inventory
@@ -710,6 +711,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StockResourceResponse'
+        '400':
+          description: 値が正しくない。アイテムの在庫に name・item_type_ids を送った
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       summary: カップの削除
       description: 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
@@ -1758,7 +1765,7 @@ components:
       x-enum-descriptions: [アイテム, カップ]
     StockResourceRequest:
       type: object
-      description: name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つは無視する
+      description: name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400
       required:
         - unit
         - per_serving

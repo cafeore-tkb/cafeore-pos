@@ -321,11 +321,13 @@ func toStockEventResponse(e *models.StockEvent) models.StockEventResponse {
 	}
 }
 
-// cup ならカップの名前も見る。アイテムの在庫では名前と使う種類は無視する。
+// cup ならカップの名前も見る。アイテムの在庫は名前も使う種類も持たない（名前はアイテムの名前）。
 func validateStockResource(req *models.StockResourceRequest, cup bool) error {
 	switch {
 	case cup && (req.Name == nil || strings.TrimSpace(*req.Name) == ""):
 		return errors.New("name is required for cups")
+	case !cup && (req.Name != nil || req.ItemTypeIds != nil):
+		return errors.New("name and item_type_ids are only for cups; item stock is named after its item, so rename the item instead")
 	case req.PerServing <= 0:
 		return errors.New("per_serving must be positive")
 	case req.NotifyFrom < 0 || req.NotifyStep < 0 || req.Buffer < 0:
@@ -422,7 +424,6 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
 	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
 	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
-	// 名前と使う種類はカップだけ。アイテムの在庫ではアイテムの名前を使う。
 	before := resource
 	columns := []string{"unit", "per_serving", "notify_from", "notify_step", "buffer"}
 	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
@@ -442,8 +443,8 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 		if err := tx.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
 			return err
 		}
-		// 使う種類を省略したら今のまま
-		if !isCup || req.ItemTypeIds == nil {
+		// 使う種類を省略したら今のまま（アイテムの在庫では送れない）
+		if req.ItemTypeIds == nil {
 			return nil
 		}
 		return replaceCupItemTypes(tx, &resource, *req.ItemTypeIds)
@@ -455,9 +456,9 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
 	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
-	// 使う種類は送られたときだけ比べる（アイテムの在庫や省略したときは今のまま）
+	// 使う種類は送られたときだけ比べる（省略したときは今のまま）
 	var typesBefore, typesAfter string
-	if isCup && req.ItemTypeIds != nil {
+	if req.ItemTypeIds != nil {
 		typesBefore, typesAfter = h.inv.itemTypeNames(before.ItemTypes), h.inv.itemTypeNames(resource.ItemTypes)
 	}
 	h.inv.activity.Post(stockResourceUpdatedMessage(&before, &resource, typesBefore, typesAfter))

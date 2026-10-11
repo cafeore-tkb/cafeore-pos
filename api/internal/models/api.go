@@ -531,7 +531,7 @@ type StockEventResponse struct {
 // StockResourceKind item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
 type StockResourceKind string
 
-// StockResourceRequest name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つは無視する
+// StockResourceRequest name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400
 type StockResourceRequest struct {
 	// Buffer 最低限残したい杯数。これを切ると危険扱い
 	Buffer int `json:"buffer"`

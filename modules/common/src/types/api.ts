@@ -132,7 +132,10 @@ export interface paths {
     post: operations["createStockResource"];
   };
   "/api/inventory/resources/{id}": {
-    /** 在庫対象の更新 */
+    /**
+     * 在庫対象の更新
+     * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+     */
     put: operations["updateStockResource"];
     /**
      * カップの削除
@@ -540,7 +543,7 @@ export interface components {
      * @enum {string}
      */
     StockResourceKind: "item" | "cup";
-    /** @description name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つは無視する */
+    /** @description name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400 */
     StockResourceRequest: {
       /**
        * @description カップの名前（カップでは必須）
@@ -1401,7 +1404,10 @@ export interface operations {
       };
     };
   };
-  /** 在庫対象の更新 */
+  /**
+   * 在庫対象の更新
+   * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+   */
   updateStockResource: {
     parameters: {
       path: {
@@ -1418,6 +1424,12 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["StockResourceResponse"];
+        };
+      };
+      /** @description 値が正しくない。アイテムの在庫に name・item_type_ids を送った */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
