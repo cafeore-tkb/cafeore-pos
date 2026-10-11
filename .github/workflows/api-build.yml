@@ -9,13 +9,14 @@ name: api / build & deploy
 # push 先は Terraform で新しく作った Docker リポジトリ（既定 cafeore-pos）で、
 # Cloud Build が使っている cloud-run-source-deploy とは別物。
 #
-# ## Cloud Build と同じサービスを更新する
+# ## デプロイ先は cafeore-pos-prod
 #
-# デプロイ先の Cloud Run サービス cafeore-pos-git は、既存の Cloud Build
-# トリガー（infra の cloud_build.tf）も更新している。あちらの発火条件は
-# **disable-auth ブランチへの push** なので普段はぶつからないが、
-# disable-auth に push すると、そちらのビルドで上書きされる。
-# 移行が済んだら Cloud Build トリガーを止めること。
+# 本番のデプロイ先は Cloud Run サービス cafeore-pos-prod（infra の cloud_run.tf）。
+# 旧本番の cafeore-pos-git からは、Cloud Run のサービス名を変えられないため作り直して
+# 移した。旧サービスは切り替えが済んだら消す（cafeore-tkb/infra#23、infra の README
+# 「本番サービスの改名」）。
+# 既存の Cloud Build トリガー（infra の cloud_build.tf、disable-auth ブランチへの push）は
+# 旧サービスを向いたままなので、cafeore-pos-prod を上書きすることはない。
 #
 # PR では**プレビュー用の別サービス**（既定 cafeore-pos-preview）へ、
 # **リビジョンタグ付き・トラフィックなし**でデプロイする。PR ごとに
@@ -258,7 +259,7 @@ jobs:
       GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
       AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
       IMAGE_NAME: api
-      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-git' }}
+      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_SERVICE || 'cafeore-pos-prod' }}
       CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
       COMMENT_MARKER: '<!-- cafeore-preview: api -->'
       # Neon のプレビュー用ブランチ。NEON_PROJECT_ID が未設定なら丸ごとスキップする。
@@ -415,14 +416,20 @@ jobs:
           # 親ブランチに role / database が複数あると作成レスポンスに
           # 接続文字列が入らないため（既存ブランチを再利用する経路でも同じ）。
           db_url=$(neon connection-string "$branch" --pooled) || exit $?
+          # 注文などの変更通知の LISTEN は、pooler（トランザクションモード）経由では
+          # 通知が届かない。待ち受けだけは pooler を通らない接続文字列で張る
+          # （api の DATABASE_LISTEN_URL。README の「注文・オーダーストップ・レジの状態の配信」を参照）。
+          listen_url=$(neon connection-string "$branch") || exit $?
 
           # **ログに出させない。** 以降このステップの出力や後続ステップのログで
           # マスクされる。GITHUB_OUTPUT 経由で渡す値も同様。
           echo "::add-mask::$db_url"
+          echo "::add-mask::$listen_url"
 
           {
             echo "branch=$branch"
             echo "db_url=$db_url"
+            echo "listen_url=$listen_url"
           } >> "$GITHUB_OUTPUT"
 
           echo "Neon ブランチ $branch を $NEON_CU CU で用意した"
@@ -436,6 +443,7 @@ jobs:
           IS_PR: ${{ github.event_name == 'pull_request' }}
           PR_NUMBER: ${{ github.event.number }}
           NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
+          NEON_LISTEN_URL: ${{ steps.neon.outputs.listen_url }}
         run: |
           set -uo pipefail
 
@@ -470,14 +478,19 @@ jobs:
           # 黙って壊れるより止める。
           env_pairs=()
           if [ -n "${NEON_DB_URL:-}" ]; then
-            case "$NEON_DB_URL" in
+            env_pairs+=("DATABASE_URL=$NEON_DB_URL")
+          fi
+          if [ -n "${NEON_LISTEN_URL:-}" ]; then
+            env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
+          fi
+          for pair in "${env_pairs[@]}"; do
+            case "$pair" in
               *,*)
                 echo "接続文字列にカンマが含まれており --update-env-vars で渡せない" >&2
                 exit 1
                 ;;
             esac
-            env_pairs+=("DATABASE_URL=$NEON_DB_URL")
-          fi
+          done
 
           # --update-env-vars は繰り返し指定すると後勝ちで潰し合うので、
           # 1回にまとめてカンマで並べる。
@@ -542,23 +555,82 @@ jobs:
       # スキーマの正本は Go のモデルだけ（README の「DB のスキーマ」）。API は起動時に
       # DB とモデルを比べ、DB にだけあるもの（手で触った跡）を /status の schema_drift に出す。
       # 空でなければ落とす。デプロイ自体は済んでいて、注文は受けられる状態のまま。
+      #
+      # PR 専用のブランチ（preview/pr-<番号>）でずれていたら、その PR の前の push が足した列が
+      # 残っているだけ（列を消す push をしたとき）なので、ブランチを親から作り直して
+      # （接続先は変わらない）同じイメージを出し直し、もう一度だけ確かめる。
+      # 共有のブランチと本番は作り直さない。
       - name: DB のスキーマがモデルとずれていないか確かめる
         if: ${{ steps.deploy.outputs.url != '' }}
         env:
-          URL: ${{ steps.deploy.outputs.url }}
+          # 本番は Cloud Run の入口を LB だけに絞ると（infra の api_lb_only）、ここ（GitHub の
+          # runner）から run.app に届かなくなる。GCP_API_LB_URL（infra の output api_lb_url）が
+          # あれば LB を通して見る。/status は Cloud Armor がトークンなしで通す。
+          # PR のプレビューは今までどおり Cloud Run のタグの URL を見る。
+          URL: >-
+            ${{ (github.event_name != 'pull_request' && vars.GCP_API_LB_URL)
+                || steps.deploy.outputs.url }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_BRANCH: ${{ steps.neon.outputs.branch }}
+          NEON_DB_URL: ${{ steps.neon.outputs.db_url }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          PR_NUMBER: ${{ github.event.number }}
         run: |
-          body=""
-          for i in $(seq 1 10); do
-            if body=$(curl -sf --max-time 30 "$URL/status"); then
-              break
+          set -uo pipefail
+
+          schema_drift() {
+            local body=""
+            for i in $(seq 1 10); do
+              if body=$(curl -sf --max-time 30 "$URL/status"); then
+                break
+              fi
+              sleep 5
+            done
+            if [ -z "$body" ]; then
+              echo "::error::$URL/status に繋がらなかった" >&2
+              return 1
             fi
-            sleep 5
-          done
-          if [ -z "$body" ]; then
-            echo "::error::$URL/status に繋がらなかった"
-            exit 1
+            jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body"
+          }
+
+          drift=$(schema_drift) || exit 1
+          if [ -n "$drift" ] && [ -n "${NEON_DB_URL:-}" ] && [ "${NEON_BRANCH:-}" = "$NEON_BRANCH_PREFIX$PR_NUMBER" ]; then
+            echo "$NEON_BRANCH がモデルとずれている。親から作り直して出し直す："
+            echo "$drift"
+            npx --yes neonctl@3 branches reset "$NEON_BRANCH" --parent \
+              --project-id "$NEON_PROJECT_ID" || exit $?
+            # 新しいリビジョンが起動時に作り直したブランチへマイグレーションを流す（マイグレーションは
+            # listen の前なので、リビジョンが準備できていれば済んでいる）。同じイメージ・同じ環境変数だと
+            # 新しいリビジョンができないことがあるので、実行ごとに変わる名前を付けて必ず作らせる
+            # （プレビューのサービスはほかの PR と共有なので、待つのもこの名前のリビジョン）
+            suffix="pr$PR_NUMBER-reset-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            gcloud run deploy "$CLOUD_RUN_PREVIEW_SERVICE" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST" \
+              --no-traffic \
+              --tag="pr-$PR_NUMBER" \
+              --revision-suffix="$suffix" \
+              --update-env-vars "DATABASE_URL=$NEON_DB_URL" \
+              --quiet || exit $?
+            # タグが新しいリビジョンに付いてから確かめる（前のリビジョンの /status を見ないように）
+            describe() {
+              gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
+                --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format=json
+            }
+            revision="$CLOUD_RUN_PREVIEW_SERVICE-$suffix"
+            for i in $(seq 1 30); do
+              tagged=$(describe | jq -r --arg t "pr-$PR_NUMBER" \
+                'first(.status.traffic[]? | select(.tag == $t) | .revisionName) // empty')
+              [ "$tagged" = "$revision" ] && break
+              sleep 5
+            done
+            if [ "$tagged" != "$revision" ]; then
+              echo "::error::タグ pr-$PR_NUMBER が新しいリビジョン $revision に付かなかった（今は ${tagged:-なし}）"
+              exit 1
+            fi
+            drift=$(schema_drift) || exit 1
           fi
-          drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body")
           if [ -n "$drift" ]; then
             {
               echo "### DB のスキーマがモデルとずれている"

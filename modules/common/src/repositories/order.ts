@@ -5,7 +5,7 @@ import {
   responseToOrderEntity,
 } from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
-import type { OrderEntity } from "../models/order";
+import type { OrderEntity, OrderPayment } from "../models/order";
 import type { OrderRepository } from "./type";
 
 // TODO(toririm): エラーハンドリングをやる
@@ -30,9 +30,12 @@ export const orderRepoFactory = (): OrderRepository => {
     return responseToOrderEntity(data);
   };
 
-  const create = async (order: OrderEntity): Promise<WithId<OrderEntity>> => {
+  const create = async (
+    order: OrderEntity,
+    payment?: OrderPayment,
+  ): Promise<WithId<OrderEntity>> => {
     const { data, error, response } = await apiClient.POST("/api/orders", {
-      body: orderEntityToCreateRequest(order),
+      body: orderEntityToCreateRequest(order, payment),
     });
 
     if (error || !response.ok) {
@@ -47,11 +50,11 @@ export const orderRepoFactory = (): OrderRepository => {
   };
 
   return {
-    save: async (order) => {
+    save: async (order, payment) => {
       if (hasId(order)) {
         return await update(order.id, order);
       }
-      return await create(order);
+      return await create(order, payment);
     },
 
     ready: async (id: string): Promise<void> => {

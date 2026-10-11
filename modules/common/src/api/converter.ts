@@ -8,7 +8,12 @@ import {
 } from "../models/global";
 import { type Item, ItemEntity } from "../models/item";
 import { MenuEntity } from "../models/menu";
-import { type Order, type OrderComment, OrderEntity } from "../models/order";
+import {
+  type Order,
+  type OrderComment,
+  OrderEntity,
+  type OrderPayment,
+} from "../models/order";
 import type { components } from "../types/api";
 
 /**
@@ -152,7 +157,15 @@ export const responseToOrderEntity = (
       item: responseToItemEntity(cup.item).toItem(),
       readyAt: cup.ready_at ? new Date(cup.ready_at) : null,
       servedAt: cup.served_at ? new Date(cup.served_at) : null,
+      dripper: cup.dripper,
+      dripperPosition: cup.dripper_position,
+      dripId: cup.drip_id,
+      brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
+      brewFinishedAt: cup.brew_finished_at
+        ? new Date(cup.brew_finished_at)
+        : null,
     })),
+    paymentMethod: response.payment_method,
   };
   return OrderEntity.fromOrder(order);
 };
@@ -174,6 +187,7 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
 // OrderEntity を CreateRequest に変換
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
+  payment: OrderPayment = { method: "cash" },
 ): OrderCreateRequest => {
   const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
     acc.push({ assignee: cur.assignee, menu_id: cur.id });
@@ -185,6 +199,9 @@ export const orderEntityToCreateRequest = (
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
+    payment_method: payment.method,
+    square_checkout_id:
+      payment.method === "square" ? payment.squareCheckoutId : null,
     menu_ids: menuIds,
     comments: order.comments,
   };

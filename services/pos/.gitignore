@@ -5,3 +5,6 @@ node_modules
 /public/build
 .env*
 !.env.example
+
+# wrangler dev が作るローカルの状態
+.wrangler
