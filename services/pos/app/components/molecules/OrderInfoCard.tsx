@@ -2,6 +2,7 @@ import {
   type ColorScreen,
   type OrderEntity,
   type WithId,
+  assignmentDisplay,
   orderElapsedTime,
   readableTextColor,
   resolveItemColor,
@@ -128,14 +129,14 @@ export function OrderInfoCard({
                       提供済
                     </p>
                   )}
-                  {cup.assignee && (
+                  {assignmentDisplay(cup) && (
                     <p
                       className={cn(
                         order.status === "preparing" && "text-red-500",
                         "font-bold text-sm",
                       )}
                     >
-                      指名:{cup.assignee}
+                      指名:{assignmentDisplay(cup)}
                     </p>
                   )}
                 </Card>

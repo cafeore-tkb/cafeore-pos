@@ -1,8 +1,5 @@
-import createClient from "openapi-fetch";
-import type { components, paths } from "../types/api";
-import { API_BASE_URL } from "./item";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
+import { apiClient } from "../api/client";
+import type { components } from "../types/api";
 
 export type SquareStatus = components["schemas"]["SquareStatusResponse"];
 export type SquareDevice = components["schemas"]["SquareDeviceResponse"];
@@ -73,7 +70,7 @@ const refundResult = (
 export const squareRepository = {
   /** Square 連携が使えるか（未設定ならレジは Square のボタンを出さない） */
   async getStatus(): Promise<SquareStatus> {
-    const { data, error } = await client.GET("/api/square/status");
+    const { data, error } = await apiClient.GET("/api/square/status");
     if (!data) {
       throw new Error(errorMessage(error, "Square の状態を取得できません"));
     }
@@ -95,7 +92,7 @@ export const squareRepository = {
     paymentType: SquarePaymentType;
     orderNumber: number | null;
   }): Promise<SquareCheckout> {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/square/checkouts",
       {
         body: {
@@ -122,7 +119,7 @@ export const squareRepository = {
 
   /** 決済依頼の最新の状態（未確定ならサーバーが Square に問い合わせる） */
   async getCheckout(id: string): Promise<SquareCheckout> {
-    const { data, error } = await client.GET("/api/square/checkouts/{id}", {
+    const { data, error } = await apiClient.GET("/api/square/checkouts/{id}", {
       params: { path: { id } },
     });
     if (!data) {
@@ -133,7 +130,7 @@ export const squareRepository = {
 
   /** 決済依頼を取り消す（既に完了しているなどで取り消せなければ SquareCheckoutConflictError） */
   async cancelCheckout(id: string): Promise<SquareCheckout> {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/square/checkouts/{id}/cancel",
       { params: { path: { id } } },
     );
@@ -155,7 +152,7 @@ export const squareRepository = {
    * 支払いを確かめられていない・返金を頼んでいる途中なら SquareCheckoutConflictError を投げる。
    */
   async refundCheckout(id: string): Promise<SquareCheckout> {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/square/checkouts/{id}/refund",
       { params: { path: { id } } },
     );
@@ -164,7 +161,7 @@ export const squareRepository = {
 
   /** 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ） */
   async refundOrder(orderId: string): Promise<SquareCheckout> {
-    const { data, error, response } = await client.POST(
+    const { data, error, response } = await apiClient.POST(
       "/api/orders/{id}/square-refund",
       { params: { path: { id: orderId } } },
     );
@@ -173,7 +170,9 @@ export const squareRepository = {
 
   /** 支払い済みなのに注文と結び付いていない決済依頼（照合用） */
   async findUnlinked(): Promise<SquareCheckout[]> {
-    const { data, error } = await client.GET("/api/square/checkouts/unlinked");
+    const { data, error } = await apiClient.GET(
+      "/api/square/checkouts/unlinked",
+    );
     if (!data) {
       throw new Error(errorMessage(error, "未登録の決済を取得できません"));
     }
@@ -182,7 +181,7 @@ export const squareRepository = {
 
   /** 登録した端末とペアリング待ちのコード（ペアリング待ちはサーバーが Square に問い合わせる） */
   async listDevices(): Promise<SquareDevice[]> {
-    const { data, error } = await client.GET("/api/square/devices");
+    const { data, error } = await apiClient.GET("/api/square/devices");
     if (!data) {
       throw new Error(errorMessage(error, "Square 端末の一覧を取得できません"));
     }
@@ -191,7 +190,7 @@ export const squareRepository = {
 
   /** 端末をペアリングするコードを発行する。返ってきた code を端末に入力する */
   async pairDevice(name: string): Promise<SquareDevice> {
-    const { data, error } = await client.POST("/api/square/devices/pair", {
+    const { data, error } = await apiClient.POST("/api/square/devices/pair", {
       body: { name },
     });
     if (!data) {
@@ -205,7 +204,7 @@ export const squareRepository = {
     name: string;
     deviceId: string;
   }): Promise<SquareDevice> {
-    const { data, error } = await client.POST("/api/square/devices", {
+    const { data, error } = await apiClient.POST("/api/square/devices", {
       body: { name: params.name, device_id: params.deviceId },
     });
     if (!data) {
@@ -216,7 +215,7 @@ export const squareRepository = {
 
   /** Square でペアリング済みの端末のうち、まだ登録していないものを取り込む。取り込んだ端末を返す */
   async importDevices(): Promise<SquareDevice[]> {
-    const { data, error } = await client.POST("/api/square/devices/import");
+    const { data, error } = await apiClient.POST("/api/square/devices/import");
     if (!data) {
       throw new Error(errorMessage(error, "端末を取り込めませんでした"));
     }
@@ -225,7 +224,7 @@ export const squareRepository = {
 
   /** 端末を一覧から外す（端末は Square にサインインしたまま） */
   async deleteDevice(id: string): Promise<void> {
-    const { error, response } = await client.DELETE(
+    const { error, response } = await apiClient.DELETE(
       "/api/square/devices/{id}",
       { params: { path: { id } } },
     );

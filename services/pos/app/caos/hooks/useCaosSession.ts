@@ -6,6 +6,7 @@ import {
   caosLane,
   jstClock,
   mergeWrites,
+  seniorOnlyBlock,
   unassignWrites,
   useColorSettings,
   useItemMaster,
@@ -20,6 +21,7 @@ import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
+import { useCaosLanes } from "./useCaosLanes";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
@@ -73,6 +75,8 @@ export const useCaosSession = () => {
     nowMs: realTime.getTime(),
   });
   const source = test.session ? test : live;
+  // ドリッパーの担当者（サーバーの今日の担当者）。本番では、上級生のみのカードは上級生のドリッパーにしか置けない（サーバーも確かめる）
+  const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
 
@@ -152,10 +156,14 @@ export const useCaosSession = () => {
     /** 割当・ドリッパーの移動・順番の入れ替え（place が "front" なら待機の先頭、{ beforeKey } ならそのカードの前、無ければ最後）。順番の数はサーバー（練習なら練習の盤面）が決める */
     place: (key: string, bayId: number, place?: CaosPlace) => {
       const card = cardOf(key);
+      if (!card) return write(NOT_FOUND);
+      const blocked = test.session
+        ? null
+        : seniorOnlyBlock(card, bayId, people);
       return write(
-        card
-          ? assignWrites(cards, card, bayId, { place, newId: newDripId })
-          : NOT_FOUND,
+        blocked
+          ? { error: blocked }
+          : assignWrites(cards, card, bayId, { place, newId: newDripId }),
       );
     },
     /** 待機のカードを未割当に戻す */

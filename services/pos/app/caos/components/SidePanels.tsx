@@ -1,4 +1,10 @@
-import { type CaosCard, type CaosPlace, caosBrewSec } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosPlace,
+  caosBrewSec,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
@@ -10,15 +16,11 @@ import {
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import {
-  type Lane,
-  laneActive,
-  laneOrdinal,
-  moveTargets,
-} from "../logic/lanes";
+import { type Lane, laneActive, moveTargets } from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
+import { LaneChangeButton, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
@@ -92,16 +94,19 @@ export const AssignPanel: React.FC<{
   const selectedOrder = unassignedOrders.find(
     (order) => order.key === selectedOrderUid,
   );
+  // 指名の番号のあるカードは、その番号のドリッパーだけ選べる
+  const allowed = (id: number) =>
+    !selectedOrder || caosDripperAllowed(selectedOrder, id);
 
   return (
     <SidePanel
-      title={`ドリッパー ${laneOrdinal(bayId)} にオーダー割当`}
+      title={`ドリッパー ${dripperLabel(bayId)} にオーダー割当`}
       onClose={onClose}
       footer={
         <PanelFooter onCancel={onClose}>
           <button
             type="button"
-            disabled={!selectedOrder}
+            disabled={!selectedOrder || !allowed(selectedBayId)}
             onClick={() => {
               if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
@@ -146,8 +151,9 @@ export const AssignPanel: React.FC<{
           <button
             key={lane.id}
             type="button"
+            disabled={!allowed(lane.id)}
             onClick={() => setSelectedBayId(lane.id)}
-            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left ${
+            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left disabled:opacity-30 ${
               selectedBayId === lane.id
                 ? "border-emerald-600 bg-emerald-50 shadow-xs ring-1 ring-emerald-600"
                 : "border-slate-200 hover:bg-slate-50"
@@ -190,15 +196,16 @@ export const TicketDetailPanel: React.FC<{
       他のドリッパーへ移動・先頭へ
     </h3>
     <div className="grid grid-cols-3 gap-2">
-      {moveTargets(currentBayId).map(({ bayId, place }) => (
+      {moveTargets(ticket, currentBayId).map(({ bayId, place, disabled }) => (
         <button
           key={bayId}
           type="button"
+          disabled={disabled}
           onClick={() => {
             onMoveTicket(ticket, bayId, place);
             onClose();
           }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white"
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
         >
           {place ? `${bayId} 先頭へ` : bayId}
         </button>
@@ -241,7 +248,7 @@ export const AuxiliaryContent: React.FC<
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の今の抽出と待ちの件数
+  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
   return (
     <div className="grid grid-cols-2 gap-2">
       {lanes.map((lane) => {
@@ -251,7 +258,14 @@ export const AuxiliaryContent: React.FC<
             key={lane.id}
             className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs"
           >
-            <LaneBadge bayId={lane.id} />
+            <div className="flex items-center gap-2">
+              <LaneBadge bayId={lane.id} />
+              <LaneName
+                dripper={lane.id}
+                className="font-black text-[14px] text-slate-950"
+              />
+              <LaneChangeButton dripper={lane.id} className="ml-auto" />
+            </div>
             <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
               {current ? (
                 <div className="flex items-center justify-between gap-2">

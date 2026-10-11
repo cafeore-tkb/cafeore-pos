@@ -22,6 +22,7 @@ import {
   sendUnsentOrders,
 } from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import { usePrinterAddresses } from "~/components/functional/usePrinterAddresses";
 import { useSquareDevice } from "~/components/functional/useSquareDevice";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -62,6 +63,8 @@ export default function Cashier() {
   const squareEnabled = squareStatus?.enabled ?? false;
   // 決済画面を出す端末はレジごとに固定する（このブラウザに覚える）
   const squareDevice = useSquareDevice(squareEnabled);
+  // プリンターは全レジ共通で、管理画面（/printer-settings）で設定する
+  const printerAddresses = usePrinterAddresses();
 
   // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
   // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
@@ -95,6 +98,7 @@ export default function Cashier() {
       canSaveNow={canSaveNow}
       squareEnabled={squareEnabled}
       squareDevice={squareDevice}
+      printerAddresses={printerAddresses}
       submitPayload={submitPayload}
       submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}

@@ -391,6 +391,43 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	}
 }
 
+// nominate は明細の指名（ドリッパーの番号 dripper と自由記述 assignee）を書く
+func (f *caosFixture) nominate(t *testing.T, menu models.OrderMenu, dripper *int, assignee *string) {
+	t.Helper()
+	if err := f.db.Model(&menu).Updates(map[string]any{"dripper": dripper, "assignee": assignee}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCaosNominationOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o := f.createOrder(t, 1, line(f.blend), line(f.blend), line(f.blend))
+	named, legacy := "山田", "3"
+	f.nominate(t, o.OrderMenus[0], intPtr(2), &named)
+	// 番号より前の明細：自由記述が数字でも指名なし
+	f.nominate(t, o.OrderMenus[1], nil, &legacy)
+
+	// 指名の番号（明細の dripper）のあるカップは、その番号のドリッパーにしか置けない
+	if code, _ := f.put(t, write(ids(o.OrderCups[0]), unassigned, placed(3, uuid.New(), false))); code != http.StatusBadRequest {
+		t.Fatalf("nominated cup on another dripper = %d, want 400", code)
+	}
+	card := uuid.New()
+	f.mustPut(t, write(ids(o.OrderCups[0]), unassigned, placed(2, card, false)))
+	// 自由記述だけの古い明細は指名なしなので、どのドリッパーにも置ける。指名の違うカップとは 1 枚のカードにできない
+	if code, _ := f.put(t, write(ids(o.OrderCups[1]), unassigned, placed(2, card, false))); code != http.StatusBadRequest {
+		t.Fatalf("merging cups of different nominations = %d, want 400", code)
+	}
+	f.mustPut(t, write(ids(o.OrderCups[1]), unassigned, placed(4, uuid.New(), false)))
+	// 未割当のまま統合するときも同じ（指名の違うカップは同じ drip_id にできない）
+	o2 := f.createOrder(t, 2, line(f.blend))
+	f.nominate(t, o2.OrderMenus[0], intPtr(5), nil)
+	merge := map[string]any{"dripper": nil, "drip_id": uuid.New(), "insert_before": nil, "start_brew": false}
+	if code, _ := f.put(t, write(ids(o.OrderCups[2], o2.OrderCups[0]), unassigned, merge)); code != http.StatusBadRequest {
+		t.Fatalf("merging unassigned cups of different nominations = %d, want 400", code)
+	}
+}
+
 func TestCaosNextOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
