@@ -1,5 +1,4 @@
-import type { PracticeDataOrder } from "@cafeore/common";
-import dayjs from "dayjs";
+import { type PracticeDataOrder, jstClock } from "@cafeore/common";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -19,14 +18,14 @@ import {
   analyticsReport,
   deltaGrade,
 } from "../logic/analytics";
-import type { Barista } from "../logic/board";
-import { timeOfDayLabel } from "../logic/format";
-import { laneOrdinal } from "../logic/lanes";
+import type { CardLooks } from "../logic/cards";
+import { type Lane, laneOrdinal } from "../logic/lanes";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
 interface AnalyticsViewProps {
-  baristas: Barista[];
+  lanes: Lane[];
+  looks: CardLooks;
   /** 実データテストの、今までに届いた注文（テストをしていなければ空） */
   salesOrders: PracticeDataOrder[];
   periodStartMs?: number;
@@ -58,19 +57,19 @@ const GRADE_STYLE: Record<
 };
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
-  baristas,
+  lanes,
+  looks,
   salesOrders,
   periodStartMs,
   periodEndMs,
   typeNames,
 }) => {
   const report = useMemo(
-    () => analyticsReport(baristas, salesOrders),
-    [baristas, salesOrders],
+    () => analyticsReport(lanes, looks, salesOrders),
+    [lanes, looks, salesOrders],
   );
   const {
     sales: salesAnalysis,
-    rebrew: rebrewSummary,
     splits: splitResults,
     averageDelta,
     within15Rate,
@@ -82,7 +81,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   // 種類の表示名（display_name）をそのまま。POS に無い種類は名前のまま
   const typeLabel = (type: string) => typeNames.get(type) ?? type;
-  const formatBucket = (timestamp: number) => dayjs(timestamp).format("HH:mm");
+  const formatBucket = (timestamp: number) => jstClock(timestamp).slice(0, 5);
 
   return (
     <div className="space-y-3">
@@ -243,36 +242,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         </>
       )}
 
-      {(rebrewSummary.rebrewCount > 0 ||
-        rebrewSummary.interruptedCount > 0) && (
-        <section className="rounded-xl border border-red-200 bg-red-50 p-3 shadow-xs">
-          <h3 className="flex items-center gap-2 font-black text-[15px] text-red-900">
-            <AlertTriangle className="h-4 w-4" />
-            緊急入れ直し
-          </h3>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">
-                完了した入れ直し
-              </div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.rebrewCount}
-                <span className="text-[11px]">
-                  件 / {rebrewSummary.rebrewCups}杯
-                </span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-red-100 bg-white p-2">
-              <div className="font-bold text-[10px] text-slate-500">中断</div>
-              <div className="font-black font-mono text-[22px] text-red-700">
-                {rebrewSummary.interruptedCount}
-                <span className="text-[11px]">件</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs">
           <div className="flex items-center gap-1.5 font-bold text-[11px] text-slate-500">
@@ -366,8 +335,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       レーン {result.bayIds.map((bay) => `#${bay}`).join(" + ")}
                     </span>
                     <span className="font-mono">
-                      {timeOfDayLabel(result.firstFinishedAt)} →{" "}
-                      {timeOfDayLabel(result.lastFinishedAt)}
+                      {jstClock(result.firstFinishedMs)} →{" "}
+                      {jstClock(result.lastFinishedMs)}
                     </span>
                   </div>
                 </article>
