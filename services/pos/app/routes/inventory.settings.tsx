@@ -132,10 +132,15 @@ function ResourceRow({
       toast("名前を入力してください");
       return;
     }
+    // アイテムの在庫は名前（アイテムの名前）と使う種類を送らない
+    const { name, item_type_ids, ...amounts } = form;
     try {
       setBusy(true);
       if (resource) {
-        await inventoryRepository.updateResource(resource.id, form);
+        await inventoryRepository.updateResource(
+          resource.id,
+          resource.item_id == null ? form : amounts,
+        );
         toast(`${form.name} を保存しました`);
       } else {
         await inventoryRepository.createResource(form);

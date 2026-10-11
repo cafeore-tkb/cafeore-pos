@@ -83,6 +83,12 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		itemTypes = append([]uuid.UUID{}, itemTypes...)
 		return models.StockResourceRequest{Name: name, ItemTypeIds: &itemTypes, Unit: "g", PerServing: perServing, NotifyFrom: 10, NotifyStep: 2, Buffer: 3}
 	}
+	// アイテムの在庫は名前と使う種類を送らない
+	itemStockRequest := func(perServing float64) models.StockResourceRequest {
+		req := stockRequest(nil, perServing)
+		req.ItemTypeIds = nil
+		return req
+	}
 	cupName := "ホットカップ"
 	var cup models.StockResourceResponse
 	// グッズの種類を選んでも、グッズはカップを作らないので減らない
@@ -93,10 +99,12 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	call(http.MethodPost, "/resources", stockRequest(nil, 1), http.StatusBadRequest, nil)
 	call(http.MethodPost, "/resources", stockRequest(&cupName, 1, hot.ID, hot.ID), http.StatusBadRequest, nil)
 	call(http.MethodPost, "/resources", stockRequest(&cupName, 1, uuid.New()), http.StatusBadRequest, nil)
-	// アイテムの在庫は量と通知の段階だけ変える。名前・種類は無視し、消すのはアイテムを消すとき
-	ignored := "無視"
+	// アイテムの在庫は量と通知の段階だけ変える。名前・種類を送ると 400、消すのはアイテムを消すとき
+	rename := "別の名前"
+	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(&rename, 15), http.StatusBadRequest, nil)
+	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(nil, 15, hot.ID), http.StatusBadRequest, nil)
 	var updated models.StockResourceResponse
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(&ignored, 15, hot.ID), http.StatusOK, &updated)
+	call(http.MethodPut, "/resources/"+blendStock.ID.String(), itemStockRequest(15), http.StatusOK, &updated)
 	if updated.Name != "ブレンド" || len(updated.ItemTypeIds) != 0 || updated.PerServing != 15 || uuid.UUID(*updated.ItemId) != uuid.UUID(blend.Id) {
 		t.Fatalf("アイテムの在庫の更新 = %+v", updated)
 	}
@@ -141,7 +149,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	}
 
 	// あとで per_serving とカップの種類を変えても、前の注文の消費は変わらない
-	call(http.MethodPut, "/resources/"+blendStock.ID.String(), stockRequest(nil, 20), http.StatusOK, nil)
+	call(http.MethodPut, "/resources/"+blendStock.ID.String(), itemStockRequest(20), http.StatusOK, nil)
 	// 使う種類を省略した PUT では種類は今のまま
 	omitted := stockRequest(&cupName, 1)
 	omitted.ItemTypeIds = nil

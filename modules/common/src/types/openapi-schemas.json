@@ -664,7 +664,7 @@
   },
   "StockResourceRequest": {
     "type": "object",
-    "description": "name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つは無視する",
+    "description": "name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400",
     "required": ["unit", "per_serving", "notify_from", "notify_step", "buffer"],
     "properties": {
       "name": {
