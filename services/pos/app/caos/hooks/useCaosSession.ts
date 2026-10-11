@@ -57,7 +57,7 @@ const playOnSuccess = (sent: boolean | Promise<boolean>, play: () => void) => {
 // assignWrites・unassignWrites・mergeWrites で同じ。違うのは送り先だけ。
 export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(SIM_SPEEDS[0]);
+  const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
