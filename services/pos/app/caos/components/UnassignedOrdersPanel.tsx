@@ -32,6 +32,8 @@ export const UnassignedOrdersPanel: React.FC<{
   onSelectOrder: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onMergeOrders?: (firstKey: string, secondKey: string) => void;
+  /** 閲覧だけの画面。カードを押しても開かず、動かさない */
+  readOnly?: boolean;
 }> = ({
   orders,
   looks,
@@ -41,6 +43,7 @@ export const UnassignedOrdersPanel: React.FC<{
   onSelectOrder,
   onAssignToBay,
   onMergeOrders,
+  readOnly = false,
 }) => {
   const isSidebar = layout === "sidebar";
   const [openUid, setOpenUid] = useState<string | null>(null);
@@ -115,12 +118,13 @@ export const UnassignedOrdersPanel: React.FC<{
               data-unassigned-uid={uid}
               // A closed card in the scrolling list leaves vertical movement to scrolling.
               onPointerDown={
-                isMergeCandidate
+                readOnly || isMergeCandidate
                   ? undefined
                   : (event) => drag.press(order, event, !isSidebar || isOpen)
               }
               onClickCapture={drag.suppressClick}
               onClick={() => {
+                if (readOnly) return;
                 if (isMergeCandidate && openUid && onMergeOrders) {
                   onMergeOrders(openUid, uid);
                   setOpenUid(null);
@@ -130,7 +134,7 @@ export const UnassignedOrdersPanel: React.FC<{
                 setOpenUid(uid);
               }}
               style={{ gridColumn, gridRow }}
-              className={`cursor-grab hover:shadow-md active:cursor-grabbing ${isSidebar && !isOpen ? "touch-pan-y" : "touch-none"} ${isOpen ? "z-40" : ""}`}
+              className={`${readOnly ? "" : "cursor-grab hover:shadow-md active:cursor-grabbing"} ${isSidebar && !isOpen ? "touch-pan-y" : "touch-none"} ${isOpen ? "z-40" : ""}`}
               dragging={drag.source?.key === uid}
             >
               {isOrderBoundary && (
