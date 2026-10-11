@@ -127,17 +127,14 @@ export function ProductEditor({
     savedStock?: StockAmounts,
   ) => {
     const item = await itemRepository.save(toItemEntity(values, itemTypes, id));
-    const changes = stockChanges(values.stock, savedStock);
-    if (Object.keys(changes).length > 0) {
-      try {
-        await saveItemStock(item.id, changes);
-      } catch (e) {
-        toast.error(
-          `アイテムは保存しましたが、在庫の保存に失敗しました: ${
-            e instanceof Error ? e.message : "不明なエラー"
-          }。編集から直してください`,
-        );
-      }
+    try {
+      await saveItemStock(item.id, stockChanges(values.stock, savedStock));
+    } catch (e) {
+      toast.error(
+        `アイテムは保存しましたが、在庫の保存に失敗しました: ${
+          e instanceof Error ? e.message : "不明なエラー"
+        }。編集から直してください`,
+      );
     }
     return item;
   };
