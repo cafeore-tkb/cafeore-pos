@@ -3,7 +3,6 @@ import { type CaosCard, assignWrites } from "./caos-board";
 import {
   type CaosLanes,
   emptyCaosLanes,
-  isSeniorLane,
   laneChangeWarnings,
   queuedSeniorOnlyCards,
   seniorOnlyBlock,
@@ -59,9 +58,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     });
     expect(todaysCaosLanes(null, DAY)).toHaveLength(6);
     // 名前の無い担当者は上級生にしない
-    expect(isSeniorLane(todaysCaosLanes(lanes([2, "", true]), DAY), 2)).toBe(
-      false,
-    );
+    expect(todaysCaosLanes(lanes([2, "", true]), DAY)[1].senior).toBe(false);
   });
 
   test("上級生のみのカードは上級生のドリッパーにしか置けない（同じドリッパーの中は確かめない）", () => {

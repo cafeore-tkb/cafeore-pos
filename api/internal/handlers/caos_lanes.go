@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -114,18 +113,9 @@ func saveCaosLane(tx *gorm.DB, row models.CaosLaneRow, prevName string) error {
 	}).Error
 }
 
-func parseCaosDripper(c *gin.Context, raw string) (int, bool) {
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 1 || n > caosDrippers {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ドリッパーは 1〜%d です", caosDrippers)})
-		return 0, false
-	}
-	return n, true
-}
-
 // PUT /api/caos/lanes/:dripper - 交代
 func (h *CaosHandler) PutCaosLane(c *gin.Context) {
-	dripper, ok := parseCaosDripper(c, c.Param("dripper"))
+	dripper, ok := caosDripperParam(c)
 	if !ok {
 		return
 	}
@@ -151,13 +141,11 @@ func (h *CaosHandler) SwapCaosLanes(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	for _, n := range []int{req.First, req.Second} {
-		if _, ok := parseCaosDripper(c, strconv.Itoa(n)); !ok {
-			return
-		}
+	err := errors.Join(checkCaosDripper(req.First), checkCaosDripper(req.Second))
+	if err == nil && req.First == req.Second {
+		err = ruleErrorf("同じドリッパーどうしは入れ替えられません")
 	}
-	if req.First == req.Second {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "同じドリッパーどうしは入れ替えられません"})
+	if respondError(c, err) {
 		return
 	}
 	h.writeLanes(c, func(cur models.CaosLanes) []models.CaosLane {
@@ -192,9 +180,7 @@ func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLane
 		lanes, _, err = loadCaosLanes(tx, day)
 		return err
 	})
-	if err != nil {
-		log.Printf("caos lanes: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if respondError(c, err) {
 		return
 	}
 	c.JSON(http.StatusOK, lanes)

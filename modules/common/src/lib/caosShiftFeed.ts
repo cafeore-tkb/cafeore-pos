@@ -1,5 +1,5 @@
 import { DRIPPER_NUMBERS } from "../models/dripper";
-import { jstDate } from "./jst";
+import { jstClock, jstDate } from "./jst";
 
 // sohosai-shift（シフト作成ツール）が CaOS へ配信する担当者の予定（Firestore の caosFeeds/{合言葉}）を読む。
 // 合言葉を知っていればログインなしで読める（Firestore の REST）。合言葉はビルドに入れず、各 iPad の CaOS の設定で入れて端末に覚える。
@@ -194,15 +194,12 @@ const jstMs = (date: string, time: string) =>
     : Number.NaN;
 
 /** 日本時間の時刻 HH:MM */
-const clockOf = (ms: number) =>
-  new Date(ms + 9 * 60 * MINUTE_MS).toISOString().slice(11, 16);
+const clockOf = (ms: number) => jstClock(ms).slice(0, 5);
 
 /** 予定の 1 つ（本番の枠か、オペ練のラウンド） */
 export interface ShiftPeriod {
   /** 画面に出す呼び方（例「今の枠 11:00〜11:30」「第2回オペ練 次のR2 13:25〜13:45」） */
   label: string;
-  startMs: number;
-  endMs: number;
   /** 1st〜6th の氏名 */
   names: string[];
 }
@@ -263,8 +260,6 @@ export const currentShiftPeriods = (
   ) =>
     periods.push({
       label: `${label} ${range(p.startMs, p.endMs)}`,
-      startMs: p.startMs,
-      endMs: p.endMs,
       names: p.names,
     });
   if (currentSlot) push("今の枠", currentSlot);

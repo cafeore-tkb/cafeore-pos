@@ -515,6 +515,23 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 	return orderIDs, err
 }
 
+// checkCaosDripper はドリッパーの番号が 1〜caosDrippers かを確かめる（400）。
+func checkCaosDripper(dripper int) error {
+	if dripper < 1 || dripper > caosDrippers {
+		return ruleErrorf("ドリッパーは 1〜%d です", caosDrippers)
+	}
+	return nil
+}
+
+// caosDripperParam はパスのドリッパーの番号を読む。違えば 400 を書いて false。
+func caosDripperParam(c *gin.Context) (int, bool) {
+	dripper, err := strconv.Atoi(c.Param("dripper"))
+	if err != nil {
+		dripper = 0
+	}
+	return dripper, !respondError(c, checkCaosDripper(dripper))
+}
+
 // PUT /api/caos/cups - CaOS が決めたこと（ドリッパー・順番・カード・抽出の開始）をカップに書く
 func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
 	var req models.CaosCupsWriteRequest
@@ -621,9 +638,8 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID) ([]uuid.UUID, error)
 
 // POST /api/caos/drippers/:dripper/next - 「次へ」。結果は書いた注文の配信で届くので、応答は 204（PUT と同じ）
 func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
-	dripper, err := strconv.Atoi(c.Param("dripper"))
-	if err != nil || dripper < 1 || dripper > caosDrippers {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ドリッパーは 1〜%d です", caosDrippers)})
+	dripper, ok := caosDripperParam(c)
+	if !ok {
 		return
 	}
 	var req models.CaosNextRequest
@@ -632,6 +648,7 @@ func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
 		return
 	}
 	var orderIDs []uuid.UUID
+	var err error
 	for range caosAttempts {
 		orderIDs, err = h.advance(dripper, req.DripId)
 		// ロックする前に読んだカップが変わっていた（注文の編集などと重なった）ときだけ読み直す
