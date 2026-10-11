@@ -18,6 +18,7 @@ import {
   applyCaosPracticeWrites,
   toCaosPracticeOrder,
 } from "./caosPractice";
+import type { PracticeDataItemType } from "./caosPracticeData";
 import { jstDate } from "./jst";
 
 // 作りものの注文（本物のデータは入れない）
@@ -34,10 +35,30 @@ const dataOrder = (
   items,
 });
 
-const hot = { name: "テストブレンド", type: "hot" };
-const milk = { name: "テストミルク", type: "milk" };
-const goods = { name: "トート", type: "others" };
-const limited = { name: "テスト限定", type: "limited" };
+// 品物の種類の設定（読み込んだあと POS の種類から付けたもの）
+const itemType = (flags: Partial<PracticeDataItemType> = {}) => ({
+  display_name: "",
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  ...flags,
+});
+const hot = { name: "テストブレンド", type: "hot", itemType: itemType() };
+const milk = {
+  name: "テストミルク",
+  type: "milk",
+  itemType: itemType({ needs_brew: false }),
+};
+const goods = {
+  name: "トート",
+  type: "others",
+  itemType: itemType({ makes_cup: false, needs_brew: false }),
+};
+const limited = {
+  name: "テスト限定",
+  type: "limited",
+  itemType: itemType({ senior_only: true }),
+};
 
 let seq = 0;
 const newId = () => `drip-${++seq}`;
