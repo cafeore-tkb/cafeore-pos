@@ -17,14 +17,14 @@ type StockResource struct {
 	// カップの名前。アイテムの在庫はアイテムの名前を使うので空
 	Name string `gorm:"not null"`
 	Unit string `gorm:"not null"`
-	// 1 回で減る量。残量を杯数に換算するのにも使う（豆 15、コースター 1、カップ 1）
+	// 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
 	PerServing float64 `gorm:"type:double precision;not null;check:per_serving > 0"`
-	// 残りが NotifyFrom 杯を切ったら通知し、以降 NotifyStep 杯減るごとに通知する
+	// 残りが NotifyFrom 回を切ったら通知し、以降 NotifyStep 回減るごとに通知する
 	NotifyFrom int `gorm:"not null"`
 	NotifyStep int `gorm:"not null"`
-	// 最低限残したい杯数。これを切ると危険扱い
+	// 最低限残したい回数。これを切ると危険扱い
 	Buffer int `gorm:"not null"`
-	// 最後に通知した閾値（杯数）。同じ閾値で何度も通知しないために持つ。
+	// 最後に通知した閾値（回数）。同じ閾値で何度も通知しないために持つ。
 	// 残量が戻ったら NULL か上の閾値に戻す。
 	LastAlertThreshold *int
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
