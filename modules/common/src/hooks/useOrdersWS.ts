@@ -1,11 +1,12 @@
 // hooks/useOrdersWS.ts
 import { useEffect, useState } from "react";
-import { type MasterState, responseToMasterState } from "../data";
+import { apiWebSocketUrl } from "../api/client";
 import {
   type OrderResponse,
   responseToCashierState,
   responseToOrderEntity,
-} from "../firebase-utils";
+} from "../api/converter";
+import { type MasterState, responseToMasterState } from "../data";
 import type { WithId } from "../lib";
 import {
   type ReconnectingWebSocketStatus,
@@ -49,12 +50,6 @@ export const useOrdersWS = () => {
   const [status, setStatus] = useState<WsStatus>("connecting");
 
   useEffect(() => {
-    const apiBaseUrl =
-      import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-    const wsUrl = apiBaseUrl
-      .replace("http://", "ws://")
-      .replace("https://", "wss://");
-
     const handleMessage = (e: MessageEvent) => {
       try {
         const data: WSMessage = JSON.parse(e.data);
@@ -101,7 +96,7 @@ export const useOrdersWS = () => {
 
     // 切れたら自動でつなぎ直す。サーバーは接続直後に現在の状態を送ってくるので、それで再同期される
     const connection = createReconnectingWebSocket({
-      url: `${wsUrl}/api/ws/orders`,
+      url: apiWebSocketUrl("/api/ws/orders"),
       onMessage: handleMessage,
       onStatusChange: setStatus,
     });
