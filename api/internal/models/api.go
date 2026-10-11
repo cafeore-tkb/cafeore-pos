@@ -284,6 +284,35 @@ type CommentResponse struct {
 	Text      string             `json:"text"`
 }
 
+// CupEmergencyCreateRequest defines model for CupEmergencyCreateRequest.
+type CupEmergencyCreateRequest struct {
+	// OrderCupIds 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
+	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
+
+	// Reason 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+	Reason *string `json:"reason,omitempty"`
+}
+
+// CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
+type CupEmergencyCreateResponse struct {
+	// Ids 足した入れ直しの id（order_cup_ids と同じ順）
+	Ids []openapi_types.UUID `json:"ids"`
+}
+
+// CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
+type CupEmergencyResponse struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	CreatedAt       time.Time           `json:"created_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *int                `json:"dripper_position"`
+	Id              openapi_types.UUID  `json:"id"`
+
+	// Reason 入れ直す理由（足したときに書いたもの。無ければ空）
+	Reason string `json:"reason"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -524,9 +553,12 @@ type OrderCupResponse struct {
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
-	DripperPosition *int               `json:"dripper_position"`
-	Id              openapi_types.UUID `json:"id"`
-	Item            ItemResponse       `json:"item"`
+	DripperPosition *int `json:"dripper_position"`
+
+	// Emergencies このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
+	Emergencies []CupEmergencyResponse `json:"emergencies"`
+	Id          openapi_types.UUID     `json:"id"`
+	Item        ItemResponse           `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -858,6 +890,9 @@ type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 
 // UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
 type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest
+
+// CreateCupEmergenciesJSONRequestBody defines body for CreateCupEmergencies for application/json ContentType.
+type CreateCupEmergenciesJSONRequestBody = CupEmergencyCreateRequest
 
 // CreateStockResourceJSONRequestBody defines body for CreateStockResource for application/json ContentType.
 type CreateStockResourceJSONRequestBody = StockResourceRequest

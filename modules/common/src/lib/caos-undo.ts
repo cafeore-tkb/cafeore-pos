@@ -1,6 +1,6 @@
-import type { Cup } from "../models/cup";
 import type { components } from "../types/api";
 import {
+  type CaosBoardCup,
   type CaosCard,
   type CaosCupState,
   type CaosCupsWrite,
@@ -14,11 +14,12 @@ import {
 //   - restore：操作の前の値（操作したときに画面が見ていた値。CaOS の列と準備完了）
 //   - expect：その操作で変わるはずのところ（ドリッパー・カード・始めた・終えた・準備完了か）
 // を覚える。順番の数と時刻はサーバーが決めるので覚えない。
-// 戻すときは、届いている注文のカップの今の値が expect のとおりかを確かめ（違えばほかの画面が変えたので断る）、
+// 戻すときは、今の盤面のカップの値が expect のとおりかを確かめ（違えばほかの画面が変えたので断る）、
 // 今の値（current）と restore を送る。サーバーは今の値が current のときだけ書き戻す。
+// 緊急（入れ直し）もカップと同じく扱う（id は入れ直しの id。入れ直しは準備完了を持たない）。
 
 /** 「1つ戻す」で比べる・書き戻すカップの値 */
-type UndoCupState = Pick<Cup, keyof CaosCupState | "readyAt">;
+type UndoCupState = CaosCupState & Pick<CaosBoardCup, "readyAt">;
 
 /** その操作のあとのカップ（届いた値がこのとおりなら、まだほかの画面は変えていない） */
 interface UndoExpect {
@@ -36,42 +37,68 @@ export interface CaosUndoEntry {
 
 type UndoCupJSON = components["schemas"]["CaosUndoCup"];
 
-const restoreOf = (cup: CaosCard["cups"][number]): UndoCupState => ({
+// 盤面のカップ（入れ直しも）を ID で引く
+const boardCups = (cards: readonly CaosCard[]) =>
+  new Map(cards.flatMap((card) => card.cups.map((cup) => [cup.id, cup])));
+
+const restoreOf = (cup: CaosBoardCup): UndoCupState => ({
   ...cup.state,
   readyAt: cup.readyAt,
 });
 
+// そのまま残るはずのカップ（番号だけがずれうる）
+const unchanged = (cup: CaosBoardCup) => ({
+  id: cup.id,
+  restore: restoreOf(cup),
+  expect: {
+    dripper: cup.state.dripper,
+    dripId: cup.state.dripId,
+    started: cup.state.brewStartedAt !== null,
+    finished: cup.state.brewFinishedAt !== null,
+    ready: cup.readyAt !== null,
+  },
+});
+
 /**
  * PUT /api/caos/cups の操作（割当・移動・順番の入れ替え・未割当に戻す・統合）を戻すもの。
- * cards は操作したときに画面が見ていたカード（書き込みの before と同じもの）
+ * cards は操作したときに画面が見ていたカード（書き込みの before と同じもの）。
+ * カードの前に入れる書き込みは、サーバーがその列の後ろのカップの番号を +1 するので、列の待機のカップも前の番号に戻す
  */
 export const undoOfWrites = (
   cards: readonly CaosCard[],
   writes: readonly CaosCupsWrite[],
 ): CaosUndoEntry => {
-  const cups = new Map(
-    cards.flatMap((card) => card.cups.map((cup) => [cup.id, cup])),
-  );
+  const cups = boardCups(cards);
+  const written = new Set(writes.flatMap((write) => write.cup_ids));
+  const shifted = writes.flatMap(({ after }) => {
+    if (after.insert_before === null || after.dripper === null) return [];
+    return caosLane(cards, after.dripper)
+      .queued.flatMap((card) => card.cups)
+      .filter((cup) => !written.has(cup.id));
+  });
   return {
-    cups: writes.flatMap((write) =>
-      write.cup_ids.flatMap((id) => {
-        const cup = cups.get(id);
-        if (!cup) return [];
-        return [
-          {
-            id,
-            restore: restoreOf(cup),
-            expect: {
-              dripper: write.after.dripper,
-              dripId: write.after.drip_id,
-              started: write.after.start_brew,
-              finished: false,
-              ready: cup.readyAt !== null,
+    cups: [
+      ...writes.flatMap((write) =>
+        write.cup_ids.flatMap((id) => {
+          const cup = cups.get(id);
+          if (!cup) return [];
+          return [
+            {
+              id,
+              restore: restoreOf(cup),
+              expect: {
+                dripper: write.after.dripper,
+                dripId: write.after.drip_id,
+                started: write.after.start_brew,
+                finished: false,
+                ready: cup.readyAt !== null,
+              },
             },
-          },
-        ];
-      }),
-    ),
+          ];
+        }),
+      ),
+      ...shifted.map(unchanged),
+    ],
   };
 };
 
@@ -93,17 +120,18 @@ export const undoOfNext = (
         dripId: card?.dripId ?? null,
         started: true,
         finished,
-        ready: finished || cup.readyAt !== null,
+        // 入れ直しは準備完了を持たない（「次へ」は入れ直したカップを準備完了にする）
+        ready: (finished && !cup.emergency) || cup.readyAt !== null,
       },
     }));
   return { cups: [...entry(brewing, true), ...entry(queued[0], false)] };
 };
 
-const sameAsExpected = (cup: Cup, expect: UndoExpect) =>
-  cup.dripper === expect.dripper &&
-  cup.dripId === expect.dripId &&
-  (cup.brewStartedAt !== null) === expect.started &&
-  (cup.brewFinishedAt !== null) === expect.finished &&
+const sameAsExpected = (cup: CaosBoardCup, expect: UndoExpect) =>
+  cup.state.dripper === expect.dripper &&
+  cup.state.dripId === expect.dripId &&
+  (cup.state.brewStartedAt !== null) === expect.started &&
+  (cup.state.brewFinishedAt !== null) === expect.finished &&
   (cup.readyAt !== null) === expect.ready;
 
 const undoStateJSON = (state: UndoCupState) => ({
@@ -112,14 +140,14 @@ const undoStateJSON = (state: UndoCupState) => ({
 });
 
 /**
- * 覚えた操作から POST /api/caos/undo に送るカップを作る。cups は届いている注文のカップ。
+ * 覚えた操作から POST /api/caos/undo に送るカップを作る。cards は今の盤面のカード。
  * 消えた・提供済み・ほかの画面で変わったカップがあれば、送らずに理由を返す
  */
 export const caosUndoCups = (
   entry: CaosUndoEntry,
-  cups: readonly Cup[],
+  cards: readonly CaosCard[],
 ): { cups: UndoCupJSON[] } | { error: string } => {
-  const byId = new Map(cups.map((cup) => [cup.id, cup]));
+  const byId = boardCups(cards);
   const out: UndoCupJSON[] = [];
   for (const { id, restore, expect } of entry.cups) {
     const now = byId.get(id);
@@ -134,7 +162,7 @@ export const caosUndoCups = (
       return { error: "ほかの画面で先に変わったので戻せません" };
     out.push({
       cup_id: id,
-      current: undoStateJSON(now),
+      current: undoStateJSON({ ...now.state, readyAt: now.readyAt }),
       restore: undoStateJSON(restore),
     });
   }

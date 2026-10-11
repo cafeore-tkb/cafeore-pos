@@ -15,7 +15,7 @@ const (
 	caosBrewTimeMinCards = 5
 )
 
-// GET /api/caos/brew-times - 「次へ」で終えたカード（同じ drip_id のカップ）の抽出時間を、杯数ごとに、
+// GET /api/caos/brew-times - 「次へ」で終えたカード（同じ drip_id のカップと入れ直し。caosUnits）の抽出時間を、杯数ごとに、
 // 終えたのが新しいカードから caosBrewTimeCards 枚までの中央値で返す（日はまたぐ）。CaOS の画面が予定の時刻に使う。
 // 終えたカードが caosBrewTimeMinCards 枚に足りない杯数は返さない（画面は初めの値を使う）。
 func (h *CaosHandler) GetCaosBrewTimes(c *gin.Context) {
@@ -23,7 +23,7 @@ func (h *CaosHandler) GetCaosBrewTimes(c *gin.Context) {
 	err := h.db.Raw(`
 		WITH cards AS (
 			SELECT COUNT(*) AS cups, MIN(brew_started_at) AS started_at, MAX(brew_finished_at) AS finished_at
-			FROM order_cups
+			FROM `+caosUnits+` c
 			WHERE drip_id IS NOT NULL AND brew_started_at IS NOT NULL AND brew_finished_at IS NOT NULL
 			GROUP BY drip_id
 		), recent AS (
@@ -31,7 +31,7 @@ func (h *CaosHandler) GetCaosBrewTimes(c *gin.Context) {
 				ROW_NUMBER() OVER (PARTITION BY cups ORDER BY finished_at DESC) AS n
 			FROM cards
 		)
-		SELECT cups, ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY sec))::int AS sec, COUNT(*) AS samples
+		SELECT cups, ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY sec))::numeric)::int AS sec, COUNT(*) AS samples
 		FROM recent WHERE n <= ? GROUP BY cups HAVING COUNT(*) >= ? ORDER BY cups`,
 		caosBrewTimeCards, caosBrewTimeMinCards).Scan(&times).Error
 	if respondError(c, err) {

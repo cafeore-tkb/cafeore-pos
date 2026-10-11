@@ -111,7 +111,7 @@ func newCaosFixture(t *testing.T, db *gorm.DB) *caosFixture {
 		for range hub.broadcast {
 		}
 	}()
-	f := &caosFixture{db: db, hub: hub, caos: NewCaosHandler(db, hub), orders: NewOrderHandler(db, hub, nil)}
+	f := &caosFixture{db: db, hub: hub, caos: NewCaosHandler(db, hub, nil), orders: NewOrderHandler(db, hub, nil)}
 	// 抽出が要るかは種類の needs_brew で決める（ミルクはカップを作るが抽出は要らない）
 	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
 	milk := models.ItemType{Name: "milk", DisplayName: "ミルク", NeedsBrew: boolPtr(false)}
@@ -1027,10 +1027,10 @@ func TestSplitCaosLaneCases(t *testing.T) {
 	}
 	for _, tc := range file.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			var rows []caosLaneCup
+			var rows []caosUnit
 			for _, c := range tc.Cups {
 				dripper, pos, id := 1, c.DripperPosition, c.DripID
-				rows = append(rows, caosLaneCup{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
+				rows = append(rows, caosUnit{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
 					ID: uuid.New(), Dripper: &dripper, DripperPosition: &pos, DripID: &id,
 					BrewStartedAt: timeIf(c.Started), BrewFinishedAt: timeIf(c.Finished), ReadyAt: timeIf(c.Ready),
 				}})

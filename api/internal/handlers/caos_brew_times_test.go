@@ -77,4 +77,25 @@ func TestCaosBrewTimesOnDB(t *testing.T) {
 	if got := brewTimes(); !slices.Equal(got, want) {
 		t.Fatalf("brew times = %+v, want %+v", got, want)
 	}
+
+	// 入れ直しのカードも数える（入れ直しの行の時刻）
+	order := f.createOrder(t, 99, line(f.blend))
+	for i := range caosBrewTimeCards {
+		if code, body := f.addEmergencies(t, order.OrderCups[0].ID); code != http.StatusCreated {
+			t.Fatalf("add emergency = %d: %s", code, body)
+		}
+		e := f.emergencies(t, order.OrderCups[0].ID)[i]
+		finished := base.Add(time.Duration(100+i) * time.Minute)
+		started := finished.Add(-90 * time.Second)
+		dripper, pos, id := 2, i+1, uuid.New()
+		updates := caosUpdates(models.CaosCupAfter{Dripper: &dripper, DripId: &id}, &pos, &started)
+		updates["brew_finished_at"] = finished
+		if err := db.Model(&models.CupEmergency{}).Where("id = ?", e.ID).Updates(updates).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	want[0] = models.CaosBrewTime{Cups: 1, Sec: 90, Samples: caosBrewTimeCards}
+	if got := brewTimes(); !slices.Equal(got, want) {
+		t.Fatalf("brew times with emergencies = %+v, want %+v", got, want)
+	}
 }

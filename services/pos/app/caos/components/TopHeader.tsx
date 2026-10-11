@@ -14,6 +14,8 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
@@ -51,6 +53,10 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+  labelPrinter: { pendingCount: number; retry: () => void };
+  /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
+  onOpenEmergency?: () => void;
   /** 「1つ戻す」で戻せる操作の名前。戻せなければ null */
   undoLabel: string | null;
   /** 戻せる残りの秒 */
@@ -122,6 +128,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  labelPrinter,
+  onOpenEmergency,
   undoLabel,
   undoSecondsLeft,
   undoPending,
@@ -276,6 +284,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex items-center gap-2">
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
+        <PendingPrints
+          count={labelPrinter.pendingCount}
+          onRetry={labelPrinter.retry}
+        />
+        {onOpenEmergency && (
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="flex h-10 shrink-0 touch-manipulation items-center gap-1 rounded-lg bg-red-600 px-3 font-black text-[13px] text-white shadow-xs hover:bg-red-700"
+          >
+            <EmergencyIcon className="h-4 w-4" />
+            緊急
+          </button>
+        )}
         <PosStatusBadge status={posStatus} />
         <button
           type="button"

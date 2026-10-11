@@ -82,26 +82,17 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		if err := lockCaosDrippers(tx, drippers); err != nil {
 			return err
 		}
-		unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
-		var found []models.OrderCup
-		if err := tx.Preload("Item", unscoped).Preload("Item.ItemType", unscoped).
-			Find(&found, "id IN ?", cupIDs).Error; err != nil {
+		found, lockIDs, items, err := readCaosUnitItems(tx, cupIDs)
+		if err != nil {
 			return err
-		}
-		if len(found) != len(cupIDs) {
-			return conflictErrorf("カップが消えたので戻せません（注文が編集・削除されたかもしれません）")
-		}
-		items := make(map[uuid.UUID]models.Item, len(found))
-		seniorOnly := make(map[uuid.UUID]bool, len(found))
-		var lockIDs []uuid.UUID
-		for _, c := range found {
-			items[c.ID] = c.Item
-			seniorOnly[c.ID] = c.Item.ItemType.SeniorOnlyBrew()
-			lockIDs = append(lockIDs, c.OrderID)
 		}
 		orders, err := lockCaosOrders(tx, lockIDs, nil, start, end)
 		if err != nil {
 			return err
+		}
+		seniorOnly := make(map[uuid.UUID]bool, len(found))
+		for _, c := range found {
+			seniorOnly[c.ID] = items[c.ID].ItemType.SeniorOnlyBrew()
 		}
 		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
 		if err != nil {
@@ -111,25 +102,51 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		if err != nil {
 			return err
 		}
-		orderOf := make(map[uuid.UUID]*models.Order, len(found))
-		for _, c := range found {
-			orderOf[c.ID] = orders[c.OrderID]
+		// 今の値（注文の行をロックしてから読む。入れ直しは準備完了を持たない）
+		locked, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
+		if err != nil {
+			return err
+		}
+		lockedByID := make(map[uuid.UUID]caosUnit, len(locked))
+		var currentCards []uuid.UUID
+		for _, c := range locked {
+			lockedByID[c.ID] = c
+			if c.DripID != nil {
+				currentCards = append(currentCards, *c.DripID)
+			}
+		}
+		// 今のカードにほかのカップが入っていたら（あとでほかの画面が統合した）、戻すとそのカードを分けてしまうので断る。
+		// 入ってくる書き込みは、このカードのカップの注文（ロックした）をロックするので、ここで読んだより増えない
+		if len(currentCards) > 0 {
+			others, err := readCaosUnits(tx, "c.drip_id IN ? AND c.id NOT IN ?", currentCards, cupIDs)
+			if err != nil {
+				return err
+			}
+			if len(others) > 0 {
+				return conflictErrorf("ほかの画面でカードにカップが足されたので戻せません")
+			}
 		}
 
 		for i, c := range cups {
-			cup := findOrderCup(orderOf[c.CupId], c.CupId)
+			unit, ok := lockedByID[c.CupId]
 			r := c.Restore.State
-			switch {
-			case cup == nil:
+			if !ok {
 				return conflictErrorf("カップが消えたので戻せません（注文が編集されたかもしれません）")
-			case cup.ServedAt != nil:
+			}
+			// 提供済みは、入れ直しでないカップだけ見る（入れ直しは提供済みのカップにも足すので）
+			if cup := findOrderCup(orders[unit.OrderID], unit.ID); cup != nil && cup.ServedAt != nil {
 				return conflictErrorf("提供済みになったカップがあるので戻せません")
-			case !timeEqual(msTime(cup.ReadyAt), msTime(c.Current.ReadyAt)):
+			}
+			switch {
+			case !timeEqual(msTime(unit.ReadyAt), msTime(c.Current.ReadyAt)):
 				return conflictErrorf("準備完了がほかの画面で変わったので戻せません")
-			case !sameCaosState(cup, c.Current.State):
+			case !sameCaosState(&unit.OrderCup, c.Current.State):
 				return conflictErrorf("ほかの画面で先に変わったので戻せません")
 			}
-			if n := nominated[cup.OrderMenuID]; r.Dripper != nil && n != nil && *n != *r.Dripper {
+			if (r.Dripper != nil || r.DripId != nil) && !items[c.CupId].ItemType.BrewRequired() {
+				return ruleErrorf("抽出の要らないカップ（%s）はドリッパーに置けません", items[c.CupId].Name)
+			}
+			if n := nominated[unit.OrderMenuID]; r.Dripper != nil && n != nil && *n != *r.Dripper {
 				return ruleErrorf("指名のあるカップは %d 番のドリッパーにしか置けないので戻せません", *n)
 			}
 			if err := checkSeniorOnly(writes[i], items[c.CupId], seniors); err != nil {
@@ -144,7 +161,7 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 			before.OrderCups = slices.Clone(order.OrderCups)
 			changed := false
 			for _, c := range cups {
-				if cup := findOrderCup(order, c.CupId); cup != nil && !timeEqual(cup.ReadyAt, c.Restore.ReadyAt) {
+				if cup := findOrderCup(order, c.CupId); cup != nil && !timeEqual(msTime(cup.ReadyAt), msTime(c.Restore.ReadyAt)) {
 					cup.ReadyAt = c.Restore.ReadyAt
 					changed = true
 				}
@@ -159,13 +176,13 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		}
 		for _, c := range cups {
 			r := c.Restore.State
-			if err := tx.Model(&models.OrderCup{}).Where("id = ?", c.CupId).Updates(map[string]any{
+			if err := updateCaosUnits(tx, map[string]any{
 				"dripper":          r.Dripper,
 				"dripper_position": r.DripperPosition,
 				"drip_id":          r.DripId,
 				"brew_started_at":  r.BrewStartedAt,
 				"brew_finished_at": r.BrewFinishedAt,
-			}).Error; err != nil {
+			}, "id = ?", c.CupId); err != nil {
 				return err
 			}
 		}

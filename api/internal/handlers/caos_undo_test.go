@@ -12,10 +12,14 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// undoState は DB の今のカップの値と準備完了（「1つ戻す」の current・restore に送る形）。
+// undoState は DB の今のカップ（入れ直しも）の値と準備完了（「1つ戻す」の current・restore に送る形）。
 func (f *caosFixture) undoState(t *testing.T, id uuid.UUID) map[string]any {
 	t.Helper()
-	return map[string]any{"state": f.state(t, id), "ready_at": f.cup(t, id).ReadyAt}
+	rows, err := readCaosUnits(f.db, "c.id = ?", id)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("cup %s: %v %d", id, err, len(rows))
+	}
+	return map[string]any{"state": f.emergencyState(t, id), "ready_at": rows[0].ReadyAt}
 }
 
 // undo は POST /api/caos/undo を呼ぶ。restore はカップごとの操作の前の値（undoState）、current は DB の今の値
@@ -129,5 +133,60 @@ func TestCaosUndoOnDB(t *testing.T) {
 	beforeLast[cup3]["state"].(map[string]any)["brew_started_at"] = f.cup(t, cup3).BrewStartedAt
 	if code, _ := f.undo(t, beforeLast); code != http.StatusConflict {
 		t.Fatalf("undo next onto a busy dripper = %d, want 409", code)
+	}
+}
+
+// 並べ替えを戻す（ずらしたカードも前の番号に戻す）・ほかの画面があとで統合したカードは分けない・入れ直しのカードも戻せる
+func TestCaosUndoCardsOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	var o []models.Order
+	for no := 1; no <= 5; no++ {
+		o = append(o, f.createOrder(t, no, line(f.blend)))
+	}
+	cupOf := func(i int) uuid.UUID { return o[i].OrderCups[0].ID }
+	a, b, c := uuid.New(), uuid.New(), uuid.New()
+	f.mustPut(t,
+		write(ids(o[0].OrderCups[0]), unassigned, placed(1, a, false)),
+		write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, false)),
+		write(ids(o[2].OrderCups[0]), unassigned, placed(1, c, false)),
+	)
+	// c を先頭へ（a・b は +1 にずれる）。画面は列のカードを全部覚えて戻す
+	before := map[uuid.UUID]map[string]any{}
+	for i := range 3 {
+		before[cupOf(i)] = f.undoState(t, cupOf(i))
+	}
+	f.mustPut(t, write(ids(o[2].OrderCups[0]), f.state(t, cupOf(2)), placedBefore(1, c, a)))
+	if _, queued := f.lane(t, 1); !slices.Equal(queued, []uuid.UUID{c, a, b}) {
+		t.Fatalf("queued = %v", queued)
+	}
+	if code, body := f.undo(t, before); code != http.StatusNoContent {
+		t.Fatalf("undo front = %d: %s", code, body)
+	}
+	if _, queued := f.lane(t, 1); !slices.Equal(queued, []uuid.UUID{a, b, c}) {
+		t.Fatalf("queued after undo = %v, want a b c", queued)
+	}
+
+	// 割当のあと、ほかの画面が同じカードに統合したら、戻すとカードが分かれるので断る
+	d := uuid.New()
+	beforeAssign := map[uuid.UUID]map[string]any{cupOf(3): f.undoState(t, cupOf(3))}
+	f.mustPut(t, write(ids(o[3].OrderCups[0]), unassigned, placed(2, d, false)))
+	f.mustPut(t, write(ids(o[4].OrderCups[0]), unassigned, placed(2, d, false)))
+	if code, _ := f.undo(t, beforeAssign); code != http.StatusConflict {
+		t.Fatalf("undo after another merge = %d, want 409", code)
+	}
+
+	// 入れ直しのカードの割当も戻せる（入れ直しの行の列を戻す）
+	if code, body := f.addEmergencies(t, cupOf(0)); code != http.StatusCreated {
+		t.Fatalf("add emergency = %d: %s", code, body)
+	}
+	e := f.emergencies(t, cupOf(0))[0].ID
+	beforeEmergency := map[uuid.UUID]map[string]any{e: f.undoState(t, e)}
+	f.mustPut(t, write([]uuid.UUID{e}, f.emergencyState(t, e), placed(3, uuid.New(), true)))
+	if code, body := f.undo(t, beforeEmergency); code != http.StatusNoContent {
+		t.Fatalf("undo emergency assign = %d: %s", code, body)
+	}
+	if row := f.emergencies(t, cupOf(0))[0]; row.Dripper != nil || row.BrewStartedAt != nil {
+		t.Fatalf("emergency = %+v, want unassigned", row)
 	}
 }

@@ -1,4 +1,5 @@
 import {
+  type CaosCard,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
@@ -17,9 +18,13 @@ import {
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import {
+  type EmergencyCup,
+  useCupEmergency,
+} from "~/components/functional/useCupEmergency";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { waitingCupsByBean } from "../logic/beans";
-import { cardLooks, orderLabel, totalCups } from "../logic/cards";
+import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { nextAvailableBays } from "../logic/queue";
@@ -81,6 +86,13 @@ export const useCaosSession = () => {
   const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
+  // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
+  const {
+    printer: labelPrinter,
+    addEmergency,
+    cancelEmergency,
+    restoreEmergencies,
+  } = useCupEmergency();
   const undo = useCaosUndo(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
@@ -166,6 +178,45 @@ export const useCaosSession = () => {
           SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
       ),
     posStatus: live.status,
+    /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+    labelPrinter,
+    /**
+     * 緊急（入れ直し）。実データテスト中は null（練習の盤面には入れ直しが無い）
+     *   - orders：番号から入れ直すカップを選ぶ注文
+     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る
+     *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
+     * どちらも「1つ戻す」で戻せる（足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直す。シールは刷り直さない）
+     */
+    emergency: test.session
+      ? null
+      : {
+          orders: live.orders ?? [],
+          add: async (cups: EmergencyCup[], reason: string) => {
+            const ids = await addEmergency(cups, reason);
+            if (ids) {
+              const nos = new Set(cups.map((cup) => cup.order.orderId));
+              undo.remember(
+                `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`,
+                () => cancelEmergency(ids),
+              );
+            }
+            return ids;
+          },
+          cancel: (card: CaosCard) => {
+            const cups = card.cups.filter((cup) => cup.emergency);
+            void cancelEmergency(cups.map((cup) => cup.id)).then((ok) => {
+              if (!ok) return;
+              undo.remember(`緊急の取り消し ${orderLabel(card)}`, () =>
+                restoreEmergencies(
+                  cups.map((cup) => ({
+                    cupId: cup.cupId,
+                    reason: cup.emergencyReason,
+                  })),
+                ),
+              );
+            });
+          },
+        },
     soundEnabled,
     toggleSound: () => {
       soundManager.enabled = !soundEnabled;
