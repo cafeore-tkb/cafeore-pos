@@ -7,7 +7,10 @@ interface BeanQueueViewProps {
   /** POS の在庫のうち豆（kind が bean）の残量。API の値をそのまま出す */
   statuses: InventoryStatus[];
   isLoading: boolean;
-  error: unknown;
+  /** 在庫（残量）を読めなかったときのエラー */
+  inventoryError: unknown;
+  /** 在庫の設定（使用量）を読めなかったときのエラー。残量は出るが、カードに豆が付かない */
+  usagesError: unknown;
   /** 盤面で待っている（未割当・待機・抽出中の）杯数（在庫対象の ID ごと。logic/beans.ts の waitingCupsByBean。無い豆は 0 杯）。実データテスト中は出さない */
   waitingCups?: Map<string, number>;
   /** 棚卸し・入荷を記録したあとに呼ぶ（在庫を取り直す）。実データテスト中は渡さず、記録の欄を出さない */
@@ -28,10 +31,15 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = (props) => (
       </p>
     </div>
 
-    {/* 在庫は取れて使用量だけ読めないときも、カードの豆が空になるので必ず出す */}
-    {props.error ? (
+    {props.inventoryError ? (
       <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-bold text-red-800 text-xs">
-        在庫を読み込めませんでした（{String(props.error)}）
+        在庫を読み込めませんでした（{String(props.inventoryError)}）
+      </p>
+    ) : null}
+    {props.usagesError ? (
+      <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-bold text-red-800 text-xs">
+        在庫の設定（使用量）を読み込めませんでした。カードに豆が出ません（
+        {String(props.usagesError)}）
       </p>
     ) : null}
     <BeanStockList {...props} />
@@ -42,7 +50,7 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = (props) => (
 const BeanStockList: React.FC<BeanQueueViewProps> = ({
   statuses,
   isLoading,
-  error,
+  inventoryError,
   waitingCups,
   onRecorded,
 }) => {
@@ -65,7 +73,7 @@ const BeanStockList: React.FC<BeanQueueViewProps> = ({
         ))}
       </div>
     );
-  if (error) return null;
+  if (inventoryError) return null;
   if (isLoading)
     return (
       <p className="py-8 text-center text-slate-500 text-xs">読み込み中…</p>

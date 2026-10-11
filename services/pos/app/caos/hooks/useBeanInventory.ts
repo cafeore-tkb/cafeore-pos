@@ -27,8 +27,8 @@ export const useBeanInventory = () => {
   return {
     statuses,
     beanIndex,
-    // 使用量を読めないと全カードの豆が空になるので、残量と合わせて出す
-    error: inventory.error ?? stockUsages.error,
+    inventoryError: inventory.error,
+    usagesError: stockUsages.error,
     isLoading: inventory.isLoading || stockUsages.isLoading,
     // 豆キューで棚卸し・入荷を記録したら残量を取り直す
     onRecorded: () => void inventory.mutateInventory(),
