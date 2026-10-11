@@ -331,6 +331,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/printer-settings:
+    get:
+      summary: プリンター設定取得
+      description: ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+      operationId: getPrinterSettings
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrinterSettingsResponse'
+    put:
+      summary: プリンター設定の更新
+      description: 全レジで共通。両方の IP アドレスをまとめて置き換える
+      operationId: updatePrinterSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrinterSettingsUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrinterSettingsResponse'
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -2028,6 +2063,34 @@ components:
           type: string
           pattern: '^#[0-9a-fA-F]{6}$'
           example: "#bfdbfe"
+    PrinterSettingsResponse:
+      type: object
+      required:
+        - label_printer_ip
+        - receipt_printer_ip
+      properties:
+        label_printer_ip:
+          type: string
+          description: ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+          example: "192.168.77.2"
+        receipt_printer_ip:
+          type: string
+          description: レシート・領収書用のプリンターの IPv4 アドレス
+          example: "192.168.77.3"
+    PrinterSettingsUpdateRequest:
+      type: object
+      required:
+        - label_printer_ip
+        - receipt_printer_ip
+      properties:
+        label_printer_ip:
+          type: string
+          description: ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+          example: "192.168.77.2"
+        receipt_printer_ip:
+          type: string
+          description: レシート・領収書用のプリンターの IPv4 アドレス
+          example: "192.168.77.3"
     CashierStateResponse:
       type: object
       required:

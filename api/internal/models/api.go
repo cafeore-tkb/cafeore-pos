@@ -504,6 +504,24 @@ type OrderUpdateRequest struct {
 // PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 type PaymentMethod string
 
+// PrinterSettingsResponse defines model for PrinterSettingsResponse.
+type PrinterSettingsResponse struct {
+	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+	LabelPrinterIp string `json:"label_printer_ip"`
+
+	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
+	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+}
+
+// PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
+type PrinterSettingsUpdateRequest struct {
+	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+	LabelPrinterIp string `json:"label_printer_ip"`
+
+	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
+	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+}
+
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
 type SquareCheckoutConflictResponse struct {
 	Checkout SquareCheckoutResponse `json:"checkout"`
@@ -792,6 +810,9 @@ type UpdateOrderJSONRequestBody = OrderUpdateRequest
 
 // CreateOrderCommentJSONRequestBody defines body for CreateOrderComment for application/json ContentType.
 type CreateOrderCommentJSONRequestBody = CommentCreateRequest
+
+// UpdatePrinterSettingsJSONRequestBody defines body for UpdatePrinterSettings for application/json ContentType.
+type UpdatePrinterSettingsJSONRequestBody = PrinterSettingsUpdateRequest
 
 // CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
 type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest
