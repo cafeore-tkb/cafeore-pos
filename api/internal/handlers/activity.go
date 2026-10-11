@@ -147,16 +147,16 @@ func colorScreenLabel(screen string) string {
 func colorSettingSavedMessage(target string, before, after *models.ColorSetting) string {
 	screen := colorScreenLabel(after.Screen)
 	if before.ID == uuid.Nil {
-		return tagged(fmt.Sprintf("🆕 背景色を追加: %s（%s）%s", target, screen, after.Color), tagAdd)
+		return tagged(fmt.Sprintf("🆕 背景色を追加: %sの%s %s", screen, target, after.Color), tagAdd)
 	}
 	if before.Color == after.Color {
 		return ""
 	}
-	return tagged(fmt.Sprintf("✏️ 背景色を変更: %s（%s）%s → %s", target, screen, before.Color, after.Color), tagChange)
+	return tagged(fmt.Sprintf("✏️ 背景色を変更: %sの%s %s → %s", screen, target, before.Color, after.Color), tagChange)
 }
 
 func colorSettingDeletedMessage(target string, setting *models.ColorSetting) string {
-	return tagged(fmt.Sprintf("🗑️ 背景色を削除: %s（%s）%s", target, colorScreenLabel(setting.Screen), setting.Color), tagDelete)
+	return tagged(fmt.Sprintf("🗑️ 背景色を削除: %sの%s %s", colorScreenLabel(setting.Screen), target, setting.Color), tagDelete)
 }
 
 // --- 在庫対象 ---
