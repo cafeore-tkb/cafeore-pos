@@ -1,104 +1,89 @@
 import { describe, expect, test } from "vitest";
-import type { ItemType } from "../models/item";
 import {
   type CaosCard,
+  type CaosCupsWrite,
+  type CaosPlace,
+  type CaosWritesResult,
   assignWrites,
   buildCaosCards,
-  caosDay,
   caosLane,
   mergeWrites,
   unassignWrites,
 } from "./caos-board";
-import { type CaosLane, emptyCaosLanes } from "./caosLanes";
 import {
   type CaosPracticeOrder,
+  type CaosPracticeSourceItem,
+  type CaosPracticeSourceOrder,
   advanceCaosPracticeDripper,
   applyCaosPracticeWrites,
-  practiceItemType,
   toCaosPracticeOrder,
 } from "./caosPractice";
-import type { PracticeDataOrder } from "./caosPracticeData";
+import type { PracticeDataItemType } from "./caosPracticeData";
+import { jstDate } from "./jst";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z"); // 日本時間 12:00
-const DAY = caosDay(T0);
+const DAY = jstDate(T0.getTime());
 const at = (sec: number) => new Date(T0.getTime() + sec * 1000);
-
-const dbTypes: ItemType[] = [
-  {
-    id: "t-hot",
-    name: "hot",
-    display_name: "ホット",
-    makes_cup: true,
-    needs_brew: true,
-    senior_only: false,
-  },
-  {
-    id: "t-milk",
-    name: "milk",
-    display_name: "ミルク",
-    makes_cup: true,
-    needs_brew: false,
-    senior_only: false,
-  },
-  {
-    id: "t-limited",
-    name: "limited",
-    display_name: "限定",
-    makes_cup: true,
-    needs_brew: true,
-    senior_only: true,
-  },
-  {
-    id: "t-others",
-    name: "others",
-    display_name: "グッズ",
-    makes_cup: false,
-    needs_brew: false,
-    senior_only: false,
-  },
-];
 
 const dataOrder = (
   orderId: number,
-  items: { name: string; type: string }[],
-): PracticeDataOrder => ({
+  items: CaosPracticeSourceItem[],
+): CaosPracticeSourceOrder => ({
   orderId,
   createdAt: T0.toISOString(),
-  readyAt: null,
-  servedAt: null,
-  total: 0,
-  billingAmount: 0,
-  items: items.map((item) => ({ id: "", price: 500, ...item })),
+  items,
 });
 
-const hot = { name: "テストブレンド", type: "hot" };
-const limited = { name: "テスト限定", type: "limited" };
-
-// 練習の担当者（始めたときの本番の担当者の写し）。seniors の番号のドリッパーだけ上級生
-const lanesWith = (seniors: number[] = []): CaosLane[] =>
-  emptyCaosLanes(DAY).lanes.map((lane) => ({
-    ...lane,
-    name: `担当${lane.dripper}`,
-    senior: seniors.includes(lane.dripper),
-  }));
-const LANES = lanesWith();
+// 品物の種類の設定（読み込んだあと POS の種類から付けたもの）
+const itemType = (flags: Partial<PracticeDataItemType> = {}) => ({
+  display_name: "",
+  makes_cup: true,
+  needs_brew: true,
+  senior_only: false,
+  ...flags,
+});
+const hot = { name: "テストブレンド", type: "hot", itemType: itemType() };
+const milk = {
+  name: "テストミルク",
+  type: "milk",
+  itemType: itemType({ needs_brew: false }),
+};
+const goods = {
+  name: "トート",
+  type: "others",
+  itemType: itemType({ makes_cup: false, needs_brew: false }),
+};
+const limited = {
+  name: "テスト限定",
+  type: "limited",
+  itemType: itemType({ senior_only: true }),
+};
 
 let seq = 0;
 const newId = () => `drip-${++seq}`;
 
+const ordersOf = (...items: CaosPracticeSourceItem[][]) =>
+  items.map((list, index) =>
+    toCaosPracticeOrder(dataOrder(index + 1, list), index),
+  );
 const cardsOf = (orders: CaosPracticeOrder[]) => buildCaosCards(orders, DAY);
 const unassigned = (orders: CaosPracticeOrder[]) =>
   cardsOf(orders).filter((card) => card.status === "unassigned");
+const queuedOrderNos = (orders: CaosPracticeOrder[], dripper: number) =>
+  caosLane(cardsOf(orders), dripper).queued.map((card) => card.orderNo);
+
+const writesOf = (result: CaosWritesResult) => {
+  if ("error" in result) throw new Error(result.error);
+  return result.writes;
+};
 
 const apply = (
   orders: CaosPracticeOrder[],
-  result: ReturnType<typeof assignWrites>,
+  result: CaosWritesResult,
   now: Date,
-  lanes: CaosLane[] = LANES,
 ) => {
-  if ("error" in result) throw new Error(result.error);
-  const applied = applyCaosPracticeWrites(orders, result.writes, now, lanes);
+  const applied = applyCaosPracticeWrites(orders, writesOf(result), now);
   if (applied.error !== undefined) throw new Error(applied.error);
   return applied.orders;
 };
@@ -108,91 +93,44 @@ const assign = (
   card: CaosCard,
   dripper: number,
   now: Date,
-  lanes: CaosLane[] = LANES,
+  place?: CaosPlace,
 ) =>
   apply(
     orders,
-    assignWrites(cardsOf(orders), card, dripper, { newId }),
+    assignWrites(cardsOf(orders), card, dripper, { place, newId }),
     now,
-    lanes,
   );
 
-describe("unit: 練習の注文", () => {
-  test("種類は DB の今の種類 → データの種類の設定 → 既定（抽出が要る）の順に決める", () => {
-    expect(practiceItemType({ type: "milk" }, dbTypes)).toMatchObject({
-      source: "db",
-      itemType: { name: "milk", needs_brew: false },
-    });
-    const fromData = {
-      type: "seasonal",
-      itemType: {
-        display_name: "季節",
-        makes_cup: true,
-        needs_brew: false,
-        senior_only: true,
-      },
-    };
-    expect(practiceItemType(fromData, dbTypes)).toMatchObject({
-      source: "data",
-      itemType: { name: "seasonal", needs_brew: false, senior_only: true },
-    });
-    // DB の今の種類があればそちらを使う（今の決まりで練習する）
-    expect(
-      practiceItemType({ ...fromData, type: "hot" }, dbTypes),
-    ).toMatchObject({ source: "db", itemType: { needs_brew: true } });
-    expect(practiceItemType({ type: "" }, dbTypes)).toMatchObject({
-      source: "default",
-      itemType: {
-        display_name: "種類なし",
-        makes_cup: true,
-        needs_brew: true,
-        senior_only: false,
-      },
-    });
-  });
+const UNPLACED: CaosCupsWrite["before"] = {
+  dripper: null,
+  dripper_position: null,
+  drip_id: null,
+  brew_started_at: null,
+  brew_finished_at: null,
+};
 
-  test("カップを作る品物だけをカップにし、抽出の要らないカップはカードにならない", () => {
-    const order = toCaosPracticeOrder(
-      dataOrder(12, [
-        hot,
-        { name: "テストミルク", type: "milk" },
-        { name: "トート", type: "others" },
-        hot,
-        hot,
-      ]),
-      0,
-      dbTypes,
-    );
+describe("[unit] CaOS の練習の注文", () => {
+  test("グッズ以外の品物をカップにし、抽出の要らないカップはカードにならない", () => {
+    const [order] = ordersOf([hot, milk, goods, hot, hot]);
     expect(order.cups.map((cup) => cup.item.name)).toStrictEqual([
       "テストブレンド",
       "テストミルク",
       "テストブレンド",
       "テストブレンド",
     ]);
-    // 指名は実データから落としてあるので、どの明細も指名なし
-    expect(
-      order.menus.every(
-        (menu) => menu.dripper === null && menu.assignee === null,
-      ),
-    ).toBe(true);
-    // 3 杯は 2 杯と 1 杯のカードに分かれる（本番と同じ buildCaosCards）
+    // 指名は実データに無いので、どの明細も指名なし
+    expect(order.menus.every((menu) => menu.assignee === null)).toBe(true);
+    // 3 杯は 2 杯と 1 杯のカードに分かれる（本番と同じ buildCaosCards）。ミルクはカードにならない
     expect(cardsOf([order]).map((card) => card.cups.length)).toStrictEqual([
       2, 1,
     ]);
   });
 });
 
-describe("unit: 練習の盤面の操作（本番と同じ決まり）", () => {
-  const start = () =>
-    [
-      dataOrder(1, [hot]),
-      dataOrder(2, [hot]),
-      dataOrder(3, [hot, hot]),
-      dataOrder(4, [{ name: "テストミルク", type: "milk" }]),
-    ].map((order, index) => toCaosPracticeOrder(order, index, dbTypes));
-
+describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決まり）", () => {
   test("割当（空いていればそのまま抽出）・待機・次へ", () => {
-    let orders = start();
+    const initial = ordersOf([hot], [hot], [hot, hot], [milk]);
+    let orders = initial;
     const [first, second] = unassigned(orders);
     orders = assign(orders, first, 1, at(0));
     expect(caosLane(cardsOf(orders), 1).brewing?.startedAt).toStrictEqual(
@@ -221,22 +159,85 @@ describe("unit: 練習の盤面の操作（本番と同じ決まり）", () => {
     expect(lane.brewing?.startedAt).toStrictEqual(at(140));
     expect(lane.queued).toHaveLength(0);
     // 元の注文は変えない
-    expect(start()[0].cups[0].dripper).toBeNull();
+    expect(initial[0].cups[0].dripper).toBeNull();
+    // もう終わったカードで「次へ」を押すと断る
+    expect(
+      advanceCaosPracticeDripper(orders, 1, brewing?.dripId ?? null, at(150))
+        .error,
+    ).toContain("もう終わっています");
   });
 
-  test("抽出中のカードは動かせず、待機は未割当に戻せる", () => {
-    let orders = start();
+  test("番号は最後なら最大＋1、途中・先頭なら前に入るカードの番号にし、後ろをずらす", () => {
+    let orders = ordersOf([hot], [hot], [hot], [hot], [hot]);
+    // 1 番は抽出中、2・3 番は待機（番号 2・3）
+    for (const _ of [0, 1, 2])
+      orders = assign(orders, unassigned(orders)[0], 1, at(0));
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([2, 3]);
+    const positions = () =>
+      caosLane(cardsOf(orders), 1).queued.map((card) => card.dripperPosition);
+    expect(positions()).toStrictEqual([2, 3]);
+
+    // 3 番の前へ（途中への差し込み）。3 番の番号に入り、3 番は +1
+    const [fourth, fifth] = unassigned(orders);
+    const third = caosLane(cardsOf(orders), 1).queued[1];
+    orders = assign(orders, fourth, 1, at(1), { beforeKey: third.key });
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([2, 4, 3]);
+    expect(positions()).toStrictEqual([2, 3, 4]);
+
+    // 先頭へ
+    orders = assign(orders, fifth, 1, at(2), "front");
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([5, 2, 4, 3]);
+    expect(positions()).toStrictEqual([2, 3, 4, 5]);
+
+    // 待機のカードを最後へ動かすと最大＋1。抜けた番号は詰めない
+    const moved = caosLane(cardsOf(orders), 1).queued[0];
+    const lastKey = caosLane(cardsOf(orders), 1).queued[3].key;
+    orders = assign(orders, moved, 2, at(3));
+    expect(caosLane(cardsOf(orders), 2).brewing?.orderNo).toBe(5);
+    expect(positions()).toStrictEqual([3, 4, 5]);
+    expect(caosLane(cardsOf(orders), 1).queued[2].key).toBe(lastKey);
+  });
+
+  test("前に入れるカードが待機に無ければ断る", () => {
+    let orders = ordersOf([hot], [hot]);
+    orders = assign(orders, unassigned(orders)[0], 1, at(0));
+    const brewing = caosLane(cardsOf(orders), 1).brewing;
+    const [card] = unassigned(orders);
+    expect(
+      applyCaosPracticeWrites(
+        orders,
+        [
+          {
+            cup_ids: card.cups.map((cup) => cup.id),
+            before: UNPLACED,
+            after: {
+              dripper: 1,
+              drip_id: "x",
+              insert_before: brewing?.dripId ?? null,
+              start_brew: false,
+            },
+          },
+        ],
+        at(1),
+      ).error,
+    ).toBe(
+      "前に入れるカードが、そのドリッパーの待機にありません（ほかの端末で動いたかもしれません）",
+    );
+  });
+
+  test("抽出中のカードは動かせず、古い値の書き込みは断り、待機は未割当に戻せる", () => {
+    const initial = ordersOf([hot], [hot]);
+    let orders = initial;
     const [first, second] = unassigned(orders);
     orders = assign(orders, first, 2, at(0));
     orders = assign(orders, second, 2, at(1));
     const lane = caosLane(cardsOf(orders), 2);
     if (!lane.brewing) throw new Error("no brewing");
     // 古いカード（抽出を始める前の値）で書くと、本番と同じく断る
-    const stale = assignWrites(cardsOf(start()), first, 3, { newId });
-    if ("error" in stale) throw new Error(stale.error);
-    expect(
-      applyCaosPracticeWrites(orders, stale.writes, at(2), LANES).error,
-    ).toContain("ほかの端末で先に変わりました");
+    const stale = writesOf(assignWrites(cardsOf(initial), first, 3, { newId }));
+    expect(applyCaosPracticeWrites(orders, stale, at(2)).error).toBe(
+      "ほかの端末で先に変わりました。もう一度操作してください",
+    );
     expect(
       assignWrites(cardsOf(orders), lane.brewing, 3, { newId }),
     ).toStrictEqual({ error: "抽出中・終了のカードは動かせません" });
@@ -247,7 +248,7 @@ describe("unit: 練習の盤面の操作（本番と同じ決まり）", () => {
   });
 
   test("1 杯どうしを統合し、2 杯のカードとしてドリッパーに置ける", () => {
-    let orders = start();
+    let orders = ordersOf([hot], [hot]);
     const [first, second] = unassigned(orders);
     orders = apply(orders, mergeWrites(first, second, newId), at(0));
     const merged = unassigned(orders).find((card) => card.cups.length === 2);
@@ -257,33 +258,45 @@ describe("unit: 練習の盤面の操作（本番と同じ決まり）", () => {
     expect(caosLane(cardsOf(orders), 4).brewing?.cups).toHaveLength(2);
   });
 
+  test("待機どうしの統合は、相手のカードと同じ番号にし、ほかはずらさない", () => {
+    let orders = ordersOf([hot], [hot], [hot], [hot]);
+    for (const _ of [0, 1, 2, 3])
+      orders = assign(orders, unassigned(orders)[0], 1, at(0));
+    const [a, b, c] = caosLane(cardsOf(orders), 1).queued;
+    orders = apply(orders, mergeWrites(b, c, newId), at(1));
+    const queued = caosLane(cardsOf(orders), 1).queued;
+    expect(queued.map((card) => card.cups.length)).toStrictEqual([1, 2]);
+    expect(queued.map((card) => card.dripperPosition)).toStrictEqual([
+      a.dripperPosition,
+      b.dripperPosition,
+    ]);
+  });
+
+  test("上級生のみのカードは、本番と同じくどのドリッパーにも置ける", () => {
+    let orders = ordersOf([limited]);
+    orders = assign(orders, unassigned(orders)[0], 3, at(0));
+    expect(caosLane(cardsOf(orders), 3).brewing?.seniorOnly).toBe(true);
+  });
+
   test("決まりに合わない書き込みは何も変えずに断る", () => {
-    const orders = start();
+    const orders = ordersOf([hot], [], [hot, hot], [milk]);
     const milkCup = orders[3].cups[0];
-    const before = {
-      dripper: null,
-      dripper_position: null,
-      drip_id: null,
-      brew_started_at: null,
-      brew_finished_at: null,
-    };
     expect(
       applyCaosPracticeWrites(
         orders,
         [
           {
             cup_ids: [milkCup.id],
-            before,
+            before: UNPLACED,
             after: {
               dripper: 1,
-              dripper_position: 4,
               drip_id: "x",
+              insert_before: null,
               start_brew: false,
             },
           },
         ],
         at(0),
-        LANES,
       ).error,
     ).toBe("抽出の要らないカップ（テストミルク）はドリッパーに置けません");
     // 3 杯を 1 枚のカードにはできない
@@ -294,163 +307,41 @@ describe("unit: 練習の盤面の操作（本番と同じ決まり）", () => {
         [
           {
             cup_ids: three,
-            before,
+            before: UNPLACED,
             after: {
               dripper: null,
-              dripper_position: null,
               drip_id: "y",
+              insert_before: null,
               start_brew: false,
             },
           },
         ],
         at(0),
-        LANES,
       ).error,
     ).toBe("1 枚のカードは 2 杯までです");
+    // 抽出中のドリッパーでもう 1 枚を始めることはできない
+    const twoBrews = [orders[0].cups[0], orders[2].cups[0]].map((cup, i) => ({
+      cup_ids: [cup.id],
+      before: UNPLACED,
+      after: {
+        dripper: 1,
+        drip_id: `b${i}`,
+        insert_before: null,
+        start_brew: true,
+      },
+    }));
+    expect(applyCaosPracticeWrites(orders, twoBrews, at(0)).error).toBe(
+      "1 番のドリッパーはもう抽出中です",
+    );
+    // 待機のカードがあるドリッパーで、ほかのカードの抽出を始めることはできない
+    const queuedThenBrew = twoBrews.map((write, i) => ({
+      ...write,
+      after: { ...write.after, start_brew: i === 1 },
+    }));
+    expect(applyCaosPracticeWrites(orders, queuedThenBrew, at(0)).error).toBe(
+      "1 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください",
+    );
     expect(orders[0].cups[0].dripId).toBeNull();
-  });
-});
-
-describe("unit: 指名と限定（サーバーの PUT /api/caos/cups と同じ）", () => {
-  // 実データには指名が無いが、決まりはサーバーと同じにしておく（明細の dripper で指名する）
-  const nominate = (
-    order: CaosPracticeOrder,
-    dripper: number | null,
-    assignee: string | null = null,
-  ): CaosPracticeOrder => ({
-    ...order,
-    menus: order.menus.map((menu) => ({ ...menu, dripper, assignee })),
-  });
-  const orderOf = (
-    index: number,
-    items: { name: string; type: string }[],
-  ): CaosPracticeOrder =>
-    toCaosPracticeOrder(dataOrder(index + 1, items), index, dbTypes);
-  const writesOf = (result: ReturnType<typeof assignWrites>) => {
-    if ("error" in result) throw new Error(result.error);
-    return result.writes;
-  };
-  const unplaced = {
-    dripper: null,
-    dripper_position: null,
-    drip_id: null,
-    brew_started_at: null,
-    brew_finished_at: null,
-  };
-
-  test("指名は明細のドリッパーの番号。その番号のドリッパーにだけ置ける", () => {
-    const orders = [nominate(orderOf(0, [hot]), 2)];
-    const [card] = unassigned(orders);
-    expect(card.nominatedDripper).toBe(2);
-    // 画面の assignWrites が作らない書き込みでも、練習の盤面が断る（サーバーと同じ理由の文）
-    expect(
-      applyCaosPracticeWrites(
-        orders,
-        [
-          {
-            cup_ids: [orders[0].cups[0].id],
-            before: unplaced,
-            after: {
-              dripper: 3,
-              dripper_position: 1,
-              drip_id: "x",
-              start_brew: false,
-            },
-          },
-        ],
-        at(0),
-        LANES,
-      ).error,
-    ).toBe("指名のあるカップは 2 番のドリッパーにしか置けません");
-    const placed = assign(orders, card, 2, at(0));
-    expect(caosLane(cardsOf(placed), 2).brewing?.cups).toHaveLength(1);
-  });
-
-  test("自由記述（assignee）だけの古い明細は指名なし", () => {
-    const orders = [nominate(orderOf(0, [hot]), null, "2")];
-    const [card] = unassigned(orders);
-    expect(card.nominatedDripper).toBeUndefined();
-    const placed = assign(orders, card, 5, at(0));
-    expect(caosLane(cardsOf(placed), 5).brewing?.cups).toHaveLength(1);
-  });
-
-  test("指名の違うカップは同じカードにできない（無指名も 1 つの値）", () => {
-    const orders = [nominate(orderOf(0, [hot]), 2), orderOf(1, [hot])];
-    expect(
-      applyCaosPracticeWrites(
-        orders,
-        [
-          {
-            cup_ids: orders.flatMap((order) => order.cups.map((cup) => cup.id)),
-            before: unplaced,
-            after: {
-              dripper: null,
-              dripper_position: null,
-              drip_id: "m",
-              start_brew: false,
-            },
-          },
-        ],
-        at(0),
-        LANES,
-      ).error,
-    ).toBe("指名の違うカップは同じカードにできません");
-  });
-
-  test("限定のカップは、担当者が上級生のドリッパーにしか置けない", () => {
-    const orders = [orderOf(0, [limited])];
-    const [card] = unassigned(orders);
-    expect(card.seniorOnly).toBe(true);
-    const writes = writesOf(assignWrites(cardsOf(orders), card, 1, { newId }));
-    // 上級生のいない担当者の写しでは、どこにも置けない
-    expect(applyCaosPracticeWrites(orders, writes, at(0), LANES).error).toBe(
-      "限定のカップ（テスト限定）は上級生のドリッパーにしか置けません（1 番のドリッパーの担当者は上級生ではありません）",
-    );
-    // 名前の無い担当者は、上級生の印があっても上級生とみなさない（サーバーと同じ）
-    const nameless = lanesWith([1]).map((lane) =>
-      lane.dripper === 1 ? { ...lane, name: "" } : lane,
-    );
-    expect(
-      applyCaosPracticeWrites(orders, writes, at(0), nameless).error,
-    ).toContain("上級生のドリッパーにしか置けません");
-    const placed = assign(orders, card, 3, at(0), lanesWith([3]));
-    expect(caosLane(cardsOf(placed), 3).brewing?.seniorOnly).toBe(true);
-  });
-
-  test("指名のドリッパーの担当者が上級生でない限定のカップは、どこにも置けない", () => {
-    const orders = [nominate(orderOf(0, [limited]), 2)];
-    const [card] = unassigned(orders);
-    expect(
-      applyCaosPracticeWrites(
-        orders,
-        writesOf(assignWrites(cardsOf(orders), card, 2, { newId })),
-        at(0),
-        lanesWith([1, 3, 4, 5, 6]),
-      ).error,
-    ).toContain("2 番のドリッパーの担当者は上級生ではありません");
-    // 担当者を上級生に替えれば置ける
-    const placed = assign(orders, card, 2, at(0), lanesWith([2]));
-    expect(caosLane(cardsOf(placed), 2).brewing?.cups).toHaveLength(1);
-  });
-
-  test("同じドリッパーの中の順番の入れ替えは、担当者が上級生でなくてもできる", () => {
-    let orders = [orderOf(0, [hot]), orderOf(1, [hot]), orderOf(2, [limited])];
-    const seniors = lanesWith([1]);
-    for (const [index, sec] of [0, 1, 2].entries()) {
-      orders = assign(orders, unassigned(orders)[0], 1, at(sec), seniors);
-      expect(caosLane(cardsOf(orders), 1).queued).toHaveLength(index);
-    }
-    const queued = caosLane(cardsOf(orders), 1).queued;
-    expect(queued.map((card) => card.seniorOnly)).toStrictEqual([false, true]);
-    // 担当者が上級生でなくなっても、待っていた限定のカードはそのドリッパーの中で先頭へ動かせる
-    orders = apply(
-      orders,
-      assignWrites(cardsOf(orders), queued[1], 1, { index: 0, newId }),
-      at(3),
-      LANES,
-    );
-    expect(
-      caosLane(cardsOf(orders), 1).queued.map((card) => card.seniorOnly),
-    ).toStrictEqual([true, false]);
+    expect(orders[0].cups[0].brewStartedAt).toBeNull();
   });
 });

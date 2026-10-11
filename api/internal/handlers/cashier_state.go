@@ -124,7 +124,7 @@ var menuSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 	{name: "items", spec: valueSpec{kind: kindArray, elem: &menuItemSpec, minLen: 1}},
 	{name: "assignee", spec: valueSpec{kind: kindString, nullable: true}},
 	// 番号より前の画面が送る状態には無い（zod は無ければ null にする）
-	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: maxDripper}},
+	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: caosDrippers}},
 }}
 
 // menuItemSchema。item は itemSchema.required() なので id も必須
@@ -137,10 +137,11 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "id", optional: true, spec: valueSpec{kind: kindString}},
 			{name: "name", spec: valueSpec{kind: kindString}},
 			{name: "display_name", spec: valueSpec{kind: kindString}},
-			// 古いレジ状態には無い（無ければフロントの zod が既定値を入れる）
+			// 古いレジ状態には無いので受け付ける（フロントは項目の無いレジ状態を読み込みで弾く）
 			{name: "makes_cup", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "iced_brew", optional: true, spec: valueSpec{kind: kindBool}},
 		}}},
 	}}},
 	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},
@@ -300,7 +301,9 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		ID:               models.CashierStateID,
 		EdittingOrder:    models.JSONB(raw),
 		SubmittedOrderID: (*uuid.UUID)(req.SubmittedOrderId),
-		UpdatedAt:        time.Now(),
+		// DB に保存される精度（マイクロ秒）にそろえる。保存した内容を読み直さずに返す・配信するので、
+		// そろえないと GET や再接続時の初期データと updated_at が食い違う
+		UpdatedAt: time.Now().Truncate(time.Microsecond),
 	}
 
 	resp, err := h.saveAndBroadcast(&state)

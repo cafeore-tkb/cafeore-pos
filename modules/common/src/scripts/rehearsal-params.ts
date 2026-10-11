@@ -2,7 +2,7 @@
 //
 //   pnpm common rehearsal-params <出力.json> <注文.json>...
 //
-// 注文 JSON は `{ orders: [...] }`（download-orders.ts の出力と同じ形）。祭 4 日ぶんを渡す。
+// 注文 JSON は `{ orders: [...] }`（トップの「オーダーデータ書き出し」の JSON と同じ形）。祭 4 日ぶんを渡す。
 // 例（sohosai-analysis のデータ）：
 //
 //   pnpm common rehearsal-params rehearsal-params.json \

@@ -3,7 +3,6 @@ import { type CaosCard, assignWrites } from "./caos-board";
 import {
   type CaosLanes,
   emptyCaosLanes,
-  isSeniorLane,
   laneChangeWarnings,
   queuedSeniorOnlyCards,
   seniorOnlyBlock,
@@ -36,7 +35,6 @@ const card = (init: Partial<CaosCard>): CaosCard =>
     finishedAt: null,
     cups: [],
     orderNo: seq,
-    nominatedDripper: undefined,
     seniorOnly: false,
     ...init,
   }) as CaosCard;
@@ -60,12 +58,10 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     });
     expect(todaysCaosLanes(null, DAY)).toHaveLength(6);
     // 名前の無い担当者は上級生にしない
-    expect(isSeniorLane(todaysCaosLanes(lanes([2, "", true]), DAY), 2)).toBe(
-      false,
-    );
+    expect(todaysCaosLanes(lanes([2, "", true]), DAY)[1].senior).toBe(false);
   });
 
-  test("限定のカードは上級生のドリッパーにしか置けない（同じドリッパーの中は確かめない）", () => {
+  test("上級生のみのカードは上級生のドリッパーにしか置けない（同じドリッパーの中は確かめない）", () => {
     const today = todaysCaosLanes(
       lanes([1, "山田", true], [2, "佐藤", false]),
       DAY,
@@ -73,23 +69,25 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     const limited = card({ status: "unassigned", seniorOnly: true });
     expect(seniorOnlyBlock(limited, 1, today)).toBeNull();
     expect(seniorOnlyBlock(limited, 2, today)).toBe(
-      "限定のカードは上級生のドリッパーにしか置けません（2nd の担当者は上級生ではありません）",
+      "上級生のみのカードは上級生のドリッパーにしか置けません（2nd の担当者は上級生ではありません）",
     );
     expect(seniorOnlyBlock(limited, 3, today)).not.toBeNull();
     expect(
-      seniorOnlyBlock({ seniorOnly: false, dripper: null }, 3, today),
+      seniorOnlyBlock({ seniorOnly: false, dripper: null, cups: [] }, 3, today),
     ).toBe(null);
     // 上級生でない人に替えたあとも、そのドリッパーの中では動かせる
-    expect(seniorOnlyBlock({ seniorOnly: true, dripper: 2 }, 2, today)).toBe(
-      null,
-    );
+    expect(
+      seniorOnlyBlock({ seniorOnly: true, dripper: 2, cups: [] }, 2, today),
+    ).toBe(null);
   });
 
-  test("指名×限定：指名のドリッパーの担当者が上級生なら置け、上級生でなければどこにも置けない", () => {
+  test("指名×上級生のみ：指名のドリッパーの担当者が上級生なら置け、上級生でなければどこにも置けない", () => {
     const nominated = card({
       status: "unassigned",
       seniorOnly: true,
-      nominatedDripper: 2,
+      cups: [
+        { id: "cup-1", nominatedDripper: 2, nominee: "2nd" },
+      ] as CaosCard["cups"],
       state: {
         dripper: null,
         dripperPosition: null,
@@ -115,15 +113,15 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     expect(nominationError(2)).toBeNull();
     for (const d of others)
       expect(nominationError(d)).toBe(
-        "指名のあるカードは 2 番のドリッパーにしか置けません",
+        "指名のあるカードは 2nd のドリッパーにしか置けません",
       );
-    // 2nd が上級生でない：2nd は限定で、ほかは指名で断るので、どこにも置けない
+    // 2nd が上級生でない：2nd は上級生のみで、ほかは指名で断るので、どこにも置けない
     const juniorAt2 = todaysCaosLanes(
       lanes([1, "田中", true], [2, "佐藤", false]),
       DAY,
     );
     expect(seniorOnlyBlock(nominated, 2, juniorAt2)).toBe(
-      "限定のカードは上級生のドリッパーにしか置けません（指名の 2nd の担当者は上級生ではありません。担当者を上級生に替えると置けます）",
+      "上級生のみのカードは上級生のドリッパーにしか置けません（指名の 2nd の担当者は上級生ではありません。担当者を上級生に替えると置けます）",
     );
     const placeable = [1, 2, 3, 4, 5, 6].filter(
       (d) => !nominationError(d) && !seniorOnlyBlock(nominated, d, juniorAt2),
@@ -135,7 +133,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     ).not.toBeNull();
   });
 
-  test("交代の確認：上級生でない人にするドリッパーに限定のカードが待っていれば出す", () => {
+  test("交代の確認：上級生でない人にするドリッパーに上級生のみのカードが待っていれば出す", () => {
     const cards = [
       card({ dripper: 1, seniorOnly: true }),
       card({ dripper: 1, seniorOnly: true }),
@@ -153,7 +151,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         true,
       ),
     ).toEqual([
-      "このドリッパーに限定のカードが2枚あります（佐藤さんは上級生ではありません）",
+      "このドリッパーに上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）",
     ]);
     expect(
       laneChangeWarnings(
@@ -180,7 +178,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         false,
       ),
     ).toEqual([
-      "1st のドリッパーに限定のカードが2枚あります（担当者がいなくなります）",
+      "1st のドリッパーに上級生のみのカードが2枚あります（担当者がいなくなります）",
     ]);
   });
 });

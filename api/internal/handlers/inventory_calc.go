@@ -21,8 +21,7 @@ type stockSnapshot struct {
 	CountedQuantity *float64
 	// 基準点以降の入荷・調整（棚卸しが無いときは最初の入荷も含む）
 	Received float64
-	// 基準点以降の注文での消費量と杯数。注文した時点の構成（カップ）で数え、
-	// 1杯あたりの量は今の item_stock_usages を使う（inventory.go の orderItemsSQL）
+	// 基準点以降の注文での消費量と回数
 	Consumed         float64
 	Servings         int
 	ServingsLastHour int
@@ -90,7 +89,7 @@ func (s stockSnapshot) Level() models.InventoryLevel {
 	}
 }
 
-// 残り杯数が属する通知の閾値。from, from-step, from-2step, …, 0 のうち
+// 残り回数が属する通知の閾値。from, from-step, from-2step, …, 0 のうち
 // remaining 以上で最小のもの。from より多く残っていれば nil。
 //
 // 例（from=500, step=100）: 520 → nil, 500 → 500, 450 → 500, 399 → 400, -3 → 0
@@ -135,16 +134,13 @@ func formatQuantity(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
-// 「約 N 杯（M g）」
+// 「残り約N回分（Mg）」
 func describeRemaining(s stockSnapshot) string {
 	r, rs := s.Remaining(), s.RemainingServings()
 	if r == nil || rs == nil {
 		return "未計測"
 	}
-	if s.Resource.Kind == string(models.StockResourceKindCup) {
-		return fmt.Sprintf("残り約 %.0f 個", math.Floor(*rs))
-	}
-	return fmt.Sprintf("残り約 %.0f 杯（%s %s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
+	return fmt.Sprintf("残り約%.0f回分（%s%s）", math.Floor(*rs), formatQuantity(*r), s.Resource.Unit)
 }
 
 // 直近1時間のペースで、あと何時間もつか。
@@ -154,32 +150,32 @@ func describePace(s stockSnapshot) string {
 		return ""
 	}
 	if *rs <= 0 {
-		return fmt.Sprintf("直近1時間 %d 杯", s.ServingsLastHour)
+		return fmt.Sprintf("直近1時間 %d回", s.ServingsLastHour)
 	}
 	hours := *rs / float64(s.ServingsLastHour)
-	return fmt.Sprintf("直近1時間 %d 杯 → 約 %sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
+	return fmt.Sprintf("直近1時間 %d回 → 約%sで切れる見込み", s.ServingsLastHour, formatDuration(time.Duration(hours*float64(time.Hour))))
 }
 
 func formatDuration(d time.Duration) string {
 	m := int(d.Round(time.Minute).Minutes())
 	if m < 60 {
-		return fmt.Sprintf("%d 分", m)
+		return fmt.Sprintf("%d分", m)
 	}
 	// 10 時間を超えたら分までは要らない
 	if m%60 == 0 || m >= 600 {
-		return fmt.Sprintf("%d 時間", m/60)
+		return fmt.Sprintf("%d時間", m/60)
 	}
-	return fmt.Sprintf("%d 時間 %d 分", m/60, m%60)
+	return fmt.Sprintf("%d時間%d分", m/60, m%60)
 }
 
 func alertMessage(s stockSnapshot) string {
-	icon := ":warning:"
+	icon := "⚠️"
 	suffix := ""
 	if s.Level() == models.InventoryLevelCritical {
-		icon = ":rotating_light:"
-		suffix = fmt.Sprintf("（バッファ %d 杯を切りました）", s.Resource.Buffer)
+		icon = "🚨"
+		suffix = fmt.Sprintf("（バッファ%d回を切りました）", s.Resource.Buffer)
 	}
-	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.Name, describeRemaining(s), suffix)}
+	lines := []string{fmt.Sprintf("%s *%s* %s%s", icon, s.Resource.DisplayName(), describeRemaining(s), suffix)}
 	if pace := describePace(s); pace != "" {
 		lines = append(lines, "　"+pace)
 	}
@@ -187,13 +183,13 @@ func alertMessage(s stockSnapshot) string {
 }
 
 func remindMessage(snapshots []stockSnapshot, now time.Time, posURL string) string {
-	lines := []string{":clipboard: 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。"}
+	lines := []string{"⏰ 在庫の残量確認の時間です。数えて POS の在庫ページに入力してください。"}
 	for _, s := range snapshots {
 		last := "未実施"
 		if s.CountedQuantity != nil && s.BaseAt != nil {
 			last = formatDuration(now.Sub(*s.BaseAt)) + "前"
 		}
-		lines = append(lines, fmt.Sprintf("• %s: %s（最終確認 %s）", s.Resource.Name, describeRemaining(s), last))
+		lines = append(lines, fmt.Sprintf("• %s: %s（最終確認 %s）", s.Resource.DisplayName(), describeRemaining(s), last))
 	}
 	if posURL != "" {
 		lines = append(lines, fmt.Sprintf("<%s/inventory|在庫ページを開く>", strings.TrimRight(posURL, "/")))

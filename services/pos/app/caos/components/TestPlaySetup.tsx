@@ -1,36 +1,27 @@
-import {
-  type ItemType,
-  type PracticeDataOrder,
-  itemTypeRepository,
-  jstDate,
-  practiceItemType,
-  startOfJstDay,
-} from "@cafeore/common";
+import type { PracticeDataset } from "@cafeore/common";
 import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type LoadedPracticeData,
-  clearStoredPracticeData,
-  loadStoredPracticeData,
-  readPracticeFiles,
-  storePracticeData,
-} from "../practice/loaded";
-import type { PracticeStart } from "../practice/usePracticeBoard";
+import { useMemo, useRef, useState } from "react";
+import { ordersInPeriod, testPlaySlots } from "../logic/historical";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
-// データは利用者が選んだファイルをこの端末のブラウザの中で読み、担当者名・指名・コメントを落としてから使う
-// （サーバーにも配信にも出さない。practice/loaded.ts）。読み込んだデータはこの端末に覚えておき、「消す」で消せる。
-// 時間帯は日本時間の 0 分・30 分の区切り（端末の時刻帯によらない。盤面の時計と同じ）。
-// 品物の種類（抽出が要るか・カップを作るか・限定か）は DB の今の商品の種類から決める（読むだけ。practiceItemType）。
-
-const SLOT_MS = 30 * 60_000;
+// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
+// 始められる時刻は logic/historical の testPlaySlots。
 
 interface TestPlaySetupProps {
+  /** 読み込んだ実データ。まだ無ければ null */
+  dataset: PracticeDataset | null;
+  /** ファイルを読んでいる間 */
+  loading: boolean;
+  /** 読めなかったファイル */
+  problems: string[];
+  onSelectFiles: (files: FileList | null) => void;
+  onClearData: () => void;
   onClose: () => void;
-  onStart: (start: PracticeStart) => void;
+  onStart: (startMs: number, durationMinutes: 30 | 60) => void;
 }
 
+// 開始の時刻（日本時間の「10/12(日) 11:00」）
 const formatSlot = (timestamp: number) =>
   new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -42,143 +33,36 @@ const formatSlot = (timestamp: number) =>
     hour12: false,
   }).format(new Date(timestamp));
 
-const createdMs = (order: PracticeDataOrder) =>
-  new Date(order.createdAt).getTime();
-
-const countIn = (orders: PracticeDataOrder[], startMs: number, endMs: number) =>
-  orders.filter(
-    (order) => createdMs(order) >= startMs && createdMs(order) < endMs,
-  ).length;
-
 export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
+  dataset,
+  loading,
+  problems,
+  onSelectFiles,
+  onClearData,
   onClose,
   onStart,
 }) => {
-  const [dataset, setDataset] = useState<LoadedPracticeData | null>(null);
-  // この端末に覚えているデータを確かめている間・ファイルを読んでいる間
-  const [datasetLoading, setDatasetLoading] = useState(true);
-  const [problems, setProblems] = useState<string[]>([]);
-  const [stored, setStored] = useState(false);
+  const orders = dataset?.orders ?? [];
+  const fileInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
+  const slots = useMemo(
+    () => testPlaySlots(orders, duration),
+    [orders, duration],
+  );
   const [selectedStart, setSelectedStart] = useState<number | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  // DB の今の商品の種類（取れなければ空のまま。データの種類の設定か既定で決める）
-  const [itemTypes, setItemTypes] = useState<ItemType[] | null>(null);
-  const [itemTypesFailed, setItemTypesFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    itemTypeRepository
-      .findAll()
-      .then((types) => {
-        if (!cancelled) setItemTypes(types);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setItemTypes([]);
-        setItemTypesFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadStoredPracticeData()
-      .then((loaded) => {
-        if (cancelled) return;
-        setDataset(loaded);
-        setStored(Boolean(loaded));
-      })
-      .finally(() => {
-        if (!cancelled) setDatasetLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const readFiles = async (list: FileList | null) => {
-    const files = Array.from(list ?? []);
-    if (files.length === 0) return;
-    setDatasetLoading(true);
-    try {
-      const result = await readPracticeFiles(files);
-      setProblems(result.problems);
-      if (!result.data) return;
-      setDataset(result.data);
-      setSelectedStart(null);
-      setStored(await storePracticeData(result.data));
-    } catch {
-      setProblems(["読み込めませんでした"]);
-    } finally {
-      setDatasetLoading(false);
-    }
-  };
-
-  const clearData = async () => {
-    await clearStoredPracticeData();
-    setDataset(null);
-    setStored(false);
-    setProblems([]);
-    setSelectedStart(null);
-  };
-
-  const orders = dataset?.orders ?? [];
-  const slots = useMemo(() => {
-    if (orders.length === 0) return [];
-    // 日本時間の日ごとに、最初の注文の 30 分の区切りから最後の注文まで
-    const days = new Map<string, number[]>();
-    for (const order of orders) {
-      const ms = createdMs(order);
-      const values = days.get(jstDate(ms)) || [];
-      values.push(ms);
-      days.set(jstDate(ms), values);
-    }
-    return Array.from(days.values())
-      .sort((a, b) => Math.min(...a) - Math.min(...b))
-      .flatMap((timestamps) => {
-        const first = Math.min(...timestamps);
-        const dayStart = startOfJstDay(first);
-        const firstSlot =
-          dayStart + Math.floor((first - dayStart) / SLOT_MS) * SLOT_MS;
-        const last = Math.max(...timestamps);
-        const result: number[] = [];
-        for (
-          let cursor = firstSlot;
-          cursor + duration * 60_000 <= last + SLOT_MS;
-          cursor += SLOT_MS
-        ) {
-          if (countIn(orders, cursor, cursor + duration * 60_000) > 0)
-            result.push(cursor);
-        }
-        return result;
-      });
-  }, [orders, duration]);
   const effectiveStart =
     selectedStart && slots.includes(selectedStart)
       ? selectedStart
-      : slots[0] || null;
+      : (slots[0] ?? null);
   const selectedCount =
     effectiveStart === null
       ? 0
-      : countIn(orders, effectiveStart, effectiveStart + duration * 60_000);
-  const loading = datasetLoading || itemTypes === null;
-  const noData = !datasetLoading && !dataset;
-  // DB に同じ名前の種類が無い品物の種類（データの種類の設定か、既定の「抽出が要る」で扱う）
-  const unknownTypes = useMemo(() => {
-    if (!itemTypes) return [];
-    const names = new Set<string>();
-    for (const order of orders) {
-      for (const item of order.items) {
-        if (practiceItemType(item, itemTypes).source !== "db")
-          names.add(item.type || "種類なし");
-      }
-    }
-    return Array.from(names).sort();
-  }, [orders, itemTypes]);
+      : ordersInPeriod(
+          orders,
+          effectiveStart,
+          effectiveStart + duration * 60_000,
+        ).length;
 
   return (
     <div
@@ -195,7 +79,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
               実績でテストプレイ
             </h2>
             <p className="mt-1 font-medium text-[12px] text-slate-500">
-              過去の祭の実際の注文を、選んだ速度で流します（1xは実時間と同じ）。盤面のルールは本番と同じで、本番の盤面には出ません
+              過去の祭の実際の注文を、選択した速度で再生します（1xは実時間と同じ）。本番の盤面・注文・在庫には混ざりません
             </p>
           </div>
           <button
@@ -218,7 +102,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
-            void readFiles(event.dataTransfer.files);
+            onSelectFiles(event.dataTransfer.files);
           }}
         >
           <input
@@ -229,7 +113,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
             className="hidden"
             aria-label="実績の JSON ファイル"
             onChange={(event) => {
-              void readFiles(event.currentTarget.files);
+              onSelectFiles(event.currentTarget.files);
               event.currentTarget.value = "";
             }}
           />
@@ -247,25 +131,23 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
                   （{dataset.files.join("・")}）
                 </span>
               )}
-              <div className="mt-1 font-medium text-[11px] text-slate-500">
-                {stored
-                  ? "この端末に覚えています。担当者名・指名・コメントは読み込むときに落としています"
-                  : "この端末には覚えていません（閉じると読み込み直しです）。担当者名・指名・コメントは読み込むときに落としています"}
-              </div>
+              {dataset.skipped > 0 && (
+                <span className="text-slate-500">
+                  ・読めなかった注文 {dataset.skipped}件
+                </span>
+              )}
             </div>
           ) : (
-            !datasetLoading && (
-              <p role="status" className="font-bold text-[13px] text-amber-950">
-                データがありません。sohosai-analysis の{" "}
-                <code className="font-mono">YYYY/data/day*.json</code>
-                （または cafeore-pos の注文の
-                JSON）を選んでください。day1・day2・day12
-                のように複数を選ぶと、重なる注文は 1 件にまとめます。
-              </p>
-            )
+            <p className="font-bold text-[13px] text-amber-950">
+              データがありません。sohosai-analysis の{" "}
+              <code className="font-mono">YYYY/data/day*.json</code>
+              （または cafeore-pos の注文の
+              JSON）を選んでください。day1・day2・day12
+              のように複数を選ぶと、重なる注文は 1 件にまとめます。
+            </p>
           )}
           <p className="mt-1 font-medium text-[11px] text-slate-500">
-            読み込んだデータはこの端末の中だけで使い、サーバーや配信には出しません。
+            担当者名・指名・コメントは読み込むときに落とします。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
           </p>
           {problems.length > 0 && (
             <p role="alert" className="mt-2 font-bold text-[12px] text-red-700">
@@ -275,18 +157,22 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={datasetLoading}
+              disabled={loading}
               onClick={() => fileInput.current?.click()}
               className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 font-black text-[14px] text-slate-800 disabled:text-slate-400"
             >
               <FileJson className="h-4 w-4" />
-              {dataset ? "ファイルを選び直す" : "JSON ファイルを選ぶ"}
+              {loading
+                ? "読み込み中…"
+                : dataset
+                  ? "ファイルを選び直す"
+                  : "JSON ファイルを選ぶ"}
             </button>
             {dataset && (
               <button
                 type="button"
-                disabled={datasetLoading}
-                onClick={() => void clearData()}
+                disabled={loading}
+                onClick={onClearData}
                 className="flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 font-black text-[14px] text-red-700 disabled:text-slate-400"
               >
                 <Trash2 className="h-4 w-4" />
@@ -299,88 +185,68 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           </p>
         </div>
 
-        {!noData && (
-          <>
-            <div className="mt-5">
-              <div className="mb-2 font-black text-[13px] text-slate-700">
-                プレイ時間
-              </div>
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-                {([30, 60] as const).map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    onClick={() => {
-                      setDuration(minutes);
-                      setSelectedStart(null);
-                    }}
-                    className={`min-h-[48px] rounded-lg font-black text-[15px] ${duration === minutes ? "bg-slate-950 text-white shadow-sm" : "bg-white text-slate-600"}`}
-                  >
-                    {minutes === 30 ? "30分間" : "1時間"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label className="mt-4 block">
-              <span className="mb-2 block font-black text-[13px] text-slate-700">
-                開始時間帯
-              </span>
-              <select
-                value={effectiveStart || ""}
-                disabled={loading || slots.length === 0}
-                onChange={(event) =>
-                  setSelectedStart(Number(event.target.value))
-                }
-                className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-3 font-black text-[16px] text-slate-900"
+        <div className="mt-5">
+          <div className="mb-2 font-black text-[13px] text-slate-700">
+            プレイ時間
+          </div>
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+            {([30, 60] as const).map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                onClick={() => {
+                  setDuration(minutes);
+                  setSelectedStart(null);
+                }}
+                className={`min-h-[48px] rounded-lg font-black text-[15px] ${duration === minutes ? "bg-slate-950 text-white shadow-sm" : "bg-white text-slate-600"}`}
               >
-                {loading && <option>データを読み込み中…</option>}
-                {!loading && slots.length === 0 && (
-                  <option>利用できる時間帯がありません</option>
-                )}
-                {slots.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {formatSlot(slot)}〜（
-                    {countIn(orders, slot, slot + duration * 60_000)}件）
-                  </option>
-                ))}
-              </select>
-            </label>
+                {minutes === 30 ? "30分間" : "1時間"}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 font-bold text-[12px] text-blue-950">
-              選択区間の実注文{" "}
-              <span className="font-black font-mono text-[20px]">
-                {selectedCount}
-              </span>{" "}
-              件を順番に投入します。グッズ（カップを作らない種類）は売上だけに数え、管制盤には抽出が要る品物だけを出します。
-            </div>
-            {(itemTypesFailed || unknownTypes.length > 0) && (
-              <p
-                role="status"
-                className="mt-2 font-bold text-[12px] text-amber-950"
-              >
-                {itemTypesFailed
-                  ? "商品の種類を cafeore-pos から読めませんでした。"
-                  : `今の商品の種類に無い種類（${unknownTypes.join("・")}）があります。`}
-                データに種類の設定があればそれを、無ければ抽出が要る品物として扱います。
-              </p>
+        <label className="mt-4 block">
+          <span className="mb-2 block font-black text-[13px] text-slate-700">
+            開始時間帯
+          </span>
+          <select
+            value={effectiveStart || ""}
+            disabled={loading || slots.length === 0}
+            onChange={(event) => setSelectedStart(Number(event.target.value))}
+            className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-3 font-black text-[16px] text-slate-900"
+          >
+            {orders.length === 0 && <option>データがありません</option>}
+            {orders.length > 0 && slots.length === 0 && (
+              <option>利用できる時間帯がありません</option>
             )}
-          </>
-        )}
+            {slots.map((slot) => {
+              const count = orders.filter((order) => {
+                const created = new Date(order.createdAt).getTime();
+                return created >= slot && created < slot + duration * 60_000;
+              }).length;
+              return (
+                <option key={slot} value={slot}>
+                  {formatSlot(slot)}〜（{count}件）
+                </option>
+              );
+            })}
+          </select>
+        </label>
+
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 font-bold text-[12px] text-blue-950">
+          選択区間の実注文{" "}
+          <span className="font-black font-mono text-[20px]">
+            {selectedCount}
+          </span>{" "}
+          件を順番に投入します。物販は売上分析に含め、管制盤にはドリンクだけを表示します。
+        </div>
 
         <button
           type="button"
-          disabled={effectiveStart === null || loading || noData}
+          disabled={effectiveStart === null || loading}
           onClick={() =>
-            effectiveStart !== null &&
-            dataset &&
-            onStart({
-              label: dataset.label,
-              orders,
-              startMs: effectiveStart,
-              endMs: effectiveStart + duration * 60_000,
-              itemTypes: itemTypes ?? [],
-            })
+            effectiveStart !== null && onStart(effectiveStart, duration)
           }
           className="mt-5 flex min-h-[54px] w-full items-center justify-center gap-2 rounded-xl bg-blue-700 font-black text-[17px] text-white shadow-sm disabled:bg-slate-300"
         >
