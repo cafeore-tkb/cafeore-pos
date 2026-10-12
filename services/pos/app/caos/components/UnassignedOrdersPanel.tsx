@@ -251,7 +251,8 @@ export const UnassignedStrip: React.FC<
                   </span>
                 )}
               </div>
-              <div className="flex w-[180px] flex-col gap-1.5 overflow-hidden whitespace-nowrap">
+              {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・場所の札はカードの外へ出る） */}
+              <div className="flex w-[180px] flex-col gap-1.5 whitespace-nowrap">
                 {entries.map((entry) => (
                   <QueueEntry
                     key={entry.card.key}
@@ -301,7 +302,7 @@ export const OrderQueuePanel: React.FC<
       <ScrollArea
         axis="y"
         className="flex-1"
-        scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-3 pb-8"
+        scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
       >
         {rows.map(({ orderNo, emergency, entries }) => (
           <div
