@@ -1,23 +1,13 @@
-import { type CaosCard, dripperLabel } from "@cafeore/common";
+import { dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import type { OpenNextConfirm } from "../hooks/useNextConfirms";
+import type { OpenToastConfirm } from "../hooks/useToastConfirms";
 import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」とその確かめ・空きスロット・次に空く）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -142,78 +132,66 @@ export const NextButton: React.FC<{
   </button>
 );
 
+// 確かめの文（題・中身・進めるボタン・読み上げの名前）
+const confirmText = (confirm: OpenToastConfirm) =>
+  confirm.kind === "next"
+    ? {
+        label: `${dripperLabel(confirm.bayId)}の「次へ」の確かめ`,
+        title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
+        body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
+        action: "次へ進める",
+      }
+    : {
+        label: `${orderLabel(confirm.card)}の統合の確かめ`,
+        title: `${orderLabel(confirm.card)} を ${orderLabel(confirm.into)} に統合しますか？`,
+        body: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています。`,
+        action: "統合する",
+      };
+
 /**
- * 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）の確かめ。［やめる（残りの秒）］［次へ進める］。
+ * 右上の確かめ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］、
+ * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合は［やめる（残りの秒）］［統合する］。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
- * 右上に新しいものから縦に並べる（置く場所は caos.css の .caos-next-confirms。管制盤 A の右端の「次へ」の列と右のパネルを避ける）
+ * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。管制盤 A の右端の「次へ」の列と右のパネルを避ける）
  */
-export const NextConfirmToasts: React.FC<{
-  confirms: readonly OpenNextConfirm[];
-  onCancel: (bayId: number) => void;
-  onConfirm: (bayId: number) => void;
+export const ToastConfirms: React.FC<{
+  confirms: readonly OpenToastConfirm[];
+  onCancel: (id: string) => void;
+  onConfirm: (id: string) => void;
 }> = ({ confirms, onCancel, onConfirm }) =>
   confirms.length > 0 && (
-    <div className="caos-next-confirms pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
-      {confirms.map(({ bayId, card, elapsedSec, secondsLeft }) => (
-        <section
-          key={bayId}
-          role="alertdialog"
-          aria-label={`${dripperLabel(bayId)}の「次へ」の確かめ`}
-          className="fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 border-orange-600 bg-white p-3 text-slate-950 shadow-2xl duration-200"
-        >
-          <h2 className="font-black text-[16px]">
-            {dripperLabel(bayId)} の {orderLabel(card)} を終えますか？
-          </h2>
-          <p className="mt-1 font-bold text-[13px]">
-            始めてからまだ {clockLabel(elapsedSec)}{" "}
-            です。押す列を間違えていませんか？
-          </p>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onCancel(bayId)}
-              className="h-11 touch-manipulation font-bold"
-            >
-              やめる（{secondsLeft}）
-            </Button>
-            <Button
-              onClick={() => onConfirm(bayId)}
-              className="h-11 touch-manipulation font-bold"
-            >
-              次へ進める
-            </Button>
-          </div>
-        </section>
-      ))}
+    <div className="caos-toast-confirms pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
+      {confirms.map((confirm) => {
+        const { label, title, body, action } = confirmText(confirm);
+        return (
+          <section
+            key={confirm.id}
+            role="alertdialog"
+            aria-label={label}
+            className="fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 border-orange-600 bg-white p-3 text-slate-950 shadow-2xl duration-200"
+          >
+            <h2 className="font-black text-[16px]">{title}</h2>
+            <p className="mt-1 font-bold text-[13px]">{body}</p>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => onCancel(confirm.id)}
+                className="h-11 touch-manipulation font-bold"
+              >
+                やめる（{confirm.secondsLeft}）
+              </Button>
+              <Button
+                onClick={() => onConfirm(confirm.id)}
+                className="h-11 touch-manipulation font-bold"
+              >
+                {action}
+              </Button>
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
-
-/** 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合を確かめる。［やめる］［統合する］ */
-export const MergeConfirmDialog: React.FC<{
-  card: CaosCard;
-  into: CaosCard;
-  elapsedSec: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-}> = ({ card, into, elapsedSec, onCancel, onConfirm }) => (
-  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>
-          {orderLabel(card)} を {orderLabel(into)} に統合しますか？
-        </AlertDialogTitle>
-        <AlertDialogDescription className="font-black text-[16px] text-slate-950">
-          {orderLabel(into)} は抽出を始めてから {clockLabel(elapsedSec)}{" "}
-          たっています。
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>やめる</AlertDialogCancel>
-        <AlertDialogAction onClick={onConfirm}>統合する</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-);
 
 /** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
 export const EmptySlotButton: React.FC<{

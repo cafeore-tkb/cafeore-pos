@@ -39,9 +39,9 @@ import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { type UndoRun, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
-import { useNextConfirms } from "./useNextConfirms";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
+import { useToastConfirms } from "./useToastConfirms";
 
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
@@ -83,12 +83,6 @@ export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
-  // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）。確かめてから統合する
-  const [mergeConfirm, setMergeConfirm] = useState<{
-    card: CaosCard;
-    into: CaosCard;
-    elapsedSec: number;
-  } | null>(null);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
@@ -120,8 +114,9 @@ export const useCaosSession = () => {
     restoreEmergencies,
   } = useCupEmergency();
   const undo = useCaosUndo(realTime.getTime());
-  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
-  const nextConfirms = useNextConfirms(realTime.getTime());
+  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）と、抽出を始めてから時間のたったカードへの統合（caosLateMerge）。
+  // 右上で確かめてから送る
+  const confirms = useToastConfirms(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -171,7 +166,7 @@ export const useCaosSession = () => {
       () => soundManager.playComplete(),
     );
   // 統合（firstKey のカードを intoKey のカードへ）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
-  // checkLate なら送らずに mergeConfirm で確かめる（確かめを開いたら true）
+  // checkLate なら送らずに confirms で確かめる（確かめを出したら true）
   const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
     const card = cardOf(firstKey);
     const into = cardOf(intoKey);
@@ -182,7 +177,7 @@ export const useCaosSession = () => {
     if (blocked) return fail(blocked);
     const elapsedSec = checkLate ? caosLateMerge(into, nowMs) : null;
     if (elapsedSec !== null) {
-      setMergeConfirm({ card, into, elapsedSec });
+      confirms.ask({ kind: "merge", card, into, elapsedSec });
       return true;
     }
     return write(
@@ -357,15 +352,6 @@ export const useCaosSession = () => {
     /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
     merge: (firstKey: string, intoKey: string) =>
       runMerge(firstKey, intoKey, true),
-    /** 確かめている統合（抽出を始めてから時間のたったカードへ。無ければ null） */
-    mergeConfirm,
-    /** 確かめた統合を送る（そのあいだに変わったカードは、今の盤面で確かめ直す） */
-    confirmMerge: () => {
-      if (mergeConfirm)
-        runMerge(mergeConfirm.card.key, mergeConfirm.into.key, false);
-      setMergeConfirm(null);
-    },
-    cancelMerge: () => setMergeConfirm(null),
     /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
       const card = cardOf(key);
@@ -393,22 +379,27 @@ export const useCaosSession = () => {
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
      * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める。
-     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず nextConfirms で確かめる
+     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず confirms で確かめる
      */
     advance: (bayId: number) => {
       const lane = lanes.find((l) => l.id === bayId);
       const early = lane && earlyNext(lane, nowMs);
-      if (early) nextConfirms.ask({ bayId, ...early });
+      if (early) confirms.ask({ kind: "next", bayId, ...early });
       else runNext(bayId, lane?.brewing?.dripId ?? null);
     },
-    /** 確かめている「次へ」（ドリッパーごと。新しいものが先） */
-    nextConfirms: nextConfirms.open,
-    /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
-    confirmNext: (bayId: number) => {
-      const confirm = nextConfirms.take(bayId);
-      if (confirm) runNext(bayId, confirm.card.dripId);
+    /** 右上で確かめている「次へ」と統合（新しいものが先） */
+    confirms: confirms.open,
+    /**
+     * 確かめたものを送る。「次へ」は確かめたカードを終え（そのあいだに終わっていれば断られる）、
+     * 統合はそのあいだに変わったカードを今の盤面で確かめ直す
+     */
+    confirm: (id: string) => {
+      const asked = confirms.take(id);
+      if (!asked) return;
+      if (asked.kind === "next") runNext(asked.bayId, asked.card.dripId);
+      else runMerge(asked.card.key, asked.into.key, false);
     },
-    cancelNext: nextConfirms.dismiss,
+    cancelConfirm: confirms.dismiss,
     /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
     undo: {
       label: undo.label,
@@ -419,7 +410,7 @@ export const useCaosSession = () => {
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
       undo.forget();
-      nextConfirms.clear();
+      confirms.clear();
       test.clear();
       setIsRunning(true);
       soundManager.playDispatch();
@@ -442,7 +433,7 @@ export const useCaosSession = () => {
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
         undo.forget();
-        nextConfirms.clear();
+        confirms.clear();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
         setSimSpeed(TEST_START_SPEED);
