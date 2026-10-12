@@ -31,7 +31,7 @@ export default function LiberoBoard() {
   const rows = liberoLanes(lanes, nowMs);
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+    <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
       <ViewHeader nowMs={nowMs} status={status}>
         <fieldset aria-label="並び" className={`ml-auto ${SEGMENTS}`}>
           {ORDERS.map(({ id, label }) => (

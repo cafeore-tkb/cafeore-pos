@@ -7,8 +7,10 @@ import {
   Database,
   Eye,
   LayoutGrid,
+  type LucideIcon,
   Pause,
   Play,
+  Printer,
   RotateCcw,
   Undo2,
   Volume2,
@@ -18,12 +20,16 @@ import type React from "react";
 import { Link } from "react-router";
 import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
+import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 
 export type NavTab = "control" | AuxiliaryTab;
+
+/** シールのプリンターがつながっているか（usePrinter の status） */
+type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
 
 // 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
 const NAV_ITEMS = [
@@ -57,8 +63,13 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
-  /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
-  labelPrinter: { pendingCount: number; retry: () => void };
+  /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し） */
+  labelPrinter: {
+    status: LabelPrinterStatus;
+    certificateUrl: string;
+    pendingCount: number;
+    retry: () => void;
+  };
   /** この端末のまだ送れていない盤面の操作の数と、送り直し */
   unsent: { count: number; retry: () => void };
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
@@ -71,46 +82,68 @@ interface TopHeaderProps {
   onUndo: () => void;
 }
 
-// 注文の接続の札（文字・枠・点の色）
-const POS_STATUS: Record<
-  PosConnectionStatus,
-  { label: string; box: string; dot: string }
-> = {
+// 接続の札の色（枠・点）。注文の接続とシールのプリンターで共通
+const TONES = {
   off: {
-    label: "実データテスト中は停止",
     box: "border-slate-200 bg-slate-100 text-slate-400",
     dot: "bg-slate-300",
   },
-  connecting: {
-    label: "接続中",
+  waiting: {
     box: "border-amber-300 bg-amber-50 text-amber-800",
     dot: "bg-amber-400",
   },
-  open: {
-    label: "接続済み",
+  ok: {
     box: "border-emerald-300 bg-emerald-50 text-emerald-800",
     dot: "bg-emerald-500",
   },
-  reconnecting: {
-    label: "再接続中",
-    box: "border-amber-300 bg-amber-50 text-amber-800",
-    dot: "bg-amber-400",
-  },
+  ng: { box: "border-red-200 bg-red-50 text-red-500", dot: "bg-red-500" },
+};
+type Tone = keyof typeof TONES;
+
+/** 接続の札（印と、色の点）。何がどうかは label（読み上げと、押し続けたときの title） */
+const StatusBadge: React.FC<{
+  icon: LucideIcon;
+  label: string;
+  tone: Tone;
+}> = ({ icon: Icon, label, tone }) => (
+  <output
+    aria-label={label}
+    title={label}
+    className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${TONES[tone].box}`}
+  >
+    <Icon className="h-4 w-4" />
+    <span className={`h-2 w-2 rounded-full ${TONES[tone].dot}`} />
+  </output>
+);
+
+const POS_STATUS: Record<PosConnectionStatus, { label: string; tone: Tone }> = {
+  off: { label: "実データテスト中は停止", tone: "off" },
+  connecting: { label: "接続中", tone: "waiting" },
+  open: { label: "接続済み", tone: "ok" },
+  reconnecting: { label: "再接続中", tone: "waiting" },
 };
 
 /** 注文の接続の札（閲覧だけの画面（ReadOnlyBoard）でも使う） */
 export const PosStatusBadge: React.FC<{ status: PosConnectionStatus }> = ({
   status,
 }) => (
-  <output
-    aria-label={`cafeore-pos ${POS_STATUS[status].label}`}
-    title={`cafeore-posの注文: ${POS_STATUS[status].label}`}
-    className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${POS_STATUS[status].box}`}
-  >
-    <Database className="h-4 w-4" />
-    <span className={`h-2 w-2 rounded-full ${POS_STATUS[status].dot}`} />
-  </output>
+  <StatusBadge
+    icon={Database}
+    label={`cafeore-posの注文: ${POS_STATUS[status].label}`}
+    tone={POS_STATUS[status].tone}
+  />
 );
+
+// シールのプリンターの札（つなぐ前はつないでいるところとして出す）
+const PRINTER_STATUS: Record<
+  LabelPrinterStatus,
+  { label: string; tone: Tone }
+> = {
+  init: { label: "接続中", tone: "waiting" },
+  connecting: { label: "接続中", tone: "waiting" },
+  connected: { label: "接続完了", tone: "ok" },
+  disconnected: { label: "未接続", tone: "ng" },
+};
 
 // 「テスト」の色。テスト中は濃い青、テストを終えてもテストの盤面のあいだは本番と見分けられる色
 const testButtonTone = (testPlaying: boolean, testBoard: boolean) => {
@@ -153,8 +186,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
-      {/* まだ送れていない盤面の操作と、刷れずに残っているシール。ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
+      {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
+          ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
       <div className="absolute top-full right-[108px] z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+        {labelPrinter.status === "disconnected" && (
+          <PrinterStatus
+            name="ラベル"
+            status={labelPrinter.status}
+            certificateUrl={labelPrinter.certificateUrl}
+          />
+        )}
         <PendingPrints
           count={unsent.count}
           onRetry={unsent.retry}
@@ -329,7 +370,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </Link>
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
-        <PosStatusBadge status={posStatus} />
+        {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
+        <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0 [&_svg]:h-3.5 [&_svg]:w-3.5">
+          <PosStatusBadge status={posStatus} />
+          <StatusBadge
+            icon={Printer}
+            label={`ラベルプリンター: ${PRINTER_STATUS[labelPrinter.status].label}`}
+            tone={PRINTER_STATUS[labelPrinter.status].tone}
+          />
+        </div>
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
