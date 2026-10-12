@@ -48,6 +48,7 @@ func validateCaosUndo(req models.CaosUndoRequest, now time.Time) error {
 				return errors.New("ドリッパーに置くカップには drip_id と dripper_position が要ります")
 			}
 		}
+		// 始めた時刻は、抽出中のカードを動かして消した・付け直した前の時刻を戻すので、今の時刻と違ってよい（今日の今までの時刻だけ）
 		if t := r.BrewStartedAt; t != nil && (t.Before(today) || t.After(now)) {
 			return errors.New("戻す始めた時刻は、今日の今までの時刻だけです")
 		}

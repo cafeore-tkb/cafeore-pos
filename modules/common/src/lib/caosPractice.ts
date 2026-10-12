@@ -159,7 +159,7 @@ const validateAfter = (after: CaosCupsWrite["after"]) => {
   if (after.insert_before !== null && after.insert_before === after.drip_id)
     return "自分のカードの前には入れられません";
   if (after.insert_before !== null && after.start_brew)
-    return "抽出を始めるのは空いているドリッパーだけなので、前に入れるカードは決められません";
+    return "列の先頭に入れて始めるときは、前に入れるカードは決められません";
   return null;
 };
 
@@ -281,6 +281,23 @@ export const applyCaosPracticeWrites = (
     }
   }
 
+  // 抽出を始めるドリッパー。抽出中が無く待機のある列は、待機の先頭を飛ばさず「次へ」で始める（サーバーの requireCaosStartable）
+  const starting = new Set(
+    writes.flatMap(({ after }) =>
+      after.start_brew && after.dripper !== null ? [after.dripper] : [],
+    ),
+  );
+  for (const dripper of starting) {
+    const lane = caosLane(buildCaosCards(orders), dripper);
+    if (
+      !lane.brewing &&
+      lane.queued.some((card) => card.cups.some((cup) => !seen.has(cup.id)))
+    )
+      return {
+        error: `${dripper} 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください`,
+      };
+  }
+
   const next = cloneOrders(orders);
   const touched = new Set<string>();
   for (const write of writes) {
@@ -318,11 +335,14 @@ export const applyCaosPracticeWrites = (
       cups.push(cup);
     }
     // 終わったカードは動かさない（終えるのは「次へ」）。抽出中のカードは動かせるが、ほかのカードには統合せず、分けない（サーバーの checkCaosStartedMove）
-    if (before.brewStartedAt !== null || before.brewFinishedAt !== null) {
+    if (before.brewStartedAt !== null) {
       if (before.brewFinishedAt !== null || ready)
         return { error: "終わったカードは動かせません" };
       if (write.after.drip_id !== null && write.after.drip_id !== before.dripId)
-        return { error: "抽出中のカードはほかのカードに統合できません" };
+        return {
+          error:
+            "抽出中のカードの drip_id は変えられません（ほかのカードに統合もできません）",
+        };
       if (
         allUnits(next).some(
           (unit) =>
@@ -372,11 +392,8 @@ export const applyCaosPracticeWrites = (
   }
   // 抽出を始めたドリッパーで、抽出中は 1 枚だけ（サーバーの caosBrewingTwice）
   const cards = buildCaosCards(next);
-  for (const write of writes) {
-    const dripper = write.after.dripper;
+  for (const dripper of starting) {
     if (
-      write.after.start_brew &&
-      dripper !== null &&
       cards.filter(
         (card) => card.dripper === dripper && card.status === "brewing",
       ).length > 1

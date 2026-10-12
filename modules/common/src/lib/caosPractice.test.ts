@@ -501,6 +501,22 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(applyCaosPracticeWrites(orders, twoBrews, at(0)).error).toBe(
       "1 番のドリッパーはもう抽出中です",
     );
+    // 抽出中が無く待機のあるドリッパーで、待機の先頭を飛ばして始めることはできない（始めるのは「次へ」）
+    const queued = apply(
+      orders,
+      {
+        writes: [
+          {
+            ...twoBrews[0],
+            after: { ...twoBrews[0].after, start_brew: false },
+          },
+        ],
+      },
+      at(0),
+    );
+    expect(applyCaosPracticeWrites(queued, [twoBrews[1]], at(0)).error).toBe(
+      "1 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください",
+    );
     expect(orders[0].cups[0].dripId).toBeNull();
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
     // 抽出中のカードはほかのカードに統合しない。終わったカードは動かさない
@@ -522,7 +538,9 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
         [write({ ...twoBrews[1].after, start_brew: false })],
         at(1),
       ).error,
-    ).toBe("抽出中のカードはほかのカードに統合できません");
+    ).toBe(
+      "抽出中のカードの drip_id は変えられません（ほかのカードに統合もできません）",
+    );
     const advanced = advanceCaosPracticeDripper(brewed, 1, "b0", at(20));
     if (advanced.error !== undefined) throw new Error(advanced.error);
     brewed = advanced.orders;

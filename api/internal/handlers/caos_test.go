@@ -299,13 +299,13 @@ func TestCaosWriteCupsOnDB(t *testing.T) {
 	if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(2, card1, false))); code != http.StatusConflict {
 		t.Fatalf("stale before = %d, want 409", code)
 	}
-	// 抽出中のカードはほかのカードに統合しない。before の時刻はミリ秒までで比べる
-	// （画面の Date はミリ秒まで）ので、ミリ秒より細かい違いは 409 でなく、統合だから断る 400
+	// 抽出中のカードの drip_id は変えられない（ほかのカードに統合もしない）。before の時刻はミリ秒までで比べる
+	// （画面の Date はミリ秒まで）ので、ミリ秒より細かい違いは 409 でなく、drip_id を変えるから断る 400
 	before := f.state(t, o1.OrderCups[0].ID)
 	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(500 * time.Microsecond)
 	if code, body := f.put(t, write(ids(o1.OrderCups[:2]...), before, placed(2, uuid.New(), false))); code != http.StatusBadRequest ||
-		!strings.Contains(body, "統合できません") {
-		t.Fatalf("merge a brewing card = %d: %s, want 400", code, body)
+		!strings.Contains(body, "drip_id は変えられません") {
+		t.Fatalf("change the drip_id of a brewing card = %d: %s, want 400", code, body)
 	}
 	before["brew_started_at"] = f.cup(t, o1.OrderCups[0].ID).BrewStartedAt.Add(time.Millisecond)
 	if code, _ := f.put(t, write(ids(o1.OrderCups[:2]...), before, placed(2, card1, false))); code != http.StatusConflict {
@@ -542,6 +542,8 @@ func TestCaosNextOnDB(t *testing.T) {
 
 // 抽出を始められるのは、空いている（そのカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ。
 // 待機があるときに始めるのは「次へ」（待機の先頭）。画面の assignWrites も空いているドリッパーへの割当だけ start_brew を送る
+// TestCaosStartBrewOnDB は start_brew（列の先頭に入れて今から始める）を確かめる。抽出中が無く待機のある列では待機の先頭を飛ばさず、
+// 抽出中のある列では同じ書き込みで抽出中を待機に下げたときだけ始められる。
 func TestCaosStartBrewOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -558,10 +560,15 @@ func TestCaosStartBrewOnDB(t *testing.T) {
 		}
 	}
 
-	// 抽出中の無いドリッパーなら、待機があっても列の先頭に入れて始められる（待機はそのまま）
+	// 抽出中が無く待機のあるドリッパーでは、待機の先頭を飛ばして始められない（始めるのは「次へ」）。待機がそのカードだけなら始められる
 	f.mustPut(t, write(ids(o[0].OrderCups[0]), unassigned, placed(1, a, false)))
-	f.mustPut(t, write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, true)))
-	expectLane(1, []uuid.UUID{b}, a)
+	if code, body := f.put(t, write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, true))); code != http.StatusBadRequest ||
+		!strings.Contains(body, "待機のカードがある") {
+		t.Fatalf("start skipping the queue = %d: %s, want 400", code, body)
+	}
+	f.mustPut(t, write(ids(o[0].OrderCups[0]), f.state(t, cupOf(0)), placed(1, a, true)))
+	f.mustPut(t, write(ids(o[1].OrderCups[0]), unassigned, placed(1, b, false)))
+	expectLane(1, []uuid.UUID{a}, b)
 	// 抽出中があれば、それを待機に下げずに始めることはできない（400。何も書かない）
 	if code, body := f.put(t, write(ids(o[2].OrderCups[0]), unassigned, placed(1, c, true))); code != http.StatusBadRequest ||
 		!strings.Contains(body, "もう抽出中") {
@@ -570,13 +577,13 @@ func TestCaosStartBrewOnDB(t *testing.T) {
 	if cup := f.cup(t, cupOf(2)); cup.Dripper != nil {
 		t.Fatalf("cup = %+v, want unassigned", cup)
 	}
-	// 同じ書き込みで抽出中を待機の先頭に下げれば始められる。書き込みの順によらない（確かめるのは全部書いたあと）
+	// 同じ書き込みで抽出中を待機の先頭に下げれば始められる。書き込みの順によらない（抽出中の枚数を確かめるのは全部書いたあと）
 	f.mustPut(t,
 		write(ids(o[2].OrderCups[0]), unassigned, placed(1, c, true)),
-		write(ids(o[1].OrderCups[0]), f.state(t, cupOf(1)), placedBefore(1, b, a)),
+		write(ids(o[0].OrderCups[0]), f.state(t, cupOf(0)), placedBefore(1, a, b)),
 	)
-	expectLane(1, []uuid.UUID{c}, b, a)
-	if cup := f.cup(t, cupOf(1)); cup.BrewStartedAt != nil {
+	expectLane(1, []uuid.UUID{c}, a, b)
+	if cup := f.cup(t, cupOf(0)); cup.BrewStartedAt != nil {
 		t.Fatalf("demoted card = %+v, want no start", cup)
 	}
 	// 空いているドリッパーへ置いてそのまま始める

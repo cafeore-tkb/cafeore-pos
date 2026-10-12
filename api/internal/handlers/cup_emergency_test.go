@@ -450,7 +450,6 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 }
 
-// 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない
 // 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
 // 使った時刻は今の始めた時刻（消したらまだ使っていない、始め直したらその時刻）
 func TestCupEmergencyMoveStockOnDB(t *testing.T) {
@@ -517,6 +516,7 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	expect("戻した")
 }
 
+// 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない
 func TestCupEmergencyReasonOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)

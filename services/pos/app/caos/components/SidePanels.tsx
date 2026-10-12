@@ -1,7 +1,6 @@
 import {
   type CaosCard,
   type CaosOrderInput,
-  type CaosPlace,
   DRIPPER_NUMBERS,
   canSplitCard,
   caosBrewSec,
@@ -28,6 +27,7 @@ import { type Lane, laneActive, moveTargets } from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
+import type { ControlViewProps } from "./ControlWorkspace";
 import {
   LaneAbility,
   LaneChangeButton,
@@ -184,10 +184,10 @@ export const AssignPanel: React.FC<{
 };
 
 /** カードを動かす操作（待機の詳細と、抽出中のカードの緊急のパネルで共通） */
-type MoveActions = {
-  onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  onReturnToUnassigned: (card: CaosCard) => void;
-};
+type MoveActions = Pick<
+  ControlViewProps,
+  "onMoveTicket" | "onReturnToUnassigned"
+>;
 
 // 待機・抽出中のカードを別のドリッパーへ・先頭へ（今のドリッパーのボタン。抽出中のカードは今が先頭なので押せない）・未割当に戻す。押したら onDone
 const MoveCardButtons: React.FC<

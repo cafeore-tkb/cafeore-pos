@@ -349,6 +349,11 @@ export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
   };
 };
 
+/** 列の終わっていないカード（抽出中・待機の順。列の先頭は抽出中） */
+export const laneActive = (
+  lane: Pick<ReturnType<typeof caosLane>, "brewing" | "queued">,
+) => (lane.brewing ? [lane.brewing, ...lane.queued] : lane.queued);
+
 // ---------------------------------------------------------------- 書き込み
 //
 // 順番の数（dripper_position）は画面では決めない。送るのは「どのドリッパーの、どのカードの前に入れるか」（after の insert_before）だけで、
@@ -423,7 +428,7 @@ export const assignWrites = (
       error: `指名のあるカードは ${dripperLabel(card.nominatedDripper ?? dripper)} のドリッパーにしか置けません`,
     };
   const lane = caosLane(cards, dripper);
-  const active = lane.brewing ? [lane.brewing, ...lane.queued] : lane.queued;
+  const active = laneActive(lane);
   // card を除いた列（抽出中・待機の順）と、そこへ入れる位置
   const rest = active.filter((other) => other.key !== card.key);
   let index = rest.length;

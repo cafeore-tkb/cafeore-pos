@@ -827,7 +827,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(canMergeCards(named, q2)).toBe(false);
   });
 
-  test("抽出を始めたカードにも 1 杯を足せる（抽出中のカードは書かない。開始の時刻はサーバーが写す）。抽出中・終わりのカードは動かさない", () => {
+  test("抽出を始めたカードにも 1 杯を足せる（抽出中のカードは書かない。開始の時刻はサーバーが写す）。抽出中のカードはほかのカードに入れず、終わったカードには入れない", () => {
     const cards = board();
     const brewing = find(cards, (c) => c.dripId === "brewing");
     const o5 = find(cards, (c) => c.orderNo === 5);

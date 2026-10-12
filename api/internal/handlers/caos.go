@@ -142,7 +142,7 @@ func validateCaosAfter(a models.CaosCupAfter) error {
 		return errors.New("自分のカードの前には入れられません")
 	}
 	if a.InsertBefore != nil && a.StartBrew {
-		return errors.New("抽出を始めるのは空いているドリッパーだけなので、前に入れるカードは決められません")
+		return errors.New("列の先頭に入れて始めるときは、前に入れるカードは決められません")
 	}
 	return nil
 }
@@ -446,6 +446,26 @@ func placeCaosCups(tx *gorm.DB, w models.CaosCupsWrite, start, end time.Time) (c
 	return caosPlace{position: p}, shifted, err
 }
 
+// requireCaosStartable は、書く前のドリッパーで抽出を始めてよいかを確かめる（400）。抽出中のカードがあれば（先頭に入れ、同じ書き込みで待機に下げる）、
+// または cupIDs（書くカップ）のほかに待機のカードが無ければ始められる。抽出中が無く待機のある列は、待機の先頭を飛ばさず「次へ」で始める
+// （画面の assignWrites と同じ決まり）。書く前に、そのドリッパーの advisory lock を取ったまま呼ぶ（writeCups）。
+func requireCaosStartable(tx *gorm.DB, drippers []int, cupIDs []uuid.UUID, start, end time.Time) error {
+	for _, d := range sortedUnique(drippers, cmp.Compare) {
+		rows, err := readCaosLane(tx, d, start, end)
+		if err != nil {
+			return err
+		}
+		brewing, queued := splitCaosLane(rows)
+		others := slices.ContainsFunc(queued, func(card *caosLaneCard) bool {
+			return slices.ContainsFunc(card.cups, func(r caosUnit) bool { return !slices.Contains(cupIDs, r.ID) })
+		})
+		if len(brewing) == 0 && others {
+			return ruleErrorf("%d 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください", d)
+		}
+	}
+	return nil
+}
+
 // caosBrewingTwice は、drippers のうち抽出中のカードが 2 枚以上あるドリッパーを返す（無ければ 0）。抽出中は「次へ」と同じ決まりで数える（splitCaosLane）。
 // 書いたあとに、そのドリッパーの advisory lock を取ったまま呼ぶ（PUT・「1つ戻す」）。
 func caosBrewingTwice(tx *gorm.DB, drippers []int, start, end time.Time) (int, error) {
@@ -557,6 +577,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			lockedByID[c.ID] = c
 		}
 
+		if err := requireCaosStartable(tx, starting, cupIDs, start, end); err != nil {
+			return err
+		}
 		for _, w := range writes {
 			ready := true
 			for _, id := range w.CupIds {
@@ -578,7 +601,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			}
 			// 終わったカード（終了の時刻があるか、抽出中でカップが全部準備完了。splitCaosLane と同じ）は動かさない（終えるのは「次へ」）。
 			// 抽出中のカードは動かせる（始めた時刻を消すか、start_brew なら今から始め直す）が、ほかのカードには統合せず、分けない
-			if w.Before.BrewStartedAt != nil || w.Before.BrewFinishedAt != nil {
+			if w.Before.BrewStartedAt != nil {
 				if err := checkCaosStartedMove(tx, w, ready); err != nil {
 					return err
 				}
@@ -628,7 +651,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 	return orderIDs, err
 }
 
-// checkCaosStartedMove は、抽出中・終わりのカード（w.Before に時刻がある）を動かす書き込みを確かめる（400）。
+// checkCaosStartedMove は、抽出を始めたカード（抽出中・終わり。w.Before に始めた時刻がある）を動かす書き込みを確かめる（400）。
 // ready は書くカップが全部準備完了か（抽出中でも全部準備完了なら終わり。splitCaosLane と同じ）。
 // 抽出中のカードは、ほかのカードに統合せず、カップを全部いっしょに動かす（統合の解除は待機・未割当のカードだけ）。
 func checkCaosStartedMove(tx *gorm.DB, w models.CaosCupsWrite, ready bool) error {
@@ -636,7 +659,7 @@ func checkCaosStartedMove(tx *gorm.DB, w models.CaosCupsWrite, ready bool) error
 	case w.Before.BrewFinishedAt != nil || ready:
 		return ruleErrorf("終わったカードは動かせません")
 	case w.After.DripId != nil && !ptrEqual(w.After.DripId, w.Before.DripId):
-		return ruleErrorf("抽出中のカードはほかのカードに統合できません")
+		return ruleErrorf("抽出中のカードの drip_id は変えられません（ほかのカードに統合もできません）")
 	}
 	rest, err := readCaosUnits(tx, "c.drip_id = ? AND c.id NOT IN ?", w.Before.DripId, w.CupIds)
 	if err != nil {
