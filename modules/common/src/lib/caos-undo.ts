@@ -22,6 +22,9 @@ import type { LaneAssignment } from "./caosLanes";
 // 緊急（入れ直し）もカップと同じく扱う（id は入れ直しの id。入れ直しは準備完了を持たない）。
 // 担当者の交代（見出しの「交代」ですぐ替えたもの）も、今の担当者が交代のあとのままのときだけ前の人に戻す（caosLaneUndoBlock）。
 
+/** 操作のあと「1つ戻す」が押せる秒（CaOS の画面と、提供の画面の呼び出しを戻すとき） */
+export const CAOS_UNDO_SEC = 10;
+
 /** 「1つ戻す」で比べる・書き戻すカップの値 */
 type UndoCupState = CaosCupState & Pick<CaosBoardCup, "readyAt">;
 
@@ -40,7 +43,10 @@ export interface CaosUndoEntry {
     id: string;
     restore: UndoCupState;
     expect: UndoExpect;
-    /** 準備完了は今のまま残す（その操作で付いたのではない準備完了。undoOfOrderReady） */
+    /**
+     * 準備完了は今のまま残す（その操作で付いたのではない準備完了。undoOfOrderReady）。
+     * 提供の画面が直接送るときだけ使う（caos-outbox の applyUndo は見ないので、この操作は outbox に入れない）
+     */
     keepReady?: true;
   }[];
 }
@@ -178,6 +184,8 @@ export const undoOfOrderReady = (
       ?.cups.filter((cup) => cup.readyAt === null)
       .map((cup) => cup.id),
   );
+  // 呼び出したあとの盤面。準備完了の時刻はサーバーが付けるので手元の時刻で代わりにする
+  // （この注文のカップは keepReady なので、restore の readyAt に入るこの時刻は送らない）
   const calledAt = new Date();
   const called = buildCaosCards(
     orders.map((order) =>

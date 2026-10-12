@@ -214,6 +214,7 @@ const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
+  // keepReady（提供の画面の呼び出しを戻すとき）の操作は outbox に入れないので見ない
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
   const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
   return {

@@ -1,8 +1,6 @@
+import { CAOS_UNDO_SEC } from "@cafeore/common";
 import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
-
-// 操作のあと「1つ戻す」が押せる秒
-export const UNDO_SEC = 10;
 
 /** 戻す処理。戻せたら true、断られたら理由を通知で出して false。"retry" なら覚えたままにする（もう一度押せる） */
 export type UndoRun = () => UndoResult | Promise<UndoResult>;
@@ -53,7 +51,7 @@ export const useRememberUndo = () => {
   return setLast && rememberWith(setLast);
 };
 
-// 「1つ戻す」。この画面が最後にした操作（盤面の操作と、見出しの「交代」ですぐ替えた担当者）を 1 つだけ、UNDO_SEC 秒のあいだ覚える（画面のメモリだけ。再読み込みで消える）。
+// 「1つ戻す」。この画面が最後にした操作（盤面の操作と、見出しの「交代」ですぐ替えた担当者）を 1 つだけ、CAOS_UNDO_SEC 秒のあいだ覚える（画面のメモリだけ。再読み込みで消える）。
 // nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。戻したら（断られても）忘れる（結果がまだ届いていないときは覚えたまま）。
 export const useCaosUndo = (nowMs: number) => {
   const store = useContext(CaosUndoContext);
@@ -63,7 +61,10 @@ export const useCaosUndo = (nowMs: number) => {
   // 二度押し（画面が変わる前に続けて押した）で 2 回送らない
   const running = useRef(false);
   const secondsLeft = last
-    ? Math.min(UNDO_SEC, Math.ceil(UNDO_SEC - (nowMs - last.atMs) / 1000))
+    ? Math.min(
+        CAOS_UNDO_SEC,
+        Math.ceil(CAOS_UNDO_SEC - (nowMs - last.atMs) / 1000),
+      )
     : 0;
   const action = secondsLeft > 0 ? last : null;
 

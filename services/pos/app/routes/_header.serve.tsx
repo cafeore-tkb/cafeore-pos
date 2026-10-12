@@ -49,7 +49,7 @@ export default function Serve() {
           .map((order) => {
             return (
               order.servedAt === null && (
-                <ServeOrderCard key={order.id} order={order} orders={orders} />
+                <ServeOrderCard key={order.id} order={order} />
               )
             );
           })}
@@ -59,14 +59,7 @@ export default function Serve() {
 }
 
 // 提供画面の注文カード。カップを1杯ずつ出し、押すと 準備中 → 提供可能 → 提供済み → 準備中 と回す
-const ServeOrderCard = ({
-  order,
-  orders,
-}: {
-  order: WithId<OrderEntity>;
-  // CaOS の盤面を組み立てる（呼び出しで進んだ「次へ」を戻す）
-  orders: WithId<OrderEntity>[];
-}) => {
+const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
   // カップの状態も、押してから配信が届くまでの間は押した後の状態を表示する
   const cupPending = usePendingStatus<CupStatus>(order);
   const send =
@@ -81,12 +74,13 @@ const ServeOrderCard = ({
   // 注文単位の呼び出し・提供も、押してから配信が届くまでの間は押した後の状態を表示する
   const orderPending = usePendingStatus<boolean>(order);
   const isReady = orderPending.statusOf("ready", order.readyAt !== null);
-  const advance = useReadyAdvanceUndo(order.id, orders);
+  const advance = useReadyAdvanceUndo(order.id);
   const changeReady = () => {
     if (orderPending.isBusy("ready")) return;
-    if (!isReady) advance.remember();
     orderPending.run("ready", !isReady, async () => {
       if (isReady) await advance.undo();
+      // 呼び出す前の盤面を覚える（await より前なので、押したときの注文で見る）
+      else advance.remember();
       await orderRepository.ready(order.id);
       return undefined;
     });
