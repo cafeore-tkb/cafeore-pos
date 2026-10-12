@@ -23,7 +23,7 @@ import type { PracticeDataItemType } from "./caosPracticeData";
 // （api/internal/handlers/caos.go の writeCups・placeCaosCups・advance と、同じ確かめ方・同じ理由の文。
 // サーバーを使わずに練習するため、わざと 2 か所に持つ。決まりや文を変えるときは両方そろえること）。
 // ドリッパーの列の分け方は、API の splitCaosLane と同じ結果になる本番の caosLane をそのまま使う。
-//   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。上級生のみのカードは本番と同じく、どのドリッパーにも置ける
+//   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。練習には担当者がいないので、上級生のみのカードは（指名の無いカードも）どのドリッパーにも置ける
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
 

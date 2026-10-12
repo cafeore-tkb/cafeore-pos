@@ -7,6 +7,7 @@ import { type CaosCard, caosLane } from "./caos-board";
 // 上級生かは、交代した時点で画面が sohosai-shift の名簿で判定した値をサーバーに持つ。
 //
 // 上級生のみのカード（種類の senior_only）は、担当者が上級生のドリッパーにしか置けない（サーバーの PUT /api/caos/cups と同じ決まり）。
+// 指名のあるカードは指名を優先し、指名のドリッパーの担当者が上級生でなくても置ける。
 
 export type CaosLane = components["schemas"]["CaosLane"];
 export type CaosLanes = components["schemas"]["CaosLanes"];
@@ -40,36 +41,60 @@ export const todaysCaosLanes = (
   });
 
 /**
- * カードをそのドリッパーへ置けない理由（上級生のみのカードで、担当者が上級生でない）。置けるなら null。lanes は todaysCaosLanes の担当者。
+ * 担当者が上級生のドリッパーにしか置けないカードか。上級生のみで指名の無いカード。
+ * 指名のあるカードは指名のドリッパーにしか置けない（assignWrites）ので、その担当者が上級生でなくても置ける（指名が上級生のみより強い）
+ */
+const needsSeniorLane = (
+  card: Pick<CaosCard, "seniorOnly" | "nominatedDripper">,
+) => card.seniorOnly && card.nominatedDripper === null;
+
+/**
+ * カードをそのドリッパーへ置けない理由（needsSeniorLane のカードで、担当者が上級生でない）。置けるなら null。lanes は todaysCaosLanes の担当者。
  * サーバーと同じく、別のドリッパーへ置くときだけ確かめる（同じドリッパーの中の順番の入れ替えは確かめない。
- * 担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）。
- * 指名（カードの nominatedDripper）のほかのドリッパーへ置けないのは assignWrites が確かめる。両方が効くので、
- * 指名のドリッパーの担当者が上級生でない上級生のみのカードは、どこにも置けない（上級生のみが指名より強い。担当者を上級生に替えれば置ける）
+ * 担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）
  */
 export const seniorOnlyBlock = (
   card: Pick<CaosCard, "seniorOnly" | "dripper" | "nominatedDripper">,
   dripper: number,
   lanes: readonly CaosLane[],
 ): string | null => {
-  if (!card.seniorOnly || card.dripper === dripper) return null;
+  if (!needsSeniorLane(card) || card.dripper === dripper) return null;
   if (lanes.some((lane) => lane.dripper === dripper && lane.senior))
     return null;
-  if (card.nominatedDripper === dripper)
-    return `上級生のみのカードは上級生のドリッパーにしか置けません（指名の ${dripperLabel(dripper)} の担当者は上級生ではありません。担当者を上級生に替えると置けます）`;
   return `上級生のみのカードは上級生のドリッパーにしか置けません（${dripperLabel(dripper)} の担当者は上級生ではありません）`;
 };
 
-/** そのドリッパーで待っている（まだ始めていない）上級生のみのカードの枚数 */
+/**
+ * card を into に統合できない理由（seniorOnlyBlock）。統合したあとのカード（指名はどちらかの指名）を into のドリッパーに置くとみる
+ * （サーバーも統合したあとのカードで確かめる）。into が未割当なら null
+ */
+export const seniorOnlyMergeBlock = (
+  card: Pick<CaosCard, "seniorOnly" | "dripper" | "nominatedDripper">,
+  into: Pick<CaosCard, "dripper" | "nominatedDripper">,
+  lanes: readonly CaosLane[],
+) =>
+  into.dripper === null
+    ? null
+    : seniorOnlyBlock(
+        {
+          ...card,
+          nominatedDripper: card.nominatedDripper ?? into.nominatedDripper,
+        },
+        into.dripper,
+        lanes,
+      );
+
+/** そのドリッパーで待っている（まだ始めていない）、上級生のドリッパーにしか置けないカード（needsSeniorLane）の枚数 */
 export const queuedSeniorOnlyCards = (
   cards: readonly CaosCard[],
   dripper: number,
-) => caosLane(cards, dripper).queued.filter((card) => card.seniorOnly).length;
+) => caosLane(cards, dripper).queued.filter(needsSeniorLane).length;
 
 /** 交代したあとの担当者（name が空なら担当者なし） */
 export type LaneAssignment = Pick<CaosLane, "dripper" | "name" | "senior">;
 
 /**
- * 交代・入れ替えの確認の文。上級生でない人（担当者なしも）にするドリッパーに上級生のみのカードが待っていれば、ドリッパーごとに 1 行。
+ * 交代・入れ替えの確認の文。上級生でない人（担当者なしも）にするドリッパーに、指名の無い上級生のみのカードが待っていれば、ドリッパーごとに 1 行。
  * 無ければ空（確かめずに替える）。single なら 1 つのドリッパーの交代（「このドリッパーに」と書く）
  */
 export const laneChangeWarnings = (
@@ -87,5 +112,7 @@ export const laneChangeWarnings = (
     const who = change.name
       ? `${change.name}さんは上級生ではありません`
       : "担当者がいなくなります";
-    return [`${where}に上級生のみのカードが${count}枚あります（${who}）`];
+    return [
+      `${where}に指名の無い上級生のみのカードが${count}枚あります（${who}）`,
+    ];
   });

@@ -9,6 +9,7 @@ import {
   mergeWrites,
   moveQueueWrites,
   seniorOnlyBlock,
+  seniorOnlyMergeBlock,
   splitWrites,
   unassignWrites,
   undoOfNext,
@@ -87,7 +88,7 @@ export const useCaosSession = () => {
     nowMs: realTime.getTime(),
   });
   const source = test.session ? test : live;
-  // ドリッパーの担当者（サーバーの今日の担当者）。本番では、上級生のみのカードは上級生のドリッパーにしか置けない（サーバーも確かめる）
+  // ドリッパーの担当者（サーバーの今日の担当者）。本番では、指名の無い上級生のみのカードは上級生のドリッパーにしか置けない（サーバーも確かめる）
   const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
@@ -121,7 +122,7 @@ export const useCaosSession = () => {
 
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
-  // 本番では、上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
+  // 本番では、指名の無い上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
   const seniorBlock = (card: CaosCard, dripper: number) =>
     test.session ? null : seniorOnlyBlock(card, dripper, people);
   // 送った操作が通ったら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
@@ -266,8 +267,9 @@ export const useCaosSession = () => {
       const card = cardOf(firstKey);
       const into = cardOf(intoKey);
       if (!card || !into) return fail(NOT_FOUND);
-      const blocked =
-        into.dripper === null ? null : seniorBlock(card, into.dripper);
+      const blocked = test.session
+        ? null
+        : seniorOnlyMergeBlock(card, into, people);
       if (blocked) return fail(blocked);
       return write(
         mergeWrites(card, into, newDripId),

@@ -6,6 +6,7 @@ import {
   laneChangeWarnings,
   queuedSeniorOnlyCards,
   seniorOnlyBlock,
+  seniorOnlyMergeBlock,
   todaysCaosLanes,
 } from "./caosLanes";
 
@@ -90,7 +91,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     ).toBe(null);
   });
 
-  test("指名×上級生のみ：指名のドリッパーの担当者が上級生なら置け、上級生でなければどこにも置けない", () => {
+  test("指名×上級生のみ：指名を優先し、指名のドリッパーの担当者が上級生でなくても置ける（ほかへは指名で断る）", () => {
     const nominated = card({
       status: "unassigned",
       seniorOnly: true,
@@ -113,37 +114,51 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
       });
       return "error" in result ? result.error : null;
     };
-    const others = [1, 3, 4, 5, 6];
-    // 2nd が上級生：2nd にだけ置ける（ほかの上級生のドリッパーへは指名で断る）
-    const seniorAt2 = todaysCaosLanes(
-      lanes([1, "田中", true], [2, "山田", true], [3, "佐藤", false]),
-      DAY,
-    );
-    expect(seniorOnlyBlock(nominated, 2, seniorAt2)).toBeNull();
-    expect(nominationError(2)).toBeNull();
-    for (const d of others)
-      expect(nominationError(d)).toBe(
-        "指名のあるカードは 2nd のドリッパーにしか置けません",
+    const placeable = (people: CaosLanes) =>
+      [1, 2, 3, 4, 5, 6].filter(
+        (d) =>
+          !nominationError(d) &&
+          !seniorOnlyBlock(nominated, d, todaysCaosLanes(people, DAY)),
       );
-    // 2nd が上級生でない：2nd は上級生のみで、ほかは指名で断るので、どこにも置けない
-    const juniorAt2 = todaysCaosLanes(
-      lanes([1, "田中", true], [2, "佐藤", false]),
-      DAY,
+    // 2nd が上級生でも、上級生でなくても、担当者がいなくても 2nd にだけ置ける
+    expect(placeable(lanes([1, "田中", true], [2, "山田", true]))).toEqual([2]);
+    expect(placeable(lanes([1, "田中", true], [2, "佐藤", false]))).toEqual([
+      2,
+    ]);
+    expect(placeable(lanes())).toEqual([2]);
+    expect(nominationError(1)).toBe(
+      "指名のあるカードは 2nd のドリッパーにしか置けません",
     );
-    expect(seniorOnlyBlock(nominated, 2, juniorAt2)).toBe(
-      "上級生のみのカードは上級生のドリッパーにしか置けません（指名の 2nd の担当者は上級生ではありません。担当者を上級生に替えると置けます）",
-    );
-    const placeable = [1, 2, 3, 4, 5, 6].filter(
-      (d) => !nominationError(d) && !seniorOnlyBlock(nominated, d, juniorAt2),
-    );
-    expect(placeable).toEqual([]);
-    // 担当者のいない 2nd も同じ
-    expect(
-      seniorOnlyBlock(nominated, 2, todaysCaosLanes(lanes(), DAY)),
-    ).not.toBeNull();
   });
 
-  test("交代の確認：上級生でない人にするドリッパーに上級生のみのカードが待っていれば出す", () => {
+  test("統合：統合したあとのカードを into のドリッパーに置くとみる（指名はどちらかの指名）", () => {
+    const today = todaysCaosLanes(lanes([2, "佐藤", false]), DAY);
+    const limited = card({ status: "unassigned", seniorOnly: true });
+    // 指名のカード（上級生でない 2nd）に入れれば、指名のあるカードなので置ける
+    expect(
+      seniorOnlyMergeBlock(
+        limited,
+        card({ dripper: 2, seniorOnly: true, nominatedDripper: 2 }),
+        today,
+      ),
+    ).toBeNull();
+    // 指名の無いカードどうしは、上級生でない 2nd には置けない
+    expect(
+      seniorOnlyMergeBlock(
+        limited,
+        card({ dripper: 2, seniorOnly: true }),
+        today,
+      ),
+    ).toBe(
+      "上級生のみのカードは上級生のドリッパーにしか置けません（2nd の担当者は上級生ではありません）",
+    );
+    // 未割当のカードに入れるのは置かないので確かめない
+    expect(
+      seniorOnlyMergeBlock(limited, card({ status: "unassigned" }), today),
+    ).toBeNull();
+  });
+
+  test("交代の確認：上級生でない人にするドリッパーに指名の無い上級生のみのカードが待っていれば出す", () => {
     const cards = [
       card({ dripper: 1, seniorOnly: true }),
       card({ dripper: 1, seniorOnly: true }),
@@ -152,6 +167,8 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
       card({ dripper: 1, seniorOnly: true, status: "brewing" }),
       card({ dripper: 1, seniorOnly: true, status: "done" }),
       card({ dripper: 2, seniorOnly: true }),
+      // 指名のあるカードは担当者が上級生でなくても置けるので数えない
+      card({ dripper: 1, seniorOnly: true, nominatedDripper: 1 }),
     ];
     expect(queuedSeniorOnlyCards(cards, 1)).toBe(2);
     expect(
@@ -161,7 +178,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         true,
       ),
     ).toEqual([
-      "このドリッパーに上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）",
+      "このドリッパーに指名の無い上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）",
     ]);
     expect(
       laneChangeWarnings(
@@ -188,7 +205,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         false,
       ),
     ).toEqual([
-      "1st のドリッパーに上級生のみのカードが2枚あります（担当者がいなくなります）",
+      "1st のドリッパーに指名の無い上級生のみのカードが2枚あります（担当者がいなくなります）",
     ]);
   });
 });

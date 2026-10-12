@@ -26,7 +26,8 @@ import (
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     順番の数（dripper_position）と抽出の時刻は画面から受け取らない。画面は「どのカードの前に入れるか」（after の insert_before）だけを送り、
 //     番号はサーバーが決める（placeCaosCups）。空いているドリッパーで始めるときは after の start_brew で受け、サーバーの今を入れる。
-//     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）
+//     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）。指名のあるカードは指名を優先し、
+//     指名のドリッパーの担当者が上級生でなくても置ける
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める。
 //     抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
 //   - 注文・カップを準備完了・提供済みにして、抽出中のカードのカップが準備完了になったら、そのカードの「次へ」をサーバーが進める
@@ -574,9 +575,6 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 				if n := nominated[cup.OrderMenuID]; w.After.Dripper != nil && n != nil && *n != *w.After.Dripper {
 					return ruleErrorf("指名のあるカップは %d 番のドリッパーにしか置けません", *n)
 				}
-				if err := checkSeniorOnly(w, item, seniors); err != nil {
-					return err
-				}
 			}
 			// 抽出を始められるのは、空いている（このカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ
 			// （画面の assignWrites と同じ決まり。待機があれば、始めるのは「次へ」で待機の先頭）
@@ -609,6 +607,9 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 		}
 
 		if err := checkCaosCards(tx, dripIDs); err != nil {
+			return err
+		}
+		if err := checkSeniorOnly(tx, writes, itemOf, seniors); err != nil {
 			return err
 		}
 		for id := range changed {

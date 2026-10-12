@@ -296,10 +296,25 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(after?.startedAt).toStrictEqual(at(0));
   });
 
-  test("上級生のみのカードは、本番と同じくどのドリッパーにも置ける", () => {
-    let orders = ordersOf([limited]);
+  test("上級生のみのカードは、担当者がいないのでどのドリッパーにも置ける（指名のあるカードは指名のドリッパーに）", () => {
+    let orders = ordersOf([limited], [limited]);
     orders = assign(orders, unassigned(orders)[0], 3, at(0));
     expect(caosLane(cardsOf(orders), 3).brewing?.seniorOnly).toBe(true);
+    // 指名（4th）の上級生のみのカード
+    orders = orders.map((order, index) =>
+      index === 1
+        ? {
+            ...order,
+            menus: order.menus.map((menu) => ({ ...menu, dripper: 4 })),
+          }
+        : order,
+    );
+    orders = assign(orders, unassigned(orders)[0], 4, at(0));
+    const placed = caosLane(cardsOf(orders), 4).brewing;
+    expect([placed?.seniorOnly, placed?.nominatedDripper]).toStrictEqual([
+      true,
+      4,
+    ]);
   });
 
   test("決まりに合わない書き込みは何も変えずに断る", () => {

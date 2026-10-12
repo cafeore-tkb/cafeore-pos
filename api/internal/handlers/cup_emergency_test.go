@@ -215,6 +215,13 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	}
 	f.mustPutLane(t, 2, "山田", true)
 	f.mustPut(t, write([]uuid.UUID{e5}, unassigned, placed(2, uuid.New(), false)))
+	// 指名のあるカップの入れ直しは指名を優先し、指名のドリッパー（担当者のいない 3rd）に置ける
+	o6 := f.createOrder(t, 6, line(geisha))
+	f.nominate(t, o6.OrderMenus[0], intPtr(3), nil)
+	if code, body := f.addEmergencies(t, o6.OrderCups[0].ID); code != http.StatusCreated {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	f.mustPut(t, write([]uuid.UUID{f.emergencies(t, o6.OrderCups[0].ID)[0].ID}, unassigned, placed(3, uuid.New(), false)))
 
 	// 未割当に戻す（before は入れ直しの列）
 	f.mustPut(t, write([]uuid.UUID{e5}, f.emergencyState(t, e5), toUnassigned))

@@ -67,7 +67,7 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 	writes := make([]models.CaosCupsWrite, len(cups))
 	for i, c := range cups {
 		cupIDs[i] = c.CupId
-		writes[i] = models.CaosCupsWrite{CupIds: []uuid.UUID{c.CupId}, Before: c.Current.State, After: models.CaosCupAfter{Dripper: c.Restore.State.Dripper}}
+		writes[i] = models.CaosCupsWrite{CupIds: []uuid.UUID{c.CupId}, Before: c.Current.State, After: models.CaosCupAfter{Dripper: c.Restore.State.Dripper, DripId: c.Restore.State.DripId}}
 		if d := c.Restore.State.Dripper; d != nil {
 			drippers = append(drippers, *d)
 		}
@@ -127,7 +127,7 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 			}
 		}
 
-		for i, c := range cups {
+		for _, c := range cups {
 			unit, ok := lockedByID[c.CupId]
 			r := c.Restore.State
 			if !ok {
@@ -148,9 +148,6 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 			}
 			if n := nominated[unit.OrderMenuID]; r.Dripper != nil && n != nil && *n != *r.Dripper {
 				return ruleErrorf("指名のあるカップは %d 番のドリッパーにしか置けないので戻せません", *n)
-			}
-			if err := checkSeniorOnly(writes[i], items[c.CupId], seniors); err != nil {
-				return err
 			}
 		}
 
@@ -189,6 +186,9 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 
 		// 書き戻したあとも盤面の決まりに合うか（合わないのは、そのあいだにほかの画面が変えたから）
 		if err := checkCaosCards(tx, dripIDs); err != nil {
+			return err
+		}
+		if err := checkSeniorOnly(tx, writes, items, seniors); err != nil {
 			return err
 		}
 		for _, d := range sortedUnique(drippers, cmp.Compare) {
