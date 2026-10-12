@@ -13,6 +13,7 @@ import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { usePendingStatus } from "~/lib/usePendingStatus";
+import { useReadyAdvanceUndo } from "~/lib/useReadyAdvanceUndo";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
@@ -48,7 +49,7 @@ export default function Serve() {
           .map((order) => {
             return (
               order.servedAt === null && (
-                <ServeOrderCard key={order.id} order={order} />
+                <ServeOrderCard key={order.id} order={order} orders={orders} />
               )
             );
           })}
@@ -58,7 +59,14 @@ export default function Serve() {
 }
 
 // 提供画面の注文カード。カップを1杯ずつ出し、押すと 準備中 → 提供可能 → 提供済み → 準備中 と回す
-const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+const ServeOrderCard = ({
+  order,
+  orders,
+}: {
+  order: WithId<OrderEntity>;
+  // CaOS の盤面を組み立てる（呼び出しで進んだ「次へ」を戻す）
+  orders: WithId<OrderEntity>[];
+}) => {
   // カップの状態も、押してから配信が届くまでの間は押した後の状態を表示する
   const cupPending = usePendingStatus<CupStatus>(order);
   const send =
@@ -73,11 +81,15 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
   // 注文単位の呼び出し・提供も、押してから配信が届くまでの間は押した後の状態を表示する
   const orderPending = usePendingStatus<boolean>(order);
   const isReady = orderPending.statusOf("ready", order.readyAt !== null);
+  const advance = useReadyAdvanceUndo(order.id, orders);
   const changeReady = () => {
     if (orderPending.isBusy("ready")) return;
-    orderPending.run("ready", !isReady, () =>
-      orderRepository.ready(order.id).then(() => undefined),
-    );
+    if (!isReady) advance.remember();
+    orderPending.run("ready", !isReady, async () => {
+      if (isReady) await advance.undo();
+      await orderRepository.ready(order.id);
+      return undefined;
+    });
   };
   const changeServed = () =>
     orderPending.run("served", order.servedAt === null, () =>

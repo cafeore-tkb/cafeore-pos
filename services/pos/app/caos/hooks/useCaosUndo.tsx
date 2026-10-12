@@ -2,7 +2,7 @@ import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
 
 // 操作のあと「1つ戻す」が押せる秒
-const UNDO_SEC = 10;
+export const UNDO_SEC = 10;
 
 /** 戻す処理。戻せたら true、断られたら理由を通知で出して false。"retry" なら覚えたままにする（もう一度押せる） */
 export type UndoRun = () => UndoResult | Promise<UndoResult>;
