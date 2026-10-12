@@ -203,7 +203,7 @@ const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
 
 /**
  * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
- * 左から古い順に並べる。1 列に縦に 2 枚まで並べ、それより多い注文は同じ注文の枠の中で右へ折り返す（帯の高さからはみ出さない）。
+ * 左から古い順に並べる。1 列に縦に 2 枚まで並べ、それより多い注文は同じ番号の下で右へ折り返す（帯の高さからはみ出さない）。
  * 注文のまとまりは、列（上の番号）と余白で見せる。スクロールは横だけ（ScrollArea）。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
  * 下のカードは列の下の余白に出す
  */
@@ -301,7 +301,7 @@ export const OrderQueuePanel: React.FC<
       <ScrollArea
         axis="y"
         className="flex-1"
-        scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
+        scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-3 pb-8"
       >
         {rows.map(({ orderNo, emergency, entries }) => (
           <div

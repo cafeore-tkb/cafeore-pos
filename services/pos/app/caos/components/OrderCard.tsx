@@ -51,14 +51,18 @@ const SIZES = {
   },
 };
 
-// 地と枠。終わったカードは薄い灰色。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
+// 地と枠。終わったカードは薄い灰色（選んだ注文でなければ全体も薄くする。薄くすると選択中の黄の輪も薄くなる）。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
 // 文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
 // 指名のカードは黒い点線の太い枠（地の色が近くても枠の形で分かる）
-const surfaceOf = (done: boolean, nominated: boolean, color?: string) => {
+const surfaceOf = (
+  done: boolean,
+  nominated: boolean,
+  selected: boolean,
+  color?: string,
+) => {
   if (done)
     return {
-      className:
-        "border-2 border-slate-200 bg-slate-100 text-slate-500 opacity-50",
+      className: `border-2 border-slate-200 bg-slate-100 text-slate-500 ${selected ? "" : "opacity-50"}`,
     };
   const backgroundColor = color ?? "#ffffff";
   return {
@@ -79,7 +83,7 @@ export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
     /** 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards） */
     card: CaosCard;
-    /** 色・豆と、分けた注文（logic/cards.ts の cardLooks） */
+    /** 色と豆（logic/cards.ts の cardLooks） */
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
@@ -102,7 +106,7 @@ export const OrderCard: React.FC<
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
-  const surface = surfaceOf(done, nominee !== "", look?.color);
+  const surface = surfaceOf(done, nominee !== "", selected, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const reasons = emergencyReasons(card);
