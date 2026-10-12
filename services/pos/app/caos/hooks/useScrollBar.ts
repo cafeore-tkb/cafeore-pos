@@ -9,6 +9,7 @@ import {
 
 // スクロールバー（components/ScrollArea）の状態。つまみの長さと位置を枠（target）のスクロールに合わせ、
 // つまみか溝を指・マウスで引くと枠をスクロールする（溝を押すと、つまみの真ん中がそこへ来る）。
+// 枠の中にスクロールしても動かない列（sticky）があるときは、その幅（fixed）を見えている幅と中身の幅の両方から引いて、つまみの長さを決める。
 
 export type ScrollAxis = "x" | "y";
 
@@ -34,15 +35,18 @@ export const AXES = {
 /** つまみ。size は見えている割合（1 ならスクロールしない）、ratio はスクロールした割合 */
 type Thumb = { size: number; ratio: number };
 
-const readThumb = (element: HTMLElement, axis: ScrollAxis): Thumb => {
+const readThumb = (
+  element: HTMLElement,
+  axis: ScrollAxis,
+  fixed: number,
+): Thumb => {
   const keys = AXES[axis];
-  const range = element[keys.content] - element[keys.view];
+  const view = element[keys.view] - fixed;
+  const content = element[keys.content] - fixed;
+  const range = content - view;
   return {
     // 測る前（中身も枠も 0）は 1（スクロールしない）。NaN だと同じ値と見なせず測り直しが止まらない
-    size:
-      element[keys.content] > 0
-        ? element[keys.view] / element[keys.content]
-        : 1,
+    size: content > 0 ? view / content : 1,
     ratio: range > 0 ? element[keys.position] / range : 0,
   };
 };
@@ -52,6 +56,7 @@ const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 export const useScrollBar = (
   target: React.RefObject<HTMLElement>,
   axis: ScrollAxis,
+  fixed = 0,
 ) => {
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<Thumb>({ size: 1, ratio: 0 });
@@ -59,11 +64,11 @@ export const useScrollBar = (
 
   const sync = useCallback(() => {
     if (!target.current) return;
-    const next = readThumb(target.current, axis);
+    const next = readThumb(target.current, axis, fixed);
     setThumb((prev) =>
       prev.size === next.size && prev.ratio === next.ratio ? prev : next,
     );
-  }, [target, axis]);
+  }, [target, axis, fixed]);
   // The content changes with the parent's renders, so measure after each one.
   useLayoutEffect(sync);
   useEffect(() => {
