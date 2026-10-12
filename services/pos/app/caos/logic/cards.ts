@@ -129,6 +129,33 @@ export const cardLooks = (
   );
 };
 
+// 注文ごとの枠の色の数（caos.css の --caos-order-1〜）
+const ORDER_FRAME_COLORS = 4;
+
+/**
+ * 2 か所以上（未割当と列、または 2 つ以上の列）にまたがる注文の枠の色（注文番号 → 0〜ORDER_FRAME_COLORS-1）。
+ * 色は注文番号から決める（同じ注文はどこでも同じ色、開き直しても同じ）。1 か所にしか無い注文は入れない。
+ * cards は未割当と列（終わり・抽出中・待機）のカード
+ */
+export const orderFrames = (cards: readonly CaosCard[]) => {
+  const places = new Map<number, Set<number | null>>();
+  for (const card of cards)
+    for (const no of cardOrderNos(card))
+      places.set(no, (places.get(no) ?? new Set()).add(card.dripper));
+  return new Map(
+    [...places]
+      .filter(([, at]) => at.size > 1)
+      .map(([no]) => [no, no % ORDER_FRAME_COLORS]),
+  );
+};
+export type OrderFrames = ReturnType<typeof orderFrames>;
+
+/** カードの枠の色（orderFrames）。統合したカードは、またがる注文のうち番号の小さい注文の色 */
+export const cardFrame = (frames: OrderFrames, card: CaosCard) =>
+  cardOrderNos(card)
+    .map((no) => frames.get(no))
+    .find((frame) => frame !== undefined);
+
 /** カードを注文ごとにまとめる（並びはそのまま）。キーは orderLabel */
 export const groupByOrder = (cards: readonly CaosCard[]) => {
   const groups = new Map<string, CaosCard[]>();

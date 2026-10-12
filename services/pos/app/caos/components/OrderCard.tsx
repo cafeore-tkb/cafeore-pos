@@ -76,6 +76,22 @@ const surfaceOf = (done: boolean, nominated: boolean, color?: string) => {
   };
 };
 
+// 未割当とドリッパーにまたがる注文の枠（logic/cards の orderFrames の色の順。caos.css の --caos-order-1〜）。
+// カードの枠（指名の点線）と選択中の輪とは別に、外側に描く
+export const ORDER_FRAME = [
+  "outline-(color:--caos-order-1)",
+  "outline-(color:--caos-order-2)",
+  "outline-(color:--caos-order-3)",
+  "outline-(color:--caos-order-4)",
+] as const;
+
+// 外側の輪。選択中（黄の輪）は、またがる注文の枠より目立たせ、重ねない
+const ringOf = (selected: boolean, frame?: number) => {
+  if (selected) return "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2";
+  if (frame === undefined) return "shadow-xs";
+  return `shadow-xs outline-[3px] outline-solid ${ORDER_FRAME[frame]}`;
+};
+
 // 杯数の札。1 杯は白抜き、2 杯は塗り
 const cupsClass = (cups: number) =>
   cups === 1
@@ -90,6 +106,8 @@ export const OrderCard: React.FC<
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
+    /** 未割当とドリッパーにまたがる注文の枠の色（logic/cards の cardFrame） */
+    frame?: number;
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
@@ -99,6 +117,7 @@ export const OrderCard: React.FC<
   look,
   size = "md",
   selected = false,
+  frame,
   dragging = false,
   note,
   className = "",
@@ -140,7 +159,7 @@ export const OrderCard: React.FC<
     <div
       {...props}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${ringOf(selected, frame)} ${className}`}
     >
       {children}
       {selected && (

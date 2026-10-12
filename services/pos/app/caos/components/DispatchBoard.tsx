@@ -9,7 +9,13 @@ import {
 } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
-import { cardName, orderLabel, sharesOrder } from "../logic/cards";
+import {
+  cardFrame,
+  cardName,
+  orderFrames,
+  orderLabel,
+  sharesOrder,
+} from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -81,6 +87,11 @@ export const DispatchBoard: React.FC<
     command: timelineCommand,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
+  // 未割当とドリッパー（2 つ以上の列）にまたがる注文は、カードに注文ごとの色の枠
+  const frames = orderFrames([
+    ...unassignedOrders,
+    ...lanes.flatMap(laneCards),
+  ]);
 
   // 待機のカードを別の列へ・待機のカードの前へ・統合（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
@@ -260,6 +271,7 @@ export const DispatchBoard: React.FC<
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
+                            frame={cardFrame(frames, ticket)}
                             data-card-key={ticket.key}
                             // 待機のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
