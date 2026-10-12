@@ -269,12 +269,13 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       onOpenLane={onOpenLane}
                       className="h-[60px] w-full"
                     />
-                    <div className="mt-1 flex min-w-0 items-center justify-center gap-1">
+                    {/* 担当者の下に「交代」（列の幅が狭いので縦に並べる） */}
+                    <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
                       <LaneName
                         dripper={bay.id}
-                        className="font-black text-[13px]"
+                        className="max-w-full font-black text-[13px]"
                       />
-                      <LaneChangeButton dripper={bay.id} compact />
+                      <LaneChangeButton dripper={bay.id} />
                     </div>
                   </th>
                 ))}

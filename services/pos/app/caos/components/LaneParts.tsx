@@ -1,5 +1,6 @@
 import { KeyRound, Star, TriangleAlert, UserRoundPen } from "lucide-react";
 import type React from "react";
+import { toast } from "sonner";
 import { useCaosLanes } from "../hooks/useCaosLanes";
 
 // ドリッパーの見出しの担当者。「1st 山田★」のように、番号（各画面がもう出している）の横に名前と上級生の印を出す。
@@ -50,30 +51,102 @@ export const LaneAbility: React.FC<{ dripper: number }> = ({ dripper }) => {
   );
 };
 
-/** 「交代」のボタン。閲覧だけの画面では出さない。compact なら印だけ（幅の狭い見出し） */
+// 「交代」のボタンの形（押しても下のカード・列の操作には届かない）
+const LaneButton: React.FC<
+  React.ComponentProps<"button"> & { dripper: number }
+> = ({ dripper, onClick, className = "", ...props }) => (
+  <button
+    type="button"
+    data-lane-change={dripper}
+    onClick={(event) => {
+      event.stopPropagation();
+      onClick?.(event);
+    }}
+    onPointerDown={(event) => event.stopPropagation()}
+    className={`min-w-0 max-w-full touch-manipulation rounded-md border font-black text-[11px] active:scale-95 ${className}`}
+    {...props}
+  />
+);
+
+// 見出しの「交代」の並べ方。stacked は「交代 →」の下に次の人（幅の狭い A・D の見出し）、inline は 1 行（列の操作のパネル・C）
+const LAYOUTS = {
+  stacked: "flex flex-col items-start justify-center px-1 py-0.5",
+  inline: "inline-flex h-7 items-center gap-1 px-1.5",
+};
+
+/**
+ * 列の見出し・列の操作のパネルの「交代」。押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人）に替え、ボタンに次の人を出す。
+ * 次の人がいなければ押せない見た目にし、押すと理由を通知で出す。閲覧だけの画面では出さない
+ */
 export const LaneChangeButton: React.FC<{
   dripper: number;
-  compact?: boolean;
+  layout?: keyof typeof LAYOUTS;
   className?: string;
-}> = ({ dripper, compact = false, className = "" }) => {
+}> = ({ dripper, layout = "stacked", className = "" }) => {
+  const { editable, nextOf, changeToNext } = useCaosLanes();
+  if (!editable) return null;
+  const found = nextOf(dripper);
+  const head = (arrow: string) => (
+    <span className="flex shrink-0 items-center gap-0.5 whitespace-nowrap text-[10px] leading-tight">
+      <UserRoundPen className="h-3 w-3 shrink-0" />
+      交代{arrow}
+    </span>
+  );
+  if ("reason" in found)
+    return (
+      <LaneButton
+        dripper={dripper}
+        aria-disabled
+        title={found.reason}
+        onClick={() =>
+          toast(found.reason, {
+            description:
+              "ほかの人にするときは、ヘッダーの「ドリッパー」の「交代」から選ぶか名前を入れます",
+          })
+        }
+        className={`${LAYOUTS[layout]} border-slate-300 border-dashed bg-slate-50 text-slate-400 ${className}`}
+      >
+        {head("")}
+        <span className="max-w-full truncate font-bold text-[10px] leading-tight">
+          次の人なし
+        </span>
+      </LaneButton>
+    );
+  const { name, senior, reasons } = found.next;
+  return (
+    <LaneButton
+      dripper={dripper}
+      title={`交代 → ${name}（${reasons.join("・")}）`}
+      aria-label={`交代 → ${name}`}
+      onClick={() => changeToNext(dripper, found.next)}
+      className={`${LAYOUTS[layout]} border-slate-300 bg-white text-slate-500 hover:bg-slate-50 ${className}`}
+    >
+      {head(" →")}
+      <span className="flex min-w-0 max-w-full items-center text-[12px] text-slate-950 leading-tight">
+        <span className="truncate">{name}</span>
+        {senior && <SeniorMark />}
+      </span>
+    </LaneButton>
+  );
+};
+
+/** ヘッダーの「ドリッパー」の「交代」。交代の画面を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする。閲覧だけの画面では出さない */
+export const LaneChooseButton: React.FC<{
+  dripper: number;
+  className?: string;
+}> = ({ dripper, className = "" }) => {
   const { editable, openChange } = useCaosLanes();
   if (!editable) return null;
   return (
-    <button
-      type="button"
-      data-lane-change={dripper}
-      onClick={(event) => {
-        event.stopPropagation();
-        openChange(dripper);
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
+    <LaneButton
+      dripper={dripper}
+      onClick={() => openChange(dripper)}
       title="担当者を交代"
-      aria-label={compact ? "交代" : undefined}
-      className={`inline-flex h-7 shrink-0 touch-manipulation items-center gap-0.5 rounded-md border border-slate-300 bg-white px-1.5 font-black text-[11px] text-slate-700 hover:bg-slate-50 active:scale-95 ${className}`}
+      className={`inline-flex h-7 shrink-0 items-center gap-0.5 border-slate-300 bg-white px-1.5 text-slate-700 hover:bg-slate-50 ${className}`}
     >
       <UserRoundPen className="h-3.5 w-3.5" />
-      {!compact && "交代"}
-    </button>
+      交代
+    </LaneButton>
   );
 };
 

@@ -7,6 +7,7 @@ import {
   caosLane,
   caosStateJSON,
 } from "./caos-board";
+import type { LaneAssignment } from "./caosLanes";
 
 // CaOS の「1つ戻す」。DB や画面を使わない純粋な関数だけを置く（書き戻すのは POST /api/caos/undo）。
 //
@@ -17,6 +18,7 @@ import {
 // 戻すときは、今の盤面のカップの値が expect のとおりかを確かめ（違えばほかの画面が変えたので断る）、
 // 今の値（current）と restore を送る。サーバーは今の値が current のときだけ書き戻す。
 // 緊急（入れ直し）もカップと同じく扱う（id は入れ直しの id。入れ直しは準備完了を持たない）。
+// 担当者の交代（見出しの「交代」ですぐ替えたもの）も、今の担当者が交代のあとのままのときだけ前の人に戻す（caosLaneUndoBlock）。
 
 /** 「1つ戻す」で比べる・書き戻すカップの値 */
 type UndoCupState = CaosCupState & Pick<CaosBoardCup, "readyAt">;
@@ -139,6 +141,10 @@ export const undoOfNext = (
   return { cups: [...entry(brewing, true), ...entry(queued[0], false)] };
 };
 
+// 戻せないとき・まだ戻せないときの理由（カップも担当者も同じ）
+const ARRIVING = "操作の結果がまだ届いていません。もう一度押してください";
+const CHANGED = "ほかの画面で先に変わったので戻せません";
+
 const sameAsExpected = (cup: CaosBoardCup, expect: UndoExpect) =>
   cup.state.dripper === expect.dripper &&
   cup.state.dripId === expect.dripId &&
@@ -169,11 +175,7 @@ export const caosUndoCups = (
     const now = byId.get(id);
     return now !== undefined && sameUndoState(stateOf(now), restore);
   });
-  if (arriving)
-    return {
-      error: "操作の結果がまだ届いていません。もう一度押してください",
-      arriving: true,
-    };
+  if (arriving) return { error: ARRIVING, arriving: true };
   const out: UndoCupJSON[] = [];
   for (const { id, restore, expect } of entry.cups) {
     const now = byId.get(id);
@@ -184,8 +186,7 @@ export const caosUndoCups = (
       };
     if (now.servedAt !== null)
       return { error: "提供済みになったカップがあるので戻せません" };
-    if (!sameAsExpected(now, expect))
-      return { error: "ほかの画面で先に変わったので戻せません" };
+    if (!sameAsExpected(now, expect)) return { error: CHANGED };
     out.push({
       cup_id: id,
       current: undoStateJSON(stateOf(now)),
@@ -193,4 +194,21 @@ export const caosUndoCups = (
     });
   }
   return { cups: out };
+};
+
+const sameLane = (a: LaneAssignment, b: LaneAssignment) =>
+  a.name === b.name && a.senior === b.senior;
+
+/**
+ * 担当者の交代（before → after）を戻せない理由。now は今のそのドリッパーの担当者（todaysCaosLanes）。
+ * 交代のあとのままなら null（before に書き戻す）。まだ前のままなら arriving（少し待てば戻せる）、ほかの画面が替えていれば断る
+ */
+export const caosLaneUndoBlock = (
+  before: LaneAssignment,
+  after: LaneAssignment,
+  now: LaneAssignment,
+): { error: string; arriving?: true } | null => {
+  if (sameLane(now, after)) return null;
+  if (sameLane(now, before)) return { error: ARRIVING, arriving: true };
+  return { error: CHANGED };
 };
