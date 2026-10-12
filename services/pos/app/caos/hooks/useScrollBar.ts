@@ -46,7 +46,7 @@ const readThumb = (
   const range = content - view;
   return {
     // 測る前（中身も枠も 0）は 1（スクロールしない）。NaN だと同じ値と見なせず測り直しが止まらない
-    size: content > 0 ? Math.max(0, view) / content : 1,
+    size: content > 0 ? view / content : 1,
     ratio: range > 0 ? element[keys.position] / range : 0,
   };
 };
