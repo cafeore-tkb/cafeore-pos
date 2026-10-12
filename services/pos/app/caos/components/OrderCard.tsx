@@ -83,23 +83,22 @@ const surfaceOf = (
       className: `border-2 border-slate-200 bg-slate-100 text-slate-500 ${selected ? "" : "opacity-50"}`,
     };
   const backgroundColor = color ?? "#ffffff";
+  // 地の色は --caos-card-bg に入れ、統合したカードの後ろの 1 枚（shadowOf）にも同じ色を使う
   return {
-    className: nominated
-      ? "border-[3px] border-slate-900 border-dashed"
-      : "border-2 border-slate-300",
+    className: `bg-(color:--caos-card-bg) ${nominated ? "border-[3px] border-slate-900 border-dashed" : "border-2 border-slate-300"}`,
     style: {
-      backgroundColor,
-      color: readableTextColor(backgroundColor),
       "--caos-card-bg": backgroundColor,
+      color: readableTextColor(backgroundColor),
     } as React.CSSProperties,
   };
 };
 
-// 影。統合したカードは、右下にずらしたもう 1 枚（カードの地の色と枠の線）を影で描く。選択中は黄の輪（外へ 6px）の外まで大きくずらす
+// 影。統合したカードは、右下にずらしたもう 1 枚（カードの地の色と枠の線）を影で描く（終わったカードは灰色の地）。
+// 選択中は黄の輪（外へ 6px）の外に出るよう 8px ずらす（並べる枠はカードの外に 8px 空ける）
 const shadowOf = (merged: boolean, selected: boolean) => {
   if (!merged) return selected ? "shadow-lg" : "shadow-xs";
   return selected
-    ? "shadow-[10px_10px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),10px_10px_0_0_var(--caos-card-stack-line)]"
+    ? "shadow-[8px_8px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),8px_8px_0_0_var(--caos-card-stack-line)]"
     : "shadow-[5px_5px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),5px_5px_0_0_var(--caos-card-stack-line)]";
 };
 
@@ -176,7 +175,15 @@ export const OrderCard: React.FC<
           ),
           itemName("shrink-0"),
         ]
-      : [itemName(text.name), orderNo(`shrink-0 ${text.no}`)];
+      : [
+          itemName(text.name),
+          // 統合した長い番号は先に縮める（指名・上級生の札を押し出さない）
+          orderNo(
+            merged
+              ? `min-w-0 truncate tracking-tighter ${text.no}`
+              : `shrink-0 ${text.no}`,
+          ),
+        ];
   return (
     <div
       {...props}
@@ -216,7 +223,7 @@ export const OrderCard: React.FC<
       >
         {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
         {mergeInto && (
-          <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-blue-700 px-1 py-0.5 font-black font-mono text-white">
+          <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
             <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
             {orderLabel(mergeInto)}
           </span>
@@ -305,6 +312,7 @@ export const BayPad: React.FC<{
 }> = ({ card, currentBayId, hoveredBay, onPick }) => {
   const targets = moveTargets(card, currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
+  // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
   return (
     <div ref={placement.ref} className="contents">
@@ -312,7 +320,7 @@ export const BayPad: React.FC<{
         <div
           key={row[0].bayId}
           style={placement.rows[index]}
-          className="absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
+          className="absolute right-0 left-0 z-[90] grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
         >
           {row.map(({ bayId, place, disabled }) => (
             <button
@@ -375,7 +383,7 @@ export const MergeOverlay: React.FC = () => (
   <>
     <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-blue-500 bg-blue-50/90" />
     <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center p-1">
-      <span className="pointer-events-auto inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-black text-[16px] text-white shadow-md">
+      <span className="bg-(color:--caos-merge) pointer-events-auto inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-black text-[16px] text-white shadow-md">
         <MergeIcon className="h-5 w-7 shrink-0" />
         統合する
       </span>

@@ -303,7 +303,8 @@ export const DispatchBoard: React.FC<
                                 onCloseTicket();
                               }
                             }}
-                            className={`h-full hover:shadow-md ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
+                            className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isActionOpen && (
