@@ -1,5 +1,5 @@
 import { type CaosCard, type CaosPlace, canSplitCard } from "@cafeore/common";
-import { ClipboardList } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import type React from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
 import {
@@ -129,6 +129,12 @@ type UnassignedProps = {
   readOnly?: boolean;
 };
 
+/** 未割当の横帯をたたむか（閲覧だけの画面。たたむと見出しの行だけにする） */
+export interface UnassignedFold {
+  folded: boolean;
+  toggle: () => void;
+}
+
 // 注文の列で、ドリッパーに置いたカードの薄さ（未割当は濃く、待機・抽出中・済の順に薄く、灰色にする）
 const PLACED_FADE: Record<CaosCard["status"], string> = {
   unassigned: "",
@@ -205,18 +211,22 @@ const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
  * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
  * 左端から古い順に並べる。同じ注文のカードは右へ折り返さず、すべて同じ番号の下へ縦に積む。
  * 注文のまとまりは、列（上の番号）と余白で見せる。全件を見る横スクロールバーはヘッダーの「未割当」の右に置く。
+ * fold を渡すと、ヘッダーの右に「たたむ」「ひらく」を出し、たたんだらヘッダーだけにする。
  */
 export const UnassignedStrip: React.FC<
-  UnassignedProps & { nextAvailable: NextAvailable }
-> = ({ nextAvailable, readOnly = false, ...props }) => {
+  UnassignedProps & { nextAvailable: NextAvailable; fold?: UnassignedFold }
+> = ({ nextAvailable, readOnly = false, fold, ...props }) => {
   const { orders, looks, selectedOrderId, lanes = [] } = props;
   const pick = useUnassignedPick({
     ...props,
     placed: lanes.flatMap(laneActive),
   });
   const { rows: columns, places } = queueOf(orders, lanes);
+  const folded = fold?.folded ?? false;
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+    <section
+      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
+    >
       <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
         <h2 className="flex items-center gap-1.5 whitespace-nowrap font-black text-[18px] text-slate-950">
           <ClipboardList className="h-5 w-5 shrink-0 text-slate-700" />
@@ -229,50 +239,67 @@ export const UnassignedStrip: React.FC<
           nextAvailable={nextAvailable}
           className="ml-auto text-[12px]"
         />
+        {fold && (
+          <button
+            type="button"
+            aria-expanded={!folded}
+            onClick={fold.toggle}
+            className="flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-bold text-[13px] text-slate-700 hover:bg-slate-100"
+          >
+            {folded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+            {folded ? "ひらく" : "たたむ"}
+          </button>
+        )}
       </header>
-      <ScrollArea
-        axis="x"
-        trackPlacement="header"
-        className="relative flex-1"
-        scrollerClassName="overscroll-x-contain"
-      >
-        {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
-        <div className="flex min-h-full w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
-          {columns.map(({ orderNo, emergency, entries }) => (
-            <div
-              key={`${emergency}:${orderNo}`}
-              className="flex shrink-0 flex-col gap-0.5"
-            >
-              <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
-                {orderNoLabel(orderNo)}
-                {emergency && (
-                  <span className="font-sans text-[12px] text-red-600">
-                    緊急
-                  </span>
-                )}
+      {!folded && (
+        <ScrollArea
+          axis="x"
+          trackPlacement="header"
+          className="relative flex-1"
+          scrollerClassName="overscroll-x-contain"
+        >
+          {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
+          <div className="flex min-h-full w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
+            {columns.map(({ orderNo, emergency, entries }) => (
+              <div
+                key={`${emergency}:${orderNo}`}
+                className="flex shrink-0 flex-col gap-0.5"
+              >
+                <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
+                  {orderNoLabel(orderNo)}
+                  {emergency && (
+                    <span className="font-sans text-[12px] text-red-600">
+                      緊急
+                    </span>
+                  )}
+                </div>
+                {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・場所の札はカードの外へ出る） */}
+                <div className="flex w-[180px] flex-col gap-1.5 whitespace-nowrap">
+                  {entries.map((entry) => (
+                    <QueueEntry
+                      key={entry.card.key}
+                      orderNo={orderNo}
+                      entry={entry}
+                      pick={pick}
+                      looks={looks}
+                      places={places}
+                      selectedOrderId={selectedOrderId}
+                      size="queue"
+                      readOnly={readOnly}
+                      className="min-h-[62px]"
+                    />
+                  ))}
+                </div>
               </div>
-              {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・場所の札はカードの外へ出る） */}
-              <div className="flex w-[180px] flex-col gap-1.5 whitespace-nowrap">
-                {entries.map((entry) => (
-                  <QueueEntry
-                    key={entry.card.key}
-                    orderNo={orderNo}
-                    entry={entry}
-                    pick={pick}
-                    looks={looks}
-                    places={places}
-                    selectedOrderId={selectedOrderId}
-                    size="queue"
-                    readOnly={readOnly}
-                    className="min-h-[62px]"
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-          {columns.length === 0 && <EmptyNote />}
-        </div>
-      </ScrollArea>
+            ))}
+            {columns.length === 0 && <EmptyNote />}
+          </div>
+        </ScrollArea>
+      )}
       <DragGhost pick={pick} looks={looks} size="queue" />
     </section>
   );

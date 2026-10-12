@@ -18,6 +18,17 @@ class SoundManager {
     }
   }
 
+  /** 音を出せるか（iPad などは、画面に触れた中で unlock するまで出せない） */
+  public get ready() {
+    return this.ctx?.state === "running";
+  }
+
+  /** 画面に触れた中で呼び、音を出せるようにする（出せるようになったら解決する） */
+  public unlock() {
+    this.init();
+    return this.ctx ? this.ctx.resume().catch(() => {}) : Promise.resolve();
+  }
+
   // Friendly soft double-beep for ticket completion
   public playComplete() {
     if (!this.enabled) return;

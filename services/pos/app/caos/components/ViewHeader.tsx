@@ -1,8 +1,9 @@
 import { jstClock } from "@cafeore/common";
-import { Eye } from "lucide-react";
+import { Eye, Volume2, VolumeX } from "lucide-react";
 import type React from "react";
 import { NavLink } from "react-router";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import type { ViewSound } from "../hooks/useViewSound";
 import { LaneHeaderStatus } from "./LaneParts";
 import { PosStatusBadge } from "./TopHeader";
 
@@ -18,12 +19,13 @@ export const SEGMENTS =
 export const segmentClass = (active: boolean) =>
   `rounded-md px-2.5 py-1.5 ${active ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-100"}`;
 
-/** 閲覧だけの画面のヘッダー。CaOS の印・閲覧の画面の切り替え・時計・各画面のもの（children）・担当者の知らせ・注文の接続 */
+/** 閲覧だけの画面のヘッダー。CaOS の印・閲覧の画面の切り替え・時計・各画面のもの（children）・通知音・担当者の知らせ・注文の接続 */
 export const ViewHeader: React.FC<{
   nowMs: number;
   status: PosConnectionStatus;
+  sound: ViewSound;
   children?: React.ReactNode;
-}> = ({ nowMs, status, children }) => (
+}> = ({ nowMs, status, sound, children }) => (
   <header className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
     <span className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-black text-sm text-white">
       CaOS
@@ -45,8 +47,30 @@ export const ViewHeader: React.FC<{
       {jstClock(nowMs)}
     </span>
     {children}
+    <SoundToggle sound={sound} />
     {/* 上級生のドリッパーが無いときの知らせ（担当者は表示だけ） */}
     <LaneHeaderStatus />
     <PosStatusBadge status={status} />
   </header>
 );
+
+/** 通知音（タイムラインに新しく入ったカードの知らせ）のあり・なし。音ありでまだ出せない（iPad で画面に触れる前）ときはそう出す */
+const SoundToggle: React.FC<{ sound: ViewSound }> = ({ sound }) => {
+  const Icon = sound.on ? Volume2 : VolumeX;
+  const label = sound.on
+    ? sound.ready
+      ? "音あり"
+      : "音あり（触れると鳴る）"
+    : "音なし";
+  return (
+    <button
+      type="button"
+      aria-pressed={sound.on}
+      onClick={sound.toggle}
+      className={`flex touch-manipulation items-center gap-1 border font-bold text-xs ${segmentClass(sound.on)}`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+};

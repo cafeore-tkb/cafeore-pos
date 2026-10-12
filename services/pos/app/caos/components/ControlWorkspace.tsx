@@ -7,6 +7,7 @@ import type { NextAvailable } from "../logic/queue";
 import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
+import type { UnassignedFold } from "./UnassignedOrdersPanel";
 
 // 管制盤 A・C・D。待機のカードは、A はカードの上の 1〜6 のボタン、C・D は右の詳細のパネルで動かす
 export const CONTROL_VIEWS = {
@@ -61,6 +62,10 @@ export interface ControlViewProps {
   onSplitCup: (card: CaosCard, cupId: string) => void;
   /** 閲覧だけの画面（/master-sheet/view）。「次へ」・空きスロットを出さず、カードを押しても動かさない */
   readOnly?: boolean;
+  /** 点滅させるカード（key。閲覧だけの画面で、タイムラインに新しく入ったカード。管制盤 A） */
+  flashKeys?: ReadonlySet<string>;
+  /** 未割当の横帯をたたむか（管制盤 A。渡したときだけ、横帯のヘッダーに「たたむ」「ひらく」を出す） */
+  unassignedFold?: UnassignedFold;
 }
 
 const VIEWS: Record<ControlViewMode, React.FC<ControlViewProps>> = {

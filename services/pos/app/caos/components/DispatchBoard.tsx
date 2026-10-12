@@ -70,6 +70,7 @@ export const DispatchBoard: React.FC<
   nowMs,
   timelineCommand,
   readOnly = false,
+  flashKeys,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -256,7 +257,7 @@ export const DispatchBoard: React.FC<
                       return (
                         <div
                           key={ticket.key}
-                          className={isActionOpen ? "z-[80]" : undefined}
+                          className={`${isActionOpen ? "z-[80]" : ""} ${flashKeys?.has(ticket.key) ? "caos-arrival rounded-lg" : ""}`}
                           style={{
                             left: Math.max(10, toX(startMs)),
                             width: Math.max(

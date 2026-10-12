@@ -20,6 +20,7 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => (
         onSplitCup={props.onSplitCup}
         onCancelEmergency={props.onCancelEmergency}
         readOnly={props.readOnly}
+        fold={props.unassignedFold}
       />
     </div>
   </div>
