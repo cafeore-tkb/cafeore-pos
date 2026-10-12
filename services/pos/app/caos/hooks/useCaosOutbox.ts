@@ -57,17 +57,21 @@ export const useCaosOutboxSender = (
   const entries = useCaosOutboxEntries();
   const today = jstDate(nowMs);
   const todays = useMemo(() => caosDayOrders(orders, today), [orders, today]);
-  // 切れていたあいだの注文。つなぎ直すとサーバーが全部の注文を送り直すので、それが届く（注文が新しくなる）までは古い盤面とみて送らない
-  const stale = useRef<typeof orders | null>(null);
-  if (status !== "open") stale.current = orders;
+  // 前の日の担当者は、今日の担当者とみない（今日の担当者がまだ無ければサーバーは何も送らないので、前の日のものが残っている）
+  const lanes = caosLanes?.day === today ? caosLanes : null;
+  // 切れていたあいだの注文と担当者。つなぎ直すとサーバーが全部の注文と今日の担当者を送り直すので、それが届く（新しくなる）までは古い盤面とみて送らない
+  // （担当者は注文のあとに届く。古い担当者で交代・入れ替えを確かめると、ほかの端末が替えた担当者を上書きしてしまう）
+  const stale = useRef<{ orders: typeof orders; lanes: typeof lanes } | null>(
+    null,
+  );
+  if (status !== "open") stale.current = { orders, lanes };
   const server = useRef<CaosServerState | null>(null);
   server.current =
-    status === "open" && isOrdersLoaded && orders !== stale.current
-      ? {
-          orders: todays,
-          // 前の日の担当者は、今日の担当者とみない（今日の担当者がまだ無ければサーバーは何も送らないので、前の日のものが残っている）
-          lanes: caosLanes?.day === today ? caosLanes : null,
-        }
+    status === "open" &&
+    isOrdersLoaded &&
+    orders !== stale.current?.orders &&
+    (lanes === null || lanes !== stale.current?.lanes)
+      ? { orders: todays, lanes }
       : null;
   const rejected = useRef(onRejected);
   rejected.current = onRejected;

@@ -86,13 +86,6 @@ type Confirm = { warnings: string[]; answer: (ok: boolean) => void };
 const changeLabel = ({ dripper, name }: LaneAssignment) =>
   `交代 ${dripperLabel(dripper)} → ${name || "空き"}`;
 
-const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
-  kind: "lane",
-  dripper,
-  name,
-  senior,
-});
-
 export const CaosLanesProvider = ({
   editable = false,
   children,
@@ -123,6 +116,14 @@ export const CaosLanesProvider = ({
     feed: shiftFeed.feed,
   });
   latest.current = { lanes, orders, entries, today, feed: shiftFeed.feed };
+  // 交代の操作。押したときの担当者（確かめたあとの今の担当者）のままのときだけ送る（createCaosOutbox）
+  const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
+    kind: "lane",
+    dripper,
+    name,
+    senior,
+    before: latest.current.lanes[dripper - 1].name,
+  });
   // 今の盤面のカード（この端末の送れていない操作も重ねる。useLiveBoard と同じ）
   const boardCards = () => {
     const { orders, entries, today } = latest.current;

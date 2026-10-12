@@ -200,7 +200,13 @@ describe("unit: caos-outbox 重ねて表示", () => {
       names: ["鈴木", "山田"],
     });
     const entries = [
-      entry({ kind: "lane", dripper: 1, name: "鈴木", senior: false }),
+      entry({
+        kind: "lane",
+        dripper: 1,
+        name: "鈴木",
+        senior: false,
+        before: "",
+      }),
       swap,
     ];
     const names = (input: readonly { name: string; senior: boolean }[]) =>
@@ -213,6 +219,22 @@ describe("unit: caos-outbox 重ねて表示", () => {
     expect(names(overlayCaosLanes(changed, [swap], DAY))).toEqual(
       names(changed),
     );
+  });
+
+  test("交代は、届いた担当者が押したときのままのときだけ重ねる（ほかの端末が先に替えていれば、サーバーの今のまま）", () => {
+    const lanes = (name: string) =>
+      emptyCaosLanes(DAY).lanes.map((lane) =>
+        lane.dripper === 1 ? { ...lane, name } : lane,
+      );
+    const change = entry({
+      kind: "lane",
+      dripper: 1,
+      name: "鈴木",
+      senior: false,
+      before: "山田",
+    });
+    expect(overlayCaosLanes(lanes("山田"), [change], DAY)[0].name).toBe("鈴木");
+    expect(overlayCaosLanes(lanes("佐藤"), [change], DAY)[0].name).toBe("佐藤");
   });
 
   test("前の日に押した操作は重ねない", () => {
@@ -575,6 +597,62 @@ describe("unit: caos-outbox 送る", () => {
     expect(changed.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
   });
 
+  describe("交代", () => {
+    const lanes = (name: string): CaosLanes => ({
+      day: DAY,
+      lanes: emptyCaosLanes(DAY).lanes.map((lane) =>
+        lane.dripper === 1 ? { ...lane, name } : lane,
+      ),
+    });
+    const change = (before: string, name: string) =>
+      entry(
+        { kind: "lane", dripper: 1, name, senior: false, before },
+        `交代 1st → ${name}`,
+      );
+    const TAKEN =
+      "1st の交代は、ほかの iPad が先に替えていたので取りやめました";
+
+    test("押したときの担当者のままなら送る", async () => {
+      const t = setup([change("山田", "鈴木")], [], [], lanes("山田"));
+      await t.outbox.kick();
+      expect(t.sent.map((r) => r.kind)).toEqual(["lane"]);
+      expect(t.rejected).toEqual([]);
+    });
+
+    test("今日の担当者がまだ無ければ（サーバーは何も送らない）空きとみて、空きから替えたものを送る", async () => {
+      const t = setup([change("", "鈴木")], [], [], null);
+      await t.outbox.kick();
+      expect(t.sent.map((r) => r.kind)).toEqual(["lane"]);
+    });
+
+    test("ほかの端末が先に替えていれば、送らずに捨てて知らせる", async () => {
+      const t = setup([change("山田", "鈴木")], [], [], lanes("佐藤"));
+      await t.outbox.kick();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(t.sent).toEqual([]);
+      expect(t.rejected).toEqual([["交代 1st → 鈴木", TAKEN]]);
+      expect(t.items()).toEqual([]);
+    });
+
+    test("つながらないあいだに続けた交代は、そのあいだにほかの端末が替えていれば、どれも送らずに捨てる", async () => {
+      // この端末で 山田 → 鈴木 → 田中 と替えたが、送る前にほかの端末が 山田 → 佐藤 と替えた
+      const t = setup(
+        [change("山田", "鈴木"), change("鈴木", "田中")],
+        [],
+        [],
+        lanes("佐藤"),
+      );
+      await t.outbox.kick();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(t.sent).toEqual([]);
+      expect(t.rejected).toEqual([
+        ["交代 1st → 鈴木", TAKEN],
+        ["交代 1st → 田中", TAKEN],
+      ]);
+      expect(t.items()).toEqual([]);
+    });
+  });
+
   test("ログインが切れた（401・403）は捨てずに送り直す", async () => {
     const server = orders(cup("a"));
     const t = setup([entry(place(server, "a", 1))], server, [
@@ -629,5 +707,13 @@ test("unit: caos-outbox 端末に残したものは JSON から読み直せる�
   ).toBe(null);
   expect(
     parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "toString" } }),
+  ).toBe(null);
+  // 押したときの担当者の無い交代も読まない（確かめられないので）
+  expect(
+    parseCaosOutboxEntry(id, {
+      at: 1,
+      label: "x",
+      op: { kind: "lane", dripper: 1, name: "鈴木", senior: false },
+    }),
   ).toBe(null);
 });
