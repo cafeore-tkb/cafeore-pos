@@ -104,8 +104,8 @@ func caosPressedAt(press *models.CaosPress, now time.Time) time.Time {
 // その終えた時刻にする（前の抽出と重ならないように）。終えた抽出が無ければ押した時刻のまま。そのドリッパーの advisory lock を取ったまま呼ぶ。
 func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.Time, error) {
 	var last []time.Time
-	if err := tx.Raw("SELECT c.brew_finished_at FROM "+caosUnits+" c, orders o WHERE o.id = c.order_id AND o.created_at >= ? AND o.created_at < ?"+
-		" AND c.dripper = ? AND c.brew_finished_at > ? ORDER BY c.brew_finished_at DESC LIMIT 1", start, end, dripper, pressed).Scan(&last).Error; err != nil {
+	if err := tx.Raw("SELECT c.brew_finished_at FROM "+caosUnits+" c, orders o WHERE "+caosDripperWhere+
+		" AND c.brew_finished_at > ? ORDER BY c.brew_finished_at DESC LIMIT 1", start, end, dripper, pressed).Scan(&last).Error; err != nil {
 		return time.Time{}, err
 	}
 	if len(last) > 0 {
@@ -360,10 +360,11 @@ func (c *caosLaneCard) position() int {
 	return 0
 }
 
-// 今日の注文の、あるドリッパーに置いた、まだ終わっていないカップ（c は order_cups、o は orders）。
-// ? は順に、今日の始まり・終わり・ドリッパー
-const caosLaneWhere = `o.id = c.order_id AND o.created_at >= ? AND o.created_at < ?
-	AND c.dripper = ? AND c.brew_finished_at IS NULL`
+// 今日の注文の、あるドリッパーに置いたカップ（c は order_cups、o は orders）。? は順に、今日の始まり・終わり・ドリッパー
+const caosDripperWhere = `o.id = c.order_id AND o.created_at >= ? AND o.created_at < ? AND c.dripper = ?`
+
+// caosDripperWhere のうち、まだ終わっていないカップ
+const caosLaneWhere = caosDripperWhere + " AND c.brew_finished_at IS NULL"
 
 // caosLaneWhere から、書いているカップを除く。? の最後に書いているカップの ID
 const caosLaneOthersWhere = caosLaneWhere + " AND c.id NOT IN ?"

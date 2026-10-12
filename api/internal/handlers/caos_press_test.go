@@ -77,11 +77,9 @@ func TestCaosPressTimeOnDB(t *testing.T) {
 	for no := 1; no <= 9; no++ {
 		o = append(o, f.createOrder(t, no, line(f.blend)))
 	}
-	cupOf := func(i int) uuid.UUID { return o[i].OrderCups[0].ID }
-	unit := func(i int) models.OrderCup { return f.cup(t, cupOf(i)) }
 	expectTimes := func(label string, i int, started, finished *time.Time) {
 		t.Helper()
-		c := unit(i)
+		c := f.cup(t, o[i].OrderCups[0].ID)
 		if !timeEqual(msTime(c.BrewStartedAt), started) || !timeEqual(msTime(c.BrewFinishedAt), finished) {
 			t.Fatalf("%s: started %v finished %v, want %v %v", label, c.BrewStartedAt, c.BrewFinishedAt, started, finished)
 		}
