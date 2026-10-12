@@ -12,6 +12,7 @@ import {
   orderLabel,
   orderNoLabel,
   orderRows,
+  queueRows,
   totalCups,
 } from "../logic/cards";
 import { type Lane, cardPlaces, laneActive, laneCards } from "../logic/lanes";
@@ -116,24 +117,8 @@ const EmptyNote: React.FC = () => (
   </div>
 );
 
-// 横帯は 6 列 × 2 段
+// 横帯の 1 段の列の数
 const STRIP_COLUMNS = 6;
-const STRIP_LINES = 2;
-
-/** 横帯に出す注文（注文番号の順に、跡を含めて 2 段に収まるだけ。注文は段をまたがせず、収まらない注文は次の段へ） */
-const stripRows = (orders: readonly CaosCard[]) => {
-  let line = 0;
-  let column = 0;
-  return orderRows(orders).filter(({ entries }) => {
-    const width = Math.min(entries.length, STRIP_COLUMNS);
-    if (column + width > STRIP_COLUMNS) {
-      line += 1;
-      column = 0;
-    }
-    column += width;
-    return line < STRIP_LINES;
-  });
-};
 
 type UnassignedProps = {
   orders: CaosCard[];
@@ -145,7 +130,7 @@ type UnassignedProps = {
   lanes?: Lane[];
   /** 1 杯のカード（firstKey）を統合できる 1 杯のカード（intoKey）に入れる */
   onMergeOrders?: (firstKey: string, intoKey: string) => void;
-  /** 統合の解除（2 杯のカードから 1 杯を外す） */
+  /** 統合の解除（統合したカードから 1 杯を外す） */
   onSplitCup?: (card: CaosCard, cupId: string) => void;
   /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
   onCancelEmergency?: (card: CaosCard) => void;
@@ -154,7 +139,9 @@ type UnassignedProps = {
 };
 
 /**
- * 管制盤 A の下の横帯（6 列 × 2 段）。注文ごとにまとめ、2 枚以上の注文は青い枠で囲む（同じ注文がほかにもあるときだけ囲う）
+ * 管制盤 A の下の横帯（1 段 6 列。2 段が見える高さで、先の注文は縦のスクロールで見る）。注文ごとにまとめ（注文は段をまたがせない）、
+ * 2 枚以上の注文は同じ注文の色の枠で囲む（同じ注文がほかにもあるときだけ囲う）。
+ * 見出しはスクロールしても上に残し、開いたカードの 1〜6 のボタンは見出しの上に重ねる（下の段のボタンの分は下に空ける）
  */
 export const UnassignedStrip: React.FC<
   UnassignedProps & { nextAvailable: NextAvailable }
@@ -164,26 +151,29 @@ export const UnassignedStrip: React.FC<
     ...props,
     placed: props.lanes?.flatMap(laneActive),
   });
-  const rows = stripRows(orders);
   return (
-    <section className="flex h-full flex-col rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader icon={ClipboardList} title="未割当">
+    <section className="h-full overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white shadow-xs">
+      <PanelHeader
+        icon={ClipboardList}
+        title="未割当"
+        className="sticky top-0 z-30 border-slate-200 border-b"
+      >
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
           {orders.length} 件 / {totalCups(orders)} 杯
         </span>
         <NextAvailableChips nextAvailable={nextAvailable} />
       </PanelHeader>
-      <div className="flex min-h-0 flex-1 flex-wrap content-start p-1">
-        {rows.map(({ orderNo, emergency, entries }) => (
+      <div className="flex flex-wrap content-start p-1 pb-10">
+        {orderRows(orders).map(({ orderNo, emergency, entries }) => (
           <div
             key={`${emergency}:${orderNo}`}
-            className="flex h-1/2 p-0.5"
+            className="flex h-[70px] p-0.5"
             style={{
               width: `${(Math.min(entries.length, STRIP_COLUMNS) / STRIP_COLUMNS) * 100}%`,
             }}
           >
             <div
-              className={`flex min-w-0 flex-1 gap-1 ${entries.length > 1 ? "rounded-xl border-2 border-blue-600 bg-blue-50 p-0.5" : ""}`}
+              className={`flex min-w-0 flex-1 gap-1 ${entries.length > 1 ? "rounded-xl border-(color:--caos-same-order) border-2 bg-(color:--caos-same-order-soft) p-0.5" : ""}`}
             >
               {entries.map((entry) => (
                 <StripEntry
@@ -223,6 +213,7 @@ const StripEntry: React.FC<{
       pick={pick}
       size="lg"
       selected={selectedOrderId === orderLabel(entry.card)}
+      scroll="y"
       readOnly={readOnly}
       className="flex-1"
     />
@@ -236,21 +227,10 @@ const PLACED_FADE: Record<CaosCard["status"], string> = {
   done: "opacity-30 grayscale",
 };
 
-/** 未割当の入れ直しの行と、まだ淹れ終わっていない最初の注文から後ろの、注文番号の行（ドリッパーに置いたカードも含む） */
-const liveRows = (cards: readonly CaosCard[]) => {
-  const rows = orderRows(cards);
-  const first = rows.findIndex(
-    (row) =>
-      !row.emergency && row.entries.some(({ card }) => card.status !== "done"),
-  );
-  return rows.filter(
-    (row, index) => row.emergency || (first >= 0 && index >= first),
-  );
-};
-
 /**
- * 管制盤 C の右の注文の列。注文番号の行ごとに、未割当のカードと、ドリッパーに置いたカード（灰色に薄く、
- * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。10 注文くらいが一度に見える高さ
+ * 管制盤 C の右の注文の列。いちばん古い未割当の注文から、注文番号の行ごとに、未割当のカードと、ドリッパーに置いたカード（灰色に薄く、
+ * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。その上に、直近にドリッパーに置いた注文を数件だけ残す（logic/cards の queueRows）。
+ * 10 注文くらいが一度に見える高さ
  */
 export const OrderQueuePanel: React.FC<
   Omit<UnassignedProps, "readOnly"> & { lanes: Lane[] }
@@ -261,7 +241,7 @@ export const OrderQueuePanel: React.FC<
     placed: lanes.flatMap(laneActive),
   });
   const places = cardPlaces(lanes);
-  const rows = liveRows([...orders, ...lanes.flatMap(laneCards)]);
+  const rows = queueRows([...orders, ...lanes.flatMap(laneCards)]);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="注文">

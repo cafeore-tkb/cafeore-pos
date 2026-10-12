@@ -10,7 +10,6 @@ import {
   type CardLook,
   cardItemName,
   cardNominee,
-  cardTypeName,
   emergencyReasons,
   orderLabel,
   orderNoLabel,
@@ -19,12 +18,14 @@ import { moveTargets } from "../logic/lanes";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何が何杯か」（商品の略称と杯数）、次に注文番号と分けた注文の「1/2・計4杯」を出す。
+// 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中・同じ注文）は地の色に頼らず、
 // 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」、
-// ほかの場所にも同じ注文があるときは注文番号を青い札に、入れ直しは赤い「緊急」の札と理由）。商品の色が意味の色と近くても見分けられる。
+// ほかの場所にも同じ注文があるときは注文番号を同じ注文の色（caos.css の --caos-same-order）の札に、入れ直しは赤い「緊急」の札と理由）。
+// 商品の色が意味の色と近くても見分けられる。
 
 const SIZES = {
   // 管制盤 C・D と割当のパネル
@@ -112,12 +113,29 @@ export const OrderCard: React.FC<
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const reasons = emergencyReasons(card);
-  const typeName = cardTypeName(card);
   const split = look?.split;
-  // 豆と区分の札（「ケニア豆 / ホット」）。豆は在庫対象の名前、区分は商品の種類の表示名をそのまま出す。
-  // 豆の無い（商品のアイテムの在庫が無い）カードは区分だけ。狭いカードでは後ろが切れるので豆を先にする
+  // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
-  const badge = [bean, typeName].filter(Boolean).join(" / ");
+  // 注文番号の札（ほかの場所にも同じ注文があれば同じ注文の色）と、商品の略称
+  const orderNo = (size: string) => (
+    <span
+      className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${size} ${split ? "bg-(color:--caos-same-order) text-white" : "bg-black/10"}`}
+      title={split ? "同じ注文のカードがほかにもあります" : undefined}
+    >
+      {orderLabel(card)}
+    </span>
+  );
+  const itemName = (size: string) => (
+    <span
+      className={`min-w-0 truncate font-black tracking-tight ${size}`}
+      title={name}
+    >
+      {name}
+    </span>
+  );
+  // 1 行目にいちばん大きく出すものと、2 行目に出すもの
+  const [headline, subline] =
+    card.status === "unassigned" ? [orderNo, itemName] : [itemName, orderNo];
   return (
     <div
       {...props}
@@ -130,16 +148,11 @@ export const OrderCard: React.FC<
           選択中
         </span>
       )}
-      {/* 何が何杯か */}
+      {/* 何が何杯か（未割当は何番が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
-        <span
-          className={`min-w-0 truncate font-black tracking-tight ${text.name}`}
-          title={name}
-        >
-          {name}
-        </span>
+        {headline(text.name)}
         <span
           className={`shrink-0 whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
         >
@@ -158,23 +171,19 @@ export const OrderCard: React.FC<
           </Check>
         )}
       </div>
-      {/* 注文番号・指名・分けた注文の位置と合計・上級生のみ・緊急の理由か豆と区分 */}
+      {/* 注文番号（未割当は商品）・指名・分けた注文の位置と合計・上級生のみ・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        <span
-          className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${split ? "bg-blue-700 text-white" : "bg-black/10"}`}
-          title={split ? "同じ注文のカードがほかにもあります" : undefined}
-        >
-          {orderLabel(card)}
-        </span>
+        {/* 2 行目では縮めない（後ろの豆の札を先に縮める） */}
+        {subline("shrink-0")}
         {nominee && (
           <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
             指名 {nominee}
           </span>
         )}
         {split && (
-          <span className="shrink-0 whitespace-nowrap rounded border border-blue-700 bg-white px-1 py-0.5 font-bold text-blue-800">
+          <span className="shrink-0 whitespace-nowrap rounded border border-(color:--caos-same-order) bg-white px-1 py-0.5 font-bold text-(color:--caos-same-order)">
             <span className="font-black font-mono">
               {split.index}/{split.total}
             </span>
@@ -190,7 +199,7 @@ export const OrderCard: React.FC<
             上級生
           </span>
         )}
-        {/* 入れ直し（緊急）は理由を、ほかは豆と区分を出す */}
+        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
         {reasons ? (
           <span
             title={reasons}
@@ -199,12 +208,12 @@ export const OrderCard: React.FC<
             {reasons}
           </span>
         ) : (
-          badge && (
+          bean && (
             <span
-              title={`豆：${bean || "なし"}　区分：${typeName || "なし"}`}
+              title={`豆：${bean}`}
               className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
             >
-              {badge}
+              {bean}
             </span>
           )
         )}
@@ -330,7 +339,7 @@ export const MergeOverlay: React.FC = () => (
 );
 
 /**
- * 統合の解除。2 杯のカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children
+ * 統合の解除。統合したカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children
  * （注文番号の行を隠さないよう下の行に重ねる）か、詳細のパネルに置く
  */
 export const SplitCupButtons: React.FC<{

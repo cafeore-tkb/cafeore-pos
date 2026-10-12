@@ -9,6 +9,7 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
+  LanePanel,
   RebrewPanel,
   TicketDetailPanel,
 } from "./components/SidePanels";
@@ -103,6 +104,7 @@ export default function App() {
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
+            onOpenLane={selection.openLane}
             onAssignToBay={selection.assign}
             onMergeOrders={selection.merge}
             onSplitCup={selection.split}
@@ -117,7 +119,6 @@ export default function App() {
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
-              onMoveQueue={session.moveQueue}
               {...testPlay.analytics}
             />
           </AuxiliarySheet>
@@ -153,6 +154,14 @@ export default function App() {
           {...session.nextConfirm}
           onCancel={session.cancelNext}
           onConfirm={session.confirmNext}
+        />
+      )}
+
+      {panel?.kind === "lane" && (
+        <LanePanel
+          lane={lanes[panel.bayId - 1]}
+          onClose={selection.closeLane}
+          onMoveQueue={session.moveQueue}
         />
       )}
 

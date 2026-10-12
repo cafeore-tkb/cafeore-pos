@@ -27,7 +27,7 @@ import {
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
 // 縦に引くか長押しで掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う。
-// 統合できる待機・抽出中のカードの上（待機は右の部分）に落とすと統合）。2 杯のカードを開くと「外す」（統合の解除）が出る。
+// 統合できる待機・抽出中のカードの上（待機は右の部分）に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
 // 横に払うとタイムラインのスクロール（カードの上でもスクロールできる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -59,6 +59,7 @@ export const DispatchBoard: React.FC<
   onReturnToUnassigned,
   onCloseTicketAction,
   onOpenEmptySlot,
+  onOpenLane,
   onMergeOrders,
   onSplitCup,
   nowMs,
@@ -217,6 +218,7 @@ export const DispatchBoard: React.FC<
                         unassignedOrders,
                         bay.id,
                       )}
+                      onOpenLane={onOpenLane}
                       className="h-[66px] w-[80px]"
                     />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">

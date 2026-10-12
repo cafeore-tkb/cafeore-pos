@@ -32,6 +32,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   onOpenRebrew,
   onCancelEmergency,
   onOpenEmptySlot,
+  onOpenLane,
   onAssignToBay,
   onMergeOrders,
   onSplitCup,
@@ -62,6 +63,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                 bayId={bay.id}
                 status={lane}
                 nominatedCups={pendingNominatedCups(unassignedOrders, bay.id)}
+                onOpenLane={onOpenLane}
                 className="w-[80px]"
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">

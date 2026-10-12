@@ -6,12 +6,13 @@ import { orderLabel } from "../logic/cards";
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
  * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
- * assign は空きスロットへの割当、auxiliary は補助のタブ
+ * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ
  */
 type OpenPanel =
   | { kind: "detail"; key: string }
   | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
+  | { kind: "lane"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | null;
 
@@ -93,6 +94,9 @@ export const useBoardSelection = (
     },
     openAssignSlot: (bayId: number) => setPanel({ kind: "assign", bayId }),
     closeAssignSlot: () => close("assign"),
+    /** 列の操作（担当者の交代・待機をまとめて移す）を開く */
+    openLane: (bayId: number) => setPanel({ kind: "lane", bayId }),
+    closeLane: () => close("lane"),
     openAuxiliary: (tab: AuxiliaryTab) => setPanel({ kind: "auxiliary", tab }),
     closeAuxiliary: () => close("auxiliary"),
     /** 全部閉じる（リセット・実データテストの開始） */
@@ -111,7 +115,7 @@ export const useBoardSelection = (
       thenDeselect(actions.returnToUnassigned(card.key)),
     merge: (firstKey: string, intoKey: string) =>
       thenDeselect(actions.merge(firstKey, intoKey)),
-    /** 統合の解除（2 杯のカードから cupId の 1 杯を外す） */
+    /** 統合の解除（統合したカードから cupId の 1 杯を外す） */
     split: (card: CaosCard, cupId: string) =>
       thenDeselect(actions.split(card.key, cupId)),
   };

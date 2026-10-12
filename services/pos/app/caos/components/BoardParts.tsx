@@ -46,7 +46,8 @@ export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
 );
 
 // 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
-// 抽出中は白、まもなく・継続中は黄・橙。色だけに頼らず札の文字も出す
+// 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤・「次へ」の橙と分ける）。
+// 色だけに頼らず札の文字も出す
 const PHASES: Record<LanePhase, { label: string; className: string }> = {
   empty: {
     label: "空き",
@@ -63,27 +64,35 @@ const PHASES: Record<LanePhase, { label: string; className: string }> = {
   },
   overtime: {
     label: "継続中",
-    className: "border-orange-700 bg-orange-500 text-white",
+    className:
+      "border-(color:--caos-overtime-line) bg-(color:--caos-overtime) text-(color:--caos-overtime-text)",
   },
 };
 
 /**
  * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
  * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも出す。
- * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける
+ * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
+ * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
  */
 export const DripperIndicator: React.FC<{
   bayId: number;
   status: LaneStatus;
   nominatedCups: number;
+  onOpenLane?: (bayId: number) => void;
   className?: string;
-}> = ({ bayId, status, nominatedCups, className = "" }) => {
+}> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
   const phase = PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
   return (
-    <div
+    <button
+      type="button"
+      disabled={!onOpenLane}
+      onClick={() => onOpenLane?.(bayId)}
+      onPointerDown={(event) => event.stopPropagation()}
+      title={onOpenLane && `${dripperLabel(bayId)} の操作（交代・待機を移す）`}
       data-lane-phase={status.phase}
-      className={`relative flex shrink-0 flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none ${phase.className} ${className}`}
+      className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[22px]">
         {dripperLabel(bayId)}
@@ -104,7 +113,7 @@ export const DripperIndicator: React.FC<{
           指名{nominatedCups}
         </span>
       )}
-    </div>
+    </button>
   );
 };
 
