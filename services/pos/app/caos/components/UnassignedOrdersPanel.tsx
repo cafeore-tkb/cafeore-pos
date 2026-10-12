@@ -206,6 +206,16 @@ const columnFrame = (entries: number, frame?: number) => {
   return "border-transparent";
 };
 
+// A の横帯と C の注文の列の中身：並び（queueRows）・ドリッパーに置いたカードの札・またがる注文の枠の色
+const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => {
+  const cards = [...orders, ...lanes.flatMap(laneCards)];
+  return {
+    rows: queueRows(cards),
+    frames: orderFrames(cards),
+    places: cardPlaces(lanes),
+  };
+};
+
 // C の注文の行の枠（未割当とドリッパーにまたがる注文だけ、注文ごとの色）
 const rowFrame = (frame?: number) =>
   frame === undefined
@@ -215,7 +225,7 @@ const rowFrame = (frame?: number) =>
 /**
  * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
  * 左から古い順に並べる。1 列に縦に 2 枚まで並べ、それより多い注文は同じ注文の枠の中で右へ折り返す（帯の高さからはみ出さない）。
- * 2 枚以上の注文は同じ注文の色の枠で囲む。スクロールは横だけ。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
+ * 列の枠は columnFrame。スクロールは横だけ（ScrollArea）。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
  * 下のカードは列の下の余白に出す
  */
 export const UnassignedStrip: React.FC<
@@ -226,10 +236,7 @@ export const UnassignedStrip: React.FC<
     ...props,
     placed: lanes.flatMap(laneActive),
   });
-  const places = cardPlaces(lanes);
-  const cards = [...orders, ...lanes.flatMap(laneCards)];
-  const columns = queueRows(cards);
-  const frames = orderFrames(cards);
+  const { rows: columns, frames, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <header className="flex w-[120px] shrink-0 flex-col gap-1.5 border-slate-200 border-r bg-slate-50 p-2">
@@ -304,10 +311,7 @@ export const OrderQueuePanel: React.FC<
     ...props,
     placed: lanes.flatMap(laneActive),
   });
-  const places = cardPlaces(lanes);
-  const cards = [...orders, ...lanes.flatMap(laneCards)];
-  const rows = queueRows(cards);
-  const frames = orderFrames(cards);
+  const { rows, frames, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="注文">

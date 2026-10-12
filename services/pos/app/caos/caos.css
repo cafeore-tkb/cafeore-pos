@@ -27,7 +27,7 @@ body:has(.caos-root) {
   background: #94a3b8;
 }
 
-/* カードの長押し（掴む）で iPad の文字選択・メニューを出さない */
+/* カードを押し続けても iPad の文字選択・メニューを出さない */
 .caos-root {
   -webkit-touch-callout: none;
 }
