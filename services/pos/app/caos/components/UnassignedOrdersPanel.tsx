@@ -36,7 +36,7 @@ const UnassignedCard: React.FC<{
   card: CaosCard;
   looks: CardLooks;
   pick: UnassignedPick;
-  size: "sm" | "md";
+  size: "sm" | "queue" | "md";
   selected: boolean;
   readOnly?: boolean;
   className?: string;
@@ -93,7 +93,7 @@ const UnassignedCard: React.FC<{
 const DragGhost: React.FC<{
   pick: UnassignedPick;
   looks: CardLooks;
-  size: "sm" | "md";
+  size: "sm" | "queue" | "md";
 }> = ({ pick, looks, size }) =>
   pick.drag.source &&
   pick.drag.ghost(
@@ -149,7 +149,7 @@ const QueueEntry: React.FC<{
   /** ドリッパーに置いたカードの場所の札（logic/lanes の cardPlaces） */
   places: ReturnType<typeof cardPlaces>;
   selectedOrderId: string | null;
-  size: "sm" | "md";
+  size: "sm" | "queue" | "md";
   readOnly?: boolean;
   className: string;
 }> = ({
@@ -203,9 +203,8 @@ const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
 
 /**
  * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
- * 左から古い順に並べる。1 列に縦に 2 枚まで並べ、それより多い注文は同じ番号の下で右へ折り返す（帯の高さからはみ出さない）。
- * 注文のまとまりは、列（上の番号）と余白で見せる。スクロールは横だけ（ScrollArea）。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
- * 下のカードは列の下の余白に出す
+ * 左端から古い順に並べる。同じ注文のカードは右へ折り返さず、すべて同じ番号の下へ縦に積む。
+ * 注文のまとまりは、列（上の番号）と余白で見せる。全件を見る横スクロールバーはヘッダーの「未割当」の右に置く。
  */
 export const UnassignedStrip: React.FC<
   UnassignedProps & { nextAvailable: NextAvailable }
@@ -217,33 +216,34 @@ export const UnassignedStrip: React.FC<
   });
   const { rows: columns, places } = queueOf(orders, lanes);
   return (
-    <section className="flex h-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <header className="flex w-[120px] shrink-0 flex-col gap-1.5 border-slate-200 border-r bg-slate-50 p-2">
-        <h2 className="flex items-center gap-1.5 font-black text-[15px] text-slate-950">
-          <ClipboardList className="h-4 w-4 shrink-0 text-slate-700" />
+    <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
+        <h2 className="flex items-center gap-1.5 whitespace-nowrap font-black text-[18px] text-slate-950">
+          <ClipboardList className="h-5 w-5 shrink-0 text-slate-700" />
           未割当
         </h2>
-        <span className="w-fit rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
+        <span className="w-fit whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-black font-mono text-[13px] text-red-600">
           {orders.length} 件 / {totalCups(orders)} 杯
         </span>
         <NextAvailableChips
           nextAvailable={nextAvailable}
-          className="flex-wrap"
+          className="ml-auto text-[12px]"
         />
       </header>
       <ScrollArea
         axis="x"
-        className="flex-1"
+        trackPlacement="header"
+        className="relative flex-1"
         scrollerClassName="overscroll-x-contain"
       >
-        {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。下の余白は、下のカードを開いたときの 1〜6 のボタン */}
-        <div className="flex h-full w-max min-w-full items-start gap-4 px-2 pt-1.5 pb-[40px]">
+        {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
+        <div className="flex min-h-full w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
           {columns.map(({ orderNo, emergency, entries }) => (
             <div
               key={`${emergency}:${orderNo}`}
               className="flex shrink-0 flex-col gap-0.5"
             >
-              <div className="flex h-[28px] items-center justify-center gap-1.5 font-black font-mono text-[19px] text-slate-700 leading-none">
+              <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
                 {orderNoLabel(orderNo)}
                 {emergency && (
                   <span className="font-sans text-[12px] text-red-600">
@@ -251,7 +251,7 @@ export const UnassignedStrip: React.FC<
                   </span>
                 )}
               </div>
-              <div className="grid auto-cols-[180px] grid-flow-col grid-rows-[repeat(2,52px)] gap-1">
+              <div className="flex w-[180px] flex-col gap-1.5 overflow-hidden whitespace-nowrap">
                 {entries.map((entry) => (
                   <QueueEntry
                     key={entry.card.key}
@@ -261,9 +261,9 @@ export const UnassignedStrip: React.FC<
                     looks={looks}
                     places={places}
                     selectedOrderId={selectedOrderId}
-                    size="md"
+                    size="queue"
                     readOnly={readOnly}
-                    className="h-full"
+                    className="min-h-[62px]"
                   />
                 ))}
               </div>
@@ -272,7 +272,7 @@ export const UnassignedStrip: React.FC<
           {columns.length === 0 && <EmptyNote />}
         </div>
       </ScrollArea>
-      <DragGhost pick={pick} looks={looks} size="md" />
+      <DragGhost pick={pick} looks={looks} size="queue" />
     </section>
   );
 };

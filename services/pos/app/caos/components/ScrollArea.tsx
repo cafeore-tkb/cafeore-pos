@@ -25,6 +25,8 @@ const LAYOUT = {
 
 export const ScrollArea: React.FC<{
   axis: ScrollAxis;
+  /** 横バーを直前のヘッダー行へ重ねる（管制盤 A の未割当だけ） */
+  trackPlacement?: "end" | "header";
   /** スクロールする枠（渡さなければ中で持つ） */
   scrollRef?: React.RefObject<HTMLDivElement>;
   onScroll?: () => void;
@@ -35,6 +37,7 @@ export const ScrollArea: React.FC<{
   children: React.ReactNode;
 }> = ({
   axis,
+  trackPlacement = "end",
   scrollRef,
   onScroll,
   className = "",
@@ -45,6 +48,10 @@ export const ScrollArea: React.FC<{
   const ref = scrollRef ?? ownRef;
   const bar = useScrollBar(ref, axis);
   const layout = LAYOUT[axis];
+  const trackClassName =
+    axis === "x" && trackPlacement === "header"
+      ? "absolute -top-[30px] right-[220px] left-[230px] h-5 rounded-md border"
+      : `relative ${layout.track}`;
   const length = `max(${MIN_THUMB_PX}px, ${bar.thumb.size * 100}%)`;
   return (
     <div className={`flex min-h-0 min-w-0 ${layout.frame} ${className}`}>
@@ -58,7 +65,7 @@ export const ScrollArea: React.FC<{
       <div
         {...bar.handlers}
         aria-hidden="true"
-        className={`group border-(color:--caos-scrollbar-line) bg-(color:--caos-scrollbar-track) relative shrink-0 touch-none ${layout.track}`}
+        className={`group border-(color:--caos-scrollbar-line) bg-(color:--caos-scrollbar-track) shrink-0 touch-none ${trackClassName}`}
       >
         {bar.scrollable && (
           <div
