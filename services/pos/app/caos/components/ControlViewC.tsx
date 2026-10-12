@@ -73,7 +73,11 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                     className="font-black text-[14px] text-slate-950"
                   />
                   <LaneAbility dripper={bay.id} />
-                  <LaneChangeButton dripper={bay.id} className="ml-auto h-6" />
+                  <LaneChangeButton
+                    dripper={bay.id}
+                    layout="inline"
+                    className="ml-auto h-6"
+                  />
                 </div>
                 <div className="grid min-h-0 flex-1 grid-cols-[156px_72px_minmax(0,1fr)] items-stretch gap-1.5">
                   {current ? (
