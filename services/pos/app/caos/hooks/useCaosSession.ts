@@ -175,7 +175,7 @@ export const useCaosSession = () => {
     );
   };
   // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
-  // checkLate なら送らずに confirms で確かめる（確かめを出したら true）
+  // checkLate なら送らずに confirms で確かめる（確かめを出したら true。確かめは向きを決めたあとのカードで出す）
   const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
     const first = cardOf(firstKey);
     const second = cardOf(intoKey);
@@ -387,7 +387,7 @@ export const useCaosSession = () => {
       if (!card) return fail(NOT_FOUND);
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
-    /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
+    /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま。firstKey が抽出中なら逆向き） */
     merge: (firstKey: string, intoKey: string) =>
       runMerge(firstKey, intoKey, true),
     /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
