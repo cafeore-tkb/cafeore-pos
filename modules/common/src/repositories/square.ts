@@ -168,6 +168,19 @@ export const squareRepository = {
     return refundResult(data, error, response);
   },
 
+  /**
+   * 注文に使った Square の決済を全額返金し、注文は残す（戻り値と例外は refundCheckout と同じ）
+   *
+   * 返金の状態は、配られた注文の squareRefundStatus で分かる。
+   */
+  async refundOrderKeepingOrder(orderId: string): Promise<SquareCheckout> {
+    const { data, error, response } = await apiClient.POST(
+      "/api/orders/{id}/square-refund-keep-order",
+      { params: { path: { id: orderId } } },
+    );
+    return refundResult(data, error, response);
+  },
+
   /** 支払い済みなのに注文と結び付いていない決済依頼（照合用） */
   async findUnlinked(): Promise<SquareCheckout[]> {
     const { data, error } = await apiClient.GET(

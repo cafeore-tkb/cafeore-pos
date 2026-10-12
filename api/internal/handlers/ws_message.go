@@ -111,7 +111,11 @@ func broadcastOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderRespo
 		if err := preloadOrder(db).First(&order, "id = ?", orderID).Error; err != nil {
 			return WSMessage{}, err
 		}
-		resp = toOrderResponse(&order)
+		orders := []models.Order{order}
+		if err := attachSquareCheckouts(db, orders); err != nil {
+			return WSMessage{}, err
+		}
+		resp = toOrderResponse(&orders[0])
 		return WSMessage{Type: WSMessageTypeOrder, Order: &resp}, nil
 	})
 	return resp, err

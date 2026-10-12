@@ -154,7 +154,6 @@ export const SquareUnlinkedNotice = ({
                       {refundable && (
                         <SquareRefundButton
                           label={`${checkout.order_number != null ? `No.${checkout.order_number}` : "番号なし"}（¥${checkout.paid_amount ?? checkout.amount}）`}
-                          deletesOrder={false}
                           refund={() =>
                             squareRepository.refundCheckout(checkout.id)
                           }

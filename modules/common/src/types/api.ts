@@ -356,6 +356,7 @@ export interface paths {
      * 支払い済みなのに注文と結び付いていない決済依頼
      * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
      * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+     * 注文を残して返金した決済（一覧には出さない）も、返金の結果待ちなら Square に問い合わせ、変わったらその注文を配り直す。
      */
     get: operations["getUnlinkedSquareCheckouts"];
   };
@@ -394,6 +395,17 @@ export interface paths {
      * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
      */
     post: operations["refundOrderSquarePayment"];
+  };
+  "/api/orders/{id}/square-refund-keep-order": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文は残す
+     * @description その注文に結び付いた決済依頼を POST /api/square/checkouts/{id}/refund と同じように返金するが、注文は消さない
+     * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
+     * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
+     * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+     */
+    post: operations["refundOrderSquarePaymentKeepingOrder"];
   };
   "/api/square/webhook": {
     /**
@@ -638,6 +650,7 @@ export interface components {
       discount_order_id?: number | null;
       discount_order_cups?: number;
       payment_method: components["schemas"]["PaymentMethod"];
+      square_refund_status?: components["schemas"]["SquareRefundStatus"];
       menus: components["schemas"]["MenuInfo"][];
       /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
       cups: components["schemas"]["OrderCupResponse"][];
@@ -2462,6 +2475,7 @@ export interface operations {
    * 支払い済みなのに注文と結び付いていない決済依頼
    * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
    * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+   * 注文を残して返金した決済（一覧には出さない）も、返金の結果待ちなら Square に問い合わせ、変わったらその注文を配り直す。
    */
   getUnlinkedSquareCheckouts: {
     responses: {
@@ -2619,6 +2633,53 @@ export interface operations {
       500: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文は残す
+   * @description その注文に結び付いた決済依頼を POST /api/square/checkouts/{id}/refund と同じように返金するが、注文は消さない
+   * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
+   * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
+   * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+   */
+  refundOrderSquarePaymentKeepingOrder: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。注文はそのまま */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
         };
       };
       /** @description Square が返金を断った、または応答が無かった */

@@ -158,6 +158,9 @@ type ServerInterface interface {
 	// 注文に使った Square の決済を全額返金し、注文を消す
 	// (POST /api/orders/{id}/square-refund)
 	RefundOrderSquarePayment(c *gin.Context, id openapi_types.UUID)
+	// 注文に使った Square の決済を全額返金し、注文は残す
+	// (POST /api/orders/{id}/square-refund-keep-order)
+	RefundOrderSquarePaymentKeepingOrder(c *gin.Context, id openapi_types.UUID)
 	// プリンター設定取得
 	// (GET /api/printer-settings)
 	GetPrinterSettings(c *gin.Context)
@@ -1142,6 +1145,30 @@ func (siw *ServerInterfaceWrapper) RefundOrderSquarePayment(c *gin.Context) {
 	siw.Handler.RefundOrderSquarePayment(c, id)
 }
 
+// RefundOrderSquarePaymentKeepingOrder operation middleware
+func (siw *ServerInterfaceWrapper) RefundOrderSquarePaymentKeepingOrder(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundOrderSquarePaymentKeepingOrder(c, id)
+}
+
 // GetPrinterSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetPrinterSettings(c *gin.Context) {
 
@@ -1456,6 +1483,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
 	router.POST(options.BaseURL+"/api/orders/:id/square-refund", wrapper.RefundOrderSquarePayment)
+	router.POST(options.BaseURL+"/api/orders/:id/square-refund-keep-order", wrapper.RefundOrderSquarePaymentKeepingOrder)
 	router.GET(options.BaseURL+"/api/printer-settings", wrapper.GetPrinterSettings)
 	router.PUT(options.BaseURL+"/api/printer-settings", wrapper.UpdatePrinterSettings)
 	router.POST(options.BaseURL+"/api/square/checkouts", wrapper.CreateSquareCheckout)

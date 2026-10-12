@@ -313,6 +313,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	router := gin.New()
 	api := router.Group("/api")
 	api.POST("/orders", orderHandler.CreateOrder)
+	api.GET("/orders/:id", orderHandler.GetOrder)
 	api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 	api.GET("/square/status", squareHandler.GetStatus)
 	api.GET("/square/devices", squareHandler.GetDevices)
@@ -326,6 +327,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.POST("/square/checkouts/:id/cancel", squareHandler.CancelCheckout)
 	api.POST("/square/checkouts/:id/refund", squareHandler.RefundCheckout)
 	api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
+	api.POST("/orders/:id/square-refund-keep-order", squareHandler.RefundOrderKeepingOrder)
 	api.POST("/square/webhook", squareHandler.ReceiveWebhook)
 
 	return &integrationEnv{t: t, db: db, router: router, fake: fake, square: squareHandler, menuID: menu.ID}

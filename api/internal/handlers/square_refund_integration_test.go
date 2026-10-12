@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -50,6 +51,53 @@ func (e *integrationEnv) payAndOrder(orderNumber int) (models.SquareCheckoutResp
 func (e *integrationEnv) refundOrder(orderID string) (int, models.SquareCheckoutResponse, map[string]any) {
 	e.t.Helper()
 	return e.refund("/api/orders/" + orderID + "/square-refund")
+}
+
+func (e *integrationEnv) refundOrderKeepingOrder(orderID string) (int, models.SquareCheckoutResponse, map[string]any) {
+	e.t.Helper()
+	return e.refund("/api/orders/" + orderID + "/square-refund-keep-order")
+}
+
+func (e *integrationEnv) getOrder(orderID string) models.OrderResponse {
+	e.t.Helper()
+	var order models.OrderResponse
+	if code := e.call(http.MethodGet, "/api/orders/"+orderID, nil, nil, &order); code != http.StatusOK {
+		e.t.Fatalf("get order %s: %d", orderID, code)
+	}
+	return order
+}
+
+// watchOrders は画面と同じように配信を受け取り、注文が配られるのを待つ関数を返す。
+func (e *integrationEnv) watchOrders() func(orderID string) models.OrderResponse {
+	e.t.Helper()
+	hub := e.square.orders.hub
+	client := &Client{hub: hub, send: make(chan []byte, 64)}
+	hub.add(client)
+	e.t.Cleanup(func() { hub.Unregister(client) })
+	return func(orderID string) models.OrderResponse {
+		e.t.Helper()
+		for {
+			select {
+			case data := <-client.send:
+				var msg WSMessage
+				if err := json.Unmarshal(data, &msg); err != nil {
+					e.t.Fatal(err)
+				}
+				if msg.Type == WSMessageTypeOrder && msg.Order != nil && msg.Order.Id.String() == orderID {
+					return *msg.Order
+				}
+			case <-time.After(2 * time.Second):
+				e.t.Fatalf("order %s was not published", orderID)
+			}
+		}
+	}
+}
+
+func refundStatusOf(order models.OrderResponse) string {
+	if order.SquareRefundStatus == nil {
+		return "<nil>"
+	}
+	return string(*order.SquareRefundStatus)
 }
 
 func (e *integrationEnv) refundCheckout(id string) (int, models.SquareCheckoutResponse, map[string]any) {
@@ -171,6 +219,130 @@ func TestSquareIntegrationRefundDeclined(t *testing.T) {
 	}
 	if count := env.orderCount(); count != 0 {
 		t.Fatalf("order must be deleted after the retry, %d left", count)
+	}
+}
+
+// 注文を残す返金では、注文は消さずに返金の状態を注文に載せて配る。
+func TestSquareIntegrationRefundKeepingOrder(t *testing.T) {
+	env := newIntegrationEnv(t)
+	checkout, orderID := env.payAndOrder(1)
+	published := env.watchOrders()
+	if got := refundStatusOf(env.getOrder(orderID)); got != string(models.RefundNone) {
+		t.Fatalf("before refund: %s", got)
+	}
+	// 現金の注文には返金の状態が無い。
+	code, cash := env.createOrder(2, 600, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("cash order: %d", code)
+	}
+	if got := refundStatusOf(env.getOrder(cash["id"].(string))); got != "<nil>" {
+		t.Fatalf("cash order must not have a refund status: %s", got)
+	}
+
+	code, refunded, raw := env.refundOrderKeepingOrder(orderID)
+	if code != http.StatusOK || refunded.RefundStatus != models.RefundPending ||
+		refunded.OrderId == nil || refunded.OrderId.String() != orderID {
+		t.Fatalf("refund: %d %v", code, raw)
+	}
+	if len(env.fake.refundRequests) != 1 || env.fake.refundRequests[0]["payment_id"] != checkout.PaymentIds[0] {
+		t.Fatalf("unexpected refund requests: %v", env.fake.refundRequests)
+	}
+	// 注文は残り、カードには返金待ちと配られる。注文の無い決済ではないので照合の一覧には出ない。
+	if count := env.orderCount(); count != 2 {
+		t.Fatalf("order must stay, %d left", count)
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published while refunding: %s", got)
+	}
+	if unlinked := env.unlinked(); len(unlinked) != 0 {
+		t.Fatalf("kept order's checkout must not be listed: %+v", unlinked)
+	}
+	// もう一度押しても Square には頼まない。
+	if code, again, _ := env.refundOrderKeepingOrder(orderID); code != http.StatusOK || again.RefundStatus != models.RefundPending {
+		t.Fatalf("refund again: %d %+v", code, again)
+	}
+	if len(env.fake.refundRequests) != 1 {
+		t.Fatalf("refund must not be requested twice, got %d", len(env.fake.refundRequests))
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published after pressing again: %s", got)
+	}
+
+	// 照合の一覧を取ると、結果待ちの返金も Square に問い合わせ、終わったら注文を配り直す。
+	env.fake.completeRefund("rf_1")
+	env.unlinked()
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundRefunded) {
+		t.Fatalf("published after refund: %s", got)
+	}
+	if got := refundStatusOf(env.getOrder(orderID)); got != string(models.RefundRefunded) {
+		t.Fatalf("after refund: %s", got)
+	}
+
+	// 返金したあとで注文を消す返金を押すと、Square には頼まずに注文だけを消す。
+	if code, deleted, raw := env.refundOrder(orderID); code != http.StatusOK || deleted.RefundStatus != models.RefundRefunded || deleted.OrderId != nil {
+		t.Fatalf("delete after refund: %d %v", code, raw)
+	}
+	if len(env.fake.refundRequests) != 1 {
+		t.Fatalf("refund must not be requested again, got %d", len(env.fake.refundRequests))
+	}
+	if count := env.orderCount(); count != 1 {
+		t.Fatalf("order must be deleted, %d left", count)
+	}
+	if unlinked := env.unlinked(); len(unlinked) != 0 {
+		t.Fatalf("refunded checkout must not be listed: %+v", unlinked)
+	}
+}
+
+// 注文を残す返金が Square で後から失敗したら、注文のカードに失敗と配る。もう一度頼める。
+func TestSquareIntegrationRefundKeepingOrderFailsLater(t *testing.T) {
+	env := newIntegrationEnv(t)
+	_, orderID := env.payAndOrder(1)
+	published := env.watchOrders()
+
+	if code, refunded, raw := env.refundOrderKeepingOrder(orderID); code != http.StatusOK || refunded.RefundStatus != models.RefundPending {
+		t.Fatalf("refund: %d %v", code, raw)
+	}
+	published(orderID)
+
+	env.fake.mu.Lock()
+	env.fake.refunds["rf_1"].Status = "FAILED"
+	env.fake.mu.Unlock()
+	env.unlinked()
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundFailed) {
+		t.Fatalf("published after the refund failed: %s", got)
+	}
+	if count := env.orderCount(); count != 1 {
+		t.Fatalf("order must stay, %d left", count)
+	}
+
+	// 失敗したら新しく頼み直す。
+	if code, retried, raw := env.refundOrderKeepingOrder(orderID); code != http.StatusOK || retried.RefundStatus != models.RefundPending {
+		t.Fatalf("retry: %d %v", code, raw)
+	}
+	if len(env.fake.refunds) != 2 {
+		t.Fatalf("expected a new refund at Square, got %d", len(env.fake.refunds))
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published after the retry: %s", got)
+	}
+}
+
+// 注文を残す返金を Square が断ったら、注文はそのままで、カードに断られたことを配る。
+func TestSquareIntegrationRefundKeepingOrderDeclined(t *testing.T) {
+	env := newIntegrationEnv(t)
+	checkout, orderID := env.payAndOrder(1)
+	published := env.watchOrders()
+	env.fake.declinePayments[checkout.PaymentIds[0]] = true
+
+	code, declined, raw := env.refundOrderKeepingOrder(orderID)
+	if code != http.StatusBadGateway || declined.RefundStatus != models.RefundFailed {
+		t.Fatalf("declined: %d %v", code, raw)
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundFailed) {
+		t.Fatalf("published after decline: %s", got)
+	}
+	if count := env.orderCount(); count != 1 {
+		t.Fatalf("order must stay, %d left", count)
 	}
 }
 

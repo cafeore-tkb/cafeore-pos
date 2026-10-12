@@ -589,7 +589,9 @@ func (h *SquareHandler) CancelCheckout(c *gin.Context) {
 // GET /api/square/checkouts/unlinked
 //
 // 返金が終わったものは出さない。返金の結果待ちのものは、ここで Square に問い合わせて最新にする。
+// レジはこれを 30 秒おきに呼ぶので、注文を残して返金した決済の結果待ちも、ついでにここで最新にする。
 func (h *SquareHandler) GetUnlinkedCheckouts(c *gin.Context) {
+	h.refreshKeptOrderRefunds(c.Request.Context())
 	var records []models.SquareCheckout
 	if err := h.db.
 		Where("status = ? AND order_id IS NULL AND (refund_status IS NULL OR refund_status <> ?)",

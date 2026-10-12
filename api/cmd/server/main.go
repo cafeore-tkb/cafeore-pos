@@ -415,8 +415,9 @@ func main() {
 		square.GET("/checkouts/:id", squareHandler.GetCheckout)
 		square.POST("/checkouts/:id/cancel", squareHandler.CancelCheckout)
 		square.POST("/checkouts/:id/refund", squareHandler.RefundCheckout)
-		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
+		// 注文から Square の決済を返金する（注文を消す／残す）。POST なので RequireByMethod でスタッフだけ
 		api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
+		api.POST("/orders/:id/square-refund-keep-order", squareHandler.RefundOrderKeepingOrder)
 	}
 
 	// サーバー起動
