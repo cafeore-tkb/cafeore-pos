@@ -54,6 +54,13 @@ func formatYen(v int) string {
 	return "¥" + strconv.Itoa(v)
 }
 
+func formatOnOff(v bool) string {
+	if v {
+		return "あり"
+	}
+	return "なし"
+}
+
 func updatedMessage(label, name, changes string) string {
 	if changes == "" {
 		return ""
@@ -71,6 +78,11 @@ func itemTypeUpdatedMessage(before, after *models.ItemType) string {
 	return updatedMessage("タイプ", after.DisplayName, describeChanges(
 		change{"表示名", before.DisplayName, after.DisplayName},
 		change{"内部名", before.Name, after.Name},
+		// 名前は POS の種類の画面のスイッチ（itemTypeForm.tsx の FLAG_FIELDS の label）と同じにする
+		change{"カップを作る", formatOnOff(before.CreatesCup()), formatOnOff(after.CreatesCup())},
+		change{"抽出が要る", formatOnOff(before.BrewRequired()), formatOnOff(after.BrewRequired())},
+		change{"上級生のみ", formatOnOff(before.SeniorOnly), formatOnOff(after.SeniorOnly)},
+		change{"アイスで淹れる", formatOnOff(before.IcedBrew), formatOnOff(after.IcedBrew)},
 	))
 }
 

@@ -21,7 +21,8 @@ export type CupEmergency = z.infer<typeof cupEmergencySchema>;
 
 /**
  * 注文の1杯。注文明細（メニュー）の構成品を数量分に展開したもの（グッズは含まない）。
- * 注文を保存したときにサーバーが作る。
+ * 注文を保存したときにサーバーが作る。API はどの列もいつも返すので既定値は持たない
+ * （レジの編集中の注文＝cashier_state は保存前なので、cups は空）。
  */
 export const cupSchema = z.object({
   id: z.string(),
@@ -30,19 +31,19 @@ export const cupSchema = z.object({
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
   // CaOS（ドリップ管制）が決めたこと（API の同じ名前の列）。CaOS 以外の画面は読まない。
-  // 読み方は lib/caos-board.ts（状態は時刻で決まる）。前に保存したデータには無いので、無ければ未割当
+  // 読み方は lib/caos-board.ts（状態は時刻で決まる）
   /** ドリッパーの番号（1〜6）。未割当なら null */
-  dripper: z.number().int().nullable().default(null),
+  dripper: z.number().int().nullable(),
   /** ドリッパーの中の順番（整数。小さいほど先。サーバーが決める） */
-  dripperPosition: z.number().int().nullable().default(null),
+  dripperPosition: z.number().int().nullable(),
   /** 同じカードで淹れるカップの印 */
-  dripId: z.string().nullable().default(null),
+  dripId: z.string().nullable(),
   /** 抽出を始めた時刻 */
-  brewStartedAt: z.date().nullable().default(null),
+  brewStartedAt: z.date().nullable(),
   /** 抽出を終えた時刻 */
-  brewFinishedAt: z.date().nullable().default(null),
+  brewFinishedAt: z.date().nullable(),
   /** 緊急（入れ直し）。足した順 */
-  emergencies: z.array(cupEmergencySchema).default([]),
+  emergencies: z.array(cupEmergencySchema),
 });
 
 export type Cup = z.infer<typeof cupSchema>;
