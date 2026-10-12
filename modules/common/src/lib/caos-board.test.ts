@@ -12,6 +12,7 @@ import {
   caosDripperAllowed,
   caosLane,
   caosLateMerge,
+  caosMergePair,
   caosNextLocked,
   cupNeedsBrew,
   cupSeniorOnly,
@@ -827,7 +828,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(canMergeCards(named, q2)).toBe(false);
   });
 
-  test("抽出を始めたカードにも 1 杯を足せる（抽出中のカードは書かない。開始の時刻はサーバーが写す）。抽出中のカードはほかのカードに入れず、終わったカードには入れない", () => {
+  test("抽出を始めたカードにも 1 杯を足せる（抽出中のカードは書かない。開始の時刻はサーバーが写す）。抽出中のカードから統合しても相手を抽出中のカードに入れ、終わったカードには入れない", () => {
     const cards = board();
     const brewing = find(cards, (c) => c.dripId === "brewing");
     const o5 = find(cards, (c) => c.orderNo === 5);
@@ -846,9 +847,20 @@ describe("[unit] CaOS の書き込み", () => {
         },
       ],
     });
-    expect(canMergeCards(brewing, o5)).toBe(false);
+    // 抽出中のカードを相手に統合しても、抽出中のカードの dripId は変えず、相手（待機・未割当）を抽出中のカードに入れる
+    expect(caosMergePair(brewing, o5)).toEqual({ card: o5, into: brewing });
+    expect(mergeWrites(brewing, o5, newId)).toEqual(result);
+    const q2 = find(cards, (c) => c.dripId === "q2");
+    expect(caosMergePair(brewing, q2)).toEqual({ card: q2, into: brewing });
+    // 逆向きでも、入るカード（抽出中）のドリッパーに置けないカード（4 番の指名）は入れない
+    const named = find(cards, (c) => c.nominatedDripper === 4);
+    expect(caosMergePair(brewing, named)).toBeNull();
+    // 抽出中どうし・終わったカードとは統合しない
+    const other = { ...brewing, key: "other", dripId: "other" };
+    expect(canMergeCards(brewing, other)).toBe(false);
     const done = { ...brewing, key: "done", status: "done" as const };
     expect(canMergeCards(o5, done)).toBe(false);
+    expect(canMergeCards(done, o5)).toBe(false);
   });
 
   test("統合の解除：ほかの注文と統合した未割当・待機のカードから選んだ 1 杯を未割当に戻す（残りはそのまま）", () => {

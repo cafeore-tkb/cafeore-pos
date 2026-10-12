@@ -7,6 +7,7 @@ import {
   type PracticeDataOrder,
   assignWrites,
   caosLateMerge,
+  caosMergePair,
   dripperLabel,
   jstClock,
   mergeWrites,
@@ -173,12 +174,17 @@ export const useCaosSession = () => {
       () => soundManager.playComplete(),
     );
   };
-  // 統合（firstKey のカードを intoKey のカードへ）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
+  // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
   // checkLate なら送らずに confirms で確かめる（確かめを出したら true）
   const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
-    const card = cardOf(firstKey);
-    const into = cardOf(intoKey);
-    if (!card || !into) return fail(NOT_FOUND);
+    const first = cardOf(firstKey);
+    const second = cardOf(intoKey);
+    if (!first || !second) return fail(NOT_FOUND);
+    // 統合できなければ、そのまま mergeWrites が断る
+    const { card, into } = caosMergePair(first, second) ?? {
+      card: first,
+      into: second,
+    };
     const blocked = test.session
       ? null
       : seniorOnlyMergeBlock(card, into, people);

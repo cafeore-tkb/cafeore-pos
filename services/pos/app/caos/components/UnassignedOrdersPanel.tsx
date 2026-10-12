@@ -1,11 +1,8 @@
-import { type CaosCard, type CaosPlace, canSplitCard } from "@cafeore/common";
+import { type CaosCard, canSplitCard } from "@cafeore/common";
 import { ClipboardList } from "lucide-react";
 import type React from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
-import {
-  type UnassignedPick,
-  useUnassignedPick,
-} from "../hooks/useUnassignedPick";
+import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
   type CardLooks,
   type OrderRowEntry,
@@ -14,7 +11,7 @@ import {
   sharesOrder,
   totalCups,
 } from "../logic/cards";
-import { type Lane, cardPlaces, laneActive, laneCards } from "../logic/lanes";
+import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
 import {
@@ -27,7 +24,7 @@ import {
 } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
-// 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は useUnassignedPick。
+// 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
 // どちらも注文番号の順に注文ごとにまとめ、ほかの注文と統合したカードはもとの注文の場所に跡（MergedTrace）を残す。
 // カードはなぞると掴むので、スクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
@@ -115,16 +112,10 @@ type UnassignedProps = {
   orders: CaosCard[];
   looks: CardLooks;
   selectedOrderId: string | null;
-  onSelectOrder: (orderId: string | null) => void;
-  onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  /** ドリッパーの列（ドラッグで統合する相手を引く） */
-  lanes?: Lane[];
-  /** 1 杯のカード（firstKey）を統合できる 1 杯のカード（intoKey）に入れる */
-  onMergeOrders?: (firstKey: string, intoKey: string) => void;
-  /** 統合の解除（統合したカードから 1 杯を外す） */
-  onSplitCup?: (card: CaosCard, cupId: string) => void;
-  /** 入れ直し（緊急）のカードを開くと「取り消す」を出す（渡したときだけ） */
-  onCancelEmergency?: (card: CaosCard) => void;
+  /** ドリッパーの列（置いたカードを灰色で並べる） */
+  lanes: Lane[];
+  /** カードの操作（useControlPick） */
+  pick: UnassignedPick;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
 };
@@ -208,12 +199,15 @@ const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
  */
 export const UnassignedStrip: React.FC<
   UnassignedProps & { nextAvailable: NextAvailable }
-> = ({ nextAvailable, readOnly = false, ...props }) => {
-  const { orders, looks, selectedOrderId, lanes = [] } = props;
-  const pick = useUnassignedPick({
-    ...props,
-    placed: lanes.flatMap(laneActive),
-  });
+> = ({
+  nextAvailable,
+  readOnly = false,
+  orders,
+  looks,
+  selectedOrderId,
+  lanes,
+  pick,
+}) => {
   const { rows: columns, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -283,14 +277,13 @@ export const UnassignedStrip: React.FC<
  * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。その上に、直近にドリッパーに置いた注文を数件だけ残す（logic/cards の queueRows）。
  * 10 注文くらいが一度に見える高さ
  */
-export const OrderQueuePanel: React.FC<
-  Omit<UnassignedProps, "readOnly"> & { lanes: Lane[] }
-> = ({ lanes, ...props }) => {
-  const { orders, looks, selectedOrderId } = props;
-  const pick = useUnassignedPick({
-    ...props,
-    placed: lanes.flatMap(laneActive),
-  });
+export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
+  orders,
+  looks,
+  selectedOrderId,
+  lanes,
+  pick,
+}) => {
   const { rows, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">

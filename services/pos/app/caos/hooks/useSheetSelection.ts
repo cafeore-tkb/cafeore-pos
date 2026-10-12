@@ -1,8 +1,9 @@
-import { type CaosCard, canMergeCards } from "@cafeore/common";
+import type { CaosCard } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cardOrderNos, orderLabel } from "../logic/cards";
+import { canTapMerge, cardOrderNos, orderLabel } from "../logic/cards";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
+// 統合できる未割当のカードと表の抽出中のカードには「統合する」が出て、押すと統合する（待機のカードへは統合しない）。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。
 export const useSheetSelection = ({
   unassigned,
@@ -21,6 +22,8 @@ export const useSheetSelection = ({
   // 統合して、盤面から統合したカードが届くのを待っている注文番号
   const [mergingNos, setMergingNos] = useState<number[] | null>(null);
   const selected = unassigned.find((card) => card.key === selectedUid) ?? null;
+  const canMergeWith = (card: CaosCard) =>
+    Boolean(selected && canTapMerge(selected, card));
 
   useEffect(() => {
     if (selectedUid && !selected) setSelectedUid(null);
@@ -71,13 +74,14 @@ export const useSheetSelection = ({
       if (card.key === selectedUid) clear();
       else select(card);
     },
-    /** 選んだカードと統合できる */
-    canMergeWith: (card: CaosCard) =>
-      Boolean(selected && canMergeCards(selected, card)),
+    /** 選んだカードと押して統合できる（未割当と抽出中のカード） */
+    canMergeWith,
+    /** 押したカードに統合する。未割当どうしなら、統合したカードを選んで見せる */
     mergeWith: (card: CaosCard) => {
-      if (!selected || !canMergeCards(selected, card)) return;
+      if (!selected || !canMergeWith(card)) return;
       onMerge(selected.key, card.key);
-      setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
+      if (card.status === "unassigned")
+        setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
       clear();
     },
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */

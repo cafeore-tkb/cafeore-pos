@@ -2,6 +2,7 @@ import {
   type CaosCard,
   type ColorSetting,
   type StockResource,
+  canMergeCards,
   resolveItemColor,
 } from "@cafeore/common";
 import { type BeanIndex, cardBean } from "./beans";
@@ -10,6 +11,10 @@ import { type BeanIndex, cardBean } from "./beans";
 // そのまま使い、名前・注文番号・色・分割の表示はここで引く。
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
+
+/** 開いた（選んだ）未割当のカード open を、押した card に統合できるか。押して統合するのは未割当と抽出中のカード（待機のカードへはドラッグで） */
+export const canTapMerge = (open: CaosCard, card: CaosCard) =>
+  card.status !== "queued" && canMergeCards(open, card);
 
 /** 注文番号を 3 桁に（「007」） */
 export const orderNoLabel = (no: number) => no.toString().padStart(3, "0");
