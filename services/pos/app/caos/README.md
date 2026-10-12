@@ -6,7 +6,7 @@
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに同じ盤面を映します。「次へ」・空きスロットは出さず、カードを押しても動かさず、盤面への書き込みも送りません。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/master-sheet.tsx` で、POS のヘッダーは付けません。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A のタイムラインに同じ盤面を映します。「次へ」・空きスロットは出さず、カードを押しても動かさず、盤面への書き込みも送りません。リベロ（ドリッパーにお湯を持って回る係）が見る画面は `/master-sheet/libero`（`routes/master-sheet_.libero.tsx` → `caos/LiberoBoard.tsx`）で、同じ盤面を読むだけです（下の「リベロビュー」）。閲覧の 2 つの画面はヘッダーの「タイムライン」「リベロ」で行き来でき、操作の画面のヘッダーの「リベロ」はリベロビューを別のタブで開きます。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 ## 画面
 
@@ -72,9 +72,18 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 豆キューは在庫の画面（`/inventory`）と同じカード（`components/organisms/inventory/StockCard`）で、そこからの棚卸し・入荷は POS の在庫に記録します（実データテスト中は記録しません）。
 - API の URL は POS と同じ `VITE_API_BASE_URL` です（未設定ならローカルの `http://localhost:8080`）。origin も POS と同じなので、API の `FRONTEND_ORIGINS` に足すものはありません。
 
+## リベロビュー
+
+- リベロが次にお湯を持っていく人を一目で決められるよう、1st〜6th の抽出中のカードの「入れ始めてからの時間」（抽出の開始 `brew_started_at` から。秒まで、毎秒進む）と、その長い順の順位（1・2・3…）を大きく出します。未割当は出しません。
+- 各行には担当者の名前、何を何杯（商品の略称・杯数。地の色はカードと同じ色の設定）と注文番号、予定の抽出時間（`@cafeore/common` の `caosBrewSec`。1 杯 300 秒・2 杯 360 秒）に対する進み具合の帯を添えます。
+- 進み具合を予定の抽出時間までの 4 段に分け、長いほど行の地・枠・順位・帯を濃い紫にします（`caos.css` の `--caos-elapsed-1`〜`4`）。予定の抽出時間を過ぎたら継続中の赤（`--caos-overtime`）にし、帯の横に過ぎた時間（「予定 5:00 ＋0:40」）を出します。決まりは `logic/libero.ts`（`liberoLanes`）です。
+- 抽出していない（待機だけ・空き）ドリッパーは薄い灰色で、順位も経過も出しません。
+- 並びはヘッダーで切り替えます。「ドリッパー順」（1st〜6th のまま。ドリッパーの並びと同じ位置）と「経過の長い順」（いちばん上が順位 1。抽出していないドリッパーは下に番号の順）。経過の長い順は URL の `?order=elapsed` で、テレビなどで開いたままにできます。
+- 閲覧の画面（`/master-sheet/view`）と同じく、いつも cafeore-pos の本番の盤面を映し（実データテストの盤面は映しません）、書き込みは送りません。iPad の横置き（1180×820）からテレビ（1920×1080）まで、文字は画面の高さに合わせて大きくします。
+
 ## ドリッパーの担当者と交代
 
-- 「今そのドリッパーに誰がいるか」（名前と、上級生か）はサーバーが日本時間の日付ごとに持ちます（API の表 `dripper_assignees`。`api/internal/handlers/caos_lanes.go`）。全部の iPad に共有の WebSocket の `{"type":"caos_lanes"}` で届き（今日の 6 つ全部）、列の見出しに「1st 山田★」のように出します（上級生に ★。担当者がいなければ番号だけ）。閲覧だけの画面（`/master-sheet/view`）も名前を出しますが、交代はできません。
+- 「今そのドリッパーに誰がいるか」（名前と、上級生か）はサーバーが日本時間の日付ごとに持ちます（API の表 `dripper_assignees`。`api/internal/handlers/caos_lanes.go`）。全部の iPad に共有の WebSocket の `{"type":"caos_lanes"}` で届き（今日の 6 つ全部）、列の見出しに「1st 山田★」のように出します（上級生に ★。担当者がいなければ番号だけ）。閲覧だけの画面（`/master-sheet/view`・`/master-sheet/libero`）も名前を出しますが、交代はできません。
 - 替えるのは人が CaOS で行います（`PUT /api/caos/lanes/{dripper}`）。押したらその場で替わります（抽出中かどうかは見ません。待機のカードも動きません）。
   - 列の見出し（管制盤 A・C・D）と列の操作のパネル（ドリッパーの番号を押して開く）の「交代」は、押したらすぐ次の人に替わります。次の人は sohosai-shift の予定（下の並び）で、今の担当者が出てくる一番うしろの予定より後ろの最初の人です（前の予定の人には戻りません。今の担当者が予定にいなければ先頭から）。次の人はボタンに「交代 → 鈴木」のように出します（A・D は幅が狭いので「交代 →」の下に名前）。次の人がいない（合言葉が無い・予定にその番目の人がいない・予定の人がもう入っている）ときは押せない見た目で「次の人なし」と出し、押すと理由を通知で出します。替えたあとは「1つ戻す」で 10 秒のあいだ前の人に戻せます。二度押しで 2 人ぶん進まないよう、替えてから 1 秒は同じドリッパーの「交代」を押しても替えません。
   - ヘッダーの「ドリッパー」の各ドリッパーの「交代」は交代の画面を開き、候補から選ぶ・名前を入れる・空き（担当者なし）にする・ほかのドリッパーの担当者と入れ替える（`POST /api/caos/lanes/swap`）ができます。

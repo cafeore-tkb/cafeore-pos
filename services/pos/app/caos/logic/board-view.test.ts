@@ -8,6 +8,7 @@ import {
   sharesOrder,
 } from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
+import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { linkedOrderNos } from "./sheet";
 
@@ -248,5 +249,44 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     );
     expect(laneStatus(lane, T0.getTime()).phase).toBe("waiting");
+  });
+
+  test("リベロビュー：抽出中のドリッパーに経過の長い順の順位と、予定の抽出時間に対する進み具合の段", () => {
+    // 1st：#1（1 杯）を 0 秒に、3rd：#2（2 杯）を 100 秒に始めた。2nd は待機だけ、ほかは空き
+    const at = (sec: number) => new Date(T0.getTime() + sec * 1000);
+    const lanes = boardLanes(
+      buildCaosCards([
+        order(1, [
+          { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+        ]),
+        order(2, [
+          {
+            dripper: 3,
+            dripId: "d2",
+            dripperPosition: 1,
+            brewStartedAt: at(100),
+          },
+          {
+            dripper: 3,
+            dripId: "d2",
+            dripperPosition: 1,
+            brewStartedAt: at(100),
+          },
+        ]),
+        order(3, [{ dripper: 2, dripId: "d3", dripperPosition: 1 }]),
+      ]),
+    );
+    const rows = liberoLanes(lanes, at(310).getTime());
+    expect(rows.map(({ lane, brew }) => [lane.id, brew])).toEqual([
+      [1, { elapsedSec: 310, plannedSec: 300, rank: 1, step: 4 }],
+      [2, undefined],
+      [3, { elapsedSec: 210, plannedSec: 360, rank: 2, step: 2 }],
+      [4, undefined],
+      [5, undefined],
+      [6, undefined],
+    ]);
+    expect(byElapsed(rows).map(({ lane }) => lane.id)).toEqual([
+      1, 3, 2, 4, 5, 6,
+    ]);
   });
 });

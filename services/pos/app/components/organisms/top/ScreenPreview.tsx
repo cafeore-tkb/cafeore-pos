@@ -14,6 +14,7 @@ export type ScreenKind =
   | "master"
   | "master-sheet"
   | "master-sheet-view"
+  | "master-sheet-libero"
   | "serve"
   | "cashier-mini"
   | "callscreen"
@@ -38,6 +39,7 @@ const previews: Record<ScreenKind, () => JSX.Element> = {
   master: () => <OrderBoardPreview user="master" />,
   "master-sheet": () => <CaosPreview />,
   "master-sheet-view": () => <CaosPreview readOnly />,
+  "master-sheet-libero": LiberoPreview,
   serve: () => <OrderBoardPreview user="serve" />,
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
@@ -593,6 +595,92 @@ function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+// CaOS のリベロビュー（/master-sheet/libero）：ドリッパー1〜6の行に、入れ始めてからの時間の長い順の順位と経過を大きく。
+// 長いほど濃く、予定の抽出時間を過ぎたら赤。抽出していないドリッパーは薄く
+function LiberoPreview() {
+  const rows = [
+    {
+      rank: 1,
+      time: "5:44",
+      fill: 100,
+      row: "border-red-500 bg-red-100",
+      mark: "bg-red-500 text-white",
+    },
+    {
+      rank: 3,
+      time: "2:34",
+      fill: 43,
+      row: "border-violet-400 bg-violet-50",
+      mark: "bg-violet-400",
+    },
+    {
+      rank: 4,
+      time: "0:49",
+      fill: 16,
+      row: "border-violet-200 bg-white",
+      mark: "bg-violet-200",
+    },
+    null,
+    {
+      rank: 2,
+      time: "4:54",
+      fill: 82,
+      row: "border-violet-800 bg-violet-100",
+      mark: "bg-violet-800 text-white",
+    },
+    null,
+  ];
+  return (
+    <div className="flex h-full flex-col gap-[0.3em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
+      <div className="flex items-center gap-[0.4em]">
+        <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
+          CaOS
+        </span>
+        <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
+          リベロ
+        </span>
+        <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
+      </div>
+      {rows.map((row, i) => (
+        <div
+          key={`lane-${i + 1}`}
+          className={cn(
+            "flex flex-1 items-center gap-[0.4em] rounded border-2 px-[0.3em]",
+            row ? row.row : "border-transparent bg-slate-200/60 text-slate-400",
+          )}
+        >
+          <span
+            className={cn(
+              "flex h-[1.5em] w-[1.5em] items-center justify-center rounded font-black font-mono",
+              row?.mark,
+            )}
+          >
+            {row?.rank}
+          </span>
+          <span className="w-[2.4em] font-black font-mono text-[0.8em]">
+            {i + 1}
+          </span>
+          {row ? (
+            <>
+              <span className="h-[0.4em] flex-1 overflow-hidden rounded-full bg-slate-900/10">
+                <span
+                  className={cn("block h-full rounded-full", row.mark)}
+                  style={{ width: `${row.fill}%` }}
+                />
+              </span>
+              <span className="font-black font-mono text-[1.2em]">
+                {row.time}
+              </span>
+            </>
+          ) : (
+            <span className="font-bold text-[0.6em]">空き</span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
