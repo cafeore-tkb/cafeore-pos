@@ -40,6 +40,9 @@ export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
   store.put({ id: crypto.randomUUID(), at: lastAt, label, op });
 };
 
+// つなぎ直して注文が届いてから、今日の担当者が届き直すのを待つ長さ（担当者は注文のすぐあとに届く。届かなくても、これを過ぎたら送る）
+const LANES_WAIT_MS = 3_000;
+
 // 押してからこの長さのうちは、送っている途中とみて「未送信」に数えない（操作のたびに出たり消えたりしないように）
 const UNSENT_AFTER_MS = 2_000;
 
@@ -59,20 +62,24 @@ export const useCaosOutboxSender = (
   const todays = useMemo(() => caosDayOrders(orders, today), [orders, today]);
   // 前の日の担当者は、今日の担当者とみない（今日の担当者がまだ無ければサーバーは何も送らないので、前の日のものが残っている）
   const lanes = caosLanes?.day === today ? caosLanes : null;
-  // 切れていたあいだの注文と担当者。つなぎ直すとサーバーが全部の注文と今日の担当者を送り直すので、それが届く（新しくなる）までは古い盤面とみて送らない
-  // （担当者は注文のあとに届く。古い担当者で交代・入れ替えを確かめると、ほかの端末が替えた担当者を上書きしてしまう）
-  const stale = useRef<{ orders: typeof orders; lanes: typeof lanes } | null>(
-    null,
-  );
+  // 切れていたあいだの注文と担当者。つなぎ直すとサーバーが全部の注文と今日の担当者を送り直すので、それが届く（新しくなる）までは古い盤面とみて送らない。
+  // 担当者は注文のあとに届くので、注文が届いてから（ordersAt）LANES_WAIT_MS までは担当者も待つ
+  // （古い担当者で交代・入れ替えを確かめると、ほかの端末が替えた担当者を上書きしてしまう）
+  const stale = useRef<{
+    orders: typeof orders;
+    lanes: typeof lanes;
+    ordersAt?: number;
+  } | null>(null);
   if (status !== "open") stale.current = { orders, lanes };
+  const ordersFresh =
+    status === "open" && isOrdersLoaded && orders !== stale.current?.orders;
+  if (ordersFresh && stale.current) stale.current.ordersAt ??= nowMs;
+  // 今日の担当者がまだ無ければサーバーは何も送らないので、そのときも LANES_WAIT_MS で待つのをやめる
+  const lanesFresh =
+    lanes !== stale.current?.lanes ||
+    nowMs - (stale.current.ordersAt ?? nowMs) >= LANES_WAIT_MS;
   const server = useRef<CaosServerState | null>(null);
-  server.current =
-    status === "open" &&
-    isOrdersLoaded &&
-    orders !== stale.current?.orders &&
-    (lanes === null || lanes !== stale.current?.lanes)
-      ? { orders: todays, lanes }
-      : null;
+  server.current = ordersFresh && lanesFresh ? { orders: todays, lanes } : null;
   const rejected = useRef(onRejected);
   rejected.current = onRejected;
   const [outbox] = useState(() =>

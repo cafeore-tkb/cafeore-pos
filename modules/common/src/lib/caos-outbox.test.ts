@@ -625,6 +625,18 @@ describe("unit: caos-outbox 送る", () => {
       expect(t.sent.map((r) => r.kind)).toEqual(["lane"]);
     });
 
+    test("押したときの担当者の無い交代（前の版で残したもの）は、確かめずに送る", async () => {
+      const old = entry({
+        kind: "lane",
+        dripper: 1,
+        name: "鈴木",
+        senior: false,
+      });
+      const t = setup([old], [], [], lanes("佐藤"));
+      await t.outbox.kick();
+      expect(t.sent.map((r) => r.kind)).toEqual(["lane"]);
+    });
+
     test("ほかの端末が先に替えていれば、送らずに捨てて知らせる", async () => {
       const t = setup([change("山田", "鈴木")], [], [], lanes("佐藤"));
       await t.outbox.kick();
@@ -708,12 +720,9 @@ test("unit: caos-outbox 端末に残したものは JSON から読み直せる�
   expect(
     parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "toString" } }),
   ).toBe(null);
-  // 押したときの担当者の無い交代も読まない（確かめられないので）
-  expect(
-    parseCaosOutboxEntry(id, {
-      at: 1,
-      label: "x",
-      op: { kind: "lane", dripper: 1, name: "鈴木", senior: false },
-    }),
-  ).toBe(null);
+  // 押したときの担当者の無い交代（前の版で残したもの）も読む（確かめずに送る）
+  const lane = { kind: "lane", dripper: 1, name: "鈴木", senior: false };
+  expect(parseCaosOutboxEntry(id, { at: 1, label: "x", op: lane })?.op).toEqual(
+    lane,
+  );
 });

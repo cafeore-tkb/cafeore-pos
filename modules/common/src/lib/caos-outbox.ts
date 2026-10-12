@@ -55,13 +55,13 @@ export type CaosOutboxOp =
   | { kind: "undo"; entry: CaosUndoEntry }
   /** 緊急（入れ直し）の取り消し */
   | { kind: "cancel-emergency"; id: string }
-  /** 担当者の交代。before は押したときの担当者 */
+  /** 担当者の交代。before は押したときの担当者（前の版で残したものには無いので、確かめずに送る） */
   | {
       kind: "lane";
       dripper: number;
       name: string;
       senior: boolean;
-      before: string;
+      before?: string;
     }
   /** 担当者の入れ替え。names は押したときの first・second の担当者 */
   | { kind: "swap"; first: number; second: number; names: [string, string] }
@@ -110,7 +110,7 @@ const SHAPES: Record<
     typeof op.dripper === "number" &&
     typeof op.name === "string" &&
     typeof op.senior === "boolean" &&
-    typeof op.before === "string",
+    (op.before === undefined || typeof op.before === "string"),
   swap: (op) =>
     typeof op.first === "number" &&
     typeof op.second === "number" &&
@@ -313,7 +313,7 @@ export const overlayCaosOrders = (
 const pressedLanes = (op: CaosOutboxOp): [number, string][] => {
   switch (op.kind) {
     case "lane":
-      return [[op.dripper, op.before]];
+      return op.before === undefined ? [] : [[op.dripper, op.before]];
     case "swap":
       return [
         [op.first, op.names[0]],
