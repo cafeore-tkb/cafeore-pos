@@ -1,10 +1,16 @@
-import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosOrderInput,
+  type Cup,
+  buildCaosCards,
+} from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import {
   cardLooks,
   orderLabel,
   orderRows,
   queueRows,
+  quickMergePartner,
   selectedComments,
   sharesOrder,
 } from "./cards";
@@ -95,6 +101,22 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       { orderNo: 3, entries: ["m"] },
       { orderNo: 4, entries: ["#003+#004"] },
     ]);
+  });
+
+  test("開いたカードをもう一度押したときの統合の相手は、1 枚ならそれ、何枚かあれば注文番号がいちばん近いもの。決まらなければ無し", () => {
+    const [c10, c12, c13, c14, c15] = buildCaosCards(
+      [10, 12, 13, 14, 15].map((no) => order(no, [{}])),
+    );
+    const [two] = buildCaosCards([order(11, [{}, {}])]);
+    const keyOf = (card: CaosCard, cards: CaosCard[]) =>
+      quickMergePartner(card, cards)?.key;
+    // 1 枚なら離れていてもそれ（2 杯のカードには統合できない）
+    expect(keyOf(c10, [two, c15])).toBe(c15.key);
+    // いちばん近い #13
+    expect(keyOf(c15, [c10, c13, c15])).toBe(c13.key);
+    // #10 と #14 はどちらも 2 つ離れていて決まらない
+    expect(keyOf(c12, [c10, c12, c14])).toBeUndefined();
+    expect(keyOf(c12, [two])).toBeUndefined();
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {

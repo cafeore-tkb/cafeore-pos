@@ -57,6 +57,10 @@ html:has(.caos-root) body {
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);
   --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
+  /* 統合（「統合する」と、開いたカードの統合する相手の札） */
+  --caos-merge: oklch(48.8% 0.243 264.376);
+  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線 */
+  --caos-card-stack-line: oklch(55.4% 0.046 257.417);
 }
 
 /* 右のパネル（SidePanels の SidePanel）の幅 */

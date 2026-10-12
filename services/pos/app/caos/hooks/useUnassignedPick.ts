@@ -1,6 +1,6 @@
 import { type CaosCard, type CaosPlace, canMergeCards } from "@cafeore/common";
 import { useState } from "react";
-import { orderLabel } from "../logic/cards";
+import { orderLabel, quickMergePartner } from "../logic/cards";
 import { type DropTarget, dropTargetAt, useCardDrag } from "./useCardDrag";
 import { useOutsidePress } from "./useOutsidePress";
 
@@ -9,6 +9,7 @@ import { useOutsidePress } from "./useOutsidePress";
  * カードをタップすると上下に 1〜6 のボタンが開き（開いたカード）、押すか、指を離さずなぞるか、列へドラッグして割り当てる
  * （待機のカードの上に落とすと、そのカードの前へ。placed のうち統合できる待機・抽出中のカードの上なら統合）。
  * 1 杯のカードを開くと、統合できる 1 杯のカードを押して統合できる（onMergeOrders を渡したときだけ）。
+ * 相手が決まる（logic/cards の quickMergePartner）ときは、開いたカードをもう一度押しても統合する（決まらなければ開いたまま）。
  * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
  * 入れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
  */
@@ -64,12 +65,16 @@ export const useUnassignedPick = ({
 
   const canMergeWith = (card: CaosCard) =>
     Boolean(onMergeOrders && openCard && canMergeCards(openCard, card));
+  // 開いたカードをもう一度押したときに統合する相手
+  const partner =
+    onMergeOrders && openCard ? quickMergePartner(openCard, orders) : undefined;
 
   return {
     drag,
     assign,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
+    partner,
     /** 統合したカードから 1 杯を外して閉じる（onSplitCup を渡したときだけ） */
     split:
       onSplitCup &&
@@ -84,10 +89,11 @@ export const useUnassignedPick = ({
         onCancelEmergency(card);
         setOpenKey(null);
       }),
-    /** カードを押した：統合できる相手なら統合し、ほかは開いてその注文を選ぶ */
+    /** カードを押した：統合できる相手（開いたカードなら決まった相手）と統合し、ほかは開いてその注文を選ぶ */
     tap: (card: CaosCard) => {
-      if (openCard && onMergeOrders && canMergeCards(openCard, card)) {
-        onMergeOrders(openCard.key, card.key);
+      const into = card.key === openKey ? partner : card;
+      if (openCard && into && canMergeWith(into)) {
+        onMergeOrders?.(openCard.key, into.key);
         setOpenKey(null);
         return;
       }
