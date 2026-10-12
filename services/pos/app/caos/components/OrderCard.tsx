@@ -17,7 +17,7 @@ import {
 import { moveTargets } from "../logic/lanes";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
-// いちばん大きく「何が何杯か」（商品の略称と杯数）、次に注文番号と分けた注文の「1/2・計4杯」を出す。
+// いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号と分けた注文の「1/2・計4杯」を出す。
 // 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
@@ -153,23 +153,26 @@ export const OrderCard: React.FC<
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline(text.name)}
-        <span
-          className={`shrink-0 whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
-        >
-          {card.cups.length}杯
-        </span>
-        {card.emergency && (
+        {/* 杯数はいつも右上（緊急の札・終わりの印はその左） */}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {card.emergency && (
+            <span
+              className={`whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
+            >
+              緊急
+            </span>
+          )}
+          {done && (
+            <Check className="h-4 w-4 text-emerald-700">
+              <title>完了</title>
+            </Check>
+          )}
           <span
-            className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
+            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
           >
-            緊急
+            {card.cups.length}杯
           </span>
-        )}
-        {done && (
-          <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-700">
-            <title>完了</title>
-          </Check>
-        )}
+        </span>
       </div>
       {/* 注文番号（未割当は商品）・指名・分けた注文の位置と合計・上級生のみ・緊急の理由か豆 */}
       <div
