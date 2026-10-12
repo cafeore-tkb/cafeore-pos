@@ -75,10 +75,7 @@ declare global {
 export type EposPrinterConfig = {
   /** プリンターの IP アドレス */
   address: string;
-  /**
-   * ePOS-Device のポート。SDK は 8008 なら http（ws）、それ以外は https（wss）でつなぐ。
-   * つながらなければ EPOS_SECURE_PORT でつなぎ直す（createEposPrinter）
-   */
+  /** ePOS-Device のポート。SDK は 8008 なら http、それ以外は https でつなぐ */
   port: number;
   /** プリンターに設定してあるデバイス ID */
   deviceId: string;
@@ -107,22 +104,15 @@ export const eposCertificateUrl = (address: string) => `https://${address}`;
 // つながったポートを、アドレスごとに端末に覚えておく（次はそれから試し、毎回つながらない方を待たない）
 const PORT_KEY_PREFIX = "cafeore:epos-port:";
 
-/** 試すポートの順。設定のポート・暗号化のポートのうち、前につながった方を先にする */
-const portsToTry = ({ address, port }: EposPrinterConfig) => {
-  let remembered: string | null = null;
+const loadPort = (address: string) => {
   try {
-    remembered = localStorage.getItem(PORT_KEY_PREFIX + address);
+    return localStorage.getItem(PORT_KEY_PREFIX + address);
   } catch {
-    // 読めなければ設定の順
+    return null;
   }
-  const ports =
-    remembered === String(EPOS_SECURE_PORT)
-      ? [EPOS_SECURE_PORT, port]
-      : [port, EPOS_SECURE_PORT];
-  return [...new Set(ports)];
 };
 
-const rememberPort = (address: string, port: number) => {
+const storePort = (address: string, port: number) => {
   try {
     localStorage.setItem(PORT_KEY_PREFIX + address, String(port));
   } catch {
@@ -225,8 +215,7 @@ export const writeEposJob = (
 /**
  * Epson の ePOS-Device につながるプリンター
  *
- * ブラウザから直接プリンターにつなぐ（サーバーは通らない）。設定のポートでつながらなければ、
- * 暗号化のポート（EPOS_SECURE_PORT。閉じていれば 443 の ePOS-Print）でつなぎ直す。
+ * ブラウザから直接プリンターにつなぐ（サーバーは通らない）。
  */
 export const createEposPrinter = (
   onStatusChange: (status: PrinterConnectionStatus) => void,
@@ -264,7 +253,7 @@ export const createEposPrinter = (
       return;
     }
 
-    // ports の順に試す。つながらなければ次のポートでつなぎ直す（https のページでは 8008 が止められるので 8043 に）
+    // ports の順に試し、つながらなければ次でつなぎ直す（わけは EPOS_SECURE_PORT）
     const connectAt = ([port, ...rest]: number[]) => {
       const dev = new epson.ePOSDevice();
       ePosDev = dev;
@@ -289,7 +278,7 @@ export const createEposPrinter = (
             if (current !== generation) return;
             if (retcode === "OK" && devobj) {
               device = devobj;
-              rememberPort(config.address, port);
+              storePort(config.address, port);
               onStatusChange("connected");
             } else {
               onStatusChange("disconnected");
@@ -299,7 +288,12 @@ export const createEposPrinter = (
         );
       });
     };
-    connectAt(portsToTry(config));
+    // 前に暗号化のポートでつながった端末は、そちらから
+    connectAt(
+      loadPort(config.address) === String(EPOS_SECURE_PORT)
+        ? [EPOS_SECURE_PORT, config.port]
+        : [config.port, EPOS_SECURE_PORT],
+    );
   };
 
   // 1 件ずつ送り、返事を待ってから次を送る（返事がどの印刷のものか取り違えないように）
