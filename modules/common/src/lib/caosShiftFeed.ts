@@ -315,7 +315,9 @@ export const nextLaneCandidate = (
   nowMs: number,
   current: string,
 ): LaneCandidate | "already-in" | null => {
-  const [next] = laneCandidates(feed, dripper, nowMs, current);
-  if (next) return next;
-  return laneCandidates(feed, dripper, nowMs).length > 0 ? "already-in" : null;
+  const scheduled = laneCandidates(feed, dripper, nowMs);
+  const next = scheduled.find(
+    (candidate) => normalizeName(candidate.name) !== normalizeName(current),
+  );
+  return next ?? (scheduled.length > 0 ? "already-in" : null);
 };

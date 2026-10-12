@@ -9,14 +9,8 @@ import {
   undoCaosCups,
 } from "@cafeore/common";
 import { useMemo, useRef } from "react";
-import { toast } from "sonner";
+import { refuseUndo, succeeded } from "./useCaosUndo";
 import { usePosOrders } from "./usePosOrders";
-
-// API の結果。断られたら理由を通知で出して false
-const succeeded = ({ error }: { error?: string }) => {
-  if (error) toast.error(error);
-  return !error;
-};
 
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる（@cafeore/common の buildCaosCards）。
@@ -60,11 +54,7 @@ export const useLiveBoard = ({
     /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
     undoRun: (entry: CaosUndoEntry) => () => {
       const request = caosUndoCups(entry, cardsRef.current);
-      if ("error" in request && request.arriving) {
-        toast(request.error);
-        return "retry";
-      }
-      if ("error" in request) return succeeded(request);
+      if ("error" in request) return refuseUndo(request);
       return undoCaosCups(request.cups).then(succeeded);
     },
   };

@@ -97,7 +97,6 @@ export const LaneChangeButton: React.FC<{
       <LaneButton
         dripper={dripper}
         aria-disabled
-        data-lane-next=""
         title={found.reason}
         onClick={() =>
           toast(found.reason, {
@@ -117,10 +116,9 @@ export const LaneChangeButton: React.FC<{
   return (
     <LaneButton
       dripper={dripper}
-      data-lane-next={name}
       title={`交代 → ${name}（${reasons.join("・")}）`}
       aria-label={`交代 → ${name}`}
-      onClick={() => changeToNext(dripper)}
+      onClick={() => changeToNext(dripper, found.next)}
       className={`${LAYOUTS[layout]} border-slate-300 bg-white text-slate-500 hover:bg-slate-50 ${className}`}
     >
       {head(" →")}
