@@ -26,7 +26,8 @@ import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
-// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）。抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
+// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
 // 統合できる待機・抽出中のカードの上の右の部分に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
@@ -53,13 +54,13 @@ export const DispatchBoard: React.FC<
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicketPad,
+  onOpenTicket,
   onOpenRebrew,
   onCancelEmergency,
   actionTicketKey,
   onMoveTicket,
   onReturnToUnassigned,
-  onCloseTicketAction,
+  onCloseTicket,
   onOpenEmptySlot,
   onOpenLane,
   onMergeOrders,
@@ -94,17 +95,17 @@ export const DispatchBoard: React.FC<
     onDrop: ({ card }, target) => {
       if (target.mergeKey) onMergeOrders(card.key, target.mergeKey);
       else onMoveTicket(card, target.bayId, target.place);
-      onCloseTicketAction();
+      onCloseTicket();
     },
   });
 
-  // 1〜6 のボタンを開いたカードの外を押すと閉じる
+  // 1〜6 のボタンを開いたカードの外を押すと閉じる（注文の選択も外す）
   useOutsidePress(
     actionTicketKey !== null,
     (target) =>
       target.closest<HTMLElement>("[data-card-key]")?.dataset.cardKey ===
       actionTicketKey,
-    onCloseTicketAction,
+    onCloseTicket,
   );
 
   // 選んだ注文のカード（列ごと）
@@ -290,10 +291,10 @@ export const DispatchBoard: React.FC<
                                 onOpenRebrew?.(ticket);
                                 return;
                               }
-                              if (!isActionOpen) onOpenTicketPad(ticket);
+                              if (!isActionOpen) onOpenTicket(ticket);
                               else {
                                 onReturnToUnassigned(ticket);
-                                onCloseTicketAction();
+                                onCloseTicket();
                               }
                             }}
                             className={`h-full hover:shadow-md ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
@@ -307,7 +308,7 @@ export const DispatchBoard: React.FC<
                                   hoveredBay={drag.target?.bayId ?? null}
                                   onPick={(bayId, place) => {
                                     onMoveTicket(ticket, bayId, place);
-                                    onCloseTicketAction();
+                                    onCloseTicket();
                                   }}
                                 />
                                 <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
@@ -318,7 +319,7 @@ export const DispatchBoard: React.FC<
                                     card={ticket}
                                     onSplit={(cupId) => {
                                       onSplitCup(ticket, cupId);
-                                      onCloseTicketAction();
+                                      onCloseTicket();
                                     }}
                                   />
                                 )}
@@ -326,7 +327,7 @@ export const DispatchBoard: React.FC<
                                   <CancelEmergencyButton
                                     onConfirm={() => {
                                       onCancelEmergency(ticket);
-                                      onCloseTicketAction();
+                                      onCloseTicket();
                                     }}
                                   />
                                 )}

@@ -29,7 +29,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicketDetail,
+  onOpenTicket,
   onOpenRebrew,
   onCancelEmergency,
   onOpenEmptySlot,
@@ -92,7 +92,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       data-ticket-label={orderLabel(current)}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
                       {...(current.status === "queued"
-                        ? { onClick: () => onOpenTicketDetail(current) }
+                        ? { onClick: () => onOpenTicket(current) }
                         : { onClick: () => onOpenRebrew?.(current) })}
                       className={
                         current.status === "queued"
@@ -124,7 +124,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
-                        onClick={() => onOpenTicketDetail(ticket)}
+                        onClick={() => onOpenTicket(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
                       />
                     ))}

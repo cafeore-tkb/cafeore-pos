@@ -142,11 +142,28 @@ type CaosLane struct {
 	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
 	Name string `json:"name"`
 
-	// Senior 上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値
+	// Senior 上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値（名簿を読み直したら POST /api/caos/lanes/seniors で直す）
 	Senior bool `json:"senior"`
 
-	// UpdatedAt 最後に替えた時刻。今日まだ替えていなければ null
+	// UpdatedAt 最後に替えた（上級生かを直したのも含む）時刻。今日まだ替えていなければ null
 	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// CaosLaneSenior defines model for CaosLaneSenior.
+type CaosLaneSenior struct {
+	Dripper int `json:"dripper"`
+
+	// Name 今の担当者の名前。今日の担当者がこの名前のときだけ直す
+	Name string `json:"name"`
+
+	// Senior 上級生か。画面が sohosai-shift の名簿（seniors）で判定し直した値
+	Senior bool `json:"senior"`
+}
+
+// CaosLaneSeniorsRequest defines model for CaosLaneSeniorsRequest.
+type CaosLaneSeniorsRequest struct {
+	// Lanes 直すドリッパー。name はその画面が見ている今の担当者の名前、senior は名簿で判定し直した値
+	Lanes []CaosLaneSenior `json:"lanes"`
 }
 
 // CaosLaneSwapRequest defines model for CaosLaneSwapRequest.
@@ -871,6 +888,9 @@ type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
 
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest
+
+// UpdateCaosLaneSeniorsJSONRequestBody defines body for UpdateCaosLaneSeniors for application/json ContentType.
+type UpdateCaosLaneSeniorsJSONRequestBody = CaosLaneSeniorsRequest
 
 // SwapCaosLanesJSONRequestBody defines body for SwapCaosLanes for application/json ContentType.
 type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest

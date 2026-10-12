@@ -11,7 +11,7 @@ type DripperAssignee struct {
 	Dripper int    `gorm:"type:smallint;primaryKey;autoIncrement:false;check:dripper_assignees_dripper_check,dripper BETWEEN 1 AND 6"`
 	// 担当者の名前。空なら担当者なし
 	Name string `gorm:"not null"`
-	// 上級生か。交代した時点で画面が sohosai-shift の名簿（seniors）で判定した値。
+	// 上級生か。交代した時点（と、名簿を読み直したとき）に画面が sohosai-shift の名簿（seniors）で判定した値。
 	// 名簿を読めない端末でも同じに出て、PUT /api/caos/cups でも確かめられるよう、サーバーに持つ
 	Senior    bool      `gorm:"not null;default:false"`
 	UpdatedAt time.Time `gorm:"not null"`

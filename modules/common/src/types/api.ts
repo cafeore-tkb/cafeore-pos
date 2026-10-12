@@ -232,6 +232,17 @@ export interface paths {
      */
     post: operations["swapCaosLanes"];
   };
+  "/api/caos/lanes/seniors": {
+    /**
+     * CaOS の今の担当者の上級生かだけを直す
+     * @description 画面が sohosai-shift の上級生の名簿（seniors）を読み直したとき、今の担当者の上級生かを新しい名簿の判定に合わせる。名前は変えない。
+     * 今日の担当者の名前が lanes の name と同じ（ほかの画面が替えていない）で、上級生かが senior と違うドリッパーだけ senior を書く
+     * （名前の無いドリッパー・名前の違うドリッパーは何もしない。同じ値を何度送っても同じ結果）。
+     * 交代ではないので、交代の記録（dripper_assignee_changes）は足さない。
+     * 書いたドリッパーがあれば、配信は PUT /api/caos/lanes/{dripper} と同じ（無ければ配らない）。
+     */
+    post: operations["updateCaosLaneSeniors"];
+  };
   "/api/master-status": {
     /** マスターステート取得 */
     get: operations["getMasterState"];
@@ -898,11 +909,11 @@ export interface components {
       dripper: number;
       /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
       name: string;
-      /** @description 上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値 */
+      /** @description 上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値（名簿を読み直したら POST /api/caos/lanes/seniors で直す） */
       senior: boolean;
       /**
        * Format: date-time
-       * @description 最後に替えた時刻。今日まだ替えていなければ null
+       * @description 最後に替えた（上級生かを直したのも含む）時刻。今日まだ替えていなければ null
        */
       updated_at: string | null;
     };
@@ -919,6 +930,17 @@ export interface components {
       /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
       name: string;
       /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */
+      senior: boolean;
+    };
+    CaosLaneSeniorsRequest: {
+      /** @description 直すドリッパー。name はその画面が見ている今の担当者の名前、senior は名簿で判定し直した値 */
+      lanes: components["schemas"]["CaosLaneSenior"][];
+    };
+    CaosLaneSenior: {
+      dripper: number;
+      /** @description 今の担当者の名前。今日の担当者がこの名前のときだけ直す */
+      name: string;
+      /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定し直した値 */
       senior: boolean;
     };
     CaosLaneSwapRequest: {
@@ -2051,6 +2073,35 @@ export interface operations {
         };
       };
       /** @description 形の違うリクエスト（同じドリッパーどうし、など） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今の担当者の上級生かだけを直す
+   * @description 画面が sohosai-shift の上級生の名簿（seniors）を読み直したとき、今の担当者の上級生かを新しい名簿の判定に合わせる。名前は変えない。
+   * 今日の担当者の名前が lanes の name と同じ（ほかの画面が替えていない）で、上級生かが senior と違うドリッパーだけ senior を書く
+   * （名前の無いドリッパー・名前の違うドリッパーは何もしない。同じ値を何度送っても同じ結果）。
+   * 交代ではないので、交代の記録（dripper_assignee_changes）は足さない。
+   * 書いたドリッパーがあれば、配信は PUT /api/caos/lanes/{dripper} と同じ（無ければ配らない）。
+   */
+  updateCaosLaneSeniors: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneSeniorsRequest"];
+      };
+    };
+    responses: {
+      /** @description 直した（直すものが無かったときも）。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト（ドリッパーの番号が違う、など） */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

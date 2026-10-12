@@ -22,6 +22,7 @@ import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
+import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
@@ -30,6 +31,7 @@ export default function App() {
   const session = useCaosSession();
   const selection = useBoardSelection(session.cards, session);
   const typeNames = useItemTypeNames();
+  useSeniorRefresh(session.simulating);
   const { lanes, looks, testPlay } = session;
   const { panel } = selection;
 
@@ -104,13 +106,12 @@ export default function App() {
             timelineCommand={timelineCommand}
             onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}
-            onOpenTicketPad={selection.openTicket}
-            onOpenTicketDetail={selection.openDetail}
+            onOpenTicket={selection.openTicket}
             onOpenRebrew={selection.openRebrew}
             onCancelEmergency={selection.cancelEmergency}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
-            onCloseTicketAction={selection.closeTicket}
+            onCloseTicket={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
             onOpenLane={selection.openLane}
             onAssignToBay={selection.assign}
@@ -138,7 +139,7 @@ export default function App() {
           ticket={selection.scheduled.card}
           look={looks.get(selection.scheduled.card.key)}
           currentBayId={selection.scheduled.bayId}
-          onClose={selection.closeDetail}
+          onClose={selection.closeTicket}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
           onSplitCup={selection.split}
