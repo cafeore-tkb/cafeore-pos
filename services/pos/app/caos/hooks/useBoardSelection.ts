@@ -25,6 +25,8 @@ export const useBoardSelection = (
     returnToUnassigned: (key: string) => boolean;
     merge: (firstKey: string, intoKey: string) => boolean;
     split: (key: string, cupId: string) => boolean;
+    /** 緊急（入れ直し）。実データテスト中は null */
+    emergency: { cancel: (card: CaosCard) => void } | null;
   },
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
@@ -59,10 +61,13 @@ export const useBoardSelection = (
     if (rebrewKey && !rebrewing) setPanel(null);
   }, [rebrewKey, rebrewing]);
 
+  const { emergency } = actions;
   // 動かしたら注文の選択を外す
   const thenDeselect = (ok: boolean) => {
     if (ok) setSelectedOrderId(null);
   };
+  const placeCard = (card: CaosCard, bayId: number, place?: CaosPlace) =>
+    thenDeselect(actions.place(card.key, bayId, place));
 
   return {
     selectedOrderId,
@@ -105,12 +110,9 @@ export const useBoardSelection = (
       setPanel(null);
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
-    assign: (card: CaosCard, bayId: number, place?: CaosPlace) => {
-      actions.place(card.key, bayId, place);
-    },
+    assign: placeCard,
     /** 待機のカードを別のドリッパーへ・先頭へ・カードの前へ */
-    move: (card: CaosCard, bayId: number, place?: CaosPlace) =>
-      thenDeselect(actions.place(card.key, bayId, place)),
+    move: placeCard,
     returnToUnassigned: (card: CaosCard) =>
       thenDeselect(actions.returnToUnassigned(card.key)),
     merge: (firstKey: string, intoKey: string) =>
@@ -118,5 +120,12 @@ export const useBoardSelection = (
     /** 統合の解除（統合したカードから cupId の 1 杯を外す） */
     split: (card: CaosCard, cupId: string) =>
       thenDeselect(actions.split(card.key, cupId)),
+    /** 入れ直しのカードの入れ直しを取り消し、注文の選択を外す。実データテスト中は無い */
+    cancelEmergency: emergency
+      ? (card: CaosCard) => {
+          emergency.cancel(card);
+          setSelectedOrderId(null);
+        }
+      : undefined,
   };
 };
