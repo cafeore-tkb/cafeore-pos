@@ -64,34 +64,25 @@ test("unit: Firestore 版の指名（自由記述）は、番号があれば番�
     const { dripper, assignee: free } = order?.items[0] ?? {};
     return [dripper, free];
   };
-  expect(
-    ["1st", " 2nd 架空さん", "3-rd", "4th架空", "5", "１ｓｔ", "架空 6th"].map(
-      nominationOf,
-    ),
-  ).toStrictEqual([
-    [1, undefined],
-    [2, undefined],
-    [3, undefined],
-    [4, undefined],
-    [5, undefined],
-    [1, undefined],
-    [6, undefined],
-  ]);
-  // 番号の無いもの・番号が 2 つあるものは自由記述（本番の番号の無い古い明細と同じく指名なし）。7th・21st は番号にしない
-  expect(
-    ["架空さん", "1st 2nd", "7th", "21st"].map(nominationOf),
-  ).toStrictEqual([
-    [undefined, "架空さん"],
-    [undefined, "1st 2nd"],
-    [undefined, "7th"],
-    [undefined, "21st"],
-  ]);
-  expect([null, "", "  ", 3].map(nominationOf)).toStrictEqual([
-    [undefined, undefined],
-    [undefined, undefined],
-    [undefined, undefined],
-    [undefined, undefined],
-  ]);
+  // 番号の無いもの・番号が 2 つあるもの・7th や 21st は自由記述（本番の番号の無い古い明細と同じく指名なし）
+  const cases: [unknown, [number?, string?]][] = [
+    ["1st", [1]],
+    [" 2nd 架空さん", [2]],
+    ["3-rd", [3]],
+    ["4th架空", [4]],
+    ["5", [5]],
+    ["１ｓｔ", [1]],
+    ["架空 6th", [6]],
+    ["架空さん", [undefined, "架空さん"]],
+    ["1st 2nd", [undefined, "1st 2nd"]],
+    ["7th", [undefined, "7th"]],
+    ["21st", [undefined, "21st"]],
+    [null, []],
+    ["  ", []],
+    [3, []],
+  ];
+  for (const [assignee, [dripper, free]] of cases)
+    expect(nominationOf(assignee)).toStrictEqual([dripper, free]);
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
