@@ -179,6 +179,14 @@ describe("[unit] sohosai-shift の予定（caosFeeds）", () => {
     expect(nextLaneCandidate(feed, 4, NOW, "")).toMatchObject({
       name: "鈴木",
     });
+    // 前の予定の人には戻らない：次の枠の伊藤が入っていれば、今の枠の山田ではなく、その後ろのオペ練の山本
+    expect(nextLaneCandidate(feed, 1, NOW, "伊藤")).toMatchObject({
+      name: "山本",
+    });
+    // 一番うしろの予定（オペ練の次のラウンド）の中村が入っていれば、後ろに人がいない
+    expect(nextLaneCandidate(feed, 1, NOW, "中村")).toBe("already-in");
+    // 次の枠の渡辺が入っていれば、今の枠（空き）より後ろに人がいない
+    expect(nextLaneCandidate(feed, 3, NOW, "渡辺")).toBe("already-in");
     // 予定の人（今の枠も次の枠も同じ人）がもう入っている
     expect(nextLaneCandidate(feed, 2, NOW, "佐藤")).toBe("already-in");
     // 予定に人がいない・予定が無い

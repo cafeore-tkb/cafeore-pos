@@ -306,8 +306,10 @@ export const laneCandidates = (
 };
 
 /**
- * 見出しの「交代」を押したらすぐ入る次の人。laneCandidates の最初の人（今の枠 → 次の枠 → オペ練の今のラウンド → 次のラウンド）。
- * いなければ、予定の人が今そのドリッパーにいる（current）なら "already-in"、予定に人がいない・予定が無いなら null
+ * 見出しの「交代」を押したらすぐ入る次の人。予定の並び（今の枠 → 次の枠 → オペ練の今のラウンド → 次のラウンド）で、
+ * 今そのドリッパーにいる人（current）が出てくる一番うしろの予定より後ろの、最初の人（前の予定の人には戻らない）。
+ * current がどの予定にもいなければ先頭から（laneCandidates の最初の人）。
+ * いなければ、current が予定にいるなら "already-in"、予定に人がいない・予定が無いなら null
  */
 export const nextLaneCandidate = (
   feed: ShiftFeed | null,
@@ -315,9 +317,17 @@ export const nextLaneCandidate = (
   nowMs: number,
   current: string,
 ): LaneCandidate | "already-in" | null => {
-  const scheduled = laneCandidates(feed, dripper, nowMs);
-  const next = scheduled.find(
-    (candidate) => normalizeName(candidate.name) !== normalizeName(current),
+  if (!feed) return null;
+  const me = normalizeName(current);
+  const names = currentShiftPeriods(feed, nowMs).map((period) =>
+    normalizeName(period.names[dripper - 1] ?? ""),
   );
-  return next ?? (scheduled.length > 0 ? "already-in" : null);
+  const from = me ? names.lastIndexOf(me) + 1 : 0;
+  const next = names.slice(from).find((name) => name && name !== me);
+  if (!next) return from > 0 ? "already-in" : null;
+  return (
+    laneCandidates(feed, dripper, nowMs, current).find(
+      (candidate) => normalizeName(candidate.name) === next,
+    ) ?? null
+  );
 };
