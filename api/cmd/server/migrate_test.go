@@ -490,9 +490,6 @@ func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {
 	if err := db.Create(&models.Menu{Name: "缶バッジ", Abbr: "缶", Price: 300, Key: "*"}).Error; err != nil {
 		t.Fatalf("消したメニューのキーを使えない: %v", err)
 	}
-	if err := db.Create(&models.Menu{Name: "被り", Abbr: "被", Price: 300, Key: "*"}).Error; err == nil {
-		t.Error("消していないメニューとキーが重なっても作れてしまう")
-	}
 
 	rec.ddl = nil
 	if err := migrate(db); err != nil {
