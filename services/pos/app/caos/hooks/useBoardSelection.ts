@@ -48,7 +48,7 @@ export const useBoardSelection = (
   useEffect(() => {
     if (ticketKey && !scheduled) setPanel(null);
   }, [ticketKey, scheduled]);
-  // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じる
+  // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
     ? cards.find(
@@ -58,7 +58,10 @@ export const useBoardSelection = (
       )
     : undefined;
   useEffect(() => {
-    if (rebrewKey && !rebrewing) setPanel(null);
+    if (rebrewKey && !rebrewing) {
+      setPanel(null);
+      setSelectedOrderId(null);
+    }
   }, [rebrewKey, rebrewing]);
 
   const { emergency } = actions;
@@ -81,19 +84,23 @@ export const useBoardSelection = (
       panel?.kind === "rebrew" && (rebrewKey === null || rebrewing)
         ? { card: rebrewing }
         : null,
-    /** 緊急の入力を開く（card は抽出中・終わりのカード。無ければ番号から） */
-    openRebrew: (card?: CaosCard) =>
-      setPanel({ kind: "rebrew", key: card?.key ?? null }),
-    closeRebrew: () => close("rebrew"),
-    openTicket: (card: CaosCard) => setPanel({ kind: "detail", key: card.key }),
-    /** 詳細のパネルを開き、その注文を選ぶ */
-    openDetail: (card: CaosCard) => {
+    /** 緊急の入力を開く（card は抽出中・終わりのカード。無ければ番号から）。カードから開いたらその注文を選ぶ */
+    openRebrew: (card?: CaosCard) => {
+      setPanel({ kind: "rebrew", key: card?.key ?? null });
+      if (card) setSelectedOrderId(orderLabel(card));
+    },
+    /** 緊急の入力を閉じる（カードから開いていたら、注文の選択も外す） */
+    closeRebrew: () => {
+      close("rebrew");
+      if (rebrewKey) setSelectedOrderId(null);
+    },
+    /** 待機のカード（A は 1〜6 のボタン、C・D は詳細のパネル）を開き、その注文を選ぶ */
+    openTicket: (card: CaosCard) => {
       setPanel({ kind: "detail", key: card.key });
       setSelectedOrderId(orderLabel(card));
     },
-    closeTicket: () => close("detail"),
-    /** 詳細のパネルを閉じる（注文の選択も外す） */
-    closeDetail: () => {
+    /** 待機のカードを閉じる（注文の選択も外す） */
+    closeTicket: () => {
       close("detail");
       setSelectedOrderId(null);
     },

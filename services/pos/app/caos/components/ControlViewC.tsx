@@ -28,7 +28,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicketDetail,
+  onOpenTicket,
   onOpenRebrew,
   onCancelEmergency,
   onOpenEmptySlot,
@@ -92,7 +92,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       {...(current.status === "queued"
                         ? {
                             "data-queued-ticket": current.key,
-                            onClick: () => onOpenTicketDetail(current),
+                            onClick: () => onOpenTicket(current),
                           }
                         : { onClick: () => onOpenRebrew?.(current) })}
                       className={
@@ -125,7 +125,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
-                        onClick={() => onOpenTicketDetail(ticket)}
+                        onClick={() => onOpenTicket(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
                       />
                     ))}

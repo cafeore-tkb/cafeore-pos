@@ -87,7 +87,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicketDetail,
+  onOpenTicket,
   onOpenRebrew,
   onCancelEmergency,
   onOpenEmptySlot,
@@ -194,9 +194,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       onClickCapture={drag.suppressClick}
       // 抽出中・済のカードは入れ直し
       onClick={() =>
-        state === "waiting"
-          ? onOpenTicketDetail(ticket)
-          : onOpenRebrew?.(ticket)
+        state === "waiting" ? onOpenTicket(ticket) : onOpenRebrew?.(ticket)
       }
       className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}

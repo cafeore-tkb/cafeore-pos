@@ -67,11 +67,10 @@ export default function ReadOnlyBoard() {
           timelineCommand={null}
           onSelectOrder={noop}
           onAdvanceBay={noop}
-          onOpenTicketPad={noop}
-          onOpenTicketDetail={noop}
+          onOpenTicket={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
-          onCloseTicketAction={noop}
+          onCloseTicket={noop}
           onOpenEmptySlot={noop}
           onAssignToBay={noop}
           onMergeOrders={noop}

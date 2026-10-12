@@ -23,7 +23,7 @@ import { moveTargets } from "../logic/lanes";
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
-// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」。同じ注文は、選ぶとどこにあっても選択中になる。
+// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪だけ（札は付けない）。同じ注文は、選ぶとどこにあっても選択中になる。
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
@@ -145,11 +145,6 @@ export const OrderCard: React.FC<
       className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
     >
       {children}
-      {selected && (
-        <span className="-top-3 absolute left-2 z-20 rounded-full bg-amber-500 px-2 py-0.5 font-black text-[10px] text-white leading-none shadow-xs">
-          選択中
-        </span>
-      )}
       {/* 何が何杯か（未割当は何番が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
