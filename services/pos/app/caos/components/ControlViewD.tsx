@@ -89,6 +89,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onOpenRebrew,
   onCancelEmergency,
   onOpenEmptySlot,
+  onOpenLane,
   onAssignToBay,
   onMoveTicket,
   onReturnToUnassigned,
@@ -265,6 +266,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         unassignedOrders,
                         bay.id,
                       )}
+                      onOpenLane={onOpenLane}
                       className="h-[60px] w-full"
                     />
                     <div className="mt-1 flex min-w-0 items-center justify-center gap-1">

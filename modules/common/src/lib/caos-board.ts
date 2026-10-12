@@ -528,20 +528,21 @@ export const mergeWrites = (
   return { writes };
 };
 
-/** 1 杯を外せる（統合を解除できる）カードか。未割当・待機の 2 杯のカード（抽出中・終わりのカードは分けない） */
+/**
+ * 1 杯を外せる（統合を解除できる）カードか。ほかの注文と統合した、未割当・待機のカード（抽出中・終わりのカードは分けない）。
+ * 同じ注文の同じ商品の 2 杯は、はじめから 1 枚のカードで淹れるので分けない
+ */
 export const canSplitCard = (card: CaosCard) =>
-  card.cups.length > 1 &&
+  new Set(card.cups.map((cup) => cup.orderId)).size > 1 &&
   (card.status === "unassigned" || card.status === "queued");
 
 /**
- * 統合の解除。2 杯のカードから cupId の 1 杯を外して未割当に戻す（残りの 1 杯はそのままの場所。どちらを外すかで、残すほうを選べる）。
- * 外したカップは、注文のほかの未割当のカップと同じカードにまとまることがある（未割当に戻すのと同じ）。
- * まだカードの印（dripId）の無い未割当のカードからは、外したカップに新しい dripId を入れて別のカードにする
+ * 統合の解除。統合したカードから cupId の 1 杯を外して未割当に戻す（残りの 1 杯はそのままの場所。どちらを外すかで、残すほうを選べる）。
+ * 外したカップは、注文のほかの未割当のカップと同じカードにまとまることがある（未割当に戻すのと同じ）
  */
 export const splitWrites = (
   card: CaosCard,
   cupId: string,
-  newId: () => string,
 ): CaosWritesResult => {
   if (!canSplitCard(card) || !card.cups.some((cup) => cup.id === cupId))
     return { error: "このカードは分けられません" };
@@ -550,10 +551,7 @@ export const splitWrites = (
       {
         cup_ids: [cupId],
         before: caosStateJSON(card.state),
-        after: {
-          ...UNASSIGNED_AFTER,
-          drip_id: card.dripId === null ? newId() : null,
-        },
+        after: UNASSIGNED_AFTER,
       },
     ],
   };

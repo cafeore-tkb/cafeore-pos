@@ -31,3 +31,14 @@ body:has(.caos-root) {
 .caos-root {
   -webkit-touch-callout: none;
 }
+
+/* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-same-order) のように使う */
+.caos-root {
+  /* 同じ注文のカードがほかにもある（紫。待機の青と分ける） */
+  --caos-same-order: oklch(49.1% 0.27 292.581);
+  --caos-same-order-soft: oklch(96.9% 0.016 293.756);
+  /* 予定より長くかかっている（赤。緊急の赤より薄くし、「次へ」の橙と分ける） */
+  --caos-overtime: oklch(88.5% 0.062 18.334);
+  --caos-overtime-line: oklch(63.7% 0.237 25.331);
+  --caos-overtime-text: oklch(39.6% 0.141 25.723);
+}
