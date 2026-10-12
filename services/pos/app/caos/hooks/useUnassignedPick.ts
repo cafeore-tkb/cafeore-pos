@@ -9,7 +9,7 @@ import { useOutsidePress } from "./useOutsidePress";
  * カードをタップすると上下に 1〜6 のボタンが開き（開いたカード）、押すか、指を離さずなぞるか、列へドラッグして割り当てる
  * （待機のカードの上に落とすと、そのカードの前へ。placed のうち統合できる待機・抽出中のカードの上なら統合）。
  * 1 杯のカードを開くと、統合できる 1 杯のカードを押して統合できる（onMergeOrders を渡したときだけ）。
- * 2 杯のカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
+ * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
  * 入れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
  */
 export const useUnassignedPick = ({
@@ -70,7 +70,7 @@ export const useUnassignedPick = ({
     assign,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
-    /** 2 杯のカードから 1 杯を外して閉じる（onSplitCup を渡したときだけ） */
+    /** 統合したカードから 1 杯を外して閉じる（onSplitCup を渡したときだけ） */
     split:
       onSplitCup &&
       ((card: CaosCard, cupId: string) => {

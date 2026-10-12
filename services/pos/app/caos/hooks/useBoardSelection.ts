@@ -6,12 +6,13 @@ import { orderLabel } from "../logic/cards";
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
  * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
- * assign は空きスロットへの割当、auxiliary は補助のタブ
+ * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ
  */
 type OpenPanel =
   | { kind: "detail"; key: string }
   | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
+  | { kind: "lane"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | null;
 
@@ -24,6 +25,8 @@ export const useBoardSelection = (
     returnToUnassigned: (key: string) => boolean;
     merge: (firstKey: string, intoKey: string) => boolean;
     split: (key: string, cupId: string) => boolean;
+    /** 緊急（入れ直し）。実データテスト中は null */
+    emergency: { cancel: (card: CaosCard) => void } | null;
   },
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
@@ -58,10 +61,13 @@ export const useBoardSelection = (
     if (rebrewKey && !rebrewing) setPanel(null);
   }, [rebrewKey, rebrewing]);
 
+  const { emergency } = actions;
   // 動かしたら注文の選択を外す
   const thenDeselect = (ok: boolean) => {
     if (ok) setSelectedOrderId(null);
   };
+  const placeCard = (card: CaosCard, bayId: number, place?: CaosPlace) =>
+    thenDeselect(actions.place(card.key, bayId, place));
 
   return {
     selectedOrderId,
@@ -93,6 +99,9 @@ export const useBoardSelection = (
     },
     openAssignSlot: (bayId: number) => setPanel({ kind: "assign", bayId }),
     closeAssignSlot: () => close("assign"),
+    /** 列の操作（担当者の交代・待機をまとめて移す）を開く */
+    openLane: (bayId: number) => setPanel({ kind: "lane", bayId }),
+    closeLane: () => close("lane"),
     openAuxiliary: (tab: AuxiliaryTab) => setPanel({ kind: "auxiliary", tab }),
     closeAuxiliary: () => close("auxiliary"),
     /** 全部閉じる（リセット・実データテストの開始） */
@@ -101,18 +110,22 @@ export const useBoardSelection = (
       setPanel(null);
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
-    assign: (card: CaosCard, bayId: number, place?: CaosPlace) => {
-      actions.place(card.key, bayId, place);
-    },
+    assign: placeCard,
     /** 待機のカードを別のドリッパーへ・先頭へ・カードの前へ */
-    move: (card: CaosCard, bayId: number, place?: CaosPlace) =>
-      thenDeselect(actions.place(card.key, bayId, place)),
+    move: placeCard,
     returnToUnassigned: (card: CaosCard) =>
       thenDeselect(actions.returnToUnassigned(card.key)),
     merge: (firstKey: string, intoKey: string) =>
       thenDeselect(actions.merge(firstKey, intoKey)),
-    /** 統合の解除（2 杯のカードから cupId の 1 杯を外す） */
+    /** 統合の解除（統合したカードから cupId の 1 杯を外す） */
     split: (card: CaosCard, cupId: string) =>
       thenDeselect(actions.split(card.key, cupId)),
+    /** 入れ直しのカードの入れ直しを取り消し、注文の選択を外す。実データテスト中は無い */
+    cancelEmergency: emergency
+      ? (card: CaosCard) => {
+          emergency.cancel(card);
+          setSelectedOrderId(null);
+        }
+      : undefined,
   };
 };

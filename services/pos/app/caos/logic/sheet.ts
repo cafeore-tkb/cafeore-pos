@@ -3,7 +3,7 @@ import {
   type CardLooks,
   cardOrderNos,
   groupByOrder,
-  orderLabel,
+  sharesOrder,
 } from "./cards";
 import { type Lane, laneActive, laneCards } from "./lanes";
 
@@ -162,19 +162,19 @@ export const buildSheet = (
   return { rows, cells };
 };
 
-// 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカード（抽出中・待機）を薄く添える
+// 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカード（抽出中・待機。統合したカードも）を薄く添える
 export const buildOrderGroups = (lanes: Lane[], unassigned: CaosCard[]) =>
   Array.from(groupByOrder(unassigned), ([key, items]) => ({
     key,
     items,
     assigned: lanes.flatMap((lane) =>
       laneActive(lane)
-        .filter((card) => orderLabel(card) === key)
+        .filter((card) => sharesOrder(card, key))
         .map((card) => ({ card, bayId: lane.id })),
     ),
   })).sort((left, right) => left.items[0].orderNo - right.items[0].orderNo);
 
-// 選んだ注文の行（統合したカードは元の注文すべての行）
+// 選んだ注文の行（選んだ注文を含むカード（統合したカードも）の、元の注文すべての行）
 export const linkedOrderNos = (
   selectedOrderId: string | null,
   lanes: Lane[],
@@ -182,6 +182,6 @@ export const linkedOrderNos = (
 ) =>
   new Set(
     [...unassigned, ...lanes.flatMap(laneCards)]
-      .filter((card) => orderLabel(card) === selectedOrderId)
+      .filter((card) => sharesOrder(card, selectedOrderId))
       .flatMap(cardOrderNos),
   );

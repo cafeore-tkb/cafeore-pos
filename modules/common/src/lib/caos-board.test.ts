@@ -675,7 +675,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(canMergeCards(o5, done)).toBe(false);
   });
 
-  test("統合の解除：未割当・待機の 2 杯のカードから選んだ 1 杯を未割当に戻す（残りはそのまま）", () => {
+  test("統合の解除：ほかの注文と統合した未割当・待機のカードから選んだ 1 杯を未割当に戻す（残りはそのまま）", () => {
     const merged = buildCaosCards(
       [
         order(2, [
@@ -689,7 +689,7 @@ describe("[unit] CaOS の書き込み", () => {
     )[0];
     expect(canSplitCard(merged)).toBe(true);
     const later = merged.cups[1];
-    expect(splitWrites(merged, later.id, newId)).toEqual({
+    expect(splitWrites(merged, later.id)).toEqual({
       writes: [
         {
           cup_ids: [later.id],
@@ -709,15 +709,14 @@ describe("[unit] CaOS の書き込み", () => {
         },
       ],
     });
-    // まだ dripId の無い未割当の 2 杯からは、外したカップを別のカード（新しい dripId）にする
-    const pair = find(board(), (c) => c.orderNo === 4 && c.cups.length === 2);
-    const split = splitWrites(pair, pair.cups[0].id, () => "split");
-    expect("writes" in split && split.writes[0].after.drip_id).toBe("split");
-    // 1 杯・抽出中のカードは分けない
+    // 同じ注文の同じ商品の 2 杯（はじめから 1 枚のカード）・1 杯・抽出中のカードは分けない
     const cards = board();
+    const pair = find(cards, (c) => c.orderNo === 4 && c.cups.length === 2);
+    expect(canSplitCard(pair)).toBe(false);
+    expect(splitWrites(pair, pair.cups[0].id)).toHaveProperty("error");
     expect(canSplitCard(find(cards, (c) => c.orderNo === 5))).toBe(false);
     const brewing2 = { ...merged, status: "brewing" as const };
-    expect(splitWrites(brewing2, later.id, newId)).toHaveProperty("error");
+    expect(splitWrites(brewing2, later.id)).toHaveProperty("error");
   });
 
   test("待機を丸ごと別のドリッパーへ：並びのまま最後に入れる。置けないカードは残す。空いていれば先頭を始める", () => {

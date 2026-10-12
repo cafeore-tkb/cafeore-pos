@@ -9,6 +9,7 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
+  LanePanel,
   RebrewPanel,
   TicketDetailPanel,
 } from "./components/SidePanels";
@@ -98,11 +99,12 @@ export default function App() {
             onOpenTicketPad={selection.openTicket}
             onOpenTicketDetail={selection.openDetail}
             onOpenRebrew={session.emergency ? selection.openRebrew : undefined}
-            onCancelEmergency={session.emergency?.cancel}
+            onCancelEmergency={selection.cancelEmergency}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
+            onOpenLane={selection.openLane}
             onAssignToBay={selection.assign}
             onMergeOrders={selection.merge}
             onSplitCup={selection.split}
@@ -117,7 +119,6 @@ export default function App() {
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
-              onMoveQueue={session.moveQueue}
               {...testPlay.analytics}
             />
           </AuxiliarySheet>
@@ -133,7 +134,7 @@ export default function App() {
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
           onSplitCup={selection.split}
-          onCancelEmergency={session.emergency?.cancel}
+          onCancelEmergency={selection.cancelEmergency}
         />
       )}
 
@@ -161,6 +162,14 @@ export default function App() {
           {...session.mergeConfirm}
           onCancel={session.cancelMerge}
           onConfirm={session.confirmMerge}
+        />
+      )}
+
+      {panel?.kind === "lane" && (
+        <LanePanel
+          lane={lanes[panel.bayId - 1]}
+          onClose={selection.closeLane}
+          onMoveQueue={session.moveQueue}
         />
       )}
 

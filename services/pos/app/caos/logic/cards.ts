@@ -24,6 +24,17 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/**
+ * カードが、選んだ注文（orderLabel。統合したカードなら「#012+#013」）の注文を 1 つでも含むか。
+ * 統合したカードは、中の注文のどれを選んでも当たり、統合したカードを選べば中の注文のカードがみな当たる
+ */
+export const sharesOrder = (card: CaosCard, label: string | null) => {
+  const labels = label?.split("+") ?? [];
+  return cardOrderNos(card).some((no) =>
+    labels.includes(`#${orderNoLabel(no)}`),
+  );
+};
+
 /** カードの商品の名前（略称 abbr をそのまま。統合したカードも同じ商品なので 1 つ） */
 export const cardItemName = (card: CaosCard) =>
   unique(card.cups.map((cup) => cup.item.abbr)).join("・");
@@ -49,15 +60,11 @@ export const cardName = (card: CaosCard) => {
   ].join("");
 };
 
-/** 区分。商品の種類の表示名（display_name）をそのまま */
-export const cardTypeName = (card: CaosCard) =>
-  card.cups[0].item.item_type.display_name;
-
 /** カードの杯数の合計 */
 export const totalCups = (cards: readonly CaosCard[]) =>
   cards.reduce((sum, card) => sum + card.cups.length, 0);
 
-/** 分けた注文の中のカード（「1/3・計4杯」）。index は 1 始まり */
+/** 分けた注文の中のカード（「1/3・計4杯」）。index は 1 始まり。cups は注文の杯数（統合したカードに入った分も数える） */
 export interface CardSplit {
   index: number;
   total: number;
@@ -68,7 +75,7 @@ export interface CardSplit {
 export interface CardLook {
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
-  /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ */
+  /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ（ほかの注文と統合したカードに入った分も 1 枚と数える） */
   split?: CardSplit;
   /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts で引く。在庫が無い商品には付かない */
   bean?: StockResource;
@@ -81,26 +88,29 @@ export const cardLooks = (
   settings: ColorSetting[],
   beanIndex: BeanIndex,
 ): CardLooks => {
-  // 1 注文だけのカードを、注文ごとに注文の中の並び（カップの position）で並べる（割り当てても番号が変わらないように）。
-  // 入れ直しのカードは注文の分け方に入れない
-  const inSplit = (card: CaosCard) =>
-    cardOrderNos(card).length === 1 && !card.emergency;
+  // 注文ごとに、その注文のカップが入ったカード（統合したカードも）を、注文の中の並び（カップの position）で並べる
+  // （割り当てても番号が変わらないように）。入れ直しのカードは注文の分け方に入れない
+  const cupsOf = (card: CaosCard, orderId: string) =>
+    card.cups.filter((cup) => cup.orderId === orderId);
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (!inSplit(card)) continue;
-    const orderId = card.cups[0].orderId;
-    byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
+    if (card.emergency) continue;
+    for (const orderId of new Set(card.cups.map((cup) => cup.orderId)))
+      byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
-  for (const parts of byOrder.values())
-    parts.sort((a, b) => a.cups[0].position - b.cups[0].position);
+  for (const [orderId, parts] of byOrder)
+    parts.sort(
+      (a, b) => cupsOf(a, orderId)[0].position - cupsOf(b, orderId)[0].position,
+    );
   const splitOf = (card: CaosCard): CardSplit | undefined => {
-    if (!inSplit(card)) return undefined;
-    const parts = byOrder.get(card.cups[0].orderId) ?? [card];
+    if (card.emergency || cardOrderNos(card).length > 1) return undefined;
+    const { orderId } = card.cups[0];
+    const parts = byOrder.get(orderId) ?? [];
     if (parts.length <= 1) return undefined;
     return {
       index: parts.indexOf(card) + 1,
       total: parts.length,
-      cups: totalCups(parts),
+      cups: parts.flatMap((part) => cupsOf(part, orderId)).length,
     };
   };
   return new Map(
@@ -173,3 +183,31 @@ export const orderRows = (cards: readonly CaosCard[]) => {
     }));
 };
 export type OrderRow = ReturnType<typeof orderRows>[number];
+
+/** 管制盤 C の注文の列で、いちばん古い未割当の注文の上に残す、ドリッパーに置いた（待機・抽出中の）注文の数 */
+const RECENT_PLACED_ROWS = 3;
+
+/**
+ * 管制盤 C の注文の列（ドリッパーに置いたカードも含めた注文番号の行）。いちばん古い未割当の注文から後ろを並べ、
+ * その上に、それより前の注文のうちドリッパーに置いた（待機・抽出中の）カードのある行を直近の RECENT_PLACED_ROWS 件だけ残す
+ * （どこに何番目で入れたかが見えるように。その行は待機・抽出中のカードだけ）。未割当の入れ直し（緊急）の行は、残した行のすぐ下に置く
+ */
+export const queueRows = (cards: readonly CaosCard[]) => {
+  const all = orderRows(cards);
+  const rows = all.filter((row) => !row.emergency);
+  const start = rows.findIndex((row) =>
+    row.entries.some(({ card }) => card.status === "unassigned"),
+  );
+  const end = start < 0 ? rows.length : start;
+  const recent = rows
+    .slice(0, end)
+    .map((row) => ({
+      ...row,
+      entries: row.entries.filter(
+        ({ card }) => card.status === "queued" || card.status === "brewing",
+      ),
+    }))
+    .filter((row) => row.entries.length > 0)
+    .slice(-RECENT_PLACED_ROWS);
+  return [...recent, ...all.filter((row) => row.emergency), ...rows.slice(end)];
+};
