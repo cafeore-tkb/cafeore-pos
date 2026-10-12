@@ -10,8 +10,10 @@ import {
   caosLaneUndoBlock,
   caosUndoCups,
   undoOfNext,
+  undoOfOrderReady,
   undoOfWrites,
 } from "./caos-undo";
+import { jstDate } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z");
 const T1 = new Date("2026-10-08T03:01:00Z");
@@ -272,6 +274,154 @@ describe("unit: caos-undo", () => {
     expect(sent.cups.map((c) => [c.cup_id, c.restore.ready_at])).toEqual([
       ["e1", null],
     ]);
+  });
+
+  test("呼び出しで進んだ「次へ」を戻す：統合したほかの注文のカップの準備完了を外し、呼び出した注文の準備完了は残す", () => {
+    const day = jstDate(NOW.getTime());
+    const placed = { dripper: 1, dripperPosition: 1, dripId: "d1" };
+    const a = cup("a", { ...placed, brewStartedAt: NOW });
+    const x = cup("x"); // 呼び出した注文の、抽出中のカードに無いカップ
+    const b = cup("b", { ...placed, brewStartedAt: NOW });
+    const q = cup("q", { dripper: 1, dripperPosition: 2, dripId: "d2" });
+    const orders = [order(1, [a, x]), order(2, [b]), order(3, [q])];
+    const entry = undoOfOrderReady(orders, "order-1", day);
+    expect(entry.cups.map((c) => c.id)).toEqual(["a", "b", "q"]);
+
+    // 呼び出しで a・x が T1 に、サーバーの「次へ」で b が T2 に準備完了になり、カードを終えて q を始めた
+    const done = { brewFinishedAt: T2 };
+    const after = buildCaosCards([
+      order(1, [
+        { ...a, ...done, readyAt: T1 },
+        { ...x, readyAt: T1 },
+      ]),
+      order(2, [{ ...b, ...done, readyAt: T2 }]),
+      order(3, [{ ...q, brewStartedAt: T2 }]),
+    ]);
+    const sent = caosUndoCups(entry, after);
+    if ("error" in sent) throw new Error(sent.error);
+    expect(
+      sent.cups.map((c) => [
+        c.cup_id,
+        c.restore.ready_at,
+        c.restore.state.brew_started_at,
+        c.restore.state.brew_finished_at,
+      ]),
+    ).toEqual([
+      ["a", T1.toISOString(), NOW.toISOString(), null],
+      ["b", null, NOW.toISOString(), null],
+      ["q", null, null, null],
+    ]);
+    // サーバーが「次へ」を進めなかった（呼び出しの準備完了だけが付いた）なら、戻すものは無い
+    expect(
+      caosUndoCups(
+        entry,
+        buildCaosCards([
+          order(1, [{ ...a, readyAt: T1 }, x]),
+          order(2, [b]),
+          order(3, [q]),
+        ]),
+      ),
+    ).toMatchObject({ arriving: true });
+  });
+
+  test("呼び出しを戻す：呼び出しで全部準備完了になる待機のカードは始めないので、始めたのはその次のカード", () => {
+    const day = jstDate(NOW.getTime());
+    const a = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+    });
+    const c = cup("c", { dripper: 1, dripperPosition: 2, dripId: "d2" });
+    const q = cup("q", { dripper: 1, dripperPosition: 3, dripId: "d3" });
+    const orders = [order(1, [a, c]), order(2, [q])];
+    expect(
+      undoOfOrderReady(orders, "order-1", day).cups.map((c) => c.id),
+    ).toEqual(["a", "q"]);
+    // 抽出中のカードにカップの無い注文は、呼び出しても「次へ」は進まない
+    expect(undoOfOrderReady(orders, "order-2", day).cups).toEqual([]);
+  });
+
+  test("呼び出しを戻す：始めた待機の先頭がこの注文とほかの注文の統合なら、この注文のカップの準備完了は残してほかは前のまま", () => {
+    const day = jstDate(NOW.getTime());
+    const a = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+    });
+    const queued = { dripper: 1, dripperPosition: 2, dripId: "d2" };
+    const c = cup("c", queued);
+    const p = cup("p", queued);
+    const entry = undoOfOrderReady(
+      [order(1, [a, c]), order(2, [p])],
+      "order-1",
+      day,
+    );
+    expect(entry.cups.map((c) => c.id)).toEqual(["a", "c", "p"]);
+
+    const sent = caosUndoCups(
+      entry,
+      buildCaosCards([
+        order(1, [
+          { ...a, brewFinishedAt: T2, readyAt: T1 },
+          { ...c, brewStartedAt: T2, readyAt: T1 },
+        ]),
+        order(2, [{ ...p, brewStartedAt: T2 }]),
+      ]),
+    );
+    if ("error" in sent) throw new Error(sent.error);
+    expect(
+      sent.cups.map((c) => [
+        c.cup_id,
+        c.restore.ready_at,
+        c.restore.state.brew_started_at,
+      ]),
+    ).toEqual([
+      ["a", T1.toISOString(), NOW.toISOString()],
+      ["c", T1.toISOString(), null],
+      ["p", null, null],
+    ]);
+  });
+
+  test("呼び出しを戻す：この注文のカップの入れ直しが抽出中なら、そのカードの「次へ」も戻す（入れ直しは準備完了を持たない）", () => {
+    const day = jstDate(NOW.getTime());
+    const emergency = {
+      id: "e1",
+      createdAt: NOW,
+      reason: "",
+      dripper: 2,
+      dripperPosition: 1,
+      dripId: "d1",
+      brewStartedAt: NOW,
+      brewFinishedAt: null,
+    };
+    const a = cup("a", { emergencies: [emergency] });
+    const entry = undoOfOrderReady([order(1, [a])], "order-1", day);
+    expect(entry.cups.map((c) => [c.id, c.keepReady])).toEqual([
+      ["e1", undefined],
+    ]);
+
+    const sent = caosUndoCups(
+      entry,
+      buildCaosCards([
+        order(1, [
+          {
+            ...a,
+            readyAt: T1,
+            emergencies: [{ ...emergency, brewFinishedAt: T2 }],
+          },
+        ]),
+      ]),
+    );
+    if ("error" in sent) throw new Error(sent.error);
+    expect(
+      sent.cups.map((c) => [
+        c.cup_id,
+        c.restore.ready_at,
+        c.restore.state.brew_finished_at,
+      ]),
+    ).toEqual([["e1", null, null]]);
   });
 
   test("先頭へを戻す：番号がずれる列の待機のカードも前の番号に戻す", () => {
