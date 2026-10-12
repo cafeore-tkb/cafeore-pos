@@ -68,6 +68,7 @@ export default function Cashier() {
 
   // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
   // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
+  // 登録した注文を返す（「常に返金」のとき、レジがその注文を返金する）。
   const submitSquarePayload = useCallback(
     async (newOrder: OrderEntity, squareCheckoutId: string) => {
       const savedOrder = await orderRepository.save(newOrder, {
@@ -79,6 +80,7 @@ export default function Cashier() {
       await cashierRepository.setSubmittedOrder(savedOrder).catch((err) => {
         console.error("レジ状態の同期に失敗しました", err);
       });
+      return savedOrder;
     },
     [],
   );

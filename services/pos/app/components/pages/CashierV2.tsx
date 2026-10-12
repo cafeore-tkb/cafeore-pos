@@ -20,10 +20,12 @@ import {
   editingOrderAtom,
 } from "../functional/cashierAtoms";
 import {
+  cashierAutoSquareRefundAtom,
   cashierDescCommentAtom,
   cashierMenuOpenAtom,
   cashierServiceActiveAtom,
 } from "../functional/cashierUiAtoms";
+import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
 import {
   type SubmitFocusTarget,
   moveSubmitFocus,
@@ -65,11 +67,11 @@ type props = {
   /** つなぐプリンター（ラベル用・レシート用）の IP アドレス */
   printerAddresses: PrinterSettings;
   submitPayload: (order: OrderEntity) => void;
-  /** Square で支払い済みの注文を送る。登録できなければ reject する */
+  /** Square で支払い済みの注文を送り、登録した注文を返す。登録できなければ reject する */
   submitSquarePayload: (
     order: OrderEntity,
     squareCheckoutId: string,
-  ) => Promise<void>;
+  ) => Promise<WithId<OrderEntity>>;
   syncOrder: (order: OrderEntity) => void;
 };
 
@@ -111,6 +113,9 @@ const CashierV2 = ({
   } = useInputStatus();
   const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
   const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
+  const [autoSquareRefund, setAutoSquareRefund] = useAtom(
+    cashierAutoSquareRefundAtom,
+  );
   const [UISession, renewUISession] = useUISession();
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
@@ -310,6 +315,8 @@ const CashierV2 = ({
    * 注文（order）を、その注文番号のまま送る。お預かりは請求額と同じにする。
    * 登録できたと分かってから入力を消し、レシートを刷る。print なら、そのときシールも印刷する。
    * 登録に失敗したら reject する（お金は受け取っているので、呼ぶ側で支払い済みのまま送り直せるようにする）。
+   * 「常に返金（キャンセルしない）」なら、登録できたあとに裏で返金する（注文は残す）。返金できなくても
+   * 登録は済んでいるので reject しない（送り直すと断られるだけ）。結果はトーストで知らせる。
    */
   const submitSquareOrder = useCallback(
     async (
@@ -322,7 +329,10 @@ const CashierV2 = ({
       }
       const submitOne = prepareSubmit(order);
       submitOne.received = submitOne.billingAmount;
-      await submitSquarePayload(submitOne, checkout.id);
+      const savedOrder = await submitSquarePayload(submitOne, checkout.id);
+      if (autoSquareRefund) {
+        void refundSquareOrderAutomatically(savedOrder);
+      }
       if (print) {
         printOrderLabel(submitOne);
       }
@@ -337,6 +347,7 @@ const CashierV2 = ({
       canSaveNow,
       prepareSubmit,
       submitSquarePayload,
+      autoSquareRefund,
       printOrderLabel,
       receiptPrinter,
       finishSubmit,
@@ -442,13 +453,33 @@ const CashierV2 = ({
             manualOrderId={manualOrderId}
             onOrderIdOverride={setOrderIdOverride}
           />
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="menu-button"
-              checked={menuOpen}
-              onCheckedChange={setMenuOpen}
-            />
-            <Label htmlFor="menu-button">メニュー表示</Label>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="menu-button"
+                checked={menuOpen}
+                onCheckedChange={setMenuOpen}
+              />
+              <Label htmlFor="menu-button">メニュー表示</Label>
+            </div>
+            {squareEnabled && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="auto-square-refund"
+                  checked={autoSquareRefund}
+                  onCheckedChange={setAutoSquareRefund}
+                  // 決済中に切り替えると、その決済を返金するか分かりにくいので切り替えさせない
+                  disabled={squarePaymentActive}
+                  className="data-[state=checked]:bg-red-600"
+                />
+                <Label
+                  htmlFor="auto-square-refund"
+                  className={cn(autoSquareRefund && "font-bold text-red-600")}
+                >
+                  常に返金（キャンセルしない）
+                </Label>
+              </div>
+            )}
           </div>
           <div className="flex items-center space-x-2">
             {squareEnabled && (
