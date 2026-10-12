@@ -23,9 +23,10 @@ import (
 //
 //   - PUT /api/caos/lanes/:dripper：交代（名前と上級生か。空なら担当者なし）。抽出中かどうかは見ず、待機のカードも動かさない
 //   - POST /api/caos/lanes/swap：2 つのドリッパーの担当者を入れ替える
+//   - POST /api/caos/lanes/seniors：今の担当者の上級生かだけを直す（画面が名簿を読み直したとき。交代ではないので記録は足さない）
 //
 // 画面は今日の担当者を WebSocket の配信（つないだときと、変わるたび）と、上の 2 つの応答で受け取る（読むだけの API は無い）。
-// 替えるたびに、同じトランザクションで交代の記録（dripper_assignee_changes。models.DripperAssigneeChange）を 1 つのドリッパーにつき 1 行足す。
+// 替える（交代・入れ替え）たびに、同じトランザクションで交代の記録（dripper_assignee_changes。models.DripperAssigneeChange）を 1 つのドリッパーにつき 1 行足す。
 // 記録は抽出の統計のためのもので、画面には出さず配信もしない。
 //
 // 替えるのは CaOS の画面からだけ（sohosai-shift の予定は画面が候補に出すだけで、サーバーは読まない）。上級生かも画面が
@@ -156,12 +157,59 @@ func (h *CaosHandler) SwapCaosLanes(c *gin.Context) {
 	})
 }
 
+// POST /api/caos/lanes/seniors - 今の担当者の上級生かだけを直す
+func (h *CaosHandler) UpdateCaosLaneSeniors(c *gin.Context) {
+	var req models.CaosLaneSeniorsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var err error
+	for _, l := range req.Lanes {
+		err = errors.Join(err, checkCaosDripper(l.Dripper))
+	}
+	if respondError(c, err) {
+		return
+	}
+	h.updateLanes(c, func(tx *gorm.DB, cur models.CaosLanes, now time.Time) (bool, error) {
+		changed := false
+		for _, l := range req.Lanes {
+			// 名前が画面の見ていたまま（ほかの画面が替えていない）で、上級生かが違う担当者だけ書く
+			lane := cur.Lanes[l.Dripper-1]
+			if lane.Name == "" || lane.Name != strings.TrimSpace(l.Name) || lane.Senior == l.Senior {
+				continue
+			}
+			if err := tx.Model(&models.DripperAssignee{}).Where("day = ? AND dripper = ?", cur.Day, l.Dripper).
+				Updates(map[string]any{"senior": l.Senior, "updated_at": now}).Error; err != nil {
+				return false, err
+			}
+			cur.Lanes[l.Dripper-1].Senior = l.Senior
+			changed = true
+		}
+		return changed, nil
+	})
+}
+
 // writeLanes は今日の担当者を change の返したとおりに替える（交代の記録もいっしょに足す）。
-// 読んでから書くまでを 1 つのトランザクションで行い、今日の 6 つを返して配る。
 func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLanes) []models.CaosLane) {
+	h.updateLanes(c, func(tx *gorm.DB, cur models.CaosLanes, now time.Time) (bool, error) {
+		for _, l := range change(cur) {
+			row := models.DripperAssignee{Day: cur.Day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
+			if err := saveCaosLane(tx, row, cur.Lanes[l.Dripper-1].Name); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	})
+}
+
+// updateLanes は今日の担当者を write で書く。読んでから書くまでを 1 つのトランザクションで行い（担当者のロックを取る）、
+// 今日の 6 つを返す。write が書いたと返したときだけ配る。
+func (h *CaosHandler) updateLanes(c *gin.Context, write func(tx *gorm.DB, cur models.CaosLanes, now time.Time) (bool, error)) {
 	now := h.now()
 	day := caosDayString(now)
 	var lanes models.CaosLanes
+	changed := false
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := lockCaosLanes(tx); err != nil {
 			return err
@@ -170,11 +218,8 @@ func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLane
 		if err != nil {
 			return err
 		}
-		for _, l := range change(cur) {
-			row := models.DripperAssignee{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
-			if err := saveCaosLane(tx, row, cur.Lanes[l.Dripper-1].Name); err != nil {
-				return err
-			}
+		if changed, err = write(tx, cur, now); err != nil {
+			return err
 		}
 		lanes, _, err = loadCaosLanes(tx, day)
 		return err
@@ -183,8 +228,10 @@ func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLane
 		return
 	}
 	c.JSON(http.StatusOK, lanes)
-	broadcastCaosLanes(h.db, h.hub, h.now())
-	notifyCaosLanesChanged(h.db)
+	if changed {
+		broadcastCaosLanes(h.db, h.hub, h.now())
+		notifyCaosLanesChanged(h.db)
+	}
 }
 
 // ---------------------------------------------------------------- 上級生のみのカップ（PUT /api/caos/cups・POST /api/caos/undo から使う）

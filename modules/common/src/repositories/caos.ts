@@ -114,3 +114,12 @@ export const swapCaosLanes = async (
   second: number,
 ): Promise<CaosResult> =>
   send(apiClient.POST("/api/caos/lanes/swap", { body: { first, second } }));
+
+/**
+ * 今の担当者の上級生かだけを直す（POST /api/caos/lanes/seniors。sohosai-shift の名簿を読み直したとき）。
+ * サーバーは、担当者の名前が lanes の name のままのドリッパーだけ直し、交代の記録は足さない。同じ値を何度送っても同じ
+ */
+export const updateCaosLaneSeniors = async (
+  lanes: components["schemas"]["CaosLaneSenior"][],
+): Promise<CaosResult> =>
+  send(apiClient.POST("/api/caos/lanes/seniors", { body: { lanes } }));
