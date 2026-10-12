@@ -10,7 +10,7 @@ type Menu struct {
 	Name      string         `gorm:"not null"`
 	Abbr      string         `gorm:"not null"`
 	Price     int            `gorm:"not null"`
-	Key       string         `gorm:"not null;uniqueIndex"`
+	Key       string         `gorm:"not null;uniqueIndex:idx_menus_key,where:deleted_at IS NULL"` // 消したメニューのキーは使い回せる
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	MenuItems []MenuItem `gorm:"foreignKey:MenuID;references:ID"`
