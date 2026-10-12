@@ -277,10 +277,15 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     );
     const rows = liberoLanes(lanes, at(310).getTime());
-    expect(rows.map(({ lane, brew }) => [lane.id, brew])).toEqual([
-      [1, { elapsedSec: 310, plannedSec: 300, rank: 1, step: 4 }],
+    expect(
+      rows.map(({ lane, brew }) => [
+        lane.id,
+        brew && { ...brew, card: brew.card.key },
+      ]),
+    ).toEqual([
+      [1, { card: "d1", elapsedSec: 310, plannedSec: 300, rank: 1, step: 4 }],
       [2, undefined],
-      [3, { elapsedSec: 210, plannedSec: 360, rank: 2, step: 2 }],
+      [3, { card: "d2", elapsedSec: 210, plannedSec: 360, rank: 2, step: 2 }],
       [4, undefined],
       [5, undefined],
       [6, undefined],

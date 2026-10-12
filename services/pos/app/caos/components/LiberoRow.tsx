@@ -1,12 +1,8 @@
-import {
-  type CaosCard,
-  dripperLabel,
-  readableTextColor,
-} from "@cafeore/common";
+import { dripperLabel, readableTextColor } from "@cafeore/common";
 import type React from "react";
 import { cardItemName, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import type { LiberoLane } from "../logic/libero";
+import type { LiberoBrew, LiberoLane } from "../logic/libero";
 import { LaneName } from "./LaneParts";
 
 // リベロビューの 1 行（1 つのドリッパー）。抽出中は、経過の長い順の順位と経過（秒まで）をいちばん大きく出し、
@@ -47,7 +43,6 @@ export const LiberoRow: React.FC<{
     <div
       data-libero-dripper={lane.id}
       data-libero-rank={brew?.rank}
-      data-libero-step={brew?.step}
       className={`grid min-h-0 grid-cols-[11vh_minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-[2vh] rounded-xl border-4 px-[1.5vh] ${look?.row ?? "border-transparent bg-slate-200/50 text-slate-400"}`}
     >
       <span
@@ -61,13 +56,11 @@ export const LiberoRow: React.FC<{
         </span>
         <LaneName dripper={lane.id} className="font-bold text-[3.6vh]" />
       </div>
-      {lane.brewing && brew ? (
+      {brew ? (
         <>
           <BrewDetail
-            card={lane.brewing}
+            brew={brew}
             color={color}
-            elapsedSec={brew.elapsedSec}
-            plannedSec={brew.plannedSec}
             markClassName={look?.mark ?? ""}
           />
           <span className="font-black font-mono text-[10vh] tabular-nums leading-none">
@@ -85,12 +78,10 @@ export const LiberoRow: React.FC<{
 
 // 何を何杯（商品の略称と、色の設定の地の色）・注文番号と、予定の抽出時間に対する進み具合の帯
 const BrewDetail: React.FC<{
-  card: CaosCard;
+  brew: LiberoBrew;
   color?: string;
-  elapsedSec: number;
-  plannedSec: number;
   markClassName: string;
-}> = ({ card, color, elapsedSec, plannedSec, markClassName }) => {
+}> = ({ brew: { card, elapsedSec, plannedSec }, color, markClassName }) => {
   const backgroundColor = color ?? "#ffffff";
   const overSec = elapsedSec - plannedSec;
   return (
@@ -119,9 +110,8 @@ const BrewDetail: React.FC<{
           />
         </div>
         <span className="shrink-0 whitespace-nowrap font-bold font-mono text-[2.6vh] tabular-nums">
-          {overSec >= 0
-            ? `予定 ${clockLabel(plannedSec)} ＋${clockLabel(overSec)}`
-            : `予定 ${clockLabel(plannedSec)}`}
+          予定 {clockLabel(plannedSec)}
+          {overSec >= 0 && ` ＋${clockLabel(overSec)}`}
         </span>
       </div>
     </div>

@@ -55,9 +55,7 @@ export default function LiberoBoard() {
           <LiberoRow
             key={row.lane.id}
             row={row}
-            color={
-              row.lane.brewing && cardColor(row.lane.brewing, colorSettings)
-            }
+            color={row.brew && cardColor(row.brew.card, colorSettings)}
           />
         ))}
       </div>
