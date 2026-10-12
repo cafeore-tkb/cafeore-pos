@@ -108,6 +108,14 @@ export const PosStatusBadge: React.FC<{ status: PosConnectionStatus }> = ({
   </output>
 );
 
+// 「テスト」の色。テスト中は濃い青、テストを終えてもテストの盤面のあいだは本番と見分けられる色
+const testButtonTone = (testPlaying: boolean, testBoard: boolean) => {
+  if (testPlaying) return "border-blue-700 bg-blue-700 text-white";
+  if (testBoard)
+    return "border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200";
+  return "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100";
+};
+
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   controlViewMode,
@@ -306,7 +314,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
-          className={`flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border px-2 font-black text-xs shadow-xs ${testPlaying ? "border-blue-700 bg-blue-700 text-white" : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
+          className={`flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border px-2 font-black text-xs shadow-xs ${testButtonTone(testPlaying, simulating)}`}
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
