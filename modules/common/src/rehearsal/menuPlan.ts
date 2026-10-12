@@ -1,51 +1,70 @@
-// 生成器が出す役割カテゴリ（「シングルオリジン × 1」）を、今年のメニューに置き換える。
+// 生成器が出す種類ごとの個数（「hot × 2」）を、今年のメニューに置き換える。
 //
-// 割り当ては 2 段で決める。
+// どのメニューがどの種類かは POS の DB から決める：メニューに入っているアイテムの種類の名前
+// （item_types.name）が、過去の注文に入っている種類と同じものになる（`menuType()`）。
+// 対応表や名前合わせは持たない。
 //
-// * 分類ごとの割合：ドリンク全体のうち、その分類が何 % か。去年と変えると、過去の注文の組の
-//   重みを付け直して、生成される杯数の割合をそこに合わせる（`reweightBaskets()`）
-// * 分類の中の割合：その分類の 1 杯を、今年のどのメニューにするか。セットのメニューもここに入れる
+// 割合は 2 段で、どちらもオペ練の画面で決める（DB には持たない）。
 //
-// 今年のメニューの key は変わりうるので、去年との対応は名前で取る（`matchPastItem()`）。
+// * 種類ごとの割合：全体のうち、その種類が何 % か。去年と変えると、過去の注文の組の
+//   重みを付け直して、生成される個数の割合をそこに合わせる（`reweightBaskets()`）
+// * 種類の中の割合：その種類の 1 個を、今年のどのメニューにするか。決めていなければ等分
 
 import type { GeneratedOrder, Rng } from "./generator";
-import type { Basket, GeneratorParams, PastItem } from "./params";
-import { GOODS_ROLE, PAST_ITEM_GROUPS, PAST_SETS } from "./roles";
-
-/** 画面に並べるドリンクの分類（去年よく出た順） */
-export const DRINK_ROLES = [
-  "signature_blend",
-  "house_blend",
-  "ice_ore",
-  "single_origin",
-  "ice_coffee",
-  "premium",
-  "ice_milk",
-  "hot_ore",
-] as const;
-
-/** 割り当てに出てくる分類（ドリンク + 物販） */
-export const PLAN_ROLES = [...DRINK_ROLES, GOODS_ROLE] as const;
-
-export type MenuAssignment = {
-  /** 分類。null は「出さない」 */
-  role: string | null;
-  /** 分類の中の割合（%）。分類の中で足して 100 にならなくても、比で使う */
-  weight: number;
-};
+import type { Basket, GeneratorParams } from "./params";
 
 export type MenuPlan = {
-  version: 1;
-  /** ドリンクの分類ごとの割合（%）。足して 100 にならなくても、比で使う */
-  roleShares: Record<string, number>;
-  /** メニューの id → 割り当て */
-  menus: Record<string, MenuAssignment>;
+  version: 2;
+  /** 種類の名前 → 割合（%）。足して 100 にならなくても、比で使う */
+  typeShares: Record<string, number>;
+  /** メニューの id → 種類の中の割合。無いメニューは `DEFAULT_WEIGHT`（等分）。0 で出さない */
+  weights: Record<string, number>;
 };
 
-/** 割り当ての対象になるメニュー（API のメニューのうち使う項目だけ） */
-export type PlanMenu = { id: string; name: string };
+/** 種類の中の割合を決めていないメニューの重み。同じ種類のメニューで等分になる */
+export const DEFAULT_WEIGHT = 1;
 
-const normalize = (name: string) => name.normalize("NFKC").replace(/\s+/g, "");
+/** 置き換えに使うメニュー（API のメニューのうち使う項目だけ） */
+export type PlanMenu = {
+  id: string;
+  name: string;
+  items: {
+    quantity: number;
+    item: { item_type: { name: string; makes_cup: boolean } };
+  }[];
+};
+
+const units = (items: PlanMenu["items"]) =>
+  items.reduce((sum, { quantity }) => sum + quantity, 0);
+
+/**
+ * メニューが 1 個ぶんとして出る種類。
+ *
+ * * カップを作るアイテムがちょうど 1 杯 → その種類（物販が付いたセットもここ）
+ * * カップを作るアイテムが無く、全部で 1 個 → その種類（物販）
+ * * それ以外（2 杯以上のセットなど）→ null。オペ練では出さない
+ */
+export const menuType = (menu: PlanMenu): string | null => {
+  const cups = menu.items.filter(({ item }) => item.item_type.makes_cup);
+  if (units(cups) === 1) return cups[0].item.item_type.name;
+  if (cups.length === 0 && units(menu.items) === 1)
+    return menu.items[0].item.item_type.name;
+  return null;
+};
+
+/** セットに入っている物販（カップを作らないアイテム）の種類ごとの個数 */
+export const goodsInMenu = (menu: PlanMenu): Record<string, number> => {
+  if (!menu.items.some(({ item }) => item.item_type.makes_cup)) return {};
+  const goods: Record<string, number> = {};
+  for (const { item, quantity } of menu.items) {
+    if (item.item_type.makes_cup) continue;
+    goods[item.item_type.name] = (goods[item.item_type.name] ?? 0) + quantity;
+  }
+  return goods;
+};
+
+export const weightOf = (plan: MenuPlan, menuId: string) =>
+  Math.max(plan.weights[menuId] ?? DEFAULT_WEIGHT, 0);
 
 /** 過去のデータに入っている年のうち、いちばん新しい年（"2025" など） */
 export const latestYear = (params: GeneratorParams) =>
@@ -54,219 +73,93 @@ export const latestYear = (params: GeneratorParams) =>
     .sort()
     .at(-1) ?? null;
 
-/** その年のドリンクの分類ごとの割合（%） */
-export const pastRoleShares = (params: GeneratorParams, year: string) => {
-  const cups: Record<string, number> = {};
+/** 過去のデータに出てくる種類（去年よく出た順。同じなら名前順） */
+export const pastTypes = (params: GeneratorParams) => {
+  const year = latestYear(params);
+  const shares = year ? pastTypeShares(params, year) : {};
+  return [...new Set(params.items.map((item) => item.type))].sort(
+    (a, b) => (shares[b] ?? 0) - (shares[a] ?? 0) || a.localeCompare(b),
+  );
+};
+
+/** その年の種類ごとの割合（%） */
+export const pastTypeShares = (params: GeneratorParams, year: string) => {
+  const counts: Record<string, number> = {};
   for (const item of params.items) {
-    if (item.role === GOODS_ROLE) continue;
-    cups[item.role] = (cups[item.role] ?? 0) + (item.counts[year] ?? 0);
+    counts[item.type] = (counts[item.type] ?? 0) + (item.counts[year] ?? 0);
   }
-  const total = Object.values(cups).reduce((a, b) => a + b, 0);
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return Object.fromEntries(
-    DRINK_ROLES.map((role) => [
-      role,
-      total > 0 ? (100 * (cups[role] ?? 0)) / total : 0,
+    Object.entries(counts).map(([type, n]) => [
+      type,
+      total > 0 ? (100 * n) / total : 0,
     ]),
   ) as Record<string, number>;
 };
 
-/**
- * 去年の内訳で使う、過去の商品のまとまり。同じ商品とみなすもの（`PAST_ITEM_GROUPS`）は 1 つにし、
- * セット（`PAST_SETS`）は中のドリンクの分類に入れる。
- */
-export type PastEntry = { id: string; name: string; role: string };
-
-const entryOf = (params: GeneratorParams, item: PastItem): PastEntry => {
-  const set = PAST_SETS[item.id];
-  if (set) {
-    const drink = params.items.find((i) => i.id === set.drinkId);
-    return { id: item.id, name: item.name, role: drink?.role ?? item.role };
-  }
-  const group = PAST_ITEM_GROUPS[item.id];
-  return group
-    ? { ...group, role: item.role }
-    : { id: item.id, name: item.name, role: item.role };
-};
-
-/** その年の、分類の中でのまとまりごとの割合（%）。多い順 */
+/** その年の、種類の中での過去の商品ごとの割合（%）。多い順。画面で去年の内訳として見せるだけ */
 export const pastItemShares = (
   params: GeneratorParams,
   year: string,
-  role: string,
+  type: string,
 ) => {
-  const rows = new Map<string, PastEntry & { count: number }>();
-  for (const item of params.items) {
-    // セットの中のドリンクは、セットのほうで数える
-    let count = item.counts[year] ?? 0;
-    for (const [setId, set] of Object.entries(PAST_SETS)) {
-      if (set.drinkId !== item.id) continue;
-      count -= params.items.find((i) => i.id === setId)?.counts[year] ?? 0;
-    }
-    if (count <= 0) continue;
-    const entry = entryOf(params, item);
-    if (entry.role !== role) continue;
-    const found = rows.get(entry.id);
-    if (found) {
-      found.count += count;
-    } else {
-      rows.set(entry.id, { ...entry, count });
-    }
-  }
-  const total = [...rows.values()].reduce((sum, row) => sum + row.count, 0);
-  return [...rows.values()]
+  const rows = params.items
+    .filter((item) => item.type === type && (item.counts[year] ?? 0) > 0)
+    .map((item) => ({ name: item.name, count: item.counts[year] ?? 0 }));
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  return rows
     .map((row) => ({ ...row, share: (100 * row.count) / total }))
     .sort((a, b) => b.count - a.count);
 };
 
-/** 今年のメニューと名前が同じ過去の商品のまとまり。いちばん新しい年に出たものを優先する */
-export const matchPastItem = (
-  params: GeneratorParams,
-  menuName: string,
-): PastEntry | null => {
-  const name = normalize(menuName);
-  const newest = (item: PastItem) =>
-    Object.keys(item.counts).sort().at(-1) ?? "";
-  const hit = params.items
-    .map((item) => ({ item, entry: entryOf(params, item) }))
-    .filter(
-      ({ item, entry }) =>
-        normalize(item.name) === name || normalize(entry.name) === name,
-    )
-    .sort((a, b) => newest(b.item).localeCompare(newest(a.item)))[0];
-  return hit?.entry ?? null;
-};
-
-/** 割り当てが無いときの最初の形。名前が去年の商品と同じメニューだけ、その分類に入れる */
-export const initialPlan = (
-  params: GeneratorParams,
-  menus: PlanMenu[],
-): MenuPlan =>
-  lastYearPlan(params, menus, {
-    version: 1,
-    roleShares: {},
-    menus: Object.fromEntries(
-      menus.map((menu) => [
-        menu.id,
-        { role: matchPastItem(params, menu.name)?.role ?? null, weight: 0 },
-      ]),
-    ),
-  });
-
-/**
- * 「去年と同じ割合」。分類ごとの割合を去年にそろえ、分類の中の割合も去年に寄せる。
- *
- * * 名前が去年の商品と同じメニューは、その商品の去年の割合
- * * 去年の商品に当たらないメニュー（新メニューやセット）は、今年メニューが無くなった去年の
- *   商品のぶんを等分する
- * * それで 0 になる分類は等分する
- *
- * どの分類に入れるかは `current` のまま変えない。
- */
-export const lastYearPlan = (
-  params: GeneratorParams,
-  menus: PlanMenu[],
-  current: MenuPlan,
-): MenuPlan => {
+/** 最初の形：種類ごとの割合は去年のまま、種類の中は等分 */
+export const initialPlan = (params: GeneratorParams): MenuPlan => {
   const year = latestYear(params);
-  if (year === null) return current;
-
-  const next: MenuPlan = {
-    version: 1,
-    roleShares: pastRoleShares(params, year),
-    menus: { ...current.menus },
-  };
-  for (const role of PLAN_ROLES) {
-    const assigned = menus.filter(
-      (menu) => current.menus[menu.id]?.role === role,
-    );
-    if (assigned.length === 0) continue;
-
-    const past = pastItemShares(params, year, role);
-    const matched = new Map<string, number>();
-    for (const menu of assigned) {
-      const entry = matchPastItem(params, menu.name);
-      const row = past.find((p) => entry !== null && p.id === entry.id);
-      if (row) matched.set(menu.id, row.share);
-    }
-    const usedIds = new Set(
-      assigned
-        .map((menu) => matchPastItem(params, menu.name)?.id)
-        .filter(Boolean),
-    );
-    const leftover = past
-      .filter((p) => !usedIds.has(p.id))
-      .reduce((a, p) => a + p.share, 0);
-    const unmatched = assigned.filter((menu) => !matched.has(menu.id));
-
-    for (const menu of assigned) {
-      const weight =
-        matched.get(menu.id) ??
-        (unmatched.length > 0 ? leftover / unmatched.length : 0);
-      next.menus[menu.id] = { role, weight };
-    }
-    const total = assigned.reduce(
-      (sum, menu) => sum + next.menus[menu.id].weight,
-      0,
-    );
-    if (total === 0) {
-      for (const menu of assigned)
-        next.menus[menu.id] = { role, weight: 100 / assigned.length };
-    }
-  }
-  return next;
-};
-
-/** 分類の中の割合を等分する */
-export const evenPlan = (plan: MenuPlan): MenuPlan => {
-  const counts: Record<string, number> = {};
-  for (const a of Object.values(plan.menus)) {
-    if (a.role) counts[a.role] = (counts[a.role] ?? 0) + 1;
-  }
   return {
-    ...plan,
-    menus: Object.fromEntries(
-      Object.entries(plan.menus).map(([id, a]) => [
-        id,
-        { ...a, weight: a.role ? 100 / counts[a.role] : 0 },
-      ]),
-    ),
+    version: 2,
+    typeShares: year ? pastTypeShares(params, year) : {},
+    weights: {},
   };
 };
 
-/** 割合が 0 より大きいのに、メニューが 1 つも割り当たっていないドリンクの分類 */
-export const unassignedRoles = (plan: MenuPlan) =>
-  DRINK_ROLES.filter(
-    (role) =>
-      (plan.roleShares[role] ?? 0) > 0 &&
-      !Object.values(plan.menus).some((a) => a.role === role && a.weight > 0),
-  );
+/** 割合が 0 より大きいのに、出せるメニューが 1 つも無い種類 */
+export const unassignedTypes = (plan: MenuPlan, menus: PlanMenu[]) =>
+  Object.keys(plan.typeShares)
+    .filter((type) => (plan.typeShares[type] ?? 0) > 0)
+    .filter(
+      (type) =>
+        !menus.some(
+          (menu) => menuType(menu) === type && weightOf(plan, menu.id) > 0,
+        ),
+    )
+    .sort();
 
-const cupsOf = (basket: Basket) =>
-  Object.values(basket.roles).reduce((a, b) => a + b, 0);
+const unitsOfBasket = (basket: Basket) =>
+  Object.values(basket.types).reduce((a, b) => a + b, 0);
 
-/** 重みの付いた注文の組から、ドリンクの分類ごとの杯数の割合（合計 1） */
-export const roleSharesOf = (baskets: Basket[]) => {
-  const cups: Record<string, number> = {};
+/** 重みの付いた注文の組から、種類ごとの個数の割合（合計 1） */
+export const typeSharesOf = (baskets: Basket[]) => {
+  const counts: Record<string, number> = {};
   let total = 0;
   for (const basket of baskets) {
-    for (const [role, n] of Object.entries(basket.roles)) {
-      cups[role] = (cups[role] ?? 0) + n * basket.weight;
+    for (const [type, n] of Object.entries(basket.types)) {
+      counts[type] = (counts[type] ?? 0) + n * basket.weight;
       total += n * basket.weight;
     }
   }
   return Object.fromEntries(
-    Object.entries(cups).map(([role, n]) => [role, n / total]),
+    Object.entries(counts).map(([type, n]) => [type, n / total]),
   );
 };
 
 /**
- * 注文の組の重みを付け直して、ドリンクの分類ごとの杯数の割合を `targetShares` に合わせる。
+ * 注文の組の重みを付け直して、種類ごとの個数の割合を `targetShares` に合わせる。
  *
  * 注文は丸ごと引くまま（「同じものを人数分」の組を壊さない）で、どの組がどれだけ出るかだけを
- * 変える。各組の重みに `Π (目標 / いまの割合)^(その分類の杯数 / 組の杯数)` を掛けるのを繰り返す。
- * 割合 0 の分類を含む組は出なくなる。物販だけの注文の重みは変えない。
+ * 変える。各組の重みに `Π (目標 / いまの割合)^(その種類の個数 / 組の個数)` を掛けるのを繰り返す。
+ * 割合 0 の種類を含む組は出なくなる。重みの合計は元のまま。
  *
- * 過去の組に無い分類の割合を上げることはできない（その分類が出る組が無いため）。
+ * 過去の組に無い種類の割合を上げることはできない（その種類が出る組が無いため）。
  */
 export const reweightBaskets = (
   baskets: Basket[],
@@ -278,40 +171,36 @@ export const reweightBaskets = (
     0,
   );
   if (total <= 0) return baskets;
-  const target = (role: string) => Math.max(targetShares[role] ?? 0, 0) / total;
+  const target = (type: string) => Math.max(targetShares[type] ?? 0, 0) / total;
 
-  const drinkTotal = baskets
-    .filter((b) => cupsOf(b) > 0)
-    .reduce((a, b) => a + b.weight, 0);
+  const weightTotal = baskets.reduce((a, b) => a + b.weight, 0);
   let current = baskets.map((b) => ({ ...b }));
   for (let i = 0; i < iterations; i++) {
-    const shares = roleSharesOf(current);
+    const shares = typeSharesOf(current);
     current = current.map((basket) => {
-      const cups = cupsOf(basket);
-      if (cups === 0) return basket;
+      const n = unitsOfBasket(basket);
+      if (n === 0) return basket;
       let factor = 1;
-      for (const [role, n] of Object.entries(basket.roles)) {
-        const now = shares[role] ?? 0;
-        factor *= now > 0 ? (target(role) / now) ** (n / cups) : 0;
+      for (const [type, count] of Object.entries(basket.types)) {
+        const now = shares[type] ?? 0;
+        factor *= now > 0 ? (target(type) / now) ** (count / n) : 0;
       }
       return { ...basket, weight: basket.weight * factor };
     });
-    // ドリンクのある注文の重みの合計は元のまま（物販だけの注文との比を変えない）
-    const sum = current
-      .filter((b) => cupsOf(b) > 0)
-      .reduce((a, b) => a + b.weight, 0);
+    const sum = current.reduce((a, b) => a + b.weight, 0);
     if (sum === 0) return baskets;
-    current = current.map((b) =>
-      cupsOf(b) > 0 ? { ...b, weight: (b.weight * drinkTotal) / sum } : b,
-    );
+    current = current.map((b) => ({
+      ...b,
+      weight: (b.weight * weightTotal) / sum,
+    }));
   }
   return current;
 };
 
-/** 画面に出す注文 1 件の中身。メニューが割り当たっていない分類は `menuId` が null */
+/** 画面に出す注文 1 件の中身。出せるメニューが無い種類は `menuId` が null */
 export type PlannedLine = {
   menuId: string | null;
-  role: string;
+  type: string;
   count: number;
 };
 
@@ -330,44 +219,51 @@ const pickWeighted = <T>(
 };
 
 /**
- * 生成した注文の杯・物販を、1 つずつ今年のメニューに置き換える。同じメニューはまとめる。
- * 分類の中のメニューは 1 杯ごとに独立に引く（「シングル × 2」が別の豆になることもある）。
+ * 生成した注文の 1 個ずつを、今年のメニューに置き換える。同じメニューはまとめる。
+ * 種類の中のメニューは 1 個ごとに独立に引く（「hot × 2」が別の豆になることもある）。
  *
- * @param goodsInMenu メニューの id → そのメニューに入っている物販の数。セットを引いたら、
- *   その数だけ注文の物販を減らす（過去の注文ではセットの物販も物販として数えているため）
+ * 物販の付いたセットを引いたら、その物販のぶん注文の物販を減らす（過去の注文ではセットの物販も
+ * 物販として数えているため）。そのためにセットに入りうる物販の種類は最後に置き換える。
  */
 export const planOrder = (
   order: GeneratedOrder,
   plan: MenuPlan,
+  menus: PlanMenu[],
   rng: Rng,
-  goodsInMenu: Record<string, number> = {},
 ): PlannedLine[] => {
-  const byRole = new Map<string, { value: string; weight: number }[]>();
-  for (const [id, a] of Object.entries(plan.menus)) {
-    if (!a.role || a.weight <= 0) continue;
-    byRole.set(a.role, [
-      ...(byRole.get(a.role) ?? []),
-      { value: id, weight: a.weight },
-    ]);
+  const byType = new Map<string, { value: PlanMenu; weight: number }[]>();
+  for (const menu of menus) {
+    const type = menuType(menu);
+    const weight = weightOf(plan, menu.id);
+    if (!type || weight <= 0) continue;
+    byType.set(type, [...(byType.get(type) ?? []), { value: menu, weight }]);
   }
+  const setGoods = new Set(
+    menus.flatMap((menu) => Object.keys(goodsInMenu(menu))),
+  );
 
   const lines = new Map<string, PlannedLine>();
-  const add = (role: string, n: number) => {
+  const included: Record<string, number> = {};
+  const add = (type: string, n: number) => {
     for (let i = 0; i < n; i++) {
-      const menuId = pickWeighted(rng, byRole.get(role) ?? []);
-      const key = menuId ?? `role:${role}`;
-      const line = lines.get(key) ?? { menuId, role, count: 0 };
+      const menu = pickWeighted(rng, byType.get(type) ?? []);
+      const key = menu?.id ?? `type:${type}`;
+      const line = lines.get(key) ?? {
+        menuId: menu?.id ?? null,
+        type,
+        count: 0,
+      };
       line.count += 1;
       lines.set(key, line);
+      if (!menu) continue;
+      for (const [goods, count] of Object.entries(goodsInMenu(menu)))
+        included[goods] = (included[goods] ?? 0) + count;
     }
   };
-  for (const role of Object.keys(order.roles).sort())
-    add(role, order.roles[role]);
-  const goodsInSets = [...lines.values()].reduce(
-    (sum, line) =>
-      sum + (line.menuId ? (goodsInMenu[line.menuId] ?? 0) * line.count : 0),
-    0,
-  );
-  add(GOODS_ROLE, Math.max(order.goods - goodsInSets, 0));
+  const types = Object.keys(order.types).sort();
+  for (const type of types.filter((t) => !setGoods.has(t)))
+    add(type, order.types[type]);
+  for (const type of types.filter((t) => setGoods.has(t)))
+    add(type, Math.max(order.types[type] - (included[type] ?? 0), 0));
   return [...lines.values()];
 };

@@ -5,13 +5,11 @@ import {
   type MenuPlan,
   type PlannedLine,
   RESUME_MIN,
-  ROLE_LABELS,
   STOP_MIN,
   type WithId,
   flatProfile,
   generateOrders,
   initialPlan,
-  matchPastItem,
   menuRepository,
   planOrder,
   reweightBaskets,
@@ -19,7 +17,7 @@ import {
   serviceMin,
   shouldStop,
   stackAt,
-  unassignedRoles,
+  unassignedTypes,
   xoshiro128ss,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +25,7 @@ import type { MetaFunction } from "react-router";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import {
   MenuPlanEditor,
+  typeLabelsOf,
   unitsOf,
 } from "~/components/organisms/rehearsal/MenuPlanEditor";
 import { Button } from "~/components/ui/button";
@@ -57,7 +56,7 @@ const isCounts = (value: unknown): value is Record<string, number> =>
 const isParams = (value: unknown): value is GeneratorParams => {
   const v = value as GeneratorParams;
   return (
-    v?.version === 2 &&
+    v?.version === 3 &&
     isRecord(v.source) &&
     Array.isArray(v.source.dates) &&
     v.source.dates.every((d) => typeof d === "string") &&
@@ -72,10 +71,7 @@ const isParams = (value: unknown): value is GeneratorParams => {
     Array.isArray(v.baskets) &&
     v.baskets.length > 0 &&
     v.baskets.every(
-      (b) =>
-        isCounts(b?.roles) &&
-        typeof b.goods === "number" &&
-        typeof b.weight === "number",
+      (b) => isCounts(b?.types) && typeof b.weight === "number",
     ) &&
     Array.isArray(v.days) &&
     v.days.every(
@@ -91,7 +87,7 @@ const isParams = (value: unknown): value is GeneratorParams => {
       (item) =>
         typeof item?.id === "string" &&
         typeof item.name === "string" &&
-        typeof item.role === "string" &&
+        typeof item.type === "string" &&
         isCounts(item.counts),
     )
   );
@@ -117,20 +113,10 @@ const store = (key: string, value: unknown) => {
 
 const isPlan = (value: unknown): value is MenuPlan => {
   const v = value as MenuPlan;
-  return (
-    v?.version === 1 &&
-    isCounts(v.roleShares) &&
-    isRecord(v.menus) &&
-    Object.values(v.menus).every(
-      (a) =>
-        isRecord(a) &&
-        (a.role === null || typeof a.role === "string") &&
-        typeof a.weight === "number",
-    )
-  );
+  return v?.version === 2 && isCounts(v.typeShares) && isCounts(v.weights);
 };
 
-// 形が不正なら null を返し、去年の割合から作り直す
+// 形が不正（前の形の割り当てを含む）なら null を返し、去年の割合から作り直す
 const loadPlan = (): MenuPlan | null => {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
@@ -141,7 +127,7 @@ const loadPlan = (): MenuPlan | null => {
   }
 };
 
-const EMPTY_PLAN: MenuPlan = { version: 1, roleShares: {}, menus: {} };
+const EMPTY_PLAN: MenuPlan = { version: 2, typeShares: {}, weights: {} };
 
 const clock = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
@@ -183,34 +169,12 @@ export default function Rehearsal() {
       .catch(() => setMenusError(true));
   }, []);
 
-  // 割り当ては端末に覚えておく。初めてなら、名前が去年の商品と同じメニューを去年の割合で入れる。
-  // 覚えている割り当てに無いメニュー（あとから足したもの）は、名前で分類だけ推して割合は 0 にする。
-  // 今のメニューに無い id（消したメニューや入れ直した DB の古い id）は捨てる
+  // 割合は端末に覚えておく。初めてなら、種類ごとの割合は去年のまま、種類の中は等分。
+  // 覚えている割合に無いメニュー（あとから足したもの）は等分の重みで出る
   useEffect(() => {
-    if (!params || !menus || plan) return;
-    const stored = loadPlan();
-    const planMenus = menus.map((m) => ({ id: m.id, name: m.name }));
-    if (!stored) {
-      setPlan(initialPlan(params, planMenus));
-      return;
-    }
-    const known = new Set(menus.map((m) => m.id));
-    const added = menus.filter((m) => !(m.id in stored.menus));
-    setPlan({
-      ...stored,
-      menus: {
-        ...Object.fromEntries(
-          Object.entries(stored.menus).filter(([id]) => known.has(id)),
-        ),
-        ...Object.fromEntries(
-          added.map((m) => [
-            m.id,
-            { role: matchPastItem(params, m.name)?.role ?? null, weight: 0 },
-          ]),
-        ),
-      },
-    });
-  }, [params, menus, plan]);
+    if (!params || plan) return;
+    setPlan(loadPlan() ?? initialPlan(params));
+  }, [params, plan]);
 
   const changePlan = (next: MenuPlan) => {
     setPlan(next);
@@ -222,7 +186,7 @@ export default function Rehearsal() {
     const day = params.days.find((d) => d.date === profileKey);
     // 分類ごとの割合を去年から変えたら、過去の注文の組の重みを付け直してそこに合わせる
     const baskets = plan
-      ? reweightBaskets(params.baskets, plan.roleShares)
+      ? reweightBaskets(params.baskets, plan.typeShares)
       : params.baskets;
     return generateOrders(
       { ...params, baskets },
@@ -242,37 +206,24 @@ export default function Rehearsal() {
     );
   }, [params, plan, profileKey, durationMin, level, seed]);
 
-  // セットに入っている物販（種類の「カップを作る」が無いもの）の数。セットを引いた注文は、そのぶん別の物販を引かない
-  const goodsInMenu = useMemo(
-    () =>
-      Object.fromEntries(
-        (menus ?? []).map((menu) => [
-          menu.id,
-          menu.items
-            .filter(({ item }) => !item.item_type.makes_cup)
-            .reduce((sum, { quantity }) => sum + quantity, 0),
-        ]),
-      ),
-    [menus],
-  );
-
   const planned = useMemo(() => {
     const rng = xoshiro128ss((seed ^ MENU_SEED_SALT) >>> 0);
     return generated.map((order) =>
-      planOrder(order, plan ?? EMPTY_PLAN, rng, goodsInMenu),
+      planOrder(order, plan ?? EMPTY_PLAN, menus ?? [], rng),
     );
-  }, [generated, plan, seed, goodsInMenu]);
+  }, [generated, plan, seed, menus]);
 
   const menuById = useMemo(
     () => new Map((menus ?? []).map((m) => [m.id, m])),
     [menus],
   );
+  const typeLabel = useMemo(() => typeLabelsOf(menus ?? []), [menus]);
   const labelOf = (line: PlannedLine) => {
     const menu = line.menuId ? menuById.get(line.menuId) : undefined;
-    if (!menu) return `${ROLE_LABELS[line.role] ?? line.role}（未割り当て）`;
+    if (!menu) return `${typeLabel(line.type)}（メニューなし）`;
     return unitsOf(menu) > 1 ? `${menu.name}（セット）` : menu.name;
   };
-  const missingRoles = plan ? unassignedRoles(plan) : [];
+  const missingTypes = plan ? unassignedTypes(plan, menus ?? []) : [];
 
   const totalSec = useMemo(() => {
     const day = params?.days.find((d) => d.date === profileKey);
@@ -393,9 +344,12 @@ export default function Rehearsal() {
           )}
           <Button
             size="lg"
-            // 割り当てが決まると注文の組の重みが変わって流れが作り直されるので、決まるまで開始させない
+            // メニューが来ると注文の中身が決まり直すので、読み込むまで開始させない
             disabled={
-              !params || (!plan && !menusError) || elapsedSec >= totalSec
+              !params ||
+              !plan ||
+              (!menus && !menusError) ||
+              elapsedSec >= totalSec
             }
             onClick={() => {
               setStarted(true);
@@ -435,7 +389,7 @@ export default function Rehearsal() {
               <ul className="mt-2 space-y-1">
                 {head.map((line) => (
                   <li
-                    key={line.menuId ?? line.role}
+                    key={line.menuId ?? line.type}
                     className="font-bold text-4xl text-amber-950"
                   >
                     {labelOf(line)} × {line.count}
@@ -641,14 +595,14 @@ export default function Rehearsal() {
         )}
         {menusError && (
           <p className="text-red-700 text-sm">
-            メニューを読み込めませんでした。注文は分類名のまま出ます。
+            メニューを読み込めませんでした。注文は種類の名前のまま出ます。
           </p>
         )}
-        {missingRoles.length > 0 && (
+        {missingTypes.length > 0 && (
           <p className="text-amber-700 text-sm">
-            メニューが割り当たっていない分類があります（
-            {missingRoles.map((role) => ROLE_LABELS[role]).join("、")}
-            ）。この分類の注文は分類名のまま出ます。
+            出せるメニューが無い種類があります（
+            {missingTypes.map(typeLabel).join("、")}
+            ）。この種類の注文は種類の名前のまま出ます。
           </p>
         )}
       </section>
@@ -664,9 +618,9 @@ export default function Rehearsal() {
       )}
 
       <p className="text-stone-500 text-xs">
-        注文の組（何杯をどの分類で）は過去の祭の注文をそのまま使い、その 1
-        杯ずつを割り当てた今年のメニューに置き換えています。同じ分類の 2
-        杯が別のメニューになることもあります。セットは 1 杯ぶんとして出ます。
+        注文の組（どの種類を何個）は過去の祭の注文をそのまま使い、その 1
+        個ずつを同じ種類（商品管理のアイテムの種類）の今年のメニューに置き換えています。同じ種類の
+        2 杯が別のメニューになることもあります。セットは 1 杯ぶんとして出ます。
         作っているのは過去の体制でさばけた注文の流れで、需要の予測ではありません。
         オーダーストップの目安は 2024・2025 年祭（抽出 5〜6
         人）の提供時間から当てはめたもので、今年の体制では外れることがあります。
