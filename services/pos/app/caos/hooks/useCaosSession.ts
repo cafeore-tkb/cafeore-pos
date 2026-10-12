@@ -331,7 +331,7 @@ export const useCaosSession = () => {
           SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
       ),
     posStatus: live.status,
-    /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+    /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し） */
     labelPrinter,
     /** この端末のまだ送れていない盤面の操作の数と、今すぐ送り直す */
     unsent,

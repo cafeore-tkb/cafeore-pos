@@ -10,7 +10,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { eposPrinterAt } from "~/label/infra/epos";
+import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
@@ -100,14 +100,24 @@ export const useCupEmergency = () => {
     [addAndPrint],
   );
 
-  return { printer, addEmergency, cancelEmergency, restoreEmergencies };
+  return {
+    /** この端末のシールのプリンターと、つながらないときに証明書を許可するページ */
+    printer: {
+      ...printer,
+      certificateUrl: eposCertificateUrl(label_printer_ip),
+    },
+    addEmergency,
+    cancelEmergency,
+    restoreEmergencies,
+  };
 };
 
 /** 注文の抽出が要るカップ（表示の値つき。緊急で入れ直せるカップ）。指名は明細のもの */
-const brewCupsOf = (order: CaosOrderInput) =>
+const brewCupsOf = <O extends CaosOrderInput>(order: O) =>
   order.cups.filter(cupNeedsBrew).map((cup) => {
     const menu = order.menus.find((m) => m.orderMenuId === cup.orderMenuId);
     return {
+      order,
       cupId: cup.id,
       abbr: cup.item.abbr,
       name: cup.item.name,
@@ -140,7 +150,8 @@ const fetchReasons = async () => {
 
 /**
  * 緊急の入力：注文番号・入れ直すカップ・理由。initial はカップやカードから開いたときの注文番号とカップ。
- * 番号を変えると、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。理由の候補は開くたびに読み直す。
+ * 入れ直せるのは番号の注文の抽出が要るカップと、initial のカップのあるほかの注文（注文をまたいで統合したカード）の抽出が要るカップ。
+ * 番号を変えると、ほかの注文は外し、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。理由の候補は開くたびに読み直す。
  * 注文は POS の注文（OrderEntity）か、実データテストの練習の盤面の注文
  */
 export const useEmergencyDraft = <O extends CaosOrderInput>(
@@ -151,21 +162,37 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
     initial ? String(initial.orderNo) : "",
   );
   const [picked, setPicked] = useState(initial?.cupIds ?? []);
+  // ほかの注文を探すカップ（番号を変えたら空）
+  const [withCups, setWithCups] = useState(initial?.cupIds ?? []);
   const [reason, setReason] = useState("");
   const order = orderByNo(orders, orderNo);
-  const cups = order ? brewCupsOf(order) : [];
+  const scope = order
+    ? [
+        order,
+        ...orders.filter(
+          (other) =>
+            other !== order &&
+            other.cups.some((cup) => withCups.includes(cup.id)),
+        ),
+      ]
+    : [];
+  const cups = scope.flatMap(brewCupsOf);
   const { data: reasons = [] } = useSWR("cup-emergency-reasons", fetchReasons);
   return {
     orderNo,
     changeOrderNo: (value: string) => {
       setOrderNo(value);
+      setWithCups([]);
       const next = orderByNo(orders, value);
       const nextCups = next ? brewCupsOf(next) : [];
       setPicked(nextCups.length === 1 ? [nextCups[0].cupId] : []);
     },
     /** 番号の注文（無ければ undefined） */
     order,
+    /** 入れ直せるカップ（注文つき。番号の注文のカップが先） */
     cups,
+    /** ほかの注文のカップも入れ直せるか（カップに注文番号を添える） */
+    manyOrders: scope.length > 1,
     picked,
     toggle: (cupId: string) =>
       setPicked((ids) =>
@@ -177,10 +204,8 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
     setReason,
     reasons,
     /** 入れ直すカップ（addEmergency に渡す。理由は reason） */
-    selected: order
-      ? cups
-          .filter((cup) => picked.includes(cup.cupId))
-          .map((cup): EmergencyCup<O> => ({ order, cupId: cup.cupId }))
-      : [],
+    selected: cups
+      .filter((cup) => picked.includes(cup.cupId))
+      .map((cup): EmergencyCup<O> => ({ order: cup.order, cupId: cup.cupId })),
   };
 };
