@@ -15,17 +15,29 @@ export type SearchKey = string;
 const appendDigit = (value: string, digit: string) =>
   value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
 
-// 入力欄（緊急の番号・担当者の名前など）で打っているキーは拾わない
-const typingIn = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+// 押した所が selector の中か
+const within = (target: EventTarget | null, selector: string) =>
+  target instanceof HTMLElement && Boolean(target.closest(selector));
+
+// 入力欄（緊急の番号・担当者の名前など）で打っているキーと、ダイアログ（交代など）を開いているあいだのキーは拾わない
+const ignoreKey = (event: KeyboardEvent) =>
+  event.metaKey ||
+  event.ctrlKey ||
+  event.altKey ||
+  within(event.target, "input, textarea, select, [contenteditable='true']") ||
+  Boolean(
+    document.querySelector(
+      "dialog[open], [role='dialog'], [role='alertdialog']",
+    ),
+  );
 
 /**
  * 注文番号の検索（ヘッダーの「番号」と右のパネル）。入れている番号（digits。閉じていれば null）は開いているパネル（useBoardSelection）が持ち、
  * ここは押したキーで番号を変え、その注文を探す。見つかった注文は選んだ状態にし（selectOrder。盤面にカードがあるときだけ）、
  * そのカードを見せる（タイムラインのカードは showOnTimeline でスクロール、未割当のカードは未割当の帯の中でスクロール）。
  * 選ぶのは番号を変えたときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
- * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる。開いているあいだは Backspace で 1 文字消し、Enter・Esc で閉じる
+ * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる（ダイアログを開いているあいだは拾わない）。
+ * 開いているあいだは Backspace で 1 文字消し、Esc で閉じる。Enter も閉じる（ボタン・リンクの上ではそのボタンを押す）
  */
 export const useOrderSearch = ({
   digits,
@@ -103,8 +115,7 @@ export const useOrderSearch = ({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (typingIn(event.target)) return;
+      if (ignoreKey(event)) return;
       const { digits, press, open, close } = latest.current;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
@@ -113,8 +124,11 @@ export const useOrderSearch = ({
         return;
       }
       if (digits === null) return;
+      // Enter はボタン・リンクの上なら、そのボタンを押させる（閉じない）
       if (event.key === "Backspace") press("back");
-      else if (event.key === "Enter" || event.key === "Escape") close();
+      else if (event.key === "Escape") close();
+      else if (event.key === "Enter" && !within(event.target, "button, a"))
+        close();
       else return;
       event.preventDefault();
     };
