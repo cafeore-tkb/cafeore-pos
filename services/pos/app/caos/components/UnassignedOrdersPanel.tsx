@@ -9,7 +9,6 @@ import {
 import {
   type CardLooks,
   type OrderRowEntry,
-  orderLabel,
   orderNoLabel,
   queueRows,
   sharesOrder,
@@ -61,7 +60,7 @@ const UnassignedCard: React.FC<{
       look={looks.get(card.key)}
       size={size}
       selected={selected}
-      mergeHint={isOpen && pick.partner ? orderLabel(pick.partner) : undefined}
+      mergeInto={isOpen ? pick.partner : undefined}
       data-unassigned-uid={card.key}
       onPointerDown={
         readOnly || isMergeCandidate

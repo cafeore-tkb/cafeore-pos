@@ -36,9 +36,6 @@ export const sharesOrder = (card: CaosCard, label: string | null) => {
   );
 };
 
-/** 統合したカード（2 つ以上の注文のカップが入っている）か */
-export const isMergedCard = (card: CaosCard) => cardOrderNos(card).length > 1;
-
 /**
  * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち統合できる（canMergeCards）カードが 1 枚ならそれ、
  * 何枚かあれば注文番号がいちばん近いもの。いちばん近いものが 2 枚以上あって決まらなければ無し（今まで通り相手を押して選ぶ）

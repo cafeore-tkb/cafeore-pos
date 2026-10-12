@@ -11,8 +11,8 @@ import {
   type CardLook,
   cardItemName,
   cardNominee,
+  cardOrderNos,
   emergencyReasons,
-  isMergedCard,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
@@ -21,7 +21,7 @@ import { moveTargets } from "../logic/lanes";
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
 // 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeHint）だけ（終わりはカードの状態で薄くする）。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ（終わりはカードの状態で薄くする）。
 // 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
@@ -120,8 +120,8 @@ export const OrderCard: React.FC<
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
-    /** 開いたカードをもう一度押すと統合する相手の注文番号（「#012」）。統合の印と一緒に出す */
-    mergeHint?: string;
+    /** 開いたカードをもう一度押すと統合する相手。統合の印とその注文番号（「#012」）を出す */
+    mergeInto?: CaosCard;
   }
 > = ({
   card,
@@ -130,7 +130,7 @@ export const OrderCard: React.FC<
   selected = false,
   dragging = false,
   note,
-  mergeHint,
+  mergeInto,
   className = "",
   style,
   children,
@@ -162,7 +162,7 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  const merged = isMergedCard(card);
+  const merged = cardOrderNos(card).length > 1;
   // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では縮めない。後ろの豆の札を先に縮める）。
   // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
@@ -215,10 +215,10 @@ export const OrderCard: React.FC<
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
         {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
-        {mergeHint && (
+        {mergeInto && (
           <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-blue-700 px-1 py-0.5 font-black font-mono text-white">
             <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
-            {mergeHint}
+            {orderLabel(mergeInto)}
           </span>
         )}
         {subline}

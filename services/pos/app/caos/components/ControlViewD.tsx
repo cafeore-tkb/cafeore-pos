@@ -513,11 +513,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         look={looks.get(uid)}
                         size="sm"
                         selected={isSelected}
-                        mergeHint={
-                          isSelected && picked.partner
-                            ? orderLabel(picked.partner)
-                            : undefined
-                        }
+                        mergeInto={isSelected ? picked.partner : undefined}
                         data-sheet-cup={uid}
                         onPointerDown={(event) =>
                           drag.press({ kind: "unassigned", order }, event)

@@ -91,9 +91,8 @@ export const useUnassignedPick = ({
       }),
     /** カードを押した：統合できる相手（開いたカードなら決まった相手）と統合し、ほかは開いてその注文を選ぶ */
     tap: (card: CaosCard) => {
-      const into =
-        card.key === openKey ? partner : canMergeWith(card) ? card : undefined;
-      if (openCard && into) {
+      const into = card.key === openKey ? partner : card;
+      if (openCard && into && canMergeWith(into)) {
         onMergeOrders?.(openCard.key, into.key);
         setOpenKey(null);
         return;
