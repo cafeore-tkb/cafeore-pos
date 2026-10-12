@@ -124,6 +124,7 @@ export const OrderCard: React.FC<
   const orderNo = (size: string) => (
     <span
       className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      title={orderLabel(card)}
     >
       {orderLabel(card)}
     </span>
