@@ -47,6 +47,7 @@ import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
 import { PendingPrints } from "../molecules/PendingPrints";
 import { PrinterStatus } from "../molecules/PrinterStatus";
+import { ReadyTimeEstimate } from "../molecules/ReadyTimeEstimate";
 import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
 import { OrderItemEdit } from "../organisms/OrderItemEdit";
@@ -451,12 +452,18 @@ const CashierV2 = ({
     <>
       <div className="p-4">
         <div className="flex justify-between">
-          <OrderIdDisplay
-            orderId={newOrder.orderId}
-            isNeedManualOrderId={isNeedManualOrderId}
-            manualOrderId={manualOrderId}
-            onOrderIdOverride={setOrderIdOverride}
-          />
+          <div className="flex items-center gap-6">
+            <OrderIdDisplay
+              orderId={newOrder.orderId}
+              isNeedManualOrderId={isNeedManualOrderId}
+              manualOrderId={manualOrderId}
+              onOrderIdOverride={setOrderIdOverride}
+            />
+            <ReadyTimeEstimate
+              orders={orders}
+              drinkCups={newOrder.getDrinkCups().length}
+            />
+          </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center space-x-2">
               <Switch
