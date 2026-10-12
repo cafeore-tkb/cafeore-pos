@@ -75,7 +75,10 @@ declare global {
 export type EposPrinterConfig = {
   /** プリンターの IP アドレス */
   address: string;
-  /** ePOS-Device のポート。SDK は 8008 なら http、それ以外は https でつなぐ */
+  /**
+   * ePOS-Device のポート。SDK は 8008 なら http（ws）、それ以外は https（wss）でつなぐ。
+   * つながらなければ EPOS_SECURE_PORT でつなぎ直す（createEposPrinter）
+   */
   port: number;
   /** プリンターに設定してあるデバイス ID */
   deviceId: string;
@@ -87,6 +90,42 @@ export type EposPrinterConfig = {
   cut: boolean;
   /** 送ってから返事を待つ時間（ミリ秒）。来なければ刷れなかったとみなし、つなぎ直すまで送らない */
   responseTimeoutMs: number;
+};
+
+/**
+ * 暗号化してつなぐときのポート（ePOS-Device の wss）
+ *
+ * https のページからは 8008（http・ws）が混在コンテンツで止められる（iPad の Safari など）ので、こちらでつなぎ直す。
+ * SDK は 8043 につながらなければ、443 の ePOS-Print（https://<IP>/cgi-bin/epos/service.cgi に POST）でつなぐ。
+ * どちらもプリンターの証明書を端末が許可していないとつながらない（eposCertificateUrl を一度開いて許可する）。
+ */
+export const EPOS_SECURE_PORT = 8043;
+
+/** 端末でプリンターの証明書を許可するために開くページ */
+export const eposCertificateUrl = (address: string) => `https://${address}`;
+
+// つながったポートを、アドレスごとに端末に覚えておく（次はそれから試し、毎回つながらない方を待たない）
+const PORT_KEY_PREFIX = "cafeore:epos-port:";
+
+/** 試すポートの順。設定のポート・暗号化のポートのうち、前につながった方を先にする */
+const portsToTry = ({ address, port }: EposPrinterConfig) => {
+  let remembered: string | null = null;
+  try {
+    remembered = localStorage.getItem(PORT_KEY_PREFIX + address);
+  } catch {
+    // 読めなければ設定の順
+  }
+  return remembered === String(EPOS_SECURE_PORT)
+    ? [EPOS_SECURE_PORT, port]
+    : [port, EPOS_SECURE_PORT];
+};
+
+const rememberPort = (address: string, port: number) => {
+  try {
+    localStorage.setItem(PORT_KEY_PREFIX + address, String(port));
+  } catch {
+    // 覚えられなくても、次も同じ順で試すだけ
+  }
 };
 
 /** 今使っているプリンター（ラベル用） */
@@ -184,7 +223,8 @@ export const writeEposJob = (
 /**
  * Epson の ePOS-Device につながるプリンター
  *
- * ブラウザから直接プリンターにつなぐ（サーバーは通らない）。
+ * ブラウザから直接プリンターにつなぐ（サーバーは通らない）。設定のポートでつながらなければ、
+ * 暗号化のポート（EPOS_SECURE_PORT。閉じていれば 443 の ePOS-Print）でつなぎ直す。
  */
 export const createEposPrinter = (
   onStatusChange: (status: PrinterConnectionStatus) => void,
@@ -195,15 +235,19 @@ export const createEposPrinter = (
   // つなぐ・やめるたびに増やす。古いつなぎかけの応答は、これが変わっていたら捨てる
   let generation = 0;
 
-  const disconnect = () => {
-    generation += 1;
-    device = null;
-    // つなぎかけ・つなぎ損ねたものも切る。SDK が投げても画面は止めない
+  // つなぎかけ・つなぎ損ねたものも切る。SDK が投げても画面は止めない
+  const close = (dev: EposDevice | null) => {
     try {
-      ePosDev?.disconnect();
+      dev?.disconnect();
     } catch (error) {
       console.error("ePOSDevice disconnect failed:", error);
     }
+  };
+
+  const disconnect = () => {
+    generation += 1;
+    device = null;
+    close(ePosDev);
     ePosDev = null;
   };
 
@@ -211,37 +255,49 @@ export const createEposPrinter = (
     const current = generation + 1;
     generation = current;
     onStatusChange("connecting");
-    if (!window.epson) {
+    const epson = window.epson;
+    if (!epson) {
       onStatusChange("disconnected");
       console.error("ePOSDevice not found");
       return;
     }
-    const dev = new window.epson.ePOSDevice();
-    ePosDev = dev;
 
-    dev.connect(config.address, config.port, (result) => {
-      if (current !== generation) return;
-      if (result !== "OK" && result !== "SSL_CONNECT_OK") {
-        onStatusChange("disconnected");
-        console.error("ePOSDevice connect failed:", result);
-        return;
-      }
-      dev.createDevice(
-        config.deviceId,
-        dev.DEVICE_TYPE_PRINTER,
-        { crypto: true, buffer: false },
-        (devobj, retcode) => {
-          if (current !== generation) return;
-          if (retcode === "OK" && devobj) {
-            device = devobj;
-            onStatusChange("connected");
+    // ports の順に試す。つながらなければ次のポートでつなぎ直す（https のページでは 8008 が止められるので 8043 に）
+    const connectAt = ([port, ...rest]: number[]) => {
+      const dev = new epson.ePOSDevice();
+      ePosDev = dev;
+
+      dev.connect(config.address, port, (result) => {
+        if (current !== generation) return;
+        if (result !== "OK" && result !== "SSL_CONNECT_OK") {
+          console.error(`ePOSDevice connect failed (port ${port}):`, result);
+          if (rest.length > 0) {
+            close(dev);
+            connectAt(rest);
           } else {
             onStatusChange("disconnected");
-            console.error("ePOSDevice createDevice failed:", retcode);
           }
-        },
-      );
-    });
+          return;
+        }
+        dev.createDevice(
+          config.deviceId,
+          dev.DEVICE_TYPE_PRINTER,
+          { crypto: true, buffer: false },
+          (devobj, retcode) => {
+            if (current !== generation) return;
+            if (retcode === "OK" && devobj) {
+              device = devobj;
+              rememberPort(config.address, port);
+              onStatusChange("connected");
+            } else {
+              onStatusChange("disconnected");
+              console.error("ePOSDevice createDevice failed:", retcode);
+            }
+          },
+        );
+      });
+    };
+    connectAt(portsToTry(config));
   };
 
   // 1 件ずつ送り、返事を待ってから次を送る（返事がどの印刷のものか取り違えないように）
@@ -261,23 +317,28 @@ export const createEposPrinter = (
         target.onerror = null;
         resolve(printed);
       };
-      // 返事が来ないときは、つながりが切れたとみなす（つなぎ直すまで送らない）。その間にやめた・つなぎ直したなら何もしない
-      const timer = setTimeout(() => {
-        console.error("ePOS print timed out");
+      // つながりが切れたとみなす（つなぎ直すまで送らない）。その間にやめた・つなぎ直したなら何もしない
+      const drop = () => {
         if (current === generation) {
           disconnect();
           onStatusChange("disconnected");
         }
         finish(false);
+      };
+      // 返事が来ない
+      const timer = setTimeout(() => {
+        console.error("ePOS print timed out");
+        drop();
       }, config.responseTimeoutMs);
       target.onreceive = (response) => {
         if (!response.success)
           console.error("ePOS print failed:", response.code);
         finish(response.success);
       };
+      // 送れなかった（ePOS-Print の POST が届かないなど）。SDK はこのとき ePOSDevice を片付けるので、つなぎ直す
       target.onerror = (error) => {
         console.error("ePOS print error:", error);
-        finish(false);
+        drop();
       };
       try {
         writeEposJob(target, job, config);

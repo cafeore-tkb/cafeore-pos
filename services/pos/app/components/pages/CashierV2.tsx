@@ -11,7 +11,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import bellTwice from "~/assets/bell_twice.mp3";
 import { Switch } from "~/components/ui/switch";
-import { RECEIPT_EPOS_PRINTER_CONFIG, eposPrinterAt } from "~/label/infra/epos";
+import {
+  RECEIPT_EPOS_PRINTER_CONFIG,
+  eposCertificateUrl,
+  eposPrinterAt,
+} from "~/label/infra/epos";
 import { orderLabelJob } from "~/label/order-label";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
@@ -500,8 +504,16 @@ const CashierV2 = ({
               />
             )}
             <div className="flex flex-col">
-              <PrinterStatus name="ラベル" status={printer.status} />
-              <PrinterStatus name="レシート" status={receiptPrinter.status} />
+              <PrinterStatus
+                name="ラベル"
+                status={printer.status}
+                certificateUrl={eposCertificateUrl(labelPrinterIp)}
+              />
+              <PrinterStatus
+                name="レシート"
+                status={receiptPrinter.status}
+                certificateUrl={eposCertificateUrl(receiptPrinterIp)}
+              />
               <PendingPrints
                 count={printer.pendingCount}
                 onRetry={printer.retry}
