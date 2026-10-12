@@ -55,6 +55,18 @@ const newDripId = () => crypto.randomUUID();
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
 const NOT_FOUND = "カードが見つかりません";
 
+// 緊急（入れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
+// 足した・取り消したら「1つ戻す」の処理を返し、断られたら null
+type EmergencyOps = {
+  /** 番号から入れ直すカップを選ぶ注文 */
+  orders: readonly CaosOrderInput[];
+  add: (
+    cups: EmergencyCup<CaosOrderInput>[],
+    reason: string,
+  ) => Promise<{ ids: string[]; undo: UndoRun } | null>;
+  cancel: (cups: CaosBoardCup[]) => Promise<UndoRun | null>;
+};
+
 // 操作を断った理由を POS の通知で出す
 const fail = (error: string) => {
   toast.error(error);
@@ -198,15 +210,7 @@ export const useCaosSession = () => {
     });
     return found.length === cups.length ? found : null;
   };
-  // 緊急（入れ直し）を足す・取り消す。足した・取り消したら「1つ戻す」の処理を返し、断られたら null
-  const emergencyOps: {
-    orders: readonly CaosOrderInput[];
-    add: (
-      cups: EmergencyCup<CaosOrderInput>[],
-      reason: string,
-    ) => Promise<{ ids: string[]; undo: UndoRun } | null>;
-    cancel: (cups: CaosBoardCup[]) => Promise<UndoRun | null>;
-  } = test.session
+  const emergencyOps: EmergencyOps = test.session
     ? {
         // 練習の盤面の中だけ。戻すのは操作の前の練習の盤面
         orders: test.arrivedOrders,
