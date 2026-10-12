@@ -48,7 +48,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
+    <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
           activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}

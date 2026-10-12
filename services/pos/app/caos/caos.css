@@ -1,8 +1,14 @@
 /* CaOS（/master-sheet）だけに効くスタイル。POS のほかの画面に漏らさないよう .caos-root の中に閉じる。 */
 
-/* iPad でのバウンスを止める。CaOS を開いているときだけ */
-body:has(.caos-root) {
+/* iPad で画面全体を動かさない。CaOS を開いているときだけ（hooks/useFixedViewport も）。
+   ページはスクロールさせず（盤面は画面の高さに収める）、はね返りを止め、ピンチ・ダブルタップで拡大しない（指で動かせるのは枠のスクロールだけ）。
+   枠の中のスクロールとスクロールバー・カードのドラッグ（touch-action: none）・入力欄はそのまま */
+html:has(.caos-root),
+html:has(.caos-root) body {
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 @layer base {
