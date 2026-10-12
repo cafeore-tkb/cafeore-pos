@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"log"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -225,31 +226,32 @@ func caosMovesTo(w models.CaosCupsWrite) bool {
 
 // checkSeniorOnly は、上級生のみのカップ（items）を上級生でない担当者のドリッパーへ置いていれば断る（400）。書いたあとに呼ぶ。
 // 指名のあるカード（書いたあとのカードに指名のカップが 1 つでも入っている）は、指名のドリッパーにしか置けないので、
-// その担当者が上級生でなくても置ける（指名が上級生のみより強い）。seniors は caosSeniorDrippers の結果（nil なら確かめない）。
+// その担当者が上級生でなくても置ける（指名が上級生のみより強い）。seniors は caosSeniorDrippers の結果。
 func checkSeniorOnly(tx *gorm.DB, writes []models.CaosCupsWrite, items map[uuid.UUID]models.Item, seniors map[int]bool) error {
-	if seniors == nil {
-		return nil
-	}
-	var cards []uuid.UUID
+	// 上級生でない担当者のドリッパーへ置いた、上級生のみのカップのあるカード（after の drip_id）と、その理由
+	blocked := map[uuid.UUID]error{}
 	for _, w := range writes {
-		if caosMovesTo(w) {
-			cards = append(cards, *w.After.DripId)
-		}
-	}
-	var nominated []uuid.UUID
-	if err := tx.Raw(`SELECT DISTINCT c.drip_id FROM `+caosUnits+` c JOIN order_menus m ON m.id = c.order_menu_id
-		WHERE c.drip_id IN ? AND m.dripper IS NOT NULL`, cards).Scan(&nominated).Error; err != nil {
-		return err
-	}
-	for _, w := range writes {
-		if !caosMovesTo(w) || seniors[*w.After.Dripper] || slices.Contains(nominated, *w.After.DripId) {
+		if !caosMovesTo(w) || seniors[*w.After.Dripper] {
 			continue
 		}
 		for _, id := range w.CupIds {
 			if item := items[id]; item.ItemType.SeniorOnlyBrew() {
-				return ruleErrorf("上級生のみのカップ（%s）は上級生のドリッパーにしか置けません（%d 番のドリッパーの担当者は上級生ではありません）",
+				blocked[*w.After.DripId] = ruleErrorf("上級生のみのカップ（%s）は上級生のドリッパーにしか置けません（%d 番のドリッパーの担当者は上級生ではありません）",
 					item.Name, *w.After.Dripper)
 			}
+		}
+	}
+	if len(blocked) == 0 {
+		return nil
+	}
+	var nominated []uuid.UUID
+	if err := tx.Raw(`SELECT DISTINCT c.drip_id FROM `+caosUnits+` c JOIN order_menus m ON m.id = c.order_menu_id
+		WHERE c.drip_id IN ? AND m.dripper IS NOT NULL`, slices.Collect(maps.Keys(blocked))).Scan(&nominated).Error; err != nil {
+		return err
+	}
+	for card, err := range blocked {
+		if !slices.Contains(nominated, card) {
+			return err
 		}
 	}
 	return nil
