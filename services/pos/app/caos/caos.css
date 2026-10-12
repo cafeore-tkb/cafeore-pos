@@ -27,20 +27,22 @@ body:has(.caos-root) {
   background: #94a3b8;
 }
 
-/* カードの長押し（掴む）で iPad の文字選択・メニューを出さない */
+/* カードを押し続けても iPad の文字選択・メニューを出さない */
 .caos-root {
   -webkit-touch-callout: none;
 }
 
-/* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-same-order) のように使う */
+/* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-overtime) のように使う */
 .caos-root {
-  /* 同じ注文のカードがほかにもある（紫。待機の青と分ける） */
-  --caos-same-order: oklch(49.1% 0.27 292.581);
-  --caos-same-order-soft: oklch(96.9% 0.016 293.756);
   /* 予定より長くかかっている（赤。緊急の赤より薄くし、「次へ」の橙と分ける） */
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
+  /* 指で掴むスクロールバー（components/ScrollArea）。溝と、つまみ（掴んでいる間は濃く） */
+  --caos-scrollbar-track: oklch(96.8% 0.007 247.896);
+  --caos-scrollbar-line: oklch(92.9% 0.013 255.508);
+  --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
+  --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
 }
 
 /* 右のパネル（SidePanels の SidePanel）の幅 */

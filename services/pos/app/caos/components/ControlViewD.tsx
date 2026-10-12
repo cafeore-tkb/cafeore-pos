@@ -32,11 +32,13 @@ import {
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
+import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。
 // 列の見出しはドリッパーの番号（列の状態）と担当者、「次へ」は表の下に固定（押す手で表を隠さない）。
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
+// カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 // 表の行は少なくともこれだけ（空の行で表の高さをそろえる）
 const MIN_ROWS = 8;
@@ -186,11 +188,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       onPointerDown={
         state === "waiting"
           ? (event) =>
-              drag.press(
-                { kind: "ticket", ticket, fromBayId: bayId },
-                event,
-                "y",
-              )
+              drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
           : undefined
       }
       onClickCapture={drag.suppressClick}
@@ -200,7 +198,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           ? onOpenTicketDetail(ticket)
           : onOpenRebrew?.(ticket)
       }
-      className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-pan-y hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
@@ -235,7 +233,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           )}
         </PanelHeader>
 
-        <div ref={sheetScrollRef} className="min-h-0 flex-1 overflow-auto">
+        <ScrollArea
+          axis="y"
+          scrollRef={sheetScrollRef}
+          className="flex-1"
+          scrollerClassName="overflow-x-auto"
+        >
           <table className="w-full min-w-[720px] table-fixed border-collapse">
             <colgroup>
               <col className="w-[76px]" />
@@ -446,7 +449,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
               </tr>
             </tfoot>
           </table>
-        </div>
+        </ScrollArea>
       </section>
 
       <aside
@@ -479,7 +482,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             未割り振りの注文はありません
           </p>
         ) : (
-          <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto p-2">
+          <ScrollArea
+            axis="y"
+            className="flex-1"
+            scrollerClassName="grid auto-rows-max content-start gap-2 p-2"
+          >
             {orderGroups.map((group) => (
               <article
                 key={group.key}
@@ -508,22 +515,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         size="sm"
                         selected={isSelected}
                         data-sheet-cup={uid}
-                        // A selected card has touch-action none, so it can be dragged in any direction.
                         onPointerDown={(event) =>
-                          drag.press(
-                            { kind: "unassigned", order },
-                            event,
-                            isSelected ? undefined : "y",
-                          )
+                          drag.press({ kind: "unassigned", order }, event)
                         }
                         onClickCapture={drag.suppressClick}
                         onClick={() => {
                           if (isMergeCandidate) picked.mergeWith(order);
                           else picked.toggle(order);
                         }}
-                        className={`h-[64px] cursor-grab hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${
-                          isSelected ? "touch-none" : "touch-pan-y"
-                        }`}
+                        className="h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
                         dragging={dragCup?.key === uid}
                       >
                         {isMergeCandidate && <MergeOverlay />}
@@ -551,7 +551,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 </div>
               </article>
             ))}
-          </div>
+          </ScrollArea>
         )}
       </aside>
 

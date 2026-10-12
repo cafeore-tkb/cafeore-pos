@@ -10,12 +10,10 @@ import { createPortal } from "react-dom";
 import { isBayId } from "../logic/lanes";
 
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機カード）で共通。
-// 12px 動くまではタップ。掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
+// 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
+// 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
-// スクロールする枠の中のカード（press の scroll）は、指でスクロールの向きに動かすとスクロールに任せ、
-// 向きの違う動きか、長押し（HOLD_MS）で掴む（カードが並んでいても枠をスクロールできる）。
 const DRAG_THRESHOLD_PX = 12;
-const HOLD_MS = 300;
 
 // 1〜6 のボタン（カードの上の BayPad）
 const isBayButton = (element: Element): element is HTMLElement =>
@@ -164,15 +162,8 @@ export const useCardDrag = <S, T>(handlers: {
       ghostRef.current.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0)`;
   };
 
-  /**
-   * カードの onPointerDown。scroll はカードを置いた枠のスクロールの向き（カードの touch-action も pan-x・pan-y にする）。
-   * 指でその向きに動かすとスクロール、ほかの向きか長押しで掴む。マウスと scroll の無いカードはどの向きでもすぐ掴む
-   */
-  const press = (
-    source: S,
-    event: React.PointerEvent<HTMLElement>,
-    scroll?: "x" | "y",
-  ) => {
+  /** カードの onPointerDown */
+  const press = (source: S, event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     // カードの上のボタン（1〜6 など）はそのボタンの操作
     if ((event.target as HTMLElement).closest("button")) return;
@@ -180,18 +171,7 @@ export const useCardDrag = <S, T>(handlers: {
 
     const { pointerId, clientX: startX, clientY: startY } = event;
     const rect = event.currentTarget.getBoundingClientRect();
-    // A mouse drag never scrolls, so only touch and pen leave the scroll axis to the browser.
-    const scrollAxis = event.pointerType === "mouse" ? undefined : scroll;
     let dragging = false;
-    // 掴んだあと指が動いたか（長押しして動かさずに離したのはタップ）
-    let moved = false;
-    const begin = () => {
-      window.clearTimeout(holdTimer);
-      dragging = true;
-      latest.current.onBegin?.(source);
-      setDrag({ source, rect });
-    };
-    const holdTimer = scrollAxis ? window.setTimeout(begin, HOLD_MS) : 0;
 
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
@@ -204,15 +184,10 @@ export const useCardDrag = <S, T>(handlers: {
       const dy = moveEvent.clientY - startY;
       if (!dragging) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-        const horizontal = Math.abs(dx) > Math.abs(dy);
-        // Moving along the scroll axis before the hold scrolls the container instead.
-        if (scrollAxis && horizontal === (scrollAxis === "x")) {
-          cleanup();
-          return;
-        }
-        begin();
+        dragging = true;
+        latest.current.onBegin?.(source);
+        setDrag({ source, rect });
       }
-      moved ||= Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
       // Move the ghost directly; the board re-renders only when the drop target changes.
       offset.current = { x: dx, y: dy };
       placeGhost();
@@ -227,27 +202,19 @@ export const useCardDrag = <S, T>(handlers: {
       if (!dragging) return;
       setDrag(null);
       setTarget(null);
-      suppressNextClick.current = moved;
-      const dropTarget =
-        dropped && moved
-          ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
-          : null;
+      suppressNextClick.current = true;
+      const dropTarget = dropped
+        ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
+        : null;
       if (dropTarget !== null) latest.current.onDrop(source, dropTarget);
     };
     const onUp = (upEvent: PointerEvent) => finish(upEvent, true);
     const onCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, false);
 
-    // Once held, a finger moving along the scroll axis must move the card, not the container.
-    const onTouchMove = (touchEvent: TouchEvent) => {
-      if (dragging && touchEvent.cancelable) touchEvent.preventDefault();
-    };
-
     const cleanup = () => {
-      window.clearTimeout(holdTimer);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("touchmove", onTouchMove);
       endPress.current = null;
     };
     endPress.current = () => {
@@ -258,7 +225,6 @@ export const useCardDrag = <S, T>(handlers: {
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
   };
 
   return {

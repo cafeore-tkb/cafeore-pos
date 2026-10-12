@@ -22,9 +22,9 @@ import { moveTargets } from "../logic/lanes";
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
-// 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中・同じ注文）は地の色に頼らず、
-// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」、
-// ほかの場所にも同じ注文があるときは注文番号を同じ注文の色（caos.css の --caos-same-order）の札に、入れ直しは赤い「緊急」の札と理由）。
+// 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
+// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」。同じ注文は、選ぶとどこにあっても選択中になる。
+// 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
 const SIZES = {
@@ -35,19 +35,12 @@ const SIZES = {
     cups: "px-0.5 text-[13px]",
     meta: "text-[11px]",
   },
-  // 管制盤 A のタイムライン
+  // 管制盤 A のタイムラインと未割当
   md: {
     pad: "px-2 py-1",
     name: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
-  },
-  // 管制盤 A の未割当
-  lg: {
-    pad: "px-2 py-1",
-    name: "text-[20px]",
-    cups: "px-1.5 text-[18px]",
-    meta: "text-[13px]",
   },
   // 詳細のパネル
   xl: {
@@ -58,14 +51,18 @@ const SIZES = {
   },
 };
 
-// 地と枠。終わったカードは薄い灰色。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
+// 地と枠。終わったカードは薄い灰色（選んだ注文でなければ全体も薄くする。薄くすると選択中の黄の輪も薄くなる）。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
 // 文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
 // 指名のカードは黒い点線の太い枠（地の色が近くても枠の形で分かる）
-const surfaceOf = (done: boolean, nominated: boolean, color?: string) => {
+const surfaceOf = (
+  done: boolean,
+  nominated: boolean,
+  selected: boolean,
+  color?: string,
+) => {
   if (done)
     return {
-      className:
-        "border-2 border-slate-200 bg-slate-100 text-slate-500 opacity-50",
+      className: `border-2 border-slate-200 bg-slate-100 text-slate-500 ${selected ? "" : "opacity-50"}`,
     };
   const backgroundColor = color ?? "#ffffff";
   return {
@@ -86,7 +83,7 @@ export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
     /** 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards） */
     card: CaosCard;
-    /** 色・豆と、分けた注文（logic/cards.ts の cardLooks） */
+    /** 色と豆（logic/cards.ts の cardLooks） */
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
@@ -109,18 +106,16 @@ export const OrderCard: React.FC<
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
-  const surface = surfaceOf(done, nominee !== "", look?.color);
+  const surface = surfaceOf(done, nominee !== "", selected, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const reasons = emergencyReasons(card);
-  const split = look?.split;
   // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
-  // 注文番号の札（ほかの場所にも同じ注文があれば同じ注文の色）と、商品の略称
+  // 注文番号の札と、商品の略称
   const orderNo = (size: string) => (
     <span
-      className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${size} ${split ? "bg-(color:--caos-same-order) text-white" : "bg-black/10"}`}
-      title={split ? "同じ注文のカードがほかにもあります" : undefined}
+      className={`shrink-0 rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
     >
       {orderLabel(card)}
     </span>

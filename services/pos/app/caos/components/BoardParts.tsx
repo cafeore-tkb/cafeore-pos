@@ -232,10 +232,13 @@ export const EmptySlotButton: React.FC<{
 );
 
 /** 「次に空く」ドリッパー（未割当とドリッパーの見出し） */
-export const NextAvailableChips: React.FC<{ nextAvailable: NextAvailable }> = ({
-  nextAvailable,
-}) => (
-  <div className="ml-1 flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500">
+export const NextAvailableChips: React.FC<{
+  nextAvailable: NextAvailable;
+  className?: string;
+}> = ({ nextAvailable, className = "ml-1" }) => (
+  <div
+    className={`flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500 ${className}`}
+  >
     <span className="shrink-0">次に空く:</span>
     {nextAvailable.map((item, index) => (
       <span

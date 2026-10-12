@@ -85,6 +85,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       card={current}
                       look={looks.get(current.key)}
                       size="sm"
+                      selected={sharesOrder(current, selectedOrderId)}
                       data-merge-target={current.key}
                       data-ticket-label={orderLabel(current)}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
@@ -112,13 +113,15 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                     className="text-[15px]"
                   />
 
-                  <div className="flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {/* 選択中の黄の輪（外へ 6px）が切れないよう、外へ広げて内に同じだけ空ける */}
+                  <div className="-m-1.5 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {lane.waiting.map((ticket) => (
                       <OrderCard
                         key={ticket.key}
                         card={ticket}
                         look={looks.get(ticket.key)}
                         size="sm"
+                        selected={sharesOrder(ticket, selectedOrderId)}
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}
                         data-ticket-label={orderLabel(ticket)}

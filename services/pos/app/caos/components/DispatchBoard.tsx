@@ -22,13 +22,14 @@ import {
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
+import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
-// 縦に引くか長押しで掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う。
+// なぞると掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う。
 // 統合できる待機・抽出中のカードの上（待機は右の部分）に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
-// 横に払うとタイムラインのスクロール（カードの上でもスクロールできる）。
+// タイムラインの横スクロールは下のスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 // 左端の列（ドリッパーの番号と担当者）の幅
@@ -152,11 +153,11 @@ export const DispatchBoard: React.FC<
         </div>
       )}
 
-      <div
-        ref={scroll.containerRef}
+      <ScrollArea
+        axis="x"
+        scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
-        className="touch-auto select-none overflow-x-auto overflow-y-hidden overscroll-x-contain"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        scrollerClassName="touch-auto select-none overscroll-x-contain"
       >
         <div className="relative w-max">
           {/* 時刻の目盛り */}
@@ -277,7 +278,6 @@ export const DispatchBoard: React.FC<
                                     drag.press(
                                       { card: ticket, bayId: bay.id },
                                       event,
-                                      "x",
                                     )
                                 : undefined
                             }
@@ -294,7 +294,7 @@ export const DispatchBoard: React.FC<
                                 onCloseTicketAction();
                               }
                             }}
-                            className={`h-full hover:shadow-md ${isScheduled ? "cursor-grab touch-pan-x active:cursor-grabbing" : "touch-manipulation"}`}
+                            className={`h-full hover:shadow-md ${isScheduled ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isActionOpen && (
@@ -387,7 +387,7 @@ export const DispatchBoard: React.FC<
             </div>
           </div>
         </div>
-      </div>
+      </ScrollArea>
       {drag.source &&
         drag.ghost(
           <OrderCard
