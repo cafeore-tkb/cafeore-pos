@@ -30,7 +30,7 @@ export default function ReadOnlyBoard() {
   );
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+    <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
       <ViewHeader nowMs={nowMs} status={status}>
         <span className="ml-auto font-bold text-slate-600 text-sm">
           未割当{" "}
