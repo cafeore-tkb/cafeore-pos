@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { MergeConfirmDialog, NextConfirmDialog } from "./components/BoardParts";
+import {
+  MergeConfirmDialog,
+  NextConfirmDialog,
+  TestBoardBanner,
+} from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -33,6 +37,16 @@ export default function App() {
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
+  // 本番（cafeore-pos の注文）の盤面に戻る（テストの盤面を捨て、開いているものを閉じる）
+  const backToLive = () => {
+    session.reset();
+    selection.clear();
+  };
+  // 補助のパネルを閉じる。テストを終えたあとなら本番の盤面に戻す（テストの盤面のまま戻し忘れないように）
+  const closeAuxiliary = () => {
+    if (testPlay.finished) backToLive();
+    else selection.closeAuxiliary();
+  };
 
   return (
     <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
@@ -41,9 +55,7 @@ export default function App() {
           activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
           controlViewMode={controlViewMode}
           onSelectTab={(tab: NavTab) =>
-            tab === "control"
-              ? selection.closeAuxiliary()
-              : selection.openAuxiliary(tab)
+            tab === "control" ? closeAuxiliary() : selection.openAuxiliary(tab)
           }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
@@ -56,10 +68,7 @@ export default function App() {
           onTogglePlay={session.toggleRunning}
           simSpeed={session.simSpeed}
           onCycleSpeed={session.cycleSpeed}
-          onResetData={() => {
-            session.reset();
-            selection.clear();
-          }}
+          onResetData={backToLive}
           showTimelineControls={view.timelineControls}
           onTimelineNavigate={(direction) =>
             setTimelineCommand({ direction, id: Date.now() })
@@ -83,6 +92,7 @@ export default function App() {
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
+          {session.simulating && <TestBoardBanner onBackToLive={backToLive} />}
           <ControlWorkspace
             mode={controlViewMode}
             lanes={lanes}
@@ -110,7 +120,7 @@ export default function App() {
         </main>
 
         {panel?.kind === "auxiliary" && (
-          <AuxiliarySheet tab={panel.tab} onClose={selection.closeAuxiliary}>
+          <AuxiliarySheet tab={panel.tab} onClose={closeAuxiliary}>
             <AuxiliaryContent
               tab={panel.tab}
               beans={session.beans}

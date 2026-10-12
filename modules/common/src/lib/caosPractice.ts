@@ -1,4 +1,4 @@
-import type { Cup } from "../models/cup";
+import type { Cup, CupEmergency } from "../models/cup";
 import {
   CAOS_MAX_CUPS,
   CAOS_NEXT_COOLDOWN_SEC,
@@ -25,6 +25,7 @@ import type { PracticeDataItemType } from "./caosPracticeData";
 // ドリッパーの列の分け方は、API の splitCaosLane と同じ結果になる本番の caosLane をそのまま使う。
 //   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。練習には担当者がいないので、上級生のみのカードは（指名の無いカードも）どのドリッパーにも置ける
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
+//   - 緊急（入れ直し）もカップの emergencies に持ち、カップと同じ決まりでカードに入る（足す・取り消すは api の cup_emergency.go と同じ決まり）
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
 
 /** 練習の盤面の注文（本番の注文と同じく、カップに CaOS の値を持つ） */
@@ -159,11 +160,27 @@ const validateAfter = (after: CaosCupsWrite["after"]) => {
 const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
   orders.map((order) => ({
     ...order,
-    cups: order.cups.map((cup) => ({ ...cup })),
+    cups: order.cups.map((cup) => ({
+      ...cup,
+      emergencies: cup.emergencies.map((emergency) => ({ ...emergency })),
+    })),
   }));
 
-const allCups = (orders: CaosPracticeOrder[]) =>
-  orders.flatMap((order) => order.cups);
+/** カードに入る 1 杯（サーバーの caosUnit）。row は CaOS の値を書く行（カップか入れ直し）、cup は入れ直したカップ（カップなら自分） */
+interface PracticeUnit {
+  row: Cup | CupEmergency;
+  cup: Cup;
+}
+
+const allUnits = (orders: CaosPracticeOrder[]): PracticeUnit[] =>
+  orders.flatMap((order) =>
+    order.cups.flatMap((cup) => [
+      { row: cup, cup },
+      ...cup.emergencies.map((row) => ({ row, cup })),
+    ]),
+  );
+
+const isEmergency = (unit: PracticeUnit) => unit.row !== unit.cup;
 
 // ---------------------------------------------------------------- 書き込みを当てる（PUT /api/caos/cups と同じ）
 
@@ -182,7 +199,9 @@ const placeCups = (
   | { position: number; startedAt: Date | null; error?: undefined }
   | { error: string } => {
   const writing = new Set(write.cup_ids);
-  const cups = allCups(orders).filter((cup) => !writing.has(cup.id));
+  const cups = allUnits(orders)
+    .map((unit) => unit.row)
+    .filter((cup) => !writing.has(cup.id));
   const joined = cups.find((cup) => cup.dripId === write.after.drip_id);
   if (joined) {
     if (write.after.insert_before !== null)
@@ -251,13 +270,14 @@ export const applyCaosPracticeWrites = (
   const touched = new Set<string>();
   for (const write of writes) {
     const before = stateOf(write.before);
-    const cups: Cup[] = [];
+    const cups: (Cup | CupEmergency)[] = [];
     for (const id of write.cup_ids) {
-      const cup = allCups(next).find((cup) => cup.id === id);
-      if (!cup)
+      const unit = allUnits(next).find((unit) => unit.row.id === id);
+      if (!unit)
         return {
           error: "カップが消えました（注文が編集・削除されたかもしれません）",
         };
+      const cup = unit.row;
       if (!sameState(cup, before))
         return {
           error: "ほかの端末で先に変わりました。もう一度操作してください",
@@ -267,10 +287,10 @@ export const applyCaosPracticeWrites = (
         return { error: "抽出中・終わりのカードは動かせません" };
       if (
         (write.after.dripper !== null || write.after.drip_id !== null) &&
-        !cupNeedsBrew(cup)
+        !cupNeedsBrew(unit.cup)
       )
         return {
-          error: `抽出の要らないカップ（${cup.item.name}）はドリッパーに置けません`,
+          error: `抽出の要らないカップ（${unit.cup.item.name}）はドリッパーに置けません`,
         };
       cups.push(cup);
     }
@@ -305,13 +325,17 @@ export const applyCaosPracticeWrites = (
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か。入れ直しは入れ直しどうしだけ
   for (const dripId of touched) {
-    const cups = allCups(next).filter((cup) => cup.dripId === dripId);
-    if (cups.length > CAOS_MAX_CUPS)
+    const units = allUnits(next).filter((unit) => unit.row.dripId === dripId);
+    if (units.length > CAOS_MAX_CUPS)
       return { error: `1 枚のカードは ${CAOS_MAX_CUPS} 杯までです` };
-    if (cups.some((cup) => !sameState(cup, cups[0])))
+    if (units.some((unit) => !sameState(unit.row, units[0].row)))
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
+    if (units.some((unit) => isEmergency(unit) !== isEmergency(units[0])))
+      return {
+        error: "緊急（入れ直し）と緊急でないカップは同じカードにできません",
+      };
   }
   return { orders: next };
 };
@@ -348,12 +372,85 @@ export const advanceCaosPracticeDripper = (
   if (!cur && !head)
     return { error: "このドリッパーには抽出中・待機のカードがありません" };
 
-  for (const cup of allCups(next)) {
-    if (cur && cup.dripId === cur.dripId) {
+  // 終えるカードのカップ（入れ直しは入れ直したカップ）を準備完了にする
+  for (const { row, cup } of allUnits(next)) {
+    if (cur && row.dripId === cur.dripId) {
       cup.readyAt = cup.readyAt ?? new Date(now);
-      cup.brewFinishedAt = new Date(now);
+      row.brewFinishedAt = new Date(now);
     }
-    if (head && cup.dripId === head.dripId) cup.brewStartedAt = new Date(now);
+    if (head && row.dripId === head.dripId) row.brewStartedAt = new Date(now);
   }
+  return { orders: next };
+};
+
+// ---------------------------------------------------------------- 緊急（POST・DELETE /api/cup-emergencies と同じ）
+
+/** 入れ直す理由の長さ（文字。API と同じ） */
+const EMERGENCY_REASON_MAX = 100;
+
+/**
+ * 緊急（入れ直し）を足す。1 杯につき入れ直しを 1 つ（同じカップに何度でも）、理由は前後の空白を除いて付ける。足した時刻は now（練習の時計の今）。
+ * ids は足した入れ直しの id（cupIds と同じ順。newId で作る）
+ */
+export const addCaosPracticeEmergencies = (
+  orders: readonly CaosPracticeOrder[],
+  cupIds: readonly string[],
+  reason: string,
+  now: Date,
+  newId: () => string,
+): { orders: CaosPracticeOrder[]; ids: string[] } | { error: string } => {
+  if (cupIds.length === 0 || new Set(cupIds).size !== cupIds.length)
+    return {
+      error: "order_cup_ids は空にせず、同じカップを 2 回入れないでください",
+    };
+  const trimmed = reason.trim();
+  if ([...trimmed].length > EMERGENCY_REASON_MAX)
+    return { error: `理由は ${EMERGENCY_REASON_MAX} 文字までです` };
+  const next = cloneOrders(orders);
+  const ids: string[] = [];
+  for (const id of cupIds) {
+    const cup = next.flatMap((order) => order.cups).find((c) => c.id === id);
+    if (!cup)
+      return {
+        error: "カップが消えました（注文が編集・削除されたかもしれません）",
+      };
+    if (!cupNeedsBrew(cup))
+      return {
+        error: `抽出の要らないカップ（${cup.item.name}）は入れ直せません`,
+      };
+    const emergency: CupEmergency = {
+      id: newId(),
+      createdAt: new Date(now),
+      reason: trimmed,
+      dripper: null,
+      dripperPosition: null,
+      dripId: null,
+      brewStartedAt: null,
+      brewFinishedAt: null,
+    };
+    cup.emergencies.push(emergency);
+    ids.push(emergency.id);
+  }
+  return { orders: next, ids };
+};
+
+/** 緊急（入れ直し）を取り消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ */
+export const cancelCaosPracticeEmergency = (
+  orders: readonly CaosPracticeOrder[],
+  id: string,
+): CaosPracticeResult => {
+  const next = cloneOrders(orders);
+  const cup = next
+    .flatMap((order) => order.cups)
+    .find((c) => c.emergencies.some((e) => e.id === id));
+  const emergency = cup?.emergencies.find((e) => e.id === id);
+  if (!cup || !emergency)
+    return {
+      error:
+        "入れ直しが見つかりません（ほかの端末で取り消したか、注文が編集・削除されたかもしれません）",
+    };
+  if (emergency.brewStartedAt !== null)
+    return { error: "抽出を始めた入れ直しは取り消せません" };
+  cup.emergencies = cup.emergencies.filter((e) => e !== emergency);
   return { orders: next };
 };

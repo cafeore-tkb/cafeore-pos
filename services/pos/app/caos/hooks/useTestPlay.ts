@@ -5,9 +5,11 @@ import {
   type CaosUndoEntry,
   type ItemType,
   type PracticeDataOrder,
+  addCaosPracticeEmergencies,
   advanceCaosPracticeDripper,
   applyCaosPracticeWrites,
   buildCaosCards,
+  cancelCaosPracticeEmergency,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -33,7 +35,8 @@ interface TestPlaySession {
 // 練習の盤面はブラウザの中だけで持ち（本番と同じ形の注文とカップ）、カードの組み立ては本番と同じ buildCaosCards、
 // 操作の書き込みは本番と同じ @cafeore/common の assignWrites など（hooks/useCaosSession.ts）で作り、当てる（番号を決め、後ろをずらす）のと「次へ」は
 // 本番の API と同じ決まりの @cafeore/common の applyCaosPracticeWrites・advanceCaosPracticeDripper で行う。時刻は練習の時計の今。
-// サーバー・本番の盤面・注文・在庫には何も送らない。
+// 緊急（入れ直し）も練習の盤面の中だけで足し・取り消す（addCaosPracticeEmergencies・cancelCaosPracticeEmergency。シールは刷らない）。
+// サーバー・本番の盤面・注文・在庫・印刷には何も送らない。
 export const useTestPlay = ({
   historicalOrders,
   itemTypes,
@@ -90,10 +93,11 @@ export const useTestPlay = ({
       currentMs === undefined ? 0 : arrivedCount(practiceOrders, currentMs),
     [practiceOrders, currentMs],
   );
-  const cards = useMemo(
-    () => buildCaosCards(practiceOrders.slice(0, count)),
+  const arrivedOrders = useMemo(
+    () => practiceOrders.slice(0, count),
     [practiceOrders, count],
   );
+  const cards = useMemo(() => buildCaosCards(arrivedOrders), [arrivedOrders]);
   const orders = session?.orders;
   const salesOrders = useMemo(
     () => (orders ? practiceSalesOrders(orders, practiceOrders, count) : []),
@@ -133,8 +137,36 @@ export const useTestPlay = ({
           practiceNow(),
         ),
       ),
+    /** 届いた注文（緊急の入力で番号から選ぶ） */
+    arrivedOrders,
+    /** 緊急（入れ直し）を足す（理由・決まりは本番と同じ。足した時刻は練習の時計の今）。足した入れ直しの id。断ったら理由を出して null */
+    addEmergencies: (cupIds: string[], reason: string) => {
+      const result = addCaosPracticeEmergencies(
+        practiceRef.current,
+        cupIds,
+        reason,
+        practiceNow(),
+        () => crypto.randomUUID(),
+      );
+      if ("error" in result) {
+        toast.error(result.error);
+        return null;
+      }
+      replace(result.orders);
+      return result.ids;
+    },
+    /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true。断ったら理由を出して何も変えない */
+    cancelEmergencies: (ids: string[]) => {
+      let orders = practiceRef.current;
+      for (const id of ids) {
+        const result = cancelCaosPracticeEmergency(orders, id);
+        if (result.error !== undefined) return commit(result);
+        orders = result.orders;
+      }
+      return commit({ orders });
+    },
     /** 「1つ戻す」処理。今の練習の盤面を覚えておき、戻すときはそれに戻す（練習の盤面はこの画面だけが変える） */
-    undoRun: (_entry: CaosUndoEntry) => {
+    undoRun: (_entry?: CaosUndoEntry) => {
       const before = practiceRef.current;
       return () => {
         replace(before);

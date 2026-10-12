@@ -1,5 +1,6 @@
 import {
   type CaosCard,
+  type CaosOrderInput,
   type CaosPlace,
   canSplitCard,
   caosBrewSec,
@@ -9,7 +10,10 @@ import {
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
-import { EmergencyForm } from "~/components/molecules/EmergencyForm";
+import {
+  EmergencyForm,
+  type EmergencyFormProps,
+} from "~/components/molecules/EmergencyForm";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import {
@@ -269,7 +273,7 @@ export const TicketDetailPanel: React.FC<{
 // （注文をまたいで統合したカードは、先頭のカップの注文）。ヘッダーから開けば番号から入れる。
 // 確定すると、未割当のいちばん上に入れ直しのカードが出て、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る。パネルの外を押すと閉じる
 export const RebrewPanel: React.FC<
-  Omit<React.ComponentProps<typeof EmergencyForm>, "initial" | "onDone"> & {
+  Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
     card?: CaosCard;
     look?: CardLook;
     onClose: () => void;

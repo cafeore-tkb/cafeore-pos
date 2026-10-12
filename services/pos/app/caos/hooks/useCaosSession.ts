@@ -1,5 +1,7 @@
 import {
+  type CaosBoardCup,
   type CaosCard,
+  type CaosOrderInput,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
@@ -22,6 +24,8 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   type EmergencyCup,
+  toastEmergenciesAdded,
+  toastEmergenciesCancelled,
   useCupEmergency,
 } from "~/components/functional/useCupEmergency";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
@@ -186,6 +190,72 @@ export const useCaosSession = () => {
     );
   };
 
+  // 本番の緊急のカップに、刷るための POS の注文を付ける（本番のカードと入力は POS の注文から作るので、注文はある。無ければ null）
+  const withPosOrder = <T extends { orderId: string }>(cups: T[]) => {
+    const found = cups.flatMap((cup) => {
+      const order = live.orders?.find((o) => o.id === cup.orderId);
+      return order ? [{ ...cup, order }] : [];
+    });
+    return found.length === cups.length ? found : null;
+  };
+  // 緊急（入れ直し）を足す・取り消す。足した・取り消したら「1つ戻す」の処理を返し、断られたら null
+  const emergencyOps: {
+    orders: readonly CaosOrderInput[];
+    add: (
+      cups: EmergencyCup<CaosOrderInput>[],
+      reason: string,
+    ) => Promise<{ ids: string[]; undo: UndoRun } | null>;
+    cancel: (cups: CaosBoardCup[]) => Promise<UndoRun | null>;
+  } = test.session
+    ? {
+        // 練習の盤面の中だけ。戻すのは操作の前の練習の盤面
+        orders: test.arrivedOrders,
+        add: async (cups, reason) => {
+          const undoRun = test.undoRun();
+          const ids = test.addEmergencies(
+            cups.map((cup) => cup.cupId),
+            reason,
+          );
+          if (ids) toastEmergenciesAdded(ids.length);
+          return ids && { ids, undo: undoRun };
+        },
+        cancel: async (cups) => {
+          const undoRun = test.undoRun();
+          if (!test.cancelEmergencies(cups.map((cup) => cup.id))) return null;
+          toastEmergenciesCancelled(cups.length);
+          return undoRun;
+        },
+      }
+    : {
+        orders: live.orders ?? [],
+        add: async (cups, reason) => {
+          const pos = withPosOrder(
+            cups.map(({ order, cupId }) => ({ orderId: order.id, cupId })),
+          );
+          if (!pos) {
+            fail(NOT_FOUND);
+            return null;
+          }
+          const ids = await addEmergency(pos, reason);
+          return ids && { ids, undo: () => cancelEmergency(ids) };
+        },
+        cancel: async (cups) => {
+          const restore = withPosOrder(
+            cups.map((cup) => ({
+              orderId: cup.orderId,
+              cupId: cup.cupId,
+              reason: cup.emergencyReason,
+            })),
+          );
+          if (!restore) {
+            fail(NOT_FOUND);
+            return null;
+          }
+          if (!(await cancelEmergency(cups.map((cup) => cup.id)))) return null;
+          return () => restoreEmergencies(restore);
+        },
+      };
+
   return {
     /** 盤面のカード（@cafeore/common の buildCaosCards） */
     cards,
@@ -225,48 +295,34 @@ export const useCaosSession = () => {
     /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
     labelPrinter,
     /**
-     * 緊急（入れ直し）。実データテスト中は null（練習の盤面には入れ直しが無い）
+     * 緊急（入れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
      *   - orders：番号から入れ直すカップを選ぶ注文
-     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る
+     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
-     * どちらも「1つ戻す」で戻せる（足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す）
+     * どちらも「1つ戻す」で戻せる（本番は、足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す。
+     * 実データテストは練習の盤面を操作の前に戻す）
      */
-    emergency: test.session
-      ? null
-      : {
-          orders: live.orders ?? [],
-          add: async (cups: EmergencyCup[], reason: string) => {
-            const ids = await addEmergency(cups, reason);
-            if (ids) {
-              const nos = new Set(cups.map((cup) => cup.order.orderId));
-              undo.remember(
-                `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`,
-                () => cancelEmergency(ids),
-              );
-            }
-            return ids;
-          },
-          cancel: (card: CaosCard) => {
-            const cups = card.cups.filter((cup) => cup.emergency);
-            // 戻したときに足し直して刷り直すもの（カードは注文から組み立てるので、注文はある）
-            const restore = cups.flatMap((cup) => {
-              const order = live.orders?.find((o) => o.id === cup.orderId);
-              return order
-                ? [{ order, cupId: cup.cupId, reason: cup.emergencyReason }]
-                : [];
-            });
-            if (restore.length !== cups.length) {
-              fail(NOT_FOUND);
-              return;
-            }
-            void cancelEmergency(cups.map((cup) => cup.id)).then((ok) => {
-              if (!ok) return;
-              undo.remember(`緊急の取り消し ${orderLabel(card)}`, () =>
-                restoreEmergencies(restore),
-              );
-            });
-          },
-        },
+    emergency: {
+      orders: emergencyOps.orders,
+      add: async (cups: EmergencyCup<CaosOrderInput>[], reason: string) => {
+        const added = await emergencyOps.add(cups, reason);
+        if (!added) return null;
+        const nos = new Set(cups.map((cup) => cup.order.orderId));
+        undo.remember(
+          `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`,
+          added.undo,
+        );
+        return added.ids;
+      },
+      cancel: (card: CaosCard) => {
+        void emergencyOps
+          .cancel(card.cups.filter((cup) => cup.emergency))
+          .then((undoRun) => {
+            if (undoRun)
+              undo.remember(`緊急の取り消し ${orderLabel(card)}`, undoRun);
+          });
+      },
+    },
     soundEnabled,
     toggleSound: () => {
       soundManager.enabled = !soundEnabled;
@@ -366,6 +422,8 @@ export const useCaosSession = () => {
     },
     testPlay: {
       isActive: test.session?.status === "active",
+      /** テストを終えて、実績を見ている（盤面はまだテストのまま） */
+      finished: test.session?.status === "finished",
       /** 残り（「12分」）。テストをしていなければ null */
       remainingLabel: test.session
         ? testPlayRemainingLabel(test.session)
