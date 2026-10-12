@@ -324,15 +324,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く） */}
+        {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
         <button
           type="button"
           onClick={onOpenSearch}
           aria-pressed={searchOpen}
           title="注文番号で探す"
-          className="flex min-h-[44px] shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] px-2 font-black text-slate-700 text-xs aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
+          className="flex h-11 w-11 shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] font-black text-[10px] text-slate-700 leading-none aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
         >
-          <Search className="h-4 w-4" />
+          <Search className="mb-0.5 h-4 w-4" />
           番号
         </button>
         {/* リベロビュー（閲覧のみ）。この画面を閉じないよう、別のタブで開く */}
