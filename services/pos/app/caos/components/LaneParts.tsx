@@ -77,7 +77,7 @@ export const LaneChangeButton: React.FC<{
   );
 };
 
-// ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（上級生のみのカードをどこにも置けない）。
+// ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（指名の無い上級生のみのカードをどこにも置けない）。
 // 操作の画面では、この端末の sohosai-shift の合言葉の設定も開ける。
 
 // 合言葉のボタンの色（合言葉が無ければ点線、読めなければ赤）
@@ -97,14 +97,14 @@ export const LaneHeaderStatus: React.FC = () => {
       {!hasSenior && (
         <output
           data-no-senior
-          aria-label="上級生がいません（上級生のみのカードを置けません）"
-          title="上級生のみのカードは上級生のドリッパーにしか置けません。各ドリッパーの「交代」で上級生を入れてください"
+          aria-label="上級生がいません（指名の無い上級生のみのカードを置けません）"
+          title="上級生のみのカードは、指名が無ければ上級生のドリッパーにしか置けません。各ドリッパーの「交代」で上級生を入れてください"
           className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 font-black text-[11px] text-amber-900 leading-tight"
         >
           <TriangleAlert className="h-4 w-4 shrink-0" />
           {/* 幅が狭いと印だけ出す（ヘッダーに余裕が無いので。中身は title） */}
           <span className="hidden whitespace-nowrap 2xl:inline">
-            上級生がいません（上級生のみのカードを置けません）
+            上級生がいません（指名の無い上級生のみのカードを置けません）
           </span>
         </output>
       )}
