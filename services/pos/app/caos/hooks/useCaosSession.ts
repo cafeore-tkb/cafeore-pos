@@ -4,6 +4,7 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosLateMerge,
   dripperLabel,
   jstClock,
   mergeWrites,
@@ -69,6 +70,12 @@ export const useCaosSession = () => {
   const [nextConfirm, setNextConfirm] = useState<
     ({ bayId: number } & NonNullable<ReturnType<typeof earlyNext>>) | null
   >(null);
+  // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）。確かめてから統合する
+  const [mergeConfirm, setMergeConfirm] = useState<{
+    card: CaosCard;
+    into: CaosCard;
+    elapsedSec: number;
+  } | null>(null);
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
@@ -148,6 +155,26 @@ export const useCaosSession = () => {
       source.undoRun(undoOfNext(cards, bayId)),
       () => soundManager.playComplete(),
     );
+  // 統合（firstKey のカードを intoKey のカードへ）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
+  // checkLate なら送らずに mergeConfirm で確かめる（確かめを開いたら true）
+  const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
+    const card = cardOf(firstKey);
+    const into = cardOf(intoKey);
+    if (!card || !into) return fail(NOT_FOUND);
+    const blocked = test.session
+      ? null
+      : seniorOnlyMergeBlock(card, into, people);
+    if (blocked) return fail(blocked);
+    const elapsedSec = checkLate ? caosLateMerge(into, nowMs) : null;
+    if (elapsedSec !== null) {
+      setMergeConfirm({ card, into, elapsedSec });
+      return true;
+    }
+    return write(
+      mergeWrites(card, into, newDripId),
+      `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
+    );
+  };
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
   const write = (result: CaosWritesResult, label: string) => {
     if ("error" in result) return fail(result.error);
@@ -263,19 +290,17 @@ export const useCaosSession = () => {
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
     /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
-    merge: (firstKey: string, intoKey: string) => {
-      const card = cardOf(firstKey);
-      const into = cardOf(intoKey);
-      if (!card || !into) return fail(NOT_FOUND);
-      const blocked = test.session
-        ? null
-        : seniorOnlyMergeBlock(card, into, people);
-      if (blocked) return fail(blocked);
-      return write(
-        mergeWrites(card, into, newDripId),
-        `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
-      );
+    merge: (firstKey: string, intoKey: string) =>
+      runMerge(firstKey, intoKey, true),
+    /** 確かめている統合（抽出を始めてから時間のたったカードへ。無ければ null） */
+    mergeConfirm,
+    /** 確かめた統合を送る（そのあいだに変わったカードは、今の盤面で確かめ直す） */
+    confirmMerge: () => {
+      if (mergeConfirm)
+        runMerge(mergeConfirm.card.key, mergeConfirm.into.key, false);
+      setMergeConfirm(null);
     },
+    cancelMerge: () => setMergeConfirm(null),
     /** 統合の解除：2 杯のカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
       const card = cardOf(key);

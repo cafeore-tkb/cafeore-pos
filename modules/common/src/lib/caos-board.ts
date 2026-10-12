@@ -486,6 +486,24 @@ export const canMergeCards = (card: CaosCard, into: CaosCard) =>
     caosDripperAllowed(card, into.nominatedDripper)) &&
   (into.dripper === null || caosDripperAllowed(card, into.dripper));
 
+/** 抽出を始めてからこの秒を過ぎたカードへ統合するときは、画面で確かめる（止めはしない） */
+export const CAOS_LATE_MERGE_SEC = 30;
+
+/**
+ * 統合の前に確かめるか：入るカード（into）が抽出中で、始めてから CAOS_LATE_MERGE_SEC 秒を過ぎている。
+ * そのときは始めてからの秒を返す（画面で確かめてから統合する）。ほかは null。nowMs はエポックのミリ秒
+ */
+export const caosLateMerge = (
+  into: Pick<CaosCard, "status" | "startedAt">,
+  nowMs: number,
+) => {
+  if (into.status !== "brewing" || !into.startedAt) return null;
+  const elapsedMs = nowMs - into.startedAt.getTime();
+  return elapsedMs > CAOS_LATE_MERGE_SEC * 1000
+    ? Math.floor(elapsedMs / 1000)
+    : null;
+};
+
 /**
  * card のカップを into のカードに入れる（2 杯の同時抽出にまとめる）。into の場所（未割当・ドリッパーの順番）のまま。
  *   - into がまだカードの印（dripId）の無い未割当なら、両方に新しい同じ dripId を入れる（ドリッパーにはまだ置かない）
