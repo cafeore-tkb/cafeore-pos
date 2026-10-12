@@ -32,21 +32,12 @@ body:has(.caos-root) {
   -webkit-touch-callout: none;
 }
 
-/* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-same-order) のように使う */
+/* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-overtime) のように使う */
 .caos-root {
-  /* 同じ注文のカードがほかにもある（紫。待機の青と分ける） */
-  --caos-same-order: oklch(49.1% 0.27 292.581);
-  --caos-same-order-soft: oklch(96.9% 0.016 293.756);
   /* 予定より長くかかっている（赤。緊急の赤より薄くし、「次へ」の橙と分ける） */
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
-  /* 未割当とドリッパー（2 つ以上の列）にまたがる注文の枠（logic/cards の orderFrames。注文番号で 4 色を回す）。
-     意味の色（緊急・継続中の赤、選択中の黄、待機・置き先の青、空きの緑、同じ注文の紫）と分ける */
-  --caos-order-1: oklch(60.9% 0.126 221.723);
-  --caos-order-2: oklch(64.8% 0.2 131.684);
-  --caos-order-3: oklch(65.6% 0.241 354.308);
-  --caos-order-4: oklch(47.3% 0.137 46.201);
   /* 指で掴むスクロールバー（components/ScrollArea）。溝と、つまみ（掴んでいる間は濃く） */
   --caos-scrollbar-track: oklch(96.8% 0.007 247.896);
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);

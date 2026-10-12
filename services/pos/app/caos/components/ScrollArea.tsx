@@ -1,6 +1,6 @@
 import type React from "react";
 import { useRef } from "react";
-import { type ScrollAxis, useScrollBar } from "../hooks/useScrollBar";
+import { AXES, type ScrollAxis, useScrollBar } from "../hooks/useScrollBar";
 
 // カードを並べたスクロールの枠。カードの上をなぞると掴むので、スクロールは指で掴める太いスクロールバー（いつも出す）で行う。
 // カードの無い所をなぞるスクロールと、マウスのホイール・トラックパッドのスクロールはふつうの枠と同じに効く。OS の細いバーは隠す。
@@ -14,16 +14,12 @@ const LAYOUT = {
     scroller: "overflow-x-auto overflow-y-hidden",
     track: "h-5 w-full border-t",
     thumb: "inset-y-1",
-    start: "left",
-    length: "width",
   },
   y: {
     frame: "flex-row",
     scroller: "overflow-y-auto",
     track: "h-full w-5 border-l",
     thumb: "inset-x-1",
-    start: "top",
-    length: "height",
   },
 } as const;
 
@@ -69,8 +65,9 @@ export const ScrollArea: React.FC<{
             ref={bar.thumbRef}
             className={`bg-(color:--caos-scrollbar-thumb) group-active:bg-(color:--caos-scrollbar-thumb-active) absolute rounded-full ${layout.thumb}`}
             style={{
-              [layout.length]: length,
-              [layout.start]: `calc((100% - ${length}) * ${bar.thumb.ratio})`,
+              [AXES[axis].length]: length,
+              [AXES[axis].start]:
+                `calc((100% - ${length}) * ${bar.thumb.ratio})`,
             }}
           />
         )}

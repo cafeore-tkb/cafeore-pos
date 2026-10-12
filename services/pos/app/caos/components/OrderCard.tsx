@@ -22,9 +22,9 @@ import { moveTargets } from "../logic/lanes";
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
-// 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中・同じ注文）は地の色に頼らず、
-// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」、
-// ほかの場所にも同じ注文があるときは注文番号を同じ注文の色（caos.css の --caos-same-order）の札に、入れ直しは赤い「緊急」の札と理由）。
+// 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
+// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪と「選択中」。同じ注文は、選ぶとどこにあっても選択中になる。
+// 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
 const SIZES = {
@@ -35,19 +35,12 @@ const SIZES = {
     cups: "px-0.5 text-[13px]",
     meta: "text-[11px]",
   },
-  // 管制盤 A のタイムライン
+  // 管制盤 A のタイムラインと未割当
   md: {
     pad: "px-2 py-1",
     name: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
-  },
-  // 管制盤 A の未割当
-  lg: {
-    pad: "px-2 py-1",
-    name: "text-[20px]",
-    cups: "px-1.5 text-[18px]",
-    meta: "text-[13px]",
   },
   // 詳細のパネル
   xl: {
@@ -76,22 +69,6 @@ const surfaceOf = (done: boolean, nominated: boolean, color?: string) => {
   };
 };
 
-// 未割当とドリッパーにまたがる注文の枠（logic/cards の orderFrames の色の順。caos.css の --caos-order-1〜）。
-// カードの枠（指名の点線）と選択中の輪とは別に、外側に描く
-export const ORDER_FRAME = [
-  "outline-(color:--caos-order-1)",
-  "outline-(color:--caos-order-2)",
-  "outline-(color:--caos-order-3)",
-  "outline-(color:--caos-order-4)",
-] as const;
-
-// 外側の輪。選択中（黄の輪）は、またがる注文の枠より目立たせ、重ねない
-const ringOf = (selected: boolean, frame?: number) => {
-  if (selected) return "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2";
-  if (frame === undefined) return "shadow-xs";
-  return `shadow-xs outline-[3px] outline-solid ${ORDER_FRAME[frame]}`;
-};
-
 // 杯数の札。1 杯は白抜き、2 杯は塗り
 const cupsClass = (cups: number) =>
   cups === 1
@@ -106,8 +83,6 @@ export const OrderCard: React.FC<
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
-    /** 未割当とドリッパーにまたがる注文の枠の色（logic/cards の cardFrame） */
-    frame?: number;
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
@@ -117,7 +92,6 @@ export const OrderCard: React.FC<
   look,
   size = "md",
   selected = false,
-  frame,
   dragging = false,
   note,
   className = "",
@@ -132,14 +106,12 @@ export const OrderCard: React.FC<
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const reasons = emergencyReasons(card);
-  const split = look?.split;
   // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
-  // 注文番号の札（ほかの場所にも同じ注文があれば同じ注文の色）と、商品の略称
+  // 注文番号の札と、商品の略称
   const orderNo = (size: string) => (
     <span
-      className={`shrink-0 rounded px-1 py-0.5 font-black font-mono ${size} ${split ? "bg-(color:--caos-same-order) text-white" : "bg-black/10"}`}
-      title={split ? "同じ注文のカードがほかにもあります" : undefined}
+      className={`shrink-0 rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
     >
       {orderLabel(card)}
     </span>
@@ -159,7 +131,7 @@ export const OrderCard: React.FC<
     <div
       {...props}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${ringOf(selected, frame)} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
     >
       {children}
       {selected && (

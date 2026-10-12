@@ -12,7 +12,7 @@ import {
 
 export type ScrollAxis = "x" | "y";
 
-const AXES = {
+export const AXES = {
   x: {
     position: "scrollLeft",
     view: "clientWidth",
@@ -38,7 +38,11 @@ const readThumb = (element: HTMLElement, axis: ScrollAxis): Thumb => {
   const keys = AXES[axis];
   const range = element[keys.content] - element[keys.view];
   return {
-    size: element[keys.view] / element[keys.content],
+    // 測る前（中身も枠も 0）は 1（スクロールしない）。NaN だと同じ値と見なせず測り直しが止まらない
+    size:
+      element[keys.content] > 0
+        ? element[keys.view] / element[keys.content]
+        : 1,
     ratio: range > 0 ? element[keys.position] / range : 0,
   };
 };

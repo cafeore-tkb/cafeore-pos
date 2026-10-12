@@ -9,7 +9,6 @@ import {
 import {
   type CardLooks,
   type OrderRowEntry,
-  orderFrames,
   orderNoLabel,
   queueRows,
   sharesOrder,
@@ -23,7 +22,6 @@ import {
   CancelEmergencyButton,
   MergeOverlay,
   MergedTrace,
-  ORDER_FRAME,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
@@ -189,43 +187,24 @@ const QueueEntry: React.FC<{
         look={looks.get(card.key)}
         size={size}
         selected={selected}
-        className={`h-full ${PLACED_FADE[card.status]}`}
+        // 選んだ注文のカードは薄くしない（灰色にすると選択中の黄の輪も灰色になる）
+        className={`h-full ${selected ? "" : PLACED_FADE[card.status]}`}
       />
       <PlaceTag label={places.get(card.key)} />
     </div>
   );
 };
 
-// 横帯の注文の列の枠。未割当とドリッパーにまたがる注文は注文ごとの色（logic/cards の orderFrames）、
-// 未割当の中だけで 2 枚以上の注文は同じ注文の紫で囲む
-const columnFrame = (entries: number, frame?: number) => {
-  if (frame !== undefined)
-    return `border-transparent outline-[3px] outline-solid ${ORDER_FRAME[frame]}`;
-  if (entries > 1)
-    return "border-(color:--caos-same-order) bg-(color:--caos-same-order-soft)";
-  return "border-transparent";
-};
-
-// A の横帯と C の注文の列の中身：並び（queueRows）・ドリッパーに置いたカードの札・またがる注文の枠の色
-const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => {
-  const cards = [...orders, ...lanes.flatMap(laneCards)];
-  return {
-    rows: queueRows(cards),
-    frames: orderFrames(cards),
-    places: cardPlaces(lanes),
-  };
-};
-
-// C の注文の行の枠（未割当とドリッパーにまたがる注文だけ、注文ごとの色）
-const rowFrame = (frame?: number) =>
-  frame === undefined
-    ? ""
-    : `outline-[3px] outline-solid ${ORDER_FRAME[frame]}`;
+// A の横帯と C の注文の列の中身：並び（queueRows）と、ドリッパーに置いたカードの札
+const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
+  rows: queueRows([...orders, ...lanes.flatMap(laneCards)]),
+  places: cardPlaces(lanes),
+});
 
 /**
  * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
  * 左から古い順に並べる。1 列に縦に 2 枚まで並べ、それより多い注文は同じ注文の枠の中で右へ折り返す（帯の高さからはみ出さない）。
- * 列の枠は columnFrame。スクロールは横だけ（ScrollArea）。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
+ * 注文のまとまりは、列（上の番号）と余白で見せる。スクロールは横だけ（ScrollArea）。開いたカードの 1〜6 のボタンは、上のカードは番号の上に重ね、
  * 下のカードは列の下の余白に出す
  */
 export const UnassignedStrip: React.FC<
@@ -236,7 +215,7 @@ export const UnassignedStrip: React.FC<
     ...props,
     placed: lanes.flatMap(laneActive),
   });
-  const { rows: columns, frames, places } = queueOf(orders, lanes);
+  const { rows: columns, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <header className="flex w-[120px] shrink-0 flex-col gap-1.5 border-slate-200 border-r bg-slate-50 p-2">
@@ -257,14 +236,14 @@ export const UnassignedStrip: React.FC<
         className="flex-1"
         scrollerClassName="overscroll-x-contain"
       >
-        {/* 下の余白は、下のカードを開いたときの 1〜6 のボタン */}
-        <div className="flex h-full w-max min-w-full items-start gap-1.5 px-1.5 pt-1.5 pb-[40px]">
+        {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。下の余白は、下のカードを開いたときの 1〜6 のボタン */}
+        <div className="flex h-full w-max min-w-full items-start gap-4 px-2 pt-1.5 pb-[40px]">
           {columns.map(({ orderNo, emergency, entries }) => (
             <div
               key={`${emergency}:${orderNo}`}
-              className={`flex shrink-0 flex-col rounded-xl border-2 p-0.5 ${columnFrame(entries.length, frames.get(orderNo))}`}
+              className="flex shrink-0 flex-col gap-0.5"
             >
-              <div className="flex h-[30px] items-center justify-center gap-1.5 font-black font-mono text-[19px] text-slate-700 leading-none">
+              <div className="flex h-[28px] items-center justify-center gap-1.5 font-black font-mono text-[19px] text-slate-700 leading-none">
                 {orderNoLabel(orderNo)}
                 {emergency && (
                   <span className="font-sans text-[12px] text-red-600">
@@ -272,7 +251,7 @@ export const UnassignedStrip: React.FC<
                   </span>
                 )}
               </div>
-              <div className="grid auto-cols-[180px] grid-flow-col grid-rows-[repeat(2,48px)] gap-1">
+              <div className="grid auto-cols-[180px] grid-flow-col grid-rows-[repeat(2,52px)] gap-1">
                 {entries.map((entry) => (
                   <QueueEntry
                     key={entry.card.key}
@@ -311,7 +290,7 @@ export const OrderQueuePanel: React.FC<
     ...props,
     placed: lanes.flatMap(laneActive),
   });
-  const { rows, frames, places } = queueOf(orders, lanes);
+  const { rows, places } = queueOf(orders, lanes);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="注文">
@@ -327,7 +306,7 @@ export const OrderQueuePanel: React.FC<
         {rows.map(({ orderNo, emergency, entries }) => (
           <div
             key={`${emergency}:${orderNo}`}
-            className={`flex min-h-[62px] items-stretch gap-1.5 rounded-lg py-1.5 ${rowFrame(frames.get(orderNo))}`}
+            className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
           >
             <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
               {orderNoLabel(orderNo)}

@@ -1,9 +1,7 @@
 import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import {
-  cardFrame,
   cardLooks,
-  orderFrames,
   orderLabel,
   orderRows,
   queueRows,
@@ -135,36 +133,6 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     });
     // 統合したカードそのものには付けない
     expect(looks.get("m8")?.split).toBeUndefined();
-  });
-
-  test("注文ごとの色の枠は、未割当とドリッパー、または 2 つ以上のドリッパーにまたがる注文だけ。色は注文番号から", () => {
-    const cards = buildCaosCards([
-      // #10：1 杯を 1st の待機、1 杯は未割当
-      order(10, [{ dripper: 1, dripId: "a10", dripperPosition: 1 }, {}]),
-      // #11：2nd と 3rd（終わり）
-      order(11, [
-        { dripper: 2, dripId: "a11", dripperPosition: 1 },
-        { dripper: 3, dripId: "b11", brewStartedAt: T0, readyAt: T0 },
-      ]),
-      // #12：1st に 2 枚（1 か所だけ）。#13：未割当に 2 杯（1 か所だけ）
-      order(12, [
-        { dripper: 1, dripId: "a12", dripperPosition: 2 },
-        { dripper: 1, dripId: "b12", dripperPosition: 3 },
-      ]),
-      order(13, [{}, {}]),
-      // #14 と #15 を統合して 4th の待機。#15 はもう 1 杯が未割当
-      order(14, [{ dripper: 4, dripId: "m", dripperPosition: 1 }]),
-      order(15, [{ dripper: 4, dripId: "m", dripperPosition: 1 }, {}]),
-    ]);
-    const frames = orderFrames(cards);
-    expect([...frames].sort(([a], [b]) => a - b)).toEqual([
-      [10, 2],
-      [11, 3],
-      [15, 3],
-    ]);
-    // 統合したカードは、またがる注文（#15）の色
-    const merged = cards.filter((card) => card.key === "m");
-    expect(merged.map((card) => cardFrame(frames, card))).toEqual([3]);
   });
 
   test("管制盤 C の注文の列は、いちばん古い未割当の注文から。その上に直近のドリッパーに置いた注文を 3 件だけ残す", () => {
