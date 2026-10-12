@@ -237,3 +237,19 @@ export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
       {label}
     </span>
   );
+
+/** テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る */
+export const TestBoardBanner: React.FC<{ onBackToLive: () => void }> = ({
+  onBackToLive,
+}) => (
+  <div className="flex items-center justify-between gap-3 rounded-md border-2 border-amber-500 bg-amber-100 px-3 py-1.5 font-black text-amber-950">
+    <span>テストの盤面です（本番の注文は出ていません）</span>
+    <button
+      type="button"
+      onClick={onBackToLive}
+      className="min-h-[40px] touch-manipulation rounded-lg bg-amber-600 px-3 text-sm text-white hover:bg-amber-700"
+    >
+      本番に戻る
+    </button>
+  </div>
+);

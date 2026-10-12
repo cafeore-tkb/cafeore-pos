@@ -24,6 +24,8 @@ const (
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
 	// CaOS の今日のドリッパーの担当者（6 つ全部。caos_lanes.go）
 	WSMessageTypeCaosLanes WSMessageType = "caos_lanes"
+	// 取り消された緊急（入れ直し）の ID（cup_emergency.go）。画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す
+	WSMessageTypeCupEmergencyCancelled WSMessageType = "cup_emergency_cancelled"
 )
 
 type WSMessage struct {
@@ -33,9 +35,10 @@ type WSMessage struct {
 	OrderID *uuid.UUID             `json:"order_id,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
-	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
-	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
-	CaosLanes    *models.CaosLanes            `json:"caos_lanes,omitempty"`
+	MasterState    *models.MasterStateResponse  `json:"master_state,omitempty"`
+	CashierState   *models.CashierStateResponse `json:"cashier_state,omitempty"`
+	CaosLanes      *models.CaosLanes            `json:"caos_lanes,omitempty"`
+	CupEmergencyID *uuid.UUID                   `json:"cup_emergency_id,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {

@@ -1,6 +1,6 @@
-import { type OrderEntity, assignmentDisplay } from "@cafeore/common";
+import { type CaosOrderInput, assignmentDisplay } from "@cafeore/common";
 import { Siren } from "lucide-react";
-import { type ComponentProps, useId, useState } from "react";
+import { useId, useState } from "react";
 import {
   type EmergencyCup,
   type EmergencyInitial,
@@ -18,18 +18,20 @@ export const EmergencyIcon = Siren;
  * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ）。
  * 確定すると onAdd（足して、そのカップのシールを刷る）、足せたら onDone
  */
-export const EmergencyForm = ({
+export type EmergencyFormProps<O extends CaosOrderInput> = {
+  orders: readonly O[];
+  initial?: EmergencyInitial;
+  /** 足した入れ直しの id。断られたら null */
+  onAdd: (cups: EmergencyCup<O>[], reason: string) => Promise<string[] | null>;
+  onDone: () => void;
+};
+
+export const EmergencyForm = <O extends CaosOrderInput>({
   orders,
   initial,
   onAdd,
   onDone,
-}: {
-  orders: readonly OrderEntity[];
-  initial?: EmergencyInitial;
-  /** 足した入れ直しの id。断られたら null */
-  onAdd: (cups: EmergencyCup[], reason: string) => Promise<string[] | null>;
-  onDone: () => void;
-}) => {
+}: EmergencyFormProps<O>) => {
   const id = useId();
   const draft = useEmergencyDraft(orders, initial);
   // 送っている間は確定させない（2 回押して入れ直しが倍にならないように）
@@ -136,10 +138,10 @@ export const EmergencyForm = ({
 };
 
 /** マスターの緊急の入力（右から出す）。足せたら閉じる */
-export const EmergencySheet = ({
+export const EmergencySheet = <O extends CaosOrderInput>({
   onClose,
   ...form
-}: Omit<ComponentProps<typeof EmergencyForm>, "onDone"> & {
+}: Omit<EmergencyFormProps<O>, "onDone"> & {
   onClose: () => void;
 }) => (
   <Sheet open onOpenChange={(open) => !open && onClose()}>

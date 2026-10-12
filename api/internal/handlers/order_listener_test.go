@@ -275,6 +275,47 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
+// 緊急（入れ直し）の取り消しは、このインスタンスで取り消したらその場で配ってほかのインスタンスへ知らせ、
+// ほかのインスタンスから知らせが来たらそのまま配る（DB から読み直すものは無い）
+func TestListenChangesPublishesCupEmergencyCancellations(t *testing.T) {
+	db, dsn := openListenTestDB(t)
+	other := listenAsOtherInstance(t, dsn, cupEmergencyCancelledChannel)
+	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
+	h := NewOrderHandler(db, hub, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.ListenChanges(ctx, dsn)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
+		t.Fatalf("first broadcast = %s, want orders", msg.Type)
+	}
+	cancelled := func(id uuid.UUID) {
+		t.Helper()
+		if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCupEmergencyCancelled || msg.CupEmergencyID == nil || *msg.CupEmergencyID != id {
+			t.Fatalf("broadcast = %+v, want cup_emergency_cancelled %s", msg, id)
+		}
+	}
+
+	// このインスタンスで取り消したときは、その場で 1 回だけ配り（自分の通知では配り直さない）、ほかのインスタンスへ知らせる
+	mine := uuid.New()
+	publishCupEmergencyCancelled(db, hub, mine)
+	cancelled(mine)
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWait()
+	if n, err := other.WaitForNotification(waitCtx); err != nil || n.Payload != instanceID+" "+mine.String() {
+		t.Fatalf("notification = %+v, %v", n, err)
+	}
+	noBroadcast(t, hub)
+
+	// ほかのインスタンスで取り消したら、知らせを受けてそのまま配る
+	theirs := uuid.New()
+	sendNotify(t, db, cupEmergencyCancelledChannel, uuid.NewString()+" "+theirs.String())
+	cancelled(theirs)
+
+	// 形の分からない知らせは、どの入れ直しか分からないので配らない
+	sendNotify(t, db, cupEmergencyCancelledChannel, uuid.NewString()+" x")
+	noBroadcast(t, hub)
+}
+
 func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	if err := db.Create(&models.MasterState{Type: "stop", CreatedAt: time.Now()}).Error; err != nil {

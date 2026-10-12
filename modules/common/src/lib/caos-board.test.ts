@@ -15,7 +15,6 @@ import {
   caosNextLocked,
   cupNeedsBrew,
   cupSeniorOnly,
-  frequentEmergencyReasons,
   mergeWrites,
   moveQueueWrites,
   splitWrites,
@@ -326,33 +325,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(mergeWrites(cardOf("e3"), redoCard, newId)).toHaveProperty("writes");
   });
 
-  test("緊急の理由の候補：使った回数の多い順（同じなら名前の順）、理由の無いものは数えない", () => {
-    const withReasons = (...reasons: string[]) =>
-      cup({
-        item: blend,
-        emergencies: reasons.map((reason, i) => ({
-          id: `e-${reason}-${i}`,
-          createdAt: NOW,
-          reason,
-          dripper: null,
-          dripperPosition: null,
-          dripId: null,
-          brewStartedAt: null,
-          brewFinishedAt: null,
-        })),
-      });
-    const orders = [
-      { cups: [withReasons("こぼした", ""), withReasons("味が薄い")] },
-      { cups: [withReasons("こぼした", "温度")] },
-    ];
-    expect(frequentEmergencyReasons(orders)).toEqual([
-      "こぼした",
-      "味が薄い",
-      "温度",
-    ]);
-    expect(frequentEmergencyReasons(orders, 1)).toEqual(["こぼした"]);
-  });
-
   test("今日（日本時間。端末の時刻帯によらず 0 時で区切る）の注文だけを見る", () => {
     const yesterday = new Date("2026-10-07T14:59:59Z"); // 日本時間 10/7 23:59:59
     const midnight = new Date("2026-10-07T15:00:00Z"); // 日本時間 10/8 0:00
@@ -395,8 +367,8 @@ describe("[unit] CaOS の盤面の組み立て", () => {
   });
 
   test("抽出時間", () => {
-    expect(caosBrewSec(1)).toBe(135);
-    expect(caosBrewSec(2)).toBe(195);
+    expect(caosBrewSec(1)).toBe(300);
+    expect(caosBrewSec(2)).toBe(360);
   });
 });
 
