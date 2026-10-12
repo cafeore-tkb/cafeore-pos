@@ -12,6 +12,12 @@ const MAX_DIGITS = 4;
 const appendDigit = (value: string, digit: string) =>
   value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
 
+// 番号を押す前にフォーカスしていたボタン（指で押した「次へ」など）を、あとの Enter で押さないように外す
+const blurFocus = () => {
+  if (document.activeElement instanceof HTMLElement)
+    document.activeElement.blur();
+};
+
 // 入力欄（緊急の番号・担当者の名前など）で打っているキーと、ダイアログ（交代など）を開いているあいだのキーは拾わない
 const ignoreKey = (event: KeyboardEvent) =>
   event.metaKey ||
@@ -33,7 +39,7 @@ const ignoreKey = (event: KeyboardEvent) =>
  * そのカードを見せる（タイムラインのカードは showOnTimeline でスクロール、未割当のカードは未割当の帯の中でスクロール）。
  * 選ぶのは番号を変えたときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
  * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる（ダイアログを開いているあいだは拾わない）。
- * 開いているあいだは Backspace で 1 文字消し、Enter・Esc で閉じる
+ * 開いているあいだは Backspace で 1 文字消し、Enter・Esc で閉じる（番号を押すとフォーカスを外し、そのあと Tab で選んだボタンの上の Enter はそのボタンを押す）
  */
 export const useOrderSearch = ({
   digits,
@@ -68,6 +74,7 @@ export const useOrderSearch = ({
 
   /** テンキーを押す（数字の 1 文字か、1 文字消す "back"・全部消す "clear"） */
   const press = (key: string) => {
+    blurFocus();
     if (key === "clear") setDigits(() => "");
     else if (key === "back") setDigits((value) => value.slice(0, -1));
     else setDigits((value) => appendDigit(value, key));
@@ -116,12 +123,21 @@ export const useOrderSearch = ({
       const { digits, press, open, close } = latest.current;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
-        if (digits === null) open(appendDigit("", event.key));
-        else press(event.key);
+        if (digits !== null) press(event.key);
+        else {
+          blurFocus();
+          open(appendDigit("", event.key));
+        }
         return;
       }
       if (digits === null) return;
-      // Enter も閉じる（preventDefault するので、フォーカスの残っているボタンは押されない）
+      // ボタン・リンクの上の Enter は、そのボタンを押させる（番号を押すとフォーカスを外すので、そのあと Tab で選んだもの。通知の「表示」など）
+      if (
+        event.key === "Enter" &&
+        event.target instanceof HTMLElement &&
+        event.target.closest("button, a")
+      )
+        return;
       if (event.key === "Backspace") press("back");
       else if (event.key === "Escape" || event.key === "Enter") close();
       else return;
