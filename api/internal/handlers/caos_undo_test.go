@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -138,6 +140,61 @@ func TestCaosUndoOnDB(t *testing.T) {
 	beforeLast[cup3]["state"].(map[string]any)["brew_started_at"] = f.cup(t, cup3).BrewStartedAt
 	if code, _ := f.undo(t, beforeLast); code != http.StatusConflict {
 		t.Fatalf("undo next onto a busy dripper = %d, want 409", code)
+	}
+}
+
+// 抽出中のカードを動かしたのを戻す：今から始めたカードも、始めた時刻を消して待機に下げたカードも、前の始めた時刻に戻す
+func TestCaosUndoMoveBrewingOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	var o []models.Order
+	for no := 1; no <= 3; no++ {
+		o = append(o, f.createOrder(t, no, line(f.blend)))
+	}
+	cupOf := func(i int) uuid.UUID { return o[i].OrderCups[0].ID }
+	x, y, c := uuid.New(), uuid.New(), uuid.New()
+	f.mustPut(t, write(ids(o[0].OrderCups[0]), unassigned, placed(1, x, true)))
+	f.wait()
+	f.mustPut(t, write(ids(o[1].OrderCups[0]), unassigned, placed(2, y, true)))
+	f.mustPut(t, write(ids(o[2].OrderCups[0]), unassigned, placed(2, c, false)))
+	before := map[uuid.UUID]map[string]any{}
+	for i := range o {
+		before[cupOf(i)] = f.undoState(t, cupOf(i))
+	}
+	xStart, yStart := f.cup(t, cupOf(0)).BrewStartedAt, f.cup(t, cupOf(1)).BrewStartedAt
+
+	// x を 2 番の先頭へ（y は待機の先頭へ下がる）
+	f.wait()
+	f.mustPut(t,
+		write(ids(o[1].OrderCups[0]), f.state(t, cupOf(1)), placedBefore(2, y, c)),
+		write(ids(o[0].OrderCups[0]), f.state(t, cupOf(0)), placed(2, x, true)),
+	)
+	if brewing, queued := f.lane(t, 2); !slices.Equal(brewing, []uuid.UUID{x}) || !slices.Equal(queued, []uuid.UUID{y, c}) {
+		t.Fatalf("dripper 2 = %v / %v", brewing, queued)
+	}
+
+	// 始めた時刻は、今日の今までの時刻にしか戻せない（新しい時刻・前の日の時刻は 400）
+	for name, at := range map[string]time.Time{"future": f.caos.now().Add(time.Minute), "yesterday": f.caos.now().AddDate(0, 0, -1)} {
+		forged := f.undoState(t, cupOf(1))
+		forged["state"] = maps.Clone(before[cupOf(1)]["state"].(map[string]any))
+		forged["state"].(map[string]any)["brew_started_at"] = at
+		if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cupOf(1): forged}); code != http.StatusBadRequest {
+			t.Fatalf("undo to a %s start = %d, want 400", name, code)
+		}
+	}
+
+	if code, body := f.undo(t, before); code != http.StatusNoContent {
+		t.Fatalf("undo = %d: %s", code, body)
+	}
+	for i, want := range map[int]*time.Time{0: xStart, 1: yStart, 2: nil} {
+		if got := f.cup(t, cupOf(i)).BrewStartedAt; !timeEqual(msTime(got), msTime(want)) {
+			t.Fatalf("cup %d started at %v, want %v", i, got, want)
+		}
+	}
+	for dripper, want := range map[int][2][]uuid.UUID{1: {{x}, nil}, 2: {{y}, {c}}} {
+		if brewing, queued := f.lane(t, dripper); !slices.Equal(brewing, want[0]) || !slices.Equal(queued, want[1]) {
+			t.Fatalf("dripper %d = %v / %v, want %v", dripper, brewing, queued, want)
+		}
 	}
 }
 

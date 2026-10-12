@@ -349,6 +349,11 @@ export const caosLane = (cards: readonly CaosCard[], dripper: number) => {
   };
 };
 
+/** 列の終わっていないカード（抽出中・待機の順。列の先頭は抽出中） */
+export const laneActive = (
+  lane: Pick<ReturnType<typeof caosLane>, "brewing" | "queued">,
+) => (lane.brewing ? [lane.brewing, ...lane.queued] : lane.queued);
+
 // ---------------------------------------------------------------- 書き込み
 //
 // 順番の数（dripper_position）は画面では決めない。送るのは「どのドリッパーの、どのカードの前に入れるか」（after の insert_before）だけで、
@@ -381,7 +386,10 @@ const writeOf = (card: CaosCard, after: CaosCupAfter): CaosCupsWrite => ({
 /** 書き込みを作れなかった理由（画面にそのまま出す） */
 export type CaosWritesResult = { writes: CaosCupsWrite[] } | { error: string };
 
-/** 待機のどこに入れるか。"front" は待機の先頭（先頭のカードの前）、beforeKey はそのカード（key）の前。無ければ待機の最後 */
+/**
+ * 列のどこに入れるか。列の先頭は抽出中（抽出中が無ければ待機の先頭）。"front" は列の先頭、beforeKey はそのカード（key）の前
+ * （抽出中のカードの前なら列の先頭）。無ければ待機の最後
+ */
 export type CaosPlace = "front" | { beforeKey: string };
 
 export interface CaosAssignOptions {
@@ -397,9 +405,14 @@ export const caosDripperAllowed = (
 ) => card.nominatedDripper === null || card.nominatedDripper === dripper;
 
 /**
- * 割当・ドリッパーの移動・順番の入れ替え。未割当・待機のカードを dripper の待機の place（無ければ最後）に入れる。
- * ドリッパーに抽出中も待機も無ければ、そのまま抽出を始める（「始める」の印を送り、開始の時刻はサーバーが付ける）。
- * 今と同じ場所（同じドリッパーで、すぐ後ろのカードが同じ）なら何も書かない。
+ * 割当・ドリッパーの移動・順番の入れ替え。未割当・待機・抽出中のカードを、dripper の列の place（無ければ待機の最後）に入れる。
+ * 列の先頭は抽出中：
+ *   - 抽出中のある列の先頭に入れたら、そのカードは今から抽出を始め（「始める」の印。開始の時刻はサーバーが付ける）、
+ *     抽出中だったカードは始めた時刻を消して待機の先頭に下がる
+ *   - 抽出中のカードを列の先頭でない所（同じ列の待機・ほかの列）に入れたら、始めた時刻を消して待機にする。
+ *     同じ列の中で下げたときは、代わりに先頭になった待機のカードが今から始まる（ほかの列へ移したときは、元の列の次は始めない）
+ *   - 抽出中も待機も無い列に入れたら、そのまま抽出を始める。抽出中が無く待機のある列の先頭は、待機の先頭（「次へ」で始める）
+ * 今と同じ場所なら何も書かない。終わったカードは動かさない。
  */
 export const assignWrites = (
   cards: readonly CaosCard[],
@@ -409,42 +422,51 @@ export const assignWrites = (
 ): CaosWritesResult => {
   const invalid = caosDripperError(dripper);
   if (invalid) return { error: invalid };
-  if (card.status !== "unassigned" && card.status !== "queued")
-    return { error: "抽出中・終了のカードは動かせません" };
+  if (card.status === "done") return { error: "終わったカードは動かせません" };
   if (!caosDripperAllowed(card, dripper))
     return {
       error: `指名のあるカードは ${dripperLabel(card.nominatedDripper ?? dripper)} のドリッパーにしか置けません`,
     };
   const lane = caosLane(cards, dripper);
-  const others = lane.queued.filter((other) => other.key !== card.key);
-  let beforeCard: CaosCard | undefined;
-  if (place === "front") beforeCard = others[0];
+  const active = laneActive(lane);
+  // card を除いた列（抽出中・待機の順）と、そこへ入れる位置
+  const rest = active.filter((other) => other.key !== card.key);
+  let index = rest.length;
+  if (place === "front") index = 0;
   else if (place) {
-    beforeCard = others.find((other) => other.key === place.beforeKey);
-    if (!beforeCard)
-      return { error: "前に入れるカードが、そのドリッパーの待機にありません" };
+    index = rest.findIndex((other) => other.key === place.beforeKey);
+    if (index < 0)
+      return { error: "前に入れるカードが、そのドリッパーの列にありません" };
   }
-  if (card.status === "queued" && card.dripper === dripper) {
-    const index = lane.queued.findIndex((other) => other.key === card.key);
-    if ((lane.queued[index + 1]?.key ?? null) === (beforeCard?.key ?? null))
-      return { writes: [] };
+  if (active.findIndex((other) => other.key === card.key) === index)
+    return { writes: [] };
+  const write = (
+    target: CaosCard,
+    insertBefore: CaosCard | undefined,
+    startBrew: boolean,
+  ) =>
+    writeOf(target, {
+      dripper,
+      drip_id: target.dripId ?? newId(),
+      insert_before: insertBefore?.dripId ?? null,
+      start_brew: startBrew,
+    });
+  if (index === 0 && (lane.brewing || rest.length === 0)) {
+    // 列の先頭（抽出中）に入れて今から始める。抽出中だったカード（rest[0]）は待機の先頭（rest[1] の前）へ
+    const displaced = lane.brewing ? [write(rest[0], rest[1], false)] : [];
+    return { writes: [...displaced, write(card, undefined, true)] };
   }
-  return {
-    writes: [
-      writeOf(card, {
-        dripper,
-        drip_id: card.dripId ?? newId(),
-        insert_before: beforeCard?.dripId ?? null,
-        start_brew: !lane.brewing && others.length === 0,
-      }),
-    ],
-  };
+  const writes = [write(card, rest[index], false)];
+  // 同じ列の抽出中を待機へ下げたら、先頭になった待機のカードを始める
+  if (lane.brewing?.key === card.key)
+    writes.push(write(rest[0], undefined, true));
+  return { writes };
 };
 
-/** 待機のカードを未割当に戻す（統合していたカードは分かれる） */
+/** 待機・抽出中のカードを未割当に戻す（ドリッパー・順番・始めた時刻を消す。統合していたカードは分かれる。元の列の次は始めない） */
 export const unassignWrites = (card: CaosCard): CaosWritesResult => {
-  if (card.status !== "queued")
-    return { error: "待機のカードだけ未割当に戻せます" };
+  if (card.status !== "queued" && card.status !== "brewing")
+    return { error: "待機・抽出中のカードだけ未割当に戻せます" };
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 

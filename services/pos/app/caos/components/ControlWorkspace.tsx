@@ -37,11 +37,11 @@ export interface ControlViewProps {
   onAdvanceBay: (bayId: number) => void;
   /** 待機のカード（A は 1〜6 のボタン、C・D は詳細のパネル）を開き、その注文を選ぶ */
   onOpenTicket: (card: CaosCard) => void;
-  /** 抽出中・終わりのカードの入れ直し（緊急）のパネルを開き、その注文を選ぶ。無ければ（閲覧だけ・実データテスト中）抽出中・終わりのカードは押せない */
+  /** 抽出中・終わりのカードの入れ直し（緊急）のパネルを開き、その注文を選ぶ（抽出中のカードは 1〜6 に移す・未割当に戻すも）。無ければ（閲覧だけ・実データテスト中）抽出中・終わりのカードは押せない */
   onOpenRebrew?: (card: CaosCard) => void;
   /** 入れ直し（緊急）のカードを取り消す（未割当・待機のカードを開いたときに出す）。無ければ（閲覧だけ・実データテスト中）出さない */
   onCancelEmergency?: (card: CaosCard) => void;
-  /** 待機のカードを別のドリッパーへ。place が "front" なら待機の先頭へ、{ beforeKey } ならそのカードの前へ（同じドリッパーの中の入れ替えにも使う） */
+  /** 待機・抽出中のカードを別のドリッパーへ。place が "front" なら列の先頭（今から始まる）へ、{ beforeKey } ならそのカードの前へ（同じドリッパーの中の入れ替えにも使う） */
   onMoveTicket: (
     card: CaosCard,
     targetBayId: number,

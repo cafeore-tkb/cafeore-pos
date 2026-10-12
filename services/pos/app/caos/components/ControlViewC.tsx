@@ -17,8 +17,9 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
-// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）。未割当のカードを待機のカードの上に落とすと、そのカードの前へ
-// （統合できる待機・抽出中のカードの上（待機は右の部分）なら統合）
+// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
+// 統合できるカードの上の右の部分なら統合）
 export const ControlViewC: React.FC<ControlViewProps> = ({
   lanes,
   unassignedOrders,
@@ -87,13 +88,11 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       size="sm"
                       selected={sharesOrder(current, selectedOrderId)}
                       data-merge-target={current.key}
+                      data-queued-ticket={current.key}
                       data-ticket-label={orderLabel(current)}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
                       {...(current.status === "queued"
-                        ? {
-                            "data-queued-ticket": current.key,
-                            onClick: () => onOpenTicket(current),
-                          }
+                        ? { onClick: () => onOpenTicket(current) }
                         : { onClick: () => onOpenRebrew?.(current) })}
                       className={
                         current.status === "queued"

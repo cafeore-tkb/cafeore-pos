@@ -118,7 +118,7 @@ export const useBoardSelection = (
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
     assign: placeCard,
-    /** 待機のカードを別のドリッパーへ・先頭へ・カードの前へ */
+    /** 待機・抽出中のカードを別のドリッパーへ・先頭へ・カードの前へ */
     move: placeCard,
     returnToUnassigned: (card: CaosCard) =>
       thenDeselect(actions.returnToUnassigned(card.key)),

@@ -4,6 +4,7 @@ import {
   caosDripperAllowed,
   caosLane,
   dripperLabel,
+  laneActive,
 } from "@cafeore/common";
 import { totalCups } from "./cards";
 
@@ -17,9 +18,8 @@ export type Lane = { id: number } & ReturnType<typeof caosLane>;
 export const boardLanes = (cards: readonly CaosCard[]): Lane[] =>
   DRIPPER_NUMBERS.map((id) => ({ id, ...caosLane(cards, id) }));
 
-/** 列の終わっていないカード（抽出中・待機の順） */
-export const laneActive = (lane: Lane) =>
-  lane.brewing ? [lane.brewing, ...lane.queued] : lane.queued;
+// 列の終わっていないカード（抽出中・待機の順）は @cafeore/common の laneActive（画面の部品はここから使う）
+export { laneActive };
 
 /** 列のカード（終わり・抽出中・待機の順） */
 export const laneCards = (lane: Lane) => [...lane.done, ...laneActive(lane)];
@@ -28,14 +28,17 @@ export const laneCards = (lane: Lane) => [...lane.done, ...laneActive(lane)];
 export const isBayId = (bayId: number) => DRIPPER_NUMBERS.includes(bayId);
 
 /**
- * カード（card）の割当・移動のボタン（1〜6）。待機のカードは、今のドリッパー（currentBayId）のボタンが「先頭」（place が "front"。このドリッパーの待機の先頭へ）。
+ * カード（card）の割当・移動のボタン（1〜6）。待機・抽出中のカードは、今のドリッパー（currentBayId）のボタンが「先頭」
+ * （place が "front"。このドリッパーの列の先頭で、今から始まる。抽出中のカードは今が先頭なので押せない）。
  * 指名の番号のあるカードは、その番号のボタンだけ押せる（disabled。@cafeore/common の caosDripperAllowed）
  */
 export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
   DRIPPER_NUMBERS.map((bayId) => ({
     bayId,
     place: bayId === currentBayId ? ("front" as const) : undefined,
-    disabled: !caosDripperAllowed(card, bayId),
+    disabled:
+      !caosDripperAllowed(card, bayId) ||
+      (bayId === currentBayId && card.status === "brewing"),
   }));
 
 /** そのドリッパーをまだ待っている指名の杯数（未割当のうち、指名の番号がそのドリッパーのカード） */

@@ -156,6 +156,10 @@ export default function App() {
           practice={session.simulating}
           onClose={selection.closeRebrew}
           onAdd={session.emergency.add}
+          move={{
+            onMoveTicket: selection.move,
+            onReturnToUnassigned: selection.returnToUnassigned,
+          }}
         />
       )}
 

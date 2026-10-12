@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"cmp"
 	"errors"
 	"net/http"
 	"slices"
@@ -18,13 +17,15 @@ import (
 // 操作の前の値（restore）に書き戻す。カップの今の値が、画面の見ている値（current）とぴったり同じ（時刻はミリ秒まで）ときだけ書き、
 // ほかの端末があとで変えていたら何も書かずに 409 で断る（ほかの端末の操作を消さない）。
 //
-// PUT /api/caos/cups と違い、抽出中・終わりのカップの時刻と準備完了（ready_at）も書き戻す（「次へ」を戻す・空いているドリッパーで始めたカードを戻す）。
-// 戻すのは前の値なので、restore の時刻は current と同じか null だけ（時刻を新しく作らない）。提供済みのカップは戻さない。
+// PUT /api/caos/cups と違い、抽出中・終わりのカップの時刻と準備完了（ready_at）も書き戻す（「次へ」を戻す・始めたカードを戻す・
+// 動かして始めた時刻を消した抽出中のカードを戻す）。戻すのは前の値なので、終えた時刻と準備完了は current と同じか null だけ、
+// 始めた時刻は今日の今までの時刻（動かして消した・付け直した前の時刻）。提供済みのカップは戻さない。
 // 書き戻した結果も PUT と同じ決まり（指名・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい）と、
 // 1 つのドリッパーで抽出中は 1 枚を確かめる。
 
-// validateCaosUndo は書き戻す値の形を確かめる（400）。
-func validateCaosUndo(req models.CaosUndoRequest) error {
+// validateCaosUndo は書き戻す値の形を確かめる（400）。now はサーバーの今。
+func validateCaosUndo(req models.CaosUndoRequest, now time.Time) error {
+	today, _ := caosToday(now)
 	if len(req.Cups) == 0 {
 		return errors.New("cups が空です")
 	}
@@ -47,9 +48,13 @@ func validateCaosUndo(req models.CaosUndoRequest) error {
 				return errors.New("ドリッパーに置くカップには drip_id と dripper_position が要ります")
 			}
 		}
-		for _, t := range [][2]*time.Time{{r.BrewStartedAt, cur.BrewStartedAt}, {r.BrewFinishedAt, cur.BrewFinishedAt}, {c.Restore.ReadyAt, c.Current.ReadyAt}} {
+		// 始めた時刻は、抽出中のカードを動かして消した・付け直した前の時刻を戻すので、今の時刻と違ってよい（今日の今までの時刻だけ）
+		if t := r.BrewStartedAt; t != nil && (t.Before(today) || t.After(now)) {
+			return errors.New("戻す始めた時刻は、今日の今までの時刻だけです")
+		}
+		for _, t := range [][2]*time.Time{{r.BrewFinishedAt, cur.BrewFinishedAt}, {c.Restore.ReadyAt, c.Current.ReadyAt}} {
 			if t[0] != nil && !timeEqual(msTime(t[0]), msTime(t[1])) {
-				return errors.New("戻す時刻は、今の時刻のままか、消すだけです")
+				return errors.New("戻す終えた時刻・準備完了は、今の時刻のままか、消すだけです")
 			}
 		}
 	}
@@ -191,14 +196,12 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		if err := checkSeniorOnly(tx, writes, items, seniors); err != nil {
 			return err
 		}
-		for _, d := range sortedUnique(drippers, cmp.Compare) {
-			rows, err := readCaosLane(tx, d, start, end)
-			if err != nil {
-				return err
-			}
-			if brewing, _ := splitCaosLane(rows); len(brewing) > 1 {
-				return conflictErrorf("%d 番のドリッパーでほかのカードが抽出中なので戻せません", d)
-			}
+		d, err := caosBrewingTwice(tx, drippers, start, end)
+		if err != nil {
+			return err
+		}
+		if d != 0 {
+			return conflictErrorf("%d 番のドリッパーでほかのカードが抽出中なので戻せません", d)
 		}
 		return nil
 	})
@@ -212,7 +215,7 @@ func (h *CaosHandler) UndoCaosCups(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateCaosUndo(req); err != nil {
+	if err := validateCaosUndo(req, h.now()); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

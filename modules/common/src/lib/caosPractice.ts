@@ -2,7 +2,6 @@ import type { Cup, CupEmergency } from "../models/cup";
 import {
   CAOS_MAX_CUPS,
   CAOS_NEXT_COOLDOWN_SEC,
-  type CaosCard,
   type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
@@ -160,7 +159,7 @@ const validateAfter = (after: CaosCupsWrite["after"]) => {
   if (after.insert_before !== null && after.insert_before === after.drip_id)
     return "自分のカードの前には入れられません";
   if (after.insert_before !== null && after.start_brew)
-    return "抽出を始めるのは空いているドリッパーだけなので、前に入れるカードは決められません";
+    return "列の先頭に入れて始めるときは、前に入れるカードは決められません";
   return null;
 };
 
@@ -282,11 +281,29 @@ export const applyCaosPracticeWrites = (
     }
   }
 
+  // 抽出を始めるドリッパー。抽出中が無く待機のある列は、待機の先頭を飛ばさず「次へ」で始める（サーバーの requireCaosStartable）
+  const starting = new Set(
+    writes.flatMap(({ after }) =>
+      after.start_brew && after.dripper !== null ? [after.dripper] : [],
+    ),
+  );
+  for (const dripper of starting) {
+    const lane = caosLane(buildCaosCards(orders), dripper);
+    if (
+      !lane.brewing &&
+      lane.queued.some((card) => card.cups.some((cup) => !seen.has(cup.id)))
+    )
+      return {
+        error: `${dripper} 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください`,
+      };
+  }
+
   const next = cloneOrders(orders);
   const touched = new Set<string>();
   for (const write of writes) {
     const before = stateOf(write.before);
     const cups: (Cup | CupEmergency)[] = [];
+    let ready = true;
     for (const id of write.cup_ids) {
       const unit = allUnits(next).find((unit) => unit.row.id === id);
       if (!unit)
@@ -298,9 +315,8 @@ export const applyCaosPracticeWrites = (
         return {
           error: "ほかの端末で先に変わりました。もう一度操作してください",
         };
-      // 抽出中・終わりのカードは動かさない（終えるのは「次へ」）
-      if (before.brewStartedAt !== null || before.brewFinishedAt !== null)
-        return { error: "抽出中・終わりのカードは動かせません" };
+      // 入れ直しは準備完了を持たない（サーバーの caosUnits）
+      ready &&= !isEmergency(unit) && unit.cup.readyAt !== null;
       if (
         (write.after.dripper !== null || write.after.drip_id !== null) &&
         !cupNeedsBrew(unit.cup)
@@ -318,19 +334,28 @@ export const applyCaosPracticeWrites = (
         };
       cups.push(cup);
     }
-    const dripper = write.after.dripper;
-    // 抽出を始められるのは、空いている（このカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ（API の requireCaosDripperFree と同じ）
-    if (write.after.start_brew && dripper !== null) {
-      const lane = caosLane(buildCaosCards(next), dripper);
-      const written = (card: CaosCard) =>
-        card.cups.every((cup) => write.cup_ids.includes(cup.id));
-      if (lane.brewing && !written(lane.brewing))
-        return { error: `${dripper} 番のドリッパーはもう抽出中です` };
-      if (lane.queued.some((card) => !written(card)))
+    // 終わったカードは動かさない（終えるのは「次へ」）。抽出中のカードは動かせるが、ほかのカードには統合せず、分けない（サーバーの checkCaosStartedMove）
+    if (before.brewStartedAt !== null) {
+      if (before.brewFinishedAt !== null || ready)
+        return { error: "終わったカードは動かせません" };
+      if (write.after.drip_id !== null && write.after.drip_id !== before.dripId)
         return {
-          error: `${dripper} 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください`,
+          error:
+            "抽出中のカードの drip_id は変えられません（ほかのカードに統合もできません）",
+        };
+      if (
+        allUnits(next).some(
+          (unit) =>
+            unit.row.dripId === before.dripId &&
+            !write.cup_ids.includes(unit.row.id),
+        )
+      )
+        return {
+          error:
+            "抽出中のカードは分けられません（カップを全部いっしょに動かしてください）",
         };
     }
+    const dripper = write.after.dripper;
     let position: number | null = null;
     let startedAt = write.after.start_brew ? new Date(now) : null;
     if (dripper !== null) {
@@ -364,6 +389,16 @@ export const applyCaosPracticeWrites = (
     const nominations = units.flatMap((unit) => unit.nominated ?? []);
     if (new Set(nominations).size > 1)
       return { error: "指名の違うカップは同じカードにできません" };
+  }
+  // 抽出を始めたドリッパーで、抽出中は 1 枚だけ（サーバーの caosBrewingTwice）
+  const cards = buildCaosCards(next);
+  for (const dripper of starting) {
+    if (
+      cards.filter(
+        (card) => card.dripper === dripper && card.status === "brewing",
+      ).length > 1
+    )
+      return { error: `${dripper} 番のドリッパーはもう抽出中です` };
   }
   return { orders: next };
 };
