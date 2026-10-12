@@ -121,7 +121,7 @@ export const useOrderSearch = ({
         return;
       }
       if (digits === null) return;
-      // Enter も閉じる（前に押したボタンにフォーカスが残っていても、そのボタンは押させない）
+      // Enter も閉じる（preventDefault するので、フォーカスの残っているボタンは押されない）
       if (event.key === "Backspace") press("back");
       else if (event.key === "Escape" || event.key === "Enter") close();
       else return;

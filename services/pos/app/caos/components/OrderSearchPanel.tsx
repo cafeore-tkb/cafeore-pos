@@ -45,8 +45,6 @@ export const OrderSearchPanel: React.FC<{
           type="button"
           title={title}
           aria-label={title}
-          // 押してもフォーカスを移さない（キーボードの Enter で同じキーをもう一度押さない）
-          onMouseDown={(event) => event.preventDefault()}
           onClick={() => onKey(key)}
           className="flex h-14 touch-manipulation items-center justify-center rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[26px] active:bg-slate-900 active:text-white"
         >
