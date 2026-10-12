@@ -941,7 +941,7 @@
   },
   "CaosCupAfter": {
     "type": "object",
-    "description": "CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。\nstart_brew が true なら列の先頭に入れて抽出を始める（brew_started_at にサーバーの今を入れる。抽出中のカードなら今から始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。\ndripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）\n",
+    "description": "CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。\nstart_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。\ndripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）\n",
     "required": ["dripper", "drip_id", "insert_before", "start_brew"],
     "properties": {
       "dripper": {
@@ -963,7 +963,7 @@
       },
       "start_brew": {
         "type": "boolean",
-        "description": "列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻はサーバーの今"
+        "description": "列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress）"
       }
     }
   },
@@ -988,6 +988,23 @@
       }
     }
   },
+  "CaosPress": {
+    "type": "object",
+    "description": "操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。\n端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：\n- 送った時刻とサーバーの今が 5 秒より離れていれば、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））\n- サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今\n- 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻\n省略すると（押した時刻を送らない古い画面）、サーバーの今\n",
+    "required": ["at", "sent_at"],
+    "properties": {
+      "at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "押した時刻（端末の時計、エポックのミリ秒）"
+      },
+      "sent_at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻"
+      }
+    }
+  },
   "CaosCupsWriteRequest": {
     "type": "object",
     "required": ["writes"],
@@ -998,6 +1015,9 @@
         "items": {
           "$ref": "#/components/schemas/CaosCupsWrite"
         }
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
       }
     }
   },
@@ -1044,6 +1064,9 @@
         "format": "uuid",
         "nullable": true,
         "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
       }
     }
   },

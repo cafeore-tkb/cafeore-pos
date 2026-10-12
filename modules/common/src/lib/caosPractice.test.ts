@@ -209,6 +209,33 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     ).toBe("始めてから 10 秒は「次へ」を押せません");
   });
 
+  test("始める・終える時刻は、同じドリッパーで前の抽出を終えた時刻より前にしない（本番の盤面に、前に押した操作を重ねるとき）", () => {
+    let orders = ordersOf([hot], [hot], [hot]);
+    const [first, second, third] = unassigned(orders);
+    orders = assign(orders, first, 1, at(0));
+    const advanced = advanceCaosPracticeDripper(
+      orders,
+      1,
+      caosLane(cardsOf(orders), 1).brewing?.dripId ?? null,
+      at(60),
+    );
+    if (advanced.error !== undefined) throw new Error(advanced.error);
+    // 60 秒に終えた列で、30 秒に押した割当は 60 秒に始めたことにする。ほかのドリッパーは押した時刻
+    orders = assign(advanced.orders, second, 1, at(30));
+    orders = assign(orders, third, 2, at(30));
+    expect(caosLane(cardsOf(orders), 1).brewing?.startedAt).toStrictEqual(
+      at(60),
+    );
+    expect(caosLane(cardsOf(orders), 2).brewing?.startedAt).toStrictEqual(
+      at(30),
+    );
+    // 「次へ」の 10 秒は、その始めた時刻から数える
+    const brewing = caosLane(cardsOf(orders), 1).brewing?.dripId ?? null;
+    expect(advanceCaosPracticeDripper(orders, 1, brewing, at(65)).error).toBe(
+      "始めてから 10 秒は「次へ」を押せません",
+    );
+  });
+
   test("番号は最後なら最大＋1、途中なら前に入るカードの番号にし、後ろをずらす。先頭は今から始め、抽出中だったカードを待機の先頭へ", () => {
     let orders = ordersOf([hot], [hot], [hot], [hot], [hot]);
     // 1 番は抽出中、2・3 番は待機（番号 2・3）

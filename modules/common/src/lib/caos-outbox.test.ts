@@ -255,12 +255,14 @@ describe("unit: caos-outbox 送る", () => {
     const { items, store } = memoryStore(entries);
     let server: CaosServerState | null = initial && { orders: initial, lanes };
     const sent: CaosOutboxRequest[] = [];
+    const pressed: number[] = [];
     const rejected: [string, string][] = [];
     const outbox = createCaosOutbox({
       store,
       server: () => server,
-      send: async (request) => {
+      send: async (request, pressedAt) => {
         sent.push(request);
+        pressed.push(pressedAt);
         return results.shift() ?? {};
       },
       onRejected: ({ label }, reason) => rejected.push([label, reason]),
@@ -269,6 +271,7 @@ describe("unit: caos-outbox 送る", () => {
       outbox,
       items,
       sent,
+      pressed,
       rejected,
       setServer: (next: readonly CaosOrderInput[] | null) => {
         server = next && { orders: next, lanes: null };
@@ -449,7 +452,7 @@ describe("unit: caos-outbox 送る", () => {
     );
   });
 
-  test("送れずに遅れて始めたカードの「次へ」は、サーバーの始めた時刻から 10 秒たつまで待ってから送る", async () => {
+  test("押した時刻をいっしょに送る（「次へ」も待たずに送る。サーバーは始めた時刻と押した時刻の差で 10 秒を見る）", async () => {
     const started = orders(
       cup("a", {
         dripper: 1,
@@ -458,16 +461,16 @@ describe("unit: caos-outbox 送る", () => {
         brewStartedAt: NOW,
       }),
     );
-    const t = setup(
-      [entry({ kind: "next", dripper: 1, dripId: "drip-a", startId: null })],
-      started,
-    );
+    const next = entry({
+      kind: "next",
+      dripper: 1,
+      dripId: "drip-a",
+      startId: null,
+    });
+    const t = setup([next], started);
     await t.outbox.kick();
-    expect(t.sent).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(10_999);
-    expect(t.sent).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(1);
     expect(t.sent.map((r) => r.kind)).toEqual(["next"]);
+    expect(t.pressed).toEqual([next.at]);
   });
 
   test("返事が無かったことは端末に残す（再読み込みしても、送れたかもしれないとみる）", async () => {

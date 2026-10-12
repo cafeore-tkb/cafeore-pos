@@ -25,12 +25,12 @@ import (
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     順番の数（dripper_position）と抽出の時刻は画面から受け取らない。画面は「どのカードの前に入れるか」（after の insert_before）だけを送り、
-//     番号はサーバーが決める（placeCaosCups）。列の先頭（抽出中）に入れて始めるときは after の start_brew で受け、サーバーの今を入れる。
+//     番号はサーバーが決める（placeCaosCups）。列の先頭（抽出中）に入れて始めるときは after の start_brew で受け、押した時刻（caosBrewAt）を入れる。
 //     抽出中のカードも動かせる（始めた時刻を消して待機・未割当にする）。書いたあと、1 つのドリッパーで抽出中は 1 枚まで（caosBrewingTwice）。
 //     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）。指名のあるカードは指名を優先し、
 //     指名のドリッパーの担当者が上級生でなくても置ける
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める。
-//     抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
+//     抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ。始めた時刻と「次へ」を押した時刻の差で見る）
 //   - 注文・カップを準備完了・提供済みにして、抽出中のカードのカップが準備完了になったら、そのカードの「次へ」をサーバーが進める
 //     （advanceReadyCaosCards。order_status.go の changeOrderStatus から呼ぶ）
 //
@@ -38,6 +38,9 @@ import (
 // 注文の行より先に取り、列の番号を決めて書き終えるまで・抽出を始めるドリッパーが空いているかを確かめるまで、同じドリッパーへの書き込みを待たせる。
 // 書いたカップの注文（番号をずらしたカップの注文も）は今の注文の配信（1 件ずつ）で、このインスタンスにつないでいる画面へ届き、
 // ほかのインスタンスにも DB の通知で知らせる（publishOrder）。
+//
+// 抽出の開始・終了の時刻は、画面が操作を押した時刻（press。端末に残して後ろで送った操作も押したときの時刻）から決める（caosPressedAt・caosBrewAt）。
+// 押した時刻を送らない古い画面からの書き込みは、サーバーの今。
 
 const (
 	// ドリッパーの数。番号は 1〜caosDrippers（1st〜6th）。注文の明細の指名の番号（order_menus.dripper）も同じ範囲
@@ -48,6 +51,8 @@ const (
 	caosAttempts = 3
 	// 抽出を始めてから「次へ」を押せるようになるまで（画面の CAOS_NEXT_COOLDOWN_SEC と同じ）
 	caosNextCooldown = 10 * time.Second
+	// 送った時刻（端末の時計）とサーバーの今がこれより離れていれば、端末の時計がずれているとみる（caosPressedAt）
+	caosClockSkew = 5 * time.Second
 )
 
 var jst = time.FixedZone("JST", 9*60*60)
@@ -57,7 +62,7 @@ type CaosHandler struct {
 	hub *Hub
 	// 緊急（入れ直し）で増減した在庫の通知
 	inventory *Inventory
-	// 今の時刻（テストで差し替える）。今日の範囲と、抽出の開始・終了の時刻に使う（iPad の時計は使わない）
+	// 今の時刻（テストで差し替える）。今日の範囲と、押した時刻の無い書き込みの抽出の開始・終了の時刻に使う
 	now func() time.Time
 }
 
@@ -70,6 +75,43 @@ func caosToday(now time.Time) (time.Time, time.Time) {
 	t := now.In(jst)
 	start := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, jst)
 	return start, start.AddDate(0, 0, 1)
+}
+
+// ---------------------------------------------------------------- 抽出の時刻
+
+// caosPressedAt は、画面が操作を押した時刻（press）をサーバーの時計の時刻にする（ミリ秒まで）。now はサーバーの今（ミリ秒まで）。
+//   - press が無ければ（押した時刻を送らない古い画面）サーバーの今
+//   - 送った時刻とサーバーの今が caosClockSkew より離れていれば、端末の時計がずれているとみて、押した時刻をその差だけずらす
+//     （押してから送るまでの長さは端末の時計どうしの差なので、ずれていても正しい）。離れていなければ押した時刻のまま
+//     （同じ端末で押した開始と終了の差が、通信にかかった長さでずれないように）
+//   - サーバーの今より後なら今（orderCreatedAt と同じ）。今日（日本時間）より前でも今（画面は前の日に押した操作を送らない）
+func caosPressedAt(press *models.CaosPress, now time.Time) time.Time {
+	if press == nil {
+		return now
+	}
+	at := press.At
+	if offset := now.UnixMilli() - press.SentAt; offset > caosClockSkew.Milliseconds() || offset < -caosClockSkew.Milliseconds() {
+		at += offset
+	}
+	t := time.UnixMilli(at)
+	if today, _ := caosToday(now); t.Before(today) {
+		return now
+	}
+	return orderCreatedAt(&t, now)
+}
+
+// caosBrewAt は、ドリッパーで抽出を始める・終える時刻。押した時刻（caosPressedAt）が、同じドリッパーで今日いちばん遅く終えた抽出より前なら、
+// その終えた時刻にする（前の抽出と重ならないように）。終えた抽出が無ければ押した時刻のまま。そのドリッパーの advisory lock を取ったまま呼ぶ。
+func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.Time, error) {
+	var last []time.Time
+	if err := tx.Raw("SELECT c.brew_finished_at FROM "+caosUnits+" c, orders o WHERE o.id = c.order_id AND o.created_at >= ? AND o.created_at < ?"+
+		" AND c.dripper = ? AND c.brew_finished_at > ? ORDER BY c.brew_finished_at DESC LIMIT 1", start, end, dripper, pressed).Scan(&last).Error; err != nil {
+		return time.Time{}, err
+	}
+	if len(last) > 0 {
+		return last[0], nil
+	}
+	return pressed, nil
 }
 
 // ---------------------------------------------------------------- カップの値
@@ -506,9 +548,10 @@ func validateCaosWrites(req models.CaosCupsWriteRequest) error {
 }
 
 // writeCups は writes を 1 つのトランザクションで書く。書いた注文（番号をずらしたカップの注文も）の ID を返す。
-// 抽出を始める書き込みの brew_started_at は、サーバーの今（ミリ秒まで）。始めない書き込みは brew_started_at を消す（抽出中のカードは待機・未割当に戻る）。
-func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, error) {
+// 抽出を始める書き込みの brew_started_at は、押した時刻（press。caosBrewAt）。始めない書き込みは brew_started_at を消す（抽出中のカードは待機・未割当に戻る）。
+func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.CaosPress) ([]uuid.UUID, error) {
 	now := h.now().Truncate(time.Millisecond)
+	pressed := caosPressedAt(press, now)
 	start, end := caosToday(now)
 	var cupIDs, dripIDs []uuid.UUID
 	var placing, inserting, starting []int
@@ -609,7 +652,11 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite) ([]uuid.UUID, err
 			var position *int
 			var startedAt *time.Time
 			if w.After.StartBrew {
-				startedAt = &now
+				at, err := caosBrewAt(tx, *w.After.Dripper, pressed, start, end)
+				if err != nil {
+					return err
+				}
+				startedAt = &at
 			}
 			if w.After.Dripper != nil {
 				place, shifted, err := placeCaosCups(tx, w, start, end)
@@ -699,17 +746,19 @@ func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	orderIDs, err := h.writeCups(req.Writes)
+	orderIDs, err := h.writeCups(req.Writes, req.Press)
 	h.respond(c, orderIDs, err)
 }
 
 // ---------------------------------------------------------------- 「次へ」
 
 // advance は「次へ」を 1 回行う。seen は終えるカード（画面が抽出中と見ているカード。nil なら待機の先頭を始めるだけ）。書いた注文を返す。
-// auto は、カップが準備完了になったのでサーバーが進めるとき（advanceReadyCaosCards）：seen が抽出中のカードでなければ何もしない。
+// 終える・始める時刻は押した時刻（press。caosBrewAt）。始めてから caosNextCooldown は、始めた時刻と押した時刻の差で見る。
+// auto は、カップが準備完了になったのでサーバーが進めるとき（advanceReadyCaosCards。press は nil で、時刻はサーバーの今）：seen が抽出中のカードでなければ何もしない。
 // カップが準備完了（splitCaosLane では終わり）でも終え、始めてすぐでも断らない。ほかに抽出中のカードがあれば待機の先頭は始めない。
-func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.UUID, error) {
+func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, press *models.CaosPress, auto bool) ([]uuid.UUID, error) {
 	now := h.now().Truncate(time.Millisecond)
+	pressed := caosPressedAt(press, now)
 	start, end := caosToday(now)
 	var orderIDs []uuid.UUID
 	err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -745,7 +794,7 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 				return conflictErrorf("このカードはもう終わっています（ほかの端末で「次へ」を押したかもしれません）")
 			case seen == nil && cur != nil:
 				return conflictErrorf("抽出中のカードがあります（画面が古いかもしれません）")
-			case cur != nil && now.Sub(*cur.cups[0].BrewStartedAt) < caosNextCooldown:
+			case cur != nil && pressed.Sub(*cur.cups[0].BrewStartedAt) < caosNextCooldown:
 				return ruleErrorf("始めてから %d 秒は「次へ」を押せません", int(caosNextCooldown/time.Second))
 			}
 		}
@@ -754,6 +803,10 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 		}
 		if cur == nil && head == nil {
 			return conflictErrorf("このドリッパーには抽出中・待機のカードがありません")
+		}
+		at, err := caosBrewAt(tx, dripper, pressed, start, end)
+		if err != nil {
+			return err
 		}
 
 		// 終えるカードと始めるカードのカップ
@@ -799,12 +852,12 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 					return err
 				}
 			}
-			if err := updateCaosUnits(tx, map[string]any{"brew_finished_at": now}, "drip_id = ?", cur.dripID); err != nil {
+			if err := updateCaosUnits(tx, map[string]any{"brew_finished_at": at}, "drip_id = ?", cur.dripID); err != nil {
 				return err
 			}
 		}
 		if head != nil {
-			if err := updateCaosUnits(tx, map[string]any{"brew_started_at": now}, "drip_id = ?", head.dripID); err != nil {
+			if err := updateCaosUnits(tx, map[string]any{"brew_started_at": at}, "drip_id = ?", head.dripID); err != nil {
 				return err
 			}
 		}
@@ -827,14 +880,14 @@ func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	orderIDs, err := h.advanceRetrying(dripper, req.DripId, false)
+	orderIDs, err := h.advanceRetrying(dripper, req.DripId, req.Press, false)
 	h.respond(c, orderIDs, err)
 }
 
 // advanceRetrying は advance を、ロックする前に読んだカップが変わっていた（注文の編集などと重なった）ときだけ読み直して行う。
-func (h *CaosHandler) advanceRetrying(dripper int, seen *uuid.UUID, auto bool) ([]uuid.UUID, error) {
+func (h *CaosHandler) advanceRetrying(dripper int, seen *uuid.UUID, press *models.CaosPress, auto bool) ([]uuid.UUID, error) {
 	for range caosAttempts {
-		orderIDs, err := h.advance(dripper, seen, auto)
+		orderIDs, err := h.advance(dripper, seen, press, auto)
 		if err != errConflict {
 			return orderIDs, err
 		}
@@ -867,7 +920,7 @@ func advanceReadyCaosCards(caos *CaosHandler, before, after *models.Order) {
 			continue
 		}
 		done[*r.DripID] = true
-		orderIDs, err := caos.advanceRetrying(*r.Dripper, r.DripID, true)
+		orderIDs, err := caos.advanceRetrying(*r.Dripper, r.DripID, nil, true)
 		if err != nil {
 			log.Printf("caos: failed to advance dripper %d after cup %s got ready: %v", *r.Dripper, r.CupID, err)
 			continue

@@ -26,7 +26,8 @@ import type { PracticeDataItemType } from "./caosPracticeData";
 //   - 指名は実データの指名（明細の dripper・assignee）を本番と同じ形で持ち、本番と同じく指名の番号のドリッパーにしか置けず、違う番号のカップは 1 枚のカードにしない
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
 //   - 緊急（入れ直し）もカップの emergencies に持ち、カップと同じ決まりでカードに入る（足す・取り消すは api の cup_emergency.go と同じ決まり）
-// 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
+// 時刻はサーバーの押した時刻の代わりに、練習の時計の今（now）を使う（本番の盤面に重ねるときは押した時刻。lib/caos-outbox.ts）。
+// 抽出を始める・終える時刻は、サーバーと同じく同じドリッパーで前の抽出を終えた時刻より前にしない（brewAt）。
 
 /** 練習の盤面の注文（本番の注文と同じく、カップに CaOS の値を持つ） */
 export interface CaosPracticeOrder extends CaosOrderInput {
@@ -197,6 +198,19 @@ const allUnits = (orders: CaosPracticeOrder[]): PracticeUnit[] =>
 
 const isEmergency = (unit: PracticeUnit) => unit.row !== unit.cup;
 
+/** ドリッパーで抽出を始める・終える時刻（サーバーの caosBrewAt）。now が、同じドリッパーでいちばん遅く終えた抽出より前なら、その終えた時刻 */
+const brewAt = (orders: CaosPracticeOrder[], dripper: number, now: Date) =>
+  new Date(
+    Math.max(
+      now.getTime(),
+      ...allUnits(orders).flatMap(({ row }) =>
+        row.dripper === dripper && row.brewFinishedAt
+          ? [row.brewFinishedAt.getTime()]
+          : [],
+      ),
+    ),
+  );
+
 // ---------------------------------------------------------------- 書き込みを当てる（PUT /api/caos/cups と同じ）
 
 /**
@@ -262,7 +276,7 @@ const placeCups = (
 
 /**
  * 書き込み（assignWrites・unassignWrites・mergeWrites が作ったもの）を練習の盤面に当てる。全部当てるか、何も変えないか。
- * 番号はサーバーと同じ決まりでここで決める。抽出を始める書き込みの開始の時刻は now（練習の時計の今）
+ * 番号はサーバーと同じ決まりでここで決める。抽出を始める書き込みの開始の時刻は now（練習の時計の今。brewAt）
  */
 export const applyCaosPracticeWrites = (
   orders: readonly CaosPracticeOrder[],
@@ -357,7 +371,10 @@ export const applyCaosPracticeWrites = (
     }
     const dripper = write.after.dripper;
     let position: number | null = null;
-    let startedAt = write.after.start_brew ? new Date(now) : null;
+    let startedAt =
+      write.after.start_brew && dripper !== null
+        ? brewAt(next, dripper, now)
+        : null;
     if (dripper !== null) {
       const placed = placeCups(next, write, dripper);
       if (placed.error !== undefined) return { error: placed.error };
@@ -408,7 +425,7 @@ export const applyCaosPracticeWrites = (
 /**
  * 「次へ」。抽出中のカードを終え（終了の時刻を付け、そのカップを準備完了にする）、待機の先頭を始める。
  * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。始めてから CAOS_NEXT_COOLDOWN_SEC 秒は断る。
- * 時刻は now（練習の時計の今）。cooldown が false なら秒は見ない（押したときに確かめ済みの「次へ」を、あとから届いた盤面に重ねるとき）
+ * 時刻は now（練習の時計の今。終える・始める時刻は brewAt）。cooldown が false なら秒は見ない（押したときに確かめ済みの「次へ」を、あとから届いた盤面に重ねるとき）
  */
 export const advanceCaosPracticeDripper = (
   orders: readonly CaosPracticeOrder[],
@@ -437,12 +454,13 @@ export const advanceCaosPracticeDripper = (
     return { error: "このドリッパーには抽出中・待機のカードがありません" };
 
   // 終えるカードのカップ（入れ直しは入れ直したカップ）を準備完了にする
+  const at = brewAt(next, dripper, now);
   for (const { row, cup } of allUnits(next)) {
     if (cur && row.dripId === cur.dripId) {
       cup.readyAt = cup.readyAt ?? new Date(now);
-      row.brewFinishedAt = new Date(now);
+      row.brewFinishedAt = new Date(at);
     }
-    if (head && row.dripId === head.dripId) row.brewStartedAt = new Date(now);
+    if (head && row.dripId === head.dripId) row.brewStartedAt = new Date(at);
   }
   return { orders: next };
 };
