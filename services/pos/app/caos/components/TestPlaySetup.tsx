@@ -108,7 +108,6 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <input
             ref={fileInput}
             type="file"
-            accept=".json,application/json"
             multiple
             className="hidden"
             aria-label="実績の JSON ファイル"
