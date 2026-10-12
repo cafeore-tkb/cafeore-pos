@@ -1,6 +1,7 @@
 import type { CupEmergency } from "../models/cup";
 import type { components } from "../types/api";
 import {
+  CAOS_NEXT_COOLDOWN_SEC,
   type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
@@ -351,9 +352,11 @@ export const overlayCaosLanes = (
 // ---------------------------------------------------------------- 送る
 
 type Prepared =
-  | { request: CaosOutboxRequest }
+  /** pressedAt は押した時刻の代わりに送る時刻（無ければ押した時刻） */
+  | { request: CaosOutboxRequest; pressedAt?: number }
   | { done: true }
-  | { conflict: string };
+  | { conflict: string }
+  | { wait: number };
 
 /** サーバーの盤面がもうその操作のあとか（送ったものが届いた・送れたが返事が届かなかった・ほかの端末が同じことをした） */
 const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
@@ -411,13 +414,15 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
 };
 
 /**
- * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）。
- * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）
+ * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）、まだ送れなければ wait（待つミリ秒）。
+ * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）。at は押した時刻、nowMs は今（エポックのミリ秒）
  */
 const prepareCaosOutboxOp = (
   op: CaosOutboxOp,
   server: CaosServerState,
   attempted: boolean,
+  at: number,
+  nowMs: number,
 ): Prepared => {
   switch (op.kind) {
     case "cups": {
@@ -433,6 +438,20 @@ const prepareCaosOutboxOp = (
       // カップが前の値のまま：送ったなら戻せている。まだなら、戻す操作の結果が届くのを待つ
       if (request.arriving && attempted) return { done: true };
       return { conflict: request.error };
+    }
+    case "next": {
+      if (reflected(op, server)) return { done: true };
+      // サーバーは始めた時刻と押した時刻の差が CAOS_NEXT_COOLDOWN_SEC 秒より短ければ断る。サーバーの始めた時刻が押したときに見ていたより後
+      // （ほかの端末が先に進めた列で、前の抽出の終わりまでずれた・端末の時計が進んでいる）なら、捨てずに、始めた時刻のその秒あと
+      // （時計の差に 1 秒みておく）に押したことにして、その時刻まで待って送る
+      const { brewing } = caosLane(buildCaosCards(server.orders), op.dripper);
+      const earliest =
+        brewing?.dripId === op.dripId && brewing.startedAt
+          ? brewing.startedAt.getTime() + (CAOS_NEXT_COOLDOWN_SEC + 1) * 1000
+          : 0;
+      if (at >= earliest) return { request: op };
+      if (earliest > nowMs) return { wait: earliest - nowMs };
+      return { request: op, pressedAt: earliest };
     }
     case "swap": {
       // サーバーの入れ替えは書く前の値を確かめないので、押したときの担当者のままのときだけ送る
@@ -635,6 +654,8 @@ export const createCaosOutbox = ({
         head.op,
         state,
         head.attempted === true,
+        head.at,
+        now(),
       );
       if ("done" in prepared) {
         finish(head);
@@ -644,8 +665,14 @@ export const createCaosOutbox = ({
         conflicted(head, prepared.conflict);
         continue;
       }
+      if ("wait" in prepared) {
+        m.retryAt = now() + prepared.wait;
+        continue;
+      }
       const snapshot = snapshotOf(prepared.request, state);
-      const result = await withTimeout(send(prepared.request, head.at));
+      const result = await withTimeout(
+        send(prepared.request, prepared.pressedAt ?? head.at),
+      );
       // 送っているあいだに消えた（ほかのタブが片付けた）
       if (!store.read().some((entry) => entry.id === head.id)) continue;
       switch (outcomeOf(result)) {

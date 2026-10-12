@@ -51,8 +51,10 @@ const (
 	caosAttempts = 3
 	// 抽出を始めてから「次へ」を押せるようになるまで（画面の CAOS_NEXT_COOLDOWN_SEC と同じ）
 	caosNextCooldown = 10 * time.Second
-	// 送った時刻（端末の時計）とサーバーの今がこれより離れていれば、端末の時計がずれているとみる（caosPressedAt）
-	caosClockSkew = 5 * time.Second
+	// 送った時刻（端末の時計）がサーバーの今よりこれより後なら、端末の時計が進んでいるとみる（caosPressedAt）
+	caosClockAhead = 5 * time.Second
+	// 送った時刻がサーバーの今よりこれより前なら、端末の時計が遅れているとみる（通信にかかった長さと見分けるため、送る側の待つ長さより長く）
+	caosClockBehind = 30 * time.Second
 )
 
 var jst = time.FixedZone("JST", 9*60*60)
@@ -81,16 +83,16 @@ func caosToday(now time.Time) (time.Time, time.Time) {
 
 // caosPressedAt は、画面が操作を押した時刻（press）をサーバーの時計の時刻にする（ミリ秒まで）。now はサーバーの今（ミリ秒まで）。
 //   - press が無ければ（押した時刻を送らない古い画面）サーバーの今
-//   - 送った時刻とサーバーの今が caosClockSkew より離れていれば、端末の時計がずれているとみて、押した時刻をその差だけずらす
-//     （押してから送るまでの長さは端末の時計どうしの差なので、ずれていても正しい）。離れていなければ押した時刻のまま
-//     （同じ端末で押した開始と終了の差が、通信にかかった長さでずれないように）
+//   - 送った時刻がサーバーの今より caosClockAhead より後か、caosClockBehind より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす
+//     （押してから送るまでの長さは端末の時計どうしの差なので、ずれていても正しい）。そうでなければ押した時刻のまま
+//     （同じ端末で押した開始と終了の差が、通信にかかった長さでずれないように。送った時刻が今より前なのは、通信にかかった長さかもしれない）
 //   - サーバーの今より後なら今（orderCreatedAt と同じ）。今日（日本時間）より前でも今（画面は前の日に押した操作を送らない）
 func caosPressedAt(press *models.CaosPress, now time.Time) time.Time {
 	if press == nil {
 		return now
 	}
 	at := press.At
-	if offset := now.UnixMilli() - press.SentAt; offset > caosClockSkew.Milliseconds() || offset < -caosClockSkew.Milliseconds() {
+	if offset := now.UnixMilli() - press.SentAt; offset < -caosClockAhead.Milliseconds() || offset > caosClockBehind.Milliseconds() {
 		at += offset
 	}
 	t := time.UnixMilli(at)

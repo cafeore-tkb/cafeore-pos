@@ -50,6 +50,8 @@ func TestCaosPressedAt(t *testing.T) {
 		{"電波が切れていて 3 分後に送れた", press(now.Add(-3*time.Minute), now), now.Add(-3 * time.Minute)},
 		{"端末の時計が 4 秒進んでいる（ずれとはみない。未来は今）", press(now.Add(4*time.Second), now.Add(4*time.Second)), now},
 		{"端末の時計が 4 秒遅れている（ずれとはみない）", press(now.Add(-5*time.Second), now.Add(-4*time.Second)), now.Add(-5 * time.Second)},
+		{"送ってから 20 秒かかって届いた（ずれとはみない）", press(now.Add(-25*time.Second), now.Add(-20*time.Second)), now.Add(-25 * time.Second)},
+		{"端末の時計が 10 秒進んでいる", press(now.Add(7*time.Second), now.Add(10*time.Second)), now.Add(-3 * time.Second)},
 		{"端末の時計が 2 分遅れている", press(now.Add(-2*time.Minute-30*time.Second), now.Add(-2*time.Minute)), now.Add(-30 * time.Second)},
 		{"端末の時計が 1 時間進んでいる", press(now.Add(time.Hour-time.Minute), now.Add(time.Hour)), now.Add(-time.Minute)},
 		{"送ったのが押す前（端末の時計が戻った）", press(now.Add(time.Minute), now), now},

@@ -452,13 +452,13 @@ describe("unit: caos-outbox 送る", () => {
     );
   });
 
-  test("押した時刻をいっしょに送る（「次へ」も待たずに送る。サーバーは始めた時刻と押した時刻の差で 10 秒を見る）", async () => {
+  test("押した時刻をいっしょに送る", async () => {
     const started = orders(
       cup("a", {
         dripper: 1,
         dripperPosition: 1,
         dripId: "drip-a",
-        brewStartedAt: NOW,
+        brewStartedAt: new Date(NOW.getTime() - 60_000),
       }),
     );
     const next = entry({
@@ -471,6 +471,28 @@ describe("unit: caos-outbox 送る", () => {
     await t.outbox.kick();
     expect(t.sent.map((r) => r.kind)).toEqual(["next"]);
     expect(t.pressed).toEqual([next.at]);
+  });
+
+  test("サーバーの始めた時刻が後ろにずれて、押した時刻では 10 秒に届かない「次へ」は、始めた時刻の 11 秒後に押したことにして、その時刻まで待って送る", async () => {
+    const started = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+    );
+    const t = setup(
+      [entry({ kind: "next", dripper: 1, dripId: "drip-a", startId: null })],
+      started,
+    );
+    await t.outbox.kick();
+    expect(t.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(10_999);
+    expect(t.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sent.map((r) => r.kind)).toEqual(["next"]);
+    expect(t.pressed).toEqual([NOW.getTime() + 11_000]);
   });
 
   test("返事が無かったことは端末に残す（再読み込みしても、送れたかもしれないとみる）", async () => {
