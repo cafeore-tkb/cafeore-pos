@@ -6,6 +6,7 @@ import {
   type CaosCupsWrite,
   type CaosOrderInput,
   buildCaosCards,
+  caosDayOrders,
   caosLane,
   caosStateJSON,
 } from "./caos-board";
@@ -30,7 +31,7 @@ import { jstDate } from "./jst";
 // 送るのは 1 つずつ、残した順（createCaosOutbox）。送る直前に、書く前の値（before）をサーバーの今の値に差し替える（rebase）。
 // 順番の数・時刻はサーバーが決めるので、画面が先に重ねた値とずれても、カードの場所（ドリッパー・カード・抽出中か・終わりか）が同じなら送る。
 //   - 通った（204）：サーバーから盤面が届くまで（ECHO_MS まで）は重ね続け、届いたら消して次を送る（一瞬前に戻って見えないように）
-//   - つながらない・時間切れ・5xx・ログインが切れた（401・403）：間をあけて何度でも送り直す（後ろの操作は待つ）。送れたかもしれないので、次は「もうそうなっているか」も見る
+//   - つながらない・時間切れ・5xx・ログインが切れた・混んでいる（401・403・408・429）：間をあけて何度でも送り直す（後ろの操作は待つ）。送れたかもしれないので、次は「もうそうなっているか」も見る
 //   - 409（ほかの端末が先に変えた）：少し待ってサーバーの今で確かめ直し、カードの場所が同じならその値でもう一度送る。もうそうなっていれば済み。
 //     それでも合わなければ捨てる（盤面はサーバーの今に戻る）
 //   - 400 など、ほかの 4xx（決まりに合わない）：送り直さずに捨てる
@@ -88,15 +89,26 @@ export interface CaosServerState {
   lanes: CaosLanes | null;
 }
 
-const KINDS = new Set<CaosOutboxOp["kind"]>([
-  "cups",
-  "next",
-  "undo",
-  "cancel-emergency",
-  "lane",
-  "swap",
-  "seniors",
-]);
+// 操作の形（kind ごとの欠かせない項目）。壊れたもの・形の違うものは読まない（重ねるときに落ちないように）
+const SHAPES: Record<
+  CaosOutboxOp["kind"],
+  (op: Record<string, unknown>) => boolean
+> = {
+  cups: (op) => Array.isArray(op.writes),
+  next: (op) =>
+    typeof op.dripper === "number" && "dripId" in op && "startId" in op,
+  undo: (op) => Array.isArray((op.entry as { cups?: unknown } | null)?.cups),
+  "cancel-emergency": (op) => typeof op.id === "string",
+  lane: (op) =>
+    typeof op.dripper === "number" &&
+    typeof op.name === "string" &&
+    typeof op.senior === "boolean",
+  swap: (op) =>
+    typeof op.first === "number" &&
+    typeof op.second === "number" &&
+    Array.isArray(op.names),
+  seniors: (op) => Array.isArray(op.lanes),
+};
 
 const date = (value: unknown) =>
   typeof value === "string" ? new Date(value) : null;
@@ -111,7 +123,12 @@ export const parseCaosOutboxEntry = (
   if (typeof at !== "number" || typeof label !== "string") return null;
   if (typeof op !== "object" || op === null) return null;
   const kind = (op as { kind?: unknown }).kind;
-  if (!KINDS.has(kind as CaosOutboxOp["kind"])) return null;
+  if (
+    typeof kind !== "string" ||
+    !Object.hasOwn(SHAPES, kind) ||
+    !SHAPES[kind as CaosOutboxOp["kind"]](op as Record<string, unknown>)
+  )
+    return null;
   let parsed = op as CaosOutboxOp;
   if (parsed.kind === "undo") {
     parsed = {
@@ -237,7 +254,7 @@ export const applyCaosOutboxOp = (
 };
 
 /** 盤面の注文の写し（OrderEntity は getter で持つので、当てる関数が写せる形にする） */
-export const plainCaosOrders = (
+const plainCaosOrders = (
   orders: readonly CaosOrderInput[],
 ): CaosPracticeOrder[] =>
   orders.map(({ id, orderId, createdAt, menus, cups }) => ({
@@ -248,11 +265,22 @@ export const plainCaosOrders = (
     cups: [...cups],
   }));
 
-/** その日（day。日本時間の YYYY-MM-DD）の注文。サーバーは今日の注文のカップで番号・抽出中を決めるので、重ねるのも送るのもその日の注文で見る */
-export const caosDayOrders = <O extends CaosOrderInput>(
-  orders: readonly O[],
-  day: string,
-) => orders.filter((order) => jstDate(order.createdAt.getTime()) === day);
+/**
+ * 押した操作（ops。続けて当てる）を今の盤面（orders）に当ててみる（applyCaosOutboxOp）。1 つでも合わなければ、その理由。
+ * at は押した時刻
+ */
+export const applyCaosOutboxOps = (
+  orders: readonly CaosOrderInput[],
+  ops: readonly CaosOutboxOp[],
+  at: Date,
+): CaosPracticeResult => {
+  let result: CaosPracticeResult = { orders: plainCaosOrders(orders) };
+  for (const op of ops) {
+    if (result.error !== undefined) break;
+    result = applyCaosOutboxOp(result.orders, op, at);
+  }
+  return result;
+};
 
 /** サーバーから届いた注文のうちその日のもの（caosDayOrders）に、その日に押して残っている操作を古い順に重ねる。重ねられない操作は飛ばす */
 export const overlayCaosOrders = (
@@ -351,11 +379,12 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
       const status = (id: string) =>
         buildCaosCards(server.orders).find((card) => card.dripId === id)
           ?.status;
+      // 終えるカードがあれば、それが終わったか（待機の先頭はほかの端末が入れ替えたかもしれないので見ない）。無ければ始めるカードが始まったか
+      if (op.dripId !== null) return status(op.dripId) === "done";
       return (
-        (op.dripId === null || status(op.dripId) === "done") &&
-        (op.startId === null ||
-          status(op.startId) === "brewing" ||
-          status(op.startId) === "done")
+        op.startId === null ||
+        status(op.startId) === "brewing" ||
+        status(op.startId) === "done"
       );
     }
     case "undo": {
@@ -386,7 +415,7 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
  * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）、まだ送れなければ wait（待つミリ秒）。
  * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）。nowMs は今（エポックのミリ秒）
  */
-export const prepareCaosOutboxOp = (
+const prepareCaosOutboxOp = (
   op: CaosOutboxOp,
   server: CaosServerState,
   attempted: boolean,
@@ -419,6 +448,15 @@ export const prepareCaosOutboxOp = (
             nowMs
           : 0;
       return waitMs > 0 ? { wait: waitMs } : { request: op };
+    }
+    case "swap": {
+      // サーバーの入れ替えは書く前の値を確かめないので、押したときの担当者のままのときだけ送る
+      if (reflected(op, server)) return { done: true };
+      const name = (dripper: number) =>
+        server.lanes?.lanes.find((lane) => lane.dripper === dripper)?.name;
+      return name(op.first) === op.names[0] && name(op.second) === op.names[1]
+        ? { request: op }
+        : { conflict: CHANGED };
     }
     default:
       return reflected(op, server) ? { done: true } : { request: op };
@@ -489,9 +527,9 @@ const withTimeout = (sending: Promise<CaosOutboxResult>) => {
 };
 
 /** 送れたあと、サーバーの盤面が届くのを待つ長さ（届かなくても、これを過ぎたら次を送る） */
-export const CAOS_OUTBOX_ECHO_MS = 5_000;
+const CAOS_OUTBOX_ECHO_MS = 5_000;
 /** 返事を待つ長さ。過ぎたら送れなかったとみて送り直す */
-export const CAOS_OUTBOX_TIMEOUT_MS = 10_000;
+const CAOS_OUTBOX_TIMEOUT_MS = 10_000;
 /** 409 のあと、サーバーの今で確かめ直すまで待つ長さと、確かめる回数 */
 const CONFLICT_WAIT_MS = 1_000;
 const CONFLICT_TRIES = 2;

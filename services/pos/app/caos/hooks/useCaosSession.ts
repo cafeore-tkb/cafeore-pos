@@ -38,7 +38,7 @@ import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { useCaosOutboxSender } from "./useCaosOutbox";
-import { type UndoRun, useCaosUndo } from "./useCaosUndo";
+import { type UndoRun, refuseUndo, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
@@ -56,6 +56,9 @@ const newDripId = () => crypto.randomUUID();
 
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
 const NOT_FOUND = "カードが見つかりません";
+// 足した入れ直しが、まだ盤面に届いていないとき
+const NOT_ARRIVED =
+  "足した入れ直しがまだ届いていません。もう一度押してください";
 
 // 緊急（入れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
 // 足した・取り消したら「1つ戻す」の処理を返し、断られたら null。label は「1つ戻す」に出す操作の名前
@@ -249,9 +252,13 @@ export const useCaosSession = () => {
             return null;
           }
           const ids = await addEmergency(pos, reason);
-          return (
-            ids && { ids, undo: () => cancelLive(ids, `戻す（${label}）`) }
-          );
+          if (!ids) return null;
+          // 足した入れ直しがまだ盤面に届いていなければ、戻すのを覚えたままにする（もう一度押せる）
+          const undo: UndoRun = () =>
+            live.arrived(ids)
+              ? cancelLive(ids, `戻す（${label}）`)
+              : refuseUndo({ error: NOT_ARRIVED, arriving: true });
+          return { ids, undo };
         },
         cancel: async (cups, label) => {
           const restore = withPosOrder(

@@ -18,7 +18,7 @@ import {
   parseCaosOutboxEntry,
 } from "./caos-outbox";
 import { undoOfWrites } from "./caos-undo";
-import { emptyCaosLanes } from "./caosLanes";
+import { type CaosLanes, emptyCaosLanes } from "./caosLanes";
 import { jstDate } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z");
@@ -250,12 +250,10 @@ describe("unit: caos-outbox 送る", () => {
     entries: CaosOutboxEntry[],
     initial: readonly CaosOrderInput[] | null,
     results: CaosOutboxResult[] = [],
+    lanes: CaosLanes | null = null,
   ) => {
     const { items, store } = memoryStore(entries);
-    let server: CaosServerState | null = initial && {
-      orders: initial,
-      lanes: null,
-    };
+    let server: CaosServerState | null = initial && { orders: initial, lanes };
     const sent: CaosOutboxRequest[] = [];
     const rejected: [string, string][] = [];
     const outbox = createCaosOutbox({
@@ -497,6 +495,86 @@ describe("unit: caos-outbox 送る", () => {
     expect(t.rejected.map(([label]) => label)).toEqual(["割当"]);
   });
 
+  test("「次へ」を返事が無く送り直すとき、終えるカードが終わっていれば、ほかの端末が待機の先頭を入れ替えていても済みにする", async () => {
+    const before = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+      cup("c", { dripper: 1, dripperPosition: 3, dripId: "drip-c" }),
+    );
+    const t = setup(
+      [
+        entry({
+          kind: "next",
+          dripper: 1,
+          dripId: "drip-a",
+          startId: "drip-b",
+        }),
+      ],
+      before,
+      [{ error: "返事がありません" }],
+    );
+    await vi.advanceTimersByTimeAsync(11_000);
+    await t.outbox.kick();
+    // サーバーでは a を終え、ほかの端末が先頭に入れた c を始めていた
+    t.setServer(
+      orders(
+        cup("a", {
+          dripper: 1,
+          dripperPosition: 1,
+          dripId: "drip-a",
+          brewStartedAt: NOW,
+          brewFinishedAt: NOW,
+        }),
+        cup("b", { dripper: 1, dripperPosition: 3, dripId: "drip-b" }),
+        cup("c", {
+          dripper: 1,
+          dripperPosition: 2,
+          dripId: "drip-c",
+          brewStartedAt: NOW,
+        }),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(t.sent).toHaveLength(1);
+    expect(t.items()).toEqual([]);
+    expect(t.rejected).toEqual([]);
+  });
+
+  test("入れ替えは、押したときの担当者のままのときだけ送る。ほかの端末が替えていれば捨てる", async () => {
+    const lanes = (first: string, second: string): CaosLanes => {
+      const names = new Map([
+        [1, first],
+        [2, second],
+      ]);
+      return {
+        day: DAY,
+        lanes: emptyCaosLanes(DAY).lanes.map((lane) => ({
+          ...lane,
+          name: names.get(lane.dripper) ?? lane.name,
+        })),
+      };
+    };
+    const swap = () =>
+      entry(
+        { kind: "swap", first: 1, second: 2, names: ["鈴木", "山田"] },
+        "入れ替え",
+      );
+    const ok = setup([swap()], [], [], lanes("鈴木", "山田"));
+    await ok.outbox.kick();
+    expect(ok.sent.map((r) => r.kind)).toEqual(["swap"]);
+
+    const changed = setup([swap()], [], [], lanes("佐藤", "山田"));
+    await changed.outbox.kick();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(changed.sent).toEqual([]);
+    expect(changed.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
+  });
+
   test("ログインが切れた（401・403）は捨てずに送り直す", async () => {
     const server = orders(cup("a"));
     const t = setup([entry(place(server, "a", 1))], server, [
@@ -544,5 +622,12 @@ test("unit: caos-outbox 端末に残したものは JSON から読み直せる�
   );
   expect(
     parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "?" } }),
+  ).toBe(null);
+  // 形の違うもの（欠かせない項目が無い）は読まない
+  expect(
+    parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "cups" } }),
+  ).toBe(null);
+  expect(
+    parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "toString" } }),
   ).toBe(null);
 });

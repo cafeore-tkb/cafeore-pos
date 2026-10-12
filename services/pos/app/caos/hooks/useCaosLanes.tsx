@@ -82,6 +82,10 @@ const SENIORS_LABEL = "上級生の印を名簿に合わせる";
 
 type Confirm = { warnings: string[]; answer: (ok: boolean) => void };
 
+// 交代の名前（「1つ戻す」と、通らなかったときの知らせに出す）
+const changeLabel = ({ dripper, name }: LaneAssignment) =>
+  `交代 ${dripperLabel(dripper)} → ${name || "空き"}`;
+
 const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
   kind: "lane",
   dripper,
@@ -189,7 +193,7 @@ export const CaosLanesProvider = ({
     if (sending.current.has(dripper)) return;
     sending.current.add(dripper);
     const after = { dripper, name, senior };
-    const label = `交代 ${dripperLabel(dripper)} → ${name}`;
+    const label = changeLabel(after);
     // 前の人は替えるときの担当者（確かめているあいだにほかの画面が替えたら、その人に戻す）
     let before = laneOf(dripper);
     const undoRun = () => {
@@ -248,11 +252,8 @@ export const CaosLanesProvider = ({
           nowMs={changing.nowMs}
           onPick={(name, senior) => {
             const change = { dripper: changing.dripper, name, senior };
-            void request(
-              [change],
-              true,
-              `交代 ${dripperLabel(change.dripper)} → ${name || "空き"}`,
-              () => laneOp(change),
+            void request([change], true, changeLabel(change), () =>
+              laneOp(change),
             );
           }}
           onSwap={(other) => {

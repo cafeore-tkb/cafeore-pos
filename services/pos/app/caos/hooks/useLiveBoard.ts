@@ -2,13 +2,12 @@ import {
   type CaosCupsWrite,
   type CaosOutboxOp,
   type CaosUndoEntry,
-  applyCaosOutboxOp,
+  applyCaosOutboxOps,
   buildCaosCards,
   caosLane,
   caosUndoCups,
   jstDate,
   overlayCaosOrders,
-  plainCaosOrders,
 } from "@cafeore/common";
 import { useMemo, useRef } from "react";
 import { toast } from "sonner";
@@ -43,17 +42,12 @@ export const useLiveBoard = ({
 
   // 操作（ops は続けて当てる）を今の盤面に当ててみて、合えば端末に残す（画面はすぐ変わる）。合わなければ理由を通知で出して false
   const run = (label: string, ...ops: CaosOutboxOp[]) => {
-    const at = Date.now();
-    let current = plainCaosOrders(latest.current.board);
-    for (const op of ops) {
-      const result = applyCaosOutboxOp(current, op, new Date(at));
-      if (result.error !== undefined) {
-        toast.error(result.error);
-        return false;
-      }
-      current = result.orders;
+    const { error } = applyCaosOutboxOps(latest.current.board, ops, new Date());
+    if (error !== undefined) {
+      toast.error(error);
+      return false;
     }
-    for (const op of ops) enqueueCaosOp(label, op, at);
+    for (const op of ops) enqueueCaosOp(label, op);
     return true;
   };
 
@@ -74,6 +68,13 @@ export const useLiveBoard = ({
         startId:
           caosLane(latest.current.cards, dripper).queued[0]?.dripId ?? null,
       }),
+    /** カップ（入れ直しも。ids）が盤面に届いたか */
+    arrived: (ids: string[]) =>
+      ids.every((id) =>
+        latest.current.cards.some((card) =>
+          card.cups.some((cup) => cup.id === id),
+        ),
+      ),
     /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(

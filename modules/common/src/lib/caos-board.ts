@@ -249,6 +249,12 @@ const compareCards = (a: CaosCard, b: CaosCard) => {
   return compareQueued(a, b);
 };
 
+/** その日（day。日本時間の YYYY-MM-DD、jstDate）に作った注文 */
+export const caosDayOrders = <O extends Pick<CaosOrderInput, "createdAt">>(
+  orders: readonly O[],
+  day: string,
+) => orders.filter((order) => jstDate(order.createdAt.getTime()) === day);
+
 /**
  * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。day を省くと日では絞らない（練習の盤面）。
  *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まり、カップが全部準備完了なら終わり
@@ -264,9 +270,7 @@ export const buildCaosCards = (
 ): CaosCard[] => {
   const byDrip = new Map<string, CaosBoardCup[]>();
   const loose = new Map<string, CaosBoardCup[]>();
-  for (const order of orders) {
-    if (day !== undefined && jstDate(order.createdAt.getTime()) !== day)
-      continue;
+  for (const order of day === undefined ? orders : caosDayOrders(orders, day)) {
     for (const [position, cup] of order.cups.entries()) {
       if (!cupNeedsBrew(cup)) continue;
       const menu = order.menus.find(

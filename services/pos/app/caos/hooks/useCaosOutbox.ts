@@ -34,13 +34,9 @@ export const useCaosOutboxEntries = () =>
 // 押した順に送るので、同じミリ秒に押しても順が入れ替わらないようにする
 let lastAt = 0;
 
-/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す）。at は押した時刻 */
-export const enqueueCaosOp = (
-  label: string,
-  op: CaosOutboxOp,
-  at: number = Date.now(),
-) => {
-  lastAt = Math.max(at, lastAt + 1);
+/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す） */
+export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
+  lastAt = Math.max(Date.now(), lastAt + 1);
   store.put({ id: crypto.randomUUID(), at: lastAt, label, op });
 };
 
@@ -67,7 +63,11 @@ export const useCaosOutboxSender = (
   const server = useRef<CaosServerState | null>(null);
   server.current =
     status === "open" && isOrdersLoaded && orders !== stale.current
-      ? { orders: todays, lanes: caosLanes }
+      ? {
+          orders: todays,
+          // 前の日の担当者は、今日の担当者とみない（今日の担当者がまだ無ければサーバーは何も送らないので、前の日のものが残っている）
+          lanes: caosLanes?.day === today ? caosLanes : null,
+        }
       : null;
   const rejected = useRef(onRejected);
   rejected.current = onRejected;
