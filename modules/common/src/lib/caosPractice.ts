@@ -9,7 +9,6 @@ import {
   caosDripperError,
   caosLane,
   caosNextLocked,
-  caosStateFromJSON,
   cupNeedsBrew,
 } from "./caos-board";
 import type { PracticeDataItemType } from "./caosPracticeData";
@@ -127,6 +126,17 @@ export const toCaosPracticeOrder = (
 // 時刻はミリ秒までで比べる（サーバーの sameCaosState と同じ）
 const sameTime = (a: Date | null, b: Date | null) =>
   (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+const parseTime = (value: string | null) =>
+  value === null ? null : new Date(value);
+
+const stateOf = (before: CaosCupsWrite["before"]): CaosCupState => ({
+  dripper: before.dripper,
+  dripperPosition: before.dripper_position,
+  dripId: before.drip_id,
+  brewStartedAt: parseTime(before.brew_started_at),
+  brewFinishedAt: parseTime(before.brew_finished_at),
+});
 
 const sameState = (a: CaosCupState, b: CaosCupState) =>
   a.dripper === b.dripper &&
@@ -291,7 +301,7 @@ export const applyCaosPracticeWrites = (
   const next = cloneOrders(orders);
   const touched = new Set<string>();
   for (const write of writes) {
-    const before = caosStateFromJSON(write.before);
+    const before = stateOf(write.before);
     const cups: (Cup | CupEmergency)[] = [];
     let ready = true;
     for (const id of write.cup_ids) {

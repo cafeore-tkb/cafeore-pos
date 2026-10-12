@@ -377,20 +377,6 @@ export const caosStateJSON = (
   brew_finished_at: state.brewFinishedAt?.toISOString() ?? null,
 });
 
-const parseTime = (value: string | null) =>
-  value === null ? null : new Date(value);
-
-/** API の形のカップの値（caosStateJSON）を戻す */
-export const caosStateFromJSON = (
-  json: CaosCupsWrite["before"],
-): CaosCupState => ({
-  dripper: json.dripper,
-  dripperPosition: json.dripper_position,
-  dripId: json.drip_id,
-  brewStartedAt: parseTime(json.brew_started_at),
-  brewFinishedAt: parseTime(json.brew_finished_at),
-});
-
 const writeOf = (card: CaosCard, after: CaosCupAfter): CaosCupsWrite => ({
   cup_ids: card.cups.map((cup) => cup.id),
   before: caosStateJSON(card.state),

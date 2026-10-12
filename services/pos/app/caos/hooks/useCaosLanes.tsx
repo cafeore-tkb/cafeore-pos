@@ -101,7 +101,11 @@ export const CaosLanesProvider = ({
   // 日が変わったら前の日の担当者は使わない。見出しの「交代」の次の人も、この時計の時刻で決める（枠の変わり目から 10 秒のうちに変わる）
   const nowMs = useCurrentTime(10_000).getTime();
   const today = jstDate(nowMs);
-  const lanes = overlayCaosLanes(todaysCaosLanes(caosLanes, today), entries);
+  const lanes = overlayCaosLanes(
+    todaysCaosLanes(caosLanes, today),
+    entries,
+    today,
+  );
   const shiftFeed = useShiftFeed(editable);
   const rememberUndo = useRememberUndo();
   // すぐ替えているドリッパー。二度押しで 2 回送ったり 2 人ぶん進んだりしないよう、替えてから DOUBLE_TAP_MS のあいだも押しても替えない

@@ -2,7 +2,7 @@ import { memo } from "react";
 import { Button } from "../ui/button";
 
 type props = {
-  /** 刷れずに端末に残っているシールの数 */
+  /** 端末に残っている数（刷れなかったシール・送れていない CaOS の操作） */
   count: number;
   /** 今すぐ送り直す */
   onRetry: () => void;
@@ -11,7 +11,7 @@ type props = {
   retryLabel?: string;
 };
 
-/** 刷れなかったシールの数と「もう一度刷る」。残りが無ければ何も出さない */
+/** 端末に残っている数と送り直すボタン（既定は刷れなかったシールの「未印刷」「もう一度刷る」）。残りが無ければ何も出さない */
 export const PendingPrints = memo(
   ({ count, onRetry, label = "未印刷", retryLabel = "もう一度刷る" }: props) =>
     count > 0 && (

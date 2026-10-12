@@ -152,20 +152,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、刷れずに残っているシール。ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
-      {(unsent.count > 0 || labelPrinter.pendingCount > 0) && (
-        <div className="absolute top-full right-[108px] z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
-          <PendingPrints
-            count={unsent.count}
-            onRetry={unsent.retry}
-            label="未送信"
-            retryLabel="もう一度送る"
-          />
-          <PendingPrints
-            count={labelPrinter.pendingCount}
-            onRetry={labelPrinter.retry}
-          />
-        </div>
-      )}
+      <div className="absolute top-full right-[108px] z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+        <PendingPrints
+          count={unsent.count}
+          onRetry={unsent.retry}
+          label="未送信"
+          retryLabel="もう一度送る"
+        />
+        <PendingPrints
+          count={labelPrinter.pendingCount}
+          onRetry={labelPrinter.retry}
+        />
+      </div>
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"

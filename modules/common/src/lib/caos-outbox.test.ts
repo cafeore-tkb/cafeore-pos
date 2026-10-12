@@ -189,20 +189,41 @@ describe("unit: caos-outbox 重ねて表示", () => {
     ).toBe("unassigned");
   });
 
-  test("担当者の交代と入れ替えを重ねる", () => {
-    const lanes = emptyCaosLanes("2026-10-08").lanes.map((lane) =>
+  test("担当者の交代と入れ替えを重ねる。届いた担当者がもう入れ替わっていれば、入れ替え直さない", () => {
+    const lanes = emptyCaosLanes(DAY).lanes.map((lane) =>
       lane.dripper === 2 ? { ...lane, name: "山田", senior: true } : lane,
     );
-    const changed = overlayCaosLanes(lanes, [
+    const swap = entry({
+      kind: "swap",
+      first: 1,
+      second: 2,
+      names: ["鈴木", "山田"],
+    });
+    const entries = [
       entry({ kind: "lane", dripper: 1, name: "鈴木", senior: false }),
-      entry({ kind: "swap", first: 1, second: 2, names: ["鈴木", "山田"] }),
-    ]);
-    expect(
-      changed.slice(0, 2).map(({ name, senior }) => [name, senior]),
-    ).toEqual([
+      swap,
+    ];
+    const names = (input: readonly { name: string; senior: boolean }[]) =>
+      input.slice(0, 2).map(({ name, senior }) => [name, senior]);
+    const changed = overlayCaosLanes(lanes, entries, DAY);
+    expect(names(changed)).toEqual([
       ["山田", true],
       ["鈴木", false],
     ]);
+    expect(names(overlayCaosLanes(changed, [swap], DAY))).toEqual(
+      names(changed),
+    );
+  });
+
+  test("前の日に押した操作は重ねない", () => {
+    const server = orders(cup("a"));
+    const yesterday = {
+      ...entry(place(server, "a", 1)),
+      at: NOW.getTime() - 24 * 60 * 60 * 1000,
+    };
+    expect(
+      cardOf(overlayCaosOrders(server, [yesterday], DAY), "a").status,
+    ).toBe("unassigned");
   });
 });
 
@@ -259,6 +280,7 @@ describe("unit: caos-outbox 送る", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(NOW);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -298,6 +320,18 @@ describe("unit: caos-outbox 送る", () => {
       dripper: 1,
       brew_started_at: SERVER_T.toISOString(),
     });
+  });
+
+  test("つなぎ直して全部の注文が届き直しただけ（まだ送ったもののとおりでない）なら、届いたとみずに次を送らない", async () => {
+    const server = orders(cup("a"), cup("b"));
+    const t = setup(
+      [entry(place(server, "a", 1)), entry(place(server, "b", 2))],
+      server,
+    );
+    await t.outbox.kick();
+    t.setServer(orders(cup("a"), cup("b")));
+    await t.outbox.kick();
+    expect(t.sent).toHaveLength(1);
   });
 
   test("サーバーの盤面が届かなくても、待つのは ECHO_MS まで", async () => {
@@ -415,6 +449,52 @@ describe("unit: caos-outbox 送る", () => {
     expect(t.sent.map((r) => r.kind === "cups" && r.writes[0].cup_ids)).toEqual(
       [["a"], ["b"]],
     );
+  });
+
+  test("送れずに遅れて始めたカードの「次へ」は、サーバーの始めた時刻から 10 秒たつまで待ってから送る", async () => {
+    const started = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+    );
+    const t = setup(
+      [entry({ kind: "next", dripper: 1, dripId: "drip-a", startId: null })],
+      started,
+    );
+    await t.outbox.kick();
+    expect(t.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(10_999);
+    expect(t.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sent.map((r) => r.kind)).toEqual(["next"]);
+  });
+
+  test("返事が無かったことは端末に残す（再読み込みしても、送れたかもしれないとみる）", async () => {
+    const server = orders(cup("a"));
+    const t = setup([entry(place(server, "a", 1))], server, [
+      { error: "返事がありません" },
+    ]);
+    await t.outbox.kick();
+    expect(t.items().map((e) => e.attempted)).toEqual([true]);
+  });
+
+  test("前の日に押した操作は送らずに捨てる", async () => {
+    const server = orders(cup("a"));
+    const t = setup(
+      [
+        {
+          ...entry(place(server, "a", 1), "割当"),
+          at: NOW.getTime() - 24 * 60 * 60 * 1000,
+        },
+      ],
+      server,
+    );
+    await t.outbox.kick();
+    expect(t.sent).toEqual([]);
+    expect(t.rejected.map(([label]) => label)).toEqual(["割当"]);
   });
 
   test("ログインが切れた（401・403）は捨てずに送り直す", async () => {

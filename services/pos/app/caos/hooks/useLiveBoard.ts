@@ -43,17 +43,17 @@ export const useLiveBoard = ({
 
   // 操作（ops は続けて当てる）を今の盤面に当ててみて、合えば端末に残す（画面はすぐ変わる）。合わなければ理由を通知で出して false
   const run = (label: string, ...ops: CaosOutboxOp[]) => {
-    const at = new Date();
+    const at = Date.now();
     let current = plainCaosOrders(latest.current.board);
     for (const op of ops) {
-      const result = applyCaosOutboxOp(current, op, at);
+      const result = applyCaosOutboxOp(current, op, new Date(at));
       if (result.error !== undefined) {
         toast.error(result.error);
         return false;
       }
       current = result.orders;
     }
-    for (const op of ops) enqueueCaosOp(label, op);
+    for (const op of ops) enqueueCaosOp(label, op, at);
     return true;
   };
 

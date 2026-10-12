@@ -1,12 +1,12 @@
 import type { CupEmergency } from "../models/cup";
 import type { components } from "../types/api";
 import {
+  CAOS_NEXT_COOLDOWN_SEC,
   type CaosCupState,
   type CaosCupsWrite,
   type CaosOrderInput,
   buildCaosCards,
   caosLane,
-  caosStateFromJSON,
   caosStateJSON,
 } from "./caos-board";
 import { type CaosUndoEntry, caosUndoCups } from "./caos-undo";
@@ -60,13 +60,16 @@ export type CaosOutboxOp =
   /** 今の担当者の上級生かだけを直す */
   | { kind: "seniors"; lanes: LaneAssignment[] };
 
-/** 端末に残した操作。label は「1つ戻す」と同じ操作の名前（捨てたときの知らせに出す）。sent は送れて、サーバーの盤面が届くのを待っている */
+/** 端末に残した操作。label は「1つ戻す」と同じ操作の名前（捨てたときの知らせに出す） */
 export interface CaosOutboxEntry {
   id: string;
-  /** 押した時刻（エポックのミリ秒）。この順に送る */
+  /** 押した時刻（エポックのミリ秒）。この順に送る。前の日に押したものは重ねも送りもしない */
   at: number;
   label: string;
   op: CaosOutboxOp;
+  /** 送ったが返事が無かった（サーバーには届いたかもしれない） */
+  attempted?: true;
+  /** 送れて、サーバーの盤面が届くのを待っている */
   sent?: true;
 }
 
@@ -104,7 +107,7 @@ export const parseCaosOutboxEntry = (
   value: unknown,
 ): CaosOutboxEntry | null => {
   if (typeof value !== "object" || value === null) return null;
-  const { at, label, op, sent } = value as Record<string, unknown>;
+  const { at, label, op, attempted, sent } = value as Record<string, unknown>;
   if (typeof at !== "number" || typeof label !== "string") return null;
   if (typeof op !== "object" || op === null) return null;
   const kind = (op as { kind?: unknown }).kind;
@@ -126,7 +129,14 @@ export const parseCaosOutboxEntry = (
       },
     };
   }
-  return { id, at, label, op: parsed, ...(sent === true && { sent }) };
+  return {
+    id,
+    at,
+    label,
+    op: parsed,
+    ...(attempted === true && { attempted }),
+    ...(sent === true && { sent }),
+  };
 };
 
 // ---------------------------------------------------------------- 盤面に重ねる
@@ -170,27 +180,26 @@ const rebaseWrites = (
   return { writes: rebased };
 };
 
-// サーバーの POST /api/caos/undo と同じく、カップを restore の値（CaOS の列と準備完了）に書き戻す
-const applyUndoCups = (
+type UndoRestore = Partial<CaosUndoEntry["cups"][number]["restore"]>;
+
+// サーバーの POST /api/caos/undo と同じく、カップを操作の前の値（CaOS の列と、カップの準備完了）に書き戻す
+const applyUndo = (
   orders: readonly CaosPracticeOrder[],
-  cups: readonly UndoCupJSON[],
+  entry: CaosUndoEntry,
 ): CaosPracticeResult => {
-  const restore = new Map(cups.map((cup) => [cup.cup_id, cup.restore]));
-  const restored = <R extends Row>(row: R) => {
-    const json = restore.get(row.id);
-    return json ? { ...row, ...caosStateFromJSON(json.state) } : row;
-  };
+  const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
+  const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
   return {
     orders: orders.map((order) => ({
       ...order,
-      cups: order.cups.map((cup) => {
-        const json = restore.get(cup.id);
-        return {
-          ...restored(cup),
-          readyAt: json ? date(json.ready_at) : cup.readyAt,
-          emergencies: cup.emergencies.map(restored),
-        };
-      }),
+      cups: order.cups.map((cup) => ({
+        ...cup,
+        ...restoreOf(cup.id),
+        emergencies: cup.emergencies.map((row) => {
+          const { readyAt: _, ...state } = restoreOf(row.id);
+          return { ...row, ...state };
+        }),
+      })),
     })),
   };
 };
@@ -216,9 +225,9 @@ export const applyCaosOutboxOp = (
         cooldown,
       });
     case "undo": {
-      const request = caosUndoCups(op.entry, buildCaosCards(orders));
-      if ("error" in request) return { error: request.error };
-      return applyUndoCups(orders, request.cups);
+      const blocked = caosUndoCups(op.entry, buildCaosCards(orders));
+      if ("error" in blocked) return { error: blocked.error };
+      return applyUndo(orders, op.entry);
     }
     case "cancel-emergency":
       return cancelCaosPracticeEmergency(orders, op.id);
@@ -245,45 +254,57 @@ export const caosDayOrders = <O extends CaosOrderInput>(
   day: string,
 ) => orders.filter((order) => jstDate(order.createdAt.getTime()) === day);
 
-/** サーバーから届いた注文のうちその日のもの（caosDayOrders）に、残っている操作を古い順に重ねる。重ねられない操作は飛ばす */
+/** サーバーから届いた注文のうちその日のもの（caosDayOrders）に、その日に押して残っている操作を古い順に重ねる。重ねられない操作は飛ばす */
 export const overlayCaosOrders = (
   orders: readonly CaosOrderInput[],
   entries: readonly CaosOutboxEntry[],
   day: string,
-): readonly CaosOrderInput[] =>
-  entries.reduce<readonly CaosOrderInput[]>(
+): readonly CaosOrderInput[] => {
+  const today = caosDayOrders(orders, day);
+  const todays = entries.filter(({ at }) => jstDate(at) === day);
+  if (todays.length === 0) return today;
+  return todays.reduce(
     (current, { op, at }) =>
-      applyCaosOutboxOp(plainCaosOrders(current), op, new Date(at), {
-        cooldown: false,
-      }).orders ?? current,
-    caosDayOrders(orders, day),
+      applyCaosOutboxOp(current, op, new Date(at), { cooldown: false })
+        .orders ?? current,
+    plainCaosOrders(today),
   );
+};
 
-/** 今日の担当者（todaysCaosLanes）に、残っている担当者の操作を古い順に重ねる */
+/** その日（day）の担当者（todaysCaosLanes）に、その日に押して残っている担当者の操作を古い順に重ねる */
 export const overlayCaosLanes = (
   lanes: readonly CaosLane[],
   entries: readonly CaosOutboxEntry[],
+  day: string,
 ): CaosLane[] =>
   entries.reduce<CaosLane[]>(
-    (current, { op }) => {
-      const set = (dripper: number, name: string, senior: boolean) =>
-        current.map((lane) =>
-          lane.dripper === dripper
-            ? { ...lane, name, senior: senior && name !== "" }
-            : lane,
-        );
+    (current, { op, at }) => {
+      if (jstDate(at) !== day) return current;
+      const laneOf = (dripper: number) =>
+        current.find((lane) => lane.dripper === dripper);
       switch (op.kind) {
         case "lane":
-          return set(op.dripper, op.name, op.senior);
-        case "swap": {
-          const first = current.find((lane) => lane.dripper === op.first);
-          const second = current.find((lane) => lane.dripper === op.second);
-          if (!first || !second) return current;
-          return set(op.first, second.name, second.senior).map((lane) =>
-            lane.dripper === op.second
-              ? { ...lane, name: first.name, senior: first.senior }
+          return current.map((lane) =>
+            lane.dripper === op.dripper
+              ? { ...lane, name: op.name, senior: op.senior }
               : lane,
           );
+        case "swap": {
+          // 押したときの担当者のままのときだけ入れ替える（もう入れ替わった担当者に当てて元に戻さない）
+          const first = laneOf(op.first);
+          const second = laneOf(op.second);
+          if (first?.name !== op.names[0] || second?.name !== op.names[1])
+            return current;
+          const swapped = new Map([
+            [op.first, second],
+            [op.second, first],
+          ]);
+          return current.map((lane) => {
+            const other = swapped.get(lane.dripper);
+            return other
+              ? { ...lane, name: other.name, senior: other.senior }
+              : lane;
+          });
         }
         case "seniors":
           return current.map((lane) => {
@@ -304,54 +325,80 @@ export const overlayCaosLanes = (
 type Prepared =
   | { request: CaosOutboxRequest }
   | { done: true }
-  | { conflict: string };
+  | { conflict: string }
+  | { wait: number };
 
-// サーバーの盤面がもうその書き込みのあとか（送れたが返事が届かなかった・ほかの端末が同じことをした）
-const writesReflected = (
-  orders: readonly CaosOrderInput[],
-  writes: readonly CaosCupsWrite[],
-) => {
-  const rows = rowsOf(orders);
-  return writes.every(({ cup_ids, after }) =>
-    cup_ids.every((id) => {
-      const row = rows.get(id);
-      return (
-        row !== undefined &&
-        row.dripper === after.dripper &&
-        row.dripId === after.drip_id &&
-        (!after.start_brew || row.brewStartedAt !== null)
+/** サーバーの盤面がもうその操作のあとか（送ったものが届いた・送れたが返事が届かなかった・ほかの端末が同じことをした） */
+const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
+  const laneOf = (dripper: number) =>
+    server.lanes?.lanes.find((lane) => lane.dripper === dripper);
+  switch (op.kind) {
+    case "cups": {
+      const rows = rowsOf(server.orders);
+      return op.writes.every(({ cup_ids, after }) =>
+        cup_ids.every((id) => {
+          const row = rows.get(id);
+          return (
+            row !== undefined &&
+            row.dripper === after.dripper &&
+            row.dripId === after.drip_id &&
+            (!after.start_brew || row.brewStartedAt !== null)
+          );
+        }),
       );
-    }),
-  );
+    }
+    case "next": {
+      const status = (id: string) =>
+        buildCaosCards(server.orders).find((card) => card.dripId === id)
+          ?.status;
+      return (
+        (op.dripId === null || status(op.dripId) === "done") &&
+        (op.startId === null ||
+          status(op.startId) === "brewing" ||
+          status(op.startId) === "done")
+      );
+    }
+    case "undo": {
+      // カップが全部操作の前の値
+      const request = caosUndoCups(op.entry, buildCaosCards(server.orders));
+      return "arriving" in request;
+    }
+    case "cancel-emergency":
+      return !rowsOf(server.orders).has(op.id);
+    case "lane": {
+      const lane = laneOf(op.dripper);
+      return lane?.name === op.name && lane.senior === op.senior;
+    }
+    case "swap":
+      return (
+        laneOf(op.first)?.name === op.names[1] &&
+        laneOf(op.second)?.name === op.names[0]
+      );
+    case "seniors":
+      return op.lanes.every(
+        ({ dripper, name, senior }) =>
+          laneOf(dripper)?.name !== name || laneOf(dripper)?.senior === senior,
+      );
+  }
 };
 
 /**
- * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）。
- * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）
+ * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）、まだ送れなければ wait（待つミリ秒）。
+ * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）。nowMs は今（エポックのミリ秒）
  */
 export const prepareCaosOutboxOp = (
   op: CaosOutboxOp,
   server: CaosServerState,
   attempted: boolean,
+  nowMs: number,
 ): Prepared => {
   switch (op.kind) {
     case "cups": {
       const rebased = rebaseWrites(server.orders, op.writes);
       if ("writes" in rebased) return { request: { kind: "cups", ...rebased } };
-      if (writesReflected(server.orders, op.writes)) return { done: true };
-      return { conflict: rebased.error };
-    }
-    case "next": {
-      const cards = buildCaosCards(server.orders);
-      const status = (id: string | null) =>
-        cards.find((card) => card.dripId === id)?.status;
-      const finished = op.dripId === null || status(op.dripId) === "done";
-      const started =
-        op.startId === null ||
-        status(op.startId) === "brewing" ||
-        status(op.startId) === "done";
-      if (finished && started) return { done: true };
-      return { request: op };
+      return reflected(op, server)
+        ? { done: true }
+        : { conflict: rebased.error };
     }
     case "undo": {
       const request = caosUndoCups(op.entry, buildCaosCards(server.orders));
@@ -360,20 +407,21 @@ export const prepareCaosOutboxOp = (
       if (request.arriving && attempted) return { done: true };
       return { conflict: request.error };
     }
-    case "cancel-emergency":
-      return rowsOf(server.orders).has(op.id)
-        ? { request: op }
-        : { done: true };
-    case "swap": {
-      const name = (dripper: number) =>
-        server.lanes?.lanes.find((lane) => lane.dripper === dripper)?.name;
-      const [first, second] = op.names;
-      return name(op.first) === second && name(op.second) === first
-        ? { done: true }
-        : { request: op };
+    case "next": {
+      if (reflected(op, server)) return { done: true };
+      // サーバーの始めた時刻（送れずに遅れて始めたなら、押したときより後）から CAOS_NEXT_COOLDOWN_SEC 秒は断られるので、
+      // それまで待つ（端末とサーバーの時計の差に 1 秒みておく）
+      const { brewing } = caosLane(buildCaosCards(server.orders), op.dripper);
+      const waitMs =
+        brewing?.dripId === op.dripId && brewing.startedAt
+          ? brewing.startedAt.getTime() +
+            (CAOS_NEXT_COOLDOWN_SEC + 1) * 1000 -
+            nowMs
+          : 0;
+      return waitMs > 0 ? { wait: waitMs } : { request: op };
     }
     default:
-      return { request: op };
+      return reflected(op, server) ? { done: true } : { request: op };
   }
 };
 
@@ -431,8 +479,6 @@ const arrived = (snapshot: Snapshot, server: CaosServerState) =>
 // 返事を CAOS_OUTBOX_TIMEOUT_MS まで待つ
 const withTimeout = (sending: Promise<CaosOutboxResult>) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // stop のあとは、送っている途中のものの結果を受けたら止まる（次に kick するまで）
-  const stopped = false;
   const timeout = new Promise<CaosOutboxResult>((resolve) => {
     timer = setTimeout(
       () => resolve({ error: "返事がありません" }),
@@ -467,7 +513,7 @@ const outcomeOf = ({ error, status }: CaosOutboxResult) => {
 
 /** 送る操作を置く所（端末の localStorage。読むと古い順） */
 export interface CaosOutboxStore {
-  read: () => CaosOutboxEntry[];
+  read: () => readonly CaosOutboxEntry[];
   put: (entry: CaosOutboxEntry) => void;
   remove: (id: string) => void;
 }
@@ -498,7 +544,6 @@ export const createCaosOutbox = ({
     {
       failures: number;
       conflicts: number;
-      attempted: boolean;
       retryAt: number;
       sentAt?: number;
       snapshot?: Snapshot;
@@ -507,7 +552,7 @@ export const createCaosOutbox = ({
   const memoOf = (id: string) => {
     let m = memo.get(id);
     if (!m) {
-      m = { failures: 0, conflicts: 0, attempted: false, retryAt: 0 };
+      m = { failures: 0, conflicts: 0, retryAt: 0 };
       memo.set(id, m);
     }
     return m;
@@ -543,21 +588,39 @@ export const createCaosOutbox = ({
       if (stopped || !head || !state) return;
       const m = memoOf(head.id);
       if (head.sent) {
-        // 送れたもの。サーバーの盤面が届くまで（ECHO_MS まで）は重ねたままにし、次を送らない
+        // 送れたもの。その結果のサーバーの盤面が届くまで（ECHO_MS まで）は重ねたままにし、次を送らない。
+        // 届いたかは、書いた注文・担当者が新しくなり（並べ替えは場所が変わらないので）、中身もそのとおりか（つなぎ直して全部届き直しただけでないか）で見る
         const waitMs = (m.sentAt ?? 0) + CAOS_OUTBOX_ECHO_MS - now();
-        if (m.snapshot && waitMs > 0 && !arrived(m.snapshot, state))
+        if (
+          m.snapshot &&
+          waitMs > 0 &&
+          !(arrived(m.snapshot, state) && reflected(head.op, state))
+        )
           return later(waitMs);
         finish(head);
         continue;
       }
+      if (jstDate(head.at) !== jstDate(now())) {
+        reject(head, "前の日に押した操作なので送りません");
+        continue;
+      }
       if (m.retryAt > now()) return later(m.retryAt - now());
-      const prepared = prepareCaosOutboxOp(head.op, state, m.attempted);
+      const prepared = prepareCaosOutboxOp(
+        head.op,
+        state,
+        head.attempted === true,
+        now(),
+      );
       if ("done" in prepared) {
         finish(head);
         continue;
       }
       if ("conflict" in prepared) {
         conflicted(head, prepared.conflict);
+        continue;
+      }
+      if ("wait" in prepared) {
+        m.retryAt = now() + prepared.wait;
         continue;
       }
       const snapshot = snapshotOf(prepared.request, state);
@@ -572,7 +635,7 @@ export const createCaosOutbox = ({
           onSent?.(head);
           break;
         case "retry":
-          m.attempted = true;
+          store.put({ ...head, attempted: true });
           m.failures += 1;
           m.retryAt = now() + retryDelay(m.failures);
           break;

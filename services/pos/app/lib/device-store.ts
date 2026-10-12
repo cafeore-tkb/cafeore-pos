@@ -13,8 +13,20 @@ export const createDeviceStore = <T extends { id: string; at: number }>(
   // localStorage に書けなかったもの
   const memory = new Map<string, T>();
   const listeners = new Set<() => void>();
-  const notify = () => {
+  // 読んだもの（変わるまで同じものを返す。useSyncExternalStore にそのまま渡せる）
+  let cache: readonly T[] | null = null;
+  const changed = () => {
+    cache = null;
     for (const listener of listeners) listener();
+  };
+  // ほかのタブで変わったら読み直す（初めて読んだときから見る）
+  let watching = false;
+  const watch = () => {
+    if (watching || typeof window === "undefined") return;
+    watching = true;
+    window.addEventListener("storage", (event) => {
+      if (event.key === null || event.key.startsWith(prefix)) changed();
+    });
   };
 
   const stored = () => {
@@ -38,40 +50,40 @@ export const createDeviceStore = <T extends { id: string; at: number }>(
   };
 
   return {
-    /** 残っているもの（古い順）。localStorage に書けなくなってからメモリに置き直したものは、メモリのほう */
-    read: () =>
-      [
-        ...new Map(
-          [...stored(), ...memory.values()].map((item) => [item.id, item]),
-        ).values(),
-      ].sort((a, b) => a.at - b.at),
+    /** 残っているもの（古い順） */
+    read: () => {
+      watch();
+      cache ??= [...stored(), ...memory.values()].sort((a, b) => a.at - b.at);
+      return cache;
+    },
     /** 置く（同じ id なら置き換える） */
     put: (item: T) => {
       const { id, ...value } = item;
       try {
         localStorage.setItem(prefix + id, JSON.stringify(value));
+        memory.delete(id);
       } catch {
+        // 前に localStorage に置いた同じ id は消し、メモリのものだけにする
         memory.set(id, item);
+        try {
+          localStorage.removeItem(prefix + id);
+        } catch {}
       }
-      notify();
+      changed();
     },
     remove: (id: string) => {
       memory.delete(id);
       try {
         localStorage.removeItem(prefix + id);
       } catch {}
-      notify();
+      changed();
     },
     /** 変わったら呼ぶ（ほかのタブで変わったときも） */
     subscribe: (listener: () => void) => {
-      const onStorage = (event: StorageEvent) => {
-        if (event.key === null || event.key.startsWith(prefix)) listener();
-      };
+      watch();
       listeners.add(listener);
-      window.addEventListener("storage", onStorage);
       return () => {
         listeners.delete(listener);
-        window.removeEventListener("storage", onStorage);
       };
     },
     /**

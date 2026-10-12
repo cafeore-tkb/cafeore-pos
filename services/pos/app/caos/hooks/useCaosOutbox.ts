@@ -25,30 +25,22 @@ import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 // 送るのは操作の画面（/master-sheet）の 1 つのタブだけ（Web Locks で決める。閉じたらほかのタブが引き継ぐ）で、古い順に 1 つずつ。
 const store = createDeviceStore("cafeore:caos-outbox:", parseCaosOutboxEntry);
 
-const NO_ENTRIES: CaosOutboxEntry[] = [];
-
-// 中身が変わったときだけ新しい配列を返す（useSyncExternalStore は同じものを返さないと描き直し続ける）
-let last: { json: string; entries: CaosOutboxEntry[] } = {
-  json: "[]",
-  entries: NO_ENTRIES,
-};
-const readEntries = () => {
-  const entries = store.read();
-  const json = JSON.stringify(entries);
-  if (json !== last.json) last = { json, entries };
-  return last.entries;
-};
+const NO_ENTRIES: readonly CaosOutboxEntry[] = [];
 
 /** 残っている操作（古い順。送れて盤面が届くのを待っているものも） */
 export const useCaosOutboxEntries = () =>
-  useSyncExternalStore(store.subscribe, readEntries, () => NO_ENTRIES);
+  useSyncExternalStore(store.subscribe, store.read, () => NO_ENTRIES);
 
 // 押した順に送るので、同じミリ秒に押しても順が入れ替わらないようにする
 let lastAt = 0;
 
-/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す） */
-export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
-  lastAt = Math.max(Date.now(), lastAt + 1);
+/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す）。at は押した時刻 */
+export const enqueueCaosOp = (
+  label: string,
+  op: CaosOutboxOp,
+  at: number = Date.now(),
+) => {
+  lastAt = Math.max(at, lastAt + 1);
   store.put({ id: crypto.randomUUID(), at: lastAt, label, op });
 };
 
@@ -69,9 +61,12 @@ export const useCaosOutboxSender = (
   const entries = useCaosOutboxEntries();
   const today = jstDate(nowMs);
   const todays = useMemo(() => caosDayOrders(orders, today), [orders, today]);
+  // 切れていたあいだの注文。つなぎ直すとサーバーが全部の注文を送り直すので、それが届く（注文が新しくなる）までは古い盤面とみて送らない
+  const stale = useRef<typeof orders | null>(null);
+  if (status !== "open") stale.current = orders;
   const server = useRef<CaosServerState | null>(null);
   server.current =
-    status === "open" && isOrdersLoaded
+    status === "open" && isOrdersLoaded && orders !== stale.current
       ? { orders: todays, lanes: caosLanes }
       : null;
   const rejected = useRef(onRejected);
