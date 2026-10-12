@@ -104,13 +104,12 @@ export default function App() {
             timelineCommand={timelineCommand}
             onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}
-            onOpenTicketPad={selection.openTicket}
-            onOpenTicketDetail={selection.openDetail}
+            onOpenTicket={selection.openTicket}
             onOpenRebrew={selection.openRebrew}
             onCancelEmergency={selection.cancelEmergency}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
-            onCloseTicketAction={selection.closeTicket}
+            onCloseTicket={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
             onOpenLane={selection.openLane}
             onAssignToBay={selection.assign}
@@ -138,7 +137,7 @@ export default function App() {
           ticket={selection.scheduled.card}
           look={looks.get(selection.scheduled.card.key)}
           currentBayId={selection.scheduled.bayId}
-          onClose={selection.closeDetail}
+          onClose={selection.closeTicket}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
           onSplitCup={selection.split}

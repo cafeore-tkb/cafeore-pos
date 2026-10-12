@@ -35,11 +35,9 @@ export interface ControlViewProps {
   /** 注文を選ぶ（null で外す） */
   onSelectOrder: (orderId: string | null) => void;
   onAdvanceBay: (bayId: number) => void;
-  /** 待機のカードの 1〜6 のボタンを開く（管制盤 A） */
-  onOpenTicketPad: (card: CaosCard) => void;
-  /** 待機のカードの詳細を開き、その注文を選ぶ（管制盤 C・D） */
-  onOpenTicketDetail: (card: CaosCard) => void;
-  /** 抽出中・終わりのカードの入れ直し（緊急）のパネルを開く。無ければ（閲覧だけ・実データテスト中）抽出中・終わりのカードは押せない */
+  /** 待機のカード（A は 1〜6 のボタン、C・D は詳細のパネル）を開き、その注文を選ぶ */
+  onOpenTicket: (card: CaosCard) => void;
+  /** 抽出中・終わりのカードの入れ直し（緊急）のパネルを開き、その注文を選ぶ。無ければ（閲覧だけ・実データテスト中）抽出中・終わりのカードは押せない */
   onOpenRebrew?: (card: CaosCard) => void;
   /** 入れ直し（緊急）のカードを取り消す（未割当・待機のカードを開いたときに出す）。無ければ（閲覧だけ・実データテスト中）出さない */
   onCancelEmergency?: (card: CaosCard) => void;
@@ -50,7 +48,8 @@ export interface ControlViewProps {
     place?: CaosPlace,
   ) => void;
   onReturnToUnassigned: (card: CaosCard) => void;
-  onCloseTicketAction: () => void;
+  /** 開いた待機のカードを閉じ、注文の選択を外す */
+  onCloseTicket: () => void;
   onOpenEmptySlot: (bayId: number) => void;
   /** 列の操作（担当者の交代・待機をまとめて移す）を開く（ドリッパーの番号を押したとき）。閲覧だけの画面では渡さない */
   onOpenLane?: (bayId: number) => void;
