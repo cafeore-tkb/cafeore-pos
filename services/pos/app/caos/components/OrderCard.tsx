@@ -16,6 +16,7 @@ import {
   orderNoLabel,
 } from "../logic/cards";
 import { moveTargets } from "../logic/lanes";
+import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
@@ -155,6 +156,8 @@ export const OrderCard: React.FC<
       className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
     >
       {children}
+      {/* コメントのある注文は左上の角に印（中身は開いたカードのパネル・管制盤 A の帯に出す） */}
+      {look?.comments && <CommentMark count={look.comments.length} />}
       {/* 何が何杯か（未割当は何番が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}

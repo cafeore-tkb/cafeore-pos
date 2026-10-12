@@ -10,6 +10,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Search,
   Undo2,
   Volume2,
   VolumeX,
@@ -61,6 +62,10 @@ interface TopHeaderProps {
   labelPrinter: { pendingCount: number; retry: () => void };
   /** この端末のまだ送れていない盤面の操作の数と、送り直し */
   unsent: { count: number; retry: () => void };
+  /** 注文番号の検索を開く */
+  onOpenSearch: () => void;
+  /** 注文番号の検索を開いている */
+  searchOpen: boolean;
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
   /** 「1つ戻す」で戻せる操作の名前。戻せなければ null */
@@ -145,6 +150,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   posStatus,
   labelPrinter,
   unsent,
+  onOpenSearch,
+  searchOpen,
   onOpenEmergency,
   undoLabel,
   undoSecondsLeft,
@@ -317,6 +324,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く） */}
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          aria-pressed={searchOpen}
+          title="注文番号で探す"
+          className="flex min-h-[44px] shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] px-2 font-black text-slate-700 text-xs aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
+        >
+          <Search className="h-4 w-4" />
+          番号
+        </button>
         {/* リベロビュー（閲覧のみ）。この画面を閉じないよう、別のタブで開く */}
         <Link
           to="/master-sheet/libero"

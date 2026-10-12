@@ -214,8 +214,13 @@ const ServedTime = ({ order }: { order: OrderEntity }) => {
   );
 };
 
-// コメントの書き手を1文字で出す
-const AUTHOR_MARKS = { cashier: "レ", master: "マ", serve: "提", others: "他" };
+// コメントの書き手を1文字で出す（CaOS のコメントでも使う）
+export const AUTHOR_MARKS = {
+  cashier: "レ",
+  master: "マ",
+  serve: "提",
+  others: "他",
+};
 
 const CommentList = ({ order }: { order: OrderEntity }) =>
   order.comments.length > 0 && (
