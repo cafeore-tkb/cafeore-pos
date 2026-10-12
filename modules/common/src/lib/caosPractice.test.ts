@@ -6,6 +6,7 @@ import {
   type CaosWritesResult,
   assignWrites,
   buildCaosCards,
+  canMergeCards,
   caosLane,
   mergeWrites,
   unassignWrites,
@@ -120,11 +121,41 @@ describe("[unit] CaOS の練習の注文", () => {
       "テストブレンド",
       "テストブレンド",
     ]);
-    // 指名は実データに無いので、どの明細も指名なし
-    expect(order.menus.every((menu) => menu.assignee === null)).toBe(true);
+    // 指名の無い品物の明細は指名なし
+    expect(
+      order.menus.every(
+        (menu) => menu.dripper === null && menu.assignee === null,
+      ),
+    ).toBe(true);
     // 3 杯は 2 杯と 1 杯のカードに分かれる（本番と同じ buildCaosCards）。ミルクはカードにならない
     expect(cardsOf([order]).map((card) => card.cups.length)).toStrictEqual([
       2, 1,
+    ]);
+  });
+
+  test("品物の指名を明細に入れ、本番と同じ指名の札・カードの指名になる", () => {
+    const [order] = ordersOf([
+      { ...hot, dripper: 2 },
+      { ...hot, assignee: "架空さん" },
+      hot,
+    ]);
+    expect(
+      order.menus.map((menu) => [menu.dripper, menu.assignee]),
+    ).toStrictEqual([
+      [2, null],
+      [null, "架空さん"],
+      [null, null],
+    ]);
+    // 番号の違う指名（番号の無い自由記述だけは指名なし）は別のカード。自由記述だけのカップは指名なしのカップとまとまる
+    const cards = cardsOf([order]);
+    expect(
+      cards.map((card) => [
+        card.nominatedDripper,
+        card.cups.map((cup) => cup.nominee),
+      ]),
+    ).toStrictEqual([
+      [null, ["架空さん", null]],
+      [2, ["2nd"]],
     ]);
   });
 });
@@ -299,24 +330,76 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
   });
 
   test("上級生のみのカードは、担当者がいないのでどのドリッパーにも置ける（指名のあるカードは指名のドリッパーに）", () => {
-    let orders = ordersOf([limited], [limited]);
+    let orders = ordersOf([limited], [{ ...limited, dripper: 4 }]);
     orders = assign(orders, unassigned(orders)[0], 3, at(0));
     expect(caosLane(cardsOf(orders), 3).brewing?.seniorOnly).toBe(true);
     // 指名（4th）の上級生のみのカード
-    orders = orders.map((order, index) =>
-      index === 1
-        ? {
-            ...order,
-            menus: order.menus.map((menu) => ({ ...menu, dripper: 4 })),
-          }
-        : order,
-    );
     orders = assign(orders, unassigned(orders)[0], 4, at(0));
     const placed = caosLane(cardsOf(orders), 4).brewing;
     expect([placed?.seniorOnly, placed?.nominatedDripper]).toStrictEqual([
       true,
       4,
     ]);
+  });
+
+  test("指名のカードは指名のドリッパーにだけ置け、指名の無い上級生のみの 1 杯も指名のカードに入れれば指名のドリッパーへ", () => {
+    let orders = ordersOf(
+      [{ ...limited, dripper: 2 }],
+      [limited],
+      [{ ...limited, dripper: 5 }],
+    );
+    const [nominated, plain, other] = unassigned(orders);
+    // 本番と同じ assignWrites が断る
+    const refused = assignWrites(cardsOf(orders), nominated, 3, { newId });
+    expect("error" in refused && refused.error).toBe(
+      "指名のあるカードは 2nd のドリッパーにしか置けません",
+    );
+    // 違う番号の指名は統合できない。指名なしは指名のカードに入れられる
+    expect(canMergeCards(other, nominated)).toBe(false);
+    expect(canMergeCards(plain, nominated)).toBe(true);
+    orders = apply(orders, mergeWrites(plain, nominated, newId), at(0));
+    const merged = unassigned(orders).find((card) => card.cups.length === 2);
+    expect([merged?.nominatedDripper, merged?.seniorOnly]).toStrictEqual([
+      2,
+      true,
+    ]);
+    if (!merged) throw new Error("統合したカードがありません");
+    expect("error" in assignWrites(cardsOf(orders), merged, 4, { newId })).toBe(
+      true,
+    );
+    orders = assign(orders, merged, 2, at(0));
+    expect(
+      caosLane(cardsOf(orders), 2).brewing?.cups.map((cup) => cup.orderNo),
+    ).toStrictEqual([1, 2]);
+  });
+
+  test("指名に合わない書き込みは、API と同じく練習の盤面も断る", () => {
+    const orders = ordersOf(
+      [{ ...hot, dripper: 2 }],
+      [{ ...hot, dripper: 5 }],
+      [hot],
+    );
+    const write = (cupIds: string[], dripper: number | null) => ({
+      cup_ids: cupIds,
+      before: UNPLACED,
+      after: {
+        dripper,
+        drip_id: "n",
+        insert_before: null,
+        start_brew: false,
+      },
+    });
+    const [two, five, free] = orders.map((order) => order.cups[0].id);
+    expect(
+      applyCaosPracticeWrites(orders, [write([two], 3)], at(0)).error,
+    ).toBe("指名のあるカップは 2 番のドリッパーにしか置けません");
+    expect(
+      applyCaosPracticeWrites(orders, [write([two, five], null)], at(0)).error,
+    ).toBe("指名の違うカップは同じカードにできません");
+    // 指名なしのカップは、指名のカップと同じカードにできる
+    expect(
+      applyCaosPracticeWrites(orders, [write([two, free], 2)], at(0)).error,
+    ).toBeUndefined();
   });
 
   test("決まりに合わない書き込みは何も変えずに断る", () => {

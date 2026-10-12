@@ -53,3 +53,17 @@ body:has(.caos-root) {
   --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
 }
+
+/* 右のパネル（SidePanels の SidePanel）の幅 */
+.caos-root {
+  --caos-side-panel-width: max(360px, min(440px, 44vw));
+}
+
+/* 「次へ」の確かめ（BoardParts の NextConfirmToasts）は右上に出す。右手で押す管制盤 A の右端の「次へ」の列（96px）を隠さないよう、
+   その幅だけ右を空ける。右のパネルが開いていれば、その左に出す（パネルと重ねない） */
+.caos-root .caos-next-confirms {
+  right: 112px;
+}
+.caos-root:has(.caos-side-panel) .caos-next-confirms {
+  right: calc(var(--caos-side-panel-width) + 12px);
+}

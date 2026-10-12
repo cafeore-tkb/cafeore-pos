@@ -24,6 +24,7 @@ import type { PracticeDataItemType } from "./caosPracticeData";
 // サーバーを使わずに練習するため、わざと 2 か所に持つ。決まりや文を変えるときは両方そろえること）。
 // ドリッパーの列の分け方は、API の splitCaosLane と同じ結果になる本番の caosLane をそのまま使う。
 //   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。練習には担当者がいないので、上級生のみのカードは（指名の無いカードも）どのドリッパーにも置ける
+//   - 指名は実データの指名（明細の dripper・assignee）を本番と同じ形で持ち、本番と同じく指名の番号のドリッパーにしか置けず、違う番号のカップは 1 枚のカードにしない
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
 //   - 緊急（入れ直し）もカップの emergencies に持ち、カップと同じ決まりでカードに入る（足す・取り消すは api の cup_emergency.go と同じ決まり）
 // 時刻はサーバーの今の代わりに、練習の時計の今（now）を使う。
@@ -50,6 +51,10 @@ export interface CaosPracticeSourceItem {
   type: string;
   /** 商品の種類の設定（注文したときの設定か、POS の今の種類から引いたもの）。無ければカップにしない */
   itemType?: PracticeDataItemType;
+  /** 指名のドリッパーの番号（明細の dripper） */
+  dripper?: number;
+  /** 番号の無い指名の自由記述（明細の assignee） */
+  assignee?: string;
 }
 
 /** 練習に使う実データの注文（使う項目だけ） */
@@ -63,7 +68,7 @@ export interface CaosPracticeSourceOrder {
 /**
  * 実データの注文を、練習の盤面の注文にする。カップを作る種類（itemType の makes_cup）の品物を 1 杯ずつカップにする（POS が注文を保存したときと同じ）。
  * 抽出の要らないカップ（ミルクなど）もカップにはなるが、本番と同じく buildCaosCards がカードにしない。
- * 指名は実データに無いので、どのカップも指名なし（明細の dripper・assignee は null）。ID は練習の中だけのもの
+ * カップごとに明細を 1 つ作り、品物の指名（dripper・assignee）を明細に入れる。ID は練習の中だけのもの
  */
 export const toCaosPracticeOrder = (
   order: CaosPracticeSourceOrder,
@@ -71,6 +76,7 @@ export const toCaosPracticeOrder = (
 ): CaosPracticeOrder => {
   const id = `practice-${index}`;
   const cups: Cup[] = [];
+  const menus: CaosPracticeOrder["menus"][number][] = [];
   order.items.forEach((item, position) => {
     // 種類の設定が分からない品物は、ミルクやグッズを抽出の要るカップにしないよう、カップにしない
     const type = item.itemType;
@@ -101,16 +107,17 @@ export const toCaosPracticeOrder = (
       brewFinishedAt: null,
       emergencies: [],
     });
+    menus.push({
+      orderMenuId: cupId,
+      dripper: item.dripper ?? null,
+      assignee: item.assignee ?? null,
+    });
   });
   return {
     id,
     orderId: order.orderId,
     createdAt: new Date(order.createdAt),
-    menus: cups.map((cup) => ({
-      orderMenuId: cup.orderMenuId,
-      dripper: null,
-      assignee: null,
-    })),
+    menus,
     cups,
   };
 };
@@ -166,18 +173,27 @@ const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
     })),
   }));
 
-/** カードに入る 1 杯（サーバーの caosUnit）。row は CaOS の値を書く行（カップか入れ直し）、cup は入れ直したカップ（カップなら自分） */
+/**
+ * カードに入る 1 杯（サーバーの caosUnit）。row は CaOS の値を書く行（カップか入れ直し）、cup は入れ直したカップ（カップなら自分）、
+ * nominated は明細の指名の番号（入れ直しは入れ直したカップのもの。サーバーの caosNominations）
+ */
 interface PracticeUnit {
   row: Cup | CupEmergency;
   cup: Cup;
+  nominated: number | null;
 }
 
 const allUnits = (orders: CaosPracticeOrder[]): PracticeUnit[] =>
   orders.flatMap((order) =>
-    order.cups.flatMap((cup) => [
-      { row: cup, cup },
-      ...cup.emergencies.map((row) => ({ row, cup })),
-    ]),
+    order.cups.flatMap((cup) => {
+      const nominated =
+        order.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)
+          ?.dripper ?? null;
+      return [
+        { row: cup, cup, nominated },
+        ...cup.emergencies.map((row) => ({ row, cup, nominated })),
+      ];
+    }),
   );
 
 const isEmergency = (unit: PracticeUnit) => unit.row !== unit.cup;
@@ -292,6 +308,14 @@ export const applyCaosPracticeWrites = (
         return {
           error: `抽出の要らないカップ（${unit.cup.item.name}）はドリッパーに置けません`,
         };
+      if (
+        write.after.dripper !== null &&
+        unit.nominated !== null &&
+        unit.nominated !== write.after.dripper
+      )
+        return {
+          error: `指名のあるカップは ${unit.nominated} 番のドリッパーにしか置けません`,
+        };
       cups.push(cup);
     }
     const dripper = write.after.dripper;
@@ -325,7 +349,7 @@ export const applyCaosPracticeWrites = (
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値で、最大 2 杯か。入れ直しは入れ直しどうしだけ
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。入れ直しは入れ直しどうしだけ
   for (const dripId of touched) {
     const units = allUnits(next).filter((unit) => unit.row.dripId === dripId);
     if (units.length > CAOS_MAX_CUPS)
@@ -336,6 +360,10 @@ export const applyCaosPracticeWrites = (
       return {
         error: "緊急（入れ直し）と緊急でないカップは同じカードにできません",
       };
+    // 指名なしのカップは、どの番号のカップとも同じカードにできる（サーバーの checkCaosCardNomination は番号の種類を数える）
+    const nominations = units.flatMap((unit) => unit.nominated ?? []);
+    if (new Set(nominations).size > 1)
+      return { error: "指名の違うカップは同じカードにできません" };
   }
   return { orders: next };
 };

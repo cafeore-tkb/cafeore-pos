@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   MergeConfirmDialog,
-  NextConfirmDialog,
+  NextConfirmToasts,
   TestBoardBanner,
 } from "./components/BoardParts";
 import {
@@ -152,18 +152,17 @@ export default function App() {
           card={selection.rebrew.card}
           look={selection.rebrew.card && looks.get(selection.rebrew.card.key)}
           orders={session.emergency.orders}
+          practice={session.simulating}
           onClose={selection.closeRebrew}
           onAdd={session.emergency.add}
         />
       )}
 
-      {session.nextConfirm && (
-        <NextConfirmDialog
-          {...session.nextConfirm}
-          onCancel={session.cancelNext}
-          onConfirm={session.confirmNext}
-        />
-      )}
+      <NextConfirmToasts
+        confirms={session.nextConfirms}
+        onCancel={session.cancelNext}
+        onConfirm={session.confirmNext}
+      />
 
       {session.mergeConfirm && (
         <MergeConfirmDialog
