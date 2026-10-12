@@ -321,7 +321,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <Link
           to="/master-sheet/libero"
           target="_blank"
-          rel="noopener"
           title="リベロビュー（閲覧のみ。別のタブで開く）"
           className="flex min-h-[44px] shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] px-2 font-black text-slate-700 text-xs"
         >

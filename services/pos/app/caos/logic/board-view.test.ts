@@ -283,9 +283,31 @@ describe("[unit] CaOS の盤面の見せ方", () => {
         brew && { ...brew, card: brew.card.key },
       ]),
     ).toEqual([
-      [1, { card: "d1", elapsedSec: 310, plannedSec: 300, rank: 1, step: 4 }],
+      [
+        1,
+        {
+          card: "d1",
+          elapsedSec: 310,
+          plannedSec: 300,
+          progress: 1,
+          overSec: 10,
+          rank: 1,
+          level: "overtime",
+        },
+      ],
       [2, undefined],
-      [3, { card: "d2", elapsedSec: 210, plannedSec: 360, rank: 2, step: 2 }],
+      [
+        3,
+        {
+          card: "d2",
+          elapsedSec: 210,
+          plannedSec: 360,
+          progress: 210 / 360,
+          overSec: 0,
+          rank: 2,
+          level: 2,
+        },
+      ],
       [4, undefined],
       [5, undefined],
       [6, undefined],

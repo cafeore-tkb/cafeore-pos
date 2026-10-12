@@ -12,6 +12,12 @@ const VIEW_SCREENS = [
   { to: "/master-sheet/libero", label: "リベロ" },
 ];
 
+/** ヘッダーの切り替えの枠と、そのボタン（押されているものは濃く） */
+export const SEGMENTS =
+  "flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 font-bold text-slate-600 text-xs";
+export const segmentClass = (active: boolean) =>
+  `rounded-md px-2.5 py-1.5 ${active ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-100"}`;
+
 /** 閲覧だけの画面のヘッダー。CaOS の印・閲覧の画面の切り替え・時計・各画面のもの（children）・担当者の知らせ・注文の接続 */
 export const ViewHeader: React.FC<{
   nowMs: number;
@@ -22,19 +28,14 @@ export const ViewHeader: React.FC<{
     <span className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-black text-sm text-white">
       CaOS
     </span>
-    <nav
-      aria-label="閲覧の画面"
-      className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 font-bold text-slate-600 text-xs"
-    >
+    <nav aria-label="閲覧の画面" className={SEGMENTS}>
       <Eye className="mx-1 h-4 w-4" />
       閲覧のみ
       {VIEW_SCREENS.map((screen) => (
         <NavLink
           key={screen.to}
           to={screen.to}
-          className={({ isActive }) =>
-            `rounded-md px-2.5 py-1.5 ${isActive ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-100"}`
-          }
+          className={({ isActive }) => segmentClass(isActive)}
         >
           {screen.label}
         </NavLink>

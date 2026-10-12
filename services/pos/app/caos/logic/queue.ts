@@ -76,7 +76,7 @@ const lanePhase = (
   return "brewing";
 };
 
-/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・残り（ミリ秒と、表示の秒）・状態（phase） */
+/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・始めてからの時間と残り（ミリ秒。残りは表示の秒も）・状態（phase） */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
@@ -85,6 +85,7 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
   return {
     current,
     waiting,
+    elapsedMs,
     remainingMs,
     remainingSec,
     phase: lanePhase(current, Boolean(lane.brewing), remainingSec),
