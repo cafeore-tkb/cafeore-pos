@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { ordersInPeriod, testPlaySlots } from "../logic/historical";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
-// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
+// 表示だけ。ファイルの読み込みと、練習に使う項目だけを写す変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
 // 始められる時刻は logic/historical の testPlaySlots。
 
 interface TestPlaySetupProps {
@@ -147,7 +147,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
             </p>
           )}
           <p className="mt-1 font-medium text-[11px] text-slate-500">
-            担当者名・指名・コメントは読み込むときに落とします。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
+            担当者名・コメントは読み込むときに落とします（指名は練習の盤面に出します）。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
           </p>
           {problems.length > 0 && (
             <p role="alert" className="mt-2 font-bold text-[12px] text-red-700">
