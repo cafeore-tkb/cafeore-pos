@@ -53,6 +53,7 @@ type TextStyle = {
   size: number;
   weight: number;
   align?: CanvasTextAlign;
+  color?: string;
 };
 
 const BODY: TextStyle = { size: 34, weight: 600 };
@@ -133,7 +134,7 @@ const drawText = (
   ctx.font = font(style);
   ctx.textAlign = style.align ?? "left";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#000";
+  ctx.fillStyle = style.color ?? "#000";
   ctx.fillText(text, x, y);
 };
 
@@ -268,8 +269,20 @@ const LINE = 58;
 const TOTAL_LINE = 74;
 /** 点線の部品の高さと、その中で線を引く位置（線の上を下より広く空ける） */
 const RULE = { height: 62, y: 35 };
+const CLAIM_BOX = { width: 246, height: 75 };
+const NUMBER_LINE = 140;
 
 const TOTAL_AMOUNT: TextStyle = { size: 42, weight: 700, align: "right" };
+const CLAIM_LABEL: TextStyle = {
+  size: 34,
+  weight: 600,
+  align: "center",
+  color: "#fff",
+};
+const CLAIM_NOTE: TextStyle = { size: 28, weight: 600 };
+const CLAIM_NUMBER: TextStyle = { size: 140, weight: 800, align: "center" };
+
+const CLAIM_NOTE_LINES = ["この番号で", "お呼びいたします"];
 
 const contentRight = DESIGN_WIDTH - PADDING_X;
 
@@ -314,6 +327,38 @@ const issuerBlock = (logo: HTMLImageElement | null): Block => ({
   },
 });
 
+/** 白抜きの「引換券番号」と、その右の 2 行の案内 */
+const claimLabelBlock: Block = {
+  height: CLAIM_BOX.height,
+  draw: (ctx, top) => {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(PADDING_X, top, CLAIM_BOX.width, CLAIM_BOX.height);
+    const centerY = top + CLAIM_BOX.height / 2;
+    drawText(
+      ctx,
+      "引換券番号",
+      PADDING_X + CLAIM_BOX.width / 2,
+      centerY,
+      CLAIM_LABEL,
+    );
+    const noteX = PADDING_X + CLAIM_BOX.width + 18;
+    drawText(ctx, CLAIM_NOTE_LINES[0], noteX, centerY - 17, CLAIM_NOTE);
+    drawText(ctx, CLAIM_NOTE_LINES[1], noteX, centerY + 17, CLAIM_NOTE);
+  },
+};
+
+const claimNumberBlock = (claimNumber: string): Block => ({
+  height: NUMBER_LINE,
+  draw: (ctx, top) =>
+    drawText(
+      ctx,
+      claimNumber,
+      DESIGN_WIDTH / 2,
+      top + NUMBER_LINE / 2,
+      CLAIM_NUMBER,
+    ),
+});
+
 /** 会計のたびに刷るレシートを描く */
 export const drawOrderReceipt = async (
   receipt: OrderReceipt,
@@ -325,7 +370,9 @@ export const drawOrderReceipt = async (
     receipt.dateTime,
     receipt.orderNo,
     receipt.total,
-    "合計…",
+    receipt.claimNumber,
+    "合計引換券番号…",
+    ...CLAIM_NOTE_LINES,
     ...rows.flatMap(({ label, quantity = "", amount }) => [
       label,
       quantity,
@@ -351,6 +398,10 @@ export const drawOrderReceipt = async (
     row({ label: "合計", amount: receipt.total }, TOTAL_LINE, TOTAL_AMOUNT),
     gap(21),
     ...receipt.payments.map((item) => row(item)),
+    gap(42),
+    claimLabelBlock,
+    gap(53),
+    claimNumberBlock(receipt.claimNumber),
     gap(40),
   );
 
