@@ -417,6 +417,19 @@ describe("unit: caos-outbox 送る", () => {
     );
   });
 
+  test("ログインが切れた（401・403）は捨てずに送り直す", async () => {
+    const server = orders(cup("a"));
+    const t = setup([entry(place(server, "a", 1))], server, [
+      { error: "x", status: 401 },
+      { error: "x", status: 403 },
+    ]);
+    await t.outbox.kick();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(t.sent).toHaveLength(3);
+    expect(t.rejected).toEqual([]);
+    expect(t.items().map((e) => e.sent)).toEqual([true]);
+  });
+
   test("400（決まりに合わない）は送り直さずに捨てる", async () => {
     const server = orders(cup("a"));
     const t = setup([entry(place(server, "a", 1), "割当")], server, [

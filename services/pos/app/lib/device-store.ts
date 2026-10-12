@@ -38,8 +38,13 @@ export const createDeviceStore = <T extends { id: string; at: number }>(
   };
 
   return {
-    /** 残っているもの（古い順） */
-    read: () => [...stored(), ...memory.values()].sort((a, b) => a.at - b.at),
+    /** 残っているもの（古い順）。localStorage に書けなくなってからメモリに置き直したものは、メモリのほう */
+    read: () =>
+      [
+        ...new Map(
+          [...stored(), ...memory.values()].map((item) => [item.id, item]),
+        ).values(),
+      ].sort((a, b) => a.at - b.at),
     /** 置く（同じ id なら置き換える） */
     put: (item: T) => {
       const { id, ...value } = item;

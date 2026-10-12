@@ -80,6 +80,7 @@ export type CaosOutboxResult = { error?: string; status?: number };
 
 /** サーバーから届いた盤面。WebSocket がつながって注文が届いていなければ null（送らずに待つ） */
 export interface CaosServerState {
+  /** 今日の注文（caosDayOrders） */
   orders: readonly CaosOrderInput[];
   lanes: CaosLanes | null;
 }
@@ -238,26 +239,25 @@ export const plainCaosOrders = (
     cups: [...cups],
   }));
 
-/**
- * サーバーから届いた注文のうち、その日（day。日本時間の YYYY-MM-DD）のものに、残っている操作を古い順に重ねる。重ねられない操作は飛ばす。
- * サーバーは今日の注文のカップで番号・抽出中を決めるので、重ねるのもその日の注文だけ
- */
+/** その日（day。日本時間の YYYY-MM-DD）の注文。サーバーは今日の注文のカップで番号・抽出中を決めるので、重ねるのも送るのもその日の注文で見る */
+export const caosDayOrders = <O extends CaosOrderInput>(
+  orders: readonly O[],
+  day: string,
+) => orders.filter((order) => jstDate(order.createdAt.getTime()) === day);
+
+/** サーバーから届いた注文のうちその日のもの（caosDayOrders）に、残っている操作を古い順に重ねる。重ねられない操作は飛ばす */
 export const overlayCaosOrders = (
   orders: readonly CaosOrderInput[],
   entries: readonly CaosOutboxEntry[],
   day: string,
-): readonly CaosOrderInput[] => {
-  const today = orders.filter(
-    (order) => jstDate(order.createdAt.getTime()) === day,
-  );
-  return entries.reduce<readonly CaosOrderInput[]>(
+): readonly CaosOrderInput[] =>
+  entries.reduce<readonly CaosOrderInput[]>(
     (current, { op, at }) =>
       applyCaosOutboxOp(plainCaosOrders(current), op, new Date(at), {
         cooldown: false,
       }).orders ?? current,
-    today,
+    caosDayOrders(orders, day),
   );
-};
 
 /** 今日の担当者（todaysCaosLanes）に、残っている担当者の操作を古い順に重ねる */
 export const overlayCaosLanes = (
@@ -453,13 +453,16 @@ const CONFLICT_TRIES = 2;
 const retryDelay = (failures: number) =>
   Math.min(15_000, 1_000 * 2 ** (failures - 1));
 
-/** 送れなかった・時間切れ・サーバーの不具合（送り直す）か、断られた（409 は確かめ直す、ほかは捨てる）か */
+// 送り直す 4xx（ログインが切れた・時間切れ・混んでいる。直れば通る）
+const RETRY_4XX = [401, 403, 408, 429];
+
+/** 断られた（409 は確かめ直す、ほかの 4xx は捨てる）か、送れなかった（つながらない・時間切れ・5xx・RETRY_4XX。送り直す）か */
 const outcomeOf = ({ error, status }: CaosOutboxResult) => {
   if (error === undefined) return "ok";
   if (status === 409) return "conflict";
-  if (status === undefined || status >= 500 || status === 408 || status === 429)
-    return "retry";
-  return "reject";
+  if (status !== undefined && status < 500 && !RETRY_4XX.includes(status))
+    return "reject";
+  return "retry";
 };
 
 /** 送る操作を置く所（端末の localStorage。読むと古い順） */

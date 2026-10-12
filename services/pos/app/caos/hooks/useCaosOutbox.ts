@@ -2,11 +2,19 @@ import {
   type CaosOutboxEntry,
   type CaosOutboxOp,
   type CaosServerState,
+  caosDayOrders,
   createCaosOutbox,
+  jstDate,
   parseCaosOutboxEntry,
   sendCaosOutboxRequest,
 } from "@cafeore/common";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { toast } from "sonner";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { createDeviceStore } from "~/lib/device-store";
@@ -59,9 +67,13 @@ export const useCaosOutboxSender = (
 ) => {
   const { orders, caosLanes, isOrdersLoaded, status } = useOrdersWSContext();
   const entries = useCaosOutboxEntries();
+  const today = jstDate(nowMs);
+  const todays = useMemo(() => caosDayOrders(orders, today), [orders, today]);
   const server = useRef<CaosServerState | null>(null);
   server.current =
-    status === "open" && isOrdersLoaded ? { orders, lanes: caosLanes } : null;
+    status === "open" && isOrdersLoaded
+      ? { orders: todays, lanes: caosLanes }
+      : null;
   const rejected = useRef(onRejected);
   rejected.current = onRejected;
   const [outbox] = useState(() =>
