@@ -50,8 +50,17 @@ const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
   return { status, print, reconnect };
 };
 
-/** 刷れなかったシールを送り直す間隔（ミリ秒） */
+/** 刷れなかったシールを送り直す・つながらないプリンターにつなぎ直す間隔（ミリ秒） */
 const RETRY_INTERVAL_MS = 10_000;
+
+/** active のあいだ、一定の間隔で retry を呼ぶ */
+const useRetryInterval = (active: boolean, retry: () => void) => {
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(retry, RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [active, retry]);
+};
 
 const countPendingPrints = () => readPendingPrints().length;
 
@@ -110,11 +119,7 @@ export const usePrinter = (
     if (status === "connected") void sendPending();
   }, [status, sendPending]);
 
-  useEffect(() => {
-    if (pendingCount === 0) return;
-    const timer = setInterval(retry, RETRY_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [pendingCount, retry]);
+  useRetryInterval(pendingCount > 0, retry);
 
   const printOrderLabel = useCallback(
     (order: OrderEntity) => printJob(orderLabelJob(order)),
@@ -138,9 +143,11 @@ export const usePrinter = (
  *
  * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
  * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
+ * つながっていなければ、シールのプリンターと同じ間隔でつなぎ直す（刷れなかったものは送り直さない）。
  */
 export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
-  const { status, print } = useConnectedPrinter(createPrinter);
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
+  useRetryInterval(status === "disconnected", reconnect);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   /**
