@@ -17,6 +17,7 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
+// ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
 // 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
 // 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
 // 統合できるカードの上の右の部分なら統合）
@@ -85,7 +86,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                     <OrderCard
                       card={current}
                       look={looks.get(current.key)}
-                      size="sm"
+                      size="lane"
                       selected={sharesOrder(current, selectedOrderId)}
                       data-merge-target={current.key}
                       data-queued-ticket={current.key}
@@ -119,7 +120,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                         key={ticket.key}
                         card={ticket}
                         look={looks.get(ticket.key)}
-                        size="sm"
+                        size="lane"
                         selected={sharesOrder(ticket, selectedOrderId)}
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}

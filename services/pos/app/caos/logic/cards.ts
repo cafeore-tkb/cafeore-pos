@@ -2,6 +2,7 @@ import {
   type CaosCard,
   type ColorSetting,
   type StockResource,
+  canMergeCards,
   resolveItemColor,
 } from "@cafeore/common";
 import { type BeanIndex, cardBean } from "./beans";
@@ -33,6 +34,27 @@ export const sharesOrder = (card: CaosCard, label: string | null) => {
   return cardOrderNos(card).some((no) =>
     labels.includes(`#${orderNoLabel(no)}`),
   );
+};
+
+/** 統合したカード（2 つ以上の注文のカップが入っている）か */
+export const isMergedCard = (card: CaosCard) => cardOrderNos(card).length > 1;
+
+/**
+ * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち統合できる（canMergeCards）カードが 1 枚ならそれ、
+ * 何枚かあれば注文番号がいちばん近いもの。いちばん近いものが 2 枚以上あって決まらなければ無し（今まで通り相手を押して選ぶ）
+ */
+export const quickMergePartner = (
+  card: CaosCard,
+  cards: readonly CaosCard[],
+) => {
+  const distance = (other: CaosCard) =>
+    Math.abs(other.cups[0].orderNo - card.cups[0].orderNo);
+  const [nearest, next] = cards
+    .filter((other) => canMergeCards(card, other))
+    .sort((a, b) => distance(a) - distance(b));
+  return nearest && (!next || distance(next) > distance(nearest))
+    ? nearest
+    : undefined;
 };
 
 /** カードの商品の名前（略称 abbr をそのまま。統合したカードも同じ商品なので 1 つ） */

@@ -6,12 +6,13 @@ import {
 import { Check, Star } from "lucide-react";
 import type React from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
+import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import {
   type CardLook,
   cardItemName,
   cardNominee,
-  cardOrderNos,
   emergencyReasons,
+  isMergedCard,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
@@ -20,7 +21,8 @@ import { moveTargets } from "../logic/lanes";
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
 // 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeHint）だけ（終わりはカードの状態で薄くする）。
+// 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
@@ -28,27 +30,34 @@ import { moveTargets } from "../logic/lanes";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
+// no は 2 行目の注文番号（未割当のカードは 1 行目なので使わない）。タイムライン（A の md・C の列の lane）はカードの高さのまま大きくする
+const SM = {
+  pad: "px-1.5 py-1",
+  name: "text-[14px]",
+  cups: "px-0.5 text-[13px]",
+  meta: "text-[11px]",
+  no: "",
+};
 const SIZES = {
   // 管制盤 C・D と割当のパネル
-  sm: {
-    pad: "px-1.5 py-1",
-    name: "text-[14px]",
-    cups: "px-0.5 text-[13px]",
-    meta: "text-[11px]",
-  },
+  sm: SM,
+  // 管制盤 C のドリッパーの列
+  lane: { ...SM, no: "text-[17px]" },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
     name: "text-[21px]",
     cups: "px-1.5 text-[18px]",
     meta: "text-[15px]",
+    no: "",
   },
-  // 管制盤 A のタイムラインと未割当
+  // 管制盤 A のタイムライン
   md: {
     pad: "px-2 py-1",
     name: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
+    no: "text-[19px]",
   },
   // 詳細のパネル
   xl: {
@@ -56,6 +65,7 @@ const SIZES = {
     name: "text-[26px]",
     cups: "px-2 text-[22px]",
     meta: "text-[15px]",
+    no: "",
   },
 };
 
@@ -77,8 +87,20 @@ const surfaceOf = (
     className: nominated
       ? "border-[3px] border-slate-900 border-dashed"
       : "border-2 border-slate-300",
-    style: { backgroundColor, color: readableTextColor(backgroundColor) },
+    style: {
+      backgroundColor,
+      color: readableTextColor(backgroundColor),
+      "--caos-card-bg": backgroundColor,
+    } as React.CSSProperties,
   };
+};
+
+// 影。統合したカードは、右下にずらしたもう 1 枚（カードの地の色と枠の線）を影で描く。選択中は黄の輪（外へ 6px）の外まで大きくずらす
+const shadowOf = (merged: boolean, selected: boolean) => {
+  if (!merged) return selected ? "shadow-lg" : "shadow-xs";
+  return selected
+    ? "shadow-[10px_10px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),10px_10px_0_0_var(--caos-card-stack-line)]"
+    : "shadow-[5px_5px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),5px_5px_0_0_var(--caos-card-stack-line)]";
 };
 
 // 杯数の札。1 杯は白抜き、2 杯は塗り
@@ -98,6 +120,8 @@ export const OrderCard: React.FC<
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
+    /** 開いたカードをもう一度押すと統合する相手の注文番号（「#012」）。統合の印と一緒に出す */
+    mergeHint?: string;
   }
 > = ({
   card,
@@ -106,6 +130,7 @@ export const OrderCard: React.FC<
   selected = false,
   dragging = false,
   note,
+  mergeHint,
   className = "",
   style,
   children,
@@ -137,29 +162,33 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  // 1 行目にいちばん大きく出すものと、2 行目に出すもの
-  const [headline, subline] =
-    card.status === "unassigned" ? [orderNo, itemName] : [itemName, orderNo];
+  const merged = isMergedCard(card);
+  // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では縮めない。後ろの豆の札を先に縮める）。
   // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
-  const headlineSize =
-    card.status !== "unassigned"
-      ? text.name
-      : cardOrderNos(card).length > 1
-        ? `min-w-0 truncate tracking-tighter ${text.cups}`
-        : `shrink-0 ${text.name}`;
+  const [headline, subline] =
+    card.status === "unassigned"
+      ? [
+          orderNo(
+            merged
+              ? `min-w-0 truncate tracking-tighter ${text.cups}`
+              : `shrink-0 ${text.name}`,
+          ),
+          itemName("shrink-0"),
+        ]
+      : [itemName(text.name), orderNo(`shrink-0 ${text.no}`)];
   return (
     <div
       {...props}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${selected ? "z-10 shadow-lg ring-4 ring-amber-500 ring-offset-2" : "shadow-xs"} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
       {/* 何が何杯か（未割当は何番が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
-        {headline(headlineSize)}
+        {headline}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {card.emergency && (
@@ -185,8 +214,14 @@ export const OrderCard: React.FC<
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        {/* 2 行目では縮めない（後ろの豆の札を先に縮める） */}
-        {subline("shrink-0")}
+        {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
+        {mergeHint && (
+          <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-blue-700 px-1 py-0.5 font-black font-mono text-white">
+            <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
+            {mergeHint}
+          </span>
+        )}
+        {subline}
         {nominee && (
           <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
             指名 {nominee}
@@ -255,6 +290,7 @@ const padTone = (bayId: number, hoveredBay: number | null) =>
     : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
+// 段がヘッダー・帯・ほかのカードの下になったり枠で切れたりして押せないときは、両方の段を下か上に寄せる（useBayPadPlacement）。
 // 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの列の先頭へ。今から始まる）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
 // ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
@@ -269,28 +305,34 @@ export const BayPad: React.FC<{
 }> = ({ card, currentBayId, hoveredBay, onPick }) => {
   const targets = moveTargets(card, currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
-  return [targets.slice(0, half), targets.slice(half)].map((row, index) => (
-    <div
-      key={row[0].bayId}
-      className={`${index === 0 ? "-top-[38px]" : "-bottom-[38px]"} absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl`}
-    >
-      {row.map(({ bayId, place, disabled }) => (
-        <button
-          key={bayId}
-          type="button"
-          disabled={disabled}
-          data-bay-target={bayId}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPick(bayId, place);
-          }}
-          className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
+  const placement = useBayPadPlacement();
+  return (
+    <div ref={placement.ref} className="contents">
+      {[targets.slice(0, half), targets.slice(half)].map((row, index) => (
+        <div
+          key={row[0].bayId}
+          style={placement.rows[index]}
+          className="absolute right-0 left-0 z-[90] grid h-[34px] grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
         >
-          {place ? "先頭" : bayId}
-        </button>
+          {row.map(({ bayId, place, disabled }) => (
+            <button
+              key={bayId}
+              type="button"
+              disabled={disabled}
+              data-bay-target={bayId}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPick(bayId, place);
+              }}
+              className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
+            >
+              {place ? "先頭" : bayId}
+            </button>
+          ))}
+        </div>
       ))}
     </div>
-  ));
+  );
 };
 
 // 入れ直し（緊急）のカードの「取り消す」。開いた未割当・待機のカードに重ねる（2 回押しで決める）
@@ -305,6 +347,28 @@ export const CancelEmergencyButton: React.FC<{ onConfirm: () => void }> = ({
   />
 );
 
+/** 統合の印（2 つのカップを 1 つに） */
+const MergeIcon: React.FC<{ className: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 25.04 19.03" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M3.04,12.26c-.63-.55-1.04-1.35-1.04-2.26V2h12v1h0,0v.03h2v-1.03c0-1.1-.9-2-2-2H2C.9,0,0,.9,0,2v8c0,2.07,1.27,3.86,3.07,4.61-.02-.19-.03-.39-.03-.58v-1.77Z"
+    />
+    <path
+      fill="currentColor"
+      d="M20.04,4.03H6.04c-1.1,0-2,.9-2,2v8c0,.3.04.6.09.88.07.37.16.72.3,1.06.76,1.79,2.54,3.06,4.61,3.06h6c2.76,0,5-2.24,5-5,2.76,0,5-2.24,5-5s-2.24-5-5-5ZM18.04,14.03c0,1.65-1.35,3-3,3h-6c-.9,0-1.69-.4-2.24-1.03-.26-.29-.45-.63-.58-1-.11-.31-.18-.63-.18-.97V6.03h12v8ZM20.04,12.03v-6c1.65,0,3,1.35,3,3s-1.35,3-3,3Z"
+    />
+    <path
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      d="M9.15,11.51h5.76M12.03,8.51v5.76"
+    />
+  </svg>
+);
+
 // 統合できる相手のカードに重ねる「統合する」（管制盤 A・C・D の未割当）。
 // 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
 export const MergeOverlay: React.FC = () => (
@@ -312,28 +376,7 @@ export const MergeOverlay: React.FC = () => (
     <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-blue-500 bg-blue-50/90" />
     <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center p-1">
       <span className="pointer-events-auto inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 font-black text-[16px] text-white shadow-md">
-        <svg
-          className="h-5 w-7 shrink-0"
-          viewBox="0 0 25.04 19.03"
-          aria-hidden="true"
-        >
-          <path
-            fill="currentColor"
-            d="M3.04,12.26c-.63-.55-1.04-1.35-1.04-2.26V2h12v1h0,0v.03h2v-1.03c0-1.1-.9-2-2-2H2C.9,0,0,.9,0,2v8c0,2.07,1.27,3.86,3.07,4.61-.02-.19-.03-.39-.03-.58v-1.77Z"
-          />
-          <path
-            fill="currentColor"
-            d="M20.04,4.03H6.04c-1.1,0-2,.9-2,2v8c0,.3.04.6.09.88.07.37.16.72.3,1.06.76,1.79,2.54,3.06,4.61,3.06h6c2.76,0,5-2.24,5-5,2.76,0,5-2.24,5-5s-2.24-5-5-5ZM18.04,14.03c0,1.65-1.35,3-3,3h-6c-.9,0-1.69-.4-2.24-1.03-.26-.29-.45-.63-.58-1-.11-.31-.18-.63-.18-.97V6.03h12v8ZM20.04,12.03v-6c1.65,0,3,1.35,3,3s-1.35,3-3,3Z"
-          />
-          <path
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M9.15,11.51h5.76M12.03,8.51v5.76"
-          />
-        </svg>
+        <MergeIcon className="h-5 w-7 shrink-0" />
         統合する
       </span>
     </div>

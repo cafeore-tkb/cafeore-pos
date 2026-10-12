@@ -1,8 +1,9 @@
 import { type CaosCard, canMergeCards } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cardOrderNos, orderLabel } from "../logic/cards";
+import { cardOrderNos, orderLabel, quickMergePartner } from "../logic/cards";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
+// 統合する相手が決まる（logic/cards の quickMergePartner）ときは、選んだカードをもう一度押すと統合する（決まらなければ選択を外す）。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。
 export const useSheetSelection = ({
   unassigned,
@@ -41,6 +42,16 @@ export const useSheetSelection = ({
     setSelectedUid(null);
     onSelectOrder(null);
   };
+  const mergeWith = (card: CaosCard) => {
+    if (!selected || !canMergeCards(selected, card)) return;
+    onMerge(selected.key, card.key);
+    setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
+    clear();
+  };
+  // 選んだカードをもう一度押したときに統合する相手
+  const partner = selected
+    ? quickMergePartner(selected, unassigned)
+    : undefined;
 
   // The combined card is listed under the earlier order, often far from the card just tapped,
   // so select it and bring it into view; it can then be placed right away.
@@ -66,20 +77,17 @@ export const useSheetSelection = ({
     selected,
     select,
     clear,
-    /** 選んだカードなら外し、ほかのカードなら選ぶ */
+    partner,
+    /** 選んだカードなら、統合する相手が決まっていれば統合し、決まらなければ外す。ほかのカードなら選ぶ */
     toggle: (card: CaosCard) => {
-      if (card.key === selectedUid) clear();
-      else select(card);
+      if (card.key !== selectedUid) select(card);
+      else if (partner) mergeWith(partner);
+      else clear();
     },
     /** 選んだカードと統合できる */
     canMergeWith: (card: CaosCard) =>
       Boolean(selected && canMergeCards(selected, card)),
-    mergeWith: (card: CaosCard) => {
-      if (!selected || !canMergeCards(selected, card)) return;
-      onMerge(selected.key, card.key);
-      setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
-      clear();
-    },
+    mergeWith,
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */
     assignTo: (bayId: number) => {
       if (!selected) return;
