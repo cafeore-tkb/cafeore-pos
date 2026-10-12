@@ -176,14 +176,24 @@ export interface paths {
      * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
      * 今日（日本時間）の注文の、抽出が要るカップだけ。
      * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+     * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
      */
     post: operations["createCupEmergencies"];
+  };
+  "/api/cup-emergencies/reasons": {
+    /**
+     * よく使う緊急（入れ直し）の理由
+     * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+     */
+    get: operations["getCupEmergencyReasons"];
   };
   "/api/cup-emergencies/{id}": {
     /**
      * 緊急（入れ直し）を取り消す
      * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
      * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
+     * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
      */
     delete: operations["deleteCupEmergency"];
   };
@@ -1858,6 +1868,7 @@ export interface operations {
    * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
    * 今日（日本時間）の注文の、抽出が要るカップだけ。
    * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+   * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
    */
   createCupEmergencies: {
     requestBody: {
@@ -1887,9 +1898,25 @@ export interface operations {
     };
   };
   /**
+   * よく使う緊急（入れ直し）の理由
+   * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+   */
+  getCupEmergencyReasons: {
+    responses: {
+      /** @description 理由（よく使う順） */
+      200: {
+        content: {
+          "application/json": string[];
+        };
+      };
+    };
+  };
+  /**
    * 緊急（入れ直し）を取り消す
    * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
    * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
+   * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
    */
   deleteCupEmergency: {
     parameters: {

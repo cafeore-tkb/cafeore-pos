@@ -229,7 +229,7 @@ export const useCaosSession = () => {
      *   - orders：番号から入れ直すカップを選ぶ注文
      *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出て、カップのシールを刷る
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
-     * どちらも「1つ戻す」で戻せる（足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直す。シールは刷り直さない）
+     * どちらも「1つ戻す」で戻せる（足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す）
      */
     emergency: test.session
       ? null
@@ -248,15 +248,21 @@ export const useCaosSession = () => {
           },
           cancel: (card: CaosCard) => {
             const cups = card.cups.filter((cup) => cup.emergency);
+            // 戻したときに足し直して刷り直すもの（カードは注文から組み立てるので、注文はある）
+            const restore = cups.flatMap((cup) => {
+              const order = live.orders?.find((o) => o.id === cup.orderId);
+              return order
+                ? [{ order, cupId: cup.cupId, reason: cup.emergencyReason }]
+                : [];
+            });
+            if (restore.length !== cups.length) {
+              fail(NOT_FOUND);
+              return;
+            }
             void cancelEmergency(cups.map((cup) => cup.id)).then((ok) => {
               if (!ok) return;
               undo.remember(`緊急の取り消し ${orderLabel(card)}`, () =>
-                restoreEmergencies(
-                  cups.map((cup) => ({
-                    cupId: cup.cupId,
-                    reason: cup.emergencyReason,
-                  })),
-                ),
+                restoreEmergencies(restore),
               );
             });
           },

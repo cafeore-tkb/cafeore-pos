@@ -60,6 +60,31 @@ describe("[unit] pending-prints", () => {
     expect(readPendingPrints()).toHaveLength(1);
   });
 
+  test("緊急の取り消しの知らせを受けたタブが消すと、同じ端末のほかのタブが残したそのシールも消える。ほかのシールは残る", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const printing = await load();
+    printing.addPendingPrint(job, "emergency-1");
+    printing.addPendingPrint(job, "emergency-2");
+    vi.resetModules();
+    const other = await load();
+    other.cancelPendingPrint("emergency-1");
+
+    expect(printing.readPendingPrints().map((p) => p.id)).toEqual([
+      "emergency-2",
+    ]);
+  });
+
+  test("取り消しの知らせのあとで刷れなかったシール（刷っている間に取り消された）は残さない", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const { addPendingPrint, cancelPendingPrint, readPendingPrints } =
+      await load();
+    cancelPendingPrint("emergency-1");
+    addPendingPrint(job, "emergency-1");
+    addPendingPrint(job, "emergency-2");
+
+    expect(readPendingPrints().map((p) => p.id)).toEqual(["emergency-2"]);
+  });
+
   test("壊れたもの・ほかのキーは読まない", async () => {
     const storage = fakeStorage();
     storage.setItem("cafeore:pending-label-print:x", "{");

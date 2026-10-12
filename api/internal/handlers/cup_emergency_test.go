@@ -323,6 +323,33 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	}
 }
 
+// 取り消したら、全部の画面に取り消した入れ直しを知らせる（画面はこの知らせでだけ未印刷のシールを消す）。断ったときは知らせない
+func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o := f.createOrder(t, 1, line(f.blend))
+	if code, body := f.addEmergencies(t, o.OrderCups[0].ID); code != http.StatusCreated {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	id := f.emergencies(t, o.OrderCups[0].ID)[0].ID
+	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
+	f.caos.hub = hub
+
+	if code, body := f.cancelEmergency(t, id); code != http.StatusNoContent {
+		t.Fatalf("cancel = %d: %s", code, body)
+	}
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrder {
+		t.Fatalf("first broadcast = %s, want order", msg.Type)
+	}
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCupEmergencyCancelled || msg.CupEmergencyID == nil || *msg.CupEmergencyID != id {
+		t.Fatalf("broadcast = %+v, want cup_emergency_cancelled %s", msg, id)
+	}
+	if code, _ := f.cancelEmergency(t, id); code != http.StatusConflict {
+		t.Fatalf("cancel again = %d, want 409", code)
+	}
+	noBroadcast(t, hub)
+}
+
 // 入れ直しで使うアイテムの在庫とカップは、足したときの設定で減り、取り消すと戻る
 func TestCupEmergencyStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
@@ -383,26 +410,34 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 	expect("取り消した後", map[uuid.UUID][3]float64{itemStock.ID: {20, 1, 1}, cupStock.ID: {1, 1, 1}})
 
-	// 棚卸しより前に足して、まだ入れ直していないものは、棚卸しの後に使う分として数える。入れ直し終えたものは数えない
-	if err := db.Create(&models.StockEvent{ResourceID: itemStock.ID, Kind: string(models.StockEventKindCount), Quantity: 500, CreatedAt: time.Now().Add(time.Second)}).Error; err != nil {
+	// 棚卸しより前に足した入れ直しは、抽出を始めた時刻で使ったことにする。まだ始めていない・棚卸しの後に始めたものは
+	// 棚卸しの後に使う分として数え、棚卸しの前に始めたものは（まだ終えていなくても）数えない
+	countedAt := time.Now().Add(time.Second)
+	if err := db.Create(&models.StockEvent{ResourceID: itemStock.ID, Kind: string(models.StockEventKindCount), Quantity: 500, CreatedAt: countedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
-	pending := func() float64 {
-		t.Helper()
+	for _, tc := range []struct {
+		label    string
+		started  *time.Time
+		finished *time.Time
+		consumed float64
+	}{
+		{"まだ始めていない", nil, nil, 20},
+		{"棚卸しの後に始めた", ptr(countedAt.Add(time.Second)), nil, 20},
+		{"棚卸しの前に始めた", ptr(countedAt.Add(-time.Millisecond)), nil, 0},
+		{"棚卸しの前に始めて、後に終えた", ptr(countedAt.Add(-time.Millisecond)), ptr(countedAt.Add(time.Second)), 0},
+	} {
+		if err := db.Model(&models.CupEmergency{}).Where("id = ?", second).
+			Updates(map[string]any{"brew_started_at": tc.started, "brew_finished_at": tc.finished}).Error; err != nil {
+			t.Fatal(err)
+		}
 		snapshots, err := inv.snapshots(context.Background(), []uuid.UUID{itemStock.ID})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return snapshots[0].Consumed
-	}
-	if got := pending(); got != 20 {
-		t.Fatalf("consumed after a count before brewing = %v, want 20", got)
-	}
-	if err := db.Model(&models.CupEmergency{}).Where("id = ?", second).Update("brew_finished_at", time.Now()).Error; err != nil {
-		t.Fatal(err)
-	}
-	if got := pending(); got != 0 {
-		t.Fatalf("consumed after a count after brewing = %v, want 0", got)
+		if got := snapshots[0].Consumed; got != tc.consumed {
+			t.Errorf("%s: consumed after the count = %v, want %v", tc.label, got, tc.consumed)
+		}
 	}
 
 	// 注文を消すと入れ直しの消費も消える
@@ -439,5 +474,41 @@ func TestCupEmergencyReasonOnDB(t *testing.T) {
 		if len(cup.Emergencies) != 1 || cup.Emergencies[0].Reason != "こぼした" {
 			t.Fatalf("emergencies = %+v", cup.Emergencies)
 		}
+	}
+}
+
+// 理由の候補は、前の日までも含めた全部の入れ直しの理由を、よく使う順（同じなら文字の順）に 5 つまで。理由の無いものは数えない
+func TestCupEmergencyReasonsOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	get := func() []string {
+		t.Helper()
+		w := callWithParams(t, f.caos.GetCupEmergencyReasons, http.MethodGet, "", nil)
+		var reasons []string
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &reasons) != nil {
+			t.Fatalf("GET = %d: %s", w.Code, w.Body)
+		}
+		return reasons
+	}
+	if got := get(); len(got) != 0 {
+		t.Fatalf("reasons without emergencies = %v", got)
+	}
+
+	// 前の日の注文の入れ直し（今日の注文にしか足せないので、直に入れる）
+	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
+	for _, reason := range []string{"温度", "温度", "温度", "量"} {
+		if err := db.Create(&models.CupEmergency{ID: uuid.New(), OrderCupID: old.OrderCups[0].ID, CreatedAt: old.CreatedAt, Reason: reason}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := f.createOrder(t, 1, line(f.blend))
+	for _, reason := range []string{"こぼした", "こぼした", "", "", "", "", "味が薄い", "割れた", "倒した"} {
+		body, _ := json.Marshal(map[string]any{"order_cup_ids": ids(o.OrderCups[0]), "reason": reason})
+		if w := callWithParams(t, f.caos.CreateCupEmergencies, http.MethodPost, string(body), nil); w.Code != http.StatusCreated {
+			t.Fatalf("POST = %d: %s", w.Code, w.Body)
+		}
+	}
+	if got, want := strings.Join(get(), ","), "温度,こぼした,倒した,割れた,味が薄い"; got != want {
+		t.Fatalf("reasons = %s, want %s", got, want)
 	}
 }

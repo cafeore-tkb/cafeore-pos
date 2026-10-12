@@ -22,11 +22,13 @@ const (
 	masterStateChangedChannel = "master_state_changed"
 	// レジの状態（cashier_states）。通知の中身は "<送ったインスタンスの ID>"
 	cashierStateChangedChannel = "cashier_state_changed"
+	// 取り消された緊急（入れ直し）。通知の中身は "<送ったインスタンスの ID> <入れ直しの ID>"
+	cupEmergencyCancelledChannel = "cup_emergency_cancelled"
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
 // CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel}
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -185,10 +187,16 @@ type changeSet struct {
 	masterState  bool
 	cashierState bool
 	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
+	// 取り消された緊急（入れ直し）。DB から読み直すものは無く、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
+	cancelledEmergencies map[uuid.UUID]struct{}
+}
+
+func newChangeSet() changeSet {
+	return changeSet{orderIDs: map[uuid.UUID]struct{}{}, cancelledEmergencies: map[uuid.UUID]struct{}{}}
 }
 
 func newPendingChanges() *pendingChanges {
-	return &pendingChanges{set: changeSet{orderIDs: map[uuid.UUID]struct{}{}}, wake: make(chan struct{}, 1)}
+	return &pendingChanges{set: newChangeSet(), wake: make(chan struct{}, 1)}
 }
 
 // channel に届いた通知を積む。自分が送ったものは積まない。
@@ -207,6 +215,11 @@ func (q *pendingChanges) add(channel, payload string) {
 		q.update(func(s *changeSet) { s.cashierState = true })
 	case dripperAssigneesChangedChannel:
 		q.update(func(s *changeSet) { s.caosLanes = true })
+	case cupEmergencyCancelledChannel:
+		// 形の分からない通知は、どの入れ直しか分からないので配らない（その端末は余分に刷るだけ）
+		if id, err := uuid.Parse(rest); err == nil {
+			q.update(func(s *changeSet) { s.cancelledEmergencies[id] = struct{}{} })
+		}
 	}
 }
 
@@ -248,7 +261,7 @@ func (q *pendingChanges) take() changeSet {
 	if s.allOrders {
 		s.orderIDs = nil
 	}
-	q.set = changeSet{orderIDs: map[uuid.UUID]struct{}{}}
+	q.set = newChangeSet()
 	return s
 }
 
@@ -289,6 +302,9 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		if s.caosLanes {
 			broadcastCaosLanes(h.db, h.hub, time.Now())
+		}
+		for id := range s.cancelledEmergencies {
+			broadcastCupEmergencyCancelled(h.hub, id)
 		}
 		if failed.allOrders || len(failed.orderIDs) > 0 {
 			select {

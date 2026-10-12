@@ -1,6 +1,7 @@
 import { useOrdersWS } from "@cafeore/common";
 // context/OrdersWSContext.tsx
 import { createContext, useContext } from "react";
+import { cancelPendingPrint } from "~/label/pending-prints";
 
 type OrdersWSContextValue = ReturnType<typeof useOrdersWS>;
 
@@ -11,7 +12,8 @@ export const OrdersWSProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const value = useOrdersWS();
+  // 緊急が取り消されたと知らせが来たら、この端末に残っているそのシールを消す（どの画面を開いていても）
+  const value = useOrdersWS({ onCupEmergencyCancelled: cancelPendingPrint });
 
   return (
     <OrdersWSContext.Provider value={value}>
