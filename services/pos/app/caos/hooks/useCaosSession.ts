@@ -148,17 +148,16 @@ export const useCaosSession = () => {
   // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
   // 断られたら何もしない。通ったかを返す
   const onSuccess = (
-    sent: boolean | Promise<boolean>,
+    ok: boolean,
     label: string,
     undoRun: UndoRun,
     play: () => void,
   ) => {
-    void Promise.resolve(sent).then((ok) => {
-      if (!ok) return;
+    if (ok) {
       play();
       undo.remember(label, undoRun);
-    });
-    return sent !== false;
+    }
+    return ok;
   };
   // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らし、「1つ戻す」に覚える
   const runNext = (bayId: number, seen: string | null) => {

@@ -19,8 +19,10 @@ import {
 } from "./caos-outbox";
 import { undoOfWrites } from "./caos-undo";
 import { emptyCaosLanes } from "./caosLanes";
+import { jstDate } from "./jst";
 
 const NOW = new Date("2026-10-08T03:00:00Z");
+const DAY = jstDate(NOW.getTime());
 // サーバーの時刻（端末の時計とずれている）
 const SERVER_T = new Date("2026-10-08T03:00:01.234Z");
 
@@ -95,7 +97,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
   test("割当を押したら、サーバーの盤面に重ねて抽出中に出す（始めた時刻は押した時刻）", () => {
     const server = orders(cup("a"));
     const op = entry(place(server, "a", 1));
-    const card = cardOf(overlayCaosOrders(server, [op]), "a");
+    const card = cardOf(overlayCaosOrders(server, [op], DAY), "a");
     expect(card).toMatchObject({ status: "brewing", dripper: 1 });
     expect(card.startedAt?.getTime()).toBe(op.at);
   });
@@ -111,7 +113,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
         brewStartedAt: SERVER_T,
       }),
     );
-    const card = cardOf(overlayCaosOrders(arrived, [op]), "a");
+    const card = cardOf(overlayCaosOrders(arrived, [op], DAY), "a");
     expect(card).toMatchObject({ status: "brewing", dripper: 1 });
     expect(card.startedAt).toEqual(SERVER_T);
   });
@@ -120,7 +122,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
     const server = orders(cup("a"), cup("b"));
     const first = entry(place(server, "a", 1));
     const second = entry(
-      place(overlayCaosOrders(server, [first]), "a", 2), // 端末の時刻で始めたカードを 2 番へ
+      place(overlayCaosOrders(server, [first], DAY), "a", 2), // 端末の時刻で始めたカードを 2 番へ
     );
     const arrived = orders(
       cup("a", {
@@ -132,7 +134,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
       cup("b"),
     );
     expect(
-      cardOf(overlayCaosOrders(arrived, [first, second]), "a"),
+      cardOf(overlayCaosOrders(arrived, [first, second], DAY), "a"),
     ).toMatchObject({ status: "brewing", dripper: 2 });
   });
 
@@ -147,7 +149,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
         brewStartedAt: SERVER_T,
       }),
     );
-    expect(cardOf(overlayCaosOrders(other, [op]), "a").dripper).toBe(3);
+    expect(cardOf(overlayCaosOrders(other, [op], DAY), "a").dripper).toBe(3);
   });
 
   test("「次へ」は押したあとに届いた盤面にも重ね、始めてからの秒は見直さない", () => {
@@ -167,7 +169,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
       startId: "drip-b",
     });
     const lane = caosLane(
-      buildCaosCards(overlayCaosOrders(brewing, [next])),
+      buildCaosCards(overlayCaosOrders(brewing, [next], DAY)),
       1,
     );
     expect(lane.done.map((card) => card.key)).toEqual(["drip-a"]);
@@ -183,7 +185,7 @@ describe("unit: caos-outbox 重ねて表示", () => {
       entry: undoOfWrites(buildCaosCards(server), op.writes),
     });
     expect(
-      cardOf(overlayCaosOrders(server, [entry(op), undo]), "a").status,
+      cardOf(overlayCaosOrders(server, [entry(op), undo], DAY), "a").status,
     ).toBe("unassigned");
   });
 
@@ -265,7 +267,9 @@ describe("unit: caos-outbox 送る", () => {
   test("古い順に 1 つずつ送り、送れたらサーバーの盤面が届くまで次を送らない。次は書く前の値をサーバーの値に差し替えて送る", async () => {
     const server = orders(cup("a"), cup("b"));
     const first = entry(place(server, "a", 1));
-    const second = entry(place(overlayCaosOrders(server, [first]), "a", 2));
+    const second = entry(
+      place(overlayCaosOrders(server, [first], DAY), "a", 2),
+    );
     const t = setup([first, second], server);
 
     await t.outbox.kick();

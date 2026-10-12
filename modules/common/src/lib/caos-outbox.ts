@@ -18,6 +18,7 @@ import {
   applyCaosPracticeWrites,
   cancelCaosPracticeEmergency,
 } from "./caosPractice";
+import { jstDate } from "./jst";
 
 // CaOS の盤面の操作を「画面を先に動かし、書き込みは後ろで送る」ための決まり。
 //
@@ -237,19 +238,26 @@ export const plainCaosOrders = (
     cups: [...cups],
   }));
 
-/** サーバーから届いた注文に、残っている操作を古い順に重ねる。重ねられない操作は飛ばす */
+/**
+ * サーバーから届いた注文のうち、その日（day。日本時間の YYYY-MM-DD）のものに、残っている操作を古い順に重ねる。重ねられない操作は飛ばす。
+ * サーバーは今日の注文のカップで番号・抽出中を決めるので、重ねるのもその日の注文だけ
+ */
 export const overlayCaosOrders = (
   orders: readonly CaosOrderInput[],
   entries: readonly CaosOutboxEntry[],
-): readonly CaosOrderInput[] =>
-  entries.length === 0
-    ? orders
-    : entries.reduce<CaosPracticeOrder[]>(
-        (current, { op, at }) =>
-          applyCaosOutboxOp(current, op, new Date(at), { cooldown: false })
-            .orders ?? current,
-        plainCaosOrders(orders),
-      );
+  day: string,
+): readonly CaosOrderInput[] => {
+  const today = orders.filter(
+    (order) => jstDate(order.createdAt.getTime()) === day,
+  );
+  return entries.reduce<readonly CaosOrderInput[]>(
+    (current, { op, at }) =>
+      applyCaosOutboxOp(plainCaosOrders(current), op, new Date(at), {
+        cooldown: false,
+      }).orders ?? current,
+    today,
+  );
+};
 
 /** 今日の担当者（todaysCaosLanes）に、残っている担当者の操作を古い順に重ねる */
 export const overlayCaosLanes = (
@@ -342,8 +350,7 @@ export const prepareCaosOutboxOp = (
         op.startId === null ||
         status(op.startId) === "brewing" ||
         status(op.startId) === "done";
-      if (finished && started && (op.dripId !== null || op.startId !== null))
-        return { done: true };
+      if (finished && started) return { done: true };
       return { request: op };
     }
     case "undo": {
@@ -361,9 +368,7 @@ export const prepareCaosOutboxOp = (
       const name = (dripper: number) =>
         server.lanes?.lanes.find((lane) => lane.dripper === dripper)?.name;
       const [first, second] = op.names;
-      return first !== second &&
-        name(op.first) === second &&
-        name(op.second) === first
+      return name(op.first) === second && name(op.second) === first
         ? { done: true }
         : { request: op };
     }
@@ -426,6 +431,8 @@ const arrived = (snapshot: Snapshot, server: CaosServerState) =>
 // 返事を CAOS_OUTBOX_TIMEOUT_MS まで待つ
 const withTimeout = (sending: Promise<CaosOutboxResult>) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // stop のあとは、送っている途中のものの結果を受けたら止まる（次に kick するまで）
+  const stopped = false;
   const timeout = new Promise<CaosOutboxResult>((resolve) => {
     timer = setTimeout(
       () => resolve({ error: "返事がありません" }),
@@ -519,6 +526,8 @@ export const createCaosOutbox = ({
   };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // stop のあとは、送っている途中のものの結果を受けたら止まる（次に kick するまで）
+  let stopped = false;
   const later = (ms: number) => {
     clearTimeout(timer);
     timer = setTimeout(() => void kick(), Math.max(0, ms));
@@ -528,7 +537,7 @@ export const createCaosOutbox = ({
     for (;;) {
       const head = store.read()[0];
       const state = server();
-      if (!head || !state) return;
+      if (stopped || !head || !state) return;
       const m = memoOf(head.id);
       if (head.sent) {
         // 送れたもの。サーバーの盤面が届くまで（ECHO_MS まで）は重ねたままにし、次を送らない
@@ -576,6 +585,7 @@ export const createCaosOutbox = ({
   let running: Promise<void> | null = null;
   let again = false;
   const kick = (): Promise<void> => {
+    stopped = false;
     if (running) {
       again = true;
       return running;
@@ -600,7 +610,10 @@ export const createCaosOutbox = ({
       for (const m of memo.values()) m.retryAt = 0;
       return kick();
     },
-    /** 待つのをやめる（画面を閉じたとき） */
-    stop: () => clearTimeout(timer),
+    /** 送るのをやめる（画面を閉じた・ほかのタブが送るようになったとき） */
+    stop: () => {
+      stopped = true;
+      clearTimeout(timer);
+    },
   };
 };

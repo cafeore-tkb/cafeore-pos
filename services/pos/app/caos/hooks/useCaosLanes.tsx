@@ -82,6 +82,13 @@ const SENIORS_LABEL = "上級生の印を名簿に合わせる";
 
 type Confirm = { warnings: string[]; answer: (ok: boolean) => void };
 
+const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
+  kind: "lane",
+  dripper,
+  name,
+  senior,
+});
+
 export const CaosLanesProvider = ({
   editable = false,
   children,
@@ -111,12 +118,7 @@ export const CaosLanesProvider = ({
   // 今の盤面のカード（この端末の送れていない操作も重ねる。useLiveBoard と同じ）
   const boardCards = () => {
     const { orders, entries, today } = latest.current;
-    return buildCaosCards(
-      overlayCaosOrders(
-        orders.filter((order) => jstDate(order.createdAt.getTime()) === today),
-        entries,
-      ),
-    );
+    return buildCaosCards(overlayCaosOrders(orders, entries, today));
   };
 
   const [changing, setChanging] = useState<{
@@ -146,12 +148,6 @@ export const CaosLanesProvider = ({
       return ok;
     });
   };
-  const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
-    kind: "lane",
-    dripper,
-    name,
-    senior,
-  });
 
   // 名簿に合わせると上級生かが変わる担当者を、すぐ直すもの（auto）と、交代なら確かめるもの（held。外すほうで、そのドリッパーに指名の無い上級生のみのカードが待っている）に分ける。
   // 閲覧だけの画面は予定を読まないので、どちらも空

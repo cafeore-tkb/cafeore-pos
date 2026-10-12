@@ -32,17 +32,8 @@ export const useLiveBoard = ({
   const { orders, status } = usePosOrders(enabled);
   const entries = useCaosOutboxEntries();
   const today = jstDate(nowMs);
-  // サーバーは今日の注文のカップで番号・抽出中を決めるので、重ねるのも今日の注文だけ
   const board = useMemo(
-    () =>
-      orders
-        ? overlayCaosOrders(
-            orders.filter(
-              (order) => jstDate(order.createdAt.getTime()) === today,
-            ),
-            entries,
-          )
-        : [],
+    () => (orders ? overlayCaosOrders(orders, entries, today) : []),
     [orders, today, entries],
   );
   const cards = useMemo(() => buildCaosCards(board), [board]);
