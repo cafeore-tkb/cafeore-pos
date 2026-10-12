@@ -34,7 +34,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 //   - 列の見出しと列の操作のパネルの「交代」は、押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人。nextLaneCandidate）に替える。
 //     替えたら「1つ戻す」（CaosUndoProvider）に覚え、10 秒のあいだ前の人に戻せる
 //   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
-// 閲覧だけの画面（/master-sheet/view）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
+// 閲覧だけの画面（/master-sheet/view・/master-sheet/libero）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
 // 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめる。
 // ［変える］ならそのまま替え、カードも残す。替えたら画面はすぐ変わり、送るのは後ろで（盤面の操作と同じく端末に残して送る。useCaosOutbox）。
