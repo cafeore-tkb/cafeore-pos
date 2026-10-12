@@ -49,6 +49,9 @@ html:has(.caos-root) body {
   --caos-elapsed-2: oklch(70.2% 0.183 293.541);
   --caos-elapsed-3: oklch(54.1% 0.281 293.009);
   --caos-elapsed-4: oklch(38% 0.189 293.745);
+  /* 注文のコメント（カードの左上の印・コメントの中身）。ほかの意味の色と分けた青緑 */
+  --caos-comment: oklch(52% 0.105 223.128);
+  --caos-comment-soft: oklch(95.6% 0.045 203.388);
   /* 指で掴むスクロールバー（components/ScrollArea）。溝と、つまみ（掴んでいる間は濃く） */
   --caos-scrollbar-track: oklch(96.8% 0.007 247.896);
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);

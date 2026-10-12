@@ -71,7 +71,12 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="w-[min(560px,92vw)] rounded-2xl border border-slate-300 bg-white p-5 shadow-2xl">
+      <dialog
+        open
+        aria-modal="true"
+        aria-label="実績でテストプレイ"
+        className="static w-[min(560px,92vw)] rounded-2xl border border-slate-300 bg-white p-5 text-slate-950 shadow-2xl"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-black text-[20px] text-slate-950">
@@ -252,7 +257,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <Play className="h-5 w-5 fill-current" />
           テストプレイ開始
         </button>
-      </section>
+      </dialog>
     </div>
   );
 };

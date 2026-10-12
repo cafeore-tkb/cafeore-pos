@@ -5,11 +5,13 @@ import {
   orderLabel,
   orderRows,
   queueRows,
+  selectedComments,
   sharesOrder,
 } from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
 import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
+import { findOrder, focusCard } from "./search";
 import { linkedOrderNos } from "./sheet";
 
 // 作りものの注文（本物のデータは入れない）
@@ -315,5 +317,80 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(byElapsed(rows).map(({ lane }) => lane.id)).toEqual([
       1, 3, 2, 4, 5, 6,
     ]);
+  });
+});
+
+describe("[unit] CaOS の注文番号の検索とコメント", () => {
+  // #1：1st で抽出中、#2：1st の待機、#3 と #4：統合した未割当、#6：準備完了（盤面に出ない）
+  const orders = [
+    order(1, [
+      { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+    ]),
+    order(2, [{ dripper: 1, dripId: "d2", dripperPosition: 2 }]),
+    order(3, [{ dripId: "m" }]),
+    order(4, [{ dripId: "m" }]),
+    order(6, [{ readyAt: T0 }]),
+    // #7：3 杯を 3 枚に分けた（4th で終わり・5th で待機・6th で抽出中）
+    order(7, [
+      { dripper: 4, dripId: "d7a", dripperPosition: 1, readyAt: T0 },
+      { dripper: 5, dripId: "d7b", dripperPosition: 1 },
+      { dripper: 6, dripId: "d7c", dripperPosition: 1, brewStartedAt: T0 },
+    ]),
+  ];
+  const cards = buildCaosCards(orders);
+  const comment = {
+    author: "cashier" as const,
+    text: "氷少なめ",
+    createdAt: T0,
+    orderNo: 3,
+  };
+  const comments = new Map([["order-3", [comment]]]);
+  const find = (orderNo: number) =>
+    findOrder({
+      orders,
+      cards,
+      lanes: boardLanes(cards),
+      comments,
+      orderNo,
+      nowMs: T0.getTime() + 130_000,
+    });
+
+  test("注文の状態と、その注文のカードの場所（抽出中は始めてからの時間）を出す", () => {
+    const places = (orderNo: number) =>
+      find(orderNo)?.cards.map(({ place }) => place);
+    expect(places(1)).toEqual(["1st 抽出中 2:10"]);
+    expect(places(2)).toEqual(["1st 1番目"]);
+    expect(places(4)).toEqual(["未割当"]);
+    expect(find(1)?.status).toBe("preparing");
+    expect(find(6)).toMatchObject({
+      status: "ready",
+      readyCups: 1,
+      cards: [],
+    });
+    expect(find(99)).toBeNull();
+  });
+
+  test("見せるカードは、抽出中・待機・未割当・終わりの順に選ぶ", () => {
+    const focus = (orderNo: number) => {
+      const found = find(orderNo);
+      return found && focusCard(found)?.key;
+    };
+    expect(find(7)?.cards.map(({ place }) => place)).toEqual([
+      "4th 済",
+      "5th 1番目",
+      "6th 抽出中 2:10",
+    ]);
+    expect(focus(7)).toBe("d7c");
+    expect(focus(3)).toBe("m");
+  });
+
+  test("統合したカードには中の注文のコメントが付き、選んだ注文のコメントだけを出す", () => {
+    const looks = cardLooks(cards, [], new Map(), comments);
+    expect(looks.get("m")?.comments).toEqual([comment]);
+    expect(looks.get("d1")?.comments).toBeUndefined();
+    expect(selectedComments(cards, looks, "#003")).toEqual([comment]);
+    expect(find(4)?.comments).toEqual([]);
+    expect(find(3)?.comments).toEqual([comment]);
+    expect(selectedComments(cards, looks, "#004")).toEqual([]);
   });
 });
