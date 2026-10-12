@@ -1,8 +1,15 @@
 import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { cardLooks, orderRows, queueRows } from "./cards";
+import {
+  cardLooks,
+  orderLabel,
+  orderRows,
+  queueRows,
+  sharesOrder,
+} from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
 import { earlyNext, laneStatus } from "./queue";
+import { linkedOrderNos } from "./sheet";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -156,6 +163,22 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       [4, ["queued"]],
       [6, ["unassigned"]],
       [7, ["queued"]],
+    ]);
+  });
+
+  test("注文を選ぶと、その注文の入った統合したカードも当たる（統合したカードを選ぶと中の注文のカードも）", () => {
+    const merged = cards.find((card) => card.key === "m");
+    if (!merged) throw new Error("統合したカードが無い");
+    expect(orderLabel(merged)).toBe("#003+#004");
+    expect(sharesOrder(merged, "#004")).toBe(true);
+    expect(sharesOrder(merged, "#003")).toBe(true);
+    expect(sharesOrder(merged, "#002")).toBe(false);
+    expect(sharesOrder(merged, null)).toBe(false);
+    const [own] = buildCaosCards([order(4, [{}])]);
+    expect(sharesOrder(own, "#003+#004")).toBe(true);
+    // D の表：#004 を選ぶと、統合したカードの行（#003 と #004）
+    expect([...linkedOrderNos("#004", lanes, unassigned)].sort()).toEqual([
+      3, 4,
     ]);
   });
 

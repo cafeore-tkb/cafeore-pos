@@ -9,10 +9,10 @@ import {
 import {
   type CardLooks,
   type OrderRowEntry,
-  orderLabel,
   orderNoLabel,
   orderRows,
   queueRows,
+  sharesOrder,
   totalCups,
 } from "../logic/cards";
 import { type Lane, cardPlaces, laneActive, laneCards } from "../logic/lanes";
@@ -141,7 +141,8 @@ type UnassignedProps = {
 /**
  * 管制盤 A の下の横帯（1 段 6 列。2 段が見える高さで、先の注文は縦のスクロールで見る）。注文ごとにまとめ（注文は段をまたがせない）、
  * 2 枚以上の注文は同じ注文の色の枠で囲む（同じ注文がほかにもあるときだけ囲う）。
- * 見出しはスクロールしても上に残し、開いたカードの 1〜6 のボタンは見出しの上に重ねる（下の段のボタンの分は下に空ける）
+ * 見出しはスクロールしても上に残し、スクロールは段ごとに止める。開いたカードの 1〜6 のボタンは、上の段は見出しの上に重ね、
+ * 下の段は 2 段の下の余り（と最後の余白）に出す
  */
 export const UnassignedStrip: React.FC<
   UnassignedProps & { nextAvailable: NextAvailable }
@@ -152,7 +153,7 @@ export const UnassignedStrip: React.FC<
     placed: props.lanes?.flatMap(laneActive),
   });
   return (
-    <section className="h-full overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white shadow-xs">
+    <section className="h-full snap-y snap-mandatory scroll-pt-11 overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader
         icon={ClipboardList}
         title="未割当"
@@ -167,7 +168,7 @@ export const UnassignedStrip: React.FC<
         {orderRows(orders).map(({ orderNo, emergency, entries }) => (
           <div
             key={`${emergency}:${orderNo}`}
-            className="flex h-[70px] p-0.5"
+            className="flex h-[66px] snap-start p-0.5"
             style={{
               width: `${(Math.min(entries.length, STRIP_COLUMNS) / STRIP_COLUMNS) * 100}%`,
             }}
@@ -212,7 +213,7 @@ const StripEntry: React.FC<{
       looks={looks}
       pick={pick}
       size="lg"
-      selected={selectedOrderId === orderLabel(entry.card)}
+      selected={sharesOrder(entry.card, selectedOrderId)}
       scroll="y"
       readOnly={readOnly}
       className="flex-1"
@@ -265,7 +266,7 @@ export const OrderQueuePanel: React.FC<
             </span>
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
               {entries.map(({ card, mergedInto }) => {
-                const selected = selectedOrderId === orderLabel(card);
+                const selected = sharesOrder(card, selectedOrderId);
                 if (mergedInto)
                   return (
                     <MergedTrace

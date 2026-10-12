@@ -9,7 +9,7 @@ import {
 } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
-import { cardName, orderLabel } from "../logic/cards";
+import { cardName, orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -108,7 +108,7 @@ export const DispatchBoard: React.FC<
   // 選んだ注文のカード（列ごと）
   const matchingTickets = lanes.flatMap((lane) =>
     laneCards(lane)
-      .filter((card) => orderLabel(card) === selectedOrderId)
+      .filter((card) => sharesOrder(card, selectedOrderId))
       .map(
         (card) =>
           `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
@@ -258,7 +258,7 @@ export const DispatchBoard: React.FC<
                           <OrderCard
                             card={ticket}
                             look={looks.get(ticket.key)}
-                            selected={selectedOrderId === orderLabel(ticket)}
+                            selected={sharesOrder(ticket, selectedOrderId)}
                             data-card-key={ticket.key}
                             // 待機のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={

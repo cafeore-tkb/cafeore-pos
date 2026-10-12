@@ -24,6 +24,17 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/**
+ * カードが、選んだ注文（orderLabel。統合したカードなら「#012+#013」）の注文を 1 つでも含むか。
+ * 統合したカードは、中の注文のどれを選んでも当たり、統合したカードを選べば中の注文のカードがみな当たる
+ */
+export const sharesOrder = (card: CaosCard, label: string | null) => {
+  const labels = label?.split("+") ?? [];
+  return cardOrderNos(card).some((no) =>
+    labels.includes(`#${orderNoLabel(no)}`),
+  );
+};
+
 /** カードの商品の名前（略称 abbr をそのまま。統合したカードも同じ商品なので 1 つ） */
 export const cardItemName = (card: CaosCard) =>
   unique(card.cups.map((cup) => cup.item.abbr)).join("・");
