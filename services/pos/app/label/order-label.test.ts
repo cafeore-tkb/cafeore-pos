@@ -79,6 +79,22 @@ describe("[unit] orderLabelJob", () => {
     ]);
   });
 
+  test("先頭へ送るのは 1 枚目のカップだけで、2 枚目以降のカップは前のシールの続きから刷る", () => {
+    const order = orderOf(7, [
+      menu("ブレンド", hotType, null),
+      menu("ブレンド", hotType, null),
+      menu("カフェオレ", hotType, null),
+    ]);
+
+    const { labels } = orderLabelJob(order);
+
+    expect(
+      labels.map((label) =>
+        label.type === "fixed" ? (label.continued ?? false) : label.type,
+      ),
+    ).toEqual([false, true, true, "flow"]);
+  });
+
   test("カップのシールにはロゴを置く", () => {
     const order = orderOf(7, [menu("ブレンド", hotType, null)]);
 
@@ -125,7 +141,7 @@ describe("[unit] orderLabelJob", () => {
 });
 
 describe("[unit] cupLabelJob", () => {
-  test("保存した注文のカップ 1 杯のシールは、注文で刷ったそのカップのシールと同じ（「2/2」は抽出が要るカップの中の順番）", () => {
+  test("保存した注文のカップ 1 杯のシールは、注文で刷ったそのカップのシールと同じ中身で、先頭へ送る（「2/2」は抽出が要るカップの中の順番）", () => {
     const order = orderOf(7, [
       menu("ブレンド", hotType, null),
       menu("クッキー", goodsType, null),
@@ -156,9 +172,12 @@ describe("[unit] cupLabelJob", () => {
         })),
     });
 
-    expect(cupLabelJob(saved, "cup-カフェオレ")).toEqual({
-      labels: [orderLabelJob(order).labels[1]],
+    const job = cupLabelJob(saved, "cup-カフェオレ");
+    // 注文では 2 枚目なので続きから刷るが、1 枚だけ刷るときは先頭へ送る（continued を付けない）
+    expect(job).toEqual({
+      labels: [{ ...orderLabelJob(order).labels[1], continued: undefined }],
     });
+    expect(job?.labels[0]).not.toHaveProperty("continued");
     expect(cupLabelJob(saved, "cup-クッキー")).toBeNull();
   });
 });

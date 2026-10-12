@@ -38,7 +38,8 @@ export type PlacedElement =
 /**
  * シール 1 枚
  *
- * - fixed: シールの先頭へ送ってから、範囲（area）の中に座標で置く
+ * - fixed: シールの先頭へ送ってから、範囲（area）の中に座標で置く。
+ *   continued なら先頭へは送らず、前のシールの続きから置く
  * - flow: 先頭へは送らず、前のシールの続きから行を上から順に流す。
  *   align が center なら各行を紙の中央に寄せる（省略したら左寄せ）
  * - image: 先頭へは送らず、前のシールの続きに画像を紙の中央に寄せて刷る
@@ -46,6 +47,12 @@ export type PlacedElement =
 export type Label =
   | {
       type: "fixed";
+      /**
+       * 先頭へは送らず、前の fixed のシールの続きから置く（同じ注文の 2 枚目以降のカップ）。
+       * 今のプリンターとシールでは、fixed のシールの後に先頭へ送ると空のシールが 1 枚出る
+       * （刷り終えた紙が次のシールの先頭を少し過ぎていて、そのシールを飛ばすとみている）
+       */
+      continued?: boolean;
       area: { x: number; y: number; width: number; height: number };
       elements: readonly PlacedElement[];
     }

@@ -3,6 +3,8 @@ import type { Label, PrintJob, TextLine, TextRun, TextSize } from "./document";
 
 type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
 
+type FixedLabel = Extract<Label, { type: "fixed" }>;
+
 /** 行頭の余白（2 倍の大きさの空白 1 文字） */
 const MARGIN: TextRun = { text: " ", size: [2, 2] };
 
@@ -30,7 +32,7 @@ const cupLabel = (
   index: number,
   total: number,
   item: CupItem,
-): Label => ({
+): FixedLabel => ({
   type: "fixed",
   area: { x: 0, y: 24, width: 570, height: 230 },
   elements: [
@@ -95,7 +97,8 @@ const summaryLabel = (order: OrderEntity): Label => {
 
 /**
  * カップ 1 杯のシール（緊急で入れ直したカップに貼る）。注文で刷るカップのシールと同じ中身で、
- * 「2/3」はその注文の抽出が要るカップの中の順番。注文にそのカップが無ければ null
+ * 「2/3」はその注文の抽出が要るカップの中の順番。1 枚だけ刷るので、何枚目のカップでも先頭へ送る。
+ * 注文にそのカップが無ければ null
  */
 export const cupLabelJob = (
   order: OrderEntity,
@@ -113,14 +116,16 @@ export const cupLabelJob = (
  * 注文で刷るシール
  *
  * 抽出が要るもの 1 杯ごとにカップに貼るシールを刷り、最後に引換券に貼るシールを 1 枚刷る。
+ * 先頭へ送るのは 1 枚目のカップだけで、2 枚目以降のカップは前のシールの続きから刷る（continued）。
  */
 export const orderLabelJob = (order: OrderEntity): PrintJob => {
   const cups = order.getCoffeeCups();
   return {
     labels: [
-      ...cups.map((item, idx) =>
-        cupLabel(order.orderId, idx + 1, cups.length, item),
-      ),
+      ...cups.map((item, idx) => {
+        const label = cupLabel(order.orderId, idx + 1, cups.length, item);
+        return idx === 0 ? label : { ...label, continued: true };
+      }),
       summaryLabel(order),
     ],
   };

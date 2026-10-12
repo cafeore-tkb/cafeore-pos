@@ -119,6 +119,28 @@ describe("[unit] writeEposJob", () => {
     ]);
   });
 
+  test("continued の fixed は先頭へ送らず、前のシールの続きからページモードで置く", () => {
+    const { builder, calls } = recordingBuilder();
+    const [cup] = job.labels;
+    if (cup.type !== "fixed") throw new Error("fixed ではない");
+
+    writeEposJob(
+      builder,
+      { labels: [cup, { ...cup, continued: true }] },
+      { logoKey: [32, 32], trailingFeedLines: 7, cut: false },
+    );
+
+    expect(
+      calls.filter(
+        ([name]) => name === "addFeedPosition" || name === "addPageBegin",
+      ),
+    ).toEqual([
+      ["addFeedPosition", "current_tof"],
+      ["addPageBegin"],
+      ["addPageBegin"],
+    ]);
+  });
+
   test("中央寄せの flow は寄せてから流して左に戻し、cut なら最後に紙を切る", () => {
     const { builder, calls } = recordingBuilder();
     const receipt: PrintJob = {

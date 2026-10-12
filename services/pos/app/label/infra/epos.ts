@@ -150,8 +150,8 @@ const writeLabel = (
     return;
   }
 
-  // ページモード: 範囲の中に座標で置く
-  builder.addFeedPosition(builder.FEED_CURRENT_TOF);
+  // ページモード: 範囲の中に座標で置く（続きのシールは先頭へ送らない）
+  if (!label.continued) builder.addFeedPosition(builder.FEED_CURRENT_TOF);
   builder.addPageBegin();
   const { x, y, width, height } = label.area;
   builder.addPageArea(x, y, width, height);
