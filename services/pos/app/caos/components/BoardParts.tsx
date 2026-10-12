@@ -89,8 +89,6 @@ export const DripperIndicator: React.FC<{
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
-      onPointerDown={(event) => event.stopPropagation()}
-      title={onOpenLane && `${dripperLabel(bayId)} の操作（交代・待機を移す）`}
       data-lane-phase={status.phase}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
