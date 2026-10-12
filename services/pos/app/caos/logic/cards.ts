@@ -64,14 +64,13 @@ export const cardName = (card: CaosCard) => {
 export const totalCups = (cards: readonly CaosCard[]) =>
   cards.reduce((sum, card) => sum + card.cups.length, 0);
 
-/** 分けた注文の中のカード（「1/3・計4杯」）。index は 1 始まり。cups は注文の杯数（統合したカードに入った分も数える） */
+/** 分けた注文（total 枚のカードに分かれている）。cups は注文の杯数（統合したカードに入った分も数える） */
 export interface CardSplit {
-  index: number;
   total: number;
   cups: number;
 }
 
-/** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文の中の位置） */
+/** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文） */
 export interface CardLook {
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
@@ -88,29 +87,23 @@ export const cardLooks = (
   settings: ColorSetting[],
   beanIndex: BeanIndex,
 ): CardLooks => {
-  // 注文ごとに、その注文のカップが入ったカード（統合したカードも）を、注文の中の並び（カップの position）で並べる
-  // （割り当てても番号が変わらないように）。入れ直しのカードは注文の分け方に入れない
-  const cupsOf = (card: CaosCard, orderId: string) =>
-    card.cups.filter((cup) => cup.orderId === orderId);
+  // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
     if (card.emergency) continue;
     for (const orderId of new Set(card.cups.map((cup) => cup.orderId)))
       byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
-  for (const [orderId, parts] of byOrder)
-    parts.sort(
-      (a, b) => cupsOf(a, orderId)[0].position - cupsOf(b, orderId)[0].position,
-    );
   const splitOf = (card: CaosCard): CardSplit | undefined => {
     if (card.emergency || cardOrderNos(card).length > 1) return undefined;
     const { orderId } = card.cups[0];
     const parts = byOrder.get(orderId) ?? [];
     if (parts.length <= 1) return undefined;
     return {
-      index: parts.indexOf(card) + 1,
       total: parts.length,
-      cups: parts.flatMap((part) => cupsOf(part, orderId)).length,
+      cups: parts
+        .flatMap((part) => part.cups)
+        .filter((cup) => cup.orderId === orderId).length,
     };
   };
   return new Map(

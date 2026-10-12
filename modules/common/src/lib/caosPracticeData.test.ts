@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import {
-  assertNoPersonalFields,
+  assertAllowedFields,
   mergePracticeFiles,
   readPracticeTexts,
   toPracticeOrder,
@@ -35,7 +35,7 @@ const firestoreOrder = {
   discount: 0,
 };
 
-test("unit: Firestore 版の注文から、許可した項目だけを写す（指名とコメントは落とす）", () => {
+test("unit: Firestore 版の注文から、許可した項目だけを写す（指名は番号にし、名前とコメントは落とす）", () => {
   expect(toPracticeOrder(firestoreOrder)).toStrictEqual({
     orderId: 775,
     createdAt: "2025-11-03T05:16:14.100Z",
@@ -49,9 +49,40 @@ test("unit: Firestore 版の注文から、許可した項目だけを写す（�
         name: "テストブレンド",
         price: 500,
         type: "hot",
+        dripper: 1,
       },
     ],
   });
+});
+
+test("unit: Firestore 版の指名（自由記述）は、番号があれば番号に、名前だけなら自由記述のまま", () => {
+  const nominationOf = (assignee: unknown) => {
+    const order = toPracticeOrder({
+      ...firestoreOrder,
+      items: [{ ...firestoreOrder.items[0], assignee }],
+    });
+    const { dripper, assignee: free } = order?.items[0] ?? {};
+    return [dripper, free];
+  };
+  // 番号の無いもの・番号が 2 つあるもの・7th や 21st は自由記述（本番の番号の無い古い明細と同じく指名なし）
+  const cases: [unknown, [number?, string?]][] = [
+    ["1st", [1]],
+    [" 2nd 架空さん", [2]],
+    ["3-rd", [3]],
+    ["4th架空", [4]],
+    ["5", [5]],
+    ["１ｓｔ", [1]],
+    ["架空 6th", [6]],
+    ["架空さん", [undefined, "架空さん"]],
+    ["1st 2nd", [undefined, "1st 2nd"]],
+    ["7th", [undefined, "7th"]],
+    ["21st", [undefined, "21st"]],
+    [null, []],
+    ["  ", []],
+    [3, []],
+  ];
+  for (const [assignee, [dripper, free]] of cases)
+    expect(nominationOf(assignee)).toStrictEqual([dripper, free]);
 });
 
 test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
@@ -81,13 +112,15 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
         id: "m1",
         menu_name: "優勝",
         unit_price: 500,
-        assignee: "山田",
+        dripper: 2,
+        assignee: "テスト担当",
         menu: { items: [] },
       },
       {
         id: "m2",
         menu_name: "トート",
         unit_price: 400,
+        dripper: 9,
         assignee: null,
         menu: {
           items: [{ item: item("tote", "トート", "others"), quantity: 1 }],
@@ -101,7 +134,7 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
         item: item("champ", "優勝ブレンド", "hot"),
       },
     ],
-    comments: [{ author: "cashier", text: "山田さん指名" }],
+    comments: [{ author: "cashier", text: "テスト担当さん指名" }],
   };
   expect(toPracticeOrder(order)).toStrictEqual({
     orderId: 12,
@@ -123,6 +156,7 @@ test("unit: cafeore-pos の注文（GET /api/orders）も読める", () => {
           needs_brew: true,
           senior_only: false,
         },
+        dripper: 2,
       },
       {
         id: "tote",
@@ -157,13 +191,11 @@ test("unit: 同じ注文が別のファイルにあっても 1 件にし、作�
   ]);
   expect(orders.map((order) => order.orderId)).toStrictEqual([775, 776]);
   expect(skipped).toBe(1);
-  assertNoPersonalFields(orders);
+  assertAllowedFields(orders);
+  expect(() => assertAllowedFields([{ ...orders[0], comments: [] }])).toThrow();
   expect(() =>
-    assertNoPersonalFields([{ ...orders[0], comments: [] }]),
-  ).toThrow();
-  expect(() =>
-    assertNoPersonalFields([
-      { ...orders[0], items: [{ ...orders[0].items[0], assignee: "x" }] },
+    assertAllowedFields([
+      { ...orders[0], items: [{ ...orders[0].items[0], staff: "x" }] },
     ]),
   ).toThrow();
 });

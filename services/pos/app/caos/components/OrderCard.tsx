@@ -17,7 +17,7 @@ import {
 import { moveTargets } from "../logic/lanes";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
-// いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号と分けた注文の「1/2・計4杯」を出す。
+// いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
 // 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）だけ（終わりはカードの状態で薄くする）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
@@ -86,7 +86,7 @@ export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
     /** 注文のカップから組み立てたカード（@cafeore/common の buildCaosCards） */
     card: CaosCard;
-    /** 色・豆と、分けた注文の中の位置（logic/cards.ts の cardLooks） */
+    /** 色・豆と、分けた注文（logic/cards.ts の cardLooks） */
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
@@ -174,7 +174,7 @@ export const OrderCard: React.FC<
           </span>
         </span>
       </div>
-      {/* 注文番号（未割当は商品）・指名・分けた注文の位置と合計・上級生のみ・緊急の理由か豆 */}
+      {/* 注文番号（未割当は商品）・指名・上級生のみ・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
@@ -183,14 +183,6 @@ export const OrderCard: React.FC<
         {nominee && (
           <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
             指名 {nominee}
-          </span>
-        )}
-        {split && (
-          <span className="shrink-0 whitespace-nowrap rounded border border-(color:--caos-same-order) bg-white px-1 py-0.5 font-bold text-(color:--caos-same-order)">
-            <span className="font-black font-mono">
-              {split.index}/{split.total}
-            </span>
-            ・計{split.cups}杯
           </span>
         )}
         {card.seniorOnly && (

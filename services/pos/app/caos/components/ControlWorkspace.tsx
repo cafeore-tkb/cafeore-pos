@@ -22,7 +22,7 @@ export interface ControlViewProps {
   lanes: Lane[];
   /** 未割当のカード（注文番号の順） */
   unassignedOrders: CaosCard[];
-  /** カードの色と、分けた注文の中の位置 */
+  /** カードの色・豆と、分けた注文 */
   looks: CardLooks;
   nextAvailable: NextAvailable;
   /** 選んだ注文（orderLabel） */
