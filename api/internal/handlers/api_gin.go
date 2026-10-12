@@ -47,6 +47,9 @@ type ServerInterface interface {
 	// カップを緊急（入れ直し）にする
 	// (POST /api/cup-emergencies)
 	CreateCupEmergencies(c *gin.Context)
+	// よく使う緊急（入れ直し）の理由
+	// (GET /api/cup-emergencies/reasons)
+	GetCupEmergencyReasons(c *gin.Context)
 	// 緊急（入れ直し）を取り消す
 	// (DELETE /api/cup-emergencies/{id})
 	DeleteCupEmergency(c *gin.Context, id openapi_types.UUID)
@@ -385,6 +388,19 @@ func (siw *ServerInterfaceWrapper) CreateCupEmergencies(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCupEmergencies(c)
+}
+
+// GetCupEmergencyReasons operation middleware
+func (siw *ServerInterfaceWrapper) GetCupEmergencyReasons(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCupEmergencyReasons(c)
 }
 
 // DeleteCupEmergency operation middleware
@@ -1403,6 +1419,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
 	router.POST(options.BaseURL+"/api/cup-emergencies", wrapper.CreateCupEmergencies)
+	router.GET(options.BaseURL+"/api/cup-emergencies/reasons", wrapper.GetCupEmergencyReasons)
 	router.DELETE(options.BaseURL+"/api/cup-emergencies/:id", wrapper.DeleteCupEmergency)
 	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
 	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)

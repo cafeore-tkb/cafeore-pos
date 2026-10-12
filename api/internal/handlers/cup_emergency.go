@@ -49,6 +49,22 @@ func (h *CaosHandler) CreateCupEmergencies(c *gin.Context) {
 // 入れ直す理由の長さ（文字。OpenAPI の maxLength と同じ）
 const cupEmergencyReasonMax = 100
 
+// GET /api/cup-emergencies/reasons - 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、よく使う順に
+// cupEmergencyReasonsLimit 個まで（同じ回数なら理由の文字の順。理由の無い入れ直しは数えない）。
+func (h *CaosHandler) GetCupEmergencyReasons(c *gin.Context) {
+	reasons := []string{}
+	if err := h.db.Model(&models.CupEmergency{}).Where("reason <> ''").Group("reason").
+		Order(`COUNT(*) DESC, reason COLLATE "C"`).Limit(cupEmergencyReasonsLimit).
+		Pluck("reason", &reasons).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, reasons)
+}
+
+// 理由の候補の数
+const cupEmergencyReasonsLimit = 5
+
 // addEmergencies は cupIDs のカップに理由 reason の入れ直しを 1 つずつ足し（cupIDs と同じ順）、入れ直しで減る在庫を残す。
 // 足したカップの注文と、減らした在庫対象の ID も返す。
 // 今日の注文の、抽出が要るカップだけ。注文の行をロックしてから足す（注文の編集・CaOS の書き込みと同じ順番）。
@@ -115,7 +131,7 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 }
 
 // DELETE /api/cup-emergencies/{id} - 緊急（入れ直し）を取り消す（押し間違い）。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。
-// 入れ直しで減らした在庫も戻す。
+// 入れ直しで減らした在庫も戻す。取り消したら全部の画面に {"type":"cup_emergency_cancelled"} で知らせる（publishCupEmergencyCancelled）。
 func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	id, ok := parseUUIDParam(c)
 	if !ok {
@@ -124,8 +140,24 @@ func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	orderID, resourceIDs, err := h.cancelEmergency(id)
 	h.respond(c, []uuid.UUID{orderID}, err)
 	if err == nil {
+		publishCupEmergencyCancelled(h.db, h.hub, id)
 		h.checkStockAlerts(resourceIDs)
 	}
+}
+
+// publishCupEmergencyCancelled は入れ直しを取り消したことを、このインスタンスの画面へ配り、ほかのインスタンスへ DB の通知で知らせる。
+// 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す（注文の一覧から消えたことでは消さない）。
+// 知らせを受け損ねた画面はシールを刷ってしまうが、刷るべきシールを刷らないよりよいので、送り直しはしない。
+func publishCupEmergencyCancelled(db *gorm.DB, hub *Hub, id uuid.UUID) {
+	broadcastCupEmergencyCancelled(hub, id)
+	notifyChanged(db, cupEmergencyCancelledChannel, instanceID+" "+id.String())
+}
+
+// broadcastCupEmergencyCancelled は入れ直しを取り消したことを、このインスタンスの画面へだけ配る（ほかのインスタンスからの通知でも使う）。
+func broadcastCupEmergencyCancelled(hub *Hub, id uuid.UUID) {
+	_ = hub.Publish(func() (WSMessage, error) {
+		return WSMessage{Type: WSMessageTypeCupEmergencyCancelled, CupEmergencyID: &id}, nil
+	})
 }
 
 // cancelEmergency は入れ直しを消す。消した入れ直しの注文と、戻した在庫対象の ID を返す。

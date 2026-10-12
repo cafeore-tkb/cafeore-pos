@@ -1,5 +1,5 @@
 // hooks/useOrdersWS.ts
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiWebSocketUrl } from "../api/client";
 import {
   type OrderResponse,
@@ -34,13 +34,21 @@ type WSMessage =
       cashier_state: components["schemas"]["CashierStateResponse"];
     }
   // CaOS のドリッパーの担当者（今日の 6 つ全部）。変わるたびと、つないだとき（今日の担当者があれば）に届く
-  | { type: "caos_lanes"; caos_lanes: CaosLanes };
+  | { type: "caos_lanes"; caos_lanes: CaosLanes }
+  // 取り消された緊急（入れ直し）の id。取り消したときに 1 回だけ届く（つないだときには届かない）
+  | { type: "cup_emergency_cancelled"; cup_emergency_id: string };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
 const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 
-export const useOrdersWS = () => {
+/**
+ * 共有の WebSocket（/api/ws/orders）。注文・オーダーストップ・レジの状態・CaOS の担当者を持つ。
+ * onCupEmergencyCancelled は緊急（入れ直し）が取り消されたという知らせを受けたときだけ呼ぶ（注文の一覧から消えたことでは呼ばない）
+ */
+export const useOrdersWS = ({
+  onCupEmergencyCancelled,
+}: { onCupEmergencyCancelled?: (id: string) => void } = {}) => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
   // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま。
@@ -53,6 +61,9 @@ export const useOrdersWS = () => {
   // CaOS のドリッパーの担当者。まだ届いていなければ null（担当者なし）
   const [caosLanes, setCaosLanes] = useState<CaosLanes | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
+  // つなぎ直さずに最新の関数を呼ぶ
+  const onCancelledRef = useRef(onCupEmergencyCancelled);
+  onCancelledRef.current = onCupEmergencyCancelled;
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
@@ -93,6 +104,10 @@ export const useOrdersWS = () => {
 
           case "caos_lanes":
             setCaosLanes(data.caos_lanes);
+            break;
+
+          case "cup_emergency_cancelled":
+            onCancelledRef.current?.(data.cup_emergency_id);
             break;
 
           default:
