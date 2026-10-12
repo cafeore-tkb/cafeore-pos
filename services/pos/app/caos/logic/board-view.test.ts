@@ -2,7 +2,7 @@ import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import { orderRows } from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
-import { earlyNext, laneStatus } from "./queue";
+import { earlyNext, laneStatus, laneTimes } from "./queue";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -124,8 +124,8 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     const phase = (sec: number, lane = lanes[0]) =>
       laneStatus(lane, T0.getTime() + sec * 1000).phase;
     expect(phase(0)).toBe("brewing");
-    expect(phase(125)).toBe("soon");
-    expect(phase(200)).toBe("overtime");
+    expect(phase(290)).toBe("soon");
+    expect(phase(310)).toBe("overtime");
     expect(phase(0, lanes[2])).toBe("empty");
   });
 
@@ -133,10 +133,39 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     const at = (sec: number) => T0.getTime() + sec * 1000;
     expect(laneStatus(lanes[0], at(9)).nextLocked).toBe(true);
     expect(laneStatus(lanes[0], at(10)).nextLocked).toBe(false);
-    // 1 杯は 135 秒なので、67 秒までは確かめる
-    expect(earlyNext(lanes[0], at(67))?.elapsedSec).toBe(67);
-    expect(earlyNext(lanes[0], at(68))).toBeNull();
+    // 1 杯は 300 秒なので、149 秒までは確かめる
+    expect(earlyNext(lanes[0], at(149))?.elapsedSec).toBe(149);
+    expect(earlyNext(lanes[0], at(150))).toBeNull();
     expect(earlyNext(lanes[2], at(0))).toBeNull();
+  });
+
+  test("予定の時刻は 1 杯 5 分・2 杯 6 分の抽出と、15 秒の入れ替え", () => {
+    // 1st：#1（1 杯）を抽出中、#6（2 杯）と #5（1 杯）が待機
+    const [lane] = boardLanes(
+      buildCaosCards([
+        order(1, [
+          { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+        ]),
+        order(5, [{ dripper: 1, dripId: "d5", dripperPosition: 3 }]),
+        order(6, [
+          { dripper: 1, dripId: "d6", dripperPosition: 2 },
+          { dripper: 1, dripId: "d6", dripperPosition: 2 },
+        ]),
+      ]),
+    );
+    const sec = (ms: number) => (ms - T0.getTime()) / 1000;
+    expect(
+      laneTimes(lane, T0.getTime()).map(({ card, startMs, endMs }) => [
+        card.key,
+        sec(startMs),
+        sec(endMs),
+      ]),
+    ).toEqual([
+      ["d1", 0, 300],
+      ["d6", 315, 675],
+      ["d5", 690, 990],
+    ]);
+    expect(laneStatus(lane, T0.getTime()).remainingSec).toBe(300);
   });
 
   test("待機のカードがあり、まだ始めていない列は待機", () => {
