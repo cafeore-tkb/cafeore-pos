@@ -6,9 +6,11 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosDayOrders,
   caosLateMerge,
   dripperLabel,
   jstClock,
+  jstDate,
   mergeWrites,
   moveQueueWrites,
   seniorOnlyBlock,
@@ -31,6 +33,7 @@ import {
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { waitingCupsByBean } from "../logic/beans";
 import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
@@ -133,9 +136,16 @@ export const useCaosSession = () => {
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],
   );
+  // 本番の今日の注文のコメント（実データテスト中と、注文が届くまでは null）
+  const today = jstDate(realTime.getTime());
+  const comments = useMemo(
+    () =>
+      live.orders ? commentsByOrder(caosDayOrders(live.orders, today)) : null,
+    [live.orders, today],
+  );
   const looks = useMemo(
-    () => cardLooks(cards, colorSettings, beanIndex),
-    [cards, colorSettings, beanIndex],
+    () => cardLooks(cards, colorSettings, beanIndex, comments),
+    [cards, colorSettings, beanIndex, comments],
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
@@ -290,8 +300,10 @@ export const useCaosSession = () => {
     lanes,
     /** 未割当（注文番号の順） */
     unassigned,
-    /** カードの色・豆と、分けた注文の中の位置 */
+    /** カードの色・豆・コメントと、分けた注文の中の位置 */
     looks,
+    /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
+    comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
     cups: {

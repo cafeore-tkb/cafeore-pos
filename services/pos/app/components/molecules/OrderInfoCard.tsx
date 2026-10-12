@@ -1,4 +1,5 @@
 import {
+  AUTHOR_MARKS,
   type ColorScreen,
   type OrderEntity,
   type WithId,
@@ -213,9 +214,6 @@ const ServedTime = ({ order }: { order: OrderEntity }) => {
     </div>
   );
 };
-
-// コメントの書き手を1文字で出す
-const AUTHOR_MARKS = { cashier: "レ", master: "マ", serve: "提", others: "他" };
 
 const CommentList = ({ order }: { order: OrderEntity }) =>
   order.comments.length > 0 && (

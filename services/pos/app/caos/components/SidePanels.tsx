@@ -35,10 +35,11 @@ import {
   LaneName,
 } from "./LaneParts";
 import { OrderCard, SplitCupButtons } from "./OrderCard";
+import { CommentList } from "./OrderComments";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
 // onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
-const SidePanel: React.FC<{
+export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
   onOutsidePress?: () => void;
@@ -260,6 +261,7 @@ export const TicketDetailPanel: React.FC<
     onOutsidePress={onClose}
   >
     <OrderCard card={ticket} look={look} size="xl" />
+    <CommentList comments={look?.comments} className="mt-3" />
     <MoveCardButtons
       card={ticket}
       currentBayId={currentBayId}
@@ -322,6 +324,7 @@ export const RebrewPanel: React.FC<
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />
+          <CommentList comments={look?.comments} className="mt-3" />
         </div>
       )}
       <EmergencyForm
