@@ -32,15 +32,14 @@ export const predictReadyMinutes = (
  * いまの stack。今日（日本時間）受けた注文のうち、まだ提供可能になっていない（readyAt が無い）ものの杯数の合計。
  * readyAt は全カップが揃ったときに付く注文単位のものを使う（カップ単位で数えると予測が短めに出る）。
  * 受け取り待ち（readyAt があって servedAt が無い）は数えない。入力中の注文は orders に含めない。
+ * now は今日を決めるためだけに使う。画面の now は少し古いことがあり、受付の時刻と比べると直前に確定した注文が漏れる。
  */
 export const currentStack = (orders: OrderEntity[], now: Date): number => {
   const today = jstDate(now.getTime());
   return orders
     .filter(
       (order) =>
-        order.readyAt === null &&
-        order.createdAt < now &&
-        jstDate(order.createdAt.getTime()) === today,
+        order.readyAt === null && jstDate(order.createdAt.getTime()) === today,
     )
     .reduce((sum, order) => sum + order.getDrinkCups().length, 0);
 };

@@ -102,8 +102,8 @@ describe("[unit] currentStack", () => {
     expect(currentStack(orders, now)).toBe(1);
   });
 
-  test("いまより後に受けた注文は数えない", () => {
-    const orders = [order("2026-11-07T12:00:01+09:00", [blend])];
-    expect(currentStack(orders, now)).toBe(0);
+  test("now より後に確定した注文も数える（画面の now は少し古いことがある）", () => {
+    const orders = [order("2026-11-07T12:00:20+09:00", [blend])];
+    expect(currentStack(orders, now)).toBe(1);
   });
 });
