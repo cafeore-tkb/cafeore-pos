@@ -35,6 +35,13 @@ const SIZES = {
     cups: "px-0.5 text-[13px]",
     meta: "text-[11px]",
   },
+  // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
+  queue: {
+    pad: "px-2.5 py-1.5",
+    name: "text-[21px]",
+    cups: "px-1.5 text-[18px]",
+    meta: "text-[15px]",
+  },
   // 管制盤 A のタイムラインと未割当
   md: {
     pad: "px-2 py-1",
