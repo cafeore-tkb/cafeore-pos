@@ -39,6 +39,7 @@ import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { type UndoRun, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
+import { useNextConfirms } from "./useNextConfirms";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
 
@@ -82,10 +83,6 @@ export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
-  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
-  const [nextConfirm, setNextConfirm] = useState<
-    ({ bayId: number } & NonNullable<ReturnType<typeof earlyNext>>) | null
-  >(null);
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）。確かめてから統合する
   const [mergeConfirm, setMergeConfirm] = useState<{
     card: CaosCard;
@@ -123,6 +120,8 @@ export const useCaosSession = () => {
     restoreEmergencies,
   } = useCupEmergency();
   const undo = useCaosUndo(realTime.getTime());
+  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）。確かめてから進める
+  const nextConfirms = useNextConfirms(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -394,22 +393,22 @@ export const useCaosSession = () => {
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
      * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める。
-     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず nextConfirm で確かめる
+     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず nextConfirms で確かめる
      */
     advance: (bayId: number) => {
       const lane = lanes.find((l) => l.id === bayId);
       const early = lane && earlyNext(lane, nowMs);
-      if (early) setNextConfirm({ bayId, ...early });
+      if (early) nextConfirms.ask({ bayId, ...early });
       else runNext(bayId, lane?.brewing?.dripId ?? null);
     },
-    /** 確かめている「次へ」（無ければ null） */
-    nextConfirm,
+    /** 確かめている「次へ」（ドリッパーごと。新しいものが先） */
+    nextConfirms: nextConfirms.open,
     /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
-    confirmNext: () => {
-      if (nextConfirm) runNext(nextConfirm.bayId, nextConfirm.card.dripId);
-      setNextConfirm(null);
+    confirmNext: (bayId: number) => {
+      const confirm = nextConfirms.take(bayId);
+      if (confirm) runNext(bayId, confirm.card.dripId);
     },
-    cancelNext: () => setNextConfirm(null),
+    cancelNext: nextConfirms.dismiss,
     /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
     undo: {
       label: undo.label,
@@ -420,6 +419,7 @@ export const useCaosSession = () => {
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
       undo.forget();
+      nextConfirms.clear();
       test.clear();
       setIsRunning(true);
       soundManager.playDispatch();
@@ -442,6 +442,7 @@ export const useCaosSession = () => {
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
         undo.forget();
+        nextConfirms.clear();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
         setSimSpeed(TEST_START_SPEED);

@@ -24,6 +24,8 @@ export type EmergencyFormProps<O extends CaosOrderInput> = {
   /** 足した入れ直しの id。断られたら null */
   onAdd: (cups: EmergencyCup<O>[], reason: string) => Promise<string[] | null>;
   onDone: () => void;
+  /** 実データテストの練習の盤面に足す（シールを刷らないので、確定のボタンにそう書く） */
+  practice?: boolean;
 };
 
 export const EmergencyForm = <O extends CaosOrderInput>({
@@ -31,6 +33,7 @@ export const EmergencyForm = <O extends CaosOrderInput>({
   initial,
   onAdd,
   onDone,
+  practice = false,
 }: EmergencyFormProps<O>) => {
   const id = useId();
   const draft = useEmergencyDraft(orders, initial);
@@ -131,7 +134,9 @@ export const EmergencyForm = <O extends CaosOrderInput>({
         className="h-12 gap-2 font-bold text-base"
       >
         <EmergencyIcon className="h-5 w-5" />
-        {draft.selected.length}杯を入れ直して刷る
+        {practice
+          ? `${draft.selected.length}杯を入れ直す（テストなので刷りません）`
+          : `${draft.selected.length}杯を入れ直して刷る`}
       </Button>
     </form>
   );
