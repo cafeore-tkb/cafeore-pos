@@ -2,7 +2,7 @@ import { type PracticeDataset, readPracticeTexts } from "@cafeore/common";
 import { useCallback, useRef, useState } from "react";
 
 // 実データテストのデータ。利用者が画面で選んだ手元の JSON（sohosai-analysis の day*.json など）を、
-// この端末のブラウザの中で読み、名前とコメントを落としてから使う（readPracticeTexts）。
+// この端末のブラウザの中で読み、練習に使う項目（指名を含む）だけを写してから使う（readPracticeTexts。担当者名・コメントは落とす）。
 // サーバー・API にも配信にも出さず、この画面を開いている間だけ覚えておく（開き直したら選び直す）。
 export const usePracticeData = () => {
   const [dataset, setDataset] = useState<PracticeDataset | null>(null);

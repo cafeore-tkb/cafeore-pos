@@ -95,7 +95,7 @@ export const useCaosSession = () => {
   const stopRunning = useCallback(() => setIsRunning(false), []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
-  // （ブラウザの中で名前とコメントを落とす。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
+  // （ブラウザの中で練習に使う項目だけを写す。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
   const practiceData = usePracticeData();
   const { itemTypes } = useItemMaster();
   const test = useTestPlay({

@@ -2,19 +2,22 @@
 // （読み込んだデータはサーバーにも配信にも出さない。リポジトリにも入れない）。
 //
 // 入れる項目は下の toPracticeOrder で決めた分だけ（許可したものだけを写す）。
-// 担当者名・指名（assignee）・コメント（comments）・お預かり（received）・Firestore の文書 ID などは写さない。
-// 人の名前や文章になりうる項目を、元のデータに足されても入れないため。
+// 指名は、練習の盤面で本番と同じ指名の表示・決まりを出すために写す（ブラウザの中だけなので）。写すのは指名の番号（dripper）と、
+// 番号の無い指名の自由記述（assignee。本番と同じく、番号の無い自由記述だけの指名は札に出すだけで指名なし）だけ。
+// ほかの担当者名・コメント（comments）・お預かり（received）・Firestore の文書 ID などは写さない。
 //
 // 読める形は 2 つ：
 //   - sohosai-analysis の YYYY/data/day*.json（Firestore 版の POS。2024・2025 年）：
 //       { orders: [{ orderId, createdAt, readyAt, servedAt, total, billingAmount,
 //         items: [{ id, name, price, type, assignee }], comments, ... }] }
+//     （assignee は自由記述。「1st」「1st 名前」「1」のように番号があればその番号、名前だけなら番号の無い自由記述）
 //   - cafeore-pos（2026 年から）の GET /api/orders の応答をそのまま保存したもの：
 //       [{ id, order_id, created_at, ready_at, served_at, billing_amount,
-//         menus: [{ id, menu_name, unit_price, assignee, menu: { items: [{ item, quantity }] } }],
+//         menus: [{ id, menu_name, unit_price, dripper, assignee, menu: { items: [{ item, quantity }] } }],
 //         cups: [{ order_menu_id, item }], comments }]
 //     （配列のままでも、{ orders: [...] } でもよい）
 
+import { DRIPPER_NUMBERS, dripperLabel } from "../models/dripper";
 import { jstDate } from "./jst";
 
 /** 実データの注文の品物（1 杯・1 個ずつ）。id は実績データの商品の ID（無いデータもある） */
@@ -28,6 +31,10 @@ export interface PracticeDataItem {
   type: string;
   /** 注文したときの商品の種類の設定（cafeore-pos の注文にだけある） */
   itemType?: PracticeDataItemType;
+  /** 指名のドリッパーの番号（1〜6）。指名なし・番号の無い自由記述だけの指名は無し */
+  dripper?: number;
+  /** 番号の無い指名の自由記述（番号があれば無し） */
+  assignee?: string;
 }
 
 /** 商品の種類の設定（POS の item_type の表示名と、カップを作る・抽出が要る・限定） */
@@ -77,6 +84,38 @@ const text = (value: unknown): string =>
 const bool = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 
+/** 自由記述の中のドリッパーの番号（「1st」「2-nd」「1」。全角も）。無い・2 つ以上あれば null */
+const dripperInText = (value: string): number | null => {
+  const normalized = value
+    .normalize("NFKC")
+    .toLowerCase()
+    .trim()
+    .replace(/(\d)[\s:-]+(?=[a-z])/g, "$1");
+  const found = DRIPPER_NUMBERS.filter(
+    (n) =>
+      normalized === String(n) ||
+      new RegExp(`(^|\\D)${dripperLabel(n)}`).test(normalized),
+  );
+  return found.length === 1 ? found[0] : null;
+};
+
+/**
+ * 品物の指名（本番の明細の dripper・assignee）。番号は dripper（1〜6）か、無ければ自由記述の中の番号。
+ * 自由記述は番号の無いときだけ写す（本番も番号があれば番号を出す）
+ */
+const nominationOf = (
+  dripper: unknown,
+  assignee: unknown,
+): Pick<PracticeDataItem, "dripper" | "assignee"> => {
+  const free = text(assignee);
+  const number =
+    typeof dripper === "number" && DRIPPER_NUMBERS.includes(dripper)
+      ? dripper
+      : dripperInText(free);
+  if (number !== null) return { dripper: number };
+  return free ? { assignee: free } : {};
+};
+
 /** cafeore-pos の注文の品物の種類の設定。無ければ undefined */
 const itemTypeOf = (type: unknown): PracticeDataItemType | undefined => {
   if (!isObject(type)) return undefined;
@@ -117,6 +156,7 @@ const fromFirestore = (order: Loose): RawOrder => ({
     name: text(field(item, "name")),
     price: num(field(item, "price")),
     type: text(field(item, "type")),
+    ...nominationOf(undefined, field(item, "assignee")),
   })),
 });
 
@@ -144,6 +184,10 @@ const fromCafeorePos = (order: Loose): RawOrder => {
           );
     const price =
       lineItems.length > 0 ? Math.round(unitPrice / lineItems.length) : 0;
+    const nomination = nominationOf(
+      field(line, "dripper"),
+      field(line, "assignee"),
+    );
     for (const item of lineItems) {
       const abbr = text(field(item, "abbr"));
       const itemType = itemTypeOf(field(item, "item_type"));
@@ -154,6 +198,7 @@ const fromCafeorePos = (order: Loose): RawOrder => {
         price,
         type: text(field(field(item, "item_type"), "name")),
         ...(itemType ? { itemType } : {}),
+        ...nomination,
       });
     }
   }
@@ -204,6 +249,8 @@ export const toPracticeOrder = (order: unknown): PracticeDataOrder | null => {
               },
             }
           : {}),
+        ...(item.dripper !== undefined ? { dripper: item.dripper } : {}),
+        ...(item.assignee ? { assignee: item.assignee } : {}),
       })),
   };
 };
@@ -265,6 +312,8 @@ const ALLOWED_ITEM_KEYS = new Set([
   "price",
   "type",
   "itemType",
+  "dripper",
+  "assignee",
 ]);
 const ALLOWED_ITEM_TYPE_KEYS = new Set([
   "display_name",
@@ -273,8 +322,8 @@ const ALLOWED_ITEM_TYPE_KEYS = new Set([
   "senior_only",
 ]);
 
-/** 写してはいけない項目が入っていないか（念のため。見つかったら投げる） */
-export const assertNoPersonalFields = (orders: unknown[]) => {
+/** 許可した項目のほかに入っていないか（念のため。見つかったら投げる） */
+export const assertAllowedFields = (orders: unknown[]) => {
   for (const order of orders) {
     for (const key of Object.keys(isObject(order) ? order : {})) {
       if (!ALLOWED_ORDER_KEYS.has(key))
@@ -296,7 +345,7 @@ export const assertNoPersonalFields = (orders: unknown[]) => {
   }
 };
 
-/** 読み込んだ実データ（名前とコメントを落とした後） */
+/** 読み込んだ実データ（許可した項目だけを写した後） */
 export interface PracticeDataset {
   /** どのデータか（例「2025年の実績」）。画面の表示に使う */
   label: string;
@@ -354,7 +403,7 @@ export const readPracticeTexts = (
   const { orders, skipped } = mergePracticeFiles(jsons);
   if (orders.length === 0) return { data: null, problems };
   // 念のため：写してはいけない項目が入っていたら使わない
-  assertNoPersonalFields(orders);
+  assertAllowedFields(orders);
   return {
     data: { label: labelOf(orders), files: names, orders, skipped },
     problems,
