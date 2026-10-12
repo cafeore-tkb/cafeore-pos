@@ -188,6 +188,10 @@ func TestMenuCRUD(t *testing.T) {
 	if len(menus) != 3 {
 		t.Fatalf("deleted menu must not be listed: %+v", menus)
 	}
+	// 消したメニューのキーは別のメニューに使える
+	api.do(http.MethodPost, "/api/menus", models.MenuCreateRequest{
+		Name: "缶バッジ", Abbr: "缶", Key: created.Key, Price: 300, Items: []models.MenuItemRequest{{ItemId: m.blend.ID, Quantity: 1}},
+	}).expect(http.StatusCreated)
 
 	for _, path := range []string{"/api/menus/" + uuid.NewString(), "/api/menus/" + created.Id.String()} {
 		api.do(http.MethodGet, path, nil).expect(http.StatusNotFound)

@@ -449,3 +449,63 @@ func TestMigrateRenamesColorScreen(t *testing.T) {
 		t.Errorf("値を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
 	}
 }
+
+func menuKeyIndexDef(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var def string
+	if err := db.Raw("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_menus_key'").Scan(&def).Error; err != nil {
+		t.Fatal(err)
+	}
+	return def
+}
+
+// 前の形（消したメニューも数える）のメニューのキーの索引は、消していないメニューだけの部分索引に変わり、
+// 消したメニューのキーを使える。2 回目は何もせず、モデルともずれない
+func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	const partial = "CREATE UNIQUE INDEX idx_menus_key ON public.menus USING btree (key) WHERE (deleted_at IS NULL)"
+	if def := menuKeyIndexDef(t, db); def != partial {
+		t.Fatalf("空の DB に作った索引 = %s", def)
+	}
+	mustExec(t, db, "DROP INDEX idx_menus_key")
+	mustExec(t, db, `CREATE UNIQUE INDEX "idx_menus_key" ON "menus" ("key")`)
+	old := models.Menu{Name: "トートバッグ", Abbr: "ト", Price: 1500, Key: "*"}
+	if err := db.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if def := menuKeyIndexDef(t, db); def != partial {
+		t.Fatalf("索引 = %s, want %s", def, partial)
+	}
+	if err := db.Create(&models.Menu{Name: "缶バッジ", Abbr: "缶", Price: 300, Key: "*"}).Error; err != nil {
+		t.Fatalf("消したメニューのキーを使えない: %v", err)
+	}
+	if err := db.Create(&models.Menu{Name: "被り", Abbr: "被", Price: 300, Key: "*"}).Error; err == nil {
+		t.Error("消していないメニューとキーが重なっても作れてしまう")
+	}
+
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("索引を作り直したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}

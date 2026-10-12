@@ -68,6 +68,10 @@ func migrate(db *gorm.DB) error {
 			}
 		}
 
+		if err := dropOldMenuKeyIndex(tx); err != nil {
+			return fmt.Errorf("failed to drop idx_menus_key: %w", err)
+		}
+
 		splitStock, err := prepareItemStockMigration(tx)
 		if err != nil {
 			return fmt.Errorf("failed to prepare stock_resources: %w", err)
@@ -96,6 +100,22 @@ func migrate(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+// メニューのキーの一意の索引を、消していないメニューの中だけの部分索引にしたとき（2026-10）の移行。
+// AutoMigrate は同じ名前の索引があると作り直さないので、前の形（WHERE の無い索引）なら消しておく（AutoMigrate が部分索引で作り直す）。
+func dropOldMenuKeyIndex(tx *gorm.DB) error {
+	var old bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM pg_indexes
+		WHERE schemaname = current_schema() AND indexname = 'idx_menus_key' AND indexdef NOT LIKE '% WHERE %')`).
+		Scan(&old).Error; err != nil {
+		return err
+	}
+	if !old {
+		return nil
+	}
+	return tx.Exec(`DROP INDEX idx_menus_key`).Error
 }
 
 // 在庫をアイテムの在庫とカップの 2 種類にしたとき（2026-10）の一度だけの移行。stock_resources に item_id が無ければ流す。
