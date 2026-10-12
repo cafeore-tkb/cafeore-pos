@@ -110,7 +110,8 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 		scanFrom = hourAgo
 	}
 
-	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。緊急（入れ直し）も同じ。
+	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。
+	// 緊急（入れ直し）も同じで、作った時刻は抽出を始めた時刻（since より前に足して、since 以降に始めた・まだ始めていないものを数える）。
 	// 量は受けたときに残したもの（stockUsages）で数える。
 	err := db.Raw(`
 		SELECT
@@ -138,12 +139,12 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 const consumedAfter = `u.created_at > @since OR (u.created_at > @pending_from AND (u.ready_at IS NULL OR u.ready_at > @since))`
 
 // 在庫の消費：注文の明細（受けた時刻・作った時刻は注文の created_at・ready_at）と、
-// 緊急（入れ直し）（足した時刻と、入れ直しの抽出を終えた時刻）。
+// 緊急（入れ直し）（足した時刻と、入れ直しの抽出を始めた時刻。始めた時刻で使ったことにする）。
 const stockUsages = `(
 	SELECT u.resource_id, u.servings, u.amount, o.created_at, o.ready_at
 	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
 	UNION ALL
-	SELECT u.resource_id, u.servings, u.amount, e.created_at, e.brew_finished_at
+	SELECT u.resource_id, u.servings, u.amount, e.created_at, e.brew_started_at
 	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id)`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。

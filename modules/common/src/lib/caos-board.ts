@@ -36,8 +36,8 @@ export const caosDripperError = (dripper: number) =>
 /** 1 枚のカード（1 回のドリップ）で淹れる最大の杯数 */
 export const CAOS_MAX_CUPS = 2;
 
-/** 1 枚のカードの抽出時間（秒）。全ドリッパー同じ（1 杯 135 秒・2 杯 195 秒） */
-export const caosBrewSec = (cups: number) => (cups > 1 ? 195 : 135);
+/** 1 枚のカードの抽出時間（秒）。全ドリッパー同じ（1 杯 300 秒・2 杯 360 秒） */
+export const caosBrewSec = (cups: number) => (cups > 1 ? 360 : 300);
 
 export type CaosCardStatus = "unassigned" | "queued" | "brewing" | "done";
 
@@ -389,22 +389,6 @@ export interface CaosAssignOptions {
   /** 新しいカードの dripId を作る */
   newId: () => string;
 }
-
-/** 注文の入れ直しの理由を、よく使う順に limit 個（緊急の理由の候補。理由の無いものは数えない） */
-export const frequentEmergencyReasons = (
-  orders: readonly { cups: readonly Pick<Cup, "emergencies">[] }[],
-  limit = 5,
-): string[] => {
-  const counts = new Map<string, number>();
-  for (const order of orders)
-    for (const cup of order.cups)
-      for (const { reason } of cup.emergencies)
-        if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
-  return [...counts]
-    .sort((a, b) => b[1] - a[1] || compareStr(a[0], b[0]))
-    .slice(0, limit)
-    .map(([reason]) => reason);
-};
 
 /** カードを置けるドリッパーか。指名の番号のあるカードは、その番号のドリッパーだけ（サーバーも同じ決まりで断る） */
 export const caosDripperAllowed = (

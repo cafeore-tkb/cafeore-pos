@@ -14,8 +14,10 @@ import {
   type CaosPracticeOrder,
   type CaosPracticeSourceItem,
   type CaosPracticeSourceOrder,
+  addCaosPracticeEmergencies,
   advanceCaosPracticeDripper,
   applyCaosPracticeWrites,
+  cancelCaosPracticeEmergency,
   toCaosPracticeOrder,
 } from "./caosPractice";
 import type { PracticeDataItemType } from "./caosPracticeData";
@@ -382,5 +384,120 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     );
     expect(orders[0].cups[0].dripId).toBeNull();
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
+  });
+});
+
+describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決まり）", () => {
+  const addEmergencies = (
+    orders: CaosPracticeOrder[],
+    cupIds: string[],
+    reason: string,
+    now: Date,
+  ) => {
+    const added = addCaosPracticeEmergencies(
+      orders,
+      cupIds,
+      reason,
+      now,
+      newId,
+    );
+    if ("error" in added) throw new Error(added.error);
+    return added;
+  };
+
+  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップを準備完了にする", () => {
+    const initial = ordersOf([hot], [hot]);
+    const cupId = initial[0].cups[0].id;
+    const added = addEmergencies(initial, [cupId], "  こぼした ", at(5));
+    let orders = added.orders;
+    expect(initial[0].cups[0].emergencies).toHaveLength(0);
+    const emergency = orders[0].cups[0].emergencies[0];
+    expect(emergency).toMatchObject({
+      id: added.ids[0],
+      reason: "こぼした",
+      createdAt: at(5),
+      dripper: null,
+    });
+    const [card] = unassigned(orders).filter((c) => c.emergency);
+    expect(card.cups.map((cup) => cup.id)).toStrictEqual(added.ids);
+
+    // 割当（空いていればそのまま抽出）。抽出の開始は練習の時計の今
+    orders = assign(orders, card, 2, at(10));
+    expect(orders[0].cups[0].emergencies[0].brewStartedAt).toStrictEqual(
+      at(10),
+    );
+    expect(orders[0].cups[0].dripper).toBeNull();
+    const advanced = advanceCaosPracticeDripper(
+      orders,
+      2,
+      caosLane(cardsOf(orders), 2).brewing?.dripId ?? null,
+      at(310),
+    );
+    if (advanced.error !== undefined) throw new Error(advanced.error);
+    expect(
+      advanced.orders[0].cups[0].emergencies[0].brewFinishedAt,
+    ).toStrictEqual(at(310));
+    expect(advanced.orders[0].cups[0].readyAt).toStrictEqual(at(310));
+  });
+
+  test("入れ直しは入れ直しどうしだけ統合でき、緊急でないカップと同じカードにはできない", () => {
+    const initial = ordersOf([hot], [hot]);
+    const { orders, ids } = addEmergencies(
+      initial,
+      [initial[0].cups[0].id],
+      "",
+      at(0),
+    );
+    const write = (cupIds: string[]): CaosCupsWrite => ({
+      cup_ids: cupIds,
+      before: UNPLACED,
+      after: {
+        dripper: null,
+        drip_id: "m",
+        insert_before: null,
+        start_brew: false,
+      },
+    });
+    expect(
+      applyCaosPracticeWrites(
+        orders,
+        [write([ids[0], orders[1].cups[0].id])],
+        at(0),
+      ).error,
+    ).toBe("緊急（入れ直し）と緊急でないカップは同じカードにできません");
+  });
+
+  test("取り消せるのはまだ抽出を始めていない入れ直しだけ。抽出の要らないカップ・無いカップには足せない", () => {
+    const initial = ordersOf([hot], [milk]);
+    const { orders, ids } = addEmergencies(
+      initial,
+      [initial[0].cups[0].id],
+      "",
+      at(0),
+    );
+    const cancelled = cancelCaosPracticeEmergency(orders, ids[0]);
+    if (cancelled.error !== undefined) throw new Error(cancelled.error);
+    expect(cancelled.orders[0].cups[0].emergencies).toHaveLength(0);
+    expect(orders[0].cups[0].emergencies).toHaveLength(1);
+    expect(
+      cancelCaosPracticeEmergency(cancelled.orders, ids[0]).error,
+    ).toContain("入れ直しが見つかりません");
+
+    const [card] = unassigned(orders).filter((c) => c.emergency);
+    const brewing = assign(orders, card, 1, at(0));
+    expect(cancelCaosPracticeEmergency(brewing, ids[0]).error).toBe(
+      "抽出を始めた入れ直しは取り消せません",
+    );
+
+    const add = (cupIds: string[], reason = "") =>
+      addCaosPracticeEmergencies(initial, cupIds, reason, at(0), newId);
+    expect(add([initial[1].cups[0].id])).toStrictEqual({
+      error: "抽出の要らないカップ（テストミルク）は入れ直せません",
+    });
+    expect(add(["missing"])).toHaveProperty("error");
+    expect(add([])).toHaveProperty("error");
+    expect(add([initial[0].cups[0].id], "あ".repeat(101))).toStrictEqual({
+      error: "理由は 100 文字までです",
+    });
   });
 });
