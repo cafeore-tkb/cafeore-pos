@@ -284,7 +284,7 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		case <-changes.wake:
 		}
 		s := changes.take()
-		failed := changeSet{orderIDs: map[uuid.UUID]struct{}{}}
+		failed := newChangeSet()
 		if s.allOrders && !h.publishAllOrders() {
 			failed.allOrders = true
 		}

@@ -62,8 +62,8 @@ export const useOrdersWS = ({
   const [caosLanes, setCaosLanes] = useState<CaosLanes | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
   // つなぎ直さずに最新の関数を呼ぶ
-  const cancelledRef = useRef(onCupEmergencyCancelled);
-  cancelledRef.current = onCupEmergencyCancelled;
+  const onCancelledRef = useRef(onCupEmergencyCancelled);
+  onCancelledRef.current = onCupEmergencyCancelled;
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
@@ -107,7 +107,7 @@ export const useOrdersWS = ({
             break;
 
           case "cup_emergency_cancelled":
-            cancelledRef.current?.(data.cup_emergency_id);
+            onCancelledRef.current?.(data.cup_emergency_id);
             break;
 
           default:
