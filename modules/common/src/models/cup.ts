@@ -21,7 +21,8 @@ export type CupEmergency = z.infer<typeof cupEmergencySchema>;
 
 /**
  * 注文の1杯。注文明細（メニュー）の構成品を数量分に展開したもの（グッズは含まない）。
- * 注文を保存したときにサーバーが作る。
+ * 注文を保存したときにサーバーが作る。API はどの列もいつも返すので既定値は持たない
+ * （レジの編集中の注文＝cashier_state は保存前なので、cups は空）。
  */
 export const cupSchema = z.object({
   id: z.string(),
