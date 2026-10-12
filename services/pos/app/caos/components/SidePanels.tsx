@@ -303,13 +303,13 @@ export const TicketDetailPanel: React.FC<
 // 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードの注文とカップを選んでおく
 // （注文をまたいで統合したカードは、先頭のカップの注文）。ヘッダーから開けば番号から入れる。
 // 確定すると、未割当のいちばん上に入れ直しのカードが出て、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
-// 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す（move を渡したときだけ）。パネルの外を押すと閉じる
+// 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す。パネルの外を押すと閉じる
 export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
     card?: CaosCard;
     look?: CardLook;
     onClose: () => void;
-    move?: MoveActions;
+    move: MoveActions;
   }
 > = ({ card, look, onClose, move, ...form }) => {
   const first = card?.cups[0];
@@ -336,7 +336,7 @@ export const RebrewPanel: React.FC<
         }
         onDone={onClose}
       />
-      {card?.status === "brewing" && move && (
+      {card?.status === "brewing" && (
         <MoveCardButtons
           card={card}
           currentBayId={card.dripper}

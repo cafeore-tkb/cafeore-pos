@@ -656,17 +656,12 @@ func TestCaosMoveBrewingOnDB(t *testing.T) {
 	}
 	expectLane(3, nil)
 
-	// 終わったカード（「次へ」で終えた・抽出中でカップが全部準備完了）は動かせない
+	// 終わったカード（「次へ」で終えた・抽出中でカップが全部準備完了）は動かせない。1 番は b を始めて終え、a を始める
 	if code := f.next(t, 1, nil); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	f.wait()
-	if code := f.next(t, 1, &x); code != http.StatusConflict { // x はもう未割当
-		t.Fatalf("next with a stale card = %d", code)
-	}
-	brewing, _ := f.lane(t, 1)
-	f.wait()
-	if code := f.next(t, 1, &brewing[0]); code != http.StatusNoContent {
+	if code := f.next(t, 1, &b); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	if code, body := f.put(t, write(ids(o[2].OrderCups[0]), f.state(t, cupOf(2)), placed(4, b, false))); code != http.StatusBadRequest ||
