@@ -206,9 +206,12 @@ export const undoOfOrderReady = (
         )
       : [],
   );
+  // この注文のカップは、呼び出しで準備完了になっているはず
   return {
     cups: cups.map((cup) =>
-      readied.has(cup.id) ? { ...cup, keepReady: true } : cup,
+      readied.has(cup.id)
+        ? { ...cup, expect: { ...cup.expect, ready: true }, keepReady: true }
+        : cup,
     ),
   };
 };
