@@ -7,8 +7,10 @@ import {
   queuedSeniorOnlyCards,
   seniorOnlyBlock,
   seniorOnlyMergeBlock,
+  seniorUpdates,
   todaysCaosLanes,
 } from "./caosLanes";
+import type { ShiftFeed } from "./caosShiftFeed";
 
 const DAY = "2026-11-03";
 
@@ -207,5 +209,27 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     ).toEqual([
       "1st のドリッパーに指名の無い上級生のみのカードが2枚あります（担当者がいなくなります）",
     ]);
+  });
+
+  test("名簿を読み直すと、今の担当者の上級生かだけを新しい名簿に合わせる", () => {
+    const feed = (seniors: string[]): ShiftFeed => ({
+      drippers: {},
+      drills: [],
+      seniors,
+      updatedAt: null,
+    });
+    const now = todaysCaosLanes(
+      lanes([1, "山田", false], [2, "佐藤", true], [3, "鈴木", true]),
+      DAY,
+    );
+    // 名簿に載った人は上級生に、名簿から消えた人は外す。変わらない人と担当者なしは出さない（名前は変えない）
+    expect(seniorUpdates(now, feed(["山田", "鈴木"]))).toEqual([
+      { dripper: 1, name: "山田", senior: true },
+      { dripper: 2, name: "佐藤", senior: false },
+    ]);
+    expect(seniorUpdates(now, feed(["佐藤", "鈴木"]))).toEqual([]);
+    // 予定が無い・名簿が空なら何もしない（読めなかっただけで全員を外さない）
+    expect(seniorUpdates(now, null)).toEqual([]);
+    expect(seniorUpdates(now, feed([]))).toEqual([]);
   });
 });

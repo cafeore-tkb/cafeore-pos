@@ -187,6 +187,75 @@ func TestCaosLanesOnDB(t *testing.T) {
 	}
 }
 
+// updateSeniors は今の担当者の上級生かだけを直す（POST /api/caos/lanes/seniors）。lanes は {dripper, name, senior} の並び。
+func (f *caosFixture) updateSeniors(t *testing.T, lanes ...map[string]any) (int, string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"lanes": lanes})
+	w := callHandler(t, f.caos.UpdateCaosLaneSeniors, http.MethodPost, string(body))
+	return w.Code, w.Body.String()
+}
+
+func seniorOf(dripper int, name string, senior bool) map[string]any {
+	return map[string]any{"dripper": dripper, "name": name, "senior": senior}
+}
+
+func TestCaosLaneSeniorsOnDB(t *testing.T) {
+	db, _ := openListenTestDB(t)
+	f := newCaosFixture(t, db)
+	hub := NewHub()
+	f.caos.hub = hub
+	f.mustPutLane(t, 1, "山田", false)
+	nextBroadcast(t, hub)
+	f.mustPutLane(t, 2, "佐藤", true)
+	nextBroadcast(t, hub)
+	const changes = "1:→山田 2:→佐藤*"
+	before := f.getLanes(t).Lanes[0].UpdatedAt
+
+	// 名簿を読み直したら、上級生かだけを直す（名前は変えない）。交代ではないので記録は足さない
+	code, body := f.updateSeniors(t, seniorOf(1, "山田", true), seniorOf(2, "佐藤", false))
+	if code != http.StatusOK || laneNames(decodeLanes(t, []byte(body))) != "1:山田* 2:佐藤 3: 4: 5: 6:" {
+		t.Fatalf("update seniors = %d: %s", code, body)
+	}
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCaosLanes || laneNames(*msg.CaosLanes) != "1:山田* 2:佐藤 3: 4: 5: 6:" {
+		t.Fatalf("broadcast = %+v", msg)
+	}
+	if got := f.laneChanges(t); got != changes {
+		t.Fatalf("lane changes = %s, want %s", got, changes)
+	}
+	if after := f.getLanes(t).Lanes[0].UpdatedAt; after == nil || !after.After(*before) {
+		t.Fatalf("updated_at = %v, before %v", after, before)
+	}
+
+	// 同じ値をもう一度送っても同じ（何も書かず、配らない）。いない人（名前が違う・担当者なし）のは直さない
+	for _, lanes := range [][]map[string]any{
+		{seniorOf(1, "山田", true), seniorOf(2, "佐藤", false)},
+		{seniorOf(1, "鈴木", false)},
+		{seniorOf(3, "", true), seniorOf(4, "田中", true)},
+	} {
+		if code, body := f.updateSeniors(t, lanes...); code != http.StatusOK || laneNames(decodeLanes(t, []byte(body))) != "1:山田* 2:佐藤 3: 4: 5: 6:" {
+			t.Fatalf("update seniors %v = %d: %s", lanes, code, body)
+		}
+	}
+	noBroadcast(t, hub)
+	// 名前の前後の空白は交代と同じく落として比べる
+	if code, body := f.updateSeniors(t, seniorOf(2, " 佐藤 ", true)); code != http.StatusOK || laneNames(decodeLanes(t, []byte(body))) != "1:山田* 2:佐藤* 3: 4: 5: 6:" {
+		t.Fatalf("update seniors with spaces = %d: %s", code, body)
+	}
+	nextBroadcast(t, hub)
+
+	// 形の違うリクエストは 400 で、何も変えない
+	if code, _ := f.updateSeniors(t, seniorOf(1, "山田", false), seniorOf(7, "山田", true)); code != http.StatusBadRequest {
+		t.Fatalf("dripper 7 = %d, want 400", code)
+	}
+	noBroadcast(t, hub)
+	if got := laneNames(f.getLanes(t)); got != "1:山田* 2:佐藤* 3: 4: 5: 6:" {
+		t.Fatalf("lanes after a bad request = %s", got)
+	}
+	if got := f.laneChanges(t); got != changes {
+		t.Fatalf("lane changes = %s, want %s", got, changes)
+	}
+}
+
 func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
 	db, _ := openListenTestDB(t)
 	f := newCaosFixture(t, db)

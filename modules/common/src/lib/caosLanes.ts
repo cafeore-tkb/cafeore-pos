@@ -1,10 +1,11 @@
 import { DRIPPER_NUMBERS, dripperLabel } from "../models/dripper";
 import type { components } from "../types/api";
 import { type CaosCard, caosLane } from "./caos-board";
+import { type ShiftFeed, isSeniorName } from "./caosShiftFeed";
 
 // CaOS（ドリップ管制）のドリッパーの担当者。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
 // 替えるのは CaOS の画面の「交代」「入れ替え」だけ。全部の画面へは共有の WebSocket の {"type":"caos_lanes"} で届く。
-// 上級生かは、交代した時点で画面が sohosai-shift の名簿で判定した値をサーバーに持つ。
+// 上級生かは、交代した時点で画面が sohosai-shift の名簿で判定した値をサーバーに持つ。名簿を読み直したら、今の担当者の分を新しい名簿に合わせる（seniorUpdates）。
 //
 // 上級生のみのカード（種類の senior_only）は、担当者が上級生のドリッパーにしか置けない（サーバーの PUT /api/caos/cups と同じ決まり）。
 // 指名のあるカードは指名を優先し、指名のドリッパーの担当者が上級生でなくても置ける。
@@ -116,3 +117,19 @@ export const laneChangeWarnings = (
       `${where}に指名の無い上級生のみのカードが${count}枚あります（${who}）`,
     ];
   });
+
+/**
+ * sohosai-shift の上級生の名簿（feed の seniors）で判定し直すと、上級生かが変わる今の担当者（名前は変えない）。lanes は todaysCaosLanes の担当者。
+ * 予定が無い・名簿が空なら空（読めなかっただけで全員を上級生から外さないよう）
+ */
+export const seniorUpdates = (
+  lanes: readonly CaosLane[],
+  feed: ShiftFeed | null,
+): LaneAssignment[] => {
+  if (!feed || feed.seniors.length === 0) return [];
+  return lanes.flatMap(({ dripper, name, senior }) =>
+    name && isSeniorName(feed, name) !== senior
+      ? [{ dripper, name, senior: !senior }]
+      : [],
+  );
+};

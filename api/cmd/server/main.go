@@ -400,6 +400,7 @@ func main() {
 		api.POST("/caos/undo", caosHandler.UndoCaosCups)
 		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
 		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
+		api.POST("/caos/lanes/seniors", caosHandler.UpdateCaosLaneSeniors)
 
 		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
 		// 表示用の端末が決済を待つことは無いので
