@@ -156,10 +156,10 @@ export const CaosLanesProvider = ({
       before = latest.current.lanes[dripper - 1];
       return putCaosLane(dripper, name, senior);
     }).then((ok) => {
-      if (ok)
-        rememberUndo?.(`交代 ${dripperLabel(dripper)} → ${name}`, undoRun);
       // 替えなかった（［まだ変えない］・断られた）ならすぐ押せる
-      setTimeout(() => sending.current.delete(dripper), ok ? DOUBLE_TAP_MS : 0);
+      if (!ok) return sending.current.delete(dripper);
+      rememberUndo?.(`交代 ${dripperLabel(dripper)} → ${name}`, undoRun);
+      setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
     });
   };
 
