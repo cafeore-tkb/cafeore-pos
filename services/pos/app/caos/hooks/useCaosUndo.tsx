@@ -8,18 +8,15 @@ const UNDO_SEC = 10;
 export type UndoRun = () => UndoResult | Promise<UndoResult>;
 type UndoResult = boolean | "retry";
 
-// API の結果。断られたら理由を通知で出して false
-export const succeeded = ({ error }: { error?: string }) => {
-  if (error) toast.error(error);
-  return !error;
-};
-
 /** 戻せない理由（@cafeore/common の caosUndoCups・caosLaneUndoBlock）を出す。結果がまだ届いていないだけなら覚えたままにする */
 export const refuseUndo = ({
   error,
   arriving,
 }: { error: string; arriving?: true }): UndoResult => {
-  if (!arriving) return succeeded({ error });
+  if (!arriving) {
+    toast.error(error);
+    return false;
+  }
   toast(error);
   return "retry";
 };
@@ -77,7 +74,11 @@ export const useCaosUndo = (nowMs: number) => {
     secondsLeft,
     pending,
     remember: rememberWith(setLast),
-    forget: () => setLast(null),
+    /** 忘れる。label を渡すと、覚えているのがその操作のときだけ（通らなかった操作は戻せないので） */
+    forget: (label?: string) =>
+      setLast((current) =>
+        label === undefined || current?.label === label ? null : current,
+      ),
     undo: () => {
       if (!action || running.current) return;
       running.current = true;

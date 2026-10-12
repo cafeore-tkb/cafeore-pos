@@ -37,6 +37,7 @@ import { earlyNext, nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
+import { useCaosOutboxSender } from "./useCaosOutbox";
 import { type UndoRun, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
@@ -57,15 +58,16 @@ const newDripId = () => crypto.randomUUID();
 const NOT_FOUND = "カードが見つかりません";
 
 // 緊急（入れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
-// 足した・取り消したら「1つ戻す」の処理を返し、断られたら null
+// 足した・取り消したら「1つ戻す」の処理を返し、断られたら null。label は「1つ戻す」に出す操作の名前
 type EmergencyOps = {
   /** 番号から入れ直すカップを選ぶ注文 */
   orders: readonly CaosOrderInput[];
   add: (
     cups: EmergencyCup<CaosOrderInput>[],
     reason: string,
+    label: string,
   ) => Promise<{ ids: string[]; undo: UndoRun } | null>;
-  cancel: (cups: CaosBoardCup[]) => Promise<UndoRun | null>;
+  cancel: (cups: CaosBoardCup[], label: string) => Promise<UndoRun | null>;
 };
 
 // 操作を断った理由を POS の通知で出す
@@ -110,10 +112,11 @@ export const useCaosSession = () => {
   const {
     printer: labelPrinter,
     addEmergency,
-    cancelEmergency,
     restoreEmergencies,
   } = useCupEmergency();
   const undo = useCaosUndo(realTime.getTime());
+  // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「1つ戻す」から忘れる
+  const unsent = useCaosOutboxSender(realTime.getTime(), undo.forget);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）と、抽出を始めてから時間のたったカードへの統合（caosLateMerge）。
   // 右上で確かめてから送る
   const confirms = useToastConfirms(realTime.getTime());
@@ -142,8 +145,8 @@ export const useCaosSession = () => {
   // 本番では、指名の無い上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
   const seniorBlock = (card: CaosCard, dripper: number) =>
     test.session ? null : seniorOnlyBlock(card, dripper, people);
-  // 送った操作が通ったら（練習はすぐ、本番は API の応答で決まる）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
-  // 断られたら何もしない。送れたか（練習で断られた・「次へ」の二度押しは false）を返す
+  // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
+  // 断られたら何もしない。通ったかを返す
   const onSuccess = (
     sent: boolean | Promise<boolean>,
     label: string,
@@ -158,13 +161,15 @@ export const useCaosSession = () => {
     return sent !== false;
   };
   // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らし、「1つ戻す」に覚える
-  const runNext = (bayId: number, seen: string | null) =>
-    onSuccess(
-      source.runNext(bayId, seen),
-      `次へ ${dripperLabel(bayId)}`,
-      source.undoRun(undoOfNext(cards, bayId)),
+  const runNext = (bayId: number, seen: string | null) => {
+    const label = `次へ ${dripperLabel(bayId)}`;
+    return onSuccess(
+      source.runNext(bayId, seen, label),
+      label,
+      source.undoRun(undoOfNext(cards, bayId), label),
       () => soundManager.playComplete(),
     );
+  };
   // 統合（firstKey のカードを intoKey のカードへ）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
   // checkLate なら送らずに confirms で確かめる（確かめを出したら true）
   const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
@@ -190,9 +195,12 @@ export const useCaosSession = () => {
     if ("error" in result) return fail(result.error);
     // 今と同じ場所に置き直したなど、変わるものが無ければ送らず、音も鳴らさない
     if (result.writes.length === 0) return true;
-    const undoRun = source.undoRun(undoOfWrites(cards, result.writes));
-    return onSuccess(source.runWrites(result.writes), label, undoRun, () =>
-      soundManager.playDispatch(),
+    const undoRun = source.undoRun(undoOfWrites(cards, result.writes), label);
+    return onSuccess(
+      source.runWrites(result.writes, label),
+      label,
+      undoRun,
+      () => soundManager.playDispatch(),
     );
   };
 
@@ -203,6 +211,12 @@ export const useCaosSession = () => {
       return order ? [{ ...cup, order }] : [];
     });
     return found.length === cups.length ? found : null;
+  };
+  // 本番の入れ直しを取り消す（画面はすぐ変わり、送るのは後ろで。取り消せたらこの端末に残っているシールも消す）
+  const cancelLive = (ids: string[], label: string) => {
+    if (!live.cancelEmergencies(ids, label)) return false;
+    toastEmergenciesCancelled(ids.length);
+    return true;
   };
   const emergencyOps: EmergencyOps = test.session
     ? {
@@ -226,7 +240,7 @@ export const useCaosSession = () => {
       }
     : {
         orders: live.orders ?? [],
-        add: async (cups, reason) => {
+        add: async (cups, reason, label) => {
           const pos = withPosOrder(
             cups.map(({ order, cupId }) => ({ orderId: order.id, cupId })),
           );
@@ -235,9 +249,11 @@ export const useCaosSession = () => {
             return null;
           }
           const ids = await addEmergency(pos, reason);
-          return ids && { ids, undo: () => cancelEmergency(ids) };
+          return (
+            ids && { ids, undo: () => cancelLive(ids, `戻す（${label}）`) }
+          );
         },
-        cancel: async (cups) => {
+        cancel: async (cups, label) => {
           const restore = withPosOrder(
             cups.map((cup) => ({
               orderId: cup.orderId,
@@ -249,7 +265,13 @@ export const useCaosSession = () => {
             fail(NOT_FOUND);
             return null;
           }
-          if (!(await cancelEmergency(cups.map((cup) => cup.id)))) return null;
+          if (
+            !cancelLive(
+              cups.map((cup) => cup.id),
+              label,
+            )
+          )
+            return null;
           return () => restoreEmergencies(restore);
         },
       };
@@ -292,6 +314,8 @@ export const useCaosSession = () => {
     posStatus: live.status,
     /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
     labelPrinter,
+    /** この端末のまだ送れていない盤面の操作の数と、今すぐ送り直す */
+    unsent,
     /**
      * 緊急（入れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
      *   - orders：番号から入れ直すカップを選ぶ注文
@@ -303,21 +327,22 @@ export const useCaosSession = () => {
     emergency: {
       orders: emergencyOps.orders,
       add: async (cups: EmergencyCup<CaosOrderInput>[], reason: string) => {
-        const added = await emergencyOps.add(cups, reason);
-        if (!added) return null;
         const nos = new Set(cups.map((cup) => cup.order.orderId));
-        undo.remember(
-          `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`,
-          added.undo,
-        );
+        const label = `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`;
+        const added = await emergencyOps.add(cups, reason, label);
+        if (!added) return null;
+        undo.remember(label, added.undo);
         return added.ids;
       },
       cancel: (card: CaosCard) => {
+        const label = `緊急の取り消し ${orderLabel(card)}`;
         void emergencyOps
-          .cancel(card.cups.filter((cup) => cup.emergency))
+          .cancel(
+            card.cups.filter((cup) => cup.emergency),
+            label,
+          )
           .then((undoRun) => {
-            if (undoRun)
-              undo.remember(`緊急の取り消し ${orderLabel(card)}`, undoRun);
+            if (undoRun) undo.remember(label, undoRun);
           });
       },
     },
