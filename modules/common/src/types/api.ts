@@ -11,7 +11,10 @@ export interface paths {
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
-    /** アイテム作成 */
+    /**
+     * アイテム作成
+     * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+     */
     post: operations["createItem"];
   };
   "/api/items/{id}": {
@@ -19,7 +22,10 @@ export interface paths {
     get: operations["getItem"];
     /** アイテム情報更新 */
     put: operations["updateItem"];
-    /** アイテム削除 */
+    /**
+     * アイテム削除
+     * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+     */
     delete: operations["deleteItem"];
   };
   "/api/menus": {
@@ -120,8 +126,9 @@ export interface paths {
   "/api/caos/cups": {
     /**
      * CaOS が決めたことを注文のカップに書く
-     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
      * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+     * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
      * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
      * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
      *
@@ -153,21 +160,54 @@ export interface paths {
   "/api/caos/drippers/{dripper}/next": {
     /**
      * CaOS の「次へ」
-     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
      * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
      * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
   };
+  "/api/cup-emergencies": {
+    /**
+     * カップを緊急（入れ直し）にする
+     * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+     * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+     * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+     * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+     * 今日（日本時間）の注文の、抽出が要るカップだけ。
+     * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+     */
+    post: operations["createCupEmergencies"];
+  };
+  "/api/cup-emergencies/{id}": {
+    /**
+     * 緊急（入れ直し）を取り消す
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+     * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     */
+    delete: operations["deleteCupEmergency"];
+  };
+  "/api/caos/undo": {
+    /**
+     * CaOS の「1つ戻す」
+     * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
+     * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
+     * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
+     * PUT /api/caos/cups と違い、抽出中・終わりのカップと準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる）。
+     * 戻すのは前の値なので、restore の時刻（brew_started_at・brew_finished_at・ready_at）は current と同じか null だけ（違えば 400）。提供済みのカップは戻さない（409）。
+     * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
+     * 書いたカップの注文は PUT と同じく配る。
+     */
+    post: operations["undoCaosCups"];
+  };
   "/api/caos/lanes/{dripper}": {
     /**
      * CaOS のドリッパーの担当者を替える（交代）
      * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
      * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
      * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
-     * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+     * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
      */
     put: operations["putCaosLane"];
   };
@@ -188,18 +228,27 @@ export interface paths {
   "/api/inventory": {
     /**
      * 在庫の残量一覧
-     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
      */
     get: operations["getInventory"];
   };
   "/api/inventory/resources": {
-    /** 在庫対象の作成 */
+    /**
+     * カップの作成
+     * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+     */
     post: operations["createStockResource"];
   };
   "/api/inventory/resources/{id}": {
-    /** 在庫対象の更新 */
+    /**
+     * 在庫対象の更新
+     * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+     */
     put: operations["updateStockResource"];
-    /** 在庫対象の削除 */
+    /**
+     * カップの削除
+     * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+     */
     delete: operations["deleteStockResource"];
   };
   "/api/inventory/resources/{id}/events": {
@@ -208,12 +257,6 @@ export interface paths {
      * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
      */
     post: operations["createStockEvent"];
-  };
-  "/api/inventory/usages": {
-    /** アイテム1杯あたりの使用量一覧 */
-    get: operations["getStockUsages"];
-    /** アイテム1杯あたりの使用量をまとめて置き換える */
-    put: operations["replaceStockUsages"];
   };
   "/api/inventory/remind": {
     /**
@@ -365,6 +408,24 @@ export interface components {
       version: string;
       /** @example connected */
       database: string;
+      build?: components["schemas"]["BuildInfo"];
+    };
+    /**
+     * @description このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+     * POS のトップページに、画面のビルドと並べて出す。
+     * ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+     */
+    BuildInfo: {
+      /**
+       * @description PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+       * @example 889
+       */
+      pr?: number;
+      /**
+       * @description コミットの SHA。プレビューは PR の head のコミット。分からなければ省く
+       * @example 90b89b2a1c3e4f5061728394a5b6c7d8e9f01234
+       */
+      commit?: string;
     };
     ItemResponse: {
       /** Format: uuid */
@@ -519,6 +580,25 @@ export interface components {
        * @description CaOS で抽出を終えた時刻
        */
       brew_finished_at: string | null;
+      /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
+      emergencies: components["schemas"]["CupEmergencyResponse"][];
+    };
+    /** @description 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ） */
+    CupEmergencyResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      created_at: string;
+      /** @description 入れ直す理由（足したときに書いたもの。無ければ空） */
+      reason: string;
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -641,16 +721,11 @@ export interface components {
     /**
      * @description 背景色を適用する画面。
      * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-     * master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+     * master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
      *
      * @enum {string}
      */
-    ColorScreen:
-      | "cashier"
-      | "cashier_order"
-      | "master"
-      | "serve"
-      | "caos_nominated";
+    ColorScreen: "cashier" | "cashier_order" | "master" | "serve" | "nominated";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
@@ -760,12 +835,37 @@ export interface components {
     CaosCupsWriteRequest: {
       writes: components["schemas"]["CaosCupsWrite"][];
     };
+    CupEmergencyCreateRequest: {
+      /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
+      order_cup_ids: string[];
+      /** @description 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける */
+      reason?: string;
+    };
+    CupEmergencyCreateResponse: {
+      /** @description 足した入れ直しの id（order_cup_ids と同じ順） */
+      ids: string[];
+    };
     CaosNextRequest: {
       /**
        * Format: uuid
        * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
        */
       drip_id: string | null;
+    };
+    /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了） */
+    CaosUndoCupState: {
+      state: components["schemas"]["CaosCupState"];
+      /** Format: date-time */
+      ready_at: string | null;
+    };
+    CaosUndoCup: {
+      /** Format: uuid */
+      cup_id: string;
+      current: components["schemas"]["CaosUndoCupState"];
+      restore: components["schemas"]["CaosUndoCupState"];
+    };
+    CaosUndoRequest: {
+      cups: components["schemas"]["CaosUndoCup"][];
     };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
@@ -803,12 +903,20 @@ export interface components {
       /** @example Invalid order ID format */
       error: string;
     };
-    /** @enum {string} */
-    StockResourceKind: "cup" | "bean";
+    /**
+     * @description item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
+     * @enum {string}
+     */
+    StockResourceKind: "item" | "cup";
+    /** @description name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400 */
     StockResourceRequest: {
-      kind: components["schemas"]["StockResourceKind"];
-      /** @example ホットカップ */
-      name: string;
+      /**
+       * @description カップの名前（カップでは必須）
+       * @example ホットカップ
+       */
+      name?: string;
+      /** @description このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空） */
+      item_type_ids?: string[];
       /**
        * @description 数える単位（個 / g）
        * @example 個
@@ -816,29 +924,45 @@ export interface components {
       unit: string;
       /**
        * Format: double
-       * @description 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+       * @description 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
        * @example 1
        */
       per_serving: number;
       /**
-       * @description 残りがこの杯数を切ったら通知を始める
+       * @description 残りがこの回数を切ったら通知を始める
        * @example 500
        */
       notify_from: number;
       /**
-       * @description notify_from から何杯減るごとに通知するか
+       * @description notify_from から何回減るごとに通知するか
        * @example 100
        */
       notify_step: number;
       /**
-       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @description 最低限残したい回数。これを切ると危険扱い
        * @example 100
        */
       buffer: number;
     };
-    StockResourceResponse: components["schemas"]["StockResourceRequest"] & {
+    StockResourceResponse: {
       /** Format: uuid */
       id: string;
+      kind: components["schemas"]["StockResourceKind"];
+      /**
+       * Format: uuid
+       * @description アイテムの在庫ならそのアイテム。カップは null
+       */
+      item_id: string | null;
+      /** @description アイテムの在庫ならアイテムの名前、カップならカップの名前 */
+      name: string;
+      /** @description このカップを使うアイテムの種類（アイテムの在庫は空） */
+      item_type_ids: string[];
+      unit: string;
+      /** Format: double */
+      per_serving: number;
+      notify_from: number;
+      notify_step: number;
+      buffer: number;
     };
     /**
      * @description untracked は棚卸し・入荷がまだ一度も無い
@@ -865,13 +989,13 @@ export interface components {
        * @description counted_at 以降の注文での消費量
        */
       consumed: number;
-      /** @description counted_at 以降に売れた杯数 */
+      /** @description counted_at 以降に売れた回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた杯数 */
+      /** @description 直近1時間に売れた回数 */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -903,20 +1027,9 @@ export interface components {
       estimated?: number | null;
       /**
        * Format: double
-       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       * @description 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
        */
       actual_per_serving?: number | null;
-    };
-    StockUsage: {
-      /** Format: uuid */
-      item_id: string;
-      /** Format: uuid */
-      resource_id: string;
-      /**
-       * Format: double
-       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
-       */
-      amount: number;
     };
     InventoryRemindResponse: {
       sent: boolean;
@@ -1078,7 +1191,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム作成 */
+  /**
+   * アイテム作成
+   * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+   */
   createItem: {
     requestBody: {
       content: {
@@ -1131,7 +1247,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム削除 */
+  /**
+   * アイテム削除
+   * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+   */
   deleteItem: {
     parameters: {
       path: {
@@ -1639,8 +1758,9 @@ export interface operations {
   };
   /**
    * CaOS が決めたことを注文のカップに書く
-   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
    * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+   * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
    * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
    * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
    *
@@ -1694,7 +1814,7 @@ export interface operations {
   };
   /**
    * CaOS の「次へ」
-   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップだけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
    * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
    * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -1731,12 +1851,113 @@ export interface operations {
     };
   };
   /**
+   * カップを緊急（入れ直し）にする
+   * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+   * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+   * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+   * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+   * 今日（日本時間）の注文の、抽出が要るカップだけ。
+   * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
+   */
+  createCupEmergencies: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CupEmergencyCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 足した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CupEmergencyCreateResponse"];
+        };
+      };
+      /** @description 形の違うリクエスト・決まりに合わない（何も足さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description カップが消えた（何も足さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急（入れ直し）を取り消す
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+   * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   */
+  deleteCupEmergency: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消した */
+      204: {
+        content: never;
+      };
+      /** @description 抽出を始めた入れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の「1つ戻す」
+   * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
+   * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
+   * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
+   * PUT /api/caos/cups と違い、抽出中・終わりのカップと準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる）。
+   * 戻すのは前の値なので、restore の時刻（brew_started_at・brew_finished_at・ready_at）は current と同じか null だけ（違えば 400）。提供済みのカップは戻さない（409）。
+   * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
+   * 書いたカップの注文は PUT と同じく配る。
+   */
+  undoCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosUndoRequest"];
+      };
+    };
+    responses: {
+      /** @description 書き戻した */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト・書き戻した結果が決まりに合わない（何も書かない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 今の値が current と違う・提供済み・抽出中が 2 枚になる（何も書かない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
    * CaOS のドリッパーの担当者を替える（交代）
    * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
    * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
-   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（caos_lanes_changed）で知らせる
+   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
    * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
-   * 同じトランザクションで交代の記録（caos_lane_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+   * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
    */
   putCaosLane: {
     parameters: {
@@ -1820,7 +2041,7 @@ export interface operations {
   };
   /**
    * 在庫の残量一覧
-   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
    */
   getInventory: {
     responses: {
@@ -1832,7 +2053,10 @@ export interface operations {
       };
     };
   };
-  /** 在庫対象の作成 */
+  /**
+   * カップの作成
+   * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+   */
   createStockResource: {
     requestBody: {
       content: {
@@ -1846,9 +2070,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 名前が空、または item_type_ids の種類が無い・重複 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の更新 */
+  /**
+   * 在庫対象の更新
+   * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+   */
   updateStockResource: {
     parameters: {
       path: {
@@ -1867,9 +2100,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 値が正しくない。アイテムの在庫に name・item_type_ids を送った */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の削除 */
+  /**
+   * カップの削除
+   * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+   */
   deleteStockResource: {
     parameters: {
       path: {
@@ -1880,6 +2122,12 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
+      };
+      /** @description アイテムの在庫は消せない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -1903,33 +2151,6 @@ export interface operations {
       201: {
         content: {
           "application/json": components["schemas"]["StockEventCreateResponse"];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量一覧 */
-  getStockUsages: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量をまとめて置き換える */
-  replaceStockUsages: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StockUsage"][];
-      };
-    };
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
         };
       };
     };

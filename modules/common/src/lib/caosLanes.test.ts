@@ -35,6 +35,7 @@ const card = (init: Partial<CaosCard>): CaosCard =>
     finishedAt: null,
     cups: [],
     orderNo: seq,
+    nominatedDripper: null,
     seniorOnly: false,
     ...init,
   }) as CaosCard;
@@ -73,11 +74,19 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     );
     expect(seniorOnlyBlock(limited, 3, today)).not.toBeNull();
     expect(
-      seniorOnlyBlock({ seniorOnly: false, dripper: null, cups: [] }, 3, today),
+      seniorOnlyBlock(
+        { seniorOnly: false, dripper: null, nominatedDripper: null },
+        3,
+        today,
+      ),
     ).toBe(null);
     // 上級生でない人に替えたあとも、そのドリッパーの中では動かせる
     expect(
-      seniorOnlyBlock({ seniorOnly: true, dripper: 2, cups: [] }, 2, today),
+      seniorOnlyBlock(
+        { seniorOnly: true, dripper: 2, nominatedDripper: null },
+        2,
+        today,
+      ),
     ).toBe(null);
   });
 
@@ -85,6 +94,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     const nominated = card({
       status: "unassigned",
       seniorOnly: true,
+      nominatedDripper: 2,
       cups: [
         { id: "cup-1", nominatedDripper: 2, nominee: "2nd" },
       ] as CaosCard["cups"],

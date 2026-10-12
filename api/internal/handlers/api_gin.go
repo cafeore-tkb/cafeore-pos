@@ -26,6 +26,9 @@ type ServerInterface interface {
 	// CaOS のドリッパーの担当者を替える（交代）
 	// (PUT /api/caos/lanes/{dripper})
 	PutCaosLane(c *gin.Context, dripper int)
+	// CaOS の「1つ戻す」
+	// (POST /api/caos/undo)
+	UndoCaosCups(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -41,16 +44,22 @@ type ServerInterface interface {
 	// 背景色設定削除
 	// (DELETE /api/color-settings/{id})
 	DeleteColorSetting(c *gin.Context, id openapi_types.UUID)
+	// カップを緊急（入れ直し）にする
+	// (POST /api/cup-emergencies)
+	CreateCupEmergencies(c *gin.Context)
+	// 緊急（入れ直し）を取り消す
+	// (DELETE /api/cup-emergencies/{id})
+	DeleteCupEmergency(c *gin.Context, id openapi_types.UUID)
 	// 在庫の残量一覧
 	// (GET /api/inventory)
 	GetInventory(c *gin.Context)
 	// 残量確認のリマインドを Slack に送る
 	// (POST /api/inventory/remind)
 	RemindInventory(c *gin.Context)
-	// 在庫対象の作成
+	// カップの作成
 	// (POST /api/inventory/resources)
 	CreateStockResource(c *gin.Context)
-	// 在庫対象の削除
+	// カップの削除
 	// (DELETE /api/inventory/resources/{id})
 	DeleteStockResource(c *gin.Context, id openapi_types.UUID)
 	// 在庫対象の更新
@@ -59,12 +68,6 @@ type ServerInterface interface {
 	// 棚卸し・入荷・調整の記録
 	// (POST /api/inventory/resources/{id}/events)
 	CreateStockEvent(c *gin.Context, id openapi_types.UUID)
-	// アイテム1杯あたりの使用量一覧
-	// (GET /api/inventory/usages)
-	GetStockUsages(c *gin.Context)
-	// アイテム1杯あたりの使用量をまとめて置き換える
-	// (PUT /api/inventory/usages)
-	ReplaceStockUsages(c *gin.Context)
 	// アイテムタイプ一覧取得
 	// (GET /api/item-types)
 	GetItemTypes(c *gin.Context)
@@ -282,6 +285,19 @@ func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
 	siw.Handler.PutCaosLane(c, dripper)
 }
 
+// UndoCaosCups operation middleware
+func (siw *ServerInterfaceWrapper) UndoCaosCups(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UndoCaosCups(c)
+}
+
 // GetCashierState operation middleware
 func (siw *ServerInterfaceWrapper) GetCashierState(c *gin.Context) {
 
@@ -356,6 +372,43 @@ func (siw *ServerInterfaceWrapper) DeleteColorSetting(c *gin.Context) {
 	}
 
 	siw.Handler.DeleteColorSetting(c, id)
+}
+
+// CreateCupEmergencies operation middleware
+func (siw *ServerInterfaceWrapper) CreateCupEmergencies(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCupEmergencies(c)
+}
+
+// DeleteCupEmergency operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCupEmergency(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCupEmergency(c, id)
 }
 
 // GetInventory operation middleware
@@ -467,32 +520,6 @@ func (siw *ServerInterfaceWrapper) CreateStockEvent(c *gin.Context) {
 	}
 
 	siw.Handler.CreateStockEvent(c, id)
-}
-
-// GetStockUsages operation middleware
-func (siw *ServerInterfaceWrapper) GetStockUsages(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetStockUsages(c)
-}
-
-// ReplaceStockUsages operation middleware
-func (siw *ServerInterfaceWrapper) ReplaceStockUsages(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ReplaceStockUsages(c)
 }
 
 // GetItemTypes operation middleware
@@ -1369,19 +1396,20 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
 	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
 	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
+	router.POST(options.BaseURL+"/api/caos/undo", wrapper.UndoCaosCups)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
+	router.POST(options.BaseURL+"/api/cup-emergencies", wrapper.CreateCupEmergencies)
+	router.DELETE(options.BaseURL+"/api/cup-emergencies/:id", wrapper.DeleteCupEmergency)
 	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
 	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)
 	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)
 	router.DELETE(options.BaseURL+"/api/inventory/resources/:id", wrapper.DeleteStockResource)
 	router.PUT(options.BaseURL+"/api/inventory/resources/:id", wrapper.UpdateStockResource)
 	router.POST(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.CreateStockEvent)
-	router.GET(options.BaseURL+"/api/inventory/usages", wrapper.GetStockUsages)
-	router.PUT(options.BaseURL+"/api/inventory/usages", wrapper.ReplaceStockUsages)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.POST(options.BaseURL+"/api/item-types", wrapper.CreateItemType)
 	router.DELETE(options.BaseURL+"/api/item-types/:id", wrapper.DeleteItemType)

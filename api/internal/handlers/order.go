@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 		Preload("OrderCups", func(db *gorm.DB) *gorm.DB { return db.Order("order_cups.position") }).
 		Preload("OrderCups.Item", unscoped).
 		Preload("OrderCups.Item.ItemType", unscoped).
+		Preload("OrderCups.Emergencies", func(db *gorm.DB) *gorm.DB { return db.Order("created_at, id") }).
 		Preload("Comments")
 }
 
@@ -97,7 +99,7 @@ func buildOrderMenus(orderID uuid.UUID, requests []models.MenuInfoCreate, existi
 				return nil, errInvalidOrderMenus
 			}
 			prev = &old
-			line.ID, line.MenuName, line.UnitPrice = old.ID, old.MenuName, old.UnitPrice
+			line.ID, line.MenuName, line.UnitPrice, line.StockUsages = old.ID, old.MenuName, old.UnitPrice, old.StockUsages
 			delete(byID, old.ID) // 同じ明細を二重に指定することはできない
 		} else {
 			menu, ok := masters[menuID]
@@ -148,7 +150,61 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 	if err != nil {
 		return nil, nil, err
 	}
+	// 新しい明細で減る在庫を、今の在庫の設定で決めて残す。既存の明細は前に決めたものを引き継ぐ
+	if len(ids) > 0 {
+		var resources []models.StockResource
+		if err := db.Preload("ItemTypes").Find(&resources).Error; err != nil {
+			return nil, nil, err
+		}
+		menuByID := make(map[uuid.UUID]models.Menu, len(menus))
+		for _, menu := range menus {
+			menuByID[menu.ID] = menu
+		}
+		for i, request := range requests {
+			if request.OrderMenuId == nil {
+				lines[i].StockUsages = buildOrderStockUsages(orderID, lines[i].ID, menuByID[lines[i].MenuID], resources)
+			}
+		}
+	}
 	return lines, buildOrderCups(orderID, lines, existing, menus), nil
+}
+
+// アイテム 1 つで減る在庫対象：そのアイテムの在庫と、カップを作る（種類の makes_cup。order_cups と同じ isCupItem）アイテムなら
+// その種類を使うカップ。注文の明細と緊急（入れ直し）で使う。
+func itemStockResources(item models.Item, resources []models.StockResource) []models.StockResource {
+	var used []models.StockResource
+	for _, r := range resources {
+		if (r.ItemID != nil && *r.ItemID == item.ID) ||
+			(r.Kind == string(models.StockResourceKindCup) && isCupItem(item) && slices.ContainsFunc(r.ItemTypes, func(t models.StockResourceItemType) bool {
+				return t.ItemTypeID == item.ItemTypeID
+			})) {
+			used = append(used, r)
+		}
+	}
+	return used
+}
+
+// 明細 1 行で減る在庫。在庫対象（itemStockResources）ごとに、アイテムの数 × per_serving。
+// 同じ在庫対象（同じ種類のアイテムが 2 つあるセットのカップなど）は 1 行にまとめる。
+func buildOrderStockUsages(orderID, orderMenuID uuid.UUID, menu models.Menu, resources []models.StockResource) []models.OrderStockUsage {
+	usages := []models.OrderStockUsage{}
+	index := map[uuid.UUID]int{}
+	add := func(r models.StockResource, quantity int) {
+		i, ok := index[r.ID]
+		if !ok {
+			i = len(usages)
+			index[r.ID] = i
+			usages = append(usages, models.OrderStockUsage{OrderMenuID: orderMenuID, ResourceID: r.ID, OrderID: orderID})
+		}
+		usages[i].Servings += quantity
+		usages[i].Amount += float64(quantity) * r.PerServing
+	}
+	for _, mi := range menu.MenuItems {
+		for _, r := range itemStockResources(mi.Item, resources) {
+			add(r, mi.Quantity)
+		}
+	}
+	return usages
 }
 
 // DB models → API models 変換関数
@@ -482,6 +538,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		// 編集画面を開いた時点の値なので、使うとその間のカップの操作を巻き戻してしまう。
 		// カップの無い注文（グッズだけの注文）はリクエストの値を使い、提供済みでなければ提供済みにする
 		// （飲み物を外してグッズだけになった注文が準備中のまま残らないように）。
+		beforeCups := order.OrderCups
 		order.OrderCups = orderCups
 		order.ReadyAt, order.ServedAt = req.ReadyAt, req.ServedAt
 		syncOrderWithCups(&order)
@@ -503,6 +560,10 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
+			return err
+		}
+		// 明細と一緒に、その明細で減る在庫も入れ直す
 		if len(orderMenus) > 0 {
 			if err := tx.Create(&orderMenus).Error; err != nil {
 				return err
@@ -510,9 +571,21 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		// 引き継いだカップは同じ ID・状態のまま入れ直す
 		if len(orderCups) > 0 {
-			return tx.Omit(clause.Associations).Create(&orderCups).Error
+			if err := tx.Omit(clause.Associations).Create(&orderCups).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		// 外した明細のカップの入れ直しも消す
+		var removed []uuid.UUID
+		for _, cup := range beforeCups {
+			if !slices.ContainsFunc(orderCups, func(kept models.OrderCup) bool { return kept.ID == cup.ID }) {
+				removed = append(removed, cup.ID)
+			}
+		}
+		if len(removed) == 0 {
+			return nil
+		}
+		return deleteCupEmergencies(tx, "order_cup_id IN ?", removed)
 	})
 	if err != nil {
 		status, message := http.StatusInternalServerError, err.Error()
@@ -570,7 +643,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
 	resources := h.inventory.ResourceIDsForOrder(order.ID)
 
-	// 注文明細・カップ・オーダーをまとめて削除し、途中で失敗したら全部戻す
+	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
@@ -584,7 +657,14 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
+		// カップの入れ直しも消す
+		if err := deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID)); err != nil {
+			return err
+		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
 			return err
 		}
 		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して

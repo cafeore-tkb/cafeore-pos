@@ -11,11 +11,11 @@ import (
 
 // Defines values for ColorScreen.
 const (
-	ColorScreenCaosNominated ColorScreen = "caos_nominated"
-	ColorScreenCashier       ColorScreen = "cashier"
-	ColorScreenCashierOrder  ColorScreen = "cashier_order"
-	ColorScreenMaster        ColorScreen = "master"
-	ColorScreenServe         ColorScreen = "serve"
+	ColorScreenCashier      ColorScreen = "cashier"
+	ColorScreenCashierOrder ColorScreen = "cashier_order"
+	ColorScreenMaster       ColorScreen = "master"
+	ColorScreenNominated    ColorScreen = "nominated"
+	ColorScreenServe        ColorScreen = "serve"
 )
 
 // Defines values for ColorTargetType.
@@ -78,9 +78,20 @@ const (
 
 // Defines values for StockResourceKind.
 const (
-	StockResourceKindBean StockResourceKind = "bean"
 	StockResourceKindCup  StockResourceKind = "cup"
+	StockResourceKindItem StockResourceKind = "item"
 )
+
+// BuildInfo このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+// POS のトップページに、画面のビルドと並べて出す。
+// ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+type BuildInfo struct {
+	// Commit コミットの SHA。プレビューは PR の head のコミット。分からなければ省く
+	Commit *string `json:"commit,omitempty"`
+
+	// Pr PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+	Pr *int `json:"pr,omitempty"`
+}
 
 // CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
 // start_brew が true なら抽出を始める（brew_started_at にサーバーの今を入れる）。false なら待機・未割当（brew_started_at・brew_finished_at は null）。
@@ -166,6 +177,30 @@ type CaosNextRequest struct {
 	DripId *openapi_types.UUID `json:"drip_id"`
 }
 
+// CaosUndoCup defines model for CaosUndoCup.
+type CaosUndoCup struct {
+	CupId openapi_types.UUID `json:"cup_id"`
+
+	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	Current CaosUndoCupState `json:"current"`
+
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	Restore CaosUndoCupState `json:"restore"`
+}
+
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+type CaosUndoCupState struct {
+	ReadyAt *time.Time `json:"ready_at"`
+
+	// State カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	State CaosCupState `json:"state"`
+}
+
+// CaosUndoRequest defines model for CaosUndoRequest.
+type CaosUndoRequest struct {
+	Cups []CaosUndoCup `json:"cups"`
+}
+
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -184,7 +219,7 @@ type CashierStateUpdateRequest struct {
 
 // ColorScreen 背景色を適用する画面。
 // cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 type ColorScreen string
 
 // ColorSettingResponse defines model for ColorSettingResponse.
@@ -194,7 +229,7 @@ type ColorSettingResponse struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -210,7 +245,7 @@ type ColorSettingUpsertRequest struct {
 
 	// Screen 背景色を適用する画面。
 	// cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-	// master・serve はマスター・提供画面のカップ、caos_nominated は CaOS の指名のカード（無ければ master の色）
+	// master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
 	Screen ColorScreen `json:"screen"`
 
 	// TargetId Item または ItemType の ID
@@ -235,6 +270,35 @@ type CommentResponse struct {
 	CreatedAt time.Time          `json:"created_at"`
 	OrderId   openapi_types.UUID `json:"order_id"`
 	Text      string             `json:"text"`
+}
+
+// CupEmergencyCreateRequest defines model for CupEmergencyCreateRequest.
+type CupEmergencyCreateRequest struct {
+	// OrderCupIds 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
+	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
+
+	// Reason 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+	Reason *string `json:"reason,omitempty"`
+}
+
+// CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
+type CupEmergencyCreateResponse struct {
+	// Ids 足した入れ直しの id（order_cup_ids と同じ順）
+	Ids []openapi_types.UUID `json:"ids"`
+}
+
+// CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
+type CupEmergencyResponse struct {
+	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
+	BrewStartedAt   *time.Time          `json:"brew_started_at"`
+	CreatedAt       time.Time           `json:"created_at"`
+	DripId          *openapi_types.UUID `json:"drip_id"`
+	Dripper         *int                `json:"dripper"`
+	DripperPosition *int                `json:"dripper_position"`
+	Id              openapi_types.UUID  `json:"id"`
+
+	// Reason 入れ直す理由（足したときに書いたもの。無ければ空）
+	Reason string `json:"reason"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -269,10 +333,10 @@ type InventoryStatus struct {
 	RemainingServings *float64              `json:"remaining_servings"`
 	Resource          StockResourceResponse `json:"resource"`
 
-	// Servings counted_at 以降に売れた杯数
+	// Servings counted_at 以降に売れた回数
 	Servings int `json:"servings"`
 
-	// ServingsLastHour 直近1時間に売れた杯数
+	// ServingsLastHour 直近1時間に売れた回数
 	ServingsLastHour int `json:"servings_last_hour"`
 }
 
@@ -477,9 +541,12 @@ type OrderCupResponse struct {
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
-	DripperPosition *int               `json:"dripper_position"`
-	Id              openapi_types.UUID `json:"id"`
-	Item            ItemResponse       `json:"item"`
+	DripperPosition *int `json:"dripper_position"`
+
+	// Emergencies このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
+	Emergencies []CupEmergencyResponse `json:"emergencies"`
+	Id          openapi_types.UUID     `json:"id"`
+	Item        ItemResponse           `json:"item"`
 
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
@@ -699,10 +766,14 @@ type SquareStatusResponse struct {
 
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
-	Database  string    `json:"database"`
-	Status    string    `json:"status"`
-	Timestamp time.Time `json:"timestamp"`
-	Version   string    `json:"version"`
+	// Build このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+	// POS のトップページに、画面のビルドと並べて出す。
+	// ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+	Build     *BuildInfo `json:"build,omitempty"`
+	Database  string     `json:"database"`
+	Status    string     `json:"status"`
+	Timestamp time.Time  `json:"timestamp"`
+	Version   string     `json:"version"`
 }
 
 // StockEventCreateRequest defines model for StockEventCreateRequest.
@@ -714,7 +785,7 @@ type StockEventCreateRequest struct {
 
 // StockEventCreateResponse defines model for StockEventCreateResponse.
 type StockEventCreateResponse struct {
-	// ActualPerServing 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+	// ActualPerServing 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
 	ActualPerServing *float64 `json:"actual_per_serving"`
 
 	// Estimated 記録する直前の推定残量（count のときの答え合わせ用）
@@ -735,23 +806,27 @@ type StockEventResponse struct {
 	ResourceId openapi_types.UUID `json:"resource_id"`
 }
 
-// StockResourceKind defines model for StockResourceKind.
+// StockResourceKind item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
 type StockResourceKind string
 
-// StockResourceRequest defines model for StockResourceRequest.
+// StockResourceRequest name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400
 type StockResourceRequest struct {
-	// Buffer 最低限残したい杯数。これを切ると危険扱い
-	Buffer int               `json:"buffer"`
-	Kind   StockResourceKind `json:"kind"`
-	Name   string            `json:"name"`
+	// Buffer 最低限残したい回数。これを切ると危険扱い
+	Buffer int `json:"buffer"`
 
-	// NotifyFrom 残りがこの杯数を切ったら通知を始める
+	// ItemTypeIds このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）
+	ItemTypeIds *[]openapi_types.UUID `json:"item_type_ids,omitempty"`
+
+	// Name カップの名前（カップでは必須）
+	Name *string `json:"name,omitempty"`
+
+	// NotifyFrom 残りがこの回数を切ったら通知を始める
 	NotifyFrom int `json:"notify_from"`
 
-	// NotifyStep notify_from から何杯減るごとに通知するか
+	// NotifyStep notify_from から何回減るごとに通知するか
 	NotifyStep int `json:"notify_step"`
 
-	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	// PerServing 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
 	PerServing float64 `json:"per_serving"`
 
 	// Unit 数える単位（個 / g）
@@ -760,35 +835,25 @@ type StockResourceRequest struct {
 
 // StockResourceResponse defines model for StockResourceResponse.
 type StockResourceResponse struct {
-	// Buffer 最低限残したい杯数。これを切ると危険扱い
 	Buffer int                `json:"buffer"`
 	Id     openapi_types.UUID `json:"id"`
-	Kind   StockResourceKind  `json:"kind"`
-	Name   string             `json:"name"`
 
-	// NotifyFrom 残りがこの杯数を切ったら通知を始める
-	NotifyFrom int `json:"notify_from"`
+	// ItemId アイテムの在庫ならそのアイテム。カップは null
+	ItemId *openapi_types.UUID `json:"item_id"`
 
-	// NotifyStep notify_from から何杯減るごとに通知するか
-	NotifyStep int `json:"notify_step"`
+	// ItemTypeIds このカップを使うアイテムの種類（アイテムの在庫は空）
+	ItemTypeIds []openapi_types.UUID `json:"item_type_ids"`
 
-	// PerServing 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+	// Kind item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
+	Kind StockResourceKind `json:"kind"`
+
+	// Name アイテムの在庫ならアイテムの名前、カップならカップの名前
+	Name       string  `json:"name"`
+	NotifyFrom int     `json:"notify_from"`
+	NotifyStep int     `json:"notify_step"`
 	PerServing float64 `json:"per_serving"`
-
-	// Unit 数える単位（個 / g）
-	Unit string `json:"unit"`
+	Unit       string  `json:"unit"`
 }
-
-// StockUsage defines model for StockUsage.
-type StockUsage struct {
-	// Amount アイテム1杯で使う量（カップ 1、豆 15 など）
-	Amount     float64            `json:"amount"`
-	ItemId     openapi_types.UUID `json:"item_id"`
-	ResourceId openapi_types.UUID `json:"resource_id"`
-}
-
-// ReplaceStockUsagesJSONBody defines parameters for ReplaceStockUsages.
-type ReplaceStockUsagesJSONBody = []StockUsage
 
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
@@ -805,11 +870,17 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
 
+// UndoCaosCupsJSONRequestBody defines body for UndoCaosCups for application/json ContentType.
+type UndoCaosCupsJSONRequestBody = CaosUndoRequest
+
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
 
 // UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
 type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest
+
+// CreateCupEmergenciesJSONRequestBody defines body for CreateCupEmergencies for application/json ContentType.
+type CreateCupEmergenciesJSONRequestBody = CupEmergencyCreateRequest
 
 // CreateStockResourceJSONRequestBody defines body for CreateStockResource for application/json ContentType.
 type CreateStockResourceJSONRequestBody = StockResourceRequest
@@ -819,9 +890,6 @@ type UpdateStockResourceJSONRequestBody = StockResourceRequest
 
 // CreateStockEventJSONRequestBody defines body for CreateStockEvent for application/json ContentType.
 type CreateStockEventJSONRequestBody = StockEventCreateRequest
-
-// ReplaceStockUsagesJSONRequestBody defines body for ReplaceStockUsages for application/json ContentType.
-type ReplaceStockUsagesJSONRequestBody = ReplaceStockUsagesJSONBody
 
 // CreateItemTypeJSONRequestBody defines body for CreateItemType for application/json ContentType.
 type CreateItemTypeJSONRequestBody = ItemTypeCreateRequest

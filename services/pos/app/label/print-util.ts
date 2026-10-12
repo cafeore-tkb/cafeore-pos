@@ -1,17 +1,28 @@
 import type { OrderEntity } from "@cafeore/common";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { PrintJob } from "./document";
 import { createEposPrinter } from "./infra/epos";
 import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 import {
-  type ReceiptPayment,
-  formalReceiptJob,
-  orderReceiptJob,
-} from "./receipt";
+  addPendingPrint,
+  readPendingPrints,
+  removePendingPrint,
+  subscribePendingPrints,
+  withPendingPrintsLock,
+} from "./pending-prints";
+import type { ReceiptPayment } from "./receipt";
+import { formalReceiptJob, orderReceiptJob } from "./receipt-canvas";
 
 /**
  * プリンターにつないでおき、印刷データを刷る
@@ -31,48 +42,127 @@ const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
   }, [printer]);
 
   const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
+  const reconnect = useCallback(() => {
+    printer.disconnect();
+    printer.connect();
+  }, [printer]);
 
-  return { status, print };
+  return { status, print, reconnect };
 };
+
+/** 刷れなかったシールを送り直す間隔（ミリ秒） */
+const RETRY_INTERVAL_MS = 10_000;
+
+const countPendingPrints = () => readPendingPrints().length;
 
 /**
  * シールのプリンター
  *
  * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
  * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
+ *
+ * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
+ * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
  */
 export const usePrinter = (
   createPrinter: CreateLabelPrinter = createEposPrinter,
 ) => {
-  const { status, print } = useConnectedPrinter(createPrinter);
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
+  const pendingCount = useSyncExternalStore(
+    subscribePendingPrints,
+    countPendingPrints,
+    () => 0,
+  );
 
-  const printOrderLabel = useCallback(
-    (order: OrderEntity) => {
-      print(orderLabelJob(order));
+  const printJob = useCallback(
+    async (job: PrintJob, pendingId?: string) => {
+      if (!(await print(job))) addPendingPrint(job, pendingId);
     },
     [print],
   );
 
-  return { status, printOrderLabel };
+  // 残りを古い順に送り、刷れたものを消す（刷れなかったものは残して次を送る。1 件のせいで後ろが刷れなくならないように）
+  const sending = useRef(false);
+  const sendPending = useCallback(async () => {
+    if (sending.current) return;
+    sending.current = true;
+    try {
+      await withPendingPrintsLock(async () => {
+        for (const pending of readPendingPrints()) {
+          // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
+          if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
+          if (await print(pending.job)) removePendingPrint(pending.id);
+        }
+      });
+    } finally {
+      sending.current = false;
+    }
+  }, [print]);
+
+  /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る） */
+  const retry = useCallback(() => {
+    if (status === "connected") void sendPending();
+    else if (status === "disconnected") reconnect();
+  }, [status, sendPending, reconnect]);
+
+  // つながったらすぐ送る（開き直したときの残りも）。あとは残っているあいだ一定の間隔で
+  useEffect(() => {
+    if (status === "connected") void sendPending();
+  }, [status, sendPending]);
+
+  useEffect(() => {
+    if (pendingCount === 0) return;
+    const timer = setInterval(retry, RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [pendingCount, retry]);
+
+  const printOrderLabel = useCallback(
+    (order: OrderEntity) => printJob(orderLabelJob(order)),
+    [printJob],
+  );
+
+  /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
+  const printCupLabel = useCallback(
+    async (order: OrderEntity, cupId: string, emergencyId: string) => {
+      const job = cupLabelJob(order, cupId);
+      if (job) await printJob(job, emergencyId);
+    },
+    [printJob],
+  );
+
+  return { status, pendingCount, retry, printOrderLabel, printCupLabel };
 };
 
 /**
  * レシートと領収書のプリンター
  *
  * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
+ * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
  */
 export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
   const { status, print } = useConnectedPrinter(createPrinter);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
-  // 印刷データを作るところも try の中に入れる（作れなくても会計の流れに例外を出さない）
+  /**
+   * 印刷データはすぐ作り始め、刷るのは頼まれた順にする
+   *
+   * buildJob は async 関数を渡す（同期で投げない）。作れなくても会計の流れに例外は出さない。
+   */
   const printSafely = useCallback(
-    (buildJob: () => PrintJob) => {
-      try {
-        return print(buildJob());
-      } catch (error) {
-        console.error("レシート用のプリンターで印刷できませんでした", error);
-        return false;
-      }
+    (buildJob: () => Promise<PrintJob>) => {
+      const job = buildJob();
+      // 刷る番が来る前に失敗しても未処理の reject にしない（下の try で拾う）
+      job.catch(() => {});
+      const printed = queue.current.then(async () => {
+        try {
+          return print(await job);
+        } catch (error) {
+          console.error("レシート用のプリンターで印刷できませんでした", error);
+          return false;
+        }
+      });
+      queue.current = printed;
+      return printed;
     },
     [print],
   );

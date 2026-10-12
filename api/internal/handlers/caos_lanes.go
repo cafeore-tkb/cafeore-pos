@@ -16,25 +16,25 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// CaOS（ドリップ管制）のドリッパーの担当者（caos_lanes。models.CaosLaneRow）。日本時間の日付ごとに、ドリッパー 1〜6 の名前と、
+// CaOS（ドリップ管制）のドリッパーの担当者（dripper_assignees。models.DripperAssignee）。日本時間の日付ごとに、ドリッパー 1〜6 の名前と、
 // 交代した時点で上級生だったか。
 //
 //   - PUT /api/caos/lanes/:dripper：交代（名前と上級生か。空なら担当者なし）。抽出中かどうかは見ず、待機のカードも動かさない
 //   - POST /api/caos/lanes/swap：2 つのドリッパーの担当者を入れ替える
 //
 // 画面は今日の担当者を WebSocket の配信（つないだときと、変わるたび）と、上の 2 つの応答で受け取る（読むだけの API は無い）。
-// 替えるたびに、同じトランザクションで交代の記録（caos_lane_changes。models.CaosLaneChangeRow）を 1 つのドリッパーにつき 1 行足す。
+// 替えるたびに、同じトランザクションで交代の記録（dripper_assignee_changes。models.DripperAssigneeChange）を 1 つのドリッパーにつき 1 行足す。
 // 記録は抽出の統計のためのもので、画面には出さず配信もしない。
 //
 // 替えるのは CaOS の画面からだけ（sohosai-shift の予定は画面が候補に出すだけで、サーバーは読まない）。上級生かも画面が
 // sohosai-shift の名簿で判定して送り、そのまま持つ。PUT /api/caos/cups は、上級生のみのカップを置くときにこの値を確かめる（caos.go）。
 //
-// 変えたら今日の 6 つを {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは caos_lanes_changed で知らせる
+// 変えたら今日の 6 つを {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは dripper_assignees_changed で知らせる
 // （注文と同じ形。受けたインスタンスは DB から読み直して配る。order_listener.go）。
 
 const (
 	// 担当者が変わったことをインスタンス同士で知らせるチャンネル。通知の中身は "<送ったインスタンスの ID>"
-	caosLanesChangedChannel = "caos_lanes_changed"
+	dripperAssigneesChangedChannel = "dripper_assignees_changed"
 	// 担当者の名前の長さ（文字）の上限
 	caosMaxLaneName = 40
 	// 担当者の書き込みと、上級生のみのカップを置く書き込みを順番にする advisory lock
@@ -46,7 +46,7 @@ func caosDayString(now time.Time) string { return now.In(jst).Format(time.DateOn
 
 // loadCaosLanes は day の 6 つの担当者と、その日の行があったかを返す。
 func loadCaosLanes(db *gorm.DB, day string) (models.CaosLanes, bool, error) {
-	var rows []models.CaosLaneRow
+	var rows []models.DripperAssignee
 	if err := db.Select("dripper", "name", "senior", "updated_at").
 		Where("day = ?", day).Find(&rows).Error; err != nil {
 		return models.CaosLanes{}, false, err
@@ -89,7 +89,7 @@ func broadcastCaosLanes(db *gorm.DB, hub *Hub, now time.Time) {
 
 // 担当者が変わったことをほかのインスタンスへ知らせる。
 func notifyCaosLanesChanged(db *gorm.DB) {
-	notifyChanged(db, caosLanesChangedChannel, instanceID)
+	notifyChanged(db, dripperAssigneesChangedChannel, instanceID)
 }
 
 func lockCaosLanes(tx *gorm.DB) error {
@@ -97,14 +97,14 @@ func lockCaosLanes(tx *gorm.DB) error {
 }
 
 // saveCaosLane はドリッパーの担当者を書き、交代の記録を 1 行足す。prevName は替える前の名前（担当者なしなら空）。
-func saveCaosLane(tx *gorm.DB, row models.CaosLaneRow, prevName string) error {
+func saveCaosLane(tx *gorm.DB, row models.DripperAssignee, prevName string) error {
 	if err := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "day"}, {Name: "dripper"}},
 		DoUpdates: clause.AssignmentColumns([]string{"name", "senior", "updated_at"}),
 	}).Create(&row).Error; err != nil {
 		return err
 	}
-	return tx.Create(&models.CaosLaneChangeRow{
+	return tx.Create(&models.DripperAssigneeChange{
 		ChangedAt: row.UpdatedAt, Day: row.Day, Dripper: row.Dripper,
 		PrevName: prevName, Name: row.Name, Senior: row.Senior,
 	}).Error
@@ -169,7 +169,7 @@ func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLane
 			return err
 		}
 		for _, l := range change(cur) {
-			row := models.CaosLaneRow{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
+			row := models.DripperAssignee{Day: day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
 			if err := saveCaosLane(tx, row, cur.Lanes[l.Dripper-1].Name); err != nil {
 				return err
 			}

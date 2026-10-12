@@ -75,6 +75,7 @@ export default function ReadOnlyBoard() {
           onOpenEmptySlot={noop}
           onAssignToBay={noop}
           onMergeOrders={noop}
+          onSplitCup={noop}
           readOnly
         />
       </div>

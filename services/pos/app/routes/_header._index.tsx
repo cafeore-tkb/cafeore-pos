@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
+import { BuildInfo } from "~/components/organisms/top/BuildInfo";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -139,6 +140,15 @@ const sections: Section[] = [
           "棚卸しの実数と入荷・注文から、豆とカップの残量を推定。棚卸し・入荷の記録もここで。",
       },
       {
+        kind: "products",
+        to: "/products",
+        title: "商品管理",
+        audience: "admin",
+        where: "祭の前の準備・メニューの変更",
+        description:
+          "メニュー・アイテム・タイプ・背景色と、アイテムごとの在庫の量・カップを編集。CSV / JSON で取り込み・書き出しもできます。",
+      },
+      {
         kind: "rehearsal",
         to: "/rehearsal",
         title: "オペ練",
@@ -152,8 +162,6 @@ const sections: Section[] = [
 ];
 
 const settingLinks = [
-  { to: "/products", label: "商品管理" },
-  { to: "/inventory/settings", label: "在庫の設定" },
   { to: "/square-devices", label: "Square 端末" },
   { to: "/printer-settings", label: "プリンター" },
 ];
@@ -188,7 +196,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            メニュー・商品・在庫の通知条件・Square 端末・プリンターを設定します
+            Square 端末・プリンターを設定します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (
@@ -210,6 +218,8 @@ export default function Index() {
           <DownloadButton />
         </div>
       </section>
+
+      <BuildInfo />
     </div>
   );
 }

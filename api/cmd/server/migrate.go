@@ -42,11 +42,23 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}
 
+		// AutoMigrate は表の名前を変えず新しい表を作ってしまうので、名前を変えた表は先に変えておく。
+		m := tx.Migrator()
+		for _, r := range tableRenames {
+			if !m.HasTable(r.from) || m.HasTable(r.to) {
+				continue
+			}
+			for _, sql := range r.sql {
+				if err := tx.Exec(sql).Error; err != nil {
+					return fmt.Errorf("failed to rename %s to %s: %w", r.from, r.to, err)
+				}
+			}
+		}
+
 		// AutoMigrate は足した列の全行に列の既定値を入れるだけなので、種類ごとに違う最初の値は
 		// 列を足した直後に入れる。列がもう DB にあれば走らない（あとで画面や API で変えた値を戻さない）。
 		// 表が無い（空の DB）ときは行も無いので要らない。
 		itemType := &models.ItemType{}
-		m := tx.Migrator()
 		var backfills []itemTypeBackfill
 		if m.HasTable(itemType) {
 			for _, b := range itemTypeBackfills {
@@ -54,6 +66,11 @@ func migrate(db *gorm.DB) error {
 					backfills = append(backfills, b)
 				}
 			}
+		}
+
+		splitStock, err := prepareItemStockMigration(tx)
+		if err != nil {
+			return fmt.Errorf("failed to prepare stock_resources: %w", err)
 		}
 
 		if err := tx.AutoMigrate(models.All()...); err != nil {
@@ -65,8 +82,109 @@ func migrate(db *gorm.DB) error {
 				return fmt.Errorf("failed to backfill item_types.%s: %w", b.column, err)
 			}
 		}
+
+		if splitStock {
+			if err := migrateItemStock(tx); err != nil {
+				return fmt.Errorf("failed to migrate item stock: %w", err)
+			}
+		}
+
+		for _, sql := range valueRenames {
+			if err := tx.Exec(sql).Error; err != nil {
+				return fmt.Errorf("failed to rename values: %w", err)
+			}
+		}
 		return nil
 	})
+}
+
+// 在庫をアイテムの在庫とカップの 2 種類にしたとき（2026-10）の一度だけの移行。stock_resources に item_id が無ければ流す。
+// AutoMigrate は check を名前で見て付け替えないので、ここで kind の check を外す（AutoMigrate が新しい check を付ける）。
+// 豆（kind bean）はアイテムに結べないので、棚卸し・入荷の記録ごと消す。
+func prepareItemStockMigration(tx *gorm.DB) (bool, error) {
+	m := tx.Migrator()
+	resource := &models.StockResource{}
+	if m.HasColumn(resource, "item_id") {
+		return false, nil
+	}
+	if !m.HasTable(resource) {
+		return true, nil
+	}
+	for _, sql := range []string{
+		`ALTER TABLE stock_resources DROP CONSTRAINT IF EXISTS chk_stock_resources_kind`,
+		`DELETE FROM stock_events WHERE resource_id IN (SELECT id FROM stock_resources WHERE kind = 'bean')`,
+		`DELETE FROM stock_resources WHERE kind = 'bean'`,
+	} {
+		if err := tx.Exec(sql).Error; err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// AutoMigrate の後に、今のアイテムそれぞれの在庫を作る。使用量の表（item_stock_usages）があれば、
+// 前からある注文で減った量をその表から 1 回だけ埋めて、表を消す。カップの使う種類は空で始める。
+func migrateItemStock(tx *gorm.DB) error {
+	var items []models.Item
+	if err := tx.Find(&items).Error; err != nil {
+		return err
+	}
+	if len(items) > 0 {
+		resources := make([]models.StockResource, len(items))
+		for i, item := range items {
+			resources[i] = models.NewItemStockResource(item.ID)
+		}
+		if err := tx.Create(&resources).Error; err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasTable("item_stock_usages") {
+		return nil
+	}
+	// 消した豆の行は stock_resources と結んで落とす
+	if err := tx.Exec(`
+		INSERT INTO order_stock_usages (order_menu_id, resource_id, order_id, servings, amount)
+		SELECT om.id, u.resource_id, om.order_id, SUM(mi.quantity), SUM(mi.quantity * u.amount)
+		FROM order_menus om
+		JOIN menu_items mi ON mi.menu_id = om.menu_id
+		JOIN item_stock_usages u ON u.item_id = mi.item_id
+		JOIN stock_resources r ON r.id = u.resource_id
+		GROUP BY om.id, u.resource_id, om.order_id`).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`DROP TABLE item_stock_usages`).Error
+}
+
+// 名前を変えた表。前の名前（from）の表があって今の名前（to）の表が無いときだけ sql を流す。
+// 表と一緒に、前の名前の入った主キー・CHECK・索引・連番の名前も、空の DB に AutoMigrate で作るときと同じ名前に変える
+// （CHECK と索引は名前で有無を見るので、変えないと AutoMigrate が同じものをもう 1 つ作る）。
+var tableRenames = []struct {
+	from, to string
+	sql      []string
+}{
+	// ドリッパーの担当者（2026-10）
+	{from: "caos_lanes", to: "dripper_assignees", sql: []string{
+		`ALTER TABLE caos_lanes RENAME TO dripper_assignees`,
+		`ALTER TABLE dripper_assignees RENAME CONSTRAINT caos_lanes_pkey TO dripper_assignees_pkey`,
+		`ALTER TABLE dripper_assignees RENAME CONSTRAINT caos_lanes_dripper_check TO dripper_assignees_dripper_check`,
+	}},
+	// ドリッパーの担当者の交代の記録（2026-10）
+	{from: "caos_lane_changes", to: "dripper_assignee_changes", sql: []string{
+		`ALTER TABLE caos_lane_changes RENAME TO dripper_assignee_changes`,
+		`ALTER TABLE dripper_assignee_changes RENAME CONSTRAINT caos_lane_changes_pkey TO dripper_assignee_changes_pkey`,
+		`ALTER TABLE dripper_assignee_changes RENAME CONSTRAINT caos_lane_changes_dripper_check TO dripper_assignee_changes_dripper_check`,
+		`ALTER INDEX idx_caos_lane_changes_day RENAME TO idx_dripper_assignee_changes_day`,
+		`ALTER SEQUENCE caos_lane_changes_id_seq RENAME TO dripper_assignee_changes_id_seq`,
+	}},
+}
+
+// 名前を変えた、DB に入る値。前の名前の行が無ければ何も変えないので、起動のたびに流す
+// （デプロイの切り替えの間に前の版のインスタンスが前の名前で書いても、次の起動で直る）。
+var valueRenames = []string{
+	// 色の設定の画面（2026-10。caos_nominated → nominated）。同じ対象に今の名前の行があれば、前の名前の行は消す（一意制約）
+	`UPDATE color_settings o SET screen = 'nominated' WHERE screen = 'caos_nominated' AND NOT EXISTS (
+		SELECT 1 FROM color_settings n WHERE n.target_type = o.target_type AND n.target_id = o.target_id AND n.screen = 'nominated')`,
+	`DELETE FROM color_settings WHERE screen = 'caos_nominated'`,
 }
 
 type itemTypeBackfill struct {

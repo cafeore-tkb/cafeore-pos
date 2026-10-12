@@ -1,10 +1,21 @@
-import { dripperLabel } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import type { NextAvailable } from "../logic/queue";
+import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号・「次へ」・空きスロット・次に空く）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」・空きスロット・次に空く）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -27,46 +38,126 @@ export const PanelHeader: React.FC<{
   </header>
 );
 
-/** 列の番号（1st〜6th）。担当者の名前は出さない */
+/** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
   <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
     {dripperLabel(bayId)}
   </span>
 );
 
-// 「次へ」の色（待機は灰、まもなく終わる列は黄、ほかは緑）
-const nextTone = (active: boolean, soon: boolean) => {
-  if (!active) return "bg-slate-200 text-slate-500";
-  if (soon) return "bg-amber-500 text-slate-950 ring-2 ring-amber-200";
-  return "bg-emerald-700 text-white";
+// 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
+// 抽出中は白、まもなく・継続中は黄・橙。色だけに頼らず札の文字も出す
+const PHASES: Record<LanePhase, { label: string; className: string }> = {
+  empty: {
+    label: "空き",
+    className: "border-emerald-700 bg-emerald-500 text-white",
+  },
+  waiting: { label: "待機", className: "border-sky-800 bg-sky-600 text-white" },
+  brewing: {
+    label: "抽出中",
+    className: "border-emerald-600 bg-white text-slate-950",
+  },
+  soon: {
+    label: "まもなく",
+    className: "border-amber-600 bg-amber-300 text-slate-950",
+  },
+  overtime: {
+    label: "継続中",
+    className: "border-orange-700 bg-orange-500 text-white",
+  },
 };
 
-/** 「次へ」（抽出中のカードを終えて待機の先頭を始める）。まもなく終わる列は黄色。remainingSec を渡すと残り時間も出す */
+/**
+ * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
+ * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも出す。
+ * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける
+ */
+export const DripperIndicator: React.FC<{
+  bayId: number;
+  status: LaneStatus;
+  nominatedCups: number;
+  className?: string;
+}> = ({ bayId, status, nominatedCups, className = "" }) => {
+  const phase = PHASES[status.phase];
+  const showsRemaining = status.phase === "brewing" || status.phase === "soon";
+  return (
+    <div
+      data-lane-phase={status.phase}
+      className={`relative flex shrink-0 flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none ${phase.className} ${className}`}
+    >
+      <span className="font-black font-mono text-[22px]">
+        {dripperLabel(bayId)}
+      </span>
+      <span className="mt-1 flex items-baseline gap-0.5 whitespace-nowrap font-black text-[11px]">
+        {phase.label}
+        {showsRemaining && (
+          <span className="font-mono text-[14px] tabular-nums">
+            {clockLabel(status.remainingSec)}
+          </span>
+        )}
+      </span>
+      {nominatedCups > 0 && (
+        <span
+          title={`${dripperLabel(bayId)}への指名が ${nominatedCups} 杯、未割当で待っています`}
+          className="-top-2.5 -translate-x-1/2 absolute left-1/2 z-10 whitespace-nowrap rounded-full border-2 border-white border-dashed bg-slate-900 px-1.5 py-0.5 font-black text-[11px] text-white leading-none shadow"
+        >
+          指名{nominatedCups}
+        </span>
+      )}
+    </div>
+  );
+};
+
+/**
+ * 「次へ」（抽出中のカードを終えて待機の先頭を始める）。押せないとき（カードが無い・locked）は薄い枠だけ。列の状態はドリッパーの番号に出す。
+ * locked のあいだ（抽出を始めてすぐ。二度押しを防ぐ）は押せない
+ */
 export const NextButton: React.FC<{
   bayId: number;
-  /** 抽出中のカードがある */
+  /** 抽出中か待機のカードがある */
   active: boolean;
-  /** まもなく終わる */
-  soon: boolean;
-  remainingSec?: number;
+  /** まだ押せない（抽出を始めてすぐ） */
+  locked?: boolean;
   onAdvance: (bayId: number) => void;
   className?: string;
-}> = ({ bayId, active, soon, remainingSec, onAdvance, className = "" }) => (
+}> = ({ bayId, active, locked = false, onAdvance, className = "" }) => (
   <button
     type="button"
-    disabled={!active}
+    disabled={!active || locked}
     onClick={() => onAdvance(bayId)}
     title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
-    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg font-black shadow-xs active:scale-95 ${nextTone(active, soon)} ${className}`}
+    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg border-2 font-black shadow-xs active:scale-95 enabled:border-orange-700 enabled:bg-orange-600 enabled:text-white disabled:border-slate-200 disabled:border-dashed disabled:bg-white disabled:text-slate-300 disabled:shadow-none ${className}`}
   >
-    {active && remainingSec !== undefined && (
-      <span className="font-mono">
-        {remainingSec === 0 ? "継続" : clockLabel(remainingSec)}
-      </span>
-    )}
-    <span>{active ? "次へ" : "待機"}</span>
+    次へ
     {active && <ArrowRightCircle className="h-4 w-4 shrink-0" />}
   </button>
+);
+
+/** 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）を確かめる。［やめる］［次へ進める］ */
+export const NextConfirmDialog: React.FC<{
+  bayId: number;
+  card: CaosCard;
+  elapsedSec: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ bayId, card, elapsedSec, onCancel, onConfirm }) => (
+  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {dripperLabel(bayId)} の {orderLabel(card)} を終えますか？
+        </AlertDialogTitle>
+        <AlertDialogDescription className="font-black text-[16px] text-slate-950">
+          始めてからまだ {clockLabel(elapsedSec)}{" "}
+          です。押す列を間違えていませんか？
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>やめる</AlertDialogCancel>
+        <AlertDialogAction onClick={onConfirm}>次へ進める</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 );
 
 /** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
@@ -96,8 +187,16 @@ export const NextAvailableChips: React.FC<{ nextAvailable: NextAvailable }> = ({
         key={item.bayId}
         className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
       >
-        #{item.bayId} {item.isStandby ? "待機" : clockLabel(item.seconds)}
+        #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
       </span>
     ))}
   </div>
 );
+
+/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 C の注文の列・D の表） */
+export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
+  label && (
+    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[11px] text-white leading-none shadow-xs">
+      {label}
+    </span>
+  );

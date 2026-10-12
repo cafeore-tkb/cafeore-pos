@@ -129,6 +129,20 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 プレビュー用サービスは**アクセスが無ければゼロまで縮む**ので、PR を放置しても
 費用は増えない。
 
+### ビルドの番号
+
+POS のトップページの一番下に、画面と API がどの PR・コミットのビルドかを
+`画面 #889 · 90b89b2　API #889 · 90b89b2` の形で出す。デプロイが反映されたか、
+画面と API が食い違っていないかを確かめるのに使う。
+
+- 番号は `pos-deploy-workers` と `api-build` が `.github/scripts/build-info.sh` で決める。
+  PR ではその PR と head のコミット、main ではマージコミットとそれをマージした PR
+- 画面はビルド時に `VITE_BUILD_PR`・`VITE_BUILD_COMMIT` として焼き込む
+- API はイメージの環境変数 `BUILD_PR`・`BUILD_COMMIT` に焼き込み（`api/Dockerfile`）、
+  `/status` と `/health` の `build` で返す。画面はこれを `/status` から読む
+- 積んだ PR で別の PR の backend を使うときは、API にはその持ち主の PR の番号が出る
+- ローカルのビルドでは「ローカル」と出る
+
 ### backend の環境変数
 
 | 変数 | ローカル | プレビュー | 本番 |
@@ -138,6 +152,7 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
+| `SLACK_ACTIVITY_WEBHOOK_URL` | 未設定（`SLACK_WEBHOOK_URL` に流す） | 未設定 | 任意。商品の登録・変更・削除、棚卸し・入荷、オーダーストップの通知を別のチャンネルに分けるときだけ |
 | `INVENTORY_CRON_SECRET` | 任意（`X-Cron-Secret` で手動実行） | 未設定 | 未設定 |
 | `INVENTORY_REMIND_INVOKER` / `INVENTORY_REMIND_AUDIENCE` | 未設定 | 未設定 | Cloud Scheduler の SA と ID トークンの audience |
 | `POS_BASE_URL` | 任意 | 未設定 | リマインドに載せる POS の URL |
@@ -168,13 +183,17 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` がタグを外�
 - 開いているレジには、再読み込みしたとき（またはタブに戻って設定を取り直したとき）に反映される。値が変わったらつなぎ直す。
 - レジは最後に取れた設定をブラウザ（`localStorage` の `cafeore:printer-settings`）に覚えておく。API に届かないとき
   （と、取れるまでの間）はそれ、無ければ既定値でつなぐ。API が落ちていてもラベルとレシートは刷れる。
-- レシートは現金なら送信したとき、Square なら注文を登録できたときに刷る。明細・割引・合計と、現金ならお預り・お釣り、
-  Square なら決済手段を載せる。
-- 領収書はレジの「過去の注文」の「領収書」を押したときだけ刷る。宛名は手書きの空欄、但し書きは「お品代として」、
-  金額は請求額（割引後）、日付は注文を受けた日。何度でも刷れ、再発行の印は付かない。
-- 文面は `services/pos/app/label/receipt.ts`（シールと同じく印刷データ `PrintJob` を作るだけ）。用紙の幅（58mm / 80mm）に
-  よらず収まるよう 32 桁（全角 16 文字）で組み、中央に寄せて刷る。プリンターの設定（紙を切るなど）は `infra/epos.ts` の
-  `RECEIPT_EPOS_PRINTER_CONFIG`。
+- レシートは現金なら送信したとき、Square なら注文を登録できたときに刷る。ロゴ・明細・割引・合計と、現金ならお預り・お釣り、
+  Square なら決済手段を載せる。注文番号は日時の横に載せる。引換券番号は載せない（引換券のシールはラベル用で刷る）。
+- 領収書はレジの「過去の注文」の「領収書」を押したときだけ刷る。宛名は手書きの空欄、但し書きは「飲食代として」、
+  金額は請求額（割引後）、日付は注文を受けた日。横長に描いて 90 度回して刷る（「領収書」の側が先に出る）。
+  何度でも刷れ、再発行の印は付かない。
+- 中身は `services/pos/app/label/receipt.ts`、描き方は `receipt-canvas.ts`。太字やロゴの横並びをデザインどおりに
+  刷るため、プリンターの文字ではなく、ブラウザの canvas で描いた白黒の画像を刷る（フォントは画面と同じ Noto Sans JP、
+  ロゴは `app/assets/receipt/ore-logo.svg`）。寸法は幅 576 の座標で決めてあり、刷るときに紙の印字幅
+  （`RECEIPT_WIDTH`）に縮める。今は **TM-m30 の 58mm の紙（420 ドット）** に合わせてある。80mm の紙に替えるときは
+  `RECEIPT_WIDTH` を 576 にする（ほかの機種は印字幅のドット数を確かめる。広すぎると右端が切れる）。
+  プリンターの設定（紙を切るなど）は `infra/epos.ts` の `RECEIPT_EPOS_PRINTER_CONFIG`。
 
 ### Square Terminal 連携
 
@@ -375,7 +394,7 @@ Neon のブランチで、本番のデータは入っていない。
 - API は起動時に `AutoMigrate` でモデルを DB へ反映する（`api/cmd/server/migrate.go`）。本番・プレビュー・ローカルとも同じ
 - 本番へはマージして Cloud Run にデプロイされた時点で反映される。失敗すると新しいリビジョンが起動せず、デプロイが落ちてトラフィックは前のリビジョンに残る
 - 同時に起動したインスタンスは advisory lock で 1 つずつ走る。反映は 1 トランザクションなので、途中で失敗しても半端なスキーマは残らない
-- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる。CaOS（`caos` スキーマ）のものは今は対象外
+- 起動時に DB とモデルを比べ、DB にだけあるテーブル・列・トリガー・関数（手で触った跡）を `/status` の `schema_drift` に出す。デプロイの CI（`api-build.yml`）は空でなければ落ちる
 - PR の CI（`api-ci` の `test`）でも確かめる。プレビューのラベルが無くても走る
   - `models` に struct を足したのに `models.All()` に入れ忘れると落ちる（テーブルが作られず、`schema_drift` でも気づけないため）
   - 空の Postgres 17 に起動時のマイグレーションをかけ、通ること・2 回目に何も変えないこと・`schema_drift` が空なこと・3 つ同時に走っても通ることを見る（手元での流し方は下の「backend のテスト」）
@@ -422,7 +441,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `orders_changed` | 注文 | `<インスタンス ID> <注文 ID>` |
 | `master_state_changed` | オーダーストップ（`POST /api/master-status`） | `<インスタンス ID>` |
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
-| `caos_lanes_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `caos_lanes`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
+| `dripper_assignees_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`。表は `dripper_assignees`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
 - ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。全部のチャンネルを 1 本の接続でまとめて待ち受ける

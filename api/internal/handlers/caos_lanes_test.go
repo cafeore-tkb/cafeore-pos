@@ -30,7 +30,7 @@ func (f *caosFixture) getLanes(t *testing.T) models.CaosLanes {
 // laneChanges は今日の交代の記録を足した順に「ドリッパー:前→後」（上級生なら後ろに *）で並べる。
 func (f *caosFixture) laneChanges(t *testing.T) string {
 	t.Helper()
-	var rows []models.CaosLaneChangeRow
+	var rows []models.DripperAssigneeChange
 	if err := f.db.Where("day = ?", caosDayString(time.Now())).Order("id").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestCaosLanesOnDB(t *testing.T) {
 		t.Fatal("caos_lanes message without any lane")
 	}
 	// 前の日の担当者は今日に出ない
-	if err := db.Create(&models.CaosLaneRow{Day: caosDayString(time.Now().AddDate(0, 0, -1)), Dripper: 1, Name: "昨日", Senior: true, UpdatedAt: time.Now()}).Error; err != nil {
+	if err := db.Create(&models.DripperAssignee{Day: caosDayString(time.Now().AddDate(0, 0, -1)), Dripper: 1, Name: "昨日", Senior: true, UpdatedAt: time.Now()}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if got := laneNames(f.getLanes(t)); got != "1: 2: 3: 4: 5: 6:" {
@@ -156,7 +156,7 @@ func TestCaosLanesOnDB(t *testing.T) {
 		t.Fatalf("lane changes = %s, want %s", got, changes)
 	}
 	// 時刻は担当者の updated_at と同じ（サーバーの時刻）
-	var last models.CaosLaneChangeRow
+	var last models.DripperAssigneeChange
 	if err := db.Order("id DESC").First(&last).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -267,13 +267,13 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	f := newCaosFixture(t, db)
 	// 同じプロセスの中ではインスタンスの ID が同じなので、送った通知は別の接続で受けて確かめる
-	other := listenAsOtherInstance(t, dsn, caosLanesChangedChannel)
+	other := listenAsOtherInstance(t, dsn, dripperAssigneesChangedChannel)
 	f.mustPutLane(t, 2, "山田", true)
-	expectNotification(t, other, caosLanesChangedChannel)
+	expectNotification(t, other, dripperAssigneesChangedChannel)
 	if code, _ := f.swapLanes(t, 2, 3); code != http.StatusOK {
 		t.Fatalf("swap = %d", code)
 	}
-	expectNotification(t, other, caosLanesChangedChannel)
+	expectNotification(t, other, dripperAssigneesChangedChannel)
 
 	// ほかのインスタンスで替わったら、通知を受けて今日の担当者を読み直して配る。つないだときにも配り直す
 	hub := NewHub()
@@ -291,11 +291,11 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 	}
 	noBroadcast(t, hub)
 
-	if err := db.Model(&models.CaosLaneRow{}).Where("day = ? AND dripper = 3", caosDayString(time.Now())).
+	if err := db.Model(&models.DripperAssignee{}).Where("day = ? AND dripper = 3", caosDayString(time.Now())).
 		Updates(map[string]any{"name": "佐藤", "senior": false}).Error; err != nil {
 		t.Fatal(err)
 	}
-	sendNotify(t, db, caosLanesChangedChannel, uuid.NewString())
+	sendNotify(t, db, dripperAssigneesChangedChannel, uuid.NewString())
 	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCaosLanes || laneNames(*msg.CaosLanes) != "1: 2: 3:佐藤 4: 5: 6:" {
 		t.Fatalf("broadcast = %+v", msg)
 	}
@@ -308,12 +308,12 @@ func TestCaosLanesReachOtherInstances(t *testing.T) {
 
 func TestPendingChangesCaosLanes(t *testing.T) {
 	q := newPendingChanges()
-	q.add(caosLanesChangedChannel, instanceID)
+	q.add(dripperAssigneesChangedChannel, instanceID)
 	if s := q.take(); s.caosLanes {
 		t.Fatal("own notification was queued")
 	}
-	q.add(caosLanesChangedChannel, uuid.NewString())
-	q.add(caosLanesChangedChannel, uuid.NewString())
+	q.add(dripperAssigneesChangedChannel, uuid.NewString())
+	q.add(dripperAssigneesChangedChannel, uuid.NewString())
 	if s := q.take(); !s.caosLanes || s.allOrders || s.masterState || s.cashierState || len(s.orderIDs) != 0 {
 		t.Fatalf("take() = %+v; want caos lanes only", s)
 	}

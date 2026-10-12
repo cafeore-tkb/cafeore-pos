@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NextConfirmDialog } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -8,6 +9,7 @@ import {
   AssignPanel,
   AuxiliaryContent,
   AuxiliarySheet,
+  RebrewPanel,
   TicketDetailPanel,
 } from "./components/SidePanels";
 import { TestPlaySetup } from "./components/TestPlaySetup";
@@ -49,6 +51,7 @@ export default function App() {
           totalWaitingCups={session.cups.waiting}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
+          simulating={session.simulating}
           isRunning={session.isRunning}
           onTogglePlay={session.toggleRunning}
           simSpeed={session.simSpeed}
@@ -69,6 +72,14 @@ export default function App() {
             selection.openAuxiliary("analytics");
           }}
           posStatus={session.posStatus}
+          labelPrinter={session.labelPrinter}
+          onOpenEmergency={
+            session.emergency ? () => selection.openRebrew() : undefined
+          }
+          undoLabel={session.undo.label}
+          undoSecondsLeft={session.undo.secondsLeft}
+          undoPending={session.undo.pending}
+          onUndo={session.undo.run}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
@@ -86,12 +97,15 @@ export default function App() {
             onAdvanceBay={session.advance}
             onOpenTicketPad={selection.openTicket}
             onOpenTicketDetail={selection.openDetail}
+            onOpenRebrew={session.emergency ? selection.openRebrew : undefined}
+            onCancelEmergency={session.emergency?.cancel}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
             onCloseTicketAction={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
             onAssignToBay={selection.assign}
             onMergeOrders={selection.merge}
+            onSplitCup={selection.split}
           />
         </main>
 
@@ -103,6 +117,7 @@ export default function App() {
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
+              onMoveQueue={session.moveQueue}
               {...testPlay.analytics}
             />
           </AuxiliarySheet>
@@ -117,6 +132,27 @@ export default function App() {
           onClose={selection.closeDetail}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
+          onSplitCup={selection.split}
+          onCancelEmergency={session.emergency?.cancel}
+        />
+      )}
+
+      {selection.rebrew && session.emergency && (
+        <RebrewPanel
+          key={selection.rebrew.card?.key ?? "byNumber"}
+          card={selection.rebrew.card}
+          look={selection.rebrew.card && looks.get(selection.rebrew.card.key)}
+          orders={session.emergency.orders}
+          onClose={selection.closeRebrew}
+          onAdd={session.emergency.add}
+        />
+      )}
+
+      {session.nextConfirm && (
+        <NextConfirmDialog
+          {...session.nextConfirm}
+          onCancel={session.cancelNext}
+          onConfirm={session.confirmNext}
         />
       )}
 

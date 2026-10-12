@@ -5,10 +5,12 @@ import { orderLabel } from "../logic/cards";
 
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
- * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、assign は空きスロットへの割当、auxiliary は補助のタブ
+ * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
+ * assign は空きスロットへの割当、auxiliary は補助のタブ
  */
 type OpenPanel =
   | { kind: "detail"; key: string }
+  | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | null;
@@ -20,7 +22,8 @@ export const useBoardSelection = (
   actions: {
     place: (key: string, bayId: number, place?: CaosPlace) => boolean;
     returnToUnassigned: (key: string) => boolean;
-    merge: (firstKey: string, secondKey: string) => boolean;
+    merge: (firstKey: string, intoKey: string) => boolean;
+    split: (key: string, cupId: string) => boolean;
   },
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
@@ -42,6 +45,18 @@ export const useBoardSelection = (
   useEffect(() => {
     if (ticketKey && !scheduled) setPanel(null);
   }, [ticketKey, scheduled]);
+  // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じる
+  const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
+  const rebrewing = rebrewKey
+    ? cards.find(
+        (card) =>
+          card.key === rebrewKey &&
+          (card.status === "brewing" || card.status === "done"),
+      )
+    : undefined;
+  useEffect(() => {
+    if (rebrewKey && !rebrewing) setPanel(null);
+  }, [rebrewKey, rebrewing]);
 
   // 動かしたら注文の選択を外す
   const thenDeselect = (ok: boolean) => {
@@ -55,6 +70,15 @@ export const useBoardSelection = (
     panel,
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
+    /** 緊急の入力を開いていれば、開いたカード（ヘッダーから開いたなら card は無い） */
+    rebrew:
+      panel?.kind === "rebrew" && (rebrewKey === null || rebrewing)
+        ? { card: rebrewing }
+        : null,
+    /** 緊急の入力を開く（card は抽出中・終わりのカード。無ければ番号から） */
+    openRebrew: (card?: CaosCard) =>
+      setPanel({ kind: "rebrew", key: card?.key ?? null }),
+    closeRebrew: () => close("rebrew"),
     openTicket: (card: CaosCard) => setPanel({ kind: "detail", key: card.key }),
     /** 詳細のパネルを開き、その注文を選ぶ */
     openDetail: (card: CaosCard) => {
@@ -85,7 +109,10 @@ export const useBoardSelection = (
       thenDeselect(actions.place(card.key, bayId, place)),
     returnToUnassigned: (card: CaosCard) =>
       thenDeselect(actions.returnToUnassigned(card.key)),
-    merge: (firstKey: string, secondKey: string) =>
-      thenDeselect(actions.merge(firstKey, secondKey)),
+    merge: (firstKey: string, intoKey: string) =>
+      thenDeselect(actions.merge(firstKey, intoKey)),
+    /** 統合の解除（2 杯のカードから cupId の 1 杯を外す） */
+    split: (card: CaosCard, cupId: string) =>
+      thenDeselect(actions.split(card.key, cupId)),
   };
 };

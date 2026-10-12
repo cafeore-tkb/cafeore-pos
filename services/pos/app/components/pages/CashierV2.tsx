@@ -39,6 +39,7 @@ import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
 import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
+import { PendingPrints } from "../molecules/PendingPrints";
 import { PrinterStatus } from "../molecules/PrinterStatus";
 import { DiscountInput } from "../organisms/DiscountInput";
 import { ItemButtons } from "../organisms/ItemButtons";
@@ -470,6 +471,10 @@ const CashierV2 = ({
             <div className="flex flex-col">
               <PrinterStatus name="ラベル" status={printer.status} />
               <PrinterStatus name="レシート" status={receiptPrinter.status} />
+              <PendingPrints
+                count={printer.pendingCount}
+                onRetry={printer.retry}
+              />
             </div>
             <PastOrderSideSheet
               orders={orders}

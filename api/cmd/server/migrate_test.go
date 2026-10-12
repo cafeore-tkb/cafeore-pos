@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"cafeore-pos/api/internal/models"
 	"cafeore-pos/api/internal/testdb"
 
 	"github.com/google/uuid"
@@ -210,5 +211,241 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 	}
 	if !db.Migrator().HasColumn("item_types", "iced_brew") {
 		t.Fatal("item_types.iced_brew was not created")
+	}
+}
+
+// 在庫をアイテムの在庫とカップに分ける前（main）の stock_resources と item_stock_usages。
+type oldStockResource struct {
+	ID                 uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	Kind               string    `gorm:"not null;check:kind IN ('cup','bean')"`
+	Name               string    `gorm:"not null"`
+	Unit               string    `gorm:"not null"`
+	PerServing         float64   `gorm:"type:double precision;not null;check:per_serving > 0"`
+	NotifyFrom         int       `gorm:"not null"`
+	NotifyStep         int       `gorm:"not null"`
+	Buffer             int       `gorm:"not null"`
+	LastAlertThreshold *int
+	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+func (oldStockResource) TableName() string { return "stock_resources" }
+
+type oldItemStockUsage struct {
+	ItemID     uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ResourceID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Amount     float64   `gorm:"type:double precision;not null;check:amount > 0"`
+}
+
+func (oldItemStockUsage) TableName() string { return "item_stock_usages" }
+
+// 前の形の DB（種類の項目も無い）に migrate を流すと、種類の項目の最初の値が入り、アイテムの在庫ができ、
+// 前の注文で減った量が埋まり、使用量の表と豆が消える。もう一度流しても何も変わらない。
+func TestMigrateSplitsStockIntoItemsAndCups(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 前の形のテーブルの ID の既定値に uuid_generate_v4() が要る
+	must(db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
+	old := []any{&itemTypeBeforeFlags{}, &oldStockResource{}, &oldItemStockUsage{}}
+	for _, m := range models.All() {
+		switch m.(type) {
+		case *models.ItemType, *models.StockResource, *models.StockResourceItemType, *models.OrderStockUsage:
+		default:
+			old = append(old, m)
+		}
+	}
+	must(db.AutoMigrate(old...))
+
+	hot := itemTypeBeforeFlags{ID: uuid.New(), Name: "hot", DisplayName: "ホット"}
+	must(db.Create(&hot).Error)
+	must(db.Create(&itemTypeBeforeFlags{ID: uuid.New(), Name: "others", DisplayName: "グッズ"}).Error)
+	blend := models.Item{Name: "ブレンド", Abbr: "ブ", ItemTypeID: hot.ID}
+	gone := models.Item{Name: "販売終了", Abbr: "終", ItemTypeID: hot.ID}
+	must(db.Create(&blend).Error)
+	must(db.Create(&gone).Error)
+	must(db.Delete(&gone).Error)
+	cup := oldStockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}
+	bean := oldStockResource{Kind: "bean", Name: "豆", Unit: "g", PerServing: 15}
+	must(db.Create(&cup).Error)
+	must(db.Create(&bean).Error)
+	must(db.Create(&models.StockEvent{ResourceID: bean.ID, Kind: "count", Quantity: 1000, CreatedAt: time.Now()}).Error)
+	must(db.Create(&models.StockEvent{ResourceID: cup.ID, Kind: "count", Quantity: 500, CreatedAt: time.Now()}).Error)
+	must(db.Create(&[]oldItemStockUsage{{ItemID: blend.ID, ResourceID: cup.ID, Amount: 1}, {ItemID: blend.ID, ResourceID: bean.ID, Amount: 15}}).Error)
+	menu := models.Menu{Name: "ブレンド2杯", Abbr: "ブ2", Price: 1000, Key: "b2", MenuItems: []models.MenuItem{{ItemID: blend.ID, Quantity: 2}}}
+	must(db.Create(&menu).Error)
+	line := models.OrderMenu{ID: uuid.New(), MenuID: menu.ID, MenuName: menu.Name, UnitPrice: menu.Price}
+	order := models.Order{CreatedAt: time.Now(), BillingAmount: 1000, Received: 1000, OrderMenus: []models.OrderMenu{line}}
+	must(db.Create(&order).Error)
+
+	for range 2 {
+		must(migrate(db))
+
+		var resources []models.StockResource
+		must(db.Order("kind").Find(&resources).Error)
+		if len(resources) != 2 || resources[0].ID != cup.ID || resources[0].Kind != "cup" ||
+			resources[1].Kind != "item" || *resources[1].ItemID != blend.ID {
+			t.Fatalf("在庫対象 = %+v, want カップと、消していないアイテムの在庫だけ", resources)
+		}
+		var usages []models.OrderStockUsage
+		must(db.Find(&usages).Error)
+		if len(usages) != 1 || usages[0].OrderMenuID != line.ID || usages[0].OrderID != order.ID ||
+			usages[0].ResourceID != cup.ID || usages[0].Servings != 2 || usages[0].Amount != 2 {
+			t.Errorf("前の注文で減った量 = %+v, want カップ 2", usages)
+		}
+		if flags := readItemTypeFlags(t, db); flags["hot"] != (itemTypeFlags{MakesCup: true, NeedsBrew: true}) || flags["others"] != (itemTypeFlags{}) {
+			t.Errorf("種類の項目 = %+v", flags)
+		}
+		var beanEvents int64
+		must(db.Model(&models.StockEvent{}).Where("resource_id = ?", bean.ID).Count(&beanEvents).Error)
+		if beanEvents != 0 || db.Migrator().HasTable("item_stock_usages") {
+			t.Errorf("豆の記録 %d 件・使用量の表 %v が残っている", beanEvents, db.Migrator().HasTable("item_stock_usages"))
+		}
+	}
+	// kind の check は新しい形に付け替わっている
+	if err := db.Create(&models.StockResource{Kind: "bean", Name: "豆", Unit: "g", PerServing: 15}).Error; err == nil {
+		t.Error("kind bean を作れてしまう")
+	}
+}
+
+// 名前を変える前のドリッパーの担当者と交代の記録（#833 で入れた形）
+type caosLaneBeforeRename struct {
+	Day       string    `gorm:"type:date;primaryKey;autoIncrement:false"`
+	Dripper   int       `gorm:"type:smallint;primaryKey;autoIncrement:false;check:caos_lanes_dripper_check,dripper BETWEEN 1 AND 6"`
+	Name      string    `gorm:"not null"`
+	Senior    bool      `gorm:"not null;default:false"`
+	UpdatedAt time.Time `gorm:"not null"`
+}
+
+func (caosLaneBeforeRename) TableName() string { return "caos_lanes" }
+
+type caosLaneChangeBeforeRename struct {
+	ID        int64     `gorm:"primaryKey"`
+	ChangedAt time.Time `gorm:"not null"`
+	Day       string    `gorm:"type:date;not null;index"`
+	Dripper   int       `gorm:"type:smallint;not null;check:caos_lane_changes_dripper_check,dripper BETWEEN 1 AND 6"`
+	PrevName  string    `gorm:"not null"`
+	Name      string    `gorm:"not null"`
+	Senior    bool      `gorm:"not null;default:false"`
+}
+
+func (caosLaneChangeBeforeRename) TableName() string { return "caos_lane_changes" }
+
+// 前の名前の表は、行を残したまま今の名前に変わる。2 回目は何もせず、モデルともずれない
+func TestMigrateRenamesTables(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := db.AutoMigrate(&caosLaneBeforeRename{}, &caosLaneChangeBeforeRename{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Create(&caosLaneBeforeRename{Day: "2026-10-11", Dripper: 1, Name: "山田", Senior: true, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&caosLaneChangeBeforeRename{ChangedAt: now, Day: "2026-10-11", Dripper: 1, Name: "山田", Senior: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	var lanes, changes []string
+	if err := db.Raw("SELECT day::text || ' ' || dripper || ' ' || name || ' ' || senior FROM dripper_assignees").Scan(&lanes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw("SELECT id || ' ' || dripper || ' ' || prev_name || '>' || name FROM dripper_assignee_changes").Scan(&changes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(lanes, ",") + " / " + strings.Join(changes, ","); got != "2026-10-11 1 山田 true / 1 1 >山田" {
+		t.Errorf("rows after rename = %s", got)
+	}
+	// 連番は前の表の続きから
+	mustExec(t, db, "INSERT INTO dripper_assignee_changes (changed_at, day, dripper, prev_name, name) VALUES (now(), '2026-10-11', 1, '山田', '佐藤')")
+	var maxID int64
+	if err := db.Raw("SELECT max(id) FROM dripper_assignee_changes").Scan(&maxID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if maxID != 2 {
+		t.Errorf("next id = %d, want 2", maxID)
+	}
+
+	// 表・索引・制約・連番に前の名前が残らない
+	var left []string
+	if err := db.Raw(`
+		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relname LIKE '%caos%'
+		UNION ALL
+		SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+		WHERE n.nspname = 'public' AND conname LIKE '%caos%'`).Scan(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(left) > 0 {
+		t.Errorf("前の名前が残っている: %v", left)
+	}
+
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("名前を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
+func readColorSettings(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var rows []string
+	if err := db.Raw("SELECT target_type || ' ' || screen || ' ' || color FROM color_settings ORDER BY 1").Scan(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(rows, ",")
+}
+
+// 色の設定の画面の前の名前（caos_nominated）は今の名前（nominated）に変わる。同じ対象に今の名前の行があれば、前の名前の行は消える。
+// 2 回目は何も変えず、スキーマも変えない
+func TestMigrateRenamesColorScreen(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	item, itemType := uuid.New(), uuid.New()
+	mustExec(t, db, `INSERT INTO color_settings (id, target_type, target_id, screen, color, created_at, updated_at) VALUES
+		(?, 'Item', ?, 'caos_nominated', '#111111', now(), now()),
+		(?, 'Item', ?, 'master', '#222222', now(), now()),
+		(?, 'ItemType', ?, 'caos_nominated', '#333333', now(), now()),
+		(?, 'ItemType', ?, 'nominated', '#444444', now(), now())`,
+		uuid.New(), item, uuid.New(), item, uuid.New(), itemType, uuid.New(), itemType)
+
+	const want = "Item master #222222,Item nominated #111111,ItemType nominated #444444"
+	rec.ddl = nil
+	for range 2 {
+		if err := migrate(db); err != nil {
+			t.Fatal(err)
+		}
+		if got := readColorSettings(t, db); got != want {
+			t.Errorf("color_settings = %s, want %s", got, want)
+		}
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("値を変えたあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
 	}
 }

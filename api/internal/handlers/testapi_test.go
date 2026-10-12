@@ -46,7 +46,7 @@ func newTestAPI(t *testing.T) *testAPI {
 	hub.add(ws)
 
 	slack := newFakeSlack(t)
-	inv := NewInventory(db, notify.NewSlack(slack.url), RemindAuth{}, "")
+	inv := NewInventory(db, notify.NewSlack(slack.url), RemindAuth{}, "", nil)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -61,15 +61,15 @@ func newTestAPI(t *testing.T) *testAPI {
 
 // cmd/server/main.go と同じルーティング
 func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
-	itemHandler := NewItemHandler(db)
-	menuHandler := NewMenuHandler(db)
-	itemTypeHandler := NewItemTypeHandler(db)
+	itemHandler := NewItemHandler(db, nil)
+	menuHandler := NewMenuHandler(db, nil)
+	itemTypeHandler := NewItemTypeHandler(db, nil)
 	inventoryHandler := NewInventoryHandler(inv)
 	orderHandler := NewOrderHandler(db, hub, inv)
 	commentHandler := NewCommentHandler(db, hub)
-	masterStateHandler := NewMasterStateHandler(db, hub)
+	masterStateHandler := NewMasterStateHandler(db, hub, nil)
 	cashierStateHandler := NewCashierStateHandler(db, hub)
-	colorSettingHandler := NewColorSettingHandler(db)
+	colorSettingHandler := NewColorSettingHandler(db, nil)
 	printerSettingHandler := NewPrinterSettingHandler(db)
 
 	api := r.Group("/api")
@@ -116,8 +116,6 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
 	api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
 	api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-	api.GET("/inventory/usages", inventoryHandler.GetStockUsages)
-	api.PUT("/inventory/usages", inventoryHandler.ReplaceStockUsages)
 	api.POST("/inventory/remind", inventoryHandler.RemindInventory)
 	api.GET("/color-settings", colorSettingHandler.GetColorSettings)
 	api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)

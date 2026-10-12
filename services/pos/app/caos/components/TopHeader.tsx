@@ -14,6 +14,8 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
@@ -39,6 +41,8 @@ interface TopHeaderProps {
   totalWaitingCups: number;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  /** 実データテストの時計（一時停止・速さ・やめる）を出すか */
+  simulating: boolean;
   isRunning: boolean;
   onTogglePlay: () => void;
   simSpeed: number;
@@ -51,6 +55,16 @@ interface TopHeaderProps {
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+  labelPrinter: { pendingCount: number; retry: () => void };
+  /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
+  onOpenEmergency?: () => void;
+  /** 「1つ戻す」で戻せる操作の名前。戻せなければ null */
+  undoLabel: string | null;
+  /** 戻せる残りの秒 */
+  undoSecondsLeft: number;
+  undoPending: boolean;
+  onUndo: () => void;
 }
 
 // 注文の接続の札（文字・枠・点の色）
@@ -104,6 +118,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   totalWaitingCups,
   soundEnabled,
   onToggleSound,
+  simulating,
   isRunning,
   onTogglePlay,
   simSpeed,
@@ -116,9 +131,24 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  labelPrinter,
+  onOpenEmergency,
+  undoLabel,
+  undoSecondsLeft,
+  undoPending,
+  onUndo,
 }) => {
   return (
-    <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
+    <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
+      {/* 刷れずに残っているシール。ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
+      {labelPrinter.pendingCount > 0 && (
+        <div className="absolute top-full right-[108px] z-[160] mt-1 rounded-lg border-2 border-red-300 bg-white px-3 py-1 shadow-lg">
+          <PendingPrints
+            count={labelPrinter.pendingCount}
+            onRetry={labelPrinter.retry}
+          />
+        </div>
+      )}
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
@@ -168,54 +198,60 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </nav>
 
         <div className="flex items-center gap-2">
-          <div className="font-bold font-mono text-[#0f172a] text-[28px] leading-none tracking-tight">
+          <div className="font-bold font-mono text-[#0f172a] text-[26px] leading-none tracking-tight">
             {timeStr}
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
-            <button
-              type="button"
-              onClick={onTogglePlay}
-              title={isRunning ? "一時停止" : "タイマー再開"}
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
-            >
-              {isRunning ? (
-                <Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onCycleSpeed}
-              title="シミュレーション速度切替"
-              className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
-            >
-              {simSpeed}x
-            </button>
-            <button
-              type="button"
-              onClick={onResetData}
-              title="初期状態にリセット"
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1 empty:hidden">
+            {simulating && (
+              <>
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  title={isRunning ? "一時停止" : "タイマー再開"}
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
+                >
+                  {isRunning ? (
+                    <Pause className="h-3.5 w-3.5" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCycleSpeed}
+                  title="シミュレーション速度切替"
+                  className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
+                >
+                  {simSpeed}x
+                </button>
+                <button
+                  type="button"
+                  onClick={onResetData}
+                  title="初期状態にリセット"
+                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
             {showTimelineControls && (
-              <div className="ml-1 flex items-center gap-1 border-slate-300 border-l pl-1">
+              <div
+                className={`flex items-center gap-1 ${simulating ? "ml-1 border-slate-300 border-l pl-1" : ""}`}
+              >
                 <button
                   type="button"
                   onClick={() => onTimelineNavigate("back")}
                   title="5分前を表示"
-                  className="flex h-10 touch-manipulation items-center gap-0.5 rounded-lg border border-slate-300 bg-white px-2 font-black text-[12px] text-slate-700"
+                  className="flex h-10 touch-manipulation items-center whitespace-nowrap rounded-lg border border-slate-300 bg-white px-1.5 font-black text-[12px] text-slate-700"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
-                  −5分
+                  5分
                 </button>
                 <button
                   type="button"
                   onClick={() => onTimelineNavigate("now")}
                   title="現在時刻へ戻る"
-                  className="flex h-10 touch-manipulation items-center gap-1 rounded-lg bg-red-500 px-3 font-black text-[12px] text-white"
+                  className="flex h-10 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg bg-red-500 px-2 font-black text-[12px] text-white"
                 >
                   <span className="h-2 w-2 rounded-full bg-white" />
                   現在
@@ -224,9 +260,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   type="button"
                   onClick={() => onTimelineNavigate("forward")}
                   title="5分先を表示"
-                  className="flex h-10 touch-manipulation items-center gap-0.5 rounded-lg border border-slate-300 bg-white px-2 font-black text-[12px] text-slate-700"
+                  className="flex h-10 touch-manipulation items-center whitespace-nowrap rounded-lg border border-slate-300 bg-white px-1.5 font-black text-[12px] text-slate-700"
                 >
-                  ＋5分
+                  5分
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -263,14 +299,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
         <PosStatusBadge status={posStatus} />
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
-          className={`flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border px-3 font-black text-xs shadow-xs ${testPlaying ? "border-blue-700 bg-blue-700 text-white" : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
+          className={`flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border px-2 font-black text-xs shadow-xs ${testPlaying ? "border-blue-700 bg-blue-700 text-white" : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
@@ -283,20 +319,34 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <CalendarClock className="h-4 w-4" />
           )}
           <span>
-            {testPlaying
-              ? `終了・実績 ${testProgressLabel || ""}`
-              : "実データテスト"}
+            {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
           </span>
         </button>
-        {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
+        {/* 1つ戻す。この画面が最後にした操作を、10 秒のあいだ戻せる。押せるあいだは濃くし、何を戻すかと残りの秒を出す */}
         <button
           type="button"
-          disabled
-          title="1つ戻すは準備中です"
-          className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          disabled={!undoLabel || undoPending}
+          onClick={onUndo}
+          title={
+            undoLabel ? `「${undoLabel}」を戻す` : "戻せる操作はありません"
+          }
+          aria-label={undoLabel ? `1つ戻す：${undoLabel}` : "1つ戻す"}
+          className="flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-slate-900 bg-slate-900 px-2 font-black text-white text-xs shadow-xs transition-colors hover:bg-slate-700 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Undo2 className="h-4 w-4" />
-          <span>1つ戻す</span>
+          <span className="flex min-w-0 flex-col items-start leading-tight">
+            <span>
+              戻す
+              {undoLabel && (
+                <span className="font-mono">（{undoSecondsLeft}）</span>
+              )}
+            </span>
+            {undoLabel && (
+              <span className="max-w-[8rem] truncate font-bold text-[10px]">
+                {undoLabel}
+              </span>
+            )}
+          </span>
         </button>
 
         <button
@@ -315,6 +365,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <VolumeX className="h-4 w-4" />
           )}
         </button>
+        {/* 緊急（入れ直し）。右端に置き、右手で押しても盤面を隠さない */}
+        {onOpenEmergency && (
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="flex h-11 shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-800 bg-red-600 px-3 font-black text-[15px] text-white shadow-xs hover:bg-red-700"
+          >
+            <EmergencyIcon className="h-5 w-5" />
+            緊急
+          </button>
+        )}
       </div>
     </header>
   );

@@ -1,6 +1,7 @@
 import {
   type CaosCard,
   type CaosPlace,
+  canMergeCards,
   caosDripperAllowed,
 } from "@cafeore/common";
 import type React from "react";
@@ -11,7 +12,10 @@ import { isBayId } from "../logic/lanes";
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機カード）で共通。
 // 12px 動くまではタップ。掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
+// スクロールする枠の中のカード（press の scroll）は、指でスクロールの向きに動かすとスクロールに任せ、
+// 向きの違う動きか、長押し（HOLD_MS）で掴む（カードが並んでいても枠をスクロールできる）。
 const DRAG_THRESHOLD_PX = 12;
+const HOLD_MS = 300;
 
 // 1〜6 のボタン（カードの上の BayPad）
 const isBayButton = (element: Element): element is HTMLElement =>
@@ -49,26 +53,55 @@ export const bayTargetAt = (
 
 /**
  * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機のカードの前（{ beforeKey }）。
- * place が無ければ、その列の待機の最後へ
+ * place が無ければ、その列の待機の最後へ。mergeKey があれば、そのカード（待機・抽出中）に統合する
  */
 export interface DropTarget {
   bayId: number;
   place?: CaosPlace;
-  /** 前に入れるカードの表示（注文番号） */
+  /** 統合する相手のカード（key） */
+  mergeKey?: string;
+  /** 前に入れる・統合する相手のカードの表示（注文番号） */
   beforeLabel?: string;
 }
 
+// 待機のカードの上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
+const MERGE_FROM = 0.4;
+
 /**
- * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）、待機のカード（data-queued-ticket）の上ならそのカードの前
- * （同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。運んでいるカード（card）自身は飛ばし、置けない列は null
+ * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
+ * 運んでいるカード（card）を統合できる（canMergeCards。cards から引く）なら統合（待機のカードは右の部分だけ）、
+ * 待機のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
+ * 運んでいるカード自身は飛ばし、置けない列は null
  */
 export const dropTargetAt = (
   clientX: number,
   clientY: number,
-  { from, card }: { from?: number; card?: CaosCard } = {},
+  {
+    from,
+    card,
+    cards = [],
+  }: { from?: number; card?: CaosCard; cards?: readonly CaosCard[] } = {},
 ): DropTarget | null => {
   const elements = document.elementsFromPoint(clientX, clientY);
   if (!elements.some(isBayButton)) {
+    for (const element of elements) {
+      const target = element.closest<HTMLElement>("[data-merge-target]");
+      const into = cards.find(
+        (other) => other.key === target?.dataset.mergeTarget,
+      );
+      if (!target || !into || !card || !canMergeCards(card, into)) continue;
+      const rect = target.getBoundingClientRect();
+      if (
+        into.status === "queued" &&
+        clientX < rect.left + rect.width * MERGE_FROM
+      )
+        break;
+      return {
+        bayId: into.dripper ?? 0,
+        mergeKey: into.key,
+        beforeLabel: target.dataset.ticketLabel,
+      };
+    }
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;
@@ -90,9 +123,10 @@ export const dropTargetAt = (
   return bayId === null ? null : { bayId };
 };
 
-/** 落とす先の札（「→ 3」・「→ 3 #012 の前」） */
+/** 落とす先の札（「→ 3」・「→ 3 #012 の前」・「→ 3 #012 と統合」） */
 export const dropTargetLabel = (target: DropTarget | null) => {
   if (!target) return null;
+  if (target.mergeKey) return `→ ${target.bayId} ${target.beforeLabel} と統合`;
   return target.beforeLabel
     ? `→ ${target.bayId} ${target.beforeLabel} の前`
     : `→ ${target.bayId}`;
@@ -130,11 +164,14 @@ export const useCardDrag = <S, T>(handlers: {
       ghostRef.current.style.transform = `translate3d(${offset.current.x}px, ${offset.current.y}px, 0)`;
   };
 
-  /** カードの onPointerDown。anyDirection が false なら縦の動きはスクロールに任せる（touch-action pan-y のカード） */
+  /**
+   * カードの onPointerDown。scroll はカードを置いた枠のスクロールの向き（カードの touch-action も pan-x・pan-y にする）。
+   * 指でその向きに動かすとスクロール、ほかの向きか長押しで掴む。マウスと scroll の無いカードはどの向きでもすぐ掴む
+   */
   const press = (
     source: S,
     event: React.PointerEvent<HTMLElement>,
-    anyDirection = true,
+    scroll?: "x" | "y",
   ) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     // カードの上のボタン（1〜6 など）はそのボタンの操作
@@ -143,7 +180,18 @@ export const useCardDrag = <S, T>(handlers: {
 
     const { pointerId, clientX: startX, clientY: startY } = event;
     const rect = event.currentTarget.getBoundingClientRect();
+    // A mouse drag never scrolls, so only touch and pen leave the scroll axis to the browser.
+    const scrollAxis = event.pointerType === "mouse" ? undefined : scroll;
     let dragging = false;
+    // 掴んだあと指が動いたか（長押しして動かさずに離したのはタップ）
+    let moved = false;
+    const begin = () => {
+      window.clearTimeout(holdTimer);
+      dragging = true;
+      latest.current.onBegin?.(source);
+      setDrag({ source, rect });
+    };
+    const holdTimer = scrollAxis ? window.setTimeout(begin, HOLD_MS) : 0;
 
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
@@ -156,11 +204,15 @@ export const useCardDrag = <S, T>(handlers: {
       const dy = moveEvent.clientY - startY;
       if (!dragging) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-        if (!anyDirection && Math.abs(dy) > Math.abs(dx)) return;
-        dragging = true;
-        latest.current.onBegin?.(source);
-        setDrag({ source, rect });
+        const horizontal = Math.abs(dx) > Math.abs(dy);
+        // Moving along the scroll axis before the hold scrolls the container instead.
+        if (scrollAxis && horizontal === (scrollAxis === "x")) {
+          cleanup();
+          return;
+        }
+        begin();
       }
+      moved ||= Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
       // Move the ghost directly; the board re-renders only when the drop target changes.
       offset.current = { x: dx, y: dy };
       placeGhost();
@@ -175,19 +227,27 @@ export const useCardDrag = <S, T>(handlers: {
       if (!dragging) return;
       setDrag(null);
       setTarget(null);
-      suppressNextClick.current = true;
-      const dropTarget = dropped
-        ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
-        : null;
+      suppressNextClick.current = moved;
+      const dropTarget =
+        dropped && moved
+          ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
+          : null;
       if (dropTarget !== null) latest.current.onDrop(source, dropTarget);
     };
     const onUp = (upEvent: PointerEvent) => finish(upEvent, true);
     const onCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, false);
 
+    // Once held, a finger moving along the scroll axis must move the card, not the container.
+    const onTouchMove = (touchEvent: TouchEvent) => {
+      if (dragging && touchEvent.cancelable) touchEvent.preventDefault();
+    };
+
     const cleanup = () => {
+      window.clearTimeout(holdTimer);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("touchmove", onTouchMove);
       endPress.current = null;
     };
     endPress.current = () => {
@@ -198,6 +258,7 @@ export const useCardDrag = <S, T>(handlers: {
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
   };
 
   return {

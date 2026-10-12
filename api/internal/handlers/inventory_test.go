@@ -30,35 +30,54 @@ func TestMergeResourceIDs(t *testing.T) {
 }
 
 func validStockResourceRequest() models.StockResourceRequest {
-	return models.StockResourceRequest{Kind: models.StockResourceKindBean, Name: "ブレンド豆", Unit: "g", PerServing: 15, NotifyFrom: 100, NotifyStep: 20, Buffer: 30}
+	name := "ホットカップ"
+	return models.StockResourceRequest{Name: &name, Unit: "個", PerServing: 1, NotifyFrom: 100, NotifyStep: 20, Buffer: 30}
 }
 
 func TestValidateStockResource(t *testing.T) {
 	ok := validStockResourceRequest()
-	if err := validateStockResource(&ok); err != nil {
+	if err := validateStockResource(&ok, true); err != nil {
 		t.Fatal(err)
 	}
 	// 通知しない設定（0）は受け付ける
 	zero := validStockResourceRequest()
-	zero.Kind, zero.NotifyFrom, zero.NotifyStep, zero.Buffer = models.StockResourceKindCup, 0, 0, 0
-	if err := validateStockResource(&zero); err != nil {
+	zero.NotifyFrom, zero.NotifyStep, zero.Buffer = 0, 0, 0
+	if err := validateStockResource(&zero, true); err != nil {
+		t.Fatal(err)
+	}
+	// アイテムの在庫は名前と使う種類を持たない
+	item := validStockResourceRequest()
+	item.Name = nil
+	if err := validateStockResource(&item, false); err != nil {
 		t.Fatal(err)
 	}
 
-	cases := map[string]func(*models.StockResourceRequest){
-		"unknown kind":         func(r *models.StockResourceRequest) { r.Kind = "milk" },
-		"blank name":           func(r *models.StockResourceRequest) { r.Name = "  " },
+	blank := "  "
+	cupCases := map[string]func(*models.StockResourceRequest){
+		"missing name":         func(r *models.StockResourceRequest) { r.Name = nil },
+		"blank name":           func(r *models.StockResourceRequest) { r.Name = &blank },
 		"zero per_serving":     func(r *models.StockResourceRequest) { r.PerServing = 0 },
 		"negative per_serving": func(r *models.StockResourceRequest) { r.PerServing = -1 },
 		"negative notify_from": func(r *models.StockResourceRequest) { r.NotifyFrom = -1 },
 		"negative notify_step": func(r *models.StockResourceRequest) { r.NotifyStep = -1 },
 		"negative buffer":      func(r *models.StockResourceRequest) { r.Buffer = -1 },
 	}
-	for name, mutate := range cases {
+	for name, mutate := range cupCases {
 		req := validStockResourceRequest()
 		mutate(&req)
-		if validateStockResource(&req) == nil {
-			t.Errorf("%s: invalid request accepted", name)
+		if validateStockResource(&req, true) == nil {
+			t.Errorf("cup %s: invalid request accepted", name)
+		}
+	}
+	itemCases := map[string]func(*models.StockResourceRequest){
+		"name":          func(r *models.StockResourceRequest) {},
+		"item_type_ids": func(r *models.StockResourceRequest) { r.Name, r.ItemTypeIds = nil, &[]uuid.UUID{} },
+	}
+	for name, mutate := range itemCases {
+		req := validStockResourceRequest()
+		mutate(&req)
+		if validateStockResource(&req, false) == nil {
+			t.Errorf("item stock with %s: invalid request accepted", name)
 		}
 	}
 }

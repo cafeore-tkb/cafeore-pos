@@ -10,19 +10,34 @@ import {
 } from "./epos";
 import type { PrinterConnectionStatus } from "./printer";
 
-/** 積まれた命令を [名前, ...引数] で覚える builder */
-const recordingBuilder = () => {
+/** プリンターの返事 */
+type Reply = { success: boolean; code: string };
+
+/**
+ * 積まれた命令を [名前, ...引数] で覚える builder
+ *
+ * send するとすぐ reply を返事として返す（null なら返さない。あとで device.onreceive を呼ぶ）。
+ */
+const recordingBuilder = (
+  reply: Reply | null = { success: true, code: "" },
+) => {
   const calls: unknown[][] = [];
   const record =
     (name: string) =>
     (...args: unknown[]) => {
       calls.push([name, ...args]);
     };
-  const builder: EposBuilder & { send: () => void } = {
+  const builder: EposBuilder & {
+    send: () => void;
+    onreceive: ((response: Reply) => void) | null;
+    onerror: ((error: unknown) => void) | null;
+  } = {
     FEED_CURRENT_TOF: "current_tof",
     ALIGN_LEFT: "left",
     ALIGN_CENTER: "center",
     CUT_FEED: "cut_feed",
+    COLOR_1: "color_1",
+    MODE_MONO: "mono",
     addTextLang: record("addTextLang"),
     addTextAlign: record("addTextAlign"),
     addTextSize: record("addTextSize"),
@@ -32,10 +47,19 @@ const recordingBuilder = () => {
     addPageArea: record("addPageArea"),
     addPagePosition: record("addPagePosition"),
     addLogo: record("addLogo"),
+    // 画像は context から読める画素を覚える
+    addImage: (context, ...args) => {
+      calls.push(["addImage", context.getImageData(), ...args]);
+    },
     addFeedLine: record("addFeedLine"),
     addFeedPosition: record("addFeedPosition"),
     addCut: record("addCut"),
-    send: record("send"),
+    send: () => {
+      calls.push(["send"]);
+      if (reply) builder.onreceive?.(reply);
+    },
+    onreceive: null,
+    onerror: null,
   };
   return { builder, calls };
 };
@@ -125,6 +149,31 @@ describe("[unit] writeEposJob", () => {
       ["addCut", "cut_feed"],
     ]);
   });
+
+  test("画像は中央に寄せて白黒で刷り、左寄せに戻す", () => {
+    const { builder, calls } = recordingBuilder();
+    const image = {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]),
+    };
+
+    writeEposJob(
+      builder,
+      { labels: [{ type: "image", image }] },
+      { logoKey: [32, 32], trailingFeedLines: 1, cut: true },
+    );
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ["addTextAlign", "center"],
+      ["addImage", image, 0, 0, 2, 1, "color_1", "mono"],
+      ["addTextAlign", "left"],
+      ["addFeedLine", 1],
+      ["addCut", "cut_feed"],
+    ]);
+  });
 });
 
 describe("[unit] createEposPrinter", () => {
@@ -138,7 +187,7 @@ describe("[unit] createEposPrinter", () => {
    * deferConnect なら connect の応答を返さず、pending に貯める（あとで呼ぶ）。
    */
   const stubEpson = (
-    device: EposBuilder & { send: () => void },
+    device: ReturnType<typeof recordingBuilder>["builder"],
     { deferConnect = false } = {},
   ) => {
     const pending: ((r: string) => void)[] = [];
@@ -173,14 +222,14 @@ describe("[unit] createEposPrinter", () => {
     return { connect, createDevice, disconnect, pending };
   };
 
-  test("つないでから刷ると、命令を積んで 1 回送る", () => {
+  test("つないでから刷ると、命令を積んで 1 回送る", async () => {
     const { builder, calls } = recordingBuilder();
     const { connect, createDevice } = stubEpson(builder);
     const statuses: PrinterConnectionStatus[] = [];
 
     const printer = createEposPrinter((status) => statuses.push(status));
     printer.connect();
-    printer.print(job);
+    await printer.print(job);
 
     expect(connect).toHaveBeenCalledWith(
       DEFAULT_EPOS_PRINTER_CONFIG.address,
@@ -198,31 +247,111 @@ describe("[unit] createEposPrinter", () => {
     expect(calls.at(-1)).toEqual(["send"]);
   });
 
-  test("つながっていなければ刷らず、disconnected を知らせる", () => {
+  test("つながっていなければ刷らず、disconnected を知らせる", async () => {
     const { builder, calls } = recordingBuilder();
     stubEpson(builder);
     vi.spyOn(console, "error").mockImplementation(() => {});
     const statuses: PrinterConnectionStatus[] = [];
 
     const printer = createEposPrinter((status) => statuses.push(status));
-    printer.print(job);
+    await printer.print(job);
 
     expect(statuses).toEqual(["disconnected"]);
     expect(calls).toEqual([]);
   });
 
-  test("刷れたら true、つながっていなければ false を返す", () => {
+  test("刷れたと返したら true、つながっていなければ false を返す", async () => {
     const { builder } = recordingBuilder();
     stubEpson(builder);
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const printer = createEposPrinter(() => {});
-    expect(printer.print(job)).toBe(false);
+    expect(await printer.print(job)).toBe(false);
     printer.connect();
-    expect(printer.print(job)).toBe(true);
+    expect(await printer.print(job)).toBe(true);
   });
 
-  test("やめた後は、つなぎかけの応答が来ても知らせず刷らない", () => {
+  test("プリンターが失敗を返したら false（つながりはそのまま）", async () => {
+    const { builder } = recordingBuilder({
+      success: false,
+      code: "EPTR_REC_EMPTY",
+    });
+    stubEpson(builder);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+
+    expect(await printer.print(job)).toBe(false);
+    expect(statuses).toEqual(["connecting", "connected"]);
+  });
+
+  test("返事が来なければ false にし、つながりを切る", async () => {
+    vi.useFakeTimers();
+    const { builder, calls } = recordingBuilder(null);
+    const { disconnect } = stubEpson(builder);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+    const printed = printer.print(job);
+    await vi.advanceTimersByTimeAsync(
+      DEFAULT_EPOS_PRINTER_CONFIG.responseTimeoutMs,
+    );
+
+    expect(await printed).toBe(false);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(statuses.at(-1)).toBe("disconnected");
+    // 切ったので、次は送らない
+    expect(await printer.print(job)).toBe(false);
+    expect(calls.filter(([name]) => name === "send")).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  test("返事を待つ間にやめていたら、時間切れでも知らせない", async () => {
+    vi.useFakeTimers();
+    const { builder } = recordingBuilder(null);
+    const { disconnect } = stubEpson(builder);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+    const printed = printer.print(job);
+    await vi.advanceTimersByTimeAsync(0); // 送るまで進める
+    printer.disconnect();
+    await vi.advanceTimersByTimeAsync(
+      DEFAULT_EPOS_PRINTER_CONFIG.responseTimeoutMs,
+    );
+
+    expect(await printed).toBe(false);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["connecting", "connected"]);
+    vi.useRealTimers();
+  });
+
+  test("前の印刷の返事を待ってから次を送る", async () => {
+    const { builder, calls } = recordingBuilder(null);
+    stubEpson(builder);
+    const printer = createEposPrinter(() => {});
+    printer.connect();
+    const sends = () => calls.filter(([name]) => name === "send").length;
+
+    const first = printer.print(job);
+    const second = printer.print(job);
+    await Promise.resolve();
+    expect(sends()).toBe(1);
+
+    builder.onreceive?.({ success: true, code: "" });
+    expect(await first).toBe(true);
+    expect(sends()).toBe(2);
+    builder.onreceive?.({ success: true, code: "" });
+    expect(await second).toBe(true);
+  });
+
+  test("やめた後は、つなぎかけの応答が来ても知らせず刷らない", async () => {
     const { builder, calls } = recordingBuilder();
     const { disconnect, pending } = stubEpson(builder, { deferConnect: true });
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -235,11 +364,11 @@ describe("[unit] createEposPrinter", () => {
 
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(statuses).toEqual(["connecting"]);
-    expect(printer.print(job)).toBe(false);
+    expect(await printer.print(job)).toBe(false);
     expect(calls).toEqual([]);
   });
 
-  test("やめてからつなぎ直すと、新しい方の応答だけを使う", () => {
+  test("やめてからつなぎ直すと、新しい方の応答だけを使う", async () => {
     const { builder } = recordingBuilder();
     const { pending } = stubEpson(builder, { deferConnect: true });
     const statuses: PrinterConnectionStatus[] = [];
@@ -253,10 +382,10 @@ describe("[unit] createEposPrinter", () => {
     pending[1]("OK");
 
     expect(statuses).toEqual(["connecting", "connecting", "connected"]);
-    expect(printer.print(job)).toBe(true);
+    expect(await printer.print(job)).toBe(true);
   });
 
-  test("eposPrinterAt はアドレスだけ変え、ほかは渡した設定のまま", () => {
+  test("eposPrinterAt はアドレスだけ変え、ほかは渡した設定のまま", async () => {
     const { builder, calls } = recordingBuilder();
     const { connect } = stubEpson(builder);
 
@@ -265,7 +394,7 @@ describe("[unit] createEposPrinter", () => {
       RECEIPT_EPOS_PRINTER_CONFIG,
     )(() => {});
     printer.connect();
-    printer.print({ labels: [{ type: "flow", lines: [] }] });
+    await printer.print({ labels: [{ type: "flow", lines: [] }] });
 
     expect(connect).toHaveBeenCalledWith(
       "10.0.0.3",
