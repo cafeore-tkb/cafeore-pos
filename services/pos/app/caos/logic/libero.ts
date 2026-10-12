@@ -32,13 +32,13 @@ export interface LiberoLane {
   brew?: LiberoBrew;
 }
 
-const startMs = (lane: Lane) => lane.brewing?.startedAt?.getTime() ?? 0;
-
 /** ドリッパーごとの抽出中のカードの経過（並びは lanes のまま） */
 export const liberoLanes = (
   lanes: readonly Lane[],
   nowMs: number,
 ): LiberoLane[] => {
+  // 始めた時刻（まだ無ければ今。laneStatus の経過と同じ）
+  const startMs = (lane: Lane) => lane.brewing?.startedAt?.getTime() ?? nowMs;
   const longest = lanes
     .filter((lane) => lane.brewing)
     .sort((a, b) => startMs(a) - startMs(b));
