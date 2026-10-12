@@ -33,6 +33,8 @@ const dripperFromKey = (key: string): number | null | undefined => {
   return DRIPPER_NUMBERS.find((d) => d === n);
 };
 
+const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
+
 /**
  * Enterで指名の入力欄を開けて、アイテムの指名を変更できるコンポーネント
  *
@@ -115,6 +117,12 @@ const ItemAssign = memo(
                       );
                     }}
                     onKeyDown={(e) => {
+                      // 矢印のキーはレジの画面の移動（window の keydown）に使うので、選ぶ欄の番号は変えない
+                      // （閉じた select は ← → ↑ ↓ で選んでいる番号が 1 つずれる）
+                      if (ARROW_KEYS.has(e.key)) {
+                        e.preventDefault();
+                        return;
+                      }
                       const next = dripperFromKey(e.key);
                       if (next === undefined) return;
                       e.preventDefault();
