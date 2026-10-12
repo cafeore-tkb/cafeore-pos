@@ -83,9 +83,7 @@ export default function App() {
           }}
           posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
-          onOpenEmergency={
-            session.emergency ? () => selection.openRebrew() : undefined
-          }
+          onOpenEmergency={() => selection.openRebrew()}
           undoLabel={session.undo.label}
           undoSecondsLeft={session.undo.secondsLeft}
           undoPending={session.undo.pending}
@@ -108,7 +106,7 @@ export default function App() {
             onAdvanceBay={session.advance}
             onOpenTicketPad={selection.openTicket}
             onOpenTicketDetail={selection.openDetail}
-            onOpenRebrew={session.emergency ? selection.openRebrew : undefined}
+            onOpenRebrew={selection.openRebrew}
             onCancelEmergency={selection.cancelEmergency}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
@@ -148,7 +146,7 @@ export default function App() {
         />
       )}
 
-      {selection.rebrew && session.emergency && (
+      {selection.rebrew && (
         <RebrewPanel
           key={selection.rebrew.card?.key ?? "byNumber"}
           card={selection.rebrew.card}
