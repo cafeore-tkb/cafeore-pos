@@ -38,6 +38,11 @@ body:has(.caos-root) {
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
+  /* 抽出を始めてからの経過（リベロビュー）。予定の抽出時間までを 4 段に分け、長いほど濃い紫（ほかの意味の色と分ける）。過ぎたら継続中の赤 */
+  --caos-elapsed-1: oklch(89.4% 0.057 293.283);
+  --caos-elapsed-2: oklch(70.2% 0.183 293.541);
+  --caos-elapsed-3: oklch(54.1% 0.281 293.009);
+  --caos-elapsed-4: oklch(38% 0.189 293.745);
   /* 指で掴むスクロールバー（components/ScrollArea）。溝と、つまみ（掴んでいる間は濃く） */
   --caos-scrollbar-track: oklch(96.8% 0.007 247.896);
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);

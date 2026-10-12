@@ -89,6 +89,15 @@ const sections: Section[] = [
         description:
           "CaOS の盤面をタイムラインで映すだけ。注文と抽出がリアルタイムに流れます。操作はできないので、どの端末で開いても盤面は変わりません。",
       },
+      {
+        kind: "master-sheet-libero",
+        to: "/master-sheet/libero",
+        title: "CaOS リベロビュー",
+        audience: "staff",
+        where: "リベロ（お湯を持って回る係）が見る端末・テレビ",
+        description:
+          "ドリッパーごとに、入れ始めてからの時間と長い順の順位を大きく表示。長いほど濃く、予定の抽出時間を過ぎたら赤。閲覧のみです。",
+      },
     ],
   },
   {

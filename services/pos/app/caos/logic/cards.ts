@@ -81,6 +81,12 @@ export interface CardLook {
 }
 export type CardLooks = ReadonlyMap<string, CardLook>;
 
+/** カードの地の色（CardLook の color） */
+export const cardColor = (card: CaosCard, settings: ColorSetting[]) =>
+  (card.nominatedDripper !== null
+    ? resolveItemColor(settings, card.cups[0].item, "nominated")
+    : undefined) ?? resolveItemColor(settings, card.cups[0].item, "master");
+
 /** カードごとの見せ方（キーはカードの key）。色の設定と在庫はあとから読み込まれたり変わったりするので、出すたびに引く */
 export const cardLooks = (
   cards: readonly CaosCard[],
@@ -110,11 +116,7 @@ export const cardLooks = (
     cards.map((card) => [
       card.key,
       {
-        color:
-          (card.nominatedDripper !== null
-            ? resolveItemColor(settings, card.cups[0].item, "nominated")
-            : undefined) ??
-          resolveItemColor(settings, card.cups[0].item, "master"),
+        color: cardColor(card, settings),
         split: splitOf(card),
         bean: cardBean(card, beanIndex),
       },
