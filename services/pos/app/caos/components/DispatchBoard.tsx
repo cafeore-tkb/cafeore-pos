@@ -31,11 +31,13 @@ import { ScrollArea } from "./ScrollArea";
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
 // 統合できる待機・抽出中のカードの上の右の部分に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
-// タイムラインの横スクロールは下のスクロールバー（ScrollArea）か、カードの無い所をなぞる。
+// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 // 左端の列（ドリッパーの番号と担当者）の幅
 const STICKY_LEFT_WIDTH = 168;
+// 右端の列（次へ）の幅
+const NEXT_COLUMN_WIDTH = 96;
 // 90 seconds of past context remains visible to the left of NOW.
 const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
 
@@ -157,6 +159,10 @@ export const DispatchBoard: React.FC<
 
       <ScrollArea
         axis="x"
+        trackInset={{
+          start: STICKY_LEFT_WIDTH,
+          end: readOnly ? 0 : NEXT_COLUMN_WIDTH,
+        }}
         scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
         scrollerClassName="touch-auto select-none overscroll-x-contain"
@@ -409,7 +415,8 @@ const NextColumn: React.FC<{
   children?: React.ReactNode;
 }> = ({ className, children }) => (
   <div
-    className={`sticky right-0 isolate z-50 flex w-[96px] shrink-0 items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
+    style={{ width: NEXT_COLUMN_WIDTH }}
+    className={`sticky right-0 isolate z-50 flex shrink-0 items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
   >
     {children}
   </div>
