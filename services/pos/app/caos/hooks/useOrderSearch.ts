@@ -11,6 +11,10 @@ const MAX_DIGITS = 4;
 /** 番号の検索のキー（数字の 1 文字か、1 文字消す "back"・全部消す "clear"） */
 export type SearchKey = string;
 
+// 番号に数字を 1 つ足す（頭の 0 は入れない。MAX_DIGITS 桁まで）
+const appendDigit = (value: string, digit: string) =>
+  value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
+
 // 入力欄（緊急の番号・担当者の名前など）で打っているキーは拾わない
 const typingIn = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -44,7 +48,7 @@ export const useOrderSearch = ({
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
   lanes: readonly Lane[];
-  comments: CommentsByOrder;
+  comments: CommentsByOrder | null;
   nowMs: number;
 }) => {
   const orderNo = digits ? Number(digits) : null;
@@ -57,29 +61,36 @@ export const useOrderSearch = ({
   const press = (key: SearchKey) => {
     if (key === "clear") setDigits(() => "");
     else if (key === "back") setDigits((value) => value.slice(0, -1));
-    else
-      setDigits((value) =>
-        value.length < MAX_DIGITS ? `${value}${key}`.replace(/^0+/, "") : value,
-      );
+    else setDigits((value) => appendDigit(value, key));
   };
 
-  const latest = useRef({ found, target, press, open, close, digits });
-  const show = useRef({ selectOrder, showOnTimeline });
+  // 効果の中で読む今の値（効果は番号・キーで動かし、毎回は張り直さない）
+  const current = {
+    found,
+    target,
+    digits,
+    press,
+    open,
+    close,
+    selectOrder,
+    showOnTimeline,
+  };
+  const latest = useRef(current);
   useLayoutEffect(() => {
-    latest.current = { found, target, press, open, close, digits };
-    show.current = { selectOrder, showOnTimeline };
+    latest.current = current;
   });
 
   // 番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
   // 開いたまま番号を変えて、盤面に見せるカードが無くなったら（消した・無い番号）選んだ注文を外す（閉じたときは選んだままにする）
   useEffect(() => {
-    const { found, target, digits } = latest.current;
+    const { found, target, digits, selectOrder, showOnTimeline } =
+      latest.current;
     if (targetId === null || !found || !target) {
-      if (digits !== null) show.current.selectOrder(null);
+      if (digits !== null) selectOrder(null);
       return;
     }
-    show.current.selectOrder(`#${orderNoLabel(found.orderNo)}`);
-    if (target.status !== "unassigned") show.current.showOnTimeline(target.key);
+    selectOrder(`#${orderNoLabel(found.orderNo)}`);
+    if (target.status !== "unassigned") showOnTimeline(target.key);
     else
       document
         .querySelector(`[data-unassigned-uid="${CSS.escape(target.key)}"]`)
@@ -97,7 +108,7 @@ export const useOrderSearch = ({
       const { digits, press, open, close } = latest.current;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
-        if (digits === null) open(event.key);
+        if (digits === null) open(appendDigit("", event.key));
         else press(event.key);
         return;
       }

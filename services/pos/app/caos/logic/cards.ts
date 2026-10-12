@@ -119,7 +119,7 @@ export const cardLooks = (
   cards: readonly CaosCard[],
   settings: ColorSetting[],
   beanIndex: BeanIndex,
-  comments: CommentsByOrder = new Map(),
+  comments: CommentsByOrder | null = null,
 ): CardLooks => {
   // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
   const byOrder = new Map<string, CaosCard[]>();

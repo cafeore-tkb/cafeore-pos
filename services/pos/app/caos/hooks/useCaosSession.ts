@@ -140,7 +140,7 @@ export const useCaosSession = () => {
     [live.orders],
   );
   const looks = useMemo(
-    () => cardLooks(cards, colorSettings, beanIndex, comments ?? undefined),
+    () => cardLooks(cards, colorSettings, beanIndex, comments),
     [cards, colorSettings, beanIndex, comments],
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない

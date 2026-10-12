@@ -66,7 +66,8 @@ export const findOrder = ({
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
   lanes: readonly Lane[];
-  comments: CommentsByOrder;
+  /** 本番の注文のコメント（実データテスト中は null） */
+  comments: CommentsByOrder | null;
   orderNo: number;
   nowMs: number;
 }): FoundOrder | null => {
@@ -86,7 +87,7 @@ export const findOrder = ({
     cards: cards
       .filter((card) => card.cups.some((cup) => cup.orderId === order.id))
       .map((card) => ({ card, place: placeOf(card, places, nowMs) })),
-    comments: comments.get(order.id) ?? [],
+    comments: comments?.get(order.id) ?? [],
   };
 };
 

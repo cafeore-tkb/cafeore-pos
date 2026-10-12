@@ -48,10 +48,11 @@ export default function App() {
     selectOrder: selection.selectOrder,
     showOnTimeline: (cardKey) =>
       setTimelineCommand({ direction: "card", cardKey, id: Date.now() }),
+    // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
     orders: session.emergency.orders,
     cards: session.cards,
     lanes,
-    comments: session.comments ?? new Map(),
+    comments: session.comments,
     nowMs: session.nowMs,
   });
   // 新しいコメントの通知。「表示」でその注文を探す

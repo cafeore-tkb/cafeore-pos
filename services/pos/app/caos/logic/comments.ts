@@ -35,9 +35,12 @@ export const commentKey = (comment: BoardComment) =>
   `${comment.orderNo}\u0000${comment.createdAt.getTime()}\u0000${comment.author}\u0000${comment.text}`;
 
 /** カードの注文のコメント（統合したカードは中の注文すべて）。無ければ undefined */
-export const cardComments = (card: CaosCard, comments: CommentsByOrder) => {
+export const cardComments = (
+  card: CaosCard,
+  comments: CommentsByOrder | null,
+) => {
   const found = [...new Set(card.cups.map((cup) => cup.orderId))].flatMap(
-    (orderId) => comments.get(orderId) ?? [],
+    (orderId) => comments?.get(orderId) ?? [],
   );
   return found.length > 0 ? found : undefined;
 };
