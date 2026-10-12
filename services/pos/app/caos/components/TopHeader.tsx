@@ -371,7 +371,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
         {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
-        <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0 [&_svg]:h-3.5 [&_svg]:w-3.5">
+        <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
           <PosStatusBadge status={posStatus} />
           <StatusBadge
             icon={Printer}

@@ -17,12 +17,12 @@ export const useFixedViewport = () => {
     const meta = document.querySelector<HTMLMetaElement>(
       'meta[name="viewport"]',
     );
-    const before = meta?.content;
+    const before = meta?.content ?? "";
     if (meta) meta.content = `${before}, ${FIXED_VIEWPORT}`;
     for (const gesture of GESTURES)
       document.addEventListener(gesture, preventDefault, { passive: false });
     return () => {
-      if (meta && before !== undefined) meta.content = before;
+      if (meta) meta.content = before;
       for (const gesture of GESTURES)
         document.removeEventListener(gesture, preventDefault);
     };
