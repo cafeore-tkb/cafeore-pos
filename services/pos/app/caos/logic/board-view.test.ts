@@ -121,14 +121,13 @@ describe("[unit] CaOS の盤面の見せ方", () => {
   });
 
   test("同じ注文の分け方は、ほかの注文と統合したカードに入った分も数える", () => {
-    // #8：2 杯のうち 1 杯を #9 と統合した。残りの 1 杯にも「同じ注文がほかにもある」（1/2・計2杯）
+    // #8：2 杯のうち 1 杯を #9 と統合した。残りの 1 杯にも「同じ注文がほかにもある」（2 枚・計2杯）
     const merged = buildCaosCards([
       order(8, [{ dripId: "m8" }, {}]),
       order(9, [{ dripId: "m8" }]),
     ]);
     const looks = cardLooks(merged, [], new Map());
     expect(looks.get("cups:cup-8-1")?.split).toEqual({
-      index: 2,
       total: 2,
       cups: 2,
     });

@@ -42,3 +42,17 @@ body:has(.caos-root) {
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
 }
+
+/* 右のパネル（SidePanels の SidePanel）の幅 */
+.caos-root {
+  --caos-side-panel-width: max(360px, min(440px, 44vw));
+}
+
+/* 「次へ」の確かめ（BoardParts の NextConfirmToasts）は右上に出す。右手で押す管制盤 A の右端の「次へ」の列（96px）を隠さないよう、
+   その幅だけ右を空ける。右のパネルが開いていれば、その左に出す（パネルと重ねない） */
+.caos-root .caos-next-confirms {
+  right: 112px;
+}
+.caos-root:has(.caos-side-panel) .caos-next-confirms {
+  right: calc(var(--caos-side-panel-width) + 12px);
+}
