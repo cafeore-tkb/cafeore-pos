@@ -30,7 +30,7 @@ import (
 //     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）。指名のあるカードは指名を優先し、
 //     指名のドリッパーの担当者が上級生でなくても置ける
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え（brew_finished_at）、待機の先頭を始める（brew_started_at）。
-//     カップの準備完了（ready_at）は付けない（付けるのは提供の画面・マスター）。抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
+//     カップの準備完了（ready_at）は付けない（付けるのは提供の画面）。抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
 //   - 注文・カップを準備完了・提供済みにして、抽出中のカードのカップが準備完了になったら、そのカードの「次へ」をサーバーが進める
 //     （advanceReadyCaosCards。order_status.go の changeOrderStatus から呼ぶ）
 //
@@ -786,7 +786,7 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 		}
 
 		if cur != nil {
-			// 終えるのは抽出だけ。カップの準備完了（ready_at）は提供の画面・マスターで付ける
+			// 終えるのは抽出だけ。カップの準備完了（ready_at）は提供の画面で付ける
 			if err := updateCaosUnits(tx, map[string]any{"brew_finished_at": now}, "drip_id = ?", cur.dripID); err != nil {
 				return err
 			}

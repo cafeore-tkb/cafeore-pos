@@ -369,7 +369,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面・マスターで付ける（CaOS の「次へ」では付かない）"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",

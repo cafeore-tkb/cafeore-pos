@@ -568,7 +568,7 @@ type OrderCupResponse struct {
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
 
-	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面・マスターで付ける（CaOS の「次へ」では付かない）
+	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
 	ReadyAt *time.Time `json:"ready_at"`
 
 	// ServedAt このカップを提供した時刻。未提供なら null

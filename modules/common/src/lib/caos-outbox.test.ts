@@ -204,7 +204,14 @@ describe("unit: caos-outbox 重ねて表示", () => {
         cups: [
           {
             id: "a",
-            restore: { ...brewing, readyAt: null },
+            restore: {
+              dripper: 1,
+              dripperPosition: 1,
+              dripId: "drip-a",
+              brewStartedAt: NOW,
+              brewFinishedAt: null,
+              readyAt: null,
+            },
             expect: {
               dripper: 1,
               dripId: "drip-a",
