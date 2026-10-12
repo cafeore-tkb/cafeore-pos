@@ -81,6 +81,7 @@ export default function App() {
           }}
           posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
+          unsent={session.unsent}
           onOpenEmergency={() => selection.openRebrew()}
           undoLabel={session.undo.label}
           undoSecondsLeft={session.undo.secondsLeft}

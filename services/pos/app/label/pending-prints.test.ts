@@ -141,4 +141,20 @@ describe("[unit] pending-prints", () => {
     expect(readPendingPrints()).toHaveLength(2);
     expect(storage.length).toBe(1);
   });
+
+  test("書けなくなってから同じ id を置き直したら、メモリのほうを 1 件だけ読む", async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const { addPendingPrint, readPendingPrints } = await load();
+    addPendingPrint(job, "emergency-1");
+    storage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    const other: PrintJob = { labels: [] };
+    addPendingPrint(other, "emergency-1");
+
+    expect(readPendingPrints().map((p) => [p.id, p.job])).toEqual([
+      ["emergency-1", other],
+    ]);
+  });
 });

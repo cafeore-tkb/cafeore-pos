@@ -408,13 +408,14 @@ export const applyCaosPracticeWrites = (
 /**
  * 「次へ」。抽出中のカードを終え（終了の時刻を付け、そのカップを準備完了にする）、待機の先頭を始める。
  * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。始めてから CAOS_NEXT_COOLDOWN_SEC 秒は断る。
- * 時刻は now（練習の時計の今）
+ * 時刻は now（練習の時計の今）。cooldown が false なら秒は見ない（押したときに確かめ済みの「次へ」を、あとから届いた盤面に重ねるとき）
  */
 export const advanceCaosPracticeDripper = (
   orders: readonly CaosPracticeOrder[],
   dripper: number,
   seenDripId: string | null,
   now: Date,
+  { cooldown = true }: { cooldown?: boolean } = {},
 ): CaosPracticeResult => {
   const invalid = caosDripperError(dripper);
   if (invalid) return { error: invalid };
@@ -427,7 +428,7 @@ export const advanceCaosPracticeDripper = (
     };
   if (seenDripId === null && cur)
     return { error: "抽出中のカードがあります（画面が古いかもしれません）" };
-  if (caosNextLocked(cur, now.getTime()))
+  if (cooldown && caosNextLocked(cur, now.getTime()))
     return {
       error: `始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は「次へ」を押せません`,
     };

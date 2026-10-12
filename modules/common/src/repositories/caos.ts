@@ -1,14 +1,16 @@
 import { apiClient } from "../api/client";
 import type { CaosCupsWrite } from "../lib/caos-board";
+import type { CaosOutboxRequest } from "../lib/caos-outbox";
 import type { components } from "../types/api";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
 // 書いた結果は、書いた注文の配信（{"type":"order"}）で全部の画面に届く。
 // ルールに合わない（400）・ほかの端末が先に書いた（409）ときは何も変わらず、その理由（error）を返す。画面にそのまま出す。
+// status は HTTP のステータス（つながらなければ無い。CaOS の書き込みを送り直すかを決める。lib/caos-outbox.ts）。
 
 type CaosResult<T = unknown> =
   | { data: T; error?: undefined }
-  | { error: string };
+  | { error: string; status?: number };
 
 // 送って、通れば応答の中身を、断られたら理由を返す（どの書き込みも同じ）
 const send = async <T>(
@@ -22,6 +24,7 @@ const send = async <T>(
     const { data, error, response } = await request;
     if (response.ok) return { data: data as T };
     return {
+      status: response.status,
       error:
         error?.error ||
         (response.status === 409
@@ -123,3 +126,25 @@ export const updateCaosLaneSeniors = async (
   lanes: components["schemas"]["CaosLaneSenior"][],
 ): Promise<CaosResult> =>
   send(apiClient.POST("/api/caos/lanes/seniors", { body: { lanes } }));
+
+/** 端末に残した CaOS の操作を送る（lib/caos-outbox.ts の createCaosOutbox が、サーバーの今の値で作ったものを 1 つずつ） */
+export const sendCaosOutboxRequest = (
+  request: CaosOutboxRequest,
+): Promise<CaosResult> => {
+  switch (request.kind) {
+    case "cups":
+      return putCaosCups(request.writes);
+    case "next":
+      return nextCaosDripper(request.dripper, request.dripId);
+    case "undo":
+      return undoCaosCups(request.cups);
+    case "cancel-emergency":
+      return cancelCupEmergency(request.id);
+    case "lane":
+      return putCaosLane(request.dripper, request.name, request.senior);
+    case "swap":
+      return swapCaosLanes(request.first, request.second);
+    case "seniors":
+      return updateCaosLaneSeniors(request.lanes);
+  }
+};

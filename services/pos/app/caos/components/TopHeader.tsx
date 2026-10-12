@@ -57,6 +57,8 @@ interface TopHeaderProps {
   posStatus: PosConnectionStatus;
   /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
   labelPrinter: { pendingCount: number; retry: () => void };
+  /** この端末のまだ送れていない盤面の操作の数と、送り直し */
+  unsent: { count: number; retry: () => void };
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
   /** 「1つ戻す」で戻せる操作の名前。戻せなければ null */
@@ -140,6 +142,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onEndTestPlay,
   posStatus,
   labelPrinter,
+  unsent,
   onOpenEmergency,
   undoLabel,
   undoSecondsLeft,
@@ -148,15 +151,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
-      {/* 刷れずに残っているシール。ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
-      {labelPrinter.pendingCount > 0 && (
-        <div className="absolute top-full right-[108px] z-[160] mt-1 rounded-lg border-2 border-red-300 bg-white px-3 py-1 shadow-lg">
-          <PendingPrints
-            count={labelPrinter.pendingCount}
-            onRetry={labelPrinter.retry}
-          />
-        </div>
-      )}
+      {/* まだ送れていない盤面の操作と、刷れずに残っているシール。ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
+      <div className="absolute top-full right-[108px] z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+        <PendingPrints
+          count={unsent.count}
+          onRetry={unsent.retry}
+          label="未送信"
+          retryLabel="もう一度送る"
+        />
+        <PendingPrints
+          count={labelPrinter.pendingCount}
+          onRetry={labelPrinter.retry}
+        />
+      </div>
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
