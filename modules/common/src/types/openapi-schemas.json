@@ -546,6 +546,9 @@
       "payment_method": {
         "$ref": "#/components/schemas/PaymentMethod"
       },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      },
       "menus": {
         "type": "array",
         "items": {

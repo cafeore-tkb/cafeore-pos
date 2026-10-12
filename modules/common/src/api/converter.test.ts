@@ -125,6 +125,20 @@ describe("[unit] order snapshot conversion", () => {
     expect(OrderEntity.createNew({ orderId: 1 }).paymentMethod).toBeUndefined();
   });
 
+  test("keeps the Square refund status through cloning", () => {
+    expect(responseToOrderEntity(response).squareRefundStatus).toBeUndefined();
+    const order = responseToOrderEntity({
+      ...response,
+      payment_method: "square",
+      square_refund_status: "pending",
+    });
+    expect(order.squareRefundStatus).toBe("pending");
+    expect(order.clone().squareRefundStatus).toBe("pending");
+    expect(
+      OrderEntity.createNew({ orderId: 1 }).squareRefundStatus,
+    ).toBeUndefined();
+  });
+
   test("converts each cup's ready and served status", () => {
     const readyAt = "2026-09-11T00:05:00Z";
     const servedAt = "2026-09-11T00:06:00Z";

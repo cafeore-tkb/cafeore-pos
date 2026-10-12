@@ -223,6 +223,10 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 		Cups:              make([]models.OrderCupResponse, 0, len(order.OrderCups)),
 	}
+	if order.SquareCheckout != nil {
+		status := squareRefundOutcome(order.SquareCheckout, time.Now())
+		resp.SquareRefundStatus = &status
+	}
 	for i := range order.OrderCups {
 		resp.Cups = append(resp.Cups, toOrderCupResponse(&order.OrderCups[i]))
 	}
@@ -248,6 +252,31 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	}
 
 	return resp
+}
+
+// attachSquareCheckouts は Square で払った注文に、その決済（返金の状態を応答に載せる）を埋める。
+func attachSquareCheckouts(db *gorm.DB, orders []models.Order) error {
+	ids := make([]uuid.UUID, 0, len(orders))
+	for i := range orders {
+		if orders[i].PaymentMethod == string(models.Square) {
+			ids = append(ids, orders[i].ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var checkouts []models.SquareCheckout
+	if err := db.Where("order_id IN ?", ids).Find(&checkouts).Error; err != nil {
+		return err
+	}
+	byOrder := make(map[uuid.UUID]*models.SquareCheckout, len(checkouts))
+	for i := range checkouts {
+		byOrder[*checkouts[i].OrderID] = &checkouts[i]
+	}
+	for i := range orders {
+		orders[i].SquareCheckout = byOrder[orders[i].ID]
+	}
+	return nil
 }
 
 // 列を足す前の行（payment_method が空）は現金として返す。
@@ -288,6 +317,9 @@ func ordersMessage(db *gorm.DB) (WSMessage, bool) {
 	if err := preloadOrder(db).Find(&orders).Error; err != nil {
 		return WSMessage{}, false
 	}
+	if err := attachSquareCheckouts(db, orders); err != nil {
+		return WSMessage{}, false
+	}
 	responses := make([]models.OrderResponse, len(orders))
 	for i, o := range orders {
 		responses[i] = toOrderResponse(&o)
@@ -302,6 +334,10 @@ func ordersMessage(db *gorm.DB) (WSMessage, bool) {
 func (h *OrderHandler) GetOrders(c *gin.Context) {
 	var orders []models.Order
 	if err := preloadOrder(h.db).Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := attachSquareCheckouts(h.db, orders); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -500,8 +536,13 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	orders := []models.Order{order}
+	if err := attachSquareCheckouts(h.db, orders); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, toOrderResponse(&order))
+	c.JSON(http.StatusOK, toOrderResponse(&orders[0]))
 }
 
 // PUT /api/orders/:id - オーダー更新

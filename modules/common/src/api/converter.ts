@@ -182,6 +182,7 @@ export const responseToOrderEntity = (
       })),
     })),
     paymentMethod: response.payment_method,
+    squareRefundStatus: response.square_refund_status,
   };
   return OrderEntity.fromOrder(order);
 };

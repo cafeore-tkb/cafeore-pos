@@ -17,8 +17,8 @@ import { Button, buttonVariants } from "../ui/button";
 type Props = {
   /** 確認に出す決済（「No.12（¥600）」など） */
   label: string;
-  /** 返金すると注文が消えるか */
-  deletesOrder: boolean;
+  /** 結び付いた注文を、返金したら消すか残すか。注文の無い決済なら渡さない */
+  orderOnRefund?: "delete" | "keep";
   /** 返金を頼む */
   refund: () => Promise<SquareCheckout>;
   /** Square が返金を受け付けたあと */
@@ -33,7 +33,7 @@ type Props = {
  */
 export const SquareRefundButton = ({
   label,
-  deletesOrder,
+  orderOnRefund,
   refund,
   onRefunded,
   children = "返金",
@@ -57,10 +57,11 @@ export const SquareRefundButton = ({
         );
         return;
       }
+      const kept = orderOnRefund === "keep" ? "（注文は残しています）" : "";
       toast.success(
         checkout.refund_status === "refunded"
-          ? `${label} を返金しました`
-          : `${label} の返金を受け付けました（Square で処理されると完了します）`,
+          ? `${label} を返金しました${kept}`
+          : `${label} の返金を受け付けました（Square で処理されると完了します）${kept}`,
       );
       setOpen(false);
       onRefunded?.(checkout);
@@ -90,18 +91,30 @@ export const SquareRefundButton = ({
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>{label} を返金しますか？</AlertDialogTitle>
+          <AlertDialogTitle>
+            {label} を返金しますか？
+            {orderOnRefund === "keep" && "（注文は残します）"}
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-1">
               <p>
                 支払いに使ったカード・電子マネー・QR
                 コードへ全額を返します。取り消せません。
-                {deletesOrder && "Square が受け付けたら注文は消えます。"}
+                {orderOnRefund === "delete" &&
+                  "Square が受け付けたら注文は消えます。"}
+                {orderOnRefund === "keep" &&
+                  "注文は消さずに残します（提供もそのまま続きます）。"}
               </p>
-              {deletesOrder && (
+              {orderOnRefund === "delete" && (
                 <p>
                   あとで Square で返金が失敗したときは「未登録の Square
                   決済」に理由付きで出ます。そこでもう一度返金するか、注文を登録し直してください。
+                </p>
+              )}
+              {orderOnRefund === "keep" && (
+                <p>
+                  あとで Square
+                  で返金が失敗したときは、過去の注文のこの注文のカードに出ます。そこでもう一度返金してください。
                 </p>
               )}
               <p>交通系 IC の支払いは Square でも返金できません。</p>

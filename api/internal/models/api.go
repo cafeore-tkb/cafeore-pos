@@ -589,6 +589,14 @@ type OrderResponse struct {
 	ReadyAt       *time.Time    `json:"ready_at"`
 	Received      int           `json:"received"`
 	ServedAt      *time.Time    `json:"served_at"`
+
+	// SquareRefundStatus 返金（全額）の状態。
+	//   - none: 返金を頼んでいない
+	//   - pending: Square に頼んだ。結果を待っている
+	//   - refunded: 返金が終わった
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+	SquareRefundStatus *SquareRefundStatus `json:"square_refund_status,omitempty"`
 }
 
 // OrderUpdateRequest defines model for OrderUpdateRequest.

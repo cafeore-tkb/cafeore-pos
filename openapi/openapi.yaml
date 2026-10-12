@@ -1387,6 +1387,7 @@ paths:
       description: |
         決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
         返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+        注文を残して返金した決済（一覧には出さない）も、返金の結果待ちなら Square に問い合わせ、変わったらその注文を配り直す。
       operationId: getUnlinkedSquareCheckouts
       tags:
         - square
@@ -1558,6 +1559,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Square が返金を断った、または応答が無かった
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '503':
+          description: Square 連携が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/square-refund-keep-order:
+    post:
+      summary: 注文に使った Square の決済を全額返金し、注文は残す
+      description: |
+        その注文に結び付いた決済依頼を POST /api/square/checkouts/{id}/refund と同じように返金するが、注文は消さない
+        （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
+        あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
+        結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+        返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+      operationId: refundOrderSquarePaymentKeepingOrder
+      tags:
+        - square
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Square が返金を受け付けた（refund_status が pending か refunded）。注文はそのまま
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutResponse'
+        '404':
+          description: 注文が無い、またはその注文に Square の決済が無い（現金の注文など）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 支払いを確かめられていない、または返金を頼んでいる途中
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SquareCheckoutConflictResponse'
         '502':
           description: Square が返金を断った、または応答が無かった
           content:
@@ -2059,6 +2110,10 @@ components:
           type: integer
         payment_method:
           $ref: '#/components/schemas/PaymentMethod'
+        # Square で払った注文の、その決済の返金の状態。現金の注文には無い。
+        # 返金しても注文を残した（POST /api/orders/{id}/square-refund-keep-order）ときに pending / refunded / failed などになる。
+        square_refund_status:
+          $ref: '#/components/schemas/SquareRefundStatus'
         menus:
           type: array
           items:

@@ -279,6 +279,37 @@ func (h *SquareHandler) refreshRefund(ctx context.Context, record *models.Square
 	record.RefundStatus = &status
 	record.RefundError = message
 	h.saveRefund(record, squareRefundPending)
+	if status != squareRefundPending {
+		// 注文を残して返金した決済なら、カードの返金の状態を変える。
+		h.publishCheckoutOrder(record)
+	}
+}
+
+// refreshKeptOrderRefunds は、注文を残して返金した決済のうち結果待ちのものを Square に問い合わせて最新にする。
+// 照合の一覧（GetUnlinkedCheckouts）は注文の無い決済だけを出すので、こちらは別に引く。
+func (h *SquareHandler) refreshKeptOrderRefunds(ctx context.Context) {
+	if !h.enabled() {
+		return
+	}
+	var records []models.SquareCheckout
+	if err := h.db.Where("order_id IS NOT NULL AND refund_status = ?", squareRefundPending).Find(&records).Error; err != nil {
+		log.Printf("square: failed to list pending refunds of orders: %v", err)
+		return
+	}
+	for i := range records {
+		h.refreshRefund(ctx, &records[i])
+	}
+}
+
+// publishCheckoutOrder は決済に結び付いた注文を配り直す（カードに出す返金の状態を変える）。
+// 注文が無ければ何もしない。配れなくても返金はそのままにする（次に注文を配るときに直る）。
+func (h *SquareHandler) publishCheckoutOrder(record *models.SquareCheckout) {
+	if record.OrderID == nil {
+		return
+	}
+	if _, err := publishOrder(h.db, h.orders.hub, *record.OrderID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Printf("square: failed to publish order %s of checkout %s: %v", *record.OrderID, record.ID, err)
+	}
 }
 
 // saveRefund は返金の列だけを、DB の記録が読んだときと同じ返金（状態が expected で、RefundKey が同じ）の
@@ -310,7 +341,8 @@ func (h *SquareHandler) saveRefund(record *models.SquareCheckout, expected strin
 }
 
 // refund は決済依頼を全額返金し、Square が受け付けたら結び付いた注文を消して応答する。
-func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound string) {
+// keepOrder なら注文は消さず、返金の状態を載せた注文を配り直す。
+func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound string, keepOrder bool) {
 	if !h.enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Square 連携が設定されていません"})
 		return
@@ -338,7 +370,14 @@ func (h *SquareHandler) refund(c *gin.Context, where string, arg any, notFound s
 	}
 	if outcome := squareRefundOutcome(record, h.now()); outcome != models.RefundPending && outcome != models.RefundRefunded {
 		log.Printf("square: refund of checkout %s was not accepted (%s)", record.ID, outcome)
+		// 注文のカードにも、返金できなかった（確かめられなかった）ことを出す。
+		h.publishCheckoutOrder(record)
 		c.JSON(http.StatusBadGateway, toSquareCheckoutResponse(record, h.now()))
+		return
+	}
+	if keepOrder {
+		h.publishCheckoutOrder(record)
+		c.JSON(http.StatusOK, toSquareCheckoutResponse(record, h.now()))
 		return
 	}
 
@@ -365,15 +404,26 @@ func (h *SquareHandler) RefundCheckout(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
-	h.refund(c, "id = ?", id, "Checkout not found")
+	h.refund(c, "id = ?", id, "Checkout not found", false)
 }
 
 // POST /api/orders/:id/square-refund
 func (h *SquareHandler) RefundOrder(c *gin.Context) {
+	h.refundOrder(c, false)
+}
+
+// POST /api/orders/:id/square-refund-keep-order
+//
+// 返金だけして注文は残す（提供も続く）。返金の状態は注文の square_refund_status で配る。
+func (h *SquareHandler) RefundOrderKeepingOrder(c *gin.Context) {
+	h.refundOrder(c, true)
+}
+
+func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
-	h.refund(c, "order_id = ?", id, "この注文に Square の決済がありません")
+	h.refund(c, "order_id = ?", id, "この注文に Square の決済がありません", keepOrder)
 }

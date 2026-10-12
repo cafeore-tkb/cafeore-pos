@@ -26,7 +26,7 @@ type CardOptions = {
   withGoods?: boolean; // カップを作らない商品（グッズなど）も出す
   gray?: boolean; // カップを灰色にする。灰色でなければ過去の注文のカードの色の設定（cashier_order）で色を付ける
   cancellable?: boolean; // 提供取消のボタンを出す
-  squareRefundable?: boolean; // Square で払った注文に返金のボタンを出す（返金すると注文は消える）
+  squareRefundable?: boolean; // Square で払った注文に返金のボタン（注文を消す・残す）と返金の状態を出す
   onPrintFormalReceipt?: (order: OrderEntity) => Promise<boolean>; // 渡せば領収書のボタンを出す。プリンターに送れたら true
 };
 
@@ -171,14 +171,53 @@ const PastOrderCard = ({
         </div>
       )}
       {squareRefundable && order.paymentMethod === "square" && (
-        <div className="mt-2 flex justify-end">
+        <SquareRefundActions order={order} />
+      )}
+    </OrderInfoCard>
+  );
+};
+
+// Square で払った注文の返金。注文を消す返金と、返金だけして注文を残す返金を選べる。
+// 返金を受け付けたら（結果待ち・返金済み）ボタンは出さず、状態だけを出す。
+const SquareRefundActions = ({ order }: { order: WithId<OrderEntity> }) => {
+  const status = order.squareRefundStatus;
+  const label = `No.${order.orderId}（¥${order.billingAmount}）`;
+  return (
+    <div className="mt-2 flex flex-col items-end gap-1">
+      {status === "pending" && (
+        <p className="text-stone-600 text-xs">
+          返金を受け付けました（Square で処理されると返金済みになります）
+        </p>
+      )}
+      {status === "refunded" && (
+        <p className="font-bold text-sm text-stone-600">返金済み</p>
+      )}
+      {status === "failed" && (
+        <p className="text-red-700 text-xs">
+          返金できませんでした。もう一度返金してください
+        </p>
+      )}
+      {status === "unknown" && (
+        <p className="text-red-700 text-xs">
+          返金できたか確かめられていません。もう一度返金を押すと確かめます（二重には返金されません）
+        </p>
+      )}
+      {status !== "pending" && status !== "refunded" && (
+        <div className="flex flex-wrap justify-end gap-2">
           <SquareRefundButton
-            label={`No.${order.orderId}（¥${order.billingAmount}）`}
-            deletesOrder
+            label={label}
+            orderOnRefund="keep"
+            refund={() => squareRepository.refundOrderKeepingOrder(order.id)}
+          >
+            返金（キャンセルしない）
+          </SquareRefundButton>
+          <SquareRefundButton
+            label={label}
+            orderOnRefund="delete"
             refund={() => squareRepository.refundOrder(order.id)}
           />
         </div>
       )}
-    </OrderInfoCard>
+    </div>
   );
 };

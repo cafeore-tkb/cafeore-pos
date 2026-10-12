@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
+import type { components } from "../types/api";
 import { type Cup, type CupStatus, cupSchema, getCupStatus } from "./cup";
 import { MenuEntity, menuSchema } from "./menu";
 
@@ -10,6 +11,15 @@ export type Author = (typeof AUTHORS)[number];
 const PAYMENT_METHODS = ["cash", "square"] as const;
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+// openapi.yaml の SquareRefundStatus と同じ値
+const SQUARE_REFUND_STATUSES = [
+  "none",
+  "pending",
+  "refunded",
+  "failed",
+  "unknown",
+] as const satisfies readonly components["schemas"]["SquareRefundStatus"][];
 
 export const commentSchema = z.object({
   author: z.enum(AUTHORS),
@@ -37,6 +47,8 @@ export const orderSchema = z.object({
   cups: z.array(cupSchema).optional(),
   // サーバーに保存された支払い方法。保存前の注文には無い
   paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  // Square で払った注文の、その決済の返金の状態。現金の注文と保存前の注文には無い
+  squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -119,6 +131,7 @@ export class OrderEntity implements Order {
     private _estimateTime: number,
     private readonly _cups: Cup[],
     private readonly _paymentMethod: PaymentMethod | undefined,
+    private readonly _squareRefundStatus: Order["squareRefundStatus"],
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -139,6 +152,7 @@ export class OrderEntity implements Order {
       0,
       -1,
       [],
+      undefined,
       undefined,
     );
   }
@@ -166,6 +180,7 @@ export class OrderEntity implements Order {
       order.estimateTime,
       order.cups ?? [],
       order.paymentMethod,
+      order.squareRefundStatus,
     );
   }
 
@@ -259,6 +274,10 @@ export class OrderEntity implements Order {
 
   get paymentMethod() {
     return this._paymentMethod;
+  }
+
+  get squareRefundStatus() {
+    return this._squareRefundStatus;
   }
 
   // --------------------------------------------------
@@ -460,6 +479,7 @@ export class OrderEntity implements Order {
       estimateTime: this.estimateTime,
       cups: this.cups,
       paymentMethod: this.paymentMethod,
+      squareRefundStatus: this.squareRefundStatus,
     };
   }
 

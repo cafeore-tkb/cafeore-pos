@@ -24,6 +24,11 @@ type Order struct {
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
 	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`
 	Comments   []Comment   `gorm:"foreignKey:OrderID;references:ID"`
+
+	// この注文に使った Square の決済（返金の状態を応答に載せるのに使う）。DB の列でも関連でもなく、
+	// 読んだあとに handlers の attachSquareCheckouts で埋める。関連にすると AutoMigrate が
+	// square_checkouts.order_id に外部キーを張ってしまう。
+	SquareCheckout *SquareCheckout `gorm:"-"`
 }
 
 func (o *Order) BeforeCreate(tx *gorm.DB) error {
