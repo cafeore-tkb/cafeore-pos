@@ -209,7 +209,7 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     ).toBe("始めてから 10 秒は「次へ」を押せません");
   });
 
-  test("番号は最後なら最大＋1、途中・先頭なら前に入るカードの番号にし、後ろをずらす", () => {
+  test("番号は最後なら最大＋1、途中なら前に入るカードの番号にし、後ろをずらす。先頭は今から始め、抽出中だったカードを待機の先頭へ", () => {
     let orders = ordersOf([hot], [hot], [hot], [hot], [hot]);
     // 1 番は抽出中、2・3 番は待機（番号 2・3）
     for (const _ of [0, 1, 2])
@@ -226,16 +226,20 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(queuedOrderNos(orders, 1)).toStrictEqual([2, 4, 3]);
     expect(positions()).toStrictEqual([2, 3, 4]);
 
-    // 先頭へ
+    // 先頭へ：今から始める。抽出中だった 1 番は始めた時刻を消して待機の先頭（2 番の番号）へ
     orders = assign(orders, fifth, 1, at(2), "front");
-    expect(queuedOrderNos(orders, 1)).toStrictEqual([5, 2, 4, 3]);
+    const lane = caosLane(cardsOf(orders), 1);
+    expect(lane.brewing?.orderNo).toBe(5);
+    expect(lane.brewing?.startedAt).toStrictEqual(at(2));
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([1, 2, 4, 3]);
+    expect(lane.queued[0].startedAt).toBeNull();
     expect(positions()).toStrictEqual([2, 3, 4, 5]);
 
     // 待機のカードを最後へ動かすと最大＋1。抜けた番号は詰めない
     const moved = caosLane(cardsOf(orders), 1).queued[0];
     const lastKey = caosLane(cardsOf(orders), 1).queued[3].key;
     orders = assign(orders, moved, 2, at(3));
-    expect(caosLane(cardsOf(orders), 2).brewing?.orderNo).toBe(5);
+    expect(caosLane(cardsOf(orders), 2).brewing?.orderNo).toBe(1);
     expect(positions()).toStrictEqual([3, 4, 5]);
     expect(caosLane(cardsOf(orders), 1).queued[2].key).toBe(lastKey);
   });
@@ -267,7 +271,7 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     );
   });
 
-  test("抽出中のカードは動かせず、古い値の書き込みは断り、待機は未割当に戻せる", () => {
+  test("抽出中のカードも動かせ、古い値の書き込みは断り、待機・抽出中は未割当に戻せる", () => {
     const initial = ordersOf([hot], [hot]);
     let orders = initial;
     const [first, second] = unassigned(orders);
@@ -280,13 +284,53 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(applyCaosPracticeWrites(orders, stale, at(2)).error).toBe(
       "ほかの端末で先に変わりました。もう一度操作してください",
     );
-    expect(
-      assignWrites(cardsOf(orders), lane.brewing, 3, { newId }),
-    ).toStrictEqual({ error: "抽出中・終了のカードは動かせません" });
+    // 抽出中のカードを空いている 3 番へ：今から始め直す。元の 2 番の待機は始めない
+    orders = assign(orders, lane.brewing, 3, at(2));
+    expect(caosLane(cardsOf(orders), 3).brewing?.startedAt).toStrictEqual(
+      at(2),
+    );
+    expect(caosLane(cardsOf(orders), 2).brewing).toBeUndefined();
+    expect(queuedOrderNos(orders, 2)).toStrictEqual([2]);
 
-    orders = apply(orders, unassignWrites(lane.queued[0]), at(3));
+    orders = apply(
+      orders,
+      unassignWrites(caosLane(cardsOf(orders), 2).queued[0]),
+      at(3),
+    );
     expect(caosLane(cardsOf(orders), 2).queued).toHaveLength(0);
-    expect(unassigned(orders).map((card) => card.orderNo)).toContain(2);
+    const brewing = caosLane(cardsOf(orders), 3).brewing;
+    if (!brewing) throw new Error("no brewing");
+    orders = apply(orders, unassignWrites(brewing), at(4));
+    expect(unassigned(orders).map((card) => card.orderNo)).toStrictEqual([
+      1, 2,
+    ]);
+    expect(orders[0].cups[0].brewStartedAt).toBeNull();
+  });
+
+  test("抽出中のカードを同じ列の待機へ下げると次のカードが今から始まり、抽出中のある列の先頭へ移すとそこの抽出中が待機の先頭へ", () => {
+    let orders = ordersOf([hot], [hot], [hot], [hot]);
+    for (const dripper of [1, 1, 1, 2])
+      orders = assign(orders, unassigned(orders)[0], dripper, at(0));
+    const lane1 = () => caosLane(cardsOf(orders), 1);
+    const lane2 = () => caosLane(cardsOf(orders), 2);
+    // 1 番の抽出中（1 番）を 3 番の前へ：2 番が今から始まる
+    const third = lane1().queued[1];
+    orders = assign(orders, lane1().brewing as CaosCard, 1, at(5), {
+      beforeKey: third.key,
+    });
+    expect(lane1().brewing?.orderNo).toBe(2);
+    expect(lane1().brewing?.startedAt).toStrictEqual(at(5));
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([1, 3]);
+    // 1 番の抽出中（2 番）を 2 番の列の抽出中（4 番）の前へ：2 番は今から始め直し、4 番は待機へ。1 番の列は始めない
+    orders = assign(orders, lane1().brewing as CaosCard, 2, at(20), {
+      beforeKey: lane2().brewing?.key ?? "",
+    });
+    expect(lane2().brewing?.orderNo).toBe(2);
+    expect(lane2().brewing?.startedAt).toStrictEqual(at(20));
+    expect(queuedOrderNos(orders, 2)).toStrictEqual([4]);
+    expect(lane2().queued[0].startedAt).toBeNull();
+    expect(lane1().brewing).toBeUndefined();
+    expect(queuedOrderNos(orders, 1)).toStrictEqual([1, 3]);
   });
 
   test("1 杯どうしを統合し、2 杯のカードとしてドリッパーに置ける", () => {
@@ -457,16 +501,36 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(applyCaosPracticeWrites(orders, twoBrews, at(0)).error).toBe(
       "1 番のドリッパーはもう抽出中です",
     );
-    // 待機のカードがあるドリッパーで、ほかのカードの抽出を始めることはできない
-    const queuedThenBrew = twoBrews.map((write, i) => ({
-      ...write,
-      after: { ...write.after, start_brew: i === 1 },
-    }));
-    expect(applyCaosPracticeWrites(orders, queuedThenBrew, at(0)).error).toBe(
-      "1 番のドリッパーには待機のカードがあるので、抽出は「次へ」で待機の先頭から始めてください",
-    );
     expect(orders[0].cups[0].dripId).toBeNull();
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
+    // 抽出中のカードはほかのカードに統合しない。終わったカードは動かさない
+    let brewed = apply(orders, { writes: [twoBrews[0]] }, at(0));
+    const write = (after: CaosCupsWrite["after"]) => ({
+      cup_ids: [orders[0].cups[0].id],
+      before: {
+        ...UNPLACED,
+        dripper: 1,
+        dripper_position: 1,
+        drip_id: "b0",
+        brew_started_at: at(0).toISOString(),
+      },
+      after,
+    });
+    expect(
+      applyCaosPracticeWrites(
+        brewed,
+        [write({ ...twoBrews[1].after, start_brew: false })],
+        at(1),
+      ).error,
+    ).toBe("抽出中のカードはほかのカードに統合できません");
+    const advanced = advanceCaosPracticeDripper(brewed, 1, "b0", at(20));
+    if (advanced.error !== undefined) throw new Error(advanced.error);
+    brewed = advanced.orders;
+    const done = write({ ...twoBrews[0].after, dripper: 2 });
+    done.before.brew_finished_at = at(20).toISOString();
+    expect(applyCaosPracticeWrites(brewed, [done], at(21)).error).toBe(
+      "終わったカードは動かせません",
+    );
   });
 });
 

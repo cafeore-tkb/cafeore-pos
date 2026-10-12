@@ -451,6 +451,72 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 }
 
 // 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない
+// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
+// 使った時刻は今の始めた時刻（消したらまだ使っていない、始め直したらその時刻）
+func TestCupEmergencyMoveStockOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	inv := &Inventory{db: db}
+	stock := models.StockResource{Kind: string(models.StockResourceKindItem), ItemID: &f.blend.ID, Unit: "g", PerServing: 15}
+	if err := db.Create(&stock).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.StockEvent{ResourceID: stock.ID, Kind: string(models.StockEventKindCount), Quantity: 1000, CreatedAt: time.Now().Add(-time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	o := f.createOrder(t, 1, line(f.blend))
+	if code, body := f.addEmergencies(t, o.OrderCups[0].ID); code != http.StatusCreated {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	e := f.emergencies(t, o.OrderCups[0].ID)[0].ID
+	expect := func(label string) {
+		t.Helper()
+		snapshots, err := inv.snapshots(context.Background(), []uuid.UUID{stock.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := snapshots[0]; s.Consumed != 15 || s.Servings != 1 {
+			t.Errorf("%s: consumed=%v servings=%d, want 15 / 1", label, s.Consumed, s.Servings)
+		}
+	}
+	startedAt := func() *time.Time {
+		t.Helper()
+		rows, err := readCaosUnits(db, "c.id = ?", e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rows[0].BrewStartedAt
+	}
+	card := uuid.New()
+	f.mustPut(t, write([]uuid.UUID{e}, unassigned, placed(1, card, true)))
+	expect("始めた")
+	before := map[uuid.UUID]map[string]any{e: f.undoState(t, e)}
+	first := startedAt()
+	// 抽出中の 2 番の待機へ（始めた時刻を消す）
+	other := f.createOrder(t, 2, line(f.blend))
+	f.mustPut(t, write(ids(other.OrderCups[0]), unassigned, placed(2, uuid.New(), true)))
+	f.mustPut(t, write([]uuid.UUID{e}, f.emergencyState(t, e), placed(2, card, false)))
+	if startedAt() != nil {
+		t.Fatalf("started at %v, want none", startedAt())
+	}
+	expect("待機に下げた")
+	// 空いている 3 番で今から始め直す
+	f.wait()
+	f.mustPut(t, write([]uuid.UUID{e}, f.emergencyState(t, e), placed(3, card, true)))
+	if restarted := startedAt(); restarted == nil || !restarted.After(*first) {
+		t.Fatalf("restarted at %v, want after %v", restarted, first)
+	}
+	expect("始め直した")
+	// 戻すと前の始めた時刻
+	if code, body := f.undo(t, before); code != http.StatusNoContent {
+		t.Fatalf("undo = %d: %s", code, body)
+	}
+	if got := startedAt(); !timeEqual(msTime(got), msTime(first)) {
+		t.Fatalf("started at %v after undo, want %v", got, first)
+	}
+	expect("戻した")
+}
+
 func TestCupEmergencyReasonOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)

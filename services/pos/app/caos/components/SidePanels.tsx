@@ -183,20 +183,68 @@ export const AssignPanel: React.FC<{
   );
 };
 
+/** カードを動かす操作（待機の詳細と、抽出中のカードの緊急のパネルで共通） */
+type MoveActions = {
+  onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
+  onReturnToUnassigned: (card: CaosCard) => void;
+};
+
+// 待機・抽出中のカードを別のドリッパーへ・先頭へ（今のドリッパーのボタン。抽出中のカードは今が先頭なので押せない）・未割当に戻す。押したら onDone
+const MoveCardButtons: React.FC<
+  MoveActions & {
+    card: CaosCard;
+    currentBayId: number | null;
+    onDone: () => void;
+  }
+> = ({ card, currentBayId, onMoveTicket, onReturnToUnassigned, onDone }) => (
+  <>
+    <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+      他のドリッパーへ移動・先頭へ
+    </h3>
+    <div className="grid grid-cols-3 gap-2">
+      {moveTargets(card, currentBayId).map(({ bayId, place, disabled }) => (
+        <button
+          key={bayId}
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            onMoveTicket(card, bayId, place);
+            onDone();
+          }}
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
+        >
+          {place ? `${bayId} 先頭へ` : bayId}
+        </button>
+      ))}
+    </div>
+    <button
+      type="button"
+      onClick={() => {
+        onReturnToUnassigned(card);
+        onDone();
+      }}
+      className="mt-5 flex min-h-[60px] w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-4 font-black text-[16px] text-red-700 active:bg-red-100"
+    >
+      <Undo2 className="h-5 w-5" />
+      未割り当に戻す
+    </button>
+  </>
+);
+
 // 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ（今のドリッパーのボタン）・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
 // 入れ直し（緊急）の取り消し。
 // パネルの外を押すと閉じる
-export const TicketDetailPanel: React.FC<{
-  ticket: CaosCard;
-  look?: CardLook;
-  currentBayId: number | null;
-  onClose: () => void;
-  onMoveTicket: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
-  onReturnToUnassigned: (card: CaosCard) => void;
-  onSplitCup: (card: CaosCard, cupId: string) => void;
-  /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
-  onCancelEmergency?: (card: CaosCard) => void;
-}> = ({
+export const TicketDetailPanel: React.FC<
+  MoveActions & {
+    ticket: CaosCard;
+    look?: CardLook;
+    currentBayId: number | null;
+    onClose: () => void;
+    onSplitCup: (card: CaosCard, cupId: string) => void;
+    /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+    onCancelEmergency?: (card: CaosCard) => void;
+  }
+> = ({
   ticket,
   look,
   currentBayId,
@@ -212,36 +260,13 @@ export const TicketDetailPanel: React.FC<{
     onOutsidePress={onClose}
   >
     <OrderCard card={ticket} look={look} size="xl" />
-    <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
-      他のドリッパーへ移動・先頭へ
-    </h3>
-    <div className="grid grid-cols-3 gap-2">
-      {moveTargets(ticket, currentBayId).map(({ bayId, place, disabled }) => (
-        <button
-          key={bayId}
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            onMoveTicket(ticket, bayId, place);
-            onClose();
-          }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
-        >
-          {place ? `${bayId} 先頭へ` : bayId}
-        </button>
-      ))}
-    </div>
-    <button
-      type="button"
-      onClick={() => {
-        onReturnToUnassigned(ticket);
-        onClose();
-      }}
-      className="mt-5 flex min-h-[60px] w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-4 font-black text-[16px] text-red-700 active:bg-red-100"
-    >
-      <Undo2 className="h-5 w-5" />
-      未割り当に戻す
-    </button>
+    <MoveCardButtons
+      card={ticket}
+      currentBayId={currentBayId}
+      onMoveTicket={onMoveTicket}
+      onReturnToUnassigned={onReturnToUnassigned}
+      onDone={onClose}
+    />
     {canSplitCard(ticket) && (
       <>
         <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
@@ -270,21 +295,23 @@ export const TicketDetailPanel: React.FC<{
     )}
     <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
       <ArrowRight className="h-4 w-4" />
-      抽出開始後はここから変更できません
+      抽出中のカードは、押して開く緊急のパネルから移せます
     </p>
   </SidePanel>
 );
 
 // 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードの注文とカップを選んでおく
 // （注文をまたいで統合したカードは、先頭のカップの注文）。ヘッダーから開けば番号から入れる。
-// 確定すると、未割当のいちばん上に入れ直しのカードが出て、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。パネルの外を押すと閉じる
+// 確定すると、未割当のいちばん上に入れ直しのカードが出て、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
+// 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す（move を渡したときだけ）。パネルの外を押すと閉じる
 export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
     card?: CaosCard;
     look?: CardLook;
     onClose: () => void;
+    move?: MoveActions;
   }
-> = ({ card, look, onClose, ...form }) => {
+> = ({ card, look, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
     <SidePanel
@@ -309,6 +336,14 @@ export const RebrewPanel: React.FC<
         }
         onDone={onClose}
       />
+      {card?.status === "brewing" && move && (
+        <MoveCardButtons
+          card={card}
+          currentBayId={card.dripper}
+          {...move}
+          onDone={onClose}
+        />
+      )}
     </SidePanel>
   );
 };

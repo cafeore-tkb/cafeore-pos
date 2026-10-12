@@ -478,7 +478,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(idle.writes[0].after).not.toHaveProperty("dripper_position");
   });
 
-  test("順番：どのカードの前に入れるか（insert_before）だけを送る。先頭は先頭のカードの前、途中はそのカードの前、無ければ最後", () => {
+  test("順番：どのカードの前に入れるか（insert_before）だけを送る。待機の先頭は先頭のカードの前、途中はそのカードの前、無ければ最後", () => {
     const cards = board();
     const q2 = find(cards, (c) => c.dripId === "q2");
     const q3 = find(cards, (c) => c.dripId === "q3");
@@ -486,15 +486,18 @@ describe("[unit] CaOS の書き込み", () => {
       if (!("writes" in result)) throw new Error(result.error);
       return result.writes[0]?.after;
     };
-    // 先頭：待機の先頭（q2）の前。抽出中のカードの前ではない
-    const front = assignWrites(cards, q3, 1, { place: "front", newId });
-    expect(afterOf(front)).toEqual({
+    // 待機の先頭：待機の先頭（q2）の前
+    const head = assignWrites(cards, q3, 1, {
+      place: { beforeKey: "q2" },
+      newId,
+    });
+    expect(afterOf(head)).toEqual({
       dripper: 1,
       drip_id: "q3",
       insert_before: "q2",
       start_brew: false,
     });
-    expect("writes" in front && front.writes[0].before).toMatchObject({
+    expect("writes" in head && head.writes[0].before).toMatchObject({
       dripper: 1,
       dripper_position: 3,
       drip_id: "q3",
@@ -521,24 +524,199 @@ describe("[unit] CaOS の書き込み", () => {
       insert_before: null,
       start_brew: true,
     });
-    // 今と同じ場所なら何も書かない（最後のカードを最後へ・すぐ後ろのカードの前へ・先頭のカードを先頭へ）
+    // 今と同じ場所なら何も書かない（最後のカードを最後へ・すぐ後ろのカードの前へ・抽出中のカードを先頭へ）
     expect(assignWrites(cards, q3, 1, { newId })).toEqual({ writes: [] });
     expect(
       assignWrites(cards, q2, 1, { place: { beforeKey: "q3" }, newId }),
     ).toEqual({ writes: [] });
-    expect(assignWrites(cards, q2, 1, { place: "front", newId })).toEqual({
+    const brewing = find(cards, (c) => c.dripId === "brewing");
+    expect(assignWrites(cards, brewing, 1, { place: "front", newId })).toEqual({
       writes: [],
     });
-    // 前に入れるカードがそのドリッパーの待機に無い（抽出中・ほかのドリッパー）
     expect(
-      assignWrites(cards, card, 1, { place: { beforeKey: "brewing" }, newId }),
-    ).toHaveProperty("error");
+      assignWrites(cards, brewing, 1, { place: { beforeKey: "q2" }, newId }),
+    ).toEqual({ writes: [] });
+    // 前に入れるカードがそのドリッパーの列に無い（ほかのドリッパー）
     expect(
       assignWrites(cards, card, 2, { place: { beforeKey: "q3" }, newId }),
     ).toHaveProperty("error");
   });
 
-  test("指名の番号のカードはその番号のドリッパーにだけ置ける。自由記述だけの古い明細はどこにでも。抽出中は動かせない", () => {
+  test("列の先頭は抽出中：先頭（抽出中のカードの前）に入れたら今から始め、抽出中だったカードは始めた時刻を消して待機の先頭へ", () => {
+    const cards = board();
+    const q3 = find(cards, (c) => c.dripId === "q3");
+    const o5 = find(cards, (c) => c.orderNo === 5);
+    const brewingBefore = {
+      dripper: 1,
+      dripper_position: 1,
+      drip_id: "brewing",
+      brew_started_at: start.toISOString(),
+      brew_finished_at: null,
+    };
+    // 待機のカードを先頭へ：抽出中のカードを待機の先頭（q2 の前）に下げ、q3 を始める
+    const front = [
+      {
+        cup_ids: ids(find(cards, (c) => c.dripId === "brewing")),
+        before: brewingBefore,
+        after: {
+          dripper: 1,
+          drip_id: "brewing",
+          insert_before: "q2",
+          start_brew: false,
+        },
+      },
+      {
+        cup_ids: ids(q3),
+        before: expect.objectContaining({ drip_id: "q3" }),
+        after: {
+          dripper: 1,
+          drip_id: "q3",
+          insert_before: null,
+          start_brew: true,
+        },
+      },
+    ];
+    expect(assignWrites(cards, q3, 1, { place: "front", newId })).toEqual({
+      writes: front,
+    });
+    // 抽出中のカードの前に落としても同じ
+    expect(
+      assignWrites(cards, q3, 1, { place: { beforeKey: "brewing" }, newId }),
+    ).toEqual({ writes: front });
+    // 未割当のカードを先頭へ
+    const assigned = assignWrites(cards, o5, 1, { place: "front", newId });
+    expect("writes" in assigned && assigned.writes.map((w) => w.after)).toEqual(
+      [
+        front[0].after,
+        {
+          dripper: 1,
+          drip_id: expect.stringMatching(/^drip-/),
+          insert_before: null,
+          start_brew: true,
+        },
+      ],
+    );
+  });
+
+  test("抽出中のカードを動かす：先頭でない所なら始めた時刻を消して待機に。同じ列で下げたら次のカードを今から始め、ほかの列へ移したら元の列は始めない", () => {
+    const cards = board();
+    const brewing = find(cards, (c) => c.dripId === "brewing");
+    const q2 = find(cards, (c) => c.dripId === "q2");
+    const writesOf = (result: ReturnType<typeof assignWrites>) => {
+      if (!("writes" in result)) throw new Error(result.error);
+      return result.writes.map((w) => [w.cup_ids, w.after]);
+    };
+    // 同じ列の q3 の前へ：抽出中を待機に下げ、先頭になった q2 を始める
+    expect(
+      writesOf(
+        assignWrites(cards, brewing, 1, { place: { beforeKey: "q3" }, newId }),
+      ),
+    ).toEqual([
+      [
+        ids(brewing),
+        {
+          dripper: 1,
+          drip_id: "brewing",
+          insert_before: "q3",
+          start_brew: false,
+        },
+      ],
+      [
+        ids(q2),
+        { dripper: 1, drip_id: "q2", insert_before: null, start_brew: true },
+      ],
+    ]);
+    // 同じ列の最後へ
+    expect(writesOf(assignWrites(cards, brewing, 1, { newId }))).toEqual([
+      [
+        ids(brewing),
+        {
+          dripper: 1,
+          drip_id: "brewing",
+          insert_before: null,
+          start_brew: false,
+        },
+      ],
+      [
+        ids(q2),
+        { dripper: 1, drip_id: "q2", insert_before: null, start_brew: true },
+      ],
+    ]);
+    // 空いている列へ：そのまま今から始める（元の列の q2 は始めない）
+    expect(
+      writesOf(assignWrites(cards, brewing, 2, { place: "front", newId })),
+    ).toEqual([
+      [
+        ids(brewing),
+        {
+          dripper: 2,
+          drip_id: "brewing",
+          insert_before: null,
+          start_brew: true,
+        },
+      ],
+    ]);
+    // 抽出中が無く待機のある列の先頭は、待機の先頭（始めない）
+    const moved = buildCaosCards(
+      [
+        order(1, [
+          cup({
+            item: blend,
+            dripper: 1,
+            dripperPosition: 1,
+            dripId: "brewing",
+            brewStartedAt: start,
+          }),
+        ]),
+        order(2, [
+          cup({ item: blend, dripper: 2, dripperPosition: 1, dripId: "w" }),
+        ]),
+      ],
+      DAY,
+    );
+    expect(
+      writesOf(
+        assignWrites(
+          moved,
+          find(moved, (c) => c.dripId === "brewing"),
+          2,
+          {
+            place: "front",
+            newId,
+          },
+        ),
+      ),
+    ).toEqual([
+      [
+        ids(find(moved, (c) => c.dripId === "brewing")),
+        {
+          dripper: 2,
+          drip_id: "brewing",
+          insert_before: "w",
+          start_brew: false,
+        },
+      ],
+    ]);
+    // 未割当に戻す：ドリッパー・順番・始めた時刻を消す
+    expect(unassignWrites(brewing)).toEqual({
+      writes: [
+        {
+          cup_ids: ids(brewing),
+          before: expect.objectContaining({
+            brew_started_at: start.toISOString(),
+          }),
+          after: {
+            dripper: null,
+            drip_id: null,
+            insert_before: null,
+            start_brew: false,
+          },
+        },
+      ],
+    });
+  });
+
+  test("指名の番号のカードはその番号のドリッパーにだけ置ける。自由記述だけの古い明細はどこにでも。終わったカードは動かせない", () => {
     const cards = board();
     const named = find(cards, (c) => c.cups[0].nominatedDripper === 4);
     expect(named.cups[0].nominee).toBe("4th");
@@ -552,17 +730,13 @@ describe("[unit] CaOS の書き込み", () => {
     expect(old.cups.map((x) => x.nominatedDripper)).toEqual([null, null]);
     expect(caosDripperAllowed(old, 1)).toBe(true);
     expect(assignWrites(cards, old, 1, { newId })).toHaveProperty("writes");
+    const brewing = find(cards, (c) => c.dripId === "brewing");
     expect(
-      assignWrites(
-        cards,
-        find(cards, (c) => c.dripId === "brewing"),
-        2,
-        { newId },
-      ),
-    ).toHaveProperty("error");
+      assignWrites(cards, { ...brewing, status: "done" }, 2, { newId }),
+    ).toEqual({ error: "終わったカードは動かせません" });
   });
 
-  test("未割当に戻す：待機だけ。値を全部空にする", () => {
+  test("未割当に戻す：待機・抽出中だけ。値を全部空にする", () => {
     const cards = board();
     const q2 = find(cards, (c) => c.dripId === "q2");
     const result = unassignWrites(q2);
@@ -572,9 +746,11 @@ describe("[unit] CaOS の書き込み", () => {
       insert_before: null,
       start_brew: false,
     });
-    expect(
-      unassignWrites(find(cards, (c) => c.dripId === "brewing")),
-    ).toHaveProperty("error");
+    const brewing = find(cards, (c) => c.dripId === "brewing");
+    expect(unassignWrites(brewing)).toHaveProperty("writes");
+    expect(unassignWrites({ ...brewing, status: "done" })).toHaveProperty(
+      "error",
+    );
   });
 
   test("統合：1 杯どうし・同じ商品。指名は片方だけか同じ番号。card を into のカードに入れ（into を後に同じ値で書く）、into の場所のまま", () => {

@@ -250,7 +250,7 @@ const padTone = (bayId: number, hoveredBay: number | null) =>
     : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
-// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの待機の先頭へ）。
+// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの列の先頭へ。今から始まる）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
 // ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
@@ -259,7 +259,7 @@ export const BayPad: React.FC<{
   currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  /** place は「先頭」のボタンなら "front"（今のドリッパーの待機の先頭へ） */
+  /** place は「先頭」のボタンなら "front"（今のドリッパーの列の先頭へ） */
   onPick: (bayId: number, place?: CaosPlace) => void;
 }> = ({ card, currentBayId, hoveredBay, onPick }) => {
   const targets = moveTargets(card, currentBayId ?? null);

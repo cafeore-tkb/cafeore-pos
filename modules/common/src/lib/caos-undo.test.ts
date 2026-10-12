@@ -132,6 +132,52 @@ describe("unit: caos-undo", () => {
     ]);
   });
 
+  test("抽出中のカードをほかの列の先頭へ移したのを戻す：移したカードは前の始めた時刻、待機に下がったカードも前の始めた時刻に戻す", () => {
+    const x = cup("x", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "dx",
+      brewStartedAt: NOW,
+    });
+    const y = cup("y", {
+      dripper: 2,
+      dripperPosition: 1,
+      dripId: "dy",
+      brewStartedAt: T1,
+    });
+    const cards = board(x, y);
+    const result = assignWrites(cards, cards[0], 2, {
+      place: "front",
+      newId: () => "unused",
+    });
+    if ("error" in result) throw new Error(result.error);
+    const entry = undoOfWrites(cards, result.writes);
+    expect(entry.cups.map((c) => [c.id, c.expect.started])).toEqual([
+      ["y", false],
+      ["x", true],
+    ]);
+    // サーバーが x を今（T2）から始め、y の始めた時刻を消して待機（番号 2）にした
+    const undo = caosUndoCups(
+      entry,
+      board(
+        cup("x", {
+          dripper: 2,
+          dripperPosition: 3,
+          dripId: "dx",
+          brewStartedAt: T2,
+        }),
+        cup("y", { dripper: 2, dripperPosition: 2, dripId: "dy" }),
+      ),
+    );
+    if (!("cups" in undo)) throw new Error(undo.error);
+    expect(
+      undo.cups.map((c) => [c.cup_id, c.restore.state.brew_started_at]),
+    ).toEqual([
+      ["y", T1.toISOString()],
+      ["x", NOW.toISOString()],
+    ]);
+  });
+
   test("ほかの画面があとで変えた・提供済み・消えたカップは送らない", () => {
     const cards = buildCaosCards([order(1, [cup("a")])]);
     const result = assignWrites(cards, cards[0], 2, { newId: () => "d1" });

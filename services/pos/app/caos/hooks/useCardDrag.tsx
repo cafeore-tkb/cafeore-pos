@@ -50,7 +50,7 @@ export const bayTargetAt = (
 };
 
 /**
- * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機のカードの前（{ beforeKey }）。
+ * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機・抽出中のカードの前（{ beforeKey }。抽出中のカードの前は列の先頭）。
  * place が無ければ、その列の待機の最後へ。mergeKey があれば、そのカード（待機・抽出中）に統合する
  */
 export interface DropTarget {
@@ -62,13 +62,13 @@ export interface DropTarget {
   beforeLabel?: string;
 }
 
-// 待機のカードの上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
+// 列のカード（待機・抽出中）の上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
 const MERGE_FROM = 0.4;
 
 /**
  * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
- * 運んでいるカード（card）を統合できる（canMergeCards。cards から引く）なら統合（待機のカードは右の部分だけ）、
- * 待機のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
+ * 運んでいるカード（card）を統合できる（canMergeCards。cards から引く）なら統合（列のカードは右の部分だけ。未割当のカードは全部）、
+ * 列の待機・抽出中のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
  * 運んでいるカード自身は飛ばし、置けない列は null
  */
 export const dropTargetAt = (
@@ -90,7 +90,7 @@ export const dropTargetAt = (
       if (!target || !into || !card || !canMergeCards(card, into)) continue;
       const rect = target.getBoundingClientRect();
       if (
-        into.status === "queued" &&
+        into.status !== "unassigned" &&
         clientX < rect.left + rect.width * MERGE_FROM
       )
         break;

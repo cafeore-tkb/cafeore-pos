@@ -26,9 +26,10 @@ import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
-// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）、
-// なぞると掴んで移す（列に落とすとその列の最後、待機のカードの上に落とすとそのカードの前。同じ列の中の入れ替えにも使う。
-// 統合できる待機・抽出中のカードの上（待機は右の部分）に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
+// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）。抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
+// 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
+// 統合できる待機・抽出中のカードの上の右の部分に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -82,7 +83,7 @@ export const DispatchBoard: React.FC<
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機のカードを別の列へ・待機のカードの前へ・統合（今の列そのものと、指名以外の列には置けない）
+  // 待機・抽出中のカードを別の列へ・カードの前へ・統合（今の列そのものと、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
       dropTargetAt(x, y, {
@@ -239,9 +240,10 @@ export const DispatchBoard: React.FC<
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
                       if (endMs <= range.startMs) return null;
-                      // 動かせるのは待機のカードだけ（閲覧だけの画面では動かさない）
+                      // 動かせるのは待機・抽出中のカード（閲覧だけの画面では動かさない）。1〜6 のボタンを開くのは待機のカード
+                      const isMovable = !readOnly && ticket.status !== "done";
                       const isScheduled =
-                        !readOnly && ticket.status === "queued";
+                        isMovable && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
                       return (
@@ -261,9 +263,9 @@ export const DispatchBoard: React.FC<
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
                             data-card-key={ticket.key}
-                            // 待機のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
+                            // 待機・抽出中のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
-                              isScheduled ? ticket.key : undefined
+                              isMovable ? ticket.key : undefined
                             }
                             // 待機・抽出中のカードは、ドラッグで落とすと統合の相手になる
                             data-merge-target={
@@ -273,7 +275,7 @@ export const DispatchBoard: React.FC<
                             }
                             data-ticket-label={orderLabel(ticket)}
                             onPointerDown={
-                              isScheduled
+                              isMovable
                                 ? (event) =>
                                     drag.press(
                                       { card: ticket, bayId: bay.id },
@@ -294,7 +296,7 @@ export const DispatchBoard: React.FC<
                                 onCloseTicketAction();
                               }
                             }}
-                            className={`h-full hover:shadow-md ${isScheduled ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            className={`h-full hover:shadow-md ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isActionOpen && (

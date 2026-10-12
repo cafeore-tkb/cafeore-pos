@@ -28,14 +28,17 @@ export const laneCards = (lane: Lane) => [...lane.done, ...laneActive(lane)];
 export const isBayId = (bayId: number) => DRIPPER_NUMBERS.includes(bayId);
 
 /**
- * カード（card）の割当・移動のボタン（1〜6）。待機のカードは、今のドリッパー（currentBayId）のボタンが「先頭」（place が "front"。このドリッパーの待機の先頭へ）。
+ * カード（card）の割当・移動のボタン（1〜6）。待機・抽出中のカードは、今のドリッパー（currentBayId）のボタンが「先頭」
+ * （place が "front"。このドリッパーの列の先頭で、今から始まる。抽出中のカードは今が先頭なので押せない）。
  * 指名の番号のあるカードは、その番号のボタンだけ押せる（disabled。@cafeore/common の caosDripperAllowed）
  */
 export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
   DRIPPER_NUMBERS.map((bayId) => ({
     bayId,
     place: bayId === currentBayId ? ("front" as const) : undefined,
-    disabled: !caosDripperAllowed(card, bayId),
+    disabled:
+      !caosDripperAllowed(card, bayId) ||
+      (bayId === currentBayId && card.status === "brewing"),
   }));
 
 /** そのドリッパーをまだ待っている指名の杯数（未割当のうち、指名の番号がそのドリッパーのカード） */

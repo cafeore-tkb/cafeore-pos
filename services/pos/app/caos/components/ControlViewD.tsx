@@ -35,7 +35,8 @@ import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
-// 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。
+// 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
+// （抽出中のカードは始めた時刻を消して待機の最後へ）か、右の注文へドラッグして未割当に戻す。抽出中のカードのタップは緊急のパネル（1〜6 に移す・未割当に戻すも）。
 // 列の見出しはドリッパーの番号（列の状態）と担当者、「次へ」は表の下に固定（押す手で表を隠さない）。
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
@@ -45,7 +46,7 @@ const MIN_ROWS = 8;
 // 開いたときは、まだ淹れ終わっていない最初の注文の1つ上から見せる。
 const HISTORY_ROWS_ON_OPEN = 1;
 
-// 右の未割当カードと、表の未開始カード（列間の移動・未割当へ戻す）を同じ操作で掴む。
+// 右の未割当カードと、表の待機・抽出中のカード（列間の移動・未割当へ戻す）を同じ操作で掴む。
 type DragSource =
   | { kind: "unassigned"; order: CaosCard }
   | { kind: "ticket"; ticket: CaosCard; fromBayId: number };
@@ -186,7 +187,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       size="sm"
       note={rowIds.length > 1 ? "統合" : undefined}
       onPointerDown={
-        state === "waiting"
+        state !== "past"
           ? (event) =>
               drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
           : undefined
@@ -198,7 +199,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           ? onOpenTicketDetail(ticket)
           : onOpenRebrew?.(ticket)
       }
-      className={`h-[60px] shrink-0 ${state === "waiting" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      className={`h-[60px] shrink-0 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
