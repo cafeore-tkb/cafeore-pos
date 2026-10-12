@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useCurrentTime } from "~/components/functional/useCurrentTime";
 
 // 操作のあと「1つ戻す」が押せる秒
 const UNDO_SEC = 10;
@@ -8,9 +9,10 @@ const UNDO_SEC = 10;
 export type UndoRun = () => UndoResult | Promise<UndoResult>;
 type UndoResult = boolean | "retry";
 
-// 「1つ戻す」。この画面が最後にした操作を 1 つだけ、UNDO_SEC 秒のあいだ覚える（画面のメモリだけ。再読み込みで消える）。
+// 「1つ戻す」。この画面が最後にした操作（盤面の操作と、見出しの「交代」ですぐ替えた担当者）を 1 つだけ、UNDO_SEC 秒のあいだ覚える
+// （画面のメモリだけ。再読み込みで消える）。盤面（useCaosSession）と担当者（CaosLanesProvider）が同じものに覚えるよう、画面の外側の CaosUndoProvider が持つ。
 // nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。戻したら（断られても）忘れる（結果がまだ届いていないときは覚えたまま）。
-export const useCaosUndo = (nowMs: number) => {
+const useUndoState = (nowMs: number) => {
   const [last, setLast] = useState<{
     label: string;
     atMs: number;
@@ -50,4 +52,28 @@ export const useCaosUndo = (nowMs: number) => {
         });
     },
   };
+};
+
+type CaosUndo = ReturnType<typeof useUndoState>;
+
+/** 閲覧だけの画面には無い（null） */
+export const CaosUndoContext = createContext<CaosUndo | null>(null);
+
+export const CaosUndoProvider = ({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
+  const value = useUndoState(useCurrentTime(1000).getTime());
+  return (
+    <CaosUndoContext.Provider value={value}>
+      {children}
+    </CaosUndoContext.Provider>
+  );
+};
+
+export const useCaosUndo = () => {
+  const value = useContext(CaosUndoContext);
+  if (!value) throw new Error("useCaosUndo は CaosUndoProvider の中で使う");
+  return value;
 };

@@ -6,7 +6,12 @@ import {
   buildCaosCards,
   mergeWrites,
 } from "./caos-board";
-import { caosUndoCups, undoOfNext, undoOfWrites } from "./caos-undo";
+import {
+  caosLaneUndoBlock,
+  caosUndoCups,
+  undoOfNext,
+  undoOfWrites,
+} from "./caos-undo";
 
 const NOW = new Date("2026-10-08T03:00:00Z");
 const T1 = new Date("2026-10-08T03:01:00Z");
@@ -244,5 +249,21 @@ describe("unit: caos-undo", () => {
       ["b", 2],
       ["a", 1],
     ]);
+  });
+
+  test("担当者の交代を戻す：今の担当者が交代のあとのままのときだけ", () => {
+    const before = { dripper: 1, name: "山田", senior: true };
+    const after = { dripper: 1, name: "伊藤", senior: false };
+    expect(caosLaneUndoBlock(before, after, after)).toBeNull();
+    expect(caosLaneUndoBlock(before, after, before)).toMatchObject({
+      arriving: true,
+    });
+    expect(
+      caosLaneUndoBlock(before, after, { ...after, name: "鈴木" }),
+    ).toEqual({ error: "ほかの画面で先に変わったので戻せません" });
+    // 上級生の判定だけ変わったのも、ほかの画面が替えたとみる
+    expect(
+      caosLaneUndoBlock(before, after, { ...after, senior: true }),
+    ).toEqual({ error: "ほかの画面で先に変わったので戻せません" });
   });
 });

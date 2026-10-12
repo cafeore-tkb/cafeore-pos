@@ -304,3 +304,18 @@ export const laneCandidates = (
   }
   return [...byName.values()];
 };
+
+/**
+ * 見出しの「交代」を押したらすぐ入る次の人。laneCandidates の最初の人（今の枠 → 次の枠 → オペ練の今のラウンド → 次のラウンド）。
+ * いなければ、予定の人が今そのドリッパーにいる（current）なら "already-in"、予定に人がいない・予定が無いなら null
+ */
+export const nextLaneCandidate = (
+  feed: ShiftFeed | null,
+  dripper: number,
+  nowMs: number,
+  current: string,
+): LaneCandidate | "already-in" | null => {
+  const [next] = laneCandidates(feed, dripper, nowMs, current);
+  if (next) return next;
+  return laneCandidates(feed, dripper, nowMs).length > 0 ? "already-in" : null;
+};

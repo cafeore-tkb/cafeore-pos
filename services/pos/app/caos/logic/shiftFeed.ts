@@ -50,6 +50,15 @@ export const noCandidateReason = ({
   return `予定を読めません${error ? `：${error}` : ""}`;
 };
 
+/** 見出しの「交代」ですぐ替える次の人（@cafeore/common の nextLaneCandidate）がいないときの理由 */
+export const noNextReason = (
+  progress: ShiftFeedProgress,
+  next: "already-in" | null,
+) =>
+  next === "already-in"
+    ? "予定の人がもう入っています"
+    : noCandidateReason(progress);
+
 /** 入れた名前が上級生か（名簿が無ければそう書く） */
 export const typedSeniorNote = (senior: boolean, feed: ShiftFeed | null) => {
   if (senior) return "上級生です（上級生のみのカードを淹れられます）";

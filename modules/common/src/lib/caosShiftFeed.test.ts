@@ -5,6 +5,7 @@ import {
   fetchShiftFeed,
   isSeniorName,
   laneCandidates,
+  nextLaneCandidate,
   normalizeFeedKey,
   parseShiftFeed,
 } from "./caosShiftFeed";
@@ -160,6 +161,29 @@ describe("[unit] sohosai-shift の予定（caosFeeds）", () => {
     ]);
     expect(laneCandidates(feed, 3, NOW).map((c) => c.name)).toEqual(["渡辺"]);
     expect(laneCandidates(null, 1, NOW)).toEqual([]);
+  });
+
+  test("すぐ入る次の人は候補の最初の人。いなければ、予定の人がもう入っているか", () => {
+    const feed = parseShiftFeed(DOC);
+    // 今の枠の人が入っていれば、次の枠の人
+    expect(nextLaneCandidate(feed, 1, NOW, "山田")).toEqual({
+      name: "伊藤",
+      senior: false,
+      reasons: ["次の枠 11:30〜12:00"],
+    });
+    // 予定に無い人が入っていれば、今の枠の人
+    expect(nextLaneCandidate(feed, 1, NOW, "代打")).toMatchObject({
+      name: "山田",
+    });
+    // 空きなら今の枠の人
+    expect(nextLaneCandidate(feed, 4, NOW, "")).toMatchObject({
+      name: "鈴木",
+    });
+    // 予定の人（今の枠も次の枠も同じ人）がもう入っている
+    expect(nextLaneCandidate(feed, 2, NOW, "佐藤")).toBe("already-in");
+    // 予定に人がいない・予定が無い
+    expect(nextLaneCandidate(feed, 3, NOW + 3_600_000, "")).toBeNull();
+    expect(nextLaneCandidate(null, 1, NOW, "山田")).toBeNull();
   });
 
   test("合言葉で Firestore の REST を読む", async () => {

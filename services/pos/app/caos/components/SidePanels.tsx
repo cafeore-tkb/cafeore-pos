@@ -24,7 +24,12 @@ import { type Lane, laneActive, moveTargets } from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
-import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
+import {
+  LaneAbility,
+  LaneChangeButton,
+  LaneChooseButton,
+  LaneName,
+} from "./LaneParts";
 import { OrderCard, SplitCupButtons } from "./OrderCard";
 
 // 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
@@ -319,7 +324,11 @@ export const LanePanel: React.FC<{
     <div className="flex items-center gap-2">
       <LaneName dripper={lane.id} className="font-black text-[18px]" />
       <LaneAbility dripper={lane.id} />
-      <LaneChangeButton dripper={lane.id} className="ml-auto h-11 px-3" />
+      <LaneChangeButton
+        dripper={lane.id}
+        layout="inline"
+        className="ml-auto h-11 px-3"
+      />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
       この列の待機 {lane.queued.length}件を移す
@@ -379,7 +388,7 @@ export const AuxiliaryContent: React.FC<
                 dripper={lane.id}
                 className="font-black text-[14px] text-slate-950"
               />
-              <LaneChangeButton dripper={lane.id} className="ml-auto" />
+              <LaneChooseButton dripper={lane.id} className="ml-auto" />
             </div>
             <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
               {current ? (

@@ -1,14 +1,18 @@
 import {
   type CaosLane,
   type LaneAssignment,
+  type LaneCandidate,
   buildCaosCards,
+  caosLaneUndoBlock,
+  dripperLabel,
   jstDate,
   laneChangeWarnings,
+  nextLaneCandidate,
   putCaosLane,
   swapCaosLanes,
   todaysCaosLanes,
 } from "@cafeore/common";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
@@ -17,16 +21,23 @@ import {
   LaneConfirmDialog,
   ShiftFeedSettings,
 } from "../components/LaneDialogs";
+import { noNextReason } from "../logic/shiftFeed";
+import { CaosUndoContext } from "./useCaosUndo";
 import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 
 // ドリッパーの担当者（名前と上級生か）。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
 // 共有の WebSocket の {"type":"caos_lanes"} で全部の画面にそろう。
 //
 // 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
+//   - 列の見出しと列の操作のパネルの「交代」は、押したらすぐ次の人（sohosai-shift の予定の最初の候補。nextLaneCandidate）に替える。
+//     替えたら「1つ戻す」（CaosUndoProvider）に覚え、10 秒のあいだ前の人に戻せる
+//   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
 // 閲覧だけの画面（/master-sheet/view）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
-// sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、自動では替えない。
+// sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
 // 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめる。
 // ［変える］ならそのまま替え、カードも残す。断られた理由は POS の通知（sonner）で出す。
+
+type NextLane = { next: LaneCandidate } | { reason: string };
 
 interface CaosLanesContextValue {
   /** 今日の 6 つ（ドリッパーの番号の順） */
@@ -36,6 +47,10 @@ interface CaosLanesContextValue {
   /** 上級生の担当者がいるか（いなければ指名の無い上級生のみのカードをどこにも置けない） */
   hasSenior: boolean;
   openChange: (dripper: number) => void;
+  /** 見出しの「交代」ですぐ入る次の人。いなければその理由 */
+  nextOf: (dripper: number) => NextLane;
+  /** 次の人にすぐ替える（nextOf の人） */
+  changeToNext: (dripper: number) => void;
   openSettings: () => void;
   shiftFeed: ShiftFeedState;
 }
@@ -50,6 +65,12 @@ export const useCaosLanes = () => {
 
 type Confirm = { warnings: string[]; run: () => void };
 
+// API の結果。断られたら理由を通知で出して false
+const succeeded = ({ error }: { error?: string }) => {
+  if (error) toast.error(error);
+  return !error;
+};
+
 export const CaosLanesProvider = ({
   editable = false,
   children,
@@ -58,10 +79,15 @@ export const CaosLanesProvider = ({
   children: React.ReactNode;
 }) => {
   const { caosLanes, orders } = useOrdersWSContext();
-  // 日が変わったら前の日の担当者は使わない（1 分ごとに今日を確かめる）
-  const today = jstDate(useCurrentTime(60_000).getTime());
+  // 日が変わったら前の日の担当者は使わない。見出しの「交代」の次の人も、この時計の時刻で決める（枠の変わり目から 10 秒のうちに変わる）
+  const nowMs = useCurrentTime(10_000).getTime();
+  const today = jstDate(nowMs);
   const lanes = todaysCaosLanes(caosLanes, today);
   const shiftFeed = useShiftFeed(editable);
+  const undo = useContext(CaosUndoContext);
+  // 「1つ戻す」は押したときの担当者と比べる
+  const lanesRef = useRef(lanes);
+  lanesRef.current = lanes;
 
   const [changing, setChanging] = useState<{
     dripper: number;
@@ -70,17 +96,19 @@ export const CaosLanesProvider = ({
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーを確かめてから送る。結果は WebSocket で届く
+  // 替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーを確かめてから送る。結果は WebSocket で届く。
+  // 替えられたら onDone を呼ぶ
   const request = (
     changes: LaneAssignment[],
     single: boolean,
     send: () => Promise<{ error?: string }>,
+    onDone?: () => void,
   ) => {
     setChanging(null);
     const run = () => {
       setConfirm(null);
-      void send().then(({ error }) => {
-        if (error) toast.error(error);
+      void send().then((result) => {
+        if (succeeded(result)) onDone?.();
       });
     };
     const warnings = laneChangeWarnings(
@@ -95,11 +123,54 @@ export const CaosLanesProvider = ({
   // lanes は 6 つ全部を番号の順に持つ（todaysCaosLanes）
   const laneOf = (dripper: number) => lanes[dripper - 1];
 
+  const nextOf = (dripper: number): NextLane => {
+    const next = nextLaneCandidate(
+      shiftFeed.feed,
+      dripper,
+      nowMs,
+      laneOf(dripper).name,
+    );
+    return next === null || next === "already-in"
+      ? { reason: noNextReason(shiftFeed, next) }
+      : { next };
+  };
+
+  // 次の人にすぐ替え、「1つ戻す」に前の人へ戻す処理を覚える（戻すのは、今の担当者が替えたあとのままのときだけ）
+  const changeToNext = (dripper: number) => {
+    const found = nextOf(dripper);
+    if ("reason" in found) return;
+    const before = laneOf(dripper);
+    const after = { dripper, name: found.next.name, senior: found.next.senior };
+    request(
+      [after],
+      true,
+      () => putCaosLane(dripper, after.name, after.senior),
+      () =>
+        undo?.remember(`交代 ${dripperLabel(dripper)} → ${after.name}`, () => {
+          const blocked = caosLaneUndoBlock(
+            before,
+            after,
+            lanesRef.current[dripper - 1],
+          );
+          if (blocked?.arriving) {
+            toast(blocked.error);
+            return "retry";
+          }
+          if (blocked) return succeeded(blocked);
+          return putCaosLane(dripper, before.name, before.senior).then(
+            succeeded,
+          );
+        }),
+    );
+  };
+
   const value: CaosLanesContextValue = {
     lanes,
     editable,
     hasSenior: lanes.some((lane) => lane.senior),
     openChange: (dripper) => setChanging({ dripper, nowMs: Date.now() }),
+    nextOf,
+    changeToNext,
     openSettings: () => setSettingsOpen(true),
     shiftFeed,
   };

@@ -2,6 +2,7 @@ import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
 import "~/caos/caos.css";
 import { CaosLanesProvider } from "~/caos/hooks/useCaosLanes";
+import { CaosUndoProvider } from "~/caos/hooks/useCaosUndo";
 
 export const meta: MetaFunction = () => {
   return [
@@ -20,10 +21,12 @@ export const meta: MetaFunction = () => {
 export default function MasterSheet() {
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
-      {/* ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
-      <CaosLanesProvider editable>
-        <CaosApp />
-      </CaosLanesProvider>
+      {/* 「1つ戻す」（盤面の操作と担当者の交代が同じものに覚える）と、ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
+      <CaosUndoProvider>
+        <CaosLanesProvider editable>
+          <CaosApp />
+        </CaosLanesProvider>
+      </CaosUndoProvider>
     </div>
   );
 }

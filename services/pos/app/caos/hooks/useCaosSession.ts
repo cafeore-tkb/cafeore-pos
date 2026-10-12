@@ -106,7 +106,7 @@ export const useCaosSession = () => {
     cancelEmergency,
     restoreEmergencies,
   } = useCupEmergency();
-  const undo = useCaosUndo(realTime.getTime());
+  const undo = useCaosUndo();
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
