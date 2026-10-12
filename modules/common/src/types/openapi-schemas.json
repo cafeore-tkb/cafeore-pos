@@ -369,7 +369,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了になった時刻。未準備なら null"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面・マスターで付ける（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",
@@ -405,7 +405,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "CaOS で抽出を終えた時刻"
+        "description": "CaOS で抽出を終えた時刻（「次へ」か、カップを準備完了・提供済みにしてサーバーが「次へ」を進めたとき）。準備完了（ready_at）とは別に持つ"
       },
       "emergencies": {
         "type": "array",
@@ -1049,7 +1049,7 @@
   },
   "CaosUndoCupState": {
     "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない",
     "required": ["state", "ready_at"],
     "properties": {
       "state": {

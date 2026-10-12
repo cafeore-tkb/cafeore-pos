@@ -148,39 +148,14 @@ func findOrderCup(order *models.Order, cupID uuid.UUID) *models.OrderCup {
 	return nil
 }
 
-// markCupsReady は注文のカップのうち match に合うものを準備完了にし（もう準備完了のカップは時刻を変えない）、
-// 注文の状態をカップから決め直す。カップか注文の状態を変えたら true を返す。
-// カップの準備完了（PATCH /api/orders/:id/cups/:cupId/ready）と、CaOS の「次へ」で使う。
-func markCupsReady(order *models.Order, match func(*models.OrderCup) bool, now time.Time) bool {
-	matched, changed := false, false
-	for i := range order.OrderCups {
-		cup := &order.OrderCups[i]
-		if !match(cup) {
-			continue
-		}
-		matched = true
-		if cup.ReadyAt == nil {
-			cup.ReadyAt = &now
-			changed = true
-		}
-	}
-	if !matched {
-		return false
-	}
-	readyAt, servedAt := order.ReadyAt, order.ServedAt
-	syncOrderWithCups(order)
-	return changed || !timeEqual(readyAt, order.ReadyAt) || !timeEqual(servedAt, order.ServedAt)
-}
-
 // PATCH /api/orders/:id/cups/:cupId/ready の切り替え
 func toggleCupReady(order *models.Order, cup *models.OrderCup, now time.Time) {
 	if cup.ReadyAt == nil {
-		// cup は order.OrderCups の中を指す（findOrderCup）ので、ポインタで比べる
-		markCupsReady(order, func(c *models.OrderCup) bool { return c == cup }, now)
-		return
+		cup.ReadyAt = &now
+	} else {
+		// 準備完了でないカップは提供済みにもできない
+		cup.ReadyAt, cup.ServedAt = nil, nil
 	}
-	// 準備完了でないカップは提供済みにもできない
-	cup.ReadyAt, cup.ServedAt = nil, nil
 	syncOrderWithCups(order)
 }
 

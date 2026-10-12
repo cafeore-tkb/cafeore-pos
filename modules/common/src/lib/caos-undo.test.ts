@@ -199,7 +199,7 @@ describe("unit: caos-undo", () => {
     });
   });
 
-  test("次へを戻す：終えたカードは抽出中・準備完了なしに、始めたカードは待機に戻す", () => {
+  test("次へを戻す：終えたカードは抽出中に、始めたカードは待機に戻す（準備完了は変えない）", () => {
     const brewing = cup("a", {
       dripper: 1,
       dripperPosition: 1,
@@ -211,7 +211,7 @@ describe("unit: caos-undo", () => {
     const entry = undoOfNext(cards, 1);
     expect(entry.cups.map((c) => c.id)).toEqual(["a", "b"]);
 
-    const finished = { ...brewing, brewFinishedAt: T1, readyAt: T1 };
+    const finished = { ...brewing, brewFinishedAt: T1 };
     const started = { ...queued, brewStartedAt: T1 };
     const sent = caosUndoCups(entry, board(finished, started));
     if ("error" in sent) throw new Error(sent.error);
@@ -248,6 +248,10 @@ describe("unit: caos-undo", () => {
       error: "操作の結果がまだ届いていません。もう一度押してください",
       arriving: true,
     });
+    // 「次へ」のあとに提供の画面で準備完了にしていたら、ほかの画面が変えたとみて戻さない
+    expect(
+      caosUndoCups(entry, board({ ...finished, readyAt: T1 }, started)),
+    ).toEqual({ error: "ほかの画面で先に変わったので戻せません" });
   });
 
   test("入れ直しの「次へ」を戻す：入れ直しは準備完了を持たないので、終えても準備完了は見ない", () => {

@@ -198,14 +198,14 @@ type CaosNextRequest struct {
 type CaosUndoCup struct {
 	CupId openapi_types.UUID `json:"cup_id"`
 
-	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 	Current CaosUndoCupState `json:"current"`
 
-	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 	Restore CaosUndoCupState `json:"restore"`
 }
 
-// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 type CaosUndoCupState struct {
 	ReadyAt *time.Time `json:"ready_at"`
 
@@ -545,7 +545,7 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	// BrewFinishedAt CaOS で抽出を終えた時刻
+	// BrewFinishedAt CaOS で抽出を終えた時刻（「次へ」か、カップを準備完了・提供済みにしてサーバーが「次へ」を進めたとき）。準備完了（ready_at）とは別に持つ
 	BrewFinishedAt *time.Time `json:"brew_finished_at"`
 
 	// BrewStartedAt CaOS で抽出を始めた時刻
@@ -568,7 +568,7 @@ type OrderCupResponse struct {
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
 
-	// ReadyAt このカップが準備完了になった時刻。未準備なら null
+	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面・マスターで付ける（CaOS の「次へ」では付かない）
 	ReadyAt *time.Time `json:"ready_at"`
 
 	// ServedAt このカップを提供した時刻。未提供なら null

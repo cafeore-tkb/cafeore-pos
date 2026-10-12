@@ -187,7 +187,8 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     orders = advanced.orders;
     const lane = caosLane(cardsOf(orders), 1);
     expect(lane.done.map((card) => card.finishedAt)).toStrictEqual([at(140)]);
-    expect(lane.done[0].cups[0].readyAt).toStrictEqual(at(140));
+    // 「次へ」は終えた時刻だけ。準備完了（提供可能）は提供の画面で付ける
+    expect(lane.done[0].cups[0].readyAt).toBeNull();
     expect(lane.brewing?.orderNo).toBe(2);
     expect(lane.brewing?.startedAt).toStrictEqual(at(140));
     expect(lane.queued).toHaveLength(0);
@@ -570,7 +571,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     return added;
   };
 
-  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップを準備完了にする", () => {
+  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップは準備完了にしない", () => {
     const initial = ordersOf([hot], [hot]);
     const cupId = initial[0].cups[0].id;
     const added = addEmergencies(initial, [cupId], "  こぼした ", at(5));
@@ -602,7 +603,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     expect(
       advanced.orders[0].cups[0].emergencies[0].brewFinishedAt,
     ).toStrictEqual(at(310));
-    expect(advanced.orders[0].cups[0].readyAt).toStrictEqual(at(310));
+    expect(advanced.orders[0].cups[0].readyAt).toBeNull();
   });
 
   test("入れ直しは入れ直しどうしだけ統合でき、緊急でないカップと同じカードにはできない", () => {

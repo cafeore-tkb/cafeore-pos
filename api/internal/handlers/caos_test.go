@@ -459,24 +459,26 @@ func TestCaosNextOnDB(t *testing.T) {
 		t.Fatalf("next right after the start = %d, want 400", code)
 	}
 	f.wait()
-	// 次へ：抽出中のカードを終え、そのカップだけ準備完了にし、待機の先頭（順番の小さいもの）を始める
+	// 次へ：抽出中のカードを終え（終えた時刻だけ。準備完了は付けない）、待機の先頭（順番の小さいもの）を始める
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	if got, _ := f.lane(t, 1); len(got) != 1 || got[0] != card3 {
 		t.Fatalf("brewing after next = %v, want %v", got, card3)
 	}
-	for _, c := range o1.OrderCups[:2] {
-		if cup := f.cup(t, c.ID); cup.ReadyAt == nil || cup.BrewFinishedAt == nil {
-			t.Fatalf("cup = %+v, want ready and finished", cup)
+	for _, c := range o1.OrderCups {
+		if cup := f.cup(t, c.ID); cup.ReadyAt != nil {
+			t.Fatalf("cup = %+v, want not ready (ready_at is for the serve screen)", cup)
 		}
 	}
-	if cup := f.cup(t, o1.OrderCups[2].ID); cup.ReadyAt != nil {
-		t.Fatal("milk got ready")
+	for _, c := range o1.OrderCups[:2] {
+		if cup := f.cup(t, c.ID); cup.BrewFinishedAt == nil {
+			t.Fatalf("cup = %+v, want finished", cup)
+		}
 	}
 	var order models.Order
 	if err := db.First(&order, "id = ?", o1.ID).Error; err != nil || order.ReadyAt != nil {
-		t.Fatalf("order = %+v, want not ready (the milk is left)", order)
+		t.Fatalf("order = %+v, want not ready", order)
 	}
 	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewStartedAt == nil {
 		t.Fatal("the next card did not start")
@@ -1028,8 +1030,8 @@ func TestCaosMergeIntoBrewingOnDB(t *testing.T) {
 	if code := f.next(t, 3, &card); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
-	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt == nil || got.BrewFinishedAt == nil {
-		t.Fatalf("joined cup after next = %+v, want ready and finished", got)
+	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt != nil || got.BrewFinishedAt == nil {
+		t.Fatalf("joined cup after next = %+v, want finished and not ready", got)
 	}
 	// 終わったカードには入れない
 	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(3, card, false))); code != http.StatusBadRequest {
@@ -1038,7 +1040,7 @@ func TestCaosMergeIntoBrewingOnDB(t *testing.T) {
 }
 
 // 提供の画面などでカップを提供済み・準備完了にしたら、そのカップの抽出中のカードの「次へ」をサーバーが進める。
-// 統合したカードのほかの注文のカップも準備完了になり、待機の先頭が始まる。待機のカードのカップでは進めない
+// カードを終えて待機の先頭が始まる（統合したカードのほかの注文のカップは準備完了にしない）。待機のカードのカップでは進めない
 func TestCaosAdvanceWhenServedOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -1058,12 +1060,12 @@ func TestCaosAdvanceWhenServedOnDB(t *testing.T) {
 	if brewing, _ := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{merged}) {
 		t.Fatalf("brewing = %v, want %v", brewing, merged)
 	}
-	// 注文 1 を提供（注文ごと）：統合したカードを終え、注文 2 のカップも準備完了にし、待機の先頭を始める
+	// 注文 1 を提供（注文ごと）：統合したカードを終え、待機の先頭を始める。注文 2 のカップは準備中のまま
 	if w := callWithParams(t, f.orders.MarkOrderServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o1.ID.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("PATCH served = %d", w.Code)
 	}
-	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt == nil || got.BrewFinishedAt == nil {
-		t.Fatalf("the other cup of the card = %+v, want ready and finished", got)
+	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt != nil || got.BrewFinishedAt == nil {
+		t.Fatalf("the other cup of the card = %+v, want finished and not ready", got)
 	}
 	if brewing, _ := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{next}) {
 		t.Fatalf("brewing after served = %v, want %v", brewing, next)

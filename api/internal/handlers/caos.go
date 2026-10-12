@@ -29,8 +29,8 @@ import (
 //     抽出中のカードも動かせる（始めた時刻を消して待機・未割当にする）。書いたあと、1 つのドリッパーで抽出中は 1 枚まで（caosBrewingTwice）。
 //     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）。指名のあるカードは指名を優先し、
 //     指名のドリッパーの担当者が上級生でなくても置ける
-//   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え、そのカップを準備完了にし、待機の先頭を始める。
-//     抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
+//   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え（brew_finished_at）、待機の先頭を始める（brew_started_at）。
+//     カップの準備完了（ready_at）は付けない（付けるのは提供の画面・マスター）。抽出を始めてから caosNextCooldown は断る（二度押し・続けて押すのを防ぐ）
 //   - 注文・カップを準備完了・提供済みにして、抽出中のカードのカップが準備完了になったら、そのカードの「次へ」をサーバーが進める
 //     （advanceReadyCaosCards。order_status.go の changeOrderStatus から呼ぶ）
 //
@@ -706,6 +706,7 @@ func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
 // ---------------------------------------------------------------- 「次へ」
 
 // advance は「次へ」を 1 回行う。seen は終えるカード（画面が抽出中と見ているカード。nil なら待機の先頭を始めるだけ）。書いた注文を返す。
+// 書くのは抽出の時刻（終えるカードの brew_finished_at と、始めるカードの brew_started_at）だけで、カップの準備完了は変えない。
 // auto は、カップが準備完了になったのでサーバーが進めるとき（advanceReadyCaosCards）：seen が抽出中のカードでなければ何もしない。
 // カップが準備完了（splitCaosLane では終わり）でも終え、始めてすぐでも断らない。ほかに抽出中のカードがあれば待機の先頭は始めない。
 func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.UUID, error) {
@@ -785,20 +786,7 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, auto bool) ([]uuid.U
 		}
 
 		if cur != nil {
-			// カードのカップ（入れ直しは入れ直したカップ）を準備完了にし、注文の状態をカップから決め直す（POS のカップの準備完了と同じ関数）
-			inCard := func(cup *models.OrderCup) bool {
-				return slices.ContainsFunc(cur.cups, func(r caosUnit) bool { return r.CupID == cup.ID })
-			}
-			for _, order := range orders {
-				before := *order
-				before.OrderCups = slices.Clone(order.OrderCups)
-				if !markCupsReady(order, inCard, now) {
-					continue
-				}
-				if err := saveOrderStatus(tx, &before, order); err != nil {
-					return err
-				}
-			}
+			// 終えるのは抽出だけ。カップの準備完了（ready_at）は提供の画面・マスターで付ける
 			if err := updateCaosUnits(tx, map[string]any{"brew_finished_at": now}, "drip_id = ?", cur.dripID); err != nil {
 				return err
 			}
@@ -843,7 +831,7 @@ func (h *CaosHandler) advanceRetrying(dripper int, seen *uuid.UUID, auto bool) (
 }
 
 // advanceReadyCaosCards は、注文のカップが準備完了になったら（before では準備完了でなかった。提供済みにしたときも付く）、
-// そのカップ（入れ直しも）の抽出中のカードの「次へ」を進める（カードを終えてほかのカップも準備完了にし、待機の先頭を始める）。
+// そのカップ（入れ直しも）の抽出中のカードの「次へ」を進める（カードを終えて待機の先頭を始める。統合したカードのほかのカップは準備完了にしない）。
 // 提供の画面で提供したら、マスターが「次へ」を押さなくても進むように。注文の状態を書き終えてから、別のトランザクションで行う
 // （CaOS の書き込みと同じく、ドリッパーのロックを注文の行より先に取るため）。CaOS で断られても注文の状態は戻さず、ログに残すだけ。
 func advanceReadyCaosCards(caos *CaosHandler, before, after *models.Order) {

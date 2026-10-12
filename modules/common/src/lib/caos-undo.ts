@@ -12,7 +12,7 @@ import type { LaneAssignment } from "./caosLanes";
 // CaOS の「1つ戻す」。DB や画面を使わない純粋な関数だけを置く（書き戻すのは POST /api/caos/undo）。
 //
 // 画面は操作が通ったら、書いたカップごとに
-//   - restore：操作の前の値（操作したときに画面が見ていた値。CaOS の列と準備完了）
+//   - restore：操作の前の値（操作したときに画面が見ていた値。CaOS の列と準備完了。準備完了は比べるだけで書き戻さない）
 //   - expect：その操作で変わるはずのところ（ドリッパー・カード・始めた・終えた・準備完了か）
 // を覚える。順番の数と時刻はサーバーが決めるので覚えない。
 // 戻すときは、今の盤面のカップの値が expect のとおりかを確かめ（違えばほかの画面が変えたので断る）、
@@ -119,8 +119,8 @@ export const undoOfWrites = (
 };
 
 /**
- * 「次へ」を戻すもの。サーバーと同じ決まり（caosLane）で、抽出中のカードを終えて準備完了にし、待機の先頭を始めたとみる。
- * 戻すと、終えたカードは抽出中に戻って準備完了が外れ（この「次へ」で準備完了にしたカップだけ）、始めたカードは待機に戻る
+ * 「次へ」を戻すもの。サーバーと同じ決まり（caosLane）で、抽出中のカードを終え、待機の先頭を始めたとみる。
+ * 戻すと、終えたカードは抽出中に、始めたカードは待機に戻る（準備完了は「次へ」でも戻すときも変わらない）
  */
 export const undoOfNext = (
   cards: readonly CaosCard[],
@@ -136,8 +136,7 @@ export const undoOfNext = (
         dripId: card?.dripId ?? null,
         started: true,
         finished,
-        // 入れ直しは準備完了を持たない（「次へ」は入れ直したカップを準備完了にする）
-        ready: (finished && !cup.emergency) || cup.readyAt !== null,
+        ready: cup.readyAt !== null,
       },
     }));
   return { cups: [...entry(brewing, true), ...entry(queued[0], false)] };
