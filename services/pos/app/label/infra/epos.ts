@@ -115,9 +115,11 @@ const portsToTry = ({ address, port }: EposPrinterConfig) => {
   } catch {
     // 読めなければ設定の順
   }
-  return remembered === String(EPOS_SECURE_PORT)
-    ? [EPOS_SECURE_PORT, port]
-    : [port, EPOS_SECURE_PORT];
+  const ports =
+    remembered === String(EPOS_SECURE_PORT)
+      ? [EPOS_SECURE_PORT, port]
+      : [port, EPOS_SECURE_PORT];
+  return [...new Set(ports)];
 };
 
 const rememberPort = (address: string, port: number) => {
