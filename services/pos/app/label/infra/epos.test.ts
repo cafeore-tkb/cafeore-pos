@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { PrintJob } from "../document";
 import {
   DEFAULT_EPOS_PRINTER_CONFIG,
+  EPOS_SECURE_PORT,
   type EposBuilder,
   RECEIPT_EPOS_PRINTER_CONFIG,
   createEposPrinter,
@@ -177,6 +178,15 @@ describe("[unit] writeEposJob", () => {
 });
 
 describe("[unit] createEposPrinter", () => {
+  // つながったポートを覚える先。テストごとに空にする
+  let storage: Map<string, string>;
+  beforeEach(() => {
+    storage = new Map();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => void storage.set(key, value),
+    });
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -185,18 +195,22 @@ describe("[unit] createEposPrinter", () => {
    * createDevice まで成功する ePOSDevice の偽物
    *
    * deferConnect なら connect の応答を返さず、pending に貯める（あとで呼ぶ）。
+   * failPorts のポートには、つながらなかった（ERROR_TIMEOUT）と返す。
    */
   const stubEpson = (
     device: ReturnType<typeof recordingBuilder>["builder"],
-    { deferConnect = false } = {},
+    {
+      deferConnect = false,
+      failPorts = [],
+    }: { deferConnect?: boolean; failPorts?: number[] } = {},
   ) => {
     const pending: ((r: string) => void)[] = [];
     const connect = vi.fn(
-      (_address: string, _port: number, callback: (r: string) => void) => {
+      (_address: string, port: number, callback: (r: string) => void) => {
         if (deferConnect) {
           pending.push(callback);
         } else {
-          callback("OK");
+          callback(failPorts.includes(port) ? "ERROR_TIMEOUT" : "OK");
         }
       },
     );
@@ -406,6 +420,116 @@ describe("[unit] createEposPrinter", () => {
       ["addCut", "cut_feed"],
       ["send"],
     ]);
+  });
+
+  const connectedPorts = (connect: ReturnType<typeof stubEpson>["connect"]) =>
+    connect.mock.calls.map(([, port]) => port);
+
+  test("8008 でつながらなければ、8043 でつなぎ直し、つながったポートを覚える", async () => {
+    const { builder } = recordingBuilder();
+    const { connect, disconnect } = stubEpson(builder, {
+      failPorts: [DEFAULT_EPOS_PRINTER_CONFIG.port],
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+
+    expect(connectedPorts(connect)).toEqual([
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+      EPOS_SECURE_PORT,
+    ]);
+    // つながらなかった方は切る
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["connecting", "connected"]);
+    expect(await printer.print(job)).toBe(true);
+    expect([...storage.values()]).toEqual([String(EPOS_SECURE_PORT)]);
+  });
+
+  test("前に 8043 でつながった端末は 8043 から試す（アドレスごと）", () => {
+    const { builder } = recordingBuilder();
+    const { connect } = stubEpson(builder, {
+      failPorts: [DEFAULT_EPOS_PRINTER_CONFIG.port],
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    createEposPrinter(() => {}).connect();
+    connect.mockClear();
+
+    createEposPrinter(() => {}).connect();
+    eposPrinterAt("10.0.0.3")(() => {}).connect();
+
+    expect(connectedPorts(connect)).toEqual([
+      EPOS_SECURE_PORT,
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+      EPOS_SECURE_PORT,
+    ]);
+  });
+
+  test("8008 でつながる端末は 8008 だけで、8043 は試さない", () => {
+    const { builder } = recordingBuilder();
+    const { connect } = stubEpson(builder);
+
+    createEposPrinter(() => {}).connect();
+    createEposPrinter(() => {}).connect();
+
+    expect(connectedPorts(connect)).toEqual([
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+    ]);
+  });
+
+  test("どのポートでもつながらなければ disconnected で、刷らない", async () => {
+    const { builder, calls } = recordingBuilder();
+    const { connect } = stubEpson(builder, {
+      failPorts: [DEFAULT_EPOS_PRINTER_CONFIG.port, EPOS_SECURE_PORT],
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+
+    expect(connectedPorts(connect)).toEqual([
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+      EPOS_SECURE_PORT,
+    ]);
+    expect(statuses).toEqual(["connecting", "disconnected"]);
+    expect(await printer.print(job)).toBe(false);
+    expect(calls).toEqual([]);
+    expect(storage.size).toBe(0);
+  });
+
+  test("8008 の応答を待つ間にやめたら、8043 は試さない", () => {
+    const { builder } = recordingBuilder();
+    const { connect, pending } = stubEpson(builder, { deferConnect: true });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+    printer.disconnect();
+    pending[0]("ERROR_TIMEOUT");
+
+    expect(connectedPorts(connect)).toEqual([DEFAULT_EPOS_PRINTER_CONFIG.port]);
+    expect(statuses).toEqual(["connecting"]);
+  });
+
+  test("送れなかった（onerror）ら false にし、つながりを切る", async () => {
+    const { builder } = recordingBuilder(null);
+    const { disconnect } = stubEpson(builder);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: PrinterConnectionStatus[] = [];
+
+    const printer = createEposPrinter((status) => statuses.push(status));
+    printer.connect();
+    const printed = printer.print(job);
+    await Promise.resolve();
+    builder.onerror?.({ status: 0, responseText: "" });
+
+    expect(await printed).toBe(false);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
   });
 
   test("SDK が読み込まれていなければ disconnected になる", () => {
