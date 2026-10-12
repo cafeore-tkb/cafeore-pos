@@ -10,6 +10,7 @@ import {
   type CardLook,
   cardItemName,
   cardNominee,
+  cardOrderNos,
   emergencyReasons,
   orderLabel,
   orderNoLabel,
@@ -122,7 +123,8 @@ export const OrderCard: React.FC<
   // 注文番号の札と、商品の略称
   const orderNo = (size: string) => (
     <span
-      className={`shrink-0 rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      title={orderLabel(card)}
     >
       {orderLabel(card)}
     </span>
@@ -138,6 +140,14 @@ export const OrderCard: React.FC<
   // 1 行目にいちばん大きく出すものと、2 行目に出すもの
   const [headline, subline] =
     card.status === "unassigned" ? [orderNo, itemName] : [itemName, orderNo];
+  // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
+  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
+  const headlineSize =
+    card.status !== "unassigned"
+      ? text.name
+      : cardOrderNos(card).length > 1
+        ? `min-w-0 truncate tracking-tighter ${text.cups}`
+        : `shrink-0 ${text.name}`;
   return (
     <div
       {...props}
@@ -149,7 +159,7 @@ export const OrderCard: React.FC<
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
-        {headline(text.name)}
+        {headline(headlineSize)}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {card.emergency && (
