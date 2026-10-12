@@ -25,7 +25,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 // 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
 // 閲覧だけの画面（/master-sheet/view）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、自動では替えない。
-// 上級生でない人（担当者なしも）にするドリッパーに上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめる。
+// 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカードが待っていれば、［まだ変えない］［変える］で確かめる。
 // ［変える］ならそのまま替え、カードも残す。断られた理由は POS の通知（sonner）で出す。
 
 interface CaosLanesContextValue {
@@ -33,7 +33,7 @@ interface CaosLanesContextValue {
   lanes: CaosLane[];
   /** 交代できる（操作の画面） */
   editable: boolean;
-  /** 上級生の担当者がいるか（いなければ上級生のみのカードをどこにも置けない） */
+  /** 上級生の担当者がいるか（いなければ指名の無い上級生のみのカードをどこにも置けない） */
   hasSenior: boolean;
   openChange: (dripper: number) => void;
   openSettings: () => void;
@@ -70,7 +70,7 @@ export const CaosLanesProvider = ({
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 替えたあとの担当者で、上級生のみのカードが待っているドリッパーを確かめてから送る。結果は WebSocket で届く
+  // 替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーを確かめてから送る。結果は WebSocket で届く
   const request = (
     changes: LaneAssignment[],
     single: boolean,

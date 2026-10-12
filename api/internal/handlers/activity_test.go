@@ -45,6 +45,43 @@ func TestMenuUpdatedMessage(t *testing.T) {
 	}
 }
 
+func TestItemTypeUpdatedMessageFlags(t *testing.T) {
+	yes, no := true, false
+	before := models.ItemType{Name: "special", DisplayName: "限定", MakesCup: &yes, NeedsBrew: &yes, SeniorOnly: true}
+
+	cases := []struct {
+		name   string
+		change func(*models.ItemType)
+		want   string
+	}{
+		{"makes_cup", func(it *models.ItemType) { it.MakesCup, it.NeedsBrew, it.SeniorOnly = &no, &no, false },
+			"✏️ タイプを変更: 限定（カップを作る あり → なし、抽出が要る あり → なし、上級生のみ あり → なし） :e-change:"},
+		{"needs_brew", func(it *models.ItemType) { it.NeedsBrew, it.SeniorOnly = &no, false },
+			"✏️ タイプを変更: 限定（抽出が要る あり → なし、上級生のみ あり → なし） :e-change:"},
+		{"senior_only", func(it *models.ItemType) { it.SeniorOnly = false },
+			"✏️ タイプを変更: 限定（上級生のみ あり → なし） :e-change:"},
+		{"iced_brew", func(it *models.ItemType) { it.IcedBrew = true },
+			"✏️ タイプを変更: 限定（アイスで淹れる なし → あり） :e-change:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			after := before
+			tc.change(&after)
+			if got := itemTypeUpdatedMessage(&before, &after); got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+
+	// 保存し直しただけなら通知しない（読み込み直して別のポインタになっても値で比べる）
+	yes2, yes3 := true, true
+	same := before
+	same.MakesCup, same.NeedsBrew = &yes2, &yes3
+	if got := itemTypeUpdatedMessage(&before, &same); got != "" {
+		t.Fatalf("expected no message, got %q", got)
+	}
+}
+
 func TestStockResourceMessages(t *testing.T) {
 	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15}
 	after := kenya

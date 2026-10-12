@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { Cup } from "../models/cup";
 import {
+  CAOS_LATE_MERGE_SEC,
   type CaosCard,
   type CaosOrderInput,
   assignWrites,
@@ -10,6 +11,7 @@ import {
   caosBrewSec,
   caosDripperAllowed,
   caosLane,
+  caosLateMerge,
   caosNextLocked,
   cupNeedsBrew,
   cupSeniorOnly,
@@ -791,5 +793,18 @@ describe("[unit] CaOS の書き込み", () => {
     expect(caosNextLocked({ startedAt }, NOW.getTime() + 9_999)).toBe(true);
     expect(caosNextLocked({ startedAt }, NOW.getTime() + 10_000)).toBe(false);
     expect(caosNextLocked(undefined, NOW.getTime())).toBe(false);
+  });
+
+  test("抽出を始めてから CAOS_LATE_MERGE_SEC 秒を過ぎたカードへの統合は確かめる（始めてからの秒）", () => {
+    const late = NOW.getTime() + CAOS_LATE_MERGE_SEC * 1000;
+    const brewing = { status: "brewing" as const, startedAt: NOW };
+    expect(caosLateMerge(brewing, late)).toBeNull();
+    expect(caosLateMerge(brewing, late + 1)).toBe(CAOS_LATE_MERGE_SEC);
+    expect(caosLateMerge(brewing, late + 45_000)).toBe(
+      CAOS_LATE_MERGE_SEC + 45,
+    );
+    // 待機・未割当のカードへの統合は確かめない
+    for (const status of ["queued", "unassigned"] as const)
+      expect(caosLateMerge({ status, startedAt: null }, late + 1)).toBeNull();
   });
 });

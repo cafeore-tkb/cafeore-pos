@@ -167,6 +167,33 @@ export const NextConfirmDialog: React.FC<{
   </AlertDialog>
 );
 
+/** 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合を確かめる。［やめる］［統合する］ */
+export const MergeConfirmDialog: React.FC<{
+  card: CaosCard;
+  into: CaosCard;
+  elapsedSec: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ card, into, elapsedSec, onCancel, onConfirm }) => (
+  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {orderLabel(card)} を {orderLabel(into)} に統合しますか？
+        </AlertDialogTitle>
+        <AlertDialogDescription className="font-black text-[16px] text-slate-950">
+          {orderLabel(into)} は抽出を始めてから {clockLabel(elapsedSec)}{" "}
+          たっています。
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>やめる</AlertDialogCancel>
+        <AlertDialogAction onClick={onConfirm}>統合する</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+);
+
 /** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
 export const EmptySlotButton: React.FC<{
   onClick: () => void;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NextConfirmDialog } from "./components/BoardParts";
+import { MergeConfirmDialog, NextConfirmDialog } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -154,6 +154,14 @@ export default function App() {
           {...session.nextConfirm}
           onCancel={session.cancelNext}
           onConfirm={session.confirmNext}
+        />
+      )}
+
+      {session.mergeConfirm && (
+        <MergeConfirmDialog
+          {...session.mergeConfirm}
+          onCancel={session.cancelMerge}
+          onConfirm={session.confirmMerge}
         />
       )}
 
