@@ -137,7 +137,7 @@ const orderByNo = <O extends CaosOrderInput>(
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 };
 
-/** 緊急の入力を開いたときの値（カップやカードから開けば、その注文番号とカップ。注文をまたいで統合したカードなら、ほかの注文のカップも） */
+/** 緊急の入力を開いたときの値（カップやカードから開けば、その注文番号とカップ） */
 export type EmergencyInitial = { orderNo: number; cupIds: string[] };
 
 // 理由の候補（前の日までも含めてよく使う順。GET /api/cup-emergencies/reasons）。取れなければ前に取れたもののまま

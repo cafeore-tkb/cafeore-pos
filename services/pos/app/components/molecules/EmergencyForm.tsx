@@ -15,7 +15,7 @@ export const EmergencyIcon = Siren;
 
 /**
  * 緊急（入れ直し）の入力：注文番号・入れ直すカップ・理由（よく使うものを押すか、自由に書く）。マスターと CaOS で同じもの。
- * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ。注文をまたいで統合したカードなら、カップに注文番号を添える）。
+ * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ）。
  * 確定すると onAdd（足して、そのカップのシールを刷る）、足せたら onDone
  */
 export type EmergencyFormProps<O extends CaosOrderInput> = {

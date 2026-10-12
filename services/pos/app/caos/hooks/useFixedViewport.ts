@@ -7,11 +7,7 @@ const FIXED_VIEWPORT = "maximum-scale=1, user-scalable=no";
 const GESTURES = ["gesturestart", "gesturechange"] as const;
 const preventDefault = (event: Event) => event.preventDefault();
 
-/**
- * iPad で CaOS の画面を拡大させない（開いているあいだだけ）。
- * ページのスクロール・はね返りと、ピンチ・ダブルタップの拡大は caos.css（overflow・overscroll-behavior・touch-action）で止め、
- * iPad の Safari が CSS だけでは止めないピンチと、入力欄の自動の拡大は、ここで viewport と Safari の手ぶりの知らせで止める
- */
+/** iPad の Safari が caos.css だけでは止めないピンチと、入力欄の自動の拡大を止める（CaOS の画面を開いているあいだだけ） */
 export const useFixedViewport = () => {
   useEffect(() => {
     const meta = document.querySelector<HTMLMetaElement>(
