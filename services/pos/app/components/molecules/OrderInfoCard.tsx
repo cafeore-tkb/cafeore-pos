@@ -1,4 +1,5 @@
 import {
+  AUTHOR_MARKS,
   type ColorScreen,
   type OrderEntity,
   type WithId,
@@ -212,14 +213,6 @@ const ServedTime = ({ order }: { order: OrderEntity }) => {
       <div>{order.servedAt == null ? "未提供" : `${m}分${ss}秒`}</div>
     </div>
   );
-};
-
-// コメントの書き手を1文字で出す（CaOS のコメントでも使う）
-export const AUTHOR_MARKS = {
-  cashier: "レ",
-  master: "マ",
-  serve: "提",
-  others: "他",
 };
 
 const CommentList = ({ order }: { order: OrderEntity }) =>

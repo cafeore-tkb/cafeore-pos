@@ -1,7 +1,6 @@
 import type { CupStatus } from "@cafeore/common";
 import { Delete } from "lucide-react";
 import type React from "react";
-import type { SearchKey } from "../hooks/useOrderSearch";
 import { type CardLooks, orderNoLabel } from "../logic/cards";
 import type { FoundOrder } from "../logic/search";
 import { OrderCard } from "./OrderCard";
@@ -12,7 +11,7 @@ import { SidePanel } from "./SidePanels";
 // 押すたびに探し直し、見つかった注文は盤面で選んだ状態になる（useOrderSearch）。パネルの外を押すと閉じる
 
 // テンキーの並び（電卓と同じく 7 8 9 が上）
-const KEYS: { key: SearchKey; label: React.ReactNode; title?: string }[] = [
+const KEYS: { key: string; label: React.ReactNode; title?: string }[] = [
   ..."789456123".split("").map((key) => ({ key, label: key })),
   { key: "clear", label: "C", title: "全部消す" },
   { key: "0", label: "0" },
@@ -29,7 +28,7 @@ export const OrderSearchPanel: React.FC<{
   digits: string;
   found: FoundOrder | null;
   looks: CardLooks;
-  onKey: (key: SearchKey) => void;
+  onKey: (key: string) => void;
   onClose: () => void;
 }> = ({ digits, found, looks, onKey, onClose }) => (
   <SidePanel title="注文番号で探す" onClose={onClose} onOutsidePress={onClose}>
@@ -46,6 +45,8 @@ export const OrderSearchPanel: React.FC<{
           type="button"
           title={title}
           aria-label={title}
+          // 押してもフォーカスを移さない（キーボードの Enter で同じキーをもう一度押さない）
+          onMouseDown={(event) => event.preventDefault()}
           onClick={() => onKey(key)}
           className="flex h-14 touch-manipulation items-center justify-center rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[26px] active:bg-slate-900 active:text-white"
         >
@@ -68,7 +69,8 @@ const SearchResult: React.FC<{
   if (!digits)
     return (
       <p className="rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
-        番号を押すと、その注文がどこにあるかを出し、盤面で選びます（キーボードの数字でも入れられます）
+        番号を押すと、その注文がどこにあるかを出し、盤面で選びます（キーボードの数字でも入れられ、Enter
+        で閉じます）
       </p>
     );
   if (!found)

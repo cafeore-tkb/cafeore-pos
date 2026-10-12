@@ -6,9 +6,11 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosDayOrders,
   caosLateMerge,
   dripperLabel,
   jstClock,
+  jstDate,
   mergeWrites,
   moveQueueWrites,
   seniorOnlyBlock,
@@ -134,10 +136,12 @@ export const useCaosSession = () => {
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],
   );
-  // 本番の注文のコメント（実データテスト中と、注文が届くまでは null）
+  // 本番の今日の注文のコメント（実データテスト中と、注文が届くまでは null）
+  const today = jstDate(realTime.getTime());
   const comments = useMemo(
-    () => (live.orders ? commentsByOrder(live.orders) : null),
-    [live.orders],
+    () =>
+      live.orders ? commentsByOrder(caosDayOrders(live.orders, today)) : null,
+    [live.orders, today],
   );
   const looks = useMemo(
     () => cardLooks(cards, colorSettings, beanIndex, comments),
@@ -298,7 +302,7 @@ export const useCaosSession = () => {
     unassigned,
     /** カードの色・豆・コメントと、分けた注文の中の位置 */
     looks,
-    /** 本番の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
+    /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
     comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */

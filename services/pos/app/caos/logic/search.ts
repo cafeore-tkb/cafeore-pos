@@ -7,6 +7,7 @@ import {
   getCupStatus,
   jstDate,
 } from "@cafeore/common";
+import { orderByNo } from "~/components/functional/useCupEmergency";
 import type { BoardComment, CommentsByOrder } from "./comments";
 import { clockLabel } from "./format";
 import { type Lane, cardPlaces } from "./lanes";
@@ -71,8 +72,9 @@ export const findOrder = ({
   orderNo: number;
   nowMs: number;
 }): FoundOrder | null => {
-  const order = caosDayOrders(orders, jstDate(nowMs)).find(
-    (o) => o.orderId === orderNo,
+  const order = orderByNo(
+    caosDayOrders(orders, jstDate(nowMs)),
+    String(orderNo),
   );
   if (!order) return null;
   const statuses = order.cups.map(getCupStatus);

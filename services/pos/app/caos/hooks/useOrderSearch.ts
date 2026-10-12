@@ -8,23 +8,19 @@ import { findOrder, focusCard } from "../logic/search";
 /** 入れられる番号の桁 */
 const MAX_DIGITS = 4;
 
-/** 番号の検索のキー（数字の 1 文字か、1 文字消す "back"・全部消す "clear"） */
-export type SearchKey = string;
-
 // 番号に数字を 1 つ足す（頭の 0 は入れない。MAX_DIGITS 桁まで）
 const appendDigit = (value: string, digit: string) =>
   value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
-
-// 押した所が selector の中か
-const within = (target: EventTarget | null, selector: string) =>
-  target instanceof HTMLElement && Boolean(target.closest(selector));
 
 // 入力欄（緊急の番号・担当者の名前など）で打っているキーと、ダイアログ（交代など）を開いているあいだのキーは拾わない
 const ignoreKey = (event: KeyboardEvent) =>
   event.metaKey ||
   event.ctrlKey ||
   event.altKey ||
-  within(event.target, "input, textarea, select, [contenteditable='true']") ||
+  (event.target instanceof HTMLElement &&
+    Boolean(
+      event.target.closest("input, textarea, select, [contenteditable='true']"),
+    )) ||
   Boolean(
     document.querySelector(
       "dialog[open], [role='dialog'], [role='alertdialog']",
@@ -37,7 +33,7 @@ const ignoreKey = (event: KeyboardEvent) =>
  * そのカードを見せる（タイムラインのカードは showOnTimeline でスクロール、未割当のカードは未割当の帯の中でスクロール）。
  * 選ぶのは番号を変えたときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
  * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる（ダイアログを開いているあいだは拾わない）。
- * 開いているあいだは Backspace で 1 文字消し、Esc で閉じる。Enter も閉じる（ボタン・リンクの上ではそのボタンを押す）
+ * 開いているあいだは Backspace で 1 文字消し、Enter・Esc で閉じる
  */
 export const useOrderSearch = ({
   digits,
@@ -70,7 +66,8 @@ export const useOrderSearch = ({
   const targetId =
     found && target ? `${found.orderNo}\u0000${target.key}` : null;
 
-  const press = (key: SearchKey) => {
+  /** テンキーを押す（数字の 1 文字か、1 文字消す "back"・全部消す "clear"） */
+  const press = (key: string) => {
     if (key === "clear") setDigits(() => "");
     else if (key === "back") setDigits((value) => value.slice(0, -1));
     else setDigits((value) => appendDigit(value, key));
@@ -124,11 +121,9 @@ export const useOrderSearch = ({
         return;
       }
       if (digits === null) return;
-      // Enter はボタン・リンクの上なら、そのボタンを押させる（閉じない）
+      // Enter も閉じる（前に押したボタンにフォーカスが残っていても、そのボタンは押させない）
       if (event.key === "Backspace") press("back");
-      else if (event.key === "Escape") close();
-      else if (event.key === "Enter" && !within(event.target, "button, a"))
-        close();
+      else if (event.key === "Escape" || event.key === "Enter") close();
       else return;
       event.preventDefault();
     };

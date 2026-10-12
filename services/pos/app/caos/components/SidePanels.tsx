@@ -261,7 +261,7 @@ export const TicketDetailPanel: React.FC<
     onOutsidePress={onClose}
   >
     <OrderCard card={ticket} look={look} size="xl" />
-    <CommentList comments={look?.comments ?? []} className="mt-3" />
+    <CommentList comments={look?.comments} className="mt-3" />
     <MoveCardButtons
       card={ticket}
       currentBayId={currentBayId}
@@ -324,7 +324,7 @@ export const RebrewPanel: React.FC<
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />
-          <CommentList comments={look?.comments ?? []} className="mt-3" />
+          <CommentList comments={look?.comments} className="mt-3" />
         </div>
       )}
       <EmergencyForm

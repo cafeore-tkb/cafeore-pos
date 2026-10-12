@@ -1,6 +1,6 @@
+import { AUTHOR_MARKS } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { toast } from "sonner";
-import { AUTHOR_MARKS } from "~/components/molecules/OrderInfoCard";
 import { orderNoLabel } from "../logic/cards";
 import { type CommentsByOrder, commentKey } from "../logic/comments";
 
@@ -23,11 +23,15 @@ export const useCommentToasts = (
   useEffect(() => {
     if (!comments) return;
     const all = [...comments.values()].flat();
-    const known = seen.current;
-    seen.current = new Set([...(known ?? []), ...all.map(commentKey)]);
-    if (!known) return;
+    // 最初に届いたときは、見た印を付けるだけ
+    if (!seen.current) {
+      seen.current = new Set(all.map(commentKey));
+      return;
+    }
     for (const comment of all) {
-      if (known.has(commentKey(comment))) continue;
+      const key = commentKey(comment);
+      if (seen.current.has(key)) continue;
+      seen.current.add(key);
       toast(`#${orderNoLabel(comment.orderNo)} にコメント`, {
         description: `${AUTHOR_MARKS[comment.author]}：${comment.text}`,
         duration: TOAST_MS,

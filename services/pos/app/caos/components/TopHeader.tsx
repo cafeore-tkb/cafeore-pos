@@ -330,7 +330,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           onClick={onOpenSearch}
           aria-pressed={searchOpen}
           title="注文番号で探す"
-          className="flex h-11 w-11 shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] font-black text-[10px] text-slate-700 leading-none aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
+          className="flex h-11 w-11 shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] font-black text-[11px] text-slate-700 leading-none aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
         >
           <Search className="mb-0.5 h-4 w-4" />
           番号

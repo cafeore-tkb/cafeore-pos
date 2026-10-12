@@ -330,6 +330,12 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     order(3, [{ dripId: "m" }]),
     order(4, [{ dripId: "m" }]),
     order(6, [{ readyAt: T0 }]),
+    // #7：3 杯を 3 枚に分けた（4th で終わり・5th で待機・6th で抽出中）
+    order(7, [
+      { dripper: 4, dripId: "d7a", dripperPosition: 1, readyAt: T0 },
+      { dripper: 5, dripId: "d7b", dripperPosition: 1 },
+      { dripper: 6, dripId: "d7c", dripperPosition: 1, brewStartedAt: T0 },
+    ]),
   ];
   const cards = buildCaosCards(orders);
   const comment = {
@@ -365,9 +371,17 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
   });
 
   test("見せるカードは、抽出中・待機・未割当・終わりの順に選ぶ", () => {
-    const found = find(3);
-    expect(found && focusCard(found)?.key).toBe("m");
-    expect(found?.comments).toEqual([comment]);
+    const focus = (orderNo: number) => {
+      const found = find(orderNo);
+      return found && focusCard(found)?.key;
+    };
+    expect(find(7)?.cards.map(({ place }) => place)).toEqual([
+      "4th 済",
+      "5th 1番目",
+      "6th 抽出中 2:10",
+    ]);
+    expect(focus(7)).toBe("d7c");
+    expect(focus(3)).toBe("m");
   });
 
   test("統合したカードには中の注文のコメントが付き、選んだ注文のコメントだけを出す", () => {
@@ -375,6 +389,8 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     expect(looks.get("m")?.comments).toEqual([comment]);
     expect(looks.get("d1")?.comments).toBeUndefined();
     expect(selectedComments(cards, looks, "#003")).toEqual([comment]);
+    expect(find(4)?.comments).toEqual([]);
+    expect(find(3)?.comments).toEqual([comment]);
     expect(selectedComments(cards, looks, "#004")).toEqual([]);
   });
 });

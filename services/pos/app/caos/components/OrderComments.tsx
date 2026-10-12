@@ -1,8 +1,8 @@
+import { AUTHOR_MARKS } from "@cafeore/common";
 import { MessageSquareText } from "lucide-react";
 import type React from "react";
-import { AUTHOR_MARKS } from "~/components/molecules/OrderInfoCard";
 import { orderNoLabel } from "../logic/cards";
-import type { BoardComment } from "../logic/comments";
+import { type BoardComment, commentKey } from "../logic/comments";
 
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身
 
@@ -20,16 +20,16 @@ export const CommentMark: React.FC<{ count: number }> = ({ count }) => (
 
 /** コメントの中身（付けた順。書き手は POS と同じ 1 文字）。いくつかの注文のコメントなら注文番号も出す */
 export const CommentList: React.FC<{
-  comments: readonly BoardComment[];
+  comments?: readonly BoardComment[];
   className?: string;
-}> = ({ comments, className = "" }) => {
+}> = ({ comments = [], className = "" }) => {
   if (comments.length === 0) return null;
   const withNo = new Set(comments.map((c) => c.orderNo)).size > 1;
   return (
     <ul className={`grid gap-1 ${className}`}>
       {comments.map((comment) => (
         <li
-          key={`${comment.orderNo}-${comment.createdAt.getTime()}-${comment.text}`}
+          key={commentKey(comment)}
           className="border-(color:--caos-comment) bg-(color:--caos-comment-soft) flex items-start gap-2 rounded-lg border px-2 py-1.5 font-bold text-[14px] text-slate-900"
         >
           <MessageSquareText className="text-(color:--caos-comment) mt-0.5 h-4 w-4 shrink-0" />
