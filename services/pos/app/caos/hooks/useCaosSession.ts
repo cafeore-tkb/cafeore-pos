@@ -367,13 +367,13 @@ export const useCaosSession = () => {
       setMergeConfirm(null);
     },
     cancelMerge: () => setMergeConfirm(null),
-    /** 統合の解除：2 杯のカードから cupId の 1 杯を外して未割当に戻す */
+    /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
       const card = cardOf(key);
       const cup = card?.cups.find((c) => c.id === cupId);
       if (!card || !cup) return fail(NOT_FOUND);
       return write(
-        splitWrites(card, cupId, newDripId),
+        splitWrites(card, cupId),
         `外す #${orderNoLabel(cup.orderNo)}`,
       );
     },

@@ -1,8 +1,15 @@
 import { type CaosOrderInput, type Cup, buildCaosCards } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { orderRows } from "./cards";
+import {
+  cardLooks,
+  orderLabel,
+  orderRows,
+  queueRows,
+  sharesOrder,
+} from "./cards";
 import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
+import { linkedOrderNos } from "./sheet";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -23,7 +30,12 @@ const item = {
 type CupPlace = Partial<
   Pick<
     Cup,
-    "dripper" | "dripId" | "dripperPosition" | "brewStartedAt" | "emergencies"
+    | "dripper"
+    | "dripId"
+    | "dripperPosition"
+    | "brewStartedAt"
+    | "readyAt"
+    | "emergencies"
   >
 >;
 
@@ -105,6 +117,68 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       { orderNo: 7, emergency: true },
       { orderNo: 2, emergency: false },
       { orderNo: 7, emergency: false },
+    ]);
+  });
+
+  test("同じ注文の分け方は、ほかの注文と統合したカードに入った分も数える", () => {
+    // #8：2 杯のうち 1 杯を #9 と統合した。残りの 1 杯にも「同じ注文がほかにもある」（1/2・計2杯）
+    const merged = buildCaosCards([
+      order(8, [{ dripId: "m8" }, {}]),
+      order(9, [{ dripId: "m8" }]),
+    ]);
+    const looks = cardLooks(merged, [], new Map());
+    expect(looks.get("cups:cup-8-1")?.split).toEqual({
+      index: 2,
+      total: 2,
+      cups: 2,
+    });
+    // 統合したカードそのものには付けない
+    expect(looks.get("m8")?.split).toBeUndefined();
+  });
+
+  test("管制盤 C の注文の列は、いちばん古い未割当の注文から。その上に直近のドリッパーに置いた注文を 3 件だけ残す", () => {
+    const placed = (orderId: number, dripId: string) =>
+      order(orderId, [{ dripper: 3, dripId, dripperPosition: orderId }]);
+    const rows = queueRows(
+      buildCaosCards([
+        placed(1, "p1"),
+        placed(2, "p2"),
+        placed(3, "p3"),
+        placed(4, "p4"),
+        order(5, [
+          { dripper: 4, dripId: "done5", brewStartedAt: T0, readyAt: T0 },
+        ]),
+        order(6, [{}]),
+        placed(7, "p7"),
+      ]),
+    );
+    expect(
+      rows.map(({ orderNo, entries }) => [
+        orderNo,
+        entries.map(({ card }) => card.status),
+      ]),
+    ).toEqual([
+      [2, ["queued"]],
+      [3, ["queued"]],
+      [4, ["queued"]],
+      [6, ["unassigned"]],
+      [7, ["queued"]],
+    ]);
+  });
+
+  test("注文を選ぶと、その注文の入った統合したカードも当たる（統合したカードを選ぶと中の注文のカードも）", () => {
+    const merged = cards.find((card) => card.key === "m");
+    if (!merged) throw new Error("統合したカードが無い");
+    expect(orderLabel(merged)).toBe("#003+#004");
+    expect(sharesOrder(merged, "#004")).toBe(true);
+    expect(sharesOrder(merged, "#003")).toBe(true);
+    expect(sharesOrder(merged, "#002")).toBe(false);
+    expect(sharesOrder(merged, null)).toBe(false);
+    const [own] = buildCaosCards([order(4, [{}])]);
+    expect(sharesOrder(own, "#003+#004")).toBe(true);
+    // D の表：#004 を選ぶと、統合したカードの行（#003 と #004）
+    expect([...linkedOrderNos("#004", lanes, unassigned)].sort()).toEqual([
+      3, 4,
     ]);
   });
 
