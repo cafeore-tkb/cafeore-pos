@@ -154,7 +154,8 @@ export const useCaosSession = () => {
     play: () => void,
   ) => {
     if (ok) {
-      play();
+      // 音は盤面を描いてから鳴らす（初めて鳴らすときの音の準備で、盤面が変わるのを待たせない）
+      setTimeout(play);
       undo.remember(label, undoRun);
     }
     return ok;
