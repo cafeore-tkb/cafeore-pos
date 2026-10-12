@@ -1,9 +1,5 @@
 import { useState } from "react";
-import {
-  MergeConfirmDialog,
-  NextConfirmToasts,
-  TestBoardBanner,
-} from "./components/BoardParts";
+import { TestBoardBanner, ToastConfirms } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -163,19 +159,11 @@ export default function App() {
         />
       )}
 
-      <NextConfirmToasts
-        confirms={session.nextConfirms}
-        onCancel={session.cancelNext}
-        onConfirm={session.confirmNext}
+      <ToastConfirms
+        confirms={session.confirms}
+        onCancel={session.cancelConfirm}
+        onConfirm={session.confirm}
       />
-
-      {session.mergeConfirm && (
-        <MergeConfirmDialog
-          {...session.mergeConfirm}
-          onCancel={session.cancelMerge}
-          onConfirm={session.confirmMerge}
-        />
-      )}
 
       {panel?.kind === "lane" && (
         <LanePanel

@@ -50,11 +50,11 @@ body:has(.caos-root) {
   --caos-side-panel-width: max(360px, min(440px, 44vw));
 }
 
-/* 「次へ」の確かめ（BoardParts の NextConfirmToasts）は右上に出す。右手で押す管制盤 A の右端の「次へ」の列（96px）を隠さないよう、
+/* 「次へ」・統合の確かめ（BoardParts の ToastConfirms）は右上に出す。右手で押す管制盤 A の右端の「次へ」の列（96px）を隠さないよう、
    その幅だけ右を空ける。右のパネルが開いていれば、その左に出す（パネルと重ねない） */
-.caos-root .caos-next-confirms {
+.caos-root .caos-toast-confirms {
   right: 112px;
 }
-.caos-root:has(.caos-side-panel) .caos-next-confirms {
+.caos-root:has(.caos-side-panel) .caos-toast-confirms {
   right: calc(var(--caos-side-panel-width) + 12px);
 }
