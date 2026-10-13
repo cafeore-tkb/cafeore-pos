@@ -1,7 +1,6 @@
 import { dripperLabel, useColorSettings } from "@cafeore/common";
 import {
   CheckCircledIcon,
-  Cross2Icon,
   CrossCircledIcon,
   Pencil2Icon,
 } from "@radix-ui/react-icons";
@@ -158,7 +157,7 @@ const LinesSection = ({
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => onSelect(index)}
-                className="flex min-h-12 min-w-0 flex-1 items-center gap-2 pl-2.5 text-left"
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-2 pr-3.5 pl-2.5 text-left"
               >
                 <span className="w-3.5 flex-none text-right font-mono text-stone-400 text-xs">
                   {index + 1}
@@ -196,18 +195,6 @@ const LinesSection = ({
                   {formatYen(line.menu.price)}
                 </span>
               </button>
-              {line.voided ? (
-                <span className="w-11 flex-none" />
-              ) : (
-                <button
-                  type="button"
-                  aria-label={`${index + 1}. ${line.menu.name} を削除`}
-                  onClick={() => onToggleVoid(index)}
-                  className="flex h-11 w-11 flex-none items-center justify-center self-center rounded-lg text-stone-500 hover:bg-stone-100"
-                >
-                  <Cross2Icon className="h-4 w-4" />
-                </button>
-              )}
             </div>
           );
         })}
