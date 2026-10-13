@@ -1,10 +1,11 @@
-import type {
-  MenuEntity,
-  OrderEntity,
-  PrinterSettings,
-  SquareCheckout,
-  SquarePaymentType,
-  WithId,
+import {
+  type MenuEntity,
+  type OrderEntity,
+  type PrinterSettings,
+  type SquareCheckout,
+  type SquarePaymentType,
+  type WithId,
+  shouldSplitOrder,
 } from "@cafeore/common";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,44 +20,61 @@ import {
 import { orderLabelJob } from "~/label/order-label";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import { cn } from "~/lib/utils";
+import { formatYen } from "~/lib/yen";
 import {
   applyCashierOrderActionAtom,
+  cashierDraftAtom,
   editingOrderAtom,
+  updateCashierDraftAtom,
 } from "../functional/cashierAtoms";
 import {
-  cashierAutoSquareRefundAtom,
-  cashierDescCommentAtom,
-  cashierMenuOpenAtom,
-  cashierServiceActiveAtom,
-} from "../functional/cashierUiAtoms";
+  type CashierDraft,
+  type CashierPayment,
+  addLine,
+  addReceived,
+  assignLine,
+  backToEntry,
+  canAssignSelected,
+  cashierKeyIntent,
+  clearDigits,
+  couponStatus,
+  deleteDigit,
+  emptyCashierDraft,
+  focusCoupon,
+  focusMemo,
+  goPay,
+  inputDigits,
+  selectLine,
+  setExactReceived,
+  setMemo,
+  setPayment,
+  toggleSpecial,
+  toggleVoid,
+  voidAll,
+} from "../functional/cashierDraft";
+import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
-import {
-  type SubmitFocusTarget,
-  moveSubmitFocus,
-} from "../functional/submitFocus";
-import { useInputStatus } from "../functional/useInputStatus";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
-import { usePreventNumberKeyUpDown } from "../functional/usePreventNumberKeyUpDown";
 import type { SquareDeviceSelection } from "../functional/useSquareDevice";
 import { useSquarePayment } from "../functional/useSquarePayment";
-import { useUISession } from "../functional/useUISession";
-import { AttractiveTextArea } from "../molecules/AttractiveTextArea";
-import { InputHeader } from "../molecules/InputHeader";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
-import { PastOrderSideSheet } from "../molecules/PastOrderSideSheet";
 import { PendingPrints } from "../molecules/PendingPrints";
-import { PrinterStatus } from "../molecules/PrinterStatus";
 import { ReadyTimeEstimate } from "../molecules/ReadyTimeEstimate";
-import { DiscountInput } from "../organisms/DiscountInput";
-import { ItemButtons } from "../organisms/ItemButtons";
-import { OrderItemEdit } from "../organisms/OrderItemEdit";
-import { OrderReceivedInput } from "../organisms/OrderReceivedInput";
-import { ServiceDiscountButton } from "../organisms/ServiceDiscountButton";
 import { SquareDeviceSelect } from "../organisms/SquareDeviceSelect";
-import { SquarePaymentDialog } from "../organisms/SquarePaymentDialog";
+import {
+  SquarePaymentDialog,
+  squarePaymentTypeLabel,
+} from "../organisms/SquarePaymentDialog";
 import { SquareUnlinkedNotice } from "../organisms/SquareUnlinkedNotice";
-import { SubmitSection } from "../organisms/SubmitSection";
+import { AssignDialog } from "../organisms/cashier/AssignDialog";
+import { MemoDialog } from "../organisms/cashier/MemoDialog";
+import { MenuPanel } from "../organisms/cashier/MenuPanel";
+import { OrderPanel } from "../organisms/cashier/OrderPanel";
+import { PastOrdersView } from "../organisms/cashier/PastOrdersView";
+import { PayPanel } from "../organisms/cashier/PayPanel";
+import { PrinterStatusDot } from "../organisms/cashier/PrinterStatusDot";
+import { VoidAllDialog } from "../organisms/cashier/VoidAllDialog";
 import { Label } from "../ui/label";
 
 type props = {
@@ -83,17 +101,33 @@ type props = {
 /** シールの中身が同じかを比べるためのキー（刷る印刷データそのもの） */
 const labelKey = (order: OrderEntity) => JSON.stringify(orderLabelJob(order));
 
-/** 確定欄に出す Square の決済手段（上から順） */
+/** 会計の欄に出す Square の決済手段（左から順） */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
   "CARD_PRESENT",
   "FELICA_ALL",
   "QR_CODE",
 ];
+const NO_SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [];
+
+/** 送ったことを知らせる表示を出しておく時間 */
+const NOTICE_MS = 2600;
+
+/**
+ * 入力欄・ダイアログ・シートの中で押したキー。レジのキー操作には使わない
+ */
+const isOutsideRegister = (target: EventTarget | null) =>
+  target instanceof Element &&
+  target.closest(
+    "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
+  ) !== null;
+
+type CashierDialogKind = "assign" | "memo" | "voidAll";
 
 /**
  * キャッシャー画面のコンポーネント
  *
- * データの入出力は親コンポーネントに任せる
+ * メニュー｜注文（商品・割引・備考）｜会計 の 3 列。商品を入れて「一括会計」で会計の段階に進み、
+ * 受取金額か Square の決済手段を選んで確定する。データの入出力は親コンポーネントに任せる
  */
 const CashierV2 = ({
   items,
@@ -108,20 +142,19 @@ const CashierV2 = ({
   syncOrder,
 }: props) => {
   const newOrder = useAtomValue(editingOrderAtom);
+  const draft = useAtomValue(cashierDraftAtom);
+  const setDraft = useSetAtom(cashierDraftAtom);
   const applyOrderAction = useSetAtom(applyCashierOrderActionAtom);
-  const {
-    inputStatus,
-    proceedStatus,
-    previousStatus,
-    resetStatus,
-    setInputStatus,
-  } = useInputStatus();
-  const [descComment, setDescComment] = useAtom(cashierDescCommentAtom);
-  const [menuOpen, setMenuOpen] = useAtom(cashierMenuOpenAtom);
+  const applyDraftUpdate = useSetAtom(updateCashierDraftAtom);
   const [autoSquareRefund, setAutoSquareRefund] = useAtom(
     cashierAutoSquareRefundAtom,
   );
-  const [UISession, renewUISession] = useUISession();
+  const [view, setView] = useState<"register" | "past">("register");
+  const [dialog, setDialog] = useState<CashierDialogKind | null>(null);
+  const [notice, setNotice] = useState<{ text: string; sub: string } | null>(
+    null,
+  );
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders);
   // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
@@ -131,20 +164,29 @@ const CashierV2 = ({
   // 端末がオフラインでも、切れたことに気づくまで WebSocket は open のままのことがあるので、wsStatus だけでは見ない
   const isNeedManualOrderId = !canSaveNow && wsStatus !== "connecting";
   const soundRef = useRef<HTMLAudioElement>(null);
-  const [serviceActive, setServiceActive] = useAtom(cashierServiceActiveAtom);
-  const [hasReceivedInput, setHasReceivedInput] = useState(false);
-  const [submitFocusTarget, setSubmitFocusTarget] =
-    useState<SubmitFocusTarget>("submit");
   const dispatchOrder = useCallback(
     (action: OrderAction) => {
       applyOrderAction({ action, syncOrder });
     },
     [applyOrderAction, syncOrder],
   );
+  const updateDraft = useCallback(
+    (update: (draft: CashierDraft) => CashierDraft) => {
+      applyDraftUpdate({ update, syncOrder });
+    },
+    [applyDraftUpdate, syncOrder],
+  );
 
   const playSound = useCallback(() => {
     soundRef.current?.play();
   }, []);
+
+  const showNotice = useCallback((text: string, sub: string) => {
+    clearTimeout(noticeTimerRef.current);
+    setNotice({ text, sub });
+    noticeTimerRef.current = setTimeout(() => setNotice(null), NOTICE_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
   // プリンターの IP アドレスが変わったら、つなぎ直す
   const labelPrinterIp = printerAddresses.label_printer_ip;
@@ -178,8 +220,6 @@ const CashierV2 = ({
     [printer],
   );
 
-  usePreventNumberKeyUpDown();
-
   /**
    * FIXME #412 useEffect内でstateを更新している
    * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
@@ -188,104 +228,113 @@ const CashierV2 = ({
     dispatchOrder({ type: "updateOrderId", orderId: nextOrderId });
   }, [nextOrderId, dispatchOrder]);
 
+  // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
+  const coupon = useMemo(
+    () => couponStatus(draft.coupon, orders ?? []),
+    [draft.coupon, orders],
+  );
+  const couponApplied = coupon.kind === "available";
+  const couponOrderRef = useRef<WithId<OrderEntity> | null>(null);
+  couponOrderRef.current = couponApplied ? coupon.order : null;
+  const discountKey = draft.special
+    ? "special"
+    : couponApplied
+      ? `coupon:${coupon.order.orderId}:${coupon.order.getCoffeeCups().length}`
+      : "none";
+
+  /**
+   * FIXME #412 useEffect内でstateを更新している
+   * 割引は過去の注文で決まるので、引換券番号・特殊な割引・過去の注文が変わるたびに注文へ写す
+   */
+  useEffect(() => {
+    if (discountKey === "special") {
+      dispatchOrder({ type: "applyServiceOneCupDiscount" });
+    } else if (discountKey !== "none" && couponOrderRef.current) {
+      dispatchOrder({
+        type: "applyDiscount",
+        discountOrder: couponOrderRef.current,
+      });
+    } else {
+      dispatchOrder({ type: "removeDiscount" });
+    }
+  }, [discountKey, dispatchOrder]);
+
   const resetAll = useCallback(() => {
     unregisteredLabelKeyRef.current = null;
     dispatchOrder({ type: "clear" });
-    setHasReceivedInput(false);
-    resetStatus();
-    renewUISession();
-  }, [dispatchOrder, resetStatus, renewUISession]);
+    setDraft(emptyCashierDraft());
+    setDialog(null);
+  }, [dispatchOrder, setDraft]);
 
-  const canEnterSubmit = canSubmitOrder && newOrder.menus.length > 0;
-  const billingOk = newOrder.menus.length > 0 && newOrder.getCharge() >= 0;
-
-  const proceedStatusGuarded = useCallback(() => {
-    if (inputStatus === "received" && !canEnterSubmit) {
-      return;
-    }
-    if (inputStatus === "received") {
-      setSubmitFocusTarget(billingOk ? "submit" : "exactPayment");
-    }
-    proceedStatus();
-  }, [inputStatus, canEnterSubmit, billingOk, proceedStatus]);
+  const itemCount = newOrder.menus.length;
+  const billing = newOrder.billingAmount;
 
   // Square のボタンは、このレジで使う端末が決まっているときだけ出す
   const squareDeviceId = squareEnabled
     ? (squareDevice.device?.device_id ?? null)
     : null;
-
-  // 確定欄で押せるボタン。↑↓キーはこの中で動く。
-  const availableSubmitTargets = useMemo(() => {
-    const targets: SubmitFocusTarget[] = [];
-    if (billingOk) targets.push("submit");
-    if (newOrder.menus.length > 0 && !hasReceivedInput) {
-      targets.push("exactPayment");
-    }
-    if (canSaveNow && squareDeviceId !== null && newOrder.menus.length > 0) {
-      targets.push(...SQUARE_PAYMENT_TYPES);
-    }
-    return targets;
-  }, [billingOk, newOrder, hasReceivedInput, squareDeviceId, canSaveNow]);
-
-  const moveSubmitFocusBy = useCallback(
-    (step: number) => {
-      if (inputStatus === "submit") {
-        setSubmitFocusTarget((prev) =>
-          moveSubmitFocus(prev, availableSubmitTargets, step),
-        );
-      }
-    },
-    [inputStatus, availableSubmitTargets],
+  const squarePaymentTypes =
+    squareDeviceId !== null ? SQUARE_PAYMENT_TYPES : NO_SQUARE_PAYMENT_TYPES;
+  const canStartSquare = canSaveNow && itemCount > 0 && billing >= 0;
+  // 会計の段階で ↑↓ で選べる決済手段
+  const payments = useMemo<CashierPayment[]>(
+    () => (canStartSquare ? ["cash", ...squarePaymentTypes] : ["cash"]),
+    [canStartSquare, squarePaymentTypes],
+  );
+  // 選んでいた Square が使えなくなったら（切れた・端末を外した）、現金に戻して見せる
+  const viewDraft = useMemo(
+    () =>
+      payments.includes(draft.payment) ? draft : setPayment(draft, "cash"),
+    [draft, payments],
   );
 
-  /**
-   * FIXME #412 useEffect内でstateを更新している
-   */
-  useEffect(() => {
-    if (inputStatus === "submit" && !canEnterSubmit) {
-      setInputStatus("received");
-    }
-  }, [inputStatus, canEnterSubmit, setInputStatus]);
-
-  /** 送る直前の注文を作る。createdAt を今にし、備考を足す */
+  /** 送る直前の注文を作る。createdAt を今にし、特記事項を足す */
   const prepareSubmit = useCallback(
     (base: OrderEntity) => {
       const submitOne = base.clone();
       submitOne.nowCreated();
-      submitOne.addComment("cashier", descComment);
+      submitOne.addComment("cashier", draft.memo);
       return submitOne;
     },
-    [descComment],
+    [draft.memo],
   );
 
   /** 注文を送った後、次の注文を入力できるようにする */
-  const finishSubmit = useCallback(() => {
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && !canSaveNow) {
-      setOrderIdOverride(manualOrderId + 1);
-    }
-
-    resetAll();
-    setServiceActive(false);
-    playSound();
-  }, [
-    manualOrderId,
-    canSaveNow,
-    setOrderIdOverride,
-    resetAll,
-    setServiceActive,
-    playSound,
-  ]);
-
-  const submitOrder = useCallback(
-    (exactPayment?: boolean) => {
-      if (!canSubmitOrder) {
-        return;
+  const finishSubmit = useCallback(
+    (orderId: number, sub: string) => {
+      // オフライン時（手動番号指定時）は次の番号を自動設定
+      if (manualOrderId !== null && !canSaveNow) {
+        setOrderIdOverride(manualOrderId + 1);
       }
-      if (!exactPayment && newOrder.getCharge() < 0) {
+
+      resetAll();
+      playSound();
+      showNotice(`No.${orderId} を送信しました`, sub);
+    },
+    [
+      manualOrderId,
+      canSaveNow,
+      setOrderIdOverride,
+      resetAll,
+      playSound,
+      showNotice,
+    ],
+  );
+
+  /** 現金で送る。exactPayment なら受取金額を請求額ちょうどにする（お釣り 0） */
+  const submitCash = useCallback(
+    (exactPayment: boolean) => {
+      if (!canSubmitOrder || draft.step !== "pay") {
         return;
       }
       if (newOrder.menus.length === 0) {
+        return;
+      }
+      if (
+        exactPayment
+          ? newOrder.billingAmount < 0
+          : draft.received === "" || newOrder.getCharge() < 0
+      ) {
         return;
       }
       const submitOne = prepareSubmit(newOrder);
@@ -294,17 +343,22 @@ const CashierV2 = ({
       receiptPrinter.printReceipt(submitOne, { method: "cash" });
       submitPayload(submitOne);
       markOrderIdIssued(submitOne.orderId);
-      finishSubmit();
+      finishSubmit(
+        submitOne.orderId,
+        `お釣り ${formatYen(submitOne.getCharge())}`,
+      );
     },
     [
       canSubmitOrder,
+      draft.step,
+      draft.received,
       newOrder,
       prepareSubmit,
       printOrderLabel,
       receiptPrinter,
       submitPayload,
-      finishSubmit,
       markOrderIdIssued,
+      finishSubmit,
     ],
   );
 
@@ -345,7 +399,10 @@ const CashierV2 = ({
         method: "square",
         paymentType: checkout.payment_type,
       });
-      finishSubmit();
+      const paymentLabel =
+        squarePaymentTypeLabel[checkout.payment_type as SquarePaymentType] ??
+        checkout.payment_type;
+      finishSubmit(submitOne.orderId, `Square・${paymentLabel}`);
       return true;
     },
     [
@@ -369,6 +426,7 @@ const CashierV2 = ({
     },
     onPaid: (checkout, order) => submitSquareOrder(checkout, order, false),
   });
+  const squarePaymentActive = squarePayment.active;
 
   /**
    * 「未登録の Square 決済」を、入力中の注文で登録する。
@@ -395,304 +453,331 @@ const CashierV2 = ({
 
   const startSquarePayment = useCallback(
     (paymentType: SquarePaymentType) => {
-      if (!canEnterSubmit || squareDeviceId === null) {
+      if (
+        draft.step !== "pay" ||
+        !canStartSquare ||
+        squareDeviceId === null ||
+        squarePaymentActive
+      ) {
         return;
       }
+      updateDraft((current) => setPayment(current, paymentType));
       squarePayment.start(newOrder, paymentType, squareDeviceId);
     },
-    [canEnterSubmit, squareDeviceId, squarePayment.start, newOrder],
+    [
+      draft.step,
+      canStartSquare,
+      squareDeviceId,
+      squarePaymentActive,
+      updateDraft,
+      squarePayment.start,
+      newOrder,
+    ],
   );
 
-  const keyEventHandlers = useMemo(() => {
-    return {
-      ArrowRight: proceedStatusGuarded,
-      ArrowLeft: previousStatus,
-      ArrowUp: () => moveSubmitFocusBy(-1),
-      ArrowDown: () => moveSubmitFocusBy(1),
-      Escape: () => {
-        resetAll();
-      },
-    };
-  }, [proceedStatusGuarded, previousStatus, moveSubmitFocusBy, resetAll]);
+  const openAssign = useCallback(() => {
+    if (canAssignSelected(draft)) {
+      setDialog("assign");
+    }
+  }, [draft]);
 
-  /**
-   * OK
-   */
-  const squarePaymentActive = squarePayment.active;
+  const openMemo = useCallback(() => {
+    updateDraft(focusMemo);
+    setDialog("memo");
+  }, [updateDraft]);
+
+  const openVoidAll = useCallback(() => {
+    if (newOrder.menus.length > 0) {
+      setDialog("voidAll");
+    }
+  }, [newOrder]);
+
+  // レジのキー操作。ダイアログ・決済中・過去の注文を見ている間は使わない
   useEffect(() => {
+    if (view !== "register" || dialog !== null || squarePaymentActive) {
+      return;
+    }
     const handler = (event: KeyboardEvent) => {
-      // 決済中は注文を変えられないようにする（Esc で注文が消えるのも防ぐ）
-      if (squarePaymentActive) {
+      // Shift は商品キー（* # など）に使うので見ない
+      if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
-      const key = event.key;
-      for (const [keyName, keyHandler] of Object.entries(keyEventHandlers)) {
-        if (key === keyName) {
-          keyHandler();
-        }
+      if (isOutsideRegister(event.target)) {
+        return;
+      }
+      const intent = cashierKeyIntent(viewDraft, event.key, {
+        menus: items ?? [],
+        payments,
+      });
+      if (intent.type === "ignore") {
+        return;
+      }
+      // フォーカスの残ったボタンが Enter・Space で押されないよう、既定の動きは止める
+      event.preventDefault();
+      switch (intent.type) {
+        case "update":
+          updateDraft(() => intent.draft);
+          return;
+        case "openAssign":
+          openAssign();
+          return;
+        case "openMemo":
+          openMemo();
+          return;
+        case "submitCash":
+          submitCash(false);
+          return;
+        case "startSquare":
+          startSquarePayment(intent.paymentType);
+          return;
+        case "reset":
+          resetAll();
+          return;
       }
     };
     window.addEventListener("keydown", handler);
     return () => {
       window.removeEventListener("keydown", handler);
     };
-  }, [keyEventHandlers, squarePaymentActive]);
+  }, [
+    view,
+    dialog,
+    squarePaymentActive,
+    viewDraft,
+    items,
+    payments,
+    updateDraft,
+    openAssign,
+    openMemo,
+    submitCash,
+    startSquarePayment,
+    resetAll,
+  ]);
 
-  const itemMenu = (
-    <ItemButtons
-      items={items ?? []}
-      addItem={useCallback(
-        (item) => dispatchOrder({ type: "addItem", item }),
-        [dispatchOrder],
-      )}
-    />
-  );
+  const selectedLine =
+    draft.selected === null ? null : draft.lines[draft.selected];
+  const discountNote = draft.special
+    ? "（特殊な割引）"
+    : couponApplied
+      ? `（引換券 ${draft.coupon}）`
+      : "";
 
   return (
-    <>
-      <div className="p-4">
-        <div className="flex justify-between">
-          <div className="flex items-center gap-6">
-            <OrderIdDisplay
-              orderId={newOrder.orderId}
-              isNeedManualOrderId={isNeedManualOrderId}
-              manualOrderId={manualOrderId}
-              onOrderIdOverride={setOrderIdOverride}
-            />
-            <ReadyTimeEstimate
-              orders={orders}
-              drinkCups={newOrder.getDrinkCups().length}
-            />
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="menu-button"
-                checked={menuOpen}
-                onCheckedChange={setMenuOpen}
+    <div className="relative flex h-[calc(100dvh-0.5rem)] min-h-[600px] flex-col overflow-hidden bg-white font-noto text-stone-900">
+      {view === "register" ? (
+        <>
+          <header className="flex h-14 flex-none items-center justify-between gap-4 whitespace-nowrap border-stone-200 border-b px-5">
+            <div className="flex min-w-0 items-center gap-5">
+              <OrderIdDisplay
+                orderId={newOrder.orderId}
+                isNeedManualOrderId={isNeedManualOrderId}
+                manualOrderId={manualOrderId}
+                onOrderIdOverride={setOrderIdOverride}
               />
-              <Label htmlFor="menu-button">メニュー表示</Label>
+              <ReadyTimeEstimate
+                orders={orders}
+                drinkCups={newOrder.getDrinkCups().length}
+              />
             </div>
-            {squareEnabled && (
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="auto-square-refund"
-                  checked={autoSquareRefund}
-                  onCheckedChange={setAutoSquareRefund}
-                  // 決済中に切り替えると、その決済を返金するか分かりにくいので切り替えさせない
-                  disabled={squarePaymentActive}
-                  className="data-[state=checked]:bg-red-600"
+            <div className="flex items-center gap-3 xl:gap-4">
+              <div className="flex items-center gap-3.5 text-[13px] text-stone-500">
+                <PrinterStatusDot
+                  name="ラベル"
+                  status={printer.status}
+                  certificateUrl={eposCertificateUrl(labelPrinterIp)}
                 />
-                <Label
-                  htmlFor="auto-square-refund"
-                  className={cn(autoSquareRefund && "font-bold text-red-600")}
-                >
-                  常に返金（キャンセルしない）
-                </Label>
+                <PrinterStatusDot
+                  name="レシート"
+                  status={receiptPrinter.status}
+                  certificateUrl={eposCertificateUrl(receiptPrinterIp)}
+                />
               </div>
-            )}
-          </div>
-          <div className="flex items-center space-x-2">
-            {squareEnabled && (
-              <SquareUnlinkedNotice
-                devices={squareDevice.devices}
-                currentBillingAmount={newOrder.billingAmount}
-                canSubmit={canEnterSubmit && !squarePaymentActive}
-                onSubmitWithCheckout={submitUnlinkedSquareOrder}
-              />
-            )}
-            {squareEnabled && (
-              <SquareDeviceSelect
-                devices={squareDevice.devices}
-                device={squareDevice.device}
-                missing={squareDevice.missing}
-                onSelect={squareDevice.select}
-                disabled={squarePaymentActive}
-              />
-            )}
-            <div className="flex flex-col">
-              <PrinterStatus
-                name="ラベル"
-                status={printer.status}
-                certificateUrl={eposCertificateUrl(labelPrinterIp)}
-              />
-              <PrinterStatus
-                name="レシート"
-                status={receiptPrinter.status}
-                certificateUrl={eposCertificateUrl(receiptPrinterIp)}
-              />
               <PendingPrints
                 count={printer.pendingCount}
                 onRetry={printer.retry}
               />
-            </div>
-            <PastOrderSideSheet
-              orders={orders}
-              author="cashier"
-              withGoods
-              squareRefundable={squareEnabled}
-              onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
-            />
-          </div>
-        </div>
-        <div className="flex gap-5 px-2">
-          <div>{menuOpen && itemMenu}</div>
-          <div className="flex-1">
-            <InputHeader
-              title="商品"
-              focus={inputStatus === "items"}
-              number={1}
-            />
-            <OrderItemEdit
-              order={newOrder}
-              onAddItem={useCallback(
-                (item) => dispatchOrder({ type: "addItem", item }),
-                [dispatchOrder],
-              )}
-              onRemoveItem={useCallback(
-                (idx) => dispatchOrder({ type: "removeItem", idx }),
-                [dispatchOrder],
-              )}
-              mutateItem={useCallback(
-                (idx, action) =>
-                  dispatchOrder({ type: "mutateItem", idx, action }),
-                [dispatchOrder],
-              )}
-              focus={inputStatus === "items"}
-              discountOrder={useMemo(
-                () => newOrder.discountOrderCups !== 0,
-                [newOrder],
-              )}
-              onClick={useCallback(() => {
-                setInputStatus("items");
-              }, [setInputStatus])}
-            />
-          </div>
-          <div className={cn("flex-1", menuOpen && "hidden")}>
-            <InputHeader
-              title="割引"
-              focus={inputStatus === "discount"}
-              number={2}
-            />
-            <div className="pt-5">
-              <DiscountInput
-                key={`DiscountInput-${UISession.key}`}
-                focus={inputStatus === "discount"}
-                disabled={serviceActive}
-                orders={orders}
-                onDiscountOrderFind={useCallback(
-                  (discountOrder) =>
-                    dispatchOrder({ type: "applyDiscount", discountOrder }),
-                  [dispatchOrder],
-                )}
-                onDiscountOrderRemoved={useCallback(
-                  () => dispatchOrder({ type: "removeDiscount" }),
-                  [dispatchOrder],
-                )}
-                onClick={useCallback(() => {
-                  setInputStatus("discount");
-                }, [setInputStatus])}
-              />
-            </div>
-            <div className="">
-              <ServiceDiscountButton
-                active={serviceActive}
-                disabled={newOrder.discountOrderId !== null}
-                onServiceDiscountOrder={useCallback(() => {
-                  dispatchOrder({ type: "applyServiceOneCupDiscount" });
-                  setServiceActive(true);
-                }, [dispatchOrder, setServiceActive])}
-                onDiscountOrderRemoved={useCallback(() => {
-                  if (serviceActive) {
-                    dispatchOrder({ type: "removeDiscount" });
-                    setServiceActive(false);
+              {squareEnabled && (
+                <SquareUnlinkedNotice
+                  devices={squareDevice.devices}
+                  currentBillingAmount={billing}
+                  canSubmit={
+                    canSubmitOrder && itemCount > 0 && !squarePaymentActive
                   }
-                }, [dispatchOrder, serviceActive, setServiceActive])}
-              />
+                  onSubmitWithCheckout={submitUnlinkedSquareOrder}
+                />
+              )}
+              {squareEnabled && (
+                <SquareDeviceSelect
+                  devices={squareDevice.devices}
+                  device={squareDevice.device}
+                  missing={squareDevice.missing}
+                  onSelect={squareDevice.select}
+                  disabled={squarePaymentActive}
+                />
+              )}
+              {squareEnabled && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="auto-square-refund"
+                    checked={autoSquareRefund}
+                    onCheckedChange={setAutoSquareRefund}
+                    // 決済中に切り替えると、その決済を返金するか分かりにくいので切り替えさせない
+                    disabled={squarePaymentActive}
+                    className="data-[state=checked]:bg-red-600"
+                  />
+                  <Label
+                    htmlFor="auto-square-refund"
+                    className={cn(
+                      "text-[13px] text-stone-500",
+                      autoSquareRefund && "font-bold text-red-600",
+                    )}
+                  >
+                    常に返金
+                    <span className="hidden xl:inline">
+                      （キャンセルしない）
+                    </span>
+                  </Label>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setView("past")}
+                className="h-11 rounded-lg border border-stone-200 bg-white px-4 font-medium text-slate-700 text-sm hover:bg-stone-50"
+              >
+                過去の注文
+              </button>
             </div>
-          </div>
-          <div className={cn("flex-1", menuOpen && "hidden")}>
-            <InputHeader
-              title="備考"
-              focus={inputStatus === "description"}
-              number={3}
+          </header>
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px]">
+            <MenuPanel
+              menus={items ?? []}
+              disabled={draft.step === "pay"}
+              onAdd={(menu) => updateDraft((current) => addLine(current, menu))}
             />
-            <div className="pt-5">
-              <AttractiveTextArea
-                key={`Description-${UISession.key}`}
-                onTextSet={setDescComment}
-                focus={inputStatus === "description"}
-                onClick={useCallback(() => {
-                  setInputStatus("description");
-                }, [setInputStatus])}
-              />
-            </div>
-          </div>
-          <div className="flex-1">
-            <InputHeader
-              title="会計"
-              focus={inputStatus === "received"}
-              number={4}
+            <OrderPanel
+              draft={viewDraft}
+              couponStatus={coupon}
+              discount={newOrder.discount}
+              coffeeCups={newOrder.getCoffeeCups().length}
+              needsSplit={shouldSplitOrder(newOrder.menus)}
+              onSelect={(index) =>
+                updateDraft((current) => selectLine(current, index))
+              }
+              onToggleVoid={(index) =>
+                updateDraft((current) => toggleVoid(current, index))
+              }
+              onOpenAssign={openAssign}
+              onVoidAll={openVoidAll}
+              onFocusCoupon={() => updateDraft(focusCoupon)}
+              onToggleSpecial={() =>
+                updateDraft((current) => toggleSpecial(current, couponApplied))
+              }
+              onOpenMemo={openMemo}
+              onGoPay={() => updateDraft(goPay)}
+              onBackToEntry={() => updateDraft(backToEntry)}
             />
-            <div className="pt-5">
-              <OrderReceivedInput
-                key={`Received-${UISession.key}`}
-                onTextSet={useCallback(
-                  (received) => {
-                    setHasReceivedInput(received !== "");
-                    dispatchOrder({ type: "setReceived", received });
-                  },
-                  [dispatchOrder],
-                )}
-                focus={inputStatus === "received"}
-                order={newOrder}
-                onClick={useCallback(() => {
-                  setInputStatus("received");
-                }, [setInputStatus])}
-              />
-            </div>
-          </div>
-          <div className={cn("flex-1", menuOpen && "hidden")}>
-            <InputHeader
-              title="確定"
-              focus={inputStatus === "submit"}
-              number={5}
+            <PayPanel
+              draft={viewDraft}
+              itemCount={itemCount}
+              total={newOrder.total}
+              discount={newOrder.discount}
+              discountNote={discountNote}
+              billing={billing}
+              squarePaymentTypes={squarePaymentTypes}
+              canStartSquare={canStartSquare}
+              canSubmit={canSubmitOrder}
+              onCash={() =>
+                updateDraft((current) => setPayment(current, "cash"))
+              }
+              onSquare={startSquarePayment}
+              onDigits={(digits) =>
+                updateDraft((current) => inputDigits(current, digits))
+              }
+              onDeleteDigit={() => updateDraft(deleteDigit)}
+              onClearDigits={() => updateDraft(clearDigits)}
+              onAddReceived={(amount) =>
+                updateDraft((current) => addReceived(current, amount))
+              }
+              onExactReceived={() =>
+                updateDraft((current) => setExactReceived(current, billing))
+              }
+              onSubmitExact={() => submitCash(true)}
+              onSubmitCash={() => submitCash(false)}
             />
-            <fieldset
-              disabled={!canEnterSubmit}
-              className="min-w-0 border-0 p-0"
-            >
-              <SubmitSection
-                submitOrder={submitOrder}
-                onExactPayment={() => submitOrder(true)}
-                order={newOrder}
-                focus={inputStatus === "submit" && !squarePaymentActive}
-                focusTarget={submitFocusTarget}
-                availableTargets={availableSubmitTargets}
-                squarePaymentTypes={
-                  canSaveNow && squareDeviceId !== null
-                    ? SQUARE_PAYMENT_TYPES
-                    : []
-                }
-                onSquarePayment={startSquarePayment}
-              />
-            </fieldset>
           </div>
-        </div>
-        <SquarePaymentDialog
-          state={squarePayment.state}
-          canSubmitOrder={canSaveNow}
-          onCancel={squarePayment.cancel}
-          onRetry={squarePayment.retry}
-          onCancelConflicting={squarePayment.cancelConflicting}
-          onSubmitPaid={squarePayment.submitPaid}
-          onClose={squarePayment.close}
+        </>
+      ) : (
+        <PastOrdersView
+          orders={orders}
+          squareRefundable={squareEnabled}
+          onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
+          onBack={() => setView("register")}
         />
-        <audio src={bellTwice} ref={soundRef}>
-          <track kind="captions" />
-        </audio>
-      </div>
-    </>
+      )}
+      <AssignDialog
+        target={
+          dialog === "assign" && selectedLine && draft.selected !== null
+            ? `${draft.selected + 1}. ${selectedLine.menu.name}`
+            : null
+        }
+        initial={{
+          dripper: selectedLine?.menu.dripper ?? null,
+          assignee: selectedLine?.menu.assignee ?? null,
+        }}
+        onCommit={(dripper, assignee) => {
+          updateDraft((current) =>
+            current.selected === null
+              ? current
+              : assignLine(current, current.selected, dripper, assignee),
+          );
+          setDialog(null);
+        }}
+        onClose={() => setDialog(null)}
+      />
+      <MemoDialog
+        open={dialog === "memo"}
+        orderId={newOrder.orderId}
+        initial={draft.memo}
+        onCommit={(memo) => {
+          updateDraft((current) => setMemo(current, memo));
+          setDialog(null);
+        }}
+        onClose={() => setDialog(null)}
+      />
+      <VoidAllDialog
+        open={dialog === "voidAll"}
+        orderId={newOrder.orderId}
+        summary={`商品 ${itemCount}点（${formatYen(newOrder.total)}）`}
+        onConfirm={() => {
+          updateDraft(voidAll);
+          setDialog(null);
+        }}
+        onClose={() => setDialog(null)}
+      />
+      <SquarePaymentDialog
+        state={squarePayment.state}
+        deviceName={
+          squareDevice.devices.find(
+            (device) => device.device_id === squarePayment.state?.deviceId,
+          )?.name
+        }
+        canSubmitOrder={canSaveNow}
+        onCancel={squarePayment.cancel}
+        onRetry={squarePayment.retry}
+        onCancelConflicting={squarePayment.cancelConflicting}
+        onSubmitPaid={squarePayment.submitPaid}
+        onClose={squarePayment.close}
+      />
+      {notice && (
+        <output className="-translate-x-1/2 pointer-events-none absolute top-18 left-1/2 z-40 flex items-center gap-3.5 whitespace-nowrap rounded-xl bg-stone-900 px-5 py-3 text-white shadow-[0_12px_32px_-8px_rgba(0,0,0,.35)]">
+          <span className="font-bold text-base">{notice.text}</span>
+          <span className="text-sm text-stone-300">{notice.sub}</span>
+        </output>
+      )}
+      <audio src={bellTwice} ref={soundRef}>
+        <track kind="captions" />
+      </audio>
+    </div>
   );
 };
 

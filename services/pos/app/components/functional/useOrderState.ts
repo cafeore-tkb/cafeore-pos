@@ -14,6 +14,7 @@ type Clear = Action<"clear", { effectFn?: () => void }>;
 type UpdateOrderId = Action<"updateOrderId", { orderId: number }>;
 type AddItem = Action<"addItem", { item: WithId<MenuEntity> }>;
 type RemoveItem = Action<"removeItem", { idx: number }>;
+type SetMenus = Action<"setMenus", { menus: WithId<MenuEntity>[] }>;
 type MutateItem = Action<
   "mutateItem",
   { idx: number; action: (prev: WithId<MenuEntity>) => WithId<MenuEntity> }
@@ -34,6 +35,7 @@ export type OrderAction =
   | UpdateOrderId
   | AddItem
   | RemoveItem
+  | SetMenus
   | MutateItem
   | ApplyDiscount
   | RemoveDiscount
@@ -68,6 +70,12 @@ const addItem: OrderReducer<AddItem> = (state, action) => {
 const removeItem: OrderReducer<RemoveItem> = (state, action) => {
   const updated = state.clone();
   updated.menus = updated.menus.filter((_, idx) => idx !== action.idx);
+  return updated;
+};
+
+const setMenus: OrderReducer<SetMenus> = (state, action) => {
+  const updated = state.clone();
+  updated.menus = action.menus;
   return updated;
 };
 
@@ -118,6 +126,8 @@ const reducer: OrderReducer<OrderAction> = (state, action): OrderEntity => {
       return addItem(state, action);
     case "removeItem":
       return removeItem(state, action);
+    case "setMenus":
+      return setMenus(state, action);
     case "mutateItem":
       return mutateItem(state, action);
     case "setReceived":
