@@ -1,18 +1,28 @@
 import type { CaosCard } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { canTapMerge, cardOrderNos, orderLabel } from "../logic/cards";
+import {
+  canTapMerge,
+  cardOrderNos,
+  orderLabel,
+  quickMergePartner,
+} from "../logic/cards";
+import { type Lane, laneActive } from "../logic/lanes";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 統合できる未割当のカードと表の抽出中のカードには「統合する」が出て、押すと統合する（待機のカードへは押して統合しない）。
+// 統合する相手が決まる（logic/cards の quickMergePartner。未割当と表の抽出中のカードから）ときは、選んだカードをもう一度押すと統合する（決まらなければ選択を外す）。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。
 export const useSheetSelection = ({
   unassigned,
+  lanes,
   selectedOrderId,
   onSelectOrder,
   onAssign,
   onMerge,
 }: {
   unassigned: CaosCard[];
+  /** ドリッパーの列（表の抽出中のカードも、もう一度押して統合する相手の候補） */
+  lanes: readonly Lane[];
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
   onAssign: (card: CaosCard, bayId: number) => void;
@@ -44,6 +54,18 @@ export const useSheetSelection = ({
     setSelectedUid(null);
     onSelectOrder(null);
   };
+  // 押したカードに統合する。未割当どうしなら、統合したカードを選んで見せる
+  const mergeWith = (card: CaosCard) => {
+    if (!selected || !canMergeWith(card)) return;
+    onMerge(selected.key, card.key);
+    if (card.status === "unassigned")
+      setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
+    clear();
+  };
+  // 選んだカードをもう一度押したときに統合する相手
+  const partner = selected
+    ? quickMergePartner(selected, [...unassigned, ...lanes.flatMap(laneActive)])
+    : undefined;
 
   // The combined card is listed under the earlier order, often far from the card just tapped,
   // so select it and bring it into view; it can then be placed right away.
@@ -69,21 +91,16 @@ export const useSheetSelection = ({
     selected,
     select,
     clear,
-    /** 選んだカードなら外し、ほかのカードなら選ぶ */
+    partner,
+    /** 選んだカードなら、統合する相手が決まっていれば統合し、決まらなければ外す。ほかのカードなら選ぶ */
     toggle: (card: CaosCard) => {
-      if (card.key === selectedUid) clear();
-      else select(card);
+      if (card.key !== selectedUid) select(card);
+      else if (partner) mergeWith(partner);
+      else clear();
     },
     /** 選んだカードと押して統合できる（未割当と抽出中のカード） */
     canMergeWith,
-    /** 押したカードに統合する。未割当どうしなら、統合したカードを選んで見せる */
-    mergeWith: (card: CaosCard) => {
-      if (!selected || !canMergeWith(card)) return;
-      onMerge(selected.key, card.key);
-      if (card.status === "unassigned")
-        setMergingNos([...cardOrderNos(selected), ...cardOrderNos(card)]);
-      clear();
-    },
+    mergeWith,
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */
     assignTo: (bayId: number) => {
       if (!selected) return;

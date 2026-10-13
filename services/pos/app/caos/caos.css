@@ -1,8 +1,14 @@
 /* CaOS（/master-sheet）だけに効くスタイル。POS のほかの画面に漏らさないよう .caos-root の中に閉じる。 */
 
-/* iPad でのバウンスを止める。CaOS を開いているときだけ */
-body:has(.caos-root) {
+/* iPad で画面全体を動かさない。CaOS を開いているときだけ（hooks/useFixedViewport も）。
+   ページはスクロールさせず（盤面は画面の高さに収める）、はね返りを止め、ピンチ・ダブルタップで拡大しない（指で動かせるのは枠のスクロールだけ）。
+   枠の中のスクロールとスクロールバー・カードのドラッグ（touch-action: none）・入力欄はそのまま */
+html:has(.caos-root),
+html:has(.caos-root) body {
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 @layer base {
@@ -43,11 +49,18 @@ body:has(.caos-root) {
   --caos-elapsed-2: oklch(70.2% 0.183 293.541);
   --caos-elapsed-3: oklch(54.1% 0.281 293.009);
   --caos-elapsed-4: oklch(38% 0.189 293.745);
+  /* 注文のコメント（カードの左上の印・コメントの中身）。ほかの意味の色と分けた青緑 */
+  --caos-comment: oklch(52% 0.105 223.128);
+  --caos-comment-soft: oklch(95.6% 0.045 203.388);
   /* 指で掴むスクロールバー（components/ScrollArea）。溝と、つまみ（掴んでいる間は濃く） */
   --caos-scrollbar-track: oklch(96.8% 0.007 247.896);
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);
   --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
+  /* 統合（「統合する」と、開いたカードの統合する相手の札） */
+  --caos-merge: oklch(48.8% 0.243 264.376);
+  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線 */
+  --caos-card-stack-line: oklch(55.4% 0.046 257.417);
 }
 
 /* 右のパネル（SidePanels の SidePanel）の幅 */

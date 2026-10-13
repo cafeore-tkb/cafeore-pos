@@ -1,7 +1,7 @@
 import type { CaosCard, CaosPlace } from "@cafeore/common";
 import { useState } from "react";
 import type { ControlViewProps } from "../components/ControlWorkspace";
-import { canTapMerge, orderLabel } from "../logic/cards";
+import { canTapMerge, orderLabel, quickMergePartner } from "../logic/cards";
 import { laneActive } from "../logic/lanes";
 import { type DropTarget, dropTargetAt, useCardDrag } from "./useCardDrag";
 import { useOutsidePress } from "./useOutsidePress";
@@ -12,6 +12,8 @@ import { useOutsidePress } from "./useOutsidePress";
  * （待機のカードの上に落とすと、そのカードの前へ。placed のうち統合できる待機・抽出中のカードの上なら統合）。
  * 1 杯のカードを開くと、統合できる 1 杯のカード（未割当と、ドリッパーの列の抽出中のカード。canTapMerge）を押して統合できる
  * （onMergeOrders を渡したときだけ。列のカードには data-merge-tap を付け、押しても開いたカードを閉じない）。
+ * 相手が決まる（logic/cards の quickMergePartner。未割当と placed の抽出中のカードから）ときは、開いたカードをもう一度押しても統合する
+ * （決まらなければ開いたまま）。
  * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
  * 入れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
  */
@@ -68,12 +70,18 @@ export const useUnassignedPick = ({
 
   const canMergeWith = (card: CaosCard) =>
     Boolean(onMergeOrders && openCard && canTapMerge(openCard, card));
+  // 開いたカードをもう一度押したときに統合する相手
+  const partner =
+    onMergeOrders && openCard
+      ? quickMergePartner(openCard, [...orders, ...placed])
+      : undefined;
 
   return {
     drag,
     assign,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
+    partner,
     /** 統合したカードから 1 杯を外して閉じる（onSplitCup を渡したときだけ） */
     split:
       onSplitCup &&
@@ -88,10 +96,11 @@ export const useUnassignedPick = ({
         onCancelEmergency(card);
         setOpenKey(null);
       }),
-    /** カードを押した：統合できる相手なら統合し、ほかは開いてその注文を選ぶ */
+    /** カードを押した：統合できる相手（開いたカードなら決まった相手）と統合し、ほかは開いてその注文を選ぶ */
     tap: (card: CaosCard) => {
-      if (openCard && canMergeWith(card)) {
-        onMergeOrders?.(openCard.key, card.key);
+      const into = card.key === openKey ? partner : card;
+      if (openCard && into && canMergeWith(into)) {
+        onMergeOrders?.(openCard.key, into.key);
         setOpenKey(null);
         return;
       }

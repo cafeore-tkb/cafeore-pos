@@ -13,6 +13,7 @@ import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
 import { usePendingStatus } from "~/lib/usePendingStatus";
+import { useReadyAdvanceUndo } from "~/lib/useReadyAdvanceUndo";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
@@ -73,11 +74,16 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
   // 注文単位の呼び出し・提供も、押してから配信が届くまでの間は押した後の状態を表示する
   const orderPending = usePendingStatus<boolean>(order);
   const isReady = orderPending.statusOf("ready", order.readyAt !== null);
+  const advance = useReadyAdvanceUndo(order.id);
   const changeReady = () => {
     if (orderPending.isBusy("ready")) return;
-    orderPending.run("ready", !isReady, () =>
-      orderRepository.ready(order.id).then(() => undefined),
-    );
+    orderPending.run("ready", !isReady, async () => {
+      if (isReady) await advance.undo();
+      // 呼び出す前の盤面を覚える（await より前なので、押したときの注文で見る）
+      else advance.remember();
+      await orderRepository.ready(order.id);
+      return undefined;
+    });
   };
   const changeServed = () =>
     orderPending.run("served", order.servedAt === null, () =>

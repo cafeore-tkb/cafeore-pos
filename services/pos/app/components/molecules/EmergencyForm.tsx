@@ -86,6 +86,9 @@ export const EmergencyForm = <O extends CaosOrderInput>({
               onClick={() => draft.toggle(cup.cupId)}
               className="flex min-h-12 items-center gap-3 rounded-lg border-2 border-slate-300 bg-white px-4 text-left font-bold aria-pressed:border-red-600 aria-pressed:bg-red-50"
             >
+              {draft.manyOrders && (
+                <span className="font-mono">No.{cup.order.orderId}</span>
+              )}
               <span className="text-xl">{cup.abbr}</span>
               <span>{cup.name}</span>
               {assignmentDisplay(cup) && (

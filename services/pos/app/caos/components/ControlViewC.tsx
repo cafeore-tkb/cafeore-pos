@@ -21,6 +21,7 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
+// ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
 // 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
 // 右の未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有）。
 // 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
@@ -66,7 +67,7 @@ const ControlViewCBoard: React.FC<
             <article
               key={bay.id}
               data-bay-target={bay.id}
-              className={`relative isolate flex min-h-0 items-stretch gap-2 p-1.5 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
+              className={`relative isolate flex min-h-0 items-stretch gap-2 p-2 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
             >
               <DripperIndicator
                 bayId={bay.id}
@@ -93,7 +94,7 @@ const ControlViewCBoard: React.FC<
                     <OrderCard
                       card={current}
                       look={looks.get(current.key)}
-                      size="sm"
+                      size="lane"
                       selected={sharesOrder(current, selectedOrderId)}
                       data-merge-target={current.key}
                       data-queued-ticket={current.key}
@@ -126,14 +127,14 @@ const ControlViewCBoard: React.FC<
                     className="text-[15px]"
                   />
 
-                  {/* 選択中の黄の輪（外へ 6px）が切れないよう、外へ広げて内に同じだけ空ける */}
-                  <div className="-m-1.5 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {/* 選択中の黄の輪（外へ 6px）と統合したカードの重ねた枠（8px）が切れないよう、外へ広げて内に同じだけ空ける（行の余白も 8px） */}
+                  <div className="-m-2 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {lane.waiting.map((ticket) => (
                       <OrderCard
                         key={ticket.key}
                         card={ticket}
                         look={looks.get(ticket.key)}
-                        size="sm"
+                        size="lane"
                         selected={sharesOrder(ticket, selectedOrderId)}
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}

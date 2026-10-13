@@ -28,7 +28,10 @@ import { ScrollArea } from "./ScrollArea";
 // どちらも注文番号の順に注文ごとにまとめ、ほかの注文と統合したカードはもとの注文の場所に跡（MergedTrace）を残す。
 // カードはなぞると掴むので、スクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
-/** 未割当の 1 枚。開くと上下に 1〜6 のボタン（入れ直しのカードは「取り消す」も）、統合できる相手には「統合する」を重ねる */
+/**
+ * 未割当の 1 枚。開くと上下に 1〜6 のボタン（入れ直しのカードは「取り消す」も）、統合できる相手には「統合する」を重ねる。
+ * もう一度押すと統合する相手が決まっていれば、開いたカードにその番号を出す
+ */
 const UnassignedCard: React.FC<{
   card: CaosCard;
   looks: CardLooks;
@@ -54,6 +57,7 @@ const UnassignedCard: React.FC<{
       look={looks.get(card.key)}
       size={size}
       selected={selected}
+      mergeInto={isOpen ? pick.partner : undefined}
       data-unassigned-uid={card.key}
       onPointerDown={
         readOnly || isMergeCandidate

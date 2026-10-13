@@ -10,7 +10,12 @@ import {
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
-import { cardName, orderLabel, sharesOrder } from "../logic/cards";
+import {
+  cardName,
+  orderLabel,
+  selectedComments,
+  sharesOrder,
+} from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -24,6 +29,7 @@ import {
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
+import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
@@ -90,6 +96,8 @@ export const DispatchBoard: React.FC<
     followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
     originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
     pagePx: 300 * PIXELS_PER_SEC,
+    // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
+    cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
@@ -127,6 +135,14 @@ export const DispatchBoard: React.FC<
           `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
+  // 選んだ注文のコメント（未割当のカードも見る）
+  const comments = selectedOrderId
+    ? selectedComments(
+        [...lanes.flatMap(laneCards), ...unassignedOrders],
+        looks,
+        selectedOrderId,
+      )
+    : [];
 
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -152,6 +168,7 @@ export const DispatchBoard: React.FC<
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
             </span>
+            <CommentLine comments={comments} />
           </div>
 
           <button
@@ -319,7 +336,8 @@ export const DispatchBoard: React.FC<
                                 onCloseTicket();
                               }
                             }}
-                            className={`h-full hover:shadow-md ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
+                            className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isMergeTap && <MergeOverlay />}
