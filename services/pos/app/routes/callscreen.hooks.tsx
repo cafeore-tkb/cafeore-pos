@@ -163,6 +163,8 @@ const VOICE_TIMEOUT_MS = 20_000;
 const VOICE_LOAD_TIMEOUT_MS = 8_000;
 /** 先に作らせておくとき、ほかの画面と同時に作らないようにずらす幅 */
 const WARM_JITTER_MS = 5_000;
+/** 先に作らせる 1 件を待つ上限。返事が来ないまま止まると、後ろの先読みが全部止まるので打ち切る */
+const WARM_TIMEOUT_MS = 15_000;
 
 // 読み上げの音声は Worker（worker/call-voice.ts）が ElevenLabs で作り、片ごとに R2 に溜めたものをつないで返す。
 // 文は Worker が決めるので、ここでは番号・「順番が前後するか」・ドリッパーの番号だけを渡す。
@@ -279,9 +281,13 @@ export function useWarmCallVoices(
       const jitter = initial ? 0 : Math.random() * WARM_JITTER_MS;
       chainRef.current = chainRef.current
         .then(() => new Promise((resolve) => setTimeout(resolve, jitter)))
-        // 本文まで読み切って、ブラウザのキャッシュに入れる
-        .then(() => fetch(callVoicePath(no, false)))
-        .then((res) => res.arrayBuffer())
+        // 本文まで読み切って、ブラウザのキャッシュに入れる（打ち切りは本文を読むところまで効く）
+        .then(async () => {
+          const res = await fetch(callVoicePath(no, false), {
+            signal: AbortSignal.timeout(WARM_TIMEOUT_MS),
+          });
+          await res.arrayBuffer();
+        })
         .then(
           () => undefined,
           () => undefined,
