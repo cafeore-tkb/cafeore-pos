@@ -69,7 +69,7 @@ html:has(.caos-root) body {
   --caos-card-stack-line: oklch(55.4% 0.046 257.417);
 }
 
-/* タイムラインに新しく入ったカード・行（hooks/useTimelineArrivals）を、数秒（4 秒。FLASH_MS と同じ）だけ水色の輪で点滅させる */
+/* タイムラインに新しく入ったカード・行（hooks/useViewBoard）を、数秒（4 秒。FLASH_MS と同じ）だけ水色の輪で点滅させる */
 @keyframes caos-arrival {
   50% {
     box-shadow: 0 0 0 5px var(--caos-arrival);

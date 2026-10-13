@@ -57,11 +57,9 @@ export const ViewHeader: React.FC<{
 /** 通知音（タイムラインに新しく入ったカードの知らせ）のあり・なし。音ありでまだ出せない（iPad で画面に触れる前）ときはそう出す */
 const SoundToggle: React.FC<{ sound: ViewSound }> = ({ sound }) => {
   const Icon = sound.on ? Volume2 : VolumeX;
-  const label = !sound.on
-    ? "音なし"
-    : sound.ready
-      ? "音あり"
-      : "音あり（触れると鳴る）";
+  const label = sound.on
+    ? `音あり${sound.ready ? "" : "（触れると鳴る）"}`
+    : "音なし";
   return (
     <button
       type="button"

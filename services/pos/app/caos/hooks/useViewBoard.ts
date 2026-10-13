@@ -64,11 +64,11 @@ const useViewSound = () => {
 export type ViewSound = ReturnType<typeof useViewSound>;
 
 // 新しく入ったカードを知らせる。入ったら通知音を鳴らし（鳴らすかは useViewSound が決める soundManager.enabled）、
-// そのカードの key を数秒だけ返す（点滅させる）。開いたときに盤面にあったカードは知らせない（ready は注文が届いたか。届くまでは比べない）。
+// そのカードの key を数秒だけ返す（点滅させる）。開いたときに盤面にあったカードは知らせない（loaded は注文が届いたか。届くまでは比べない）。
 // 点滅している間に同じカードがまた入ったとき（同じ端末の操作の画面のタブが送った操作を、こちらの注文が届く前に外して戻ったときなど）は知らせ直さない。
 const useArrivals = (
   cards: readonly CaosCard[],
-  ready: boolean,
+  loaded: boolean,
   nowMs: number,
 ) => {
   const seen = useRef<ReadonlyMap<string, CaosCardStatus> | null>(null);
@@ -79,7 +79,7 @@ const useArrivals = (
   const latestFlash = useRef(flashUntil);
   latestFlash.current = flashUntil;
   useEffect(() => {
-    if (!ready) return;
+    if (!loaded) return;
     const previous = seen.current;
     seen.current = new Map(cards.map((card) => [card.key, card.status]));
     if (!previous) return;
@@ -95,7 +95,7 @@ const useArrivals = (
         ...arrived.map((key) => [key, now + FLASH_MS] as const),
       ]),
     );
-  }, [cards, ready]);
+  }, [cards, loaded]);
 
   return useMemo(
     () =>

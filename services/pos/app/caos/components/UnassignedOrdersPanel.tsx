@@ -222,6 +222,7 @@ export const UnassignedStrip: React.FC<
 }) => {
   const { rows: columns, places } = queueOf(orders, lanes);
   const folded = fold?.folded ?? false;
+  const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
       className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
@@ -245,11 +246,7 @@ export const UnassignedStrip: React.FC<
             onClick={fold.toggle}
             className="flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-bold text-[13px] text-slate-700 hover:bg-slate-100"
           >
-            {folded ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
+            <Chevron className="h-4 w-4" />
             {folded ? "ひらく" : "たたむ"}
           </button>
         )}
