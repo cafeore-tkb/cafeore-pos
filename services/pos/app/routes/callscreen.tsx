@@ -4,10 +4,12 @@ import {
   planDripAnnouncement,
   splitCallScreenOrders,
 } from "@cafeore/common";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { MetaFunction } from "react-router";
 import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
+import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
+import { useCmPlaylist } from "~/lib/callscreen-cm";
 import {
   BOARD_W,
   BrewingIndicator,
@@ -29,7 +31,6 @@ import {
   dripVoicePath,
   useAnnouncer,
   useCallVisibility,
-  useCmPlayback,
   useFlash,
   useOnAdded,
   useStageScale,
@@ -42,10 +43,12 @@ export const meta: MetaFunction = () => {
 };
 
 /**
- * 待機中に流す CM。services/pos/public/ にこの名前で置く（16:9。H.264 の mp4 ならどのブラウザでも流せる）。
- * 置いていない・読めない間は、代わりに呼び出し画面と同じ地（ロゴ入り）を出す
+ * 待機中に流す CM。マスタ設定の「呼び出し画面の CM」でこの端末のファイルを選んでいれば、それを順番に流す（lib/callscreen-cm）。
+ * 選んでいなければ services/pos/public/ にこの名前で置いた動画を流す（16:9。H.264 の mp4 ならどのブラウザでも流せる）。
+ * どれも流せない間は、代わりに呼び出し画面と同じ地（ロゴ入り）を出す
  */
 const CM_SRC = "/callscreen-cm.mp4";
+const DEFAULT_CM = [{ id: "default", kind: "video", url: CM_SRC }] as const;
 /** 呼び出しが無くなってから CM に戻るまでの時間 */
 const RETURN_TO_CM_MS = 30_000;
 /** プレートの文字の上限。段が減っても大きくなりすぎないようにする */
@@ -55,10 +58,9 @@ const DRIP_FONT_CAP = 220;
 export default function FieldsOfCallScreen() {
   const { orders, isOrdersLoaded } = useOrdersWSContext();
 
-  const videoRef = useRef<HTMLVideoElement>(null);
   const soundRef = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
-  const [cmUnavailable, setCmUnavailable] = useState(false);
+  const cm = useCmPlaylist();
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
   // ドリップ中は CaOS のカードの状態で決める（@cafeore/common の splitCallScreenOrders）
@@ -145,7 +147,6 @@ export default function FieldsOfCallScreen() {
 
   const showCall = useCallVisibility(calling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);
-  const resumeCm = useCmPlayback(videoRef, showCall);
 
   const hasDrip = dripping.length > 0;
   const hasPrep = preparing.length > 0;
@@ -216,31 +217,12 @@ export default function FieldsOfCallScreen() {
             transition: "opacity 500ms cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
-          {cmUnavailable ? (
-            <CallScreenBackdrop logo={logoSVG} />
-          ) : (
-            <video
-              ref={videoRef}
-              src={CM_SRC}
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="auto"
-              onEnded={resumeCm}
-              onError={() => setCmUnavailable(true)}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
-            >
-              <track kind="captions" />
-            </video>
-          )}
+          <CmPlayer
+            items={cm.items.length > 0 ? cm.items : DEFAULT_CM}
+            imageSeconds={cm.imageSeconds}
+            paused={showCall}
+            fallback={<CallScreenBackdrop logo={logoSVG} />}
+          />
 
           {/* ドリップ中があれば CM と同時に帯で出す。無ければ準備中だけ細く出す */}
           {!showCall && hasDrip && (

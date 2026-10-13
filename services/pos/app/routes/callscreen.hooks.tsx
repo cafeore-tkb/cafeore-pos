@@ -122,39 +122,6 @@ export function useCallVisibility(hasCalling: boolean, delayMs: number) {
   return showCall;
 }
 
-/**
- * 呼び出し中は CM を止め、それ以外では流し続ける。
- * 戻り値は再生を促すコールバックで、再生が途切れたときに呼ぶ。
- */
-export function useCmPlayback(
-  videoRef: React.RefObject<HTMLVideoElement>,
-  paused: boolean,
-) {
-  const resume = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    video.loop = true;
-    void video.play().catch(() => {
-      // 自動再生の制限やファイルが無いときに弾かれた場合は握りつぶす
-    });
-  }, [videoRef]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (paused) {
-      video.pause();
-      return;
-    }
-
-    resume();
-  }, [videoRef, paused, resume]);
-
-  return resume;
-}
-
 /** チャイムが鳴り終わるのを待つ上限（ファイルは 2.6 秒） */
 const CHIME_TIMEOUT_MS = 5_000;
 /** 読み上げが鳴り終わるのを待つ上限 */
