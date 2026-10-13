@@ -12,6 +12,7 @@ import {
   deleteDigit,
   emptyCashierDraft,
   goPay,
+  hasDraftInput,
   inputDigits,
   moveCursor,
   selectLine,
@@ -151,6 +152,22 @@ describe("[unit] cashierDraft の数字", () => {
     expect(addReceived(draft, 2_000_000).received).toBe("999999");
     expect(setExactReceived(draft, 600).received).toBe("600");
     expect(addReceived(withLines(blend), 1000).received).toBe("");
+  });
+});
+
+describe("[unit] hasDraftInput", () => {
+  test("削除した商品しか無ければ、消しても失うものは無い", () => {
+    expect(hasDraftInput(emptyCashierDraft())).toBe(false);
+    expect(hasDraftInput(voidAll(withLines(blend)))).toBe(false);
+    expect(hasDraftInput(withLines(blend))).toBe(true);
+  });
+
+  test("引換券番号・特記事項・受取金額だけでも失うものがある", () => {
+    const draft = emptyCashierDraft();
+    expect(hasDraftInput({ ...draft, coupon: "1" })).toBe(true);
+    expect(hasDraftInput({ ...draft, special: true })).toBe(true);
+    expect(hasDraftInput({ ...draft, memo: "氷少なめ" })).toBe(true);
+    expect(hasDraftInput({ ...draft, received: "1000" })).toBe(true);
   });
 });
 

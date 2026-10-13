@@ -66,6 +66,14 @@ export const emptyCashierDraft = (): CashierDraft => ({
   payment: "cash",
 });
 
+/** 消すと失うものがあるか（商品・引換券番号・特殊な割引・特記事項・受取金額） */
+export const hasDraftInput = (draft: CashierDraft): boolean =>
+  draft.lines.some((line) => !line.voided) ||
+  draft.coupon !== "" ||
+  draft.special ||
+  draft.memo !== "" ||
+  draft.received !== "";
+
 /** 削除していない商品 */
 export const activeMenus = (draft: CashierDraft): WithId<MenuEntity>[] =>
   draft.lines.filter((line) => !line.voided).map((line) => line.menu);

@@ -43,6 +43,7 @@ import {
   focusCoupon,
   focusMemo,
   goPay,
+  hasDraftInput,
   inputDigits,
   selectLine,
   setExactReceived,
@@ -69,6 +70,7 @@ import {
 } from "../organisms/SquarePaymentDialog";
 import { SquareUnlinkedNotice } from "../organisms/SquareUnlinkedNotice";
 import { AssignDialog } from "../organisms/cashier/AssignDialog";
+import { ConfirmDialog } from "../organisms/cashier/ConfirmDialog";
 import { MemoDialog } from "../organisms/cashier/MemoDialog";
 import { MenuPanel } from "../organisms/cashier/MenuPanel";
 import { OrderPanel } from "../organisms/cashier/OrderPanel";
@@ -78,7 +80,6 @@ import {
   ConnectionIssueDot,
   PrinterStatusDot,
 } from "../organisms/cashier/PrinterStatusDot";
-import { VoidAllDialog } from "../organisms/cashier/VoidAllDialog";
 import { Label } from "../ui/label";
 
 type props = {
@@ -127,7 +128,7 @@ const isOutsideRegister = (target: EventTarget | null) =>
     "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
   ) !== null;
 
-type CashierDialogKind = "assign" | "memo" | "voidAll";
+type CashierDialogKind = "assign" | "memo" | "voidAll" | "reset";
 
 /**
  * キャッシャー画面のコンポーネント
@@ -541,7 +542,12 @@ const CashierV2 = ({
           startSquarePayment(intent.paymentType);
           return;
         case "reset":
-          resetAll();
+          // 押し間違いで消さないよう、失うものがあれば確かめる
+          if (hasDraftInput(viewDraft)) {
+            setDialog("reset");
+          } else {
+            resetAll();
+          }
           return;
       }
     };
@@ -567,6 +573,16 @@ const CashierV2 = ({
 
   const selectedLine =
     draft.selected === null ? null : draft.lines[draft.selected];
+  // 取消の確認に出す、消えるもの
+  const resetSummary = [
+    itemCount > 0 && `商品 ${itemCount}点（${formatYen(newOrder.total)}）`,
+    draft.coupon && `引換券番号 ${draft.coupon}`,
+    draft.special && "特殊な割引",
+    draft.memo && "特記事項",
+    draft.received && `受取金額 ${formatYen(Number(draft.received))}`,
+  ]
+    .filter(Boolean)
+    .join("・");
   const discountNote = draft.special
     ? "（特殊な割引）"
     : couponApplied
@@ -761,14 +777,33 @@ const CashierV2 = ({
         }}
         onClose={() => setDialog(null)}
       />
-      <VoidAllDialog
+      <ConfirmDialog
         open={dialog === "voidAll"}
-        orderId={newOrder.orderId}
-        summary={`商品 ${itemCount}点（${formatYen(newOrder.total)}）`}
+        title="全削除"
+        sub={`No.${newOrder.orderId}`}
+        question={`商品 ${itemCount}点（${formatYen(newOrder.total)}） をすべて削除しますか？`}
+        note="削除した商品は二重線で一覧に残り、「削除を戻す」で 1 点ずつ戻せます。"
+        hint="Enter で全削除 ・ Esc で閉じる"
+        confirmLabel="全削除する"
+        // 削除は戻せるので、Enter で全削除できるようにする
+        focus="confirm"
         onConfirm={() => {
           updateDraft(voidAll);
           setDialog(null);
         }}
+        onClose={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog === "reset"}
+        title="取消"
+        sub={`No.${newOrder.orderId}`}
+        question="入力中の注文を消しますか？"
+        note={`${resetSummary} が消えます。消した注文は戻せません。`}
+        hint="Enter でやめる ・ 消すときは「消す」を押す（Tab で移って Enter）"
+        confirmLabel="消す"
+        // 戻せないので、押し間違いの Enter では消さない
+        focus="cancel"
+        onConfirm={resetAll}
         onClose={() => setDialog(null)}
       />
       <SquarePaymentDialog
