@@ -1,6 +1,7 @@
 import {
   dripperLabel,
   isCallOutOfOrder,
+  planDripAnnouncement,
   splitCallScreenOrders,
 } from "@cafeore/common";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -85,8 +86,9 @@ export default function FieldsOfCallScreen() {
   ordersRef.current = orders;
   const brewingRef = useRef(brewing);
   brewingRef.current = brewing;
-  // ドリップの案内を流したカード（カードとドリッパーの印）。同じカードを外して戻したときに繰り返さない
-  const announcedBrewsRef = useRef(new Set<string>());
+  // ドリップの案内を流した注文（ID）と、最後に「よろしければ…」を付けた時刻
+  const announcedDripOrdersRef = useRef(new Set<string>());
+  const lastDripInviteAtRef = useRef<number | null>(null);
 
   const onCalled = useCallback(
     (orderId: number) => {
@@ -103,14 +105,30 @@ export default function FieldsOfCallScreen() {
   );
 
   // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
-  // 「N番のお客様、ファーストにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない
+  // 「N番のお客様、ファーストにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない。
+  // 1 つの注文につき最初の 1 回だけ流し、立て続け（1 分以内）なら「よろしければ…」を省く（@cafeore/common の planDripAnnouncement）
   const onBrewStarted = useCallback(
     (key: string) => {
       const card = brewingRef.current.find((item) => item.key === key);
-      if (!card || announcedBrewsRef.current.has(key)) return;
-      announcedBrewsRef.current.add(key);
+      if (!card) return;
+      const now = Date.now();
+      const plan = planDripAnnouncement(
+        card,
+        announcedDripOrdersRef.current,
+        lastDripInviteAtRef.current,
+        now,
+      );
+      if (!plan) return;
+      for (const order of plan.orders) {
+        announcedDripOrdersRef.current.add(order.id);
+      }
+      if (plan.invite) lastDripInviteAtRef.current = now;
       announce({
-        path: dripVoicePath(card.orderIds, card.dripper),
+        path: dripVoicePath(
+          plan.orders.map((order) => order.orderId),
+          card.dripper,
+          plan.invite,
+        ),
         chime: false,
       });
     },

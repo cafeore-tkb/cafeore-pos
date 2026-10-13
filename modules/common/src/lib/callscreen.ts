@@ -29,8 +29,8 @@ export interface CallScreenBrewing {
   /** カードとドリッパーで決まる印。同じカードを別のドリッパーに移して淹れ始めたら変わる */
   key: string;
   dripper: number;
-  /** カードで淹れている注文の番号（小さい順。統合したカードは 2 つありうる） */
-  orderIds: number[];
+  /** カードで淹れている注文（番号の小さい順。統合したカードは 2 つありうる）。id は注文の ID、orderId は注文番号 */
+  orders: { id: string; orderId: number }[];
 }
 
 export interface CallScreenOrders {
@@ -60,12 +60,15 @@ export const splitCallScreenOrders = (
   for (const card of buildCaosCards(notReady)) {
     if (card.status !== "brewing" && card.status !== "done") continue;
     if (card.status === "brewing" && card.dripper !== null && !card.emergency) {
+      const cardOrders = new Map(
+        card.cups.map((cup) => [cup.orderId, cup.orderNo] as const),
+      );
       brewingCards.push({
         key: `${card.key}@${card.dripper}`,
         dripper: card.dripper,
-        orderIds: [...new Set(card.cups.map((cup) => cup.orderNo))].sort(
-          (a, b) => a - b,
-        ),
+        orders: [...cardOrders]
+          .map(([id, orderId]) => ({ id, orderId }))
+          .sort((a, b) => a.orderId - b.orderId),
       });
     }
     for (const cup of card.cups) {
@@ -144,4 +147,33 @@ export const isCallOutOfOrder = (
       order.createdAt < called.createdAt &&
       jstDate(order.createdAt.getTime()) === day,
   );
+};
+
+/** 「よろしければぜひ、お近くでご覧ください。」を付けたあと、付けずに済ませる間（立て続けの案内では省く） */
+export const DRIP_INVITE_INTERVAL_MS = 60_000;
+
+/**
+ * 淹れ始めたカードで流すドリップの案内。流さなくてよければ null。
+ *
+ *   - 案内は 1 つの注文につき最初の 1 回だけ（2 杯を続けて・別のドリッパーで淹れても、2 回目からは流さない）。
+ *     統合したカードで片方の注文はもう案内していれば、まだの注文の番号だけを読む
+ *   - 「よろしければぜひ、お近くでご覧ください。」（invite）は、前にそれを付けた案内から 1 分以内なら省く。
+ *     省いた案内からではなく付けた案内から数えるので、続いている間も 1 分に 1 回は付く
+ *
+ * announcedOrderIds はもう案内した注文の ID、lastInviteAtMs は最後に invite を付けた時刻（まだなら null）
+ */
+export const planDripAnnouncement = (
+  card: CallScreenBrewing,
+  announcedOrderIds: ReadonlySet<string>,
+  lastInviteAtMs: number | null,
+  nowMs: number,
+): { orders: CallScreenBrewing["orders"]; invite: boolean } | null => {
+  const orders = card.orders.filter(
+    (order) => !announcedOrderIds.has(order.id),
+  );
+  if (orders.length === 0) return null;
+  const invite =
+    lastInviteAtMs === null ||
+    nowMs - lastInviteAtMs >= DRIP_INVITE_INTERVAL_MS;
+  return { orders, invite };
 };

@@ -173,9 +173,13 @@ const WARM_TIMEOUT_MS = 15_000;
 export const callVoicePath = (orderNo: number, reordered: boolean) =>
   `/call-voice/call?order=${orderNo}${reordered ? "&reordered=1" : ""}`;
 
-/** ドリップの案内の読み上げ */
-export const dripVoicePath = (orderNos: readonly number[], dripper: number) =>
-  `/call-voice/drip?${orderNos.map((no) => `order=${no}`).join("&")}&dripper=${dripper}`;
+/** ドリップの案内の読み上げ。invite が false なら「よろしければぜひ、お近くでご覧ください。」を省く */
+export const dripVoicePath = (
+  orderNos: readonly number[],
+  dripper: number,
+  invite: boolean,
+) =>
+  `/call-voice/drip?${orderNos.map((no) => `order=${no}`).join("&")}&dripper=${dripper}${invite ? "" : "&invite=0"}`;
 
 /**
  * 音声を取りに行き、再生できる URL（blob:）にする。

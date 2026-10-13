@@ -77,6 +77,11 @@ describe("[unit] 呼び出しの音声の文", () => {
       "ファーストにてドリップいたします。",
       "よろしければぜひ、お近くでご覧ください。",
     ]);
+    // 立て続けの案内では「よろしければ…」を省く
+    expect(dripAnnouncement([12], 2, false)).toEqual([
+      "12番のお客様、",
+      "セカンドにてドリップいたします。",
+    ]);
     expect(dripAnnouncement([12, 13], 3)).toEqual([
       "12番のお客様、",
       "13番のお客様、",
@@ -110,6 +115,9 @@ describe("[unit] 呼び出しの音声の文", () => {
     );
     expect(parse("/call-voice/drip?order=7&order=8&dripper=6")).toEqual(
       dripAnnouncement([7, 8], 6),
+    );
+    expect(parse("/call-voice/drip?order=7&dripper=6&invite=0")).toEqual(
+      dripAnnouncement([7], 6, false),
     );
     for (const path of [
       "/call-voice/call",

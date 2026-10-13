@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { Cup } from "../models/cup";
 import {
+  type CallScreenBrewing,
   type CallScreenOrderInput,
+  DRIP_INVITE_INTERVAL_MS,
   isCallOutOfOrder,
+  planDripAnnouncement,
   splitCallScreenOrders,
 } from "./callscreen";
 
@@ -99,7 +102,11 @@ describe("[unit] 呼び出し画面の注文の分け方", () => {
       preparing: [1, 2],
       // 準備完了の注文（4）のカードは、ドリップの案内に使わない
       brewing: [
-        { key: expect.stringMatching(/@2$/), dripper: 2, orderIds: [3] },
+        {
+          key: expect.stringMatching(/@2$/),
+          dripper: 2,
+          orders: [{ id: "order-3", orderId: 3 }],
+        },
       ],
     });
   });
@@ -177,7 +184,10 @@ describe("[unit] 呼び出し画面の抽出中のカード（ドリップの案
       order(8, [brewing(6)], { readyAt: at(20) }),
     ]);
     expect(
-      cards.map(({ dripper, orderIds }) => ({ dripper, orderIds })),
+      cards.map(({ dripper, orders }) => ({
+        dripper,
+        orderIds: orders.map((o) => o.orderId),
+      })),
     ).toEqual([
       { dripper: 2, orderIds: [4, 5] },
       { dripper: 3, orderIds: [1] },
@@ -245,5 +255,48 @@ describe("[unit] 呼び出しの順番が前後するか", () => {
     expect(isCallOutOfOrder([order(1, [cup()]), order(2, [cup()])], 2)).toBe(
       false,
     );
+  });
+});
+
+describe("[unit] ドリップの案内の流し方", () => {
+  const card = (
+    dripper: number,
+    ...orders: [string, number][]
+  ): CallScreenBrewing => ({
+    key: `card-${orders.map(([id]) => id).join("+")}@${dripper}`,
+    dripper,
+    orders: orders.map(([id, orderId]) => ({ id, orderId })),
+  });
+  const NOW = T0.getTime();
+
+  test("はじめての注文は「よろしければ…」を付けて流す", () => {
+    expect(
+      planDripAnnouncement(card(1, ["a", 12]), new Set(), null, NOW),
+    ).toEqual({ orders: [{ id: "a", orderId: 12 }], invite: true });
+  });
+
+  test("もう案内した注文は流さない。統合したカードは、まだの注文だけを読む", () => {
+    const announced = new Set(["a"]);
+    expect(planDripAnnouncement(card(3, ["a", 12]), announced, null, NOW)).toBe(
+      null,
+    );
+    expect(
+      planDripAnnouncement(card(3, ["a", 12], ["b", 13]), announced, null, NOW),
+    ).toEqual({ orders: [{ id: "b", orderId: 13 }], invite: true });
+  });
+
+  test("「よろしければ…」を付けてから 1 分以内は省き、1 分たてばまた付ける", () => {
+    const last = NOW - DRIP_INVITE_INTERVAL_MS + 1;
+    expect(
+      planDripAnnouncement(card(2, ["b", 13]), new Set(), last, NOW)?.invite,
+    ).toBe(false);
+    expect(
+      planDripAnnouncement(
+        card(2, ["b", 13]),
+        new Set(),
+        NOW - DRIP_INVITE_INTERVAL_MS,
+        NOW,
+      )?.invite,
+    ).toBe(true);
   });
 });

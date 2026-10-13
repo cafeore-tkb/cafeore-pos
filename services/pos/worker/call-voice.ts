@@ -1,7 +1,8 @@
 // 呼び出し画面で流す音声（/call-voice/call・/call-voice/drip）。
 //
 //   - 呼び出し：「（順番が前後いたします。）N番のお客様、提供口までお越しください。」
-//   - ドリップの案内：「N番のお客様、ファーストにてドリップいたします。よろしければぜひ、お近くでご覧ください。」
+//   - ドリップの案内：「N番のお客様、ファーストにてドリップいたします。（よろしければぜひ、お近くでご覧ください。）」
+//     括弧の中は invite=0 のときは省く（立て続けの案内。いつ省くかは画面が決める。@cafeore/common の planDripAnnouncement）
 //
 // 文はここで決め、画面からは注文番号・「順番が前後するか」・ドリッパーの番号だけを受け取る
 // （任意の文を読ませないため。ElevenLabs の利用枠を使うのはこの決まった文だけになる）。
@@ -80,11 +81,15 @@ export const callAnnouncement = (orderNo: number, reordered: boolean) => [
   callVoiceSegments.callTail,
 ];
 
-/** ドリップの案内の片 */
-export const dripAnnouncement = (orderNos: number[], dripper: number) => [
+/** ドリップの案内の片。invite が false なら「よろしければぜひ、お近くでご覧ください。」を省く */
+export const dripAnnouncement = (
+  orderNos: number[],
+  dripper: number,
+  invite = true,
+) => [
   ...orderNos.map(callVoiceSegments.orderNo),
   callVoiceSegments.dripper(dripper),
-  callVoiceSegments.dripTail,
+  ...(invite ? [callVoiceSegments.dripTail] : []),
 ];
 
 /** ElevenLabs の text-to-dialogue に送る中身（片 1 つ分） */
@@ -132,7 +137,11 @@ export const parseAnnouncement = (url: URL): string[] | null => {
     const dripper = Number(url.searchParams.get("dripper"));
     if (!(dripper in DRIPPER_READINGS)) return null;
     if (orderNos.length > MAX_DRIP_ORDERS) return null;
-    return dripAnnouncement(orderNos, dripper);
+    return dripAnnouncement(
+      orderNos,
+      dripper,
+      url.searchParams.get("invite") !== "0",
+    );
   }
   return null;
 };
