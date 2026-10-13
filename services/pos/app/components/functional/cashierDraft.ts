@@ -353,6 +353,8 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
+  /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
+  | { type: "exactReceived" }
   | { type: "submitCash" }
   | { type: "startSquare"; paymentType: SquarePaymentType }
   | { type: "reset" };
@@ -378,7 +380,8 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * - Backspace: 行を選んでいれば削除（戻す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - Space: 選んでいる行を指名する
- * - Enter: 備考を選んでいれば備考を開く・一括会計・確定（Square なら決済を始める）
+ * - Enter: 備考を選んでいれば備考を開く・一括会計・確定（Square なら決済を始める）。
+ *   現金で受取金額が空なら、まず受取金額をちょうどにする（もう一度 Enter で確定）
  * - Esc: 入力中の注文を消す
  */
 export const cashierKeyIntent = (
@@ -416,9 +419,12 @@ export const cashierKeyIntent = (
       return canAssignSelected(draft) ? { type: "openAssign" } : NONE;
     case "Enter":
       if (draft.step === "pay") {
-        return draft.payment === "cash"
-          ? { type: "submitCash" }
-          : { type: "startSquare", paymentType: draft.payment };
+        if (draft.payment !== "cash") {
+          return { type: "startSquare", paymentType: draft.payment };
+        }
+        return draft.received === ""
+          ? { type: "exactReceived" }
+          : { type: "submitCash" };
       }
       if (draft.selected === null && draft.zone === "memo") {
         return { type: "openMemo" };

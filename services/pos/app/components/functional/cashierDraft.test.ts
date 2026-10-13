@@ -204,13 +204,23 @@ describe("[unit] cashierKeyIntent", () => {
 
   test("会計の段階の Enter は、現金なら確定し、Square なら決済を始める", () => {
     const draft = goPay(withLines(blend));
-    expect(cashierKeyIntent(draft, "Enter", { menus, payments })).toEqual({
-      type: "submitCash",
-    });
+    expect(
+      cashierKeyIntent(inputDigits(draft, "500"), "Enter", {
+        menus,
+        payments,
+      }),
+    ).toEqual({ type: "submitCash" });
     const card = keys(draft, "ArrowDown");
     expect(cashierKeyIntent(card, "Enter", { menus, payments })).toEqual({
       type: "startSquare",
       paymentType: "CARD_PRESENT",
+    });
+  });
+
+  test("現金で受取金額が空なら、Enter はちょうどにする", () => {
+    const draft = goPay(withLines(blend));
+    expect(cashierKeyIntent(draft, "Enter", { menus, payments })).toEqual({
+      type: "exactReceived",
     });
   });
 

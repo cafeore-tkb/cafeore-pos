@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { connectionIssues } from "./connectionIssues";
 
-const online = {
+const online: Parameters<typeof connectionIssues>[0] = {
   isBackendOnline: true,
   isDatabaseOnline: true,
   isDeviceOnline: true,

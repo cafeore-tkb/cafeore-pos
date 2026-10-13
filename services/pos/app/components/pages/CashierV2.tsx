@@ -531,6 +531,9 @@ const CashierV2 = ({
         case "openMemo":
           openMemo();
           return;
+        case "exactReceived":
+          updateDraft((current) => setExactReceived(current, billing));
+          return;
         case "submitCash":
           submitCash(false);
           return;
@@ -553,6 +556,7 @@ const CashierV2 = ({
     viewDraft,
     items,
     payments,
+    billing,
     updateDraft,
     openAssign,
     openMemo,

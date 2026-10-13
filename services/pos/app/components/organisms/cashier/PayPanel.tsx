@@ -1,4 +1,5 @@
 import type { SquarePaymentType } from "@cafeore/common";
+import { EnterIcon } from "@radix-ui/react-icons";
 import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
@@ -98,6 +99,9 @@ export const PayPanel = ({
     paying && canSubmit && itemCount > 0 && change !== null && change >= 0;
   const exactReady = paying && canSubmit && itemCount > 0 && billing >= 0;
   const padEnabled = paying || canEditCoupon(draft);
+  // Enter で押すボタン。現金で受取金額が空ならちょうど、入っていれば確定
+  const enterExact = paying && cash && received === null;
+  const enterSubmit = paying && cash && received !== null;
 
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l">
@@ -215,6 +219,7 @@ export const PayPanel = ({
           <QuickButton
             label="ちょうど"
             dim={false}
+            enter={enterExact}
             disabled={!paying}
             onClick={onExactReceived}
           />
@@ -223,6 +228,7 @@ export const PayPanel = ({
               key={label}
               label={label}
               dim={amount < billing}
+              enter={false}
               disabled={!paying}
               onClick={() => onAddReceived(amount)}
             />
@@ -323,12 +329,14 @@ export const PayPanel = ({
             )}
           >
             現金会計確定
-            <KeyHint
-              inverted
-              className="-translate-y-1/2 absolute top-1/2 right-2.5"
-            >
-              Enter
-            </KeyHint>
+            {(enterSubmit || !paying) && (
+              <KeyHint
+                inverted
+                className="-translate-y-1/2 absolute top-1/2 right-2.5"
+              >
+                Enter
+              </KeyHint>
+            )}
           </button>
         </div>
       </div>
@@ -339,12 +347,15 @@ export const PayPanel = ({
 const QuickButton = ({
   label,
   dim,
+  enter,
   disabled,
   onClick,
 }: {
   label: string;
   /** 足しても請求額に届かない */
   dim: boolean;
+  /** Enter で押せる。印を添える */
+  enter: boolean;
   disabled: boolean;
   onClick: () => void;
 }) => (
@@ -352,11 +363,18 @@ const QuickButton = ({
     type="button"
     onClick={onClick}
     disabled={disabled}
+    title={enter ? "Enter でちょうど" : undefined}
     className={cn(
-      "h-11 rounded-lg border border-stone-300 bg-white p-0 font-bold text-[13px] tabular-nums active:bg-stone-100",
+      "flex h-11 items-center justify-center gap-0.5 rounded-lg border border-stone-300 bg-white p-0 font-bold text-[13px] tabular-nums active:bg-stone-100",
       dim ? "text-stone-400" : "text-stone-900",
     )}
   >
     {label}
+    {enter && (
+      <EnterIcon
+        aria-label="Enter"
+        className="h-3.5 w-3.5 flex-none text-theme-primary"
+      />
+    )}
   </button>
 );

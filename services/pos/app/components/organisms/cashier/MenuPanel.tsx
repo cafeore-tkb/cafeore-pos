@@ -132,7 +132,9 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
         <span>
           ↑ ↓ 商品 → 割引 → 備考・Space で指名・Enter で備考・Backspace で削除
         </span>
-        <span>会計中は ↑ ↓ で決済手段・Enter で確定／決済</span>
+        <span>
+          会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
+        </span>
         <span>Esc 取消</span>
       </div>
     </div>
