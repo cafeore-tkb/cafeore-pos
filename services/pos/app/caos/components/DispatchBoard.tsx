@@ -9,6 +9,7 @@ import {
 } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
+import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
   cardName,
   orderLabel,
@@ -24,6 +25,7 @@ import { LaneChangeButton, LaneName } from "./LaneParts";
 import {
   BayPad,
   CancelEmergencyButton,
+  MergeOverlay,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
@@ -33,10 +35,12 @@ import { ScrollArea } from "./ScrollArea";
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
-// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。未割当のカードを開いているあいだは、統合できる抽出中のカードに
+// 「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
-// 統合できる待機・抽出中のカードの上の右の部分に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
+// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
+// 統合したカードを開くと「外す」（統合の解除）が出る。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -54,7 +58,10 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay">
+  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay"> & {
+    /** 未割当のカードの操作（下の横帯と共有。開いた未割当のカードを、押した抽出中のカードに統合する） */
+    pick?: UnassignedPick;
+  }
 > = ({
   lanes,
   unassignedOrders,
@@ -76,6 +83,7 @@ export const DispatchBoard: React.FC<
   nowMs,
   timelineCommand,
   readOnly = false,
+  pick,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -270,6 +278,9 @@ export const DispatchBoard: React.FC<
                         isMovable && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
+                      // 開いた未割当のカードを、押して統合できる抽出中のカード
+                      const isMergeTap =
+                        isMovable && Boolean(pick?.canMergeWith(ticket));
                       return (
                         <div
                           key={ticket.key}
@@ -298,6 +309,7 @@ export const DispatchBoard: React.FC<
                                 : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
+                            data-merge-tap={isMergeTap || undefined}
                             onPointerDown={
                               isMovable
                                 ? (event) =>
@@ -309,6 +321,10 @@ export const DispatchBoard: React.FC<
                             }
                             onClickCapture={drag.suppressClick}
                             onClick={() => {
+                              if (isMergeTap) {
+                                pick?.tap(ticket);
+                                return;
+                              }
                               // 抽出中・終わりのカードは入れ直し（閲覧だけの画面では渡されない）
                               if (!isScheduled) {
                                 onOpenRebrew?.(ticket);
@@ -324,6 +340,7 @@ export const DispatchBoard: React.FC<
                             className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
+                            {isMergeTap && <MergeOverlay />}
                             {isActionOpen && (
                               <>
                                 <BayPad

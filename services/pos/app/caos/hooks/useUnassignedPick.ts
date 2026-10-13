@@ -1,6 +1,8 @@
-import { type CaosCard, type CaosPlace, canMergeCards } from "@cafeore/common";
+import type { CaosCard, CaosPlace } from "@cafeore/common";
 import { useState } from "react";
-import { orderLabel, quickMergePartner } from "../logic/cards";
+import type { ControlViewProps } from "../components/ControlWorkspace";
+import { canTapMerge, orderLabel, quickMergePartner } from "../logic/cards";
+import { laneActive } from "../logic/lanes";
 import { type DropTarget, dropTargetAt, useCardDrag } from "./useCardDrag";
 import { useOutsidePress } from "./useOutsidePress";
 
@@ -8,8 +10,10 @@ import { useOutsidePress } from "./useOutsidePress";
  * 未割当のカードの操作（管制盤 A の下の横帯と、管制盤 C の右の注文の列で共通）。
  * カードをタップすると上下に 1〜6 のボタンが開き（開いたカード）、押すか、指を離さずなぞるか、列へドラッグして割り当てる
  * （待機のカードの上に落とすと、そのカードの前へ。placed のうち統合できる待機・抽出中のカードの上なら統合）。
- * 1 杯のカードを開くと、統合できる 1 杯のカードを押して統合できる（onMergeOrders を渡したときだけ）。
- * 相手が決まる（logic/cards の quickMergePartner）ときは、開いたカードをもう一度押しても統合する（決まらなければ開いたまま）。
+ * 1 杯のカードを開くと、統合できる 1 杯のカード（未割当と、ドリッパーの列の抽出中のカード。canTapMerge）を押して統合できる
+ * （onMergeOrders を渡したときだけ。列のカードには data-merge-tap を付け、押しても開いたカードを閉じない）。
+ * 相手が決まる（logic/cards の quickMergePartner。未割当と placed の抽出中のカードから）ときは、開いたカードをもう一度押しても統合する
+ * （決まらなければ開いたまま）。
  * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
  * 入れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
  */
@@ -52,11 +56,12 @@ export const useUnassignedPick = ({
     },
   });
 
-  // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）を押したときは、そのカードのタップやドラッグで決める
+  // カードの外を押すと閉じる。未割当のカード（統合の相手・別のカード）と統合できる抽出中のカードを押したときは、そのカードのタップやドラッグで決める
   // （スクロールする列では、別のカードを押したのがスクロールのこともある）
   useOutsidePress(
     openKey !== null,
-    (target) => Boolean(target.closest("[data-unassigned-uid]")),
+    (target) =>
+      Boolean(target.closest("[data-unassigned-uid], [data-merge-tap]")),
     () => {
       setOpenKey(null);
       onSelectOrder(null);
@@ -64,10 +69,12 @@ export const useUnassignedPick = ({
   );
 
   const canMergeWith = (card: CaosCard) =>
-    Boolean(onMergeOrders && openCard && canMergeCards(openCard, card));
+    Boolean(onMergeOrders && openCard && canTapMerge(openCard, card));
   // 開いたカードをもう一度押したときに統合する相手
   const partner =
-    onMergeOrders && openCard ? quickMergePartner(openCard, orders) : undefined;
+    onMergeOrders && openCard
+      ? quickMergePartner(openCard, [...orders, ...placed])
+      : undefined;
 
   return {
     drag,
@@ -103,3 +110,15 @@ export const useUnassignedPick = ({
   };
 };
 export type UnassignedPick = ReturnType<typeof useUnassignedPick>;
+
+/** 管制盤 A・C の未割当のカードの操作。未割当（A の横帯・C の注文の列）と、ドリッパーの列の抽出中のカード（タップで統合する相手）で共有する */
+export const useControlPick = (props: ControlViewProps) =>
+  useUnassignedPick({
+    orders: props.unassignedOrders,
+    placed: props.lanes.flatMap(laneActive),
+    onSelectOrder: props.onSelectOrder,
+    onAssignToBay: props.onAssignToBay,
+    onMergeOrders: props.onMergeOrders,
+    onSplitCup: props.onSplitCup,
+    onCancelEmergency: props.onCancelEmergency,
+  });

@@ -18,6 +18,10 @@ import {
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
 
+/** 開いた（選んだ）未割当のカード open を、押した card に統合できるか。押して統合するのは未割当と抽出中のカード（待機のカードへはドラッグで） */
+export const canTapMerge = (open: CaosCard, card: CaosCard) =>
+  card.status !== "queued" && canMergeCards(open, card);
+
 /** 注文番号を 3 桁に（「007」） */
 export const orderNoLabel = (no: number) => no.toString().padStart(3, "0");
 
@@ -43,7 +47,7 @@ export const sharesOrder = (card: CaosCard, label: string | null) => {
 };
 
 /**
- * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち統合できる（canMergeCards）カードが 1 枚ならそれ、
+ * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち押して統合できる（canTapMerge。未割当と抽出中）カードが 1 枚ならそれ、
  * 何枚かあれば注文番号がいちばん近いもの。いちばん近いものが 2 枚以上あって決まらなければ無し（今まで通り相手を押して選ぶ）
  */
 export const quickMergePartner = (
@@ -53,7 +57,7 @@ export const quickMergePartner = (
   const distance = (other: CaosCard) =>
     Math.abs(other.cups[0].orderNo - card.cups[0].orderNo);
   const [nearest, next] = cards
-    .filter((other) => canMergeCards(card, other))
+    .filter((other) => canTapMerge(card, other))
     .sort((a, b) => distance(a) - distance(b));
   return nearest && (!next || distance(next) > distance(nearest))
     ? nearest

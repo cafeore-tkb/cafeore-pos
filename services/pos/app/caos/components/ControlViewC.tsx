@@ -1,5 +1,9 @@
 import { CircleDot } from "lucide-react";
 import type React from "react";
+import {
+  type UnassignedPick,
+  useControlPick,
+} from "../hooks/useUnassignedPick";
 import { orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
@@ -12,32 +16,36 @@ import {
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
-import { OrderCard } from "./OrderCard";
+import { MergeOverlay, OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
 // 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 右の未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有）。
 // 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
-// 統合できるカードの上の右の部分なら統合）
-export const ControlViewC: React.FC<ControlViewProps> = ({
+// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上なら統合）
+export const ControlViewC: React.FC<ControlViewProps> = (props) => {
+  const pick = useControlPick(props);
+  return <ControlViewCBoard {...props} pick={pick} />;
+};
+
+const ControlViewCBoard: React.FC<
+  ControlViewProps & { pick: UnassignedPick }
+> = ({
   lanes,
   unassignedOrders,
   looks,
   nextAvailable,
   nowMs,
   selectedOrderId,
-  onSelectOrder,
   onAdvanceBay,
   onOpenTicket,
   onOpenRebrew,
-  onCancelEmergency,
   onOpenEmptySlot,
   onOpenLane,
-  onAssignToBay,
-  onMergeOrders,
-  onSplitCup,
+  pick,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
@@ -91,16 +99,22 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
                       data-merge-target={current.key}
                       data-queued-ticket={current.key}
                       data-ticket-label={orderLabel(current)}
-                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し
-                      {...(current.status === "queued"
-                        ? { onClick: () => onOpenTicket(current) }
-                        : { onClick: () => onOpenRebrew?.(current) })}
+                      data-merge-tap={pick.canMergeWith(current) || undefined}
+                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し（開いた未割当のカードと統合できれば統合）
+                      onClick={() => {
+                        if (pick.canMergeWith(current)) pick.tap(current);
+                        else if (current.status === "queued")
+                          onOpenTicket(current);
+                        else onOpenRebrew?.(current);
+                      }}
                       className={
                         current.status === "queued"
                           ? "cursor-pointer hover:ring-2 hover:ring-blue-400"
                           : ""
                       }
-                    />
+                    >
+                      {pick.canMergeWith(current) && <MergeOverlay />}
+                    </OrderCard>
                   ) : (
                     <span className="rounded-lg border border-slate-300 border-dashed" />
                   )}
@@ -150,11 +164,7 @@ export const ControlViewC: React.FC<ControlViewProps> = ({
         lanes={lanes}
         looks={looks}
         selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
-        onAssignToBay={onAssignToBay}
-        onMergeOrders={onMergeOrders}
-        onSplitCup={onSplitCup}
-        onCancelEmergency={onCancelEmergency}
+        pick={pick}
       />
     </aside>
   </section>

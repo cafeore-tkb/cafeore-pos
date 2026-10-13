@@ -117,6 +117,11 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     // #10 と #14 はどちらも 2 つ離れていて決まらない
     expect(keyOf(c12, [c10, c12, c14])).toBeUndefined();
     expect(keyOf(c12, [two])).toBeUndefined();
+    // 抽出中のカードも相手の候補。待機のカードは候補にしない（押して統合しない）
+    const brewing = { ...c13, status: "brewing" as const, dripper: 1 };
+    const queued = { ...c13, status: "queued" as const, dripper: 1 };
+    expect(keyOf(c12, [brewing, c15])).toBe(brewing.key);
+    expect(keyOf(c12, [queued, c15])).toBe(c15.key);
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
