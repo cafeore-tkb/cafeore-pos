@@ -19,6 +19,7 @@ import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
 import { linkedOrderNos } from "./sheet";
+import { timelineArrivals } from "./timeline";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -209,6 +210,26 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect([...linkedOrderNos("#004", lanes, unassigned)].sort()).toEqual([
       3, 4,
     ]);
+  });
+
+  test("タイムラインに新しく入ったカードは、割り当てたものと抽出を始めたものだけ（移しただけのカードは入らない）", () => {
+    const previous = new Map(cards.map((card) => [card.key, card.status]));
+    const after = buildCaosCards([
+      // 1st で抽出中のまま 4th へ移した
+      order(1, [
+        { dripper: 4, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+      // 未割当を 2nd へ割り当てた・統合した未割当を 3rd へ割り当てた
+      order(2, [{ dripper: 2, dripId: "d2", dripperPosition: 1 }], 2),
+      order(3, [{ dripper: 3, dripId: "m", dripperPosition: 1 }]),
+      order(4, [{ dripper: 3, dripId: "m", dripperPosition: 1 }]),
+      // 1st の待機の抽出を始めた
+      order(5, [
+        { dripper: 1, dripId: "d5", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+    ]);
+    expect(timelineArrivals(previous, after).sort()).toEqual(["d2", "d5", "m"]);
+    expect(timelineArrivals(previous, cards)).toEqual([]);
   });
 
   test("ドリッパーに置いたカードの場所の札", () => {
