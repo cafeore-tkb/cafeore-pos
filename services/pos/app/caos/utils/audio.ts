@@ -23,10 +23,9 @@ class SoundManager {
     return this.ctx?.state === "running";
   }
 
-  /** 画面に触れた中で呼び、音を出せるようにする（出せるようになったら解決する） */
+  /** 画面に触れた中で呼び、音を出せるようにする */
   public unlock() {
     this.init();
-    return this.ctx ? this.ctx.resume().catch(() => {}) : Promise.resolve();
   }
 
   // Friendly soft double-beep for ticket completion

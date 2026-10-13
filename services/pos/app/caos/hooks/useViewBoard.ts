@@ -1,5 +1,5 @@
 import type { CaosCard, CaosCardStatus } from "@cafeore/common";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { timelineArrivals } from "../logic/timeline";
 import { soundManager } from "../utils/audio";
 import { useDeviceSetting } from "./useDeviceSetting";
@@ -18,11 +18,11 @@ export const useViewBoard = (nowMs: number) => {
   return { cards, status, sound, flashKeys };
 };
 
-// 通知音。鳴らすかはヘッダーで切り替え、この端末に覚える。iPad は画面に触れた中でないと音を出せるようにならないので、
-// 音ありのときは、画面のどこかに触れたら出せるようにする（それまではヘッダーに「触れると鳴る」と出す）。
+// 通知音。鳴らすかはヘッダーで切り替え、この端末に覚える。iPad は画面に触れた中でないと音を出せるようにならない（後ろに回すと止まることもある）ので、
+// 音ありのときは、画面のどこかに触れるたびに出せるようにする。出せるかは描くたび（毎秒）に見直し、出せない間はヘッダーに「触れると鳴る」と出す。
 const useViewSound = () => {
   const [on, setOn] = useDeviceSetting("caos-view-sound", false);
-  const [ready, setReady] = useState(soundManager.ready);
+  const ready = soundManager.ready;
   // 鳴らすか（soundManager.enabled）は、この画面を開いている間だけ切り替える（操作の画面の音の設定は変えない）
   useEffect(() => {
     const before = soundManager.enabled;
@@ -31,15 +31,16 @@ const useViewSound = () => {
       soundManager.enabled = before;
     };
   }, [on]);
-  const unlock = useCallback(
-    () => soundManager.unlock().then(() => setReady(soundManager.ready)),
-    [],
-  );
   useEffect(() => {
-    if (!on || ready) return;
-    window.addEventListener("pointerup", unlock);
-    return () => window.removeEventListener("pointerup", unlock);
-  }, [on, ready, unlock]);
+    if (!on) return;
+    // iPad の Safari が音を許すのは指を離したとき（どちらで届いても出せるように両方で）
+    const unlock = () => soundManager.unlock();
+    const events = ["pointerup", "touchend"] as const;
+    for (const event of events) window.addEventListener(event, unlock);
+    return () => {
+      for (const event of events) window.removeEventListener(event, unlock);
+    };
+  }, [on]);
 
   return {
     on,
@@ -47,15 +48,10 @@ const useViewSound = () => {
     ready,
     /** 音あり・なしを切り替える。音ありにしたら確かめに 1 回鳴らす。音ありでまだ出せないときは、出せるようにするだけ */
     toggle: () => {
-      if (on && !ready) {
-        void unlock();
-        return;
-      }
+      // 出せるようにするのは、画面に触れたときの pointerup・touchend が先にしている
+      if (on && !ready) return;
       soundManager.enabled = !on;
-      if (!on) {
-        void unlock();
-        soundManager.playComplete();
-      }
+      if (!on) soundManager.playComplete();
       setOn(!on);
     },
   };
