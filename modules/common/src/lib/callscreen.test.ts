@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { Cup } from "../models/cup";
-import { type CallScreenOrderInput, splitCallScreenOrders } from "./callscreen";
+import {
+  type CallScreenOrderInput,
+  isCallOutOfOrder,
+  splitCallScreenOrders,
+} from "./callscreen";
 
 const T0 = new Date("2026-10-08T03:00:00Z");
 const at = (min: number) => new Date(T0.getTime() + min * 60_000);
@@ -152,5 +156,50 @@ describe("[unit] 呼び出し画面の注文の分け方", () => {
     ]);
     expect(dripping).toEqual([]);
     expect(preparing).toEqual([1]);
+  });
+});
+
+describe("[unit] 呼び出しの順番が前後するか", () => {
+  test("先に注文した注文がまだ待っていれば前後する", () => {
+    const orders = [order(1, [cup()]), order(2, [cup()], { readyAt: at(10) })];
+    expect(isCallOutOfOrder(orders, 2)).toBe(true);
+  });
+
+  test("先の注文が呼び出し中・提供済みなら前後しない。後から注文した注文が待っていても前後しない", () => {
+    const orders = [
+      order(1, [cup()], { readyAt: at(8) }),
+      order(2, [cup()], { readyAt: at(9), servedAt: at(10) }),
+      order(3, [cup()], { readyAt: at(10) }),
+      order(4, [cup()]),
+    ];
+    expect(isCallOutOfOrder(orders, 3)).toBe(false);
+  });
+
+  test("前の日の待ったままの注文は見ない", () => {
+    const yesterday = new Date(T0.getTime() - 24 * 60 * 60 * 1000);
+    const orders = [
+      order(9, [cup()], { createdAt: yesterday }),
+      order(2, [cup()], { readyAt: at(10) }),
+    ];
+    expect(isCallOutOfOrder(orders, 2)).toBe(false);
+  });
+
+  test("同じ番号が前の日にもあれば、今日の呼び出し中の注文で決める", () => {
+    const yesterday = new Date(T0.getTime() - 24 * 60 * 60 * 1000);
+    const orders = [
+      order(1, [cup()], { createdAt: new Date(yesterday.getTime() - 60_000) }),
+      {
+        ...order(2, [cup()], { createdAt: yesterday, readyAt: yesterday }),
+        id: "order-2-yesterday",
+      },
+      order(2, [cup()], { readyAt: at(10) }),
+    ];
+    expect(isCallOutOfOrder(orders, 2)).toBe(false);
+  });
+
+  test("呼び出し中でない番号は前後しない", () => {
+    expect(isCallOutOfOrder([order(1, [cup()]), order(2, [cup()])], 2)).toBe(
+      false,
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { type CaosOrderInput, buildCaosCards } from "./caos-board";
+import { jstDate } from "./jst";
 
 // 呼び出し画面（お客さんに見せる画面）に出す注文の分け方。DB や画面を使わない純粋な関数だけを置く。
 //
@@ -83,4 +84,42 @@ export const splitCallScreenOrders = (
     .map((order) => order.orderId);
 
   return { calling, dripping, preparing };
+};
+
+/**
+ * 呼び出す注文より先に注文した（作成時刻が早い）注文が、まだ待っているか。
+ * 呼び出しの音声で「順番が前後いたします。」を冒頭に付けるかに使う。
+ *
+ * 待っているのは、準備完了でも提供済みでもない注文。同じ日（日本時間）の注文だけを見る
+ * （前の日に提供済みにし忘れた注文があっても、毎回断らないように）。
+ * 番号は日をまたぐと同じものが出うるので、呼び出す注文は呼び出し中（準備完了・未提供）のうち
+ * その番号でいちばん新しいものにする。見つからなければ false
+ */
+export const isCallOutOfOrder = (
+  orders: readonly CallScreenOrderInput[],
+  orderNo: number,
+): boolean => {
+  const called = orders
+    .filter(
+      (order) =>
+        order.orderId === orderNo &&
+        order.readyAt !== null &&
+        order.servedAt === null,
+    )
+    .reduce<CallScreenOrderInput | null>(
+      (latest, order) =>
+        latest === null || order.createdAt > latest.createdAt ? order : latest,
+      null,
+    );
+  if (called === null) return false;
+
+  const day = jstDate(called.createdAt.getTime());
+  return orders.some(
+    (order) =>
+      order !== called &&
+      order.readyAt === null &&
+      order.servedAt === null &&
+      order.createdAt < called.createdAt &&
+      jstDate(order.createdAt.getTime()) === day,
+  );
 };

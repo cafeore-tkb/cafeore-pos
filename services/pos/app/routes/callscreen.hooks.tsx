@@ -154,3 +154,83 @@ export function useCmPlayback(
 
   return resume;
 }
+
+/** チャイムが鳴り終わるのを待つ上限（ファイルは 2.6 秒） */
+const CHIME_TIMEOUT_MS = 5_000;
+/** 呼び出しの音声が鳴り終わるのを待つ上限 */
+const VOICE_TIMEOUT_MS = 15_000;
+
+/**
+ * 呼び出しの音声の URL。Worker（worker/call-voice.ts）が ElevenLabs で作り、R2 に溜めたものを返す。
+ * 文面は Worker が決めるので、ここでは番号と「順番が前後するか」だけを渡す
+ */
+const callVoiceUrl = (orderNo: number, reordered: boolean) =>
+  `/call-voice/${orderNo}${reordered ? "?reordered=1" : ""}`;
+
+/**
+ * 音声を取りに行き、再生できる URL（blob:）にする。
+ * 取れなければ null（ローカルの dev サーバーには Worker が無い、鍵が無い、ElevenLabs が落ちているなど）
+ */
+const loadCallVoice = async (url: string): Promise<string | null> => {
+  try {
+    const res = await fetch(url);
+    const type = res.headers.get("content-type") ?? "";
+    if (!res.ok || !type.startsWith("audio/")) return null;
+    return URL.createObjectURL(await res.blob());
+  } catch {
+    return null;
+  }
+};
+
+/** 最後まで鳴らす。鳴らせない・終わらないときも timeoutMs で先へ進む */
+const playToEnd = (audio: HTMLAudioElement, timeoutMs: number) =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      audio.removeEventListener("ended", done);
+      audio.removeEventListener("error", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    audio.addEventListener("ended", done);
+    audio.addEventListener("error", done);
+    try {
+      audio.currentTime = 0;
+    } catch {
+      // Safari など currentTime の操作に失敗する環境があるので握りつぶす
+    }
+    // 自動再生の制限で弾かれたら、待たずに次へ
+    audio.play().catch(done);
+  });
+
+/**
+ * 呼び出しを読み上げる。1 件ごとにチャイムを鳴らしてから番号を読み、何件も同時に呼んだときは順番に流す。
+ * 音声は呼んだ時点で取りに行くので、チャイムの間に作り終わればすぐ続けて流れる。
+ * 音声が取れなければチャイムだけ鳴らす
+ */
+export function useCallAnnouncer(
+  chimeRef: React.RefObject<HTMLAudioElement>,
+  voiceRef: React.RefObject<HTMLAudioElement>,
+) {
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+
+  return useCallback(
+    (orderNo: number, reordered: boolean) => {
+      const voice = loadCallVoice(callVoiceUrl(orderNo, reordered));
+      queueRef.current = queueRef.current.then(async () => {
+        const chime = chimeRef.current;
+        if (chime) await playToEnd(chime, CHIME_TIMEOUT_MS);
+
+        const url = await voice;
+        if (url === null) return;
+        const audio = voiceRef.current;
+        if (audio) {
+          audio.src = url;
+          await playToEnd(audio, VOICE_TIMEOUT_MS);
+        }
+        URL.revokeObjectURL(url);
+      });
+    },
+    [chimeRef, voiceRef],
+  );
+}

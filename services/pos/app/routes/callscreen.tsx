@@ -1,4 +1,8 @@
-import { dripperLabel, splitCallScreenOrders } from "@cafeore/common";
+import {
+  dripperLabel,
+  isCallOutOfOrder,
+  splitCallScreenOrders,
+} from "@cafeore/common";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
 import logoSVG from "~/assets/cafeore.svg";
@@ -20,6 +24,7 @@ import {
   stageContentStyle,
 } from "./callscreen.components";
 import {
+  useCallAnnouncer,
   useCallVisibility,
   useCmPlayback,
   useFlash,
@@ -48,6 +53,7 @@ export default function FieldsOfCallScreen() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const soundRef = useRef<HTMLAudioElement>(null);
+  const voiceRef = useRef<HTMLAudioElement>(null);
   const [cmUnavailable, setCmUnavailable] = useState(false);
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
@@ -64,31 +70,21 @@ export default function FieldsOfCallScreen() {
 
   const { startFlash, isFlashing } = useFlash();
 
-  const playChime = useCallback(() => {
-    const audio = soundRef.current;
-    if (!audio) return;
-
-    try {
-      audio.currentTime = 0;
-    } catch (error) {
-      // Safari など currentTime の操作に失敗する環境があるので握りつぶす
-    }
-
-    void audio.play().catch(() => {
-      // 自動再生の制限で弾かれた場合は握りつぶす
-    });
-  }, []);
+  const announce = useCallAnnouncer(soundRef, voiceRef);
+  // 呼んだ時点の一覧で「順番が前後するか」を決めたいので、最新の一覧を持っておく
+  const ordersRef = useRef(orders);
+  ordersRef.current = orders;
 
   const onCalled = useCallback(
     (orderId: number) => {
-      playChime();
+      announce(orderId, isCallOutOfOrder(ordersRef.current, orderId));
       startFlash(orderId);
     },
-    [playChime, startFlash],
+    [announce, startFlash],
   );
 
   // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える。
-  // 呼び出しはチャイムと点滅、ドリップ入りは点滅だけ
+  // 呼び出しはチャイムと読み上げと点滅、ドリップ入りは点滅だけ
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
 
@@ -263,6 +259,10 @@ export default function FieldsOfCallScreen() {
       </div>
 
       <audio src={brightNotifications} ref={soundRef} preload="auto">
+        <track kind="captions" />
+      </audio>
+      {/* 呼び出しの読み上げ。src は呼ぶたびに useCallAnnouncer が入れる */}
+      <audio ref={voiceRef} preload="none">
         <track kind="captions" />
       </audio>
     </div>

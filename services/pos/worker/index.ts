@@ -1,5 +1,6 @@
 // POS の Worker。静的ファイル（build/client）は assets がそのまま返し、
 // /api・/status・/health だけをここで Cloud Run の API へ中継する。
+// 呼び出し画面の音声（/call-voice）もここで返す（worker/call-voice.ts）。
 //
 // ## なぜ中継するのか
 //
@@ -16,7 +17,13 @@
 // どのパスでこの Worker が動くかは wrangler.jsonc の assets.run_worker_first で
 // 決めている。それ以外は SPA のフォールバックで index.html が返り、ここには来ない。
 
-interface Env {
+import {
+  type CallVoiceContext,
+  type CallVoiceEnv,
+  handleCallVoice,
+} from "./call-voice";
+
+interface Env extends CallVoiceEnv {
   // 中継先の API（Cloud Run）のオリジン。デプロイの workflow が --var で渡す。
   // 無いとき（PR のプレビュー）は中継しない。プレビューのフロントは Cloud Run を直接呼ぶ。
   API_ORIGIN?: string;
@@ -29,13 +36,22 @@ interface Env {
 
 // run_worker_first と揃えること
 const API_PATH = /^\/(?:api\/|status$|health$)/;
+const CALL_VOICE_PREFIX = "/call-voice/";
 
 // **infra の gcp/api_edge.tf の api_proxy_token_header と揃えること。**
 const PROXY_TOKEN_HEADER = "X-Cafeore-Proxy-Token";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: CallVoiceContext,
+  ): Promise<Response> {
     const url = new URL(request.url);
+    // プレビューでも、画面と同じ Worker が返す（中継先の API_ORIGIN は要らない）
+    if (url.pathname.startsWith(CALL_VOICE_PREFIX)) {
+      return handleCallVoice(request, env, ctx);
+    }
     if (!API_PATH.test(url.pathname)) {
       return env.ASSETS.fetch(request);
     }
