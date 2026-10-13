@@ -38,7 +38,10 @@ export const useViewSound = () => {
         return;
       }
       soundManager.enabled = !on;
-      if (!on) soundManager.playComplete();
+      if (!on) {
+        void unlock();
+        soundManager.playComplete();
+      }
       setOn(!on);
     },
   };
