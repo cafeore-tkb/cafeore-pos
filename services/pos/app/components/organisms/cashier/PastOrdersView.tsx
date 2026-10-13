@@ -16,12 +16,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
+import type { ConnectionIssue } from "../../functional/connectionIssues";
 import { useCurrentTime } from "../../functional/useCurrentTime";
 import { SquareRefundButton } from "../../molecules/SquareRefundButton";
+import { ConnectionIssueDot } from "./PrinterStatusDot";
 
 type props = {
   /** 出す注文。新しい順に並べる */
   orders: WithId<OrderEntity>[] | undefined;
+  /** つながっていないもの。見出しの右に出す */
+  connectionIssues: ConnectionIssue[];
   /** Square で払った注文に返金のボタン（注文を消す・残す）と返金の状態を出す */
   squareRefundable: boolean;
   /** 領収書を刷る。プリンターに送れたら true */
@@ -67,6 +71,7 @@ const discountNote = (order: OrderEntity) => {
  */
 export const PastOrdersView = ({
   orders,
+  connectionIssues,
   squareRefundable,
   onPrintFormalReceipt,
   onBack,
@@ -150,7 +155,12 @@ export const PastOrdersView = ({
         </button>
         <span className="font-extrabold text-xl">過去の注文</span>
         <span className="text-[13px] text-stone-500">{sorted.length}件</span>
-        <span className="ml-auto text-stone-400 text-xs">
+        <span className="ml-auto flex items-center gap-3.5 text-[13px]">
+          {connectionIssues.map((issue) => (
+            <ConnectionIssueDot key={issue.key} issue={issue} />
+          ))}
+        </span>
+        <span className="text-stone-400 text-xs">
           ↑ ↓ で選ぶ ・ Esc でレジに戻る
         </span>
       </div>

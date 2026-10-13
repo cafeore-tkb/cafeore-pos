@@ -53,6 +53,7 @@ import {
   voidAll,
 } from "../functional/cashierDraft";
 import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
+import type { ConnectionIssue } from "../functional/connectionIssues";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -73,7 +74,10 @@ import { MenuPanel } from "../organisms/cashier/MenuPanel";
 import { OrderPanel } from "../organisms/cashier/OrderPanel";
 import { PastOrdersView } from "../organisms/cashier/PastOrdersView";
 import { PayPanel } from "../organisms/cashier/PayPanel";
-import { PrinterStatusDot } from "../organisms/cashier/PrinterStatusDot";
+import {
+  ConnectionIssueDot,
+  PrinterStatusDot,
+} from "../organisms/cashier/PrinterStatusDot";
 import { VoidAllDialog } from "../organisms/cashier/VoidAllDialog";
 import { Label } from "../ui/label";
 
@@ -81,6 +85,8 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
+  /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
+  connectionIssues: ConnectionIssue[];
   /** 今すぐ保存できるか（つながっているか）。Square の会計はこのときだけ */
   canSaveNow: boolean;
   /** Square 連携が有効か。無効なら Square のボタンも端末の選択も出さない */
@@ -133,6 +139,7 @@ const CashierV2 = ({
   items,
   orders,
   wsStatus,
+  connectionIssues,
   canSaveNow,
   squareEnabled,
   squareDevice,
@@ -581,6 +588,9 @@ const CashierV2 = ({
             </div>
             <div className="flex items-center gap-3 xl:gap-4">
               <div className="flex items-center gap-3.5 text-[13px] text-stone-500">
+                {connectionIssues.map((issue) => (
+                  <ConnectionIssueDot key={issue.key} issue={issue} />
+                ))}
                 <PrinterStatusDot
                   name="ラベル"
                   status={printer.status}
@@ -711,6 +721,7 @@ const CashierV2 = ({
       ) : (
         <PastOrdersView
           orders={orders}
+          connectionIssues={connectionIssues}
           squareRefundable={squareEnabled}
           onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
           onBack={() => setView("register")}

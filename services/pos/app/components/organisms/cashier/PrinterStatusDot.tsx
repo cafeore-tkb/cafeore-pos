@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { cn } from "~/lib/utils";
+import type { ConnectionIssue } from "../../functional/connectionIssues";
 
 type props = {
   /** どのプリンターか（ラベル・レシート） */
@@ -63,4 +64,25 @@ export const PrinterStatusDot = memo(
       </span>
     );
   },
+);
+
+/**
+ * レジのヘッダーに出す、つながっていないもの（バックエンド未接続など）。文は title に出す
+ */
+export const ConnectionIssueDot = ({ issue }: { issue: ConnectionIssue }) => (
+  <span
+    title={issue.message}
+    className={cn(
+      "flex items-center gap-1.5 font-bold",
+      issue.tone === "error" ? "text-red-600" : "text-orange-600",
+    )}
+  >
+    <span
+      className={cn(
+        "h-2 w-2 rounded-full",
+        issue.tone === "error" ? "bg-red-600" : "animate-pulse bg-orange-500",
+      )}
+    />
+    {issue.label}
+  </span>
 );
