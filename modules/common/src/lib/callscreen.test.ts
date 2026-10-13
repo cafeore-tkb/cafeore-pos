@@ -97,6 +97,10 @@ describe("[unit] 呼び出し画面の注文の分け方", () => {
       dripping: [{ orderId: 3, drippers: [2] }],
       // ドリッパーに置いただけ（待機）はまだ準備中
       preparing: [1, 2],
+      // 準備完了の注文（4）のカードは、ドリップの案内に使わない
+      brewing: [
+        { key: expect.stringMatching(/@2$/), dripper: 2, orderIds: [3] },
+      ],
     });
   });
 
@@ -156,6 +160,46 @@ describe("[unit] 呼び出し画面の注文の分け方", () => {
     ]);
     expect(dripping).toEqual([]);
     expect(preparing).toEqual([1]);
+  });
+});
+
+describe("[unit] 呼び出し画面の抽出中のカード（ドリップの案内）", () => {
+  test("準備完了でない注文の抽出中のカードを、ドリッパーと注文の番号つきで返す", () => {
+    const dripId = "drip-merged";
+    const { brewing: cards } = splitCallScreenOrders([
+      order(1, [brewing(3)]),
+      // 2 つの注文を 1 枚のカードで淹れる
+      order(5, [brewing(2, { dripId })]),
+      order(4, [brewing(2, { dripId })]),
+      // 待機・終わり・準備完了の注文のカードは入れない
+      order(6, [queued(4)]),
+      order(7, [brewed(5)]),
+      order(8, [brewing(6)], { readyAt: at(20) }),
+    ]);
+    expect(
+      cards.map(({ dripper, orderIds }) => ({ dripper, orderIds })),
+    ).toEqual([
+      { dripper: 2, orderIds: [4, 5] },
+      { dripper: 3, orderIds: [1] },
+    ]);
+    expect(cards.find((card) => card.dripper === 2)?.key).toBe(`${dripId}@2`);
+  });
+
+  test("緊急（入れ直し）のカードは入れない", () => {
+    const emergency = {
+      id: "emergency-1",
+      createdAt: T0,
+      reason: "こぼした",
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "drip-emergency",
+      brewStartedAt: T0,
+      brewFinishedAt: null,
+    };
+    const { brewing: cards } = splitCallScreenOrders([
+      order(1, [brewed(3, { emergencies: [emergency] })]),
+    ]);
+    expect(cards).toEqual([]);
   });
 });
 

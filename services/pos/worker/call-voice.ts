@@ -1,12 +1,19 @@
-// 呼び出し画面で流す音声（/call-voice/<注文番号>）。
+// 呼び出し画面で流す音声（/call-voice/call・/call-voice/drip）。
 //
-// 文面はここで決め、画面からは注文番号と「順番が前後するか」だけを受け取る
-// （任意の文を読ませないため。ElevenLabs の利用枠を使うのはこの決まった文面だけになる）。
-// 作った音声は R2（CALL_VOICES）に溜め、同じ文面（と声・モデル・設定）なら ElevenLabs を呼ばずに返す。
-// 溜める鍵は、ElevenLabs に送る中身のハッシュ。文面や声を変えれば別の鍵になり、作り直される。
+//   - 呼び出し：「（順番が前後いたします。）N番のお客様、提供口までお越しください。」
+//   - ドリップの案内：「N番のお客様、ファーストにてドリップいたします。よろしければぜひ、お近くでご覧ください。」
+//
+// 文はここで決め、画面からは注文番号・「順番が前後するか」・ドリッパーの番号だけを受け取る
+// （任意の文を読ませないため。ElevenLabs の利用枠を使うのはこの決まった文だけになる）。
+//
+// 文は片（「N番のお客様、」「提供口までお越しください。」など）に分けて ElevenLabs で作り、つないで 1 本で返す。
+// 片ごとに R2（CALL_VOICES）に溜めるので、番号の片は呼び出しとドリップの案内で同じものを使い、
+// 決まった文の片は一度作れば済む。溜める鍵は、ElevenLabs に送る中身のハッシュ。文や声を変えれば別の鍵になり、作り直される。
 //
 // ElevenLabs の鍵は Worker の secret の ELEVENLABS_API_KEY。デプロイの workflow が GitHub の secret の
 // ELEVENLABS_API_KEY から --secrets-file で入れる（本番もプレビューも同じ）。
+
+import { concatMp3 } from "./mp3";
 
 /** R2 のバケットのうち、ここで使うところだけ */
 export interface CallVoiceBucket {
@@ -30,27 +37,59 @@ export interface CallVoiceContext {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-/** 注文番号は 1〜4 桁だけ受け付ける（作る文面の数に上限を付ける） */
-export const CALL_VOICE_PATH = /^\/call-voice\/([1-9]\d{0,3})$/;
-
 const ELEVENLABS_URL =
   "https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128";
 const MODEL_ID = "eleven_v4";
 const VOICE_ID = "gHBfNp2PWSyFgpPlzCOd";
+/** 声の調子の指定。片ごとに頭に付ける */
+const VOICE_DIRECTION = "[スムーズなナレーターで]";
 /** 鍵を変えずに作り直したいとき（ElevenLabs 側の声が変わったなど）はここを上げる */
 const CACHE_VERSION = 1;
 
-/**
- * 呼び出しの文面。順番が前後するとき（先に注文したお客様がまだ待っている）は冒頭で断る
- */
-export const callVoiceText = (orderNo: number, reordered: boolean) =>
-  `[スムーズなナレーターで]${reordered ? "順番が前後いたします。" : ""}${orderNo}番でお待ちのお客様、提供口までお越しください。`;
+/** 注文番号は 1〜4 桁だけ受け付ける（作る片の数に上限を付ける） */
+const ORDER_NO = /^[1-9]\d{0,3}$/;
+/** ドリップの案内で一度に読む注文の数（1 枚のカードは最大 2 杯） */
+const MAX_DRIP_ORDERS = 2;
 
-/** ElevenLabs の text-to-dialogue に送る中身 */
-export const callVoiceRequestBody = (text: string) => ({
+/** ドリッパーの読み（画面の 1st〜6th。英字のままだと読み方が揺れうるので仮名で渡す） */
+const DRIPPER_READINGS: Record<number, string> = {
+  1: "ファースト",
+  2: "セカンド",
+  3: "サード",
+  4: "フォース",
+  5: "フィフス",
+  6: "シックス",
+};
+
+/** 片の文 */
+export const callVoiceSegments = {
+  reordered: "順番が前後いたします。",
+  orderNo: (orderNo: number) => `${orderNo}番のお客様、`,
+  callTail: "提供口までお越しください。",
+  dripper: (dripper: number) =>
+    `${DRIPPER_READINGS[dripper]}にてドリップいたします。`,
+  dripTail: "よろしければぜひ、お近くでご覧ください。",
+};
+
+/** 呼び出しの片 */
+export const callAnnouncement = (orderNo: number, reordered: boolean) => [
+  ...(reordered ? [callVoiceSegments.reordered] : []),
+  callVoiceSegments.orderNo(orderNo),
+  callVoiceSegments.callTail,
+];
+
+/** ドリップの案内の片 */
+export const dripAnnouncement = (orderNos: number[], dripper: number) => [
+  ...orderNos.map(callVoiceSegments.orderNo),
+  callVoiceSegments.dripper(dripper),
+  callVoiceSegments.dripTail,
+];
+
+/** ElevenLabs の text-to-dialogue に送る中身（片 1 つ分） */
+export const callVoiceRequestBody = (segment: string) => ({
   model_id: MODEL_ID,
   language_code: "ja",
-  inputs: [{ text, voice_id: VOICE_ID }],
+  inputs: [{ text: `${VOICE_DIRECTION}${segment}`, voice_id: VOICE_ID }],
   settings: { stability: 1.0, similarity: 0.75 },
 });
 
@@ -73,36 +112,43 @@ export const callVoiceCacheKey = async (
   return `call-voice/${hex}.mp3`;
 };
 
-const audioResponse = (audio: ArrayBuffer, cache: "hit" | "miss") =>
-  new Response(audio, {
-    headers: {
-      "content-type": "audio/mpeg",
-      // 画面は同じ番号を何度も呼ぶので、しばらくはブラウザにも持たせる。
-      // 文面を変えたデプロイの後も、長くて 1 時間で新しい音声になる
-      "cache-control": "private, max-age=3600",
-      "x-call-voice-cache": cache,
-    },
-  });
+/** 読む片。URL が決まりに合わなければ null */
+export const parseAnnouncement = (url: URL): string[] | null => {
+  const orders = url.searchParams.getAll("order");
+  if (orders.length === 0 || !orders.every((no) => ORDER_NO.test(no))) {
+    return null;
+  }
+  const orderNos = orders.map(Number);
+  if (url.pathname === "/call-voice/call") {
+    if (orderNos.length !== 1) return null;
+    return callAnnouncement(
+      orderNos[0],
+      url.searchParams.get("reordered") === "1",
+    );
+  }
+  if (url.pathname === "/call-voice/drip") {
+    const dripper = Number(url.searchParams.get("dripper"));
+    if (!(dripper in DRIPPER_READINGS)) return null;
+    if (orderNos.length > MAX_DRIP_ORDERS) return null;
+    return dripAnnouncement(orderNos, dripper);
+  }
+  return null;
+};
+
+type SegmentResult =
+  | { audio: ArrayBuffer; cache: "hit" | "miss" }
+  | { error: Response };
 
 const errorResponse = (status: number, error: string) =>
   Response.json({ error }, { status });
 
-export async function handleCallVoice(
-  request: Request,
+/** 片 1 つの音声。溜めてあればそれ、無ければ ElevenLabs で作って溜める */
+const segmentAudio = async (
+  segment: string,
   env: CallVoiceEnv,
   ctx: CallVoiceContext,
-): Promise<Response> {
-  const url = new URL(request.url);
-  const match = CALL_VOICE_PATH.exec(url.pathname);
-  if (!match) return errorResponse(404, "注文番号が正しくありません");
-  if (request.method !== "GET") {
-    return errorResponse(405, "GET だけを受け付けます");
-  }
-
-  const orderNo = Number(match[1]);
-  const reordered = url.searchParams.get("reordered") === "1";
-  const text = callVoiceText(orderNo, reordered);
-  const body = callVoiceRequestBody(text);
+): Promise<SegmentResult> => {
+  const body = callVoiceRequestBody(segment);
   const key = await callVoiceCacheKey(body);
 
   const cached = await env.CALL_VOICES?.get(key).catch((error) => {
@@ -110,10 +156,12 @@ export async function handleCallVoice(
     console.error("call-voice: R2 から読めなかった", error);
     return null;
   });
-  if (cached) return audioResponse(await cached.arrayBuffer(), "hit");
+  if (cached) return { audio: await cached.arrayBuffer(), cache: "hit" };
 
   if (!env.ELEVENLABS_API_KEY) {
-    return errorResponse(503, "ELEVENLABS_API_KEY が設定されていません");
+    return {
+      error: errorResponse(503, "ELEVENLABS_API_KEY が設定されていません"),
+    };
   }
 
   const res = await fetch(ELEVENLABS_URL, {
@@ -133,22 +181,57 @@ export async function handleCallVoice(
       type,
       detail,
     });
-    return errorResponse(502, "音声を作れませんでした");
+    return { error: errorResponse(502, "音声を作れませんでした") };
   }
 
   const audio = await res.arrayBuffer();
   if (env.CALL_VOICES) {
-    // 溜めるのを待たずに返す。溜められなければ次の呼び出しでまた作る
-    // 応答の本文と取り合わないよう、溜める方には写しを渡す
+    // 溜めるのを待たずに返す。溜められなければ次の呼び出しでまた作る。
+    // 返す方と取り合わないよう、溜める方には写しを渡す
     ctx.waitUntil(
       env.CALL_VOICES.put(key, audio.slice(0), {
         httpMetadata: { contentType: "audio/mpeg" },
         // R2 の中を見たときに何の音声か分かるように（ヘッダーに載るので URL エンコードする）
-        customMetadata: { text: encodeURIComponent(text) },
+        customMetadata: { text: encodeURIComponent(segment) },
       }).catch((error) => {
         console.error("call-voice: R2 に溜められなかった", error);
       }),
     );
   }
-  return audioResponse(audio, "miss");
+  return { audio, cache: "miss" };
+};
+
+export async function handleCallVoice(
+  request: Request,
+  env: CallVoiceEnv,
+  ctx: CallVoiceContext,
+): Promise<Response> {
+  const segments = parseAnnouncement(new URL(request.url));
+  if (!segments) return errorResponse(404, "読む内容が正しくありません");
+  if (request.method !== "GET") {
+    return errorResponse(405, "GET だけを受け付けます");
+  }
+
+  // 片は同時に用意する（溜めていない片が複数あれば、ElevenLabs にも同時に頼む）
+  const results = await Promise.all(
+    segments.map((segment) => segmentAudio(segment, env, ctx)),
+  );
+  const failed = results.find((result) => "error" in result);
+  if (failed && "error" in failed) return failed.error;
+  const parts = results.flatMap((result) =>
+    "audio" in result ? [result] : [],
+  );
+
+  return new Response(concatMp3(parts.map((part) => part.audio)), {
+    headers: {
+      "content-type": "audio/mpeg",
+      // 画面は同じ番号を何度も呼ぶので、しばらくはブラウザにも持たせる。
+      // 文を変えたデプロイの後も、長くて 1 時間で新しい音声になる
+      "cache-control": "private, max-age=3600",
+      // 片がどれも溜めてあったか（確かめる用）
+      "x-call-voice-cache": parts.every((part) => part.cache === "hit")
+        ? "hit"
+        : "miss",
+    },
+  });
 }

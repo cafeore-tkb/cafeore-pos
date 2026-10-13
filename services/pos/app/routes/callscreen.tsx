@@ -24,12 +24,15 @@ import {
   stageContentStyle,
 } from "./callscreen.components";
 import {
-  useCallAnnouncer,
+  callVoicePath,
+  dripVoicePath,
+  useAnnouncer,
   useCallVisibility,
   useCmPlayback,
   useFlash,
   useOnAdded,
   useStageScale,
+  useWarmCallVoices,
 } from "./callscreen.hooks";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -58,7 +61,7 @@ export default function FieldsOfCallScreen() {
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
   // ドリップ中は CaOS のカードの状態で決める（@cafeore/common の splitCallScreenOrders）
-  const { calling, dripping, preparing } = useMemo(
+  const { calling, dripping, preparing, brewing } = useMemo(
     () => splitCallScreenOrders(orders),
     [orders],
   );
@@ -67,26 +70,60 @@ export default function FieldsOfCallScreen() {
     () => dripping.map((order) => order.orderId),
     [dripping],
   );
+  // まだ呼んでいない注文。呼び出しの読み上げを先に作らせておく
+  const waitingIds = useMemo(
+    () => [...preparing, ...drippingIds],
+    [preparing, drippingIds],
+  );
+  const brewingKeys = useMemo(() => brewing.map((card) => card.key), [brewing]);
 
   const { startFlash, isFlashing } = useFlash();
 
-  const announce = useCallAnnouncer(soundRef, voiceRef);
+  const announce = useAnnouncer(soundRef, voiceRef);
   // 呼んだ時点の一覧で「順番が前後するか」を決めたいので、最新の一覧を持っておく
   const ordersRef = useRef(orders);
   ordersRef.current = orders;
+  const brewingRef = useRef(brewing);
+  brewingRef.current = brewing;
+  // ドリップの案内を流したカード（カードとドリッパーの印）。同じカードを外して戻したときに繰り返さない
+  const announcedBrewsRef = useRef(new Set<string>());
 
   const onCalled = useCallback(
     (orderId: number) => {
-      announce(orderId, isCallOutOfOrder(ordersRef.current, orderId));
+      announce({
+        path: callVoicePath(
+          orderId,
+          isCallOutOfOrder(ordersRef.current, orderId),
+        ),
+        chime: true,
+      });
       startFlash(orderId);
     },
     [announce, startFlash],
   );
 
-  // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える。
-  // 呼び出しはチャイムと読み上げと点滅、ドリップ入りは点滅だけ
+  // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
+  // 「N番のお客様、ファーストにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない
+  const onBrewStarted = useCallback(
+    (key: string) => {
+      const card = brewingRef.current.find((item) => item.key === key);
+      if (!card || announcedBrewsRef.current.has(key)) return;
+      announcedBrewsRef.current.add(key);
+      announce({
+        path: dripVoicePath(card.orderIds, card.dripper),
+        chime: false,
+      });
+    },
+    [announce],
+  );
+
+  // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える
+  // （開いたときにもう呼んでいた・淹れていたものは読み上げない）。
+  // 呼び出しはチャイムと読み上げと点滅、ドリップ入りは点滅、淹れ始めたカードはドリップの案内
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
+  useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);
+  useWarmCallVoices(waitingIds, isOrdersLoaded);
 
   const showCall = useCallVisibility(calling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);
@@ -261,7 +298,7 @@ export default function FieldsOfCallScreen() {
       <audio src={brightNotifications} ref={soundRef} preload="auto">
         <track kind="captions" />
       </audio>
-      {/* 呼び出しの読み上げ。src は呼ぶたびに useCallAnnouncer が入れる */}
+      {/* 読み上げ。src は読むたびに useAnnouncer が入れる */}
       <audio ref={voiceRef} preload="none">
         <track kind="captions" />
       </audio>

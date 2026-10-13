@@ -10,6 +10,7 @@ import { jstDate } from "./jst";
 // ドリップ中かは CaOS のカードの状態（buildCaosCards）で決め、カップの列を自前では読まない。
 // 抽出中のカードに加えて終わったカードも数えるのは、2 杯目を待つ間などに「準備中」へ戻して見せないため。
 // 番号の下に出すドリッパーは、いま抽出中のカードのものだけ（終わったドリッパーは次の注文を淹れているので出さない）。
+// 抽出中のカード（brewing）は、ドリップの案内（「N番のお客様、ファーストにてドリップいたします。」）に使う。
 
 /** 呼び出し画面が使う注文（OrderEntity をそのまま渡せる） */
 export interface CallScreenOrderInput extends CaosOrderInput {
@@ -23,6 +24,15 @@ export interface CallScreenDripping {
   drippers: number[];
 }
 
+/** 抽出中のカード（ドリップの案内に使う） */
+export interface CallScreenBrewing {
+  /** カードとドリッパーで決まる印。同じカードを別のドリッパーに移して淹れ始めたら変わる */
+  key: string;
+  dripper: number;
+  /** カードで淹れている注文の番号（小さい順。統合したカードは 2 つありうる） */
+  orderIds: number[];
+}
+
 export interface CallScreenOrders {
   /** 注文番号。呼び出した時刻の新しい順（新しいものほど大きく出す） */
   calling: number[];
@@ -30,6 +40,8 @@ export interface CallScreenOrders {
   dripping: CallScreenDripping[];
   /** 注文番号。注文した順（淹れる順） */
   preparing: number[];
+  /** 準備完了でない注文の、抽出中のカード。緊急（入れ直し）のカードは含めない */
+  brewing: CallScreenBrewing[];
 }
 
 /**
@@ -44,8 +56,18 @@ export const splitCallScreenOrders = (
   // 注文（id）ごとの、淹れ始めたか・抽出中のドリッパー
   const started = new Set<string>();
   const brewing = new Map<string, Set<number>>();
+  const brewingCards: CallScreenBrewing[] = [];
   for (const card of buildCaosCards(notReady)) {
     if (card.status !== "brewing" && card.status !== "done") continue;
+    if (card.status === "brewing" && card.dripper !== null && !card.emergency) {
+      brewingCards.push({
+        key: `${card.key}@${card.dripper}`,
+        dripper: card.dripper,
+        orderIds: [...new Set(card.cups.map((cup) => cup.orderNo))].sort(
+          (a, b) => a - b,
+        ),
+      });
+    }
     for (const cup of card.cups) {
       started.add(cup.orderId);
       if (card.status === "brewing" && card.dripper !== null) {
@@ -83,7 +105,7 @@ export const splitCallScreenOrders = (
     )
     .map((order) => order.orderId);
 
-  return { calling, dripping, preparing };
+  return { calling, dripping, preparing, brewing: brewingCards };
 };
 
 /**

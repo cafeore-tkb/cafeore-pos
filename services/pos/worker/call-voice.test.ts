@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   type CallVoiceBucket,
+  callAnnouncement,
   callVoiceCacheKey,
   callVoiceRequestBody,
-  callVoiceText,
+  callVoiceSegments,
+  dripAnnouncement,
   handleCallVoice,
+  parseAnnouncement,
 } from "./call-voice";
 
-const AUDIO = new Uint8Array([0x49, 0x44, 0x33, 0x04]).buffer;
+// 片の音声の代わり（MP3 のフレームの形にはしていないので、つないでもそのまま並ぶ）
+const audioOf = (text: string) => new TextEncoder().encode(`<${text}>`).buffer;
+const textOf = async (res: Response) =>
+  new TextDecoder().decode(await res.arrayBuffer());
 
 const memoryBucket = (initial: Record<string, ArrayBuffer> = {}) => {
   const store = new Map(Object.entries(initial));
@@ -32,115 +38,169 @@ const context = () => {
   };
 };
 
-const elevenLabsOk = () =>
-  vi.fn(
-    async () =>
-      new Response(AUDIO, { headers: { "content-type": "audio/mpeg" } }),
-  );
+/** ElevenLabs の代わり。送られた文の片をそのまま音声にして返す */
+const elevenLabs = () =>
+  vi.fn(async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(init.body as string);
+    const text: string = body.inputs[0].text;
+    return new Response(audioOf(text.replace("[スムーズなナレーターで]", "")), {
+      headers: { "content-type": "audio/mpeg" },
+    });
+  });
+
+const keyOf = (segment: string) =>
+  callVoiceCacheKey(callVoiceRequestBody(segment));
 
 const get = (path: string) => new Request(`https://pos.example${path}`);
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
-describe("[unit] 呼び出しの音声の文面", () => {
-  test("番号を読み、順番が前後するときは冒頭で断る", () => {
-    expect(callVoiceText(12, false)).toBe(
-      "[スムーズなナレーターで]12番でお待ちのお客様、提供口までお越しください。",
-    );
-    expect(callVoiceText(12, true)).toBe(
-      "[スムーズなナレーターで]順番が前後いたします。12番でお待ちのお客様、提供口までお越しください。",
+describe("[unit] 呼び出しの音声の文", () => {
+  test("呼び出しは番号の片と決まった片。順番が前後するときは冒頭で断る", () => {
+    expect(callAnnouncement(12, false)).toEqual([
+      "12番のお客様、",
+      "提供口までお越しください。",
+    ]);
+    expect(callAnnouncement(12, true)).toEqual([
+      "順番が前後いたします。",
+      "12番のお客様、",
+      "提供口までお越しください。",
+    ]);
+  });
+
+  test("ドリップの案内は番号の片を呼び出しと同じものにし、ドリッパーは読みで渡す", () => {
+    expect(dripAnnouncement([12], 1)).toEqual([
+      "12番のお客様、",
+      "ファーストにてドリップいたします。",
+      "よろしければぜひ、お近くでご覧ください。",
+    ]);
+    expect(dripAnnouncement([12, 13], 3)).toEqual([
+      "12番のお客様、",
+      "13番のお客様、",
+      "サードにてドリップいたします。",
+      "よろしければぜひ、お近くでご覧ください。",
+    ]);
+  });
+
+  test("片ごとに ElevenLabs へ送り、声の調子の指定を頭に付ける", () => {
+    expect(callVoiceRequestBody("12番のお客様、").inputs).toEqual([
+      {
+        text: "[スムーズなナレーターで]12番のお客様、",
+        voice_id: "gHBfNp2PWSyFgpPlzCOd",
+      },
+    ]);
+  });
+
+  test("溜める鍵は同じ片なら同じ、違えば違う", async () => {
+    expect(await keyOf("1番のお客様、")).toBe(await keyOf("1番のお客様、"));
+    expect(await keyOf("1番のお客様、")).not.toBe(await keyOf("2番のお客様、"));
+    expect(await keyOf("1番のお客様、")).toMatch(
+      /^call-voice\/[0-9a-f]{64}\.mp3$/,
     );
   });
 
-  test("溜める鍵は同じ文面なら同じ、違えば違う", async () => {
-    const a = await callVoiceCacheKey(
-      callVoiceRequestBody(callVoiceText(1, false)),
+  test("URL が決まりに合わなければ読まない", () => {
+    const parse = (path: string) =>
+      parseAnnouncement(new URL(`https://pos.example${path}`));
+    expect(parse("/call-voice/call?order=7")).toEqual(
+      callAnnouncement(7, false),
     );
-    const b = await callVoiceCacheKey(
-      callVoiceRequestBody(callVoiceText(1, false)),
+    expect(parse("/call-voice/drip?order=7&order=8&dripper=6")).toEqual(
+      dripAnnouncement([7, 8], 6),
     );
-    const c = await callVoiceCacheKey(
-      callVoiceRequestBody(callVoiceText(1, true)),
-    );
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
-    expect(a).toMatch(/^call-voice\/[0-9a-f]{64}\.mp3$/);
+    for (const path of [
+      "/call-voice/call",
+      "/call-voice/call?order=abc",
+      "/call-voice/call?order=0",
+      "/call-voice/call?order=12345",
+      "/call-voice/call?order=1&order=2",
+      "/call-voice/drip?order=1",
+      "/call-voice/drip?order=1&dripper=7",
+      "/call-voice/drip?order=1&order=2&order=3&dripper=1",
+      "/call-voice/other?order=1",
+    ]) {
+      expect(parse(path)).toBe(null);
+    }
   });
 });
 
 describe("[unit] /call-voice", () => {
-  test("溜めてあれば ElevenLabs を呼ばずに返す", async () => {
-    const key = await callVoiceCacheKey(
-      callVoiceRequestBody(callVoiceText(7, false)),
-    );
-    const { bucket } = memoryBucket({ [key]: AUDIO });
-    const fetchMock = elevenLabsOk();
+  test("片をつないで 1 本で返す。溜めてある片は ElevenLabs を呼ばない", async () => {
+    const { bucket } = memoryBucket({
+      [await keyOf(callVoiceSegments.callTail)]: audioOf("溜めた尻"),
+    });
+    const fetchMock = elevenLabs();
     vi.stubGlobal("fetch", fetchMock);
-
-    const res = await handleCallVoice(
-      get("/call-voice/7"),
-      { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "key" },
-      context().ctx,
-    );
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("audio/mpeg");
-    expect(res.headers.get("x-call-voice-cache")).toBe("hit");
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(
-      new Uint8Array(AUDIO),
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  test("無ければ ElevenLabs で作って溜める。次は溜めたものを返す", async () => {
-    const { bucket, put } = memoryBucket();
-    const fetchMock = elevenLabsOk();
-    vi.stubGlobal("fetch", fetchMock);
-    const env = { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "secret-key" };
-
     const { ctx, settle } = context();
+
     const res = await handleCallVoice(
-      get("/call-voice/12?reordered=1"),
-      env,
+      get("/call-voice/call?order=12&reordered=1"),
+      { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "secret-key" },
       ctx,
     );
     await settle();
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/mpeg");
     expect(res.headers.get("x-call-voice-cache")).toBe("miss");
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(
-      new Uint8Array(AUDIO),
+    expect(await textOf(res)).toBe(
+      "<順番が前後いたします。><12番のお客様、><溜めた尻>",
     );
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
+    // 作ったのは溜めていなかった 2 つの片だけ
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(
       "https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128",
     );
     expect(new Headers(init.headers).get("xi-api-key")).toBe("secret-key");
-    expect(JSON.parse(init.body as string)).toEqual(
-      callVoiceRequestBody(callVoiceText(12, true)),
-    );
+  });
 
-    expect(put).toHaveBeenCalledTimes(1);
+  test("作った片は溜め、番号の片は呼び出しとドリップの案内で使い回す", async () => {
+    const { bucket, put } = memoryBucket();
+    const fetchMock = elevenLabs();
+    vi.stubGlobal("fetch", fetchMock);
+    const env = { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "key" };
+
+    const first = context();
+    await handleCallVoice(
+      get("/call-voice/drip?order=12&dripper=1"),
+      env,
+      first.ctx,
+    );
+    await first.settle();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(put).toHaveBeenCalledTimes(3);
+
+    // 呼び出しで新しく作るのは「提供口までお越しください。」だけ
+    const second = context();
+    const call = await handleCallVoice(
+      get("/call-voice/call?order=12"),
+      env,
+      second.ctx,
+    );
+    await second.settle();
+    expect(await textOf(call)).toBe(
+      "<12番のお客様、><提供口までお越しください。>",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    // 全部溜まっていれば ElevenLabs を呼ばない
     const again = await handleCallVoice(
-      get("/call-voice/12?reordered=1"),
+      get("/call-voice/call?order=12"),
       env,
       context().ctx,
     );
     expect(again.headers.get("x-call-voice-cache")).toBe("hit");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  test("鍵が無ければ作らない（溜めてあるものは返す）", async () => {
-    vi.stubGlobal("fetch", elevenLabsOk());
+  test("鍵が無ければ、溜めていない片は作れないので 503", async () => {
+    vi.stubGlobal("fetch", elevenLabs());
     const res = await handleCallVoice(
-      get("/call-voice/3"),
+      get("/call-voice/call?order=3"),
       { CALL_VOICES: memoryBucket().bucket },
       context().ctx,
     );
@@ -156,7 +216,7 @@ describe("[unit] /call-voice", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await handleCallVoice(
-      get("/call-voice/3"),
+      get("/call-voice/call?order=3"),
       { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "key" },
       context().ctx,
     );
@@ -165,21 +225,18 @@ describe("[unit] /call-voice", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  test("番号でないもの・5 桁以上・GET 以外は断る", async () => {
-    const fetchMock = elevenLabsOk();
+  test("決まりに合わない URL・GET 以外は断り、ElevenLabs を呼ばない", async () => {
+    const fetchMock = elevenLabs();
     vi.stubGlobal("fetch", fetchMock);
     const env = { CALL_VOICES: memoryBucket().bucket, ELEVENLABS_API_KEY: "k" };
 
-    for (const path of [
-      "/call-voice/abc",
-      "/call-voice/0",
-      "/call-voice/12345",
-    ]) {
-      expect(
-        (await handleCallVoice(get(path), env, context().ctx)).status,
-      ).toBe(404);
-    }
-    const post = new Request("https://pos.example/call-voice/1", {
+    const bad = await handleCallVoice(
+      get("/call-voice/call?order=abc"),
+      env,
+      context().ctx,
+    );
+    expect(bad.status).toBe(404);
+    const post = new Request("https://pos.example/call-voice/call?order=1", {
       method: "POST",
     });
     expect((await handleCallVoice(post, env, context().ctx)).status).toBe(405);

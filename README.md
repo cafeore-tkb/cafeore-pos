@@ -115,30 +115,39 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
 
 ### 呼び出しの音声（ElevenLabs・R2）
 
-呼び出し画面（`/callscreen`）は、番号を呼ぶたびにチャイムを鳴らしてから番号を読み上げる。
-何件も同時に呼んだときは、1 件ずつ順に流す。
+呼び出し画面（`/callscreen`）は、ElevenLabs で作った音声で次の 2 つを読み上げる。重なったときは 1 件ずつ順に流す。
 
-- 音声は POS の Worker の `/call-voice/<注文番号>` が返す（`services/pos/worker/call-voice.ts`）。
-  ElevenLabs の text-to-dialogue（`eleven_v4`）で作る。文面は Worker が決め、画面が渡すのは番号と
-  「順番が前後するか」（`?reordered=1`）だけ。決まった文面しか読ませないので、作る音声の数には上限がある
-  （番号は 1〜9999 だけ受け付ける）
+| いつ | 読む文 | チャイム |
+|--|--|--|
+| 番号を呼んだとき | （順番が前後いたします。）N番のお客様、提供口までお越しください。 | 先に鳴らす |
+| CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた・積まれていたカードを担当し始めた） | N番のお客様、ファーストにてドリップいたします。よろしければぜひ、お近くでご覧ください。 | 鳴らさない（呼び出しと取り違えないため） |
+
+- 音声は POS の Worker の `/call-voice/call?order=N(&reordered=1)`・`/call-voice/drip?order=N&dripper=K` が返す
+  （`services/pos/worker/call-voice.ts`）。文は Worker が決め、画面が渡すのは番号・「順番が前後するか」・ドリッパーの番号だけ。
+  決まった文しか読ませないので、作る音声の数には上限がある（番号は 1〜9999、ドリップの案内は 1 枚のカードの 2 注文まで）
+- 文は片（「N番のお客様、」「提供口までお越しください。」「順番が前後いたします。」「ファーストにてドリップいたします。」
+  「よろしければぜひ、お近くでご覧ください。」）に分けて作り、Worker がつないで 1 本の MP3 で返す（`worker/mp3.ts`。
+  片ごとの ID3 タグと Info ヘッダーを落としてフレームをつなぐ）。番号の片は呼び出しとドリップの案内で同じものを使う。
+  ドリッパーは画面の「1st」ではなく「ファースト」のように仮名で読ませる
+- 片は R2 のバケット `cafeore-call-voices`（Cloudflare のアカウント `cafeorepos`）に溜め、溜めてあれば ElevenLabs を呼ばない。
+  鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
+  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューで同じバケットを使う
+- 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
+  さらに、まだ呼んでいない注文の呼び出しの音声を、画面に見えた時点で先に作らせておく（番号の片が溜まるので、ドリップの案内も速くなる）
 - 呼ぶ注文より先に注文した注文（同じ日）がまだ待っている（準備完了でも提供済みでもない）ときは、冒頭に
   「順番が前後いたします。」を付ける（`@cafeore/common` の `isCallOutOfOrder`）
-- 作った音声は R2 のバケット `cafeore-call-voices`（Cloudflare のアカウント `cafeorepos`）に溜め、
-  同じ文面なら ElevenLabs を呼ばずにそれを返す。鍵は ElevenLabs に送る中身（文面・声・モデル・設定）のハッシュなので、
-  文面や声を変えると自然に作り直す。同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、
-  バケットの中身を消す。本番とプレビューで同じバケットを使う
+- ドリップの案内は、同じカードを同じドリッパーで淹れ直しても繰り返さない。緊急（入れ直し）のカード、もう呼んだ注文のカードでは流さない
 - ElevenLabs の鍵は GitHub の secret `ELEVENLABS_API_KEY`。本番もプレビューもデプロイのたびに
   `--secrets-file` で Worker の secret に入れる（書かなかった secret は前のバージョンから引き継がれるので、
   片方だけで入れると古い値が残る）
 - 音声が取れないとき（鍵が無い、ElevenLabs が断った、ローカルの `react-router dev` には Worker が無い）は、
-  チャイムだけ鳴らす
+  呼び出しはチャイムだけ、ドリップの案内は何も鳴らさない
 - Worker ごと手元で試すときは `pnpm pos build` のあと `services/pos` で `pnpm exec wrangler dev`
   （R2 は手元の模擬になる。鍵は `.dev.vars` に `ELEVENLABS_API_KEY=...` と書く）
 - **バケットが無いと Worker のデプロイが失敗する。** はじめにダッシュボードで R2 を有効にし、
   `pnpm exec wrangler r2 bucket create cafeore-call-voices` で作っておくこと
 - プレビューの URL（`preview_urls`）は PR を閉じても残る（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。
-  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。文面と番号の幅で作る音声の数は抑えてあるが、
+  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。片の数は番号の幅で抑えてあるが、
   ElevenLabs の利用枠が気になるなら、プレビューの URL も Access で守るか、`preview_urls` を止める
 
 ### backend（Artifact Registry → Cloud Run）
