@@ -173,7 +173,7 @@ export const SquarePaymentDialog = ({
               {phase === "failed" && started && (
                 <p className="font-bold text-stone-900">
                   先に印刷した No.{order.orderId}
-                  のシールは、同じ注文で会計し直すならそのまま使います（刷り直しません）。注文をやめる・変えるときは使わないでください。
+                  のシールは、同じ注文で会計し直すならそのまま使います（刷り直しません）。注文をやめる・変えるときは「会計取消」を押してください（取り消しのシールを刷ります）。
                 </p>
               )}
               {message && <p className="text-red-700">{message}</p>}

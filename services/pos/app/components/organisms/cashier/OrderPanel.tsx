@@ -15,6 +15,7 @@ import {
   type CouponStatus,
   canAssignSelected,
   canEditCoupon,
+  canEditLines,
 } from "../../functional/cashierDraft";
 import { menuColor } from "./MenuPanel";
 
@@ -26,6 +27,8 @@ type props = {
   coffeeCups: number;
   /** ドリッパーを 3 人以上確保する注文。分けるよう知らせる */
   needsSplit: boolean;
+  /** 一括会計で先に刷ったシールの番号。刷っていなければ null */
+  printedOrderId: number | null;
   onSelect: (index: number) => void;
   onToggleVoid: (index: number) => void;
   onOpenAssign: () => void;
@@ -83,13 +86,22 @@ export const OrderPanel = (props: props) => {
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={props.onBackToEntry}
-            className="h-15 w-full rounded-xl border border-stone-400 bg-white font-bold text-[17px] text-stone-900 hover:bg-stone-50"
-          >
-            会計取消
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-stone-500 text-xs leading-normal">
+              {props.printedOrderId !== null &&
+                `No.${props.printedOrderId} のシールを印刷しました。`}
+              商品を変えるときは会計取消
+              {props.printedOrderId !== null &&
+                "（取り消しのシールを刷ります）"}
+            </p>
+            <button
+              type="button"
+              onClick={props.onBackToEntry}
+              className="h-15 w-full rounded-xl border border-stone-400 bg-white font-bold text-[17px] text-stone-900 hover:bg-stone-50"
+            >
+              会計取消
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -157,7 +169,9 @@ const LinesSection = ({
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => onSelect(index)}
-                className="flex min-h-12 min-w-0 flex-1 items-center gap-2 pr-3.5 pl-2.5 text-left"
+                // 会計の段階ではシールを先に刷っているので、商品は変えない
+                disabled={!canEditLines(draft)}
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-2 pr-3.5 pl-2.5 text-left disabled:cursor-default"
               >
                 <span className="w-3.5 flex-none text-right font-mono text-stone-400 text-xs">
                   {index + 1}
@@ -239,10 +253,10 @@ const LinesSection = ({
         <button
           type="button"
           onClick={onVoidAll}
-          disabled={activeCount === 0}
+          disabled={activeCount === 0 || !canEditLines(draft)}
           className={cn(
             "h-12 min-w-0 flex-1 rounded-[10px] border font-bold text-sm leading-tight",
-            activeCount > 0
+            activeCount > 0 && canEditLines(draft)
               ? "border-red-700 bg-white text-red-700"
               : "cursor-not-allowed border-stone-200 bg-stone-100 text-stone-400",
           )}

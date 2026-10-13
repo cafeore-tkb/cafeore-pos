@@ -7,7 +7,7 @@ import {
   type WithId,
   shouldSplitOrder,
 } from "@cafeore/common";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import bellTwice from "~/assets/bell_twice.mp3";
@@ -210,31 +210,40 @@ const CashierV2 = ({
     ),
   );
 
+  const store = useStore();
   /**
-   * 印刷したが、まだ登録していない注文のシールのキー。
-   * Square の決済がお金を受け取らずに終わった後、同じ注文で会計し直すときは刷り直さない
-   * （先に印刷したシールをそのまま使う）。注文を消したとき・登録したときに忘れる。
+   * 注文のシールを刷る。このレジで先に刷った、まだ登録していない注文と同じ中身なら刷り直さない
+   * （一括会計・Square の決済で先に刷ったシールを、確定・会計し直しのときにそのまま使う）。
+   * 刷ったら番号と中身を下書き（printedLabel）に覚え、番号は確定まで変えない。注文を消したとき・登録したときに忘れる。
+   * 決済の途中（非同期）からも呼ぶので、下書きはストアから今の値を読む。
    */
-  const unregisteredLabelKeyRef = useRef<string | null>(null);
   const printOrderLabel = useCallback(
     (order: OrderEntity) => {
       const key = labelKey(order);
-      if (unregisteredLabelKeyRef.current === key) {
+      if (store.get(cashierDraftAtom).printedLabel?.key === key) {
         return;
       }
-      unregisteredLabelKeyRef.current = key;
       printer.printOrderLabel(order);
+      updateDraft((current) => ({
+        ...current,
+        printedLabel: { orderId: order.orderId, key },
+      }));
     },
-    [printer],
+    [store, printer, updateDraft],
   );
 
+  // 先にシールを刷った注文は、シールの番号のまま確定する（別のレジが送って次の番号が進んでも変えない）
+  const printedOrderId = draft.printedLabel?.orderId ?? null;
   /**
    * FIXME #412 useEffect内でstateを更新している
    * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
    */
   useEffect(() => {
-    dispatchOrder({ type: "updateOrderId", orderId: nextOrderId });
-  }, [nextOrderId, dispatchOrder]);
+    dispatchOrder({
+      type: "updateOrderId",
+      orderId: printedOrderId ?? nextOrderId,
+    });
+  }, [printedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
   const coupon = useMemo(
@@ -268,11 +277,48 @@ const CashierV2 = ({
   }, [discountKey, dispatchOrder]);
 
   const resetAll = useCallback(() => {
-    unregisteredLabelKeyRef.current = null;
     dispatchOrder({ type: "clear" });
     setDraft(emptyCashierDraft());
     setDialog(null);
   }, [dispatchOrder, setDraft]);
+
+  /**
+   * 先に刷ったシールを取り消す。取り消しのシールを刷り、覚えていたシールを忘れる。
+   * skipOrderId なら、その番号は使わずに次の番号へ進める（「取消 No.N」のあとに同じ No.N のシールが出ないように）
+   */
+  const cancelPrintedLabel = useCallback(
+    (skipOrderId: boolean) => {
+      const printed = store.get(cashierDraftAtom).printedLabel;
+      if (printed === null) {
+        return;
+      }
+      const canceled = newOrder.clone();
+      canceled.orderId = printed.orderId;
+      printer.printCancelLabel(canceled);
+      updateDraft((current) => ({ ...current, printedLabel: null }));
+      if (skipOrderId) {
+        markOrderIdIssued(printed.orderId);
+        if (manualOrderId !== null) {
+          setOrderIdOverride(printed.orderId + 1);
+        }
+      }
+    },
+    [
+      store,
+      newOrder,
+      printer,
+      updateDraft,
+      markOrderIdIssued,
+      manualOrderId,
+      setOrderIdOverride,
+    ],
+  );
+
+  /** 入力中の注文を消す。先に刷ったシールがあれば取り消しのシールを刷る */
+  const discardOrder = useCallback(() => {
+    cancelPrintedLabel(true);
+    resetAll();
+  }, [cancelPrintedLabel, resetAll]);
 
   const itemCount = newOrder.menus.length;
   const billing = newOrder.billingAmount;
@@ -483,6 +529,35 @@ const CashierV2 = ({
     ],
   );
 
+  /**
+   * 一括会計。会計の段階に進み、シールを先に刷る（Square と同じく、お金を受け取る間に作り始められるように）。
+   * 番号を決められない（オフラインで番号を付けていない）ときは、確定のときに刷る
+   */
+  const startPayment = useCallback(() => {
+    if (draft.step !== "entry" || newOrder.menus.length === 0) {
+      return;
+    }
+    updateDraft(goPay);
+    if (canSubmitOrder) {
+      printOrderLabel(newOrder);
+    }
+  }, [draft.step, newOrder, updateDraft, canSubmitOrder, printOrderLabel]);
+
+  /** 会計取消。入れる段階に戻り、先に刷ったシールは取り消しのシールを刷って使わない */
+  const cancelPayment = useCallback(() => {
+    cancelPrintedLabel(true);
+    updateDraft(backToEntry);
+  }, [cancelPrintedLabel, updateDraft]);
+
+  /** 番号を手で付け直す。先に刷ったシールの番号とずれるので、取り消しのシールを刷る */
+  const overrideOrderId = useCallback(
+    (orderId: number | null) => {
+      cancelPrintedLabel(false);
+      setOrderIdOverride(orderId);
+    },
+    [cancelPrintedLabel, setOrderIdOverride],
+  );
+
   const openAssign = useCallback(() => {
     if (canAssignSelected(draft)) {
       setDialog("assign");
@@ -532,6 +607,9 @@ const CashierV2 = ({
         case "openMemo":
           openMemo();
           return;
+        case "goPay":
+          startPayment();
+          return;
         case "exactReceived":
           updateDraft((current) => setExactReceived(current, billing));
           return;
@@ -546,7 +624,7 @@ const CashierV2 = ({
           if (hasDraftInput(viewDraft)) {
             setDialog("reset");
           } else {
-            resetAll();
+            discardOrder();
           }
           return;
       }
@@ -566,9 +644,10 @@ const CashierV2 = ({
     updateDraft,
     openAssign,
     openMemo,
+    startPayment,
     submitCash,
     startSquarePayment,
-    resetAll,
+    discardOrder,
   ]);
 
   const selectedLine =
@@ -599,7 +678,7 @@ const CashierV2 = ({
                 orderId={newOrder.orderId}
                 isNeedManualOrderId={isNeedManualOrderId}
                 manualOrderId={manualOrderId}
-                onOrderIdOverride={setOrderIdOverride}
+                onOrderIdOverride={overrideOrderId}
               />
               <ReadyTimeEstimate
                 orders={orders}
@@ -692,6 +771,7 @@ const CashierV2 = ({
               discount={newOrder.discount}
               coffeeCups={newOrder.getCoffeeCups().length}
               needsSplit={shouldSplitOrder(newOrder.menus)}
+              printedOrderId={draft.printedLabel?.orderId ?? null}
               onSelect={(index) =>
                 updateDraft((current) => selectLine(current, index))
               }
@@ -705,8 +785,8 @@ const CashierV2 = ({
                 updateDraft((current) => toggleSpecial(current, couponApplied))
               }
               onOpenMemo={openMemo}
-              onGoPay={() => updateDraft(goPay)}
-              onBackToEntry={() => updateDraft(backToEntry)}
+              onGoPay={startPayment}
+              onBackToEntry={cancelPayment}
             />
             <PayPanel
               draft={viewDraft}
@@ -798,12 +878,16 @@ const CashierV2 = ({
         title="取消"
         sub={`No.${newOrder.orderId}`}
         question="入力中の注文を消しますか？"
-        note={`${resetSummary} が消えます。消した注文は戻せません。`}
+        note={`${resetSummary} が消えます。消した注文は戻せません。${
+          draft.printedLabel
+            ? `先に刷った No.${draft.printedLabel.orderId} のシールは使わず、取り消しのシールを刷ります。`
+            : ""
+        }`}
         hint="Enter でやめる ・ 消すときは「消す」を押す（Tab で移って Enter）"
         confirmLabel="消す"
         // 戻せないので、押し間違いの Enter では消さない
         focus="cancel"
-        onConfirm={resetAll}
+        onConfirm={discardOrder}
         onClose={() => setDialog(null)}
       />
       <SquarePaymentDialog

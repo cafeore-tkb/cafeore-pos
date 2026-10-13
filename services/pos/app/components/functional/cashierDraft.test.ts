@@ -72,9 +72,13 @@ describe("[unit] cashierDraft の商品", () => {
     expect(draft.lines.every((line) => line.voided)).toBe(true);
   });
 
-  test("会計の段階では商品を足さない", () => {
+  test("会計の段階では商品を足さず、削除・選択・指名もしない（シールを先に刷っている）", () => {
     const draft = goPay(withLines(blend));
     expect(addLine(draft, coaster)).toBe(draft);
+    expect(toggleVoid(draft, 0)).toBe(draft);
+    expect(voidAll(draft)).toBe(draft);
+    expect(selectLine(draft, 0)).toBe(draft);
+    expect(assignLine(draft, 0, 1, "たなか")).toBe(draft);
   });
 
   test("同じ行を選び直すと選択を外す", () => {
@@ -187,10 +191,15 @@ describe("[unit] cashierDraft の段階", () => {
 });
 
 describe("[unit] cashierKeyIntent", () => {
-  test("商品キーで足し、Enter で一括会計に進む", () => {
-    const draft = keys(emptyCashierDraft(), "^", "^", ",", "Enter");
+  test("商品キーで足し、Enter で一括会計する", () => {
+    const draft = keys(emptyCashierDraft(), "^", "^", ",");
     expect(activeMenus(draft)).toEqual([blend, blend, coaster]);
-    expect(draft.step).toBe("pay");
+    expect(cashierKeyIntent(draft, "Enter", { menus, payments }).type).toBe(
+      "goPay",
+    );
+    expect(
+      cashierKeyIntent(voidAll(draft), "Enter", { menus, payments }).type,
+    ).toBe("none");
   });
 
   test("Backspace は選んでいる行を削除し、選んでいなければ 1 桁消す", () => {

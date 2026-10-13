@@ -46,6 +46,17 @@ export type CashierDraft = {
   /** 受取金額（数字だけ）。入れていなければ空 */
   received: string;
   payment: CashierPayment;
+  /**
+   * 一括会計・Square の決済のときに先に刷ったシール（まだ登録していない注文の）。
+   * 番号はこのシールの番号のまま確定まで変えず、同じ中身なら刷り直さない
+   */
+  printedLabel: PrintedLabel | null;
+};
+
+export type PrintedLabel = {
+  orderId: number;
+  /** シールの中身（刷る印刷データ）。中身が変わったら刷り直す */
+  key: string;
 };
 
 export const COUPON_DIGITS = 3;
@@ -64,6 +75,7 @@ export const emptyCashierDraft = (): CashierDraft => ({
   memo: "",
   received: "",
   payment: "cash",
+  printedLabel: null,
 });
 
 /** 消すと失うものがあるか（商品・引換券番号・特殊な割引・特記事項・受取金額） */
@@ -81,6 +93,13 @@ export const activeMenus = (draft: CashierDraft): WithId<MenuEntity>[] =>
 /** 指名できる商品か。指名するのはドリッパーで淹れるもの（抽出が要るもの）だけ */
 export const canAssignMenu = (menu: MenuEntity): boolean =>
   menu.items.some(({ item }) => item.item_type.needs_brew);
+
+/**
+ * 商品を変えられるか。会計の段階ではシールを先に刷っているので変えない
+ * （変えるときは会計取消で戻る。取り消しのシールを刷り、新しい番号で刷り直す）
+ */
+export const canEditLines = (draft: CashierDraft): boolean =>
+  draft.step === "entry";
 
 /** 選んでいる行が、今指名できるか（削除していない・抽出が要る） */
 export const canAssignSelected = (draft: CashierDraft): boolean => {
@@ -117,7 +136,7 @@ export const toggleVoid = (
   draft: CashierDraft,
   index: number,
 ): CashierDraft => {
-  if (!draft.lines[index]) return draft;
+  if (!canEditLines(draft) || !draft.lines[index]) return draft;
   return {
     ...draft,
     lines: draft.lines.map((line, i) =>
@@ -129,21 +148,24 @@ export const toggleVoid = (
 };
 
 /** 全部の行を削除する */
-export const voidAll = (draft: CashierDraft): CashierDraft => ({
-  ...draft,
-  lines: draft.lines.map((line) =>
-    line.voided ? line : { ...line, voided: true },
-  ),
-  selected: null,
-  zone: "coupon",
-});
+export const voidAll = (draft: CashierDraft): CashierDraft =>
+  canEditLines(draft)
+    ? {
+        ...draft,
+        lines: draft.lines.map((line) =>
+          line.voided ? line : { ...line, voided: true },
+        ),
+        selected: null,
+        zone: "coupon",
+      }
+    : draft;
 
 /** 行を選ぶ。選んでいる行をもう一度選ぶと外す */
 export const selectLine = (
   draft: CashierDraft,
   index: number,
 ): CashierDraft => {
-  if (!draft.lines[index]) return draft;
+  if (!canEditLines(draft) || !draft.lines[index]) return draft;
   if (draft.selected === index) {
     return { ...draft, selected: null, zone: "coupon" };
   }
@@ -161,7 +183,7 @@ export const assignLine = (
   assignee: string | null,
 ): CashierDraft => {
   const line = draft.lines[index];
-  if (!line) return draft;
+  if (!canEditLines(draft) || !line) return draft;
   const menu = line.menu.clone();
   menu.assign(dripper, assignee);
   return {
@@ -361,6 +383,8 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
+  /** 一括会計（シールを刷って会計の段階に進む） */
+  | { type: "goPay" }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
   | { type: "submitCash" }
@@ -437,7 +461,7 @@ export const cashierKeyIntent = (
       if (draft.selected === null && draft.zone === "memo") {
         return { type: "openMemo" };
       }
-      return update(goPay(draft));
+      return activeMenus(draft).length > 0 ? { type: "goPay" } : NONE;
     case "Escape":
       return { type: "reset" };
     default:
