@@ -648,7 +648,9 @@ const CashierV2 = ({
               </button>
             </div>
           </header>
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px]">
+          {/* 会計の列は 432px 以上にし、余った幅をメニューと 4:3 で分ける（メニューだけが広がらないように）。
+              1280px より狭い画面（iPad など）では、メニューが細くなりすぎないよう会計の列を 392px にする */}
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px] xl:grid-cols-[minmax(0,1fr)_384px_minmax(432px,0.75fr)]">
             <MenuPanel
               menus={items ?? []}
               disabled={draft.step === "pay"}
