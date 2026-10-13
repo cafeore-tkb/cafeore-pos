@@ -225,6 +225,26 @@ describe("[unit] /call-voice", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  test("ElevenLabs から返事が来なければ打ち切って 504 で、溜めない", async () => {
+    const { bucket, put } = memoryBucket();
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await handleCallVoice(
+      get("/call-voice/call?order=3"),
+      { CALL_VOICES: bucket, ELEVENLABS_API_KEY: "key" },
+      context().ctx,
+    );
+
+    expect(res.status).toBe(504);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
   test("決まりに合わない URL・GET 以外は断り、ElevenLabs を呼ばない", async () => {
     const fetchMock = elevenLabs();
     vi.stubGlobal("fetch", fetchMock);

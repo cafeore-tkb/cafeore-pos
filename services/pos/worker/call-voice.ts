@@ -45,6 +45,8 @@ const VOICE_ID = "gHBfNp2PWSyFgpPlzCOd";
 const VOICE_DIRECTION = "[スムーズなナレーターで]";
 /** 鍵を変えずに作り直したいとき（ElevenLabs 側の声が変わったなど）はここを上げる */
 const CACHE_VERSION = 1;
+/** ElevenLabs の返事を待つ上限。返事が来ないまま Worker を待たせない */
+const ELEVENLABS_TIMEOUT_MS = 20_000;
 
 /** 注文番号は 1〜4 桁だけ受け付ける（作る片の数に上限を付ける） */
 const ORDER_NO = /^[1-9]\d{0,3}$/;
@@ -164,27 +166,38 @@ const segmentAudio = async (
     };
   }
 
-  const res = await fetch(ELEVENLABS_URL, {
-    method: "POST",
-    headers: {
-      "xi-api-key": env.ELEVENLABS_API_KEY,
-      "content-type": "application/json",
-      accept: "audio/mpeg",
-    },
-    body: JSON.stringify(body),
-  });
-  const type = res.headers.get("content-type") ?? "";
-  if (!res.ok || !type.startsWith("audio/")) {
-    const detail = (await res.text().catch(() => "")).slice(0, 500);
-    console.error("call-voice: ElevenLabs が音声を返さなかった", {
-      status: res.status,
-      type,
-      detail,
+  let audio: ArrayBuffer;
+  try {
+    // 打ち切りは本文を読むところまで効く
+    const res = await fetch(ELEVENLABS_URL, {
+      method: "POST",
+      headers: {
+        "xi-api-key": env.ELEVENLABS_API_KEY,
+        "content-type": "application/json",
+        accept: "audio/mpeg",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(ELEVENLABS_TIMEOUT_MS),
     });
-    return { error: errorResponse(502, "音声を作れませんでした") };
+    const type = res.headers.get("content-type") ?? "";
+    if (!res.ok || !type.startsWith("audio/")) {
+      const detail = (await res.text().catch(() => "")).slice(0, 500);
+      console.error("call-voice: ElevenLabs が音声を返さなかった", {
+        status: res.status,
+        type,
+        detail,
+      });
+      return { error: errorResponse(502, "音声を作れませんでした") };
+    }
+    audio = await res.arrayBuffer();
+  } catch (error) {
+    // 時間切れ（TimeoutError）か、つながらなかった
+    console.error("call-voice: ElevenLabs から返事が来なかった", error);
+    return {
+      error: errorResponse(504, "音声を作るのに時間がかかりすぎました"),
+    };
   }
 
-  const audio = await res.arrayBuffer();
   if (env.CALL_VOICES) {
     // 溜めるのを待たずに返す。溜められなければ次の呼び出しでまた作る。
     // 返す方と取り合わないよう、溜める方には写しを渡す
