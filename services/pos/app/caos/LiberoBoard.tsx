@@ -5,9 +5,7 @@ import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { LiberoRow } from "./components/LiberoRow";
 import { SEGMENTS, ViewHeader, segmentClass } from "./components/ViewHeader";
 import { useHandedWater } from "./hooks/useHandedWater";
-import { useLiveBoard } from "./hooks/useLiveBoard";
-import { useTimelineArrivals } from "./hooks/useTimelineArrivals";
-import { useViewSound } from "./hooks/useViewSound";
+import { useViewBoard } from "./hooks/useViewBoard";
 import { cardColor } from "./logic/cards";
 import { boardLanes, laneActive } from "./logic/lanes";
 import { type LiberoLane, byElapsed, liberoLanes } from "./logic/libero";
@@ -27,9 +25,7 @@ const ORDERS = [
 
 export default function LiberoBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, orders, status } = useLiveBoard({ enabled: true, nowMs });
-  const sound = useViewSound();
-  const flashKeys = useTimelineArrivals(cards, orders !== null, nowMs);
+  const { cards, status, sound, flashKeys } = useViewBoard(nowMs);
   const water = useHandedWater();
   const { colorSettings } = useColorSettings();
   const [params, setParams] = useSearchParams();

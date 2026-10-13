@@ -5,9 +5,7 @@ import { ControlViewA } from "./components/ControlViewA";
 import { ViewHeader } from "./components/ViewHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { useDeviceSetting } from "./hooks/useDeviceSetting";
-import { useLiveBoard } from "./hooks/useLiveBoard";
-import { useTimelineArrivals } from "./hooks/useTimelineArrivals";
-import { useViewSound } from "./hooks/useViewSound";
+import { useViewBoard } from "./hooks/useViewBoard";
 import { cardLooks, totalCups } from "./logic/cards";
 import { boardLanes } from "./logic/lanes";
 import { nextAvailableBays } from "./logic/queue";
@@ -20,9 +18,7 @@ const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, orders, status } = useLiveBoard({ enabled: true, nowMs });
-  const sound = useViewSound();
-  const flashKeys = useTimelineArrivals(cards, orders !== null, nowMs);
+  const { cards, status, sound, flashKeys } = useViewBoard(nowMs);
   const [folded, setFolded] = useDeviceSetting(
     "caos-view-unassigned-folded",
     false,

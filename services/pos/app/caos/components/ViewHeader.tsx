@@ -3,7 +3,7 @@ import { Eye, Volume2, VolumeX } from "lucide-react";
 import type React from "react";
 import { NavLink } from "react-router";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import type { ViewSound } from "../hooks/useViewSound";
+import type { ViewSound } from "../hooks/useViewBoard";
 import { LaneHeaderStatus } from "./LaneParts";
 import { PosStatusBadge } from "./TopHeader";
 
@@ -57,17 +57,17 @@ export const ViewHeader: React.FC<{
 /** 通知音（タイムラインに新しく入ったカードの知らせ）のあり・なし。音ありでまだ出せない（iPad で画面に触れる前）ときはそう出す */
 const SoundToggle: React.FC<{ sound: ViewSound }> = ({ sound }) => {
   const Icon = sound.on ? Volume2 : VolumeX;
-  const label = sound.on
-    ? sound.ready
+  const label = !sound.on
+    ? "音なし"
+    : sound.ready
       ? "音あり"
-      : "音あり（触れると鳴る）"
-    : "音なし";
+      : "音あり（触れると鳴る）";
   return (
     <button
       type="button"
       aria-pressed={sound.on}
       onClick={sound.toggle}
-      className={`flex touch-manipulation items-center gap-1 border font-bold text-xs ${segmentClass(sound.on)}`}
+      className={`flex touch-manipulation items-center gap-1 border border-slate-200 font-bold text-xs ${segmentClass(sound.on)}`}
     >
       <Icon className="h-4 w-4" />
       {label}
