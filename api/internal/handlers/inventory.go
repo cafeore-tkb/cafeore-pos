@@ -110,6 +110,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	}
 	err := db.Raw(stockUsedQuery, map[string]any{
 		"resource_id": s.Resource.ID,
+		"item_id":     s.Resource.ItemID,
 		"since":       since,
 		"hour_ago":    hourAgo,
 		"scan_from":   scanFrom.Add(-usageLookback),
@@ -122,7 +123,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	return nil
 }
 
-// 在庫対象 @resource_id を使った分を、使った時刻（used_at）ごとに分けて足す。量は受けたとき・足したときに残したもの
+// 在庫対象 @resource_id（アイテムの在庫なら、そのアイテムが @item_id）を使った分を、使った時刻（used_at）ごとに分けて足す。量は受けたとき・足したときに残したもの
 // （order_stock_usages・cup_emergency_stock_usages）で数え、使った時刻はその物を実際に使った時刻にする：
 //   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、そのカップの抽出を始めた時刻（order_cups.brew_started_at）。
 //     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
@@ -134,10 +135,8 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 // 準備完了（ready_at）・提供済み（served_at）は使った時刻に使わない。
 const stockUsedQuery = `
 WITH lines AS (
-	SELECT u.order_menu_id, u.servings, u.amount, o.created_at, r.item_id
-	FROM order_stock_usages u
-	JOIN orders o ON o.id = u.order_id
-	JOIN stock_resources r ON r.id = u.resource_id
+	SELECT u.order_menu_id, u.servings, u.amount, o.created_at
+	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
 	WHERE u.resource_id = @resource_id AND u.servings > 0 AND o.created_at > @scan_from
 ),
 brewed AS (
@@ -148,7 +147,7 @@ brewed AS (
 		JOIN order_cups c ON c.order_menu_id = l.order_menu_id
 		JOIN items i ON i.id = c.item_id
 		JOIN item_types t ON t.id = i.item_type_id
-		WHERE t.makes_cup AND t.needs_brew AND (c.item_id = l.item_id OR i.item_type_id IN (
+		WHERE t.makes_cup AND t.needs_brew AND (c.item_id = @item_id OR i.item_type_id IN (
 			SELECT item_type_id FROM stock_resource_item_types WHERE resource_id = @resource_id))
 	) b WHERE n <= servings
 ),
