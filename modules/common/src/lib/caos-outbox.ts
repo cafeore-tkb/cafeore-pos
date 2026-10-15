@@ -1,4 +1,3 @@
-import type { CupEmergency } from "../models/cup";
 import { dripperLabel } from "../models/dripper";
 import type { components } from "../types/api";
 import {
@@ -10,6 +9,7 @@ import {
   caosDayOrders,
   caosLane,
   caosStateJSON,
+  caosUnitRows,
 } from "./caos-board";
 import { type CaosUndoEntry, caosUndoCups } from "./caos-undo";
 import type { CaosLane, CaosLanes, LaneAssignment } from "./caosLanes";
@@ -143,10 +143,13 @@ export const parseCaosOutboxEntry = (
     parsed = {
       kind: "undo",
       entry: {
+        // restore は CaOS の列だけにする（前の版で残したものは準備完了も持つ）
         cups: parsed.entry.cups.map((cup) => ({
           ...cup,
           restore: {
-            ...cup.restore,
+            dripper: cup.restore.dripper,
+            dripperPosition: cup.restore.dripperPosition,
+            dripId: cup.restore.dripId,
             brewStartedAt: date(cup.restore.brewStartedAt),
             brewFinishedAt: date(cup.restore.brewFinishedAt),
           },
@@ -171,19 +174,6 @@ const CUP_GONE = "カップが消えました（注文が編集・削除され�
 const laneTaken = (dripper: number) =>
   `${dripperLabel(dripper)} の交代は、ほかの iPad が先に替えていたので取りやめました`;
 
-type Row = Pick<CupEmergency, "id"> & CaosCupState;
-
-// カップと入れ直しの行（CaOS の値を書く行）を ID で引く
-const rowsOf = (orders: readonly CaosOrderInput[]) =>
-  new Map<string, Row>(
-    orders.flatMap((order) =>
-      order.cups.flatMap((cup) => [
-        [cup.id, cup] as const,
-        ...cup.emergencies.map((row) => [row.id, row] as const),
-      ]),
-    ),
-  );
-
 // カードの場所（ドリッパー・カード・抽出中か・終わりか）が同じか。順番の数と時刻はサーバーが決めるので比べない
 const samePlace = (row: CaosCupState, before: CaosCupsWrite["before"]) =>
   row.dripper === before.dripper &&
@@ -196,7 +186,7 @@ const rebaseWrites = (
   orders: readonly CaosOrderInput[],
   writes: readonly CaosCupsWrite[],
 ): { writes: CaosCupsWrite[] } | { error: string } => {
-  const rows = rowsOf(orders);
+  const rows = caosUnitRows(orders);
   const rebased: CaosCupsWrite[] = [];
   for (const write of writes) {
     const row = rows.get(write.cup_ids[0]);
@@ -207,27 +197,16 @@ const rebaseWrites = (
   return { writes: rebased };
 };
 
-// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了・提供は書き戻さない。
-// 前の版で端末に残した操作の restore には準備完了も入っているので、CaOS の列だけを当てる）
+// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了・提供は書き戻さない）
 const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
-  const restored = <R extends { id: string }>(row: R): R => {
-    const state = restore.get(row.id);
-    if (!state) return row;
-    const { dripper, dripperPosition, dripId, brewStartedAt, brewFinishedAt } =
-      state;
-    return {
-      ...row,
-      dripper,
-      dripperPosition,
-      dripId,
-      brewStartedAt,
-      brewFinishedAt,
-    };
-  };
+  const restored = <R extends { id: string }>(row: R): R => ({
+    ...row,
+    ...restore.get(row.id),
+  });
   return {
     orders: orders.map((order) => ({
       ...order,
@@ -260,7 +239,7 @@ export const applyCaosOutboxOp = (
         cooldown,
       });
     case "undo": {
-      const blocked = caosUndoCups(op.entry, buildCaosCards(orders));
+      const blocked = caosUndoCups(op.entry, orders);
       if ("error" in blocked) return { error: blocked.error };
       return applyUndo(orders, op.entry);
     }
@@ -402,7 +381,7 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
     server.lanes?.lanes.find((lane) => lane.dripper === dripper);
   switch (op.kind) {
     case "cups": {
-      const rows = rowsOf(server.orders);
+      const rows = caosUnitRows(server.orders);
       return op.writes.every(({ cup_ids, after }) =>
         cup_ids.every((id) => {
           const row = rows.get(id);
@@ -429,11 +408,11 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
     }
     case "undo": {
       // カップが全部操作の前の値
-      const request = caosUndoCups(op.entry, buildCaosCards(server.orders));
+      const request = caosUndoCups(op.entry, server.orders);
       return "arriving" in request;
     }
     case "cancel-emergency":
-      return !rowsOf(server.orders).has(op.id);
+      return !caosUnitRows(server.orders).has(op.id);
     case "lane": {
       const lane = laneOf(op.dripper);
       return lane?.name === op.name && lane.senior === op.senior;
@@ -471,7 +450,7 @@ const prepareCaosOutboxOp = (
         : { conflict: rebased.error };
     }
     case "undo": {
-      const request = caosUndoCups(op.entry, buildCaosCards(server.orders));
+      const request = caosUndoCups(op.entry, server.orders);
       if ("cups" in request) return { request: { kind: "undo", ...request } };
       // カップが前の値のまま：送ったなら戻せている。まだなら、戻す操作の結果が届くのを待つ
       if (request.arriving && attempted) return { done: true };

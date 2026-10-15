@@ -129,7 +129,8 @@ const caosUnits = `(SELECT id, id AS cup_id, order_id, order_menu_id, item_id,
 		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at
 	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id)`
 
-// caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）
+// caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）。
+// 準備完了・提供（ReadyAt・ServedAt）は読まないので、いつも nil
 type caosUnit struct {
 	models.OrderCup
 	// 入れ直したカップ（カップなら自分）
@@ -383,7 +384,7 @@ func readCaosLane(tx *gorm.DB, dripper int, start, end time.Time) ([]caosUnit, e
 
 // splitCaosLane はドリッパーのカップを、抽出中のカードと待機のカード（先頭から順に）に分ける。
 // 画面の caosLane（modules/common/src/lib/caos-board.ts。buildCaosCards の状態と compareQueued の並び）と同じ決まり：
-//   - 終了の時刻があるカードは終わり（どちらにも入れない）。カップの準備完了・提供は見ない（終えるのは「次へ」だけ）
+//   - 終了の時刻があるカードは終わり（どちらにも入れない）
 //   - 開始の時刻があれば抽出中、無ければ待機
 //   - 待機の並びは dripper_position・いちばん小さい注文番号・drip_id の順
 //

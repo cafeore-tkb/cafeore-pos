@@ -169,7 +169,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(looks.get("m8")?.split).toBeUndefined();
   });
 
-  test("管制盤 C の注文の列は、いちばん古い未割当の注文から。その上に直近のドリッパーに置いた注文を 3 件だけ残す", () => {
+  test("管制盤 C の注文の列は、いちばん古い未割当の注文から。その上に直近のドリッパーに置いた注文を 3 件だけ残す。終わったカードは出さない", () => {
     const placed = (orderId: number, dripId: string) =>
       order(orderId, [{ dripper: 3, dripId, dripperPosition: orderId }]);
     const rows = queueRows(
@@ -188,6 +188,15 @@ describe("[unit] CaOS の盤面の見せ方", () => {
         ]),
         order(6, [{}]),
         placed(7, "p7"),
+        // いちばん古い未割当より後ろの、終わったカードも出さない
+        order(8, [
+          {
+            dripper: 4,
+            dripId: "done8",
+            brewStartedAt: T0,
+            brewFinishedAt: T0,
+          },
+        ]),
       ]),
     );
     expect(

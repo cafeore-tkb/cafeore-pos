@@ -96,7 +96,8 @@ export const cardNominee = (card: CaosCard) =>
  * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。入れ直しは提供を持たない。無ければ空
  */
 export const cardServedLabel = (card: CaosCard) => {
-  if (card.status !== "queued" && card.status !== "brewing") return "";
+  // 未割当には準備完了・提供済みのカップは入らない
+  if (card.status === "done") return "";
   const served = card.cups.filter((cup) => cup.servedAt !== null).length;
   if (served === 0) return "";
   return served === card.cups.length
@@ -250,24 +251,16 @@ const RECENT_PLACED_ROWS = 3;
 /**
  * 管制盤 C の注文の列（ドリッパーに置いたカードも含めた注文番号の行）。いちばん古い未割当の注文から後ろを並べ、
  * その上に、それより前の注文のうちドリッパーに置いた（待機・抽出中の）カードのある行を直近の RECENT_PLACED_ROWS 件だけ残す
- * （どこに何番目で入れたかが見えるように。その行は待機・抽出中のカードだけ）。未割当の入れ直し（緊急）の行は、残した行のすぐ下に置く
+ * （どこに何番目で入れたかが見えるように）。未割当の入れ直し（緊急）の行は、残した行のすぐ下に置く。
+ * 終わったカード（「次へ」で終えた）は出さない
  */
 export const queueRows = (cards: readonly CaosCard[]) => {
-  const all = orderRows(cards);
+  const all = orderRows(cards.filter((card) => card.status !== "done"));
   const rows = all.filter((row) => !row.emergency);
   const start = rows.findIndex((row) =>
     row.entries.some(({ card }) => card.status === "unassigned"),
   );
   const end = start < 0 ? rows.length : start;
-  const recent = rows
-    .slice(0, end)
-    .map((row) => ({
-      ...row,
-      entries: row.entries.filter(
-        ({ card }) => card.status === "queued" || card.status === "brewing",
-      ),
-    }))
-    .filter((row) => row.entries.length > 0)
-    .slice(-RECENT_PLACED_ROWS);
+  const recent = rows.slice(Math.max(0, end - RECENT_PLACED_ROWS), end);
   return [...recent, ...all.filter((row) => row.emergency), ...rows.slice(end)];
 };

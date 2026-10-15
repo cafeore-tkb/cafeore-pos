@@ -11,7 +11,7 @@ import {
   sharesOrder,
   totalCups,
 } from "../logic/cards";
-import { type Lane, cardPlaces, laneActive } from "../logic/lanes";
+import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
 import {
@@ -197,9 +197,9 @@ const QueueEntry: React.FC<{
   );
 };
 
-// A の横帯と C の注文の列の中身：並び（queueRows）と、ドリッパーに置いたカードの札。終わったカード（「次へ」で終えた）は出さない
+// A の横帯と C の注文の列の中身：並び（queueRows。終わったカードは出さない）と、ドリッパーに置いたカードの札
 const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
-  rows: queueRows([...orders, ...lanes.flatMap(laneActive)]),
+  rows: queueRows([...orders, ...lanes.flatMap(laneCards)]),
   places: cardPlaces(lanes),
 });
 

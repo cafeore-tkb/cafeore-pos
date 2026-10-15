@@ -83,7 +83,7 @@ export const useLiveBoard = ({
       ),
     /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
     undoRun: (entry: CaosUndoEntry, label: string) => () => {
-      const request = caosUndoCups(entry, latest.current.cards);
+      const request = caosUndoCups(entry, latest.current.board);
       if ("error" in request) return refuseUndo(request);
       return run(`戻す（${label}）`, { kind: "undo", entry });
     },

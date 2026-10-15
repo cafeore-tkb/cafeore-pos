@@ -4,8 +4,10 @@ import {
   type CaosCard,
   type CaosCupState,
   type CaosCupsWrite,
+  type CaosOrderInput,
   caosLane,
   caosStateJSON,
+  caosUnitRows,
 } from "./caos-board";
 import type { LaneAssignment } from "./caosLanes";
 
@@ -135,11 +137,11 @@ export const undoOfNext = (
 const ARRIVING = "操作の結果がまだ届いていません。もう一度押してください";
 const CHANGED = "ほかの画面で先に変わったので戻せません";
 
-const sameAsExpected = (cup: CaosBoardCup, expect: UndoExpect) =>
-  cup.state.dripper === expect.dripper &&
-  cup.state.dripId === expect.dripId &&
-  (cup.state.brewStartedAt !== null) === expect.started &&
-  (cup.state.brewFinishedAt !== null) === expect.finished;
+const sameAsExpected = (row: CaosCupState, expect: UndoExpect) =>
+  row.dripper === expect.dripper &&
+  row.dripId === expect.dripId &&
+  (row.brewStartedAt !== null) === expect.started &&
+  (row.brewFinishedAt !== null) === expect.finished;
 
 const undoStateJSON = (state: CaosCupState) => ({
   state: caosStateJSON(state),
@@ -149,19 +151,20 @@ const sameUndoState = (a: CaosCupState, b: CaosCupState) =>
   JSON.stringify(undoStateJSON(a)) === JSON.stringify(undoStateJSON(b));
 
 /**
- * 覚えた操作から POST /api/caos/undo に送るカップを作る。cards は今の盤面のカード。
+ * 覚えた操作から POST /api/caos/undo に送るカップを作る。orders は今の盤面の注文（カードに出ていないカップも引く。
+ * 準備完了・提供済みのカードを未割当に戻すと盤面から消えるが、それも戻せる）。
  * 消えた・ほかの画面で変わったカップがあれば、送らずに理由を返す
  */
 export const caosUndoCups = (
   entry: CaosUndoEntry,
-  cards: readonly CaosCard[],
+  orders: readonly CaosOrderInput[],
 ): { cups: UndoCupJSON[] } | { error: string; arriving?: true } => {
   if (entry.cups.length === 0) return { error: "戻せる操作がありません" };
-  const byId = boardCups(cards);
+  const byId = caosUnitRows(orders);
   // 操作の結果がまだ盤面に届いていない（全部のカップが前の値のまま）。少し待てば戻せる
   const arriving = entry.cups.every(({ id, restore }) => {
     const now = byId.get(id);
-    return now !== undefined && sameUndoState(now.state, restore);
+    return now !== undefined && sameUndoState(now, restore);
   });
   if (arriving) return { error: ARRIVING, arriving: true };
   const out: UndoCupJSON[] = [];
@@ -175,7 +178,7 @@ export const caosUndoCups = (
     if (!sameAsExpected(now, expect)) return { error: CHANGED };
     out.push({
       cup_id: id,
-      current: undoStateJSON(now.state),
+      current: undoStateJSON(now),
       restore: undoStateJSON(restore),
     });
   }

@@ -26,7 +26,7 @@ export default function ReadOnlyBoard() {
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(
-    () => boardLanes(cards).map((lane) => ({ ...lane, done: [] })),
+    () => boardLanes(cards.filter((card) => card.status !== "done")),
     [cards],
   );
   const unassigned = useMemo(

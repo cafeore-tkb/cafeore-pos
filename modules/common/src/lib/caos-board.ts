@@ -60,6 +60,20 @@ const UNASSIGNED_STATE: CaosCupState = {
   brewFinishedAt: null,
 };
 
+/** カップと入れ直しの行（CaOS の値を書く行。盤面に出ていない行も） */
+export type CaosUnitRow = { id: string } & CaosCupState;
+
+/** 注文のカップと入れ直しの行を ID で引く（盤面のカードに出ないカップも。未割当に戻した準備完了・提供済みのカップなど） */
+export const caosUnitRows = (orders: readonly CaosOrderInput[]) =>
+  new Map<string, CaosUnitRow>(
+    orders.flatMap((order) =>
+      order.cups.flatMap((cup) => [
+        [cup.id, cup] as const,
+        ...cup.emergencies.map((row) => [row.id, row] as const),
+      ]),
+    ),
+  );
+
 /** 盤面が使う注文（OrderEntity をそのまま渡せる） */
 export interface CaosOrderInput {
   id: string;
@@ -171,7 +185,7 @@ const makeCard = (
     dripper: state.dripper,
     dripperPosition: state.dripperPosition,
     startedAt: state.brewStartedAt,
-    finishedAt: status === "done" ? state.brewFinishedAt : null,
+    finishedAt: state.brewFinishedAt,
     cups: sorted,
     orderNo: sorted[0].orderNo,
     nominatedDripper:
@@ -183,7 +197,7 @@ const makeCard = (
   };
 };
 
-// dripId のあるカードの状態（終了あり＝終わり、開始あり＝抽出中、ドリッパーあり＝待機、無し＝統合した未割当）。準備完了・提供は見ない
+// dripId のあるカードの状態（終了あり＝終わり、開始あり＝抽出中、ドリッパーあり＝待機、無し＝統合した未割当）
 const placedStatus = (state: CaosCupState): CaosCardStatus => {
   if (state.dripper === null) return "unassigned";
   if (state.brewFinishedAt) return "done";
@@ -246,8 +260,7 @@ export const caosDayOrders = <O extends Pick<CaosOrderInput, "createdAt">>(
 
 /**
  * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。day を省くと日では絞らない（練習の盤面）。
- *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻だけで決まる（カップが全部準備完了・提供済みでも、終えるのは「次へ」だけ。
- *     API の「次へ」の splitCaosLane と同じ決まり）
+ *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まる（API の「次へ」の splitCaosLane と同じ決まり）
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
  *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名の番号ごと・入れ直しかで分け、1 枚は最大 2 杯
  * 並びは、未割当（入れ直し、注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
