@@ -88,6 +88,8 @@ export interface CaosBoardCup {
   orderNo: number;
   /** 注文の中の並び（0 始まり） */
   position: number;
+  /** 受けた時刻（注文の時刻。入れ直しなら入れ直した時刻） */
+  orderedAt: Date;
   item: Cup["item"];
   /** 指名のドリッパーの番号（明細の dripper。1〜6）。指名なし・自由記述だけの古い明細は null */
   nominatedDripper: number | null;
@@ -295,6 +297,7 @@ export const buildCaosCards = (
           id: cup.id,
           emergency: false,
           emergencyReason: "",
+          orderedAt: order.createdAt,
           readyAt: cup.readyAt,
           servedAt: cup.servedAt,
           state: cupState(cup),
@@ -304,6 +307,7 @@ export const buildCaosCards = (
           id: emergency.id,
           emergency: true,
           emergencyReason: emergency.reason,
+          orderedAt: emergency.createdAt,
           readyAt: null,
           servedAt: null,
           state: cupState(emergency),

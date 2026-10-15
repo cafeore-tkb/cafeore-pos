@@ -1,13 +1,14 @@
-import { dripperLabel } from "@cafeore/common";
-import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
+import { ArrowRightCircle, Clock3, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenToastConfirm } from "../hooks/useToastConfirms";
+import { longWaitMinutes } from "../logic/alerts";
 import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く・長く待っている未割当の札）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -39,7 +40,7 @@ export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
 
 // 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
 // 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤・「次へ」の橙と分ける）。
-// 色だけに頼らず札の文字も出す
+// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない。logic/alerts）は FORGOTTEN
 const PHASES: Record<LanePhase, { label: string; className: string }> = {
   empty: {
     label: "空き",
@@ -61,9 +62,16 @@ const PHASES: Record<LanePhase, { label: string; className: string }> = {
   },
 };
 
+// 予定を大きく過ぎた抽出。継続中の赤を濃くし、点滅させ（caos.css の .caos-forgotten）、札は「要確認」と過ぎた時間
+const FORGOTTEN = {
+  label: "要確認",
+  className:
+    "caos-forgotten border-(color:--caos-overtime-text) bg-(color:--caos-overtime-line) text-white",
+};
+
 /**
  * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
- * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも出す。
+ * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中・要確認）を、抽出中は残り、要確認は予定を過ぎた時間も出す。
  * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
  * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
  */
@@ -74,14 +82,14 @@ export const DripperIndicator: React.FC<{
   onOpenLane?: (bayId: number) => void;
   className?: string;
 }> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
-  const phase = PHASES[status.phase];
+  const phase = status.forgotten ? FORGOTTEN : PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
   return (
     <button
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
-      data-lane-phase={status.phase}
+      data-lane-phase={status.forgotten ? "forgotten" : status.phase}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[22px]">
@@ -92,6 +100,11 @@ export const DripperIndicator: React.FC<{
         {showsRemaining && (
           <span className="font-mono text-[14px] tabular-nums">
             {clockLabel(status.remainingSec)}
+          </span>
+        )}
+        {status.forgotten && (
+          <span className="font-mono text-[14px] tabular-nums">
+            +{clockLabel(status.overSec)}
           </span>
         )}
       </span>
@@ -248,7 +261,26 @@ export const NextAvailableChips: React.FC<{
   </div>
 );
 
-/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 C の注文の列・D の表） */
+/** 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる */
+export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
+  card,
+  nowMs,
+}) => {
+  const minutes = longWaitMinutes(card, nowMs);
+  return (
+    minutes !== null && (
+      <span
+        title={`受けてから ${minutes} 分、未割当で待っています`}
+        className="-top-2 border-(color:--caos-overtime-line) bg-(color:--caos-overtime) text-(color:--caos-overtime-text) pointer-events-none absolute left-5 z-20 flex items-center gap-0.5 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-black text-[11px] leading-none shadow-xs"
+      >
+        <Clock3 className="h-3 w-3" />
+        待ち {minutes}分
+      </span>
+    )
+  );
+};
+
+/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 D の表） */
 export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
   label && (
     <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[11px] text-white leading-none shadow-xs">

@@ -182,8 +182,8 @@ export interface paths {
      * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
      * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
      * 今日（日本時間）の注文の、抽出が要るカップだけ。
-     * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
-     * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
+     * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+     * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
      */
     post: operations["createCupEmergencies"];
   };
@@ -197,7 +197,7 @@ export interface paths {
   "/api/cup-emergencies/{id}": {
     /**
      * 緊急（入れ直し）を取り消す
-     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
      * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
      * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
      * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
@@ -258,7 +258,14 @@ export interface paths {
   "/api/inventory": {
     /**
      * 在庫の残量一覧
-     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+     * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+     *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+     *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+     *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+     *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+     * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
      */
     get: operations["getInventory"];
   };
@@ -1077,16 +1084,16 @@ export interface components {
       received: number;
       /**
        * Format: double
-       * @description counted_at 以降の注文での消費量
+       * @description counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
        */
       consumed: number;
-      /** @description counted_at 以降に売れた回数 */
+      /** @description counted_at より後に使った回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた回数 */
+      /** @description 直近1時間に使った回数（consumed と同じく、使った時刻で数える） */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -1959,8 +1966,8 @@ export interface operations {
    * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
    * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
    * 今日（日本時間）の注文の、抽出が要るカップだけ。
-   * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
-   * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
+   * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+   * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
    */
   createCupEmergencies: {
     requestBody: {
@@ -2005,7 +2012,7 @@ export interface operations {
   };
   /**
    * 緊急（入れ直し）を取り消す
-   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
    * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
    * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
    * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
@@ -2191,7 +2198,14 @@ export interface operations {
   };
   /**
    * 在庫の残量一覧
-   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+   * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+   *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+   *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+   *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+   *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+   * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
    */
   getInventory: {
     responses: {

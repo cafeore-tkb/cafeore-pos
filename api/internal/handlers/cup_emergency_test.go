@@ -409,8 +409,8 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 	expect("取り消した後", map[uuid.UUID][3]float64{itemStock.ID: {20, 1, 1}, cupStock.ID: {1, 1, 1}})
 
-	// 棚卸しより前に足した入れ直しは、抽出を始めた時刻で使ったことにする。まだ始めていない・棚卸しの後に始めたものは
-	// 棚卸しの後に使う分として数え、棚卸しの前に始めたものは（まだ終えていなくても）数えない
+	// 入れ直しは足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した入れ直しは、
+	// いつ抽出を始めても（まだ始めていなくても）棚卸しの後に使った分に数えない
 	countedAt := time.Now().Add(time.Second)
 	if err := db.Create(&models.StockEvent{ResourceID: itemStock.ID, Kind: string(models.StockEventKindCount), Quantity: 500, CreatedAt: countedAt}).Error; err != nil {
 		t.Fatal(err)
@@ -421,8 +421,8 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 		finished *time.Time
 		consumed float64
 	}{
-		{"まだ始めていない", nil, nil, 20},
-		{"棚卸しの後に始めた", ptr(countedAt.Add(time.Second)), nil, 20},
+		{"まだ始めていない", nil, nil, 0},
+		{"棚卸しの後に始めた", ptr(countedAt.Add(time.Second)), nil, 0},
 		{"棚卸しの前に始めた", ptr(countedAt.Add(-time.Millisecond)), nil, 0},
 		{"棚卸しの前に始めて、後に終えた", ptr(countedAt.Add(-time.Millisecond)), ptr(countedAt.Add(time.Second)), 0},
 	} {
@@ -438,6 +438,14 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 			t.Errorf("%s: consumed after the count = %v, want %v", tc.label, got, tc.consumed)
 		}
 	}
+	// 棚卸しの後に足した入れ直しは、まだ抽出を始めていなくても数える
+	if err := db.Model(&models.CupEmergency{}).Where("id = ?", second).
+		Updates(map[string]any{"created_at": countedAt.Add(time.Second), "brew_started_at": nil, "brew_finished_at": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if snapshots, err := inv.snapshots(context.Background(), []uuid.UUID{itemStock.ID}); err != nil || snapshots[0].Consumed != 20 {
+		t.Errorf("added after the count: %+v (%v), want consumed 20", snapshots, err)
+	}
 
 	// 注文を消すと入れ直しの消費も消える
 	if err := f.orders.deleteOrder(o.ID); err != nil {
@@ -450,7 +458,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 }
 
 // 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
-// 使った時刻は今の始めた時刻（消したらまだ使っていない、始め直したらその時刻）
+// 使った時刻は足した時刻で、CaOS の抽出の時刻には依らない
 func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)

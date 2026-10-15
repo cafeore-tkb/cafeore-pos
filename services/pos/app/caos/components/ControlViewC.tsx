@@ -20,7 +20,7 @@ import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
 import { DropMark, MergeOverlay, OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
-// 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
+// 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
 // 待機のカードはタップで詳細（移動・先頭へ・待機の先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
@@ -175,8 +175,8 @@ const ControlViewCBoard: React.FC<
     <aside className="min-h-0 min-w-0">
       <OrderQueuePanel
         orders={unassignedOrders}
-        lanes={lanes}
         looks={looks}
+        nowMs={nowMs}
         selectedOrderId={selectedOrderId}
         pick={pick}
       />

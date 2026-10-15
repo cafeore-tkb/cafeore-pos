@@ -257,6 +257,8 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+	// 抽出が要るカップの在庫は、提供可能（無ければ提供済み）にした時刻で使う（Inventory.consumption）
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderID)) }()
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

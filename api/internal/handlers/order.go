@@ -514,7 +514,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	c.JSON(status, resp)
-	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(order.ID)) }()
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(order.ID)) }()
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -563,7 +563,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
-	resourcesBefore := h.inventory.ResourceIDsForOrder(orderID)
+	resourcesBefore := h.inventory.ResourceIDsForOrders(orderID)
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態変更と重なっても、どちらかの変更が消えないようにロックしてから読む
@@ -647,7 +647,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, resp)
 	go func() {
-		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrder(orderID)))
+		h.inventory.CheckAlerts(mergeResourceIDs(resourcesBefore, h.inventory.ResourceIDsForOrders(orderID)))
 	}()
 }
 
@@ -682,7 +682,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 	}
 
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
-	resources := h.inventory.ResourceIDsForOrder(order.ID)
+	resources := h.inventory.ResourceIDsForOrders(order.ID)
 
 	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64

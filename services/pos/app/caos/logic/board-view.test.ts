@@ -5,16 +5,16 @@ import {
   buildCaosCards,
 } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
+import { longWaitMinutes } from "./alerts";
 import {
   type CardLook,
   cardLooks,
   cardOrderParts,
   orderLabel,
-  orderRows,
-  queueRows,
   quickMergePartner,
   selectedComments,
   sharesOrder,
+  unassignedRows,
 } from "./cards";
 import {
   DROP_EDGE,
@@ -102,15 +102,14 @@ describe("[unit] CaOS の盤面の見せ方", () => {
   const lanes = boardLanes(cards);
   const unassigned = cards.filter((card) => card.status === "unassigned");
 
-  test("統合したカードは小さい注文の行に置き、もう一方の注文の行に跡を残す", () => {
-    const rows = orderRows(unassigned).map(({ orderNo, entries }) => ({
+  test("未割当の行は未割当のカードだけ。統合したカードは小さい注文の行に置く（もう一方の注文の行は作らない）", () => {
+    const rows = unassignedRows(unassigned).map(({ orderNo, cards }) => ({
       orderNo,
-      entries: entries.map((entry) => entry.mergedInto ?? entry.card.key),
+      cards: cards.map((card) => card.key),
     }));
     expect(rows).toEqual([
-      { orderNo: 2, entries: ["cups:cup-2-0"] },
-      { orderNo: 3, entries: ["m"] },
-      { orderNo: 4, entries: ["#003+#004"] },
+      { orderNo: 2, cards: ["cups:cup-2-0"] },
+      { orderNo: 3, cards: ["m"] },
     ]);
   });
 
@@ -191,7 +190,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       brewStartedAt: null,
       brewFinishedAt: null,
     };
-    const rows = orderRows(
+    const rows = unassignedRows(
       buildCaosCards([
         order(2, [{}]),
         order(7, [{ emergencies: [emergency] }]),
@@ -219,36 +218,6 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     });
     // 統合したカードそのものには付けない
     expect(looks.get("m8")?.split).toBeUndefined();
-  });
-
-  test("管制盤 C の注文の列は、いちばん古い未割当の注文から。その上に直近のドリッパーに置いた注文を 3 件だけ残す", () => {
-    const placed = (orderId: number, dripId: string) =>
-      order(orderId, [{ dripper: 3, dripId, dripperPosition: orderId }]);
-    const rows = queueRows(
-      buildCaosCards([
-        placed(1, "p1"),
-        placed(2, "p2"),
-        placed(3, "p3"),
-        placed(4, "p4"),
-        order(5, [
-          { dripper: 4, dripId: "done5", brewStartedAt: T0, readyAt: T0 },
-        ]),
-        order(6, [{}]),
-        placed(7, "p7"),
-      ]),
-    );
-    expect(
-      rows.map(({ orderNo, entries }) => [
-        orderNo,
-        entries.map(({ card }) => card.status),
-      ]),
-    ).toEqual([
-      [2, ["queued"]],
-      [3, ["queued"]],
-      [4, ["queued"]],
-      [6, ["unassigned"]],
-      [7, ["queued"]],
-    ]);
   });
 
   test("注文を選ぶと、その注文の入った統合したカードも当たる（統合したカードを選ぶと中の注文のカードも）", () => {
@@ -341,6 +310,26 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(phase(290)).toBe("soon");
     expect(phase(310)).toBe("overtime");
     expect(phase(0, lanes[2])).toBe("empty");
+  });
+
+  test("予定の抽出時間を 2 分過ぎても「次へ」が押されていない抽出は要確認（予定を過ぎた秒も）", () => {
+    const status = (sec: number) =>
+      laneStatus(lanes[0], T0.getTime() + sec * 1000);
+    // 1 杯は 300 秒
+    expect(status(300 + 119)).toMatchObject({ overSec: 119, forgotten: false });
+    expect(status(300 + 120)).toMatchObject({ overSec: 120, forgotten: true });
+    expect(status(100)).toMatchObject({ overSec: 0, forgotten: false });
+    expect(laneStatus(lanes[2], T0.getTime() + 999_000).forgotten).toBe(false);
+  });
+
+  test("受けてから 5 分たっても未割当のカードは、待っている分", () => {
+    const [card] = unassigned;
+    const at = (sec: number) => T0.getTime() + sec * 1000;
+    expect(longWaitMinutes(card, at(299))).toBeNull();
+    expect(longWaitMinutes(card, at(300))).toBe(5);
+    expect(longWaitMinutes(card, at(419))).toBe(6);
+    // ドリッパーに置いたカードには付けない
+    expect(longWaitMinutes(lanes[0].brewing ?? card, at(999))).toBeNull();
   });
 
   test("「次へ」は始めてから 10 秒は押せず、抽出時間の半分までは押し間違いかを確かめる", () => {
