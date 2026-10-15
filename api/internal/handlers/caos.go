@@ -893,6 +893,7 @@ func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
 		}
 	}
 	if h.inventory != nil && len(orderIDs) > 0 {
-		go h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderIDs...))
+		// 在庫対象を読むのも裏で行う（注文の作成と同じ）
+		go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderIDs...)) }()
 	}
 }
