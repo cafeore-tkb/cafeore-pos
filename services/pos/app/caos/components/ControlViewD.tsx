@@ -49,8 +49,6 @@ import { ScrollArea } from "./ScrollArea";
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
-// 表のカードを探して見せるとき、上に固定した見出し（担当者・交代。カードの上の札も）と下の「次へ」に隠れないよう空ける幅（utils/scrollToCard）
-const SHEET_SCROLL_MARGIN = "scroll-mt-[144px] scroll-mb-[68px]";
 // 表の行は少なくともこれだけ（空の行で表の高さをそろえる）
 const MIN_ROWS = 8;
 // 開いたときは、まだ淹れ終わっていない最初の注文の1つ上から見せる。
@@ -211,7 +209,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         else if (state === "waiting") onOpenTicket(ticket);
         else onOpenRebrew?.(ticket);
       }}
-      className={`h-[60px] shrink-0 ${SHEET_SCROLL_MARGIN} ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      // 探して見せるとき、上にはみ出した場所の札も見せる（見出し・「次へ」の高さは useScrollToFirstLive が枠に付ける）
+      className={`h-[60px] shrink-0 scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />

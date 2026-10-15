@@ -108,9 +108,23 @@ export const useSheetSelection = ({
 };
 
 // 表を開いたときだけ、まだ淹れ終わっていない最初の注文（data-live）の historyRows 行上までスクロールする。
-// そのあとのスクロールは見ている人に任せる
+// そのあとのスクロールは見ている人に任せる。
+// 探したカードへのスクロール（utils/scrollToCard）が上下に固定した見出し・「次へ」の下に入らないよう、その高さを枠の scroll-padding にする（高さが変わったら合わせる）
 export const useScrollToFirstLive = (historyRows: number) => {
   const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = ref.current;
+    const head = container?.querySelector("thead");
+    const foot = container?.querySelector("tfoot");
+    if (!container || !head || !foot) return;
+    const observer = new ResizeObserver(() => {
+      container.style.scrollPaddingTop = `${head.offsetHeight}px`;
+      container.style.scrollPaddingBottom = `${foot.offsetHeight}px`;
+    });
+    observer.observe(head);
+    observer.observe(foot);
+    return () => observer.disconnect();
+  }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 開いたときの 1 回だけ
   useLayoutEffect(() => {
     const container = ref.current;
