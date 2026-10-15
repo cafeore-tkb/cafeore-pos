@@ -130,7 +130,8 @@ const BrewDetail: React.FC<{
         <span className="shrink-0 font-black text-[4vh] leading-tight">
           {brew.card.cups.length}杯
         </span>
-        <span className="truncate font-bold font-mono text-[2.6vh] opacity-70">
+        {/* 注文番号は省かない（長い商品名を先に省く） */}
+        <span className="shrink-0 font-bold font-mono text-[2.6vh] opacity-70">
           {orderLabel(brew.card)}
         </span>
       </div>

@@ -60,6 +60,8 @@ interface TopHeaderProps {
   /** 「現在」（管制盤 A のタイムラインを NOW へ戻す）を出すか */
   showTimelineNow: boolean;
   onTimelineNow: () => void;
+  /** タイムラインが NOW を追っている（「現在」を押した形にする。手でスクロールしたら押していない形にして、押すと戻ることを見せる） */
+  followingNow: boolean;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
@@ -169,6 +171,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   simulating,
   showTimelineNow,
   onTimelineNow,
+  followingNow,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
@@ -271,10 +274,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               type="button"
               onClick={onTimelineNow}
-              title="現在時刻へ戻る"
-              className="flex h-10 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-red-500 font-black text-[11px] text-white leading-none"
+              aria-pressed={followingNow}
+              title={
+                followingNow ? "現在時刻を追っています" : "現在時刻へ戻って追う"
+              }
+              className="group flex h-10 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-500 bg-white font-black text-[11px] text-red-600 leading-none aria-pressed:bg-red-500 aria-pressed:text-white"
             >
-              <span className="h-2 w-2 rounded-full bg-white" />
+              <span className="h-2 w-2 rounded-full bg-red-500 group-aria-pressed:bg-white" />
               現在
             </button>
           )}
@@ -316,7 +322,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
         <button
           type="button"
