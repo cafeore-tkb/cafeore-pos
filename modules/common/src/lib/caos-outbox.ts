@@ -580,6 +580,8 @@ export const createCaosOutbox = ({
     else reject(entry, reason);
   };
 
+  // 今送っていて、返事を待っている操作の id
+  let sending: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   // stop のあとは、送っている途中のものの結果を受けたら止まる（次に kick するまで）
   let stopped = false;
@@ -626,9 +628,12 @@ export const createCaosOutbox = ({
         continue;
       }
       const snapshot = snapshotOf(prepared.request, state);
+      sending = head.id;
       const result = await withTimeout(
         send(prepared.request, prepared.pressedAt ?? head.at),
-      );
+      ).finally(() => {
+        sending = null;
+      });
       // 送っているあいだに消えた（ほかのタブが片付けた）
       if (!store.read().some((entry) => entry.id === head.id)) continue;
       switch (outcomeOf(result)) {
@@ -675,6 +680,8 @@ export const createCaosOutbox = ({
   return {
     kick,
     /** 送り直しの間隔を待たずに、今すぐ送る */
+    /** 今送っていて返事を待っている操作の id（無ければ null）。もうサーバーに届いているかもしれないので、画面から消させない */
+    inFlight: () => sending,
     retryNow: () => {
       for (const m of memo.values()) m.retryAt = 0;
       return kick();

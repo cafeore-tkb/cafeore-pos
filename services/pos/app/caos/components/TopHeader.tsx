@@ -17,8 +17,8 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import { LATE_ORDER_MIN, type orderBacklog } from "../logic/alerts";
-import { orderNoLabel } from "../logic/cards";
+import { LATE_ORDER_SEC, type orderBacklog } from "../logic/alerts";
+import { type orderAndCupCounts, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
@@ -27,8 +27,10 @@ import { UnsentOps } from "./UnsentOps";
 
 export type NavTab = "control" | AuxiliaryTab;
 
-/** 注文の数と杯数（logic/cards.ts の orderAndCupCounts） */
-type Counts = { orders: number; cups: number };
+type Counts = ReturnType<typeof orderAndCupCounts>;
+
+// 「15分超」の分
+const LATE_MIN = LATE_ORDER_SEC / 60;
 
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
@@ -49,7 +51,7 @@ interface TopHeaderProps {
   timeStr: string;
   /** 未割当と、全ドリッパーの待ち（抽出中・待機）の注文の数と杯数 */
   counts: { unassigned: Counts; waiting: Counts };
-  /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_MIN 分を超えた注文） */
+  /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
   backlog: ReturnType<typeof orderBacklog>;
   /** 注文番号でその注文を選ぶ（番号の検索と同じ） */
   onFindOrder: (orderNo: number) => void;
@@ -199,6 +201,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         )}
         <UnsentOps
           entries={unsent.entries}
+          sending={unsent.sending}
           onRetry={unsent.retry}
           onDiscard={unsent.discard}
         />
@@ -287,7 +290,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* 注文の数（杯数は小さく添える。統合したカードは中の注文をみな、分けた注文は 1 つと数える）と、入れ忘れ・飛ばしに気づく待ち。
-            押すと、いちばん古い未割当・受けてから LATE_ORDER_MIN 分を超えて始めていないいちばん古い注文を選ぶ */}
+            押すと、いちばん古い未割当・受けてから LATE_ORDER_SEC を超えて始めていないいちばん古い注文を選ぶ */}
         <BacklogButton
           label="未割当"
           counts={counts.unassigned}
@@ -296,7 +299,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               ? `最古 #${orderNoLabel(oldest.orderNo)} ${clockLabel(oldest.waitSec)}`
               : "最古 なし"
           }
-          late={oldest !== null && oldest.waitSec > LATE_ORDER_MIN * 60}
+          late={oldest?.late ?? false}
           title={
             oldest
               ? `いちばん古い未割当 #${orderNoLabel(oldest.orderNo)}（受けてから ${clockLabel(oldest.waitSec)}）を選ぶ`
@@ -307,12 +310,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <BacklogButton
           label="待ち"
           counts={counts.waiting}
-          detail={`${LATE_ORDER_MIN}分超 ${backlog.late.length}件`}
+          detail={`${LATE_MIN}分超 ${backlog.late.length}件`}
           late={backlog.late.length > 0}
           title={
             backlog.late.length > 0
-              ? `受けてから ${LATE_ORDER_MIN} 分を超えて、まだ抽出を始めていない注文が ${backlog.late.length} 件（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
-              : `受けてから ${LATE_ORDER_MIN} 分を超えて、まだ抽出を始めていない注文はありません`
+              ? `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文が ${backlog.late.length} 件（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
+              : `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文はありません`
           }
           onClick={
             backlog.late.length > 0

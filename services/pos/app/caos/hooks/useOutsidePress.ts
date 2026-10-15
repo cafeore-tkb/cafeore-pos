@@ -32,9 +32,9 @@ export const useOutsidePress = (
   }, [enabled, swallow]);
 };
 
-// 上に重ねて出るもの（確かめ・ダイアログとその後ろの幕・通知）。ほかのパネルから見ると「中」
+// 上に重ねて出るもの（右上の確かめと知らせ・ダイアログとその後ろの幕・POS の通知）。ほかのパネルから見ると「中」
 const LAYERS =
-  "dialog, [role='dialog'], [role='alertdialog'], [data-caos-backdrop], [data-sonner-toaster]";
+  "dialog, [role='dialog'], [role='alertdialog'], [data-caos-layer], [data-caos-backdrop], [data-sonner-toaster]";
 
 // 文字を打つ入力欄
 const TEXT_INPUT =

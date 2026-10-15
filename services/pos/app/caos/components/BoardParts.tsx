@@ -164,7 +164,7 @@ export const NextButton: React.FC<{
 );
 
 // 知らせのあとに添える文
-const UNDO_HINT = "違っていたらヘッダーの「戻す」で戻せます。";
+const FIX_HINT = "違っていたら逆の操作（外す・移す）で直してください。";
 
 // 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・読み上げの名前）
 const confirmText = (confirm: OpenToastConfirm) => {
@@ -179,7 +179,7 @@ const confirmText = (confirm: OpenToastConfirm) => {
     return {
       label: `${orderLabel(confirm.into)}への統合の知らせ`,
       title: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています`,
-      body: `${orderLabel(confirm.card)} を統合しました。${UNDO_HINT}`,
+      body: `${orderLabel(confirm.card)} を統合しました。${FIX_HINT}`,
       action: null,
     };
   const { dripper, name } = confirm.lane;
@@ -189,7 +189,7 @@ const confirmText = (confirm: OpenToastConfirm) => {
   return {
     label: `${orderLabel(confirm.card)}の上級生のみの知らせ`,
     title: `上級生のみの ${orderLabel(confirm.card)} を${who}に置きました`,
-    body: `カードに警告の印を付けています。${UNDO_HINT}`,
+    body: `カードに警告の印を付けています。${FIX_HINT}`,
     action: null,
   };
 };
@@ -208,7 +208,10 @@ export const ToastConfirms: React.FC<{
   onConfirm: (id: string) => void;
 }> = ({ confirms, onCancel, onConfirm }) =>
   confirms.length > 0 && (
-    <div className="caos-toast-confirms pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
+    <div
+      data-caos-layer
+      className="caos-toast-confirms pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2"
+    >
       {confirms.map((confirm) => {
         const { label, title, body, action } = confirmText(confirm);
         return (

@@ -36,6 +36,8 @@ export const useLiveBoard = ({
   // 押した操作は押したときの盤面に当てる
   const latest = useRef({ board, cards });
   latest.current = { board, cards };
+  // 最後に端末に残した操作の id（「直前の操作」に覚える）
+  const enqueued = useRef<string[]>([]);
 
   // 操作（ops は続けて当てる）を今の盤面に当ててみて、合えば端末に残す（画面はすぐ変わる）。合わなければ理由を通知で出して false
   const run = (label: string, ...ops: CaosOutboxOp[]) => {
@@ -44,7 +46,7 @@ export const useLiveBoard = ({
       toast.error(error);
       return false;
     }
-    for (const op of ops) enqueueCaosOp(label, op);
+    enqueued.current = ops.map((op) => enqueueCaosOp(label, op));
     return true;
   };
 
@@ -53,6 +55,8 @@ export const useLiveBoard = ({
     /** 注文（緊急のシールの中身を作る） */
     orders,
     cards,
+    /** 最後に通った操作で端末に残した操作の id */
+    lastEnqueued: () => enqueued.current,
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),

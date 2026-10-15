@@ -130,7 +130,7 @@ export const CaosLanesProvider = ({
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 端末に残して送る。替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーがあれば、止めずに POS の通知で知らせる
+  // 端末に残して送る（残した操作の id を返す）。替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーがあれば、止めずに POS の通知で知らせる
   const request = (
     changes: LaneAssignment[],
     single: boolean,
@@ -139,11 +139,12 @@ export const CaosLanesProvider = ({
   ) => {
     setChanging(null);
     const warnings = laneChangeWarnings(boardCards(), changes, single);
-    enqueueCaosOp(label, op);
+    const id = enqueueCaosOp(label, op);
     if (warnings.length > 0)
       toast.warning(`${label}：${warnings.join("。")}`, {
         description: "カードに警告の印を付けています",
       });
+    return id;
   };
 
   // 名簿に合わせると上級生かが変わる担当者を、すぐ直すもの（auto）と、交代なら確かめるもの（held。外すほうで、そのドリッパーに指名の無い上級生のみのカードが待っている）に分ける。
@@ -182,8 +183,7 @@ export const CaosLanesProvider = ({
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);
-    request([after], true, label, laneOp(after));
-    rememberAction?.(label);
+    rememberAction?.(label, [request([after], true, label, laneOp(after))]);
     setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
   };
 

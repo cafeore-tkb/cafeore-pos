@@ -5,7 +5,7 @@ import {
   buildCaosCards,
 } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { LATE_ORDER_MIN, longWaitMinutes, orderBacklog } from "./alerts";
+import { LATE_ORDER_SEC, longWaitMinutes, orderBacklog } from "./alerts";
 import {
   type CardLook,
   cardLooks,
@@ -135,13 +135,14 @@ describe("[unit] CaOS の盤面の見せ方", () => {
         { dripper: 1, dripId: "b", dripperPosition: 1, brewStartedAt: T0 },
       ]),
       at(2, 20, [{ dripper: 2, dripId: "q", dripperPosition: 1 }]),
-      at(3, LATE_ORDER_MIN + 1, [{}]),
+      at(3, LATE_ORDER_SEC / 60 + 1, [{}]),
       at(4, 5, [{}]),
     ];
     const backlog = orderBacklog(buildCaosCards(orders), T0.getTime());
     expect(backlog.oldestUnassigned).toEqual({
       orderNo: 3,
-      waitSec: (LATE_ORDER_MIN + 1) * 60,
+      waitSec: LATE_ORDER_SEC + 60,
+      late: true,
     });
     // 抽出中の #1 は数えない
     expect(backlog.late.map((o) => o.orderNo)).toEqual([2, 3]);

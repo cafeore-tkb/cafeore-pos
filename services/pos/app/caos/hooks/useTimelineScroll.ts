@@ -179,11 +179,11 @@ export const useTimelineScroll = ({
   const followSettleTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(followSettleTimerRef.current), []);
   // カードへの操作は、ゆっくり始まる smooth scroll。始めの NOW の近くのコマを止まったと見なさない
-  const pagingUntilRef = useRef(0);
+  const cardScrollUntilRef = useRef(0);
   const scheduleFollowCheck = (leftAtSchedule: number) => {
     window.clearTimeout(followSettleTimerRef.current);
     followSettleTimerRef.current = window.setTimeout(() => {
-      if (performance.now() < pagingUntilRef.current || isPressing()) {
+      if (performance.now() < cardScrollUntilRef.current || isPressing()) {
         scheduleFollowCheck(leftAtSchedule);
         return;
       }
@@ -269,7 +269,7 @@ export const useTimelineScroll = ({
     // Stop following first so the next clock tick does not cut the smooth scroll short.
     returnRef.current = null;
     setIsFollowingNow(false);
-    pagingUntilRef.current = performance.now() + 1000;
+    cardScrollUntilRef.current = performance.now() + 1000;
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
   }, [command, cardInsetPx]);
 

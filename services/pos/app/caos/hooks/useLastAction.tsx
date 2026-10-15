@@ -3,7 +3,8 @@ import { createContext, useContext, useState } from "react";
 // 「直前の操作」をヘッダーに出す秒（間違えたら、出ている操作の逆の操作で直す）
 const LAST_ACTION_SEC = 30;
 
-type LastAction = { label: string; atMs: number };
+/** 覚えた操作。ids はその操作で端末に残した（後ろで送る）操作の id（useCaosOutbox。通らなかったら忘れるのに使う） */
+type LastAction = { label: string; ids: readonly string[]; atMs: number };
 
 // 覚えた操作。盤面（useCaosSession）と担当者（CaosLanesProvider）が同じものに覚えるよう、画面の外側の LastActionProvider が持つ
 const LastActionContext = createContext<{
@@ -26,8 +27,9 @@ export const LastActionProvider = ({
 
 // 通った操作を覚える（前の操作は出さなくなる）
 const rememberWith =
-  (setLast: (action: LastAction) => void) => (label: string) =>
-    setLast({ label, atMs: Date.now() });
+  (setLast: (action: LastAction) => void) =>
+  (label: string, ids: readonly string[]) =>
+    setLast({ label, ids, atMs: Date.now() });
 
 /** 「直前の操作」に覚える。閲覧だけの画面（LastActionProvider が無い）では undefined */
 export const useRememberAction = () => {
@@ -46,10 +48,10 @@ export const useLastAction = (nowMs: number) => {
     /** 出す操作の名前（「割当 #038 → 2nd」）。無ければ null */
     label: shown ? last.label : null,
     remember: rememberWith(setLast),
-    /** 忘れる。label を渡すと、覚えているのがその操作のときだけ（通らなかった操作は出さない） */
-    forget: (label?: string) =>
+    /** 忘れる。端末に残した操作（entry）を渡すと、覚えているのがその操作のときだけ（通らなかった・消した操作は出さない） */
+    forget: (entry?: { id: string }) =>
       setLast((current) =>
-        label === undefined || current?.label === label ? null : current,
+        entry === undefined || current?.ids.includes(entry.id) ? null : current,
       ),
   };
 };

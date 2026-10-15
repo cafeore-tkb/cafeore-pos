@@ -172,13 +172,15 @@ export const useCaosSession = () => {
   ) => {
     if (lane && !testing) confirms.ask({ kind: "seniorOnly", card, lane });
   };
+  // 通った操作で端末に残した操作の id（本番だけ。通らなかったら「直前の操作」から忘れる）
+  const liveIds = () => (test.session ? [] : live.lastEnqueued());
   // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「直前の操作」に label を覚える。
   // 断られたら何もしない。通ったかを返す
   const onSuccess = (ok: boolean, label: string, play: () => void) => {
     if (ok) {
       // 音は盤面を描いてから鳴らす（初めて鳴らすときの音の準備で、盤面が変わるのを待たせない）
       setTimeout(play);
-      lastAction.remember(label);
+      lastAction.remember(label, liveIds());
     }
     return ok;
   };
@@ -264,7 +266,7 @@ export const useCaosSession = () => {
   };
   const emergencyOps: EmergencyOps = test.session
     ? {
-        // 練習の盤面の中だけ
+        // 練習の盤面の中だけ（足したときの知らせは、本番は addEmergency がマスターと同じく出すので、練習もここで出す）
         orders: test.arrivedOrders,
         add: async (cups, reason) => {
           const ids = test.addEmergencies(
@@ -274,11 +276,7 @@ export const useCaosSession = () => {
           if (ids) toastEmergenciesAdded(ids.length);
           return ids;
         },
-        cancel: (cups) => {
-          if (!test.cancelEmergencies(cups.map((cup) => cup.id))) return false;
-          toastEmergenciesCancelled(cups.length);
-          return true;
-        },
+        cancel: (cups) => test.cancelEmergencies(cups.map((cup) => cup.id)),
       }
     : {
         orders: live.orders ?? [],
@@ -293,17 +291,11 @@ export const useCaosSession = () => {
           return addEmergency(pos, reason);
         },
         // 画面はすぐ変わり、送るのは後ろで（取り消せたらこの端末に残っているシールも消す）
-        cancel: (cups, label) => {
-          if (
-            !live.cancelEmergencies(
-              cups.map((cup) => cup.id),
-              label,
-            )
-          )
-            return false;
-          toastEmergenciesCancelled(cups.length);
-          return true;
-        },
+        cancel: (cups, label) =>
+          live.cancelEmergencies(
+            cups.map((cup) => cup.id),
+            label,
+          ),
       };
 
   return {
@@ -323,7 +315,7 @@ export const useCaosSession = () => {
       unassigned: orderAndCupCounts(unassigned),
       waiting: orderAndCupCounts(lanes.flatMap(laneActive)),
     },
-    /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_MIN 分を超えた注文） */
+    /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
     backlog: orderBacklog(cards, nowMs),
     /** 今（エポックのミリ秒。テスト中は練習の時計） */
     nowMs,
@@ -369,18 +361,15 @@ export const useCaosSession = () => {
         const ids = await emergencyOps.add(cups, reason);
         if (!ids) return null;
         if (together) mergeRebrews(ids);
-        lastAction.remember(label);
+        lastAction.remember(label, []);
         return ids;
       },
       cancel: (card: CaosCard) => {
         const label = `緊急の取り消し ${orderLabel(card)}`;
-        if (
-          emergencyOps.cancel(
-            card.cups.filter((cup) => cup.emergency),
-            label,
-          )
-        )
-          lastAction.remember(label);
+        const cups = card.cups.filter((cup) => cup.emergency);
+        if (!emergencyOps.cancel(cups, label)) return;
+        toastEmergenciesCancelled(cups.length);
+        lastAction.remember(label, liveIds());
       },
     },
     soundEnabled,

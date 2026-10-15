@@ -520,6 +520,29 @@ describe("unit: caos-outbox 送る", () => {
     expect(t.pressed).toEqual([NOW.getTime() + 11_000]);
   });
 
+  test("返事を待っているあいだは、その操作を送っている途中（inFlight）とする", async () => {
+    const server = orders(cup("a"));
+    const op = entry(place(server, "a", 1));
+    const { store } = memoryStore([op]);
+    let answer: (result: CaosOutboxResult) => void = () => {};
+    const outbox = createCaosOutbox({
+      store,
+      server: () => ({ orders: server, lanes: null }),
+      send: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      onRejected: () => {},
+    });
+    expect(outbox.inFlight()).toBeNull();
+    const kicked = outbox.kick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.inFlight()).toBe(op.id);
+    answer({});
+    await kicked;
+    expect(outbox.inFlight()).toBeNull();
+  });
+
   test("前の日に押した操作は送らずに捨てる", async () => {
     const server = orders(cup("a"));
     const t = setup(
