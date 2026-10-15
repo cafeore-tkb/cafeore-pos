@@ -190,8 +190,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
-          ヘッダーの下に重ねて出す（ヘッダーの並びを詰めず、A の「次へ」の列も隠さない） */}
-      <div className="absolute top-full right-[108px] z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+          ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
+      <div className="absolute top-full right-2 z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
         {labelPrinter.status === "disconnected" && (
           <PrinterStatus
             name="ラベル"

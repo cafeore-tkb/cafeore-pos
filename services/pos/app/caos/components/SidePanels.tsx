@@ -328,7 +328,7 @@ export const TicketDetailPanel: React.FC<
     )}
     <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
       <ArrowRight className="h-4 w-4" />
-      抽出中のカードは、押して開く緊急のパネルから移せます
+      抽出中のカードは、長押しで開く緊急のパネルから移せます
     </p>
   </SidePanel>
 );

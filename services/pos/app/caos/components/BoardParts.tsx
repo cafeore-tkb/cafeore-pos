@@ -170,10 +170,15 @@ const FIX_HINT = "違っていたら逆の操作（外す・移す）で直し�
 const toastText = (toast: OpenCornerToast) => {
   if (toast.kind === "next")
     return {
-      label: `${dripperLabel(toast.bayId)}の「次へ」の確かめ`,
+      label: `${dripperLabel(toast.bayId)}の抽出を終える確かめ`,
       title: `${dripperLabel(toast.bayId)} の ${orderLabel(toast.card)} を終えますか？`,
       body: `始めてからまだ ${clockLabel(toast.elapsedSec)} です。押す列を間違えていませんか？`,
-      action: "次へ進める",
+      action:
+        toast.start === "none"
+          ? "終える"
+          : toast.start === "head"
+            ? "次へ進める"
+            : "終えて始める",
       frame: "border-orange-600",
     };
   if (toast.kind === "lateMerge")
@@ -207,7 +212,7 @@ const toastText = (toast: OpenCornerToast) => {
  * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
  * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
- * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-corner-toasts。管制盤 A の右端の「次へ」の列と右のパネルを避ける）
+ * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-corner-toasts。右のパネルを避ける）
  */
 export const CornerToasts: React.FC<{
   toasts: readonly OpenCornerToast[];

@@ -192,6 +192,59 @@ describe("unit: caos-outbox 重ねて表示", () => {
     expect(lane.done[0].cups[0].readyAt).toBeNull();
   });
 
+  test("終えるだけの「次へ」（startNext: false）は、重ねても待機の先頭を始めない", () => {
+    const brewing = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+    );
+    const finish = entry({
+      kind: "next",
+      dripper: 1,
+      dripId: "drip-a",
+      startId: null,
+      startNext: false,
+    });
+    const lane = caosLane(
+      buildCaosCards(overlayCaosOrders(brewing, [finish], DAY)),
+      1,
+    );
+    expect(lane.done.map((card) => card.key)).toEqual(["drip-a"]);
+    expect(lane.brewing).toBeUndefined();
+    expect(lane.queued.map((card) => card.key)).toEqual(["drip-b"]);
+  });
+
+  test("押したカードを始める「次へ」（startPressed）は、そのカードが待機の先頭のときだけ重ねる", () => {
+    const board = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+      cup("c", { dripper: 1, dripperPosition: 3, dripId: "drip-c" }),
+    );
+    const start = (startId: string) =>
+      entry({
+        kind: "next",
+        dripper: 1,
+        dripId: "drip-a",
+        startId,
+        startPressed: true,
+      });
+    const brewingOf = (op: ReturnType<typeof start>) =>
+      caosLane(buildCaosCards(overlayCaosOrders(board, [op], DAY)), 1).brewing
+        ?.key;
+    // 先頭へ動かすのが通らず、押したカード（c）が先頭でなければ、b を始めない
+    expect(brewingOf(start("drip-c"))).toBe("drip-a");
+    expect(brewingOf(start("drip-b"))).toBe("drip-b");
+  });
+
   test("担当者の交代と入れ替えを重ねる。届いた担当者がもう入れ替わっていれば、入れ替え直さない", () => {
     const lanes = emptyCaosLanes(DAY).lanes.map((lane) =>
       lane.dripper === 2 ? { ...lane, name: "山田", senior: true } : lane,

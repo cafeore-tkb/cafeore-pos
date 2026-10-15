@@ -1,8 +1,4 @@
-import {
-  type CaosCard,
-  type CaosPlace,
-  readableTextColor,
-} from "@cafeore/common";
+import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
 import { Fragment } from "react";
@@ -18,17 +14,12 @@ import {
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
-import {
-  type DropSide,
-  type Lane,
-  frontTargets,
-  moveTargets,
-} from "../logic/lanes";
+import { type DropSide, moveTargets } from "../logic/lanes";
 import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
-// いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
-// 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
+// いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
+// （どの注文から割り当てるか・何番を入れているかを番号で合わせる。1 杯のカードは統合の判断に商品が要るので、2 行目でも読める大きさにする）。
 // 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）・注文ごとの段（byOrder）だけ（終わりはカードの状態で薄くする）。
 // 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる（管制盤 A・C）。
 // 管制盤 D（byOrder）は重ねず、入っている注文ごとの段（注文番号・コメントの印・緊急の理由・杯数）に分ける（表では元の注文の行にまたがって縦に長い）。
@@ -39,42 +30,52 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 2 行目の注文番号（未割当のカードは 1 行目なので使わない）。タイムライン（A の md・C の列の lane）はカードの高さのまま大きくする
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）。
+// emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
   pad: "px-1.5 py-1",
-  name: "text-[14px]",
+  no: "text-[14px]",
   cups: "px-0.5 text-[13px]",
   meta: "text-[11px]",
-  no: "",
+  item: "text-[12px]",
+  emergencyBelow: true,
 };
 const SIZES = {
   // 管制盤 C・D と割当のパネル
   sm: SM,
-  // 管制盤 C のドリッパーの列
-  lane: { ...SM, no: "text-[17px]" },
+  // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
+  lane: {
+    ...SM,
+    no: "text-[17px]",
+    item: "text-[14px]",
+    emergencyBelow: false,
+  },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
-    name: "text-[21px]",
+    no: "text-[21px]",
     cups: "px-1.5 text-[18px]",
     meta: "text-[15px]",
-    no: "",
+    emergencyBelow: false,
+    item: "text-[15px]",
   },
   // 管制盤 A のタイムライン
   md: {
     pad: "px-2 py-1",
-    name: "text-[19px]",
+    no: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
-    no: "text-[19px]",
+    emergencyBelow: false,
+    item: "text-[15px]",
   },
   // 詳細のパネル
   xl: {
     pad: "p-4",
-    name: "text-[26px]",
+    no: "text-[26px]",
     cups: "px-2 text-[22px]",
     meta: "text-[15px]",
-    no: "",
+    emergencyBelow: false,
+    item: "text-[18px]",
   },
 };
 
@@ -184,6 +185,15 @@ export const OrderCard: React.FC<
       {label}
     </span>
   );
+  // 入れ直し（緊急）の札
+  const emergencyTag = (className: string) =>
+    card.emergency && (
+      <span
+        className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${className}`}
+      >
+        緊急
+      </span>
+    );
   const itemName = (size: string) => (
     <span
       className={`min-w-0 truncate font-black tracking-tight ${size}`}
@@ -192,29 +202,20 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では、後ろの豆の札を先に縮め、入らなければ省略する）。
-  // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
-  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
+  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札と指名・上級生の札を先に縮め、商品は入らなければ省略する。
+  // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
+  // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
+  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
   const [headline, subline] = parts
-    ? [itemName(text.name), null]
-    : card.status === "unassigned"
-      ? [
-          orderNo(
-            merged
-              ? `min-w-0 truncate tracking-tighter ${text.cups}`
-              : `shrink-0 ${text.name}`,
-          ),
-          itemName(""),
-        ]
-      : [
-          itemName(text.name),
-          // 統合した長い番号は先に縮める（指名・上級生の札を押し出さない）
-          orderNo(
-            merged
-              ? `min-w-0 truncate tracking-tighter ${text.no}`
-              : `shrink-0 ${text.no}`,
-          ),
-        ];
+    ? [itemName(text.no), null]
+    : [
+        orderNo(
+          merged
+            ? `min-w-0 truncate tracking-tighter ${text.cups}`
+            : `shrink-0 ${text.no}`,
+        ),
+        itemName(`max-w-full shrink-0 ${text.item}`),
+      ];
   return (
     <div
       {...props}
@@ -229,20 +230,14 @@ export const OrderCard: React.FC<
       {look?.comments && (
         <CommentMark count={look.comments.length} label={orderLabel(card)} />
       )}
-      {/* 何が何杯か（未割当は何番が何杯か） */}
+      {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
-        {/* 杯数はいつも右上（緊急の札・終わりの印はその左） */}
+        {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {card.emergency && (
-            <span
-              className={`whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
-            >
-              緊急
-            </span>
-          )}
+          {!text.emergencyBelow && emergencyTag(text.cups)}
           {done && (
             <Check className="h-4 w-4 text-emerald-700">
               <title>完了</title>
@@ -270,7 +265,7 @@ export const OrderCard: React.FC<
                 <span className="relative shrink-0">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
-                    `tracking-tighter ${text.name}`,
+                    `tracking-tighter ${text.no}`,
                   )}
                   {part.comments > 0 && (
                     <CommentMark
@@ -282,7 +277,7 @@ export const OrderCard: React.FC<
                 </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
-                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.name}`}
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.no}`}
                 >
                   {part.cups}杯
                 </span>
@@ -291,11 +286,12 @@ export const OrderCard: React.FC<
           ))}
         </div>
       )}
-      {/* 注文番号（未割当は商品）・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
+      {/* 商品・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
         <span className="flex max-w-full shrink-0 items-center gap-1">
+          {text.emergencyBelow && emergencyTag("px-1")}
           {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
           {mergeInto && (
             <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
@@ -358,69 +354,45 @@ const padTone = (bayId: number, hoveredBay: number | null) =>
     ? "border-white bg-blue-500 text-white"
     : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
-// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
+// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。未割当カード（管制盤 A・C）で使い、番号はそのドリッパーの列の最後へ。
 // 段がヘッダー・帯・ほかのカードの下になったり枠で切れたりして押せないときは、両方の段を下か上に寄せる（useBayPadPlacement）。
-// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。番号はそのドリッパーの列の最後へ。待機カードは段の右端に、
-// 今のドリッパーの「先頭」（列の先頭へ。今から始まる）と「待機の先頭」（抽出中の次へ）を足す（logic/lanes の frontTargets）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
 // ドラッグで指を滑らせて選べるよう、番号のボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
   card: CaosCard;
-  /** 待機カードの今のドリッパーの列 */
-  lane?: Lane;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  /** place は「先頭」なら "front"、「待機の先頭」なら "queueFront"（今のドリッパーの列）。番号なら無し（その列の最後へ） */
-  onPick: (bayId: number, place?: CaosPlace) => void;
-}> = ({ card, lane, hoveredBay, onPick }) => {
-  const targets = moveTargets(card, lane?.id ?? null);
+  onPick: (bayId: number) => void;
+}> = ({ card, hoveredBay, onPick }) => {
+  const targets = moveTargets(card, null);
   const half = Math.ceil(targets.length / 2);
-  const fronts = lane ? frontTargets(card, lane) : [];
   // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
-  const pick =
-    (bayId: number, place?: CaosPlace) => (event: React.MouseEvent) => {
-      event.stopPropagation();
-      onPick(bayId, place);
-    };
   return (
     <div ref={placement.ref} className="contents">
-      {[targets.slice(0, half), targets.slice(half)].map((row, index) => {
-        const front = fronts[index];
-        return (
-          <div
-            key={row[0].bayId}
-            style={placement.rows[index]}
-            className={`absolute right-0 left-0 z-[90] grid gap-1 rounded-lg bg-slate-950 p-1 shadow-xl ${front ? "grid-cols-[1fr_1fr_1fr_1.4fr]" : "grid-cols-3"}`}
-          >
-            {row.map(({ bayId, current, disabled }) => (
-              <button
-                key={bayId}
-                type="button"
-                disabled={disabled}
-                data-bay-target={bayId}
-                title={current ? "この列の最後へ" : undefined}
-                onClick={pick(bayId)}
-                className={`flex h-full touch-none items-center justify-center gap-0.5 rounded-md border font-black font-mono text-[17px] leading-none transition-colors ${padTone(bayId, hoveredBay)}`}
-              >
-                {bayId}
-                {current && <span className="font-sans text-[10px]">最後</span>}
-              </button>
-            ))}
-            {front && (
-              <button
-                type="button"
-                disabled={front.disabled}
-                title={front.hint}
-                onClick={pick(front.bayId, front.place)}
-                className="h-full touch-none whitespace-nowrap rounded-md border border-amber-300 bg-amber-100 px-0.5 font-black text-[12px] text-amber-950 leading-none disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500"
-              >
-                {front.label}
-              </button>
-            )}
-          </div>
-        );
-      })}
+      {[targets.slice(0, half), targets.slice(half)].map((row, index) => (
+        <div
+          key={row[0].bayId}
+          style={placement.rows[index]}
+          className="absolute right-0 left-0 z-[90] grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
+        >
+          {row.map(({ bayId, disabled }) => (
+            <button
+              key={bayId}
+              type="button"
+              disabled={disabled}
+              data-bay-target={bayId}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPick(bayId);
+              }}
+              className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
+            >
+              {bayId}
+            </button>
+          ))}
+        </div>
+      ))}
     </div>
   );
 };

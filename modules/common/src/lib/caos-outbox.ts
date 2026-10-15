@@ -41,12 +41,18 @@ import { jstDate } from "./jst";
 export type CaosOutboxOp =
   /** PUT /api/caos/cups（割当・移動・先頭へ・未割当に戻す・統合・外す・まとめて移す） */
   | { kind: "cups"; writes: CaosCupsWrite[] }
-  /** 「次へ」。dripId は終えるカード、startId は始めるはずの待機の先頭（押したときの盤面） */
+  /**
+   * 「次へ」。dripId は終えるカード、startId は始めるはずの待機の先頭（押したときの盤面）。startNext が false なら終えるだけ（省略すると始める）。
+   * startPressed は押した待機のカード（startId）を始める（その前に先頭へ動かしてある）。待機の先頭が startId でなければ当てず・送らない
+   * （送ったあとにほかの端末が入れ替えても、サーバーが start_drip_id で断る）
+   */
   | {
       kind: "next";
       dripper: number;
       dripId: string | null;
       startId: string | null;
+      startNext?: boolean;
+      startPressed?: boolean;
     }
   /** 緊急（入れ直し）の取り消し */
   | { kind: "cancel-emergency"; id: string }
@@ -185,6 +191,15 @@ const rebaseWrites = (
   return { writes: rebased };
 };
 
+// 押した待機のカード（startId）が、その列の待機の先頭か（先頭へ動かす書き込みが通らなかったら、ほかのカードを始めない）
+const pressedAtHead = (
+  orders: readonly CaosOrderInput[],
+  op: Extract<CaosOutboxOp, { kind: "next" }>,
+) =>
+  caosLane(buildCaosCards(orders), op.dripper).queued[0]?.dripId === op.startId;
+const PRESSED_MOVED =
+  "押したカードを先頭へ動かせなかったので、始めませんでした";
+
 /**
  * 操作を盤面（orders）に当てる。押したとき（決まりに合うかを先に確かめる）と、届いた盤面に重ねるときに使う。
  * at は押した時刻（抽出の始めた・終えた時刻の代わり）。cooldown は「次へ」の秒を見るか（重ねるときは見ない）。担当者の操作は orders を変えない
@@ -202,8 +217,11 @@ export const applyCaosOutboxOp = (
       return applyCaosPracticeWrites(orders, rebased.writes, at);
     }
     case "next":
+      if (op.startPressed && !pressedAtHead(orders, op))
+        return { error: PRESSED_MOVED };
       return advanceCaosPracticeDripper(orders, op.dripper, op.dripId, at, {
         cooldown,
+        startNext: op.startNext,
       });
     case "cancel-emergency":
       return cancelCaosPracticeEmergency(orders, op.id);
@@ -410,6 +428,8 @@ const prepareCaosOutboxOp = (
     }
     case "next": {
       if (reflected(op, server)) return { done: true };
+      if (op.startPressed && !pressedAtHead(server.orders, op))
+        return { conflict: PRESSED_MOVED };
       // サーバーは始めた時刻と押した時刻の差が CAOS_NEXT_COOLDOWN_SEC 秒より短ければ断る。サーバーの始めた時刻が押したときに見ていたより後
       // （ほかの端末が先に進めた列で、前の抽出の終わりまでずれた・端末の時計が進んでいる）なら、捨てずに、始めた時刻のその秒あと
       // （時計の差に 1 秒みておく）に押したことにして、その時刻まで待って送る
@@ -448,7 +468,8 @@ const cupIdsOf = (request: CaosOutboxOp, server: CaosServerState) => {
       return [request.id];
     case "next": {
       const lane = caosLane(buildCaosCards(server.orders), request.dripper);
-      return [lane.brewing, lane.queued[0]].flatMap(
+      const start = request.startNext === false ? undefined : lane.queued[0];
+      return [lane.brewing, start].flatMap(
         (card) => card?.cups.map((cup) => cup.id) ?? [],
       );
     }

@@ -3,7 +3,6 @@ import {
   type CaosOutboxOp,
   applyCaosOutboxOps,
   buildCaosCards,
-  caosLane,
   jstDate,
   overlayCaosOrders,
 } from "@cafeore/common";
@@ -11,6 +10,12 @@ import { useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
 import { usePosOrders } from "./usePosOrders";
+
+/**
+ * 「次へ」（抽出中のカードを終え、待機の先頭を始める）。dripId は画面が抽出中と見ているカード、startId は始めるカード（無ければ null）、
+ * startNext が false なら終えるだけ
+ */
+export type CaosNextOp = Omit<Extract<CaosOutboxOp, { kind: "next" }>, "kind">;
 
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる（@cafeore/common の buildCaosCards）。
@@ -60,15 +65,15 @@ export const useLiveBoard = ({
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),
-    /** 「次へ」を送る。dripId は画面が抽出中と見ているカード。決まりに合えば true */
-    runNext: (dripper: number, dripId: string | null, label: string) =>
-      run(label, {
-        kind: "next",
-        dripper,
-        dripId,
-        startId:
-          caosLane(latest.current.cards, dripper).queued[0]?.dripId ?? null,
-      }),
+    /** 「次へ」を送る。before は先に当てる書き込み（押した待機のカードを待機の先頭へ）。決まりに合えば true */
+    runNext: (next: CaosNextOp, label: string, before: CaosCupsWrite[] = []) =>
+      run(
+        label,
+        ...(before.length > 0
+          ? [{ kind: "cups", writes: before } as const]
+          : []),
+        { kind: "next", ...next },
+      ),
     /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(

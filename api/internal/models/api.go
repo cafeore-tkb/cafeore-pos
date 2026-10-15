@@ -209,6 +209,12 @@ type CaosNextRequest struct {
 	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press *CaosPress `json:"press,omitempty"`
+
+	// StartDripId 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
+	StartDripId *openapi_types.UUID `json:"start_drip_id,omitempty"`
+
+	// StartNext 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
+	StartNext *bool `json:"start_next,omitempty"`
 }
 
 // CaosPress 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
