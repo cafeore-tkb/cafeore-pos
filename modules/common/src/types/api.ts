@@ -318,7 +318,8 @@ export interface paths {
     /**
      * Square 端末の一覧
      * @description 登録した端末と、ペアリング待ちのコード。古い順。
-     * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+     * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+     * Square に問い合わせて最新にしてから返す。
      * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
      */
     get: operations["getSquareDevices"];
@@ -355,6 +356,19 @@ export interface paths {
      * 外した端末は POST /api/square/devices/import で戻せる。
      */
     delete: operations["deleteSquareDevice"];
+  };
+  "/api/square/devices/{id}/code": {
+    /**
+     * ペアリング済みの端末にコード（Device Code）を発行し直す
+     * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+     * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+     * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+     * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+     * 別の端末で入力したら、その端末の device_id に置き換わる。
+     * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+     * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+     */
+    post: operations["issueSquareDeviceCode"];
   };
   "/api/square/checkouts": {
     /**
@@ -1125,7 +1139,7 @@ export interface components {
     /**
      * @description 端末のペアリングの状態（Square の Device Code の status）。
      *   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-     *   - PAIRED: ペアリング済み。決済に使える
+     *   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
      *   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
      *
      * @enum {string}
@@ -1139,11 +1153,15 @@ export interface components {
       status: components["schemas"]["SquareDeviceStatus"];
       /** @description 端末の ID。決済の依頼に使う。PAIRED になるまで null */
       device_id?: string | null;
-      /** @description 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る */
+      /**
+       * @description 端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る
+       * （UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）
+       */
       code?: string | null;
       /**
        * Format: date-time
-       * @description コードの期限。これを過ぎると EXPIRED になる
+       * @description 最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。
+       * ペアリング済みの行は code が消えるだけで PAIRED のまま
        */
       pair_by?: string | null;
       /** Format: date-time */
@@ -2341,7 +2359,8 @@ export interface operations {
   /**
    * Square 端末の一覧
    * @description 登録した端末と、ペアリング待ちのコード。古い順。
-   * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+   * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+   * Square に問い合わせて最新にしてから返す。
    * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
    */
   getSquareDevices: {
@@ -2472,6 +2491,61 @@ export interface operations {
       };
       /** @description 見つからない */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * ペアリング済みの端末にコード（Device Code）を発行し直す
+   * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+   * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+   * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+   * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+   * 別の端末で入力したら、その端末の device_id に置き換わる。
+   * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+   * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+   */
+  issueSquareDeviceCode: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 発行した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description ID が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ペアリング済みの端末ではない（ペアリング待ち・期限切れ） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square がコードを発行しなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
