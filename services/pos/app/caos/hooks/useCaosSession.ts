@@ -9,6 +9,8 @@ import {
   caosDayOrders,
   caosLateMerge,
   caosMergePair,
+  caosRebrewMergePair,
+  caosRebrewsTogether,
   dripperLabel,
   jstClock,
   jstDate,
@@ -23,7 +25,7 @@ import {
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   type EmergencyCup,
@@ -223,6 +225,31 @@ export const useCaosSession = () => {
     );
   };
 
+  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id。盤面に届いたら、元のカードと同じ組み合わせの
+  // 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。まとめるのは「1つ戻す」に覚えず、
+  // 戻すと入れ直しごと取り消す）
+  const [rebrewsToMerge, setRebrewsToMerge] = useState<string[] | null>(null);
+  useLayoutEffect(() => {
+    if (!rebrewsToMerge) return;
+    const pair = caosRebrewMergePair(cards, rebrewsToMerge);
+    if (pair === "arriving") return;
+    setRebrewsToMerge(null);
+    if (!pair) return;
+    const result = mergeWrites(pair.card, pair.into, newDripId);
+    if ("writes" in result)
+      source.runWrites(
+        result.writes,
+        `統合 ${orderLabel(pair.card)} → ${orderLabel(pair.into)}`,
+      );
+  }, [cards, rebrewsToMerge, source]);
+
+  // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・入れ直しのまとめ）を忘れる
+  const forgetPending = () => {
+    undo.forget();
+    confirms.clear();
+    setRebrewsToMerge(null);
+  };
+
   // 本番の緊急のカップに、刷るための POS の注文を付ける（本番のカードと入力は POS の注文から作るので、注文はある。無ければ null）
   const withPosOrder = <T extends { orderId: string }>(cups: T[]) => {
     const found = cups.flatMap((cup) => {
@@ -295,7 +322,12 @@ export const useCaosSession = () => {
             )
           )
             return null;
-          return () => restoreEmergencies(restore);
+          // 足し直したものも、取り消したカードと同じ 1 枚にまとめる（1 杯なら何もしない）
+          return async () => {
+            const ids = await restoreEmergencies(restore);
+            if (ids) setRebrewsToMerge(ids);
+            return ids !== null;
+          };
         },
       };
 
@@ -344,7 +376,7 @@ export const useCaosSession = () => {
     /**
      * 緊急（入れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
      *   - orders：番号から入れ直すカップを選ぶ注文
-     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る
+     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る（統合したカードから全部の杯を入れ直せば、元のカードと同じ組み合わせの 1 枚）
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
      * どちらも「1つ戻す」で戻せる（本番は、足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す。
      * 実データテストは練習の盤面を操作の前に戻す）
@@ -354,8 +386,13 @@ export const useCaosSession = () => {
       add: async (cups: EmergencyCup<CaosOrderInput>[], reason: string) => {
         const nos = new Set(cups.map((cup) => cup.order.orderId));
         const label = `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`;
+        const together = caosRebrewsTogether(
+          cards,
+          cups.map((cup) => cup.cupId),
+        );
         const added = await emergencyOps.add(cups, reason, label);
         if (!added) return null;
+        if (together) setRebrewsToMerge(added.ids);
         undo.remember(label, added.undo);
         return added.ids;
       },
@@ -459,8 +496,7 @@ export const useCaosSession = () => {
     },
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
-      undo.forget();
-      confirms.clear();
+      forgetPending();
       test.clear();
       setIsRunning(true);
       soundManager.playDispatch();
@@ -482,8 +518,7 @@ export const useCaosSession = () => {
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
-        undo.forget();
-        confirms.clear();
+        forgetPending();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
         setSimSpeed(TEST_START_SPEED);

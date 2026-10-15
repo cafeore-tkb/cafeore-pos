@@ -557,6 +557,51 @@ export const mergeWrites = (
 };
 
 /**
+ * 入れ直すカップ（cupIds。入れ直したカップの ID）が、盤面のどれかのカードのカップの組と同じで 2 杯以上か
+ * （統合したカード（#011+#012 など）から全部の杯を入れ直す）。そのときは、足した入れ直しも元のカードと同じ組み合わせの 1 枚にまとめる（caosRebrewMergeWrites）
+ */
+export const caosRebrewsTogether = (
+  cards: readonly CaosCard[],
+  cupIds: readonly string[],
+) => {
+  const picked = new Set(cupIds);
+  // カードは CAOS_MAX_CUPS 杯までなので、カードと同じ組なら杯数もそこまで
+  return (
+    picked.size > 1 &&
+    cards.some(
+      (card) =>
+        card.cups.length === picked.size &&
+        new Set(card.cups.map((cup) => cup.cupId)).size === picked.size &&
+        card.cups.every((cup) => picked.has(cup.cupId)),
+    )
+  );
+};
+
+/** カップ（入れ直しも。id は書き込みの cup_ids に入れる ID）の入ったカード。盤面にまだ無ければ undefined */
+export const caosCardOfCup = (cards: readonly CaosCard[], id: string) =>
+  cards.find((card) => card.cups.some((cup) => cup.id === id));
+
+/**
+ * 足した入れ直し（ids）を 1 枚のカード（同じ dripId。未割当のまま）にまとめるときの、統合する 2 枚（caosMergePair の向き。書き込みは mergeWrites）。
+ * 足した入れ直しがまだ盤面に届いていなければ "arriving"（届くのを待つ）。もう 1 枚にまとまっている（同じ注文の同じ商品）・
+ * 未割当の 1 杯のカードでなくなった（届くまでにほかの端末が動かした）・統合できないときは null（まとめない）
+ */
+export const caosRebrewMergePair = (
+  cards: readonly CaosCard[],
+  ids: readonly string[],
+) => {
+  const found = new Set<CaosCard>();
+  for (const id of ids) {
+    const card = caosCardOfCup(cards, id);
+    if (!card) return "arriving";
+    found.add(card);
+  }
+  const [card, into] = found;
+  if (found.size !== 2 || card.status !== "unassigned") return null;
+  return into.status === "unassigned" ? caosMergePair(card, into) : null;
+};
+
+/**
  * 1 杯を外せる（統合を解除できる）カードか。ほかの注文と統合した、未割当・待機のカード（抽出中・終わりのカードは分けない）。
  * 同じ注文の同じ商品の 2 杯は、はじめから 1 枚のカードで淹れるので分けない
  */
