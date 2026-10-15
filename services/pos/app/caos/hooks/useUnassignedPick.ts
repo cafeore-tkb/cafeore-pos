@@ -73,8 +73,14 @@ export const useUnassignedPick = ({
     },
   );
 
+  // ドラッグしているあいだは「統合する」を出さない（落とす所の線・統合の枠を隠さない）
   const canMergeWith = (card: CaosCard) =>
-    Boolean(onMergeOrders && openCard && canMergeCards(openCard, card));
+    Boolean(
+      onMergeOrders &&
+        openCard &&
+        !drag.source &&
+        canMergeCards(openCard, card),
+    );
   // 開いたカードをもう一度押したときに統合する相手
   const partner =
     onMergeOrders && openCard

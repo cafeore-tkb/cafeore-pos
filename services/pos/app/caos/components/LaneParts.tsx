@@ -45,7 +45,7 @@ export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
   );
 };
 
-/** その担当者が淹れられるもの（上級生のみのカードを淹れられるか）。担当者がいなければ何も出さない */
+/** その担当者が上級生か（上級生のみのカードを置くと警告の印が付くか）。担当者がいなければ何も出さない */
 export const LaneAbility: React.FC<{ dripper: number }> = ({ dripper }) => {
   const lane = useCaosLanes().lanes.find((l) => l.dripper === dripper);
   if (!lane?.name) return null;
@@ -53,7 +53,7 @@ export const LaneAbility: React.FC<{ dripper: number }> = ({ dripper }) => {
     <span
       className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 font-bold text-[11px] leading-none ${lane.senior ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-500"}`}
     >
-      {lane.senior ? "上級生のみも可" : "上級生のみ不可"}
+      {lane.senior ? "上級生のみも可" : "上級生のみは ⚠"}
     </span>
   );
 };

@@ -228,7 +228,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
-      {picked.canMergeWith(ticket) && <MergeOverlay />}
+      {/* ドラッグしているあいだは出さない（落とす所の線・統合の枠を隠さない） */}
+      {!dragSource && picked.canMergeWith(ticket) && <MergeOverlay />}
       <DropMark side={dropSideOn(sheetTarget, ticket.key)} />
     </OrderCard>
   );
@@ -534,7 +535,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                   {group.items.map((order) => {
                     const uid = order.key;
                     const isSelected = selectedOrder?.key === uid;
-                    const isMergeCandidate = picked.canMergeWith(order);
+                    const isMergeCandidate =
+                      !dragSource && picked.canMergeWith(order);
                     return (
                       <OrderCard
                         key={uid}
