@@ -330,7 +330,7 @@ export const DispatchBoard: React.FC<
                               <>
                                 <BayPad
                                   card={ticket}
-                                  currentBayId={bay.id}
+                                  lane={bay}
                                   hoveredBay={drag.target?.bayId ?? null}
                                   onPick={(bayId, place) => {
                                     onMoveTicket(ticket, bayId, place);

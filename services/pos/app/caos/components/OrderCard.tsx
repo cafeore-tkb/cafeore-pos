@@ -18,7 +18,12 @@ import {
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
-import { type DropSide, frontTargets, moveTargets } from "../logic/lanes";
+import {
+  type DropSide,
+  type Lane,
+  frontTargets,
+  moveTargets,
+} from "../logic/lanes";
 import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
@@ -355,16 +360,16 @@ const padTone = (bayId: number, hoveredBay: number | null) =>
 // ドラッグで指を滑らせて選べるよう、番号のボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
   card: CaosCard;
-  /** 待機カードの今のドリッパー */
-  currentBayId?: number;
+  /** 待機カードの今のドリッパーの列 */
+  lane?: Lane;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
   /** place は「先頭」なら "front"、「待機の先頭」なら "queueFront"（今のドリッパーの列）。番号なら無し（その列の最後へ） */
   onPick: (bayId: number, place?: CaosPlace) => void;
-}> = ({ card, currentBayId, hoveredBay, onPick }) => {
-  const targets = moveTargets(card, currentBayId ?? null);
+}> = ({ card, lane, hoveredBay, onPick }) => {
+  const targets = moveTargets(card, lane?.id ?? null);
   const half = Math.ceil(targets.length / 2);
-  const fronts = currentBayId === undefined ? [] : frontTargets(card);
+  const fronts = lane ? frontTargets(card, lane) : [];
   // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
   const pick =
@@ -396,12 +401,12 @@ export const BayPad: React.FC<{
                 {current && <span className="font-sans text-[10px]">最後</span>}
               </button>
             ))}
-            {front && currentBayId !== undefined && (
+            {front && (
               <button
                 type="button"
                 disabled={front.disabled}
                 title={front.hint}
-                onClick={pick(currentBayId, front.place)}
+                onClick={pick(front.bayId, front.place)}
                 className="h-full touch-none whitespace-nowrap rounded-md border border-amber-300 bg-amber-100 px-0.5 font-black text-[12px] text-amber-950 leading-none disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500"
               >
                 {front.label}
