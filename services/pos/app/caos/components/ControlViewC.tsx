@@ -98,6 +98,7 @@ const ControlViewCBoard: React.FC<
                       selected={sharesOrder(current, selectedOrderId)}
                       data-merge-target={current.key}
                       data-queued-ticket={current.key}
+                      data-search-key={current.key}
                       data-ticket-label={orderLabel(current)}
                       data-merge-tap={pick.canMergeWith(current) || undefined}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し（開いた未割当のカードと統合できれば統合）
@@ -138,6 +139,7 @@ const ControlViewCBoard: React.FC<
                         selected={sharesOrder(ticket, selectedOrderId)}
                         data-queued-ticket={ticket.key}
                         data-merge-target={ticket.key}
+                        data-search-key={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
                         onClick={() => onOpenTicket(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
