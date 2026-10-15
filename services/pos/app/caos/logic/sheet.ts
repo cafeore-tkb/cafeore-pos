@@ -5,7 +5,7 @@ import {
   groupByOrder,
   sharesOrder,
 } from "./cards";
-import { type Lane, laneActive, laneCards } from "./lanes";
+import { type Lane, laneCards } from "./lanes";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
 // 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。終わったカード（「次へ」で終えた）は枠に出さない
@@ -164,17 +164,11 @@ export const buildSheet = (
   return { rows, cells };
 };
 
-// 右の注文内容。未割当のカードを注文ごとにまとめ、同じ注文のドリッパーのカード（抽出中・待機。統合したカードも）を薄く添える
-export const buildOrderGroups = (lanes: Lane[], unassigned: CaosCard[]) =>
-  Array.from(groupByOrder(unassigned), ([key, items]) => ({
-    key,
-    items,
-    assigned: lanes.flatMap((lane) =>
-      laneActive(lane)
-        .filter((card) => sharesOrder(card, key))
-        .map((card) => ({ card, bayId: lane.id })),
-    ),
-  })).sort((left, right) => left.items[0].orderNo - right.items[0].orderNo);
+// 右の注文内容。未割当のカードだけを注文ごとにまとめる
+export const buildOrderGroups = (unassigned: CaosCard[]) =>
+  Array.from(groupByOrder(unassigned), ([key, items]) => ({ key, items })).sort(
+    (left, right) => left.items[0].orderNo - right.items[0].orderNo,
+  );
 
 // 選んだ注文の行（選んだ注文を含むカード（統合したカードも）の、元の注文すべての行）
 export const linkedOrderNos = (

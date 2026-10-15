@@ -365,7 +365,7 @@ type InventoryRemindResponse struct {
 
 // InventoryStatus defines model for InventoryStatus.
 type InventoryStatus struct {
-	// Consumed counted_at 以降の注文での消費量
+	// Consumed counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
 	Consumed float64 `json:"consumed"`
 
 	// CountedAt 最後の棚卸し。無ければ最初の入荷
@@ -381,10 +381,10 @@ type InventoryStatus struct {
 	RemainingServings *float64              `json:"remaining_servings"`
 	Resource          StockResourceResponse `json:"resource"`
 
-	// Servings counted_at 以降に売れた回数
+	// Servings counted_at より後に使った回数
 	Servings int `json:"servings"`
 
-	// ServingsLastHour 直近1時間に売れた回数
+	// ServingsLastHour 直近1時間に使った回数（consumed と同じく、使った時刻で数える）
 	ServingsLastHour int `json:"servings_last_hour"`
 }
 
