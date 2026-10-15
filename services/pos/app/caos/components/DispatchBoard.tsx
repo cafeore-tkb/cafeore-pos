@@ -325,6 +325,7 @@ export const DispatchBoard: React.FC<
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
                             data-card-key={ticket.key}
+                            data-search-key={ticket.key}
                             // 待機・抽出中のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
                               isMovable ? ticket.key : undefined
