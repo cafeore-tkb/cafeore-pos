@@ -116,7 +116,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 	// 注文で、アイテムの在庫は per_serving × 数、カップはカップを作るアイテムの数だけ減る
 	startBrew(first.Id)
 	expect("1 つめ", map[uuid.UUID][2]float64{blendStock.ID: {30, 2}, coasterStock.ID: {1, 1}, cupID: {2, 2}})
-	if got := inv.ResourceIDsForOrder(uuid.UUID(first.Id)); len(got) != 3 {
+	if got := inv.ResourceIDsForOrders(uuid.UUID(first.Id)); len(got) != 3 {
 		t.Errorf("1 つめの注文の在庫対象 = %v, want 3 つ", got)
 	}
 

@@ -897,6 +897,6 @@ func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
 		}
 	}
 	if h.inventory != nil && len(orderIDs) > 0 {
-		go h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrder(orderIDs...))
+		go h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderIDs...))
 	}
 }

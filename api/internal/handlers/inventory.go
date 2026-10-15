@@ -264,7 +264,7 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 }
 
 // 注文で減る在庫対象（明細と、その注文のカップの緊急（入れ直し）の分）。
-func (inv *Inventory) ResourceIDsForOrder(orderIDs ...uuid.UUID) []uuid.UUID {
+func (inv *Inventory) ResourceIDsForOrders(orderIDs ...uuid.UUID) []uuid.UUID {
 	if inv == nil {
 		return nil
 	}

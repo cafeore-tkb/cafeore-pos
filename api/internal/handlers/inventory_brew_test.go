@@ -89,7 +89,7 @@ func TestStockUsedWhenBrewStartsOnDB(t *testing.T) {
 	expect("抽出を始めた", map[uuid.UUID][3]float64{beans.ID: {15, 1, 1}, cups.ID: {3, 3, 3}})
 
 	// 注文で減る在庫対象は、いくつかの注文をまとめても重ねない
-	if got := inv.ResourceIDsForOrder(o.ID, other.ID); len(got) != 2 {
+	if got := inv.ResourceIDsForOrders(o.ID, other.ID); len(got) != 2 {
 		t.Errorf("resources of the orders = %v, want beans and cups", got)
 	}
 }
