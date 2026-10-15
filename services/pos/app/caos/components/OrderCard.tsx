@@ -249,14 +249,20 @@ export const OrderCard: React.FC<
                   <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
                 </div>
               )}
-              <div className="flex min-w-0 shrink-0 items-center gap-1 leading-none">
-                {noTag(
-                  `#${orderNoLabel(part.orderNo)}`,
-                  `shrink-0 ${text.name}`,
-                )}
-                {part.comments > 0 && (
-                  <CommentMark count={part.comments} className="h-4 w-4" />
-                )}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
+                <span className="relative shrink-0">
+                  {noTag(
+                    `#${orderNoLabel(part.orderNo)}`,
+                    `tracking-tighter ${text.name}`,
+                  )}
+                  {part.comments > 0 && (
+                    <CommentMark
+                      count={part.comments}
+                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                    />
+                  )}
+                </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
                   className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.name}`}

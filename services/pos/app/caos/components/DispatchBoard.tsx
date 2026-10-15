@@ -51,7 +51,7 @@ const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 const STICKY_LEFT_WIDTH = 168;
 // 右端の列（次へ）の幅
 const NEXT_COLUMN_WIDTH = 96;
-// NOW の左に見せる過去（2 分半）。抽出中のカードの、始めてから今までと、貼り付けた商品・注文番号の札が NOW の線の左に収まる幅
+// NOW の左に見せる過去（2 分半）。抽出中のカードの始めてから今までと、寄せて残した商品・注文番号が NOW の線の左に収まる幅
 const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
 // 左へ隠れたカードで、商品・注文番号・杯数を寄せて残す幅（px。これより狭くは寄せず、カードと一緒に流れる）
 const MIN_LABEL_WIDTH = 120;
