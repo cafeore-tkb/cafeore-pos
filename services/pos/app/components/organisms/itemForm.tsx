@@ -170,7 +170,7 @@ export function ItemForm({
         <div className="grid gap-1">
           <p className="font-medium text-sm">在庫</p>
           <p className="text-muted-foreground text-xs">
-            注文のたびに「1回の量」を在庫から引きます。通知の段階は在庫タブと同じです。空欄の値は今のまま（新規は既定）です
+            1つ使うたびに（抽出が要るアイテムは提供可能にしたとき、ほかは注文を受けたとき）「1回の量」を在庫から引きます。通知の段階は在庫タブと同じです。空欄の値は今のまま（新規は既定）です
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3">
