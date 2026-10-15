@@ -14,8 +14,8 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => {
       <div className="relative z-[70] min-h-0 flex-1">
         <UnassignedStrip
           orders={props.unassignedOrders}
-          lanes={props.lanes}
           looks={props.looks}
+          nowMs={props.nowMs}
           nextAvailable={props.nextAvailable}
           selectedOrderId={props.selectedOrderId}
           pick={pick}

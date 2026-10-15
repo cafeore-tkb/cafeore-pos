@@ -25,6 +25,7 @@ import {
 import {
   DripperIndicator,
   EmptySlotButton,
+  LongWaitTag,
   NextButton,
   PanelHeader,
   PlaceTag,
@@ -115,8 +116,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     [bays, unassignedOrders, looks],
   );
   const orderGroups = useMemo(
-    () => buildOrderGroups(bays, unassignedOrders),
-    [bays, unassignedOrders],
+    () => buildOrderGroups(unassignedOrders),
+    [unassignedOrders],
   );
   const linkedRows = useMemo(
     () => linkedOrderNos(selectedOrderId, bays, unassignedOrders),
@@ -531,6 +532,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         className="h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
                         dragging={dragCup?.key === uid}
                       >
+                        <LongWaitTag card={order} nowMs={nowMs} />
                         {isMergeCandidate && <MergeOverlay />}
                         {isSelected && order.emergency && onCancelEmergency && (
                           <CancelEmergencyButton
@@ -543,16 +545,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       </OrderCard>
                     );
                   })}
-                  {group.assigned.map(({ card: ticket, bayId }) => (
-                    <OrderCard
-                      key={ticket.key}
-                      card={ticket}
-                      look={looks.get(ticket.key)}
-                      size="sm"
-                      note={`→ ${dripperLabel(bayId)}`}
-                      className="h-[64px] opacity-50"
-                    />
-                  ))}
                 </div>
               </article>
             ))}

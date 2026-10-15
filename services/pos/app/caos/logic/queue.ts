@@ -1,4 +1,5 @@
 import { type CaosCard, caosBrewSec, caosNextLocked } from "@cafeore/common";
+import { FORGOTTEN_BREW_SEC } from "./alerts";
 import { type Lane, laneActive } from "./lanes";
 
 // ドリッパーの列の時刻（エポックのミリ秒。日付を含むので、日をまたいでもそのまま続く）。
@@ -76,12 +77,18 @@ const lanePhase = (
   return "brewing";
 };
 
-/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・始めてからの時間と残り（ミリ秒。残りは表示の秒も）・状態（phase） */
+/**
+ * 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・始めてからの時間と残り（ミリ秒。残りは表示の秒も）・状態（phase）・
+ * 予定を過ぎた秒と、入れ忘れ・押し忘れかもしれないか（予定を FORGOTTEN_BREW_SEC 過ぎた抽出中）
+ */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
   const remainingMs = current ? Math.max(0, brewMs(current) - elapsedMs) : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
+  const overSec = lane.brewing
+    ? Math.max(0, Math.floor((elapsedMs - brewMs(lane.brewing)) / 1000))
+    : 0;
   return {
     current,
     waiting,
@@ -89,6 +96,8 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
     remainingMs,
     remainingSec,
     phase: lanePhase(current, Boolean(lane.brewing), remainingSec),
+    overSec,
+    forgotten: overSec >= FORGOTTEN_BREW_SEC,
     /** 「次へ」をまだ押せない（抽出を始めてすぐ。@cafeore/common の caosNextLocked） */
     nextLocked: caosNextLocked(lane.brewing, nowMs),
   };

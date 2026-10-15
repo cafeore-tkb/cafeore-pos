@@ -186,37 +186,26 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
   return groups;
 };
 
-/** 注文の行の 1 枚。mergedInto は、統合したカードをいちばん小さい注文番号の行に置いたとき、ほかの注文の行に残す跡（統合したカードの orderLabel） */
-export interface OrderRowEntry {
-  card: CaosCard;
-  mergedInto?: string;
-}
-
 /**
- * カードを注文番号の行にまとめる（注文番号の順、行の中は注文の中の並び）。
- * 統合したカードはいちばん小さい注文番号の行に置き、ほかの注文の行には跡（mergedInto）を残す。
- * 未割当の入れ直し（緊急）のカードは、注文ごとの別の行（emergency）にして先頭に置く（buildCaosCards の未割当の並びと同じ）
+ * 未割当のカードを注文番号の行にまとめる（管制盤 A の横帯・C の注文の列）。入れ直し（緊急）の行を先に、ほかは注文番号の順
+ * （buildCaosCards の未割当の並びと同じ）。統合したカードはいちばん小さい注文番号の行に置く。行の中は注文の中の並び
  */
-export const orderRows = (cards: readonly CaosCard[]) => {
+export const unassignedRows = (cards: readonly CaosCard[]) => {
   const rows = new Map<
     string,
-    { orderNo: number; emergency: boolean; entries: OrderRowEntry[] }
+    { orderNo: number; emergency: boolean; cards: CaosCard[] }
   >();
-  const add = (orderNo: number, emergency: boolean, entry: OrderRowEntry) => {
-    const key = `${emergency}:${orderNo}`;
-    const row = rows.get(key) ?? { orderNo, emergency, entries: [] };
-    row.entries.push(entry);
-    rows.set(key, row);
-  };
   for (const card of cards) {
-    const emergency = card.emergency && card.status === "unassigned";
-    const [first, ...others] = cardOrderNos(card);
-    add(first, emergency, { card });
-    for (const no of others)
-      add(no, emergency, { card, mergedInto: orderLabel(card) });
+    const key = `${card.emergency}:${card.orderNo}`;
+    const row = rows.get(key) ?? {
+      orderNo: card.orderNo,
+      emergency: card.emergency,
+      cards: [],
+    };
+    row.cards.push(card);
+    rows.set(key, row);
   }
-  const positionIn = (orderNo: number, { card }: OrderRowEntry) =>
-    card.cups.find((cup) => cup.orderNo === orderNo)?.position ?? 0;
+  const position = (card: CaosCard) => card.cups[0].position;
   return [...rows.values()]
     .sort(
       (a, b) =>
@@ -224,37 +213,6 @@ export const orderRows = (cards: readonly CaosCard[]) => {
     )
     .map((row) => ({
       ...row,
-      entries: row.entries.sort(
-        (a, b) => positionIn(row.orderNo, a) - positionIn(row.orderNo, b),
-      ),
+      cards: row.cards.sort((a, b) => position(a) - position(b)),
     }));
-};
-export type OrderRow = ReturnType<typeof orderRows>[number];
-
-/** 管制盤 C の注文の列で、いちばん古い未割当の注文の上に残す、ドリッパーに置いた（待機・抽出中の）注文の数 */
-const RECENT_PLACED_ROWS = 3;
-
-/**
- * 管制盤 C の注文の列（ドリッパーに置いたカードも含めた注文番号の行）。いちばん古い未割当の注文から後ろを並べ、
- * その上に、それより前の注文のうちドリッパーに置いた（待機・抽出中の）カードのある行を直近の RECENT_PLACED_ROWS 件だけ残す
- * （どこに何番目で入れたかが見えるように。その行は待機・抽出中のカードだけ）。未割当の入れ直し（緊急）の行は、残した行のすぐ下に置く
- */
-export const queueRows = (cards: readonly CaosCard[]) => {
-  const all = orderRows(cards);
-  const rows = all.filter((row) => !row.emergency);
-  const start = rows.findIndex((row) =>
-    row.entries.some(({ card }) => card.status === "unassigned"),
-  );
-  const end = start < 0 ? rows.length : start;
-  const recent = rows
-    .slice(0, end)
-    .map((row) => ({
-      ...row,
-      entries: row.entries.filter(
-        ({ card }) => card.status === "queued" || card.status === "brewing",
-      ),
-    }))
-    .filter((row) => row.entries.length > 0)
-    .slice(-RECENT_PLACED_ROWS);
-  return [...recent, ...all.filter((row) => row.emergency), ...rows.slice(end)];
 };

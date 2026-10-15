@@ -79,6 +79,18 @@ html:has(.caos-root) body {
   animation: caos-arrival 0.8s ease-in-out 5;
 }
 
+/* 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない）のドリッパーの番号（BoardParts の DripperIndicator）を点滅させる。
+   濃い赤と継続中の薄い赤を行き来する（「次へ」で終えるまで続ける） */
+@keyframes caos-forgotten {
+  50% {
+    background-color: var(--caos-overtime);
+    color: var(--caos-overtime-text);
+  }
+}
+.caos-root .caos-forgotten {
+  animation: caos-forgotten 1s steps(1, end) infinite;
+}
+
 /* 右のパネル（SidePanels の SidePanel）の幅 */
 .caos-root {
   --caos-side-panel-width: max(360px, min(440px, 44vw));
@@ -91,4 +103,12 @@ html:has(.caos-root) body {
 }
 .caos-root:has(.caos-side-panel) .caos-toast-confirms {
   right: calc(var(--caos-side-panel-width) + 12px);
+}
+
+/* コメントの置き場（OrderComments の CommentDock）は右下に出す（上はヘッダーの操作と右上の確かめ）。右のパネルが開いていれば、その左に出す */
+.caos-root .caos-comment-dock {
+  right: 8px;
+}
+.caos-root:has(.caos-side-panel) .caos-comment-dock {
+  right: calc(var(--caos-side-panel-width) + 8px);
 }
