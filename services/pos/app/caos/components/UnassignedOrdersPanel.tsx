@@ -1,6 +1,7 @@
 import { type CaosCard, canSplitCard } from "@cafeore/common";
 import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import type React from "react";
+import { useState } from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
@@ -222,6 +223,8 @@ export const UnassignedStrip: React.FC<
 }) => {
   const { rows: columns, places } = queueOf(orders, lanes);
   const folded = fold?.folded ?? false;
+  // 横のスクロールバーを置く、見出しの行の空いた所（件数と「次に空く」の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
+  const [trackSlot, setTrackSlot] = useState<HTMLDivElement | null>(null);
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
@@ -235,9 +238,10 @@ export const UnassignedStrip: React.FC<
         <span className="w-fit whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-black font-mono text-[13px] text-red-600">
           {orders.length} 件 / {totalCups(orders)} 杯
         </span>
+        <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         <NextAvailableChips
           nextAvailable={nextAvailable}
-          className="ml-auto text-[12px]"
+          className="shrink-0 text-[12px]"
         />
         {fold && (
           <button
@@ -254,7 +258,7 @@ export const UnassignedStrip: React.FC<
       {!folded && (
         <ScrollArea
           axis="x"
-          trackPlacement="header"
+          trackSlot={trackSlot}
           className="relative flex-1"
           scrollerClassName="overscroll-x-contain"
         >

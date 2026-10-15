@@ -41,15 +41,28 @@ import { ScrollArea } from "./ScrollArea";
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
 // 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
 // 統合したカードを開くと「外す」（統合の解除）が出る。
-// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
+// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
+// （左右の固定の列はなぞってもスクロールしない。「次へ」を急いで押して指が滑っても、NOW の追従が外れない）。
+// 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
+// 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 // 左端の列（ドリッパーの番号と担当者）の幅
 const STICKY_LEFT_WIDTH = 168;
 // 右端の列（次へ）の幅
 const NEXT_COLUMN_WIDTH = 96;
-// 90 seconds of past context remains visible to the left of NOW.
-const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
+// NOW の左に見せる過去（2 分半）。抽出中のカードの、始めてから今までと、貼り付けた商品・注文番号の札が NOW の線の左に収まる幅
+const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
+// 左へ隠れたカードで、商品・注文番号・杯数を寄せて残す幅（px。これより狭くは寄せず、カードと一緒に流れる）
+const MIN_LABEL_WIDTH = 120;
+
+/**
+ * カードの左の余白。左の固定の列の下に隠れた分（タイムラインのスクロールの位置 --timeline-left からカードの左の位置を引いた分）だけ
+ * 中身を右に寄せる（隠れても商品・注文番号が左の固定の列のすぐ右に見える）。寄せるのは中身の幅が MIN_LABEL_WIDTH になるまで。
+ * スクロールのたびに盤面を描き直さないよう、位置は CSS の変数（useTimelineScroll が書く）で受ける
+ */
+const cardInset = (left: number, width: number) =>
+  `calc(0.5rem + clamp(0px, var(--timeline-left, 0px) - ${left}px, ${Math.max(0, width - MIN_LABEL_WIDTH)}px))`;
 
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
@@ -85,6 +98,7 @@ export const DispatchBoard: React.FC<
   readOnly = false,
   pick,
   flashKeys,
+  onFollowNowChange,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -100,6 +114,7 @@ export const DispatchBoard: React.FC<
     // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
     cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
+    onFollowingChange: onFollowNowChange,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
@@ -198,9 +213,21 @@ export const DispatchBoard: React.FC<
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
             <div
               style={{ width: STICKY_LEFT_WIDTH }}
-              className="sticky left-0 isolate z-[60] flex h-full shrink-0 items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+              className="sticky left-0 isolate z-[60] flex h-full shrink-0 touch-none items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
             >
-              ドリッパー / 抽出担当
+              {scroll.isFollowingNow ? (
+                "ドリッパー / 抽出担当"
+              ) : (
+                // 手でスクロールして NOW の追従をやめているあいだ（閲覧だけの画面にはヘッダーの「現在」が無いので、ここで戻す）
+                <button
+                  type="button"
+                  onClick={scroll.toNow}
+                  className="-mx-2 flex h-[26px] flex-1 touch-manipulation items-center justify-center gap-1 rounded-md bg-red-500 font-black text-[12px] text-white shadow-sm active:bg-red-600"
+                >
+                  <span className="h-2 w-2 rounded-full bg-white" />
+                  現在に戻る
+                </button>
+              )}
             </div>
             <div
               className="relative h-full"
@@ -244,7 +271,7 @@ export const DispatchBoard: React.FC<
                   {/* ドリッパーの番号（列の状態）と担当者・交代 */}
                   <div
                     style={{ width: STICKY_LEFT_WIDTH }}
-                    className="sticky left-0 isolate z-[51] flex shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+                    className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
                   >
                     <DripperIndicator
                       bayId={bay.id}
@@ -282,17 +309,16 @@ export const DispatchBoard: React.FC<
                       // 開いた未割当のカードを、押して統合できる抽出中のカード
                       const isMergeTap =
                         isMovable && Boolean(pick?.canMergeWith(ticket));
+                      const left = Math.max(10, toX(startMs));
+                      const width = Math.max(
+                        130,
+                        ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
+                      );
                       return (
                         <div
                           key={ticket.key}
                           className={`${isActionOpen ? "z-[80]" : ""} ${flashKeys?.has(ticket.key) ? "caos-arrival rounded-lg" : ""}`}
-                          style={{
-                            left: Math.max(10, toX(startMs)),
-                            width: Math.max(
-                              130,
-                              ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
-                            ),
-                          }}
+                          style={{ left, width }}
                         >
                           <OrderCard
                             card={ticket}
@@ -311,6 +337,7 @@ export const DispatchBoard: React.FC<
                             }
                             data-ticket-label={orderLabel(ticket)}
                             data-merge-tap={isMergeTap || undefined}
+                            style={{ paddingLeft: cardInset(left, width) }}
                             onPointerDown={
                               isMovable
                                 ? (event) =>
@@ -452,7 +479,7 @@ const NextColumn: React.FC<{
 }> = ({ className, children }) => (
   <div
     style={{ width: NEXT_COLUMN_WIDTH }}
-    className={`sticky right-0 isolate z-50 flex shrink-0 items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
+    className={`sticky right-0 isolate z-50 flex shrink-0 touch-none items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
   >
     {children}
   </div>

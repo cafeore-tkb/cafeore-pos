@@ -1,5 +1,6 @@
 import type React from "react";
 import { useRef } from "react";
+import { createPortal } from "react-dom";
 import { AXES, type ScrollAxis, useScrollBar } from "../hooks/useScrollBar";
 
 // カードを並べたスクロールの枠。カードの上をなぞると掴むので、スクロールは指で掴める太いスクロールバー（いつも出す）で行う。
@@ -25,8 +26,8 @@ const LAYOUT = {
 
 export const ScrollArea: React.FC<{
   axis: ScrollAxis;
-  /** 横バーを直前のヘッダー行へ重ねる（管制盤 A の未割当だけ） */
-  trackPlacement?: "end" | "header";
+  /** バーを置く所（管制盤 A の未割当は見出しの行の空いた所）。渡さなければ枠の端。null のあいだ（置く所がまだ無い）は出さない */
+  trackSlot?: HTMLElement | null;
   /** 枠の両端にスクロールしても動かない列（sticky）があるとき、その幅（px）。溝はその間だけに出し、つまみもその間の見えている幅で決める（管制盤 A のタイムラインだけ） */
   trackInset?: { start: number; end: number };
   /** スクロールする枠（渡さなければ中で持つ） */
@@ -39,7 +40,7 @@ export const ScrollArea: React.FC<{
   children: React.ReactNode;
 }> = ({
   axis,
-  trackPlacement = "end",
+  trackSlot,
   trackInset,
   scrollRef,
   onScroll,
@@ -56,8 +57,8 @@ export const ScrollArea: React.FC<{
   );
   const layout = LAYOUT[axis];
   const trackClassName =
-    axis === "x" && trackPlacement === "header"
-      ? "absolute -top-[30px] right-[220px] left-[230px] h-5 rounded-md border"
+    trackSlot !== undefined
+      ? "relative size-full rounded-md border"
       : trackInset
         ? "relative size-full"
         : `relative ${layout.track}`;
@@ -89,7 +90,9 @@ export const ScrollArea: React.FC<{
       >
         {children}
       </div>
-      {trackInset ? (
+      {trackSlot !== undefined ? (
+        trackSlot && createPortal(track, trackSlot)
+      ) : trackInset ? (
         // 線は端から端まで引き、溝は固定の列の下を空ける
         <div
           className={`border-(color:--caos-scrollbar-line) shrink-0 ${layout.track}`}
