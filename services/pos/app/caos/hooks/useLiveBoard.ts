@@ -15,18 +15,18 @@ import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
 import { refuseUndo } from "./useCaosUndo";
 import { usePosOrders } from "./usePosOrders";
 
+/**
+ * 「次へ」（抽出中のカードを終え、待機の先頭を始める）。dripId は画面が抽出中と見ているカード、startId は始めるカード（無ければ null）、
+ * startNext が false なら終えるだけ
+ */
+export type CaosNextOp = Omit<Extract<CaosOutboxOp, { kind: "next" }>, "kind">;
+
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
 // 共有の WebSocket の注文から今日（日本時間）のカードを組み立てる（@cafeore/common の buildCaosCards）。
 // 画面を先に動かす：操作は押したらサーバーと同じ決まりで今の盤面に当ててみて（合わなければ理由を POS の通知で出して何もしない）、
 // 合えばこの端末に残し（useCaosOutbox）、盤面はサーバーから届いた注文に残っている操作を重ねて出す（overlayCaosOrders）。
 // 書き込み（PUT /api/caos/cups・「次へ」など）は後ろで 1 つずつ送り、書いた注文は全部の画面に配られる。
 // enabled が false（実データテスト中）のときは注文を読まない（重ねもしない）。
-
-/**
- * 「次へ」（抽出中のカードを終え、待機の先頭を始める）。dripId は画面が抽出中と見ているカード、startId は始めるカード（無ければ null）、
- * startNext が false なら終えるだけ
- */
-export type CaosNextOp = Omit<Extract<CaosOutboxOp, { kind: "next" }>, "kind">;
 export const useLiveBoard = ({
   enabled,
   nowMs,
