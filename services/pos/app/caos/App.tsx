@@ -81,8 +81,9 @@ export default function App() {
           }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
-          unassignedCups={session.cups.unassigned}
-          totalWaitingCups={session.cups.waiting}
+          counts={session.counts}
+          backlog={session.backlog}
+          onFindOrder={(orderNo) => selection.openSearch(String(orderNo))}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
           simulating={session.simulating}
@@ -91,9 +92,9 @@ export default function App() {
           simSpeed={session.simSpeed}
           onCycleSpeed={session.cycleSpeed}
           onResetData={backToLive}
-          showTimelineControls={view.timelineControls}
-          onTimelineNavigate={(direction) =>
-            setTimelineCommand({ direction, id: Date.now() })
+          showTimelineNow={view.timelineControls}
+          onTimelineNow={() =>
+            setTimelineCommand({ direction: "now", id: Date.now() })
           }
           testPlaying={testPlay.isActive}
           testProgressLabel={testPlay.remainingLabel}
@@ -108,10 +109,7 @@ export default function App() {
           onOpenSearch={() => selection.openSearch("")}
           searchOpen={selection.searchDigits !== null}
           onOpenEmergency={() => selection.openRebrew()}
-          undoLabel={session.undo.label}
-          undoSecondsLeft={session.undo.secondsLeft}
-          undoPending={session.undo.pending}
-          onUndo={session.undo.run}
+          lastAction={session.lastAction}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">

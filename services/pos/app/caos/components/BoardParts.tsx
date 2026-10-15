@@ -1,9 +1,9 @@
-import { dripperLabel } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenToastConfirm } from "../hooks/useToastConfirms";
-import { orderLabel } from "../logic/cards";
+import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
@@ -29,6 +29,18 @@ export const PanelHeader: React.FC<{
     {children}
   </header>
 );
+
+/** カードの注文の数（「8 件」）に杯数を小さく添える（未割当の見出し）。統合したカードは中の注文をみな、分けた注文は 1 つと数える */
+export const OrderCountLabel: React.FC<{ cards: readonly CaosCard[] }> = ({
+  cards,
+}) => {
+  const { orders, cups } = orderAndCupCounts(cards);
+  return (
+    <>
+      {orders} 件<span className="ml-1 text-[0.8em] opacity-75">{cups} 杯</span>
+    </>
+  );
+};
 
 /** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
@@ -62,8 +74,8 @@ const PHASES: Record<LanePhase, { label: string; className: string }> = {
 };
 
 /**
- * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
- * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも出す。
+ * ドリッパーの番号（数字だけ。担当者の名前を広く出せるよう細くする）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
+ * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも（札の下に）出す。
  * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
  * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
  */
@@ -82,19 +94,18 @@ export const DripperIndicator: React.FC<{
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
       data-lane-phase={status.phase}
-      className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
+      aria-label={`${dripperLabel(bayId)} ${phase.label}`}
+      className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
-      <span className="font-black font-mono text-[22px]">
-        {dripperLabel(bayId)}
-      </span>
-      <span className="mt-1 flex items-baseline gap-0.5 whitespace-nowrap font-black text-[11px]">
+      <span className="font-black font-mono text-[24px]">{bayId}</span>
+      <span className="mt-0.5 whitespace-nowrap font-black text-[10px] tracking-tighter">
         {phase.label}
-        {showsRemaining && (
-          <span className="font-mono text-[14px] tabular-nums">
-            {clockLabel(status.remainingSec)}
-          </span>
-        )}
       </span>
+      {showsRemaining && (
+        <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
+          {clockLabel(status.remainingSec)}
+        </span>
+      )}
       {nominatedCups > 0 && (
         <span
           title={`${dripperLabel(bayId)}への指名が ${nominatedCups} 杯、未割当で待っています`}

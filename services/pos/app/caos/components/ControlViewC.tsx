@@ -74,13 +74,13 @@ const ControlViewCBoard: React.FC<
                 status={lane}
                 nominatedCups={pendingNominatedCups(unassignedOrders, bay.id)}
                 onOpenLane={onOpenLane}
-                className="w-[80px]"
+                className="w-[46px]"
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <LaneName
                     dripper={bay.id}
-                    className="font-black text-[14px] text-slate-950"
+                    className="font-black text-[18px] text-slate-950"
                   />
                   <LaneAbility dripper={bay.id} />
                   <LaneChangeButton

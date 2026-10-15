@@ -15,11 +15,12 @@ import {
   type EmergencyFormProps,
 } from "~/components/molecules/EmergencyForm";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
-import { useOutsidePress } from "../hooks/useOutsidePress";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import {
   type CardLook,
   type CardLooks,
   cardName,
+  orderCount,
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
@@ -37,21 +38,16 @@ import {
 import { OrderCard, SplitCupButtons } from "./OrderCard";
 import { CommentList } from "./OrderComments";
 
-// 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
-// onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
+// 右のパネル（割当・詳細・補助のタブ・番号の検索・緊急・列の操作）。ヘッダーの下に右から出し、管制盤は隠さない。
+// パネルの外を押すと閉じる（その 1 回は閉じるだけで、下のカード・ボタンは動かさない。usePanelOutsidePress）
 export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
-  onOutsidePress?: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, onOutsidePress, footer, children }) => {
+}> = ({ title, onClose, footer, children }) => {
   const panelRef = useRef<HTMLElement>(null);
-  useOutsidePress(
-    onOutsidePress !== undefined,
-    (target) => Boolean(panelRef.current?.contains(target)),
-    () => onOutsidePress?.(),
-  );
+  usePanelOutsidePress(panelRef, onClose);
   return (
     <aside
       ref={panelRef}
@@ -175,7 +171,7 @@ export const AssignPanel: React.FC<{
           >
             <LaneBadge bayId={lane.id} />
             <span className="text-[10px] text-slate-500">
-              待機 {lane.queued.length}件
+              待機 {orderCount(lane.queued)}件
             </span>
           </button>
         ))}
@@ -255,11 +251,7 @@ export const TicketDetailPanel: React.FC<
   onSplitCup,
   onCancelEmergency,
 }) => (
-  <SidePanel
-    title="未開始オーダーの移動"
-    onClose={onClose}
-    onOutsidePress={onClose}
-  >
+  <SidePanel title="未開始オーダーの移動" onClose={onClose}>
     <OrderCard card={ticket} look={look} size="xl" />
     <CommentList comments={look?.comments} className="mt-3" />
     <MoveCardButtons
@@ -316,11 +308,7 @@ export const RebrewPanel: React.FC<
 > = ({ card, look, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
-    <SidePanel
-      title="緊急（入れ直し）"
-      onClose={onClose}
-      onOutsidePress={onClose}
-    >
+    <SidePanel title="緊急（入れ直し）" onClose={onClose}>
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />
@@ -356,11 +344,7 @@ export const LanePanel: React.FC<{
   onClose: () => void;
   onMoveQueue: (from: number, to: number) => void;
 }> = ({ lane, onClose, onMoveQueue }) => (
-  <SidePanel
-    title={`ドリッパー ${dripperLabel(lane.id)}`}
-    onClose={onClose}
-    onOutsidePress={onClose}
-  >
+  <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
       <LaneName dripper={lane.id} className="font-black text-[18px]" />
       <LaneAbility dripper={lane.id} />
@@ -371,7 +355,7 @@ export const LanePanel: React.FC<{
       />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
-      この列の待機 {lane.queued.length}件を移す
+      この列の待機 {orderCount(lane.queued)}件を移す
     </h3>
     <div className="grid grid-cols-3 gap-2">
       {DRIPPER_NUMBERS.map((to) => (
@@ -444,7 +428,7 @@ export const AuxiliaryContent: React.FC<
                 <span className="font-bold text-slate-400">空き</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
-                待ち {waiting.length}件
+                待ち {orderCount(waiting)}件
               </div>
             </div>
           </article>

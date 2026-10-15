@@ -34,7 +34,7 @@ export const useCaosOutboxEntries = () =>
 // 押した順に送るので、同じミリ秒に押しても順が入れ替わらないようにする
 let lastAt = 0;
 
-/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す） */
+/** 操作を端末に残す（後ろで送る）。label は「直前の操作」と同じ操作の名前（通らなかったときの知らせに出す） */
 export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
   lastAt = Math.max(Date.now(), lastAt + 1);
   store.put({ id: crypto.randomUUID(), at: lastAt, label, op });
@@ -49,8 +49,8 @@ const UNSENT_AFTER_MS = 2_000;
 /**
  * 残っている操作を送る（操作の画面で 1 回だけ呼ぶ）。つながっていれば（共有の WebSocket が開いていて注文が届いている）古い順に送り、
  * つながらなければ間をあけて送り直す。通らなかった（ほかの端末が先に変えた・決まりに合わない）ものは捨て、何が戻ったかを通知で出す。
- * count はまだ送れていない数（押してから UNSENT_AFTER_MS を過ぎたものがあるときだけ。nowMs は実時間の今）、
- * retry は今すぐ送り直す（ヘッダーの「未送信 N 件」）。onRejected は捨てた操作の名前を受け取る（「1つ戻す」から忘れる）
+ * entries はまだ送れていない操作（押してから UNSENT_AFTER_MS を過ぎたものがあるときだけ。nowMs は実時間の今）、
+ * retry は今すぐ送り直す、discard は送らずに消す（ヘッダーの「未送信 N 件」の一覧）。onRejected は捨てた操作の名前を受け取る（「直前の操作」から忘れる）
  */
 export const useCaosOutboxSender = (
   nowMs: number,
@@ -134,11 +134,15 @@ export const useCaosOutboxSender = (
 
   const unsent = entries.filter((entry) => !entry.sent);
   return {
-    count: unsent.some((entry) => nowMs - entry.at >= UNSENT_AFTER_MS)
-      ? unsent.length
-      : 0,
+    entries: unsent.some((entry) => nowMs - entry.at >= UNSENT_AFTER_MS)
+      ? unsent
+      : NO_ENTRIES,
     retry: () => {
       if (leader) void outbox.retryNow();
+    },
+    /** 送らずに消す（盤面はサーバーの今に戻る。同じ端末のほかのタブからも消える）。送っている途中のものは、もうサーバーに届いているかもしれない */
+    discard: (ids: readonly string[]) => {
+      for (const id of ids) store.remove(id);
     },
   };
 };

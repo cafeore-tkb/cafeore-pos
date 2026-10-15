@@ -96,7 +96,6 @@ export const DispatchBoard: React.FC<
     nowX,
     followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
     originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
-    pagePx: 300 * PIXELS_PER_SEC,
     // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
     cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
@@ -254,12 +253,13 @@ export const DispatchBoard: React.FC<
                         bay.id,
                       )}
                       onOpenLane={onOpenLane}
-                      className="h-[66px] w-[80px]"
+                      className="h-[66px] w-[46px]"
                     />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                       <LaneName
                         dripper={bay.id}
-                        className="max-w-full font-black text-[14px] text-slate-950"
+                        wrap
+                        className="max-w-full font-black text-[17px] text-slate-950 leading-tight"
                       />
                       <LaneChangeButton dripper={bay.id} />
                     </div>

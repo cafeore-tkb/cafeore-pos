@@ -1,18 +1,15 @@
 import {
   type CaosCupsWrite,
   type CaosOutboxOp,
-  type CaosUndoEntry,
   applyCaosOutboxOps,
   buildCaosCards,
   caosLane,
-  caosUndoCups,
   jstDate,
   overlayCaosOrders,
 } from "@cafeore/common";
 import { useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
-import { refuseUndo } from "./useCaosUndo";
 import { usePosOrders } from "./usePosOrders";
 
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
@@ -68,24 +65,11 @@ export const useLiveBoard = ({
         startId:
           caosLane(latest.current.cards, dripper).queued[0]?.dripId ?? null,
       }),
-    /** カップ（入れ直しも。ids）が盤面に届いたか */
-    arrived: (ids: string[]) =>
-      ids.every((id) =>
-        latest.current.cards.some((card) =>
-          card.cups.some((cup) => cup.id === id),
-        ),
-      ),
     /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(
         label,
         ...ids.map((id) => ({ kind: "cancel-emergency", id }) as const),
       ),
-    /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
-    undoRun: (entry: CaosUndoEntry, label: string) => () => {
-      const request = caosUndoCups(entry, latest.current.cards);
-      if ("error" in request) return refuseUndo(request);
-      return run(`戻す（${label}）`, { kind: "undo", entry });
-    },
   };
 };

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // 管制盤 A のタイムラインの横スクロール。NOW を画面の左寄りの決まった位置に置き、時間とともにレーンの側を動かす。
-// 見ている人がスクロール（か ±5分・カードへ）で離れたら追うのをやめ、NOW の近くで止まるか「現在」で戻ったら、また追う。
+// 見ている人がスクロール（かカードへ）で離れたら追うのをやめ、NOW の近くで止まるか「現在」で戻ったら、また追う。
 
-/** ヘッダーからの操作（±5分・現在）と、カード（cardKey。注文番号で探したカード）までスクロールする "card"。id で 1 回ずつ */
+/** ヘッダーの「現在」と、カード（cardKey。注文番号で探したカード）までスクロールする "card"。id で 1 回ずつ */
 export type TimelineCommand = { id: number } & (
-  | { direction: "back" | "now" | "forward" }
+  | { direction: "now" }
   | { direction: "card"; cardKey: string }
 );
 
@@ -18,27 +18,18 @@ const PAST_VIEW_THRESHOLD_PX = 600;
 const commandLeft = (
   command: TimelineCommand,
   container: HTMLElement,
-  {
-    followLeftPx,
-    pagePx,
-    cardInsetPx,
-  }: { followLeftPx: number; pagePx: number; cardInsetPx: number },
+  { followLeftPx, cardInsetPx }: { followLeftPx: number; cardInsetPx: number },
 ) => {
   if (command.direction === "now") return followLeftPx;
-  if (command.direction === "card") {
-    const card = container.querySelector(
-      `[data-card-key="${CSS.escape(command.cardKey)}"]`,
-    );
-    if (!card) return null;
-    return (
-      container.scrollLeft +
-      card.getBoundingClientRect().left -
-      container.getBoundingClientRect().left -
-      cardInsetPx
-    );
-  }
+  const card = container.querySelector(
+    `[data-card-key="${CSS.escape(command.cardKey)}"]`,
+  );
+  if (!card) return null;
   return (
-    container.scrollLeft + (command.direction === "back" ? -pagePx : pagePx)
+    container.scrollLeft +
+    card.getBoundingClientRect().left -
+    container.getBoundingClientRect().left -
+    cardInsetPx
   );
 };
 
@@ -46,7 +37,6 @@ export const useTimelineScroll = ({
   nowX,
   followLeftPx,
   originPx,
-  pagePx,
   cardInsetPx,
   command,
 }: {
@@ -56,8 +46,6 @@ export const useTimelineScroll = ({
   followLeftPx: number;
   /** タイムラインの始まり（px）。時が変わって動いたら、見えているものを動かさないよう同じだけ戻す */
   originPx: number;
-  /** ±5分 で動かす幅（px） */
-  pagePx: number;
   /** カードまでスクロールするとき、カードの左を見えている所の左端からどれだけ空けるか（px。左端に固定した列の幅も入れる） */
   cardInsetPx: number;
   command: TimelineCommand | null;
@@ -90,7 +78,7 @@ export const useTimelineScroll = ({
   // has settled near NOW so a scroll that merely passes NOW is not captured.
   const followSettleTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(followSettleTimerRef.current), []);
-  // ±5分 starts a smooth scroll that begins slowly; don't mistake its first frames near NOW for a stop.
+  // Scrolling to a card starts a smooth scroll that begins slowly; don't mistake its first frames near NOW for a stop.
   const pagingUntilRef = useRef(0);
   const scheduleFollowCheck = (leftAtSchedule: number) => {
     followSettleTimerRef.current = window.setTimeout(() => {
@@ -129,7 +117,7 @@ export const useTimelineScroll = ({
     scheduleFollowCheck(currentLeft);
   };
 
-  // Run each header command once. ±5分 pages from the current view; 現在 returns to NOW,
+  // Run each header command once. 現在 returns to NOW,
   // and arriving there resumes following through onScroll. "card" brings that card to the left of the view.
   const handledCommandIdRef = useRef(command?.id);
   useEffect(() => {
@@ -139,7 +127,6 @@ export const useTimelineScroll = ({
     if (!container) return;
     const left = commandLeft(command, container, {
       followLeftPx: followLeftRef.current,
-      pagePx,
       cardInsetPx,
     });
     if (left === null) return;
@@ -149,7 +136,7 @@ export const useTimelineScroll = ({
       pagingUntilRef.current = performance.now() + 1000;
     }
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-  }, [command, pagePx, cardInsetPx]);
+  }, [command, cardInsetPx]);
 
   return {
     containerRef,

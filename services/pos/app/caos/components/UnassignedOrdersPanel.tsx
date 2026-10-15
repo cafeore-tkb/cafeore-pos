@@ -9,11 +9,15 @@ import {
   orderNoLabel,
   queueRows,
   sharesOrder,
-  totalCups,
 } from "../logic/cards";
 import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
-import { NextAvailableChips, PanelHeader, PlaceTag } from "./BoardParts";
+import {
+  NextAvailableChips,
+  OrderCountLabel,
+  PanelHeader,
+  PlaceTag,
+} from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
@@ -233,7 +237,7 @@ export const UnassignedStrip: React.FC<
           未割当
         </h2>
         <span className="w-fit whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-black font-mono text-[13px] text-red-600">
-          {orders.length} 件 / {totalCups(orders)} 杯
+          <OrderCountLabel cards={orders} />
         </span>
         <NextAvailableChips
           nextAvailable={nextAvailable}
@@ -318,7 +322,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="注文">
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
-          未割当 {orders.length} 件 / {totalCups(orders)} 杯
+          未割当 <OrderCountLabel cards={orders} />
         </span>
       </PanelHeader>
       <ScrollArea

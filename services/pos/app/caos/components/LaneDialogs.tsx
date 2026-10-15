@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
 import {
   type ShiftFeedTone,
@@ -70,6 +71,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
 }) => {
   const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。名前を打っているあいだは入力を終えるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
   const ordinal = dripperLabel(lane.dripper);
   const candidates = useMemo(
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
@@ -81,11 +85,10 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/40 p-4"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
       <dialog
+        ref={dialogRef}
         open
         aria-modal="true"
         aria-label={`${ordinal} の交代`}
@@ -315,17 +318,19 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
   const { feedKey, feed, loading, fetchedAt } = shiftFeed;
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。合言葉を打っているあいだは入力を終えるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
 
   const status = shiftFeedStatus(shiftFeed);
 
   return (
     <div
       className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/40 p-4"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
       <dialog
+        ref={dialogRef}
         open
         aria-modal="true"
         aria-label="sohosai-shift の合言葉"

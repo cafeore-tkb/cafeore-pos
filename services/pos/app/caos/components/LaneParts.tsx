@@ -26,11 +26,12 @@ export const SeniorMark: React.FC<{ className?: string }> = ({
   </span>
 );
 
-/** そのドリッパーの担当者の名前と上級生の印。担当者がいなければ何も出さない */
-export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
-  dripper,
-  className = "",
-}) => {
+/** そのドリッパーの担当者の名前と上級生の印。担当者がいなければ何も出さない。wrap なら入らない名前を 2 行まで折り返す（列の見出し） */
+export const LaneName: React.FC<{
+  dripper: number;
+  wrap?: boolean;
+  className?: string;
+}> = ({ dripper, wrap = false, className = "" }) => {
   const lane = useCaosLanes().lanes.find((l) => l.dripper === dripper);
   if (!lane?.name) return null;
   return (
@@ -39,7 +40,9 @@ export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
       title={lane.senior ? `${lane.name}（上級生）` : lane.name}
       className={`inline-flex min-w-0 items-center gap-0.5 ${className}`}
     >
-      <span className="truncate">{lane.name}</span>
+      <span className={wrap ? "line-clamp-2 break-all" : "truncate"}>
+        {lane.name}
+      </span>
       {lane.senior && <SeniorMark />}
     </span>
   );

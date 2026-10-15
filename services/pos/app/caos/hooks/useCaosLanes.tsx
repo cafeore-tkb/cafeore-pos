@@ -4,7 +4,6 @@ import {
   type LaneAssignment,
   type LaneCandidate,
   buildCaosCards,
-  caosLaneUndoBlock,
   dripperLabel,
   jstDate,
   laneChangeWarnings,
@@ -24,7 +23,7 @@ import {
 } from "../components/LaneDialogs";
 import { noNextReason } from "../logic/shiftFeed";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
-import { refuseUndo, useRememberUndo } from "./useCaosUndo";
+import { useRememberAction } from "./useLastAction";
 import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 
 // ドリッパーの担当者（名前と上級生か）。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
@@ -32,7 +31,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 //
 // 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
 //   - 列の見出しと列の操作のパネルの「交代」は、押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人。nextLaneCandidate）に替える。
-//     替えたら「1つ戻す」（CaosUndoProvider）に覚え、10 秒のあいだ前の人に戻せる
+//     替えたら「直前の操作」（LastActionProvider）に出す（間違えたら、もう一度替えて直す）
 //   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
 // 閲覧だけの画面（/master-sheet/view・/master-sheet/libero）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
@@ -82,7 +81,7 @@ const SENIORS_LABEL = "上級生の印を名簿に合わせる";
 
 type Confirm = { warnings: string[]; answer: (ok: boolean) => void };
 
-// 交代の名前（「1つ戻す」と、通らなかったときの知らせに出す）
+// 交代の名前（「直前の操作」と、通らなかったときの知らせに出す）
 const changeLabel = ({ dripper, name }: LaneAssignment) =>
   `交代 ${dripperLabel(dripper)} → ${name || "空き"}`;
 
@@ -104,10 +103,10 @@ export const CaosLanesProvider = ({
     today,
   );
   const shiftFeed = useShiftFeed(editable);
-  const rememberUndo = useRememberUndo();
+  const rememberAction = useRememberAction();
   // すぐ替えているドリッパー。二度押しで 2 回送ったり 2 人ぶん進んだりしないよう、替えてから DOUBLE_TAP_MS のあいだも押しても替えない
   const sending = useRef(new Set<number>());
-  // 確かめるのは送るときの担当者と注文（「1つ戻す」はあとで押すので、そのときの値を読む）
+  // 確かめるのは送るときの担当者と注文（確かめのダイアログで待つので、そのときの値を読む）
   const latest = useRef({
     lanes,
     orders,
@@ -188,31 +187,16 @@ export const CaosLanesProvider = ({
       : { next };
   };
 
-  // 次の人（ボタンに出していた人）にすぐ替え、「1つ戻す」に前の人へ戻す処理を覚える。
-  // 戻すのは今の担当者が替えたあとのままのときだけで、替えるときと同じく上級生のみのカードを確かめる
+  // 次の人（ボタンに出していた人）にすぐ替え、「直前の操作」に覚える
   const changeToNext = (dripper: number, { name, senior }: LaneCandidate) => {
     if (sending.current.has(dripper)) return;
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);
-    // 前の人は替えるときの担当者（確かめているあいだにほかの画面が替えたら、その人に戻す）
-    let before = laneOf(dripper);
-    const undoRun = () => {
-      const blocked = caosLaneUndoBlock(
-        before,
-        after,
-        latest.current.lanes[dripper - 1],
-      );
-      if (blocked) return refuseUndo(blocked);
-      return request([before], true, `戻す（${label}）`, () => laneOp(before));
-    };
-    void request([after], true, label, () => {
-      before = latest.current.lanes[dripper - 1];
-      return laneOp(after);
-    }).then((ok) => {
+    void request([after], true, label, () => laneOp(after)).then((ok) => {
       // 替えなかった（［まだ変えない］・断られた）ならすぐ押せる
       if (!ok) return sending.current.delete(dripper);
-      rememberUndo?.(label, undoRun);
+      rememberAction?.(label);
       setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
     });
   };
