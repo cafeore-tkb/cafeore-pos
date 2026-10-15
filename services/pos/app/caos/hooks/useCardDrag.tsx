@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isBayId } from "../logic/lanes";
 
-// カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機カード）で共通。
+// カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機・抽出中のカード）で共通。
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
 // 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
@@ -66,7 +66,7 @@ export interface DropTarget {
 const MERGE_FROM = 0.4;
 
 /**
- * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
+ * 落とす先（管制盤 A・C・D）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
  * 運んでいるカード（card）と統合できる（caosMergePair。cards から引く。運んでいるのが抽出中なら相手を抽出中に入れる）なら統合
  * （待機のカードは右の部分だけ。抽出中・未割当のカードは全部。抽出中のカードの前（列の先頭）へは、統合できないときだけ）、
  * 列の待機・抽出中のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。

@@ -6,6 +6,7 @@ import {
 } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import {
+  type CardLook,
   cardLooks,
   cardOrderParts,
   orderLabel,
@@ -216,12 +217,36 @@ describe("[unit] CaOS の盤面の見せ方", () => {
   test("統合したカードの注文ごとの段は、注文番号の小さい順にその注文の杯数", () => {
     const merged = cards.find((card) => card.key === "m");
     if (!merged) throw new Error("統合したカードが無い");
-    expect(cardOrderParts(merged)).toEqual([
-      { orderNo: 3, cups: 1, reason: "" },
-      { orderNo: 4, cups: 1, reason: "" },
+    // コメントはその注文の段にだけ数える
+    const look = { comments: [{ orderNo: 4 }] } as CardLook;
+    expect(cardOrderParts(merged, look)).toEqual([
+      { orderNo: 3, cups: 1, reason: "", comments: 0 },
+      { orderNo: 4, cups: 1, reason: "", comments: 1 },
     ]);
     const [two] = buildCaosCards([order(11, [{}, {}])]);
-    expect(cardOrderParts(two)).toEqual([{ orderNo: 11, cups: 2, reason: "" }]);
+    expect(cardOrderParts(two)).toEqual([
+      { orderNo: 11, cups: 2, reason: "", comments: 0 },
+    ]);
+    // 入れ直しどうしを統合したカードは、理由をその注文の段にだけ出す
+    const emergency = (id: string, reason: string) => ({
+      id,
+      createdAt: T0,
+      reason,
+      dripper: null,
+      dripperPosition: null,
+      dripId: "em",
+      brewStartedAt: null,
+      brewFinishedAt: null,
+    });
+    const rebrew = buildCaosCards([
+      order(7, [{ emergencies: [emergency("e7", "こぼした")] }]),
+      order(8, [{ emergencies: [emergency("e8", "")] }]),
+    ]).find((card) => card.emergency);
+    if (!rebrew) throw new Error("入れ直しのカードが無い");
+    expect(cardOrderParts(rebrew).map(({ reason }) => reason)).toEqual([
+      "こぼした",
+      "",
+    ]);
   });
 
   test("タイムラインに新しく入ったカードは、割り当てたものと抽出を始めたものだけ（移しただけのカードは入らない）", () => {

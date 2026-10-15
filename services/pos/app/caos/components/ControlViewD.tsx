@@ -178,7 +178,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const dragSource = drag.source;
   const dragCup = dragSource ? sourceCard(dragSource) : null;
   const hoveredTarget = drag.target;
-  // 指の下の列（その列の枠を青くする。統合なら相手のカードの列）
+  // 指の下の列（その列の枠を青くする。統合なら統合したカードが残る列）
   const hoveredBay =
     hoveredTarget === null || hoveredTarget === "unassigned"
       ? null

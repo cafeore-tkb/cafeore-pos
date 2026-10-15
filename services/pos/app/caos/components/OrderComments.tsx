@@ -6,15 +6,18 @@ import { type BoardComment, commentKey } from "../logic/comments";
 
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身
 
-/** コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる */
-export const CommentMark: React.FC<{ count: number }> = ({ count }) => (
+/** コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる（className で置き場所と大きさを替える。D の統合したカードの段では小さく並べる） */
+export const CommentMark: React.FC<{ count: number; className?: string }> = ({
+  count,
+  className = "-top-2 -left-2 absolute z-20 h-6 w-6 border-2 border-white shadow-sm",
+}) => (
   <span
     role="img"
     aria-label={`コメント ${count}件`}
     title={`コメント ${count}件`}
-    className="-top-2 -left-2 bg-(color:--caos-comment) pointer-events-none absolute z-20 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-white shadow-sm"
+    className={`bg-(color:--caos-comment) pointer-events-none flex shrink-0 items-center justify-center rounded-full text-white ${className}`}
   >
-    <MessageSquareText className="h-3.5 w-3.5" />
+    <MessageSquareText className="h-3/5 w-3/5" />
   </span>
 );
 
