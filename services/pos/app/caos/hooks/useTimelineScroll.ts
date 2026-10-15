@@ -56,25 +56,26 @@ const placeScroll = (container: HTMLElement, left: number) => {
 };
 
 // 画面に指・マウスのボタンが触れているか（触れているあいだは追従に戻さない。戻すと指の下で盤面が跳ぶ）
+const PRESS_EVENTS = [
+  "touchstart",
+  "touchend",
+  "touchcancel",
+  "mousedown",
+  "mouseup",
+] as const;
 const usePressing = () => {
   const pressing = useRef({ touches: 0, mouse: false });
   useEffect(() => {
-    const onTouch = (event: TouchEvent) => {
-      pressing.current.touches = event.touches.length;
+    const onPress = (event: TouchEvent | MouseEvent) => {
+      if ("touches" in event) pressing.current.touches = event.touches.length;
+      else pressing.current.mouse = event.buttons !== 0;
     };
-    const onMouse = (event: MouseEvent) => {
-      pressing.current.mouse = event.buttons !== 0;
-    };
-    const events = ["touchstart", "touchend", "touchcancel"] as const;
-    for (const type of events)
-      window.addEventListener(type, onTouch, { passive: true, capture: true });
-    window.addEventListener("mousedown", onMouse, { capture: true });
-    window.addEventListener("mouseup", onMouse, { capture: true });
+    const options = { passive: true, capture: true };
+    for (const type of PRESS_EVENTS)
+      window.addEventListener(type, onPress, options);
     return () => {
-      for (const type of events)
-        window.removeEventListener(type, onTouch, { capture: true });
-      window.removeEventListener("mousedown", onMouse, { capture: true });
-      window.removeEventListener("mouseup", onMouse, { capture: true });
+      for (const type of PRESS_EVENTS)
+        window.removeEventListener(type, onPress, options);
     };
   }, []);
   return () => pressing.current.touches > 0 || pressing.current.mouse;
