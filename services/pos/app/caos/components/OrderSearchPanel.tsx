@@ -8,7 +8,7 @@ import { CommentList } from "./OrderComments";
 import { SidePanel } from "./SidePanels";
 
 // 注文番号の検索（ヘッダーの「番号」で開く右のパネル）。上にテンキー、下に探した注文の今。
-// 押すたびに探し直し、見つかった注文は盤面で選んだ状態になる（useOrderSearch）。パネルの外を押すと閉じる
+// 押し終えると探し（useOrderSearch）、見つかった注文は盤面で選んだ状態になる。パネルの外を押すと閉じる
 
 // テンキーの並び（電卓と同じく 7 8 9 が上）
 const KEYS: { key: string; label: React.ReactNode; title?: string }[] = [
@@ -27,10 +27,12 @@ const STATUS_LABELS: Record<CupStatus, string> = {
 export const OrderSearchPanel: React.FC<{
   digits: string;
   found: FoundOrder | null;
+  /** 押した番号をまだ探していない */
+  pending: boolean;
   looks: CardLooks;
   onKey: (key: string) => void;
   onClose: () => void;
-}> = ({ digits, found, looks, onKey, onClose }) => (
+}> = ({ digits, found, pending, looks, onKey, onClose }) => (
   <SidePanel title="注文番号で探す" onClose={onClose}>
     <output
       aria-label="入れた注文番号"
@@ -53,7 +55,12 @@ export const OrderSearchPanel: React.FC<{
       ))}
     </div>
     <div className="mt-4">
-      <SearchResult digits={digits} found={found} looks={looks} />
+      <SearchResult
+        digits={digits}
+        found={found}
+        pending={pending}
+        looks={looks}
+      />
     </div>
   </SidePanel>
 );
@@ -62,13 +69,20 @@ export const OrderSearchPanel: React.FC<{
 const SearchResult: React.FC<{
   digits: string;
   found: FoundOrder | null;
+  pending: boolean;
   looks: CardLooks;
-}> = ({ digits, found, looks }) => {
+}> = ({ digits, found, pending, looks }) => {
   if (!digits)
     return (
       <p className="rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
         番号を押すと、その注文がどこにあるかを出し、盤面で選びます（キーボードの数字でも入れられ、Enter
-        で閉じます）
+        ですぐ探して閉じます）
+      </p>
+    );
+  if (pending)
+    return (
+      <p className="rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
+        押し終えると探します
       </p>
     );
   if (!found)

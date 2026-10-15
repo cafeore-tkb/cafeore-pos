@@ -101,8 +101,7 @@ const brewCupsOf = <O extends CaosOrderInput>(order: O) =>
     };
   });
 
-/** 注文番号の注文（数で比べるので「012」でもよい。同じ番号が複数あれば新しいもの） */
-/** 注文番号（入れた文字）の注文。同じ番号が複数あれば新しいもの */
+/** 注文番号（入れた文字。数で比べるので「012」でもよい）の注文。同じ番号が複数あれば新しいもの */
 export const orderByNo = <O extends CaosOrderInput>(
   orders: readonly O[],
   orderNo: string,

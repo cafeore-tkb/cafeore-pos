@@ -18,6 +18,10 @@ import {
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
 
+// 入れ直し（緊急）の理由（重ねずに「・」でつなぐ。無ければ空）
+const cupsEmergencyReasons = (cups: CaosCard["cups"]) =>
+  unique(cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
+
 /** 開いた（選んだ）未割当のカード open を、押した card に統合できるか。押して統合するのは未割当と抽出中のカード（待機のカードへはドラッグで） */
 export const canTapMerge = (open: CaosCard, card: CaosCard) =>
   card.status !== "queued" && canMergeCards(open, card);
@@ -28,6 +32,23 @@ export const orderNoLabel = (no: number) => no.toString().padStart(3, "0");
 /** カードの注文番号。統合したカードは元の注文すべて（小さい順） */
 export const cardOrderNos = (card: CaosCard) =>
   unique(card.cups.map((cup) => cup.orderNo)).sort((a, b) => a - b);
+
+/**
+ * カードに入っている注文ごとのカップの数（注文番号の小さい順）。統合したカードを注文ごとの段に分けて出す（管制盤 D の OrderCard の byOrder）。
+ * reason はその注文の入れ直し（緊急）の理由（無ければ空）、comments はその注文のコメントの数（look から引く）
+ */
+export const cardOrderParts = (card: CaosCard, look?: CardLook) =>
+  cardOrderNos(card).map((orderNo) => {
+    const cups = card.cups.filter((cup) => cup.orderNo === orderNo);
+    return {
+      orderNo,
+      cups: cups.length,
+      reason: cupsEmergencyReasons(cups),
+      comments:
+        look?.comments?.filter((comment) => comment.orderNo === orderNo)
+          .length ?? 0,
+    };
+  });
 
 /** 注文番号の表示（「#152」、統合したカードは「#152+#160」）。選んだ注文を指すキーにも使う */
 export const orderLabel = (card: CaosCard) =>
@@ -93,7 +114,7 @@ export const cardNominee = (card: CaosCard) =>
 
 /** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
 export const emergencyReasons = (card: CaosCard) =>
-  unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
+  cupsEmergencyReasons(card.cups);
 
 /**
  * カードの名前（文で出すところ）。商品の略称に、指名は「（指名:2nd）」、
