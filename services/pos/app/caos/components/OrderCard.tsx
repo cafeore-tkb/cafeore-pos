@@ -30,25 +30,33 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）。
+// emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
   pad: "px-1.5 py-1",
   no: "text-[14px]",
   cups: "px-0.5 text-[13px]",
   meta: "text-[11px]",
   item: "text-[12px]",
+  emergencyBelow: true,
 };
 const SIZES = {
   // 管制盤 C・D と割当のパネル
   sm: SM,
   // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
-  lane: { ...SM, no: "text-[17px]", item: "text-[14px]" },
+  lane: {
+    ...SM,
+    no: "text-[17px]",
+    item: "text-[14px]",
+    emergencyBelow: false,
+  },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
     no: "text-[21px]",
     cups: "px-1.5 text-[18px]",
     meta: "text-[15px]",
+    emergencyBelow: false,
     item: "text-[15px]",
   },
   // 管制盤 A のタイムライン
@@ -57,6 +65,7 @@ const SIZES = {
     no: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
+    emergencyBelow: false,
     item: "text-[15px]",
   },
   // 詳細のパネル
@@ -65,6 +74,7 @@ const SIZES = {
     no: "text-[26px]",
     cups: "px-2 text-[22px]",
     meta: "text-[15px]",
+    emergencyBelow: false,
     item: "text-[18px]",
   },
 };
@@ -169,6 +179,15 @@ export const OrderCard: React.FC<
       {label}
     </span>
   );
+  // 入れ直し（緊急）の札
+  const emergencyTag = (className: string) =>
+    card.emergency && (
+      <span
+        className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${className}`}
+      >
+        緊急
+      </span>
+    );
   const itemName = (size: string) => (
     <span
       className={`min-w-0 truncate font-black tracking-tight ${size}`}
@@ -177,7 +196,8 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札を先に縮め、入らなければ省略する）。
+  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札と指名・上級生の札を先に縮め、商品は入らなければ省略する。
+  // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
   // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
   const [headline, subline] = parts
@@ -188,7 +208,7 @@ export const OrderCard: React.FC<
             ? `min-w-0 truncate tracking-tighter ${text.cups}`
             : `shrink-0 ${text.no}`,
         ),
-        itemName(text.item),
+        itemName(`max-w-full shrink-0 ${text.item}`),
       ];
   return (
     <div
@@ -206,22 +226,16 @@ export const OrderCard: React.FC<
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
-        {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードでは、番号と杯数を残して緊急の札を先に縮める） */}
-        <span className="ml-auto flex min-w-0 items-center gap-1">
-          {card.emergency && (
-            <span
-              className={`min-w-0 truncate whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
-            >
-              緊急
-            </span>
-          )}
+        {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {!text.emergencyBelow && emergencyTag(text.cups)}
           {done && (
-            <Check className="h-4 w-4 shrink-0 text-emerald-700">
+            <Check className="h-4 w-4 text-emerald-700">
               <title>完了</title>
             </Check>
           )}
           <span
-            className={`shrink-0 whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
+            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
           >
             {card.cups.length}杯
           </span>
@@ -268,6 +282,7 @@ export const OrderCard: React.FC<
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
         <span className="flex max-w-full shrink-0 items-center gap-1">
+          {text.emergencyBelow && emergencyTag("px-1")}
           {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
           {mergeInto && (
             <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
