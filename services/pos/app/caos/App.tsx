@@ -45,15 +45,18 @@ export default function App() {
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
-  // 注文番号の検索。見つかった注文を選び、そのカードを見せる
+  // 注文番号の検索。見つかった注文を選び、そのカードを見せる（A はタイムラインのカードをタイムラインの命令で、ほかは並べた枠の中で）
   const search = useOrderSearch({
     digits: selection.searchDigits,
     open: selection.openSearch,
     setDigits: selection.setSearchDigits,
     close: selection.closeSearch,
     selectOrder: selection.selectOrder,
-    showOnTimeline: (cardKey) =>
-      setTimelineCommand({ direction: "card", cardKey, id: Date.now() }),
+    showOnTimeline: view.timelineControls
+      ? (cardKey) =>
+          setTimelineCommand({ direction: "card", cardKey, id: Date.now() })
+      : undefined,
+    view: controlViewMode,
     // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
     orders: session.emergency.orders,
     cards: session.cards,
@@ -223,7 +226,7 @@ export default function App() {
         notices={commentNotices.notices}
         onOpen={(comment) => {
           commentNotices.dismiss([comment]);
-          selection.openSearch(String(comment.orderNo));
+          search.show(comment.orderNo);
         }}
         onDismiss={commentNotices.dismiss}
       />
@@ -232,9 +235,10 @@ export default function App() {
         <OrderSearchPanel
           digits={selection.searchDigits}
           found={search.found}
+          pending={search.pending}
           looks={looks}
           onKey={search.press}
-          onClose={selection.closeSearch}
+          onClose={search.finish}
         />
       )}
 

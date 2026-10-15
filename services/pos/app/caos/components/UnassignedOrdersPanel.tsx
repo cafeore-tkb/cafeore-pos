@@ -58,6 +58,7 @@ const UnassignedCard: React.FC<{
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
       data-unassigned-uid={card.key}
+      data-search-key={card.key}
       onPointerDown={
         readOnly || isMergeCandidate
           ? undefined
