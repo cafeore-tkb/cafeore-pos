@@ -14,6 +14,8 @@ import {
   caosLateMerge,
   caosMergePair,
   caosNextLocked,
+  caosRebrewMergePair,
+  caosRebrewsTogether,
   cupNeedsBrew,
   cupSeniorOnly,
   mergeWrites,
@@ -87,6 +89,22 @@ const cup = ({ line = "line-1", ...init }: CupInit): Cup => ({
   brewFinishedAt: null,
   emergencies: [],
   ...init,
+});
+
+// 緊急（入れ直し）の行。既定は未割当
+const emergency = (
+  id: string,
+  at: Partial<Cup["emergencies"][number]> = {},
+): Cup["emergencies"][number] => ({
+  id,
+  createdAt: NOW,
+  reason: "",
+  dripper: null,
+  dripperPosition: null,
+  dripId: null,
+  brewStartedAt: null,
+  brewFinishedAt: null,
+  ...at,
 });
 
 const order = (
@@ -219,20 +237,6 @@ describe("[unit] CaOS の盤面の組み立て", () => {
 
   test("緊急（入れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの入れ直しも出し、入れ直しは準備完了で終わりにしない", () => {
     const start = new Date(NOW.getTime() - 60_000);
-    const emergency = (
-      id: string,
-      at: Partial<Cup["emergencies"][number]> = {},
-    ) => ({
-      id,
-      createdAt: NOW,
-      reason: "",
-      dripper: null,
-      dripperPosition: null,
-      dripId: null,
-      brewStartedAt: null,
-      brewFinishedAt: null,
-      ...at,
-    });
     // 1 杯目は準備完了（最初の抽出は終わり）で、入れ直しが 2 回。1 回目は 3 番で抽出中、2 回目は未割当
     const brewed = cup({
       item: blend,
@@ -905,6 +909,82 @@ describe("[unit] CaOS の書き込み", () => {
     expect(canSplitCard(find(cards, (c) => c.orderNo === 5))).toBe(false);
     const brewing2 = { ...merged, status: "brewing" as const };
     expect(splitWrites(brewing2, later.id)).toHaveProperty("error");
+  });
+
+  test("統合したカードから全部の杯を入れ直したら、足した入れ直しを元のカードと同じ組み合わせの 1 枚（未割当）にまとめる", () => {
+    const started = new Date(NOW.getTime() - 60_000);
+    const brewed = { dripper: 3, dripperPosition: 1, dripId: "m" };
+    const a = cup({ item: blend, ...brewed, brewStartedAt: started });
+    const b = cup({ item: blend, ...brewed, brewStartedAt: started });
+    const other = cup({ item: blend, line: "line-2" });
+    const before = buildCaosCards([order(11, [a, other]), order(12, [b])], DAY);
+    // 元のカード（#011+#012）と同じ組み合わせだけ。1 杯だけ・ほかのカップを混ぜたら別々のまま
+    expect(caosRebrewsTogether(before, [b.id, a.id])).toBe(true);
+    expect(caosRebrewsTogether(before, [a.id])).toBe(false);
+    expect(caosRebrewsTogether(before, [other.id, b.id])).toBe(false);
+    expect(caosRebrewsTogether(before, [a.id, b.id, other.id])).toBe(false);
+
+    // 足した入れ直しは注文ごとに別々のカードで届く。届いていなければ待つ（null）
+    const added = (emergencies: Record<string, string[]>) =>
+      buildCaosCards(
+        [
+          order(11, [
+            {
+              ...a,
+              emergencies: (emergencies[a.id] ?? []).map((id) => emergency(id)),
+            },
+            other,
+          ]),
+          order(12, [
+            {
+              ...b,
+              emergencies: (emergencies[b.id] ?? []).map((id) => emergency(id)),
+            },
+          ]),
+        ],
+        DAY,
+      );
+    expect(caosRebrewMergePair(added({ [a.id]: ["e1"] }), ["e1", "e2"])).toBe(
+      "arriving",
+    );
+    const arrived = added({ [a.id]: ["e1"], [b.id]: ["e2"] });
+    expect(arrived.filter((c) => c.emergency).map(ids)).toEqual([
+      ["e1"],
+      ["e2"],
+    ]);
+    const pair = caosRebrewMergePair(arrived, ["e1", "e2"]);
+    if (!pair || pair === "arriving") throw new Error("not mergeable");
+    expect([ids(pair.card), ids(pair.into)]).toEqual([["e1"], ["e2"]]);
+    const merged = mergeWrites(pair.card, pair.into, newId);
+    if (!("writes" in merged)) throw new Error(merged.error);
+    expect(merged.writes.map((w) => [w.cup_ids, w.after])).toEqual([
+      [
+        ["e1"],
+        {
+          dripper: null,
+          drip_id: expect.any(String),
+          insert_before: null,
+          start_brew: false,
+        },
+      ],
+      [["e2"], merged.writes[0].after],
+    ]);
+    // 届くまでに動かした（未割当でない）・もう 1 枚なら、まとめない
+    const moved = arrived.map((c) =>
+      ids(c)[0] === "e2" ? { ...c, status: "queued" as const } : c,
+    );
+    expect(caosRebrewMergePair(moved, ["e1", "e2"])).toBeNull();
+    const one = buildCaosCards(
+      [
+        order(11, [
+          { ...a, emergencies: [emergency("e1")] },
+          { ...other, emergencies: [emergency("e3")] },
+        ]),
+      ],
+      DAY,
+    );
+    expect(one.filter((c) => c.emergency).map(ids)).toEqual([["e1", "e3"]]);
+    expect(caosRebrewMergePair(one, ["e1", "e3"])).toBeNull();
   });
 
   test("待機を丸ごと別のドリッパーへ：並びのまま最後に入れる。置けないカードは残す。空いていれば先頭を始める", () => {
