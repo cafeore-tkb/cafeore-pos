@@ -31,10 +31,10 @@ func (a *testAPI) seedStockEvent(resource models.StockResource, kind models.Stoc
 }
 
 // 注文を直接 DB に入れる。API で作ると、応答のあとに在庫の通知の判定が走ってしまう。
-// 明細・減る在庫・カップは、注文を受けたときと同じ loadOrderMenus で作る。brewStartedAt はカップの抽出を始めた時刻（nil ならまだ始めていない）
-func (a *testAPI) seedOrder(menu models.Menu, createdAt time.Time, brewStartedAt *time.Time) models.Order {
+// 明細・減る在庫・カップは、注文を受けたときと同じ loadOrderMenus で作る。readyAt は注文とカップを提供可能にした時刻（nil ならまだ）
+func (a *testAPI) seedOrder(menu models.Menu, createdAt time.Time, readyAt *time.Time) models.Order {
 	a.t.Helper()
-	order := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: createdAt, BillingAmount: menu.Price, Received: menu.Price}
+	order := models.Order{ID: uuid.New(), OrderId: 1, CreatedAt: createdAt, ReadyAt: readyAt, BillingAmount: menu.Price, Received: menu.Price}
 	a.create(&order)
 	lines, cups, err := loadOrderMenus(a.db, order.ID, []models.MenuInfoCreate{menuLine(menu)}, &models.Order{})
 	if err != nil {
@@ -44,7 +44,7 @@ func (a *testAPI) seedOrder(menu models.Menu, createdAt time.Time, brewStartedAt
 		a.t.Fatal(err)
 	}
 	for i := range cups {
-		cups[i].BrewStartedAt = brewStartedAt
+		cups[i].ReadyAt = readyAt
 	}
 	if len(cups) > 0 {
 		if err := a.db.Omit("Item").Create(&cups).Error; err != nil {
@@ -155,8 +155,8 @@ func TestStockResourceCRUD(t *testing.T) {
 }
 
 // 残量は、基準点（最後の棚卸し、無ければ最初の入荷）からの入荷と、基準点より後に使った分で決まる。
-// 使った時刻は、抽出が要るカップ（豆・カップ）ならそのカップの抽出を始めた時刻（まだ始めていなければまだ使っていない）、
-// 抽出の要らない物（グッズ）なら注文を受けた時刻。準備完了・提供済みの時刻は見ない
+// 使った時刻は、抽出が要るカップ（豆・カップ）なら提供の画面でそのカップを提供可能にした時刻（無ければ提供済みにした時刻。
+// どちらも無ければまだ使っていない）、抽出の要らない物（グッズ）なら注文を受けた時刻。CaOS の抽出の時刻は見ない
 func TestInventoryRemainingAndCount(t *testing.T) {
 	api := newTestAPI(t)
 	m := api.seedMaster()
@@ -168,14 +168,17 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 
 	api.seedStockEvent(beans, models.StockEventKindReceipt, 1000, now.Add(-2*time.Hour))
 	api.seedStockEvent(stickers, models.StockEventKindReceipt, 100, now.Add(-2*time.Hour))
-	// 基準点より前に受けて、ずっと抽出を始めていない注文は、まだ使っていない（ステッカーは基準点より前に使った）
+	// 基準点より前に受けて、ずっと提供可能にしていない注文は、まだ使っていない（ステッカーは基準点より前に使った）
 	api.seedOrder(m.pairMenu, now.Add(-6*time.Hour), nil)
-	// 基準点より前に受けて、基準点の後に抽出を始めたブレンド 1 杯
+	// 基準点より前に受けて、基準点の後に提供可能にしたブレンド 1 杯
 	api.seedOrder(m.blendMenu, now.Add(-3*time.Hour), at(-90*time.Minute))
-	// 抽出を始めたペアセット（ブレンド 2 杯）。棚卸しの後に準備完了にする
+	// 提供可能にしたペアセット（ブレンド 2 杯）。棚卸しの後に提供済みにする
 	pair := api.seedOrder(m.pairMenu, now.Add(-30*time.Minute), at(-20*time.Minute))
-	// まだ抽出を始めていないブレンド 1 杯
+	// まだ提供可能にしていないブレンド 1 杯（抽出は始めている）
 	pending := api.seedOrder(m.blendMenu, now.Add(-10*time.Minute), nil)
+	if err := api.db.Model(&models.OrderCup{}).Where("order_id = ?", pending.ID).Update("brew_started_at", now.Add(-5*time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
 	// ブレンドを使わないメニューは数えない
 	api.seedOrder(m.iceMenu, now.Add(-10*time.Minute), at(-5*time.Minute))
 
@@ -209,31 +212,33 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 	api.waitBackground()
 	countedAt := counted.Event.CreatedAt
 
-	// 棚卸しが新しい基準点になる。棚卸しの前に抽出を始めたペアセットは、棚卸しの後に準備完了・提供済みにしても数えない。
-	// まだ始めていないブレンドもまだ数えない
-	readyAt := countedAt.Add(time.Second)
-	if err := api.db.Model(&models.Order{}).Where("id = ?", pair.ID).Updates(map[string]any{"ready_at": readyAt, "served_at": readyAt}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := api.db.Model(&models.OrderCup{}).Where("order_id = ?", pair.ID).Updates(map[string]any{"ready_at": readyAt, "served_at": readyAt}).Error; err != nil {
+	// 棚卸しが新しい基準点になる。棚卸しの前に提供可能にしたペアセットは、棚卸しの後に提供済みにしても数えない。
+	// まだ提供可能にしていないブレンドも（抽出を始めていても）まだ数えない
+	cupsOf := func(o models.Order) *gorm.DB { return api.db.Model(&models.OrderCup{}).Where("order_id = ?", o.ID) }
+	if err := cupsOf(pair).Update("served_at", countedAt.Add(time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
 	status = api.inventory()["ブレンド"]
 	if !floatPtrEq(status.CountedQuantity, 900) || status.Consumed != 0 || status.Servings != 0 || !floatPtrEq(status.Remaining, 900) {
 		t.Fatalf("after count: %+v", status)
 	}
-	// 直近 1 時間の回数も抽出を始めた時刻で数える（ペアセットの 2 杯）
+	// 直近 1 時間の回数も提供可能にした時刻で数える（ペアセットの 2 杯）
 	if status.ServingsLastHour != 2 {
 		t.Fatalf("servings last hour: %+v", status)
 	}
 
-	// 棚卸しの前に受けて、棚卸しの後に抽出を始めたら、棚卸しの後に使った分に数える
-	if err := api.db.Model(&models.OrderCup{}).Where("order_id = ?", pending.ID).Update("brew_started_at", countedAt.Add(time.Second)).Error; err != nil {
+	// 棚卸しの前に受けて抽出を始め、棚卸しの後に提供可能にしたら、棚卸しの後に使った分に数える
+	if err := cupsOf(pending).Update("ready_at", countedAt.Add(time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 提供可能を飛ばして提供済みにしたカップは、提供済みにした時刻で数える
+	servedOnly := api.seedOrder(m.blendMenu, now.Add(-5*time.Minute), nil)
+	if err := cupsOf(servedOnly).Update("served_at", countedAt.Add(time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
 	status = api.inventory()["ブレンド"]
-	if status.Consumed != 15 || status.Servings != 1 || status.ServingsLastHour != 3 || !floatPtrEq(status.Remaining, 885) {
-		t.Fatalf("after brewing the pending order: %+v", status)
+	if status.Consumed != 30 || status.Servings != 2 || status.ServingsLastHour != 4 || !floatPtrEq(status.Remaining, 870) {
+		t.Fatalf("after serving the pending orders: %+v", status)
 	}
 
 	// 入荷は基準点からの差分に足す
@@ -245,7 +250,7 @@ func TestInventoryRemainingAndCount(t *testing.T) {
 		t.Fatalf("receipt must not estimate: %+v", received)
 	}
 	api.waitBackground()
-	if status := api.inventory()["ブレンド"]; !floatPtrEq(status.Remaining, 1385) {
+	if status := api.inventory()["ブレンド"]; !floatPtrEq(status.Remaining, 1370) {
 		t.Fatalf("after receipt: %+v", status)
 	}
 }

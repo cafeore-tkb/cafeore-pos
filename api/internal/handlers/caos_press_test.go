@@ -159,8 +159,8 @@ func TestCaosPressTimeOnDB(t *testing.T) {
 	}
 }
 
-// 入れ直しの在庫は抽出を始めた時刻で使ったことにする（#908）ので、棚卸しの前に押して棚卸しの後に届いた割当は、棚卸しの後に使った分に数えない。
-// 押した時刻を送らない古い画面・未来の時刻はサーバーの今で数える
+// 入れ直しの在庫は足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した入れ直しは、
+// 棚卸しの後にいつ抽出を始めても（押した時刻・押した時刻を送らない古い画面・未来の時刻）棚卸しの後に使った分に数えない
 func TestCupEmergencyPressStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -193,7 +193,6 @@ func TestCupEmergencyPressStockOnDB(t *testing.T) {
 			t.Errorf("%s: consumed after the count = %v, want %v", label, got, consumed)
 		}
 	}
-	// まだ始めていない入れ直しは、まだ使っていない
 	expect("まだ始めていない", 0)
 	// 未割当に戻しては、空いているドリッパーで始め直す
 	for i, tc := range []struct {
@@ -202,9 +201,9 @@ func TestCupEmergencyPressStockOnDB(t *testing.T) {
 		consumed float64
 	}{
 		{"棚卸しの前に押して、後に届いた", press(counted.Add(-10*time.Second), now), 0},
-		{"棚卸しの後に押した", press(counted.Add(10*time.Second), now), 15},
-		{"未来", press(now.Add(3*time.Second), now.Add(3*time.Second)), 15},
-		{"古い画面", nil, 15},
+		{"棚卸しの後に押した", press(counted.Add(10*time.Second), now), 0},
+		{"未来", press(now.Add(3*time.Second), now.Add(3*time.Second)), 0},
+		{"古い画面", nil, 0},
 	} {
 		if i > 0 {
 			f.mustPut(t, write([]uuid.UUID{e}, f.emergencyState(t, e), toUnassigned))

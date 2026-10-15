@@ -884,16 +884,11 @@ func (h *CaosHandler) respond(c *gin.Context, orderIDs []uuid.UUID, err error) {
 	h.publish(orderIDs)
 }
 
-// publish は書いた注文を配り（応答を書いてから呼ぶ）、その注文の在庫の通知を確かめる
-// （抽出を始めた・始めた時刻を消したカップと入れ直しは、その時刻で在庫を使う。Inventory.consumption）。
+// publish は書いた注文を配る（応答を書いてから呼ぶ）。
 func (h *CaosHandler) publish(orderIDs []uuid.UUID) {
 	for _, id := range orderIDs {
 		if _, err := publishOrder(h.db, h.hub, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("caos: failed to publish order %s: %v", id, err)
 		}
-	}
-	if h.inventory != nil && len(orderIDs) > 0 {
-		// 在庫対象を読むのも裏で行う（注文の作成と同じ）
-		go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderIDs...)) }()
 	}
 }

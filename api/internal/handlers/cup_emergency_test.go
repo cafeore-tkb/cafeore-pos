@@ -353,7 +353,7 @@ func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
-// 入れ直しで使うアイテムの在庫とカップは、足したときの設定で、入れ直しの抽出を始めたときに減る。取り消すと減る分の行も消える
+// 入れ直しで使うアイテムの在庫とカップは、足したときの設定で減り、取り消すと戻る
 func TestCupEmergencyStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -396,18 +396,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 		return res.Ids[0]
 	}
 
-	// 入れ直しの抽出を今始める
-	start := func(id uuid.UUID) {
-		t.Helper()
-		if err := db.Model(&models.CupEmergency{}).Where("id = ?", id).Update("brew_started_at", time.Now()).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// 足しただけではまだ使っていない（元のカップもまだ抽出を始めていない）
 	first := add()
-	expect("足しただけ", map[uuid.UUID][3]float64{})
-	start(first)
 	expect("1 つめ", map[uuid.UUID][3]float64{itemStock.ID: {15, 1, 1}, cupStock.ID: {1, 1, 1}})
 
 	// あとで per_serving を変えても、前の入れ直しの消費は変わらない。次の入れ直しは今の設定で減る
@@ -416,22 +405,16 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 	expect("設定を変えた後", map[uuid.UUID][3]float64{itemStock.ID: {15, 1, 1}, cupStock.ID: {1, 1, 1}})
 	second := add()
-	start(second)
 	expect("2 つめ", map[uuid.UUID][3]float64{itemStock.ID: {35, 2, 2}, cupStock.ID: {2, 2, 2}})
 
-	// まだ始めていない入れ直しを取り消すと、減る分の行も消える（使っていないので残量は変わらない）
-	third := add()
-	if code, body := f.cancelEmergency(t, third); code != http.StatusNoContent {
+	// 取り消すと、その入れ直しの分だけ戻る
+	if code, body := f.cancelEmergency(t, first); code != http.StatusNoContent {
 		t.Fatalf("cancel = %d: %s", code, body)
 	}
-	var left int64
-	if err := db.Model(&models.CupEmergencyStockUsage{}).Where("cup_emergency_id = ?", third).Count(&left).Error; err != nil || left != 0 {
-		t.Errorf("stock usages of the cancelled emergency = %d (%v)", left, err)
-	}
-	expect("取り消した後", map[uuid.UUID][3]float64{itemStock.ID: {35, 2, 2}, cupStock.ID: {2, 2, 2}})
+	expect("取り消した後", map[uuid.UUID][3]float64{itemStock.ID: {20, 1, 1}, cupStock.ID: {1, 1, 1}})
 
-	// 棚卸しの前に足した入れ直しは、抽出を始めた時刻で使ったことにする。棚卸しの後に始めたものは棚卸しの後に使った分に数え、
-	// 棚卸しの前に始めたもの（まだ終えていなくても）・まだ始めていないものは数えない
+	// 入れ直しは足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した入れ直しは、
+	// いつ抽出を始めても（まだ始めていなくても）棚卸しの後に使った分に数えない
 	countedAt := time.Now().Add(time.Second)
 	if err := db.Create(&models.StockEvent{ResourceID: itemStock.ID, Kind: string(models.StockEventKindCount), Quantity: 500, CreatedAt: countedAt}).Error; err != nil {
 		t.Fatal(err)
@@ -443,7 +426,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 		consumed float64
 	}{
 		{"まだ始めていない", nil, nil, 0},
-		{"棚卸しの後に始めた", ptr(countedAt.Add(time.Second)), nil, 20},
+		{"棚卸しの後に始めた", ptr(countedAt.Add(time.Second)), nil, 0},
 		{"棚卸しの前に始めた", ptr(countedAt.Add(-time.Millisecond)), nil, 0},
 		{"棚卸しの前に始めて、後に終えた", ptr(countedAt.Add(-time.Millisecond)), ptr(countedAt.Add(time.Second)), 0},
 	} {
@@ -459,18 +442,27 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 			t.Errorf("%s: consumed after the count = %v, want %v", tc.label, got, tc.consumed)
 		}
 	}
+	// 棚卸しの後に足した入れ直しは、まだ抽出を始めていなくても数える
+	if err := db.Model(&models.CupEmergency{}).Where("id = ?", second).
+		Updates(map[string]any{"created_at": countedAt.Add(time.Second), "brew_started_at": nil, "brew_finished_at": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if snapshots, err := inv.snapshots(context.Background(), []uuid.UUID{itemStock.ID}); err != nil || snapshots[0].Consumed != 20 {
+		t.Errorf("added after the count: %+v (%v), want consumed 20", snapshots, err)
+	}
 
 	// 注文を消すと入れ直しの消費も消える
 	if err := f.orders.deleteOrder(o.ID); err != nil {
 		t.Fatal(err)
 	}
+	var left int64
 	if err := db.Model(&models.CupEmergencyStockUsage{}).Count(&left).Error; err != nil || left != 0 {
 		t.Fatalf("stock usages after deleting the order = %d (%v)", left, err)
 	}
 }
 
-// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、始めている間の入れ直しの在庫は 1 杯分のまま（二重に数えない）。
-// 使った時刻は今の始めた時刻（消したらまだ使っていない、始め直したらその時刻）
+// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
+// 使った時刻は足した時刻で、CaOS の抽出の時刻には依らない
 func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -487,15 +479,14 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 		t.Fatalf("POST = %d: %s", code, body)
 	}
 	e := f.emergencies(t, o.OrderCups[0].ID)[0].ID
-	// 始めていれば 1 杯分（15g）、始めていなければまだ使っていない
-	expect := func(label string, servings int) {
+	expect := func(label string) {
 		t.Helper()
 		snapshots, err := inv.snapshots(context.Background(), []uuid.UUID{stock.ID})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s := snapshots[0]; s.Consumed != 15*float64(servings) || s.Servings != servings {
-			t.Errorf("%s: consumed=%v servings=%d, want %d servings", label, s.Consumed, s.Servings, servings)
+		if s := snapshots[0]; s.Consumed != 15 || s.Servings != 1 {
+			t.Errorf("%s: consumed=%v servings=%d, want 15 / 1", label, s.Consumed, s.Servings)
 		}
 	}
 	startedAt := func() *time.Time {
@@ -508,7 +499,7 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	}
 	card := uuid.New()
 	f.mustPut(t, write([]uuid.UUID{e}, unassigned, placed(1, card, true)))
-	expect("始めた", 1)
+	expect("始めた")
 	before := map[uuid.UUID]map[string]any{e: f.undoState(t, e)}
 	first := startedAt()
 	// 抽出中の 2 番の待機へ（始めた時刻を消す）
@@ -518,14 +509,14 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	if startedAt() != nil {
 		t.Fatalf("started at %v, want none", startedAt())
 	}
-	expect("待機に下げた", 0)
+	expect("待機に下げた")
 	// 空いている 3 番で今から始め直す
 	f.wait()
 	f.mustPut(t, write([]uuid.UUID{e}, f.emergencyState(t, e), placed(3, card, true)))
 	if restarted := startedAt(); restarted == nil || !restarted.After(*first) {
 		t.Fatalf("restarted at %v, want after %v", restarted, first)
 	}
-	expect("始め直した", 1)
+	expect("始め直した")
 	// 戻すと前の始めた時刻
 	if code, body := f.undo(t, before); code != http.StatusNoContent {
 		t.Fatalf("undo = %d: %s", code, body)
@@ -533,7 +524,7 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	if got := startedAt(); !timeEqual(msTime(got), msTime(first)) {
 		t.Fatalf("started at %v after undo, want %v", got, first)
 	}
-	expect("戻した", 1)
+	expect("戻した")
 }
 
 // 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない

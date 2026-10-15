@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	// 使った時刻は、受けた時刻（入れ直しは足した時刻）からこの時間のうち（CaOS が抽出を始めるのは今日の注文だけ）。
-	// 残量を数えるとき、これより前に受けた注文は読まない
+	// 残量を数えるとき、棚卸し（か 1 時間前）よりこの時間より前に受けた注文は読まない
+	// （提供可能・提供済みにするのは受けた日のうち。それより後に提供しても、棚卸しの後に使った分に数えない）
 	usageLookback = 24 * time.Hour
 	// リマインドを送るのは、この時間内に注文がある（営業している）ときだけ。
 	remindActiveWindow = 3 * time.Hour
@@ -125,14 +125,14 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 
 // 在庫対象 @resource_id（アイテムの在庫なら、そのアイテムが @item_id）を使った分を、使った時刻（used_at）ごとに分けて足す。量は受けたとき・足したときに残したもの
 // （order_stock_usages・cup_emergency_stock_usages）で数え、使った時刻はその物を実際に使った時刻にする：
-//   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、そのカップの抽出を始めた時刻（order_cups.brew_started_at）。
+//   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、提供の画面でそのカップを提供可能にした時刻
+//     （order_cups.ready_at。無ければ提供済みにした時刻 served_at）。どちらも無ければ used_at が NULL で、まだ使っていない。
 //     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
-//     明細の回数まで（並びの順）。まだ始めていないカップは used_at が NULL で、まだ使っていない。
-//     あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
+//     明細の回数まで（並びの順）。あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
 //   - 明細の残り（抽出の要らない物：グッズ・ミルク・コースターなど。カップの無い前の注文も）：注文を受けた時刻（orders.created_at）
-//   - 緊急（入れ直し）：入れ直しの抽出を始めた時刻（cup_emergencies.brew_started_at。まだ始めていなければ NULL）
+//   - 緊急（入れ直し）：入れ直しを足した時刻（cup_emergencies.created_at。取り消すと行ごと消える）
 //
-// 準備完了（ready_at）・提供済み（served_at）は使った時刻に使わない。
+// 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。
 const stockUsedQuery = `
 WITH lines AS (
 	SELECT u.order_menu_id, u.servings, u.amount, o.created_at
@@ -141,7 +141,7 @@ WITH lines AS (
 ),
 brewed AS (
 	SELECT * FROM (
-		SELECT l.order_menu_id, l.servings, l.amount, c.brew_started_at,
+		SELECT l.order_menu_id, l.servings, l.amount, COALESCE(c.ready_at, c.served_at) AS used_at,
 			ROW_NUMBER() OVER (PARTITION BY l.order_menu_id ORDER BY c.position) AS n
 		FROM lines l
 		JOIN order_cups c ON c.order_menu_id = l.order_menu_id
@@ -152,13 +152,13 @@ brewed AS (
 	) b WHERE n <= servings
 ),
 used AS (
-	SELECT 1 AS servings, amount / servings AS amount, brew_started_at AS used_at FROM brewed
+	SELECT 1 AS servings, amount / servings AS amount, used_at FROM brewed
 	UNION ALL
 	SELECT l.servings - COALESCE(b.cups, 0), l.amount * (l.servings - COALESCE(b.cups, 0)) / l.servings, l.created_at
 	FROM lines l
 	LEFT JOIN (SELECT order_menu_id, COUNT(*) AS cups FROM brewed GROUP BY order_menu_id) b ON b.order_menu_id = l.order_menu_id
 	UNION ALL
-	SELECT u.servings, u.amount, e.brew_started_at
+	SELECT u.servings, u.amount, e.created_at
 	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id
 	WHERE u.resource_id = @resource_id AND e.created_at > @scan_from
 )
