@@ -26,10 +26,11 @@ import { jstDate } from "./jst";
 //
 // 画面は操作を押したら、その操作（CaosOutboxOp）を端末に残し（送れていない書き込み）、
 // サーバーから届いた盤面（共有の WebSocket の注文と担当者）に残っている操作を古い順に重ねて出す（overlayCaosOrders・overlayCaosLanes）。
-// 重ねるのは、サーバーの決まりをブラウザで行う実データテストの関数（applyCaosPracticeWrites など）。抽出の始めた時刻は押した時刻（端末の今）で、
+// 重ねるのは、サーバーの決まりをブラウザで行う実データテストの関数（applyCaosPracticeWrites など）。抽出の始めた・終えた時刻は押した時刻（端末の今）で、
 // サーバーの値が届いたら差し替わる。重ねられなくなった操作（サーバーの盤面がもうその操作のあと・ほかの端末が先に変えた）は重ねない。
 //
-// 送るのは 1 つずつ、残した順（createCaosOutbox）。送る直前に、書く前の値（before）をサーバーの今の値に差し替える（rebase）。
+// 送るのは 1 つずつ、残した順（createCaosOutbox）。押した時刻（CaosOutboxEntry の at）もいっしょに送り、サーバーは抽出の開始・終了をその時刻で付ける
+// （電波が切れていたあいだに押した操作も、届いた時刻にならない）。送る直前に、書く前の値（before）をサーバーの今の値に差し替える（rebase）。
 // 順番の数・時刻はサーバーが決めるので、画面が先に重ねた値とずれても、カードの場所（ドリッパー・カード・抽出中か・終わりか）が同じなら送る。
 //   - 通った（204）：サーバーから盤面が届くまで（ECHO_MS まで）は重ね続け、届いたら消して次を送る（一瞬前に戻って見えないように）
 //   - つながらない・時間切れ・5xx・ログインが切れた・混んでいる（401・403・408・429）：間をあけて何度でも送り直す（後ろの操作は待つ）。送れたかもしれないので、次は「もうそうなっているか」も見る
@@ -71,7 +72,7 @@ export type CaosOutboxOp =
 /** 端末に残した操作。label は「1つ戻す」と同じ操作の名前（捨てたときの知らせに出す） */
 export interface CaosOutboxEntry {
   id: string;
-  /** 押した時刻（エポックのミリ秒）。この順に送る。前の日に押したものは重ねも送りもしない */
+  /** 押した時刻（エポックのミリ秒）。この順に送り、いっしょに送る（抽出の開始・終了の時刻になる）。前の日に押したものは重ねも送りもしない */
   at: number;
   label: string;
   op: CaosOutboxOp;
@@ -209,24 +210,23 @@ const rebaseWrites = (
 
 type UndoRestore = Partial<CaosUndoEntry["cups"][number]["restore"]>;
 
-// サーバーの POST /api/caos/undo と同じく、カップを操作の前の値（CaOS の列と、カップの準備完了）に書き戻す
+// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了は書き戻さない）
 const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
-  // keepReady（提供の画面の呼び出しを戻すとき）の操作は outbox に入れないので見ない
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
   const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
+  const restored = <R extends { id: string }>(row: R): R => {
+    const { readyAt: _, ...state } = restoreOf(row.id);
+    return { ...row, ...state };
+  };
   return {
     orders: orders.map((order) => ({
       ...order,
       cups: order.cups.map((cup) => ({
-        ...cup,
-        ...restoreOf(cup.id),
-        emergencies: cup.emergencies.map((row) => {
-          const { readyAt: _, ...state } = restoreOf(row.id);
-          return { ...row, ...state };
-        }),
+        ...restored(cup),
+        emergencies: cup.emergencies.map(restored),
       })),
     })),
   };
@@ -383,7 +383,8 @@ export const overlayCaosLanes = (
 // ---------------------------------------------------------------- 送る
 
 type Prepared =
-  | { request: CaosOutboxRequest }
+  /** pressedAt は押した時刻の代わりに送る時刻（無ければ押した時刻） */
+  | { request: CaosOutboxRequest; pressedAt?: number }
   | { done: true }
   | { conflict: string }
   | { wait: number };
@@ -445,12 +446,13 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
 
 /**
  * 送る直前に、サーバーの今の盤面（server）で送るものを作る。もうそうなっていれば done、合わなければ conflict（理由）、まだ送れなければ wait（待つミリ秒）。
- * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）。nowMs は今（エポックのミリ秒）
+ * attempted は前に送って返事が無かった（サーバーには届いたかもしれない）。at は押した時刻、nowMs は今（エポックのミリ秒）
  */
 const prepareCaosOutboxOp = (
   op: CaosOutboxOp,
   server: CaosServerState,
   attempted: boolean,
+  at: number,
   nowMs: number,
 ): Prepared => {
   switch (op.kind) {
@@ -470,16 +472,17 @@ const prepareCaosOutboxOp = (
     }
     case "next": {
       if (reflected(op, server)) return { done: true };
-      // サーバーの始めた時刻（送れずに遅れて始めたなら、押したときより後）から CAOS_NEXT_COOLDOWN_SEC 秒は断られるので、
-      // それまで待つ（端末とサーバーの時計の差に 1 秒みておく）
+      // サーバーは始めた時刻と押した時刻の差が CAOS_NEXT_COOLDOWN_SEC 秒より短ければ断る。サーバーの始めた時刻が押したときに見ていたより後
+      // （ほかの端末が先に進めた列で、前の抽出の終わりまでずれた・端末の時計が進んでいる）なら、捨てずに、始めた時刻のその秒あと
+      // （時計の差に 1 秒みておく）に押したことにして、その時刻まで待って送る
       const { brewing } = caosLane(buildCaosCards(server.orders), op.dripper);
-      const waitMs =
+      const earliest =
         brewing?.dripId === op.dripId && brewing.startedAt
-          ? brewing.startedAt.getTime() +
-            (CAOS_NEXT_COOLDOWN_SEC + 1) * 1000 -
-            nowMs
+          ? brewing.startedAt.getTime() + (CAOS_NEXT_COOLDOWN_SEC + 1) * 1000
           : 0;
-      return waitMs > 0 ? { wait: waitMs } : { request: op };
+      if (at >= earliest) return { request: op };
+      if (earliest > nowMs) return { wait: earliest - nowMs };
+      return { request: op, pressedAt: earliest };
     }
     case "lane":
     case "swap": {
@@ -589,7 +592,7 @@ export interface CaosOutboxStore {
 /**
  * 端末に残した操作を、古い順に 1 つずつ送る。kick で送り始める（残りが変わった・サーバーの盤面が届いた・つながった、のたびに呼ぶ）。
  * 待つあいだ（送り直しの間隔・盤面が届くのを待つ）は自分で kick し直す。retryNow は送り直しの間隔を待たずに送る。
- * send は送る関数（repositories/caos の sendCaosOutboxRequest）。onSent は通ったとき、onRejected は捨てたとき（reason は理由）
+ * send は送る関数（repositories/caos の sendCaosOutboxRequest。pressedAt は押した時刻）。onSent は通ったとき、onRejected は捨てたとき（reason は理由）
  */
 export const createCaosOutbox = ({
   store,
@@ -601,7 +604,10 @@ export const createCaosOutbox = ({
 }: {
   store: CaosOutboxStore;
   server: () => CaosServerState | null;
-  send: (request: CaosOutboxRequest) => Promise<CaosOutboxResult>;
+  send: (
+    request: CaosOutboxRequest,
+    pressedAt: number,
+  ) => Promise<CaosOutboxResult>;
   onSent?: (entry: CaosOutboxEntry) => void;
   onRejected: (entry: CaosOutboxEntry, reason: string) => void;
   now?: () => number;
@@ -677,6 +683,7 @@ export const createCaosOutbox = ({
         head.op,
         state,
         head.attempted === true,
+        head.at,
         now(),
       );
       if ("done" in prepared) {
@@ -692,7 +699,9 @@ export const createCaosOutbox = ({
         continue;
       }
       const snapshot = snapshotOf(prepared.request, state);
-      const result = await withTimeout(send(prepared.request));
+      const result = await withTimeout(
+        send(prepared.request, prepared.pressedAt ?? head.at),
+      );
       // 送っているあいだに消えた（ほかのタブが片付けた）
       if (!store.read().some((entry) => entry.id === head.id)) continue;
       switch (outcomeOf(result)) {

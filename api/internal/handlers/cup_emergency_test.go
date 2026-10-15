@@ -129,7 +129,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 		t.Fatalf("ready_at = %v, want %v", cup.ReadyAt, first.ReadyAt)
 	}
 
-	// 準備中のカップの入れ直しの「次へ」は、カップを準備完了にする（注文の状態もカップから決め直す）
+	// 準備中のカップの入れ直しの「次へ」も、終えた時刻だけを付ける（カップも注文も準備完了にしない）
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(3, uuid.New(), false)))
 	if code, body := f.addEmergencies(t, o2.OrderCups[0].ID); code != http.StatusCreated {
 		t.Fatalf("POST = %d: %s", code, body)
@@ -141,12 +141,15 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if code := f.next(t, 4, &card3); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
-	var after models.Order
-	if err := db.First(&after, "id = ?", o2.ID).Error; err != nil || after.ReadyAt == nil {
-		t.Fatalf("order = %+v, want ready", after)
+	if got := f.emergencies(t, o2.OrderCups[0].ID)[0]; got.BrewFinishedAt == nil {
+		t.Fatalf("emergency after next = %+v, want finished", got)
 	}
-	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（準備完了なので終わりとみなす）
-	if cup := f.cup(t, o2.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 || cup.ReadyAt == nil {
+	var after models.Order
+	if err := db.First(&after, "id = ?", o2.ID).Error; err != nil || after.ReadyAt != nil {
+		t.Fatalf("order = %+v, want not ready", after)
+	}
+	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にすると終わりとみなす）
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 || cup.ReadyAt != nil {
 		t.Fatalf("cup = %+v", cup)
 	}
 }

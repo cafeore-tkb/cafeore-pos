@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +16,10 @@ import (
 // 操作の前の値（restore）に書き戻す。カップの今の値が、画面の見ている値（current）とぴったり同じ（時刻はミリ秒まで）ときだけ書き、
 // ほかの端末があとで変えていたら何も書かずに 409 で断る（ほかの端末の操作を消さない）。
 //
-// PUT /api/caos/cups と違い、抽出中・終わりのカップの時刻と準備完了（ready_at）も書き戻す（「次へ」を戻す・始めたカードを戻す・
-// 動かして始めた時刻を消した抽出中のカードを戻す）。戻すのは前の値なので、終えた時刻と準備完了は current と同じか null だけ、
+// PUT /api/caos/cups と違い、抽出中・終わりのカップの時刻も書き戻す（「次へ」を戻す・始めたカードを戻す・
+// 動かして始めた時刻を消した抽出中のカードを戻す）。戻すのは前の値なので、終えた時刻は current と同じか null だけ、
 // 始めた時刻は今日の今までの時刻（動かして消した・付け直した前の時刻）。提供済みのカップは戻さない。
+// 準備完了（ready_at）は CaOS の操作では変わらないので書き戻さない（restore の ready_at は読まない）。今の値が current と違えば断る。
 // 書き戻した結果も PUT と同じ決まり（指名・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい）と、
 // 1 つのドリッパーで抽出中は 1 枚を確かめる。
 
@@ -52,10 +52,8 @@ func validateCaosUndo(req models.CaosUndoRequest, now time.Time) error {
 		if t := r.BrewStartedAt; t != nil && (t.Before(today) || t.After(now)) {
 			return errors.New("戻す始めた時刻は、今日の今までの時刻だけです")
 		}
-		for _, t := range [][2]*time.Time{{r.BrewFinishedAt, cur.BrewFinishedAt}, {c.Restore.ReadyAt, c.Current.ReadyAt}} {
-			if t[0] != nil && !timeEqual(msTime(t[0]), msTime(t[1])) {
-				return errors.New("戻す終えた時刻・準備完了は、今の時刻のままか、消すだけです")
-			}
+		if t := r.BrewFinishedAt; t != nil && !timeEqual(msTime(t), msTime(cur.BrewFinishedAt)) {
+			return errors.New("戻す終えた時刻は、今の時刻のままか、消すだけです")
 		}
 	}
 	return nil
@@ -156,25 +154,8 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 			}
 		}
 
-		// 準備完了を戻し、注文の状態をカップから決め直す（POS のカップの準備完了と同じ）
-		for id, order := range orders {
+		for id := range orders {
 			orderIDs = append(orderIDs, id)
-			before := *order
-			before.OrderCups = slices.Clone(order.OrderCups)
-			changed := false
-			for _, c := range cups {
-				if cup := findOrderCup(order, c.CupId); cup != nil && !timeEqual(msTime(cup.ReadyAt), msTime(c.Restore.ReadyAt)) {
-					cup.ReadyAt = c.Restore.ReadyAt
-					changed = true
-				}
-			}
-			if !changed {
-				continue
-			}
-			syncOrderWithCups(order)
-			if err := saveOrderStatus(tx, &before, order); err != nil {
-				return err
-			}
 		}
 		for _, c := range cups {
 			r := c.Restore.State
