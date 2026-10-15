@@ -5,7 +5,13 @@ import {
   caosMergePair,
 } from "@cafeore/common";
 import type React from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 
@@ -14,6 +20,27 @@ import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 // 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
 const DRAG_THRESHOLD_PX = 12;
+
+// どこかでカードをドラッグしているか（管制盤 A・C・D の全部のドラッグで 1 つ。ドラッグのあいだは「統合する」を出さない）
+let anyDragging = false;
+const dragListeners = new Set<() => void>();
+const setAnyDragging = (value: boolean) => {
+  if (anyDragging === value) return;
+  anyDragging = value;
+  for (const listener of dragListeners) listener();
+};
+const subscribeDragging = (listener: () => void) => {
+  dragListeners.add(listener);
+  return () => dragListeners.delete(listener);
+};
+
+/** どこかでカードをドラッグしているか（useCardDrag のどれか。落とす所の線・統合の枠を「統合する」で隠さないため） */
+export const useAnyCardDragging = () =>
+  useSyncExternalStore(
+    subscribeDragging,
+    () => anyDragging,
+    () => false,
+  );
 
 // 1〜6 のボタン（カードの上の BayPad）
 const isBayButton = (element: Element): element is HTMLElement =>
@@ -201,6 +228,7 @@ export const useCardDrag = <S, T>(handlers: {
       if (!dragging) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
         dragging = true;
+        setAnyDragging(true);
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
       }
@@ -216,6 +244,7 @@ export const useCardDrag = <S, T>(handlers: {
       if (upEvent.pointerId !== pointerId) return;
       cleanup();
       if (!dragging) return;
+      setAnyDragging(false);
       setDrag(null);
       setTarget(null);
       suppressNextClick.current = true;
@@ -235,6 +264,7 @@ export const useCardDrag = <S, T>(handlers: {
     };
     endPress.current = () => {
       cleanup();
+      if (dragging) setAnyDragging(false);
       setDrag(null);
       setTarget(null);
     };

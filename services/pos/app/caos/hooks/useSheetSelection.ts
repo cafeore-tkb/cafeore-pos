@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cardOrderNos, orderLabel, quickMergePartner } from "../logic/cards";
 import { type Lane, laneActive } from "../logic/lanes";
 import { scrollCardIntoView } from "../utils/scrollToCard";
+import { useAnyCardDragging } from "./useCardDrag";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 統合できる未割当のカードと表の待機・抽出中のカードには「統合する」が出て、押すと統合する。
@@ -28,8 +29,10 @@ export const useSheetSelection = ({
   // 統合して、盤面から統合したカードが届くのを待っている注文番号
   const [mergingNos, setMergingNos] = useState<number[] | null>(null);
   const selected = unassigned.find((card) => card.key === selectedUid) ?? null;
+  // どこかでドラッグしているあいだは「統合する」を出さない（落とす所の線・統合の枠を隠さない。管制盤 A・C の useUnassignedPick と同じ）
+  const dragging = useAnyCardDragging();
   const canMergeWith = (card: CaosCard) =>
-    Boolean(selected && canMergeCards(selected, card));
+    Boolean(selected && !dragging && canMergeCards(selected, card));
 
   useEffect(() => {
     if (selectedUid && !selected) setSelectedUid(null);

@@ -127,6 +127,10 @@ export const OrderCard: React.FC<
     mergeInto?: CaosCard;
     /** 統合したカードを、重ねた枠でなく注文ごとの段に分けて出す（管制盤 D） */
     byOrder?: boolean;
+    /** 開いた（選んだ）カードを押して統合できる相手。「統合する」を重ね、data-merge-tap を付ける（押しても開いたカードを閉じない） */
+    mergeTap?: boolean;
+    /** ドラッグで指の下にあるとき、入れる所の線か統合の枠（hooks/useCardDrag の dropSideOn） */
+    dropSide?: DropSide;
   }
 > = ({
   card,
@@ -137,6 +141,8 @@ export const OrderCard: React.FC<
   note,
   mergeInto,
   byOrder = false,
+  mergeTap = false,
+  dropSide,
   className = "",
   style,
   children,
@@ -207,10 +213,13 @@ export const OrderCard: React.FC<
   return (
     <div
       {...props}
+      data-merge-tap={mergeTap || undefined}
       style={{ ...surface.style, ...style }}
       className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
+      {mergeTap && <MergeOverlay />}
+      <DropMark side={dropSide} />
       {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
       {look?.comments && (
         <CommentMark count={look.comments.length} label={orderLabel(card)} />
@@ -292,24 +301,23 @@ export const OrderCard: React.FC<
           </span>
         )}
         {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
-        {card.seniorOnly &&
-          (look?.offSenior ? (
-            <span
-              title="上級生のみ（担当者が上級生ではありません）"
-              className="inline-flex shrink-0 items-center rounded bg-red-600 px-1 py-0.5 font-black text-white"
-            >
+        {card.seniorOnly && (
+          <span
+            title={
+              look?.offSenior
+                ? "上級生のみ（担当者が上級生ではありません）"
+                : "上級生のみ"
+            }
+            className={`inline-flex shrink-0 items-center rounded px-1 py-0.5 font-black ${look?.offSenior ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
+          >
+            {look?.offSenior ? (
               <TriangleAlert className="h-3 w-3" />
-              上級生
-            </span>
-          ) : (
-            <span
-              title="上級生のみ"
-              className="inline-flex shrink-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
-            >
+            ) : (
               <Star className="h-3 w-3 fill-current" />
-              上級生
-            </span>
-          ))}
+            )}
+            上級生
+          </span>
+        )}
         {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
         {reasons
           ? reasonTag(reasons, "ml-auto")
@@ -440,9 +448,9 @@ const MergeIcon: React.FC<{ className: string }> = ({ className }) => (
   </svg>
 );
 
-// 統合できる相手のカードに重ねる「統合する」（管制盤 A・C・D の未割当）。
+// 統合できる相手のカードに重ねる「統合する」（OrderCard の mergeTap。管制盤 A・C・D）。
 // 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
-export const MergeOverlay: React.FC = () => (
+const MergeOverlay: React.FC = () => (
   <>
     <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-blue-500 bg-blue-50/90" />
     <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center p-1">
@@ -485,10 +493,10 @@ export const SplitCupButtons: React.FC<{
 );
 
 /**
- * ドラッグで指の下にある列のカードの印（カードの children に置く）。前は左の縁、後ろは右の縁に入れる所の線、
+ * ドラッグで指の下にある列のカードの印（OrderCard の dropSide）。前は左の縁、後ろは右の縁に入れる所の線、
  * 統合はカードを囲む統合の色の枠（落とす先の札は指に付いた写しに出す。hooks/useCardDrag の dropTargetLabel）
  */
-export const DropMark: React.FC<{ side?: DropSide }> = ({ side }) => {
+const DropMark: React.FC<{ side?: DropSide }> = ({ side }) => {
   if (!side) return null;
   if (side === "merge")
     return (

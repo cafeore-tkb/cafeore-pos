@@ -21,8 +21,6 @@ import { LaneChangeButton, LaneName } from "./LaneParts";
 import {
   BayPad,
   CancelEmergencyButton,
-  DropMark,
-  MergeOverlay,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
@@ -296,7 +294,8 @@ export const DispatchBoard: React.FC<
                               isMovable ? ticket.key : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
-                            data-merge-tap={isMergeTap || undefined}
+                            mergeTap={isMergeTap}
+                            dropSide={dropSideOn(dropTarget, ticket.key)}
                             onPointerDown={
                               isMovable
                                 ? (event) =>
@@ -327,10 +326,6 @@ export const DispatchBoard: React.FC<
                             className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
-                            {isMergeTap && <MergeOverlay />}
-                            <DropMark
-                              side={dropSideOn(dropTarget, ticket.key)}
-                            />
                             {isActionOpen && (
                               <>
                                 <BayPad
