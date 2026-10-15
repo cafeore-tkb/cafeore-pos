@@ -21,6 +21,8 @@ import {
   boardLanes,
   cardPlaces,
   dropSideAt,
+  frontTargets,
+  moveTargets,
   pendingNominatedCups,
 } from "./lanes";
 import { byElapsed, liberoLanes } from "./libero";
@@ -149,6 +151,33 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       "merge",
     );
     expect(dropSideAt(0.1, { mergeable: false, placeable: false })).toBeNull();
+  });
+
+  test("移すボタン：番号は列の最後へ（今の列も）、指名の番号だけ押せる。先頭は抽出中のカードでは押せず、待機の先頭はいつも押せる", () => {
+    const [card] = buildCaosCards([order(20, [{}])]);
+    const queued = { ...card, status: "queued" as const, dripper: 2 };
+    expect(
+      moveTargets(queued, 2)
+        .filter((t) => t.current)
+        .map((t) => t.bayId),
+    ).toEqual([2]);
+    expect(moveTargets(queued, 2).every((t) => !t.disabled)).toBe(true);
+    const [named] = buildCaosCards([order(21, [{}], 3)]);
+    expect(
+      moveTargets(named, null)
+        .filter((t) => !t.disabled)
+        .map((t) => t.bayId),
+    ).toEqual([3]);
+    const disabledOf = (c: CaosCard) =>
+      frontTargets(c).map((t) => [t.place, t.disabled]);
+    expect(disabledOf(queued)).toEqual([
+      ["front", false],
+      ["queueFront", false],
+    ]);
+    expect(disabledOf({ ...queued, status: "brewing" })).toEqual([
+      ["front", true],
+      ["queueFront", false],
+    ]);
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {

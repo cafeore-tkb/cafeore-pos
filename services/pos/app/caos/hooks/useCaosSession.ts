@@ -433,7 +433,7 @@ export const useCaosSession = () => {
       soundManager.enabled = !soundEnabled;
       setSoundEnabled(!soundEnabled);
     },
-    /** 割当・ドリッパーの移動・順番の入れ替え（place が "front" なら列の先頭（今から始まる）、{ beforeKey } ならそのカードの前、無ければ最後）。抽出中のカードも動かせる。順番の数はサーバー（練習なら練習の盤面）が決める */
+    /** 割当・ドリッパーの移動・順番の入れ替え（place は @cafeore/common の CaosPlace：列の先頭（今から始まる）・待機の先頭・カードの前後。無ければ最後）。抽出中のカードも動かせる。順番の数はサーバー（練習なら練習の盤面）が決める */
     place: (key: string, bayId: number, place?: CaosPlace) => {
       const card = cardOf(key);
       if (!card) return fail(NOT_FOUND);

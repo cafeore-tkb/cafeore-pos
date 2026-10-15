@@ -104,7 +104,7 @@ export const seniorOnlyOffSenior = (
   (card.status === "queued" || card.status === "brewing") &&
   nonSeniorLane(card.dripper, lanes) !== null;
 
-/** そのドリッパーで待っている（まだ始めていない）、上級生のドリッパーにしか置けないカード（needsSeniorLane）の枚数 */
+/** そのドリッパーで待っている（まだ始めていない）、上級生のドリッパーに置くはずのカード（needsSeniorLane）の枚数 */
 export const queuedSeniorOnlyCards = (
   cards: readonly CaosCard[],
   dripper: number,
