@@ -5,7 +5,13 @@ import {
   caosMergePair,
 } from "@cafeore/common";
 import type React from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 
@@ -33,6 +39,27 @@ const swallowNextClick = () => {
   window.addEventListener("click", swallow, true);
   window.addEventListener("pointerdown", stop, true);
 };
+
+// いまドラッグしているカードの数（管制盤 A・C・D の全部のドラッグで 1 つ。2 本の指で別々に掴んでも数える）。
+// 1 枚でもドラッグしているあいだは「統合する」を出さない
+let draggingCount = 0;
+const dragListeners = new Set<() => void>();
+const countDragging = (delta: 1 | -1) => {
+  draggingCount = Math.max(0, draggingCount + delta);
+  for (const listener of dragListeners) listener();
+};
+const subscribeDragging = (listener: () => void) => {
+  dragListeners.add(listener);
+  return () => dragListeners.delete(listener);
+};
+
+/** どこかでカードをドラッグしているか（useCardDrag のどれか。落とす所の線・統合の枠を「統合する」で隠さないため） */
+export const useAnyCardDragging = () =>
+  useSyncExternalStore(
+    subscribeDragging,
+    () => draggingCount > 0,
+    () => false,
+  );
 
 // 1〜6 のボタン（カードの上の BayPad）
 const isBayButton = (element: Element): element is HTMLElement =>
@@ -230,6 +257,7 @@ export const useCardDrag = <S, T>(handlers: {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
         window.clearTimeout(hold);
         dragging = true;
+        countDragging(1);
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
       }
@@ -245,6 +273,7 @@ export const useCardDrag = <S, T>(handlers: {
       if (upEvent.pointerId !== pointerId) return;
       cleanup();
       if (!dragging) return;
+      countDragging(-1);
       setDrag(null);
       setTarget(null);
       suppressNextClick.current = true;
@@ -265,6 +294,7 @@ export const useCardDrag = <S, T>(handlers: {
     };
     endPress.current = () => {
       cleanup();
+      if (dragging) countDragging(-1);
       setDrag(null);
       setTarget(null);
     };
@@ -319,13 +349,13 @@ export const useCardDrag = <S, T>(handlers: {
  * 長押しだけ（ドラッグしないカード。管制盤 C のドリッパーの列・A と D の終わったカード）。useCardDrag と同じ決まりで、動かしたら長押しにならない。
  * press をカードの onPointerDown に、suppressClick を onClickCapture に渡す
  */
-export const useCardHold = <S,>(onHold: (source: S) => void) => {
+export const useCardHold = <S,>(onHold?: (source: S) => void) => {
   const { press, suppressClick } = useCardDrag<S, never>({
     targetAt: () => null,
     onDrop: () => {},
     onHold: (source) => {
-      onHold(source);
-      return true;
+      onHold?.(source);
+      return Boolean(onHold);
     },
   });
   return { press, suppressClick };

@@ -18,7 +18,7 @@ import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { DropMark, MergeOverlay, OrderCard } from "./OrderCard";
+import { OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
@@ -117,7 +117,7 @@ export const DispatchBoard: React.FC<
     },
   });
   // 終わったカードは動かさないので、長押しだけ
-  const hold = useCardHold<CaosCard>((card) => onHoldCard?.(card));
+  const hold = useCardHold<CaosCard>(onHoldCard);
 
   // ドラッグ（タイムラインのカードか、下の横帯の未割当のカード）で指の下の落とす先
   const dropTarget = drag.target ?? pick?.drag.target ?? null;
@@ -306,7 +306,8 @@ export const DispatchBoard: React.FC<
                               isMovable ? ticket.key : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
-                            data-merge-tap={isMergeTap || undefined}
+                            mergeTap={isMergeTap}
+                            dropSide={dropSideOn(dropTarget, ticket.key)}
                             style={{ paddingLeft: cardInset(left, width) }}
                             onPointerDown={(event) => {
                               if (readOnly) return;
@@ -323,19 +324,13 @@ export const DispatchBoard: React.FC<
                                 : hold.suppressClick
                             }
                             onClick={() => {
-                              if (readOnly) return;
                               if (isMergeTap) pick?.tap(ticket);
                               else onPressCard(ticket);
                             }}
                             // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
                             className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
-                          >
-                            {isMergeTap && <MergeOverlay />}
-                            <DropMark
-                              side={dropSideOn(dropTarget, ticket.key)}
-                            />
-                          </OrderCard>
+                          />
                         </div>
                       );
                     })}

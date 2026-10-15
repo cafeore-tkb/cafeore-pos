@@ -220,6 +220,33 @@ describe("unit: caos-outbox 重ねて表示", () => {
     expect(lane.queued.map((card) => card.key)).toEqual(["drip-b"]);
   });
 
+  test("押したカードを始める「次へ」（startPressed）は、そのカードが待機の先頭のときだけ重ねる", () => {
+    const board = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+      cup("c", { dripper: 1, dripperPosition: 3, dripId: "drip-c" }),
+    );
+    const start = (startId: string) =>
+      entry({
+        kind: "next",
+        dripper: 1,
+        dripId: "drip-a",
+        startId,
+        startPressed: true,
+      });
+    const brewingOf = (op: ReturnType<typeof start>) =>
+      caosLane(buildCaosCards(overlayCaosOrders(board, [op], DAY)), 1).brewing
+        ?.key;
+    // 先頭へ動かすのが通らず、押したカード（c）が先頭でなければ、b を始めない
+    expect(brewingOf(start("drip-c"))).toBe("drip-a");
+    expect(brewingOf(start("drip-b"))).toBe("drip-b");
+  });
+
   test("「1つ戻す」は戻す操作のあとに重ねる（未送信のまま戻すと、元の盤面に見える）", () => {
     const server = orders(cup("a"));
     const op = place(server, "a", 1);

@@ -2,13 +2,13 @@ import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ArrowRightCircle, Clock3, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
-import type { OpenToastConfirm } from "../hooks/useToastConfirms";
+import type { OpenCornerToast } from "../hooks/useCornerToasts";
 import { longWaitMinutes } from "../logic/alerts";
 import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く・長く待っている未割当の札）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -148,76 +148,80 @@ export const NextButton: React.FC<{
 // 知らせのあとに添える文
 const UNDO_HINT = "違っていたらヘッダーの「戻す」で戻せます。";
 
-// 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・読み上げの名前）
-const confirmText = (confirm: OpenToastConfirm) => {
-  if (confirm.kind === "next")
+// 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・枠の色・読み上げの名前）
+const toastText = (toast: OpenCornerToast) => {
+  if (toast.kind === "next")
     return {
-      label: `${dripperLabel(confirm.bayId)}の抽出を終える確かめ`,
-      title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
-      body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
+      label: `${dripperLabel(toast.bayId)}の抽出を終える確かめ`,
+      title: `${dripperLabel(toast.bayId)} の ${orderLabel(toast.card)} を終えますか？`,
+      body: `始めてからまだ ${clockLabel(toast.elapsedSec)} です。押す列を間違えていませんか？`,
       action:
-        confirm.start === "none"
+        toast.start === "none"
           ? "終える"
-          : confirm.start === "head"
+          : toast.start === "head"
             ? "次へ進める"
             : "終えて始める",
+      frame: "border-orange-600",
     };
-  if (confirm.kind === "lateMerge")
+  if (toast.kind === "lateMerge")
     return {
-      label: `${orderLabel(confirm.into)}への統合の知らせ`,
-      title: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています`,
-      body: `${orderLabel(confirm.card)} を統合しました。${UNDO_HINT}`,
+      label: `${orderLabel(toast.into)}への統合の知らせ`,
+      title: `${orderLabel(toast.into)} は抽出を始めてから ${clockLabel(toast.elapsedSec)} たっています`,
+      body: `${orderLabel(toast.card)} を統合しました。${UNDO_HINT}`,
       action: null,
+      frame: "border-(color:--caos-merge)",
     };
-  const { dripper, name } = confirm.lane;
-  const who = name
-    ? `上級生でない ${dripperLabel(dripper)} ${name}`
-    : `担当者のいない ${dripperLabel(dripper)}`;
+  const { cards, lane } = toast;
+  const who = `上級生でない ${dripperLabel(lane.dripper)} ${lane.name}`;
   return {
-    label: `${orderLabel(confirm.card)}の上級生のみの知らせ`,
-    title: `上級生のみの ${orderLabel(confirm.card)} を${who}に置きました`,
+    label: "上級生のみのカードの知らせ",
+    title:
+      cards.length === 1
+        ? `上級生のみの ${orderLabel(cards[0])} を${who}に置きました`
+        : `上級生のみのカード ${cards.length} 枚を${who}に移しました`,
     body: `カードに警告の印を付けています。${UNDO_HINT}`,
     action: null,
+    frame: "border-(color:--caos-senior-warning)",
   };
 };
 
 /**
- * 右上の確かめと知らせ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
+ * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
  * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
  * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
  * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
- * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。右のパネルを避ける）
+ * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-corner-toasts。右のパネルを避ける）
  */
-export const ToastConfirms: React.FC<{
-  confirms: readonly OpenToastConfirm[];
-  onCancel: (id: string) => void;
+export const CornerToasts: React.FC<{
+  toasts: readonly OpenCornerToast[];
+  onDismiss: (id: string) => void;
   onConfirm: (id: string) => void;
-}> = ({ confirms, onCancel, onConfirm }) =>
-  confirms.length > 0 && (
-    <div className="caos-toast-confirms pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
-      {confirms.map((confirm) => {
-        const { label, title, body, action } = confirmText(confirm);
+}> = ({ toasts, onDismiss, onConfirm }) =>
+  toasts.length > 0 && (
+    <div className="caos-corner-toasts pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
+      {toasts.map((toast) => {
+        const { label, title, body, action, frame } = toastText(toast);
         return (
           <section
-            key={confirm.id}
+            key={toast.id}
             role={action ? "alertdialog" : "status"}
             aria-label={label}
-            className={`fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl duration-200 ${action ? "border-orange-600" : "border-(color:--caos-merge)"}`}
+            className={`fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl duration-200 ${frame}`}
           >
             <h2 className="font-black text-[16px]">{title}</h2>
             <p className="mt-1 font-bold text-[13px]">{body}</p>
             <div className="mt-2 flex justify-end gap-2">
               <Button
                 variant="outline"
-                onClick={() => onCancel(confirm.id)}
+                onClick={() => onDismiss(toast.id)}
                 className="h-11 touch-manipulation font-bold"
               >
-                {action ? "やめる" : "閉じる"}（{confirm.secondsLeft}）
+                {action ? "やめる" : "閉じる"}（{toast.secondsLeft}）
               </Button>
               {action && (
                 <Button
-                  onClick={() => onConfirm(confirm.id)}
+                  onClick={() => onConfirm(toast.id)}
                   className="h-11 touch-manipulation font-bold"
                 >
                   {action}

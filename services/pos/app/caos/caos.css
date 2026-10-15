@@ -63,6 +63,8 @@ html:has(.caos-root) body {
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);
   --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
+  /* 上級生のみのカードを上級生でない担当者のドリッパーに置いた警告（カードの「⚠上級生」の札と、右上の知らせの枠） */
+  --caos-senior-warning: oklch(57.7% 0.245 27.325);
   /* 統合（「統合する」と、開いたカードの統合する相手の札） */
   --caos-merge: oklch(48.8% 0.243 264.376);
   /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線（管制盤 A・C） */
@@ -98,12 +100,12 @@ html:has(.caos-root) body {
   --caos-side-panel-width: max(360px, min(440px, 44vw));
 }
 
-/* 「次へ」の確かめと、統合・上級生のみの知らせ（BoardParts の ToastConfirms）は右上に出す（「次へ」は左の列の見出しにあるので隠さない）。
+/* 「次へ」の確かめと、統合・上級生のみの知らせ（BoardParts の CornerToasts）は右上に出す（「次へ」は左の列の見出しにあるので隠さない）。
    右のパネルが開いていれば、その左に出す（パネルと重ねない） */
-.caos-root .caos-toast-confirms {
+.caos-root .caos-corner-toasts {
   right: 12px;
 }
-.caos-root:has(.caos-side-panel) .caos-toast-confirms {
+.caos-root:has(.caos-side-panel) .caos-corner-toasts {
   right: calc(var(--caos-side-panel-width) + 12px);
 }
 

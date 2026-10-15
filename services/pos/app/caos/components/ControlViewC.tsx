@@ -7,6 +7,7 @@ import {
   useControlPick,
 } from "../hooks/useUnassignedPick";
 import { orderLabel, sharesOrder } from "../logic/cards";
+import type { CardLook } from "../logic/cards";
 import { laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
@@ -18,7 +19,7 @@ import {
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
-import { DropMark, MergeOverlay, OrderCard } from "./OrderCard";
+import { OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
@@ -31,25 +32,12 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 // （抽出中のカードの前は列の先頭で今から始まり、後ろは待機の先頭。useCardDrag の dropTargetAt）。指の下のカードには入れる所の線か統合の枠（DropMark）
 export const ControlViewC: React.FC<ControlViewProps> = (props) => {
   const pick = useControlPick(props);
-  const hold = useCardHold<CaosCard>((card) => props.onHoldCard?.(card));
-  // ドリッパーの列のカードを押すと始める・終える（開いた未割当のカードと統合できれば統合）。長押しは onHoldCard
-  const pressProps = (card: CaosCard) => ({
-    onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-      hold.press(card, event),
-    onClickCapture: hold.suppressClick,
-    onClick: () => {
-      if (pick.canMergeWith(card)) pick.tap(card);
-      else props.onPressCard(card);
-    },
-  });
-  return <ControlViewCBoard {...props} pick={pick} pressProps={pressProps} />;
+  const hold = useCardHold<CaosCard>(props.onHoldCard);
+  return <ControlViewCBoard {...props} pick={pick} hold={hold} />;
 };
 
 const ControlViewCBoard: React.FC<
-  ControlViewProps & {
-    pick: UnassignedPick;
-    pressProps: (card: CaosCard) => React.HTMLAttributes<HTMLElement>;
-  }
+  ControlViewProps & { pick: UnassignedPick; hold: CardHold }
 > = ({
   lanes,
   unassignedOrders,
@@ -58,10 +46,11 @@ const ControlViewCBoard: React.FC<
   nowMs,
   selectedOrderId,
   onAdvanceBay,
+  onPressCard,
   onOpenEmptySlot,
   onOpenLane,
   pick,
-  pressProps,
+  hold,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
@@ -114,24 +103,16 @@ const ControlViewCBoard: React.FC<
                 </div>
                 <div className="grid min-h-0 flex-1 grid-cols-[156px_minmax(0,1fr)] items-stretch gap-1.5">
                   {current ? (
-                    <OrderCard
+                    <LaneCard
                       card={current}
                       look={looks.get(current.key)}
-                      size="lane"
                       selected={sharesOrder(current, selectedOrderId)}
-                      data-queued-ticket={current.key}
-                      data-search-key={current.key}
-                      data-ticket-label={orderLabel(current)}
-                      data-merge-tap={pick.canMergeWith(current) || undefined}
+                      pick={pick}
+                      hold={hold}
                       // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード
-                      {...pressProps(current)}
+                      onPress={onPressCard}
                       className="cursor-pointer hover:ring-2 hover:ring-blue-400"
-                    >
-                      {pick.canMergeWith(current) && <MergeOverlay />}
-                      <DropMark
-                        side={dropSideOn(pick.drag.target, current.key)}
-                      />
-                    </OrderCard>
+                    />
                   ) : (
                     <span className="rounded-lg border border-slate-300 border-dashed" />
                   )}
@@ -139,24 +120,16 @@ const ControlViewCBoard: React.FC<
                   {/* 選択中の黄の輪（外へ 6px）と統合したカードの重ねた枠（8px）が切れないよう、外へ広げて内に同じだけ空ける（行の余白も 8px） */}
                   <div className="-m-2 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {lane.waiting.map((ticket) => (
-                      <OrderCard
+                      <LaneCard
                         key={ticket.key}
                         card={ticket}
                         look={looks.get(ticket.key)}
-                        size="lane"
                         selected={sharesOrder(ticket, selectedOrderId)}
-                        data-queued-ticket={ticket.key}
-                        data-search-key={ticket.key}
-                        data-ticket-label={orderLabel(ticket)}
-                        data-merge-tap={pick.canMergeWith(ticket) || undefined}
-                        {...pressProps(ticket)}
+                        pick={pick}
+                        hold={hold}
+                        onPress={onPressCard}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
-                      >
-                        {pick.canMergeWith(ticket) && <MergeOverlay />}
-                        <DropMark
-                          side={dropSideOn(pick.drag.target, ticket.key)}
-                        />
-                      </OrderCard>
+                      />
                     ))}
                     {lane.waiting.length === 0 && (
                       <EmptySlotButton
@@ -184,3 +157,37 @@ const ControlViewCBoard: React.FC<
     </aside>
   </section>
 );
+
+type CardHold = ReturnType<typeof useCardHold<CaosCard>>;
+
+// ドリッパーの列のカード（抽出中・待機）。開いた未割当のカードと統合できれば押して統合し、ほかは onPress（抽出中は終える・待機は始める）。
+// 長押しは hold（待機の詳細・抽出中の入れ直し）。ドラッグで落とす先の目印（前・後ろ・統合。useCardDrag の dropTargetAt）を持ち、
+// 指の下なら入れる所の線か統合の枠を出す
+const LaneCard: React.FC<{
+  card: CaosCard;
+  look?: CardLook;
+  selected: boolean;
+  pick: UnassignedPick;
+  hold: CardHold;
+  onPress: (card: CaosCard) => void;
+  className: string;
+}> = ({ card, look, selected, pick, hold, onPress, className }) => {
+  const mergeTap = pick.canMergeWith(card);
+  return (
+    <OrderCard
+      card={card}
+      look={look}
+      size="lane"
+      selected={selected}
+      data-queued-ticket={card.key}
+      data-search-key={card.key}
+      data-ticket-label={orderLabel(card)}
+      mergeTap={mergeTap}
+      dropSide={dropSideOn(pick.drag.target, card.key)}
+      onPointerDown={(event) => hold.press(card, event)}
+      onClickCapture={hold.suppressClick}
+      onClick={() => (mergeTap ? pick.tap(card) : onPress(card))}
+      className={className}
+    />
+  );
+};
