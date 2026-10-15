@@ -6,15 +6,22 @@ import { useDeviceSetting } from "./useDeviceSetting";
 import { useLiveBoard } from "./useLiveBoard";
 
 // 閲覧だけの画面（閲覧の画面・リベロビュー）の盤面。操作の画面と同じ cafeore-pos の盤面（useLiveBoard）を読むだけで、書き込みは送らない。
-// タイムラインに新しく入ったカード（割り当てた・抽出を始めた。logic/timeline の timelineArrivals）を、通知音と点滅で知らせる。
+// 新しく入ったカードを、通知音と点滅で知らせる。何を知らせるかは arrivals（logic/timeline）で決める：
+// 閲覧の画面はタイムラインに入ったカード（割り当てた・抽出を始めた。timelineArrivals）、リベロビューは抽出を始めたカードだけ（brewStarts）。
 
 /** 点滅させる長さ（caos.css の .caos-arrival と同じ） */
 const FLASH_MS = 4000;
 
-export const useViewBoard = (nowMs: number) => {
+/** 前に見たカードの状態（key → status）と今のカードから、知らせるカードの key を出す */
+type Arrivals = typeof timelineArrivals;
+
+export const useViewBoard = (
+  nowMs: number,
+  arrivals: Arrivals = timelineArrivals,
+) => {
   const { cards, orders, status } = useLiveBoard({ enabled: true, nowMs });
   const sound = useViewSound();
-  const flashKeys = useArrivals(cards, orders !== null, nowMs);
+  const flashKeys = useArrivals(cards, orders !== null, nowMs, arrivals);
   return { cards, status, sound, flashKeys };
 };
 
@@ -66,6 +73,7 @@ const useArrivals = (
   cards: readonly CaosCard[],
   loaded: boolean,
   nowMs: number,
+  arrivals: Arrivals,
 ) => {
   const seen = useRef<ReadonlyMap<string, CaosCardStatus> | null>(null);
   // 点滅させるカードの key と、止める時刻
@@ -80,7 +88,7 @@ const useArrivals = (
     seen.current = new Map(cards.map((card) => [card.key, card.status]));
     if (!previous) return;
     const now = Date.now();
-    const arrived = timelineArrivals(previous, cards).filter(
+    const arrived = arrivals(previous, cards).filter(
       (key) => (latestFlash.current.get(key) ?? 0) <= now,
     );
     if (arrived.length === 0) return;
@@ -91,7 +99,7 @@ const useArrivals = (
         ...arrived.map((key) => [key, now + FLASH_MS] as const),
       ]),
     );
-  }, [cards, loaded]);
+  }, [cards, loaded, arrivals]);
 
   return useMemo(
     () =>
