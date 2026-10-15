@@ -9,7 +9,7 @@ import { scrollCardIntoView } from "../utils/scrollToCard";
 /** 入れられる番号の桁 */
 const MAX_DIGITS = 4;
 /** 番号を押し終えてから探すまで（ms）。「12」を打つ途中の「1」で選んだりスクロールしたりしない */
-export const SEARCH_DELAY_MS = 500;
+const SEARCH_DELAY_MS = 500;
 
 // 番号に数字を 1 つ足す（頭の 0 は入れない。MAX_DIGITS 桁まで）
 const appendDigit = (value: string, digit: string) =>
@@ -40,9 +40,11 @@ const ignoreKey = (event: KeyboardEvent) =>
  * 注文番号の検索（ヘッダーの「番号」と右のパネル）。入れている番号（digits。閉じていれば null）は開いているパネル（useBoardSelection）が持ち、
  * ここは押したキーで番号を変え、押し終えて SEARCH_DELAY_MS たったら（Enter ならすぐ）その注文を探す。見つかった注文は選んだ状態にし（selectOrder。盤面にカードがあるときだけ）、
  * そのカードを見せる（A のタイムラインのカードは showOnTimeline でスクロール、ほかは並べた枠の中でスクロール。utils/scrollToCard）。
- * 選ぶのは探す番号が変わったときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
+ * 選ぶのは探す番号か管制盤（view）が変わったときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない。開いたまま管制盤を替えたら、替えた先で見せ直す）。
  * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる（ダイアログを開いているあいだは拾わない）。
- * 開いているあいだは Backspace で 1 文字消し、Enter で探して閉じ、Esc で閉じる（番号を押すとフォーカスを外し、そのあと Tab で選んだボタンの上の Enter はそのボタンを押す）
+ * 開いているあいだは Backspace で 1 文字消し、Enter で待たずに探して閉じる（finish。× とパネルの外も同じ。番号が空なら選んだ注文を外す）。
+ * Esc は待っている番号を探さずに閉じる（前に探した注文を選んだまま）。
+ * 番号を押すとフォーカスを外し、そのあと Tab で選んだボタンの上の Enter はそのボタンを押す
  */
 export const useOrderSearch = ({
   digits,
@@ -51,6 +53,7 @@ export const useOrderSearch = ({
   close,
   selectOrder,
   showOnTimeline,
+  view,
   ...board
 }: {
   digits: string | null;
@@ -62,6 +65,8 @@ export const useOrderSearch = ({
   selectOrder: (label: string | null) => void;
   /** 管制盤 A のタイムラインをカード（key）までスクロールする（タイムラインの無い C・D では渡さない） */
   showOnTimeline?: (cardKey: string) => void;
+  /** 今の管制盤（替わったら見せ直す） */
+  view: string;
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
   lanes: readonly Lane[];
@@ -81,9 +86,9 @@ export const useOrderSearch = ({
   const orderNo = searched ? Number(searched) : null;
   const found = orderNo === null ? null : findOrder({ ...board, orderNo });
   const target = found && focusCard(found);
-  // 見せる注文とカード。変わったときだけ見せ直す
+  // 見せる注文とカードと管制盤。変わったときだけ見せ直す
   const targetId =
-    found && target ? `${found.orderNo}\u0000${target.key}` : null;
+    found && target ? `${found.orderNo}\u0000${target.key}\u0000${view}` : null;
 
   /** テンキーを押す（数字の 1 文字か、1 文字消す "back"・全部消す "clear"） */
   const press = (key: string) => {
@@ -91,6 +96,11 @@ export const useOrderSearch = ({
     if (key === "clear") setDigits(() => "");
     else if (key === "back") setDigits((value) => value.slice(0, -1));
     else setDigits((value) => appendDigit(value, key));
+  };
+  /** 待たずに今の番号で探して閉じる（Enter・×・パネルの外。閉じても選んだまま、番号が空なら外す） */
+  const finish = () => {
+    setSearched(digits);
+    close();
   };
 
   // 効果の中で読む今の値（効果は番号・キーで動かし、毎回は張り直さない）
@@ -100,6 +110,7 @@ export const useOrderSearch = ({
     digits,
     searched,
     press,
+    finish,
     open,
     close,
     selectOrder,
@@ -128,7 +139,7 @@ export const useOrderSearch = ({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (ignoreKey(event)) return;
-      const { digits, press, open, close } = latest.current;
+      const { digits, press, finish, open, close } = latest.current;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
         if (digits !== null) press(event.key);
@@ -147,11 +158,8 @@ export const useOrderSearch = ({
       )
         return;
       if (event.key === "Backspace") press("back");
-      else if (event.key === "Enter") {
-        // 待たずに探してから閉じる（閉じても選んだまま）
-        setSearched(digits);
-        close();
-      } else if (event.key === "Escape") close();
+      else if (event.key === "Enter") finish();
+      else if (event.key === "Escape") close();
       else return;
       event.preventDefault();
     };
@@ -165,11 +173,12 @@ export const useOrderSearch = ({
     /** 押した番号をまだ探していない（押し終えるのを待っている） */
     pending: digits !== searched,
     press,
+    finish,
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
-      const digits = String(orderNo);
-      open(digits);
-      setSearched(digits);
+      const shown = String(orderNo);
+      open(shown);
+      setSearched(shown);
     },
   };
 };

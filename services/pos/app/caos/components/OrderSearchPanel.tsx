@@ -76,7 +76,7 @@ const SearchResult: React.FC<{
     return (
       <p className="rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
         番号を押すと、その注文がどこにあるかを出し、盤面で選びます（キーボードの数字でも入れられ、Enter
-        で閉じます）
+        ですぐ探して閉じます）
       </p>
     );
   if (pending)

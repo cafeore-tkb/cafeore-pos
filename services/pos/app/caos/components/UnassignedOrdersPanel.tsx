@@ -326,7 +326,10 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
         </span>
         {/* 開いたカードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
         {openCard && (
-          <CommentLine comments={looks.get(openCard.key)?.comments ?? []} />
+          <CommentLine
+            comments={looks.get(openCard.key)?.comments ?? []}
+            className="font-bold text-[12px]"
+          />
         )}
       </PanelHeader>
       <ScrollArea

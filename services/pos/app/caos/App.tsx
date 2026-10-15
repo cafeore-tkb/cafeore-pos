@@ -50,6 +50,7 @@ export default function App() {
       ? (cardKey) =>
           setTimelineCommand({ direction: "card", cardKey, id: Date.now() })
       : undefined,
+    view: controlViewMode,
     // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
     orders: session.emergency.orders,
     cards: session.cards,
@@ -198,7 +199,7 @@ export default function App() {
           pending={search.pending}
           looks={looks}
           onKey={search.press}
-          onClose={selection.closeSearch}
+          onClose={search.finish}
         />
       )}
 

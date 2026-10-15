@@ -49,6 +49,8 @@ import { ScrollArea } from "./ScrollArea";
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
+// 表のカードを探して見せるとき、上に固定した見出し（担当者・交代。カードの上の札も）と下の「次へ」に隠れないよう空ける幅（utils/scrollToCard）
+const SHEET_SCROLL_MARGIN = "scroll-mt-[144px] scroll-mb-[68px]";
 // 表の行は少なくともこれだけ（空の行で表の高さをそろえる）
 const MIN_ROWS = 8;
 // 開いたときは、まだ淹れ終わっていない最初の注文の1つ上から見せる。
@@ -209,7 +211,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         else if (state === "waiting") onOpenTicket(ticket);
         else onOpenRebrew?.(ticket);
       }}
-      className={`h-[60px] shrink-0 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      className={`h-[60px] shrink-0 ${SHEET_SCROLL_MARGIN} ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
@@ -233,21 +235,22 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           <p className="min-w-0 truncate font-bold text-[11px] text-slate-500">
             {headerHint()}
           </p>
-          {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
           {selectedOrder && (
-            <CommentLine
-              comments={looks.get(selectedOrder.key)?.comments ?? []}
-            />
-          )}
-          {selectedOrder && (
-            <button
-              type="button"
-              onClick={picked.clear}
-              className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
-            >
-              <X className="h-3.5 w-3.5" />
-              解除
-            </button>
+            <>
+              {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
+              <CommentLine
+                comments={looks.get(selectedOrder.key)?.comments ?? []}
+                className="font-bold text-[12px]"
+              />
+              <button
+                type="button"
+                onClick={picked.clear}
+                className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+                解除
+              </button>
+            </>
           )}
         </PanelHeader>
 
