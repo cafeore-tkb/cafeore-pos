@@ -96,24 +96,30 @@ export interface paths {
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
-    /** オーダーを準備完了にする */
+    /**
+     * オーダーを準備完了にする
+     * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+     */
     patch: operations["markOrderReady"];
   };
   "/api/orders/{id}/served": {
-    /** オーダーを提供完了にする */
+    /**
+     * オーダーを提供完了にする
+     * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+     */
     patch: operations["markOrderServe"];
   };
   "/api/orders/{id}/cups/{cupId}/ready": {
     /**
      * カップを準備完了にする
-     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
      */
     patch: operations["markOrderCupReady"];
   };
   "/api/orders/{id}/cups/{cupId}/served": {
     /**
      * カップを提供完了にする
-     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
      */
     patch: operations["markOrderCupServe"];
   };
@@ -163,9 +169,9 @@ export interface paths {
   "/api/caos/drippers/{dripper}/next": {
     /**
      * CaOS の「次へ」
-     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
-     * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
-     * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+     * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+     * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
@@ -206,9 +212,10 @@ export interface paths {
      * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
      * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
      * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-     * PUT /api/caos/cups と違い、抽出の時刻と準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる。
+     * PUT /api/caos/cups と違い、抽出の時刻も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻る。
      * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-     * 戻すのは前の値なので、restore の brew_finished_at・ready_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
+     * 戻すのは前の値なので、restore の brew_finished_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
+     * 準備完了（ready_at）は CaOS の操作では変わらないので書き戻さない（restore の ready_at は読まない）。今の準備完了が current の ready_at と違えば（提供の画面で変わった）409。
      * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
      * 書いたカップの注文は PUT と同じく配る。
      */
@@ -604,7 +611,7 @@ export interface components {
       item: components["schemas"]["ItemResponse"];
       /**
        * Format: date-time
-       * @description このカップが準備完了になった時刻。未準備なら null
+       * @description このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
        */
       ready_at: string | null;
       /**
@@ -628,7 +635,7 @@ export interface components {
       brew_started_at: string | null;
       /**
        * Format: date-time
-       * @description CaOS で抽出を終えた時刻
+       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
        */
       brew_finished_at: string | null;
       /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
@@ -904,7 +911,7 @@ export interface components {
        */
       drip_id: string | null;
     };
-    /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了） */
+    /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない */
     CaosUndoCupState: {
       state: components["schemas"]["CaosCupState"];
       /** Format: date-time */
@@ -1660,7 +1667,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを準備完了にする */
+  /**
+   * オーダーを準備完了にする
+   * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+   */
   markOrderReady: {
     parameters: {
       path: {
@@ -1682,7 +1692,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを提供完了にする */
+  /**
+   * オーダーを提供完了にする
+   * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+   */
   markOrderServe: {
     parameters: {
       path: {
@@ -1706,7 +1719,7 @@ export interface operations {
   };
   /**
    * カップを準備完了にする
-   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
    */
   markOrderCupReady: {
     parameters: {
@@ -1740,7 +1753,7 @@ export interface operations {
   };
   /**
    * カップを提供完了にする
-   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
    */
   markOrderCupServe: {
     parameters: {
@@ -1884,9 +1897,9 @@ export interface operations {
   };
   /**
    * CaOS の「次へ」
-   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
-   * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
-   * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
+   * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+   * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
    */
   advanceCaosDripper: {
@@ -2008,9 +2021,10 @@ export interface operations {
    * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
    * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
    * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-   * PUT /api/caos/cups と違い、抽出の時刻と準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる。
+   * PUT /api/caos/cups と違い、抽出の時刻も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻る。
    * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-   * 戻すのは前の値なので、restore の brew_finished_at・ready_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
+   * 戻すのは前の値なので、restore の brew_finished_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
+   * 準備完了（ready_at）は CaOS の操作では変わらないので書き戻さない（restore の ready_at は読まない）。今の準備完了が current の ready_at と違えば（提供の画面で変わった）409。
    * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
    * 書いたカップの注文は PUT と同じく配る。
    */

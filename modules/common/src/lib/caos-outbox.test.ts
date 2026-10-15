@@ -174,6 +174,8 @@ describe("unit: caos-outbox 重ねて表示", () => {
     );
     expect(lane.done.map((card) => card.key)).toEqual(["drip-a"]);
     expect(lane.brewing?.key).toBe("drip-b");
+    // 重ねるのもサーバーと同じく終えた時刻だけで、準備完了（提供可能）にはしない
+    expect(lane.done[0].cups[0].readyAt).toBeNull();
   });
 
   test("「1つ戻す」は戻す操作のあとに重ねる（未送信のまま戻すと、元の盤面に見える）", () => {
@@ -187,6 +189,50 @@ describe("unit: caos-outbox 重ねて表示", () => {
     expect(
       cardOf(overlayCaosOrders(server, [entry(op), undo], DAY), "a").status,
     ).toBe("unassigned");
+  });
+
+  test("「1つ戻す」を重ねても、準備完了はサーバーと同じく書き戻さない（あとから提供の画面で付いたものを消さない）", () => {
+    const brewing = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "drip-a",
+      brewStartedAt: NOW,
+    });
+    const undo = entry({
+      kind: "undo",
+      entry: {
+        cups: [
+          {
+            id: "a",
+            restore: {
+              dripper: 1,
+              dripperPosition: 1,
+              dripId: "drip-a",
+              brewStartedAt: NOW,
+              brewFinishedAt: null,
+              readyAt: null,
+            },
+            expect: {
+              dripper: 1,
+              dripId: "drip-a",
+              started: true,
+              finished: true,
+              ready: true,
+            },
+          },
+        ],
+      },
+    });
+    const finishedReady = orders({
+      ...brewing,
+      brewFinishedAt: SERVER_T,
+      readyAt: SERVER_T,
+    });
+    const [order] = overlayCaosOrders(finishedReady, [undo], DAY);
+    expect(order.cups[0]).toMatchObject({
+      brewFinishedAt: null,
+      readyAt: SERVER_T,
+    });
   });
 
   test("担当者の交代と入れ替えを重ねる。届いた担当者がもう入れ替わっていれば、入れ替え直さない", () => {

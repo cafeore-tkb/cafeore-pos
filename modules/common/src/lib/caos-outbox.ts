@@ -209,24 +209,23 @@ const rebaseWrites = (
 
 type UndoRestore = Partial<CaosUndoEntry["cups"][number]["restore"]>;
 
-// サーバーの POST /api/caos/undo と同じく、カップを操作の前の値（CaOS の列と、カップの準備完了）に書き戻す
+// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了は書き戻さない）
 const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
-  // keepReady（提供の画面の呼び出しを戻すとき）の操作は outbox に入れないので見ない
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
   const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
+  const restored = <R extends { id: string }>(row: R): R => {
+    const { readyAt: _, ...state } = restoreOf(row.id);
+    return { ...row, ...state };
+  };
   return {
     orders: orders.map((order) => ({
       ...order,
       cups: order.cups.map((cup) => ({
-        ...cup,
-        ...restoreOf(cup.id),
-        emergencies: cup.emergencies.map((row) => {
-          const { readyAt: _, ...state } = restoreOf(row.id);
-          return { ...row, ...state };
-        }),
+        ...restored(cup),
+        emergencies: cup.emergencies.map(restored),
       })),
     })),
   };

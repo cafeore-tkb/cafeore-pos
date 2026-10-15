@@ -66,7 +66,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 	// 戻す時刻は今のままか消すだけ（新しい時刻は書けない）。ドリッパーの無いカップに順番は書けない
 	f.mustPut(t, write(ids(o1.OrderCups[:2]...), unassigned, placed(1, card1, true)))
 	forged := f.undoState(t, cup1)
-	forged["ready_at"] = "2020-01-01T00:00:00Z"
+	forged["state"].(map[string]any)["brew_finished_at"] = "2020-01-01T00:00:00Z"
 	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: forged}); code != http.StatusBadRequest {
 		t.Fatalf("undo to a new time = %d, want 400", code)
 	}
@@ -74,7 +74,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 		t.Fatalf("undo to a position without a dripper = %d, want 400", code)
 	}
 
-	// 「次へ」を戻すと、終えたカードは抽出中に戻って準備完了が外れ、始めたカードは待機に戻る
+	// 「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻る。準備完了は「次へ」でも戻すときも変えない
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(1, card2, false)))
 	beforeNext := map[uuid.UUID]map[string]any{}
 	for _, id := range []uuid.UUID{o1.OrderCups[0].ID, o1.OrderCups[1].ID, cup2} {
@@ -85,16 +85,19 @@ func TestCaosUndoOnDB(t *testing.T) {
 		t.Fatalf("next = %d", code)
 	}
 	expectLane(1, []uuid.UUID{card2})
-	var order models.Order
-	if err := db.First(&order, "id = ?", o1.ID).Error; err != nil || order.ReadyAt != nil {
-		t.Fatalf("order = %+v, want not ready (the milk is left)", order)
+	if cup := f.cup(t, cup1); cup.ReadyAt != nil {
+		t.Fatalf("cup = %+v, want not ready after next", cup)
+	}
+	// 提供の画面で付けた準備完了は、restore に無くても消さない（restore の ready_at は読まない）
+	if w := callWithParams(t, f.orders.MarkOrderCupReady, http.MethodPatch, "", gin.Params{{Key: "id", Value: o1.ID.String()}, {Key: "cupId", Value: cup1.String()}}); w.Code != http.StatusOK {
+		t.Fatalf("PATCH cup ready = %d", w.Code)
 	}
 	if code, body := f.undo(t, beforeNext); code != http.StatusNoContent {
 		t.Fatalf("undo next = %d: %s", code, body)
 	}
 	expectLane(1, []uuid.UUID{card1}, card2)
-	if cup := f.cup(t, cup1); cup.ReadyAt != nil || cup.BrewFinishedAt != nil || cup.BrewStartedAt == nil {
-		t.Fatalf("cup = %+v, want brewing and not ready", cup)
+	if cup := f.cup(t, cup1); cup.ReadyAt == nil || cup.BrewFinishedAt != nil || cup.BrewStartedAt == nil {
+		t.Fatalf("cup = %+v, want brewing and still ready", cup)
 	}
 	// 戻したあとも「次へ」が押せる
 	f.wait()
