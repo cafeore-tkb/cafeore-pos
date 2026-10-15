@@ -1,13 +1,14 @@
-import { dripperLabel } from "@cafeore/common";
-import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
+import { ArrowRightCircle, Clock3, type LucideIcon, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenToastConfirm } from "../hooks/useToastConfirms";
+import { longWaitMinutes } from "../logic/alerts";
 import { orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ（「次へ」・統合）・空きスロット・次に空く・長く待っている未割当の札）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -39,7 +40,7 @@ export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
 
 // 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
 // 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤・「次へ」の橙と分ける）。
-// 色だけに頼らず札の文字も出す
+// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない。logic/alerts）は FORGOTTEN
 const PHASES: Record<LanePhase, { label: string; className: string }> = {
   empty: {
     label: "空き",
@@ -61,9 +62,16 @@ const PHASES: Record<LanePhase, { label: string; className: string }> = {
   },
 };
 
+// 予定を大きく過ぎた抽出。継続中の赤を濃くし、点滅させ（caos.css の .caos-forgotten）、札は「要確認」と過ぎた時間
+const FORGOTTEN = {
+  label: "要確認",
+  className:
+    "caos-forgotten border-(color:--caos-overtime-text) bg-(color:--caos-overtime-line) text-white",
+};
+
 /**
  * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
- * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中）を、抽出中は残りも出す。
+ * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中・要確認）を、抽出中は残り、要確認は予定を過ぎた時間も出す。
  * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
  * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
  */
@@ -74,14 +82,14 @@ export const DripperIndicator: React.FC<{
   onOpenLane?: (bayId: number) => void;
   className?: string;
 }> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
-  const phase = PHASES[status.phase];
+  const phase = status.forgotten ? FORGOTTEN : PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
   return (
     <button
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
-      data-lane-phase={status.phase}
+      data-lane-phase={status.forgotten ? "forgotten" : status.phase}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[22px]">
@@ -92,6 +100,11 @@ export const DripperIndicator: React.FC<{
         {showsRemaining && (
           <span className="font-mono text-[14px] tabular-nums">
             {clockLabel(status.remainingSec)}
+          </span>
+        )}
+        {status.forgotten && (
+          <span className="font-mono text-[14px] tabular-nums">
+            +{clockLabel(status.overSec)}
           </span>
         )}
       </span>
@@ -132,30 +145,47 @@ export const NextButton: React.FC<{
   </button>
 );
 
-// 確かめの文（題・中身・進めるボタン・読み上げの名前）
-const confirmText = (confirm: OpenToastConfirm) =>
-  confirm.kind === "next"
-    ? {
-        label: `${dripperLabel(confirm.bayId)}の抽出を終える確かめ`,
-        title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
-        body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
-        action:
-          confirm.start === "none"
-            ? "終える"
-            : confirm.start === "head"
-              ? "次へ進める"
-              : "終えて始める",
-      }
-    : {
-        label: `${orderLabel(confirm.card)}の統合の確かめ`,
-        title: `${orderLabel(confirm.card)} を ${orderLabel(confirm.into)} に統合しますか？`,
-        body: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています。`,
-        action: "統合する",
-      };
+// 知らせのあとに添える文
+const UNDO_HINT = "違っていたらヘッダーの「戻す」で戻せます。";
+
+// 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・読み上げの名前）
+const confirmText = (confirm: OpenToastConfirm) => {
+  if (confirm.kind === "next")
+    return {
+      label: `${dripperLabel(confirm.bayId)}の抽出を終える確かめ`,
+      title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
+      body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
+      action:
+        confirm.start === "none"
+          ? "終える"
+          : confirm.start === "head"
+            ? "次へ進める"
+            : "終えて始める",
+    };
+  if (confirm.kind === "lateMerge")
+    return {
+      label: `${orderLabel(confirm.into)}への統合の知らせ`,
+      title: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています`,
+      body: `${orderLabel(confirm.card)} を統合しました。${UNDO_HINT}`,
+      action: null,
+    };
+  const { dripper, name } = confirm.lane;
+  const who = name
+    ? `上級生でない ${dripperLabel(dripper)} ${name}`
+    : `担当者のいない ${dripperLabel(dripper)}`;
+  return {
+    label: `${orderLabel(confirm.card)}の上級生のみの知らせ`,
+    title: `上級生のみの ${orderLabel(confirm.card)} を${who}に置きました`,
+    body: `カードに警告の印を付けています。${UNDO_HINT}`,
+    action: null,
+  };
+};
 
 /**
- * 右上の確かめ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］、
- * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合は［やめる（残りの秒）］［統合する］。
+ * 右上の確かめと知らせ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
+ * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
+ * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
+ * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
  * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。右のパネルを避ける）
  */
@@ -171,9 +201,9 @@ export const ToastConfirms: React.FC<{
         return (
           <section
             key={confirm.id}
-            role="alertdialog"
+            role={action ? "alertdialog" : "status"}
             aria-label={label}
-            className="fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 border-orange-600 bg-white p-3 text-slate-950 shadow-2xl duration-200"
+            className={`fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl duration-200 ${action ? "border-orange-600" : "border-(color:--caos-merge)"}`}
           >
             <h2 className="font-black text-[16px]">{title}</h2>
             <p className="mt-1 font-bold text-[13px]">{body}</p>
@@ -183,14 +213,16 @@ export const ToastConfirms: React.FC<{
                 onClick={() => onCancel(confirm.id)}
                 className="h-11 touch-manipulation font-bold"
               >
-                やめる（{confirm.secondsLeft}）
+                {action ? "やめる" : "閉じる"}（{confirm.secondsLeft}）
               </Button>
-              <Button
-                onClick={() => onConfirm(confirm.id)}
-                className="h-11 touch-manipulation font-bold"
-              >
-                {action}
-              </Button>
+              {action && (
+                <Button
+                  onClick={() => onConfirm(confirm.id)}
+                  className="h-11 touch-manipulation font-bold"
+                >
+                  {action}
+                </Button>
+              )}
             </div>
           </section>
         );
@@ -214,7 +246,7 @@ export const EmptySlotButton: React.FC<{
   </button>
 );
 
-/** 「次に空く」ドリッパー（未割当とドリッパーの見出し） */
+/** 「次に空く」ドリッパー（未割当とドリッパーの見出し）。札の幅は決めておく（毎秒の残りや「空き」で見出しの並びが動かないように） */
 export const NextAvailableChips: React.FC<{
   nextAvailable: NextAvailable;
   className?: string;
@@ -226,7 +258,7 @@ export const NextAvailableChips: React.FC<{
     {nextAvailable.map((item, index) => (
       <span
         key={item.bayId}
-        className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
+        className={`min-w-[6em] shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-center font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
       >
         #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
       </span>
@@ -234,7 +266,26 @@ export const NextAvailableChips: React.FC<{
   </div>
 );
 
-/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 C の注文の列・D の表） */
+/** 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる */
+export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
+  card,
+  nowMs,
+}) => {
+  const minutes = longWaitMinutes(card, nowMs);
+  return (
+    minutes !== null && (
+      <span
+        title={`受けてから ${minutes} 分、未割当で待っています`}
+        className="-top-2 border-(color:--caos-overtime-line) bg-(color:--caos-overtime) text-(color:--caos-overtime-text) pointer-events-none absolute left-5 z-20 flex items-center gap-0.5 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-black text-[11px] leading-none shadow-xs"
+      >
+        <Clock3 className="h-3 w-3" />
+        待ち {minutes}分
+      </span>
+    )
+  );
+};
+
+/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 D の表） */
 export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
   label && (
     <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[11px] text-white leading-none shadow-xs">

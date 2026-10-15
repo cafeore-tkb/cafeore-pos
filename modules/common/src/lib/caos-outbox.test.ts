@@ -5,6 +5,7 @@ import {
   assignWrites,
   buildCaosCards,
   caosLane,
+  mergeWrites,
 } from "./caos-board";
 import {
   type CaosOutboxEntry,
@@ -150,6 +151,21 @@ describe("unit: caos-outbox 重ねて表示", () => {
       }),
     );
     expect(cardOf(overlayCaosOrders(other, [op], DAY), "a").dripper).toBe(3);
+  });
+
+  test("注文をまたぐ統合は、一部の注文だけ届いたあいだも、届いていない注文のぶんを重ねて 1 枚に出す", () => {
+    const server = orders(cup("a"), cup("b"));
+    const merged = mergeWrites(
+      cardOf(server, "a"),
+      cardOf(server, "b"),
+      () => "drip-m",
+    );
+    if (!("writes" in merged)) throw new Error(merged.error);
+    const op = entry({ kind: "cups", writes: merged.writes });
+    const half = orders(cup("a", { dripId: "drip-m" }), cup("b"));
+    const card = cardOf(overlayCaosOrders(half, [op], DAY), "a");
+    expect(card.cups.map((c) => c.id)).toEqual(["a", "b"]);
+    expect(card.dripId).toBe("drip-m");
   });
 
   test("「次へ」は押したあとに届いた盤面にも重ね、始めてからの秒は見直さない", () => {

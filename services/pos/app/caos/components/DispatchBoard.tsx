@@ -3,6 +3,7 @@ import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
   type DropTarget,
+  dropSideOn,
   dropTargetAt,
   dropTargetLabel,
   useCardDrag,
@@ -10,36 +11,44 @@ import {
 } from "../hooks/useCardDrag";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
-import {
-  cardName,
-  orderLabel,
-  selectedComments,
-  sharesOrder,
-} from "../logic/cards";
+import { cardName, orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { MergeOverlay, OrderCard } from "./OrderCard";
-import { CommentLine } from "./OrderComments";
+import { DropMark, MergeOverlay, OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、その右に「次へ」。
 // カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・終わりは緊急のパネル（onHoldCard）。
-// 未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
-// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
-// 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
-// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
-// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
+// 未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
+// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後。待機・抽出中のカードの上に落とすと、左の端はそのカードの前・
+// 右の端は後ろ・真ん中は統合（統合できる相手のときだけ。useCardDrag の dropTargetAt）。抽出中のカードの前は列の先頭で今から始まり、
+// 後ろは待機の先頭。同じ列の中の入れ替えにも使う。抽出中のカードを落として統合したら相手を抽出中のカードに入れる）。
+// 指の下のカードには、入れる所の線か統合の枠を出す（DropMark）。
+// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
+// （左の固定の列はなぞってもスクロールしない。「次へ」を急いで押して指が滑っても、NOW の追従が外れない）。
+// 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
+// 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 // 左端の列（ドリッパーの番号・担当者と「次へ」）の幅
 const STICKY_LEFT_WIDTH = 240;
-// 90 seconds of past context remains visible to the left of NOW.
-const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
+// NOW の左に見せる過去（2 分半）。抽出中のカードの始めてから今までと、寄せて残した商品・注文番号が NOW の線の左に収まる幅
+const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
+// 左へ隠れたカードで、商品・注文番号・杯数を寄せて残す幅（px。これより狭くは寄せず、カードと一緒に流れる）
+const MIN_LABEL_WIDTH = 120;
+
+/**
+ * カードの左の余白。左の固定の列の下に隠れた分（タイムラインのスクロールの位置 --timeline-left からカードの左の位置を引いた分）だけ
+ * 中身を右に寄せる（隠れても商品・注文番号が左の固定の列のすぐ右に見える）。寄せるのは中身の幅が MIN_LABEL_WIDTH になるまで。
+ * スクロールのたびに盤面を描き直さないよう、位置は CSS の変数（useTimelineScroll が書く）で受ける。0.5rem はカード（OrderCard の md）の左の余白
+ */
+const cardInset = (left: number, width: number) =>
+  `calc(0.5rem + clamp(0px, var(--timeline-left, 0px) - ${left}px, ${Math.max(0, width - MIN_LABEL_WIDTH)}px))`;
 
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
@@ -70,6 +79,7 @@ export const DispatchBoard: React.FC<
   readOnly = false,
   pick,
   flashKeys,
+  onFollowNowChange,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -85,10 +95,11 @@ export const DispatchBoard: React.FC<
     // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
     cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
+    onFollowingChange: onFollowNowChange,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機・抽出中のカードを別の列へ・カードの前へ・統合（今の列そのものと、指名以外の列には置けない）
+  // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列そのもの（カードの無い所）と、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
       dropTargetAt(x, y, {
@@ -108,6 +119,9 @@ export const DispatchBoard: React.FC<
   // 終わったカードは動かさないので、長押しだけ
   const hold = useCardHold<CaosCard>((card) => onHoldCard?.(card));
 
+  // ドラッグ（タイムラインのカードか、下の横帯の未割当のカード）で指の下の落とす先
+  const dropTarget = drag.target ?? pick?.drag.target ?? null;
+
   // 選んだ注文のカード（列ごと）
   const matchingTickets = lanes.flatMap((lane) =>
     laneCards(lane)
@@ -117,14 +131,6 @@ export const DispatchBoard: React.FC<
           `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
-  // 選んだ注文のコメント（未割当のカードも見る）
-  const comments = selectedOrderId
-    ? selectedComments(
-        [...lanes.flatMap(laneCards), ...unassignedOrders],
-        looks,
-        selectedOrderId,
-      )
-    : [];
 
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -150,7 +156,6 @@ export const DispatchBoard: React.FC<
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
             </span>
-            <CommentLine comments={comments} />
           </div>
 
           <button
@@ -176,9 +181,21 @@ export const DispatchBoard: React.FC<
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
             <div
               style={{ width: STICKY_LEFT_WIDTH }}
-              className="sticky left-0 isolate z-[60] flex h-full shrink-0 items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+              className="sticky left-0 isolate z-[60] flex h-full shrink-0 touch-none items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
             >
-              ドリッパー / 抽出担当
+              {scroll.isFollowingNow ? (
+                "ドリッパー / 抽出担当"
+              ) : (
+                // 手でスクロールして NOW の追従をやめているあいだ（閲覧だけの画面にはヘッダーの「現在」が無いので、ここで戻す）
+                <button
+                  type="button"
+                  onClick={scroll.toNow}
+                  className="-mx-2 flex h-[26px] flex-1 items-center justify-center gap-1 rounded-md bg-red-500 font-black text-[12px] text-white shadow-sm active:bg-red-600"
+                >
+                  <span className="h-2 w-2 rounded-full bg-white" />
+                  現在に戻る
+                </button>
+              )}
             </div>
             <div
               className="relative h-full"
@@ -221,7 +238,7 @@ export const DispatchBoard: React.FC<
                   {/* ドリッパーの番号（列の状態）と担当者・交代、その右に「次へ」 */}
                   <div
                     style={{ width: STICKY_LEFT_WIDTH }}
-                    className="sticky left-0 isolate z-[51] flex shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+                    className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
                   >
                     <DripperIndicator
                       bayId={bay.id}
@@ -261,9 +278,14 @@ export const DispatchBoard: React.FC<
                       if (endMs <= range.startMs) return null;
                       // 動かせるのは待機・抽出中のカード（閲覧だけの画面では押しても動かさない）
                       const isMovable = !readOnly && ticket.status !== "done";
-                      // 開いた未割当のカードを、押して統合できる抽出中のカード
+                      // 開いた未割当のカードを、押して統合できる待機・抽出中のカード
                       const isMergeTap =
                         isMovable && Boolean(pick?.canMergeWith(ticket));
+                      const left = Math.max(10, toX(startMs));
+                      const width = Math.max(
+                        130,
+                        ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
+                      );
                       return (
                         <div
                           key={ticket.key}
@@ -272,29 +294,20 @@ export const DispatchBoard: React.FC<
                               ? "caos-arrival rounded-lg"
                               : ""
                           }
-                          style={{
-                            left: Math.max(10, toX(startMs)),
-                            width: Math.max(
-                              130,
-                              ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
-                            ),
-                          }}
+                          style={{ left, width }}
                         >
                           <OrderCard
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
                             data-search-key={ticket.key}
-                            // 待機・抽出中のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
+                            // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
-                              isMovable ? ticket.key : undefined
-                            }
-                            // 待機・抽出中のカードは、ドラッグで落とすと統合の相手になる
-                            data-merge-target={
                               isMovable ? ticket.key : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
                             data-merge-tap={isMergeTap || undefined}
+                            style={{ paddingLeft: cardInset(left, width) }}
                             onPointerDown={(event) => {
                               if (readOnly) return;
                               if (isMovable)
@@ -319,6 +332,9 @@ export const DispatchBoard: React.FC<
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isMergeTap && <MergeOverlay />}
+                            <DropMark
+                              side={dropSideOn(dropTarget, ticket.key)}
+                            />
                           </OrderCard>
                         </div>
                       );

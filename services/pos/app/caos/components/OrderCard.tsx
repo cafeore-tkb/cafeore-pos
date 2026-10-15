@@ -1,6 +1,7 @@
 import { type CaosCard, readableTextColor } from "@cafeore/common";
-import { Check, Star } from "lucide-react";
+import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
+import { Fragment } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import {
@@ -8,18 +9,20 @@ import {
   cardItemName,
   cardNominee,
   cardOrderNos,
+  cardOrderParts,
   emergencyReasons,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
-import { moveTargets } from "../logic/lanes";
+import { type DropSide, moveTargets } from "../logic/lanes";
 import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
 // （どの注文から割り当てるか・何番を入れているかを番号で合わせる。1 杯のカードは統合の判断に商品が要るので、2 行目でも読める大きさにする）。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ（終わりはカードの状態で薄くする）。
-// 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）・注文ごとの段（byOrder）だけ（終わりはカードの状態で薄くする）。
+// 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる（管制盤 A・C）。
+// 管制盤 D（byOrder）は重ねず、入っている注文ごとの段（注文番号・コメントの印・緊急の理由・杯数）に分ける（表では元の注文の行にまたがって縦に長い）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
@@ -27,7 +30,7 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 1 行目の注文番号、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）
 const SM = {
   pad: "px-1.5 py-1",
   no: "text-[14px]",
@@ -118,6 +121,8 @@ export const OrderCard: React.FC<
     note?: string;
     /** 開いたカードをもう一度押すと統合する相手。統合の印とその注文番号（「#012」）を出す */
     mergeInto?: CaosCard;
+    /** 統合したカードを、重ねた枠でなく注文ごとの段に分けて出す（管制盤 D） */
+    byOrder?: boolean;
   }
 > = ({
   card,
@@ -127,6 +132,7 @@ export const OrderCard: React.FC<
   dragging = false,
   note,
   mergeInto,
+  byOrder = false,
   className = "",
   style,
   children,
@@ -138,39 +144,64 @@ export const OrderCard: React.FC<
   const surface = surfaceOf(done, nominee !== "", selected, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
-  const reasons = emergencyReasons(card);
+  const merged = cardOrderNos(card).length > 1;
+  // 注文ごとの段（byOrder の統合したカード）。1 行目に商品、注文番号と緊急の理由は段に出す
+  const parts = byOrder && merged ? cardOrderParts(card, look) : null;
+  const reasons = parts ? "" : emergencyReasons(card);
   // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
-  const merged = cardOrderNos(card).length > 1;
-  // 1 行目にいちばん大きく出す注文番号の札。番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで
-  // 字の間を詰め、それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
-  const headline = (
+  // 注文番号の札と、商品の略称
+  const noTag = (label: string, size: string) => (
     <span
-      className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${merged ? `min-w-0 truncate tracking-tighter ${text.cups}` : `shrink-0 ${text.no}`}`}
-      title={orderLabel(card)}
+      className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      title={label}
     >
-      {orderLabel(card)}
+      {label}
     </span>
   );
-  // 2 行目の商品の略称（縮めない。後ろの豆の札を先に縮める）
-  const subline = (
+  const orderNo = (size: string) => noTag(orderLabel(card), size);
+  // 入れ直し（緊急）の理由の札
+  const reasonTag = (label: string, className: string) => (
     <span
-      className={`min-w-0 shrink-0 truncate font-black tracking-tight ${text.item}`}
+      title={label}
+      className={`min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700 ${className}`}
+    >
+      {label}
+    </span>
+  );
+  const itemName = (size: string) => (
+    <span
+      className={`min-w-0 truncate font-black tracking-tight ${size}`}
       title={name}
     >
       {name}
     </span>
   );
+  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札を先に縮め、入らなければ省略する）。
+  // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
+  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
+  const [headline, subline] = parts
+    ? [itemName(text.no), null]
+    : [
+        orderNo(
+          merged
+            ? `min-w-0 truncate tracking-tighter ${text.cups}`
+            : `shrink-0 ${text.no}`,
+        ),
+        itemName(text.item),
+      ];
   return (
     <div
       {...props}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
-      {/* コメントのある注文は左上の角に印（中身は開いたカードのパネル・管制盤 A の帯に出す） */}
-      {look?.comments && <CommentMark count={look.comments.length} />}
-      {/* 何番が何杯か */}
+      {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
+      {look?.comments && (
+        <CommentMark count={look.comments.length} label={orderLabel(card)} />
+      )}
+      {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
@@ -196,50 +227,92 @@ export const OrderCard: React.FC<
           </span>
         </span>
       </div>
-      {/* 商品・指名・上級生のみ・緊急の理由か豆 */}
+      {/* 注文ごとの段（上から注文番号の小さい順）。段は上と下の端に寄せ（表では元の注文の行の高さに来る）、間の真ん中に点線 */}
+      {parts && (
+        <div className={`flex min-h-0 flex-1 flex-col ${fade}`}>
+          {parts.map((part, index) => (
+            <Fragment key={part.orderNo}>
+              {index > 0 && (
+                <div className="flex min-h-1.5 flex-1 items-center">
+                  <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
+                </div>
+              )}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
+                <span className="relative shrink-0">
+                  {noTag(
+                    `#${orderNoLabel(part.orderNo)}`,
+                    `tracking-tighter ${text.no}`,
+                  )}
+                  {part.comments > 0 && (
+                    <CommentMark
+                      count={part.comments}
+                      label={`#${orderNoLabel(part.orderNo)}`}
+                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                    />
+                  )}
+                </span>
+                {part.reason && reasonTag(part.reason, text.meta)}
+                <span
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.no}`}
+                >
+                  {part.cups}杯
+                </span>
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {/* 商品・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
-        {mergeInto && (
-          <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
-            <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
-            {orderLabel(mergeInto)}
-          </span>
-        )}
-        {subline}
-        {nominee && (
-          <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
-            指名 {nominee}
-          </span>
-        )}
-        {card.seniorOnly && (
-          <span
-            title="上級生のみ"
-            className="inline-flex shrink-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
-          >
-            <Star className="h-3 w-3 fill-current" />
-            上級生
-          </span>
-        )}
-        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
-        {reasons ? (
-          <span
-            title={reasons}
-            className="ml-auto min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700"
-          >
-            {reasons}
-          </span>
-        ) : (
-          bean && (
-            <span
-              title={`豆：${bean}`}
-              className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
-            >
-              {bean}
+        <span className="flex max-w-full shrink-0 items-center gap-1">
+          {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
+          {mergeInto && (
+            <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
+              <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
+              {orderLabel(mergeInto)}
             </span>
-          )
-        )}
+          )}
+          {subline}
+          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
+          {nominee && (
+            <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
+              指名 {nominee}
+            </span>
+          )}
+          {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
+          {card.seniorOnly &&
+            (look?.offSenior ? (
+              <span
+                title="上級生のみ（担当者が上級生ではありません）"
+                className="inline-flex min-w-0 items-center rounded bg-red-600 px-1 py-0.5 font-black text-white"
+              >
+                <TriangleAlert className="h-3 w-3 shrink-0" />
+                <span className="truncate">上級生</span>
+              </span>
+            ) : (
+              <span
+                title="上級生のみ"
+                className="inline-flex min-w-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
+              >
+                <Star className="h-3 w-3 shrink-0 fill-current" />
+                <span className="truncate">上級生</span>
+              </span>
+            ))}
+        </span>
+        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
+        {reasons
+          ? reasonTag(reasons, "ml-auto")
+          : bean && (
+              <span
+                title={`豆：${bean}`}
+                className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+              >
+                {bean}
+              </span>
+            )}
       </div>
       {note && (
         <div
@@ -252,33 +325,16 @@ export const OrderCard: React.FC<
   );
 };
 
-/** 統合した跡。ほかの注文と統合して、もとの場所から無くなったカードの代わりに薄く残す（「#011 → #010+#011 に統合」） */
-export const MergedTrace: React.FC<{
-  orderNo: number;
-  /** 統合したカードの注文番号の表示（orderLabel） */
-  into: string;
-  className?: string;
-}> = ({ orderNo, into, className = "" }) => (
-  <div
-    className={`flex min-w-0 flex-col justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-100 px-2 py-1 text-slate-500 leading-none ${className}`}
-  >
-    <span className="font-black font-mono text-[14px]">
-      #{orderNoLabel(orderNo)}
-    </span>
-    <span className="truncate font-bold text-[11px]">→ {into} に統合</span>
-  </div>
-);
-
 // 1〜6 のボタンの色（ドラッグで指の下は青。指名の番号でないボタンは押せない）
 const padTone = (bayId: number, hoveredBay: number | null) =>
   hoveredBay === bayId
     ? "border-white bg-blue-500 text-white"
     : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
-// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。未割当カード（管制盤 A・C）で使う。
+// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。未割当カード（管制盤 A・C）で使い、番号はそのドリッパーの列の最後へ。
 // 段がヘッダー・帯・ほかのカードの下になったり枠で切れたりして押せないときは、両方の段を下か上に寄せる（useBayPadPlacement）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
-// ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
+// ドラッグで指を滑らせて選べるよう、番号のボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
   card: CaosCard;
   /** ドラッグで指の下にあるドリッパー */
@@ -395,3 +451,20 @@ export const SplitCupButtons: React.FC<{
     ))}
   </div>
 );
+
+/**
+ * ドラッグで指の下にある列のカードの印（カードの children に置く）。前は左の縁、後ろは右の縁に入れる所の線、
+ * 統合はカードを囲む統合の色の枠（落とす先の札は指に付いた写しに出す。hooks/useCardDrag の dropTargetLabel）
+ */
+export const DropMark: React.FC<{ side?: DropSide }> = ({ side }) => {
+  if (!side) return null;
+  if (side === "merge")
+    return (
+      <div className="border-(color:--caos-merge) pointer-events-none absolute inset-0 z-[95] rounded-lg border-4 bg-white/30" />
+    );
+  return (
+    <div
+      className={`-top-1 -bottom-1 pointer-events-none absolute z-[95] w-[6px] rounded-full bg-blue-600 shadow-[0_0_0_2px_white] ${side === "before" ? "-left-[7px]" : "-right-[7px]"}`}
+    />
+  );
+};

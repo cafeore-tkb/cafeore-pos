@@ -8,17 +8,21 @@ import {
   type PracticeDataOrder,
   assignWrites,
   caosDayOrders,
+  caosDripperAllowed,
   caosLane,
   caosLateMerge,
   caosMergePair,
   caosNextLocked,
+  caosRebrewMergePair,
+  caosRebrewsTogether,
   dripperLabel,
   jstClock,
   jstDate,
   mergeWrites,
   moveQueueWrites,
-  seniorOnlyBlock,
-  seniorOnlyMergeBlock,
+  nonSeniorMerge,
+  nonSeniorPlacement,
+  seniorOnlyOffSenior,
   splitWrites,
   unassignWrites,
   undoOfNext,
@@ -26,7 +30,7 @@ import {
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   type EmergencyCup,
@@ -127,8 +131,8 @@ export const useCaosSession = () => {
   const undo = useCaosUndo(realTime.getTime());
   // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「1つ戻す」から忘れる
   const unsent = useCaosOutboxSender(realTime.getTime(), undo.forget);
-  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）と、抽出を始めてから時間のたったカードへの統合（caosLateMerge）。
-  // 右上で確かめてから送る
+  // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
+  // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）は、確かめずに統合し、同じ所に知らせだけ出す
   const confirms = useToastConfirms(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
@@ -147,9 +151,18 @@ export const useCaosSession = () => {
       live.orders ? commentsByOrder(caosDayOrders(live.orders, today)) : null,
     [live.orders, today],
   );
+  const testing = Boolean(test.session);
   const looks = useMemo(
-    () => cardLooks(cards, colorSettings, beanIndex, comments),
-    [cards, colorSettings, beanIndex, comments],
+    () =>
+      cardLooks(
+        cards,
+        colorSettings,
+        beanIndex,
+        comments,
+        // 練習には担当者がいないので出さない
+        (card) => !testing && seniorOnlyOffSenior(card, people),
+      ),
+    [cards, colorSettings, beanIndex, comments, testing, people],
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
@@ -159,9 +172,13 @@ export const useCaosSession = () => {
 
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
-  // 本番では、指名の無い上級生のみのカードは上級生のドリッパーにしか置けない（実データテストでは確かめない）
-  const seniorBlock = (card: CaosCard, dripper: number) =>
-    test.session ? null : seniorOnlyBlock(card, dripper, people);
+  // 本番で、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら、置いたうえで右上に知らせる（実データテストには担当者がいない）
+  const noticeNonSenior = (
+    card: CaosCard,
+    lane: ReturnType<typeof nonSeniorPlacement>,
+  ) => {
+    if (lane && !testing) confirms.ask({ kind: "seniorOnly", card, lane });
+  };
   // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
   // 断られたら何もしない。通ったかを返す
   const onSuccess = (
@@ -232,9 +249,9 @@ export const useCaosSession = () => {
     if (early) confirms.ask({ kind: "next", bayId, start, ...early });
     else runNext(bayId, lane.brewing?.dripId ?? null, start);
   };
-  // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
-  // checkLate なら送らずに confirms で確かめる（確かめを出したら true。確かめは向きを決めたあとのカードで出す）
-  const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
+  // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。どれだけ前に抽出を始めたカードへも統合し、
+  // 始めてから時間がたっていれば（caosLateMerge）、統合したあとに confirms で知らせる（向きを決めたあとのカードで出す）
+  const runMerge = (firstKey: string, intoKey: string) => {
     const first = cardOf(firstKey);
     const second = cardOf(intoKey);
     if (!first || !second) return fail(NOT_FOUND);
@@ -243,19 +260,16 @@ export const useCaosSession = () => {
       card: first,
       into: second,
     };
-    const blocked = test.session
-      ? null
-      : seniorOnlyMergeBlock(card, into, people);
-    if (blocked) return fail(blocked);
-    const elapsedSec = checkLate ? caosLateMerge(into, nowMs) : null;
-    if (elapsedSec !== null) {
-      confirms.ask({ kind: "merge", card, into, elapsedSec });
-      return true;
-    }
-    return write(
+    const merged = write(
       mergeWrites(card, into, newDripId),
       `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
     );
+    if (!merged) return false;
+    const elapsedSec = caosLateMerge(into, nowMs);
+    if (elapsedSec !== null)
+      confirms.ask({ kind: "lateMerge", card, into, elapsedSec });
+    noticeNonSenior(card, nonSeniorMerge(card, into, people));
+    return true;
   };
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
   const write = (result: CaosWritesResult, label: string) => {
@@ -269,6 +283,40 @@ export const useCaosSession = () => {
       undoRun,
       () => soundManager.playDispatch(),
     );
+  };
+
+  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id（1 回の入れ直しごとに 1 組。続けて入れ直せば組が並ぶ）。
+  // 組の全部が盤面に届いたら、元のカードと同じ組み合わせの 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。
+  // 足せた入れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「1つ戻す」に覚えず、
+  // 戻すと入れ直しごと取り消す）
+  const [rebrewsToMerge, setRebrewsToMerge] = useState<string[][]>([]);
+  const mergeRebrews = (ids: string[]) =>
+    setRebrewsToMerge((groups) => [...groups, ids]);
+  useLayoutEffect(() => {
+    if (rebrewsToMerge.length === 0) return;
+    const waiting: string[][] = [];
+    for (const ids of rebrewsToMerge) {
+      const pair = caosRebrewMergePair(cards, ids);
+      if (pair === "arriving") {
+        waiting.push(ids);
+        continue;
+      }
+      if (!pair) continue;
+      const result = mergeWrites(pair.card, pair.into, newDripId);
+      if ("writes" in result)
+        source.runWrites(
+          result.writes,
+          `統合 ${orderLabel(pair.card)} → ${orderLabel(pair.into)}`,
+        );
+    }
+    if (waiting.length < rebrewsToMerge.length) setRebrewsToMerge(waiting);
+  }, [cards, rebrewsToMerge, source]);
+
+  // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・入れ直しのまとめ）を忘れる
+  const forgetPending = () => {
+    undo.forget();
+    confirms.clear();
+    setRebrewsToMerge([]);
   };
 
   // 本番の緊急のカップに、刷るための POS の注文を付ける（本番のカードと入力は POS の注文から作るので、注文はある。無ければ null）
@@ -343,7 +391,12 @@ export const useCaosSession = () => {
             )
           )
             return null;
-          return () => restoreEmergencies(restore);
+          // 足し直したものも、取り消したカードと同じ 1 枚にまとめる（1 杯なら何もしない）
+          return async () => {
+            const ids = await restoreEmergencies(restore);
+            if (ids) mergeRebrews(ids);
+            return ids !== null;
+          };
         },
       };
 
@@ -392,7 +445,7 @@ export const useCaosSession = () => {
     /**
      * 緊急（入れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
      *   - orders：番号から入れ直すカップを選ぶ注文
-     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る
+     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る（統合したカードから全部の杯を入れ直せば、元のカードと同じ組み合わせの 1 枚）
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
      * どちらも「1つ戻す」で戻せる（本番は、足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す。
      * 実データテストは練習の盤面を操作の前に戻す）
@@ -402,8 +455,13 @@ export const useCaosSession = () => {
       add: async (cups: EmergencyCup<CaosOrderInput>[], reason: string) => {
         const nos = new Set(cups.map((cup) => cup.order.orderId));
         const label = `緊急 ${[...nos].map((no) => `#${orderNoLabel(no)}`).join("・")}`;
+        const together = caosRebrewsTogether(
+          cards,
+          cups.map((cup) => cup.cupId),
+        );
         const added = await emergencyOps.add(cups, reason, label);
         if (!added) return null;
+        if (together) mergeRebrews(added.ids);
         undo.remember(label, added.undo);
         return added.ids;
       },
@@ -424,22 +482,23 @@ export const useCaosSession = () => {
       soundManager.enabled = !soundEnabled;
       setSoundEnabled(!soundEnabled);
     },
-    /** 割当・ドリッパーの移動・順番の入れ替え（place が "front" なら列の先頭（今から始まる）、{ beforeKey } ならそのカードの前、無ければ最後）。抽出中のカードも動かせる。順番の数はサーバー（練習なら練習の盤面）が決める */
+    /** 割当・ドリッパーの移動・順番の入れ替え（place は @cafeore/common の CaosPlace：列の先頭（今から始まる）・待機の先頭・カードの前後。無ければ最後）。抽出中のカードも動かせる。順番の数はサーバー（練習なら練習の盤面）が決める */
     place: (key: string, bayId: number, place?: CaosPlace) => {
       const card = cardOf(key);
       if (!card) return fail(NOT_FOUND);
-      const blocked = seniorBlock(card, bayId);
-      if (blocked) return fail(blocked);
       const action =
         card.status === "unassigned"
           ? "割当"
           : card.dripper === bayId
             ? "並べ替え"
             : "移動";
-      return write(
+      const placed = write(
         assignWrites(cards, card, bayId, { place, newId: newDripId }),
         `${action} ${orderLabel(card)} → ${dripperLabel(bayId)}`,
       );
+      if (placed)
+        noticeNonSenior(card, nonSeniorPlacement(card, bayId, people));
+      return placed;
     },
     /** 待機・抽出中のカードを未割当に戻す */
     returnToUnassigned: (key: string) => {
@@ -448,8 +507,7 @@ export const useCaosSession = () => {
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
     /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま。firstKey が抽出中なら逆向き） */
-    merge: (firstKey: string, intoKey: string) =>
-      runMerge(firstKey, intoKey, true),
+    merge: runMerge,
     /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
       const card = cardOf(key);
@@ -460,19 +518,22 @@ export const useCaosSession = () => {
         `外す #${orderNoLabel(cup.orderNo)}`,
       );
     },
-    /** ドリッパー from の待機を全部 to へ（置けないカードは残して知らせる） */
+    /** ドリッパー from の待機を全部 to へ（指名で置けないカードは残して知らせる。上級生のみのカードは移して知らせる） */
     moveQueue: (from: number, to: number) => {
-      const result = moveQueueWrites(cards, from, to, (card) =>
-        seniorBlock(card, to),
-      );
+      const result = moveQueueWrites(cards, from, to);
       if ("kept" in result && result.kept > 0)
         toast(
-          `指名・上級生のみで ${dripperLabel(to)} に置けないカード ${result.kept} 枚は残しました`,
+          `指名で ${dripperLabel(to)} に置けないカード ${result.kept} 枚は残しました`,
         );
-      return write(
+      const moved = write(
         result,
         `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`,
       );
+      if (moved)
+        for (const card of lanes.find((l) => l.id === from)?.queued ?? [])
+          if (caosDripperAllowed(card, to))
+            noticeNonSenior(card, nonSeniorPlacement(card, to, people));
+      return moved;
     },
     /**
      * 「次へ」。抽出中のカードを終え、待機の先頭を始める。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
@@ -490,18 +551,13 @@ export const useCaosSession = () => {
       else if (card.status === "queued")
         endBrewing(card.dripper, { key: card.key });
     },
-    /** 右上で確かめている「次へ」と統合（新しいものが先） */
+    /** 右上で確かめている「次へ」と、時間のたったカードへの統合の知らせ（新しいものが先） */
     confirms: confirms.open,
-    /**
-     * 確かめたものを送る。「次へ」は確かめたカードを終え（そのあいだに終わっていれば断られる）、
-     * 統合はそのあいだに変わったカードを今の盤面で確かめ直す
-     */
+    /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
     confirm: (id: string) => {
       const asked = confirms.take(id);
-      if (!asked) return;
-      if (asked.kind === "next")
+      if (asked?.kind === "next")
         runNext(asked.bayId, asked.card.dripId, asked.start);
-      else runMerge(asked.card.key, asked.into.key, false);
     },
     cancelConfirm: confirms.dismiss,
     /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
@@ -513,8 +569,7 @@ export const useCaosSession = () => {
     },
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
-      undo.forget();
-      confirms.clear();
+      forgetPending();
       test.clear();
       setIsRunning(true);
       soundManager.playDispatch();
@@ -536,8 +591,7 @@ export const useCaosSession = () => {
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
-        undo.forget();
-        confirms.clear();
+        forgetPending();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
         setSimSpeed(TEST_START_SPEED);

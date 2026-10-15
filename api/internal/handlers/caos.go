@@ -27,8 +27,7 @@ import (
 //     順番の数（dripper_position）と抽出の時刻は画面から受け取らない。画面は「どのカードの前に入れるか」（after の insert_before）だけを送り、
 //     番号はサーバーが決める（placeCaosCups）。列の先頭（抽出中）に入れて始めるときは after の start_brew で受け、押した時刻（caosBrewAt）を入れる。
 //     抽出中のカードも動かせる（始めた時刻を消して待機・未割当にする）。書いたあと、1 つのドリッパーで抽出中は 1 枚まで（caosBrewingTwice）。
-//     上級生のみのカップは、今日の担当者が上級生のドリッパーにしか置けない（担当者は caos_lanes.go）。指名のあるカードは指名を優先し、
-//     指名のドリッパーの担当者が上級生でなくても置ける
+//     上級生のみのカップ（種類の senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え（brew_finished_at）、待機の先頭を始める（brew_started_at。start_next が false なら始めない）。
 //     カップの準備完了（ready_at）は付けない（付けるのは提供の画面）。抽出を始めてから caosNextCooldown は断る
 //     （二度押し・続けて押すのを防ぐ。始めた時刻と「次へ」を押した時刻の差で見る）
@@ -277,13 +276,13 @@ func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
 // readCaosUnitItems は書くカップ（入れ直しも）と、その注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
 // 商品（行の ID ごと。入れ直しは入れ直したカップの商品）を読む。どれかが消えていれば 409。
 // 後から削除した商品・種類のカップも、注文の応答と同じく読む
-func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]caosUnit, []uuid.UUID, map[uuid.UUID]models.Item, error) {
+func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]uuid.UUID, map[uuid.UUID]models.Item, error) {
 	found, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if len(found) != len(cupIDs) {
-		return nil, nil, nil, conflictErrorf("カップが消えました（注文が編集・削除されたかもしれません）")
+		return nil, nil, conflictErrorf("カップが消えました（注文が編集・削除されたかもしれません）")
 	}
 	var orderIDs, sourceIDs []uuid.UUID
 	for _, c := range found {
@@ -294,7 +293,7 @@ func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]caosUnit, []uuid.UUID
 	var sources []models.OrderCup
 	if err := tx.Preload("Item", unscoped).Preload("Item.ItemType", unscoped).
 		Find(&sources, "id IN ?", sourceIDs).Error; err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	sourceItem := make(map[uuid.UUID]models.Item, len(sources))
 	for _, c := range sources {
@@ -304,7 +303,7 @@ func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]caosUnit, []uuid.UUID
 	for _, c := range found {
 		items[c.ID] = sourceItem[c.CupID]
 	}
-	return found, orderIDs, items, nil
+	return orderIDs, items, nil
 }
 
 // caosNominations は注文（orderIDs）の明細の指名のドリッパーの番号（明細の ID ごと。無指名は nil。自由記述 assignee だけの古い明細も指名なし）。
@@ -581,7 +580,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 		if err := lockCaosDrippers(tx, placing); err != nil {
 			return err
 		}
-		found, lockIDs, itemOf, err := readCaosUnitItems(tx, cupIDs)
+		lockIDs, itemOf, err := readCaosUnitItems(tx, cupIDs)
 		if err != nil {
 			return err
 		}
@@ -601,15 +600,6 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 		changed := map[uuid.UUID]bool{}
 		for id := range orders {
 			changed[id] = true
-		}
-		// 上級生のみのカップをほかのドリッパーへ置くなら、今日の担当者が上級生のドリッパー（caos_lanes.go）
-		seniorOnly := make(map[uuid.UUID]bool, len(found))
-		for _, c := range found {
-			seniorOnly[c.ID] = itemOf[c.ID].ItemType.SeniorOnlyBrew()
-		}
-		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
-		if err != nil {
-			return err
 		}
 		nominated, err := caosNominations(tx, lockIDs)
 		if err != nil {
@@ -682,9 +672,6 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 		}
 
 		if err := checkCaosCards(tx, dripIDs); err != nil {
-			return err
-		}
-		if err := checkSeniorOnly(tx, writes, itemOf, seniors); err != nil {
 			return err
 		}
 		// 抽出を始めたドリッパーで、抽出中は 1 枚だけ（先頭に入れるなら、抽出中だったカードを同じ書き込みで待機に下げる。画面の assignWrites）

@@ -4,6 +4,7 @@ import {
   type CaosUndoEntry,
   applyCaosOutboxOps,
   buildCaosCards,
+  caosCardOfCup,
   caosUndoCups,
   jstDate,
   overlayCaosOrders,
@@ -75,11 +76,7 @@ export const useLiveBoard = ({
       ),
     /** カップ（入れ直しも。ids）が盤面に届いたか */
     arrived: (ids: string[]) =>
-      ids.every((id) =>
-        latest.current.cards.some((card) =>
-          card.cups.some((cup) => cup.id === id),
-        ),
-      ),
+      ids.every((id) => caosCardOfCup(latest.current.cards, id)),
     /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(

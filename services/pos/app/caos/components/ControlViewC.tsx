@@ -1,7 +1,7 @@
 import type { CaosCard } from "@cafeore/common";
 import { CircleDot } from "lucide-react";
 import type React from "react";
-import { useCardHold } from "../hooks/useCardDrag";
+import { dropSideOn, useCardHold } from "../hooks/useCardDrag";
 import {
   type UnassignedPick,
   useControlPick,
@@ -18,17 +18,17 @@ import {
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
-import { MergeOverlay, OrderCard } from "./OrderCard";
+import { DropMark, MergeOverlay, OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
-// 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
+// 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
 // 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・待機。「次へ」は担当者の名前のすぐ右。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
-// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細（移動・先頭へ・未割当に戻す・統合の解除）、
+// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細（移動・先頭へ・待機の先頭へ・未割当に戻す・統合の解除）、
 // 抽出中は緊急のパネル（1〜6 に移す・未割当に戻すも）（onHoldCard）。ドリッパーの列のカードはドラッグしない（横になぞると待機の列のスクロール）ので、長押しだけ。
-// 右の未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有）。
-// 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
-// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上なら統合）
+// 右の未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有。詳細は開かない）。
+// 未割当のカードを待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（統合できる相手のときだけ）
+// （抽出中のカードの前は列の先頭で今から始まり、後ろは待機の先頭。useCardDrag の dropTargetAt）。指の下のカードには入れる所の線か統合の枠（DropMark）
 export const ControlViewC: React.FC<ControlViewProps> = (props) => {
   const pick = useControlPick(props);
   const hold = useCardHold<CaosCard>((card) => props.onHoldCard?.(card));
@@ -119,7 +119,6 @@ const ControlViewCBoard: React.FC<
                       look={looks.get(current.key)}
                       size="lane"
                       selected={sharesOrder(current, selectedOrderId)}
-                      data-merge-target={current.key}
                       data-queued-ticket={current.key}
                       data-search-key={current.key}
                       data-ticket-label={orderLabel(current)}
@@ -129,6 +128,9 @@ const ControlViewCBoard: React.FC<
                       className="cursor-pointer hover:ring-2 hover:ring-blue-400"
                     >
                       {pick.canMergeWith(current) && <MergeOverlay />}
+                      <DropMark
+                        side={dropSideOn(pick.drag.target, current.key)}
+                      />
                     </OrderCard>
                   ) : (
                     <span className="rounded-lg border border-slate-300 border-dashed" />
@@ -144,12 +146,17 @@ const ControlViewCBoard: React.FC<
                         size="lane"
                         selected={sharesOrder(ticket, selectedOrderId)}
                         data-queued-ticket={ticket.key}
-                        data-merge-target={ticket.key}
                         data-search-key={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
+                        data-merge-tap={pick.canMergeWith(ticket) || undefined}
                         {...pressProps(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
-                      />
+                      >
+                        {pick.canMergeWith(ticket) && <MergeOverlay />}
+                        <DropMark
+                          side={dropSideOn(pick.drag.target, ticket.key)}
+                        />
+                      </OrderCard>
                     ))}
                     {lane.waiting.length === 0 && (
                       <EmptySlotButton
@@ -169,8 +176,8 @@ const ControlViewCBoard: React.FC<
     <aside className="min-h-0 min-w-0">
       <OrderQueuePanel
         orders={unassignedOrders}
-        lanes={lanes}
         looks={looks}
+        nowMs={nowMs}
         selectedOrderId={selectedOrderId}
         pick={pick}
       />

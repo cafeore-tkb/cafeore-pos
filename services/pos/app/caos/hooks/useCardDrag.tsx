@@ -7,9 +7,9 @@ import {
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { isBayId } from "../logic/lanes";
+import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 
-// カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機カード）で共通。
+// カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機・抽出中のカード）で共通。
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
 // 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
@@ -69,27 +69,32 @@ export const bayTargetAt = (
 };
 
 /**
- * ドラッグで落とす先。bayId はドリッパー（列）、place はその列の待機・抽出中のカードの前（{ beforeKey }。抽出中のカードの前は列の先頭）。
- * place が無ければ、その列の待機の最後へ。mergeKey があれば、そのカード（待機・抽出中）に統合する
+ * ドラッグで落とす先。bayId はドリッパー（列）、place はその列のどこか（列のカードの前 { beforeKey }・後ろ { afterKey }。
+ * 抽出中のカードの前は列の先頭（今から始まる）、後ろは待機の先頭）。place が無ければ、その列の待機の最後へ。
+ * mergeKey があれば、そのカード（待機・抽出中）に統合する。near は指の下の列のカード（札と、前後の線・統合の印を出す）
  */
 export interface DropTarget {
   bayId: number;
   place?: CaosPlace;
   /** 統合する相手のカード（key） */
   mergeKey?: string;
-  /** 前に入れる・統合する相手のカードの表示（注文番号） */
-  beforeLabel?: string;
+  near?: {
+    /** 指の下の列のカード（key） */
+    key: string;
+    side: DropSide;
+    /** そのカードの表示（注文番号） */
+    label: string;
+    /** そのカードが抽出中（前は今から始める、後ろは待機の先頭） */
+    brewing: boolean;
+  };
 }
 
-// 待機のカードの上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
-const MERGE_FROM = 0.4;
-
 /**
- * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
- * 運んでいるカード（card）と統合できる（caosMergePair。cards から引く。運んでいるのが抽出中なら相手を抽出中に入れる）なら統合
- * （待機のカードは右の部分だけ。抽出中・未割当のカードは全部。抽出中のカードの前（列の先頭）へは、統合できないときだけ）、
- * 列の待機・抽出中のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
- * 運んでいるカード自身は飛ばし、置けない列は null
+ * 落とす先（管制盤 A・C・D）。1〜6 のボタンが下にあればそのボタン（列の最後）。列の待機・抽出中のカード（data-queued-ticket）の上なら、
+ * 左の端はそのカードの前・右の端は後ろ・真ん中は統合（運んでいるカード card と統合できる（caosMergePair。cards から引く。
+ * 運んでいるのが抽出中なら相手を抽出中のカードに入れる）ときだけ。できなければ近いほうの端。logic/lanes の dropSideAt）。
+ * 同じ列の中の入れ替えにも使う。ほかは列（最後。bayTargetAt）。運んでいるカード自身は飛ばし、置けない列は null。
+ * merge が false なら統合しない（前か後ろだけ）
  */
 export const dropTargetAt = (
   clientX: number,
@@ -98,31 +103,16 @@ export const dropTargetAt = (
     from,
     card,
     cards = [],
-  }: { from?: number; card?: CaosCard; cards?: readonly CaosCard[] } = {},
+    merge = true,
+  }: {
+    from?: number;
+    card?: CaosCard;
+    cards?: readonly CaosCard[];
+    merge?: boolean;
+  } = {},
 ): DropTarget | null => {
   const elements = document.elementsFromPoint(clientX, clientY);
   if (!elements.some(isBayButton)) {
-    for (const element of elements) {
-      const target = element.closest<HTMLElement>("[data-merge-target]");
-      const into = cards.find(
-        (other) => other.key === target?.dataset.mergeTarget,
-      );
-      if (!target || !into || !card) continue;
-      const pair = caosMergePair(card, into);
-      if (!pair) continue;
-      const rect = target.getBoundingClientRect();
-      if (
-        into.status === "queued" &&
-        clientX < rect.left + rect.width * MERGE_FROM
-      )
-        break;
-      // 統合したカードの場所（運んでいるのが抽出中なら、そのドリッパー）
-      return {
-        bayId: pair.into.dripper ?? 0,
-        mergeKey: into.key,
-        beforeLabel: target.dataset.ticketLabel,
-      };
-    }
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;
@@ -131,12 +121,28 @@ export const dropTargetAt = (
         ticket.parentElement?.closest<HTMLElement>("[data-bay-target]")?.dataset
           .bayTarget,
       );
-      if (!isBayId(bayId) || (card && !caosDripperAllowed(card, bayId)))
-        return null;
+      if (!isBayId(bayId)) return null;
+      const into = cards.find((other) => other.key === key);
+      const pair = merge && card && into ? caosMergePair(card, into) : null;
+      const rect = ticket.getBoundingClientRect();
+      const side = dropSideAt((clientX - rect.left) / rect.width, {
+        mergeable: pair !== null,
+        placeable: !card || caosDripperAllowed(card, bayId),
+      });
+      if (!side) return null;
+      const near = {
+        key,
+        side,
+        label: ticket.dataset.ticketLabel ?? "",
+        brewing: into?.status === "brewing",
+      };
+      // 統合したカードの場所（運んでいるのが抽出中なら、そのドリッパー）
+      if (side === "merge" && pair)
+        return { bayId: pair.into.dripper ?? bayId, mergeKey: key, near };
       return {
         bayId,
-        place: { beforeKey: key },
-        beforeLabel: ticket.dataset.ticketLabel,
+        place: side === "before" ? { beforeKey: key } : { afterKey: key },
+        near,
       };
     }
   }
@@ -144,14 +150,20 @@ export const dropTargetAt = (
   return bayId === null ? null : { bayId };
 };
 
-/** 落とす先の札（「→ 3」・「→ 3 #012 の前」・「→ 3 #012 と統合」） */
+/** 落とす先の札（「→ 3」・「#012 の前へ（今から始める）」・「#012 の後ろへ（待機の先頭）」・「#012 と統合」） */
 export const dropTargetLabel = (target: DropTarget | null) => {
   if (!target) return null;
-  if (target.mergeKey) return `→ ${target.bayId} ${target.beforeLabel} と統合`;
-  return target.beforeLabel
-    ? `→ ${target.bayId} ${target.beforeLabel} の前`
-    : `→ ${target.bayId}`;
+  const { near } = target;
+  if (!near) return `→ ${target.bayId}`;
+  if (near.side === "merge") return `${near.label} と統合`;
+  if (near.side === "before")
+    return `${near.label} の前へ${near.brewing ? "（今から始める）" : ""}`;
+  return `${near.label} の後ろへ${near.brewing ? "（待機の先頭）" : ""}`;
 };
+
+/** 指の下の列のカードに出す印（前・後ろの線か統合の枠）。そのカードでなければ undefined */
+export const dropSideOn = (target: DropTarget | null, key: string) =>
+  target?.near?.key === key ? target.near.side : undefined;
 
 export const useCardDrag = <S, T>(handlers: {
   targetAt: (source: S, clientX: number, clientY: number) => T | null;

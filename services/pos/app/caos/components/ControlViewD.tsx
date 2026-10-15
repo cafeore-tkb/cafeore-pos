@@ -6,7 +6,14 @@ import {
 import { ClipboardList, Table2, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import { bayTargetAt, useCardDrag, useCardHold } from "../hooks/useCardDrag";
+import {
+  type DropTarget,
+  dropSideOn,
+  dropTargetAt,
+  dropTargetLabel,
+  useCardDrag,
+  useCardHold,
+} from "../hooks/useCardDrag";
 import {
   useScrollToFirstLive,
   useSheetSelection,
@@ -18,7 +25,7 @@ import {
   sharesOrder,
   totalCups,
 } from "../logic/cards";
-import { cardPlaces, pendingNominatedCups } from "../logic/lanes";
+import { cardPlaces, laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   type SheetEntry,
@@ -26,26 +33,33 @@ import {
   buildSheet,
   cellKey,
   linkedOrderNos,
-  orderCupsOf,
 } from "../logic/sheet";
 import {
   DripperIndicator,
   EmptySlotButton,
+  LongWaitTag,
   NextButton,
   PanelHeader,
   PlaceTag,
 } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
-import { CommentLine } from "./OrderComments";
+import {
+  CancelEmergencyButton,
+  DropMark,
+  MergeOverlay,
+  OrderCard,
+} from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
 // （抽出中のカードは始めた時刻を消して待機の最後へ。抽出中も待機も無い列なら今から始め直す）か、右の注文へドラッグして未割当に戻す。
 // 表のカードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・済は緊急のパネル（onHoldCard）。
-// 右の注文カードを選んでいるあいだは、統合できる表の抽出中のカードに「統合する」が出て、押すとそのカードに統合する。
+// 表の待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（統合できる相手のときだけ。管制盤 A・C と同じ
+// useCardDrag の dropTargetAt。表の行は注文番号なので、列の中の順番は札「3rd 2番目」で見る）。
+// 右の注文カードを選んでいるあいだは、統合できる表の待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する。
+// 統合したカードは、重ねた枠でなく入っている注文ごとの段に分けて出す（OrderCard の byOrder。表では元の注文の行にまたがって縦に長い）。
 // 列の見出しはドリッパーの番号（列の状態）と担当者、担当者の名前のすぐ右に「次へ」。
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
@@ -60,7 +74,8 @@ type DragSource =
   | { kind: "unassigned"; order: CaosCard }
   | { kind: "ticket"; ticket: CaosCard; fromBayId: number };
 
-type DropTarget = number | "unassigned";
+// 列・列のカードの前後・統合（DropTarget）か、右の注文内容（未割当に戻す）
+type SheetDrop = DropTarget | "unassigned";
 
 const sourceCard = (source: DragSource): CaosCard =>
   source.kind === "unassigned" ? source.order : source.ticket;
@@ -83,11 +98,8 @@ const cellTone = (isDropColumn: boolean, isLinked: boolean) => {
 };
 
 // 運んでいるカードの札（置き先）
-const dropLabel = (target: DropTarget | null) => {
-  if (target === null) return null;
-  if (target === "unassigned") return "未割当へ";
-  return `→ ${target}`;
-};
+const dropLabel = (target: SheetDrop | null) =>
+  target === "unassigned" ? "未割当へ" : dropTargetLabel(target);
 
 export const ControlViewD: React.FC<ControlViewProps> = ({
   lanes: bays,
@@ -123,8 +135,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     [bays, unassignedOrders, looks],
   );
   const orderGroups = useMemo(
-    () => buildOrderGroups(bays, unassignedOrders),
-    [bays, unassignedOrders],
+    () => buildOrderGroups(unassignedOrders),
+    [unassignedOrders],
   );
   const linkedRows = useMemo(
     () => linkedOrderNos(selectedOrderId, bays, unassignedOrders),
@@ -136,9 +148,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const places = cardPlaces(bays);
   const fillerRowCount = Math.max(0, MIN_ROWS - sheet.rows.length - 1);
 
-  // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。
+  // 列のどのセル（見出しを含む）に落としても、その担当者の次の枠へ配置する。表のカードの上なら、その前・後ろ・統合。
   // 表のカードは右の注文内容へ落とすと未割当に戻る。
-  const drag = useCardDrag<DragSource, DropTarget>({
+  const placed = useMemo(() => bays.flatMap(laneActive), [bays]);
+  const drag = useCardDrag<DragSource, SheetDrop>({
     targetAt: (source, clientX, clientY) => {
       if (
         source.kind === "ticket" &&
@@ -148,9 +161,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       ) {
         return "unassigned";
       }
-      return bayTargetAt(clientX, clientY, {
+      return dropTargetAt(clientX, clientY, {
         from: source.kind === "ticket" ? source.fromBayId : undefined,
         card: sourceCard(source),
+        cards: placed,
       });
     },
     onBegin: (source) => {
@@ -159,14 +173,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       else if (selectedOrder) picked.clear();
     },
     onDrop: (source, target) => {
-      if (source.kind === "unassigned") {
-        if (target === "unassigned") return;
-        onAssignToBay(source.order, target);
-        picked.clear();
-        return;
-      }
-      if (target === "unassigned") onReturnToUnassigned(source.ticket);
-      else onMoveTicket(source.ticket, target);
+      const card = sourceCard(source);
+      if (source.kind === "unassigned") picked.clear();
+      if (target === "unassigned") {
+        if (source.kind === "ticket") onReturnToUnassigned(source.ticket);
+      } else if (target.mergeKey) onMergeOrders(card.key, target.mergeKey);
+      else if (source.kind === "unassigned")
+        onAssignToBay(card, target.bayId, target.place);
+      else onMoveTicket(card, target.bayId, target.place);
     },
     // 長押しは表のカードだけ（右の注文カードは押し続けてから動かしてもドラッグ）
     onHold: (source) => {
@@ -181,15 +195,22 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const dragSource = drag.source;
   const dragCup = dragSource ? sourceCard(dragSource) : null;
   const hoveredTarget = drag.target;
+  // 指の下の列（その列の枠を青くする。統合なら統合したカードが残る列）
+  const hoveredBay =
+    hoveredTarget === null || hoveredTarget === "unassigned"
+      ? null
+      : hoveredTarget.bayId;
+  // 指の下の表のカード（入れる所の線・統合の枠）
+  const sheetTarget = hoveredTarget === "unassigned" ? null : hoveredTarget;
 
   const headerHint = () => {
     if (dragSource?.kind === "ticket")
-      return `${orderLabel(dragSource.ticket)} ${cardName(dragSource.ticket)} ${dragSource.ticket.cups.length}杯 → 移す担当者の列で離す／右の注文内容で離すと未割当に戻す`;
+      return `${orderLabel(dragSource.ticket)} ${cardName(dragSource.ticket)} ${dragSource.ticket.cups.length}杯 → 移す担当者の列・カードの前後で離す／右の注文内容で離すと未割当に戻す`;
     if (!selectedOrder)
       return "右の注文カードを選んで表の枠をタップするか、列へドラッグして割り振ります";
     const card = `${orderLabel(selectedOrder)} ${cardName(selectedOrder)} ${selectedOrder.cups.length}杯`;
     return dragSource
-      ? `${card} → 担当者の列で離すと配置`
+      ? `${card} → 担当者の列・カードの前後で離すと配置`
       : `${card} → 配置する枠を選択`;
   };
 
@@ -203,26 +224,32 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       card={ticket}
       look={looks.get(ticket.key)}
       size="sm"
-      note={rowIds.length > 1 ? "統合" : undefined}
+      byOrder
       data-search-key={ticket.key}
       onPointerDown={(event) => {
         if (state === "past") hold.press(ticket, event);
         else drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event);
       }}
+      // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
+      data-queued-ticket={state !== "past" ? ticket.key : undefined}
+      data-ticket-label={orderLabel(ticket)}
       onClickCapture={
         state === "past" ? hold.suppressClick : drag.suppressClick
       }
-      // 押すと始める・終える（選んだ注文カードと統合できる抽出中のカードは統合）
+      // 押すと始める・終える（選んだ注文カードと統合できる待機・抽出中のカードは統合）
       onClick={() => {
         if (picked.canMergeWith(ticket)) picked.mergeWith(ticket);
         else onPressCard(ticket);
       }}
+      // 統合したカードは注文ごとの段の分だけ高く（元の注文の行にまたがる枠では枠いっぱい）。
       // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
-      className={`h-[60px] shrink-0 scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
-      {picked.canMergeWith(ticket) && <MergeOverlay />}
+      {/* ドラッグしているあいだは出さない（落とす所の線・統合の枠を隠さない） */}
+      {!dragSource && picked.canMergeWith(ticket) && <MergeOverlay />}
+      <DropMark side={dropSideOn(sheetTarget, ticket.key)} />
     </OrderCard>
   );
 
@@ -243,21 +270,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             {headerHint()}
           </p>
           {selectedOrder && (
-            <>
-              {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
-              <CommentLine
-                comments={looks.get(selectedOrder.key)?.comments ?? []}
-                className="font-bold text-[12px]"
-              />
-              <button
-                type="button"
-                onClick={picked.clear}
-                className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
-              >
-                <X className="h-3.5 w-3.5" />
-                解除
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={picked.clear}
+              className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
+            >
+              <X className="h-3.5 w-3.5" />
+              解除
+            </button>
           )}
         </PanelHeader>
 
@@ -287,7 +307,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     key={bay.id}
                     data-bay-target={bay.id}
                     className={`border-r-2 border-b-4 p-1 align-top ${LINE} ${
-                      hoveredTarget === bay.id ? "bg-blue-100" : ""
+                      hoveredBay === bay.id ? "bg-blue-100" : ""
                     }`}
                   >
                     <DripperIndicator
@@ -357,7 +377,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       );
                       if (cell?.coveredBy) return null;
                       const cellEntries = cell?.entries ?? [];
-                      const isDropColumn = hoveredTarget === bay.id;
+                      const isDropColumn = hoveredBay === bay.id;
                       // 選んだカードを置ける枠（指名の番号のあるカードは、その番号の列だけ）
                       const isTargetCell =
                         isTargetRow &&
@@ -446,7 +466,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       key={bay.id}
                       data-bay-target={bay.id}
                       className={`border-r-2 border-b-2 p-1 ${LINE} ${
-                        hoveredTarget === bay.id ? "bg-blue-50" : ""
+                        hoveredBay === bay.id ? "bg-blue-50" : ""
                       }`}
                     >
                       {index === 0 && !selectedOrder && (
@@ -512,20 +532,22 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     注文 {group.key}
                   </h3>
                   <span className="font-black text-[13px]">
-                    {orderCupsOf(group.items[0], looks)}杯
+                    {totalCups(group.items)}杯
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 p-2">
                   {group.items.map((order) => {
                     const uid = order.key;
                     const isSelected = selectedOrder?.key === uid;
-                    const isMergeCandidate = picked.canMergeWith(order);
+                    const isMergeCandidate =
+                      !dragSource && picked.canMergeWith(order);
                     return (
                       <OrderCard
                         key={uid}
                         card={order}
                         look={looks.get(uid)}
                         size="sm"
+                        byOrder
                         // 選んだカードと、カードを選んでいないときは選んだ注文（番号で探した・表のカードを開いた）のカード
                         selected={
                           isSelected ||
@@ -542,9 +564,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                           if (isMergeCandidate) picked.mergeWith(order);
                           else picked.toggle(order);
                         }}
-                        className="h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
+                        className="min-h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
                         dragging={dragCup?.key === uid}
                       >
+                        <LongWaitTag card={order} nowMs={nowMs} />
                         {isMergeCandidate && <MergeOverlay />}
                         {isSelected && order.emergency && onCancelEmergency && (
                           <CancelEmergencyButton
@@ -557,17 +580,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       </OrderCard>
                     );
                   })}
-                  {group.assigned.map(({ card: ticket, bayId }) => (
-                    <OrderCard
-                      key={ticket.key}
-                      card={ticket}
-                      look={looks.get(ticket.key)}
-                      size="sm"
-                      note={`→ ${dripperLabel(bayId)}`}
-                      data-search-key={ticket.key}
-                      className="h-[64px] opacity-50"
-                    />
-                  ))}
                 </div>
               </article>
             ))}
@@ -577,7 +589,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
 
       {dragCup &&
         drag.ghost(
-          <OrderCard card={dragCup} look={looks.get(dragCup.key)} size="sm" />,
+          <OrderCard
+            card={dragCup}
+            look={looks.get(dragCup.key)}
+            size="sm"
+            byOrder
+          />,
           dropLabel(hoveredTarget),
         )}
     </section>
