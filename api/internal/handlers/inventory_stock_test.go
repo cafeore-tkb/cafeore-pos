@@ -106,8 +106,15 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		}
 	}
 
-	// 注文で、アイテムの在庫は per_serving × 数、カップはカップを作るアイテムの数だけ減る
+	// 抽出が要るブレンドとそのカップは、抽出を始めたときに使う。抽出の要らないコースターは注文を受けたときに使う
+	startBrew := func(orderID openapi_types.UUID) {
+		t.Helper()
+		must(db.Model(&models.OrderCup{}).Where("order_id = ? AND brew_started_at IS NULL", orderID).Update("brew_started_at", time.Now()).Error)
+	}
 	first := api.createOrder(1, set)
+	expect("抽出を始める前", map[uuid.UUID][2]float64{blendStock.ID: {0, 0}, coasterStock.ID: {1, 1}, cupID: {0, 0}})
+	// 注文で、アイテムの在庫は per_serving × 数、カップはカップを作るアイテムの数だけ減る
+	startBrew(first.Id)
 	expect("1 つめ", map[uuid.UUID][2]float64{blendStock.ID: {30, 2}, coasterStock.ID: {1, 1}, cupID: {2, 2}})
 	if got := inv.ResourceIDsForOrder(uuid.UUID(first.Id)); len(got) != 3 {
 		t.Errorf("1 つめの注文の在庫対象 = %v, want 3 つ", got)
@@ -130,7 +137,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		t.Fatalf("種類を消した後の種類 = %v, want ホットだけ", unchanged.ItemTypeIds)
 	}
 	call(http.MethodPut, "/inventory/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
-	api.createOrder(1, set)
+	startBrew(api.createOrder(1, set).Id)
 	expect("変えた後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40, 4}, coasterStock.ID: {2, 2}, cupID: {2, 2}})
 
 	// 前の注文を編集しても、残した明細はその時点の量のまま。足した明細は今の設定で減る
@@ -139,6 +146,7 @@ func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
 		Id: first.Id, OrderId: 1, BillingAmount: 2000, Received: 2000,
 		MenuIds: []models.MenuInfoCreate{{MenuId: set.ID, OrderMenuId: &kept}, newLine},
 	}, http.StatusOK, nil)
+	startBrew(first.Id)
 	expect("編集した後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40 + 40, 6}, coasterStock.ID: {3, 3}, cupID: {2, 2}})
 
 	// 棚卸し・入荷・残り何回・通知の段階は今までどおり。注文の後の通知の判定を待ってから、下で直接呼ぶ

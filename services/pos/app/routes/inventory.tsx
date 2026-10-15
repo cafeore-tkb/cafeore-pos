@@ -7,7 +7,7 @@ export default function InventoryLayout() {
         <div className="space-y-1">
           <h1 className="font-semibold text-2xl tracking-tight">在庫</h1>
           <p className="text-muted-foreground text-sm">
-            棚卸しの実数から、その後の入荷と注文での消費を差し引いて残量を推定します
+            棚卸しの実数から、その後の入荷と使った分（抽出が要るものは抽出を始めたとき、ほかは注文を受けたとき）を差し引いて残量を推定します
           </p>
         </div>
         {/* 在庫の設定は商品管理にまとめている */}

@@ -33,7 +33,7 @@ func (h *CaosHandler) CreateCupEmergencies(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("理由は %d 文字までです", cupEmergencyReasonMax)})
 		return
 	}
-	rows, orderIDs, resourceIDs, err := h.addEmergencies(req.OrderCupIds, reason)
+	rows, orderIDs, err := h.addEmergencies(req.OrderCupIds, reason)
 	if respondError(c, err) {
 		return
 	}
@@ -43,7 +43,6 @@ func (h *CaosHandler) CreateCupEmergencies(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, models.CupEmergencyCreateResponse{Ids: ids})
 	h.publish(orderIDs)
-	h.checkStockAlerts(resourceIDs)
 }
 
 // 入れ直す理由の長さ（文字。OpenAPI の maxLength と同じ）
@@ -65,14 +64,14 @@ func (h *CaosHandler) GetCupEmergencyReasons(c *gin.Context) {
 // 理由の候補の数
 const cupEmergencyReasonsLimit = 5
 
-// addEmergencies は cupIDs のカップに理由 reason の入れ直しを 1 つずつ足し（cupIDs と同じ順）、入れ直しで減る在庫を残す。
-// 足したカップの注文と、減らした在庫対象の ID も返す。
+// addEmergencies は cupIDs のカップに理由 reason の入れ直しを 1 つずつ足し（cupIDs と同じ順）、入れ直しで減る在庫を残す
+// （在庫を使うのは入れ直しの抽出を始めたとき。Inventory.consumption）。足したカップの注文も返す。
 // 今日の注文の、抽出が要るカップだけ。注文の行をロックしてから足す（注文の編集・CaOS の書き込みと同じ順番）。
-func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []models.CupEmergency, orderIDs, resourceIDs []uuid.UUID, err error) {
+func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []models.CupEmergency, orderIDs []uuid.UUID, err error) {
 	now := h.now()
 	start, end := caosToday(now)
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		rows, orderIDs, resourceIDs = nil, nil, nil
+		rows, orderIDs = nil, nil
 		unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
 		var cups []models.OrderCup
 		if err := tx.Preload("Item", unscoped).Preload("Item.ItemType", unscoped).
@@ -111,7 +110,6 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 			rows = append(rows, row)
 			for _, r := range itemStockResources(cup.Item, resources) {
 				usages = append(usages, models.CupEmergencyStockUsage{CupEmergencyID: row.ID, ResourceID: r.ID, Servings: 1, Amount: r.PerServing})
-				resourceIDs = append(resourceIDs, r.ID)
 			}
 		}
 		if err := tx.Create(&rows).Error; err != nil {
@@ -127,21 +125,20 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 		}
 		return nil
 	})
-	return rows, orderIDs, resourceIDs, err
+	return rows, orderIDs, err
 }
 
 // DELETE /api/cup-emergencies/{id} - 緊急（入れ直し）を取り消す（押し間違い）。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。
-// 入れ直しで減らした在庫も戻す。取り消したら全部の画面に {"type":"cup_emergency_cancelled"} で知らせる（publishCupEmergencyCancelled）。
+// 入れ直しで減る在庫の行も消す。取り消したら全部の画面に {"type":"cup_emergency_cancelled"} で知らせる（publishCupEmergencyCancelled）。
 func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	id, ok := parseUUIDParam(c)
 	if !ok {
 		return
 	}
-	orderID, resourceIDs, err := h.cancelEmergency(id)
+	orderID, err := h.cancelEmergency(id)
 	h.respond(c, []uuid.UUID{orderID}, err)
 	if err == nil {
 		publishCupEmergencyCancelled(h.db, h.hub, id)
-		h.checkStockAlerts(resourceIDs)
 	}
 }
 
@@ -160,9 +157,9 @@ func broadcastCupEmergencyCancelled(hub *Hub, id uuid.UUID) {
 	})
 }
 
-// cancelEmergency は入れ直しを消す。消した入れ直しの注文と、戻した在庫対象の ID を返す。
+// cancelEmergency は入れ直しを消す（入れ直しで減る在庫の行も消す。まだ抽出を始めていないので、在庫はまだ使っていない）。消した入れ直しの注文を返す。
 // 待機の入れ直しはドリッパーの列から抜けるので、CaOS の書き込みと同じく、ドリッパーの advisory lock を取ってから注文の行をロックする。
-func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resourceIDs []uuid.UUID, err error) {
+func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, err error) {
 	start, end := caosToday(h.now())
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 入れ直しの行だけ（カップの行は id と cup_id が同じ）
@@ -200,13 +197,9 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 			return ruleErrorf("抽出を始めた入れ直しは取り消せません")
 		}
 		orderID = row.OrderID
-		if err := tx.Model(&models.CupEmergencyStockUsage{}).Where("cup_emergency_id = ?", id).
-			Pluck("resource_id", &resourceIDs).Error; err != nil {
-			return err
-		}
 		return deleteCupEmergencies(tx, "id = ?", id)
 	})
-	return orderID, resourceIDs, err
+	return orderID, err
 }
 
 // deleteCupEmergencies は where に合う入れ直しを、入れ直しで減らした在庫ごと消す（外部キーが無いので。models.CupEmergency）。
@@ -216,11 +209,4 @@ func deleteCupEmergencies(tx *gorm.DB, where string, args ...any) error {
 		return err
 	}
 	return tx.Where(where, args...).Delete(&models.CupEmergency{}).Error
-}
-
-// checkStockAlerts は入れ直しで増減した在庫の通知を確かめる（応答を書いてから呼ぶ）。
-func (h *CaosHandler) checkStockAlerts(resourceIDs []uuid.UUID) {
-	if len(resourceIDs) > 0 {
-		go h.inventory.CheckAlerts(resourceIDs)
-	}
 }

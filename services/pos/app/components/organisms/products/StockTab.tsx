@@ -41,7 +41,7 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
             </Link>
           </div>
           <p className="text-muted-foreground text-sm">
-            アイテムを作ると一緒にでき、アイテムを消すと消えます。注文のたびに「1回の量」を引きます。
+            アイテムを作ると一緒にでき、アイテムを消すと消えます。1つ使うたびに（抽出が要るアイテムは抽出を始めたとき、ほかは注文を受けたとき）「1回の量」を引きます。
             通知は残りが「通知開始」を切ったときと、そこから「間隔」回減るごとに
             Slack
             に送ります。「バッファ」を切ると危険扱いになります（いずれも回数）。
@@ -67,7 +67,7 @@ export function StockTab({ resources, itemTypes, onChanged }: Props) {
         <div>
           <h2 className="font-semibold text-lg">{kindLabels.cup}</h2>
           <p className="text-muted-foreground text-sm">
-            チェックしたタイプのアイテムが 1 つ売れるごとに「1回の量」を引きます
+            チェックしたタイプのアイテムを1つ使うごとに（抽出が要るものは抽出を始めたとき、ほかは注文を受けたとき）「1回の量」を引きます
           </p>
         </div>
         <Table>

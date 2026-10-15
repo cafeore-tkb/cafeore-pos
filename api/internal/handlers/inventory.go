@@ -21,10 +21,9 @@ import (
 )
 
 const (
-	// 棚卸しの時点で受けていてまだ作っていない注文は、実数に含まれているのに
-	// 後から作られる。ready_at で後から消費したものとして数えるが、
-	// 作られないまま放置された古い注文まで拾わないよう遡る範囲を絞る。
-	pendingOrderWindow = 3 * time.Hour
+	// 使った時刻は、受けた時刻（入れ直しは足した時刻）からこの時間のうち（CaOS が抽出を始めるのは今日の注文だけ）。
+	// 残量を数えるとき、これより前に受けた注文は読まない
+	usageLookback = 24 * time.Hour
 	// リマインドを送るのは、この時間内に注文がある（営業している）ときだけ。
 	remindActiveWindow = 3 * time.Hour
 	// この時間内に棚卸ししたものはリマインドに載せない。
@@ -95,39 +94,26 @@ func (inv *Inventory) snapshots(ctx context.Context, ids []uuid.UUID) ([]stockSn
 	return result, nil
 }
 
+// since より後に使った分を数える。棚卸しの実数には、そのときまでに使った分がもう引かれているので、
+// 残りは実数から since より後に使った分を引けばよい（まだ使っていない分は棚に残っているので引かない）。
 func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time.Time) error {
 	var row struct {
 		Consumed         float64
 		Servings         int
 		ServingsLastHour int
 	}
-
-	pendingFrom := since.Add(-pendingOrderWindow)
 	hourAgo := now.Add(-time.Hour)
 	// SQL の LEAST() に渡すと simple protocol では text 同士の比較になるので、ここで決める。
-	scanFrom := pendingFrom
+	scanFrom := since
 	if hourAgo.Before(scanFrom) {
 		scanFrom = hourAgo
 	}
-
-	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。
-	// 緊急（入れ直し）も同じで、作った時刻は抽出を始めた時刻（since より前に足して、since 以降に始めた・まだ始めていないものを数える）。
-	// 量は受けたときに残したもの（stockUsages）で数える。
-	err := db.Raw(`
-		SELECT
-			COALESCE(SUM(u.amount) FILTER (WHERE `+consumedAfter+`), 0) AS consumed,
-			COALESCE(SUM(u.servings) FILTER (WHERE `+consumedAfter+`), 0) AS servings,
-			COALESCE(SUM(u.servings) FILTER (WHERE u.created_at > @hour_ago), 0) AS servings_last_hour
-		FROM `+stockUsages+` u
-		WHERE u.resource_id = @resource_id
-			AND u.created_at > @scan_from`,
-		map[string]any{
-			"resource_id":  s.Resource.ID,
-			"since":        since,
-			"pending_from": pendingFrom,
-			"hour_ago":     hourAgo,
-			"scan_from":    scanFrom,
-		}).Scan(&row).Error
+	err := db.Raw(stockUsedQuery, map[string]any{
+		"resource_id": s.Resource.ID,
+		"since":       since,
+		"hour_ago":    hourAgo,
+		"scan_from":   scanFrom.Add(-usageLookback),
+	}).Scan(&row).Error
 	if err != nil {
 		return err
 	}
@@ -136,16 +122,52 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	return nil
 }
 
-const consumedAfter = `u.created_at > @since OR (u.created_at > @pending_from AND (u.ready_at IS NULL OR u.ready_at > @since))`
-
-// 在庫の消費：注文の明細（受けた時刻・作った時刻は注文の created_at・ready_at）と、
-// 緊急（入れ直し）（足した時刻と、入れ直しの抽出を始めた時刻。始めた時刻で使ったことにする）。
-const stockUsages = `(
-	SELECT u.resource_id, u.servings, u.amount, o.created_at, o.ready_at
-	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
+// 在庫対象 @resource_id を使った分を、使った時刻（used_at）ごとに分けて足す。量は受けたとき・足したときに残したもの
+// （order_stock_usages・cup_emergency_stock_usages）で数え、使った時刻はその物を実際に使った時刻にする：
+//   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、そのカップの抽出を始めた時刻（order_cups.brew_started_at）。
+//     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
+//     明細の回数まで（並びの順）。まだ始めていないカップは used_at が NULL で、まだ使っていない。
+//     あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
+//   - 明細の残り（抽出の要らない物：グッズ・ミルク・コースターなど。カップの無い前の注文も）：注文を受けた時刻（orders.created_at）
+//   - 緊急（入れ直し）：入れ直しの抽出を始めた時刻（cup_emergencies.brew_started_at。まだ始めていなければ NULL）
+//
+// 準備完了（ready_at）・提供済み（served_at）は使った時刻に使わない。
+const stockUsedQuery = `
+WITH lines AS (
+	SELECT u.order_menu_id, u.servings, u.amount, o.created_at, r.item_id
+	FROM order_stock_usages u
+	JOIN orders o ON o.id = u.order_id
+	JOIN stock_resources r ON r.id = u.resource_id
+	WHERE u.resource_id = @resource_id AND u.servings > 0 AND o.created_at > @scan_from
+),
+brewed AS (
+	SELECT * FROM (
+		SELECT l.order_menu_id, l.servings, l.amount, c.brew_started_at,
+			ROW_NUMBER() OVER (PARTITION BY l.order_menu_id ORDER BY c.position) AS n
+		FROM lines l
+		JOIN order_cups c ON c.order_menu_id = l.order_menu_id
+		JOIN items i ON i.id = c.item_id
+		JOIN item_types t ON t.id = i.item_type_id
+		WHERE t.makes_cup AND t.needs_brew AND (c.item_id = l.item_id OR i.item_type_id IN (
+			SELECT item_type_id FROM stock_resource_item_types WHERE resource_id = @resource_id))
+	) b WHERE n <= servings
+),
+used AS (
+	SELECT 1 AS servings, amount / servings AS amount, brew_started_at AS used_at FROM brewed
 	UNION ALL
-	SELECT u.resource_id, u.servings, u.amount, e.created_at, e.brew_started_at
-	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id)`
+	SELECT l.servings - COALESCE(b.cups, 0), l.amount * (l.servings - COALESCE(b.cups, 0)) / l.servings, l.created_at
+	FROM lines l
+	LEFT JOIN (SELECT order_menu_id, COUNT(*) AS cups FROM brewed GROUP BY order_menu_id) b ON b.order_menu_id = l.order_menu_id
+	UNION ALL
+	SELECT u.servings, u.amount, e.brew_started_at
+	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id
+	WHERE u.resource_id = @resource_id AND e.created_at > @scan_from
+)
+SELECT
+	COALESCE(SUM(amount) FILTER (WHERE used_at > @since), 0) AS consumed,
+	COALESCE(SUM(servings) FILTER (WHERE used_at > @since), 0) AS servings,
+	COALESCE(SUM(servings) FILTER (WHERE used_at > @hour_ago), 0) AS servings_last_hour
+FROM used`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
 // Slack への送信で応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
@@ -241,15 +263,23 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 	return errors.Join(sendErr, loopErr)
 }
 
-// 注文で減る在庫対象。
-func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
+// 注文で減る在庫対象（明細と、その注文のカップの緊急（入れ直し）の分）。
+func (inv *Inventory) ResourceIDsForOrder(orderIDs ...uuid.UUID) []uuid.UUID {
 	if inv == nil {
 		return nil
 	}
 	ids := []uuid.UUID{}
-	if err := inv.db.Model(&models.OrderStockUsage{}).Distinct().
-		Where("order_id = ?", orderID).Pluck("resource_id", &ids).Error; err != nil {
-		log.Printf("inventory: failed to load resources for order %s: %v", orderID, err)
+	if len(orderIDs) == 0 {
+		return ids
+	}
+	if err := inv.db.Raw(`
+		SELECT resource_id FROM order_stock_usages WHERE order_id IN @orders
+		UNION
+		SELECT u.resource_id FROM cup_emergency_stock_usages u
+		JOIN cup_emergencies e ON e.id = u.cup_emergency_id
+		JOIN order_cups c ON c.id = e.order_cup_id
+		WHERE c.order_id IN @orders`, map[string]any{"orders": orderIDs}).Scan(&ids).Error; err != nil {
+		log.Printf("inventory: failed to load resources for orders %v: %v", orderIDs, err)
 		return nil
 	}
 	return ids
