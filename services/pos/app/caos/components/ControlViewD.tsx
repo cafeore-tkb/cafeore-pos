@@ -12,7 +12,6 @@ import {
   dropTargetAt,
   dropTargetLabel,
   useCardDrag,
-  useCardHold,
 } from "../hooks/useCardDrag";
 import {
   useScrollToFirstLive,
@@ -51,7 +50,7 @@ import { ScrollArea } from "./ScrollArea";
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
 // （抽出中のカードは始めた時刻を消して待機の最後へ。抽出中も待機も無い列なら今から始め直す）か、右の注文へドラッグして未割当に戻す。
-// 表のカードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・済は緊急のパネル（onHoldCard）。
+// 表のカードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中は緊急のパネル（onHoldCard）。終わったカードは表に出さない（logic/sheet.ts）。
 // 表の待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（統合できる相手のときだけ。管制盤 A・C と同じ
 // useCardDrag の dropTargetAt。表の行は注文番号なので、列の中の順番は札「3rd 2番目」で見る）。
 // 右の注文カードを選んでいるあいだは、統合できる表の待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する。
@@ -185,8 +184,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       return true;
     },
   });
-  // 済のカードは動かさないので、長押しだけ
-  const hold = useCardHold<CaosCard>(onHoldCard);
 
   const dragSource = drag.source;
   const dragCup = dragSource ? sourceCard(dragSource) : null;
@@ -210,7 +207,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       : `${card} → 配置する枠を選択`;
   };
 
-  // 抽出中・待機・済は札（「3rd 抽出中」）で、残りはドリッパーの番号で出す
+  // 抽出中・待機は札（「3rd 抽出中」）で、残りはドリッパーの番号で出す（終わったカードは表に出さない。logic/sheet.ts）
   const renderEntry = (
     { card: ticket, state, rowIds }: SheetEntry,
     bayId: number,
@@ -224,18 +221,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         size="sm"
         byOrder
         data-search-key={ticket.key}
-        onPointerDown={(event) => {
-          if (state === "past") hold.press(ticket, event);
-          else drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event);
-        }}
+        onPointerDown={(event) =>
+          drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
+        }
         // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
-        data-queued-ticket={state !== "past" ? ticket.key : undefined}
+        data-queued-ticket={ticket.key}
         data-ticket-label={orderLabel(ticket)}
         mergeTap={mergeTap}
         dropSide={dropSideOn(sheetTarget, ticket.key)}
-        onClickCapture={
-          state === "past" ? hold.suppressClick : drag.suppressClick
-        }
+        onClickCapture={drag.suppressClick}
         // 押すと始める・終える（選んだ注文カードと統合できる待機・抽出中のカードは統合）
         onClick={() => {
           if (mergeTap) picked.mergeWith(ticket);
@@ -243,7 +237,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         }}
         // 統合したカードは注文ごとの段の分だけ高く（元の注文の行にまたがる枠では枠いっぱい）。
         // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
-        className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+        className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} cursor-grab touch-none scroll-mt-3 hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
         dragging={dragCup?.key === ticket.key}
       >
         <PlaceTag label={places.get(ticket.key)} />

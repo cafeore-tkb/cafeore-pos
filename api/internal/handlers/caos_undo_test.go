@@ -14,14 +14,10 @@ import (
 	"cafeore-pos/api/internal/models"
 )
 
-// undoState は DB の今のカップ（入れ直しも）の値と準備完了（「1つ戻す」の current・restore に送る形）。
+// undoState は DB の今のカップ（入れ直しも）の値（「1つ戻す」の current・restore に送る形）。
 func (f *caosFixture) undoState(t *testing.T, id uuid.UUID) map[string]any {
 	t.Helper()
-	rows, err := readCaosUnits(f.db, "c.id = ?", id)
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("cup %s: %v %d", id, err, len(rows))
-	}
-	return map[string]any{"state": f.emergencyState(t, id), "ready_at": rows[0].ReadyAt}
+	return map[string]any{"state": f.emergencyState(t, id)}
 }
 
 // undo は POST /api/caos/undo を呼ぶ。restore はカップごとの操作の前の値（undoState）、current は DB の今の値
@@ -70,7 +66,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: forged}); code != http.StatusBadRequest {
 		t.Fatalf("undo to a new time = %d, want 400", code)
 	}
-	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: {"state": map[string]any{"dripper": nil, "dripper_position": 1, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}, "ready_at": nil}}); code != http.StatusBadRequest {
+	if code, _ := f.undo(t, map[uuid.UUID]map[string]any{cup1: {"state": map[string]any{"dripper": nil, "dripper_position": 1, "drip_id": nil, "brew_started_at": nil, "brew_finished_at": nil}}}); code != http.StatusBadRequest {
 		t.Fatalf("undo to a position without a dripper = %d, want 400", code)
 	}
 
@@ -88,7 +84,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 	if cup := f.cup(t, cup1); cup.ReadyAt != nil {
 		t.Fatalf("cup = %+v, want not ready after next", cup)
 	}
-	// 提供の画面で付けた準備完了は、restore に無くても消さない（restore の ready_at は読まない）
+	// 「次へ」のあとに提供の画面で準備完了にしていても戻せ、準備完了は消さない（準備完了は比べも書き戻しもしない）
 	if w := callWithParams(t, f.orders.MarkOrderCupReady, http.MethodPatch, "", gin.Params{{Key: "id", Value: o1.ID.String()}, {Key: "cupId", Value: cup1.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("PATCH cup ready = %d", w.Code)
 	}
@@ -107,7 +103,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 
 	// ほかの端末があとで変えていたら断り、何も書かない（画面の見ている値が古い）
 	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(2, card3, false)))
-	stale := map[string]any{"cup_id": cup3, "current": f.undoState(t, cup3), "restore": map[string]any{"state": unassigned, "ready_at": nil}}
+	stale := map[string]any{"cup_id": cup3, "current": f.undoState(t, cup3), "restore": map[string]any{"state": unassigned}}
 	f.mustPut(t, write(ids(o3.OrderCups[0]), f.state(t, cup3), placed(3, card3, false)))
 	body, _ := json.Marshal(map[string]any{"cups": []any{stale}})
 	if w := callWithParams(t, f.caos.UndoCaosCups, http.MethodPost, string(body), nil); w.Code != http.StatusConflict {
@@ -115,7 +111,7 @@ func TestCaosUndoOnDB(t *testing.T) {
 	}
 	expectLane(3, nil, card3)
 
-	// 提供済みになったカップは戻さない
+	// 提供済みになったカップの「次へ」も戻せる（提供済みでも、盤面は CaOS の操作で決まる）。提供済みはそのまま
 	beforeServe := map[uuid.UUID]map[string]any{cup2: f.undoState(t, cup2)}
 	f.wait()
 	if code := f.next(t, 1, &card2); code != http.StatusNoContent {
@@ -124,8 +120,12 @@ func TestCaosUndoOnDB(t *testing.T) {
 	if w := callWithParams(t, f.orders.MarkOrderCupServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o2.ID.String()}, {Key: "cupId", Value: cup2.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("PATCH cup served = %d: %s", w.Code, w.Body.String())
 	}
-	if code, _ := f.undo(t, beforeServe); code != http.StatusConflict {
-		t.Fatalf("undo after served = %d, want 409", code)
+	if code, body := f.undo(t, beforeServe); code != http.StatusNoContent {
+		t.Fatalf("undo after served = %d: %s", code, body)
+	}
+	expectLane(1, []uuid.UUID{card2})
+	if cup := f.cup(t, cup2); cup.ServedAt == nil || cup.BrewFinishedAt != nil {
+		t.Fatalf("cup = %+v, want brewing and still served", cup)
 	}
 
 	// 「次へ」で空いたドリッパーでほかのカードが始まっていたら、終えたカードを抽出中に戻せない

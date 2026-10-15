@@ -180,7 +180,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     expect(cards[0].key).toBe(`cups:${ids(cards[0]).join(",")}`);
   });
 
-  test("ドリッパーに置いたカードの状態は時刻で決まり、カップが全部準備完了なら終わり", () => {
+  test("ドリッパーに置いたカードの状態は時刻だけで決まり、カップが全部準備完了・提供済みでも終わらない", () => {
     const start = new Date(NOW.getTime() - 60_000);
     const placed = (dripId: string, at: Partial<Cup>) => ({
       item: blend,
@@ -200,19 +200,26 @@ describe("[unit] CaOS の盤面の組み立て", () => {
         ]),
         order(3, [cup(placed("c", { dripperPosition: 5 }))]),
         order(4, [cup(placed("d", { dripperPosition: 3 }))]),
-        // マスターで準備完了にした待機のカード
-        order(5, [cup(placed("e", { readyAt: start }))]),
+        // 提供の画面で準備完了・提供済みにした待機のカード
+        order(5, [cup(placed("e", { readyAt: start, servedAt: start }))]),
+        // 提供の画面で全部準備完了にした抽出中のカード（ほかの列）
+        order(6, [
+          cup({
+            ...placed("f", { brewStartedAt: start, readyAt: start }),
+            dripper: 3,
+          }),
+        ]),
       ],
       DAY,
     );
     const lane = caosLane(cards, 2);
     expect(lane.brewing?.dripId).toBe("b");
     expect(lane.brewing?.cups).toHaveLength(2);
-    expect(lane.queued.map((c) => c.dripId)).toEqual(["d", "c"]);
+    expect(lane.queued.map((c) => c.dripId)).toEqual(["e", "d", "c"]);
     expect(lane.done.map((c) => [c.dripId, c.finishedAt])).toEqual([
-      ["e", start],
       ["a", NOW],
     ]);
+    expect(caosLane(cards, 3).brewing?.dripId).toBe("f");
   });
 
   test("統合した未割当は dripId のカードになり、準備完了のカップは外れる", () => {
@@ -235,7 +242,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("緊急（入れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの入れ直しも出し、入れ直しは準備完了で終わりにしない", () => {
+  test("緊急（入れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの入れ直しも出す", () => {
     const start = new Date(NOW.getTime() - 60_000);
     // 1 杯目は準備完了（最初の抽出は終わり）で、入れ直しが 2 回。1 回目は 3 番で抽出中、2 回目は未割当
     const brewed = cup({
@@ -384,6 +391,8 @@ describe("[unit] CaOS のドリッパーの列（API と同じ決まり）", () 
     test(c.name, () => {
       const byOrder = new Map<number, Cup[]>();
       for (const x of c.cups) {
+        // ready・served は書いたカップだけ持つ（無ければ false）
+        const { ready, served } = x as { ready?: boolean; served?: boolean };
         byOrder.set(x.order_no, [
           ...(byOrder.get(x.order_no) ?? []),
           cup({
@@ -393,7 +402,8 @@ describe("[unit] CaOS のドリッパーの列（API と同じ決まり）", () 
             dripId: x.drip_id,
             brewStartedAt: x.started ? at : null,
             brewFinishedAt: x.finished ? at : null,
-            readyAt: x.ready ? at : null,
+            readyAt: ready || served ? at : null,
+            servedAt: served ? at : null,
           }),
         ]);
       }

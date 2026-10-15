@@ -12,7 +12,7 @@ import { boardLanes } from "./logic/lanes";
 import { nextAvailableBays } from "./logic/queue";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
-// 管制盤 A のタイムラインに映すだけ。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// 管制盤 A のタイムラインに映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
 // タイムラインに新しく入ったカードは、通知音（ヘッダーで切り替え）とそのカードの点滅で知らせる。未割当の横帯はたためる（この端末に覚える）。
 
 const noop = () => {};
@@ -26,7 +26,10 @@ export default function ReadOnlyBoard() {
   );
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
-  const lanes = useMemo(() => boardLanes(cards), [cards]);
+  const lanes = useMemo(
+    () => boardLanes(cards.filter((card) => card.status !== "done")),
+    [cards],
+  );
   const unassigned = useMemo(
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],

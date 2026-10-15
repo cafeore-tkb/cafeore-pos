@@ -31,7 +31,7 @@ type OrderCup struct {
 	//   - Dripper あり・BrewStartedAt が nil：そのドリッパーの待機
 	//   - BrewStartedAt あり・BrewFinishedAt が nil：抽出中（1 つのドリッパーで同時に 1 枚）
 	//   - BrewFinishedAt あり：終わり
-	// どのカップも準備完了（ReadyAt あり）になったカード（マスターで準備完了にした）も終わりとみなす。
+	// 準備完了・提供（ReadyAt・ServedAt）はカードの状態に使わない（全部提供済みでも、終えるのは CaOS の「次へ」だけ）。
 	// 同じ DripID のカップは、Dripper・DripperPosition・BrewStartedAt・BrewFinishedAt も同じ値を持つ（PUT で確かめる）。
 
 	// ドリッパーの番号（1〜6。画面では 1st〜6th）。指名の番号と同じもの
