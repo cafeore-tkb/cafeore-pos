@@ -1,6 +1,6 @@
 import { dripperLabel, readableTextColor } from "@cafeore/common";
 import type React from "react";
-import { cardItemName, orderLabel } from "../logic/cards";
+import { cardItemName, orderCount, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { Lane } from "../logic/lanes";
 import type { LiberoBrew, LiberoLane, LiberoLevel } from "../logic/libero";
@@ -93,18 +93,21 @@ const IdleRow: React.FC<{ lane: Lane; className: string }> = ({
     <span />
     <LaneTitle dripper={lane.id} />
     <span className="col-span-2 font-black text-[3.6vh]">
-      {lane.queued.length > 0 ? `待機 ${lane.queued.length} 件` : "空き"}
+      {lane.queued.length > 0 ? `待機 ${orderCount(lane.queued)} 件` : "空き"}
     </span>
   </div>
 );
 
-// ドリッパーの番号と担当者の名前
+// ドリッパーの番号（数字だけ。左の順位と見分けるよう枠で囲む）と担当者の名前（大きく、入らなければ 2 行まで）
 const LaneTitle: React.FC<{ dripper: number }> = ({ dripper }) => (
-  <div className="flex min-w-0 flex-col leading-tight">
-    <span className="font-black font-mono text-[5.5vh] leading-none">
-      {dripperLabel(dripper)}
+  <div className="flex min-w-0 items-center gap-[1.2vh] leading-tight">
+    <span
+      title={dripperLabel(dripper)}
+      className="shrink-0 rounded-lg border-[0.4vh] border-current px-[0.8vh] font-black font-mono text-[4.5vh] leading-none"
+    >
+      {dripper}
     </span>
-    <LaneName dripper={dripper} className="font-bold text-[3.6vh]" />
+    <LaneName dripper={dripper} wrap className="font-black text-[4.8vh]" />
   </div>
 );
 

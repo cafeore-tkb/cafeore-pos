@@ -39,6 +39,7 @@ import {
   EmptySlotButton,
   LongWaitTag,
   NextButton,
+  OrderCountLabel,
   PanelHeader,
   PlaceTag,
 } from "./BoardParts";
@@ -315,14 +316,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         bay.id,
                       )}
                       onOpenLane={onOpenLane}
-                      className="h-[60px] w-full"
+                      className="h-[56px] w-full"
                     />
                     {/* 担当者のすぐ右に「次へ」、その下に「交代」（列の幅が狭いので縦に並べる） */}
                     <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
                       <div className="flex w-full min-w-0 items-center justify-center gap-1">
                         <LaneName
                           dripper={bay.id}
-                          className="min-w-0 font-black text-[13px]"
+                          wrap
+                          className="min-w-0 font-black text-[16px] leading-tight"
                         />
                         <NextButton
                           bayId={bay.id}
@@ -503,7 +505,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           className={`border-b-2 ${LINE}`}
         >
           <span className="ml-auto font-black text-[12px] text-slate-700">
-            未割り振り {totalCups(unassignedOrders)}杯
+            未割り振り <OrderCountLabel cards={unassignedOrders} />
           </span>
         </PanelHeader>
 

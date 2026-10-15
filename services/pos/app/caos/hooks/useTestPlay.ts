@@ -2,7 +2,6 @@ import {
   type CaosCupsWrite,
   type CaosPracticeOrder,
   type CaosPracticeResult,
-  type CaosUndoEntry,
   type ItemType,
   type PracticeDataOrder,
   addCaosPracticeEmergencies,
@@ -179,14 +178,6 @@ export const useTestPlay = ({
         orders = result.orders;
       }
       return commit({ orders });
-    },
-    /** 「1つ戻す」処理。今の練習の盤面を覚えておき、戻すときはそれに戻す（練習の盤面はこの画面だけが変える） */
-    undoRun: (_entry?: CaosUndoEntry) => {
-      const before = practiceRef.current;
-      return () => {
-        replace(before);
-        return true;
-      };
     },
     /** 時間帯（startMs から durationMinutes 分）でテストを始める */
     start: (sessionStartMs: number, durationMinutes: 30 | 60) => {

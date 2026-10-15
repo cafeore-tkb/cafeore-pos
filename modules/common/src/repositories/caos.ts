@@ -1,6 +1,6 @@
 import { apiClient } from "../api/client";
 import type { CaosCupsWrite } from "../lib/caos-board";
-import type { CaosOutboxRequest } from "../lib/caos-outbox";
+import type { CaosOutboxOp } from "../lib/caos-outbox";
 import type { components } from "../types/api";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
@@ -101,15 +101,6 @@ export const cancelCupEmergency = async (id: string): Promise<CaosResult> =>
   );
 
 /**
- * 「1つ戻す」（POST /api/caos/undo）。カップの今の値が current のときだけ restore に書き戻す（@cafeore/common の caosUndoCups で作る）。
- * ほかの端末があとで変えていたら断られる
- */
-export const undoCaosCups = async (
-  cups: components["schemas"]["CaosUndoCup"][],
-): Promise<CaosResult> =>
-  send(apiClient.POST("/api/caos/undo", { body: { cups } }));
-
-/**
  * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
  * 変えた結果は全部の画面に共有の WebSocket の {"type":"caos_lanes"} で届く
  */
@@ -146,7 +137,7 @@ export const updateCaosLaneSeniors = async (
  * pressedAt は操作を押した時刻（抽出を始める・終える操作は、サーバーがこの時刻で付ける）
  */
 export const sendCaosOutboxRequest = (
-  request: CaosOutboxRequest,
+  request: CaosOutboxOp,
   pressedAt: number,
 ): Promise<CaosResult> => {
   switch (request.kind) {
@@ -159,8 +150,6 @@ export const sendCaosOutboxRequest = (
         pressedAt,
         request.startNext,
       );
-    case "undo":
-      return undoCaosCups(request.cups);
     case "cancel-emergency":
       return cancelCupEmergency(request.id);
     case "lane":

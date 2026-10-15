@@ -25,8 +25,6 @@ import {
   seniorOnlyOffSenior,
   splitWrites,
   unassignWrites,
-  undoOfNext,
-  undoOfWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -39,8 +37,14 @@ import {
   useCupEmergency,
 } from "~/components/functional/useCupEmergency";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
+import { orderBacklog } from "../logic/alerts";
 import { waitingCupsByBean } from "../logic/beans";
-import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import {
+  cardLooks,
+  orderAndCupCounts,
+  orderLabel,
+  orderNoLabel,
+} from "../logic/cards";
 import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
@@ -49,8 +53,8 @@ import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { useCaosOutboxSender } from "./useCaosOutbox";
-import { type UndoRun, refuseUndo, useCaosUndo } from "./useCaosUndo";
 import { type NextStart, useCornerToasts } from "./useCornerToasts";
+import { useLastAction } from "./useLastAction";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
@@ -67,21 +71,17 @@ const newDripId = () => crypto.randomUUID();
 
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
 const NOT_FOUND = "カードが見つかりません";
-// 足した入れ直しが、まだ盤面に届いていないとき
-const NOT_ARRIVED =
-  "足した入れ直しがまだ届いていません。もう一度押してください";
 
 // 緊急（入れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
-// 足した・取り消したら「1つ戻す」の処理を返し、断られたら null。label は「1つ戻す」に出す操作の名前
+// 足したら入れ直しの id、取り消したら true を返し、断られたら null・false。label は「直前の操作」に出す操作の名前
 type EmergencyOps = {
   /** 番号から入れ直すカップを選ぶ注文 */
   orders: readonly CaosOrderInput[];
   add: (
     cups: EmergencyCup<CaosOrderInput>[],
     reason: string,
-    label: string,
-  ) => Promise<{ ids: string[]; undo: UndoRun } | null>;
-  cancel: (cups: CaosBoardCup[], label: string) => Promise<UndoRun | null>;
+  ) => Promise<string[] | null>;
+  cancel: (cups: CaosBoardCup[], label: string) => boolean;
 };
 
 // 操作を断った理由を POS の通知で出す
@@ -123,14 +123,10 @@ export const useCaosSession = () => {
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
   // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
-  const {
-    printer: labelPrinter,
-    addEmergency,
-    restoreEmergencies,
-  } = useCupEmergency();
-  const undo = useCaosUndo(realTime.getTime());
-  // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「1つ戻す」から忘れる
-  const unsent = useCaosOutboxSender(realTime.getTime(), undo.forget);
+  const { printer: labelPrinter, addEmergency } = useCupEmergency();
+  const lastAction = useLastAction(realTime.getTime());
+  // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「直前の操作」から忘れる
+  const unsent = useCaosOutboxSender(realTime.getTime(), lastAction.forget);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
   // 止めずにそのまま書き、同じ所に知らせだけ出す
@@ -179,23 +175,20 @@ export const useCaosSession = () => {
     if (lane && cards.length > 0 && !testing)
       toasts.show({ kind: "seniorOnly", cards, lane });
   };
-  // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
+  // 通った操作で端末に残した操作の id（本番だけ。通らなかったら「直前の操作」から忘れる）
+  const liveIds = () => (test.session ? [] : live.lastEnqueued());
+  // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「直前の操作」に label を覚える。
   // 断られたら何もしない。通ったかを返す
-  const onSuccess = (
-    ok: boolean,
-    label: string,
-    undoRun: UndoRun,
-    play: () => void,
-  ) => {
+  const onSuccess = (ok: boolean, label: string, play: () => void) => {
     if (ok) {
       // 音は盤面を描いてから鳴らす（初めて鳴らすときの音の準備で、盤面が変わるのを待たせない）
       setTimeout(play);
-      undo.remember(label, undoRun);
+      lastAction.remember(label, liveIds());
     }
     return ok;
   };
   // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。押した待機のカードを始めるときは、先にそのカードを待機の先頭へ動かす
-  // （同じ 1 つの操作として端末に残す）。書けたら音を鳴らし、「1つ戻す」に覚える
+  // （同じ 1 つの操作として端末に残す）。書けたら音を鳴らし、「直前の操作」に覚える
   const runNext = (bayId: number, seen: string | null, start: NextStart) => {
     const { brewing, queued } = caosLane(cards, bayId);
     const head = queued[0];
@@ -214,14 +207,6 @@ export const useCaosSession = () => {
           })
         : { writes: [] };
     if ("error" in moved) return fail(moved.error);
-    // 戻すもの：終えたカードを抽出中に、始めたカードを待機に。先頭へ動かしたなら、そのとき後ろへずれた待機も元の番号に
-    const undoEntry = undoOfNext(cards, bayId, card ?? null);
-    const pressedCups = new Set(card?.cups.map((cup) => cup.id));
-    undoEntry.cups.push(
-      ...undoOfWrites(cards, moved.writes).cups.filter(
-        (cup) => !pressedCups.has(cup.id),
-      ),
-    );
     const label =
       typeof start === "object" && card
         ? `始める ${orderLabel(card)}`
@@ -242,7 +227,6 @@ export const useCaosSession = () => {
         moved.writes,
       ),
       label,
-      source.undoRun(undoEntry, label),
       () => soundManager.playComplete(),
     );
   };
@@ -281,24 +265,19 @@ export const useCaosSession = () => {
     noticeNonSenior([card], nonSeniorMerge(card, into, people));
     return true;
   };
-  // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
+  // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「直前の操作」に出す操作の名前
   const write = (result: CaosWritesResult, label: string) => {
     if ("error" in result) return fail(result.error);
     // 今と同じ場所に置き直したなど、変わるものが無ければ送らず、音も鳴らさない
     if (result.writes.length === 0) return true;
-    const undoRun = source.undoRun(undoOfWrites(cards, result.writes), label);
-    return onSuccess(
-      source.runWrites(result.writes, label),
-      label,
-      undoRun,
-      () => soundManager.playDispatch(),
+    return onSuccess(source.runWrites(result.writes, label), label, () =>
+      soundManager.playDispatch(),
     );
   };
 
   // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id（1 回の入れ直しごとに 1 組。続けて入れ直せば組が並ぶ）。
   // 組の全部が盤面に届いたら、元のカードと同じ組み合わせの 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。
-  // 足せた入れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「1つ戻す」に覚えず、
-  // 戻すと入れ直しごと取り消す）
+  // 足せた入れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「直前の操作」に出さない）
   const [rebrewsToMerge, setRebrewsToMerge] = useState<string[][]>([]);
   const mergeRebrews = (ids: string[]) =>
     setRebrewsToMerge((groups) => [...groups, ids]);
@@ -322,50 +301,38 @@ export const useCaosSession = () => {
     if (waiting.length < rebrewsToMerge.length) setRebrewsToMerge(waiting);
   }, [cards, rebrewsToMerge, source]);
 
-  // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・入れ直しのまとめ）を忘れる
+  // 本番と実データテストを行き来するときに、覚えている操作（「直前の操作」・右上の確かめ・入れ直しのまとめ）を忘れる
   const forgetPending = () => {
-    undo.forget();
+    lastAction.forget();
     toasts.clear();
     setRebrewsToMerge([]);
   };
 
   // 本番の緊急のカップに、刷るための POS の注文を付ける（本番のカードと入力は POS の注文から作るので、注文はある。無ければ null）
-  const withPosOrder = <T extends { orderId: string }>(cups: T[]) => {
+  const withPosOrder = (cups: { orderId: string; cupId: string }[]) => {
     const found = cups.flatMap((cup) => {
       const order = live.orders?.find((o) => o.id === cup.orderId);
       return order ? [{ ...cup, order }] : [];
     });
     return found.length === cups.length ? found : null;
   };
-  // 本番の入れ直しを取り消す（画面はすぐ変わり、送るのは後ろで。取り消せたらこの端末に残っているシールも消す）
-  const cancelLive = (ids: string[], label: string) => {
-    if (!live.cancelEmergencies(ids, label)) return false;
-    toastEmergenciesCancelled(ids.length);
-    return true;
-  };
   const emergencyOps: EmergencyOps = test.session
     ? {
-        // 練習の盤面の中だけ。戻すのは操作の前の練習の盤面
+        // 練習の盤面の中だけ（足したときの知らせは、本番は addEmergency がマスターと同じく出すので、練習もここで出す）
         orders: test.arrivedOrders,
         add: async (cups, reason) => {
-          const undoRun = test.undoRun();
           const ids = test.addEmergencies(
             cups.map((cup) => cup.cupId),
             reason,
           );
           if (ids) toastEmergenciesAdded(ids.length);
-          return ids && { ids, undo: undoRun };
+          return ids;
         },
-        cancel: async (cups) => {
-          const undoRun = test.undoRun();
-          if (!test.cancelEmergencies(cups.map((cup) => cup.id))) return null;
-          toastEmergenciesCancelled(cups.length);
-          return undoRun;
-        },
+        cancel: (cups) => test.cancelEmergencies(cups.map((cup) => cup.id)),
       }
     : {
         orders: live.orders ?? [],
-        add: async (cups, reason, label) => {
+        add: async (cups, reason) => {
           const pos = withPosOrder(
             cups.map(({ order, cupId }) => ({ orderId: order.id, cupId })),
           );
@@ -373,41 +340,14 @@ export const useCaosSession = () => {
             fail(NOT_FOUND);
             return null;
           }
-          const ids = await addEmergency(pos, reason);
-          if (!ids) return null;
-          // 足した入れ直しがまだ盤面に届いていなければ、戻すのを覚えたままにする（もう一度押せる）
-          const undo: UndoRun = () =>
-            live.arrived(ids)
-              ? cancelLive(ids, `戻す（${label}）`)
-              : refuseUndo({ error: NOT_ARRIVED, arriving: true });
-          return { ids, undo };
+          return addEmergency(pos, reason);
         },
-        cancel: async (cups, label) => {
-          const restore = withPosOrder(
-            cups.map((cup) => ({
-              orderId: cup.orderId,
-              cupId: cup.cupId,
-              reason: cup.emergencyReason,
-            })),
-          );
-          if (!restore) {
-            fail(NOT_FOUND);
-            return null;
-          }
-          if (
-            !cancelLive(
-              cups.map((cup) => cup.id),
-              label,
-            )
-          )
-            return null;
-          // 足し直したものも、取り消したカードと同じ 1 枚にまとめる（1 杯なら何もしない）
-          return async () => {
-            const ids = await restoreEmergencies(restore);
-            if (ids) mergeRebrews(ids);
-            return ids !== null;
-          };
-        },
+        // 画面はすぐ変わり、送るのは後ろで（取り消せたらこの端末に残っているシールも消す）
+        cancel: (cups, label) =>
+          live.cancelEmergencies(
+            cups.map((cup) => cup.id),
+            label,
+          ),
       };
 
   return {
@@ -422,11 +362,13 @@ export const useCaosSession = () => {
     /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
     comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
-    /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
-    cups: {
-      unassigned: totalCups(unassigned),
-      waiting: totalCups(lanes.flatMap(laneActive)),
+    /** ヘッダーの注文の数と杯数（未割当・ドリッパーの待ち） */
+    counts: {
+      unassigned: orderAndCupCounts(unassigned),
+      waiting: orderAndCupCounts(lanes.flatMap(laneActive)),
     },
+    /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
+    backlog: orderBacklog(cards, nowMs),
     /** 今（エポックのミリ秒。テスト中は練習の時計） */
     nowMs,
     /** ヘッダーの時刻（日本時間の「10:05:09」） */
@@ -457,8 +399,7 @@ export const useCaosSession = () => {
      *   - orders：番号から入れ直すカップを選ぶ注文
      *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る（統合したカードから全部の杯を入れ直せば、元のカードと同じ組み合わせの 1 枚）
      *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
-     * どちらも「1つ戻す」で戻せる（本番は、足したのは取り消し、取り消したのは同じカップ・理由で未割当に足し直し、この端末でそのカップのシールを刷り直す。
-     * 実データテストは練習の盤面を操作の前に戻す）
+     * どちらも「直前の操作」に出す
      */
     emergency: {
       orders: emergencyOps.orders,
@@ -469,22 +410,18 @@ export const useCaosSession = () => {
           cards,
           cups.map((cup) => cup.cupId),
         );
-        const added = await emergencyOps.add(cups, reason, label);
-        if (!added) return null;
-        if (together) mergeRebrews(added.ids);
-        undo.remember(label, added.undo);
-        return added.ids;
+        const ids = await emergencyOps.add(cups, reason);
+        if (!ids) return null;
+        if (together) mergeRebrews(ids);
+        lastAction.remember(label, []);
+        return ids;
       },
       cancel: (card: CaosCard) => {
         const label = `緊急の取り消し ${orderLabel(card)}`;
-        void emergencyOps
-          .cancel(
-            card.cups.filter((cup) => cup.emergency),
-            label,
-          )
-          .then((undoRun) => {
-            if (undoRun) undo.remember(label, undoRun);
-          });
+        const cups = card.cups.filter((cup) => cup.emergency);
+        if (!emergencyOps.cancel(cups, label)) return;
+        toastEmergenciesCancelled(cups.length);
+        lastAction.remember(label, liveIds());
       },
     },
     soundEnabled,
@@ -578,13 +515,8 @@ export const useCaosSession = () => {
     },
     /** 右上の確かめ・知らせを閉じる（確かめはやめる） */
     dismissToast: toasts.dismiss,
-    /** 「1つ戻す」（この画面が最後にした操作を、10 秒のあいだ戻せる） */
-    undo: {
-      label: undo.label,
-      secondsLeft: undo.secondsLeft,
-      pending: undo.pending,
-      run: undo.undo,
-    },
+    /** 「直前の操作」（この画面が最後にした操作の名前。しばらくたつと null） */
+    lastAction: lastAction.label,
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
       forgetPending();
