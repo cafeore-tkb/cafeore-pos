@@ -374,7 +374,7 @@ const UNASSIGNED_AFTER: CaosCupAfter = {
   start_brew: false,
 };
 
-/** カップの CaOS の値を API の形（書き込みの before・「1つ戻す」の値）にする */
+/** カップの CaOS の値を API の形（書き込みの before）にする */
 export const caosStateJSON = (
   state: CaosCupState,
 ): CaosCupsWrite["before"] => ({

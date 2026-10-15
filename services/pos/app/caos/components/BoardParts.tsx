@@ -1,10 +1,17 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import { ArrowRightCircle, Clock3, type LucideIcon, Plus } from "lucide-react";
+import {
+  ArrowRightCircle,
+  Clock3,
+  type LucideIcon,
+  Pause,
+  Play,
+  Plus,
+} from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenCornerToast } from "../hooks/useCornerToasts";
 import { longWaitMinutes } from "../logic/alerts";
-import { orderLabel } from "../logic/cards";
+import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
@@ -30,6 +37,18 @@ export const PanelHeader: React.FC<{
     {children}
   </header>
 );
+
+/** カードの注文の数（「8 件」）に杯数を小さく添える（未割当の見出し）。統合したカードは中の注文をみな、分けた注文は 1 つと数える */
+export const OrderCountLabel: React.FC<{ cards: readonly CaosCard[] }> = ({
+  cards,
+}) => {
+  const { orders, cups } = orderAndCupCounts(cards);
+  return (
+    <>
+      {orders} 件<span className="ml-1 text-[0.8em] opacity-75">{cups} 杯</span>
+    </>
+  );
+};
 
 /** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
@@ -70,8 +89,8 @@ const FORGOTTEN = {
 };
 
 /**
- * ドリッパーの番号（1st〜6th）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
- * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中・要確認）を、抽出中は残り、要確認は予定を過ぎた時間も出す。
+ * ドリッパーの番号（数字だけ。担当者の名前を広く出せるよう細くする）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
+ * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中・要確認）を、抽出中は残り、要確認は予定を過ぎた時間も（札の下に）出す。
  * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
  * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
  */
@@ -90,24 +109,23 @@ export const DripperIndicator: React.FC<{
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
       data-lane-phase={status.forgotten ? "forgotten" : status.phase}
-      className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-2 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
+      aria-label={`${dripperLabel(bayId)} ${phase.label}`}
+      className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
-      <span className="font-black font-mono text-[22px]">
-        {dripperLabel(bayId)}
-      </span>
-      <span className="mt-1 flex items-baseline gap-0.5 whitespace-nowrap font-black text-[11px]">
+      <span className="font-black font-mono text-[24px]">{bayId}</span>
+      <span className="mt-0.5 whitespace-nowrap font-black text-[10px] tracking-tighter">
         {phase.label}
-        {showsRemaining && (
-          <span className="font-mono text-[14px] tabular-nums">
-            {clockLabel(status.remainingSec)}
-          </span>
-        )}
-        {status.forgotten && (
-          <span className="font-mono text-[14px] tabular-nums">
-            +{clockLabel(status.overSec)}
-          </span>
-        )}
       </span>
+      {showsRemaining && (
+        <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
+          {clockLabel(status.remainingSec)}
+        </span>
+      )}
+      {status.forgotten && (
+        <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
+          +{clockLabel(status.overSec)}
+        </span>
+      )}
       {nominatedCups > 0 && (
         <span
           title={`${dripperLabel(bayId)}への指名が ${nominatedCups} 杯、未割当で待っています`}
@@ -146,7 +164,7 @@ export const NextButton: React.FC<{
 );
 
 // 知らせのあとに添える文
-const UNDO_HINT = "違っていたらヘッダーの「戻す」で戻せます。";
+const FIX_HINT = "違っていたら逆の操作（外す・移す）で直してください。";
 
 // 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・枠の色・読み上げの名前）
 const toastText = (toast: OpenCornerToast) => {
@@ -162,7 +180,7 @@ const toastText = (toast: OpenCornerToast) => {
     return {
       label: `${orderLabel(toast.into)}への統合の知らせ`,
       title: `${orderLabel(toast.into)} は抽出を始めてから ${clockLabel(toast.elapsedSec)} たっています`,
-      body: `${orderLabel(toast.card)} を統合しました。${UNDO_HINT}`,
+      body: `${orderLabel(toast.card)} を統合しました。${FIX_HINT}`,
       action: null,
       frame: "border-(color:--caos-merge)",
     };
@@ -177,7 +195,7 @@ const toastText = (toast: OpenCornerToast) => {
       cards.length === 1
         ? `上級生のみの ${orderLabel(cards[0])} を${who}に置きました`
         : `上級生のみのカード ${cards.length} 枚を${who}に移しました`,
-    body: `カードに警告の印を付けています。${UNDO_HINT}`,
+    body: `カードに警告の印を付けています。${FIX_HINT}`,
     action: null,
     frame: "border-(color:--caos-senior-warning)",
   };
@@ -197,7 +215,10 @@ export const CornerToasts: React.FC<{
   onConfirm: (id: string) => void;
 }> = ({ toasts, onDismiss, onConfirm }) =>
   toasts.length > 0 && (
-    <div className="caos-corner-toasts pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2">
+    <div
+      data-caos-layer
+      className="caos-corner-toasts pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2"
+    >
       {toasts.map((toast) => {
         const { label, title, body, action, frame } = toastText(toast);
         return (
@@ -295,12 +316,37 @@ export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
     </span>
   );
 
-/** テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る */
-export const TestBoardBanner: React.FC<{ onBackToLive: () => void }> = ({
-  onBackToLive,
-}) => (
-  <div className="flex items-center justify-between gap-3 rounded-md border-2 border-amber-500 bg-amber-100 px-3 py-1.5 font-black text-amber-950">
-    <span>テストの盤面です（本番の注文は出ていません）</span>
+/**
+ * テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る。
+ * 練習の時計（一時停止・速さ）もここに置く（ヘッダーの並びを詰めない）
+ */
+export const TestBoardBanner: React.FC<{
+  onBackToLive: () => void;
+  isRunning: boolean;
+  onTogglePlay: () => void;
+  simSpeed: number;
+  onCycleSpeed: () => void;
+}> = ({ onBackToLive, isRunning, onTogglePlay, simSpeed, onCycleSpeed }) => (
+  <div className="flex items-center gap-2 rounded-md border-2 border-amber-500 bg-amber-100 px-3 py-1.5 font-black text-amber-950">
+    <span className="mr-auto">
+      テストの盤面です（本番の注文は出ていません）
+    </span>
+    <button
+      type="button"
+      onClick={onTogglePlay}
+      title={isRunning ? "一時停止" : "タイマー再開"}
+      className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg border border-amber-500 bg-white text-amber-950"
+    >
+      {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+    </button>
+    <button
+      type="button"
+      onClick={onCycleSpeed}
+      title="シミュレーション速度切替"
+      className="h-10 min-w-12 touch-manipulation rounded-lg border border-amber-500 bg-white px-1.5 font-bold font-mono text-[13px] text-amber-950"
+    >
+      {simSpeed}x
+    </button>
     <button
       type="button"
       onClick={onBackToLive}

@@ -1,19 +1,15 @@
 import {
   type CaosCupsWrite,
   type CaosOutboxOp,
-  type CaosUndoEntry,
   applyCaosOutboxOps,
   buildCaosCards,
-  caosCardOfCup,
   caosLane,
-  caosUndoCups,
   jstDate,
   overlayCaosOrders,
 } from "@cafeore/common";
 import { useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
-import { refuseUndo } from "./useCaosUndo";
 import { usePosOrders } from "./usePosOrders";
 
 // cafeore-pos の注文で動かす盤面（本番）。盤面は注文のカップの列（ドリッパー・順番・カード・抽出の時刻）で持つので、
@@ -40,6 +36,8 @@ export const useLiveBoard = ({
   // 押した操作は押したときの盤面に当てる
   const latest = useRef({ board, cards });
   latest.current = { board, cards };
+  // 最後に端末に残した操作の id（「直前の操作」に覚える）
+  const enqueued = useRef<string[]>([]);
 
   // 操作（ops は続けて当てる）を今の盤面に当ててみて、合えば端末に残す（画面はすぐ変わる）。合わなければ理由を通知で出して false
   const run = (label: string, ...ops: CaosOutboxOp[]) => {
@@ -48,7 +46,7 @@ export const useLiveBoard = ({
       toast.error(error);
       return false;
     }
-    for (const op of ops) enqueueCaosOp(label, op);
+    enqueued.current = ops.map((op) => enqueueCaosOp(label, op));
     return true;
   };
 
@@ -57,6 +55,8 @@ export const useLiveBoard = ({
     /** 注文（緊急のシールの中身を作る） */
     orders,
     cards,
+    /** 最後に通った操作で端末に残した操作の id */
+    lastEnqueued: () => enqueued.current,
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),
@@ -69,20 +69,11 @@ export const useLiveBoard = ({
         startId:
           caosLane(latest.current.cards, dripper).queued[0]?.dripId ?? null,
       }),
-    /** カップ（入れ直しも。ids）が盤面に届いたか */
-    arrived: (ids: string[]) =>
-      ids.every((id) => caosCardOfCup(latest.current.cards, id)),
     /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(
         label,
         ...ids.map((id) => ({ kind: "cancel-emergency", id }) as const),
       ),
-    /** 操作（entry）を「1つ戻す」処理。盤面のカップがその操作のあとのままなら、操作の前の値に書き戻す */
-    undoRun: (entry: CaosUndoEntry, label: string) => () => {
-      const request = caosUndoCups(entry, latest.current.cards);
-      if ("error" in request) return refuseUndo(request);
-      return run(`戻す（${label}）`, { kind: "undo", entry });
-    },
   };
 };

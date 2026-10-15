@@ -8,12 +8,12 @@ import {
 import { cardSelector } from "../utils/scrollToCard";
 
 // 管制盤 A のタイムラインの横スクロール。NOW を画面の左寄りの決まった位置に置き、時間とともにレーンの側を動かす（追従）。
-// 手でスクロールしたら少しでも動いた時点で、±5分・カードへの操作なら押した時点で追従をやめる（NOW の線は本当の時刻の所を動く）。
+// 手でスクロールしたら少しでも動いた時点で、カードへの操作なら押した時点で追従をやめる（NOW の線は本当の時刻の所を動く）。
 // 「現在」で NOW の位置へ戻り、すぐ追従に戻る。手のスクロールが NOW の近くで止まったとき（タイムラインから指を離してから）も追従に戻る。
 
-/** ヘッダーからの操作（±5分・現在）と、カード（cardKey。注文番号で探したカード）までスクロールする "card"。id で 1 回ずつ */
+/** ヘッダーの「現在」と、カード（cardKey。注文番号で探したカード）までスクロールする "card"。id で 1 回ずつ */
 export type TimelineCommand = { id: number } & (
-  | { direction: "back" | "now" | "forward" }
+  | { direction: "now" }
   | { direction: "card"; cardKey: string }
 );
 
@@ -24,24 +24,19 @@ const PAST_VIEW_THRESHOLD_PX = 600;
 // 「現在」で NOW へ滑らかに戻るのを待つ長さの上限（ミリ秒）。戻っているあいだのスクロールは手のスクロールと見なさない
 const RETURN_MAX_MS = 2000;
 
-// ±5分・カードへの操作でスクロールする先（px）。カードがタイムラインに無ければ（表示する範囲より前に終わったなど）null
-const commandLeft = (
-  command: TimelineCommand,
+// カード（cardKey）までスクロールする先（px）。カードがタイムラインに無ければ（表示する範囲より前に終わったなど）null
+const cardLeft = (
   container: HTMLElement,
-  { pagePx, cardInsetPx }: { pagePx: number; cardInsetPx: number },
+  cardKey: string,
+  cardInsetPx: number,
 ) => {
-  if (command.direction === "card") {
-    const card = container.querySelector(cardSelector(command.cardKey));
-    if (!card) return null;
-    return (
-      container.scrollLeft +
-      card.getBoundingClientRect().left -
-      container.getBoundingClientRect().left -
-      cardInsetPx
-    );
-  }
+  const card = container.querySelector(cardSelector(cardKey));
+  if (!card) return null;
   return (
-    container.scrollLeft + (command.direction === "back" ? -pagePx : pagePx)
+    container.scrollLeft +
+    card.getBoundingClientRect().left -
+    container.getBoundingClientRect().left -
+    cardInsetPx
   );
 };
 
@@ -123,7 +118,6 @@ export const useTimelineScroll = ({
   nowX,
   followLeftPx,
   originPx,
-  pagePx,
   cardInsetPx,
   command,
   onFollowingChange,
@@ -134,8 +128,6 @@ export const useTimelineScroll = ({
   followLeftPx: number;
   /** タイムラインの始まり（px）。時が変わって動いたら、見えているものを動かさないよう同じだけ戻す */
   originPx: number;
-  /** ±5分 で動かす幅（px） */
-  pagePx: number;
   /** カードまでスクロールするとき、カードの左を見えている所の左端からどれだけ空けるか（px。左端に固定した列の幅も入れる） */
   cardInsetPx: number;
   command: TimelineCommand | null;
@@ -183,15 +175,15 @@ export const useTimelineScroll = ({
     ownLeftRef.current = placeScroll(container, followLeftPx);
   }, [followLeftPx, isFollowingNow]);
 
-  // 手のスクロールが NOW の近くで止まったら、追従に戻す（通り過ぎただけ・指を乗せたまま・±5分やカードへの途中では戻さない）
+  // 手のスクロールが NOW の近くで止まったら、追従に戻す（通り過ぎただけ・指を乗せたまま・カードへの途中では戻さない）
   const followSettleTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(followSettleTimerRef.current), []);
-  // ±5分・カードへの操作は、ゆっくり始まる smooth scroll。始めの NOW の近くのコマを止まったと見なさない
-  const pagingUntilRef = useRef(0);
+  // カードへの操作は、ゆっくり始まる smooth scroll。始めの NOW の近くのコマを止まったと見なさない
+  const cardScrollUntilRef = useRef(0);
   const scheduleFollowCheck = (leftAtSchedule: number) => {
     window.clearTimeout(followSettleTimerRef.current);
     followSettleTimerRef.current = window.setTimeout(() => {
-      if (performance.now() < pagingUntilRef.current || isPressing()) {
+      if (performance.now() < cardScrollUntilRef.current || isPressing()) {
         scheduleFollowCheck(leftAtSchedule);
         return;
       }
@@ -259,7 +251,7 @@ export const useTimelineScroll = ({
     container.scrollTo({ left, behavior: "smooth" });
   };
 
-  // Run each header command once. ±5分 pages from the current view; 現在 returns to NOW and follows it.
+  // Run each header command once. 現在 returns to NOW and follows it.
   // "card" brings that card to the left of the view.
   const handledCommandIdRef = useRef(command?.id);
   // biome-ignore lint/correctness/useExhaustiveDependencies: toNow reads refs only
@@ -272,14 +264,14 @@ export const useTimelineScroll = ({
     }
     const container = containerRef.current;
     if (!container) return;
-    const left = commandLeft(command, container, { pagePx, cardInsetPx });
+    const left = cardLeft(container, command.cardKey, cardInsetPx);
     if (left === null) return;
     // Stop following first so the next clock tick does not cut the smooth scroll short.
     returnRef.current = null;
     setIsFollowingNow(false);
-    pagingUntilRef.current = performance.now() + 1000;
+    cardScrollUntilRef.current = performance.now() + 1000;
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-  }, [command, pagePx, cardInsetPx]);
+  }, [command, cardInsetPx]);
 
   return {
     containerRef,

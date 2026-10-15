@@ -17,3 +17,46 @@ export const longWaitMinutes = (card: CaosCard, nowMs: number) => {
   const waitedSec = (nowMs - orderedMs) / 1000;
   return waitedSec >= LONG_WAIT_SEC ? Math.floor(waitedSec / 60) : null;
 };
+
+/** 受けてからこれだけ（秒）を超えて、まだ抽出を始めていない（未割当・待機の）注文を、ヘッダーで「15分超 N件」と数える */
+export const LATE_ORDER_SEC = 15 * 60;
+
+/** 待っている注文（注文番号と、受けてからの秒。late は LATE_ORDER_SEC を超えた） */
+export interface WaitingOrder {
+  orderNo: number;
+  waitSec: number;
+  late: boolean;
+}
+
+// cards のカップの注文を、待ちの長い順に 1 つずつ（受けた時刻はカップの orderedAt。入れ直しは入れ直した時刻）
+const waitingOrders = (cards: readonly CaosCard[], nowMs: number) => {
+  const found = new Map<string, WaitingOrder>();
+  for (const cup of cards.flatMap((card) => card.cups)) {
+    const waitSec = (nowMs - cup.orderedAt.getTime()) / 1000;
+    const seen = found.get(cup.orderId);
+    if (!seen || waitSec > seen.waitSec)
+      found.set(cup.orderId, {
+        orderNo: cup.orderNo,
+        waitSec,
+        late: waitSec > LATE_ORDER_SEC,
+      });
+  }
+  return [...found.values()].sort((a, b) => b.waitSec - a.waitSec);
+};
+
+/**
+ * 抽出を始めていない注文の待ち（ヘッダー。飛ばした注文・入れ忘れに気づく）。nowMs は今（実データテスト中は練習の時計）。
+ *   - oldestUnassigned：未割当のカップのある注文のうち、いちばん長く待っているもの（無ければ null）
+ *   - late：未割当・待機のカップのある注文のうち、受けてから LATE_ORDER_SEC を超えたもの（長く待っている順）
+ */
+export const orderBacklog = (cards: readonly CaosCard[], nowMs: number) => {
+  const unstarted = (statuses: CaosCard["status"][]) =>
+    waitingOrders(
+      cards.filter((card) => statuses.includes(card.status)),
+      nowMs,
+    );
+  return {
+    oldestUnassigned: unstarted(["unassigned"])[0] ?? null,
+    late: unstarted(["unassigned", "queued"]).filter((order) => order.late),
+  };
+};

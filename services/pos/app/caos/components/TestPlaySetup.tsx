@@ -2,6 +2,7 @@ import type { PracticeDataset } from "@cafeore/common";
 import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import { ordersInPeriod, testPlaySlots } from "../logic/historical";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
@@ -44,6 +45,9 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
 }) => {
   const orders = dataset?.orders ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
   const slots = useMemo(
@@ -67,11 +71,10 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
       <dialog
+        ref={dialogRef}
         open
         aria-modal="true"
         aria-label="実績でテストプレイ"
