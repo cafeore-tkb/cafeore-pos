@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { cardSelector } from "../utils/scrollToCard";
 
 // 管制盤 A のタイムラインの横スクロール。NOW を画面の左寄りの決まった位置に置き、時間とともにレーンの側を動かす（追従）。
@@ -50,34 +56,66 @@ const placeScroll = (container: HTMLElement, left: number) => {
   return container.scrollLeft;
 };
 
-// タイムライン（スクロールの枠とスクロールバーを並べた外の枠 frame）に指・マウスのボタンが触れているか。
-// 触れているあいだは追従に戻さない（戻すと指の下で盤面が跳ぶ）。触れ始めは frame で、離すのは画面のどこでも見る
-const usePressing = (frame: () => HTMLElement | null | undefined) => {
+// 「現在」で戻っている途中か（戻る先と期限。期限は performance.now() のミリ秒）
+type Return = { left: number; until: number };
+const isReturning = (current: Return | null) =>
+  current !== null && performance.now() < current.until;
+
+const TOUCH_ENDS = ["touchend", "touchcancel"] as const;
+
+// タイムライン（スクロールの枠 ref と、スクロールバーを並べた外の枠）に指・マウスのボタンが触れているか。
+// 触れているあいだは追従に戻さない（戻すと指の下で盤面が跳ぶ）。枠の中のなぞってもスクロールしない所（固定の列・掴めるカード）の指は数えない。
+// ホイール・トラックパッドを回したら onWheel（「現在」の戻りを止めたので、そのスクロールを手のスクロールと見なす）
+const usePressing = (ref: RefObject<HTMLElement>, onWheel: () => void) => {
   const pressing = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: frame は描き直しで変わらない枠を返すだけ
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
   useEffect(() => {
-    const element = frame();
-    if (!element) return;
-    const press = () => {
+    const frame = ref.current?.parentElement;
+    if (!frame) return;
+    const release = () => {
+      pressing.current = false;
+    };
+    // タイムラインの外に残った指（iPad を持つ親指など）は数えない（Touch.target は触れ始めた要素のまま）
+    const touchEnd = (event: TouchEvent) => {
+      const inside = Array.from(event.touches).some(
+        (touch) => touch.target instanceof Node && frame.contains(touch.target),
+      );
+      if (!inside) release();
+    };
+    const press = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // 枠の中のなぞってもスクロールしない所（スクロールバーは枠の外なので数える）
+      const still = target.closest(".touch-none");
+      if (still && ref.current?.contains(still)) return;
       pressing.current = true;
+      // 離す前に触れ始めた要素が作り直されると、離した知らせは window に届かないので、その要素でも受ける
+      if (event.type === "touchstart")
+        for (const type of TOUCH_ENDS)
+          target.addEventListener(type, touchEnd as EventListener, {
+            once: true,
+          });
     };
-    const release = (event: Event) => {
-      if (!("touches" in event) || (event as TouchEvent).touches.length === 0)
-        pressing.current = false;
-    };
-    const releases = ["touchend", "touchcancel", "mouseup", "blur"] as const;
+    const wheel = () => onWheelRef.current();
     const options = { passive: true, capture: true };
-    element.addEventListener("touchstart", press, options);
-    element.addEventListener("mousedown", press, options);
-    for (const type of releases)
-      window.addEventListener(type, release, options);
+    frame.addEventListener("touchstart", press, options);
+    frame.addEventListener("mousedown", press, options);
+    frame.addEventListener("wheel", wheel, options);
+    for (const type of TOUCH_ENDS)
+      window.addEventListener(type, touchEnd, options);
+    window.addEventListener("mouseup", release, options);
+    window.addEventListener("blur", release, options);
     return () => {
-      element.removeEventListener("touchstart", press, options);
-      element.removeEventListener("mousedown", press, options);
-      for (const type of releases)
-        window.removeEventListener(type, release, options);
+      frame.removeEventListener("touchstart", press, options);
+      frame.removeEventListener("mousedown", press, options);
+      frame.removeEventListener("wheel", wheel, options);
+      for (const type of TOUCH_ENDS)
+        window.removeEventListener(type, touchEnd, options);
+      window.removeEventListener("mouseup", release, options);
+      window.removeEventListener("blur", release, options);
     };
-  }, []);
+  }, [ref]);
   return () => pressing.current;
 };
 
@@ -111,7 +149,11 @@ export const useTimelineScroll = ({
   useLayoutEffect(() => {
     followLeftRef.current = followLeftPx;
   }, [followLeftPx]);
-  const isPressing = usePressing(() => containerRef.current?.parentElement);
+  // 「現在」で滑らかに戻っている先と期限。着いたら・ほかの操作で null
+  const returnRef = useRef<Return | null>(null);
+  const isPressing = usePressing(containerRef, () => {
+    returnRef.current = null;
+  });
 
   useEffect(() => {
     onFollowingChange?.(isFollowingNow);
@@ -119,10 +161,6 @@ export const useTimelineScroll = ({
 
   // この画面が自分で置いたスクロールの位置（そのスクロールの知らせは手のスクロールと見なさない）
   const ownLeftRef = useRef<number | null>(null);
-  // 「現在」で滑らかに戻っている先（left）と、待つ期限（performance.now() のミリ秒）。着いたら・ほかの操作で null
-  const returnRef = useRef<{ left: number; until: number } | null>(null);
-  const isReturning = () =>
-    returnRef.current !== null && performance.now() < returnRef.current.until;
 
   // When the hour rolls over the track origin moves; shift the scroll by the same
   // amount before paint so whatever is on screen stays put.
@@ -139,10 +177,9 @@ export const useTimelineScroll = ({
 
   // Keep NOW at one fixed screen position; the timeline moves underneath it.
   // 「現在」で滑らかに戻っているあいだは、毎秒の位置で途中を切らない
-  // biome-ignore lint/correctness/useExhaustiveDependencies: isReturning reads refs only
   useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container || !isFollowingNow || isReturning()) return;
+    if (!container || !isFollowingNow || isReturning(returnRef.current)) return;
     ownLeftRef.current = placeScroll(container, followLeftPx);
   }, [followLeftPx, isFollowingNow]);
 
@@ -185,7 +222,7 @@ export const useTimelineScroll = ({
     setIsScrolledToPast(currentLeft < nowX - PAST_VIEW_THRESHOLD_PX);
     // 「現在」で戻っている途中（タイムラインを指で止めたら手のスクロール）。
     // 戻る先に着いたら、その時の NOW の位置に寄せて（倍速の実データテストでは戻るあいだにも NOW が進む）毎秒の追従に戻す
-    if (isReturning() && !isPressing()) {
+    if (isReturning(returnRef.current) && !isPressing()) {
       if (
         returnRef.current &&
         Math.abs(currentLeft - returnRef.current.left) < 2
