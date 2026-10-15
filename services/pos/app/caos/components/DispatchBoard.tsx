@@ -10,12 +10,7 @@ import {
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
-import {
-  cardName,
-  orderLabel,
-  selectedComments,
-  sharesOrder,
-} from "../logic/cards";
+import { cardName, orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -29,7 +24,6 @@ import {
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
-import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
@@ -151,14 +145,6 @@ export const DispatchBoard: React.FC<
           `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
-  // 選んだ注文のコメント（未割当のカードも見る）
-  const comments = selectedOrderId
-    ? selectedComments(
-        [...lanes.flatMap(laneCards), ...unassignedOrders],
-        looks,
-        selectedOrderId,
-      )
-    : [];
 
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -184,7 +170,6 @@ export const DispatchBoard: React.FC<
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
             </span>
-            <CommentLine comments={comments} />
           </div>
 
           <button

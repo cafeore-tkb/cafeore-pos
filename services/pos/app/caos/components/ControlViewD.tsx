@@ -31,11 +31,11 @@ import {
   buildSheet,
   cellKey,
   linkedOrderNos,
-  orderCupsOf,
 } from "../logic/sheet";
 import {
   DripperIndicator,
   EmptySlotButton,
+  LongWaitTag,
   NextButton,
   PanelHeader,
   PlaceTag,
@@ -43,7 +43,6 @@ import {
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
-import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
@@ -127,8 +126,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     [bays, unassignedOrders, looks],
   );
   const orderGroups = useMemo(
-    () => buildOrderGroups(bays, unassignedOrders),
-    [bays, unassignedOrders],
+    () => buildOrderGroups(unassignedOrders),
+    [unassignedOrders],
   );
   const linkedRows = useMemo(
     () => linkedOrderNos(selectedOrderId, bays, unassignedOrders),
@@ -250,21 +249,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             {headerHint()}
           </p>
           {selectedOrder && (
-            <>
-              {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
-              <CommentLine
-                comments={looks.get(selectedOrder.key)?.comments ?? []}
-                className="font-bold text-[12px]"
-              />
-              <button
-                type="button"
-                onClick={picked.clear}
-                className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
-              >
-                <X className="h-3.5 w-3.5" />
-                解除
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={picked.clear}
+              className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
+            >
+              <X className="h-3.5 w-3.5" />
+              解除
+            </button>
           )}
         </PanelHeader>
 
@@ -534,7 +526,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     注文 {group.key}
                   </h3>
                   <span className="font-black text-[13px]">
-                    {orderCupsOf(group.items[0], looks)}杯
+                    {totalCups(group.items)}杯
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 p-2">
@@ -568,6 +560,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         className="min-h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
                         dragging={dragCup?.key === uid}
                       >
+                        <LongWaitTag card={order} nowMs={nowMs} />
                         {isMergeCandidate && <MergeOverlay />}
                         {isSelected && order.emergency && onCancelEmergency && (
                           <CancelEmergencyButton
@@ -580,18 +573,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       </OrderCard>
                     );
                   })}
-                  {group.assigned.map(({ card: ticket, bayId }) => (
-                    <OrderCard
-                      key={ticket.key}
-                      card={ticket}
-                      look={looks.get(ticket.key)}
-                      size="sm"
-                      byOrder
-                      note={`→ ${dripperLabel(bayId)}`}
-                      data-search-key={ticket.key}
-                      className="min-h-[64px] opacity-50"
-                    />
-                  ))}
                 </div>
               </article>
             ))}

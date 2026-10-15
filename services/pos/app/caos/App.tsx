@@ -5,6 +5,7 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { CommentDock, OpenCommentsContext } from "./components/OrderComments";
 import { OrderSearchPanel } from "./components/OrderSearchPanel";
 import {
   AssignPanel,
@@ -18,11 +19,13 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
-import { useCommentToasts } from "./hooks/useCommentToasts";
+import { useCommentNotices } from "./hooks/useCommentNotices";
+import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
+import { useViewedComments } from "./hooks/useViewedComments";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
 // 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
@@ -60,8 +63,21 @@ export default function App() {
     comments: session.comments,
     nowMs: session.nowMs,
   });
-  // 新しいコメントの通知。「表示」でその注文を探す
-  useCommentToasts(session.comments, search.show);
+  // 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない）を音で知らせる
+  useForgottenBrewAlert(lanes, session.nowMs);
+  // 右下のコメント：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
+  // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
+  const viewed = useViewedComments({
+    selectedOrderId: selection.selectedOrderId,
+    selectOrder: selection.selectOrder,
+    cards: session.cards,
+    looks,
+    hidden:
+      selection.searchDigits !== null ||
+      Boolean(selection.rebrew?.card) ||
+      Boolean(selection.scheduled && view.detailPanel),
+  });
+  const commentNotices = useCommentNotices(session.comments, viewed.label);
   // 本番（cafeore-pos の注文）の盤面に戻る（テストの盤面を捨て、開いているものを閉じる）
   const backToLive = () => {
     session.reset();
@@ -120,31 +136,34 @@ export default function App() {
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
           {session.simulating && <TestBoardBanner onBackToLive={backToLive} />}
-          <ControlWorkspace
-            mode={controlViewMode}
-            lanes={lanes}
-            unassignedOrders={session.unassigned}
-            looks={looks}
-            nextAvailable={session.nextAvailable}
-            selectedOrderId={selection.selectedOrderId}
-            actionTicketKey={selection.scheduled?.card.key ?? null}
-            nowMs={session.nowMs}
-            timelineCommand={timelineCommand}
-            onSelectOrder={selection.selectOrder}
-            onAdvanceBay={session.advance}
-            onOpenTicket={selection.openTicket}
-            onOpenRebrew={selection.openRebrew}
-            onCancelEmergency={selection.cancelEmergency}
-            onMoveTicket={selection.move}
-            onReturnToUnassigned={selection.returnToUnassigned}
-            onCloseTicket={selection.closeTicket}
-            onOpenEmptySlot={selection.openAssignSlot}
-            onOpenLane={selection.openLane}
-            onAssignToBay={selection.assign}
-            onMergeOrders={selection.merge}
-            onSplitCup={selection.split}
-            onFollowNowChange={setFollowingNow}
-          />
+          {/* 盤面のカードのコメントの印を押すと、その注文のコメントを右下に出す */}
+          <OpenCommentsContext.Provider value={viewed.open}>
+            <ControlWorkspace
+              mode={controlViewMode}
+              lanes={lanes}
+              unassignedOrders={session.unassigned}
+              looks={looks}
+              nextAvailable={session.nextAvailable}
+              selectedOrderId={selection.selectedOrderId}
+              actionTicketKey={selection.scheduled?.card.key ?? null}
+              nowMs={session.nowMs}
+              timelineCommand={timelineCommand}
+              onSelectOrder={selection.selectOrder}
+              onAdvanceBay={session.advance}
+              onOpenTicket={selection.openTicket}
+              onOpenRebrew={selection.openRebrew}
+              onCancelEmergency={selection.cancelEmergency}
+              onMoveTicket={selection.move}
+              onReturnToUnassigned={selection.returnToUnassigned}
+              onCloseTicket={selection.closeTicket}
+              onOpenEmptySlot={selection.openAssignSlot}
+              onOpenLane={selection.openLane}
+              onAssignToBay={selection.assign}
+              onMergeOrders={selection.merge}
+              onSplitCup={selection.split}
+              onFollowNowChange={setFollowingNow}
+            />
+          </OpenCommentsContext.Provider>
         </main>
 
         {panel?.kind === "auxiliary" && (
@@ -194,6 +213,17 @@ export default function App() {
         confirms={session.confirms}
         onCancel={session.cancelConfirm}
         onConfirm={session.confirm}
+      />
+
+      <CommentDock
+        viewing={viewed.viewing}
+        onCloseViewing={viewed.close}
+        notices={commentNotices.notices}
+        onOpen={(comment) => {
+          commentNotices.dismiss([comment]);
+          search.show(comment.orderNo);
+        }}
+        onDismiss={commentNotices.dismiss}
       />
 
       {selection.searchDigits !== null && (

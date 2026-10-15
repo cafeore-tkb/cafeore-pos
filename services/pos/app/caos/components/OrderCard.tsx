@@ -211,8 +211,10 @@ export const OrderCard: React.FC<
       className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
-      {/* コメントのある注文は左上の角に印（中身は開いたカードのパネル・管制盤 A の帯に出す） */}
-      {look?.comments && <CommentMark count={look.comments.length} />}
+      {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
+      {look?.comments && (
+        <CommentMark count={look.comments.length} label={orderLabel(card)} />
+      )}
       {/* 何が何杯か（未割当は何番が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
@@ -259,6 +261,7 @@ export const OrderCard: React.FC<
                   {part.comments > 0 && (
                     <CommentMark
                       count={part.comments}
+                      label={`#${orderNoLabel(part.orderNo)}`}
                       className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
                     />
                   )}
@@ -325,23 +328,6 @@ export const OrderCard: React.FC<
     </div>
   );
 };
-
-/** 統合した跡。ほかの注文と統合して、もとの場所から無くなったカードの代わりに薄く残す（「#011 → #010+#011 に統合」） */
-export const MergedTrace: React.FC<{
-  orderNo: number;
-  /** 統合したカードの注文番号の表示（orderLabel） */
-  into: string;
-  className?: string;
-}> = ({ orderNo, into, className = "" }) => (
-  <div
-    className={`flex min-w-0 flex-col justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-100 px-2 py-1 text-slate-500 leading-none ${className}`}
-  >
-    <span className="font-black font-mono text-[14px]">
-      #{orderNoLabel(orderNo)}
-    </span>
-    <span className="truncate font-bold text-[11px]">→ {into} に統合</span>
-  </div>
-);
 
 // 1〜6 のボタンの色（ドラッグで指の下は青。指名の番号でないボタンは押せない）
 const padTone = (bayId: number, hoveredBay: number | null) =>
