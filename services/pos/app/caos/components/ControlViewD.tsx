@@ -177,7 +177,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       : `${card} → 配置する枠を選択`;
   };
 
-  // 抽出中・待機・済は札（「3rd 抽出中」）で、残りはドリッパーの番号で出す
+  // 抽出中・待機は札（「3rd 抽出中」）で、残りはドリッパーの番号で出す（終わったカードは表に出さない。logic/sheet.ts）
   const renderEntry = (
     { card: ticket, state, rowIds }: SheetEntry,
     bayId: number,
@@ -188,20 +188,17 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       look={looks.get(ticket.key)}
       size="sm"
       note={rowIds.length > 1 ? "統合" : undefined}
-      onPointerDown={
-        state !== "past"
-          ? (event) =>
-              drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
-          : undefined
+      onPointerDown={(event) =>
+        drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
       }
       onClickCapture={drag.suppressClick}
-      // 抽出中・済のカードは入れ直し（選んだ注文カードと統合できる抽出中のカードは統合）
+      // 抽出中のカードは入れ直し（選んだ注文カードと統合できる抽出中のカードは統合）
       onClick={() => {
         if (picked.canMergeWith(ticket)) picked.mergeWith(ticket);
         else if (state === "waiting") onOpenTicket(ticket);
         else onOpenRebrew?.(ticket);
       }}
-      className={`h-[60px] shrink-0 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      className={`h-[60px] shrink-0 cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />

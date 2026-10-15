@@ -12,6 +12,7 @@ import {
   cardItemName,
   cardNominee,
   cardOrderNos,
+  cardServedLabel,
   emergencyReasons,
   orderLabel,
   orderNoLabel,
@@ -22,7 +23,9 @@ import { CommentMark } from "./OrderComments";
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
 // 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ（終わりはカードの状態で薄くする）。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ。
+// 終わったカード（管制盤 A のタイムラインの NOW より左だけに出る）は、点線の枠・地の色なし・薄い文字にし、抽出中・待機と見分ける。
+// 提供の画面で提供済みにしたカップのある待機・抽出中のカードは「提供済」の札（終えるのは「次へ」だけなので、盤面に残る）。
 // 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
@@ -70,7 +73,7 @@ const SIZES = {
   },
 };
 
-// 地と枠。終わったカードは薄い灰色（選んだ注文でなければ全体も薄くする。薄くすると選択中の黄の輪も薄くなる）。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
+// 地と枠。終わったカードは点線の枠に薄い灰色の地（選んだ注文でなければ全体も薄くする。薄くすると選択中の黄の輪も薄くなる）。それ以外は色の設定の色（look.color。画面 master・指名は nominated）で塗り、色の無いカードは白。
 // 文字色は背景色から決める（POS と共通の readableTextColor）。商品の種類や名前で色を決め打ちしない。
 // 指名のカードは黒い点線の太い枠（地の色が近くても枠の形で分かる）
 const surfaceOf = (
@@ -81,7 +84,7 @@ const surfaceOf = (
 ) => {
   if (done)
     return {
-      className: `border-2 border-slate-200 bg-slate-100 text-slate-500 ${selected ? "" : "opacity-50"}`,
+      className: `border-2 border-slate-300 border-dashed bg-slate-50 text-slate-400 ${selected ? "" : "opacity-40"}`,
     };
   const backgroundColor = color ?? "#ffffff";
   // 地の色は --caos-card-bg に入れ、統合したカードの後ろの 1 枚（shadowOf）にも同じ色を使う
@@ -103,11 +106,13 @@ const shadowOf = (merged: boolean, selected: boolean) => {
     : "shadow-[5px_5px_0_-2px_var(--caos-card-bg,var(--color-slate-100)),5px_5px_0_0_var(--caos-card-stack-line)]";
 };
 
-// 杯数の札。1 杯は白抜き、2 杯は塗り
-const cupsClass = (cups: number) =>
-  cups === 1
+// 杯数の札。1 杯は白抜き、2 杯は塗り。終わったカードは枠だけ（抽出中・待機の濃い札と見分ける）
+const cupsClass = (cups: number, done: boolean) => {
+  if (done) return "border-slate-300 bg-transparent text-slate-400";
+  return cups === 1
     ? "border-slate-950 bg-white text-black"
     : "border-slate-950 bg-slate-950 text-white";
+};
 
 export const OrderCard: React.FC<
   React.HTMLAttributes<HTMLDivElement> & {
@@ -143,6 +148,7 @@ export const OrderCard: React.FC<
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const reasons = emergencyReasons(card);
+  const served = cardServedLabel(card);
   // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
   // 注文番号の札と、商品の略称
@@ -209,12 +215,12 @@ export const OrderCard: React.FC<
             </span>
           )}
           {done && (
-            <Check className="h-4 w-4 text-emerald-700">
+            <Check className="h-4 w-4 text-slate-400">
               <title>完了</title>
             </Check>
           )}
           <span
-            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length)}`}
+            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length, done)}`}
           >
             {card.cups.length}杯
           </span>
@@ -232,6 +238,11 @@ export const OrderCard: React.FC<
           </span>
         )}
         {subline}
+        {served && (
+          <span className="shrink-0 whitespace-nowrap rounded border border-slate-900 bg-white px-1 py-0.5 font-black text-slate-900">
+            {served}
+          </span>
+        )}
         {nominee && (
           <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
             指名 {nominee}

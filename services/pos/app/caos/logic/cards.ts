@@ -91,6 +91,19 @@ export const cardItemName = (card: CaosCard) =>
 export const cardNominee = (card: CaosCard) =>
   unique(card.cups.flatMap((cup) => cup.nominee ?? [])).join("・");
 
+/**
+ * ドリッパーに置いた（待機・抽出中の）カードの、提供の画面で提供済みにしたカップの札（全部なら「提供済」、一部なら「提供済 1/2」）。
+ * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。入れ直しは提供を持たない。無ければ空
+ */
+export const cardServedLabel = (card: CaosCard) => {
+  if (card.status !== "queued" && card.status !== "brewing") return "";
+  const served = card.cups.filter((cup) => cup.servedAt !== null).length;
+  if (served === 0) return "";
+  return served === card.cups.length
+    ? "提供済"
+    : `提供済 ${served}/${card.cups.length}`;
+};
+
 /** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
 export const emergencyReasons = (card: CaosCard) =>
   unique(card.cups.flatMap((cup) => cup.emergencyReason || [])).join("・");

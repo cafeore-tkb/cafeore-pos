@@ -15,9 +15,10 @@ import { jstDate } from "./jst";
 //   - dripId：同じカードで淹れるカップの印（統合したら同じ値）
 //   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻。どちらもサーバーの時刻で、サーバーが付ける（画面からは送らない）
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
-// カップが全部準備完了（提供の画面で準備完了にした）のカードも終わりとみなす。
+// ドリッパーに置いたカードは、提供の画面でカップを準備完了（提供可能）・提供済みにしても終わらない（終えるのは CaOS の「次へ」だけ）。
+// 準備完了・提供済みのカップを除くのは、まだドリッパーに置いていない未割当だけ。
 // 緊急（入れ直し。カップの emergencies）も同じ列を持ち、カップと同じ決まりでカードに入る（書き込みの cup_ids には入れ直しの id を入れる）。
-// 入れ直しは準備完了の時刻を持たない（準備完了のカップも入れ直すので、準備完了で終わりにしない）。未割当の入れ直しは未割当のいちばん上に出す。
+// 入れ直しは準備完了・提供の時刻を持たない（準備完了のカップも入れ直すので）。未割当の入れ直しは未割当のいちばん上に出す。
 // 指名はレジで選んだドリッパーの番号（注文の明細の dripper）。番号のあるカップはその番号のドリッパーにしか置けない。
 // 1 枚のカードに違う番号のカップは入れない（指名なしのカップは、どの番号のカップとも同じカードにできる。カードの指名はその番号）。
 // 番号の無い自由記述（assignee）だけの古い明細は指名なし。
@@ -107,7 +108,7 @@ export interface CaosCard {
   dripper: number | null;
   dripperPosition: number | null;
   startedAt: Date | null;
-  /** 終えた時刻。準備完了で終わりとみなしたカードは、カップの準備完了のいちばん遅い時刻 */
+  /** 終えた時刻（「次へ」で付いた brewFinishedAt） */
   finishedAt: Date | null;
   /** 並びは注文番号・注文の中の順 */
   cups: CaosBoardCup[];
@@ -157,12 +158,6 @@ const itemNomineeKey = (cup: Pick<CaosBoardCup, "item" | "nominatedDripper">) =>
 const isReady = (cup: Pick<Cup, "readyAt" | "servedAt">) =>
   cup.readyAt !== null || cup.servedAt !== null;
 
-const latest = (dates: (Date | null)[]) =>
-  dates.reduce<Date | null>(
-    (out, d) => (d && (!out || d > out) ? d : out),
-    null,
-  );
-
 const makeCard = (
   cups: CaosBoardCup[],
   status: CaosCardStatus,
@@ -176,10 +171,7 @@ const makeCard = (
     dripper: state.dripper,
     dripperPosition: state.dripperPosition,
     startedAt: state.brewStartedAt,
-    finishedAt:
-      status === "done"
-        ? (state.brewFinishedAt ?? latest(sorted.map((cup) => cup.readyAt)))
-        : null,
+    finishedAt: status === "done" ? state.brewFinishedAt : null,
     cups: sorted,
     orderNo: sorted[0].orderNo,
     nominatedDripper:
@@ -191,13 +183,10 @@ const makeCard = (
   };
 };
 
-// dripId のあるカードの状態（終了あり・全部準備完了＝終わり、開始あり＝抽出中、ドリッパーあり＝待機、無し＝統合した未割当）
-const placedStatus = (
-  state: CaosCupState,
-  allReady: boolean,
-): CaosCardStatus => {
+// dripId のあるカードの状態（終了あり＝終わり、開始あり＝抽出中、ドリッパーあり＝待機、無し＝統合した未割当）。準備完了・提供は見ない
+const placedStatus = (state: CaosCupState): CaosCardStatus => {
   if (state.dripper === null) return "unassigned";
-  if (state.brewFinishedAt || allReady) return "done";
+  if (state.brewFinishedAt) return "done";
   if (state.brewStartedAt) return "brewing";
   return "queued";
 };
@@ -257,8 +246,8 @@ export const caosDayOrders = <O extends Pick<CaosOrderInput, "createdAt">>(
 
 /**
  * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。day を省くと日では絞らない（練習の盤面）。
- *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まり、カップが全部準備完了なら終わり
- *     （API の「次へ」の splitCaosLane と同じ決まり）
+ *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻だけで決まる（カップが全部準備完了・提供済みでも、終えるのは「次へ」だけ。
+ *     API の「次へ」の splitCaosLane と同じ決まり）
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
  *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名の番号ごと・入れ直しかで分け、1 枚は最大 2 杯
  * 並びは、未割当（入れ直し、注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
@@ -326,7 +315,7 @@ export const buildCaosCards = (
   const cards: CaosCard[] = [];
   for (const cups of byDrip.values()) {
     const state = cups[0].state;
-    cards.push(makeCard(cups, placedStatus(state, cups.every(isReady)), state));
+    cards.push(makeCard(cups, placedStatus(state), state));
   }
   for (const cups of loose.values()) {
     const sorted = [...cups].sort(compareCups);

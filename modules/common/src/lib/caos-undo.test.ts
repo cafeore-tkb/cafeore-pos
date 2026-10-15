@@ -97,9 +97,8 @@ describe("unit: caos-undo", () => {
               brew_started_at: T1.toISOString(),
               brew_finished_at: null,
             },
-            ready_at: null,
           },
-          restore: { state: nullState, ready_at: null },
+          restore: { state: nullState },
         },
       ],
     });
@@ -127,7 +126,7 @@ describe("unit: caos-undo", () => {
     // 抽出中のカードのカップは、今の値のまま送る
     if (!("cups" in undo)) throw new Error(undo.error);
     expect(undo.cups.map((c) => [c.cup_id, c.restore])).toEqual([
-      ["b", { state: nullState, ready_at: null }],
+      ["b", { state: nullState }],
       ["a", undo.cups[1].current],
     ]);
   });
@@ -178,7 +177,7 @@ describe("unit: caos-undo", () => {
     ]);
   });
 
-  test("ほかの画面があとで変えた・提供済み・消えたカップは送らない", () => {
+  test("ほかの画面があとで変えた・消えたカップは送らない。提供済みになったカップは送る（準備完了・提供は比べない）", () => {
     const cards = buildCaosCards([order(1, [cup("a")])]);
     const result = assignWrites(cards, cards[0], 2, { newId: () => "d1" });
     if ("error" in result) throw new Error(result.error);
@@ -191,8 +190,13 @@ describe("unit: caos-undo", () => {
       error: "ほかの画面で先に変わったので戻せません",
     });
     expect(
-      caosUndoCups(entry, board(cup("a", { ...placed, servedAt: T2 }))),
-    ).toEqual({ error: "提供済みになったカップがあるので戻せません" });
+      caosUndoCups(
+        entry,
+        board(
+          cup("a", { ...placed, brewStartedAt: T1, readyAt: T2, servedAt: T2 }),
+        ),
+      ),
+    ).toMatchObject({ cups: [{ cup_id: "a" }] });
     expect(caosUndoCups(entry, [])).toEqual({
       error:
         "カップが消えたので戻せません（注文が編集・削除されたかもしれません）",
@@ -226,7 +230,6 @@ describe("unit: caos-undo", () => {
             brew_started_at: NOW.toISOString(),
             brew_finished_at: null,
           },
-          ready_at: null,
         },
       ],
       [
@@ -239,7 +242,6 @@ describe("unit: caos-undo", () => {
             brew_started_at: null,
             brew_finished_at: null,
           },
-          ready_at: null,
         },
       ],
     ]);
@@ -248,13 +250,16 @@ describe("unit: caos-undo", () => {
       error: "操作の結果がまだ届いていません。もう一度押してください",
       arriving: true,
     });
-    // 「次へ」のあとに提供の画面で準備完了にしていたら、ほかの画面が変えたとみて戻さない
+    // 「次へ」のあとに提供の画面で準備完了・提供にしていても戻せる（準備完了・提供は比べも書き戻しもしない）
     expect(
-      caosUndoCups(entry, board({ ...finished, readyAt: T1 }, started)),
-    ).toEqual({ error: "ほかの画面で先に変わったので戻せません" });
+      caosUndoCups(
+        entry,
+        board({ ...finished, readyAt: T1, servedAt: T1 }, started),
+      ),
+    ).toEqual(sent);
   });
 
-  test("入れ直しの「次へ」を戻す：入れ直しは準備完了を持たないので、終えても準備完了は見ない", () => {
+  test("入れ直しの「次へ」を戻す：入れ直したカップが提供済みでも戻せる", () => {
     const emergency = {
       id: "e1",
       createdAt: NOW,
@@ -273,9 +278,9 @@ describe("unit: caos-undo", () => {
     };
     const sent = caosUndoCups(entry, board(finished));
     if ("error" in sent) throw new Error(sent.error);
-    expect(sent.cups.map((c) => [c.cup_id, c.restore.ready_at])).toEqual([
-      ["e1", null],
-    ]);
+    expect(
+      sent.cups.map((c) => [c.cup_id, c.restore.state.brew_finished_at]),
+    ).toEqual([["e1", null]]);
   });
 
   test("先頭へを戻す：番号がずれる列の待機のカードも前の番号に戻す", () => {

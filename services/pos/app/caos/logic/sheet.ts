@@ -8,7 +8,8 @@ import {
 import { type Lane, laneActive, laneCards } from "./lanes";
 
 // 管制盤 D（マスターシート）の表。紙のマスターシートと同じく、行は注文番号ごと。
-// 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。
+// 割り当てた注文は下へ積むだけで、淹れ終わっても行は動かさず薄く残す。終わったカード（「次へ」で終えた）は枠に出さない
+// （列は抽出中・待機だけ。行の杯数と、淹れ終わった行かは終わったカードも数える）。
 
 type CellState = "past" | "current" | "waiting";
 
@@ -117,7 +118,8 @@ export const buildSheet = (
     cells.set(key, cell);
     return cell;
   };
-  for (const [bayId, entries] of entriesByBay) {
+  for (const [bayId, all] of entriesByBay) {
+    const entries = all.filter((entry) => entry.state !== "past");
     const touches = new Map<number, number>();
     for (const entry of entries)
       for (const id of entry.rowIds)

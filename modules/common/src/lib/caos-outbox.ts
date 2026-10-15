@@ -149,7 +149,6 @@ export const parseCaosOutboxEntry = (
             ...cup.restore,
             brewStartedAt: date(cup.restore.brewStartedAt),
             brewFinishedAt: date(cup.restore.brewFinishedAt),
-            readyAt: date(cup.restore.readyAt),
           },
         })),
       },
@@ -208,18 +207,26 @@ const rebaseWrites = (
   return { writes: rebased };
 };
 
-type UndoRestore = Partial<CaosUndoEntry["cups"][number]["restore"]>;
-
-// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了は書き戻さない）
+// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了・提供は書き戻さない。
+// 前の版で端末に残した操作の restore には準備完了も入っているので、CaOS の列だけを当てる）
 const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
-  const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
   const restored = <R extends { id: string }>(row: R): R => {
-    const { readyAt: _, ...state } = restoreOf(row.id);
-    return { ...row, ...state };
+    const state = restore.get(row.id);
+    if (!state) return row;
+    const { dripper, dripperPosition, dripId, brewStartedAt, brewFinishedAt } =
+      state;
+    return {
+      ...row,
+      dripper,
+      dripperPosition,
+      dripId,
+      brewStartedAt,
+      brewFinishedAt,
+    };
   };
   return {
     orders: orders.map((order) => ({

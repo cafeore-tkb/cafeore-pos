@@ -17,7 +17,7 @@ import {
   overlayCaosOrders,
   parseCaosOutboxEntry,
 } from "./caos-outbox";
-import { undoOfWrites } from "./caos-undo";
+import { type CaosUndoEntry, undoOfWrites } from "./caos-undo";
 import { type CaosLanes, emptyCaosLanes } from "./caosLanes";
 import { jstDate } from "./jst";
 
@@ -198,7 +198,8 @@ describe("unit: caos-outbox 重ねて表示", () => {
       dripId: "drip-a",
       brewStartedAt: NOW,
     });
-    const undo = entry({
+    // 前の版で端末に残した「1つ戻す」は、restore に準備完了（readyAt）も持つ。読んで重ねても、準備完了は当てない
+    const stored = entry({
       kind: "undo",
       entry: {
         cups: [
@@ -211,18 +212,22 @@ describe("unit: caos-outbox 重ねて表示", () => {
               brewStartedAt: NOW,
               brewFinishedAt: null,
               readyAt: null,
-            },
+            } as CaosUndoEntry["cups"][number]["restore"],
             expect: {
               dripper: 1,
               dripId: "drip-a",
               started: true,
               finished: true,
-              ready: true,
             },
           },
         ],
       },
     });
+    const undo = parseCaosOutboxEntry(
+      stored.id,
+      JSON.parse(JSON.stringify(stored)),
+    );
+    if (!undo) throw new Error("not parsed");
     const finishedReady = orders({
       ...brewing,
       brewFinishedAt: SERVER_T,
