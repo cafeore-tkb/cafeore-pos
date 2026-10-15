@@ -148,6 +148,7 @@ export const useCaosSession = () => {
       live.orders ? commentsByOrder(caosDayOrders(live.orders, today)) : null,
     [live.orders, today],
   );
+  const testing = Boolean(test.session);
   const looks = useMemo(
     () =>
       cardLooks(
@@ -156,9 +157,9 @@ export const useCaosSession = () => {
         beanIndex,
         comments,
         // 練習には担当者がいないので出さない
-        (card) => !test.session && seniorOnlyOffSenior(card, people),
+        (card) => !testing && seniorOnlyOffSenior(card, people),
       ),
-    [cards, colorSettings, beanIndex, comments, test.session, people],
+    [cards, colorSettings, beanIndex, comments, testing, people],
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
@@ -173,7 +174,7 @@ export const useCaosSession = () => {
     card: CaosCard,
     lane: ReturnType<typeof nonSeniorPlacement>,
   ) => {
-    if (lane && !test.session) confirms.ask({ kind: "seniorOnly", card, lane });
+    if (lane && !testing) confirms.ask({ kind: "seniorOnly", card, lane });
   };
   // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
   // 断られたら何もしない。通ったかを返す
