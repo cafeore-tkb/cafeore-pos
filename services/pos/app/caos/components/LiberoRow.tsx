@@ -9,7 +9,7 @@ import { LaneName } from "./LaneParts";
 // リベロビューの 1 行（1 つのドリッパー）。抽出中は、経過の長い順の順位と経過（秒まで）をいちばん大きく出し、
 // 進み具合の段（logic/libero.ts の level）で地・枠・順位・帯を濃くする。予定の抽出時間を過ぎたら継続中の赤（caos.css の --caos-overtime）。
 // 抽出していない（待機だけ・空き）ドリッパーは薄く、順位も経過も出さない。
-// flashing の行（抽出を始めたばかり）は数秒だけ点滅させる（caos.css の .caos-arrival）。見るだけなので、押しても何も起きない。
+// flashing の行（抽出を始めたばかり）は数秒だけ点滅させる（caos.css の .caos-arrival）。
 
 // 段ごとの見た目（行の地と枠・順位と帯）
 const LEVEL_LOOKS: Record<LiberoLevel, { row: string; mark: string }> = {

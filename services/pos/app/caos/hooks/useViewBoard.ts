@@ -1,6 +1,5 @@
 import type { CaosCard, CaosCardStatus } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { timelineArrivals } from "../logic/timeline";
 import { soundManager } from "../utils/audio";
 import { useDeviceSetting } from "./useDeviceSetting";
 import { useLiveBoard } from "./useLiveBoard";
@@ -12,13 +11,13 @@ import { useLiveBoard } from "./useLiveBoard";
 /** 点滅させる長さ（caos.css の .caos-arrival と同じ） */
 const FLASH_MS = 4000;
 
-/** 前に見たカードの状態（key → status）と今のカードから、知らせるカードの key を出す */
-type Arrivals = typeof timelineArrivals;
+/** 前に見たカードの状態（key → status）と今のカードから、知らせるカードの key を出す（logic/timeline の timelineArrivals・brewStarts） */
+type Arrivals = (
+  previous: ReadonlyMap<string, CaosCardStatus>,
+  cards: readonly CaosCard[],
+) => string[];
 
-export const useViewBoard = (
-  nowMs: number,
-  arrivals: Arrivals = timelineArrivals,
-) => {
+export const useViewBoard = (nowMs: number, arrivals: Arrivals) => {
   const { cards, orders, status } = useLiveBoard({ enabled: true, nowMs });
   const sound = useViewSound();
   const flashKeys = useArrivals(cards, orders !== null, nowMs, arrivals);

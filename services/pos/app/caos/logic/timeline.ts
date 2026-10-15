@@ -43,6 +43,15 @@ export const positionTickets = (lane: Lane, nowMs: number) => {
 
 type SeenStatus = ReadonlyMap<string, CaosCardStatus>;
 
+// 待機に入った（前に無かったか未割当だった待機のカード）
+const queuedIn = (previous: SeenStatus, { key, status }: CaosCard) => {
+  const before = previous.get(key);
+  return (
+    status === "queued" && (before === undefined || before === "unassigned")
+  );
+};
+
+// 抽出を始めた（前に抽出中でなかった抽出中のカード）
 const startedBrewing = (previous: SeenStatus, { key, status }: CaosCard) =>
   status === "brewing" && previous.get(key) !== "brewing";
 
@@ -56,15 +65,12 @@ export const timelineArrivals = (
   cards: readonly CaosCard[],
 ) =>
   cards
-    .filter((card) => {
-      const before = previous.get(card.key);
-      if (card.status === "queued")
-        return before === undefined || before === "unassigned";
-      return startedBrewing(previous, card);
-    })
+    .filter(
+      (card) => queuedIn(previous, card) || startedBrewing(previous, card),
+    )
     .map((card) => card.key);
 
-/** 抽出を始めたカード（前に抽出中でなかった抽出中のカード）の key（リベロビューの知らせ。待機に入っただけのカードは入らない） */
+/** 抽出を始めたカードの key（リベロビューの知らせ。待機に入っただけのカードは入らない） */
 export const brewStarts = (previous: SeenStatus, cards: readonly CaosCard[]) =>
   cards
     .filter((card) => startedBrewing(previous, card))
