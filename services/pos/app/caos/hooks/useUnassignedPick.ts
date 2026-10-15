@@ -79,8 +79,6 @@ export const useUnassignedPick = ({
   return {
     drag,
     assign,
-    /** 開いたカード */
-    openCard,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
     partner,

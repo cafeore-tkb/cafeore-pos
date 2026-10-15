@@ -44,7 +44,7 @@ export const liberoLanes = (
     .sort((a, b) => startMs(a) - startMs(b));
   return lanes.map((lane) => {
     if (!lane.brewing) return { lane };
-    const { elapsedMs, phase } = laneStatus(lane, nowMs);
+    const { elapsedMs, phase, overSec } = laneStatus(lane, nowMs);
     const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
     const plannedSec = caosBrewSec(lane.brewing.cups.length);
     const progress = Math.min(1, elapsedSec / plannedSec);
@@ -55,7 +55,7 @@ export const liberoLanes = (
         elapsedSec,
         plannedSec,
         progress,
-        overSec: Math.max(0, elapsedSec - plannedSec),
+        overSec,
         rank: longest.indexOf(lane) + 1,
         level:
           phase === "overtime"
