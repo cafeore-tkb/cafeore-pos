@@ -192,7 +192,18 @@ const samePlace = (row: CaosCupState, before: CaosCupsWrite["before"]) =>
   (row.brewStartedAt !== null) === (before.brew_started_at !== null) &&
   (row.brewFinishedAt !== null) === (before.brew_finished_at !== null);
 
-/** 書き込みの before を orders の今の値にする。カードの場所が変わっていれば（ほかの端末が先に変えた）理由を返す */
+// カードの場所を変える書き込みが、もう書いたあとの場所にある（送った結果が届いた）か。
+// サーバーの盤面は注文ごとに届くので、注文をまたぐ書き込み（統合など）は一部の注文だけ届いたところがある
+const landed = (row: CaosCupState, { before, after }: CaosCupsWrite) =>
+  (before.dripper !== after.dripper || before.drip_id !== after.drip_id) &&
+  row.dripper === after.dripper &&
+  row.dripId === after.drip_id &&
+  (!after.start_brew || row.brewStartedAt !== null);
+
+/**
+ * 書き込みの before を orders の今の値にする。もう書いたあとの場所にある書き込みは除く（一部の注文だけ届いた統合を、届いていない注文のぶんだけ重ねる）。
+ * カードの場所が変わっていれば（ほかの端末が先に変えた）理由を返す
+ */
 const rebaseWrites = (
   orders: readonly CaosOrderInput[],
   writes: readonly CaosCupsWrite[],
@@ -202,6 +213,7 @@ const rebaseWrites = (
   for (const write of writes) {
     const row = rows.get(write.cup_ids[0]);
     if (!row) return { error: CUP_GONE };
+    if (landed(row, write)) continue;
     if (!samePlace(row, write.before)) return { error: CHANGED };
     rebased.push({ ...write, before: caosStateJSON(row) });
   }
@@ -458,7 +470,10 @@ const prepareCaosOutboxOp = (
   switch (op.kind) {
     case "cups": {
       const rebased = rebaseWrites(server.orders, op.writes);
-      if ("writes" in rebased) return { request: { kind: "cups", ...rebased } };
+      if ("writes" in rebased)
+        return rebased.writes.length === 0
+          ? { done: true }
+          : { request: { kind: "cups", ...rebased } };
       return reflected(op, server)
         ? { done: true }
         : { conflict: rebased.error };
