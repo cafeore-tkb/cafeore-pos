@@ -56,16 +56,16 @@ export const orderLabel = (card: CaosCard) =>
     .map((no) => `#${orderNoLabel(no)}`)
     .join("+");
 
+/** 選んだ注文（orderLabel。統合したカードなら「#012+#013」）に、注文番号 no の注文が入っているか */
+export const labelHasOrder = (label: string | null, no: number) =>
+  label?.split("+").includes(`#${orderNoLabel(no)}`) ?? false;
+
 /**
  * カードが、選んだ注文（orderLabel。統合したカードなら「#012+#013」）の注文を 1 つでも含むか。
  * 統合したカードは、中の注文のどれを選んでも当たり、統合したカードを選べば中の注文のカードがみな当たる
  */
-export const sharesOrder = (card: CaosCard, label: string | null) => {
-  const labels = label?.split("+") ?? [];
-  return cardOrderNos(card).some((no) =>
-    labels.includes(`#${orderNoLabel(no)}`),
-  );
-};
+export const sharesOrder = (card: CaosCard, label: string | null) =>
+  cardOrderNos(card).some((no) => labelHasOrder(label, no));
 
 /**
  * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち押して統合できる（canTapMerge。未割当と抽出中）カードが 1 枚ならそれ、
@@ -91,12 +91,11 @@ export const selectedComments = (
   looks: CardLooks,
   label: string,
 ) => {
-  const labels = label.split("+");
   const found = new Map<string, BoardComment>();
   for (const card of cards) {
     if (!sharesOrder(card, label)) continue;
     for (const comment of looks.get(card.key)?.comments ?? [])
-      if (labels.includes(`#${orderNoLabel(comment.orderNo)}`))
+      if (labelHasOrder(label, comment.orderNo))
         found.set(commentKey(comment), comment);
   }
   return [...found.values()].sort(

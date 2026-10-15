@@ -46,8 +46,7 @@ export const CommentMark: React.FC<{
       type="button"
       aria-label={`${title}を見る`}
       title={`${title}（押すと右下に出す）`}
-      // カードの掴む・開くに渡さない
-      onPointerDown={(event) => event.stopPropagation()}
+      // カードを押したとき（開く）に渡さない（掴むのは、useCardDrag がボタンの上の押下を見ないので渡らない）
       onClick={(event) => {
         event.stopPropagation();
         open(label);
@@ -85,7 +84,7 @@ export const CommentList: React.FC<{
   );
 };
 
-// 知らせは新しいものからこれだけ出す（ほかは「ほか N 件」）
+// 知らせは新しいものからこれだけ出す（ほかは「ほかに新しいコメント N 件」）
 const NOTICES_SHOWN = 3;
 
 /**
@@ -94,7 +93,7 @@ const NOTICES_SHOWN = 3;
  * 知らせは押すとその注文を開き（onOpen）、×で閉じる。どちらも押すまで残す
  */
 export const CommentDock: React.FC<{
-  /** 見ている注文（orderLabel）と、そのコメント */
+  /** 見ている注文（orderLabel）と、そのコメント（コメントがあるときだけ） */
   viewing?: { label: string; comments: readonly BoardComment[] };
   onCloseViewing: () => void;
   notices: readonly BoardComment[];
@@ -103,13 +102,15 @@ export const CommentDock: React.FC<{
 }> = ({ viewing, onCloseViewing, notices, onOpen, onDismiss }) => {
   const shown = notices.slice(-NOTICES_SHOWN);
   const hidden = notices.length - shown.length;
-  if (notices.length === 0 && !viewing?.comments.length) return null;
+  if (notices.length === 0 && !viewing) return null;
   return (
+    // 中を押しても、開いているもの（未割当のカード・右のパネル）を閉じない（useOutsidePress）
     <div
+      data-comment-dock
       aria-live="polite"
       className="caos-comment-dock pointer-events-none fixed bottom-2 z-[150] flex w-[340px] flex-col gap-1.5"
     >
-      {viewing && viewing.comments.length > 0 && (
+      {viewing && (
         <section
           aria-label={`${viewing.label} のコメント`}
           className="border-(color:--caos-comment) pointer-events-auto rounded-lg border-2 bg-white p-1.5 shadow-lg"
@@ -128,7 +129,10 @@ export const CommentDock: React.FC<{
               <X className="h-4 w-4" />
             </button>
           </header>
-          <CommentList comments={viewing.comments} />
+          <CommentList
+            comments={viewing.comments}
+            className="max-h-[40vh] overflow-y-auto"
+          />
         </section>
       )}
       {hidden > 0 && (

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { labelHasOrder } from "../logic/cards";
 import {
   type BoardComment,
   type CommentsByOrder,
@@ -6,13 +7,26 @@ import {
 } from "../logic/comments";
 import { soundManager } from "../utils/audio";
 
+// 知らせから gone のものを除く（無ければそのまま。描き直さない）
+const without =
+  (gone: (comment: BoardComment) => boolean) =>
+  (list: readonly BoardComment[]) =>
+    list.some(gone) ? list.filter((comment) => !gone(comment)) : list;
+
 /**
  * 注文に付いた新しいコメントの知らせ（画面の右下の CommentDock に出す）。見落とさないよう、届いたら音を鳴らし（ヘッダーの音の切り替えに従う）、
- * 押す（その注文を開く）か閉じるまで残す。画面を開いたとき（最初に注文が届いたとき）にもう付いていたコメントは知らせない。
- * comments が null（実データテスト中など）のあいだは見ない
+ * 押す（その注文を開く）か閉じるか、その注文を見る（viewedLabel。選ぶ・印を押す・番号で探す）まで残す。
+ * 画面を開いたとき（最初に注文が届いたとき）にもう付いていたコメントは知らせない。comments が null（実データテスト中など）のあいだは見ない
  */
-export const useCommentNotices = (comments: CommentsByOrder | null) => {
+export const useCommentNotices = (
+  comments: CommentsByOrder | null,
+  viewedLabel: string | null,
+) => {
   const seen = useRef<Set<string> | null>(null);
+  const viewed = useRef(viewedLabel);
+  useLayoutEffect(() => {
+    viewed.current = viewedLabel;
+  });
   const [notices, setNotices] = useState<readonly BoardComment[]>([]);
   useEffect(() => {
     if (!comments) return;
@@ -26,31 +40,28 @@ export const useCommentNotices = (comments: CommentsByOrder | null) => {
     const fresh = all.filter((comment) => !known.has(commentKey(comment)));
     if (fresh.length === 0) return;
     for (const comment of fresh) known.add(commentKey(comment));
-    setNotices((list) => [...list, ...fresh]);
     soundManager.playComment();
+    // 今見ている注文のコメントは、右下の見ている注文の欄に出ている
+    setNotices((list) => [
+      ...list,
+      ...fresh.filter(
+        (comment) => !labelHasOrder(viewed.current, comment.orderNo),
+      ),
+    ]);
   }, [comments]);
+  // その注文を見たら、知らせは消す
+  useEffect(() => {
+    if (viewedLabel)
+      setNotices(
+        without((comment) => labelHasOrder(viewedLabel, comment.orderNo)),
+      );
+  }, [viewedLabel]);
   return {
     notices,
     /** 知らせを消す（押した・閉じた） */
-    dismiss: (dismissed: readonly BoardComment[]) =>
-      setNotices((list) => list.filter((c) => !dismissed.includes(c))),
-  };
-};
-
-/**
- * 右下にコメントを出す注文（orderLabel）。カードの印を押した注文（閉じるか、ほかの注文を選ぶまで。選択を外しても残す）か、選んでいる注文
- */
-export const useViewedComments = (selectedOrderId: string | null) => {
-  const [pinned, setPinned] = useState<string | null>(null);
-  // ほかの注文を選んだら、印を押した注文はやめて選んだ注文を出す
-  useEffect(() => {
-    if (selectedOrderId !== null) setPinned(null);
-  }, [selectedOrderId]);
-  return {
-    label: pinned ?? selectedOrderId,
-    /** 印を押した注文のコメントを出す */
-    open: setPinned,
-    /** 閉じる（印を押した注文をやめる） */
-    close: () => setPinned(null),
+    dismiss: (dismissed: readonly BoardComment[]) => {
+      const keys = new Set(dismissed.map(commentKey));
+      setNotices(without((comment) => keys.has(commentKey(comment))));
+    },
   };
 };
