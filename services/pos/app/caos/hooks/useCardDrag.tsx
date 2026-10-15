@@ -21,12 +21,12 @@ import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
 const DRAG_THRESHOLD_PX = 12;
 
-// どこかでカードをドラッグしているか（管制盤 A・C・D の全部のドラッグで 1 つ。ドラッグのあいだは「統合する」を出さない）
-let anyDragging = false;
+// いまドラッグしているカードの数（管制盤 A・C・D の全部のドラッグで 1 つ。2 本の指で別々に掴んでも数える）。
+// 1 枚でもドラッグしているあいだは「統合する」を出さない
+let draggingCount = 0;
 const dragListeners = new Set<() => void>();
-const setAnyDragging = (value: boolean) => {
-  if (anyDragging === value) return;
-  anyDragging = value;
+const countDragging = (delta: 1 | -1) => {
+  draggingCount = Math.max(0, draggingCount + delta);
   for (const listener of dragListeners) listener();
 };
 const subscribeDragging = (listener: () => void) => {
@@ -38,7 +38,7 @@ const subscribeDragging = (listener: () => void) => {
 export const useAnyCardDragging = () =>
   useSyncExternalStore(
     subscribeDragging,
-    () => anyDragging,
+    () => draggingCount > 0,
     () => false,
   );
 
@@ -228,7 +228,7 @@ export const useCardDrag = <S, T>(handlers: {
       if (!dragging) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
         dragging = true;
-        setAnyDragging(true);
+        countDragging(1);
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
       }
@@ -244,7 +244,7 @@ export const useCardDrag = <S, T>(handlers: {
       if (upEvent.pointerId !== pointerId) return;
       cleanup();
       if (!dragging) return;
-      setAnyDragging(false);
+      countDragging(-1);
       setDrag(null);
       setTarget(null);
       suppressNextClick.current = true;
@@ -264,7 +264,7 @@ export const useCardDrag = <S, T>(handlers: {
     };
     endPress.current = () => {
       cleanup();
-      if (dragging) setAnyDragging(false);
+      if (dragging) countDragging(-1);
       setDrag(null);
       setTarget(null);
     };
