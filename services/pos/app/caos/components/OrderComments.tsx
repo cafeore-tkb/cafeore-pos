@@ -44,10 +44,12 @@ export const CommentList: React.FC<{
   );
 };
 
-/** コメントの中身を 1 行で（管制盤 A の選んだ注文の帯）。入らなければ省略し、全部は title に */
-export const CommentLine: React.FC<{ comments: readonly BoardComment[] }> = ({
-  comments,
-}) => {
+/** コメントの中身を 1 行で（管制盤 A の選んだ注文の帯、C・D で開いた未割当のカードの見出し）。入らなければ省略し、全部は title に */
+export const CommentLine: React.FC<{
+  comments: readonly BoardComment[];
+  /** 文字の大きさなど（A の帯は帯の文字のまま） */
+  className?: string;
+}> = ({ comments, className = "" }) => {
   if (comments.length === 0) return null;
   const text = comments
     .map((comment) => `${AUTHOR_MARKS[comment.author]} ${comment.text}`)
@@ -55,7 +57,7 @@ export const CommentLine: React.FC<{ comments: readonly BoardComment[] }> = ({
   return (
     <span
       title={text}
-      className="text-(color:--caos-comment) flex min-w-0 items-center gap-1 rounded bg-white px-2 py-0.5"
+      className={`text-(color:--caos-comment) flex min-w-0 items-center gap-1 rounded bg-white px-2 py-0.5 ${className}`}
     >
       <MessageSquareText className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{text}</span>

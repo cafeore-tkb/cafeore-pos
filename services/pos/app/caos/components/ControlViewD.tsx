@@ -11,7 +11,13 @@ import {
   useScrollToFirstLive,
   useSheetSelection,
 } from "../hooks/useSheetSelection";
-import { cardName, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import {
+  cardName,
+  orderLabel,
+  orderNoLabel,
+  sharesOrder,
+  totalCups,
+} from "../logic/cards";
 import { cardPlaces, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
@@ -32,6 +38,7 @@ import {
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
+import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
@@ -188,6 +195,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       look={looks.get(ticket.key)}
       size="sm"
       note={rowIds.length > 1 ? "統合" : undefined}
+      data-search-key={ticket.key}
       onPointerDown={
         state !== "past"
           ? (event) =>
@@ -201,7 +209,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         else if (state === "waiting") onOpenTicket(ticket);
         else onOpenRebrew?.(ticket);
       }}
-      className={`h-[60px] shrink-0 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+      // 探して見せるとき、上にはみ出した場所の札も見せる（見出し・「次へ」の高さは useScrollToFirstLive が枠に付ける）
+      className={`h-[60px] shrink-0 scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
       <PlaceTag label={places.get(ticket.key)} />
@@ -226,14 +235,21 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             {headerHint()}
           </p>
           {selectedOrder && (
-            <button
-              type="button"
-              onClick={picked.clear}
-              className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
-            >
-              <X className="h-3.5 w-3.5" />
-              解除
-            </button>
+            <>
+              {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
+              <CommentLine
+                comments={looks.get(selectedOrder.key)?.comments ?? []}
+                className="font-bold text-[12px]"
+              />
+              <button
+                type="button"
+                onClick={picked.clear}
+                className="ml-auto flex h-8 shrink-0 touch-manipulation items-center gap-1 rounded-md border border-slate-300 bg-white px-2 font-black text-[11px] text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+                解除
+              </button>
+            </>
           )}
         </PanelHeader>
 
@@ -517,9 +533,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         card={order}
                         look={looks.get(uid)}
                         size="sm"
-                        selected={isSelected}
+                        // 選んだカードと、カードを選んでいないときは選んだ注文（番号で探した・表のカードを開いた）のカード
+                        selected={
+                          isSelected ||
+                          (!selectedOrder &&
+                            sharesOrder(order, selectedOrderId))
+                        }
                         mergeInto={isSelected ? picked.partner : undefined}
-                        data-sheet-cup={uid}
+                        data-search-key={uid}
                         onPointerDown={(event) =>
                           drag.press({ kind: "unassigned", order }, event)
                         }
@@ -550,6 +571,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       look={looks.get(ticket.key)}
                       size="sm"
                       note={`→ ${dripperLabel(bayId)}`}
+                      data-search-key={ticket.key}
                       className="h-[64px] opacity-50"
                     />
                   ))}
