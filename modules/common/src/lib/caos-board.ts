@@ -60,20 +60,6 @@ const UNASSIGNED_STATE: CaosCupState = {
   brewFinishedAt: null,
 };
 
-/** カップと入れ直しの行（CaOS の値を書く行。盤面に出ていない行も） */
-export type CaosUnitRow = { id: string } & CaosCupState;
-
-/** 注文のカップと入れ直しの行を ID で引く（盤面のカードに出ないカップも。未割当に戻した準備完了・提供済みのカップなど） */
-export const caosUnitRows = (orders: readonly CaosOrderInput[]) =>
-  new Map<string, CaosUnitRow>(
-    orders.flatMap((order) =>
-      order.cups.flatMap((cup) => [
-        [cup.id, cup] as const,
-        ...cup.emergencies.map((row) => [row.id, row] as const),
-      ]),
-    ),
-  );
-
 /** 盤面が使う注文（OrderEntity をそのまま渡せる） */
 export interface CaosOrderInput {
   id: string;
@@ -376,7 +362,7 @@ const UNASSIGNED_AFTER: CaosCupAfter = {
   start_brew: false,
 };
 
-/** カップの CaOS の値を API の形（書き込みの before・「1つ戻す」の値）にする */
+/** カップの CaOS の値を API の形（書き込みの before）にする */
 export const caosStateJSON = (
   state: CaosCupState,
 ): CaosCupsWrite["before"] => ({
@@ -651,13 +637,15 @@ export const splitWrites = (
 
 /**
  * ドリッパー from の待機を全部、to の待機の最後へ移す（並びはそのまま）。to に置けないカード（指名の番号の違うカード）は残し、
- * その枚数を kept で返す。to に抽出中も待機も無ければ、先頭のカードはそのまま抽出を始める（assignWrites と同じ）
+ * 移したカードを moved、残した枚数を kept で返す。to に抽出中も待機も無ければ、先頭のカードはそのまま抽出を始める（assignWrites と同じ）
  */
 export const moveQueueWrites = (
   cards: readonly CaosCard[],
   from: number,
   to: number,
-): { writes: CaosCupsWrite[]; kept: number } | { error: string } => {
+):
+  | { writes: CaosCupsWrite[]; moved: CaosCard[]; kept: number }
+  | { error: string } => {
   const invalid = caosDripperError(to);
   if (invalid) return { error: invalid };
   if (from === to) return { error: "同じドリッパーには移せません" };
@@ -674,6 +662,7 @@ export const moveQueueWrites = (
         start_brew: free && index === 0,
       }),
     ),
+    moved: moving,
     kept: queued.length - moving.length,
   };
 };

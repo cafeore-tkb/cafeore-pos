@@ -10,7 +10,7 @@ export const cardSelector = (key: string) =>
 /**
  * カード（key）を、並べた枠の中で見える所までスクロールする（縦は見えるだけ、横は真ん中へ）。
  * 縦を真ん中にすると、縦をスクロールさせない枠（A の未割当の帯は overflow-y-hidden）の中身もずれて戻せなくなる。
- * 枠の端に固定したもの（D の表の見出し・「次へ」）に隠れないよう、カードの側に scroll-margin を付ける
+ * 枠の端に固定したもの（D の表の見出し）に隠れないよう、カードの側に scroll-margin を付ける
  */
 export const scrollCardIntoView = (key: string) => {
   for (const element of document.querySelectorAll(cardSelector(key)))

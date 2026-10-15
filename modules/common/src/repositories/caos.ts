@@ -1,6 +1,6 @@
 import { apiClient } from "../api/client";
 import type { CaosCupsWrite } from "../lib/caos-board";
-import type { CaosOutboxRequest } from "../lib/caos-outbox";
+import type { CaosOutboxOp } from "../lib/caos-outbox";
 import type { components } from "../types/api";
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
@@ -53,18 +53,28 @@ export const putCaosCups = async (
       );
 
 /**
- * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
- * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる。pressedAt は押した時刻
+ * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、待機の先頭を始める（startNext が false なら終えるだけ）。
+ * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる。
+ * startDripId を渡すと、待機の先頭がそのカードのときだけ始める（違えば断られる）。pressedAt は押した時刻
  */
 export const nextCaosDripper = async (
   dripper: number,
   dripId: string | null,
   pressedAt: number,
+  {
+    startNext = true,
+    startDripId,
+  }: { startNext?: boolean; startDripId?: string } = {},
 ): Promise<CaosResult> =>
   send(
     apiClient.POST("/api/caos/drippers/{dripper}/next", {
       params: { path: { dripper } },
-      body: { drip_id: dripId, press: pressOf(pressedAt) },
+      body: {
+        drip_id: dripId,
+        start_next: startNext,
+        start_drip_id: startDripId,
+        press: pressOf(pressedAt),
+      },
     }),
   );
 
@@ -94,15 +104,6 @@ export const cancelCupEmergency = async (id: string): Promise<CaosResult> =>
       params: { path: { id } },
     }),
   );
-
-/**
- * 「1つ戻す」（POST /api/caos/undo）。カップの今の値が current のときだけ restore に書き戻す（@cafeore/common の caosUndoCups で作る）。
- * ほかの端末があとで変えていたら断られる
- */
-export const undoCaosCups = async (
-  cups: components["schemas"]["CaosUndoCup"][],
-): Promise<CaosResult> =>
-  send(apiClient.POST("/api/caos/undo", { body: { cups } }));
 
 /**
  * ドリッパーの担当者の交代（PUT /api/caos/lanes/{dripper}）。name が空なら担当者なし。senior は sohosai-shift の名簿で判定した値。
@@ -141,16 +142,19 @@ export const updateCaosLaneSeniors = async (
  * pressedAt は操作を押した時刻（抽出を始める・終える操作は、サーバーがこの時刻で付ける）
  */
 export const sendCaosOutboxRequest = (
-  request: CaosOutboxRequest,
+  request: CaosOutboxOp,
   pressedAt: number,
 ): Promise<CaosResult> => {
   switch (request.kind) {
     case "cups":
       return putCaosCups(request.writes, pressedAt);
     case "next":
-      return nextCaosDripper(request.dripper, request.dripId, pressedAt);
-    case "undo":
-      return undoCaosCups(request.cups);
+      return nextCaosDripper(request.dripper, request.dripId, pressedAt, {
+        startNext: request.startNext,
+        // 押した待機のカードを始めるときは、サーバーでもそれが待機の先頭かを確かめる
+        startDripId:
+          request.startPressed && request.startId ? request.startId : undefined,
+      });
     case "cancel-emergency":
       return cancelCupEmergency(request.id);
     case "lane":

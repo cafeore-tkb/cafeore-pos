@@ -1,6 +1,6 @@
 import { DRIPPER_NUMBERS, dripperLabel } from "../models/dripper";
 import type { components } from "../types/api";
-import { type CaosCard, caosLane } from "./caos-board";
+import { type CaosCard, caosLane, laneActive } from "./caos-board";
 import { type ShiftFeed, isSeniorName } from "./caosShiftFeed";
 
 // CaOS（ドリップ管制）のドリッパーの担当者。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
@@ -50,26 +50,24 @@ const needsSeniorLane = (
   card: Pick<CaosCard, "seniorOnly" | "nominatedDripper">,
 ) => card.seniorOnly && card.nominatedDripper === null;
 
-// ドリッパーの担当者が上級生でなければ、その担当者（担当者がいなければ名前は空）
-const nonSeniorLane = (dripper: number, lanes: readonly CaosLane[]) => {
-  const lane = lanes.find((l) => l.dripper === dripper);
-  if (lane?.senior) return null;
-  return lane ?? { dripper, name: "", senior: false, updated_at: null };
-};
+// ドリッパーの担当者が上級生か（担当者がいなければ上級生でない）
+const seniorLane = (dripper: number, lanes: readonly CaosLane[]) =>
+  lanes.some((lane) => lane.dripper === dripper && lane.senior);
 
 /**
- * カードをそのドリッパーへ置くと、上級生のみのカード（needsSeniorLane）を上級生でない担当者（担当者なしも）に置くことになるなら、その担当者。
- * ほかは null。lanes は todaysCaosLanes の担当者。置くのは止めず（サーバーも断らない）、画面が置いたあとに知らせる。
- * 別のドリッパーへ置くときだけ（同じドリッパーの中の順番の入れ替えでは知らせ直さない）
+ * カードをそのドリッパーへ置くと、上級生のみのカード（needsSeniorLane）を上級生でない担当者に置くことになるなら、その担当者。
+ * ほかは null（担当者のいないドリッパーも。カードの警告の印だけ出す）。lanes は todaysCaosLanes の担当者。
+ * 置くのは止めず（サーバーも断らない）、画面が置いたあとに知らせる。別のドリッパーへ置くときだけ（同じドリッパーの中の順番の入れ替えでは知らせ直さない）
  */
 export const nonSeniorPlacement = (
   card: Pick<CaosCard, "seniorOnly" | "dripper" | "nominatedDripper">,
   dripper: number,
   lanes: readonly CaosLane[],
-): CaosLane | null =>
-  needsSeniorLane(card) && card.dripper !== dripper
-    ? nonSeniorLane(dripper, lanes)
-    : null;
+): CaosLane | null => {
+  if (!needsSeniorLane(card) || card.dripper === dripper) return null;
+  const lane = lanes.find((l) => l.dripper === dripper);
+  return lane && lane.name !== "" && !lane.senior ? lane : null;
+};
 
 /**
  * card を into に統合したときの nonSeniorPlacement。統合したあとのカード（指名はどちらかの指名）を into のドリッパーに置くとみる。
@@ -102,20 +100,20 @@ export const seniorOnlyOffSenior = (
   needsSeniorLane(card) &&
   card.dripper !== null &&
   (card.status === "queued" || card.status === "brewing") &&
-  nonSeniorLane(card.dripper, lanes) !== null;
+  !seniorLane(card.dripper, lanes);
 
-/** そのドリッパーで待っている（まだ始めていない）、上級生のドリッパーに置くはずのカード（needsSeniorLane）の枚数 */
-export const queuedSeniorOnlyCards = (
+/** そのドリッパーの抽出中・待機の、上級生のドリッパーに置くはずのカード（needsSeniorLane）の枚数 */
+export const activeSeniorOnlyCards = (
   cards: readonly CaosCard[],
   dripper: number,
-) => caosLane(cards, dripper).queued.filter(needsSeniorLane).length;
+) => laneActive(caosLane(cards, dripper)).filter(needsSeniorLane).length;
 
 /** 交代したあとの担当者（name が空なら担当者なし） */
 export type LaneAssignment = Pick<CaosLane, "dripper" | "name" | "senior">;
 
 /**
- * 交代・入れ替えの確認の文。上級生でない人（担当者なしも）にするドリッパーに、指名の無い上級生のみのカードが待っていれば、ドリッパーごとに 1 行。
- * 無ければ空（確かめずに替える）。single なら 1 つのドリッパーの交代（「このドリッパーに」と書く）
+ * 交代・入れ替えの知らせの文。上級生でない人（担当者なしも）にするドリッパーに、指名の無い上級生のみのカード（抽出中・待機。警告の印と同じ）があれば、
+ * ドリッパーごとに 1 行。無ければ空。替えるのは止めない。single なら 1 つのドリッパーの交代（「このドリッパーに」と書く）
  */
 export const laneChangeWarnings = (
   cards: readonly CaosCard[],
@@ -124,7 +122,7 @@ export const laneChangeWarnings = (
 ): string[] =>
   changes.flatMap((change) => {
     if (change.senior && change.name !== "") return [];
-    const count = queuedSeniorOnlyCards(cards, change.dripper);
+    const count = activeSeniorOnlyCards(cards, change.dripper);
     if (count === 0) return [];
     const where = single
       ? "このドリッパー"

@@ -4,7 +4,6 @@ import {
   type LaneAssignment,
   type LaneCandidate,
   buildCaosCards,
-  caosLaneUndoBlock,
   dripperLabel,
   jstDate,
   laneChangeWarnings,
@@ -21,7 +20,7 @@ import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { LaneChangeDialog, ShiftFeedSettings } from "../components/LaneDialogs";
 import { noNextReason } from "../logic/shiftFeed";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
-import { refuseUndo, useRememberUndo } from "./useCaosUndo";
+import { useRememberAction } from "./useLastAction";
 import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 
 // ドリッパーの担当者（名前と上級生か）。サーバーが日本時間の日付ごとに持ち（api の caos_lanes）、
@@ -29,15 +28,15 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 //
 // 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
 //   - 列の見出しと列の操作のパネルの「交代」は、押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人。nextLaneCandidate）に替える。
-//     替えたら「1つ戻す」（CaosUndoProvider）に覚え、10 秒のあいだ前の人に戻せる
+//     替えたら「直前の操作」（LastActionProvider）に出す（間違えたら、もう一度替えて直す）
 //   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
 // 閲覧だけの画面（/master-sheet/view・/master-sheet/libero）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
-// 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカードが待っていても止めずに替え、POS の通知で知らせる
+// 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカード（抽出中・待機）があっても止めずに替え、POS の通知で知らせる
 // （カードはそのドリッパーに残り、警告の印が付く）。替えたら画面はすぐ変わり、送るのは後ろで（盤面の操作と同じく端末に残して送る。useCaosOutbox）。
 // 担当者はサーバーから届いた今日の担当者に、この端末の送れていない交代を重ねて出す。
 // 予定を読み直したら（useSeniorRefresh）、今の担当者の上級生かだけを新しい名簿に合わせる（syncSeniors。交代の記録は足さない）。
-// 名簿から外れた人のドリッパーに指名の無い上級生のみのカードが待っていれば自動では外さず、ヘッダーで知らせて（heldSeniors）、押したら外す。
+// 名簿から外れた人は、そのドリッパーに指名の無い上級生のみのカードがあっても外す（カードに警告の印が付く）。
 
 type NextLane = { next: LaneCandidate } | { reason: string };
 
@@ -55,11 +54,10 @@ interface CaosLanesContextValue {
   changeToNext: (dripper: number, next: LaneCandidate) => void;
   openSettings: () => void;
   shiftFeed: ShiftFeedState;
-  /** 名簿から外れたが、指名の無い上級生のみのカードが待っているので上級生のままにしている担当者 */
-  heldSeniors: LaneAssignment[];
-  /** heldSeniors を上級生から外す（交代と同じく、上級生のみのカードが待っていれば知らせる） */
-  releaseHeldSeniors: () => void;
-  /** 今の担当者の上級生かを名簿に合わせる（heldSeniors は除く）。予定を読み直したときに useSeniorRefresh が呼ぶ */
+  /**
+   * 今の担当者の上級生かを名簿に合わせる。予定を読み直したときに useSeniorRefresh が呼ぶ。
+   * 上級生のみのカード（抽出中・待機）があっても外し、カードに警告の印が付く（知らせは出さない）。閲覧だけの画面は予定を読まないので何もしない
+   */
   syncSeniors: () => void;
 }
 
@@ -77,7 +75,7 @@ const DOUBLE_TAP_MS = 1000;
 // 名簿に合わせて上級生の印を直す操作の名前（通らなかったときの知らせに出す）
 const SENIORS_LABEL = "上級生の印を名簿に合わせる";
 
-// 交代の名前（「1つ戻す」と、通らなかったときの知らせに出す）
+// 交代の名前（「直前の操作」と、通らなかったときの知らせに出す）
 const changeLabel = ({ dripper, name }: LaneAssignment) =>
   `交代 ${dripperLabel(dripper)} → ${name || "空き"}`;
 
@@ -99,10 +97,10 @@ export const CaosLanesProvider = ({
     today,
   );
   const shiftFeed = useShiftFeed(editable);
-  const rememberUndo = useRememberUndo();
+  const rememberAction = useRememberAction();
   // すぐ替えているドリッパー。二度押しで 2 回送ったり 2 人ぶん進んだりしないよう、替えてから DOUBLE_TAP_MS のあいだも押しても替えない
   const sending = useRef(new Set<number>());
-  // 確かめるのは送るときの担当者と注文（「1つ戻す」はあとで押すので、そのときの値を読む）
+  // 確かめるのは送るときの担当者と注文（確かめのダイアログで待つので、そのときの値を読む）
   const latest = useRef({
     lanes,
     orders,
@@ -111,7 +109,7 @@ export const CaosLanesProvider = ({
     feed: shiftFeed.feed,
   });
   latest.current = { lanes, orders, entries, today, feed: shiftFeed.feed };
-  // 交代の操作。押したときの担当者（確かめたあとの今の担当者）のままのときだけ送る（createCaosOutbox）
+  // 交代の操作。押したときの担当者のままのときだけ送る（createCaosOutbox）
   const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
     kind: "lane",
     dripper,
@@ -131,7 +129,7 @@ export const CaosLanesProvider = ({
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 端末に残して送る。替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーがあれば、止めずに POS の通知で知らせる
+  // 端末に残して送る（残した操作の id を返す）。替えたあとの担当者で、指名の無い上級生のみのカード（抽出中・待機）があるドリッパーがあれば、止めずに POS の通知で知らせる
   const request = (
     changes: LaneAssignment[],
     single: boolean,
@@ -140,26 +138,12 @@ export const CaosLanesProvider = ({
   ) => {
     setChanging(null);
     const warnings = laneChangeWarnings(boardCards(), changes, single);
-    enqueueCaosOp(label, op);
+    const id = enqueueCaosOp(label, op);
     if (warnings.length > 0)
       toast.warning(`${label}：${warnings.join("。")}`, {
         description: "カードに警告の印を付けています",
       });
-  };
-
-  // 名簿に合わせると上級生かが変わる担当者を、すぐ直すもの（auto）と、交代なら確かめるもの（held。外すほうで、そのドリッパーに指名の無い上級生のみのカードが待っている）に分ける。
-  // 閲覧だけの画面は予定を読まないので、どちらも空
-  const seniorFixes = () => {
-    const { lanes, feed } = latest.current;
-    const updates = seniorUpdates(lanes, feed);
-    // 外すほうが無ければカードは見ない（laneChangeWarnings は上級生にするほうを確かめない）
-    const cards = updates.some((u) => !u.senior) ? boardCards() : [];
-    const held = (u: LaneAssignment) =>
-      laneChangeWarnings(cards, [u], true).length > 0;
-    return {
-      auto: updates.filter((u) => !held(u)),
-      held: updates.filter(held),
-    };
+    return id;
   };
 
   // lanes は 6 つ全部を番号の順に持つ（todaysCaosLanes）
@@ -177,26 +161,13 @@ export const CaosLanesProvider = ({
       : { next };
   };
 
-  // 次の人（ボタンに出していた人）にすぐ替え、「1つ戻す」に前の人へ戻す処理を覚える。
-  // 戻すのは今の担当者が替えたあとのままのときだけで、替えるときと同じく上級生のみのカードが待っていれば知らせる
+  // 次の人（ボタンに出していた人）にすぐ替え、「直前の操作」に覚える（上級生のみのカード（抽出中・待機）があれば知らせる）
   const changeToNext = (dripper: number, { name, senior }: LaneCandidate) => {
     if (sending.current.has(dripper)) return;
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);
-    const before = laneOf(dripper);
-    const undoRun = () => {
-      const blocked = caosLaneUndoBlock(
-        before,
-        after,
-        latest.current.lanes[dripper - 1],
-      );
-      if (blocked) return refuseUndo(blocked);
-      request([before], true, `戻す（${label}）`, laneOp(before));
-      return true;
-    };
-    request([after], true, label, laneOp(after));
-    rememberUndo?.(label, undoRun);
+    rememberAction?.(label, [request([after], true, label, laneOp(after))]);
     setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
   };
 
@@ -209,16 +180,11 @@ export const CaosLanesProvider = ({
     changeToNext,
     openSettings: () => setSettingsOpen(true),
     shiftFeed,
-    heldSeniors: seniorFixes().held,
-    releaseHeldSeniors: () => {
-      const { held } = seniorFixes();
-      if (held.length > 0)
-        request(held, false, SENIORS_LABEL, { kind: "seniors", lanes: held });
-    },
     syncSeniors: () => {
-      const { auto } = seniorFixes();
-      if (auto.length > 0)
-        enqueueCaosOp(SENIORS_LABEL, { kind: "seniors", lanes: auto });
+      const { lanes, feed } = latest.current;
+      const updates = seniorUpdates(lanes, feed);
+      if (updates.length > 0)
+        enqueueCaosOp(SENIORS_LABEL, { kind: "seniors", lanes: updates });
     },
   };
 

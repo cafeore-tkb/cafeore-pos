@@ -10,7 +10,6 @@ import {
 import {
   type CaosOutboxEntry,
   type CaosOutboxOp,
-  type CaosOutboxRequest,
   type CaosOutboxResult,
   type CaosServerState,
   createCaosOutbox,
@@ -18,7 +17,6 @@ import {
   overlayCaosOrders,
   parseCaosOutboxEntry,
 } from "./caos-outbox";
-import { type CaosUndoEntry, undoOfWrites } from "./caos-undo";
 import { type CaosLanes, emptyCaosLanes } from "./caosLanes";
 import { jstDate } from "./jst";
 
@@ -194,66 +192,57 @@ describe("unit: caos-outbox 重ねて表示", () => {
     expect(lane.done[0].cups[0].readyAt).toBeNull();
   });
 
-  test("「1つ戻す」は戻す操作のあとに重ねる（未送信のまま戻すと、元の盤面に見える）", () => {
-    const server = orders(cup("a"));
-    const op = place(server, "a", 1);
-    if (op.kind !== "cups") throw new Error();
-    const undo = entry({
-      kind: "undo",
-      entry: undoOfWrites(buildCaosCards(server), op.writes),
+  test("終えるだけの「次へ」（startNext: false）は、重ねても待機の先頭を始めない", () => {
+    const brewing = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+    );
+    const finish = entry({
+      kind: "next",
+      dripper: 1,
+      dripId: "drip-a",
+      startId: null,
+      startNext: false,
     });
-    expect(
-      cardOf(overlayCaosOrders(server, [entry(op), undo], DAY), "a").status,
-    ).toBe("unassigned");
+    const lane = caosLane(
+      buildCaosCards(overlayCaosOrders(brewing, [finish], DAY)),
+      1,
+    );
+    expect(lane.done.map((card) => card.key)).toEqual(["drip-a"]);
+    expect(lane.brewing).toBeUndefined();
+    expect(lane.queued.map((card) => card.key)).toEqual(["drip-b"]);
   });
 
-  test("「1つ戻す」を重ねても、準備完了はサーバーと同じく書き戻さない（あとから提供の画面で付いたものを消さない）", () => {
-    const brewing = cup("a", {
-      dripper: 1,
-      dripperPosition: 1,
-      dripId: "drip-a",
-      brewStartedAt: NOW,
-    });
-    // 前の版で端末に残した「1つ戻す」は、restore に準備完了（readyAt）も持つ。読んで重ねても、準備完了は当てない
-    const stored = entry({
-      kind: "undo",
-      entry: {
-        cups: [
-          {
-            id: "a",
-            restore: {
-              dripper: 1,
-              dripperPosition: 1,
-              dripId: "drip-a",
-              brewStartedAt: NOW,
-              brewFinishedAt: null,
-              readyAt: null,
-            } as CaosUndoEntry["cups"][number]["restore"],
-            expect: {
-              dripper: 1,
-              dripId: "drip-a",
-              started: true,
-              finished: true,
-            },
-          },
-        ],
-      },
-    });
-    const undo = parseCaosOutboxEntry(
-      stored.id,
-      JSON.parse(JSON.stringify(stored)),
+  test("押したカードを始める「次へ」（startPressed）は、そのカードが待機の先頭のときだけ重ねる", () => {
+    const board = orders(
+      cup("a", {
+        dripper: 1,
+        dripperPosition: 1,
+        dripId: "drip-a",
+        brewStartedAt: NOW,
+      }),
+      cup("b", { dripper: 1, dripperPosition: 2, dripId: "drip-b" }),
+      cup("c", { dripper: 1, dripperPosition: 3, dripId: "drip-c" }),
     );
-    if (!undo) throw new Error("not parsed");
-    const finishedReady = orders({
-      ...brewing,
-      brewFinishedAt: SERVER_T,
-      readyAt: SERVER_T,
-    });
-    const [order] = overlayCaosOrders(finishedReady, [undo], DAY);
-    expect(order.cups[0]).toMatchObject({
-      brewFinishedAt: null,
-      readyAt: SERVER_T,
-    });
+    const start = (startId: string) =>
+      entry({
+        kind: "next",
+        dripper: 1,
+        dripId: "drip-a",
+        startId,
+        startPressed: true,
+      });
+    const brewingOf = (op: ReturnType<typeof start>) =>
+      caosLane(buildCaosCards(overlayCaosOrders(board, [op], DAY)), 1).brewing
+        ?.key;
+    // 先頭へ動かすのが通らず、押したカード（c）が先頭でなければ、b を始めない
+    expect(brewingOf(start("drip-c"))).toBe("drip-a");
+    expect(brewingOf(start("drip-b"))).toBe("drip-b");
   });
 
   test("担当者の交代と入れ替えを重ねる。届いた担当者がもう入れ替わっていれば、入れ替え直さない", () => {
@@ -343,7 +332,7 @@ describe("unit: caos-outbox 送る", () => {
   ) => {
     const { items, store } = memoryStore(entries);
     let server: CaosServerState | null = initial && { orders: initial, lanes };
-    const sent: CaosOutboxRequest[] = [];
+    const sent: CaosOutboxOp[] = [];
     const pressed: number[] = [];
     const rejected: [string, string][] = [];
     const outbox = createCaosOutbox({
@@ -584,13 +573,27 @@ describe("unit: caos-outbox 送る", () => {
     expect(t.pressed).toEqual([NOW.getTime() + 11_000]);
   });
 
-  test("返事が無かったことは端末に残す（再読み込みしても、送れたかもしれないとみる）", async () => {
+  test("返事を待っているあいだは、その操作を送っている途中（inFlight）とする", async () => {
     const server = orders(cup("a"));
-    const t = setup([entry(place(server, "a", 1))], server, [
-      { error: "返事がありません" },
-    ]);
-    await t.outbox.kick();
-    expect(t.items().map((e) => e.attempted)).toEqual([true]);
+    const op = entry(place(server, "a", 1));
+    const { store } = memoryStore([op]);
+    let answer: (result: CaosOutboxResult) => void = () => {};
+    const outbox = createCaosOutbox({
+      store,
+      server: () => ({ orders: server, lanes: null }),
+      send: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      onRejected: () => {},
+    });
+    expect(outbox.inFlight()).toBeNull();
+    const kicked = outbox.kick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.inFlight()).toBe(op.id);
+    answer({});
+    await kicked;
+    expect(outbox.inFlight()).toBeNull();
   });
 
   test("前の日に押した操作は送らずに捨てる", async () => {
@@ -783,27 +786,23 @@ describe("unit: caos-outbox 送る", () => {
   });
 });
 
-test("unit: caos-outbox 端末に残したものは JSON から読み直せる（「1つ戻す」の時刻も）", () => {
-  const server = orders(
-    cup("a", {
-      dripper: 1,
-      dripperPosition: 1,
-      dripId: "d",
-      brewStartedAt: NOW,
-    }),
-  );
-  const op = place(server, "a", 2);
-  if (op.kind !== "cups") throw new Error();
-  const undo = entry({
-    kind: "undo",
-    entry: undoOfWrites(buildCaosCards(server), op.writes),
-  });
-  const { id, ...stored } = undo;
+test("unit: caos-outbox 端末に残したものは JSON から読み直せる", () => {
+  const server = orders(cup("a"));
+  const placed = { ...entry(place(server, "a", 2)), sent: true as const };
+  const { id, ...stored } = placed;
   expect(parseCaosOutboxEntry(id, JSON.parse(JSON.stringify(stored)))).toEqual(
-    undo,
+    placed,
   );
   expect(
     parseCaosOutboxEntry(id, { at: 1, label: "x", op: { kind: "?" } }),
+  ).toBe(null);
+  // 前の版の「1つ戻す」（もう送らない）は読まない
+  expect(
+    parseCaosOutboxEntry(id, {
+      at: 1,
+      label: "x",
+      op: { kind: "undo", entry: { cups: [] } },
+    }),
   ).toBe(null);
   // 形の違うもの（欠かせない項目が無い）は読まない
   expect(

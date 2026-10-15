@@ -1,11 +1,4 @@
-import { dripperLabel } from "@cafeore/common";
-import {
-  KeyRound,
-  Star,
-  StarOff,
-  TriangleAlert,
-  UserRoundPen,
-} from "lucide-react";
+import { KeyRound, Star, TriangleAlert, UserRoundPen } from "lucide-react";
 import type React from "react";
 import { toast } from "sonner";
 import { useCaosLanes } from "../hooks/useCaosLanes";
@@ -26,11 +19,12 @@ export const SeniorMark: React.FC<{ className?: string }> = ({
   </span>
 );
 
-/** そのドリッパーの担当者の名前と上級生の印。担当者がいなければ何も出さない */
-export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
-  dripper,
-  className = "",
-}) => {
+/** そのドリッパーの担当者の名前と上級生の印。担当者がいなければ何も出さない。wrap なら入らない名前を 2 行まで折り返す（列の見出し） */
+export const LaneName: React.FC<{
+  dripper: number;
+  wrap?: boolean;
+  className?: string;
+}> = ({ dripper, wrap = false, className = "" }) => {
   const lane = useCaosLanes().lanes.find((l) => l.dripper === dripper);
   if (!lane?.name) return null;
   return (
@@ -39,7 +33,9 @@ export const LaneName: React.FC<{ dripper: number; className?: string }> = ({
       title={lane.senior ? `${lane.name}（上級生）` : lane.name}
       className={`inline-flex min-w-0 items-center gap-0.5 ${className}`}
     >
-      <span className="truncate">{lane.name}</span>
+      <span className={wrap ? "line-clamp-2 break-all" : "truncate"}>
+        {lane.name}
+      </span>
       {lane.senior && <SeniorMark />}
     </span>
   );
@@ -158,7 +154,6 @@ export const LaneChooseButton: React.FC<{
 };
 
 // ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（指名の無い上級生のみのカードは、どこに置いても警告の印が付く）。
-// 上級生の名簿から外れたのに、指名の無い上級生のみのカードが待っているので上級生のままにしている担当者がいれば知らせ、押したら確かめて外す。
 // 操作の画面では、この端末の sohosai-shift の合言葉の設定も開ける。
 
 // 合言葉のボタンの色（合言葉が無ければ点線、読めなければ赤）
@@ -172,36 +167,9 @@ const keyTone = ({
 };
 
 export const LaneHeaderStatus: React.FC = () => {
-  const {
-    hasSenior,
-    editable,
-    openSettings,
-    shiftFeed,
-    heldSeniors,
-    releaseHeldSeniors,
-  } = useCaosLanes();
-  // 閲覧だけの画面は予定を読まないので出ない
-  const held = heldSeniors
-    .map(({ dripper, name }) => `${dripperLabel(dripper)} ${name}`)
-    .join("・");
+  const { hasSenior, editable, openSettings, shiftFeed } = useCaosLanes();
   return (
     <>
-      {held && (
-        <button
-          type="button"
-          data-held-senior
-          onClick={releaseHeldSeniors}
-          aria-label={`${held} は上級生の名簿にありません。上級生から外す`}
-          title={`${held} は sohosai-shift の上級生の名簿にありません。指名の無い上級生のみのカードが待っているので、上級生のままにしています（カードが無くなれば、次に予定を読み直したときに外します）。押すと外します（カードには警告の印が付きます）`}
-          className="flex min-h-[44px] min-w-[44px] shrink-0 touch-manipulation items-center justify-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 font-black text-[11px] text-amber-900 leading-tight"
-        >
-          <StarOff className="h-4 w-4 shrink-0" />
-          {/* 幅が狭いと印だけ出す（ヘッダーに余裕が無いので。中身は title） */}
-          <span className="hidden whitespace-nowrap 2xl:inline">
-            {held} は上級生の名簿にありません（★を外す）
-          </span>
-        </button>
-      )}
       {!hasSenior && (
         <output
           data-no-senior

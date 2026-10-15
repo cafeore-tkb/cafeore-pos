@@ -210,6 +210,32 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     ).toBe("始めてから 10 秒は「次へ」を押せません");
   });
 
+  test("終えるだけ（startNext: false）は待機の先頭を始めない。抽出中が無ければ断る", () => {
+    let orders = ordersOf([hot], [hot]);
+    const [first, second] = unassigned(orders);
+    orders = assign(orders, first, 1, at(0));
+    orders = assign(orders, second, 1, at(0));
+    const brewing = caosLane(cardsOf(orders), 1).brewing?.dripId ?? null;
+    expect(
+      advanceCaosPracticeDripper(orders, 1, brewing, at(5), {
+        startNext: false,
+      }).error,
+    ).toBe("始めてから 10 秒は「次へ」を押せません");
+    const finished = advanceCaosPracticeDripper(orders, 1, brewing, at(60), {
+      startNext: false,
+    });
+    if (finished.error !== undefined) throw new Error(finished.error);
+    const lane = caosLane(cardsOf(finished.orders), 1);
+    expect(lane.done.map((card) => card.finishedAt)).toStrictEqual([at(60)]);
+    expect(lane.brewing).toBeUndefined();
+    expect(lane.queued.map((card) => card.startedAt)).toStrictEqual([null]);
+    expect(
+      advanceCaosPracticeDripper(finished.orders, 1, null, at(70), {
+        startNext: false,
+      }).error,
+    ).toBe("このドリッパーには抽出中のカードがありません");
+  });
+
   test("始める・終える時刻は、同じドリッパーで前の抽出を終えた時刻より前にしない（本番の盤面に、前に押した操作を重ねるとき）", () => {
     let orders = ordersOf([hot], [hot], [hot]);
     const [first, second, third] = unassigned(orders);

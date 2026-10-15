@@ -40,8 +40,8 @@ export const useCupEmergency = () => {
   );
   const { printCupLabel } = printer;
 
-  // 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null
-  const addAndPrint = useCallback(
+  /** 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
+  const addEmergency = useCallback(
     async (cups: EmergencyCup[], reason: string) => {
       const result = await addCupEmergencies(
         cups.map((cup) => cup.cupId),
@@ -54,19 +54,10 @@ export const useCupEmergency = () => {
       cups.forEach(({ order, cupId }, i) => {
         void printCupLabel(order, cupId, result.data.ids[i]);
       });
+      toastEmergenciesAdded(cups.length);
       return result.data.ids;
     },
     [printCupLabel],
-  );
-
-  /** 足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
-  const addEmergency = useCallback(
-    async (cups: EmergencyCup[], reason: string) => {
-      const ids = await addAndPrint(cups, reason);
-      if (ids) toastEmergenciesAdded(cups.length);
-      return ids;
-    },
-    [addAndPrint],
   );
 
   /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */
@@ -85,23 +76,6 @@ export const useCupEmergency = () => {
     return true;
   }, []);
 
-  /** 取り消した入れ直しを、同じカップ・同じ理由で足し直し、そのカップのシールを刷り直す（CaOS の「1つ戻す」）。足し直した入れ直しの id。断られたら null */
-  const restoreEmergencies = useCallback(
-    async (cups: (EmergencyCup & { reason: string })[]) => {
-      const restored: string[] = [];
-      for (const reason of new Set(cups.map((cup) => cup.reason))) {
-        const ids = await addAndPrint(
-          cups.filter((cup) => cup.reason === reason),
-          reason,
-        );
-        if (!ids) return null;
-        restored.push(...ids);
-      }
-      return restored;
-    },
-    [addAndPrint],
-  );
-
   return {
     /** この端末のシールのプリンターと、つながらないときに証明書を許可するページ */
     printer: {
@@ -110,7 +84,6 @@ export const useCupEmergency = () => {
     },
     addEmergency,
     cancelEmergency,
-    restoreEmergencies,
   };
 };
 

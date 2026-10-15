@@ -1,21 +1,25 @@
 import { type CaosCard, canSplitCard } from "@cafeore/common";
 import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import type React from "react";
+import { useState } from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
   type CardLooks,
   orderNoLabel,
   sharesOrder,
-  totalCups,
   unassignedRows,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import { LongWaitTag, NextAvailableChips, PanelHeader } from "./BoardParts";
+import {
+  LongWaitTag,
+  NextAvailableChips,
+  OrderCountLabel,
+  PanelHeader,
+} from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
-  MergeOverlay,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
@@ -57,6 +61,7 @@ const UnassignedCard: React.FC<{
       size={size}
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
+      mergeTap={isMergeCandidate}
       data-unassigned-uid={card.key}
       data-search-key={card.key}
       onPointerDown={
@@ -70,7 +75,6 @@ const UnassignedCard: React.FC<{
       dragging={pick.drag.source?.key === card.key}
     >
       <LongWaitTag card={card} nowMs={nowMs} />
-      {isMergeCandidate && <MergeOverlay />}
       {isOpen && (
         <BayPad
           card={card}
@@ -151,6 +155,8 @@ export const UnassignedStrip: React.FC<
 }) => {
   const columns = unassignedRows(orders);
   const folded = fold?.folded ?? false;
+  // 横のスクロールバーを置く、見出しの行の空いた所（件数と「次に空く」の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
+  const [trackSlot, setTrackSlot] = useState<HTMLDivElement | null>(null);
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
@@ -162,11 +168,12 @@ export const UnassignedStrip: React.FC<
           未割当
         </h2>
         <span className="w-fit whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-black font-mono text-[13px] text-red-600">
-          {orders.length} 件 / {totalCups(orders)} 杯
+          <OrderCountLabel cards={orders} />
         </span>
+        <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         <NextAvailableChips
           nextAvailable={nextAvailable}
-          className="ml-auto text-[12px]"
+          className="shrink-0 text-[12px]"
         />
         {fold && (
           <button
@@ -183,8 +190,8 @@ export const UnassignedStrip: React.FC<
       {!folded && (
         <ScrollArea
           axis="x"
-          trackPlacement="header"
-          className="relative flex-1"
+          trackSlot={trackSlot}
+          className="flex-1"
           scrollerClassName="overscroll-x-contain"
         >
           {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
@@ -242,7 +249,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="未割当">
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
-          {orders.length} 件 / {totalCups(orders)} 杯
+          <OrderCountLabel cards={orders} />
         </span>
       </PanelHeader>
       <ScrollArea

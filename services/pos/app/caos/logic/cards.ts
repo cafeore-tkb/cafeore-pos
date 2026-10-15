@@ -142,6 +142,16 @@ export const cardName = (card: CaosCard) => {
 export const totalCups = (cards: readonly CaosCard[]) =>
   cards.reduce((sum, card) => sum + card.cups.length, 0);
 
+/** カードに入っている注文の数（統合したカードは中の注文をみな数え、分けた注文は 1 つと数える） */
+export const orderCount = (cards: readonly CaosCard[]) =>
+  new Set(cards.flatMap((card) => card.cups.map((cup) => cup.orderId))).size;
+
+/** カードの注文の数と杯数（ヘッダー・未割当の見出しに「8 件 10 杯」と出す） */
+export const orderAndCupCounts = (cards: readonly CaosCard[]) => ({
+  orders: orderCount(cards),
+  cups: totalCups(cards),
+});
+
 /** 分けた注文（total 枚のカードに分かれている）。cups は注文の杯数（統合したカードに入った分も数える） */
 export interface CardSplit {
   total: number;

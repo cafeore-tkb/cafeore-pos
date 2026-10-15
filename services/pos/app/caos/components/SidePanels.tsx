@@ -16,11 +16,12 @@ import {
   type EmergencyFormProps,
 } from "~/components/molecules/EmergencyForm";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
-import { useOutsidePress } from "../hooks/useOutsidePress";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import {
   type CardLook,
   type CardLooks,
   cardName,
+  orderCount,
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
@@ -43,21 +44,16 @@ import {
 import { OrderCard, SplitCupButtons } from "./OrderCard";
 import { CommentList } from "./OrderComments";
 
-// 右のパネル（割当・詳細・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
-// onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
+// 右のパネル（割当・詳細・補助のタブ・番号の検索・緊急・列の操作）。ヘッダーの下に右から出し、管制盤は隠さない。
+// パネルの外を押すと閉じる（その 1 回は閉じるだけで、下のカード・ボタンは動かさない。usePanelOutsidePress）
 export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
-  onOutsidePress?: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, onOutsidePress, footer, children }) => {
+}> = ({ title, onClose, footer, children }) => {
   const panelRef = useRef<HTMLElement>(null);
-  useOutsidePress(
-    onOutsidePress !== undefined,
-    (target) => Boolean(panelRef.current?.contains(target)),
-    () => onOutsidePress?.(),
-  );
+  usePanelOutsidePress(panelRef, onClose);
   return (
     <aside
       ref={panelRef}
@@ -181,7 +177,7 @@ export const AssignPanel: React.FC<{
           >
             <LaneBadge bayId={lane.id} />
             <span className="text-[10px] text-slate-500">
-              待機 {lane.queued.length}件
+              待機 {orderCount(lane.queued)}件
             </span>
           </button>
         ))}
@@ -201,10 +197,11 @@ type MoveActions = Pick<
 const MoveCardButtons: React.FC<
   MoveActions & {
     card: CaosCard;
-    currentBayId: number | null;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
     onDone: () => void;
   }
-> = ({ card, currentBayId, onMoveTicket, onReturnToUnassigned, onDone }) => {
+> = ({ card, lane, onMoveTicket, onReturnToUnassigned, onDone }) => {
   const move = (bayId: number, place?: CaosPlace) => {
     onMoveTicket(card, bayId, place);
     onDone();
@@ -215,36 +212,42 @@ const MoveCardButtons: React.FC<
         ドリッパーへ移す（列の最後へ）
       </h3>
       <div className="grid grid-cols-3 gap-2">
-        {moveTargets(card, currentBayId).map(({ bayId, current, disabled }) => (
-          <button
-            key={bayId}
-            type="button"
-            disabled={disabled}
-            onClick={() => move(bayId)}
-            className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
-          >
-            {current ? `${bayId} 最後へ` : bayId}
-          </button>
-        ))}
+        {moveTargets(card, lane?.id ?? null).map(
+          ({ bayId, current, disabled }) => (
+            <button
+              key={bayId}
+              type="button"
+              disabled={disabled}
+              onClick={() => move(bayId)}
+              className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
+            >
+              {current ? `${bayId} 最後へ` : bayId}
+            </button>
+          ),
+        )}
       </div>
-      {currentBayId !== null && (
+      {lane && (
         <>
           <h3 className="mt-4 mb-2 font-black text-[14px] text-slate-700">
-            {dripperLabel(currentBayId)} の中で動かす
+            {dripperLabel(lane.id)} の中で動かす
           </h3>
           <div className="grid grid-cols-2 gap-2">
-            {frontTargets(card).map(({ place, label, hint, disabled }) => (
-              <button
-                key={place}
-                type="button"
-                disabled={disabled}
-                onClick={() => move(currentBayId, place)}
-                className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
-              >
-                {label}
-                <span className="font-bold text-[12px]">（{hint}）</span>
-              </button>
-            ))}
+            {frontTargets(card, lane).map(
+              ({ bayId, place, label, hint, disabled }) => (
+                <button
+                  key={place}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => move(bayId, place)}
+                  className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
+                >
+                  {label}
+                  {hint && (
+                    <span className="font-bold text-[12px]">（{hint}）</span>
+                  )}
+                </button>
+              ),
+            )}
           </div>
         </>
       )}
@@ -270,7 +273,8 @@ export const TicketDetailPanel: React.FC<
   MoveActions & {
     ticket: CaosCard;
     look?: CardLook;
-    currentBayId: number | null;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
     onClose: () => void;
     onSplitCup: (card: CaosCard, cupId: string) => void;
     /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
@@ -279,23 +283,19 @@ export const TicketDetailPanel: React.FC<
 > = ({
   ticket,
   look,
-  currentBayId,
+  lane,
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
   onSplitCup,
   onCancelEmergency,
 }) => (
-  <SidePanel
-    title="未開始オーダーの移動"
-    onClose={onClose}
-    onOutsidePress={onClose}
-  >
+  <SidePanel title="未開始オーダーの移動" onClose={onClose}>
     <OrderCard card={ticket} look={look} size="xl" />
     <CommentList comments={look?.comments} className="mt-3" />
     <MoveCardButtons
       card={ticket}
-      currentBayId={currentBayId}
+      lane={lane}
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onDone={onClose}
@@ -328,7 +328,7 @@ export const TicketDetailPanel: React.FC<
     )}
     <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
       <ArrowRight className="h-4 w-4" />
-      抽出中のカードは、押して開く緊急のパネルから移せます
+      抽出中のカードは、長押しで開く緊急のパネルから移せます
     </p>
   </SidePanel>
 );
@@ -341,17 +341,15 @@ export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
     card?: CaosCard;
     look?: CardLook;
+    /** 抽出中のカードの今のドリッパーの列（移すボタンに使う） */
+    lane?: Lane;
     onClose: () => void;
     move: MoveActions;
   }
-> = ({ card, look, onClose, move, ...form }) => {
+> = ({ card, look, lane, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
-    <SidePanel
-      title="緊急（入れ直し）"
-      onClose={onClose}
-      onOutsidePress={onClose}
-    >
+    <SidePanel title="緊急（入れ直し）" onClose={onClose}>
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />
@@ -369,12 +367,7 @@ export const RebrewPanel: React.FC<
         onDone={onClose}
       />
       {card?.status === "brewing" && (
-        <MoveCardButtons
-          card={card}
-          currentBayId={card.dripper}
-          {...move}
-          onDone={onClose}
-        />
+        <MoveCardButtons card={card} lane={lane} {...move} onDone={onClose} />
       )}
     </SidePanel>
   );
@@ -387,11 +380,7 @@ export const LanePanel: React.FC<{
   onClose: () => void;
   onMoveQueue: (from: number, to: number) => void;
 }> = ({ lane, onClose, onMoveQueue }) => (
-  <SidePanel
-    title={`ドリッパー ${dripperLabel(lane.id)}`}
-    onClose={onClose}
-    onOutsidePress={onClose}
-  >
+  <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
       <LaneName dripper={lane.id} className="font-black text-[18px]" />
       <LaneAbility dripper={lane.id} />
@@ -402,7 +391,7 @@ export const LanePanel: React.FC<{
       />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
-      この列の待機 {lane.queued.length}件を移す
+      この列の待機 {orderCount(lane.queued)}件を移す
     </h3>
     <div className="grid grid-cols-3 gap-2">
       {DRIPPER_NUMBERS.map((to) => (
@@ -475,7 +464,7 @@ export const AuxiliaryContent: React.FC<
                 <span className="font-bold text-slate-400">空き</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
-                待ち {waiting.length}件
+                待ち {orderCount(waiting)}件
               </div>
             </div>
           </article>

@@ -5,12 +5,13 @@ import {
   buildCaosCards,
 } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { longWaitMinutes } from "./alerts";
+import { LATE_ORDER_SEC, longWaitMinutes, orderBacklog } from "./alerts";
 import {
   type CardLook,
   cardLooks,
   cardOrderParts,
   cardServedLabel,
+  orderAndCupCounts,
   orderLabel,
   quickMergePartner,
   selectedComments,
@@ -116,6 +117,44 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
   });
 
+  test("ヘッダーの数は注文の数（統合したカードは中の注文をみな、分けた注文は 1 つ）と杯数", () => {
+    // #3+#4 の統合（2 注文・2 杯）と #2（1 注文・1 杯）
+    expect(orderAndCupCounts(unassigned)).toEqual({ orders: 3, cups: 3 });
+    // 2 杯の注文を 2 枚に分けても 1 注文
+    const split = buildCaosCards([
+      order(9, [{ dripId: "a" }, { dripId: "b" }]),
+    ]);
+    expect(split).toHaveLength(2);
+    expect(orderAndCupCounts(split)).toEqual({ orders: 1, cups: 2 });
+  });
+
+  test("いちばん古い未割当と、受けてから 15 分を超えてまだ始めていない注文（未割当・待機。古い順）", () => {
+    const at = (orderId: number, minutesAgo: number, cups: CupPlace[]) => ({
+      ...order(orderId, cups),
+      createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
+    });
+    const orders = [
+      at(1, 30, [
+        { dripper: 1, dripId: "b", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+      at(2, 20, [{ dripper: 2, dripId: "q", dripperPosition: 1 }]),
+      at(3, LATE_ORDER_SEC / 60 + 1, [{}]),
+      at(4, 5, [{}]),
+    ];
+    const backlog = orderBacklog(buildCaosCards(orders), T0.getTime());
+    expect(backlog.oldestUnassigned).toEqual({
+      orderNo: 3,
+      waitSec: LATE_ORDER_SEC + 60,
+      late: true,
+    });
+    // 抽出中の #1 は数えない
+    expect(backlog.late.map((o) => o.orderNo)).toEqual([2, 3]);
+    expect(orderBacklog([], T0.getTime())).toEqual({
+      oldestUnassigned: null,
+      late: [],
+    });
+  });
+
   test("開いたカードをもう一度押したときの統合の相手は、1 枚ならそれ、何枚かあれば注文番号がいちばん近いもの。決まらなければ無し", () => {
     const [c10, c12, c13, c14, c15] = buildCaosCards(
       [10, 12, 13, 14, 15].map((no) => order(no, [{}])),
@@ -155,7 +194,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(dropSideAt(0.1, { mergeable: false, placeable: false })).toBeNull();
   });
 
-  test("移すボタン：番号は列の最後へ（今の列も）、指名の番号だけ押せる。先頭は抽出中のカードでは押せず、待機の先頭はいつも押せる", () => {
+  test("移すボタン：番号は列の最後へ（今の列も）、指名の番号だけ押せる。先頭・待機の先頭は今と同じ場所なら押せない", () => {
     const [card] = buildCaosCards([order(20, [{}])]);
     const queued = { ...card, status: "queued" as const, dripper: 2 };
     expect(
@@ -170,15 +209,43 @@ describe("[unit] CaOS の盤面の見せ方", () => {
         .filter((t) => !t.disabled)
         .map((t) => t.bayId),
     ).toEqual([3]);
-    const disabledOf = (c: CaosCard) =>
-      frontTargets(c).map((t) => [t.place, t.disabled]);
-    expect(disabledOf(queued)).toEqual([
-      ["front", false],
-      ["queueFront", false],
+    // 先頭・待機の先頭は、今と同じ場所なら押せない。添え書きは列に抽出中があるときだけ
+    const cards = buildCaosCards([
+      order(30, [
+        { dripper: 2, dripId: "b", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+      order(31, [{ dripper: 2, dripId: "q1", dripperPosition: 2 }]),
+      order(32, [{ dripper: 2, dripId: "q2", dripperPosition: 3 }]),
+      order(40, [{ dripper: 3, dripId: "w1", dripperPosition: 1 }]),
+      order(41, [{ dripper: 3, dripId: "w2", dripperPosition: 2 }]),
     ]);
-    expect(disabledOf({ ...queued, status: "brewing" })).toEqual([
-      ["front", true],
-      ["queueFront", false],
+    const lanes = boardLanes(cards);
+    const fronts = (dripId: string) => {
+      const c = cards.find((x) => x.dripId === dripId);
+      const lane = lanes.find((l) => l.id === c?.dripper);
+      if (!c || !lane) throw new Error("no card");
+      return frontTargets(c, lane).map((t) => [t.disabled, t.hint ?? ""]);
+    };
+    expect(fronts("q2")).toEqual([
+      [false, "今から始める"],
+      [false, "抽出中の次"],
+    ]);
+    expect(fronts("q1")).toEqual([
+      [false, "今から始める"],
+      [true, "抽出中の次"],
+    ]);
+    expect(fronts("b")).toEqual([
+      [true, "今から始める"],
+      [false, "抽出中の次"],
+    ]);
+    // 抽出中の無い列：どちらも待機の先頭なので添え書きは無し
+    expect(fronts("w1")).toEqual([
+      [true, ""],
+      [true, ""],
+    ]);
+    expect(fronts("w2")).toEqual([
+      [false, ""],
+      [false, ""],
     ]);
   });
 

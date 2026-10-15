@@ -1,6 +1,8 @@
 import {
   type CaosCard,
+  type CaosPlace,
   DRIPPER_NUMBERS,
+  assignWrites,
   caosDripperAllowed,
   caosLane,
   dripperLabel,
@@ -39,23 +41,35 @@ export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
   }));
 
 /**
- * 待機・抽出中のカードを、今のドリッパーの列の先頭（"front"。今から始める）・待機の先頭（"queueFront"。抽出中のすぐ後ろ）へ動かすボタン。
- * 抽出中のカードは今が先頭なので「先頭」は押せない（待機の先頭へ下げると、待機の先頭だったカードが今から始まる）
+ * 待機・抽出中のカードを、今のドリッパーの列（lane）の先頭（"front"）・待機の先頭（"queueFront"。抽出中のすぐ後ろ）へ動かすボタン。
+ * 動かしても今と同じ場所なら押せない（抽出中のカードの「先頭」・もう待機の先頭にあるカードの「待機の先頭」）。置けないとき（assignWrites が断る）も押せない
+ * （@cafeore/common の assignWrites で確かめる）。bayId はその列（押したら onPick・onMoveTicket に渡す）。
+ * 添え書き（hint）は列に抽出中があるときだけ（先頭は今から始まり、待機の先頭は抽出中の次。抽出中が無ければどちらも待機の先頭で、「次へ」で始める）
  */
-export const frontTargets = (card: CaosCard) => [
-  {
-    place: "front" as const,
-    label: "先頭",
-    hint: "今から始める",
-    disabled: card.status === "brewing",
-  },
-  {
-    place: "queueFront" as const,
-    label: "待機の先頭",
-    hint: "抽出中の次",
-    disabled: false,
-  },
-];
+export const frontTargets = (card: CaosCard, lane: Lane) => {
+  const stays = (place: CaosPlace) => {
+    const result = assignWrites(laneActive(lane), card, lane.id, {
+      place,
+      newId: () => "",
+    });
+    return "error" in result || result.writes.length === 0;
+  };
+  const brewing = lane.brewing !== undefined;
+  return [
+    {
+      place: "front" as const,
+      label: "先頭",
+      hint: brewing ? "今から始める" : undefined,
+      disabled: stays("front"),
+    },
+    {
+      place: "queueFront" as const,
+      label: "待機の先頭",
+      hint: brewing ? "抽出中の次" : undefined,
+      disabled: stays("queueFront"),
+    },
+  ].map((target) => ({ ...target, bayId: lane.id }));
+};
 
 /** そのドリッパーをまだ待っている指名の杯数（未割当のうち、指名の番号がそのドリッパーのカード） */
 export const pendingNominatedCups = (
