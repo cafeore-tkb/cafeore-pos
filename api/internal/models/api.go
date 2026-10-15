@@ -93,8 +93,8 @@ type BuildInfo struct {
 	Pr *int `json:"pr,omitempty"`
 }
 
-// CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
-// start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at にサーバーの今を入れる。抽出中のカードなら今から始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
+// CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。
+// start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
 // dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
 type CaosCupAfter struct {
 	DripId  *openapi_types.UUID `json:"drip_id"`
@@ -104,7 +104,7 @@ type CaosCupAfter struct {
 	// dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
 	InsertBefore *openapi_types.UUID `json:"insert_before"`
 
-	// StartBrew 列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻はサーバーの今
+	// StartBrew 列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress）
 	StartBrew bool `json:"start_brew"`
 }
 
@@ -120,8 +120,8 @@ type CaosCupState struct {
 // CaosCupsWrite カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
 // 終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く
 type CaosCupsWrite struct {
-	// After CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
-	// start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at にサーバーの今を入れる。抽出中のカードなら今から始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
+	// After CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。
+	// start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
 	// dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
 	After CaosCupAfter `json:"after"`
 
@@ -132,6 +132,14 @@ type CaosCupsWrite struct {
 
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
 type CaosCupsWriteRequest struct {
+	// Press 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+	// 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+	// - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+	//   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+	// - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
+	Press  *CaosPress      `json:"press,omitempty"`
 	Writes []CaosCupsWrite `json:"writes"`
 }
 
@@ -192,6 +200,31 @@ type CaosLanes struct {
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
 	DripId *openapi_types.UUID `json:"drip_id"`
+
+	// Press 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+	// 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+	// - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+	//   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+	// - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
+	Press *CaosPress `json:"press,omitempty"`
+}
+
+// CaosPress 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+// 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+//   - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+//     そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+//   - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+//   - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+//
+// 省略すると（押した時刻を送らない古い画面）、サーバーの今
+type CaosPress struct {
+	// At 押した時刻（端末の時計、エポックのミリ秒）
+	At int64 `json:"at"`
+
+	// SentAt 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
+	SentAt int64 `json:"sent_at"`
 }
 
 // CaosUndoCup defines model for CaosUndoCup.
