@@ -6,7 +6,7 @@ import {
 import { ClipboardList, Table2, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
+import { bayTargetAt, useCardDrag, useCardHold } from "../hooks/useCardDrag";
 import {
   useScrollToFirstLive,
   useSheetSelection,
@@ -43,9 +43,10 @@ import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
-// （抽出中のカードは始めた時刻を消して待機の最後へ。抽出中も待機も無い列なら今から始め直す）か、右の注文へドラッグして未割当に戻す。抽出中のカードのタップは緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// （抽出中のカードは始めた時刻を消して待機の最後へ。抽出中も待機も無い列なら今から始め直す）か、右の注文へドラッグして未割当に戻す。
+// 表のカードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・済は緊急のパネル（onHoldCard）。
 // 右の注文カードを選んでいるあいだは、統合できる表の抽出中のカードに「統合する」が出て、押すとそのカードに統合する。
-// 列の見出しはドリッパーの番号（列の状態）と担当者、「次へ」は表の下に固定（押す手で表を隠さない）。
+// 列の見出しはドリッパーの番号（列の状態）と担当者、担当者の名前のすぐ右に「次へ」。
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
@@ -96,8 +97,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicket,
-  onOpenRebrew,
+  onPressCard,
+  onHoldCard,
   onCancelEmergency,
   onOpenEmptySlot,
   onOpenLane,
@@ -167,7 +168,15 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       if (target === "unassigned") onReturnToUnassigned(source.ticket);
       else onMoveTicket(source.ticket, target);
     },
+    // 長押しは表のカードだけ（右の注文カードは押し続けてから動かしてもドラッグ）
+    onHold: (source) => {
+      if (source.kind !== "ticket" || !onHoldCard) return false;
+      onHoldCard(source.ticket);
+      return true;
+    },
   });
+  // 済のカードは動かさないので、長押しだけ
+  const hold = useCardHold<CaosCard>((card) => onHoldCard?.(card));
 
   const dragSource = drag.source;
   const dragCup = dragSource ? sourceCard(dragSource) : null;
@@ -196,20 +205,19 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       size="sm"
       note={rowIds.length > 1 ? "統合" : undefined}
       data-search-key={ticket.key}
-      onPointerDown={
-        state !== "past"
-          ? (event) =>
-              drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
-          : undefined
+      onPointerDown={(event) => {
+        if (state === "past") hold.press(ticket, event);
+        else drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event);
+      }}
+      onClickCapture={
+        state === "past" ? hold.suppressClick : drag.suppressClick
       }
-      onClickCapture={drag.suppressClick}
-      // 抽出中・済のカードは入れ直し（選んだ注文カードと統合できる抽出中のカードは統合）
+      // 押すと始める・終える（選んだ注文カードと統合できる抽出中のカードは統合）
       onClick={() => {
         if (picked.canMergeWith(ticket)) picked.mergeWith(ticket);
-        else if (state === "waiting") onOpenTicket(ticket);
-        else onOpenRebrew?.(ticket);
+        else onPressCard(ticket);
       }}
-      // 探して見せるとき、上にはみ出した場所の札も見せる（見出し・「次へ」の高さは useScrollToFirstLive が枠に付ける）
+      // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
       className={`h-[60px] shrink-0 scroll-mt-3 ${state !== "past" ? "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
       dragging={dragCup?.key === ticket.key}
     >
@@ -292,12 +300,22 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       onOpenLane={onOpenLane}
                       className="h-[60px] w-full"
                     />
-                    {/* 担当者の下に「交代」（列の幅が狭いので縦に並べる） */}
+                    {/* 担当者のすぐ右に「次へ」、その下に「交代」（列の幅が狭いので縦に並べる） */}
                     <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
-                      <LaneName
-                        dripper={bay.id}
-                        className="max-w-full font-black text-[13px]"
-                      />
+                      <div className="flex w-full min-w-0 items-center justify-center gap-1">
+                        <LaneName
+                          dripper={bay.id}
+                          className="min-w-0 font-black text-[13px]"
+                        />
+                        <NextButton
+                          bayId={bay.id}
+                          active={Boolean(lane.current)}
+                          locked={lane.nextLocked}
+                          onAdvance={onAdvanceBay}
+                          // 列の幅が狭いので矢印は出さない（名前を残す）
+                          className="h-9 shrink-0 px-1.5 text-[14px] [&>svg]:hidden"
+                        />
+                      </div>
                       <LaneChangeButton dripper={bay.id} />
                     </div>
                   </th>
@@ -443,31 +461,6 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 </tr>
               ))}
             </tbody>
-            {/* 次へ（表の下に固定） */}
-            <tfoot className="sticky bottom-0 z-30 bg-slate-100">
-              <tr>
-                <th
-                  className={`border-t-4 border-r-4 px-1 font-black text-[12px] ${LINE}`}
-                >
-                  次へ
-                </th>
-                {columns.map(({ bay, lane }) => (
-                  <td
-                    key={bay.id}
-                    className={`border-t-4 border-r-2 p-1 ${LINE}`}
-                  >
-                    <NextButton
-                      bayId={bay.id}
-                      active={Boolean(lane.current)}
-                      locked={lane.nextLocked}
-                      onAdvance={onAdvanceBay}
-                      className="h-12 w-full text-[15px]"
-                    />
-                  </td>
-                ))}
-                <td className={`border-t-4 border-l-4 ${LINE}`} />
-              </tr>
-            </tfoot>
           </table>
         </ScrollArea>
       </section>

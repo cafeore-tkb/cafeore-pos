@@ -1,4 +1,5 @@
 import {
+  CAOS_NEXT_COOLDOWN_SEC,
   type CaosBoardCup,
   type CaosCard,
   type CaosOrderInput,
@@ -7,8 +8,10 @@ import {
   type PracticeDataOrder,
   assignWrites,
   caosDayOrders,
+  caosLane,
   caosLateMerge,
   caosMergePair,
+  caosNextLocked,
   dripperLabel,
   jstClock,
   jstDate,
@@ -46,7 +49,7 @@ import { type UndoRun, refuseUndo, useCaosUndo } from "./useCaosUndo";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
-import { useToastConfirms } from "./useToastConfirms";
+import { type NextStart, useToastConfirms } from "./useToastConfirms";
 
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
@@ -174,15 +177,60 @@ export const useCaosSession = () => {
     }
     return ok;
   };
-  // 「次へ」を送る（seen は終えるカード）。書けたら音を鳴らし、「1つ戻す」に覚える
-  const runNext = (bayId: number, seen: string | null) => {
-    const label = `次へ ${dripperLabel(bayId)}`;
+  // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。押した待機のカードを始めるときは、先にそのカードを待機の先頭へ動かす
+  // （同じ 1 つの操作として端末に残す）。書けたら音を鳴らし、「1つ戻す」に覚える
+  const runNext = (bayId: number, seen: string | null, start: NextStart) => {
+    const { brewing, queued } = caosLane(cards, bayId);
+    const head = queued[0];
+    const card =
+      typeof start === "object"
+        ? queued.find((other) => other.key === start.key)
+        : start === "head"
+          ? head
+          : undefined;
+    if (typeof start === "object" && !card) return fail(NOT_FOUND);
+    const moved =
+      card && card !== head
+        ? assignWrites(cards, card, bayId, {
+            place: { beforeKey: head.key },
+            newId: newDripId,
+          })
+        : { writes: [] };
+    if ("error" in moved) return fail(moved.error);
+    const label =
+      typeof start === "object" && card
+        ? `始める ${orderLabel(card)}`
+        : start === "none" && brewing
+          ? `終える ${orderLabel(brewing)}`
+          : `次へ ${dripperLabel(bayId)}`;
     return onSuccess(
-      source.runNext(bayId, seen, label),
+      source.runNext(
+        {
+          dripper: bayId,
+          dripId: seen,
+          startId: card?.dripId ?? null,
+          startNext: start !== "none",
+        },
+        label,
+        moved.writes,
+      ),
       label,
-      source.undoRun(undoOfNext(cards, bayId), label),
+      source.undoRun(undoOfNext(cards, bayId, card ?? null), label),
       () => soundManager.playComplete(),
     );
+  };
+  // 抽出中のカードを終える操作（「次へ」・抽出中のカードを押す・待機のカードを押して始める）。始めてから 10 秒は終えられず、
+  // 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）すぐには送らず confirms で確かめる。抽出中が無ければそのまま始める
+  const endBrewing = (bayId: number, start: NextStart) => {
+    const lane = lanes.find((l) => l.id === bayId);
+    if (!lane) return;
+    if (caosNextLocked(lane.brewing, nowMs)) {
+      fail(`始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は終えられません`);
+      return;
+    }
+    const early = earlyNext(lane, nowMs);
+    if (early) confirms.ask({ kind: "next", bayId, start, ...early });
+    else runNext(bayId, lane.brewing?.dripId ?? null, start);
   };
   // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
   // checkLate なら送らずに confirms で確かめる（確かめを出したら true。確かめは向きを決めたあとのカードで出す）
@@ -427,15 +475,20 @@ export const useCaosSession = () => {
       );
     },
     /**
-     * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ（提供の画面で全部準備完了にして終わった、など）null で、待機の先頭を始める。
-     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず confirms で確かめる
+     * 「次へ」。抽出中のカードを終え、待機の先頭を始める。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
+     * 抽出中が無ければ（提供の画面で全部準備完了にして終わった、など）null で、待機の先頭を始める。押し間違いの確かめは endBrewing
      */
-    advance: (bayId: number) => {
-      const lane = lanes.find((l) => l.id === bayId);
-      const early = lane && earlyNext(lane, nowMs);
-      if (early) confirms.ask({ kind: "next", bayId, ...early });
-      else runNext(bayId, lane?.brewing?.dripId ?? null);
+    advance: (bayId: number) => endBrewing(bayId, "head"),
+    /**
+     * ドリッパーのカードを押した。抽出中のカードは終える（待機の先頭は始めない）、待機のカードはそれを始める（抽出中のカードがあれば終える。
+     * 待機の先頭でなくても、押したカードを始める）。終わったカードは何もしない
+     */
+    pressCard: (pressed: CaosCard) => {
+      const card = cardOf(pressed.key);
+      if (!card?.dripper) return;
+      if (card.status === "brewing") endBrewing(card.dripper, "none");
+      else if (card.status === "queued")
+        endBrewing(card.dripper, { key: card.key });
     },
     /** 右上で確かめている「次へ」と統合（新しいものが先） */
     confirms: confirms.open,
@@ -446,7 +499,8 @@ export const useCaosSession = () => {
     confirm: (id: string) => {
       const asked = confirms.take(id);
       if (!asked) return;
-      if (asked.kind === "next") runNext(asked.bayId, asked.card.dripId);
+      if (asked.kind === "next")
+        runNext(asked.bayId, asked.card.dripId, asked.start);
       else runMerge(asked.card.key, asked.into.key, false);
     },
     cancelConfirm: confirms.dismiss,

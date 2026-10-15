@@ -136,10 +136,15 @@ export const NextButton: React.FC<{
 const confirmText = (confirm: OpenToastConfirm) =>
   confirm.kind === "next"
     ? {
-        label: `${dripperLabel(confirm.bayId)}の「次へ」の確かめ`,
+        label: `${dripperLabel(confirm.bayId)}の抽出を終える確かめ`,
         title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
         body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
-        action: "次へ進める",
+        action:
+          confirm.start === "none"
+            ? "終える"
+            : confirm.start === "head"
+              ? "次へ進める"
+              : "終えて始める",
       }
     : {
         label: `${orderLabel(confirm.card)}の統合の確かめ`,
@@ -152,7 +157,7 @@ const confirmText = (confirm: OpenToastConfirm) =>
  * 右上の確かめ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］、
  * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合は［やめる（残りの秒）］［統合する］。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
- * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。管制盤 A の右端の「次へ」の列と右のパネルを避ける）
+ * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。右のパネルを避ける）
  */
 export const ToastConfirms: React.FC<{
   confirms: readonly OpenToastConfirm[];

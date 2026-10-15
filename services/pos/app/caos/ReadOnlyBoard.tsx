@@ -53,15 +53,13 @@ export default function ReadOnlyBoard() {
           looks={looks}
           nextAvailable={nextAvailableBays(lanes, nowMs)}
           selectedOrderId={null}
-          actionTicketKey={null}
           nowMs={nowMs}
           timelineCommand={null}
           onSelectOrder={noop}
           onAdvanceBay={noop}
-          onOpenTicket={noop}
+          onPressCard={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
-          onCloseTicket={noop}
           onOpenEmptySlot={noop}
           onAssignToBay={noop}
           onMergeOrders={noop}

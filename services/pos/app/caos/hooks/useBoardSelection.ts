@@ -5,7 +5,7 @@ import { orderLabel } from "../logic/cards";
 
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
- * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
+ * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
  */
 type OpenPanel =
@@ -85,19 +85,19 @@ export const useBoardSelection = (
       panel?.kind === "rebrew" && (rebrewKey === null || rebrewing)
         ? { card: rebrewing }
         : null,
-    /** 緊急の入力を開く（card は抽出中・終わりのカード。無ければ番号から）。カードから開いたらその注文を選ぶ */
-    openRebrew: (card?: CaosCard) => {
-      setPanel({ kind: "rebrew", key: card?.key ?? null });
-      if (card) setSelectedOrderId(orderLabel(card));
-    },
+    /** 緊急の入力を番号から開く（ヘッダーの「緊急」。カードからは openCard） */
+    openRebrew: () => setPanel({ kind: "rebrew", key: null }),
     /** 緊急の入力を閉じる（カードから開いていたら、注文の選択も外す） */
     closeRebrew: () => {
       close("rebrew");
       if (rebrewKey) setSelectedOrderId(null);
     },
-    /** 待機のカード（A は 1〜6 のボタン、C・D は詳細のパネル）を開き、その注文を選ぶ */
-    openTicket: (card: CaosCard) => {
-      setPanel({ kind: "detail", key: card.key });
+    /** ドリッパーのカードを開き（長押し）、その注文を選ぶ。待機のカードは詳細のパネル、抽出中・終わりのカードは緊急の入力 */
+    openCard: (card: CaosCard) => {
+      setPanel({
+        kind: card.status === "queued" ? "detail" : "rebrew",
+        key: card.key,
+      });
       setSelectedOrderId(orderLabel(card));
     },
     /** 待機のカードを閉じる（注文の選択も外す） */

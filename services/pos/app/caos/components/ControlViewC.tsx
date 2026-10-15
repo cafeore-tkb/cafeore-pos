@@ -1,5 +1,7 @@
+import type { CaosCard } from "@cafeore/common";
 import { CircleDot } from "lucide-react";
 import type React from "react";
+import { useCardHold } from "../hooks/useCardDrag";
 import {
   type UnassignedPick,
   useControlPick,
@@ -20,19 +22,34 @@ import { MergeOverlay, OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当と、ドリッパーに置いたカードを注文番号の順に）。
-// 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・「次へ」・待機。
+// 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・待機。「次へ」は担当者の名前のすぐ右。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
-// 待機のカードはタップで詳細（移動・先頭へ・未割当に戻す・統合の解除）、抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細（移動・先頭へ・未割当に戻す・統合の解除）、
+// 抽出中は緊急のパネル（1〜6 に移す・未割当に戻すも）（onHoldCard）。ドリッパーの列のカードはドラッグしない（横になぞると待機の列のスクロール）ので、長押しだけ。
 // 右の未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有）。
 // 未割当のカードを待機・抽出中のカードの上に落とすと、そのカードの前へ（抽出中のカードの前は列の先頭で、今から始まる。
 // 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上なら統合）
 export const ControlViewC: React.FC<ControlViewProps> = (props) => {
   const pick = useControlPick(props);
-  return <ControlViewCBoard {...props} pick={pick} />;
+  const hold = useCardHold<CaosCard>((card) => props.onHoldCard?.(card));
+  // ドリッパーの列のカードを押すと始める・終える（開いた未割当のカードと統合できれば統合）。長押しは onHoldCard
+  const pressProps = (card: CaosCard) => ({
+    onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+      hold.press(card, event),
+    onClickCapture: hold.suppressClick,
+    onClick: () => {
+      if (pick.canMergeWith(card)) pick.tap(card);
+      else props.onPressCard(card);
+    },
+  });
+  return <ControlViewCBoard {...props} pick={pick} pressProps={pressProps} />;
 };
 
 const ControlViewCBoard: React.FC<
-  ControlViewProps & { pick: UnassignedPick }
+  ControlViewProps & {
+    pick: UnassignedPick;
+    pressProps: (card: CaosCard) => React.HTMLAttributes<HTMLElement>;
+  }
 > = ({
   lanes,
   unassignedOrders,
@@ -41,11 +58,10 @@ const ControlViewCBoard: React.FC<
   nowMs,
   selectedOrderId,
   onAdvanceBay,
-  onOpenTicket,
-  onOpenRebrew,
   onOpenEmptySlot,
   onOpenLane,
   pick,
+  pressProps,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
@@ -82,6 +98,13 @@ const ControlViewCBoard: React.FC<
                     dripper={bay.id}
                     className="font-black text-[14px] text-slate-950"
                   />
+                  <NextButton
+                    bayId={bay.id}
+                    active={Boolean(current)}
+                    locked={lane.nextLocked}
+                    onAdvance={onAdvanceBay}
+                    className="h-9 w-[76px] shrink-0 text-[15px]"
+                  />
                   <LaneAbility dripper={bay.id} />
                   <LaneChangeButton
                     dripper={bay.id}
@@ -89,7 +112,7 @@ const ControlViewCBoard: React.FC<
                     className="ml-auto h-6"
                   />
                 </div>
-                <div className="grid min-h-0 flex-1 grid-cols-[156px_72px_minmax(0,1fr)] items-stretch gap-1.5">
+                <div className="grid min-h-0 flex-1 grid-cols-[156px_minmax(0,1fr)] items-stretch gap-1.5">
                   {current ? (
                     <OrderCard
                       card={current}
@@ -101,32 +124,15 @@ const ControlViewCBoard: React.FC<
                       data-search-key={current.key}
                       data-ticket-label={orderLabel(current)}
                       data-merge-tap={pick.canMergeWith(current) || undefined}
-                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード。抽出中のカードは入れ直し（開いた未割当のカードと統合できれば統合）
-                      onClick={() => {
-                        if (pick.canMergeWith(current)) pick.tap(current);
-                        else if (current.status === "queued")
-                          onOpenTicket(current);
-                        else onOpenRebrew?.(current);
-                      }}
-                      className={
-                        current.status === "queued"
-                          ? "cursor-pointer hover:ring-2 hover:ring-blue-400"
-                          : ""
-                      }
+                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード
+                      {...pressProps(current)}
+                      className="cursor-pointer hover:ring-2 hover:ring-blue-400"
                     >
                       {pick.canMergeWith(current) && <MergeOverlay />}
                     </OrderCard>
                   ) : (
                     <span className="rounded-lg border border-slate-300 border-dashed" />
                   )}
-
-                  <NextButton
-                    bayId={bay.id}
-                    active={Boolean(current)}
-                    locked={lane.nextLocked}
-                    onAdvance={onAdvanceBay}
-                    className="text-[15px]"
-                  />
 
                   {/* 選択中の黄の輪（外へ 6px）と統合したカードの重ねた枠（8px）が切れないよう、外へ広げて内に同じだけ空ける（行の余白も 8px） */}
                   <div className="-m-2 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -141,7 +147,7 @@ const ControlViewCBoard: React.FC<
                         data-merge-target={ticket.key}
                         data-search-key={ticket.key}
                         data-ticket-label={orderLabel(ticket)}
-                        onClick={() => onOpenTicket(ticket)}
+                        {...pressProps(ticket)}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
                       />
                     ))}

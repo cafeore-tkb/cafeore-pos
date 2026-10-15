@@ -1,4 +1,4 @@
-import { type CaosCard, canSplitCard, dripperLabel } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -6,8 +6,8 @@ import {
   dropTargetAt,
   dropTargetLabel,
   useCardDrag,
+  useCardHold,
 } from "../hooks/useCardDrag";
-import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
@@ -22,32 +22,22 @@ import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
-import {
-  BayPad,
-  CancelEmergencyButton,
-  MergeOverlay,
-  OrderCard,
-  SplitCupButtons,
-} from "./OrderCard";
+import { MergeOverlay, OrderCard } from "./OrderCard";
 import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
-// 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
-// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
-// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。未割当のカードを開いているあいだは、統合できる抽出中のカードに
-// 「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
+// 左端はドリッパーの番号（列の状態のインジケーター）と担当者、その右に「次へ」。
+// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・終わりは緊急のパネル（onHoldCard）。
+// 未割当のカードを開いているあいだは、統合できる抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
 // 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
-// 統合したカードを開くと「外す」（統合の解除）が出る。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
-// 左端の列（ドリッパーの番号と担当者）の幅
-const STICKY_LEFT_WIDTH = 168;
-// 右端の列（次へ）の幅
-const NEXT_COLUMN_WIDTH = 96;
+// 左端の列（ドリッパーの番号・担当者と「次へ」）の幅
+const STICKY_LEFT_WIDTH = 240;
 // 90 seconds of past context remains visible to the left of NOW.
 const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
 
@@ -69,17 +59,12 @@ export const DispatchBoard: React.FC<
   selectedOrderId,
   onSelectOrder,
   onAdvanceBay,
-  onOpenTicket,
-  onOpenRebrew,
-  onCancelEmergency,
-  actionTicketKey,
+  onPressCard,
+  onHoldCard,
   onMoveTicket,
-  onReturnToUnassigned,
-  onCloseTicket,
   onOpenEmptySlot,
   onOpenLane,
   onMergeOrders,
-  onSplitCup,
   nowMs,
   timelineCommand,
   readOnly = false,
@@ -114,18 +99,14 @@ export const DispatchBoard: React.FC<
     onDrop: ({ card }, target) => {
       if (target.mergeKey) onMergeOrders(card.key, target.mergeKey);
       else onMoveTicket(card, target.bayId, target.place);
-      onCloseTicket();
+    },
+    onHold: ({ card }) => {
+      onHoldCard?.(card);
+      return Boolean(onHoldCard);
     },
   });
-
-  // 1〜6 のボタンを開いたカードの外を押すと閉じる（注文の選択も外す）
-  useOutsidePress(
-    actionTicketKey !== null,
-    (target) =>
-      target.closest<HTMLElement>("[data-card-key]")?.dataset.cardKey ===
-      actionTicketKey,
-    onCloseTicket,
-  );
+  // 終わったカードは動かさないので、長押しだけ
+  const hold = useCardHold<CaosCard>((card) => onHoldCard?.(card));
 
   // 選んだ注文のカード（列ごと）
   const matchingTickets = lanes.flatMap((lane) =>
@@ -185,10 +166,7 @@ export const DispatchBoard: React.FC<
 
       <ScrollArea
         axis="x"
-        trackInset={{
-          start: STICKY_LEFT_WIDTH,
-          end: readOnly ? 0 : NEXT_COLUMN_WIDTH,
-        }}
+        trackInset={{ start: STICKY_LEFT_WIDTH, end: 0 }}
         scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
         scrollerClassName="touch-auto select-none overscroll-x-contain"
@@ -226,7 +204,6 @@ export const DispatchBoard: React.FC<
                 </div>
               ))}
             </div>
-            {!readOnly && <NextColumn className="h-full bg-slate-50" />}
           </div>
 
           {/* 6 列 */}
@@ -241,7 +218,7 @@ export const DispatchBoard: React.FC<
                   data-bay-target={bay.id}
                   className="relative flex h-[80px] touch-manipulation items-center bg-white"
                 >
-                  {/* ドリッパーの番号（列の状態）と担当者・交代 */}
+                  {/* ドリッパーの番号（列の状態）と担当者・交代、その右に「次へ」 */}
                   <div
                     style={{ width: STICKY_LEFT_WIDTH }}
                     className="sticky left-0 isolate z-[51] flex shrink-0 items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
@@ -263,6 +240,15 @@ export const DispatchBoard: React.FC<
                       />
                       <LaneChangeButton dripper={bay.id} />
                     </div>
+                    {!readOnly && (
+                      <NextButton
+                        bayId={bay.id}
+                        active={Boolean(lane.current)}
+                        locked={lane.nextLocked}
+                        onAdvance={onAdvanceBay}
+                        className="h-[64px] w-[64px] shrink-0 text-[16px]"
+                      />
+                    )}
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
@@ -273,19 +259,19 @@ export const DispatchBoard: React.FC<
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
                       if (endMs <= range.startMs) return null;
-                      // 動かせるのは待機・抽出中のカード（閲覧だけの画面では動かさない）。1〜6 のボタンを開くのは待機のカード
+                      // 動かせるのは待機・抽出中のカード（閲覧だけの画面では押しても動かさない）
                       const isMovable = !readOnly && ticket.status !== "done";
-                      const isScheduled =
-                        isMovable && ticket.status === "queued";
-                      const isActionOpen =
-                        isScheduled && actionTicketKey === ticket.key;
                       // 開いた未割当のカードを、押して統合できる抽出中のカード
                       const isMergeTap =
                         isMovable && Boolean(pick?.canMergeWith(ticket));
                       return (
                         <div
                           key={ticket.key}
-                          className={`${isActionOpen ? "z-[80]" : ""} ${flashKeys?.has(ticket.key) ? "caos-arrival rounded-lg" : ""}`}
+                          className={
+                            flashKeys?.has(ticket.key)
+                              ? "caos-arrival rounded-lg"
+                              : ""
+                          }
                           style={{
                             left: Math.max(10, toX(startMs)),
                             width: Math.max(
@@ -298,7 +284,6 @@ export const DispatchBoard: React.FC<
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
-                            data-card-key={ticket.key}
                             data-search-key={ticket.key}
                             // 待機・抽出中のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
@@ -306,76 +291,34 @@ export const DispatchBoard: React.FC<
                             }
                             // 待機・抽出中のカードは、ドラッグで落とすと統合の相手になる
                             data-merge-target={
-                              !readOnly && ticket.status !== "done"
-                                ? ticket.key
-                                : undefined
+                              isMovable ? ticket.key : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
                             data-merge-tap={isMergeTap || undefined}
-                            onPointerDown={
+                            onPointerDown={(event) => {
+                              if (readOnly) return;
+                              if (isMovable)
+                                drag.press(
+                                  { card: ticket, bayId: bay.id },
+                                  event,
+                                );
+                              else hold.press(ticket, event);
+                            }}
+                            onClickCapture={
                               isMovable
-                                ? (event) =>
-                                    drag.press(
-                                      { card: ticket, bayId: bay.id },
-                                      event,
-                                    )
-                                : undefined
+                                ? drag.suppressClick
+                                : hold.suppressClick
                             }
-                            onClickCapture={drag.suppressClick}
                             onClick={() => {
-                              if (isMergeTap) {
-                                pick?.tap(ticket);
-                                return;
-                              }
-                              // 抽出中・終わりのカードは入れ直し（閲覧だけの画面では渡されない）
-                              if (!isScheduled) {
-                                onOpenRebrew?.(ticket);
-                                return;
-                              }
-                              if (!isActionOpen) onOpenTicket(ticket);
-                              else {
-                                onReturnToUnassigned(ticket);
-                                onCloseTicket();
-                              }
+                              if (readOnly) return;
+                              if (isMergeTap) pick?.tap(ticket);
+                              else onPressCard(ticket);
                             }}
                             // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
                             className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isMergeTap && <MergeOverlay />}
-                            {isActionOpen && (
-                              <>
-                                <BayPad
-                                  card={ticket}
-                                  currentBayId={bay.id}
-                                  hoveredBay={drag.target?.bayId ?? null}
-                                  onPick={(bayId, place) => {
-                                    onMoveTicket(ticket, bayId, place);
-                                    onCloseTicket();
-                                  }}
-                                />
-                                <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
-                                  <X className="h-10 w-10 stroke-[3] text-red-600/35" />
-                                </div>
-                                {canSplitCard(ticket) && (
-                                  <SplitCupButtons
-                                    card={ticket}
-                                    onSplit={(cupId) => {
-                                      onSplitCup(ticket, cupId);
-                                      onCloseTicket();
-                                    }}
-                                  />
-                                )}
-                                {ticket.emergency && onCancelEmergency && (
-                                  <CancelEmergencyButton
-                                    onConfirm={() => {
-                                      onCancelEmergency(ticket);
-                                      onCloseTicket();
-                                    }}
-                                  />
-                                )}
-                              </>
-                            )}
                           </OrderCard>
                         </div>
                       );
@@ -395,19 +338,6 @@ export const DispatchBoard: React.FC<
                       </div>
                     )}
                   </div>
-
-                  {/* 次へ（右端に固定） */}
-                  {!readOnly && (
-                    <NextColumn className="self-stretch bg-white">
-                      <NextButton
-                        bayId={bay.id}
-                        active={Boolean(lane.current)}
-                        locked={lane.nextLocked}
-                        onAdvance={onAdvanceBay}
-                        className="h-[64px] w-full text-[17px]"
-                      />
-                    </NextColumn>
-                  )}
                 </div>
               );
             })}
@@ -445,16 +375,3 @@ export const DispatchBoard: React.FC<
     </div>
   );
 };
-
-/** 右端に固定する「次へ」の列（目盛りの行は空） */
-const NextColumn: React.FC<{
-  className: string;
-  children?: React.ReactNode;
-}> = ({ className, children }) => (
-  <div
-    style={{ width: NEXT_COLUMN_WIDTH }}
-    className={`sticky right-0 isolate z-50 flex shrink-0 items-center justify-center border-slate-300 border-l px-2 shadow-[-4px_0_10px_rgba(15,23,42,0.08)] ${className}`}
-  >
-    {children}
-  </div>
-);

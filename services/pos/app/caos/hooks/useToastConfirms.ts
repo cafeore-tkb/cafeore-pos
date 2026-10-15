@@ -5,12 +5,25 @@ import { useState } from "react";
 const CONFIRM_SEC = 8;
 
 /**
+ * 抽出中のカードを終えたあとに始めるもの。head は待機の先頭（「次へ」）、none は何も始めない（抽出中のカードを押した）、
+ * key はそのカード（押した待機のカード）
+ */
+export type NextStart = "head" | "none" | { key: string };
+
+/**
  * 右上に出す確かめ（盤面の操作を止めない）
- *   - next：押し間違いかもしれない「次へ」（どのドリッパーの、どのカードを、始めてから何秒で終えようとしたか）
+ *   - next：押し間違いかもしれない、抽出中のカードを終える操作（どのドリッパーの、どのカードを、始めてから何秒で終えようとしたか。
+ *     start は終えたあとに始めるもの）
  *   - merge：抽出を始めてから時間のたったカードへの統合（card を into へ。into は始めてから何秒か）
  */
 export type ToastConfirm =
-  | { kind: "next"; bayId: number; card: CaosCard; elapsedSec: number }
+  | {
+      kind: "next";
+      bayId: number;
+      card: CaosCard;
+      elapsedSec: number;
+      start: NextStart;
+    }
   | { kind: "merge"; card: CaosCard; into: CaosCard; elapsedSec: number };
 
 /** 出している確かめ（id と、何もしなければ消えるまでの残りの秒つき） */

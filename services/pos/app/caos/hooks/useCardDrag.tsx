@@ -13,7 +13,26 @@ import { isBayId } from "../logic/lanes";
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
 // 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
 // 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
+// onHold を渡すと、12px より動かさずに HOLD_MS 押し続けたら長押し（onHold が true を返したら、ドラッグは始めず、離したときのクリックも捨てる）。
+// 動かし始めたら長押しにはならない（なぞったらすぐ掴むのはそのまま）。Apple Pencil・マウスも同じ。
 const DRAG_THRESHOLD_PX = 12;
+const HOLD_MS = 600;
+
+// 長押しのあとの、指を離したときのクリックを捨てる。開いたパネルの「外を押したら閉じる」（document の capture で見る）より先に、
+// window の capture で止める。クリックが来なければ（指の長押し）、次に押したときにやめる
+const swallowNextClick = () => {
+  const swallow = (event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    stop();
+  };
+  const stop = () => {
+    window.removeEventListener("click", swallow, true);
+    window.removeEventListener("pointerdown", stop, true);
+  };
+  window.addEventListener("click", swallow, true);
+  window.addEventListener("pointerdown", stop, true);
+};
 
 // 1〜6 のボタン（カードの上の BayPad）
 const isBayButton = (element: Element): element is HTMLElement =>
@@ -138,6 +157,8 @@ export const useCardDrag = <S, T>(handlers: {
   targetAt: (source: S, clientX: number, clientY: number) => T | null;
   onBegin?: (source: S) => void;
   onDrop: (source: S, target: T) => void;
+  /** 動かさずに押し続けた（長押し）。長押しにしたら true（false ならそのまま。動かせばドラッグ） */
+  onHold?: (source: S) => boolean;
 }) => {
   const [drag, setDrag] = useState<{ source: S; rect: DOMRect } | null>(null);
   const [target, setTarget] = useState<T | null>(null);
@@ -176,6 +197,13 @@ export const useCardDrag = <S, T>(handlers: {
     const { pointerId, clientX: startX, clientY: startY } = event;
     const rect = event.currentTarget.getBoundingClientRect();
     let dragging = false;
+    const hold =
+      latest.current.onHold &&
+      window.setTimeout(() => {
+        if (!latest.current.onHold?.(source)) return;
+        cleanup();
+        swallowNextClick();
+      }, HOLD_MS);
 
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
@@ -188,6 +216,7 @@ export const useCardDrag = <S, T>(handlers: {
       const dy = moveEvent.clientY - startY;
       if (!dragging) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+        window.clearTimeout(hold);
         dragging = true;
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
@@ -216,6 +245,7 @@ export const useCardDrag = <S, T>(handlers: {
     const onCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, false);
 
     const cleanup = () => {
+      window.clearTimeout(hold);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
@@ -271,4 +301,20 @@ export const useCardDrag = <S, T>(handlers: {
         document.body,
       ),
   };
+};
+
+/**
+ * 長押しだけ（ドラッグしないカード。管制盤 C のドリッパーの列・A と D の終わったカード）。useCardDrag と同じ決まりで、動かしたら長押しにならない。
+ * press をカードの onPointerDown に、suppressClick を onClickCapture に渡す
+ */
+export const useCardHold = <S,>(onHold: (source: S) => void) => {
+  const { press, suppressClick } = useCardDrag<S, never>({
+    targetAt: () => null,
+    onDrop: () => {},
+    onHold: (source) => {
+      onHold(source);
+      return true;
+    },
+  });
+  return { press, suppressClick };
 };

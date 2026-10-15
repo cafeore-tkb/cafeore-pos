@@ -108,7 +108,7 @@ export default function App() {
           unsent={session.unsent}
           onOpenSearch={() => selection.openSearch("")}
           searchOpen={selection.searchDigits !== null}
-          onOpenEmergency={() => selection.openRebrew()}
+          onOpenEmergency={selection.openRebrew}
           undoLabel={session.undo.label}
           undoSecondsLeft={session.undo.secondsLeft}
           undoPending={session.undo.pending}
@@ -124,17 +124,15 @@ export default function App() {
             looks={looks}
             nextAvailable={session.nextAvailable}
             selectedOrderId={selection.selectedOrderId}
-            actionTicketKey={selection.scheduled?.card.key ?? null}
             nowMs={session.nowMs}
             timelineCommand={timelineCommand}
             onSelectOrder={selection.selectOrder}
             onAdvanceBay={session.advance}
-            onOpenTicket={selection.openTicket}
-            onOpenRebrew={selection.openRebrew}
+            onPressCard={session.pressCard}
+            onHoldCard={selection.openCard}
             onCancelEmergency={selection.cancelEmergency}
             onMoveTicket={selection.move}
             onReturnToUnassigned={selection.returnToUnassigned}
-            onCloseTicket={selection.closeTicket}
             onOpenEmptySlot={selection.openAssignSlot}
             onOpenLane={selection.openLane}
             onAssignToBay={selection.assign}
@@ -157,7 +155,7 @@ export default function App() {
         )}
       </div>
 
-      {selection.scheduled && view.detailPanel && (
+      {selection.scheduled && (
         <TicketDetailPanel
           ticket={selection.scheduled.card}
           look={looks.get(selection.scheduled.card.key)}

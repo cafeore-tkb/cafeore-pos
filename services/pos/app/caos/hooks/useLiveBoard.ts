@@ -4,7 +4,6 @@ import {
   type CaosUndoEntry,
   applyCaosOutboxOps,
   buildCaosCards,
-  caosLane,
   caosUndoCups,
   jstDate,
   overlayCaosOrders,
@@ -21,6 +20,12 @@ import { usePosOrders } from "./usePosOrders";
 // 合えばこの端末に残し（useCaosOutbox）、盤面はサーバーから届いた注文に残っている操作を重ねて出す（overlayCaosOrders）。
 // 書き込み（PUT /api/caos/cups・「次へ」など）は後ろで 1 つずつ送り、書いた注文は全部の画面に配られる。
 // enabled が false（実データテスト中）のときは注文を読まない（重ねもしない）。
+
+/**
+ * 「次へ」（抽出中のカードを終え、待機の先頭を始める）。dripId は画面が抽出中と見ているカード、startId は始めるカード（無ければ null）、
+ * startNext が false なら終えるだけ
+ */
+export type CaosNextOp = Omit<Extract<CaosOutboxOp, { kind: "next" }>, "kind">;
 export const useLiveBoard = ({
   enabled,
   nowMs,
@@ -59,15 +64,15 @@ export const useLiveBoard = ({
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),
-    /** 「次へ」を送る。dripId は画面が抽出中と見ているカード。決まりに合えば true */
-    runNext: (dripper: number, dripId: string | null, label: string) =>
-      run(label, {
-        kind: "next",
-        dripper,
-        dripId,
-        startId:
-          caosLane(latest.current.cards, dripper).queued[0]?.dripId ?? null,
-      }),
+    /** 「次へ」を送る。before は先に当てる書き込み（押した待機のカードを待機の先頭へ）。決まりに合えば true */
+    runNext: (next: CaosNextOp, label: string, before: CaosCupsWrite[] = []) =>
+      run(
+        label,
+        ...(before.length > 0
+          ? [{ kind: "cups", writes: before } as const]
+          : []),
+        { kind: "next", ...next },
+      ),
     /** カップ（入れ直しも。ids）が盤面に届いたか */
     arrived: (ids: string[]) =>
       ids.every((id) =>
