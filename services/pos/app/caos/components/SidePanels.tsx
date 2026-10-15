@@ -197,10 +197,11 @@ type MoveActions = Pick<
 const MoveCardButtons: React.FC<
   MoveActions & {
     card: CaosCard;
-    currentBayId: number | null;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
     onDone: () => void;
   }
-> = ({ card, currentBayId, onMoveTicket, onReturnToUnassigned, onDone }) => {
+> = ({ card, lane, onMoveTicket, onReturnToUnassigned, onDone }) => {
   const move = (bayId: number, place?: CaosPlace) => {
     onMoveTicket(card, bayId, place);
     onDone();
@@ -211,36 +212,42 @@ const MoveCardButtons: React.FC<
         ドリッパーへ移す（列の最後へ）
       </h3>
       <div className="grid grid-cols-3 gap-2">
-        {moveTargets(card, currentBayId).map(({ bayId, current, disabled }) => (
-          <button
-            key={bayId}
-            type="button"
-            disabled={disabled}
-            onClick={() => move(bayId)}
-            className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
-          >
-            {current ? `${bayId} 最後へ` : bayId}
-          </button>
-        ))}
+        {moveTargets(card, lane?.id ?? null).map(
+          ({ bayId, current, disabled }) => (
+            <button
+              key={bayId}
+              type="button"
+              disabled={disabled}
+              onClick={() => move(bayId)}
+              className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
+            >
+              {current ? `${bayId} 最後へ` : bayId}
+            </button>
+          ),
+        )}
       </div>
-      {currentBayId !== null && (
+      {lane && (
         <>
           <h3 className="mt-4 mb-2 font-black text-[14px] text-slate-700">
-            {dripperLabel(currentBayId)} の中で動かす
+            {dripperLabel(lane.id)} の中で動かす
           </h3>
           <div className="grid grid-cols-2 gap-2">
-            {frontTargets(card).map(({ place, label, hint, disabled }) => (
-              <button
-                key={place}
-                type="button"
-                disabled={disabled}
-                onClick={() => move(currentBayId, place)}
-                className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
-              >
-                {label}
-                <span className="font-bold text-[12px]">（{hint}）</span>
-              </button>
-            ))}
+            {frontTargets(card, lane).map(
+              ({ place, label, hint, disabled }) => (
+                <button
+                  key={place}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => move(lane.id, place)}
+                  className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
+                >
+                  {label}
+                  {hint && (
+                    <span className="font-bold text-[12px]">（{hint}）</span>
+                  )}
+                </button>
+              ),
+            )}
           </div>
         </>
       )}
@@ -266,7 +273,8 @@ export const TicketDetailPanel: React.FC<
   MoveActions & {
     ticket: CaosCard;
     look?: CardLook;
-    currentBayId: number | null;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
     onClose: () => void;
     onSplitCup: (card: CaosCard, cupId: string) => void;
     /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
@@ -275,7 +283,7 @@ export const TicketDetailPanel: React.FC<
 > = ({
   ticket,
   look,
-  currentBayId,
+  lane,
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
@@ -287,7 +295,7 @@ export const TicketDetailPanel: React.FC<
     <CommentList comments={look?.comments} className="mt-3" />
     <MoveCardButtons
       card={ticket}
-      currentBayId={currentBayId}
+      lane={lane}
       onMoveTicket={onMoveTicket}
       onReturnToUnassigned={onReturnToUnassigned}
       onDone={onClose}
@@ -333,10 +341,12 @@ export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
     card?: CaosCard;
     look?: CardLook;
+    /** 抽出中のカードの今のドリッパーの列（移すボタンに使う） */
+    lane?: Lane;
     onClose: () => void;
     move: MoveActions;
   }
-> = ({ card, look, onClose, move, ...form }) => {
+> = ({ card, look, lane, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
     <SidePanel title="緊急（入れ直し）" onClose={onClose}>
@@ -357,12 +367,7 @@ export const RebrewPanel: React.FC<
         onDone={onClose}
       />
       {card?.status === "brewing" && (
-        <MoveCardButtons
-          card={card}
-          currentBayId={card.dripper}
-          {...move}
-          onDone={onClose}
-        />
+        <MoveCardButtons card={card} lane={lane} {...move} onDone={onClose} />
       )}
     </SidePanel>
   );

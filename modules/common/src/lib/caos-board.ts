@@ -649,13 +649,15 @@ export const splitWrites = (
 
 /**
  * ドリッパー from の待機を全部、to の待機の最後へ移す（並びはそのまま）。to に置けないカード（指名の番号の違うカード）は残し、
- * その枚数を kept で返す。to に抽出中も待機も無ければ、先頭のカードはそのまま抽出を始める（assignWrites と同じ）
+ * 移したカードを moved、残した枚数を kept で返す。to に抽出中も待機も無ければ、先頭のカードはそのまま抽出を始める（assignWrites と同じ）
  */
 export const moveQueueWrites = (
   cards: readonly CaosCard[],
   from: number,
   to: number,
-): { writes: CaosCupsWrite[]; kept: number } | { error: string } => {
+):
+  | { writes: CaosCupsWrite[]; moved: CaosCard[]; kept: number }
+  | { error: string } => {
   const invalid = caosDripperError(to);
   if (invalid) return { error: invalid };
   if (from === to) return { error: "同じドリッパーには移せません" };
@@ -672,6 +674,7 @@ export const moveQueueWrites = (
         start_brew: free && index === 0,
       }),
     ),
+    moved: moving,
     kept: queued.length - moving.length,
   };
 };

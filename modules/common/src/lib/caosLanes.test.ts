@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 import type { CaosCard } from "./caos-board";
 import {
   type CaosLanes,
+  activeSeniorOnlyCards,
   emptyCaosLanes,
   laneChangeWarnings,
   nonSeniorMerge,
   nonSeniorPlacement,
-  queuedSeniorOnlyCards,
   seniorOnlyOffSenior,
   seniorUpdates,
   todaysCaosLanes,
@@ -66,7 +66,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     expect(todaysCaosLanes(lanes([2, "", true]), DAY)[1].senior).toBe(false);
   });
 
-  test("上級生のみのカードを上級生でない担当者のドリッパーに置くなら、その担当者（止めない。同じドリッパーの中は知らせない）", () => {
+  test("上級生のみのカードを上級生でない担当者のドリッパーに置くなら、その担当者（止めない。担当者のいないドリッパー・同じドリッパーの中は知らせない）", () => {
     const today = todaysCaosLanes(
       lanes([1, "山田", true], [2, "佐藤", false]),
       DAY,
@@ -74,11 +74,8 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     const limited = card({ status: "unassigned", seniorOnly: true });
     expect(nonSeniorPlacement(limited, 1, today)).toBeNull();
     expect(nonSeniorPlacement(limited, 2, today)?.name).toBe("佐藤");
-    // 担当者がいない
-    expect(nonSeniorPlacement(limited, 3, today)).toMatchObject({
-      dripper: 3,
-      name: "",
-    });
+    // 担当者がいない（警告の印だけ）
+    expect(nonSeniorPlacement(limited, 3, today)).toBeNull();
     expect(
       nonSeniorPlacement(
         { seniorOnly: false, dripper: null, nominatedDripper: null },
@@ -151,19 +148,19 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
     ).toBeNull();
   });
 
-  test("交代の確認：上級生でない人にするドリッパーに指名の無い上級生のみのカードが待っていれば出す", () => {
+  test("交代の知らせ：上級生でない人にするドリッパーに指名の無い上級生のみのカード（抽出中・待機）があれば出す", () => {
     const cards = [
       card({ dripper: 1, seniorOnly: true }),
       card({ dripper: 1, seniorOnly: true }),
       card({ dripper: 1, seniorOnly: false }),
-      // 抽出中・終わりは数えない
+      // 抽出中は数え、終わりは数えない（警告の印と同じ）
       card({ dripper: 1, seniorOnly: true, status: "brewing" }),
       card({ dripper: 1, seniorOnly: true, status: "done" }),
       card({ dripper: 2, seniorOnly: true }),
       // 指名のあるカードは担当者が上級生でなくても置けるので数えない
       card({ dripper: 1, seniorOnly: true, nominatedDripper: 1 }),
     ];
-    expect(queuedSeniorOnlyCards(cards, 1)).toBe(2);
+    expect(activeSeniorOnlyCards(cards, 1)).toBe(3);
     expect(
       laneChangeWarnings(
         cards,
@@ -171,7 +168,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         true,
       ),
     ).toEqual([
-      "このドリッパーに指名の無い上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）",
+      "このドリッパーに指名の無い上級生のみのカードが3枚あります（佐藤さんは上級生ではありません）",
     ]);
     expect(
       laneChangeWarnings(
@@ -198,7 +195,7 @@ describe("[unit] CaOS のドリッパーの担当者", () => {
         false,
       ),
     ).toEqual([
-      "1st のドリッパーに指名の無い上級生のみのカードが2枚あります（担当者がいなくなります）",
+      "1st のドリッパーに指名の無い上級生のみのカードが3枚あります（担当者がいなくなります）",
     ]);
   });
 

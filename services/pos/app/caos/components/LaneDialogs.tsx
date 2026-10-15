@@ -27,7 +27,7 @@ import { LaneName, SeniorMark } from "./LaneParts";
 
 // ドリッパーの「交代」。sohosai-shift の予定（今の枠・次の枠・オペ練の今と次のラウンド）の、そのドリッパーの番目の人を候補に出す。
 // 候補に無い人は自由に入れられ、空き（担当者なし）にもできる。ほかのドリッパーの担当者との入れ替えもここから。
-// 押したらその場で替える（抽出中かどうかは見ない）。指名の無い上級生のみのカードが待っているときの確認は CaosLanesProvider が出す。
+// 押したらその場で替える（抽出中かどうかは見ない）。指名の無い上級生のみのカードがあるときの知らせ（POS の通知）は CaosLanesProvider が出す。
 
 interface LaneChangeDialogProps {
   lane: CaosLane;

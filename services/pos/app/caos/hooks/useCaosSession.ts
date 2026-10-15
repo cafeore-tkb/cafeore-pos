@@ -1,13 +1,13 @@
 import {
   type CaosBoardCup,
   type CaosCard,
+  type CaosLane,
   type CaosOrderInput,
   type CaosPlace,
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
   caosDayOrders,
-  caosDripperAllowed,
   caosLateMerge,
   caosMergePair,
   caosRebrewMergePair,
@@ -50,11 +50,11 @@ import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { useCaosOutboxSender } from "./useCaosOutbox";
+import { useCornerToasts } from "./useCornerToasts";
 import { useLastAction } from "./useLastAction";
 import { useLiveBoard } from "./useLiveBoard";
 import { usePracticeData } from "./usePracticeData";
 import { useTestPlay } from "./useTestPlay";
-import { useToastConfirms } from "./useToastConfirms";
 
 // 実データを読み込んでいないとき
 const NO_ORDERS: PracticeDataOrder[] = [];
@@ -115,7 +115,7 @@ export const useCaosSession = () => {
     nowMs: realTime.getTime(),
   });
   const source = test.session ? test : live;
-  // ドリッパーの担当者（サーバーの今日の担当者）。本番では、指名の無い上級生のみのカードは上級生のドリッパーにしか置けない（サーバーも確かめる）
+  // ドリッパーの担当者（サーバーの今日の担当者）。本番では、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら知らせ、カードに警告の印を出す（止めない）
   const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
@@ -125,8 +125,9 @@ export const useCaosSession = () => {
   // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「直前の操作」から忘れる
   const unsent = useCaosOutboxSender(realTime.getTime(), lastAction.forget);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
-  // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）は、確かめずに統合し、同じ所に知らせだけ出す
-  const confirms = useToastConfirms(realTime.getTime());
+  // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
+  // 止めずにそのまま書き、同じ所に知らせだけ出す
+  const toasts = useCornerToasts(realTime.getTime());
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -165,12 +166,11 @@ export const useCaosSession = () => {
 
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
-  // 本番で、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら、置いたうえで右上に知らせる（実データテストには担当者がいない）
-  const noticeNonSenior = (
-    card: CaosCard,
-    lane: ReturnType<typeof nonSeniorPlacement>,
-  ) => {
-    if (lane && !testing) confirms.ask({ kind: "seniorOnly", card, lane });
+  // 本番で、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら、置いたうえで右上に知らせる（実データテストには担当者がいない。
+  // 担当者のいないドリッパーは知らせず、警告の印だけ。nonSeniorPlacement）。cards はまとめて移したときは何枚も（知らせは 1 つ）
+  const noticeNonSenior = (cards: CaosCard[], lane: CaosLane | null) => {
+    if (lane && cards.length > 0 && !testing)
+      toasts.show({ kind: "seniorOnly", cards, lane });
   };
   // 通った操作で端末に残した操作の id（本番だけ。通らなかったら「直前の操作」から忘れる）
   const liveIds = () => (test.session ? [] : live.lastEnqueued());
@@ -192,7 +192,7 @@ export const useCaosSession = () => {
     );
   };
   // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。どれだけ前に抽出を始めたカードへも統合し、
-  // 始めてから時間がたっていれば（caosLateMerge）、統合したあとに confirms で知らせる（向きを決めたあとのカードで出す）
+  // 始めてから時間がたっていれば（caosLateMerge）、統合したあとに右上で知らせる（向きを決めたあとのカードで出す）
   const runMerge = (firstKey: string, intoKey: string) => {
     const first = cardOf(firstKey);
     const second = cardOf(intoKey);
@@ -209,8 +209,8 @@ export const useCaosSession = () => {
     if (!merged) return false;
     const elapsedSec = caosLateMerge(into, nowMs);
     if (elapsedSec !== null)
-      confirms.ask({ kind: "lateMerge", card, into, elapsedSec });
-    noticeNonSenior(card, nonSeniorMerge(card, into, people));
+      toasts.show({ kind: "lateMerge", card, into, elapsedSec });
+    noticeNonSenior([card], nonSeniorMerge(card, into, people));
     return true;
   };
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「直前の操作」に出す操作の名前
@@ -252,7 +252,7 @@ export const useCaosSession = () => {
   // 本番と実データテストを行き来するときに、覚えている操作（「直前の操作」・右上の確かめ・入れ直しのまとめ）を忘れる
   const forgetPending = () => {
     lastAction.forget();
-    confirms.clear();
+    toasts.clear();
     setRebrewsToMerge([]);
   };
 
@@ -392,7 +392,7 @@ export const useCaosSession = () => {
         `${action} ${orderLabel(card)} → ${dripperLabel(bayId)}`,
       );
       if (placed)
-        noticeNonSenior(card, nonSeniorPlacement(card, bayId, people));
+        noticeNonSenior([card], nonSeniorPlacement(card, bayId, people));
       return placed;
     },
     /** 待機・抽出中のカードを未割当に戻す */
@@ -424,31 +424,39 @@ export const useCaosSession = () => {
         result,
         `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`,
       );
-      if (moved)
-        for (const card of lanes.find((l) => l.id === from)?.queued ?? [])
-          if (caosDripperAllowed(card, to))
-            noticeNonSenior(card, nonSeniorPlacement(card, to, people));
+      // 上級生でない担当者のドリッパーへ移した上級生のみのカードは、まとめて 1 つの知らせに
+      if (moved && "moved" in result) {
+        const offSenior = result.moved.filter((card) =>
+          nonSeniorPlacement(card, to, people),
+        );
+        if (offSenior[0])
+          noticeNonSenior(
+            offSenior,
+            nonSeniorPlacement(offSenior[0], to, people),
+          );
+      }
       return moved;
     },
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
      * 抽出中が無ければ（提供の画面で全部準備完了にして終わった、など）null で、待機の先頭を始める。
-     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず confirms で確かめる
+     * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず右上で確かめる
      */
     advance: (bayId: number) => {
       const lane = lanes.find((l) => l.id === bayId);
       const early = lane && earlyNext(lane, nowMs);
-      if (early) confirms.ask({ kind: "next", bayId, ...early });
+      if (early) toasts.show({ kind: "next", bayId, ...early });
       else runNext(bayId, lane?.brewing?.dripId ?? null);
     },
-    /** 右上で確かめている「次へ」と、時間のたったカードへの統合の知らせ（新しいものが先） */
-    confirms: confirms.open,
+    /** 右上の確かめ（「次へ」）と知らせ（時間のたったカードへの統合・上級生のみのカードを上級生でない担当者に置いた）。新しいものが先 */
+    cornerToasts: toasts.open,
     /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
     confirm: (id: string) => {
-      const asked = confirms.take(id);
+      const asked = toasts.take(id);
       if (asked?.kind === "next") runNext(asked.bayId, asked.card.dripId);
     },
-    cancelConfirm: confirms.dismiss,
+    /** 右上の確かめ・知らせを閉じる（確かめはやめる） */
+    dismissToast: toasts.dismiss,
     /** 「直前の操作」（この画面が最後にした操作の名前。しばらくたつと null） */
     lastAction: lastAction.label,
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
