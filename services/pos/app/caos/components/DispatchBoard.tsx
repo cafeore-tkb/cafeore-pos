@@ -3,6 +3,7 @@ import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
   type DropTarget,
+  dropSideOn,
   dropTargetAt,
   dropTargetLabel,
   useCardDrag,
@@ -20,6 +21,7 @@ import { LaneChangeButton, LaneName } from "./LaneParts";
 import {
   BayPad,
   CancelEmergencyButton,
+  DropMark,
   MergeOverlay,
   OrderCard,
   SplitCupButtons,
@@ -28,12 +30,13 @@ import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
-// 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
-// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。未割当のカードを開いているあいだは、統合できる抽出中のカードに
-// 「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
-// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
-// 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
-// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
+// 待機のカードはタップで 1〜6 のボタン（今の列は「先頭」「待機の先頭」も。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
+// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに
+// 「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有。1〜6 のボタンは開かない）。
+// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後。待機・抽出中のカードの上に落とすと、左の端はそのカードの前・
+// 右の端は後ろ・真ん中は統合（統合できる相手のときだけ。useCardDrag の dropTargetAt）。抽出中のカードの前は列の先頭で今から始まり、
+// 後ろは待機の先頭。同じ列の中の入れ替えにも使う。抽出中のカードを落として統合したら相手を抽出中のカードに入れる）。
+// 指の下のカードには、入れる所の線か統合の枠を出す（DropMark）。
 // 統合したカードを開くと「外す」（統合の解除）が出る。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
 // （左右の固定の列はなぞってもスクロールしない。「次へ」を急いで押して指が滑っても、NOW の追従が外れない）。
@@ -112,7 +115,7 @@ export const DispatchBoard: React.FC<
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機・抽出中のカードを別の列へ・カードの前へ・統合（今の列そのものと、指名以外の列には置けない）
+  // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列そのもの（カードの無い所）と、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
       dropTargetAt(x, y, {
@@ -135,6 +138,9 @@ export const DispatchBoard: React.FC<
       actionTicketKey,
     onCloseTicket,
   );
+
+  // ドラッグ（タイムラインのカードか、下の横帯の未割当のカード）で指の下の落とす先
+  const dropTarget = drag.target ?? pick?.drag.target ?? null;
 
   // 選んだ注文のカード（列ごと）
   const matchingTickets = lanes.flatMap((lane) =>
@@ -291,7 +297,7 @@ export const DispatchBoard: React.FC<
                         isMovable && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
-                      // 開いた未割当のカードを、押して統合できる抽出中のカード
+                      // 開いた未割当のカードを、押して統合できる待機・抽出中のカード
                       const isMergeTap =
                         isMovable && Boolean(pick?.canMergeWith(ticket));
                       const left = Math.max(10, toX(startMs));
@@ -311,15 +317,9 @@ export const DispatchBoard: React.FC<
                             selected={sharesOrder(ticket, selectedOrderId)}
                             data-card-key={ticket.key}
                             data-search-key={ticket.key}
-                            // 待機・抽出中のカードは、ドラッグで落とすと「このカードの前へ」の目印になる（useCardDrag の dropTargetAt）
+                            // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
                               isMovable ? ticket.key : undefined
-                            }
-                            // 待機・抽出中のカードは、ドラッグで落とすと統合の相手になる
-                            data-merge-target={
-                              !readOnly && ticket.status !== "done"
-                                ? ticket.key
-                                : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
                             data-merge-tap={isMergeTap || undefined}
@@ -355,6 +355,9 @@ export const DispatchBoard: React.FC<
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             {isMergeTap && <MergeOverlay />}
+                            <DropMark
+                              side={dropSideOn(dropTarget, ticket.key)}
+                            />
                             {isActionOpen && (
                               <>
                                 <BayPad

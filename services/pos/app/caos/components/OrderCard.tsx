@@ -3,7 +3,7 @@ import {
   type CaosPlace,
   readableTextColor,
 } from "@cafeore/common";
-import { Check, Star } from "lucide-react";
+import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
 import { Fragment } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
@@ -18,7 +18,7 @@ import {
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
-import { moveTargets } from "../logic/lanes";
+import { type DropSide, frontTargets, moveTargets } from "../logic/lanes";
 import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
@@ -296,15 +296,25 @@ export const OrderCard: React.FC<
               指名 {nominee}
             </span>
           )}
-          {card.seniorOnly && (
-            <span
-              title="上級生のみ"
-              className="inline-flex min-w-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
-            >
-              <Star className="h-3 w-3 shrink-0 fill-current" />
-              <span className="truncate">上級生</span>
-            </span>
-          )}
+          {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
+          {card.seniorOnly &&
+            (look?.offSenior ? (
+              <span
+                title="上級生のみ（担当者が上級生ではありません）"
+                className="inline-flex min-w-0 items-center rounded bg-red-600 px-1 py-0.5 font-black text-white"
+              >
+                <TriangleAlert className="h-3 w-3 shrink-0" />
+                <span className="truncate">上級生</span>
+              </span>
+            ) : (
+              <span
+                title="上級生のみ"
+                className="inline-flex min-w-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
+              >
+                <Star className="h-3 w-3 shrink-0 fill-current" />
+                <span className="truncate">上級生</span>
+              </span>
+            ))}
         </span>
         {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
         {reasons
@@ -337,47 +347,67 @@ const padTone = (bayId: number, hoveredBay: number | null) =>
 
 // カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
 // 段がヘッダー・帯・ほかのカードの下になったり枠で切れたりして押せないときは、両方の段を下か上に寄せる（useBayPadPlacement）。
-// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの列の先頭へ。今から始まる）。
+// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。番号はそのドリッパーの列の最後へ。待機カードは段の右端に、
+// 今のドリッパーの「先頭」（列の先頭へ。今から始まる）と「待機の先頭」（抽出中の次へ）を足す（logic/lanes の frontTargets）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
-// ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
+// ドラッグで指を滑らせて選べるよう、番号のボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
   card: CaosCard;
   /** 待機カードの今のドリッパー */
   currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  /** place は「先頭」のボタンなら "front"（今のドリッパーの列の先頭へ） */
+  /** place は「先頭」なら "front"、「待機の先頭」なら "queueFront"（今のドリッパーの列）。番号なら無し（その列の最後へ） */
   onPick: (bayId: number, place?: CaosPlace) => void;
 }> = ({ card, currentBayId, hoveredBay, onPick }) => {
   const targets = moveTargets(card, currentBayId ?? null);
   const half = Math.ceil(targets.length / 2);
+  const fronts = currentBayId === undefined ? [] : frontTargets(card);
   // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
+  const pick =
+    (bayId: number, place?: CaosPlace) => (event: React.MouseEvent) => {
+      event.stopPropagation();
+      onPick(bayId, place);
+    };
   return (
     <div ref={placement.ref} className="contents">
-      {[targets.slice(0, half), targets.slice(half)].map((row, index) => (
-        <div
-          key={row[0].bayId}
-          style={placement.rows[index]}
-          className="absolute right-0 left-0 z-[90] grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
-        >
-          {row.map(({ bayId, place, disabled }) => (
-            <button
-              key={bayId}
-              type="button"
-              disabled={disabled}
-              data-bay-target={bayId}
-              onClick={(event) => {
-                event.stopPropagation();
-                onPick(bayId, place);
-              }}
-              className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
-            >
-              {place ? "先頭" : bayId}
-            </button>
-          ))}
-        </div>
-      ))}
+      {[targets.slice(0, half), targets.slice(half)].map((row, index) => {
+        const front = fronts[index];
+        return (
+          <div
+            key={row[0].bayId}
+            style={placement.rows[index]}
+            className={`absolute right-0 left-0 z-[90] grid gap-1 rounded-lg bg-slate-950 p-1 shadow-xl ${front ? "grid-cols-[1fr_1fr_1fr_1.4fr]" : "grid-cols-3"}`}
+          >
+            {row.map(({ bayId, current, disabled }) => (
+              <button
+                key={bayId}
+                type="button"
+                disabled={disabled}
+                data-bay-target={bayId}
+                title={current ? "この列の最後へ" : undefined}
+                onClick={pick(bayId)}
+                className={`flex h-full touch-none items-center justify-center gap-0.5 rounded-md border font-black font-mono text-[17px] leading-none transition-colors ${padTone(bayId, hoveredBay)}`}
+              >
+                {bayId}
+                {current && <span className="font-sans text-[10px]">最後</span>}
+              </button>
+            ))}
+            {front && currentBayId !== undefined && (
+              <button
+                type="button"
+                disabled={front.disabled}
+                title={front.hint}
+                onClick={pick(currentBayId, front.place)}
+                className="h-full touch-none whitespace-nowrap rounded-md border border-amber-300 bg-amber-100 px-0.5 font-black text-[12px] text-amber-950 leading-none disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500"
+              >
+                {front.label}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -459,3 +489,20 @@ export const SplitCupButtons: React.FC<{
     ))}
   </div>
 );
+
+/**
+ * ドラッグで指の下にある列のカードの印（カードの children に置く）。前は左の縁、後ろは右の縁に入れる所の線、
+ * 統合はカードを囲む統合の色の枠（落とす先の札は指に付いた写しに出す。hooks/useCardDrag の dropTargetLabel）
+ */
+export const DropMark: React.FC<{ side?: DropSide }> = ({ side }) => {
+  if (!side) return null;
+  if (side === "merge")
+    return (
+      <div className="border-(color:--caos-merge) pointer-events-none absolute inset-0 z-[95] rounded-lg border-4 bg-white/30" />
+    );
+  return (
+    <div
+      className={`-top-1 -bottom-1 pointer-events-none absolute z-[95] w-[6px] rounded-full bg-blue-600 shadow-[0_0_0_2px_white] ${side === "before" ? "-left-[7px]" : "-right-[7px]"}`}
+    />
+  );
+};
