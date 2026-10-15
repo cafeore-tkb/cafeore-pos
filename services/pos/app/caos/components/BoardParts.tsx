@@ -241,7 +241,7 @@ export const EmptySlotButton: React.FC<{
   </button>
 );
 
-/** 「次に空く」ドリッパー（未割当とドリッパーの見出し） */
+/** 「次に空く」ドリッパー（未割当とドリッパーの見出し）。札の幅は決めておく（毎秒の残りや「空き」で見出しの並びが動かないように） */
 export const NextAvailableChips: React.FC<{
   nextAvailable: NextAvailable;
   className?: string;
@@ -253,7 +253,7 @@ export const NextAvailableChips: React.FC<{
     {nextAvailable.map((item, index) => (
       <span
         key={item.bayId}
-        className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
+        className={`min-w-[6em] shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-center font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
       >
         #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
       </span>

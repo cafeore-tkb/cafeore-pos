@@ -40,6 +40,8 @@ export default function App() {
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
+  // 管制盤 A のタイムラインが NOW を追っているか（ヘッダーの「現在」の見た目）
+  const [followingNow, setFollowingNow] = useState(true);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
   // 注文番号の検索。見つかった注文を選び、そのカードを見せる（A はタイムラインのカードをタイムラインの命令で、ほかは並べた枠の中で）
@@ -112,6 +114,7 @@ export default function App() {
           onTimelineNavigate={(direction) =>
             setTimelineCommand({ direction, id: Date.now() })
           }
+          followingNow={followingNow}
           testPlaying={testPlay.isActive}
           testProgressLabel={testPlay.remainingLabel}
           onOpenTestPlay={() => setTestSetupOpen(true)}
@@ -158,6 +161,7 @@ export default function App() {
               onAssignToBay={selection.assign}
               onMergeOrders={selection.merge}
               onSplitCup={selection.split}
+              onFollowNowChange={setFollowingNow}
             />
           </OpenCommentsContext.Provider>
         </main>
