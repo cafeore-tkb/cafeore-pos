@@ -132,25 +132,42 @@ export const NextButton: React.FC<{
   </button>
 );
 
-// 確かめの文（題・中身・進めるボタン・読み上げの名前）
-const confirmText = (confirm: OpenToastConfirm) =>
-  confirm.kind === "next"
-    ? {
-        label: `${dripperLabel(confirm.bayId)}の「次へ」の確かめ`,
-        title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
-        body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
-        action: "次へ進める",
-      }
-    : {
-        label: `${orderLabel(confirm.card)}の統合の確かめ`,
-        title: `${orderLabel(confirm.card)} を ${orderLabel(confirm.into)} に統合しますか？`,
-        body: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています。`,
-        action: "統合する",
-      };
+// 知らせのあとに添える文
+const UNDO_HINT = "違っていたらヘッダーの「戻す」で戻せます。";
+
+// 確かめ・知らせの文（題・中身・進めるボタン（知らせは無し）・読み上げの名前）
+const confirmText = (confirm: OpenToastConfirm) => {
+  if (confirm.kind === "next")
+    return {
+      label: `${dripperLabel(confirm.bayId)}の「次へ」の確かめ`,
+      title: `${dripperLabel(confirm.bayId)} の ${orderLabel(confirm.card)} を終えますか？`,
+      body: `始めてからまだ ${clockLabel(confirm.elapsedSec)} です。押す列を間違えていませんか？`,
+      action: "次へ進める",
+    };
+  if (confirm.kind === "lateMerge")
+    return {
+      label: `${orderLabel(confirm.into)}への統合の知らせ`,
+      title: `${orderLabel(confirm.into)} は抽出を始めてから ${clockLabel(confirm.elapsedSec)} たっています`,
+      body: `${orderLabel(confirm.card)} を統合しました。${UNDO_HINT}`,
+      action: null,
+    };
+  const { dripper, name } = confirm.lane;
+  const who = name
+    ? `上級生でない ${dripperLabel(dripper)} ${name}`
+    : `担当者のいない ${dripperLabel(dripper)}`;
+  return {
+    label: `${orderLabel(confirm.card)}の上級生のみの知らせ`,
+    title: `上級生のみの ${orderLabel(confirm.card)} を${who}に置きました`,
+    body: `カードに警告の印を付けています。${UNDO_HINT}`,
+    action: null,
+  };
+};
 
 /**
- * 右上の確かめ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］、
- * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）への統合は［やめる（残りの秒）］［統合する］。
+ * 右上の確かめと知らせ（hooks/useToastConfirms）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
+ * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
+ * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
+ * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
  * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
  * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-toast-confirms。管制盤 A の右端の「次へ」の列と右のパネルを避ける）
  */
@@ -166,9 +183,9 @@ export const ToastConfirms: React.FC<{
         return (
           <section
             key={confirm.id}
-            role="alertdialog"
+            role={action ? "alertdialog" : "status"}
             aria-label={label}
-            className="fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 border-orange-600 bg-white p-3 text-slate-950 shadow-2xl duration-200"
+            className={`fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl duration-200 ${action ? "border-orange-600" : "border-(color:--caos-merge)"}`}
           >
             <h2 className="font-black text-[16px]">{title}</h2>
             <p className="mt-1 font-bold text-[13px]">{body}</p>
@@ -178,14 +195,16 @@ export const ToastConfirms: React.FC<{
                 onClick={() => onCancel(confirm.id)}
                 className="h-11 touch-manipulation font-bold"
               >
-                やめる（{confirm.secondsLeft}）
+                {action ? "やめる" : "閉じる"}（{confirm.secondsLeft}）
               </Button>
-              <Button
-                onClick={() => onConfirm(confirm.id)}
-                className="h-11 touch-manipulation font-bold"
-              >
-                {action}
-              </Button>
+              {action && (
+                <Button
+                  onClick={() => onConfirm(confirm.id)}
+                  className="h-11 touch-manipulation font-bold"
+                >
+                  {action}
+                </Button>
+              )}
             </div>
           </section>
         );

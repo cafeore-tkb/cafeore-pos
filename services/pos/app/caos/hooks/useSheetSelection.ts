@@ -1,16 +1,11 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, canMergeCards } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  canTapMerge,
-  cardOrderNos,
-  orderLabel,
-  quickMergePartner,
-} from "../logic/cards";
+import { cardOrderNos, orderLabel, quickMergePartner } from "../logic/cards";
 import { type Lane, laneActive } from "../logic/lanes";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
-// 統合できる未割当のカードと表の抽出中のカードには「統合する」が出て、押すと統合する（待機のカードへは押して統合しない）。
-// 統合する相手が決まる（logic/cards の quickMergePartner。未割当と表の抽出中のカードから）ときは、選んだカードをもう一度押すと統合する（決まらなければ選択を外す）。
+// 統合できる未割当のカードと表の待機・抽出中のカードには「統合する」が出て、押すと統合する。
+// 統合する相手が決まる（logic/cards の quickMergePartner。未割当と表の待機・抽出中のカードから）ときは、選んだカードをもう一度押すと統合する（決まらなければ選択を外す）。
 // 選んだ注文（App の selectedOrderId）が別の注文に変わったり、カードが無くなったりしたら選択を外す。
 export const useSheetSelection = ({
   unassigned,
@@ -21,7 +16,7 @@ export const useSheetSelection = ({
   onMerge,
 }: {
   unassigned: CaosCard[];
-  /** ドリッパーの列（表の抽出中のカードも、もう一度押して統合する相手の候補） */
+  /** ドリッパーの列（表の待機・抽出中のカードも、もう一度押して統合する相手の候補） */
   lanes: readonly Lane[];
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
@@ -33,7 +28,7 @@ export const useSheetSelection = ({
   const [mergingNos, setMergingNos] = useState<number[] | null>(null);
   const selected = unassigned.find((card) => card.key === selectedUid) ?? null;
   const canMergeWith = (card: CaosCard) =>
-    Boolean(selected && canTapMerge(selected, card));
+    Boolean(selected && canMergeCards(selected, card));
 
   useEffect(() => {
     if (selectedUid && !selected) setSelectedUid(null);
@@ -98,7 +93,7 @@ export const useSheetSelection = ({
       else if (partner) mergeWith(partner);
       else clear();
     },
-    /** 選んだカードと押して統合できる（未割当と抽出中のカード） */
+    /** 選んだカードと押して統合できる（未割当と待機・抽出中のカード） */
     canMergeWith,
     mergeWith,
     /** 選んだカードをそのドリッパーへ（「ここに配置」） */

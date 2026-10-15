@@ -14,7 +14,13 @@ import {
   selectedComments,
   sharesOrder,
 } from "./cards";
-import { boardLanes, cardPlaces, pendingNominatedCups } from "./lanes";
+import {
+  DROP_EDGE,
+  boardLanes,
+  cardPlaces,
+  dropSideAt,
+  pendingNominatedCups,
+} from "./lanes";
 import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
@@ -118,11 +124,29 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     // #10 と #14 はどちらも 2 つ離れていて決まらない
     expect(keyOf(c12, [c10, c12, c14])).toBeUndefined();
     expect(keyOf(c12, [two])).toBeUndefined();
-    // 抽出中のカードも相手の候補。待機のカードは候補にしない（押して統合しない）
+    // 抽出中・待機のカードも相手の候補。終わったカードは候補にしない
     const brewing = { ...c13, status: "brewing" as const, dripper: 1 };
     const queued = { ...c13, status: "queued" as const, dripper: 1 };
+    const done = { ...c13, status: "done" as const, dripper: 1 };
     expect(keyOf(c12, [brewing, c15])).toBe(brewing.key);
-    expect(keyOf(c12, [queued, c15])).toBe(c15.key);
+    expect(keyOf(c12, [queued, c15])).toBe(queued.key);
+    expect(keyOf(c12, [done, c15])).toBe(c15.key);
+  });
+
+  test("列のカードに落とす所：左の端は前、右の端は後ろ、真ん中は統合（できなければ近いほうの端）。置けない列なら統合だけ", () => {
+    const mergeable = { mergeable: true };
+    const plain = { mergeable: false };
+    expect(dropSideAt(0, mergeable)).toBe("before");
+    expect(dropSideAt(DROP_EDGE - 0.01, mergeable)).toBe("before");
+    expect(dropSideAt(0.5, mergeable)).toBe("merge");
+    expect(dropSideAt(1 - DROP_EDGE + 0.01, mergeable)).toBe("after");
+    expect(dropSideAt(1, mergeable)).toBe("after");
+    expect(dropSideAt(0.45, plain)).toBe("before");
+    expect(dropSideAt(0.55, plain)).toBe("after");
+    expect(dropSideAt(0.1, { mergeable: true, placeable: false })).toBe(
+      "merge",
+    );
+    expect(dropSideAt(0.1, { mergeable: false, placeable: false })).toBeNull();
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
