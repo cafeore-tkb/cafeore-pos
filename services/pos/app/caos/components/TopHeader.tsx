@@ -3,7 +3,6 @@ import {
   CalendarClock,
   Coffee,
   Database,
-  Eye,
   History,
   LayoutGrid,
   type LucideIcon,
@@ -13,13 +12,12 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
-import { Link } from "react-router";
 import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import { LATE_ORDER_MIN, type orderBacklog } from "../logic/backlog";
+import { LATE_ORDER_MIN, type orderBacklog } from "../logic/alerts";
 import { orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
@@ -330,16 +328,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <Search className="mb-0.5 h-4 w-4" />
           番号
         </button>
-        {/* リベロビュー（閲覧のみ）。この画面を閉じないよう、別のタブで開く */}
-        <Link
-          to="/master-sheet/libero"
-          target="_blank"
-          title="リベロビュー（閲覧のみ。別のタブで開く）"
-          className="flex min-h-[44px] shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] px-2 font-black text-slate-700 text-xs"
-        >
-          <Eye className="h-4 w-4" />
-          リベロ
-        </Link>
         {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
         <LaneHeaderStatus />
         {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}

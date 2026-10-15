@@ -9,23 +9,12 @@ import {
   KeyRound,
   RefreshCw,
   Trash2,
-  TriangleAlert,
   UserMinus,
   UserRound,
   X,
 } from "lucide-react";
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
 import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
 import {
@@ -240,45 +229,6 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
     </div>
   );
 };
-
-// 上級生でない人（担当者なしも）にするドリッパーに、指名の無い上級生のみのカードが待っているときの確認。ボタンは［まだ変えない］［変える］の 2 つだけ。
-// ［変える］なら、そのまま交代し、上級生のみのカードもそのドリッパーに残る（未割当へ戻すなどはしない）。
-
-interface LaneConfirmDialogProps {
-  /** 例「このドリッパーに指名の無い上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）」。ドリッパーごとに 1 行 */
-  messages: string[];
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-export const LaneConfirmDialog: React.FC<LaneConfirmDialogProps> = ({
-  messages,
-  onCancel,
-  onConfirm,
-}) => (
-  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle className="flex items-center gap-2">
-          <TriangleAlert className="h-6 w-6 shrink-0 text-amber-500" />
-          交代の確認
-        </AlertDialogTitle>
-        {messages.map((message) => (
-          <AlertDialogDescription
-            key={message}
-            className="font-black text-[16px] text-slate-950"
-          >
-            {message}
-          </AlertDialogDescription>
-        ))}
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>まだ変えない</AlertDialogCancel>
-        <AlertDialogAction onClick={onConfirm}>変える</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-);
 
 // CaOS の設定：sohosai-shift の合言葉。この iPad にだけ覚えさせる（ビルドには入れない）。
 // 合言葉は sohosai-shift で CaOS へ配信したときのもの。無くても交代（名前の自由入力）は使える。

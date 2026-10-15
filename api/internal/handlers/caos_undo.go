@@ -20,7 +20,7 @@ import (
 // 動かして始めた時刻を消した抽出中のカードを戻す）。戻すのは前の値なので、終えた時刻は current と同じか null だけ、
 // 始めた時刻は今日の今までの時刻（動かして消した・付け直した前の時刻）。提供済みのカップは戻さない。
 // 準備完了（ready_at）は CaOS の操作では変わらないので書き戻さない（restore の ready_at は読まない）。今の値が current と違えば断る。
-// 書き戻した結果も PUT と同じ決まり（指名・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい）と、
+// 書き戻した結果も PUT と同じ決まり（指名・1 枚 2 杯まで・同じカードは同じ値・指名のそろい）と、
 // 1 つのドリッパーで抽出中は 1 枚を確かめる。
 
 // validateCaosUndo は書き戻す値の形を確かめる（400）。now はサーバーの今。
@@ -66,11 +66,8 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 	cupIDs := make([]uuid.UUID, len(cups))
 	var drippers []int
 	var dripIDs []uuid.UUID
-	// 上級生のみを確かめるため、戻すのを「今の値から前の値への書き込み」とみる（PUT と同じ確かめ方）
-	writes := make([]models.CaosCupsWrite, len(cups))
 	for i, c := range cups {
 		cupIDs[i] = c.CupId
-		writes[i] = models.CaosCupsWrite{CupIds: []uuid.UUID{c.CupId}, Before: c.Current.State, After: models.CaosCupAfter{Dripper: c.Restore.State.Dripper, DripId: c.Restore.State.DripId}}
 		if d := c.Restore.State.Dripper; d != nil {
 			drippers = append(drippers, *d)
 		}
@@ -85,19 +82,11 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		if err := lockCaosDrippers(tx, drippers); err != nil {
 			return err
 		}
-		found, lockIDs, items, err := readCaosUnitItems(tx, cupIDs)
+		lockIDs, items, err := readCaosUnitItems(tx, cupIDs)
 		if err != nil {
 			return err
 		}
 		orders, err := lockCaosOrders(tx, lockIDs, nil, start, end)
-		if err != nil {
-			return err
-		}
-		seniorOnly := make(map[uuid.UUID]bool, len(found))
-		for _, c := range found {
-			seniorOnly[c.ID] = items[c.ID].ItemType.SeniorOnlyBrew()
-		}
-		seniors, err := caosSeniorDrippers(tx, writes, seniorOnly, now)
 		if err != nil {
 			return err
 		}
@@ -172,9 +161,6 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 
 		// 書き戻したあとも盤面の決まりに合うか（合わないのは、そのあいだにほかの画面が変えたから）
 		if err := checkCaosCards(tx, dripIDs); err != nil {
-			return err
-		}
-		if err := checkSeniorOnly(tx, writes, items, seniors); err != nil {
 			return err
 		}
 		d, err := caosBrewingTwice(tx, drippers, start, end)

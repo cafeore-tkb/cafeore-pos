@@ -5,32 +5,28 @@ import { dropTargetLabel } from "../hooks/useCardDrag";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
 import {
   type CardLooks,
-  type OrderRowEntry,
   orderNoLabel,
-  queueRows,
   sharesOrder,
+  unassignedRows,
 } from "../logic/cards";
-import { type Lane, cardPlaces, laneCards } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import {
+  LongWaitTag,
   NextAvailableChips,
   OrderCountLabel,
   PanelHeader,
-  PlaceTag,
 } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
   MergeOverlay,
-  MergedTrace,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
-import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
-// どちらも注文番号の順に注文ごとにまとめ、ほかの注文と統合したカードはもとの注文の場所に跡（MergedTrace）を残す。
+// どちらも未割当のカードだけを、注文番号の行（logic/cards の unassignedRows）にまとめる。長く待っているカードには待ち時間の札を付ける。
 // カードはなぞると掴むので、スクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 /**
@@ -43,6 +39,7 @@ const UnassignedCard: React.FC<{
   pick: UnassignedPick;
   size: "sm" | "queue" | "md";
   selected: boolean;
+  nowMs: number;
   readOnly?: boolean;
   className?: string;
 }> = ({
@@ -51,6 +48,7 @@ const UnassignedCard: React.FC<{
   pick,
   size,
   selected,
+  nowMs,
   readOnly = false,
   className = "",
 }) => {
@@ -75,6 +73,7 @@ const UnassignedCard: React.FC<{
       className={`${readOnly ? "touch-manipulation" : "cursor-grab touch-none active:cursor-grabbing"} ${isOpen ? "z-40" : ""} ${className}`}
       dragging={pick.drag.source?.key === card.key}
     >
+      <LongWaitTag card={card} nowMs={nowMs} />
       {isMergeCandidate && <MergeOverlay />}
       {isOpen && (
         <BayPad
@@ -122,8 +121,8 @@ type UnassignedProps = {
   orders: CaosCard[];
   looks: CardLooks;
   selectedOrderId: string | null;
-  /** ドリッパーの列（置いたカードを灰色で並べる） */
-  lanes: Lane[];
+  /** 今（エポックのミリ秒。長く待っているカードの札） */
+  nowMs: number;
   /** カードの操作（useControlPick） */
   pick: UnassignedPick;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
@@ -136,81 +135,8 @@ export interface UnassignedFold {
   toggle: () => void;
 }
 
-// 注文の列で、ドリッパーに置いたカードの薄さ（未割当は濃く、待機・抽出中・済の順に薄く、灰色にする）
-const PLACED_FADE: Record<CaosCard["status"], string> = {
-  unassigned: "",
-  queued: "opacity-70 grayscale",
-  brewing: "opacity-50 grayscale",
-  done: "opacity-30 grayscale",
-};
-
 /**
- * 注文の 1 枚（A の横帯・C の注文の列で共通）。ほかの注文と統合したカードは跡、未割当のカードは操作できるカード、
- * ドリッパーに置いたカードは灰色に薄く「3rd 2番目」の札を付ける
- */
-const QueueEntry: React.FC<{
-  orderNo: number;
-  entry: OrderRowEntry;
-  pick: UnassignedPick;
-  looks: CardLooks;
-  /** ドリッパーに置いたカードの場所の札（logic/lanes の cardPlaces） */
-  places: ReturnType<typeof cardPlaces>;
-  selectedOrderId: string | null;
-  size: "sm" | "queue" | "md";
-  readOnly?: boolean;
-  className: string;
-}> = ({
-  orderNo,
-  entry: { card, mergedInto },
-  pick,
-  looks,
-  places,
-  selectedOrderId,
-  size,
-  readOnly,
-  className,
-}) => {
-  const selected = sharesOrder(card, selectedOrderId);
-  if (mergedInto)
-    return (
-      <MergedTrace orderNo={orderNo} into={mergedInto} className={className} />
-    );
-  if (card.status === "unassigned")
-    return (
-      <UnassignedCard
-        card={card}
-        looks={looks}
-        pick={pick}
-        size={size}
-        selected={selected}
-        readOnly={readOnly}
-        className={className}
-      />
-    );
-  return (
-    <div className={`relative ${className}`}>
-      <OrderCard
-        card={card}
-        look={looks.get(card.key)}
-        size={size}
-        selected={selected}
-        data-search-key={card.key}
-        // 選んだ注文のカードは薄くしない（灰色にすると選択中の黄の輪も灰色になる）
-        className={`h-full ${selected ? "" : PLACED_FADE[card.status]}`}
-      />
-      <PlaceTag label={places.get(card.key)} />
-    </div>
-  );
-};
-
-// A の横帯と C の注文の列の中身：並び（queueRows）と、ドリッパーに置いたカードの札
-const queueOf = (orders: readonly CaosCard[], lanes: readonly Lane[]) => ({
-  rows: queueRows([...orders, ...lanes.flatMap(laneCards)]),
-  places: cardPlaces(lanes),
-});
-
-/**
- * 管制盤 A の下の横帯。C の注文の列（queueRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
+ * 管制盤 A の下の横帯。C の注文の列（unassignedRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
  * 左端から古い順に並べる。同じ注文のカードは右へ折り返さず、すべて同じ番号の下へ縦に積む。
  * 注文のまとまりは、列（上の番号）と余白で見せる。全件を見る横スクロールバーはヘッダーの「未割当」の右に置く。
  * fold を渡すと、ヘッダーの右に「たたむ」「ひらく」を出し、たたんだらヘッダーだけにする。
@@ -223,11 +149,11 @@ export const UnassignedStrip: React.FC<
   orders,
   looks,
   selectedOrderId,
-  lanes,
+  nowMs,
   pick,
   fold,
 }) => {
-  const { rows: columns, places } = queueOf(orders, lanes);
+  const columns = unassignedRows(orders);
   const folded = fold?.folded ?? false;
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
@@ -267,7 +193,7 @@ export const UnassignedStrip: React.FC<
         >
           {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
           <div className="flex min-h-full w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
-            {columns.map(({ orderNo, emergency, entries }) => (
+            {columns.map(({ orderNo, emergency, cards }) => (
               <div
                 key={`${emergency}:${orderNo}`}
                 className="flex shrink-0 flex-col gap-0.5"
@@ -280,18 +206,17 @@ export const UnassignedStrip: React.FC<
                     </span>
                   )}
                 </div>
-                {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・場所の札はカードの外へ出る） */}
+                {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・待ち時間の札はカードの外へ出る） */}
                 <div className="flex w-[180px] flex-col gap-1.5 whitespace-nowrap">
-                  {entries.map((entry) => (
-                    <QueueEntry
-                      key={entry.card.key}
-                      orderNo={orderNo}
-                      entry={entry}
-                      pick={pick}
+                  {cards.map((card) => (
+                    <UnassignedCard
+                      key={card.key}
+                      card={card}
                       looks={looks}
-                      places={places}
-                      selectedOrderId={selectedOrderId}
+                      pick={pick}
                       size="queue"
+                      selected={sharesOrder(card, selectedOrderId)}
+                      nowMs={nowMs}
                       readOnly={readOnly}
                       className="min-h-[62px]"
                     />
@@ -308,40 +233,28 @@ export const UnassignedStrip: React.FC<
   );
 };
 
-/**
- * 管制盤 C の右の注文の列。いちばん古い未割当の注文から、注文番号の行ごとに、未割当のカードと、ドリッパーに置いたカード（灰色に薄く、
- * 「3rd 2番目」のようにどのドリッパーの何番目かの札）を並べる。その上に、直近にドリッパーに置いた注文を数件だけ残す（logic/cards の queueRows）。
- * 10 注文くらいが一度に見える高さ
- */
+/** 管制盤 C の右の注文の列。未割当のカードを注文番号の行ごとに並べる（logic/cards の unassignedRows）。10 注文くらいが一度に見える高さ */
 export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   orders,
   looks,
   selectedOrderId,
-  lanes,
+  nowMs,
   pick,
 }) => {
-  const { rows, places } = queueOf(orders, lanes);
-  const { openCard } = pick;
+  const rows = unassignedRows(orders);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader icon={ClipboardList} title="注文">
+      <PanelHeader icon={ClipboardList} title="未割当">
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
-          未割当 <OrderCountLabel cards={orders} />
+          <OrderCountLabel cards={orders} />
         </span>
-        {/* 開いたカードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
-        {openCard && (
-          <CommentLine
-            comments={looks.get(openCard.key)?.comments ?? []}
-            className="font-bold text-[12px]"
-          />
-        )}
       </PanelHeader>
       <ScrollArea
         axis="y"
         className="flex-1"
         scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
       >
-        {rows.map(({ orderNo, emergency, entries }) => (
+        {rows.map(({ orderNo, emergency, cards }) => (
           <div
             key={`${emergency}:${orderNo}`}
             className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
@@ -355,16 +268,15 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
               )}
             </span>
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-              {entries.map((entry) => (
-                <QueueEntry
-                  key={entry.card.key}
-                  orderNo={orderNo}
-                  entry={entry}
-                  pick={pick}
+              {cards.map((card) => (
+                <UnassignedCard
+                  key={card.key}
+                  card={card}
                   looks={looks}
-                  places={places}
-                  selectedOrderId={selectedOrderId}
+                  pick={pick}
                   size="sm"
+                  selected={sharesOrder(card, selectedOrderId)}
+                  nowMs={nowMs}
                   className="h-[50px] w-[150px]"
                 />
               ))}
