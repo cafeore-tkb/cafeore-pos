@@ -53,18 +53,23 @@ export const putCaosCups = async (
       );
 
 /**
- * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
+ * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、待機の先頭を始める（startNext が false なら終えるだけ）。
  * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる。pressedAt は押した時刻
  */
 export const nextCaosDripper = async (
   dripper: number,
   dripId: string | null,
   pressedAt: number,
+  startNext = true,
 ): Promise<CaosResult> =>
   send(
     apiClient.POST("/api/caos/drippers/{dripper}/next", {
       params: { path: { dripper } },
-      body: { drip_id: dripId, press: pressOf(pressedAt) },
+      body: {
+        drip_id: dripId,
+        start_next: startNext,
+        press: pressOf(pressedAt),
+      },
     }),
   );
 
@@ -148,7 +153,12 @@ export const sendCaosOutboxRequest = (
     case "cups":
       return putCaosCups(request.writes, pressedAt);
     case "next":
-      return nextCaosDripper(request.dripper, request.dripId, pressedAt);
+      return nextCaosDripper(
+        request.dripper,
+        request.dripId,
+        pressedAt,
+        request.startNext,
+      );
     case "undo":
       return undoCaosCups(request.cups);
     case "cancel-emergency":

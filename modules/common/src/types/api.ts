@@ -173,6 +173,7 @@ export interface paths {
      * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
      * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
      * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
+     * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
@@ -933,6 +934,11 @@ export interface components {
        * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
        */
       drip_id: string | null;
+      /**
+       * @description 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
+       * @default true
+       */
+      start_next?: boolean;
       press?: components["schemas"]["CaosPress"];
     };
     /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない */
@@ -1925,6 +1931,7 @@ export interface operations {
    * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
    * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
    * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
+   * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
    */
   advanceCaosDripper: {
@@ -1950,7 +1957,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い・start_next が false で抽出中が無い（何も変えない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

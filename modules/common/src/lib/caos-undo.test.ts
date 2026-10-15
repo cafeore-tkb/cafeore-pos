@@ -210,6 +210,13 @@ describe("unit: caos-undo", () => {
     const cards = buildCaosCards([order(1, [brewing]), order(2, [queued])]);
     const entry = undoOfNext(cards, 1);
     expect(entry.cups.map((c) => c.id)).toEqual(["a", "b"]);
+    // 終えるだけなら終えたカードだけ、始めるカードを選んだならそのカード
+    expect(undoOfNext(cards, 1, null).cups.map((c) => c.id)).toEqual(["a"]);
+    const other = cards.find((card) => card.dripId === "d2");
+    expect(undoOfNext(cards, 1, other).cups.map((c) => c.id)).toEqual([
+      "a",
+      "b",
+    ]);
 
     const finished = { ...brewing, brewFinishedAt: T1 };
     const started = { ...queued, brewStartedAt: T1 };

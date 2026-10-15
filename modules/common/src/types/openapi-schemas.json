@@ -1065,6 +1065,11 @@
         "nullable": true,
         "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
       },
+      "start_next": {
+        "type": "boolean",
+        "default": true,
+        "description": "待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true"
+      },
       "press": {
         "$ref": "#/components/schemas/CaosPress"
       }

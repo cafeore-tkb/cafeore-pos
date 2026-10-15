@@ -45,12 +45,13 @@ type UndoCupJSON = components["schemas"]["CaosUndoCup"];
 export type CaosOutboxOp =
   /** PUT /api/caos/cups（割当・移動・先頭へ・未割当に戻す・統合・外す・まとめて移す） */
   | { kind: "cups"; writes: CaosCupsWrite[] }
-  /** 「次へ」。dripId は終えるカード、startId は始めるはずの待機の先頭（押したときの盤面） */
+  /** 「次へ」。dripId は終えるカード、startId は始めるはずの待機の先頭（押したときの盤面）。startNext が false なら終えるだけ（無ければ始める） */
   | {
       kind: "next";
       dripper: number;
       dripId: string | null;
       startId: string | null;
+      startNext?: boolean;
     }
   /** 「1つ戻す」（POST /api/caos/undo）。送る直前にサーバーの今の値で作る */
   | { kind: "undo"; entry: CaosUndoEntry }
@@ -251,6 +252,7 @@ export const applyCaosOutboxOp = (
     case "next":
       return advanceCaosPracticeDripper(orders, op.dripper, op.dripId, at, {
         cooldown,
+        startNext: op.startNext,
       });
     case "undo": {
       const blocked = caosUndoCups(op.entry, buildCaosCards(orders));
@@ -512,7 +514,8 @@ const cupIdsOf = (request: CaosOutboxRequest, server: CaosServerState) => {
       return [request.id];
     case "next": {
       const lane = caosLane(buildCaosCards(server.orders), request.dripper);
-      return [lane.brewing, lane.queued[0]].flatMap(
+      const start = request.startNext === false ? undefined : lane.queued[0];
+      return [lane.brewing, start].flatMap(
         (card) => card?.cups.map((cup) => cup.id) ?? [],
       );
     }

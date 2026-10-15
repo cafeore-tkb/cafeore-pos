@@ -119,12 +119,13 @@ export const undoOfWrites = (
 };
 
 /**
- * 「次へ」を戻すもの。サーバーと同じ決まり（caosLane）で、抽出中のカードを終え、待機の先頭を始めたとみる。
- * 戻すと、終えたカードは抽出中に、始めたカードは待機に戻る（準備完了は「次へ」でも戻すときも変わらない）
+ * 「次へ」を戻すもの。サーバーと同じ決まり（caosLane）で、抽出中のカードを終え、start（無ければ待機の先頭。null なら終えるだけ）を始めたとみる。
+ * 戻すと、終えたカードは抽出中に、始めたカードは待機（start の今の場所）に戻る（準備完了は「次へ」でも戻すときも変わらない）
  */
 export const undoOfNext = (
   cards: readonly CaosCard[],
   dripper: number,
+  start?: CaosCard | null,
 ): CaosUndoEntry => {
   const { brewing, queued } = caosLane(cards, dripper);
   const entry = (card: CaosCard | undefined, finished: boolean) =>
@@ -139,7 +140,12 @@ export const undoOfNext = (
         ready: cup.readyAt !== null,
       },
     }));
-  return { cups: [...entry(brewing, true), ...entry(queued[0], false)] };
+  return {
+    cups: [
+      ...entry(brewing, true),
+      ...entry(start === undefined ? queued[0] : (start ?? undefined), false),
+    ],
+  };
 };
 
 // 戻せないとき・まだ戻せないときの理由（カップも担当者も同じ）
