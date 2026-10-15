@@ -12,28 +12,33 @@ export const OpenCommentsContext = createContext<
   ((label: string) => void) | null
 >(null);
 
-const MARK =
-  "-top-2 -left-2 bg-(color:--caos-comment) absolute z-20 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-white shadow-sm";
-
 /**
- * コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる。押すと（OpenCommentsContext があれば）その注文のコメントを右下に出す
- * （カードを押したとき（掴む・開く）とは別。選択を外してもコメントを読めるように）
+ * コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる（className で置き場所と大きさを替える。D の統合したカードの段では小さく並べる）。
+ * 押すと（OpenCommentsContext があれば）label の注文のコメントを右下に出す（カードを押したとき（掴む・開く）とは別。選択を外してもコメントを読めるように）
  */
-export const CommentMark: React.FC<{ count: number; label: string }> = ({
+export const CommentMark: React.FC<{
+  count: number;
+  /** 押したときにコメントを出す注文（orderLabel） */
+  label: string;
+  className?: string;
+}> = ({
   count,
   label,
+  className = "-top-2 -left-2 absolute z-20 h-7 w-7 border-2 border-white shadow-sm",
 }) => {
   const open = useContext(OpenCommentsContext);
   const title = `コメント ${count}件`;
+  const look = `bg-(color:--caos-comment) flex shrink-0 items-center justify-center rounded-full text-white ${className}`;
+  const icon = <MessageSquareText className="h-3/5 w-3/5" />;
   if (!open)
     return (
       <span
         role="img"
         aria-label={title}
         title={title}
-        className={`pointer-events-none ${MARK}`}
+        className={`pointer-events-none ${look}`}
       >
-        <MessageSquareText className="h-4 w-4" />
+        {icon}
       </span>
     );
   return (
@@ -47,9 +52,9 @@ export const CommentMark: React.FC<{ count: number; label: string }> = ({
         event.stopPropagation();
         open(label);
       }}
-      className={`touch-manipulation ${MARK}`}
+      className={`touch-manipulation ${look}`}
     >
-      <MessageSquareText className="h-4 w-4" />
+      {icon}
     </button>
   );
 };
