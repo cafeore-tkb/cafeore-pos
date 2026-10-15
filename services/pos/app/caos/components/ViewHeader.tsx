@@ -54,7 +54,7 @@ export const ViewHeader: React.FC<{
   </header>
 );
 
-/** 通知音（タイムラインに新しく入ったカードの知らせ）のあり・なし。音ありでまだ出せない（iPad で画面に触れる前）ときはそう出す */
+/** 通知音（新しく入ったカードの知らせ。何を知らせるかは画面ごと。useViewBoard の arrivals）のあり・なし。音ありでまだ出せない（iPad で画面に触れる前）ときはそう出す */
 const SoundToggle: React.FC<{ sound: ViewSound }> = ({ sound }) => {
   const Icon = sound.on ? Volume2 : VolumeX;
   const label = sound.on

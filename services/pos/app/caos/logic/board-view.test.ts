@@ -30,7 +30,7 @@ import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
 import { linkedOrderNos } from "./sheet";
-import { timelineArrivals } from "./timeline";
+import { brewStarts, timelineArrivals } from "./timeline";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -356,6 +356,9 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
     expect(timelineArrivals(previous, after).sort()).toEqual(["d2", "d5", "m"]);
     expect(timelineArrivals(previous, cards)).toEqual([]);
+    // リベロビューは抽出を始めたものだけ
+    expect(brewStarts(previous, after)).toEqual(["d5"]);
+    expect(brewStarts(previous, cards)).toEqual([]);
   });
 
   test("ドリッパーに置いたカードの場所の札", () => {

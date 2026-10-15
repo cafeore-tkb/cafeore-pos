@@ -41,20 +41,37 @@ export const positionTickets = (lane: Lane, nowMs: number) => {
   };
 };
 
+type SeenStatus = ReadonlyMap<string, CaosCardStatus>;
+
+// 待機に入った（前に無かったか未割当だった待機のカード）
+const queuedIn = (previous: SeenStatus, { key, status }: CaosCard) => {
+  const before = previous.get(key);
+  return (
+    status === "queued" && (before === undefined || before === "unassigned")
+  );
+};
+
+// 抽出を始めた（前に抽出中でなかった抽出中のカード）
+const startedBrewing = (previous: SeenStatus, { key, status }: CaosCard) =>
+  status === "brewing" && previous.get(key) !== "brewing";
+
 /**
  * タイムラインに新しく入ったカード（割り当てた・抽出を始めた）の key。previous は前に見たカードの状態（key → status）。
  * 待機のカードは前に無かったか未割当だったもの、抽出中のカードは前に抽出中でなかったもの。
  * 別のドリッパーへ移した・統合したカードは同じ key（dripId）のままなので入らない
  */
 export const timelineArrivals = (
-  previous: ReadonlyMap<string, CaosCardStatus>,
+  previous: SeenStatus,
   cards: readonly CaosCard[],
 ) =>
   cards
-    .filter(({ key, status }) => {
-      const before = previous.get(key);
-      if (status === "queued")
-        return before === undefined || before === "unassigned";
-      return status === "brewing" && before !== "brewing";
-    })
+    .filter(
+      (card) => queuedIn(previous, card) || startedBrewing(previous, card),
+    )
+    .map((card) => card.key);
+
+/** 抽出を始めたカードの key（リベロビューの知らせ。待機に入っただけのカードは入らない） */
+export const brewStarts = (previous: SeenStatus, cards: readonly CaosCard[]) =>
+  cards
+    .filter((card) => startedBrewing(previous, card))
     .map((card) => card.key);

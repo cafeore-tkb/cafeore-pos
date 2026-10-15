@@ -33,6 +33,7 @@ import { ScrollArea } from "./ScrollArea";
 // （左の固定の列はなぞってもスクロールしない。「次へ」を急いで押して指が滑っても、NOW の追従が外れない）。
 // 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
 // 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
+// fill のときは残りの高さを使い、列を高くする（閲覧の画面で未割当をたたんだとき。HEIGHTS）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
 // 左端の列（ドリッパーの番号・担当者と「次へ」）の幅
@@ -50,6 +51,25 @@ const MIN_LABEL_WIDTH = 120;
 const cardInset = (left: number, width: number) =>
   `calc(0.5rem + clamp(0px, var(--timeline-left, 0px) - ${left}px, ${Math.max(0, width - MIN_LABEL_WIDTH)}px))`;
 
+// 高さの決め方。ふつうは列が 80px で、タイムラインはその高さだけ。
+// fill のときはタイムライン（枠・スクロールの枠・中身）が残りの高さを使い、列はそれを 6 等分する（80px より低くはしない）
+const HEIGHTS = {
+  fixed: {
+    board: "shrink-0",
+    scroll: "",
+    body: "",
+    lane: "h-[80px]",
+    track: "h-[80px]",
+  },
+  fill: {
+    board: "min-h-0 flex-1",
+    scroll: "flex-1",
+    body: "h-full",
+    lane: "min-h-[80px] flex-1",
+    track: "self-stretch",
+  },
+};
+
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
   if (marker.isMajor) return "h-[10px] w-[1px] bg-slate-400";
@@ -60,6 +80,8 @@ export const DispatchBoard: React.FC<
   Omit<ControlViewProps, "nextAvailable" | "onAssignToBay"> & {
     /** 未割当のカードの操作（下の横帯と共有。開いた未割当のカードを、押した抽出中のカードに統合する） */
     pick?: UnassignedPick;
+    /** 残りの高さを使い、列を高くする */
+    fill?: boolean;
   }
 > = ({
   lanes,
@@ -80,6 +102,7 @@ export const DispatchBoard: React.FC<
   pick,
   flashKeys,
   onFollowNowChange,
+  fill = false,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -97,6 +120,7 @@ export const DispatchBoard: React.FC<
     onFollowingChange: onFollowNowChange,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
+  const height = HEIGHTS[fill ? "fill" : "fixed"];
 
   // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列そのもの（カードの無い所）と、指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
@@ -132,7 +156,9 @@ export const DispatchBoard: React.FC<
   );
 
   return (
-    <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+    <div
+      className={`relative flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${height.board}`}
+    >
       {scroll.isPastView && (
         <div
           style={{ left: STICKY_LEFT_WIDTH }}
@@ -173,9 +199,10 @@ export const DispatchBoard: React.FC<
         trackInset={{ start: STICKY_LEFT_WIDTH, end: 0 }}
         scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
+        className={height.scroll}
         scrollerClassName="touch-auto select-none overscroll-x-contain"
       >
-        <div className="relative w-max">
+        <div className={`relative flex w-max flex-col ${height.body}`}>
           {/* 時刻の目盛り */}
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
             <div
@@ -222,8 +249,11 @@ export const DispatchBoard: React.FC<
             </div>
           </div>
 
-          {/* 6 列 */}
-          <div className="relative divide-y divide-slate-200">
+          {/* 6 列。高さの決め方が替わったら作り直す（Chrome は、高くなって新しく見えた左端の固定の列のうち、中身の変わらない列を描き直さないことがある） */}
+          <div
+            key={fill ? "fill" : "fixed"}
+            className="relative flex flex-1 flex-col divide-y divide-slate-200"
+          >
             {lanes.map((bay) => {
               const lane = laneStatus(bay, nowMs);
               const { positioned, freeFromMs } = positionTickets(bay, nowMs);
@@ -232,7 +262,7 @@ export const DispatchBoard: React.FC<
                 <div
                   key={bay.id}
                   data-bay-target={bay.id}
-                  className="relative flex h-[80px] touch-manipulation items-center bg-white"
+                  className={`relative flex ${height.lane} touch-manipulation items-center bg-white`}
                 >
                   {/* ドリッパーの番号（列の状態）と担当者・交代、その右に「次へ」 */}
                   <div
@@ -270,7 +300,7 @@ export const DispatchBoard: React.FC<
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
                   <div
-                    className="relative h-[80px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
+                    className={`relative ${height.track} [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5`}
                     style={{ width: `${timelineWidthPx}px` }}
                   >
                     {positioned.map(({ card: ticket, startMs, endMs }) => {
