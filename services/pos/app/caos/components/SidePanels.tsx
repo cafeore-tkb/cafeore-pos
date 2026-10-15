@@ -233,12 +233,12 @@ const MoveCardButtons: React.FC<
           </h3>
           <div className="grid grid-cols-2 gap-2">
             {frontTargets(card, lane).map(
-              ({ place, label, hint, disabled }) => (
+              ({ bayId, place, label, hint, disabled }) => (
                 <button
                   key={place}
                   type="button"
                   disabled={disabled}
-                  onClick={() => move(lane.id, place)}
+                  onClick={() => move(bayId, place)}
                   className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
                 >
                   {label}

@@ -32,7 +32,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 //   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
 // 閲覧だけの画面（/master-sheet/view・/master-sheet/libero）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
-// 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカードが待っていても止めずに替え、POS の通知で知らせる
+// 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカード（抽出中・待機）があっても止めずに替え、POS の通知で知らせる
 // （カードはそのドリッパーに残り、警告の印が付く）。替えたら画面はすぐ変わり、送るのは後ろで（盤面の操作と同じく端末に残して送る。useCaosOutbox）。
 // 担当者はサーバーから届いた今日の担当者に、この端末の送れていない交代を重ねて出す。
 // 予定を読み直したら（useSeniorRefresh）、今の担当者の上級生かだけを新しい名簿に合わせる（syncSeniors。交代の記録は足さない）。
@@ -54,7 +54,10 @@ interface CaosLanesContextValue {
   changeToNext: (dripper: number, next: LaneCandidate) => void;
   openSettings: () => void;
   shiftFeed: ShiftFeedState;
-  /** 今の担当者の上級生かを名簿に合わせる。予定を読み直したときに useSeniorRefresh が呼ぶ */
+  /**
+   * 今の担当者の上級生かを名簿に合わせる。予定を読み直したときに useSeniorRefresh が呼ぶ。
+   * 上級生のみのカード（抽出中・待機）があっても外し、カードに警告の印が付く（知らせは出さない）。閲覧だけの画面は予定を読まないので何もしない
+   */
   syncSeniors: () => void;
 }
 
@@ -158,7 +161,7 @@ export const CaosLanesProvider = ({
       : { next };
   };
 
-  // 次の人（ボタンに出していた人）にすぐ替え、「直前の操作」に覚える（上級生のみのカードが待っていれば知らせる）
+  // 次の人（ボタンに出していた人）にすぐ替え、「直前の操作」に覚える（上級生のみのカード（抽出中・待機）があれば知らせる）
   const changeToNext = (dripper: number, { name, senior }: LaneCandidate) => {
     if (sending.current.has(dripper)) return;
     sending.current.add(dripper);
@@ -177,8 +180,6 @@ export const CaosLanesProvider = ({
     changeToNext,
     openSettings: () => setSettingsOpen(true),
     shiftFeed,
-    // 名簿に合わせると上級生かが変わる担当者を、そのまま直す（上級生のみのカードが待っていても外し、カードに警告の印が付く。
-    // 閲覧だけの画面は予定を読まないので何もしない）
     syncSeniors: () => {
       const { lanes, feed } = latest.current;
       const updates = seniorUpdates(lanes, feed);

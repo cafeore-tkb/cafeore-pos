@@ -42,7 +42,8 @@ export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
 
 /**
  * 待機・抽出中のカードを、今のドリッパーの列（lane）の先頭（"front"）・待機の先頭（"queueFront"。抽出中のすぐ後ろ）へ動かすボタン。
- * 動かしても今と同じ場所なら押せない（抽出中のカードの「先頭」・もう待機の先頭にあるカードの「待機の先頭」。@cafeore/common の assignWrites）。
+ * 動かしても今と同じ場所なら押せない（抽出中のカードの「先頭」・もう待機の先頭にあるカードの「待機の先頭」）。置けないとき（assignWrites が断る）も押せない
+ * （@cafeore/common の assignWrites で確かめる）。bayId はその列（押したら onPick・onMoveTicket に渡す）。
  * 添え書き（hint）は列に抽出中があるときだけ（先頭は今から始まり、待機の先頭は抽出中の次。抽出中が無ければどちらも待機の先頭で、「次へ」で始める）
  */
 export const frontTargets = (card: CaosCard, lane: Lane) => {

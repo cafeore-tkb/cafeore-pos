@@ -185,7 +185,7 @@ export default function App() {
         <TicketDetailPanel
           ticket={selection.scheduled.card}
           look={looks.get(selection.scheduled.card.key)}
-          lane={lanes.find((lane) => lane.id === selection.scheduled?.bayId)}
+          lane={lanes[selection.scheduled.bayId - 1]}
           onClose={selection.closeTicket}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
@@ -199,9 +199,11 @@ export default function App() {
           key={selection.rebrew.card?.key ?? "byNumber"}
           card={selection.rebrew.card}
           look={selection.rebrew.card && looks.get(selection.rebrew.card.key)}
-          lane={lanes.find(
-            (lane) => lane.id === selection.rebrew?.card?.dripper,
-          )}
+          lane={
+            selection.rebrew.card?.dripper
+              ? lanes[selection.rebrew.card.dripper - 1]
+              : undefined
+          }
           orders={session.emergency.orders}
           practice={session.simulating}
           onClose={selection.closeRebrew}
