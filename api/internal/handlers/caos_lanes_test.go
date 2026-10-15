@@ -259,88 +259,42 @@ func TestCaosLaneSeniorsOnDB(t *testing.T) {
 func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
 	db, _ := openListenTestDB(t)
 	f := newCaosFixture(t, db)
-	// 上級生のみかは種類の senior_only で決める（名前は見ない）
+	// 上級生のみかは種類の senior_only で決める（名前は見ない）。サーバーは上級生かで断らない（画面が置いたときに知らせる）
 	special := models.ItemType{Name: "special-" + uuid.NewString(), DisplayName: "特別", SeniorOnly: true}
 	geisha := models.Item{Name: "ゲイシャ", Abbr: "ゲ", ItemType: special}
 	if err := db.Create(&geisha).Error; err != nil {
 		t.Fatal(err)
 	}
 	o1 := f.createOrder(t, 1, line(geisha))
-	// 指名は明細のドリッパーの番号（dripper）。2 杯目の明細は番号の無い古い自由記述だけ（指名なし）
-	o2 := f.createOrder(t, 2, line(geisha), line(geisha))
-	named, legacy := "山田さん", "5"
+	o2 := f.createOrder(t, 2, line(geisha))
+	named := "山田さん"
 	f.nominate(t, o2.OrderMenus[0], intPtr(2), &named)
-	f.nominate(t, o2.OrderMenus[1], nil, &legacy)
-	o3 := f.createOrder(t, 3, line(f.blend))
 	card1, card2 := uuid.New(), uuid.New()
 
-	// どのドリッパーにも担当者がいなければ、上級生のみのカップはどこにも置けない。上級生のみでないカップは置ける
-	if code, body := f.put(t, write(ids(o1.OrderCups[0]), unassigned, placed(3, card1, false))); code != http.StatusBadRequest || !strings.Contains(body, "上級生") {
-		t.Fatalf("limited cup without a senior = %d: %s", code, body)
-	}
-	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(3, uuid.New(), false)))
-
-	// 上級生のドリッパーには置ける（抽出を始めるのも同じ）
+	// どのドリッパーにも担当者がいなくても、上級生のみのカップを置ける
+	f.mustPut(t, write(ids(o1.OrderCups[0]), unassigned, placed(3, card1, false)))
+	// 上級生でない担当者のドリッパーへも移せる
 	f.mustPutLane(t, 3, "山田", true)
 	f.mustPutLane(t, 4, "佐藤", false)
-	f.mustPut(t, write(ids(o1.OrderCups[0]), unassigned, placed(3, card1, false)))
-	// 上級生でないドリッパーへは移せない
-	if code, _ := f.put(t, write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), placed(4, card1, false))); code != http.StatusBadRequest {
-		t.Fatalf("move a limited cup to a non-senior = %d, want 400", code)
+	f.mustPut(t, write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), placed(4, card1, false)))
+	if cup := f.cup(t, o1.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 4 {
+		t.Fatalf("limited cup on a non-senior = %+v", cup)
 	}
-
-	// 担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残り、同じドリッパーの中では順番を変えられる
-	f.mustPutLane(t, 3, "鈴木", false)
-	if cup := f.cup(t, o1.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 {
-		t.Fatalf("limited cup after the change = %+v", cup)
-	}
-	f.mustPut(t, write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), placed(3, card1, false)))
-	// 未割当に戻すのもできる
+	// 「1つ戻す」で上級生でないドリッパーへ戻すのもできる
+	before := map[uuid.UUID]map[string]any{o1.OrderCups[0].ID: f.undoState(t, o1.OrderCups[0].ID)}
 	f.mustPut(t, write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), toUnassigned))
-	// 入れ替えで上級生がいるドリッパーが変われば、置ける先もいっしょに変わる
-	if code, body := f.swapLanes(t, 3, 4); code != http.StatusOK {
-		t.Fatalf("swap = %d: %s", code, body)
+	if code, body := f.undo(t, before); code != http.StatusNoContent {
+		t.Fatalf("undo onto a non-senior = %d: %s", code, body)
 	}
-	if code, _ := f.put(t, write(ids(o1.OrderCups[0]), unassigned, placed(4, card1, false))); code != http.StatusBadRequest {
-		t.Fatalf("limited cup to 4 (佐藤 → 鈴木) = %d, want 400", code)
+	if cup := f.cup(t, o1.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 4 {
+		t.Fatalf("limited cup after undo = %+v", cup)
 	}
 
-	// 指名（2nd）の上級生のみのカップは指名を優先する：指名の 2nd の担当者が上級生でなくても 2nd に置ける
-	// （ほかのドリッパーへは、上級生の 1st でも指名で断る）
-	f.mustPutLane(t, 1, "高橋", true)
-	f.mustPutLane(t, 2, "小林", false)
-	nominatedCup, legacyCup := o2.OrderCups[0], o2.OrderCups[1]
-	for d := 1; d <= caosDrippers; d++ {
-		if d == 2 {
-			continue
-		}
-		if code, body := f.put(t, write(ids(nominatedCup), unassigned, placed(d, card2, false))); code != http.StatusBadRequest || !strings.Contains(body, "指名のあるカップは 2 番") {
-			t.Fatalf("nominated limited cup to %d = %d: %s", d, code, body)
-		}
+	// 指名は今まで通り：指名（2nd）のカップは 2nd にしか置けない（上級生の 3rd でも断る）
+	if code, body := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(3, card2, false))); code != http.StatusBadRequest || !strings.Contains(body, "指名のあるカップは 2 番") {
+		t.Fatalf("nominated limited cup to 3 = %d: %s", code, body)
 	}
-	f.mustPut(t, write(ids(nominatedCup), unassigned, placed(2, card2, false)))
-	// 番号の無い自由記述だけの古い明細の上級生のみのカップは指名なし：上級生でない 2nd には置けず、上級生の 1st には置ける
-	if code, body := f.put(t, write(ids(legacyCup), unassigned, placed(2, uuid.New(), false))); code != http.StatusBadRequest || !strings.Contains(body, "上級生") {
-		t.Fatalf("legacy limited cup to 2nd (not a senior) = %d: %s", code, body)
-	}
-	f.mustPut(t, write(ids(legacyCup), unassigned, placed(1, uuid.New(), false)))
-	// 指名のカードに統合すれば、指名のあるカードなので 2nd に置ける
-	f.mustPut(t,
-		write(ids(legacyCup), f.state(t, legacyCup.ID), placed(2, card2, false)),
-		write(ids(nominatedCup), f.state(t, nominatedCup.ID), placed(2, card2, false)))
-	// 未割当に戻したのを「1つ戻す」で 2nd に戻せる（カップごとに書き戻しても、カードの指名で確かめる）
-	both := ids(nominatedCup, legacyCup)
-	before := map[uuid.UUID]map[string]any{}
-	for _, id := range both {
-		before[id] = f.undoState(t, id)
-	}
-	f.mustPut(t, write(both, f.state(t, nominatedCup.ID), toUnassigned))
-	if code, body := f.undo(t, before); code != http.StatusNoContent {
-		t.Fatalf("undo unassigning the nominated card = %d: %s", code, body)
-	}
-	if cup := f.cup(t, legacyCup.ID); cup.Dripper == nil || *cup.Dripper != 2 || cup.DripID == nil || *cup.DripID != card2 {
-		t.Fatalf("legacy cup after undo = %+v", cup)
-	}
+	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(2, card2, false)))
 }
 
 func TestCaosLanesReachOtherInstances(t *testing.T) {

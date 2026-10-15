@@ -3,15 +3,12 @@ package handlers
 import (
 	"errors"
 	"log"
-	"maps"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -30,7 +27,7 @@ import (
 // 記録は抽出の統計のためのもので、画面には出さず配信もしない。
 //
 // 替えるのは CaOS の画面からだけ（sohosai-shift の予定は画面が候補に出すだけで、サーバーは読まない）。上級生かも画面が
-// sohosai-shift の名簿で判定して送り、そのまま持つ。PUT /api/caos/cups は、上級生のみのカップを置くときにこの値を確かめる（caos.go）。
+// sohosai-shift の名簿で判定して送り、そのまま持つ。PUT /api/caos/cups は上級生かを見ない（上級生のみのカップも、どのドリッパーにも置ける）。
 //
 // 変えたら今日の 6 つを {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは dripper_assignees_changed で知らせる
 // （注文と同じ形。受けたインスタンスは DB から読み直して配る。order_listener.go）。
@@ -40,7 +37,7 @@ const (
 	dripperAssigneesChangedChannel = "dripper_assignees_changed"
 	// 担当者の名前の長さ（文字）の上限
 	caosMaxLaneName = 40
-	// 担当者の書き込みと、上級生のみのカップを置く書き込みを順番にする advisory lock
+	// 担当者の書き込みを順番にする advisory lock
 	caosLanesLock = "caos:lanes"
 )
 
@@ -232,74 +229,4 @@ func (h *CaosHandler) updateLanes(c *gin.Context, write func(tx *gorm.DB, cur mo
 		broadcastCaosLanes(h.db, h.hub, h.now())
 		notifyCaosLanesChanged(h.db)
 	}
-}
-
-// ---------------------------------------------------------------- 上級生のみのカップ（PUT /api/caos/cups・POST /api/caos/undo から使う）
-
-// caosSeniorDrippers は、上級生のみのカップをほかのドリッパーへ置く書き込みがあれば、今日の担当者が上級生のドリッパーを返す
-// （無ければ nil。読まない）。担当者の書き込みと入れ違わないよう、担当者のロックを共有で取ってから読む。
-func caosSeniorDrippers(tx *gorm.DB, writes []models.CaosCupsWrite, seniorOnly map[uuid.UUID]bool, now time.Time) (map[int]bool, error) {
-	need := false
-	for _, w := range writes {
-		if !caosMovesTo(w) {
-			continue
-		}
-		for _, id := range w.CupIds {
-			need = need || seniorOnly[id]
-		}
-	}
-	if !need {
-		return nil, nil
-	}
-	if err := tx.Exec("SELECT pg_advisory_xact_lock_shared(hashtext(?))", caosLanesLock).Error; err != nil {
-		return nil, err
-	}
-	lanes, _, err := loadCaosLanes(tx, caosDayString(now))
-	if err != nil {
-		return nil, err
-	}
-	seniors := map[int]bool{}
-	for _, l := range lanes.Lanes {
-		seniors[l.Dripper] = l.Senior
-	}
-	return seniors, nil
-}
-
-// caosMovesTo は、カップをほかのドリッパーへ置く（未割当から置く・ドリッパーを移す）書き込みか。
-// 同じドリッパーの中の順番の入れ替えは含めない（担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）。
-func caosMovesTo(w models.CaosCupsWrite) bool {
-	return w.After.Dripper != nil && !ptrEqual(w.Before.Dripper, w.After.Dripper)
-}
-
-// checkSeniorOnly は、上級生のみのカップ（items）を上級生でない担当者のドリッパーへ置いていれば断る（400）。書いたあとに呼ぶ。
-// 指名のあるカード（書いたあとのカードに指名のカップが 1 つでも入っている）は、指名のドリッパーにしか置けないので、
-// その担当者が上級生でなくても置ける（指名が上級生のみより強い）。seniors は caosSeniorDrippers の結果。
-func checkSeniorOnly(tx *gorm.DB, writes []models.CaosCupsWrite, items map[uuid.UUID]models.Item, seniors map[int]bool) error {
-	// 上級生でない担当者のドリッパーへ置いた、上級生のみのカップのあるカード（after の drip_id）と、その理由
-	blocked := map[uuid.UUID]error{}
-	for _, w := range writes {
-		if !caosMovesTo(w) || seniors[*w.After.Dripper] {
-			continue
-		}
-		for _, id := range w.CupIds {
-			if item := items[id]; item.ItemType.SeniorOnlyBrew() {
-				blocked[*w.After.DripId] = ruleErrorf("上級生のみのカップ（%s）は上級生のドリッパーにしか置けません（%d 番のドリッパーの担当者は上級生ではありません）",
-					item.Name, *w.After.Dripper)
-			}
-		}
-	}
-	if len(blocked) == 0 {
-		return nil
-	}
-	var nominated []uuid.UUID
-	if err := tx.Raw(`SELECT DISTINCT c.drip_id FROM `+caosUnits+` c JOIN order_menus m ON m.id = c.order_menu_id
-		WHERE c.drip_id IN ? AND m.dripper IS NOT NULL`, slices.Collect(maps.Keys(blocked))).Scan(&nominated).Error; err != nil {
-		return err
-	}
-	for card, err := range blocked {
-		if !slices.Contains(nominated, card) {
-			return err
-		}
-	}
-	return nil
 }

@@ -1,12 +1,13 @@
 import { useColorSettings } from "@cafeore/common";
 import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
+import { OrderCountLabel } from "./components/BoardParts";
 import { ControlViewA } from "./components/ControlViewA";
 import { ViewHeader } from "./components/ViewHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { useDeviceSetting } from "./hooks/useDeviceSetting";
 import { useViewBoard } from "./hooks/useViewBoard";
-import { cardLooks, totalCups } from "./logic/cards";
+import { cardLooks } from "./logic/cards";
 import { boardLanes } from "./logic/lanes";
 import { nextAvailableBays } from "./logic/queue";
 
@@ -41,9 +42,8 @@ export default function ReadOnlyBoard() {
         <span className="ml-auto font-bold text-slate-600 text-sm">
           未割当{" "}
           <span className="font-black font-mono text-red-600">
-            {totalCups(unassigned)}
-          </span>{" "}
-          杯
+            <OrderCountLabel cards={unassigned} />
+          </span>
         </span>
       </ViewHeader>
       <div className="min-h-0 flex-1">
@@ -53,15 +53,13 @@ export default function ReadOnlyBoard() {
           looks={looks}
           nextAvailable={nextAvailableBays(lanes, nowMs)}
           selectedOrderId={null}
-          actionTicketKey={null}
           nowMs={nowMs}
           timelineCommand={null}
           onSelectOrder={noop}
           onAdvanceBay={noop}
-          onOpenTicket={noop}
+          onPressCard={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
-          onCloseTicket={noop}
           onOpenEmptySlot={noop}
           onAssignToBay={noop}
           onMergeOrders={noop}

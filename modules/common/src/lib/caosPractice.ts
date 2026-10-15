@@ -423,7 +423,7 @@ export const applyCaosPracticeWrites = (
 // ---------------------------------------------------------------- 「次へ」（POST /api/caos/drippers/{dripper}/next と同じ）
 
 /**
- * 「次へ」。抽出中のカードを終え（終了の時刻を付ける。カップの準備完了は付けない）、待機の先頭を始める。
+ * 「次へ」。抽出中のカードを終え（終了の時刻を付ける。カップの準備完了は付けない）、待機の先頭を始める（startNext が false なら終えるだけ）。
  * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。始めてから CAOS_NEXT_COOLDOWN_SEC 秒は断る。
  * 時刻は now（練習の時計の今。終える・始める時刻は brewAt）。cooldown が false なら秒は見ない（押したときに確かめ済みの「次へ」を、あとから届いた盤面に重ねるとき）
  */
@@ -432,7 +432,10 @@ export const advanceCaosPracticeDripper = (
   dripper: number,
   seenDripId: string | null,
   now: Date,
-  { cooldown = true }: { cooldown?: boolean } = {},
+  {
+    cooldown = true,
+    startNext = true,
+  }: { cooldown?: boolean; startNext?: boolean } = {},
 ): CaosPracticeResult => {
   const invalid = caosDripperError(dripper);
   if (invalid) return { error: invalid };
@@ -449,7 +452,9 @@ export const advanceCaosPracticeDripper = (
     return {
       error: `始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は「次へ」を押せません`,
     };
-  const head = queued[0];
+  const head = startNext ? queued[0] : undefined;
+  if (!cur && !startNext)
+    return { error: "このドリッパーには抽出中のカードがありません" };
   if (!cur && !head)
     return { error: "このドリッパーには抽出中・待機のカードがありません" };
 

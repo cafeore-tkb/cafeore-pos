@@ -34,10 +34,12 @@ export const useCaosOutboxEntries = () =>
 // 押した順に送るので、同じミリ秒に押しても順が入れ替わらないようにする
 let lastAt = 0;
 
-/** 操作を端末に残す（後ろで送る）。label は「1つ戻す」と同じ操作の名前（通らなかったときの知らせに出す） */
+/** 操作を端末に残す（後ろで送る）。label は「直前の操作」と同じ操作の名前（通らなかったときの知らせに出す）。残した操作の id を返す */
 export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
   lastAt = Math.max(Date.now(), lastAt + 1);
-  store.put({ id: crypto.randomUUID(), at: lastAt, label, op });
+  const id = crypto.randomUUID();
+  store.put({ id, at: lastAt, label, op });
+  return id;
 };
 
 // つなぎ直して注文が届いてから、今日の担当者が届き直すのを待つ長さ（担当者は注文のすぐあとに届く。届かなくても、これを過ぎたら送る）
@@ -49,12 +51,13 @@ const UNSENT_AFTER_MS = 2_000;
 /**
  * 残っている操作を送る（操作の画面で 1 回だけ呼ぶ）。つながっていれば（共有の WebSocket が開いていて注文が届いている）古い順に送り、
  * つながらなければ間をあけて送り直す。通らなかった（ほかの端末が先に変えた・決まりに合わない）ものは捨て、何が戻ったかを通知で出す。
- * count はまだ送れていない数（押してから UNSENT_AFTER_MS を過ぎたものがあるときだけ。nowMs は実時間の今）、
- * retry は今すぐ送り直す（ヘッダーの「未送信 N 件」）。onRejected は捨てた操作の名前を受け取る（「1つ戻す」から忘れる）
+ * entries はまだ送れていない操作（押してから UNSENT_AFTER_MS を過ぎたものがあるときだけ。nowMs は実時間の今）、
+ * sending は今送っていて返事を待っている操作の id、retry は今すぐ送り直す、discard は送らずに消す（ヘッダーの「未送信 N 件」の一覧）。
+ * onRejected は捨てた操作を受け取る（「直前の操作」から忘れる）
  */
 export const useCaosOutboxSender = (
   nowMs: number,
-  onRejected: (label: string) => void,
+  onRejected: (entry: CaosOutboxEntry) => void,
 ) => {
   const { orders, caosLanes, isOrdersLoaded, status } = useOrdersWSContext();
   const entries = useCaosOutboxEntries();
@@ -91,11 +94,12 @@ export const useCaosOutboxSender = (
       onSent: ({ op }) => {
         if (op.kind === "cancel-emergency") cancelPendingPrint(op.id);
       },
-      onRejected: ({ label }, reason) => {
+      onRejected: (entry, reason) => {
+        const { label } = entry;
         toast.error(`「${label}」は通らなかったので、盤面を戻しました`, {
           description: reason,
         });
-        rejected.current(label);
+        rejected.current(entry);
       },
     }),
   );
@@ -134,11 +138,24 @@ export const useCaosOutboxSender = (
 
   const unsent = entries.filter((entry) => !entry.sent);
   return {
-    count: unsent.some((entry) => nowMs - entry.at >= UNSENT_AFTER_MS)
-      ? unsent.length
-      : 0,
+    entries: unsent.some((entry) => nowMs - entry.at >= UNSENT_AFTER_MS)
+      ? unsent
+      : NO_ENTRIES,
+    sending: leader ? outbox.inFlight() : null,
     retry: () => {
       if (leader) void outbox.retryNow();
+    },
+    /**
+     * 送らずに消す（盤面はサーバーの今に戻る。同じ端末のほかのタブからも消える）。消した操作は onRejected にも渡す（「直前の操作」から忘れる）。
+     * 送っている途中のもの（sending。もうサーバーに届いているかもしれない）は消さない
+     */
+    discard: (ids: readonly string[]) => {
+      const sending = outbox.inFlight();
+      for (const entry of unsent) {
+        if (!ids.includes(entry.id) || entry.id === sending) continue;
+        store.remove(entry.id);
+        rejected.current(entry);
+      }
     },
   };
 };

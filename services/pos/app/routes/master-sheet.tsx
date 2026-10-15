@@ -2,8 +2,8 @@ import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
 import "~/caos/caos.css";
 import { CaosLanesProvider } from "~/caos/hooks/useCaosLanes";
-import { CaosUndoProvider } from "~/caos/hooks/useCaosUndo";
 import { useFixedViewport } from "~/caos/hooks/useFixedViewport";
+import { LastActionProvider } from "~/caos/hooks/useLastAction";
 
 export const meta: MetaFunction = () => {
   return [
@@ -23,12 +23,12 @@ export default function MasterSheet() {
   useFixedViewport();
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
-      {/* 「1つ戻す」（盤面の操作と担当者の交代が同じものに覚える）と、ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
-      <CaosUndoProvider>
+      {/* 「直前の操作」（盤面の操作と担当者の交代が同じものに覚える）と、ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
+      <LastActionProvider>
         <CaosLanesProvider editable>
           <CaosApp />
         </CaosLanesProvider>
-      </CaosUndoProvider>
+      </LastActionProvider>
     </div>
   );
 }

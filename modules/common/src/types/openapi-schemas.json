@@ -1065,6 +1065,16 @@
         "nullable": true,
         "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
       },
+      "start_next": {
+        "type": "boolean",
+        "default": true,
+        "description": "待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true"
+      },
+      "start_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない"
+      },
       "press": {
         "$ref": "#/components/schemas/CaosPress"
       }
@@ -1397,11 +1407,11 @@
       "consumed": {
         "type": "number",
         "format": "double",
-        "description": "counted_at 以降の注文での消費量"
+        "description": "counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）"
       },
       "servings": {
         "type": "integer",
-        "description": "counted_at 以降に売れた回数"
+        "description": "counted_at より後に使った回数"
       },
       "remaining": {
         "type": "number",
@@ -1415,7 +1425,7 @@
       },
       "servings_last_hour": {
         "type": "integer",
-        "description": "直近1時間に売れた回数"
+        "description": "直近1時間に使った回数（consumed と同じく、使った時刻で数える）"
       }
     }
   },

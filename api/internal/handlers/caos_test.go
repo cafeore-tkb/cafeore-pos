@@ -221,6 +221,14 @@ func (f *caosFixture) next(t *testing.T, dripper int, seen *uuid.UUID) int {
 	return w.Code
 }
 
+// finish は「次へ」を start_next: false で呼ぶ（抽出中のカードを終えるだけ）。
+func (f *caosFixture) finish(t *testing.T, dripper int, seen *uuid.UUID) int {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"drip_id": seen, "start_next": false})
+	w := callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: fmt.Sprint(dripper)}})
+	return w.Code
+}
+
 // lane はドリッパーの抽出中と待機のカード（「次へ」と同じ決まりで読み、並べる）。
 func (f *caosFixture) lane(t *testing.T, dripper int) (brewing, queued []uuid.UUID) {
 	t.Helper()
@@ -543,6 +551,61 @@ func TestCaosNextOnDB(t *testing.T) {
 		t.Fatalf("next with yesterday's card = %d, want 409", code)
 	}
 	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, toUnassigned)) // 何も変えない書き込みも通る
+}
+
+// TestCaosFinishOnlyOnDB は start_next: false（抽出中のカードを押して終えるだけ）を確かめる。待機の先頭は始めず、
+// 始めてから 10 秒の決まりは「次へ」と同じ。抽出中が無ければ断る。省略すれば今まで通り待機の先頭を始める（TestCaosNextOnDB）
+func TestCaosFinishOnlyOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o1 := f.createOrder(t, 1, line(f.blend))
+	o2 := f.createOrder(t, 2, line(f.blend))
+	card1, card2 := uuid.New(), uuid.New()
+	f.mustPut(t,
+		write(ids(o1.OrderCups[0]), unassigned, placed(1, card1, true)),
+		write(ids(o2.OrderCups[0]), unassigned, placed(1, card2, false)),
+	)
+
+	if code := f.finish(t, 1, &card1); code != http.StatusBadRequest {
+		t.Fatalf("finish right after the start = %d, want 400", code)
+	}
+	f.wait()
+	if code := f.finish(t, 1, &card1); code != http.StatusNoContent {
+		t.Fatalf("finish = %d", code)
+	}
+	if cup := f.cup(t, o1.OrderCups[0].ID); cup.BrewFinishedAt == nil || cup.ReadyAt != nil {
+		t.Fatalf("finished cup = %+v, want finished and not ready", cup)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	if brewing, queued := f.lane(t, 1); len(brewing) != 0 || !slices.Equal(queued, []uuid.UUID{card2}) {
+		t.Fatalf("lane after finish = %v %v, want none brewing and %v queued", brewing, queued, card2)
+	}
+	// 抽出中が無ければ終えるものが無い（待機の先頭も始めない）
+	if code := f.finish(t, 1, nil); code != http.StatusConflict {
+		t.Fatalf("finish without a brewing card = %d, want 409", code)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	// start_drip_id は、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409）
+	startWith := func(id uuid.UUID) int {
+		body, _ := json.Marshal(map[string]any{"drip_id": nil, "start_drip_id": id})
+		return callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: "1"}}).Code
+	}
+	if code := startWith(card1); code != http.StatusConflict {
+		t.Fatalf("start another card = %d, want 409", code)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	if code := startWith(card2); code != http.StatusNoContent {
+		t.Fatalf("start the head = %d", code)
+	}
+	if got, _ := f.lane(t, 1); !slices.Equal(got, []uuid.UUID{card2}) {
+		t.Fatalf("brewing = %v, want %v", got, card2)
+	}
 }
 
 // 抽出を始められるのは、空いている（そのカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ。

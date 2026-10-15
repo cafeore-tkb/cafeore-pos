@@ -209,6 +209,12 @@ type CaosNextRequest struct {
 	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press *CaosPress `json:"press,omitempty"`
+
+	// StartDripId 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
+	StartDripId *openapi_types.UUID `json:"start_drip_id,omitempty"`
+
+	// StartNext 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
+	StartNext *bool `json:"start_next,omitempty"`
 }
 
 // CaosPress 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
@@ -367,7 +373,7 @@ type InventoryRemindResponse struct {
 
 // InventoryStatus defines model for InventoryStatus.
 type InventoryStatus struct {
-	// Consumed counted_at 以降の注文での消費量
+	// Consumed counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
 	Consumed float64 `json:"consumed"`
 
 	// CountedAt 最後の棚卸し。無ければ最初の入荷
@@ -383,10 +389,10 @@ type InventoryStatus struct {
 	RemainingServings *float64              `json:"remaining_servings"`
 	Resource          StockResourceResponse `json:"resource"`
 
-	// Servings counted_at 以降に売れた回数
+	// Servings counted_at より後に使った回数
 	Servings int `json:"servings"`
 
-	// ServingsLastHour 直近1時間に売れた回数
+	// ServingsLastHour 直近1時間に使った回数（consumed と同じく、使った時刻で数える）
 	ServingsLastHour int `json:"servings_last_hour"`
 }
 

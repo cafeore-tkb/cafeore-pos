@@ -1,10 +1,7 @@
-import {
-  type CaosCard,
-  type CaosPlace,
-  readableTextColor,
-} from "@cafeore/common";
-import { Check, Star } from "lucide-react";
+import { type CaosCard, readableTextColor } from "@cafeore/common";
+import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
+import { Fragment } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import {
@@ -12,18 +9,20 @@ import {
   cardItemName,
   cardNominee,
   cardOrderNos,
+  cardOrderParts,
   emergencyReasons,
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
-import { moveTargets } from "../logic/lanes";
+import { type DropSide, moveTargets } from "../logic/lanes";
 import { CommentMark } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
-// いちばん大きく「何が何杯か」（商品の略称と杯数。杯数はいつもカードの右上）、次に注文番号を出す。
-// 未割当のカードだけは、注文番号をいちばん大きくし（どの注文から割り当てるかを番号で探す）、商品の略称を次の行に小さく出す。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ（終わりはカードの状態で薄くする）。
-// 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる。
+// いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
+// （どの注文から割り当てるか・何番を入れているかを番号で合わせる。1 杯のカードは統合の判断に商品が要るので、2 行目でも読める大きさにする）。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）・注文ごとの段（byOrder）だけ（終わりはカードの状態で薄くする）。
+// 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる（管制盤 A・C）。
+// 管制盤 D（byOrder）は重ねず、入っている注文ごとの段（注文番号・コメントの印・緊急の理由・杯数）に分ける（表では元の注文の行にまたがって縦に長い）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
@@ -31,42 +30,52 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 2 行目の注文番号（未割当のカードは 1 行目なので使わない）。タイムライン（A の md・C の列の lane）はカードの高さのまま大きくする
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）。
+// emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
   pad: "px-1.5 py-1",
-  name: "text-[14px]",
+  no: "text-[14px]",
   cups: "px-0.5 text-[13px]",
   meta: "text-[11px]",
-  no: "",
+  item: "text-[12px]",
+  emergencyBelow: true,
 };
 const SIZES = {
   // 管制盤 C・D と割当のパネル
   sm: SM,
-  // 管制盤 C のドリッパーの列
-  lane: { ...SM, no: "text-[17px]" },
+  // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
+  lane: {
+    ...SM,
+    no: "text-[17px]",
+    item: "text-[14px]",
+    emergencyBelow: false,
+  },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
-    name: "text-[21px]",
+    no: "text-[21px]",
     cups: "px-1.5 text-[18px]",
     meta: "text-[15px]",
-    no: "",
+    emergencyBelow: false,
+    item: "text-[15px]",
   },
   // 管制盤 A のタイムライン
   md: {
     pad: "px-2 py-1",
-    name: "text-[19px]",
+    no: "text-[19px]",
     cups: "px-1.5 text-[17px]",
     meta: "text-[12px]",
-    no: "text-[19px]",
+    emergencyBelow: false,
+    item: "text-[15px]",
   },
   // 詳細のパネル
   xl: {
     pad: "p-4",
-    name: "text-[26px]",
+    no: "text-[26px]",
     cups: "px-2 text-[22px]",
     meta: "text-[15px]",
-    no: "",
+    emergencyBelow: false,
+    item: "text-[18px]",
   },
 };
 
@@ -122,6 +131,12 @@ export const OrderCard: React.FC<
     note?: string;
     /** 開いたカードをもう一度押すと統合する相手。統合の印とその注文番号（「#012」）を出す */
     mergeInto?: CaosCard;
+    /** 統合したカードを、重ねた枠でなく注文ごとの段に分けて出す（管制盤 D） */
+    byOrder?: boolean;
+    /** 開いた（選んだ）カードを押して統合できる相手。「統合する」を重ね、data-merge-tap を付ける（押しても開いたカードを閉じない） */
+    mergeTap?: boolean;
+    /** ドラッグで指の下にあるとき、入れる所の線か統合の枠（hooks/useCardDrag の dropSideOn） */
+    dropSide?: DropSide;
   }
 > = ({
   card,
@@ -131,6 +146,9 @@ export const OrderCard: React.FC<
   dragging = false,
   note,
   mergeInto,
+  byOrder = false,
+  mergeTap = false,
+  dropSide,
   className = "",
   style,
   children,
@@ -142,18 +160,40 @@ export const OrderCard: React.FC<
   const surface = surfaceOf(done, nominee !== "", selected, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
-  const reasons = emergencyReasons(card);
+  const merged = cardOrderNos(card).length > 1;
+  // 注文ごとの段（byOrder の統合したカード）。1 行目に商品、注文番号と緊急の理由は段に出す
+  const parts = byOrder && merged ? cardOrderParts(card, look) : null;
+  const reasons = parts ? "" : emergencyReasons(card);
   // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
   const bean = look?.bean?.name;
   // 注文番号の札と、商品の略称
-  const orderNo = (size: string) => (
+  const noTag = (label: string, size: string) => (
     <span
       className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
-      title={orderLabel(card)}
+      title={label}
     >
-      {orderLabel(card)}
+      {label}
     </span>
   );
+  const orderNo = (size: string) => noTag(orderLabel(card), size);
+  // 入れ直し（緊急）の理由の札
+  const reasonTag = (label: string, className: string) => (
+    <span
+      title={label}
+      className={`min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700 ${className}`}
+    >
+      {label}
+    </span>
+  );
+  // 入れ直し（緊急）の札
+  const emergencyTag = (className: string) =>
+    card.emergency && (
+      <span
+        className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${className}`}
+      >
+        緊急
+      </span>
+    );
   const itemName = (size: string) => (
     <span
       className={`min-w-0 truncate font-black tracking-tight ${size}`}
@@ -162,52 +202,42 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  const merged = cardOrderNos(card).length > 1;
-  // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では縮めない。後ろの豆の札を先に縮める）。
-  // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
-  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
-  const [headline, subline] =
-    card.status === "unassigned"
-      ? [
-          orderNo(
-            merged
-              ? `min-w-0 truncate tracking-tighter ${text.cups}`
-              : `shrink-0 ${text.name}`,
-          ),
-          itemName("shrink-0"),
-        ]
-      : [
-          itemName(text.name),
-          // 統合した長い番号は先に縮める（指名・上級生の札を押し出さない）
-          orderNo(
-            merged
-              ? `min-w-0 truncate tracking-tighter ${text.no}`
-              : `shrink-0 ${text.no}`,
-          ),
-        ];
+  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札と指名・上級生の札を先に縮め、商品は入らなければ省略する。
+  // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
+  // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
+  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
+  const [headline, subline] = parts
+    ? [itemName(text.no), null]
+    : [
+        orderNo(
+          merged
+            ? `min-w-0 truncate tracking-tighter ${text.cups}`
+            : `shrink-0 ${text.no}`,
+        ),
+        itemName(`max-w-full shrink-0 ${text.item}`),
+      ];
   return (
     <div
       {...props}
+      data-merge-tap={mergeTap || undefined}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
-      {/* コメントのある注文は左上の角に印（中身は開いたカードのパネル・管制盤 A の帯に出す） */}
-      {look?.comments && <CommentMark count={look.comments.length} />}
-      {/* 何が何杯か（未割当は何番が何杯か） */}
+      {mergeTap && <MergeOverlay />}
+      <DropMark side={dropSide} />
+      {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
+      {look?.comments && (
+        <CommentMark count={look.comments.length} label={orderLabel(card)} />
+      )}
+      {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
-        {/* 杯数はいつも右上（緊急の札・終わりの印はその左） */}
+        {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {card.emergency && (
-            <span
-              className={`whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${text.cups}`}
-            >
-              緊急
-            </span>
-          )}
+          {!text.emergencyBelow && emergencyTag(text.cups)}
           {done && (
             <Check className="h-4 w-4 text-emerald-700">
               <title>完了</title>
@@ -220,50 +250,92 @@ export const OrderCard: React.FC<
           </span>
         </span>
       </div>
-      {/* 注文番号（未割当は商品）・指名・上級生のみ・緊急の理由か豆 */}
+      {/* 注文ごとの段（上から注文番号の小さい順）。段は上と下の端に寄せ（表では元の注文の行の高さに来る）、間の真ん中に点線 */}
+      {parts && (
+        <div className={`flex min-h-0 flex-1 flex-col ${fade}`}>
+          {parts.map((part, index) => (
+            <Fragment key={part.orderNo}>
+              {index > 0 && (
+                <div className="flex min-h-1.5 flex-1 items-center">
+                  <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
+                </div>
+              )}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
+                <span className="relative shrink-0">
+                  {noTag(
+                    `#${orderNoLabel(part.orderNo)}`,
+                    `tracking-tighter ${text.no}`,
+                  )}
+                  {part.comments > 0 && (
+                    <CommentMark
+                      count={part.comments}
+                      label={`#${orderNoLabel(part.orderNo)}`}
+                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                    />
+                  )}
+                </span>
+                {part.reason && reasonTag(part.reason, text.meta)}
+                <span
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.no}`}
+                >
+                  {part.cups}杯
+                </span>
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {/* 商品・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
-        {mergeInto && (
-          <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
-            <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
-            {orderLabel(mergeInto)}
-          </span>
-        )}
-        {subline}
-        {nominee && (
-          <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
-            指名 {nominee}
-          </span>
-        )}
-        {card.seniorOnly && (
-          <span
-            title="上級生のみ"
-            className="inline-flex shrink-0 items-center rounded bg-amber-100 px-1 py-0.5 font-black text-amber-900"
-          >
-            <Star className="h-3 w-3 fill-current" />
-            上級生
-          </span>
-        )}
-        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
-        {reasons ? (
-          <span
-            title={reasons}
-            className="ml-auto min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700"
-          >
-            {reasons}
-          </span>
-        ) : (
-          bean && (
-            <span
-              title={`豆：${bean}`}
-              className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
-            >
-              {bean}
+        <span className="flex max-w-full shrink-0 items-center gap-1">
+          {text.emergencyBelow && emergencyTag("px-1")}
+          {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
+          {mergeInto && (
+            <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
+              <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
+              {orderLabel(mergeInto)}
             </span>
-          )
-        )}
+          )}
+          {subline}
+          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
+          {nominee && (
+            <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
+              指名 {nominee}
+            </span>
+          )}
+          {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
+          {card.seniorOnly && (
+            <span
+              title={
+                look?.offSenior
+                  ? "上級生のみ（担当者が上級生ではありません）"
+                  : "上級生のみ"
+              }
+              className={`inline-flex min-w-0 items-center rounded px-1 py-0.5 font-black ${look?.offSenior ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
+            >
+              {look?.offSenior ? (
+                <TriangleAlert className="h-3 w-3 shrink-0" />
+              ) : (
+                <Star className="h-3 w-3 shrink-0 fill-current" />
+              )}
+              <span className="truncate">上級生</span>
+            </span>
+          )}
+        </span>
+        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
+        {reasons
+          ? reasonTag(reasons, "ml-auto")
+          : bean && (
+              <span
+                title={`豆：${bean}`}
+                className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+              >
+                {bean}
+              </span>
+            )}
       </div>
       {note && (
         <div
@@ -276,44 +348,23 @@ export const OrderCard: React.FC<
   );
 };
 
-/** 統合した跡。ほかの注文と統合して、もとの場所から無くなったカードの代わりに薄く残す（「#011 → #010+#011 に統合」） */
-export const MergedTrace: React.FC<{
-  orderNo: number;
-  /** 統合したカードの注文番号の表示（orderLabel） */
-  into: string;
-  className?: string;
-}> = ({ orderNo, into, className = "" }) => (
-  <div
-    className={`flex min-w-0 flex-col justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-100 px-2 py-1 text-slate-500 leading-none ${className}`}
-  >
-    <span className="font-black font-mono text-[14px]">
-      #{orderNoLabel(orderNo)}
-    </span>
-    <span className="truncate font-bold text-[11px]">→ {into} に統合</span>
-  </div>
-);
-
 // 1〜6 のボタンの色（ドラッグで指の下は青。指名の番号でないボタンは押せない）
 const padTone = (bayId: number, hoveredBay: number | null) =>
   hoveredBay === bayId
     ? "border-white bg-blue-500 text-white"
     : "border-slate-300 bg-white text-slate-950 disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-500";
 
-// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。
+// カードの上に前半（1〜3）、下に後半（4〜6）を出すドリッパーのボタン（カードの children に置く）。未割当カード（管制盤 A・C）で使い、番号はそのドリッパーの列の最後へ。
 // 段がヘッダー・帯・ほかのカードの下になったり枠で切れたりして押せないときは、両方の段を下か上に寄せる（useBayPadPlacement）。
-// 未割当カード（管制盤 A・C）と待機カード（管制盤 A）で共通。待機カードは今のドリッパーのボタンが「先頭」（このドリッパーの列の先頭へ。今から始まる）。
 // 指名の番号のあるカードは、その番号のボタンだけ押せる（logic/lanes の moveTargets）。
-// ドラッグで指を滑らせて選べるよう、ボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
+// ドラッグで指を滑らせて選べるよう、番号のボタンは data-bay-target を持つ（useCardDrag の bayTargetAt）。
 export const BayPad: React.FC<{
   card: CaosCard;
-  /** 待機カードの今のドリッパー */
-  currentBayId?: number;
   /** ドラッグで指の下にあるドリッパー */
   hoveredBay: number | null;
-  /** place は「先頭」のボタンなら "front"（今のドリッパーの列の先頭へ） */
-  onPick: (bayId: number, place?: CaosPlace) => void;
-}> = ({ card, currentBayId, hoveredBay, onPick }) => {
-  const targets = moveTargets(card, currentBayId ?? null);
+  onPick: (bayId: number) => void;
+}> = ({ card, hoveredBay, onPick }) => {
+  const targets = moveTargets(card, null);
   const half = Math.ceil(targets.length / 2);
   // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
@@ -325,7 +376,7 @@ export const BayPad: React.FC<{
           style={placement.rows[index]}
           className="absolute right-0 left-0 z-[90] grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 shadow-xl"
         >
-          {row.map(({ bayId, place, disabled }) => (
+          {row.map(({ bayId, disabled }) => (
             <button
               key={bayId}
               type="button"
@@ -333,11 +384,11 @@ export const BayPad: React.FC<{
               data-bay-target={bayId}
               onClick={(event) => {
                 event.stopPropagation();
-                onPick(bayId, place);
+                onPick(bayId);
               }}
               className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
             >
-              {place ? "先頭" : bayId}
+              {bayId}
             </button>
           ))}
         </div>
@@ -380,9 +431,9 @@ const MergeIcon: React.FC<{ className: string }> = ({ className }) => (
   </svg>
 );
 
-// 統合できる相手のカードに重ねる「統合する」（管制盤 A・C・D の未割当）。
+// 統合できる相手のカードに重ねる「統合する」（OrderCard の mergeTap。管制盤 A・C・D）。
 // 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
-export const MergeOverlay: React.FC = () => (
+const MergeOverlay: React.FC = () => (
   <>
     <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-blue-500 bg-blue-50/90" />
     <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center p-1">
@@ -423,3 +474,20 @@ export const SplitCupButtons: React.FC<{
     ))}
   </div>
 );
+
+/**
+ * ドラッグで指の下にある列のカードの印（OrderCard の dropSide）。前は左の縁、後ろは右の縁に入れる所の線、
+ * 統合はカードを囲む統合の色の枠（落とす先の札は指に付いた写しに出す。hooks/useCardDrag の dropTargetLabel）
+ */
+const DropMark: React.FC<{ side?: DropSide }> = ({ side }) => {
+  if (!side) return null;
+  if (side === "merge")
+    return (
+      <div className="border-(color:--caos-merge) pointer-events-none absolute inset-0 z-[95] rounded-lg border-4 bg-white/30" />
+    );
+  return (
+    <div
+      className={`-top-1 -bottom-1 pointer-events-none absolute z-[95] w-[6px] rounded-full bg-blue-600 shadow-[0_0_0_2px_white] ${side === "before" ? "-left-[7px]" : "-right-[7px]"}`}
+    />
+  );
+};
