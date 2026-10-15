@@ -140,9 +140,15 @@ export const useCaosOutboxSender = (
     retry: () => {
       if (leader) void outbox.retryNow();
     },
-    /** 送らずに消す（盤面はサーバーの今に戻る。同じ端末のほかのタブからも消える）。送っている途中のものは、もうサーバーに届いているかもしれない */
+    /**
+     * 送らずに消す（盤面はサーバーの今に戻る。同じ端末のほかのタブからも消える）。消した操作は onRejected にも渡す（「直前の操作」から忘れる）。
+     * 送っている途中のものは、もうサーバーに届いているかもしれない
+     */
     discard: (ids: readonly string[]) => {
-      for (const id of ids) store.remove(id);
+      for (const entry of unsent.filter(({ id }) => ids.includes(id))) {
+        store.remove(entry.id);
+        rejected.current(entry.label);
+      }
     },
   };
 };

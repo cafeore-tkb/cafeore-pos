@@ -88,11 +88,6 @@ export default function App() {
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
           simulating={session.simulating}
-          isRunning={session.isRunning}
-          onTogglePlay={session.toggleRunning}
-          simSpeed={session.simSpeed}
-          onCycleSpeed={session.cycleSpeed}
-          onResetData={backToLive}
           showTimelineNow={view.timelineControls}
           onTimelineNow={() =>
             setTimelineCommand({ direction: "now", id: Date.now() })
@@ -114,7 +109,15 @@ export default function App() {
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
-          {session.simulating && <TestBoardBanner onBackToLive={backToLive} />}
+          {session.simulating && (
+            <TestBoardBanner
+              onBackToLive={backToLive}
+              isRunning={session.isRunning}
+              onTogglePlay={session.toggleRunning}
+              simSpeed={session.simSpeed}
+              onCycleSpeed={session.cycleSpeed}
+            />
+          )}
           <ControlWorkspace
             mode={controlViewMode}
             lanes={lanes}

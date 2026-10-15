@@ -33,16 +33,36 @@ export const useOutsidePress = (
 const LAYERS =
   "dialog, [role='dialog'], [role='alertdialog'], [data-caos-backdrop], [data-sonner-toaster]";
 
+// 文字を打つ入力欄
+const TEXT_INPUT =
+  "textarea, input:not([type='checkbox'], [type='radio'], [type='file'])";
+
 /**
  * 開いたパネル・ダイアログ（ref）の外を押したら onClose。外を押した 1 回目は閉じるだけで、その下のカード・盤面のボタンには届けない。
  * 上に重ねて出ているほかのもの（LAYERS。ダイアログの後ろの幕も）を押したときは閉じない。
- * パネルの中の入力欄で打っているあいだに外を押したら、入力を終える（キーボードを閉じる）だけで閉じない（入れたものを消さない）
+ * パネルの中の入力欄で打っているあいだに外を押したら、入力を終える（キーボードを閉じる）だけで閉じない（入れたものを消さない）。
+ * 打っていたかは押し始め（pointerdown）で見る（マウスでは click の前にフォーカスが外れるので）
  */
 export const usePanelOutsidePress = (
   ref: RefObject<HTMLElement | null>,
   onClose: () => void,
   enabled = true,
-) =>
+) => {
+  const typing = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const handleDown = () => {
+      const focused = document.activeElement;
+      typing.current =
+        focused instanceof HTMLElement &&
+        ref.current?.contains(focused) &&
+        focused.matches(TEXT_INPUT)
+          ? focused
+          : null;
+    };
+    document.addEventListener("pointerdown", handleDown, true);
+    return () => document.removeEventListener("pointerdown", handleDown, true);
+  }, [enabled, ref]);
   useOutsidePress(
     enabled,
     (target) => {
@@ -52,16 +72,10 @@ export const usePanelOutsidePress = (
       return layer !== null && !layer.contains(panel);
     },
     () => {
-      const focused = document.activeElement;
-      if (
-        focused instanceof HTMLElement &&
-        ref.current?.contains(focused) &&
-        focused.matches(
-          "textarea, input:not([type='checkbox'], [type='radio'], [type='file'])",
-        )
-      )
-        focused.blur();
+      if (typing.current) typing.current.blur();
       else onClose();
+      typing.current = null;
     },
     { swallow: true },
   );
+};

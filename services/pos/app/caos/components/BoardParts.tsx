@@ -1,5 +1,11 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import { ArrowRightCircle, type LucideIcon, Plus } from "lucide-react";
+import {
+  ArrowRightCircle,
+  type LucideIcon,
+  Pause,
+  Play,
+  Plus,
+} from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenToastConfirm } from "../hooks/useToastConfirms";
@@ -248,12 +254,37 @@ export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
     </span>
   );
 
-/** テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る */
-export const TestBoardBanner: React.FC<{ onBackToLive: () => void }> = ({
-  onBackToLive,
-}) => (
-  <div className="flex items-center justify-between gap-3 rounded-md border-2 border-amber-500 bg-amber-100 px-3 py-1.5 font-black text-amber-950">
-    <span>テストの盤面です（本番の注文は出ていません）</span>
+/**
+ * テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る。
+ * 練習の時計（一時停止・速さ）もここに置く（ヘッダーの並びを詰めない）
+ */
+export const TestBoardBanner: React.FC<{
+  onBackToLive: () => void;
+  isRunning: boolean;
+  onTogglePlay: () => void;
+  simSpeed: number;
+  onCycleSpeed: () => void;
+}> = ({ onBackToLive, isRunning, onTogglePlay, simSpeed, onCycleSpeed }) => (
+  <div className="flex items-center gap-2 rounded-md border-2 border-amber-500 bg-amber-100 px-3 py-1.5 font-black text-amber-950">
+    <span className="mr-auto">
+      テストの盤面です（本番の注文は出ていません）
+    </span>
+    <button
+      type="button"
+      onClick={onTogglePlay}
+      title={isRunning ? "一時停止" : "タイマー再開"}
+      className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg border border-amber-500 bg-white text-amber-950"
+    >
+      {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+    </button>
+    <button
+      type="button"
+      onClick={onCycleSpeed}
+      title="シミュレーション速度切替"
+      className="h-10 min-w-12 touch-manipulation rounded-lg border border-amber-500 bg-white px-1.5 font-bold font-mono text-[13px] text-amber-950"
+    >
+      {simSpeed}x
+    </button>
     <button
       type="button"
       onClick={onBackToLive}

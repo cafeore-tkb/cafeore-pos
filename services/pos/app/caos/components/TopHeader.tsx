@@ -4,12 +4,10 @@ import {
   Coffee,
   Database,
   Eye,
+  History,
   LayoutGrid,
   type LucideIcon,
-  Pause,
-  Play,
   Printer,
-  RotateCcw,
   Search,
   Volume2,
   VolumeX,
@@ -59,13 +57,8 @@ interface TopHeaderProps {
   onFindOrder: (orderNo: number) => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  /** 実データテストの時計（一時停止・速さ・やめる）を出すか */
+  /** 実データテストの盤面を出している（「テスト」の色を変える。時計の操作は盤面の上の帯 TestBoardBanner） */
   simulating: boolean;
-  isRunning: boolean;
-  onTogglePlay: () => void;
-  simSpeed: number;
-  onCycleSpeed: () => void;
-  onResetData: () => void;
   /** 「現在」（管制盤 A のタイムラインを NOW へ戻す）を出すか */
   showTimelineNow: boolean;
   onTimelineNow: () => void;
@@ -176,11 +169,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   soundEnabled,
   onToggleSound,
   simulating,
-  isRunning,
-  onTogglePlay,
-  simSpeed,
-  onCycleSpeed,
-  onResetData,
   showTimelineNow,
   onTimelineNow,
   testPlaying,
@@ -267,77 +255,42 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </nav>
 
         <div className="flex items-center gap-2">
-          <div className="font-bold font-mono text-[#0f172a] text-[26px] leading-none tracking-tight">
-            {timeStr}
+          {/* 時刻と、その下に直前の操作（この画面が最後にした操作。間違えたら逆の操作で直す）。並びが動かないよう幅を決めておく */}
+          <div className="flex w-[118px] shrink-0 flex-col leading-none">
+            <div className="font-bold font-mono text-[#0f172a] text-[24px] tracking-tight">
+              {timeStr}
+            </div>
+            <output
+              aria-label="直前の操作"
+              title={lastAction ? `直前の操作：${lastAction}` : undefined}
+              className={`mt-1 flex min-w-0 items-center gap-0.5 font-black text-[11px] ${lastAction ? "text-slate-950" : "text-slate-400"}`}
+            >
+              <History className="h-3 w-3 shrink-0" />
+              <span className="truncate">{lastAction ?? "直前の操作なし"}</span>
+            </output>
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1 empty:hidden">
-            {simulating && (
-              <>
-                <button
-                  type="button"
-                  onClick={onTogglePlay}
-                  title={isRunning ? "一時停止" : "タイマー再開"}
-                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
-                >
-                  {isRunning ? (
-                    <Pause className="h-3.5 w-3.5" />
-                  ) : (
-                    <Play className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={onCycleSpeed}
-                  title="シミュレーション速度切替"
-                  className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
-                >
-                  {simSpeed}x
-                </button>
-                <button
-                  type="button"
-                  onClick={onResetData}
-                  title="初期状態にリセット"
-                  className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-            {showTimelineNow && (
-              <button
-                type="button"
-                onClick={onTimelineNow}
-                title="現在時刻へ戻る"
-                className={`flex h-10 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg bg-red-500 px-2 font-black text-[12px] text-white ${simulating ? "ml-1" : ""}`}
-              >
-                <span className="h-2 w-2 rounded-full bg-white" />
-                現在
-              </button>
-            )}
-          </div>
+          {showTimelineNow && (
+            <button
+              type="button"
+              onClick={onTimelineNow}
+              title="現在時刻へ戻る"
+              className="flex h-10 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-red-500 font-black text-[11px] text-white leading-none"
+            >
+              <span className="h-2 w-2 rounded-full bg-white" />
+              現在
+            </button>
+          )}
         </div>
 
-        {/* 注文の数（杯数は小さく添える）。統合したカードは中の注文をみな、分けた注文は 1 つと数える */}
-        <div className="flex shrink-0 flex-col justify-center rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 py-0.5 font-semibold text-[#475569] text-[11px] leading-tight">
-          <CountLine
-            label="未割当"
-            counts={counts.unassigned}
-            className="text-[#ef4444]"
-          />
-          <CountLine
-            label="待ち"
-            counts={counts.waiting}
-            className="text-[#0f172a]"
-          />
-        </div>
-
-        {/* 入れ忘れ・飛ばしに気づく：いちばん古い未割当と、受けてから LATE_ORDER_MIN 分を超えて始めていない注文。押すとその注文を選ぶ */}
+        {/* 注文の数（杯数は小さく添える。統合したカードは中の注文をみな、分けた注文は 1 つと数える）と、入れ忘れ・飛ばしに気づく待ち。
+            押すと、いちばん古い未割当・受けてから LATE_ORDER_MIN 分を超えて始めていないいちばん古い注文を選ぶ */}
         <BacklogButton
-          label="最古の未割当"
-          value={
+          label="未割当"
+          counts={counts.unassigned}
+          detail={
             oldest
-              ? `#${orderNoLabel(oldest.orderNo)} ${clockLabel(oldest.waitSec)}`
-              : "なし"
+              ? `最古 #${orderNoLabel(oldest.orderNo)} ${clockLabel(oldest.waitSec)}`
+              : "最古 なし"
           }
           late={oldest !== null && oldest.waitSec > LATE_ORDER_MIN * 60}
           title={
@@ -348,12 +301,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           onClick={oldest ? () => onFindOrder(oldest.orderNo) : undefined}
         />
         <BacklogButton
-          label={`${LATE_ORDER_MIN}分超`}
-          value={`${backlog.late.length}件`}
+          label="待ち"
+          counts={counts.waiting}
+          detail={`${LATE_ORDER_MIN}分超 ${backlog.late.length}件`}
           late={backlog.late.length > 0}
           title={
             backlog.late.length > 0
-              ? `受けてから ${LATE_ORDER_MIN} 分を超えて、まだ抽出を始めていない注文（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
+              ? `受けてから ${LATE_ORDER_MIN} 分を超えて、まだ抽出を始めていない注文が ${backlog.late.length} 件（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
               : `受けてから ${LATE_ORDER_MIN} 分を超えて、まだ抽出を始めていない注文はありません`
           }
           onClick={
@@ -400,38 +354,23 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
-          className={`flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border px-2 font-black text-xs shadow-xs ${testButtonTone(testPlaying, simulating)}`}
+          className={`flex h-11 min-w-11 touch-manipulation flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 font-black text-[11px] leading-none shadow-xs ${testButtonTone(testPlaying, simulating)}`}
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
               : "過去の実データでテストプレイ"
           }
         >
+          {/* ヘッダーの並びを詰めないよう、印の下に小さく */}
           {testPlaying ? (
-            <BarChart3 className="h-4 w-4" />
+            <BarChart3 className="mb-0.5 h-4 w-4" />
           ) : (
-            <CalendarClock className="h-4 w-4" />
+            <CalendarClock className="mb-0.5 h-4 w-4" />
           )}
           <span>
             {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
           </span>
         </button>
-        {/* 直前の操作（この画面が最後にした操作。間違えたら逆の操作で直す）。並びが動かないよう幅を決めておく */}
-        <output
-          aria-label="直前の操作"
-          title={lastAction ?? undefined}
-          className="flex h-11 w-[124px] shrink-0 flex-col justify-center rounded-lg border border-slate-300 bg-slate-50 px-2 leading-tight"
-        >
-          <span className="font-bold text-[10px] text-slate-500">
-            直前の操作
-          </span>
-          <span
-            className={`truncate font-black text-[12px] ${lastAction ? "text-slate-950" : "text-slate-300"}`}
-          >
-            {lastAction ?? "なし"}
-          </span>
-        </output>
-
         <button
           type="button"
           onClick={onToggleSound}
@@ -464,37 +403,36 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   );
 };
 
-/** ヘッダーの注文の数の 1 行（「未割当 8件 10杯」） */
-const CountLine: React.FC<{
-  label: string;
-  counts: Counts;
-  className: string;
-}> = ({ label, counts, className }) => (
-  <span className="flex items-baseline gap-1 whitespace-nowrap">
-    <span className="w-[3em]">{label}</span>
-    <span className={`font-extrabold font-mono text-[16px] ${className}`}>
-      {counts.orders}
-    </span>
-    件<span className="font-mono text-[10px]">{counts.cups}杯</span>
-  </span>
-);
-
-/** 待っている注文の札（押すとその注文を選ぶ。押せる注文が無ければ押せない）。late なら赤くする */
+/**
+ * ヘッダーの注文の数（「未割当 8件 10杯」）と、その下の待ち（detail）。late なら赤くする。
+ * 押すと待ちの注文を選ぶ（押せる注文が無ければ押せない）
+ */
 const BacklogButton: React.FC<{
   label: string;
-  value: string;
+  counts: Counts;
+  detail: string;
   late: boolean;
   title: string;
   onClick?: () => void;
-}> = ({ label, value, late, title, onClick }) => (
+}> = ({ label, counts, detail, late, title, onClick }) => (
   <button
     type="button"
     disabled={!onClick}
     onClick={onClick}
     title={title}
-    className={`flex h-11 shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border px-2 leading-tight disabled:opacity-60 ${late ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-white text-slate-700"}`}
+    className="flex h-11 w-[104px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 text-[#475569] leading-tight"
   >
-    <span className="font-bold text-[10px]">{label}</span>
-    <span className="font-black font-mono text-[14px]">{value}</span>
+    <span className="flex items-baseline gap-1 font-semibold text-[11px]">
+      {label}
+      <span className="font-extrabold font-mono text-[#0f172a] text-[16px]">
+        {counts.orders}
+      </span>
+      件<span className="font-mono text-[10px]">{counts.cups}杯</span>
+    </span>
+    <span
+      className={`font-black font-mono text-[11px] ${late ? "rounded bg-red-600 px-1 text-white" : ""}`}
+    >
+      {detail}
+    </span>
   </button>
 );

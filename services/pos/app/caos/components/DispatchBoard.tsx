@@ -253,13 +253,13 @@ export const DispatchBoard: React.FC<
                         bay.id,
                       )}
                       onOpenLane={onOpenLane}
-                      className="h-[66px] w-[46px]"
+                      className="h-[66px] w-[44px]"
                     />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                       <LaneName
                         dripper={bay.id}
                         wrap
-                        className="max-w-full font-black text-[17px] text-slate-950 leading-tight"
+                        className="max-w-full font-black text-[16px] text-slate-950 leading-tight"
                       />
                       <LaneChangeButton dripper={bay.id} />
                     </div>
