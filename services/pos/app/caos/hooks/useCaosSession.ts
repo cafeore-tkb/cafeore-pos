@@ -225,29 +225,38 @@ export const useCaosSession = () => {
     );
   };
 
-  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id。全部が盤面に届いたら、元のカードと同じ組み合わせの
-  // 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。まとめるのは「1つ戻す」に覚えず、
+  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id（1 回の入れ直しごとに 1 組。続けて入れ直せば組が並ぶ）。
+  // 組の全部が盤面に届いたら、元のカードと同じ組み合わせの 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。
+  // 足せた入れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「1つ戻す」に覚えず、
   // 戻すと入れ直しごと取り消す）
-  const [rebrewsToMerge, setRebrewsToMerge] = useState<string[] | null>(null);
+  const [rebrewsToMerge, setRebrewsToMerge] = useState<string[][]>([]);
+  const mergeRebrews = (ids: string[]) =>
+    setRebrewsToMerge((groups) => [...groups, ids]);
   useLayoutEffect(() => {
-    if (!rebrewsToMerge) return;
-    const pair = caosRebrewMergePair(cards, rebrewsToMerge);
-    if (pair === "arriving") return;
-    setRebrewsToMerge(null);
-    if (!pair) return;
-    const result = mergeWrites(pair.card, pair.into, newDripId);
-    if ("writes" in result)
-      source.runWrites(
-        result.writes,
-        `統合 ${orderLabel(pair.card)} → ${orderLabel(pair.into)}`,
-      );
+    if (rebrewsToMerge.length === 0) return;
+    const waiting: string[][] = [];
+    for (const ids of rebrewsToMerge) {
+      const pair = caosRebrewMergePair(cards, ids);
+      if (pair === "arriving") {
+        waiting.push(ids);
+        continue;
+      }
+      if (!pair) continue;
+      const result = mergeWrites(pair.card, pair.into, newDripId);
+      if ("writes" in result)
+        source.runWrites(
+          result.writes,
+          `統合 ${orderLabel(pair.card)} → ${orderLabel(pair.into)}`,
+        );
+    }
+    if (waiting.length < rebrewsToMerge.length) setRebrewsToMerge(waiting);
   }, [cards, rebrewsToMerge, source]);
 
   // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・入れ直しのまとめ）を忘れる
   const forgetPending = () => {
     undo.forget();
     confirms.clear();
-    setRebrewsToMerge(null);
+    setRebrewsToMerge([]);
   };
 
   // 本番の緊急のカップに、刷るための POS の注文を付ける（本番のカードと入力は POS の注文から作るので、注文はある。無ければ null）
@@ -325,7 +334,7 @@ export const useCaosSession = () => {
           // 足し直したものも、取り消したカードと同じ 1 枚にまとめる（1 杯なら何もしない）
           return async () => {
             const ids = await restoreEmergencies(restore);
-            if (ids) setRebrewsToMerge(ids);
+            if (ids) mergeRebrews(ids);
             return ids !== null;
           };
         },
@@ -392,7 +401,7 @@ export const useCaosSession = () => {
         );
         const added = await emergencyOps.add(cups, reason, label);
         if (!added) return null;
-        if (together) setRebrewsToMerge(added.ids);
+        if (together) mergeRebrews(added.ids);
         undo.remember(label, added.undo);
         return added.ids;
       },
