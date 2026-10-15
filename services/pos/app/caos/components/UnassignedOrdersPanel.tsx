@@ -22,6 +22,7 @@ import {
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
+import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
@@ -59,6 +60,7 @@ const UnassignedCard: React.FC<{
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
       data-unassigned-uid={card.key}
+      data-search-key={card.key}
       onPointerDown={
         readOnly || isMergeCandidate
           ? undefined
@@ -188,6 +190,7 @@ const QueueEntry: React.FC<{
         look={looks.get(card.key)}
         size={size}
         selected={selected}
+        data-search-key={card.key}
         // 選んだ注文のカードは薄くしない（灰色にすると選択中の黄の輪も灰色になる）
         className={`h-full ${selected ? "" : PLACED_FADE[card.status]}`}
       />
@@ -314,12 +317,17 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   pick,
 }) => {
   const { rows, places } = queueOf(orders, lanes);
+  const { openCard } = pick;
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader icon={ClipboardList} title="注文">
         <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
           未割当 {orders.length} 件 / {totalCups(orders)} 杯
         </span>
+        {/* 開いたカードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
+        {openCard && (
+          <CommentLine comments={looks.get(openCard.key)?.comments ?? []} />
+        )}
       </PanelHeader>
       <ScrollArea
         axis="y"

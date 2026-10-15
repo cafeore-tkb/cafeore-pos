@@ -7,6 +7,7 @@ import {
   quickMergePartner,
 } from "../logic/cards";
 import { type Lane, laneActive } from "../logic/lanes";
+import { scrollCardIntoView } from "../utils/scrollToCard";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 統合できる未割当のカードと表の抽出中のカードには「統合する」が出て、押すと統合する（待機のカードへは押して統合しない）。
@@ -80,11 +81,7 @@ export const useSheetSelection = ({
     setMergingNos(null);
     setSelectedUid(merged.key);
     onSelectOrder(orderLabel(merged));
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-sheet-cup="${CSS.escape(merged.key)}"]`)
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
+    requestAnimationFrame(() => scrollCardIntoView(merged.key));
   }, [mergingNos, unassigned, onSelectOrder]);
 
   return {

@@ -1,12 +1,15 @@
 import type { CaosCard, CaosOrderInput } from "@cafeore/common";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { orderNoLabel } from "../logic/cards";
 import type { CommentsByOrder } from "../logic/comments";
 import type { Lane } from "../logic/lanes";
 import { findOrder, focusCard } from "../logic/search";
+import { scrollCardIntoView } from "../utils/scrollToCard";
 
 /** 入れられる番号の桁 */
 const MAX_DIGITS = 4;
+/** 番号を押し終えてから探すまで（ms）。「12」を打つ途中の「1」で選んだりスクロールしたりしない */
+export const SEARCH_DELAY_MS = 500;
 
 // 番号に数字を 1 つ足す（頭の 0 は入れない。MAX_DIGITS 桁まで）
 const appendDigit = (value: string, digit: string) =>
@@ -35,11 +38,11 @@ const ignoreKey = (event: KeyboardEvent) =>
 
 /**
  * 注文番号の検索（ヘッダーの「番号」と右のパネル）。入れている番号（digits。閉じていれば null）は開いているパネル（useBoardSelection）が持ち、
- * ここは押したキーで番号を変え、その注文を探す。見つかった注文は選んだ状態にし（selectOrder。盤面にカードがあるときだけ）、
- * そのカードを見せる（タイムラインのカードは showOnTimeline でスクロール、未割当のカードは未割当の帯の中でスクロール）。
- * 選ぶのは番号を変えたときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
+ * ここは押したキーで番号を変え、押し終えて SEARCH_DELAY_MS たったら（Enter ならすぐ）その注文を探す。見つかった注文は選んだ状態にし（selectOrder。盤面にカードがあるときだけ）、
+ * そのカードを見せる（A のタイムラインのカードは showOnTimeline でスクロール、ほかは並べた枠の中でスクロール。utils/scrollToCard）。
+ * 選ぶのは探す番号が変わったときだけ（毎秒の時計やほかの端末の書き込みでは選び直さない）。
  * キーボード（テンキー）の数字は、入力欄の外ならいつでも検索を開いて入れる（ダイアログを開いているあいだは拾わない）。
- * 開いているあいだは Backspace で 1 文字消し、Enter・Esc で閉じる（番号を押すとフォーカスを外し、そのあと Tab で選んだボタンの上の Enter はそのボタンを押す）
+ * 開いているあいだは Backspace で 1 文字消し、Enter で探して閉じ、Esc で閉じる（番号を押すとフォーカスを外し、そのあと Tab で選んだボタンの上の Enter はそのボタンを押す）
  */
 export const useOrderSearch = ({
   digits,
@@ -57,15 +60,25 @@ export const useOrderSearch = ({
   close: () => void;
   /** 注文を選ぶ（orderLabel。null で外す） */
   selectOrder: (label: string | null) => void;
-  /** 管制盤 A のタイムラインをカード（key）までスクロールする */
-  showOnTimeline: (cardKey: string) => void;
+  /** 管制盤 A のタイムラインをカード（key）までスクロールする（タイムラインの無い C・D では渡さない） */
+  showOnTimeline?: (cardKey: string) => void;
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
   lanes: readonly Lane[];
   comments: CommentsByOrder | null;
   nowMs: number;
 }) => {
-  const orderNo = digits ? Number(digits) : null;
+  // 探した番号（digits を押し終えてから入れる。閉じたら null）
+  const [searched, setSearched] = useState(digits);
+  useEffect(() => {
+    if (digits === null) {
+      setSearched(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setSearched(digits), SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [digits]);
+  const orderNo = searched ? Number(searched) : null;
   const found = orderNo === null ? null : findOrder({ ...board, orderNo });
   const target = found && focusCard(found);
   // 見せる注文とカード。変わったときだけ見せ直す
@@ -85,6 +98,7 @@ export const useOrderSearch = ({
     found,
     target,
     digits,
+    searched,
     press,
     open,
     close,
@@ -96,25 +110,19 @@ export const useOrderSearch = ({
     latest.current = current;
   });
 
-  // 番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
+  // 探す番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
   // 開いたまま番号を変えて、盤面に見せるカードが無くなったら（消した・無い番号）選んだ注文を外す（閉じたときは選んだままにする）
   useEffect(() => {
-    const { found, target, digits, selectOrder, showOnTimeline } =
+    const { found, target, searched, selectOrder, showOnTimeline } =
       latest.current;
     if (targetId === null || !found || !target) {
-      if (digits !== null) selectOrder(null);
+      if (searched !== null) selectOrder(null);
       return;
     }
     selectOrder(`#${orderNoLabel(found.orderNo)}`);
-    if (target.status !== "unassigned") showOnTimeline(target.key);
-    else
-      document
-        .querySelector(`[data-unassigned-uid="${CSS.escape(target.key)}"]`)
-        ?.scrollIntoView({
-          block: "nearest",
-          inline: "center",
-          behavior: "smooth",
-        });
+    if (showOnTimeline && target.status !== "unassigned")
+      showOnTimeline(target.key);
+    else scrollCardIntoView(target.key);
   }, [targetId]);
 
   useEffect(() => {
@@ -139,7 +147,11 @@ export const useOrderSearch = ({
       )
         return;
       if (event.key === "Backspace") press("back");
-      else if (event.key === "Escape" || event.key === "Enter") close();
+      else if (event.key === "Enter") {
+        // 待たずに探してから閉じる（閉じても選んだまま）
+        setSearched(digits);
+        close();
+      } else if (event.key === "Escape") close();
       else return;
       event.preventDefault();
     };
@@ -147,5 +159,17 @@ export const useOrderSearch = ({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  return { found, press };
+  return {
+    /** 探した注文（押している途中は前の番号のまま。pending を見る） */
+    found,
+    /** 押した番号をまだ探していない（押し終えるのを待っている） */
+    pending: digits !== searched,
+    press,
+    /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
+    show: (orderNo: number) => {
+      const digits = String(orderNo);
+      open(digits);
+      setSearched(digits);
+    },
+  };
 };

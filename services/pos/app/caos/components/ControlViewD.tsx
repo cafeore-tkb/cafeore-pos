@@ -11,7 +11,13 @@ import {
   useScrollToFirstLive,
   useSheetSelection,
 } from "../hooks/useSheetSelection";
-import { cardName, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import {
+  cardName,
+  orderLabel,
+  orderNoLabel,
+  sharesOrder,
+  totalCups,
+} from "../logic/cards";
 import { cardPlaces, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
@@ -32,6 +38,7 @@ import {
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, MergeOverlay, OrderCard } from "./OrderCard";
+import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
@@ -188,6 +195,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       look={looks.get(ticket.key)}
       size="sm"
       note={rowIds.length > 1 ? "統合" : undefined}
+      data-search-key={ticket.key}
       onPointerDown={
         state !== "past"
           ? (event) =>
@@ -225,6 +233,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           <p className="min-w-0 truncate font-bold text-[11px] text-slate-500">
             {headerHint()}
           </p>
+          {/* 選んだ注文カードのコメント（A の選んだ注文の帯と同じく 1 行で） */}
+          {selectedOrder && (
+            <CommentLine
+              comments={looks.get(selectedOrder.key)?.comments ?? []}
+            />
+          )}
           {selectedOrder && (
             <button
               type="button"
@@ -517,9 +531,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         card={order}
                         look={looks.get(uid)}
                         size="sm"
-                        selected={isSelected}
+                        // 選んだカードと、カードを選んでいないときは選んだ注文（番号で探した・表のカードを開いた）のカード
+                        selected={
+                          isSelected ||
+                          (!selectedOrder &&
+                            sharesOrder(order, selectedOrderId))
+                        }
                         mergeInto={isSelected ? picked.partner : undefined}
-                        data-sheet-cup={uid}
+                        data-search-key={uid}
                         onPointerDown={(event) =>
                           drag.press({ kind: "unassigned", order }, event)
                         }
@@ -550,6 +569,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       look={looks.get(ticket.key)}
                       size="sm"
                       note={`→ ${dripperLabel(bayId)}`}
+                      data-search-key={ticket.key}
                       className="h-[64px] opacity-50"
                     />
                   ))}
