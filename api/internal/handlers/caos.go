@@ -744,13 +744,16 @@ func (h *CaosHandler) WriteCaosCups(c *gin.Context) {
 
 // ---------------------------------------------------------------- 「次へ」
 
-// advance は「次へ」を 1 回行う。seen は終えるカード（画面が抽出中と見ているカード。nil なら待機の先頭を始めるだけ）。
-// startNext が false なら終えるだけで、待機の先頭は始めない（抽出中のカードを押したとき）。書いた注文を返す。
+// advance は「次へ」を 1 回行う（req）。drip_id は終えるカード（画面が抽出中と見ているカード。nil なら待機の先頭を始めるだけ）。
+// start_next が false なら終えるだけで、待機の先頭は始めない（抽出中のカードを押したとき。省略は true）。
+// start_drip_id があれば、待機の先頭がそのカードのときだけ始める（押した待機のカードを始めるとき）。書いた注文を返す。
 // 書くのは抽出の時刻（終えるカードの brew_finished_at と、始めるカードの brew_started_at）だけで、カップの準備完了は変えない。
 // 時刻は押した時刻（press。caosBrewAt）。始めてから caosNextCooldown は、始めた時刻と押した時刻の差で見る。
-func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, startNext bool, press *models.CaosPress) ([]uuid.UUID, error) {
+func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.UUID, error) {
+	seen := req.DripId
+	startNext := req.StartNext == nil || *req.StartNext
 	now := h.now().Truncate(time.Millisecond)
-	pressed := caosPressedAt(press, now)
+	pressed := caosPressedAt(req.Press, now)
 	start, end := caosToday(now)
 	var orderIDs []uuid.UUID
 	err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -784,6 +787,8 @@ func (h *CaosHandler) advance(dripper int, seen *uuid.UUID, startNext bool, pres
 			return conflictErrorf("このドリッパーには抽出中のカードがありません")
 		case cur == nil && head == nil:
 			return conflictErrorf("このドリッパーには抽出中・待機のカードがありません")
+		case req.StartDripId != nil && (head == nil || head.dripID != *req.StartDripId):
+			return conflictErrorf("押したカードが待機の先頭ではありません（ほかの端末で並びが変わったかもしれません）")
 		}
 		at, err := caosBrewAt(tx, dripper, pressed, start, end)
 		if err != nil {
@@ -848,16 +853,14 @@ func (h *CaosHandler) AdvanceCaosDripper(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// start_next を省略したら（前の画面）、今まで通り待機の先頭を始める
-	startNext := req.StartNext == nil || *req.StartNext
-	orderIDs, err := h.advanceRetrying(dripper, req.DripId, startNext, req.Press)
+	orderIDs, err := h.advanceRetrying(dripper, req)
 	h.respond(c, orderIDs, err)
 }
 
 // advanceRetrying は advance を、ロックする前に読んだカップが変わっていた（注文の編集などと重なった）ときだけ読み直して行う。
-func (h *CaosHandler) advanceRetrying(dripper int, seen *uuid.UUID, startNext bool, press *models.CaosPress) ([]uuid.UUID, error) {
+func (h *CaosHandler) advanceRetrying(dripper int, req models.CaosNextRequest) ([]uuid.UUID, error) {
 	for range caosAttempts {
-		orderIDs, err := h.advance(dripper, seen, startNext, press)
+		orderIDs, err := h.advance(dripper, req)
 		if err != errConflict {
 			return orderIDs, err
 		}

@@ -589,6 +589,23 @@ func TestCaosFinishOnlyOnDB(t *testing.T) {
 	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
 		t.Fatalf("queued cup = %+v, want not started", cup)
 	}
+	// start_drip_id は、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409）
+	startWith := func(id uuid.UUID) int {
+		body, _ := json.Marshal(map[string]any{"drip_id": nil, "start_drip_id": id})
+		return callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: "1"}}).Code
+	}
+	if code := startWith(card1); code != http.StatusConflict {
+		t.Fatalf("start another card = %d, want 409", code)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	if code := startWith(card2); code != http.StatusNoContent {
+		t.Fatalf("start the head = %d", code)
+	}
+	if got, _ := f.lane(t, 1); !slices.Equal(got, []uuid.UUID{card2}) {
+		t.Fatalf("brewing = %v, want %v", got, card2)
+	}
 }
 
 // 抽出を始められるのは、空いている（そのカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ。

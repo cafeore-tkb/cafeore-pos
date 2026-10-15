@@ -210,6 +210,9 @@ type CaosNextRequest struct {
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press *CaosPress `json:"press,omitempty"`
 
+	// StartDripId 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
+	StartDripId *openapi_types.UUID `json:"start_drip_id,omitempty"`
+
 	// StartNext 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
 	StartNext *bool `json:"start_next,omitempty"`
 }

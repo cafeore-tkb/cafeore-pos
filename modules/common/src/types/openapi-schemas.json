@@ -1070,6 +1070,11 @@
         "default": true,
         "description": "待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true"
       },
+      "start_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない"
+      },
       "press": {
         "$ref": "#/components/schemas/CaosPress"
       }

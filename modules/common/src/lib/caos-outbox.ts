@@ -44,6 +44,7 @@ export type CaosOutboxOp =
   /**
    * 「次へ」。dripId は終えるカード、startId は始めるはずの待機の先頭（押したときの盤面）。startNext が false なら終えるだけ（省略すると始める）。
    * startPressed は押した待機のカード（startId）を始める（その前に先頭へ動かしてある）。待機の先頭が startId でなければ当てず・送らない
+   * （送ったあとにほかの端末が入れ替えても、サーバーが start_drip_id で断る）
    */
   | {
       kind: "next";
