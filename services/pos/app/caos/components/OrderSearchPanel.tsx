@@ -33,7 +33,7 @@ export const OrderSearchPanel: React.FC<{
   onKey: (key: string) => void;
   onClose: () => void;
 }> = ({ digits, found, pending, looks, onKey, onClose }) => (
-  <SidePanel title="注文番号で探す" onClose={onClose} onOutsidePress={onClose}>
+  <SidePanel title="注文番号で探す" onClose={onClose}>
     <output
       aria-label="入れた注文番号"
       className="mb-3 flex h-16 items-center justify-center rounded-xl border-2 border-slate-300 bg-slate-50 font-black font-mono text-[40px] text-slate-950 tracking-widest"

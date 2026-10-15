@@ -5,11 +5,12 @@ import {
   buildCaosCards,
 } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { longWaitMinutes } from "./alerts";
+import { LATE_ORDER_SEC, longWaitMinutes, orderBacklog } from "./alerts";
 import {
   type CardLook,
   cardLooks,
   cardOrderParts,
+  orderAndCupCounts,
   orderLabel,
   quickMergePartner,
   selectedComments,
@@ -111,6 +112,44 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       { orderNo: 2, cards: ["cups:cup-2-0"] },
       { orderNo: 3, cards: ["m"] },
     ]);
+  });
+
+  test("ヘッダーの数は注文の数（統合したカードは中の注文をみな、分けた注文は 1 つ）と杯数", () => {
+    // #3+#4 の統合（2 注文・2 杯）と #2（1 注文・1 杯）
+    expect(orderAndCupCounts(unassigned)).toEqual({ orders: 3, cups: 3 });
+    // 2 杯の注文を 2 枚に分けても 1 注文
+    const split = buildCaosCards([
+      order(9, [{ dripId: "a" }, { dripId: "b" }]),
+    ]);
+    expect(split).toHaveLength(2);
+    expect(orderAndCupCounts(split)).toEqual({ orders: 1, cups: 2 });
+  });
+
+  test("いちばん古い未割当と、受けてから 15 分を超えてまだ始めていない注文（未割当・待機。古い順）", () => {
+    const at = (orderId: number, minutesAgo: number, cups: CupPlace[]) => ({
+      ...order(orderId, cups),
+      createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
+    });
+    const orders = [
+      at(1, 30, [
+        { dripper: 1, dripId: "b", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+      at(2, 20, [{ dripper: 2, dripId: "q", dripperPosition: 1 }]),
+      at(3, LATE_ORDER_SEC / 60 + 1, [{}]),
+      at(4, 5, [{}]),
+    ];
+    const backlog = orderBacklog(buildCaosCards(orders), T0.getTime());
+    expect(backlog.oldestUnassigned).toEqual({
+      orderNo: 3,
+      waitSec: LATE_ORDER_SEC + 60,
+      late: true,
+    });
+    // 抽出中の #1 は数えない
+    expect(backlog.late.map((o) => o.orderNo)).toEqual([2, 3]);
+    expect(orderBacklog([], T0.getTime())).toEqual({
+      oldestUnassigned: null,
+      late: [],
+    });
   });
 
   test("開いたカードをもう一度押したときの統合の相手は、1 枚ならそれ、何枚かあれば注文番号がいちばん近いもの。決まらなければ無し", () => {
