@@ -5,7 +5,8 @@ import { soundManager } from "../utils/audio";
 
 /**
  * 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない。logic/queue の laneStatus の forgotten）が出たら、
- * 1 枚につき 1 回だけ音で知らせる（鳴らすかはヘッダーの音の切り替え。soundManager.enabled）。点滅は列の番号（DripperIndicator）
+ * 1 枚につき 1 回だけ音で知らせる（鳴らすかはヘッダーの音の切り替え。soundManager.enabled）。点滅は列の番号（DripperIndicator）。
+ * 画面を開いたときにもう要確認の抽出があれば、そのときも 1 回鳴らす（コメントの知らせと違い、開き直した端末でも気づけるように。わざと）
  */
 export const useForgottenBrewAlert = (
   lanes: readonly Lane[],

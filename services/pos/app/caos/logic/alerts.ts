@@ -8,7 +8,7 @@ export const FORGOTTEN_BREW_SEC = 120;
 /** 受けてからこれだけ（秒）たっても未割当のカードに、待っている時間の札を付ける */
 const LONG_WAIT_SEC = 300;
 
-/** 長く待っている未割当のカードなら、受けてから（統合したカードはいちばん早いカップから）の分。ほかは null */
+/** 長く待っている未割当のカードなら、受けてから（入れ直しは入れ直してから）の分。ほかは null。統合したカードはいちばん早いカップから数える（入れ直しは入れ直しどうしでしか統合しないので、注文と入れ直しの時刻は混ざらない） */
 export const longWaitMinutes = (card: CaosCard, nowMs: number) => {
   if (card.status !== "unassigned") return null;
   const orderedMs = Math.min(
