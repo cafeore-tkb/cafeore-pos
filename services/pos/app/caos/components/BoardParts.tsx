@@ -169,7 +169,10 @@ const toastText = (toast: OpenCornerToast) => {
   const { cards, lane } = toast;
   const who = `上級生でない ${dripperLabel(lane.dripper)} ${lane.name}`;
   return {
-    label: "上級生のみのカードの知らせ",
+    label:
+      cards.length === 1
+        ? `${orderLabel(cards[0])}の上級生のみの知らせ`
+        : "上級生のみのカードの知らせ",
     title:
       cards.length === 1
         ? `上級生のみの ${orderLabel(cards[0])} を${who}に置きました`

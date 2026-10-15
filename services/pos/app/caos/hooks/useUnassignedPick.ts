@@ -17,7 +17,7 @@ import { useOutsidePress } from "./useOutsidePress";
  * （列の待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（placed のうち統合できるカードだけ）。
  * useCardDrag の dropTargetAt）。
  * 1 杯のカードを開くと、統合できる 1 杯のカード（未割当と、ドリッパーの列の待機・抽出中のカード。canMergeCards）を押して統合できる
- * （onMergeOrders を渡したときだけ。列のカードには data-merge-tap を付け、押しても開いたカードを閉じない）。
+ * （onMergeOrders を渡したときだけ。統合できるカードには OrderCard の mergeTap が data-merge-tap を付け、押しても開いたカードを閉じない）。
  * 相手が決まる（logic/cards の quickMergePartner。未割当と placed の待機・抽出中のカードから）ときは、開いたカードをもう一度押しても統合する
  * （決まらなければ開いたまま）。
  * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。

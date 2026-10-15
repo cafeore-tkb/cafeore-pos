@@ -126,12 +126,16 @@ export const useCaosSession = () => {
     restoreEmergencies,
   } = useCupEmergency();
   const undo = useCaosUndo(realTime.getTime());
-  // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。通らなかった操作は「1つ戻す」から忘れる
-  const unsent = useCaosOutboxSender(realTime.getTime(), undo.forget);
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
   // 止めずにそのまま書き、同じ所に知らせだけ出す
   const toasts = useCornerToasts(realTime.getTime());
+  // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。
+  // 通らなかった操作は「1つ戻す」から忘れ、その操作の右上の知らせも消す（盤面は戻っているので）
+  const unsent = useCaosOutboxSender(realTime.getTime(), (label) => {
+    undo.forget(label);
+    toasts.forgetOp(label);
+  });
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
   const { cards } = source;
@@ -171,10 +175,15 @@ export const useCaosSession = () => {
   // 画面のカードのキーから、今の盤面のカードを引く
   const cardOf = (key: string) => cards.find((card) => card.key === key);
   // 本番で、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら、置いたうえで右上に知らせる（実データテストには担当者がいない。
-  // 担当者のいないドリッパーは知らせず、警告の印だけ。nonSeniorPlacement）。cards はまとめて移したときは何枚も（知らせは 1 つ）
-  const noticeNonSenior = (cards: CaosCard[], lane: CaosLane | null) => {
-    if (lane && cards.length > 0 && !testing)
-      toasts.show({ kind: "seniorOnly", cards, lane });
+  // 担当者のいないドリッパーは知らせず、警告の印だけ。nonSeniorPlacement）。placed はまとめて移したときは何枚も（知らせは 1 つ）。
+  // op は置いた操作の名前（断られたら知らせも消す）
+  const noticeNonSenior = (
+    placed: CaosCard[],
+    lane: CaosLane | null,
+    op: string,
+  ) => {
+    if (lane && placed.length > 0 && !testing)
+      toasts.show({ kind: "seniorOnly", cards: placed, lane }, op);
   };
   // 操作が通ったら（練習も本番も押したときの盤面で決まる。本番の書き込みは後ろで送る）play で音を鳴らし、「1つ戻す」に label と戻す処理を覚える。
   // 断られたら何もしない。通ったかを返す
@@ -212,15 +221,12 @@ export const useCaosSession = () => {
       card: first,
       into: second,
     };
-    const merged = write(
-      mergeWrites(card, into, newDripId),
-      `統合 ${orderLabel(card)} → ${orderLabel(into)}`,
-    );
-    if (!merged) return false;
+    const label = `統合 ${orderLabel(card)} → ${orderLabel(into)}`;
+    if (!write(mergeWrites(card, into, newDripId), label)) return false;
     const elapsedSec = caosLateMerge(into, nowMs);
     if (elapsedSec !== null)
-      toasts.show({ kind: "lateMerge", card, into, elapsedSec });
-    noticeNonSenior([card], nonSeniorMerge(card, into, people));
+      toasts.show({ kind: "lateMerge", card, into, elapsedSec }, label);
+    noticeNonSenior([card], nonSeniorMerge(card, into, people), label);
     return true;
   };
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「1つ戻す」に出す操作の名前
@@ -264,7 +270,7 @@ export const useCaosSession = () => {
     if (waiting.length < rebrewsToMerge.length) setRebrewsToMerge(waiting);
   }, [cards, rebrewsToMerge, source]);
 
-  // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・入れ直しのまとめ）を忘れる
+  // 本番と実データテストを行き来するときに、覚えている操作（「1つ戻す」・右上の確かめ・知らせ・入れ直しのまとめ）を忘れる
   const forgetPending = () => {
     undo.forget();
     toasts.clear();
@@ -444,13 +450,14 @@ export const useCaosSession = () => {
           : card.dripper === bayId
             ? "並べ替え"
             : "移動";
-      const placed = write(
+      const label = `${action} ${orderLabel(card)} → ${dripperLabel(bayId)}`;
+      const ok = write(
         assignWrites(cards, card, bayId, { place, newId: newDripId }),
-        `${action} ${orderLabel(card)} → ${dripperLabel(bayId)}`,
+        label,
       );
-      if (placed)
-        noticeNonSenior([card], nonSeniorPlacement(card, bayId, people));
-      return placed;
+      if (ok)
+        noticeNonSenior([card], nonSeniorPlacement(card, bayId, people), label);
+      return ok;
     },
     /** 待機・抽出中のカードを未割当に戻す */
     returnToUnassigned: (key: string) => {
@@ -477,22 +484,18 @@ export const useCaosSession = () => {
         toast(
           `指名で ${dripperLabel(to)} に置けないカード ${result.kept} 枚は残しました`,
         );
-      const moved = write(
-        result,
-        `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`,
-      );
-      // 上級生でない担当者のドリッパーへ移した上級生のみのカードは、まとめて 1 つの知らせに
-      if (moved && "moved" in result) {
-        const offSenior = result.moved.filter((card) =>
-          nonSeniorPlacement(card, to, people),
+      const label = `まとめて移す ${dripperLabel(from)} → ${dripperLabel(to)}`;
+      const ok = write(result, label);
+      // 上級生でない担当者のドリッパーへ移した上級生のみのカードは、まとめて 1 つの知らせに（担当者は移す先の 1 人）
+      if (ok && "moved" in result) {
+        const lane = people.find((l) => l.dripper === to) ?? null;
+        noticeNonSenior(
+          result.moved.filter((card) => nonSeniorPlacement(card, to, people)),
+          lane,
+          label,
         );
-        if (offSenior[0])
-          noticeNonSenior(
-            offSenior,
-            nonSeniorPlacement(offSenior[0], to, people),
-          );
       }
-      return moved;
+      return ok;
     },
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。

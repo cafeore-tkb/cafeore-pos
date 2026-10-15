@@ -15,9 +15,10 @@ export type CornerToast =
   | { kind: "lateMerge"; card: CaosCard; into: CaosCard; elapsedSec: number }
   | { kind: "seniorOnly"; cards: CaosCard[]; lane: CaosLane };
 
-/** 出している確かめ・知らせ（id と、何もしなければ消えるまでの残りの秒つき） */
+/** 出している確かめ・知らせ（id と、何もしなければ消えるまでの残りの秒つき。op は知らせのもとになった盤面の操作の名前） */
 export type OpenCornerToast = CornerToast & {
   id: string;
+  op?: string;
   secondsLeft: number;
 };
 
@@ -32,7 +33,7 @@ const toastId = (toast: CornerToast) => {
 // nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。SHOW_SEC 秒たったものは出さない。
 export const useCornerToasts = (nowMs: number) => {
   const [shown, setShown] = useState<
-    (CornerToast & { id: string; atMs: number })[]
+    (CornerToast & { id: string; op?: string; atMs: number })[]
   >([]);
   const open = shown.flatMap(({ atMs, ...toast }): OpenCornerToast[] => {
     const secondsLeft = Math.min(
@@ -47,12 +48,15 @@ export const useCornerToasts = (nowMs: number) => {
   return {
     /** 出している確かめ・知らせ（残りの秒つき） */
     open,
-    /** 確かめ・知らせを出す（同じものは置き換える。消えたものはここで捨てる） */
-    show: (toast: CornerToast) => {
+    /**
+     * 確かめ・知らせを出す（同じものは置き換える。消えたものはここで捨てる）。op は知らせのもとになった盤面の操作の名前
+     * （送った操作が断られて盤面が戻ったら、その知らせも消す。forgetOp）
+     */
+    show: (toast: CornerToast, op?: string) => {
       const id = toastId(toast);
       const atMs = Date.now();
       setShown((list) => [
-        { ...toast, id, atMs },
+        { ...toast, id, op, atMs },
         ...list.filter((t) => t.id !== id && atMs - t.atMs < SHOW_SEC * 1000),
       ]);
     },
@@ -63,6 +67,9 @@ export const useCornerToasts = (nowMs: number) => {
     },
     /** 閉じる（確かめはやめる、知らせは読んだ） */
     dismiss: drop,
+    /** 盤面の操作 op が断られて盤面が戻ったので、その操作の知らせを消す */
+    forgetOp: (op: string) =>
+      setShown((list) => list.filter((toast) => toast.op !== op)),
     clear: () => setShown([]),
   };
 };

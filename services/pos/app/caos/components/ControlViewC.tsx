@@ -6,8 +6,7 @@ import {
   type UnassignedPick,
   useControlPick,
 } from "../hooks/useUnassignedPick";
-import { orderLabel, sharesOrder } from "../logic/cards";
-import type { CardLook } from "../logic/cards";
+import { type CardLook, orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
