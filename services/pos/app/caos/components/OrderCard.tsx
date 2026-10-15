@@ -192,7 +192,7 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では縮めない。後ろの豆の札を先に縮める）。
+  // 1 行目にいちばん大きく出すものと、2 行目に出すもの（2 行目では、後ろの豆の札を先に縮め、入らなければ省略する）。
   // 未割当の番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）
   const [headline, subline] = parts
@@ -204,7 +204,7 @@ export const OrderCard: React.FC<
               ? `min-w-0 truncate tracking-tighter ${text.cups}`
               : `shrink-0 ${text.name}`,
           ),
-          itemName("shrink-0"),
+          itemName(""),
         ]
       : [
           itemName(text.name),
@@ -265,18 +265,21 @@ export const OrderCard: React.FC<
                   <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
                 </div>
               )}
-              <div className="flex min-w-0 shrink-0 items-center gap-1 leading-none">
-                {noTag(
-                  `#${orderNoLabel(part.orderNo)}`,
-                  `shrink-0 ${text.name}`,
-                )}
-                {part.comments > 0 && (
-                  <CommentMark
-                    count={part.comments}
-                    label={`#${orderNoLabel(part.orderNo)}`}
-                    className="h-4 w-4"
-                  />
-                )}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
+                <span className="relative shrink-0">
+                  {noTag(
+                    `#${orderNoLabel(part.orderNo)}`,
+                    `tracking-tighter ${text.name}`,
+                  )}
+                  {part.comments > 0 && (
+                    <CommentMark
+                      count={part.comments}
+                      label={`#${orderNoLabel(part.orderNo)}`}
+                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                    />
+                  )}
+                </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
                   className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.name}`}
@@ -288,41 +291,44 @@ export const OrderCard: React.FC<
           ))}
         </div>
       )}
-      {/* 注文番号（未割当は商品）・指名・上級生のみ・緊急の理由か豆 */}
+      {/* 注文番号（未割当は商品）・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
-        {mergeInto && (
-          <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
-            <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
-            {orderLabel(mergeInto)}
-          </span>
-        )}
-        {subline}
-        {nominee && (
-          <span className="shrink-0 whitespace-nowrap rounded bg-slate-900 px-1 py-0.5 font-black text-white">
-            指名 {nominee}
-          </span>
-        )}
-        {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
-        {card.seniorOnly && (
-          <span
-            title={
-              look?.offSenior
-                ? "上級生のみ（担当者が上級生ではありません）"
-                : "上級生のみ"
-            }
-            className={`inline-flex shrink-0 items-center rounded px-1 py-0.5 font-black ${look?.offSenior ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
-          >
-            {look?.offSenior ? (
-              <TriangleAlert className="h-3 w-3" />
-            ) : (
-              <Star className="h-3 w-3 fill-current" />
-            )}
-            上級生
-          </span>
-        )}
+        <span className="flex max-w-full shrink-0 items-center gap-1">
+          {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
+          {mergeInto && (
+            <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
+              <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
+              {orderLabel(mergeInto)}
+            </span>
+          )}
+          {subline}
+          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
+          {nominee && (
+            <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
+              指名 {nominee}
+            </span>
+          )}
+          {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
+          {card.seniorOnly && (
+            <span
+              title={
+                look?.offSenior
+                  ? "上級生のみ（担当者が上級生ではありません）"
+                  : "上級生のみ"
+              }
+              className={`inline-flex min-w-0 items-center rounded px-1 py-0.5 font-black ${look?.offSenior ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
+            >
+              {look?.offSenior ? (
+                <TriangleAlert className="h-3 w-3 shrink-0" />
+              ) : (
+                <Star className="h-3 w-3 shrink-0 fill-current" />
+              )}
+              <span className="truncate">上級生</span>
+            </span>
+          )}
+        </span>
         {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
         {reasons
           ? reasonTag(reasons, "ml-auto")

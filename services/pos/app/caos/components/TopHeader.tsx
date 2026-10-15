@@ -57,6 +57,8 @@ interface TopHeaderProps {
   onResetData: () => void;
   showTimelineControls: boolean;
   onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
+  /** タイムラインが NOW を追っている（「現在」を押した形にする。手でスクロールしたら押していない形にして、押すと戻ることを見せる） */
+  followingNow: boolean;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
@@ -174,6 +176,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onResetData,
   showTimelineControls,
   onTimelineNavigate,
+  followingNow,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
@@ -313,10 +316,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => onTimelineNavigate("now")}
-                  title="現在時刻へ戻る"
-                  className="flex h-10 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg bg-red-500 px-2 font-black text-[12px] text-white"
+                  aria-pressed={followingNow}
+                  title={
+                    followingNow
+                      ? "現在時刻を追っています"
+                      : "現在時刻へ戻って追う"
+                  }
+                  className="group flex h-10 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-500 bg-white px-2 font-black text-[12px] text-red-600 aria-pressed:bg-red-500 aria-pressed:text-white"
                 >
-                  <span className="h-2 w-2 rounded-full bg-white" />
+                  <span className="h-2 w-2 rounded-full bg-red-500 group-aria-pressed:bg-white" />
                   現在
                 </button>
                 <button
@@ -362,7 +370,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
         <button
           type="button"
@@ -404,7 +412,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
           </span>
         </button>
-        {/* 1つ戻す。この画面が最後にした操作を、10 秒のあいだ戻せる。押せるあいだは濃くし、何を戻すかと残りの秒を出す */}
+        {/* 1つ戻す。この画面が最後にした操作を、10 秒のあいだ戻せる。押せるあいだは濃くし、何を戻すかと残りの秒を出す。
+            幅は決めておく（割当・「次へ」のたびにヘッダーの並びが動かないように。長い操作の名前は省く） */}
         <button
           type="button"
           disabled={!undoLabel || undoPending}
@@ -413,22 +422,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             undoLabel ? `「${undoLabel}」を戻す` : "戻せる操作はありません"
           }
           aria-label={undoLabel ? `1つ戻す：${undoLabel}` : "1つ戻す"}
-          className="flex min-h-[44px] touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border border-slate-900 bg-slate-900 px-2 font-black text-white text-xs shadow-xs transition-colors hover:bg-slate-700 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          className="flex h-11 w-[96px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-lg border border-slate-900 bg-slate-900 px-1.5 font-black text-white text-xs leading-tight shadow-xs transition-colors hover:bg-slate-700 disabled:items-center disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
-          <Undo2 className="h-4 w-4" />
-          <span className="flex min-w-0 flex-col items-start leading-tight">
-            <span>
-              戻す
-              {undoLabel && (
-                <span className="font-mono">（{undoSecondsLeft}）</span>
-              )}
-            </span>
+          <span className="flex items-center gap-1">
+            <Undo2 className="h-4 w-4 shrink-0" />
+            戻す
             {undoLabel && (
-              <span className="max-w-[8rem] truncate font-bold text-[10px]">
-                {undoLabel}
-              </span>
+              <span className="font-mono">（{undoSecondsLeft}）</span>
             )}
           </span>
+          {undoLabel && (
+            <span className="max-w-full truncate font-bold text-[10px]">
+              {undoLabel}
+            </span>
+          )}
         </button>
 
         <button

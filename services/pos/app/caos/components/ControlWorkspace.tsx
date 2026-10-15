@@ -66,6 +66,8 @@ export interface ControlViewProps {
   flashKeys?: ReadonlySet<string>;
   /** 未割当の横帯をたたむか（管制盤 A。渡したときだけ、横帯のヘッダーに「たたむ」「ひらく」を出す） */
   unassignedFold?: UnassignedFold;
+  /** タイムラインが NOW を追っているかが変わったとき（管制盤 A。ヘッダーの「現在」の見た目） */
+  onFollowNowChange?: (following: boolean) => void;
 }
 
 const VIEWS: Record<ControlViewMode, React.FC<ControlViewProps>> = {
