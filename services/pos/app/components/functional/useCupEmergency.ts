@@ -85,17 +85,19 @@ export const useCupEmergency = () => {
     return true;
   }, []);
 
-  /** 取り消した入れ直しを、同じカップ・同じ理由で足し直し、そのカップのシールを刷り直す（CaOS の「1つ戻す」）。足せたら true */
+  /** 取り消した入れ直しを、同じカップ・同じ理由で足し直し、そのカップのシールを刷り直す（CaOS の「1つ戻す」）。足し直した入れ直しの id。断られたら null */
   const restoreEmergencies = useCallback(
     async (cups: (EmergencyCup & { reason: string })[]) => {
+      const restored: string[] = [];
       for (const reason of new Set(cups.map((cup) => cup.reason))) {
         const ids = await addAndPrint(
           cups.filter((cup) => cup.reason === reason),
           reason,
         );
-        if (!ids) return false;
+        if (!ids) return null;
+        restored.push(...ids);
       }
-      return true;
+      return restored;
     },
     [addAndPrint],
   );
@@ -126,8 +128,7 @@ const brewCupsOf = <O extends CaosOrderInput>(order: O) =>
     };
   });
 
-/** 注文番号の注文（数で比べるので「012」でもよい。同じ番号が複数あれば新しいもの） */
-/** 注文番号（入れた文字）の注文。同じ番号が複数あれば新しいもの */
+/** 注文番号（入れた文字。数で比べるので「012」でもよい）の注文。同じ番号が複数あれば新しいもの */
 export const orderByNo = <O extends CaosOrderInput>(
   orders: readonly O[],
   orderNo: string,
