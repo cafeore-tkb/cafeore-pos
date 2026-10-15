@@ -130,7 +130,7 @@ export const useCaosSession = () => {
   // 通らなかった操作は「直前の操作」から忘れ、その操作の右上の知らせも消す（盤面は戻っているので）
   const unsent = useCaosOutboxSender(realTime.getTime(), (entry) => {
     lastAction.forget(entry);
-    toasts.forgetOp(entry.label);
+    toasts.forgetOp(entry);
   });
 
   // 今（エポックのミリ秒）。テスト中は練習の時計
@@ -172,14 +172,10 @@ export const useCaosSession = () => {
   const cardOf = (key: string) => cards.find((card) => card.key === key);
   // 本番で、指名の無い上級生のみのカードを上級生でない担当者のドリッパーに置いたら、置いたうえで右上に知らせる（実データテストには担当者がいない。
   // 担当者のいないドリッパーは知らせず、警告の印だけ。nonSeniorPlacement）。placed はまとめて移したときは何枚も（知らせは 1 つ）。
-  // op は置いた操作の名前（断られたら知らせも消す）
-  const noticeNonSenior = (
-    placed: CaosCard[],
-    lane: CaosLane | null,
-    op: string,
-  ) => {
+  // 知らせには置いた操作の id を付ける（断られたら知らせも消す。liveIds。書いた直後に呼ぶ）
+  const noticeNonSenior = (placed: CaosCard[], lane: CaosLane | null) => {
     if (lane && placed.length > 0 && !testing)
-      toasts.show({ kind: "seniorOnly", cards: placed, lane }, op);
+      toasts.show({ kind: "seniorOnly", cards: placed, lane }, liveIds());
   };
   // 通った操作で端末に残した操作の id（本番だけ。通らなかったら「直前の操作」から忘れる）
   const liveIds = () => (test.session ? [] : live.lastEnqueued());
@@ -215,8 +211,8 @@ export const useCaosSession = () => {
     if (!write(mergeWrites(card, into, newDripId), label)) return false;
     const elapsedSec = caosLateMerge(into, nowMs);
     if (elapsedSec !== null)
-      toasts.show({ kind: "lateMerge", card, into, elapsedSec }, label);
-    noticeNonSenior([card], nonSeniorMerge(card, into, people), label);
+      toasts.show({ kind: "lateMerge", card, into, elapsedSec }, liveIds());
+    noticeNonSenior([card], nonSeniorMerge(card, into, people));
     return true;
   };
   // 書き込みを送る（作れなかったら理由を POS の通知で出す。書けたら音を鳴らす）。label は「直前の操作」に出す操作の名前
@@ -398,8 +394,7 @@ export const useCaosSession = () => {
         assignWrites(cards, card, bayId, { place, newId: newDripId }),
         label,
       );
-      if (ok)
-        noticeNonSenior([card], nonSeniorPlacement(card, bayId, people), label);
+      if (ok) noticeNonSenior([card], nonSeniorPlacement(card, bayId, people));
       return ok;
     },
     /** 待機・抽出中のカードを未割当に戻す */
@@ -435,7 +430,6 @@ export const useCaosSession = () => {
         noticeNonSenior(
           result.moved.filter((card) => nonSeniorPlacement(card, to, people)),
           lane,
-          label,
         );
       }
       return ok;
