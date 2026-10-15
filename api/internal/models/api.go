@@ -545,7 +545,7 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	// BrewFinishedAt CaOS で抽出を終えた時刻（「次へ」か、カップを準備完了・提供済みにしてサーバーが「次へ」を進めたとき）。準備完了（ready_at）とは別に持つ
+	// BrewFinishedAt CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
 	BrewFinishedAt *time.Time `json:"brew_finished_at"`
 
 	// BrewStartedAt CaOS で抽出を始めた時刻

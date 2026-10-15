@@ -96,24 +96,30 @@ export interface paths {
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
-    /** オーダーを準備完了にする */
+    /**
+     * オーダーを準備完了にする
+     * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+     */
     patch: operations["markOrderReady"];
   };
   "/api/orders/{id}/served": {
-    /** オーダーを提供完了にする */
+    /**
+     * オーダーを提供完了にする
+     * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+     */
     patch: operations["markOrderServe"];
   };
   "/api/orders/{id}/cups/{cupId}/ready": {
     /**
      * カップを準備完了にする
-     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
      */
     patch: operations["markOrderCupReady"];
   };
   "/api/orders/{id}/cups/{cupId}/served": {
     /**
      * カップを提供完了にする
-     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
      */
     patch: operations["markOrderCupServe"];
   };
@@ -165,7 +171,7 @@ export interface paths {
      * CaOS の「次へ」
      * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
      * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-     * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+     * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
@@ -629,7 +635,7 @@ export interface components {
       brew_started_at: string | null;
       /**
        * Format: date-time
-       * @description CaOS で抽出を終えた時刻（「次へ」か、カップを準備完了・提供済みにしてサーバーが「次へ」を進めたとき）。準備完了（ready_at）とは別に持つ
+       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
        */
       brew_finished_at: string | null;
       /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
@@ -1661,7 +1667,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを準備完了にする */
+  /**
+   * オーダーを準備完了にする
+   * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+   */
   markOrderReady: {
     parameters: {
       path: {
@@ -1683,7 +1692,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを提供完了にする */
+  /**
+   * オーダーを提供完了にする
+   * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+   */
   markOrderServe: {
     parameters: {
       path: {
@@ -1707,7 +1719,7 @@ export interface operations {
   };
   /**
    * カップを準備完了にする
-   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
    */
   markOrderCupReady: {
     parameters: {
@@ -1741,7 +1753,7 @@ export interface operations {
   };
   /**
    * カップを提供完了にする
-   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
    */
   markOrderCupServe: {
     parameters: {
@@ -1887,7 +1899,7 @@ export interface operations {
    * CaOS の「次へ」
    * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
    * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-   * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+   * 抽出中が無ければ（提供の画面でカップを全部準備完了にして終わりとみなした、など）待機の先頭を始めるだけ。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
    */
   advanceCaosDripper: {

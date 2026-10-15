@@ -405,7 +405,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "CaOS で抽出を終えた時刻（「次へ」か、カップを準備完了・提供済みにしてサーバーが「次へ」を進めたとき）。準備完了（ready_at）とは別に持つ"
+        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
       },
       "emergencies": {
         "type": "array",
