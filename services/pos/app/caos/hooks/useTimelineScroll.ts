@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { cardSelector } from "../utils/scrollToCard";
 
 // 管制盤 A のタイムラインの横スクロール。NOW を画面の左寄りの決まった位置に置き、時間とともにレーンの側を動かす。
 // 見ている人がスクロール（か ±5分・カードへ）で離れたら追うのをやめ、NOW の近くで止まるか「現在」で戻ったら、また追う。
@@ -26,9 +27,7 @@ const commandLeft = (
 ) => {
   if (command.direction === "now") return followLeftPx;
   if (command.direction === "card") {
-    const card = container.querySelector(
-      `[data-card-key="${CSS.escape(command.cardKey)}"]`,
-    );
+    const card = container.querySelector(cardSelector(command.cardKey));
     if (!card) return null;
     return (
       container.scrollLeft +
