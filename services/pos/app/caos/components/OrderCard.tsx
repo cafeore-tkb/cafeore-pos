@@ -164,6 +164,15 @@ export const OrderCard: React.FC<
     </span>
   );
   const orderNo = (size: string) => noTag(orderLabel(card), size);
+  // 入れ直し（緊急）の理由の札
+  const reasonTag = (label: string, className: string) => (
+    <span
+      title={label}
+      className={`min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700 ${className}`}
+    >
+      {label}
+    </span>
+  );
   const itemName = (size: string) => (
     <span
       className={`min-w-0 truncate font-black tracking-tight ${size}`}
@@ -248,14 +257,7 @@ export const OrderCard: React.FC<
                 {part.comments > 0 && (
                   <CommentMark count={part.comments} className="h-4 w-4" />
                 )}
-                {part.reason && (
-                  <span
-                    title={part.reason}
-                    className={`min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700 ${text.meta}`}
-                  >
-                    {part.reason}
-                  </span>
-                )}
+                {part.reason && reasonTag(part.reason, text.meta)}
                 <span
                   className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.name}`}
                 >
@@ -293,23 +295,16 @@ export const OrderCard: React.FC<
           </span>
         )}
         {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
-        {reasons ? (
-          <span
-            title={reasons}
-            className="ml-auto min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700"
-          >
-            {reasons}
-          </span>
-        ) : (
-          bean && (
-            <span
-              title={`豆：${bean}`}
-              className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
-            >
-              {bean}
-            </span>
-          )
-        )}
+        {reasons
+          ? reasonTag(reasons, "ml-auto")
+          : bean && (
+              <span
+                title={`豆：${bean}`}
+                className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
+              >
+                {bean}
+              </span>
+            )}
       </div>
       {note && (
         <div
