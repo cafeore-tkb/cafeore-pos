@@ -7,6 +7,7 @@ import {
 import { describe, expect, test } from "vitest";
 import {
   cardLooks,
+  cardOrderParts,
   orderLabel,
   orderRows,
   queueRows,
@@ -210,6 +211,17 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect([...linkedOrderNos("#004", lanes, unassigned)].sort()).toEqual([
       3, 4,
     ]);
+  });
+
+  test("統合したカードの注文ごとの段は、注文番号の小さい順にその注文の杯数", () => {
+    const merged = cards.find((card) => card.key === "m");
+    if (!merged) throw new Error("統合したカードが無い");
+    expect(cardOrderParts(merged)).toEqual([
+      { orderNo: 3, cups: 1, reason: "" },
+      { orderNo: 4, cups: 1, reason: "" },
+    ]);
+    const [two] = buildCaosCards([order(11, [{}, {}])]);
+    expect(cardOrderParts(two)).toEqual([{ orderNo: 11, cups: 2, reason: "" }]);
   });
 
   test("タイムラインに新しく入ったカードは、割り当てたものと抽出を始めたものだけ（移しただけのカードは入らない）", () => {
