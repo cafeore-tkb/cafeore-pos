@@ -15,7 +15,7 @@ import { jstDate } from "./jst";
 //   - dripId：同じカードで淹れるカップの印（統合したら同じ値）
 //   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻。どちらもサーバーの時刻で、サーバーが付ける（画面からは送らない）
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
-// カップが全部準備完了（マスターで準備完了にした）のカードも終わりとみなす。
+// カップが全部準備完了（提供の画面で準備完了にした）のカードも終わりとみなす。
 // 緊急（入れ直し。カップの emergencies）も同じ列を持ち、カップと同じ決まりでカードに入る（書き込みの cup_ids には入れ直しの id を入れる）。
 // 入れ直しは準備完了の時刻を持たない（準備完了のカップも入れ直すので、準備完了で終わりにしない）。未割当の入れ直しは未割当のいちばん上に出す。
 // 指名はレジで選んだドリッパーの番号（注文の明細の dripper）。番号のあるカップはその番号のドリッパーにしか置けない。
@@ -479,12 +479,12 @@ const sameItem = (a: CaosBoardCup, b: CaosBoardCup) =>
   (a.item.id ?? a.item.name) === (b.item.id ?? b.item.name);
 
 /**
- * card を into のカードに統合できるか（1 杯 + 1 杯 = 2 杯の同時抽出）。同じ商品の 1 杯どうしで、指名の番号がぶつからない
+ * card を into のカードに入れられるか（1 杯 + 1 杯 = 2 杯の同時抽出）。同じ商品の 1 杯どうしで、指名の番号がぶつからない
  * （どちらかが指名なし、または同じ番号）。緊急（入れ直し）は入れ直しどうしだけ（緊急でないカップと同じカードにしない。サーバーも断る）。
  *   - card（動かすほう）は未割当か待機。into（入るほう）は未割当・待機・抽出中（抽出を始めたカードにも足せる。終わったカードには入れない）
  *   - into がドリッパーにあれば、card もそのドリッパーに置ける（指名）
  */
-export const canMergeCards = (card: CaosCard, into: CaosCard) =>
+const mergeableInto = (card: CaosCard, into: CaosCard) =>
   card.key !== into.key &&
   (card.status === "unassigned" || card.status === "queued") &&
   into.status !== "done" &&
@@ -495,6 +495,22 @@ export const canMergeCards = (card: CaosCard, into: CaosCard) =>
   (into.nominatedDripper === null ||
     caosDripperAllowed(card, into.nominatedDripper)) &&
   (into.dripper === null || caosDripperAllowed(card, into.dripper));
+
+/**
+ * card を into に統合するときに書く向き（card のカップを into のカードに入れる）。card を into に入れられればそのまま。
+ * card が抽出中で、into を card に入れられれば逆向き（抽出中のカードの dripId は変えないので、相手を抽出中のカードに入れる。サーバーも同じ）。
+ * 統合できなければ null
+ */
+export const caosMergePair = (card: CaosCard, into: CaosCard) => {
+  if (mergeableInto(card, into)) return { card, into };
+  if (card.status === "brewing" && mergeableInto(into, card))
+    return { card: into, into: card };
+  return null;
+};
+
+/** card と into を統合できるか（どちら向きに書くかは caosMergePair） */
+export const canMergeCards = (card: CaosCard, into: CaosCard) =>
+  caosMergePair(card, into) !== null;
 
 /** 抽出を始めてからこの秒を過ぎたカードへ統合するときは、画面で確かめる（止めはしない） */
 export const CAOS_LATE_MERGE_SEC = 30;
@@ -516,17 +532,19 @@ export const caosLateMerge = (
 
 /**
  * card のカップを into のカードに入れる（2 杯の同時抽出にまとめる）。into の場所（未割当・ドリッパーの順番）のまま。
+ * 向きは caosMergePair（card が抽出中なら into を card に入れる）。
  *   - into がまだカードの印（dripId）の無い未割当なら、両方に新しい同じ dripId を入れる（ドリッパーにはまだ置かない）
  *   - 待機・未割当の into：card を先に書き、into も同じ値で書いて into が変わっていないかを確かめる（番号はサーバーが into と同じにする）
  *   - 抽出中の into：card だけを書く（抽出中のカードは書き直さない）。開始の時刻はサーバーが into から写す
  */
 export const mergeWrites = (
-  card: CaosCard,
-  into: CaosCard,
+  first: CaosCard,
+  second: CaosCard,
   newId: () => string,
 ): CaosWritesResult => {
-  if (!canMergeCards(card, into))
-    return { error: "このカード同士は統合できません" };
+  const pair = caosMergePair(first, second);
+  if (!pair) return { error: "このカード同士は統合できません" };
+  const { card, into } = pair;
   const after: CaosCupAfter = {
     dripper: into.dripper,
     drip_id: into.dripId ?? newId(),

@@ -231,14 +231,14 @@ type CaosPress struct {
 type CaosUndoCup struct {
 	CupId openapi_types.UUID `json:"cup_id"`
 
-	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 	Current CaosUndoCupState `json:"current"`
 
-	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 	Restore CaosUndoCupState `json:"restore"`
 }
 
-// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
 type CaosUndoCupState struct {
 	ReadyAt *time.Time `json:"ready_at"`
 
@@ -578,7 +578,7 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	// BrewFinishedAt CaOS で抽出を終えた時刻
+	// BrewFinishedAt CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
 	BrewFinishedAt *time.Time `json:"brew_finished_at"`
 
 	// BrewStartedAt CaOS で抽出を始めた時刻
@@ -601,7 +601,7 @@ type OrderCupResponse struct {
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
 
-	// ReadyAt このカップが準備完了になった時刻。未準備なら null
+	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
 	ReadyAt *time.Time `json:"ready_at"`
 
 	// ServedAt このカップを提供した時刻。未提供なら null
@@ -774,7 +774,8 @@ type SquareDevicePairRequest struct {
 
 // SquareDeviceResponse defines model for SquareDeviceResponse.
 type SquareDeviceResponse struct {
-	// Code 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る
+	// Code 端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る
+	// （UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）
 	Code      *string   `json:"code"`
 	CreatedAt time.Time `json:"created_at"`
 
@@ -785,12 +786,13 @@ type SquareDeviceResponse struct {
 	// Name 管理画面とレジで出す名前（例 レジ1）
 	Name string `json:"name"`
 
-	// PairBy コードの期限。これを過ぎると EXPIRED になる
+	// PairBy 最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。
+	// ペアリング済みの行は code が消えるだけで PAIRED のまま
 	PairBy *time.Time `json:"pair_by"`
 
 	// Status 端末のペアリングの状態（Square の Device Code の status）。
 	//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-	//   - PAIRED: ペアリング済み。決済に使える
+	//   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
 	//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
 	Status    SquareDeviceStatus `json:"status"`
 	UpdatedAt time.Time          `json:"updated_at"`
@@ -798,7 +800,7 @@ type SquareDeviceResponse struct {
 
 // SquareDeviceStatus 端末のペアリングの状態（Square の Device Code の status）。
 //   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-//   - PAIRED: ペアリング済み。決済に使える
+//   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
 //   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
 type SquareDeviceStatus string
 

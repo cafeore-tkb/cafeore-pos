@@ -2,14 +2,25 @@ import {
   type CaosCard,
   type ColorSetting,
   type StockResource,
+  canMergeCards,
   resolveItemColor,
 } from "@cafeore/common";
 import { type BeanIndex, cardBean } from "./beans";
+import {
+  type BoardComment,
+  type CommentsByOrder,
+  cardComments,
+  commentKey,
+} from "./comments";
 
 // カード（1 回のドリップ。最大 2 杯）の見せ方。カードは注文のカップから組み立てたもの（@cafeore/common の buildCaosCards の CaosCard）を
 // そのまま使い、名前・注文番号・色・分割の表示はここで引く。
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
+
+/** 開いた（選んだ）未割当のカード open を、押した card に統合できるか。押して統合するのは未割当と抽出中のカード（待機のカードへはドラッグで） */
+export const canTapMerge = (open: CaosCard, card: CaosCard) =>
+  card.status !== "queued" && canMergeCards(open, card);
 
 /** 注文番号を 3 桁に（「007」） */
 export const orderNoLabel = (no: number) => no.toString().padStart(3, "0");
@@ -32,6 +43,43 @@ export const sharesOrder = (card: CaosCard, label: string | null) => {
   const labels = label?.split("+") ?? [];
   return cardOrderNos(card).some((no) =>
     labels.includes(`#${orderNoLabel(no)}`),
+  );
+};
+
+/**
+ * 開いたカード（card）をもう一度押したときに統合する相手。cards のうち押して統合できる（canTapMerge。未割当と抽出中）カードが 1 枚ならそれ、
+ * 何枚かあれば注文番号がいちばん近いもの。いちばん近いものが 2 枚以上あって決まらなければ無し（今まで通り相手を押して選ぶ）
+ */
+export const quickMergePartner = (
+  card: CaosCard,
+  cards: readonly CaosCard[],
+) => {
+  const distance = (other: CaosCard) =>
+    Math.abs(other.cups[0].orderNo - card.cups[0].orderNo);
+  const [nearest, next] = cards
+    .filter((other) => canTapMerge(card, other))
+    .sort((a, b) => distance(a) - distance(b));
+  return nearest && (!next || distance(next) > distance(nearest))
+    ? nearest
+    : undefined;
+};
+
+/** 選んだ注文（orderLabel。統合したカードなら「#012+#013」）のコメント（付けた順）。cards はその注文のカードを探す盤面のカード、コメントは looks から引く */
+export const selectedComments = (
+  cards: readonly CaosCard[],
+  looks: CardLooks,
+  label: string,
+) => {
+  const labels = label.split("+");
+  const found = new Map<string, BoardComment>();
+  for (const card of cards) {
+    if (!sharesOrder(card, label)) continue;
+    for (const comment of looks.get(card.key)?.comments ?? [])
+      if (labels.includes(`#${orderNoLabel(comment.orderNo)}`))
+        found.set(commentKey(comment), comment);
+  }
+  return [...found.values()].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
 };
 
@@ -78,14 +126,23 @@ export interface CardLook {
   split?: CardSplit;
   /** 豆（POS の在庫のうち、カードの商品のアイテムの在庫）。logic/beans.ts で引く。在庫が無い商品には付かない */
   bean?: StockResource;
+  /** 注文のコメント（統合したカードは中の注文すべて）。コメントのある注文のカードにだけ付く */
+  comments?: BoardComment[];
 }
 export type CardLooks = ReadonlyMap<string, CardLook>;
 
-/** カードごとの見せ方（キーはカードの key）。色の設定と在庫はあとから読み込まれたり変わったりするので、出すたびに引く */
+/** カードの地の色（CardLook の color） */
+export const cardColor = (card: CaosCard, settings: ColorSetting[]) =>
+  (card.nominatedDripper !== null
+    ? resolveItemColor(settings, card.cups[0].item, "nominated")
+    : undefined) ?? resolveItemColor(settings, card.cups[0].item, "master");
+
+/** カードごとの見せ方（キーはカードの key）。色の設定と在庫・コメントはあとから読み込まれたり変わったりするので、出すたびに引く */
 export const cardLooks = (
   cards: readonly CaosCard[],
   settings: ColorSetting[],
   beanIndex: BeanIndex,
+  comments: CommentsByOrder | null = null,
 ): CardLooks => {
   // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
   const byOrder = new Map<string, CaosCard[]>();
@@ -110,13 +167,10 @@ export const cardLooks = (
     cards.map((card) => [
       card.key,
       {
-        color:
-          (card.nominatedDripper !== null
-            ? resolveItemColor(settings, card.cups[0].item, "nominated")
-            : undefined) ??
-          resolveItemColor(settings, card.cups[0].item, "master"),
+        color: cardColor(card, settings),
         split: splitOf(card),
         bean: cardBean(card, beanIndex),
+        comments: cardComments(card, comments),
       },
     ]),
   );

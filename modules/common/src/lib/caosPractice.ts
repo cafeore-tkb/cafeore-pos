@@ -423,7 +423,7 @@ export const applyCaosPracticeWrites = (
 // ---------------------------------------------------------------- 「次へ」（POST /api/caos/drippers/{dripper}/next と同じ）
 
 /**
- * 「次へ」。抽出中のカードを終え（終了の時刻を付け、そのカップを準備完了にする）、待機の先頭を始める。
+ * 「次へ」。抽出中のカードを終え（終了の時刻を付ける。カップの準備完了は付けない）、待機の先頭を始める。
  * seenDripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断る。始めてから CAOS_NEXT_COOLDOWN_SEC 秒は断る。
  * 時刻は now（練習の時計の今。終える・始める時刻は brewAt）。cooldown が false なら秒は見ない（押したときに確かめ済みの「次へ」を、あとから届いた盤面に重ねるとき）
  */
@@ -453,13 +453,9 @@ export const advanceCaosPracticeDripper = (
   if (!cur && !head)
     return { error: "このドリッパーには抽出中・待機のカードがありません" };
 
-  // 終えるカードのカップ（入れ直しは入れ直したカップ）を準備完了にする
   const at = brewAt(next, dripper, now);
-  for (const { row, cup } of allUnits(next)) {
-    if (cur && row.dripId === cur.dripId) {
-      cup.readyAt = cup.readyAt ?? new Date(now);
-      row.brewFinishedAt = new Date(at);
-    }
+  for (const { row } of allUnits(next)) {
+    if (cur && row.dripId === cur.dripId) row.brewFinishedAt = new Date(at);
     if (head && row.dripId === head.dripId) row.brewStartedAt = new Date(at);
   }
   return { orders: next };

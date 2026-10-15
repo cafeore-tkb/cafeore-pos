@@ -6,9 +6,12 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosDayOrders,
   caosLateMerge,
+  caosMergePair,
   dripperLabel,
   jstClock,
+  jstDate,
   mergeWrites,
   moveQueueWrites,
   seniorOnlyBlock,
@@ -31,6 +34,7 @@ import {
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { waitingCupsByBean } from "../logic/beans";
 import { cardLooks, orderLabel, orderNoLabel, totalCups } from "../logic/cards";
+import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes, laneActive } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
@@ -133,9 +137,16 @@ export const useCaosSession = () => {
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],
   );
+  // 本番の今日の注文のコメント（実データテスト中と、注文が届くまでは null）
+  const today = jstDate(realTime.getTime());
+  const comments = useMemo(
+    () =>
+      live.orders ? commentsByOrder(caosDayOrders(live.orders, today)) : null,
+    [live.orders, today],
+  );
   const looks = useMemo(
-    () => cardLooks(cards, colorSettings, beanIndex),
-    [cards, colorSettings, beanIndex],
+    () => cardLooks(cards, colorSettings, beanIndex, comments),
+    [cards, colorSettings, beanIndex, comments],
   );
   // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
@@ -173,12 +184,17 @@ export const useCaosSession = () => {
       () => soundManager.playComplete(),
     );
   };
-  // 統合（firstKey のカードを intoKey のカードへ）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
-  // checkLate なら送らずに confirms で確かめる（確かめを出したら true）
+  // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。抽出を始めてから時間のたったカード（caosLateMerge）へは、
+  // checkLate なら送らずに confirms で確かめる（確かめを出したら true。確かめは向きを決めたあとのカードで出す）
   const runMerge = (firstKey: string, intoKey: string, checkLate: boolean) => {
-    const card = cardOf(firstKey);
-    const into = cardOf(intoKey);
-    if (!card || !into) return fail(NOT_FOUND);
+    const first = cardOf(firstKey);
+    const second = cardOf(intoKey);
+    if (!first || !second) return fail(NOT_FOUND);
+    // 統合できなければ、そのまま mergeWrites が断る
+    const { card, into } = caosMergePair(first, second) ?? {
+      card: first,
+      into: second,
+    };
     const blocked = test.session
       ? null
       : seniorOnlyMergeBlock(card, into, people);
@@ -290,8 +306,10 @@ export const useCaosSession = () => {
     lanes,
     /** 未割当（注文番号の順） */
     unassigned,
-    /** カードの色・豆と、分けた注文の中の位置 */
+    /** カードの色・豆・コメントと、分けた注文の中の位置 */
     looks,
+    /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
+    comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
     /** ヘッダーの杯数（未割当・ドリッパーの待ち） */
     cups: {
@@ -319,7 +337,7 @@ export const useCaosSession = () => {
           SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
       ),
     posStatus: live.status,
-    /** この端末のシールのプリンター（刷れずに残っているシールの数と、送り直し） */
+    /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し） */
     labelPrinter,
     /** この端末のまだ送れていない盤面の操作の数と、今すぐ送り直す */
     unsent,
@@ -381,7 +399,7 @@ export const useCaosSession = () => {
       if (!card) return fail(NOT_FOUND);
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
     },
-    /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま） */
+    /** 1 杯のカード（firstKey）を、もう 1 枚の 1 杯のカード（intoKey）に入れて 2 杯の同時抽出にまとめる（intoKey の場所のまま。firstKey が抽出中なら逆向き） */
     merge: (firstKey: string, intoKey: string) =>
       runMerge(firstKey, intoKey, true),
     /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
@@ -410,7 +428,7 @@ export const useCaosSession = () => {
     },
     /**
      * 「次へ」。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ（マスターで準備完了にして終わった、など）null で、待機の先頭を始める。
+     * 抽出中が無ければ（提供の画面で全部準備完了にして終わった、など）null で、待機の先頭を始める。
      * 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）、すぐには送らず confirms で確かめる
      */
     advance: (bayId: number) => {

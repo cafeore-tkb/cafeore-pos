@@ -6,7 +6,7 @@ import { orderLabel } from "../logic/cards";
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
  * detail は待機のカード（管制盤 A では 1〜6 のボタン、管制盤 C・D では詳細のパネル）、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
- * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ
+ * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
  */
 type OpenPanel =
   | { kind: "detail"; key: string }
@@ -14,6 +14,7 @@ type OpenPanel =
   | { kind: "assign"; bayId: number }
   | { kind: "lane"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
+  | { kind: "search"; digits: string }
   | null;
 
 // 画面で選んでいるもの（注文・開いているパネル）と、選んだものへの操作。
@@ -109,6 +110,18 @@ export const useBoardSelection = (
     /** 列の操作（担当者の交代・待機をまとめて移す）を開く */
     openLane: (bayId: number) => setPanel({ kind: "lane", bayId }),
     closeLane: () => close("lane"),
+    /** 注文番号の検索で入れている番号（開いていなければ null） */
+    searchDigits: panel?.kind === "search" ? panel.digits : null,
+    /** 注文番号の検索を開く（digits は入れておく番号） */
+    openSearch: (digits: string) => setPanel({ kind: "search", digits }),
+    /** 検索の番号を変える（開いているときだけ） */
+    setSearchDigits: (update: (digits: string) => string) =>
+      setPanel((open) =>
+        open?.kind === "search"
+          ? { kind: "search", digits: update(open.digits) }
+          : open,
+      ),
+    closeSearch: () => close("search"),
     openAuxiliary: (tab: AuxiliaryTab) => setPanel({ kind: "auxiliary", tab }),
     closeAuxiliary: () => close("auxiliary"),
     /** 全部閉じる（リセット・実データテストの開始） */

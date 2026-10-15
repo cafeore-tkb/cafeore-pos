@@ -1,4 +1,4 @@
-import { jstClock } from "@cafeore/common";
+import { type CaosCard, type CaosCardStatus, jstClock } from "@cafeore/common";
 import type { Lane } from "./lanes";
 import { laneTimes } from "./queue";
 
@@ -40,3 +40,21 @@ export const positionTickets = (lane: Lane, nowMs: number) => {
     freeFromMs: Math.max(positioned.at(-1)?.endMs ?? nowMs, nowMs),
   };
 };
+
+/**
+ * タイムラインに新しく入ったカード（割り当てた・抽出を始めた）の key。previous は前に見たカードの状態（key → status）。
+ * 待機のカードは前に無かったか未割当だったもの、抽出中のカードは前に抽出中でなかったもの。
+ * 別のドリッパーへ移した・統合したカードは同じ key（dripId）のままなので入らない
+ */
+export const timelineArrivals = (
+  previous: ReadonlyMap<string, CaosCardStatus>,
+  cards: readonly CaosCard[],
+) =>
+  cards
+    .filter(({ key, status }) => {
+      const before = previous.get(key);
+      if (status === "queued")
+        return before === undefined || before === "unassigned";
+      return status === "brewing" && before !== "brewing";
+    })
+    .map((card) => card.key);

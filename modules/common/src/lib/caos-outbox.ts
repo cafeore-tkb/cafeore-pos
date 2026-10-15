@@ -1,4 +1,5 @@
 import type { CupEmergency } from "../models/cup";
+import { dripperLabel } from "../models/dripper";
 import type { components } from "../types/api";
 import {
   CAOS_NEXT_COOLDOWN_SEC,
@@ -55,8 +56,14 @@ export type CaosOutboxOp =
   | { kind: "undo"; entry: CaosUndoEntry }
   /** 緊急（入れ直し）の取り消し */
   | { kind: "cancel-emergency"; id: string }
-  /** 担当者の交代 */
-  | { kind: "lane"; dripper: number; name: string; senior: boolean }
+  /** 担当者の交代。before は押したときの担当者（前の版で残したものには無いので、確かめずに送る） */
+  | {
+      kind: "lane";
+      dripper: number;
+      name: string;
+      senior: boolean;
+      before?: string;
+    }
   /** 担当者の入れ替え。names は押したときの first・second の担当者 */
   | { kind: "swap"; first: number; second: number; names: [string, string] }
   /** 今の担当者の上級生かだけを直す */
@@ -103,7 +110,8 @@ const SHAPES: Record<
   lane: (op) =>
     typeof op.dripper === "number" &&
     typeof op.name === "string" &&
-    typeof op.senior === "boolean",
+    typeof op.senior === "boolean" &&
+    (op.before === undefined || typeof op.before === "string"),
   swap: (op) =>
     typeof op.first === "number" &&
     typeof op.second === "number" &&
@@ -161,6 +169,8 @@ export const parseCaosOutboxEntry = (
 
 const CHANGED = "ほかの端末で先に変わりました";
 const CUP_GONE = "カップが消えました（注文が編集・削除されたかもしれません）";
+const laneTaken = (dripper: number) =>
+  `${dripperLabel(dripper)} の交代は、ほかの iPad が先に替えていたので取りやめました`;
 
 type Row = Pick<CupEmergency, "id"> & CaosCupState;
 
@@ -200,23 +210,23 @@ const rebaseWrites = (
 
 type UndoRestore = Partial<CaosUndoEntry["cups"][number]["restore"]>;
 
-// サーバーの POST /api/caos/undo と同じく、カップを操作の前の値（CaOS の列と、カップの準備完了）に書き戻す
+// サーバーの POST /api/caos/undo と同じく、カップ（入れ直しも）を操作の前の CaOS の列に書き戻す（準備完了は書き戻さない）
 const applyUndo = (
   orders: readonly CaosPracticeOrder[],
   entry: CaosUndoEntry,
 ): CaosPracticeResult => {
   const restore = new Map(entry.cups.map((cup) => [cup.id, cup.restore]));
   const restoreOf = (id: string): UndoRestore => restore.get(id) ?? {};
+  const restored = <R extends { id: string }>(row: R): R => {
+    const { readyAt: _, ...state } = restoreOf(row.id);
+    return { ...row, ...state };
+  };
   return {
     orders: orders.map((order) => ({
       ...order,
       cups: order.cups.map((cup) => ({
-        ...cup,
-        ...restoreOf(cup.id),
-        emergencies: cup.emergencies.map((row) => {
-          const { readyAt: _, ...state } = restoreOf(row.id);
-          return { ...row, ...state };
-        }),
+        ...restored(cup),
+        emergencies: cup.emergencies.map(restored),
       })),
     })),
   };
@@ -300,6 +310,28 @@ export const overlayCaosOrders = (
   );
 };
 
+// 交代・入れ替えの、押したときの担当者（ドリッパーと名前）。サーバーはこの 2 つの書く前の値を確かめないので、当てる・送る前に画面が確かめる
+const pressedLanes = (op: CaosOutboxOp): [number, string][] => {
+  switch (op.kind) {
+    case "lane":
+      return op.before === undefined ? [] : [[op.dripper, op.before]];
+    case "swap":
+      return [
+        [op.first, op.names[0]],
+        [op.second, op.names[1]],
+      ];
+    default:
+      return [];
+  }
+};
+
+// 担当者（lanes）が押したときのままか。今日の担当者がまだ無ければ（サーバーは何も送らない）、どこも空き
+const lanesKept = (lanes: readonly CaosLane[] | undefined, op: CaosOutboxOp) =>
+  pressedLanes(op).every(
+    ([dripper, name]) =>
+      (lanes?.find((lane) => lane.dripper === dripper)?.name ?? "") === name,
+  );
+
 /** その日（day）の担当者（todaysCaosLanes）に、その日に押して残っている担当者の操作を古い順に重ねる */
 export const overlayCaosLanes = (
   lanes: readonly CaosLane[],
@@ -309,6 +341,8 @@ export const overlayCaosLanes = (
   entries.reduce<CaosLane[]>(
     (current, { op, at }) => {
       if (jstDate(at) !== day) return current;
+      // 交代・入れ替えは、押したときの担当者のままのときだけ当てる（ほかの端末が先に替えた担当者を上書きしない・入れ替わった担当者を元に戻さない）
+      if (!lanesKept(current, op)) return current;
       const laneOf = (dripper: number) =>
         current.find((lane) => lane.dripper === dripper);
       switch (op.kind) {
@@ -319,11 +353,8 @@ export const overlayCaosLanes = (
               : lane,
           );
         case "swap": {
-          // 押したときの担当者のままのときだけ入れ替える（もう入れ替わった担当者に当てて元に戻さない）
           const first = laneOf(op.first);
           const second = laneOf(op.second);
-          if (first?.name !== op.names[0] || second?.name !== op.names[1])
-            return current;
           const swapped = new Map([
             [op.first, second],
             [op.second, first],
@@ -453,14 +484,12 @@ const prepareCaosOutboxOp = (
       if (earliest > nowMs) return { wait: earliest - nowMs };
       return { request: op, pressedAt: earliest };
     }
+    case "lane":
     case "swap": {
-      // サーバーの入れ替えは書く前の値を確かめないので、押したときの担当者のままのときだけ送る
+      // 押したときの担当者のままのときだけ送る（ほかの端末が先に替えていれば捨てて、盤面はサーバーの今に戻る）
       if (reflected(op, server)) return { done: true };
-      const name = (dripper: number) =>
-        server.lanes?.lanes.find((lane) => lane.dripper === dripper)?.name;
-      return name(op.first) === op.names[0] && name(op.second) === op.names[1]
-        ? { request: op }
-        : { conflict: CHANGED };
+      if (lanesKept(server.lanes?.lanes, op)) return { request: op };
+      return { conflict: op.kind === "lane" ? laneTaken(op.dripper) : CHANGED };
     }
     default:
       return reflected(op, server) ? { done: true } : { request: op };

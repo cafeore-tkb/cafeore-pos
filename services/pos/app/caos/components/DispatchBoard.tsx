@@ -9,7 +9,13 @@ import {
 } from "../hooks/useCardDrag";
 import { useOutsidePress } from "../hooks/useOutsidePress";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
-import { cardName, orderLabel, sharesOrder } from "../logic/cards";
+import type { UnassignedPick } from "../hooks/useUnassignedPick";
+import {
+  cardName,
+  orderLabel,
+  selectedComments,
+  sharesOrder,
+} from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -19,18 +25,22 @@ import { LaneChangeButton, LaneName } from "./LaneParts";
 import {
   BayPad,
   CancelEmergencyButton,
+  MergeOverlay,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
+import { CommentLine } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者、右端は「次へ」（右手で押しても、腕でタイムラインを隠さない）。
 // 待機のカードはタップで 1〜6 のボタン（今の列のボタンは「先頭」。もう一度タップで未割当に戻す）を開き、その注文を選ぶ（閉じたら外す）。
-// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。
+// 抽出中のカードはタップで緊急のパネル（1〜6 に移す・未割当に戻すも）。未割当のカードを開いているあいだは、統合できる抽出中のカードに
+// 「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後、待機・抽出中のカードの上に落とすとそのカードの前。
 // 抽出中のカードの前は列の先頭で、今から始まる。同じ列の中の入れ替えにも使う。
-// 統合できる待機・抽出中のカードの上の右の部分に落とすと統合）。統合したカードを開くと「外す」（統合の解除）が出る。
+// 統合できる待機のカードの上の右の部分・統合できる抽出中のカードの上に落とすと統合。抽出中のカードを落としたら相手を抽出中のカードに入れる）。
+// 統合したカードを開くと「外す」（統合の解除）が出る。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
@@ -48,7 +58,10 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay">
+  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay"> & {
+    /** 未割当のカードの操作（下の横帯と共有。開いた未割当のカードを、押した抽出中のカードに統合する） */
+    pick?: UnassignedPick;
+  }
 > = ({
   lanes,
   unassignedOrders,
@@ -70,6 +83,8 @@ export const DispatchBoard: React.FC<
   nowMs,
   timelineCommand,
   readOnly = false,
+  pick,
+  flashKeys,
 }) => {
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
@@ -82,6 +97,8 @@ export const DispatchBoard: React.FC<
     followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
     originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
     pagePx: 300 * PIXELS_PER_SEC,
+    // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
+    cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
@@ -119,6 +136,14 @@ export const DispatchBoard: React.FC<
           `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
       ),
   );
+  // 選んだ注文のコメント（未割当のカードも見る）
+  const comments = selectedOrderId
+    ? selectedComments(
+        [...lanes.flatMap(laneCards), ...unassignedOrders],
+        looks,
+        selectedOrderId,
+      )
+    : [];
 
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -144,6 +169,7 @@ export const DispatchBoard: React.FC<
             <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
               {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
             </span>
+            <CommentLine comments={comments} />
           </div>
 
           <button
@@ -253,10 +279,13 @@ export const DispatchBoard: React.FC<
                         isMovable && ticket.status === "queued";
                       const isActionOpen =
                         isScheduled && actionTicketKey === ticket.key;
+                      // 開いた未割当のカードを、押して統合できる抽出中のカード
+                      const isMergeTap =
+                        isMovable && Boolean(pick?.canMergeWith(ticket));
                       return (
                         <div
                           key={ticket.key}
-                          className={isActionOpen ? "z-[80]" : undefined}
+                          className={`${isActionOpen ? "z-[80]" : ""} ${flashKeys?.has(ticket.key) ? "caos-arrival rounded-lg" : ""}`}
                           style={{
                             left: Math.max(10, toX(startMs)),
                             width: Math.max(
@@ -281,6 +310,7 @@ export const DispatchBoard: React.FC<
                                 : undefined
                             }
                             data-ticket-label={orderLabel(ticket)}
+                            data-merge-tap={isMergeTap || undefined}
                             onPointerDown={
                               isMovable
                                 ? (event) =>
@@ -292,6 +322,10 @@ export const DispatchBoard: React.FC<
                             }
                             onClickCapture={drag.suppressClick}
                             onClick={() => {
+                              if (isMergeTap) {
+                                pick?.tap(ticket);
+                                return;
+                              }
                               // 抽出中・終わりのカードは入れ直し（閲覧だけの画面では渡されない）
                               if (!isScheduled) {
                                 onOpenRebrew?.(ticket);
@@ -303,9 +337,11 @@ export const DispatchBoard: React.FC<
                                 onCloseTicket();
                               }
                             }}
-                            className={`h-full hover:shadow-md ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
+                            className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
                           >
+                            {isMergeTap && <MergeOverlay />}
                             {isActionOpen && (
                               <>
                                 <BayPad

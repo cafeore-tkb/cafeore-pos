@@ -102,6 +102,9 @@ func TestCaosPressTimeOnDB(t *testing.T) {
 		t.Fatalf("next = %d", code)
 	}
 	expectTimes("終えたカード", 0, ptr(now.Add(-60*time.Second)), ptr(now.Add(-45*time.Second)))
+	if cup := f.cup(t, o[0].OrderCups[0].ID); cup.ReadyAt != nil {
+		t.Fatalf("finished cup got ready at %v, want not ready (the serving screen makes it ready)", cup.ReadyAt)
+	}
 	expectTimes("始めたカード", 1, ptr(now.Add(-45*time.Second)), nil)
 	if code := f.nextPressed(t, 1, &b, press(now.Add(-30*time.Second), now)); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)

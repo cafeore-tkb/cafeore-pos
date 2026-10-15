@@ -8,6 +8,14 @@ const AUTHORS = ["cashier", "master", "serve", "others"] as const;
 
 export type Author = (typeof AUTHORS)[number];
 
+/** コメントの書き手を 1 文字で出す（POS の注文のカードと CaOS） */
+export const AUTHOR_MARKS: Record<Author, string> = {
+  cashier: "レ",
+  master: "マ",
+  serve: "提",
+  others: "他",
+};
+
 const PAYMENT_METHODS = ["cash", "square"] as const;
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];

@@ -1,24 +1,28 @@
-import { jstClock, useColorSettings } from "@cafeore/common";
-import { Eye } from "lucide-react";
+import { useColorSettings } from "@cafeore/common";
 import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { ControlViewA } from "./components/ControlViewA";
-import { LaneHeaderStatus } from "./components/LaneParts";
-import { PosStatusBadge } from "./components/TopHeader";
+import { ViewHeader } from "./components/ViewHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
-import { useLiveBoard } from "./hooks/useLiveBoard";
+import { useDeviceSetting } from "./hooks/useDeviceSetting";
+import { useViewBoard } from "./hooks/useViewBoard";
 import { cardLooks, totalCups } from "./logic/cards";
 import { boardLanes } from "./logic/lanes";
 import { nextAvailableBays } from "./logic/queue";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
 // 管制盤 A のタイムラインに映すだけ。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// タイムラインに新しく入ったカードは、通知音（ヘッダーで切り替え）とそのカードの点滅で知らせる。未割当の横帯はたためる（この端末に覚える）。
 
 const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, status } = useLiveBoard({ enabled: true, nowMs });
+  const { cards, status, sound, flashKeys } = useViewBoard(nowMs);
+  const [folded, setFolded] = useDeviceSetting(
+    "caos-view-unassigned-folded",
+    false,
+  );
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(() => boardLanes(cards), [cards]);
@@ -32,18 +36,8 @@ export default function ReadOnlyBoard() {
   );
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
-      <header className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <span className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-black text-sm text-white">
-          CaOS
-        </span>
-        <span className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-slate-600 text-xs">
-          <Eye className="h-4 w-4" />
-          閲覧のみ
-        </span>
-        <span className="font-black font-mono text-3xl tabular-nums">
-          {jstClock(nowMs)}
-        </span>
+    <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+      <ViewHeader nowMs={nowMs} status={status} sound={sound}>
         <span className="ml-auto font-bold text-slate-600 text-sm">
           未割当{" "}
           <span className="font-black font-mono text-red-600">
@@ -51,10 +45,7 @@ export default function ReadOnlyBoard() {
           </span>{" "}
           杯
         </span>
-        {/* 上級生のドリッパーが無いときの知らせ（担当者は表示だけ） */}
-        <LaneHeaderStatus />
-        <PosStatusBadge status={status} />
-      </header>
+      </ViewHeader>
       <div className="min-h-0 flex-1">
         <ControlViewA
           lanes={lanes}
@@ -76,6 +67,8 @@ export default function ReadOnlyBoard() {
           onMergeOrders={noop}
           onSplitCup={noop}
           readOnly
+          flashKeys={flashKeys}
+          unassignedFold={{ folded, toggle: () => setFolded(!folded) }}
         />
       </div>
     </div>

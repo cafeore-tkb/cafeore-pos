@@ -369,7 +369,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了になった時刻。未準備なら null"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",
@@ -405,7 +405,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "CaOS で抽出を終えた時刻"
+        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
       },
       "emergencies": {
         "type": "array",
@@ -1072,7 +1072,7 @@
   },
   "CaosUndoCupState": {
     "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）",
+    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない",
     "required": ["state", "ready_at"],
     "properties": {
       "state": {
@@ -1552,7 +1552,7 @@
   "SquareDeviceStatus": {
     "type": "string",
     "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
-    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
   },
   "SquareDeviceResponse": {
     "type": "object",
@@ -1577,13 +1577,13 @@
       "code": {
         "type": "string",
         "nullable": true,
-        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+        "description": "端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る\n（UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）\n"
       },
       "pair_by": {
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "コードの期限。これを過ぎると EXPIRED になる"
+        "description": "最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。\nペアリング済みの行は code が消えるだけで PAIRED のまま\n"
       },
       "created_at": {
         "type": "string",
