@@ -16,7 +16,6 @@ import { LongWaitTag, NextAvailableChips, PanelHeader } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
-  MergeOverlay,
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
@@ -58,6 +57,7 @@ const UnassignedCard: React.FC<{
       size={size}
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
+      mergeTap={isMergeCandidate}
       data-unassigned-uid={card.key}
       data-search-key={card.key}
       onPointerDown={
@@ -71,7 +71,6 @@ const UnassignedCard: React.FC<{
       dragging={pick.drag.source?.key === card.key}
     >
       <LongWaitTag card={card} nowMs={nowMs} />
-      {isMergeCandidate && <MergeOverlay />}
       {isOpen && (
         <BayPad
           card={card}

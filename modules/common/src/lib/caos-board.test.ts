@@ -1120,6 +1120,7 @@ describe("[unit] CaOS の書き込み", () => {
     const result = moveQueueWrites(cards, 2, 5);
     if (!("writes" in result)) throw new Error(result.error);
     expect(result.kept).toBe(1);
+    expect(result.moved.map((c) => c.dripId)).toEqual(["a", "s", "b"]);
     expect(
       result.writes.map((w) => [w.after.drip_id, w.after.start_brew]),
     ).toEqual([

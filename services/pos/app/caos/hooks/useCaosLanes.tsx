@@ -37,7 +37,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 // （カードはそのドリッパーに残り、警告の印が付く）。替えたら画面はすぐ変わり、送るのは後ろで（盤面の操作と同じく端末に残して送る。useCaosOutbox）。
 // 担当者はサーバーから届いた今日の担当者に、この端末の送れていない交代を重ねて出す。
 // 予定を読み直したら（useSeniorRefresh）、今の担当者の上級生かだけを新しい名簿に合わせる（syncSeniors。交代の記録は足さない）。
-// 名簿から外れた人のドリッパーに指名の無い上級生のみのカードが待っていれば自動では外さず、ヘッダーで知らせて（heldSeniors）、押したら外す。
+// 名簿から外れた人は、そのドリッパーに指名の無い上級生のみのカードがあっても外す（カードに警告の印が付く）。
 
 type NextLane = { next: LaneCandidate } | { reason: string };
 
@@ -55,11 +55,7 @@ interface CaosLanesContextValue {
   changeToNext: (dripper: number, next: LaneCandidate) => void;
   openSettings: () => void;
   shiftFeed: ShiftFeedState;
-  /** 名簿から外れたが、指名の無い上級生のみのカードが待っているので上級生のままにしている担当者 */
-  heldSeniors: LaneAssignment[];
-  /** heldSeniors を上級生から外す（交代と同じく、上級生のみのカードが待っていれば知らせる） */
-  releaseHeldSeniors: () => void;
-  /** 今の担当者の上級生かを名簿に合わせる（heldSeniors は除く）。予定を読み直したときに useSeniorRefresh が呼ぶ */
+  /** 今の担当者の上級生かを名簿に合わせる。予定を読み直したときに useSeniorRefresh が呼ぶ */
   syncSeniors: () => void;
 }
 
@@ -111,7 +107,7 @@ export const CaosLanesProvider = ({
     feed: shiftFeed.feed,
   });
   latest.current = { lanes, orders, entries, today, feed: shiftFeed.feed };
-  // 交代の操作。押したときの担当者（確かめたあとの今の担当者）のままのときだけ送る（createCaosOutbox）
+  // 交代の操作。押したときの担当者のままのときだけ送る（createCaosOutbox）
   const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
     kind: "lane",
     dripper,
@@ -131,7 +127,7 @@ export const CaosLanesProvider = ({
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 端末に残して送る。替えたあとの担当者で、指名の無い上級生のみのカードが待っているドリッパーがあれば、止めずに POS の通知で知らせる
+  // 端末に残して送る。替えたあとの担当者で、指名の無い上級生のみのカード（抽出中・待機）があるドリッパーがあれば、止めずに POS の通知で知らせる
   const request = (
     changes: LaneAssignment[],
     single: boolean,
@@ -145,21 +141,6 @@ export const CaosLanesProvider = ({
       toast.warning(`${label}：${warnings.join("。")}`, {
         description: "カードに警告の印を付けています",
       });
-  };
-
-  // 名簿に合わせると上級生かが変わる担当者を、すぐ直すもの（auto）と、交代なら確かめるもの（held。外すほうで、そのドリッパーに指名の無い上級生のみのカードが待っている）に分ける。
-  // 閲覧だけの画面は予定を読まないので、どちらも空
-  const seniorFixes = () => {
-    const { lanes, feed } = latest.current;
-    const updates = seniorUpdates(lanes, feed);
-    // 外すほうが無ければカードは見ない（laneChangeWarnings は上級生にするほうを確かめない）
-    const cards = updates.some((u) => !u.senior) ? boardCards() : [];
-    const held = (u: LaneAssignment) =>
-      laneChangeWarnings(cards, [u], true).length > 0;
-    return {
-      auto: updates.filter((u) => !held(u)),
-      held: updates.filter(held),
-    };
   };
 
   // lanes は 6 つ全部を番号の順に持つ（todaysCaosLanes）
@@ -209,16 +190,13 @@ export const CaosLanesProvider = ({
     changeToNext,
     openSettings: () => setSettingsOpen(true),
     shiftFeed,
-    heldSeniors: seniorFixes().held,
-    releaseHeldSeniors: () => {
-      const { held } = seniorFixes();
-      if (held.length > 0)
-        request(held, false, SENIORS_LABEL, { kind: "seniors", lanes: held });
-    },
+    // 名簿に合わせると上級生かが変わる担当者を、そのまま直す（上級生のみのカードが待っていても外し、カードに警告の印が付く。
+    // 閲覧だけの画面は予定を読まないので何もしない）
     syncSeniors: () => {
-      const { auto } = seniorFixes();
-      if (auto.length > 0)
-        enqueueCaosOp(SENIORS_LABEL, { kind: "seniors", lanes: auto });
+      const { lanes, feed } = latest.current;
+      const updates = seniorUpdates(lanes, feed);
+      if (updates.length > 0)
+        enqueueCaosOp(SENIORS_LABEL, { kind: "seniors", lanes: updates });
     },
   };
 

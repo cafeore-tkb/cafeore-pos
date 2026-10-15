@@ -273,8 +273,8 @@ func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
 	return nil
 }
 
-// readCaosUnitItems は書くカップ（入れ直しも）と、その注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
-// 商品（行の ID ごと。入れ直しは入れ直したカップの商品）を読む。どれかが消えていれば 409。
+// readCaosUnitItems は書くカップ（入れ直しも）の注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
+// 商品（行の ID ごと。入れ直しは入れ直したカップの商品）を読む。カップのどれかが消えていれば 409。
 // 後から削除した商品・種類のカップも、注文の応答と同じく読む
 func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]uuid.UUID, map[uuid.UUID]models.Item, error) {
 	found, err := readCaosUnits(tx, "c.id IN ?", cupIDs)

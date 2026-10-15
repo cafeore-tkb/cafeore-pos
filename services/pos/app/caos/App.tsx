@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TestBoardBanner, ToastConfirms } from "./components/BoardParts";
+import { CornerToasts, TestBoardBanner } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
   type ControlViewMode,
@@ -184,7 +184,7 @@ export default function App() {
         <TicketDetailPanel
           ticket={selection.scheduled.card}
           look={looks.get(selection.scheduled.card.key)}
-          currentBayId={selection.scheduled.bayId}
+          lane={lanes.find((lane) => lane.id === selection.scheduled?.bayId)}
           onClose={selection.closeTicket}
           onMoveTicket={selection.move}
           onReturnToUnassigned={selection.returnToUnassigned}
@@ -198,6 +198,9 @@ export default function App() {
           key={selection.rebrew.card?.key ?? "byNumber"}
           card={selection.rebrew.card}
           look={selection.rebrew.card && looks.get(selection.rebrew.card.key)}
+          lane={lanes.find(
+            (lane) => lane.id === selection.rebrew?.card?.dripper,
+          )}
           orders={session.emergency.orders}
           practice={session.simulating}
           onClose={selection.closeRebrew}
@@ -209,9 +212,9 @@ export default function App() {
         />
       )}
 
-      <ToastConfirms
-        confirms={session.confirms}
-        onCancel={session.cancelConfirm}
+      <CornerToasts
+        toasts={session.cornerToasts}
+        onDismiss={session.dismissToast}
         onConfirm={session.confirm}
       />
 

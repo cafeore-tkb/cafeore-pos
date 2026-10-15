@@ -3,7 +3,12 @@ import { useState } from "react";
 import type { ControlViewProps } from "../components/ControlWorkspace";
 import { orderLabel, quickMergePartner } from "../logic/cards";
 import { laneActive } from "../logic/lanes";
-import { type DropTarget, dropTargetAt, useCardDrag } from "./useCardDrag";
+import {
+  type DropTarget,
+  dropTargetAt,
+  useAnyCardDragging,
+  useCardDrag,
+} from "./useCardDrag";
 import { useOutsidePress } from "./useOutsidePress";
 
 /**
@@ -73,13 +78,11 @@ export const useUnassignedPick = ({
     },
   );
 
-  // ドラッグしているあいだは「統合する」を出さない（落とす所の線・統合の枠を隠さない）
+  // どこかでドラッグしているあいだは「統合する」を出さない（落とす所の線・統合の枠を隠さない）
+  const dragging = useAnyCardDragging();
   const canMergeWith = (card: CaosCard) =>
     Boolean(
-      onMergeOrders &&
-        openCard &&
-        !drag.source &&
-        canMergeCards(openCard, card),
+      onMergeOrders && openCard && !dragging && canMergeCards(openCard, card),
     );
   // 開いたカードをもう一度押したときに統合する相手
   const partner =
