@@ -1,17 +1,20 @@
-import type { CaosCard } from "@cafeore/common";
+import type { CaosCard, CaosLane } from "@cafeore/common";
 import { useState } from "react";
 
 // 確かめを出しておく秒。何もしなければ消える（やめる扱い。何も送らない）
 const CONFIRM_SEC = 8;
 
 /**
- * 右上に出す確かめ（盤面の操作を止めない）
- *   - next：押し間違いかもしれない「次へ」（どのドリッパーの、どのカードを、始めてから何秒で終えようとしたか）
- *   - merge：抽出を始めてから時間のたったカードへの統合（card を into へ。into は始めてから何秒か）
+ * 右上に出す確かめと知らせ（盤面の操作を止めない）
+ *   - next：押し間違いかもしれない「次へ」の確かめ（どのドリッパーの、どのカードを、始めてから何秒で終えようとしたか）
+ *   - lateMerge：抽出を始めてから時間のたったカードへ統合した知らせ（card を into へ統合した。into は始めてから何秒か）。
+ *     統合はもうしてあり、押すものは「閉じる」だけ
+ *   - seniorOnly：上級生のみのカード（card）を、上級生でない担当者（lane。担当者なしも）のドリッパーに置いた知らせ。押すものは「閉じる」だけ
  */
 export type ToastConfirm =
   | { kind: "next"; bayId: number; card: CaosCard; elapsedSec: number }
-  | { kind: "merge"; card: CaosCard; into: CaosCard; elapsedSec: number };
+  | { kind: "lateMerge"; card: CaosCard; into: CaosCard; elapsedSec: number }
+  | { kind: "seniorOnly"; card: CaosCard; lane: CaosLane };
 
 /** 出している確かめ（id と、何もしなければ消えるまでの残りの秒つき） */
 export type OpenToastConfirm = ToastConfirm & {
@@ -19,13 +22,13 @@ export type OpenToastConfirm = ToastConfirm & {
   secondsLeft: number;
 };
 
-// 同じものの確かめは 1 つ（同じドリッパーの「次へ」・同じカードの統合をもう一度押せば置き換える）
-const confirmId = (confirm: ToastConfirm) =>
-  confirm.kind === "next"
-    ? `next:${confirm.bayId}`
-    : `merge:${confirm.card.key}`;
+// 同じものの確かめ・知らせは 1 つ（同じドリッパーの「次へ」・同じカードの統合をもう一度すれば置き換える）
+const confirmId = (confirm: ToastConfirm) => {
+  if (confirm.kind === "next") return `next:${confirm.bayId}`;
+  return `${confirm.kind}:${confirm.card.key}`;
+};
 
-// 右上に出す確かめ。盤面の操作を止めないので、続けてほかのものを確かめれば種類によらず 1 つの列に並べる。新しいものが先。
+// 右上に出す確かめと知らせ。盤面の操作を止めないので、続けてほかのものを出せば種類によらず 1 つの列に並べる。新しいものが先。
 // nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。CONFIRM_SEC 秒たったものは出さない。
 export const useToastConfirms = (nowMs: number) => {
   const [asked, setAsked] = useState<

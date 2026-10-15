@@ -202,7 +202,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	}
 	f.mustPut(t, write([]uuid.UUID{e4}, unassigned, placed(5, uuid.New(), false)))
 
-	// 上級生のみのカップの入れ直しは、上級生のドリッパーにしか置けない
+	// 上級生のみのカップの入れ直しも、上級生でない（担当者のいない）ドリッパーに置ける（サーバーは断らない）
 	special := models.ItemType{Name: "special-" + uuid.NewString(), DisplayName: "特別", SeniorOnly: true}
 	geisha := models.Item{Name: "ゲイシャ", Abbr: "ゲ", ItemType: special}
 	if err := db.Create(&geisha).Error; err != nil {
@@ -213,12 +213,8 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("POST = %d: %s", code, body)
 	}
 	e5 := f.emergencies(t, o5.OrderCups[0].ID)[0].ID
-	if code, body := f.put(t, write([]uuid.UUID{e5}, unassigned, placed(2, uuid.New(), false))); code != http.StatusBadRequest || !strings.Contains(body, "上級生") {
-		t.Fatalf("limited emergency without a senior = %d: %s", code, body)
-	}
-	f.mustPutLane(t, 2, "山田", true)
 	f.mustPut(t, write([]uuid.UUID{e5}, unassigned, placed(2, uuid.New(), false)))
-	// 指名のあるカップの入れ直しは指名を優先し、指名のドリッパー（担当者のいない 3rd）に置ける
+	// 指名のあるカップの入れ直しは、指名のドリッパー（担当者のいない 3rd）に置ける
 	o6 := f.createOrder(t, 6, line(geisha))
 	f.nominate(t, o6.OrderMenus[0], intPtr(3), nil)
 	if code, body := f.addEmergencies(t, o6.OrderCups[0].ID); code != http.StatusCreated {

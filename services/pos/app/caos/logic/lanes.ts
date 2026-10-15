@@ -28,18 +28,34 @@ export const laneCards = (lane: Lane) => [...lane.done, ...laneActive(lane)];
 export const isBayId = (bayId: number) => DRIPPER_NUMBERS.includes(bayId);
 
 /**
- * カード（card）の割当・移動のボタン（1〜6）。待機・抽出中のカードは、今のドリッパー（currentBayId）のボタンが「先頭」
- * （place が "front"。このドリッパーの列の先頭で、今から始まる。抽出中のカードは今が先頭なので押せない）。
+ * カード（card）の割当・移動のボタン（1〜6）。押すとそのドリッパーの列の最後へ（今のドリッパー currentBayId でも同じ。current）。
  * 指名の番号のあるカードは、その番号のボタンだけ押せる（disabled。@cafeore/common の caosDripperAllowed）
  */
 export const moveTargets = (card: CaosCard, currentBayId: number | null) =>
   DRIPPER_NUMBERS.map((bayId) => ({
     bayId,
-    place: bayId === currentBayId ? ("front" as const) : undefined,
-    disabled:
-      !caosDripperAllowed(card, bayId) ||
-      (bayId === currentBayId && card.status === "brewing"),
+    current: bayId === currentBayId,
+    disabled: !caosDripperAllowed(card, bayId),
   }));
+
+/**
+ * 待機・抽出中のカードを、今のドリッパーの列の先頭（"front"。今から始める）・待機の先頭（"queueFront"。抽出中のすぐ後ろ）へ動かすボタン。
+ * 抽出中のカードは今が先頭なので「先頭」は押せない（待機の先頭へ下げると、待機の先頭だったカードが今から始まる）
+ */
+export const frontTargets = (card: CaosCard) => [
+  {
+    place: "front" as const,
+    label: "先頭",
+    hint: "今から始める",
+    disabled: card.status === "brewing",
+  },
+  {
+    place: "queueFront" as const,
+    label: "待機の先頭",
+    hint: "抽出中の次",
+    disabled: false,
+  },
+];
 
 /** そのドリッパーをまだ待っている指名の杯数（未割当のうち、指名の番号がそのドリッパーのカード） */
 export const pendingNominatedCups = (
@@ -66,3 +82,25 @@ export const cardPlaces = (lanes: readonly Lane[]) =>
       ];
     }),
   );
+
+/** ドラッグで列のカードの上に落としたときに、そのカードのどこに入れるか（前・後ろ・統合） */
+export type DropSide = "before" | "after" | "merge";
+
+/** カードの左右の端の幅（カードの幅に対する割合）。左の端はそのカードの前、右の端は後ろ、間は統合（統合できる相手のときだけ） */
+export const DROP_EDGE = 0.3;
+
+/**
+ * カードの上の横の位置（左の縁から右の縁までを 0〜1。fraction）から、前・後ろ・統合を決める。
+ * 左の DROP_EDGE は前、右の DROP_EDGE は後ろ、間は統合できる（mergeable）なら統合、できなければ近いほうの端（前か後ろ）。
+ * placeable が false（そのドリッパーに置けない。指名）なら、統合できればカードのどこでも統合、できなければ null
+ */
+export const dropSideAt = (
+  fraction: number,
+  { mergeable, placeable = true }: { mergeable: boolean; placeable?: boolean },
+): DropSide | null => {
+  if (!placeable) return mergeable ? "merge" : null;
+  if (fraction < DROP_EDGE) return "before";
+  if (fraction > 1 - DROP_EDGE) return "after";
+  if (mergeable) return "merge";
+  return fraction < 0.5 ? "before" : "after";
+};

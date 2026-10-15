@@ -42,7 +42,7 @@ export interface ControlViewProps {
   onOpenRebrew?: (card: CaosCard) => void;
   /** 入れ直し（緊急）のカードを取り消す（未割当・待機のカードを開いたときに出す）。無ければ（閲覧だけ・実データテスト中）出さない */
   onCancelEmergency?: (card: CaosCard) => void;
-  /** 待機・抽出中のカードを別のドリッパーへ。place が "front" なら列の先頭（今から始まる）へ、{ beforeKey } ならそのカードの前へ（同じドリッパーの中の入れ替えにも使う） */
+  /** 待機・抽出中のカードを別のドリッパーへ。place は列のどこか（@cafeore/common の CaosPlace。"front"・"queueFront"・カードの前後。無ければ最後。同じドリッパーの中の入れ替えにも使う） */
   onMoveTicket: (
     card: CaosCard,
     targetBayId: number,
@@ -54,7 +54,7 @@ export interface ControlViewProps {
   onOpenEmptySlot: (bayId: number) => void;
   /** 列の操作（担当者の交代・待機をまとめて移す）を開く（ドリッパーの番号を押したとき）。閲覧だけの画面では渡さない */
   onOpenLane?: (bayId: number) => void;
-  /** 未割当のカードをドリッパーへ。place が { beforeKey } ならそのカードの前へ（ドラッグで途中に落としたとき） */
+  /** 未割当のカードをドリッパーへ。place はドラッグで列のカードの前後に落としたとき（@cafeore/common の CaosPlace） */
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   /** 1 杯のカード（firstKey）を、統合できる 1 杯のカード（intoKey。未割当・待機・抽出中）に入れる（firstKey が抽出中なら intoKey を firstKey に入れる） */
   onMergeOrders: (firstKey: string, intoKey: string) => void;
