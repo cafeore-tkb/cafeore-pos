@@ -2,6 +2,7 @@ import { type CaosCard, canMergeCards } from "@cafeore/common";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cardOrderNos, orderLabel, quickMergePartner } from "../logic/cards";
 import { type Lane, laneActive } from "../logic/lanes";
+import { scrollCardIntoView } from "../utils/scrollToCard";
 
 // 管制盤 D で選んでいる右の注文カード。選ぶとその注文の行に「ここに配置」が出る。
 // 統合できる未割当のカードと表の待機・抽出中のカードには「統合する」が出て、押すと統合する。
@@ -75,11 +76,7 @@ export const useSheetSelection = ({
     setMergingNos(null);
     setSelectedUid(merged.key);
     onSelectOrder(orderLabel(merged));
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-sheet-cup="${CSS.escape(merged.key)}"]`)
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
+    requestAnimationFrame(() => scrollCardIntoView(merged.key));
   }, [mergingNos, unassigned, onSelectOrder]);
 
   return {
@@ -106,9 +103,23 @@ export const useSheetSelection = ({
 };
 
 // 表を開いたときだけ、まだ淹れ終わっていない最初の注文（data-live）の historyRows 行上までスクロールする。
-// そのあとのスクロールは見ている人に任せる
+// そのあとのスクロールは見ている人に任せる。
+// 探したカードへのスクロール（utils/scrollToCard）が上下に固定した見出し・「次へ」の下に入らないよう、その高さを枠の scroll-padding にする（高さが変わったら合わせる）
 export const useScrollToFirstLive = (historyRows: number) => {
   const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = ref.current;
+    const head = container?.querySelector("thead");
+    const foot = container?.querySelector("tfoot");
+    if (!container || !head || !foot) return;
+    const observer = new ResizeObserver(() => {
+      container.style.scrollPaddingTop = `${head.offsetHeight}px`;
+      container.style.scrollPaddingBottom = `${foot.offsetHeight}px`;
+    });
+    observer.observe(head);
+    observer.observe(foot);
+    return () => observer.disconnect();
+  }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 開いたときの 1 回だけ
   useLayoutEffect(() => {
     const container = ref.current;

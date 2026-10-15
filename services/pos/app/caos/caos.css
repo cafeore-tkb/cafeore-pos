@@ -65,8 +65,10 @@ html:has(.caos-root) body {
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
   /* 統合（「統合する」と、開いたカードの統合する相手の札） */
   --caos-merge: oklch(48.8% 0.243 264.376);
-  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線 */
+  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線（管制盤 A・C） */
   --caos-card-stack-line: oklch(55.4% 0.046 257.417);
+  /* 統合したカードを注文ごとに分けた段の区切りの点線（管制盤 D）。地の色（商品の色）に合わせた文字色を薄くして、どの地でも見える */
+  --caos-card-order-line: color-mix(in oklch, currentColor 40%, transparent);
 }
 
 /* タイムラインに新しく入ったカード・行（hooks/useViewBoard）を、数秒（4 秒。FLASH_MS と同じ）だけ水色の輪で点滅させる */
