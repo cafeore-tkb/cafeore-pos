@@ -225,7 +225,7 @@ export const useCaosSession = () => {
     );
   };
 
-  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id。盤面に届いたら、元のカードと同じ組み合わせの
+  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id。全部が盤面に届いたら、元のカードと同じ組み合わせの
   // 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。まとめるのは「1つ戻す」に覚えず、
   // 戻すと入れ直しごと取り消す）
   const [rebrewsToMerge, setRebrewsToMerge] = useState<string[] | null>(null);
