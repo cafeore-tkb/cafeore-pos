@@ -17,6 +17,9 @@ import (
 // 同じ端末をペアリングし直しても device_id は変わらない（Square の開発者
 // フォーラムでの回答）。device_id は一意にし、ペアリングし直したら古い行を消す。
 //
+// 端末がサインアウトしたときは、PAIRED の行にコードを発行し直せる。行は PAIRED の
+// まま Code・CodeID・PairBy だけを入れ替え、入力されたら device_id を記録し直す。
+//
 // Square には API でペアリングを解除する手段が無い。行を消してもレジで
 // 選べなくなるだけで、端末は Square にサインインしたまま残る。
 type SquareDevice struct {
@@ -25,8 +28,8 @@ type SquareDevice struct {
 	Status    string     `gorm:"not null"`    // SquareDeviceStatus（UNPAIRED / PAIRED / EXPIRED）
 	DeviceID  *string    `gorm:"uniqueIndex"` // PAIRED になるまで空
 	CodeID    *string    `gorm:"uniqueIndex"` // Square の DeviceCode.id。device_id を直接登録した行は空
-	Code      *string    // 端末に入力するコード。UNPAIRED の間だけ
-	PairBy    *time.Time // コードの期限
+	Code      *string    // 端末に入力するコード。入力されるか期限が切れるまでの間だけ
+	PairBy    *time.Time // 最後に発行したコードの期限
 	CreatedAt time.Time  `gorm:"not null"`
 	UpdatedAt time.Time  `gorm:"not null"`
 }

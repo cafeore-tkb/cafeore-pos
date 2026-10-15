@@ -411,6 +411,7 @@ func main() {
 		square.POST("/devices/pair", squareHandler.PairDevice)
 		square.POST("/devices/import", squareHandler.ImportDevices)
 		square.DELETE("/devices/:id", squareHandler.DeleteDevice)
+		square.POST("/devices/:id/code", squareHandler.IssueDeviceCode)
 		square.POST("/checkouts", squareHandler.CreateCheckout)
 		square.GET("/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
 		square.GET("/checkouts/:id", squareHandler.GetCheckout)

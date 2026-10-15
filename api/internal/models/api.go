@@ -741,7 +741,8 @@ type SquareDevicePairRequest struct {
 
 // SquareDeviceResponse defines model for SquareDeviceResponse.
 type SquareDeviceResponse struct {
-	// Code 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る
+	// Code 端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る
+	// （UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）
 	Code      *string   `json:"code"`
 	CreatedAt time.Time `json:"created_at"`
 
@@ -752,12 +753,13 @@ type SquareDeviceResponse struct {
 	// Name 管理画面とレジで出す名前（例 レジ1）
 	Name string `json:"name"`
 
-	// PairBy コードの期限。これを過ぎると EXPIRED になる
+	// PairBy 最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。
+	// ペアリング済みの行は code が消えるだけで PAIRED のまま
 	PairBy *time.Time `json:"pair_by"`
 
 	// Status 端末のペアリングの状態（Square の Device Code の status）。
 	//   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-	//   - PAIRED: ペアリング済み。決済に使える
+	//   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
 	//   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
 	Status    SquareDeviceStatus `json:"status"`
 	UpdatedAt time.Time          `json:"updated_at"`
@@ -765,7 +767,7 @@ type SquareDeviceResponse struct {
 
 // SquareDeviceStatus 端末のペアリングの状態（Square の Device Code の status）。
 //   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-//   - PAIRED: ペアリング済み。決済に使える
+//   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
 //   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
 type SquareDeviceStatus string
 

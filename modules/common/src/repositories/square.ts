@@ -212,6 +212,22 @@ export const squareRepository = {
     return data;
   },
 
+  /**
+   * ペアリング済みの端末にコードを発行し直す（端末がサインアウトしたとき）
+   *
+   * 返ってきた code を端末に入力する。入力されるまでも端末はペアリング済みのまま決済に使える。
+   */
+  async issueDeviceCode(id: string): Promise<SquareDevice> {
+    const { data, error } = await apiClient.POST(
+      "/api/square/devices/{id}/code",
+      { params: { path: { id } } },
+    );
+    if (!data) {
+      throw new Error(errorMessage(error, "コードを発行できませんでした"));
+    }
+    return data;
+  },
+
   /** ペアリングせずに device_id を登録する（Sandbox のテスト用 device_id など） */
   async registerDevice(params: {
     name: string;
