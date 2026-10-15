@@ -78,7 +78,7 @@ export const arrivedCount = (
 };
 
 /**
- * 実績に出す、届いた注文。提供時間は練習の結果（抽出の要るカップが全部準備完了になった時刻）。
+ * 実績に出す、届いた注文。提供時間は練習の結果（抽出の要るカップが全部抽出を終えた時刻。練習には提供の画面が無いので、準備完了の代わりに使う）。
  * orders と practiceOrders は同じ並び
  */
 export const practiceSalesOrders = (
@@ -88,9 +88,9 @@ export const practiceSalesOrders = (
 ): PracticeDataOrder[] =>
   orders.slice(0, count).map((order, index) => {
     const brewCups = practiceOrders[index].cups.filter(cupNeedsBrew);
-    const ready = brewCups.every((cup) => cup.readyAt !== null);
+    const ready = brewCups.every((cup) => cup.brewFinishedAt !== null);
     const readyMs = Math.max(
-      ...brewCups.map((cup) => cup.readyAt?.getTime() ?? 0),
+      ...brewCups.map((cup) => cup.brewFinishedAt?.getTime() ?? 0),
     );
     return {
       ...order,

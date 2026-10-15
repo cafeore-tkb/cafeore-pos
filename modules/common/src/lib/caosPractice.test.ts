@@ -187,7 +187,8 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     orders = advanced.orders;
     const lane = caosLane(cardsOf(orders), 1);
     expect(lane.done.map((card) => card.finishedAt)).toStrictEqual([at(140)]);
-    expect(lane.done[0].cups[0].readyAt).toStrictEqual(at(140));
+    // 「次へ」は終えた時刻だけ。準備完了（提供可能）は提供の画面で付ける
+    expect(lane.done[0].cups[0].readyAt).toBeNull();
     expect(lane.brewing?.orderNo).toBe(2);
     expect(lane.brewing?.startedAt).toStrictEqual(at(140));
     expect(lane.queued).toHaveLength(0);
@@ -207,6 +208,33 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
         at(149),
       ).error,
     ).toBe("始めてから 10 秒は「次へ」を押せません");
+  });
+
+  test("始める・終える時刻は、同じドリッパーで前の抽出を終えた時刻より前にしない（本番の盤面に、前に押した操作を重ねるとき）", () => {
+    let orders = ordersOf([hot], [hot], [hot]);
+    const [first, second, third] = unassigned(orders);
+    orders = assign(orders, first, 1, at(0));
+    const advanced = advanceCaosPracticeDripper(
+      orders,
+      1,
+      caosLane(cardsOf(orders), 1).brewing?.dripId ?? null,
+      at(60),
+    );
+    if (advanced.error !== undefined) throw new Error(advanced.error);
+    // 60 秒に終えた列で、30 秒に押した割当は 60 秒に始めたことにする。ほかのドリッパーは押した時刻
+    orders = assign(advanced.orders, second, 1, at(30));
+    orders = assign(orders, third, 2, at(30));
+    expect(caosLane(cardsOf(orders), 1).brewing?.startedAt).toStrictEqual(
+      at(60),
+    );
+    expect(caosLane(cardsOf(orders), 2).brewing?.startedAt).toStrictEqual(
+      at(30),
+    );
+    // 「次へ」の 10 秒は、その始めた時刻から数える
+    const brewing = caosLane(cardsOf(orders), 1).brewing?.dripId ?? null;
+    expect(advanceCaosPracticeDripper(orders, 1, brewing, at(65)).error).toBe(
+      "始めてから 10 秒は「次へ」を押せません",
+    );
   });
 
   test("番号は最後なら最大＋1、途中なら前に入るカードの番号にし、後ろをずらす。先頭は今から始め、抽出中だったカードを待機の先頭へ", () => {
@@ -570,7 +598,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     return added;
   };
 
-  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップを準備完了にする", () => {
+  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップは準備完了にしない", () => {
     const initial = ordersOf([hot], [hot]);
     const cupId = initial[0].cups[0].id;
     const added = addEmergencies(initial, [cupId], "  こぼした ", at(5));
@@ -602,7 +630,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     expect(
       advanced.orders[0].cups[0].emergencies[0].brewFinishedAt,
     ).toStrictEqual(at(310));
-    expect(advanced.orders[0].cups[0].readyAt).toStrictEqual(at(310));
+    expect(advanced.orders[0].cups[0].readyAt).toBeNull();
   });
 
   test("入れ直しは入れ直しどうしだけ統合でき、緊急でないカップと同じカードにはできない", () => {

@@ -36,26 +36,35 @@ const send = async <T>(
   }
 };
 
-/** カップに CaOS の値を書く（PUT /api/caos/cups）。writes は 1 つのトランザクションで書く */
+// 押した時刻（pressedAt。エポックのミリ秒）と、送る今（どちらも端末の時計）。サーバーは抽出の開始・終了をこれで付ける
+const pressOf = (pressedAt: number) => ({ at: pressedAt, sent_at: Date.now() });
+
+/** カップに CaOS の値を書く（PUT /api/caos/cups）。writes は 1 つのトランザクションで書く。pressedAt は押した時刻 */
 export const putCaosCups = async (
   writes: CaosCupsWrite[],
+  pressedAt: number,
 ): Promise<CaosResult> =>
   writes.length === 0
     ? { data: undefined }
-    : send(apiClient.PUT("/api/caos/cups", { body: { writes } }));
+    : send(
+        apiClient.PUT("/api/caos/cups", {
+          body: { writes, press: pressOf(pressedAt) },
+        }),
+      );
 
 /**
  * 「次へ」（POST /api/caos/drippers/{dripper}/next）。抽出中のカードを終え、そのカップだけを準備完了にし、待機の先頭を始める。
- * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる
+ * dripId は画面が抽出中と見ているカード（無いと見ているなら null）。今と違えば断られる。pressedAt は押した時刻
  */
 export const nextCaosDripper = async (
   dripper: number,
   dripId: string | null,
+  pressedAt: number,
 ): Promise<CaosResult> =>
   send(
     apiClient.POST("/api/caos/drippers/{dripper}/next", {
       params: { path: { dripper } },
-      body: { drip_id: dripId },
+      body: { drip_id: dripId, press: pressOf(pressedAt) },
     }),
   );
 
@@ -127,15 +136,19 @@ export const updateCaosLaneSeniors = async (
 ): Promise<CaosResult> =>
   send(apiClient.POST("/api/caos/lanes/seniors", { body: { lanes } }));
 
-/** 端末に残した CaOS の操作を送る（lib/caos-outbox.ts の createCaosOutbox が、サーバーの今の値で作ったものを 1 つずつ） */
+/**
+ * 端末に残した CaOS の操作を送る（lib/caos-outbox.ts の createCaosOutbox が、サーバーの今の値で作ったものを 1 つずつ）。
+ * pressedAt は操作を押した時刻（抽出を始める・終える操作は、サーバーがこの時刻で付ける）
+ */
 export const sendCaosOutboxRequest = (
   request: CaosOutboxRequest,
+  pressedAt: number,
 ): Promise<CaosResult> => {
   switch (request.kind) {
     case "cups":
-      return putCaosCups(request.writes);
+      return putCaosCups(request.writes, pressedAt);
     case "next":
-      return nextCaosDripper(request.dripper, request.dripId);
+      return nextCaosDripper(request.dripper, request.dripId, pressedAt);
     case "undo":
       return undoCaosCups(request.cups);
     case "cancel-emergency":
