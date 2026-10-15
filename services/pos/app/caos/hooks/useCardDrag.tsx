@@ -1,8 +1,8 @@
 import {
   type CaosCard,
   type CaosPlace,
-  canMergeCards,
   caosDripperAllowed,
+  caosMergePair,
 } from "@cafeore/common";
 import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -62,12 +62,13 @@ export interface DropTarget {
   beforeLabel?: string;
 }
 
-// 列のカード（待機・抽出中）の上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
+// 待機のカードの上で、左からこの割合より右に落とすと統合（統合できるカードだけ）。左は「このカードの前へ」
 const MERGE_FROM = 0.4;
 
 /**
  * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列のカード（data-merge-target）の上で、
- * 運んでいるカード（card）を統合できる（canMergeCards。cards から引く）なら統合（列のカードは右の部分だけ。未割当のカードは全部）、
+ * 運んでいるカード（card）と統合できる（caosMergePair。cards から引く。運んでいるのが抽出中なら相手を抽出中に入れる）なら統合
+ * （待機のカードは右の部分だけ。抽出中・未割当のカードは全部。抽出中のカードの前（列の先頭）へは、統合できないときだけ）、
  * 列の待機・抽出中のカード（data-queued-ticket）の上ならそのカードの前（同じ列の中の入れ替えにも使う）、ほかは列（最後。bayTargetAt）。
  * 運んでいるカード自身は飛ばし、置けない列は null
  */
@@ -87,15 +88,18 @@ export const dropTargetAt = (
       const into = cards.find(
         (other) => other.key === target?.dataset.mergeTarget,
       );
-      if (!target || !into || !card || !canMergeCards(card, into)) continue;
+      if (!target || !into || !card) continue;
+      const pair = caosMergePair(card, into);
+      if (!pair) continue;
       const rect = target.getBoundingClientRect();
       if (
-        into.status !== "unassigned" &&
+        into.status === "queued" &&
         clientX < rect.left + rect.width * MERGE_FROM
       )
         break;
+      // 統合したカードの場所（運んでいるのが抽出中なら、そのドリッパー）
       return {
-        bayId: into.dripper ?? 0,
+        bayId: pair.into.dripper ?? 0,
         mergeKey: into.key,
         beforeLabel: target.dataset.ticketLabel,
       };

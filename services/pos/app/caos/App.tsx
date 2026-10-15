@@ -5,6 +5,7 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { OrderSearchPanel } from "./components/OrderSearchPanel";
 import {
   AssignPanel,
   AuxiliaryContent,
@@ -17,7 +18,9 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
+import { useCommentToasts } from "./hooks/useCommentToasts";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
+import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 
@@ -36,6 +39,26 @@ export default function App() {
     useState<TimelineCommand | null>(null);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
   const view = CONTROL_VIEWS[controlViewMode];
+  // 注文番号の検索。見つかった注文を選び、そのカードを見せる
+  const search = useOrderSearch({
+    digits: selection.searchDigits,
+    open: selection.openSearch,
+    setDigits: selection.setSearchDigits,
+    close: selection.closeSearch,
+    selectOrder: selection.selectOrder,
+    showOnTimeline: (cardKey) =>
+      setTimelineCommand({ direction: "card", cardKey, id: Date.now() }),
+    // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
+    orders: session.emergency.orders,
+    cards: session.cards,
+    lanes,
+    comments: session.comments,
+    nowMs: session.nowMs,
+  });
+  // 新しいコメントの通知。「表示」でその注文を探す
+  useCommentToasts(session.comments, (orderNo) =>
+    selection.openSearch(String(orderNo)),
+  );
   // 本番（cafeore-pos の注文）の盤面に戻る（テストの盤面を捨て、開いているものを閉じる）
   const backToLive = () => {
     session.reset();
@@ -48,7 +71,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
+    <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
           activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
@@ -82,6 +105,8 @@ export default function App() {
           posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
           unsent={session.unsent}
+          onOpenSearch={() => selection.openSearch("")}
+          searchOpen={selection.searchDigits !== null}
           onOpenEmergency={() => selection.openRebrew()}
           undoLabel={session.undo.label}
           undoSecondsLeft={session.undo.secondsLeft}
@@ -165,6 +190,16 @@ export default function App() {
         onCancel={session.cancelConfirm}
         onConfirm={session.confirm}
       />
+
+      {selection.searchDigits !== null && (
+        <OrderSearchPanel
+          digits={selection.searchDigits}
+          found={search.found}
+          looks={looks}
+          onKey={search.press}
+          onClose={selection.closeSearch}
+        />
+      )}
 
       {panel?.kind === "lane" && (
         <LanePanel
