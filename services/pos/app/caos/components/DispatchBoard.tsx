@@ -53,7 +53,7 @@ const MIN_LABEL_WIDTH = 120;
 /**
  * カードの左の余白。左の固定の列の下に隠れた分（タイムラインのスクロールの位置 --timeline-left からカードの左の位置を引いた分）だけ
  * 中身を右に寄せる（隠れても商品・注文番号が左の固定の列のすぐ右に見える）。寄せるのは中身の幅が MIN_LABEL_WIDTH になるまで。
- * スクロールのたびに盤面を描き直さないよう、位置は CSS の変数（useTimelineScroll が書く）で受ける
+ * スクロールのたびに盤面を描き直さないよう、位置は CSS の変数（useTimelineScroll が書く）で受ける。0.5rem はカード（OrderCard の md）の左の余白
  */
 const cardInset = (left: number, width: number) =>
   `calc(0.5rem + clamp(0px, var(--timeline-left, 0px) - ${left}px, ${Math.max(0, width - MIN_LABEL_WIDTH)}px))`;
@@ -207,7 +207,7 @@ export const DispatchBoard: React.FC<
                 <button
                   type="button"
                   onClick={scroll.toNow}
-                  className="-mx-2 flex h-[26px] flex-1 touch-manipulation items-center justify-center gap-1 rounded-md bg-red-500 font-black text-[12px] text-white shadow-sm active:bg-red-600"
+                  className="-mx-2 flex h-[26px] flex-1 items-center justify-center gap-1 rounded-md bg-red-500 font-black text-[12px] text-white shadow-sm active:bg-red-600"
                 >
                   <span className="h-2 w-2 rounded-full bg-white" />
                   現在に戻る

@@ -290,7 +290,7 @@ export const OrderCard: React.FC<
             </span>
           )}
           {subline}
-          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（注文番号は縮めない） */}
+          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
           {nominee && (
             <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
               指名 {nominee}

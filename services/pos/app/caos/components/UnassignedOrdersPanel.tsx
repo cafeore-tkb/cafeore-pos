@@ -188,7 +188,7 @@ export const UnassignedStrip: React.FC<
         <ScrollArea
           axis="x"
           trackSlot={trackSlot}
-          className="relative flex-1"
+          className="flex-1"
           scrollerClassName="overscroll-x-contain"
         >
           {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}

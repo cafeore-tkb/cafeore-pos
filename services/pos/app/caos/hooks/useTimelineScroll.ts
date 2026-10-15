@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cardSelector } from "../utils/scrollToCard";
 
 // 管制盤 A のタイムラインの横スクロール。NOW を画面の左寄りの決まった位置に置き、時間とともにレーンの側を動かす（追従）。
-// 見ている人が手でスクロール（か ±5分・カードへ）したら、少しでも追従をやめる（NOW の線はそのまま本当の時刻の所を動く）。
-// 「現在」で NOW の位置へ戻り、すぐ追従に戻る。手のスクロールが NOW の近くで止まったとき（指を離してから）も追従に戻る。
+// 手でスクロールしたら少しでも動いた時点で、±5分・カードへの操作なら押した時点で追従をやめる（NOW の線は本当の時刻の所を動く）。
+// 「現在」で NOW の位置へ戻り、すぐ追従に戻る。手のスクロールが NOW の近くで止まったとき（タイムラインから指を離してから）も追従に戻る。
 
 /** ヘッダーからの操作（±5分・現在）と、カード（cardKey。注文番号で探したカード）までスクロールする "card"。id で 1 回ずつ */
 export type TimelineCommand = { id: number } & (
@@ -11,24 +11,19 @@ export type TimelineCommand = { id: number } & (
   | { direction: "card"; cardKey: string }
 );
 
-// Scroll positions this close to NOW count as following it.
+// 手のスクロールがこの近さ（px）で止まったら、NOW の位置へ寄せて追従に戻す
 const FOLLOW_TOLERANCE_PX = 24;
 // Scrolled this far behind NOW, the board shows the past-history banner.
 const PAST_VIEW_THRESHOLD_PX = 600;
 // 「現在」で NOW へ滑らかに戻るのを待つ長さの上限（ミリ秒）。戻っているあいだのスクロールは手のスクロールと見なさない
 const RETURN_MAX_MS = 2000;
 
-// 操作でスクロールする先（px）。カードがタイムラインに無ければ（表示する範囲より前に終わったなど）null
+// ±5分・カードへの操作でスクロールする先（px）。カードがタイムラインに無ければ（表示する範囲より前に終わったなど）null
 const commandLeft = (
   command: TimelineCommand,
   container: HTMLElement,
-  {
-    followLeftPx,
-    pagePx,
-    cardInsetPx,
-  }: { followLeftPx: number; pagePx: number; cardInsetPx: number },
+  { pagePx, cardInsetPx }: { pagePx: number; cardInsetPx: number },
 ) => {
-  if (command.direction === "now") return followLeftPx;
   if (command.direction === "card") {
     const card = container.querySelector(cardSelector(command.cardKey));
     if (!card) return null;
@@ -55,30 +50,35 @@ const placeScroll = (container: HTMLElement, left: number) => {
   return container.scrollLeft;
 };
 
-// 画面に指・マウスのボタンが触れているか（触れているあいだは追従に戻さない。戻すと指の下で盤面が跳ぶ）
-const PRESS_EVENTS = [
-  "touchstart",
-  "touchend",
-  "touchcancel",
-  "mousedown",
-  "mouseup",
-] as const;
-const usePressing = () => {
-  const pressing = useRef({ touches: 0, mouse: false });
+// タイムライン（スクロールの枠とスクロールバーを並べた外の枠 frame）に指・マウスのボタンが触れているか。
+// 触れているあいだは追従に戻さない（戻すと指の下で盤面が跳ぶ）。触れ始めは frame で、離すのは画面のどこでも見る
+const usePressing = (frame: () => HTMLElement | null | undefined) => {
+  const pressing = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: frame は描き直しで変わらない枠を返すだけ
   useEffect(() => {
-    const onPress = (event: TouchEvent | MouseEvent) => {
-      if ("touches" in event) pressing.current.touches = event.touches.length;
-      else pressing.current.mouse = event.buttons !== 0;
+    const element = frame();
+    if (!element) return;
+    const press = () => {
+      pressing.current = true;
     };
+    const release = (event: Event) => {
+      if (!("touches" in event) || (event as TouchEvent).touches.length === 0)
+        pressing.current = false;
+    };
+    const releases = ["touchend", "touchcancel", "mouseup", "blur"] as const;
     const options = { passive: true, capture: true };
-    for (const type of PRESS_EVENTS)
-      window.addEventListener(type, onPress, options);
+    element.addEventListener("touchstart", press, options);
+    element.addEventListener("mousedown", press, options);
+    for (const type of releases)
+      window.addEventListener(type, release, options);
     return () => {
-      for (const type of PRESS_EVENTS)
-        window.removeEventListener(type, onPress, options);
+      element.removeEventListener("touchstart", press, options);
+      element.removeEventListener("mousedown", press, options);
+      for (const type of releases)
+        window.removeEventListener(type, release, options);
     };
   }, []);
-  return () => pressing.current.touches > 0 || pressing.current.mouse;
+  return () => pressing.current;
 };
 
 export const useTimelineScroll = ({
@@ -111,46 +111,45 @@ export const useTimelineScroll = ({
   useLayoutEffect(() => {
     followLeftRef.current = followLeftPx;
   }, [followLeftPx]);
-  const isPressing = usePressing();
+  const isPressing = usePressing(() => containerRef.current?.parentElement);
 
-  const onFollowingChangeRef = useRef(onFollowingChange);
-  onFollowingChangeRef.current = onFollowingChange;
   useEffect(() => {
-    onFollowingChangeRef.current?.(isFollowingNow);
-  }, [isFollowingNow]);
+    onFollowingChange?.(isFollowingNow);
+  }, [isFollowingNow, onFollowingChange]);
 
   // この画面が自分で置いたスクロールの位置（そのスクロールの知らせは手のスクロールと見なさない）
   const ownLeftRef = useRef<number | null>(null);
-  // 「現在」で滑らかに戻っている間（performance.now() のミリ秒まで。NOW の位置に着いたら 0）
-  const returningUntilRef = useRef(0);
+  // 「現在」で滑らかに戻っている先（left）と、待つ期限（performance.now() のミリ秒）。着いたら・ほかの操作で null
+  const returnRef = useRef<{ left: number; until: number } | null>(null);
+  const isReturning = () =>
+    returnRef.current !== null && performance.now() < returnRef.current.until;
 
   // When the hour rolls over the track origin moves; shift the scroll by the same
   // amount before paint so whatever is on screen stays put.
+  // 「現在」で戻っている途中なら、戻りは止まるので、続く追従の effect がそのまま NOW に置く
   const previousOriginRef = useRef(originPx);
   useLayoutEffect(() => {
     const shiftPx = originPx - previousOriginRef.current;
     previousOriginRef.current = originPx;
     const container = containerRef.current;
-    if (shiftPx && container)
-      ownLeftRef.current = placeScroll(
-        container,
-        container.scrollLeft - shiftPx,
-      );
+    if (!shiftPx || !container) return;
+    returnRef.current = null;
+    ownLeftRef.current = placeScroll(container, container.scrollLeft - shiftPx);
   }, [originPx]);
 
   // Keep NOW at one fixed screen position; the timeline moves underneath it.
   // 「現在」で滑らかに戻っているあいだは、毎秒の位置で途中を切らない
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isReturning reads refs only
   useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container || !isFollowingNow) return;
-    if (performance.now() < returningUntilRef.current) return;
+    if (!container || !isFollowingNow || isReturning()) return;
     ownLeftRef.current = placeScroll(container, followLeftPx);
   }, [followLeftPx, isFollowingNow]);
 
-  // 手のスクロールが NOW の近くで止まったら、追従に戻す（通り過ぎただけ・指を乗せたまま・±5分の途中では戻さない）
+  // 手のスクロールが NOW の近くで止まったら、追従に戻す（通り過ぎただけ・指を乗せたまま・±5分やカードへの途中では戻さない）
   const followSettleTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(followSettleTimerRef.current), []);
-  // ±5分 starts a smooth scroll that begins slowly; don't mistake its first frames near NOW for a stop.
+  // ±5分・カードへの操作は、ゆっくり始まる smooth scroll。始めの NOW の近くのコマを止まったと見なさない
   const pagingUntilRef = useRef(0);
   const scheduleFollowCheck = (leftAtSchedule: number) => {
     window.clearTimeout(followSettleTimerRef.current);
@@ -184,15 +183,19 @@ export const useTimelineScroll = ({
     const currentLeft = container.scrollLeft;
     // A boolean, so scrolling re-renders the board only when it crosses the threshold.
     setIsScrolledToPast(currentLeft < nowX - PAST_VIEW_THRESHOLD_PX);
-    // 「現在」で戻っている途中（指で止めたら手のスクロール）。NOW の位置に着いたら、また毎秒の位置で追う
-    if (performance.now() < returningUntilRef.current && !isPressing()) {
-      if (Math.abs(currentLeft - followLeftRef.current) < 2) {
-        returningUntilRef.current = 0;
-        ownLeftRef.current = currentLeft;
+    // 「現在」で戻っている途中（タイムラインを指で止めたら手のスクロール）。
+    // 戻る先に着いたら、その時の NOW の位置に寄せて（倍速の実データテストでは戻るあいだにも NOW が進む）毎秒の追従に戻す
+    if (isReturning() && !isPressing()) {
+      if (
+        returnRef.current &&
+        Math.abs(currentLeft - returnRef.current.left) < 2
+      ) {
+        returnRef.current = null;
+        ownLeftRef.current = placeScroll(container, followLeftRef.current);
       }
       return;
     }
-    returningUntilRef.current = 0;
+    returnRef.current = null;
     // 自分で置いた位置は、手のスクロールではない
     if (
       ownLeftRef.current !== null &&
@@ -212,10 +215,11 @@ export const useTimelineScroll = ({
     if (!container) return;
     window.clearTimeout(followSettleTimerRef.current);
     setIsFollowingNow(true);
+    const left = followLeftRef.current;
     // もう NOW の位置なら、スクロールの知らせが来ないので待たない
-    if (Math.abs(container.scrollLeft - followLeftRef.current) < 1) return;
-    returningUntilRef.current = performance.now() + RETURN_MAX_MS;
-    container.scrollTo({ left: followLeftRef.current, behavior: "smooth" });
+    if (Math.abs(container.scrollLeft - left) < 1) return;
+    returnRef.current = { left, until: performance.now() + RETURN_MAX_MS };
+    container.scrollTo({ left, behavior: "smooth" });
   };
 
   // Run each header command once. ±5分 pages from the current view; 現在 returns to NOW and follows it.
@@ -231,13 +235,10 @@ export const useTimelineScroll = ({
     }
     const container = containerRef.current;
     if (!container) return;
-    const left = commandLeft(command, container, {
-      followLeftPx: followLeftRef.current,
-      pagePx,
-      cardInsetPx,
-    });
+    const left = commandLeft(command, container, { pagePx, cardInsetPx });
     if (left === null) return;
     // Stop following first so the next clock tick does not cut the smooth scroll short.
+    returnRef.current = null;
     setIsFollowingNow(false);
     pagingUntilRef.current = performance.now() + 1000;
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
