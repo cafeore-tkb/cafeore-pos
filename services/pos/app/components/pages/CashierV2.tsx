@@ -19,6 +19,7 @@ import {
 } from "~/label/infra/epos";
 import { orderLabelJob } from "~/label/order-label";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
+import type { ReceiptPayment } from "~/label/receipt";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
@@ -35,6 +36,7 @@ import {
   assignLine,
   backToEntry,
   canAssignSelected,
+  canGoPay,
   cashierKeyIntent,
   clearDigits,
   couponStatus,
@@ -53,6 +55,19 @@ import {
   toggleVoid,
   voidAll,
 } from "../functional/cashierDraft";
+import {
+  type CashierSplitPayment,
+  cancelSplit,
+  pickAllSplitLines,
+  preferDiscount,
+  recordSplitPayment,
+  splitBill,
+  splitOrderForSubmit,
+  splitPaymentOrder,
+  splitUpperLines,
+  startSplit,
+  toggleSplitLine,
+} from "../functional/cashierSplit";
 import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
 import type { ConnectionIssue } from "../functional/connectionIssues";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
@@ -80,6 +95,7 @@ import {
   ConnectionIssueDot,
   PrinterStatusDot,
 } from "../organisms/cashier/PrinterStatusDot";
+import { SplitPanel } from "../organisms/cashier/SplitPanel";
 import { Label } from "../ui/label";
 
 type props = {
@@ -96,7 +112,11 @@ type props = {
   squareDevice: SquareDeviceSelection;
   /** つなぐプリンター（ラベル用・レシート用）の IP アドレス */
   printerAddresses: PrinterSettings;
-  submitPayload: (order: OrderEntity) => void;
+  /** 注文を裏で送る。onSaved は、すぐに送って保存できたときに呼ぶ */
+  submitPayload: (
+    order: OrderEntity,
+    onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+  ) => void;
   /** Square で支払い済みの注文を送り、登録した注文を返す。登録できなければ reject する */
   submitSquarePayload: (
     order: OrderEntity,
@@ -135,6 +155,9 @@ type CashierDialogKind = "assign" | "memo" | "voidAll" | "reset";
  *
  * メニュー｜注文（商品・割引・備考）｜会計 の 3 列。商品を入れて「一括会計」で会計の段階に進み、
  * 受取金額か Square の決済手段を選んで確定する。データの入出力は親コンポーネントに任せる
+ *
+ * 「個別会計」を押すと、左の列に商品を上下の枠に分けて出し、下の枠に入れた商品ずつ会計する
+ * （cashierSplit）。払った分は覚えておき、最後の会計で支払いを全部付けて注文を 1 つ送る。
  */
 const CashierV2 = ({
   items,
@@ -172,17 +195,38 @@ const CashierV2 = ({
   // 端末がオフラインでも、切れたことに気づくまで WebSocket は open のままのことがあるので、wsStatus だけでは見ない
   const isNeedManualOrderId = !canSaveNow && wsStatus !== "connecting";
   const soundRef = useRef<HTMLAudioElement>(null);
+  const store = useStore();
+  /**
+   * お客さん向けの表示（cashier-mini）に入力中の注文を送る。個別会計の会計の段階では、
+   * 今回の会計（下の枠）だけを見せる
+   */
+  const syncDisplay = useCallback(
+    (order: OrderEntity) => {
+      const current = store.get(cashierDraftAtom);
+      syncOrder(
+        current.split !== null && current.step === "pay"
+          ? splitPaymentOrder(order, current)
+          : order,
+      );
+    },
+    [store, syncOrder],
+  );
+  /** 段階が変わったとき（注文の中身は変わらない）に、お客さん向けの表示を送り直す */
+  const resyncDisplay = useCallback(
+    () => syncDisplay(store.get(editingOrderAtom)),
+    [store, syncDisplay],
+  );
   const dispatchOrder = useCallback(
     (action: OrderAction) => {
-      applyOrderAction({ action, syncOrder });
+      applyOrderAction({ action, syncOrder: syncDisplay });
     },
-    [applyOrderAction, syncOrder],
+    [applyOrderAction, syncDisplay],
   );
   const updateDraft = useCallback(
     (update: (draft: CashierDraft) => CashierDraft) => {
-      applyDraftUpdate({ update, syncOrder });
+      applyDraftUpdate({ update, syncOrder: syncDisplay });
     },
-    [applyDraftUpdate, syncOrder],
+    [applyDraftUpdate, syncDisplay],
   );
 
   const playSound = useCallback(() => {
@@ -210,7 +254,6 @@ const CashierV2 = ({
     ),
   );
 
-  const store = useStore();
   /**
    * 注文のシールを刷る。このレジで先に刷った、まだ登録していない注文と同じ中身なら刷り直さない
    * （一括会計・Square の決済で先に刷ったシールを、確定・会計し直しのときにそのまま使う）。
@@ -323,13 +366,61 @@ const CashierV2 = ({
   const itemCount = newOrder.menus.length;
   const billing = newOrder.billingAmount;
 
+  // 個別会計の今回の会計（下の枠）。割引は注文全体で割り引く杯数をコーヒーに割り振る
+  const discountPerCup = newOrder.DISCOUNT_PER_CUP;
+  const discountCups = newOrder.discount / discountPerCup;
+  const bill = useMemo(
+    () =>
+      draft.split === null
+        ? null
+        : splitBill(draft, discountCups, discountPerCup),
+    [draft, discountCups, discountPerCup],
+  );
+  const splitPayments = draft.split?.payments ?? [];
+  /**
+   * 会計の欄に出す金額。個別会計の途中の会計は下の枠の分だけ、最後の会計は注文全体から
+   * 先に払った分（先会計）を引いた残り
+   */
+  const pay =
+    bill === null
+      ? {
+          itemCount,
+          total: newOrder.total,
+          discount: newOrder.discount,
+          prepaid: 0,
+          amount: billing,
+        }
+      : bill.last
+        ? {
+            itemCount,
+            total: newOrder.total,
+            discount:
+              splitPayments.reduce((acc, p) => acc + p.discount, 0) +
+              bill.discount,
+            prepaid: bill.paidAmount,
+            amount: bill.amount,
+          }
+        : {
+            itemCount: bill.lines.length,
+            total: bill.total,
+            discount: bill.discount,
+            prepaid: 0,
+            amount: bill.amount,
+          };
+  const payAmount = pay.amount;
+
   // Square のボタンは、このレジで使う端末が決まっているときだけ出す
   const squareDeviceId = squareEnabled
     ? (squareDevice.device?.device_id ?? null)
     : null;
   const squarePaymentTypes =
     squareDeviceId !== null ? SQUARE_PAYMENT_TYPES : NO_SQUARE_PAYMENT_TYPES;
-  const canStartSquare = canSaveNow && itemCount > 0 && billing >= 0;
+  // Square の決済は 1 円から
+  const canStartSquare =
+    canSaveNow &&
+    (bill === null
+      ? itemCount > 0 && billing >= 0
+      : bill.lines.length > 0 && bill.amount >= 1);
   // 会計の段階で ↑↓ で選べる決済手段
   const payments = useMemo<CashierPayment[]>(
     () => (canStartSquare ? ["cash", ...squarePaymentTypes] : ["cash"]),
@@ -375,10 +466,104 @@ const CashierV2 = ({
     ],
   );
 
+  /**
+   * 個別会計の今回の会計（下の枠）を払い終えた。レシートを刷り、払った分として覚える。
+   * 最後の会計なら、払った分を全部付けて注文を送る（シールは先に刷ったものをそのまま使う）。
+   * paymentOrder は今回の会計だけの注文（splitPaymentOrder）。下書きは決済の途中（非同期）からも
+   * 呼ぶので、ストアから今の値を読む
+   */
+  const completeSplitPayment = useCallback(
+    (
+      paymentOrder: OrderEntity,
+      payment: Omit<CashierSplitPayment, "lineKeys">,
+      receipt: ReceiptPayment,
+      sub: string,
+    ) => {
+      receiptPrinter.printReceipt(paymentOrder, receipt);
+      const current = store.get(cashierDraftAtom);
+      const last = splitUpperLines(current).length === 0;
+      const recorded = recordSplitPayment(current, payment);
+      const count = recorded.split?.payments.length ?? 0;
+      if (!last) {
+        updateDraft(() => recorded);
+        resyncDisplay();
+        showNotice(`個別会計 ${count}回目を確定しました`, sub);
+        return;
+      }
+      const submitOne = splitOrderForSubmit(
+        prepareSubmit(store.get(editingOrderAtom)),
+        recorded,
+      );
+      printOrderLabel(submitOne);
+      const paidBySquare = submitOne.payments.some(
+        (split) => split.method === "square",
+      );
+      // 「常に返金」なら、登録できたあとに Square で払った分を裏で返金する（注文は残す）
+      submitPayload(
+        submitOne,
+        autoSquareRefund && paidBySquare
+          ? (saved) => void refundSquareOrderAutomatically(saved)
+          : undefined,
+      );
+      markOrderIdIssued(submitOne.orderId);
+      finishSubmit(submitOne.orderId, `個別会計 ${count}回・${sub}`);
+    },
+    [
+      receiptPrinter,
+      store,
+      updateDraft,
+      resyncDisplay,
+      showNotice,
+      prepareSubmit,
+      printOrderLabel,
+      submitPayload,
+      autoSquareRefund,
+      markOrderIdIssued,
+      finishSubmit,
+    ],
+  );
+
+  /** 個別会計の今回の会計を現金で払う。exactPayment なら受取金額をちょうどにする（お釣り 0） */
+  const submitSplitCash = useCallback(
+    (exactPayment: boolean) => {
+      if (bill === null || bill.lines.length === 0 || bill.amount < 0) {
+        return;
+      }
+      const received = exactPayment
+        ? bill.amount
+        : draft.received === ""
+          ? null
+          : Number(draft.received);
+      if (received === null || received < bill.amount) {
+        return;
+      }
+      const paymentOrder = splitPaymentOrder(newOrder, draft);
+      paymentOrder.nowCreated();
+      paymentOrder.received = received;
+      completeSplitPayment(
+        paymentOrder,
+        {
+          method: "cash",
+          amount: bill.amount,
+          received,
+          discountCups: bill.discountCups,
+          discount: bill.discount,
+        },
+        { method: "cash" },
+        `お釣り ${formatYen(received - bill.amount)}`,
+      );
+    },
+    [bill, draft, newOrder, completeSplitPayment],
+  );
+
   /** 現金で送る。exactPayment なら受取金額を請求額ちょうどにする（お釣り 0） */
   const submitCash = useCallback(
     (exactPayment: boolean) => {
       if (!canSubmitOrder || draft.step !== "pay") {
+        return;
+      }
+      if (draft.split !== null) {
+        submitSplitCash(exactPayment);
         return;
       }
       if (newOrder.menus.length === 0) {
@@ -405,7 +590,9 @@ const CashierV2 = ({
     [
       canSubmitOrder,
       draft.step,
+      draft.split,
       draft.received,
+      submitSplitCash,
       newOrder,
       prepareSubmit,
       printOrderLabel,
@@ -470,15 +657,54 @@ const CashierV2 = ({
     ],
   );
 
+  /**
+   * 個別会計の会計を Square で払っている間の、その会計で割り引いた杯数と額。
+   * 一括会計の決済なら null。決済が終わったら払った分として覚える
+   */
+  const splitSquareRef = useRef<{
+    discountCups: number;
+    discount: number;
+  } | null>(null);
+
   // シールは端末に決済画面が出た時点で先に印刷し、支払いを待つ間に作り始められるようにする。
   // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わっても
   // 印刷はしない（ダイアログで知らせる）。
+  // 個別会計の会計では、決済するのは今回の会計の分だけ。シールは注文全体のものを刷り、
+  // 支払いが確定したら払った分として覚える（最後の会計なら注文を送る）。
   const squarePayment = useSquarePayment({
     onStarted: (checkout, order) => {
+      if (splitSquareRef.current !== null) {
+        printOrderLabel(store.get(editingOrderAtom));
+        return;
+      }
       prePrintedRef.current.set(checkout.id, order.orderId);
       printOrderLabel(order);
     },
-    onPaid: (checkout, order) => submitSquareOrder(checkout, order, false),
+    onPaid: async (checkout, order) => {
+      const split = splitSquareRef.current;
+      if (split === null) {
+        return submitSquareOrder(checkout, order, false);
+      }
+      splitSquareRef.current = null;
+      const paymentType = checkout.payment_type as SquarePaymentType;
+      const paid = order.clone();
+      paid.nowCreated();
+      paid.received = paid.billingAmount;
+      completeSplitPayment(
+        paid,
+        {
+          method: "square",
+          amount: paid.billingAmount,
+          received: paid.billingAmount,
+          ...split,
+          squareCheckoutId: checkout.id,
+          squarePaymentType: paymentType,
+        },
+        { method: "square", paymentType: checkout.payment_type },
+        `Square・${squarePaymentTypeLabel[paymentType] ?? checkout.payment_type}`,
+      );
+      return true;
+    },
   });
   const squarePaymentActive = squarePayment.active;
 
@@ -516,38 +742,70 @@ const CashierV2 = ({
         return;
       }
       updateDraft((current) => setPayment(current, paymentType));
+      if (bill !== null) {
+        // 個別会計は今回の会計（下の枠）の分だけを決済する
+        splitSquareRef.current = {
+          discountCups: bill.discountCups,
+          discount: bill.discount,
+        };
+        squarePayment.start(
+          splitPaymentOrder(newOrder, draft),
+          paymentType,
+          squareDeviceId,
+        );
+        return;
+      }
+      splitSquareRef.current = null;
       squarePayment.start(newOrder, paymentType, squareDeviceId);
     },
     [
-      draft.step,
+      draft,
       canStartSquare,
       squareDeviceId,
       squarePaymentActive,
       updateDraft,
       squarePayment.start,
       newOrder,
+      bill,
     ],
   );
 
   /**
-   * 一括会計。会計の段階に進み、シールを先に刷る（Square と同じく、お金を受け取る間に作り始められるように）。
+   * 一括会計・個別会計の下の枠の会計。会計の段階に進み、シールを先に刷る（Square と同じく、
+   * お金を受け取る間に作り始められるように）。個別会計でも注文全体のシールを 1 回だけ刷る。
    * 番号を決められない（オフラインで番号を付けていない）ときは、確定のときに刷る
    */
   const startPayment = useCallback(() => {
-    if (draft.step !== "entry" || newOrder.menus.length === 0) {
+    if (!canGoPay(draft)) {
       return;
     }
     updateDraft(goPay);
+    if (draft.split !== null) {
+      resyncDisplay();
+    }
     if (canSubmitOrder) {
       printOrderLabel(newOrder);
     }
-  }, [draft.step, newOrder, updateDraft, canSubmitOrder, printOrderLabel]);
+  }, [
+    draft,
+    newOrder,
+    updateDraft,
+    resyncDisplay,
+    canSubmitOrder,
+    printOrderLabel,
+  ]);
 
-  /** 会計取消。入れる段階に戻り、先に刷ったシールは取り消しのシールを刷って使わない */
+  /**
+   * 会計取消。入れる段階に戻り、先に刷ったシールは取り消しのシールを刷って使わない。
+   * 個別会計で払い始めていたら、シールはそのまま使い、下の枠の商品を選び直す段階に戻る
+   */
   const cancelPayment = useCallback(() => {
-    cancelPrintedLabel(true);
+    if ((draft.split?.payments.length ?? 0) === 0) {
+      cancelPrintedLabel(true);
+    }
     updateDraft(backToEntry);
-  }, [cancelPrintedLabel, updateDraft]);
+    resyncDisplay();
+  }, [draft.split, cancelPrintedLabel, updateDraft, resyncDisplay]);
 
   /** 番号を手で付け直す。先に刷ったシールの番号とずれるので、取り消しのシールを刷る */
   const overrideOrderId = useCallback(
@@ -611,7 +869,7 @@ const CashierV2 = ({
           startPayment();
           return;
         case "exactReceived":
-          updateDraft((current) => setExactReceived(current, billing));
+          updateDraft((current) => setExactReceived(current, payAmount));
           return;
         case "submitCash":
           submitCash(false);
@@ -640,7 +898,7 @@ const CashierV2 = ({
     viewDraft,
     items,
     payments,
-    billing,
+    payAmount,
     updateDraft,
     openAssign,
     openMemo,
@@ -653,8 +911,11 @@ const CashierV2 = ({
   const selectedLine =
     draft.selected === null ? null : draft.lines[draft.selected];
   // 取消の確認に出す、消えるもの
+  const splitPaidAmount = splitPayments.reduce((acc, p) => acc + p.amount, 0);
   const resetSummary = [
     itemCount > 0 && `商品 ${itemCount}点（${formatYen(newOrder.total)}）`,
+    splitPayments.length > 0 &&
+      `個別会計で払った ${splitPayments.length}回分（${formatYen(splitPaidAmount)}）`,
     draft.coupon && `引換券番号 ${draft.coupon}`,
     draft.special && "特殊な割引",
     draft.memo && "特記事項",
@@ -710,7 +971,10 @@ const CashierV2 = ({
                   devices={squareDevice.devices}
                   currentBillingAmount={billing}
                   canSubmit={
-                    canSubmitOrder && itemCount > 0 && !squarePaymentActive
+                    canSubmitOrder &&
+                    itemCount > 0 &&
+                    !squarePaymentActive &&
+                    draft.split === null
                   }
                   onSubmitWithCheckout={submitUnlinkedSquareOrder}
                 />
@@ -760,11 +1024,30 @@ const CashierV2 = ({
           {/* 会計の列は 432px 以上にし、余った幅をメニューと 4:3 で分ける（メニューだけが広がらないように）。
               1280px より狭い画面（iPad など）では、メニューが細くなりすぎないよう会計の列を 392px にする */}
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px] xl:grid-cols-[minmax(0,1fr)_384px_minmax(432px,0.75fr)]">
-            <MenuPanel
-              menus={items ?? []}
-              disabled={draft.step === "pay"}
-              onAdd={(menu) => updateDraft((current) => addLine(current, menu))}
-            />
+            {bill === null ? (
+              <MenuPanel
+                menus={items ?? []}
+                disabled={draft.step === "pay"}
+                onAdd={(menu) =>
+                  updateDraft((current) => addLine(current, menu))
+                }
+              />
+            ) : (
+              <SplitPanel
+                draft={draft}
+                bill={bill}
+                discountPerCup={discountPerCup}
+                hasDiscount={discountCups > 0}
+                disabled={draft.step === "pay"}
+                onToggle={(key) =>
+                  updateDraft((current) => toggleSplitLine(current, key))
+                }
+                onPickAll={() => updateDraft(pickAllSplitLines)}
+                onPreferDiscount={(key) =>
+                  updateDraft((current) => preferDiscount(current, key))
+                }
+              />
+            )}
             <OrderPanel
               draft={viewDraft}
               couponStatus={coupon}
@@ -772,6 +1055,8 @@ const CashierV2 = ({
               coffeeCups={newOrder.getCoffeeCups().length}
               needsSplit={shouldSplitOrder(newOrder.menus)}
               printedOrderId={draft.printedLabel?.orderId ?? null}
+              splitBill={bill}
+              discountPerCup={discountPerCup}
               onSelect={(index) =>
                 updateDraft((current) => selectLine(current, index))
               }
@@ -787,14 +1072,23 @@ const CashierV2 = ({
               onOpenMemo={openMemo}
               onGoPay={startPayment}
               onBackToEntry={cancelPayment}
+              onStartSplit={() => updateDraft(startSplit)}
+              onCancelSplit={() => updateDraft(cancelSplit)}
             />
             <PayPanel
               draft={viewDraft}
-              itemCount={itemCount}
-              total={newOrder.total}
-              discount={newOrder.discount}
+              itemCount={pay.itemCount}
+              total={pay.total}
+              discount={pay.discount}
               discountNote={discountNote}
-              billing={billing}
+              prepaid={pay.prepaid}
+              billing={payAmount}
+              splitNote={
+                bill === null
+                  ? null
+                  : `個別会計 ${splitPayments.length + 1}回目${bill.last ? "（最後の会計）" : ""}`
+              }
+              sendsOrder={bill === null || bill.last}
               squarePaymentTypes={squarePaymentTypes}
               canStartSquare={canStartSquare}
               canSubmit={canSubmitOrder}
@@ -811,7 +1105,7 @@ const CashierV2 = ({
                 updateDraft((current) => addReceived(current, amount))
               }
               onExactReceived={() =>
-                updateDraft((current) => setExactReceived(current, billing))
+                updateDraft((current) => setExactReceived(current, payAmount))
               }
               onSubmitExact={() => submitCash(true)}
               onSubmitCash={() => submitCash(false)}
@@ -881,6 +1175,10 @@ const CashierV2 = ({
         note={`${resetSummary} が消えます。消した注文は戻せません。${
           draft.printedLabel
             ? `先に刷った No.${draft.printedLabel.orderId} のシールは使わず、取り消しのシールを刷ります。`
+            : ""
+        }${
+          splitPayments.length > 0
+            ? "個別会計で払った分は、現金は手で返し、Square で払った分は右上の「未登録の Square 決済」から返金してください。"
             : ""
         }`}
         hint="Enter でやめる ・ 消すときは「消す」を押す（Tab で移って Enter）"

@@ -16,7 +16,17 @@ import {
   canAssignSelected,
   canEditCoupon,
   canEditLines,
+  canGoPay,
+  isDiscountLocked,
 } from "../../functional/cashierDraft";
+import {
+  type CashierSplitPayment,
+  type SplitBill,
+  canCancelSplit,
+  canStartSplit,
+  unpaidLines,
+} from "../../functional/cashierSplit";
+import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 import { menuColor } from "./MenuPanel";
 
 type props = {
@@ -27,8 +37,12 @@ type props = {
   coffeeCups: number;
   /** ドリッパーを 3 人以上確保する注文。分けるよう知らせる */
   needsSplit: boolean;
-  /** 一括会計で先に刷ったシールの番号。刷っていなければ null */
+  /** 一括会計・個別会計で先に刷ったシールの番号。刷っていなければ null */
   printedOrderId: number | null;
+  /** 個別会計の今回の会計（下の枠）の金額。個別会計でなければ null */
+  splitBill: SplitBill | null;
+  /** 1 杯の割引額 */
+  discountPerCup: number;
   onSelect: (index: number) => void;
   onToggleVoid: (index: number) => void;
   onOpenAssign: () => void;
@@ -38,6 +52,8 @@ type props = {
   onOpenMemo: () => void;
   onGoPay: () => void;
   onBackToEntry: () => void;
+  onStartSplit: () => void;
+  onCancelSplit: () => void;
 };
 
 /** 指名の表示（「1st・たなか」） */
@@ -50,33 +66,68 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列。商品（削除・指名）、割引、備考、一括会計
+ * レジの真ん中の列。商品（削除・指名）、割引、備考、一括会計・個別会計
+ *
+ * 個別会計の間は、商品の代わりに払い終えた会計と残りを出す（商品は左の列の上下の枠に出す）。
  */
 export const OrderPanel = (props: props) => {
-  const { draft } = props;
+  const { draft, splitBill } = props;
+  const splitPaid = (draft.split?.payments.length ?? 0) > 0;
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l bg-stone-50">
-      <LinesSection {...props} />
+      {draft.split === null ? (
+        <LinesSection {...props} />
+      ) : (
+        <SplitPaymentsSection {...props} />
+      )}
       <DiscountSection {...props} />
       <MemoSection {...props} />
       <div className="flex-none border-stone-200 border-t px-3.5 pt-3 pb-3.5">
         {draft.step === "entry" ? (
           <div className="flex gap-2">
-            <button
-              type="button"
-              disabled
-              title="準備中"
-              className="h-15 flex-[0_0_112px] cursor-not-allowed rounded-xl border border-stone-200 bg-stone-100 font-bold text-[15px] text-stone-400"
-            >
-              個別小計
-            </button>
+            {draft.split === null ? (
+              <button
+                type="button"
+                onClick={props.onStartSplit}
+                disabled={!canStartSplit(draft)}
+                title="商品を分けて、何回かに分けて払います"
+                className="h-15 flex-[0_0_112px] rounded-xl border border-stone-400 bg-white font-bold text-[15px] text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
+              >
+                個別会計
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={props.onCancelSplit}
+                disabled={!canCancelSplit(draft)}
+                title={
+                  splitPaid
+                    ? "払い始めたので、やめられません"
+                    : "商品の一覧に戻ります"
+                }
+                className="h-15 flex-[0_0_112px] rounded-xl border border-stone-400 bg-white font-bold text-[13px] text-stone-900 leading-tight hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
+              >
+                個別会計を
+                <br />
+                やめる
+              </button>
+            )}
             <button
               type="button"
               onClick={props.onGoPay}
-              disabled={!draft.lines.some((line) => !line.voided)}
-              className="relative flex h-15 min-w-0 flex-1 items-center justify-center rounded-xl bg-stone-900 font-extrabold text-[22px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
+              disabled={!canGoPay(draft)}
+              className="relative flex h-15 min-w-0 flex-1 items-center justify-center rounded-xl bg-stone-900 pr-14 pl-2 font-extrabold text-[22px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
             >
-              一括会計
+              {splitBill === null ? (
+                "一括会計"
+              ) : (
+                <span className="flex min-w-0 flex-col items-center leading-tight">
+                  <span className="text-lg">この分を会計</span>
+                  <span className="font-bold text-[13px] tabular-nums opacity-80">
+                    {splitBill.lines.length}点・{formatYen(splitBill.amount)}
+                  </span>
+                </span>
+              )}
               <KeyHint
                 inverted
                 className="-translate-y-1/2 absolute top-1/2 right-3.5 px-1.5 py-1 text-xs"
@@ -90,8 +141,11 @@ export const OrderPanel = (props: props) => {
             <p className="text-stone-500 text-xs leading-normal">
               {props.printedOrderId !== null &&
                 `No.${props.printedOrderId} のシールを印刷しました。`}
-              商品を変えるときは会計取消
+              {splitBill === null
+                ? "商品を変えるときは会計取消"
+                : "この会計で払う商品を選び直すときは会計取消"}
               {props.printedOrderId !== null &&
+                !splitPaid &&
                 "（取り消しのシールを刷ります）"}
             </p>
             <button
@@ -101,6 +155,90 @@ export const OrderPanel = (props: props) => {
             >
               会計取消
             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** 決済手段の表示（「現金」「カード」など） */
+const paymentLabel = (payment: CashierSplitPayment) =>
+  payment.method === "cash"
+    ? "現金"
+    : payment.squarePaymentType
+      ? squarePaymentTypeLabel[payment.squarePaymentType]
+      : "Square";
+
+/** 個別会計の間の真ん中の列の上。払い終えた会計と、残り */
+const SplitPaymentsSection = ({ draft, splitBill, discountPerCup }: props) => {
+  const payments = draft.split?.payments ?? [];
+  const remaining = unpaidLines(draft);
+  const remainingAmount =
+    remaining.reduce((acc, line) => acc + line.menu.price, 0) -
+    [...(splitBill?.allocation.values() ?? [])].reduce(
+      (acc, cups) => acc + cups * discountPerCup,
+      0,
+    );
+  const names = (keys: number[]) =>
+    keys
+      .flatMap((key) => draft.lines.filter((line) => line.key === key))
+      .map((line) => line.menu.name)
+      .join("・");
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pt-3 pb-2.5">
+      <div className="flex flex-none items-center gap-2.5 pl-0.5">
+        <span className="font-bold text-[15px]">個別会計</span>
+        <span className="ml-auto text-sm text-stone-600 tabular-nums">
+          残り {remaining.length}点・{formatYen(remainingAmount)}
+        </span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto">
+        {payments.map((payment, index) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: 払った順は変わらない
+            key={index}
+            className="flex flex-none flex-col gap-0.5 rounded-lg bg-white px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-stone-200)]"
+          >
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-stone-200 px-1.5 py-0.5 font-bold text-stone-700 text-xs">
+                {index + 1}回目
+              </span>
+              <span
+                className={cn(
+                  "font-bold text-sm",
+                  payment.method === "square" && "text-sky-800",
+                )}
+              >
+                {paymentLabel(payment)}
+              </span>
+              <span className="ml-auto font-extrabold text-[17px] tabular-nums">
+                {formatYen(payment.amount)}
+              </span>
+            </div>
+            <span className="truncate text-stone-600 text-xs">
+              {names(payment.lineKeys)}
+            </span>
+            {(payment.method === "cash" || payment.discount > 0) && (
+              <span className="text-stone-500 text-xs tabular-nums">
+                {[
+                  payment.discount > 0 &&
+                    `割引 ${formatYen(-payment.discount)}`,
+                  payment.method === "cash" &&
+                    `お預り ${formatYen(payment.received)}・お釣り ${formatYen(payment.received - payment.amount)}`,
+                ]
+                  .filter(Boolean)
+                  .join("・")}
+              </span>
+            )}
+          </div>
+        ))}
+        {payments.length === 0 && (
+          <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-stone-400 leading-relaxed">
+            左の下の枠に入れた商品を「この分を会計」で払います。
+            <br />
+            全部払い終えたら注文を送ります
           </div>
         )}
       </div>
@@ -319,7 +457,9 @@ const DiscountSection = (props: props) => {
   const { draft, couponStatus, onFocusCoupon, onToggleSpecial } = props;
   const editable = canEditCoupon(draft);
   const couponApplied = couponStatus.kind === "available";
-  const specialBlocked = !draft.special && couponApplied;
+  // 個別会計で払い始めたら、割引は変えない
+  const locked = isDiscountLocked(draft);
+  const specialBlocked = (!draft.special && couponApplied) || locked;
   const message = discountMessage(props);
   const complete = draft.coupon.length === COUPON_DIGITS;
 
@@ -332,9 +472,11 @@ const DiscountSection = (props: props) => {
           onClick={onToggleSpecial}
           disabled={specialBlocked}
           title={
-            specialBlocked
-              ? "引換券で割引しているときは使えません"
-              : "今年以外の引換券があるときは、1杯分に限り割引できます"
+            locked
+              ? "個別会計で払い始めたので変えられません"
+              : specialBlocked
+                ? "引換券で割引しているときは使えません"
+                : "今年以外の引換券があるときは、1杯分に限り割引できます"
           }
           className={cn(
             "ml-auto h-11 rounded-[10px] border px-3.5 font-bold text-[13px] disabled:opacity-40",
@@ -354,10 +496,10 @@ const DiscountSection = (props: props) => {
           type="button"
           aria-label={`引換券番号 ${draft.coupon || "未入力"}`}
           onClick={onFocusCoupon}
-          disabled={draft.special}
+          disabled={draft.special || locked}
           className={cn(
             "flex flex-none gap-1.5",
-            draft.special && "opacity-40",
+            (draft.special || locked) && "opacity-40",
           )}
         >
           {Array.from({ length: COUPON_DIGITS }, (_, i) => {
@@ -400,7 +542,14 @@ const DiscountSection = (props: props) => {
           {message.tone === "bad" && (
             <CrossCircledIcon className="mt-px h-4 w-4 flex-none" />
           )}
-          <span>{message.text}</span>
+          <span>
+            {message.text}
+            {draft.split !== null &&
+              props.discount > 0 &&
+              (locked
+                ? "。払い始めたので変えられません"
+                : "。左の「割引をここに」で付ける商品を選べます")}
+          </span>
         </div>
       </div>
     </div>

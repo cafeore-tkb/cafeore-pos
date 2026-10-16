@@ -17,7 +17,14 @@ type props = {
   discount: number;
   /** 割引の内訳（「（引換券 042）」「（特殊な割引）」）。割引が無ければ空 */
   discountNote: string;
+  /** 先会計（個別会計で先に払った額）。無ければ 0 */
+  prepaid: number;
+  /** 今回払う額（合計 − 割引 − 先会計） */
   billing: number;
+  /** 個別会計の何回目の会計か（「個別会計 2回目」）。個別会計でなければ null */
+  splitNote: string | null;
+  /** 確定すると注文を送るか。個別会計の途中の会計は払った分を覚えるだけ */
+  sendsOrder: boolean;
   /** 出す Square の決済手段。Square を使わないレジでは空 */
   squarePaymentTypes: readonly SquarePaymentType[];
   /** Square で決済を始められるか（つながっている・商品がある） */
@@ -77,7 +84,10 @@ export const PayPanel = ({
   total,
   discount,
   discountNote,
+  prepaid,
   billing,
+  splitNote,
+  sendsOrder,
   squarePaymentTypes,
   canStartSquare,
   canSubmit,
@@ -106,6 +116,12 @@ export const PayPanel = ({
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l">
       <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-2.5 pb-2">
+        {splitNote !== null && (
+          <div className="-mb-1 flex items-center gap-2 font-bold text-[13px] text-orange-700">
+            <span className="h-2 w-2 rounded-full bg-orange-600" />
+            {splitNote}
+          </div>
+        )}
         <div className="flex flex-col gap-px border-stone-200 border-b pb-1 tabular-nums">
           <div className="flex justify-between text-[13px] text-stone-500">
             <span>{itemCount > 0 ? `合計（${itemCount}点）` : "合計"}</span>
@@ -120,9 +136,14 @@ export const PayPanel = ({
             <span>割引{discountNote}</span>
             <span>{discount > 0 ? formatYen(-discount) : "—"}</span>
           </div>
-          <div className="flex justify-between text-[13px] text-stone-400">
+          <div
+            className={cn(
+              "flex justify-between text-[13px]",
+              prepaid > 0 ? "text-stone-600" : "text-stone-400",
+            )}
+          >
             <span>先会計</span>
-            <span>—</span>
+            <span>{prepaid > 0 ? formatYen(-prepaid) : "—"}</span>
           </div>
           <div className="flex items-baseline justify-between">
             <span className="font-bold text-[15px]">小計</span>
@@ -315,7 +336,7 @@ export const PayPanel = ({
           >
             お釣り0で
             <br />
-            送信
+            {sendsOrder ? "送信" : "確定"}
           </button>
           <button
             type="button"
