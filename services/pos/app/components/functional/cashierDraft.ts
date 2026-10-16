@@ -107,18 +107,34 @@ export const canAssignSelected = (draft: CashierDraft): boolean => {
   return !!line && !line.voided && canAssignMenu(line.menu);
 };
 
-/** 引換券番号を打てるか（入れる段階で、特殊な割引でなく、行も備考も選んでいない） */
+/** 引換券番号の欄を選んでいるか（入れる段階で、特殊な割引でなく、行も備考も選んでいない）。欄に枠を出す */
 export const canEditCoupon = (draft: CashierDraft): boolean =>
   draft.step === "entry" &&
   !draft.special &&
   draft.selected === null &&
   draft.zone === "coupon";
 
+/**
+ * 数字（テンキー・数字のキー）で引換券番号を打てるか（入れる段階で、特殊な割引でない）。
+ * 商品の行や備考を選んでいても、打てば引換券番号の欄に移る
+ */
+export const canInputCoupon = (draft: CashierDraft): boolean =>
+  draft.step === "entry" && !draft.special;
+
+/** 引換券番号の欄に移る（打った数字が入る欄を見せる） */
+const toCouponZone = (draft: CashierDraft): CashierDraft =>
+  draft.selected === null && draft.zone === "coupon"
+    ? draft
+    : { ...draft, selected: null, zone: "coupon" };
+
 // --------------------------------------------------
 // 商品
 // --------------------------------------------------
 
-/** 商品を足す。会計の段階では足さない */
+/**
+ * 商品を足し、足した行を選ぶ（続けて Space で指名、Backspace で削除できるように）。
+ * 会計の段階では足さない
+ */
 export const addLine = (
   draft: CashierDraft,
   menu: WithId<MenuEntity>,
@@ -128,6 +144,7 @@ export const addLine = (
     ...draft,
     lines: [...draft.lines, { key: draft.nextKey, menu, voided: false }],
     nextKey: draft.nextKey + 1,
+    selected: draft.lines.length,
   };
 };
 
@@ -278,18 +295,20 @@ export const setMemo = (draft: CashierDraft, memo: string): CashierDraft => ({
 // 数字（入れる段階は引換券番号、会計の段階は受取金額）
 // --------------------------------------------------
 
-/** 数字を打つ。入れる段階は引換券番号に、会計の段階は受取金額に足す（現金にする） */
+/**
+ * 数字を打つ。入れる段階は引換券番号に（行・備考を選んでいれば引換券番号の欄に移る）、
+ * 会計の段階は受取金額に足す（現金にする）
+ */
 export const inputDigits = (
   draft: CashierDraft,
   digits: string,
 ): CashierDraft => {
   if (draft.step === "entry") {
-    if (!canEditCoupon(draft) || draft.coupon.length >= COUPON_DIGITS) {
-      return draft;
-    }
+    if (!canInputCoupon(draft)) return draft;
+    const coupon = toCouponZone(draft);
     return {
-      ...draft,
-      coupon: (draft.coupon + digits).slice(0, COUPON_DIGITS),
+      ...coupon,
+      coupon: (coupon.coupon + digits).slice(0, COUPON_DIGITS),
     };
   }
   const received = (draft.received + digits).replace(/^0+/, "");
@@ -299,20 +318,22 @@ export const inputDigits = (
   return { ...draft, received, payment: "cash" };
 };
 
-/** 1 桁消す */
+/** 1 桁消す（入れる段階は引換券番号の欄に移る） */
 export const deleteDigit = (draft: CashierDraft): CashierDraft => {
   if (draft.step === "entry") {
-    return canEditCoupon(draft)
-      ? { ...draft, coupon: draft.coupon.slice(0, -1) }
+    return canInputCoupon(draft)
+      ? { ...toCouponZone(draft), coupon: draft.coupon.slice(0, -1) }
       : draft;
   }
   return { ...draft, received: draft.received.slice(0, -1) };
 };
 
-/** 全部消す */
+/** 全部消す（入れる段階は引換券番号の欄に移る） */
 export const clearDigits = (draft: CashierDraft): CashierDraft => {
   if (draft.step === "entry") {
-    return canEditCoupon(draft) ? { ...draft, coupon: "" } : draft;
+    return canInputCoupon(draft)
+      ? { ...toCouponZone(draft), coupon: "" }
+      : draft;
   }
   return { ...draft, received: "" };
 };

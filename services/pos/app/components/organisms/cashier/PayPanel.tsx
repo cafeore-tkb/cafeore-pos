@@ -5,7 +5,7 @@ import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
   type CashierDraft,
-  canEditCoupon,
+  canInputCoupon,
 } from "../../functional/cashierDraft";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 
@@ -98,7 +98,7 @@ export const PayPanel = ({
   const cashReady =
     paying && canSubmit && itemCount > 0 && change !== null && change >= 0;
   const exactReady = paying && canSubmit && itemCount > 0 && billing >= 0;
-  const padEnabled = paying || canEditCoupon(draft);
+  const padEnabled = paying || canInputCoupon(draft);
   // Enter で押すボタン。現金で受取金額が空ならちょうど、入っていれば確定
   const enterExact = paying && cash && received === null;
   const enterSubmit = paying && cash && received !== null;
