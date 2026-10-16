@@ -24,6 +24,7 @@ import {
   sharesOrder,
   unassignedRows,
 } from "./cards";
+import { isStampReply } from "./comments";
 import {
   DROP_EDGE,
   boardLanes,
@@ -39,6 +40,12 @@ import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
 import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
 import { timelineArrivals } from "./timeline";
+import {
+  markSeen,
+  unfinishedOrders,
+  unfinishedStates,
+  unseenAlerts,
+} from "./unfinished";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -607,6 +614,7 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     text: "氷少なめ",
     createdAt: T0,
     orderNo: 3,
+    orderId: "order-3",
   };
   const comments = new Map([["order-3", [comment]]]);
   const find = (orderNo: number) =>
@@ -709,5 +717,114 @@ describe("[unit] CaOS の終わったカードと提供済みのカード", () =
       isPast: true,
       cups: 1,
     });
+  });
+});
+
+describe("[unit] CaOS の未完了の注文とタブの印", () => {
+  const at = (orderId: number, minutesAgo: number, cups: CupPlace[]) => ({
+    ...order(orderId, cups),
+    createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
+  });
+  // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
+  // #6：提供済みのカップを入れ直した（入れ直しが未割当）。#7 は下に
+  const rebrew = {
+    id: "e6",
+    createdAt: T0,
+    reason: "こぼした",
+    dripper: null,
+    dripperPosition: null,
+    dripId: null,
+    brewStartedAt: null,
+    brewFinishedAt: null,
+  };
+  const orders = [
+    at(1, 20, [
+      { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+    ]),
+    at(2, 10, [{}]),
+    at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
+    at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
+    // #7：「次へ」を押し忘れたまま提供済みにした（入れ直しではないので出さない）
+    at(7, 40, [
+      {
+        dripper: 3,
+        dripId: "d7",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        readyAt: T0,
+        servedAt: T0,
+      },
+    ]),
+    at(4, 5, [
+      {
+        dripper: 2,
+        dripId: "d4",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        brewFinishedAt: T0,
+      },
+    ]),
+    at(5, 1, [{ readyAt: T0 }, {}]),
+  ];
+  const cards = buildCaosCards(orders);
+  const comment = (text: string, author: "cashier" | "master" = "cashier") => ({
+    author,
+    text,
+    createdAt: T0,
+    orderNo: 2,
+    orderId: "order-2",
+  });
+  const comments = new Map([
+    ["order-2", [comment("氷少なめ"), comment("👍 了解", "master")]],
+  ]);
+  const rows = (practice = false) =>
+    unfinishedOrders({
+      orders,
+      cards,
+      lanes: boardLanes(cards),
+      comments,
+      nowMs: T0.getTime(),
+      practice,
+    });
+
+  test("まだ提供していない注文を注文番号の順に、受けてからの時間（15 分超は late）と今の場所で", () => {
+    expect(
+      rows().map((row) => ({
+        no: row.orderNo,
+        late: row.late,
+        places: row.cards.map(({ place }) => place),
+        ready: row.readyCups,
+      })),
+    ).toEqual([
+      { no: 1, late: true, places: ["1st 抽出中 0:00"], ready: 0 },
+      { no: 2, late: false, places: ["未割当"], ready: 0 },
+      { no: 4, late: false, places: ["2nd 済"], ready: 0 },
+      { no: 5, late: false, places: ["未割当"], ready: 1 },
+      { no: 6, late: false, places: ["未割当"], ready: 1 },
+    ]);
+    expect(rows()[1].comments).toHaveLength(2);
+    expect(rows().map(unfinishedStates)).toEqual([
+      ["1st 抽出中 0:00"],
+      ["未割当"],
+      ["2nd 済"],
+      ["未割当", "準備完了 1/2"],
+      ["未割当", "準備完了"],
+    ]);
+  });
+
+  test("実データテストは、抽出の要るカップが全部抽出を終えた注文を済みとみる", () => {
+    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5, 6, 7]);
+  });
+
+  test("タブの印は、まだ見ていない 15 分超の注文と新しいコメント（返したスタンプは数えない）。見たら消え、今の未完了に無いものは忘れる", () => {
+    expect(isStampReply(comment("👍 了解", "master"))).toBe(true);
+    expect(isStampReply(comment("👍 了解"))).toBe(false);
+    const none = { late: [], comments: [] };
+    const unseen = unseenAlerts(rows(), none);
+    expect(unseen.late).toEqual(["order-1"]);
+    expect(unseen.comments).toHaveLength(1);
+    const seen = markSeen(rows(), { late: ["gone"], comments: [] }, unseen);
+    expect(seen.late).toEqual(["order-1"]);
+    expect(unseenAlerts(rows(), seen)).toEqual(none);
   });
 });

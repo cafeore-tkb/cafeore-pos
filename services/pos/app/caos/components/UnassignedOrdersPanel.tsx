@@ -1,5 +1,5 @@
 import { type CaosCard, canSplitCard } from "@cafeore/common";
-import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
@@ -24,9 +24,15 @@ import {
   SplitCupButtons,
 } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
+import {
+  UnassignedHeading,
+  UnfinishedList,
+  type UnfinishedView,
+} from "./UnfinishedOrders";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
 // どちらも未割当のカードだけを、注文番号の行（logic/cards の unassignedRows）にまとめる。長く待っているカードには待ち時間の札を付ける。
+// unfinished を渡すと（操作の画面）、見出しを「未割当」「未完了」のタブにし、「未完了」ではまだ提供していない注文の一覧（UnfinishedList）を出す。
 // カードはなぞると掴むので、スクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 /**
@@ -111,6 +117,18 @@ const DragGhost: React.FC<{
     dropTargetLabel(pick.drag.target),
   );
 
+// 未割当の注文の数（見出しの赤い札）
+const CountChip: React.FC<{
+  orders: readonly CaosCard[];
+  className?: string;
+}> = ({ orders, className = "w-fit font-black text-[13px]" }) => (
+  <span
+    className={`whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-mono text-red-600 ${className}`}
+  >
+    <OrderCountLabel cards={orders} />
+  </span>
+);
+
 const EmptyNote: React.FC = () => (
   <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
     レジからのオーダーを待っています
@@ -127,6 +145,8 @@ type UnassignedProps = {
   pick: UnassignedPick;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
+  /** 「未完了」のタブ（操作の画面だけ） */
+  unfinished?: UnfinishedView;
 };
 
 /** 未割当の横帯をたたむか（閲覧だけの画面。たたむと見出しの行だけにする） */
@@ -152,6 +172,7 @@ export const UnassignedStrip: React.FC<
   nowMs,
   pick,
   fold,
+  unfinished,
 }) => {
   const columns = unassignedRows(orders);
   const folded = fold?.folded ?? false;
@@ -163,13 +184,9 @@ export const UnassignedStrip: React.FC<
       className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
-        <h2 className="flex items-center gap-1.5 whitespace-nowrap font-black text-[18px] text-slate-950">
-          <ClipboardList className="h-5 w-5 shrink-0 text-slate-700" />
-          未割当
-        </h2>
-        <span className="w-fit whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-black font-mono text-[13px] text-red-600">
-          <OrderCountLabel cards={orders} />
-        </span>
+        <UnassignedHeading view={unfinished} className="text-[18px]">
+          <CountChip orders={orders} />
+        </UnassignedHeading>
         <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         <NextAvailableChips
           nextAvailable={nextAvailable}
@@ -187,7 +204,10 @@ export const UnassignedStrip: React.FC<
           </button>
         )}
       </header>
-      {!folded && (
+      {unfinished?.tab === "unfinished" && (
+        <UnfinishedList view={unfinished} axis="x" trackSlot={trackSlot} />
+      )}
+      {!folded && unfinished?.tab !== "unfinished" && (
         <ScrollArea
           axis="x"
           trackSlot={trackSlot}
@@ -243,51 +263,59 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   selectedOrderId,
   nowMs,
   pick,
+  unfinished,
 }) => {
   const rows = unassignedRows(orders);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader icon={ClipboardList} title="未割当">
-        <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold font-mono text-[11px] text-red-600">
-          <OrderCountLabel cards={orders} />
-        </span>
+      <PanelHeader>
+        <UnassignedHeading view={unfinished}>
+          <CountChip
+            orders={orders}
+            className="shrink-0 font-bold text-[11px]"
+          />
+        </UnassignedHeading>
       </PanelHeader>
-      <ScrollArea
-        axis="y"
-        className="flex-1"
-        scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
-      >
-        {rows.map(({ orderNo, emergency, cards }) => (
-          <div
-            key={`${emergency}:${orderNo}`}
-            className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
-          >
-            <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
-              {orderNoLabel(orderNo)}
-              {emergency && (
-                <span className="mt-1 font-sans text-[11px] text-red-600">
-                  緊急
-                </span>
-              )}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-              {cards.map((card) => (
-                <UnassignedCard
-                  key={card.key}
-                  card={card}
-                  looks={looks}
-                  pick={pick}
-                  size="sm"
-                  selected={sharesOrder(card, selectedOrderId)}
-                  nowMs={nowMs}
-                  className="h-[50px] w-[150px]"
-                />
-              ))}
+      {unfinished?.tab === "unfinished" ? (
+        <UnfinishedList view={unfinished} axis="y" />
+      ) : (
+        <ScrollArea
+          axis="y"
+          className="flex-1"
+          scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
+        >
+          {rows.map(({ orderNo, emergency, cards }) => (
+            <div
+              key={`${emergency}:${orderNo}`}
+              className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
+            >
+              <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
+                {orderNoLabel(orderNo)}
+                {emergency && (
+                  <span className="mt-1 font-sans text-[11px] text-red-600">
+                    緊急
+                  </span>
+                )}
+              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {cards.map((card) => (
+                  <UnassignedCard
+                    key={card.key}
+                    card={card}
+                    looks={looks}
+                    pick={pick}
+                    size="sm"
+                    selected={sharesOrder(card, selectedOrderId)}
+                    nowMs={nowMs}
+                    className="h-[50px] w-[150px]"
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-        {rows.length === 0 && <EmptyNote />}
-      </ScrollArea>
+          ))}
+          {rows.length === 0 && <EmptyNote />}
+        </ScrollArea>
+      )}
       <DragGhost pick={pick} looks={looks} size="sm" />
     </section>
   );

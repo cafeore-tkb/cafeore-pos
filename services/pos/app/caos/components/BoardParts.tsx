@@ -11,10 +11,10 @@ import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
 // 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
-/** パネルの見出し（アイコン・題・右に添えるもの） */
+/** パネルの見出し（アイコン・題・右に添えるもの）。題の代わりにタブを置くときは icon・title を渡さない */
 export const PanelHeader: React.FC<{
-  icon: LucideIcon;
-  title: string;
+  icon?: LucideIcon;
+  title?: string;
   className?: string;
   children?: React.ReactNode;
 }> = ({
@@ -26,8 +26,12 @@ export const PanelHeader: React.FC<{
   <header
     className={`flex h-11 shrink-0 items-center gap-2 rounded-t-lg bg-slate-50 px-3 ${className}`}
   >
-    <Icon className="h-4 w-4 shrink-0 text-slate-700" />
-    <h2 className="shrink-0 font-black text-[15px] text-slate-950">{title}</h2>
+    {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-700" />}
+    {title && (
+      <h2 className="shrink-0 font-black text-[15px] text-slate-950">
+        {title}
+      </h2>
+    )}
     {children}
   </header>
 );

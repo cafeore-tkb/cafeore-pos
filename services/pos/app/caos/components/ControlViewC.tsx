@@ -48,6 +48,7 @@ const ControlViewCBoard: React.FC<
   cardMenu,
   onOpenEmptySlot,
   onOpenLane,
+  unfinished,
   pick,
   hold,
 }) => (
@@ -148,6 +149,7 @@ const ControlViewCBoard: React.FC<
         nowMs={nowMs}
         selectedOrderId={selectedOrderId}
         pick={pick}
+        unfinished={unfinished}
       />
     </aside>
   </section>

@@ -3,7 +3,7 @@ import {
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
-import { ClipboardList, Table2, X } from "lucide-react";
+import { Table2, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
 import {
@@ -46,6 +46,7 @@ import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
+import { UnassignedHeading, UnfinishedList } from "./UnfinishedOrders";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
@@ -112,6 +113,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onMergeOrders,
+  unfinished,
 }) => {
   const picked = useSheetSelection({
     unassigned: unassignedOrders,
@@ -489,17 +491,20 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             ここで離すと未割当に戻す
           </div>
         )}
-        <PanelHeader
-          icon={ClipboardList}
-          title="注文内容"
-          className={`border-b-2 ${LINE}`}
-        >
+        <PanelHeader className={`border-b-2 ${LINE}`}>
+          <UnassignedHeading
+            view={unfinished}
+            label="注文内容"
+            className={unfinished ? "text-[13px]" : undefined}
+          />
           <span className="ml-auto font-black text-[12px] text-slate-700">
             未割り振り <OrderCountLabel cards={unassignedOrders} />
           </span>
         </PanelHeader>
 
-        {orderGroups.length === 0 ? (
+        {unfinished?.tab === "unfinished" ? (
+          <UnfinishedList view={unfinished} axis="y" />
+        ) : orderGroups.length === 0 ? (
           <p className="flex-1 py-8 text-center font-bold text-[13px] text-slate-400">
             未割り振りの注文はありません
           </p>
