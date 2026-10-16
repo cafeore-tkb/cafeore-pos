@@ -148,7 +148,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if err := db.First(&after, "id = ?", o2.ID).Error; err != nil || after.ReadyAt != nil {
 		t.Fatalf("order = %+v, want not ready", after)
 	}
-	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にすると終わりとみなす）
+	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にしても残り、終えるのは「次へ」だけ）
 	if cup := f.cup(t, o2.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 || cup.ReadyAt != nil {
 		t.Fatalf("cup = %+v", cup)
 	}
