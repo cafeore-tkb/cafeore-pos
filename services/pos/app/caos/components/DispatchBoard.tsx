@@ -98,7 +98,7 @@ export const DispatchBoard: React.FC<
   });
   const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列そのもの（カードの無い所）と、指名以外の列には置けない）
+  // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列のカードの無い所はその列の最後へ。指名以外の列には置けない）
   const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
     targetAt: ({ card, bayId }, x, y) =>
       dropTargetAt(x, y, {

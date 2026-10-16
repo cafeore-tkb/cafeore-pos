@@ -47,7 +47,7 @@ import {
 } from "../logic/cards";
 import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
-import { boardLanes, laneActive } from "../logic/lanes";
+import { boardLanes } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
@@ -124,7 +124,7 @@ export const useCaosSession = () => {
   const { beanIndex, ...beanStock } = useBeanInventory();
   // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
   const { printer: labelPrinter, addEmergency } = useCupEmergency();
-  const lastAction = useLastAction(realTime.getTime());
+  const lastAction = useLastAction();
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
   // 止めずにそのまま書き、同じ所に知らせだけ出す
@@ -364,10 +364,10 @@ export const useCaosSession = () => {
     /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
     comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
-    /** ヘッダーの注文の数と杯数（未割当・ドリッパーの待ち） */
+    /** ヘッダーの注文の数と杯数（未割当・ドリッパーに置いてまだ始めていない待機。抽出中は数えない） */
     counts: {
       unassigned: orderAndCupCounts(unassigned),
-      waiting: orderAndCupCounts(lanes.flatMap(laneActive)),
+      waiting: orderAndCupCounts(lanes.flatMap((lane) => lane.queued)),
     },
     /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
     backlog: orderBacklog(cards, nowMs),

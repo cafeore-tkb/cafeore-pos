@@ -1,8 +1,10 @@
 import {
   type CaosCard,
   type CaosPlace,
+  assignWrites,
   caosDripperAllowed,
   caosMergePair,
+  dripperLabel,
 } from "@cafeore/common";
 import type React from "react";
 import {
@@ -18,7 +20,7 @@ import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機・抽出中のカード）で共通。
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
 // 掴んだカードはその場に残し、指には写し（ghost）が付いて動く（スクロールする枠に切られない）。
-// 置き先は targetAt（指の下。bayTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
+// 置き先は targetAt（指の下。dropTargetAt など）で決め、離したら onDrop。ドラッグのあとのクリックは捨てる。
 // onHold を渡すと、12px より動かさずに HOLD_MS 押し続けたら長押し（onHold が true を返したら、ドラッグは始めず、離したときのクリックも捨てる）。
 // 動かし始めたら長押しにはならない（なぞったらすぐ掴むのはそのまま）。Apple Pencil・マウスも同じ。
 const DRAG_THRESHOLD_PX = 12;
@@ -68,15 +70,12 @@ const isBayButton = (element: Element): element is HTMLElement =>
 /**
  * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
- * 列は from（移す前のドリッパー。運んでいるカード自身がその列の中にある）を飛ばして探す。
  * 運んでいるカード（card）を置けないドリッパー（指名の番号でない列。caosDripperAllowed）は null
  */
-export const bayTargetAt = (
-  clientX: number,
-  clientY: number,
-  { from, card }: { from?: number; card?: CaosCard } = {},
+const bayTargetAt = (
+  elements: readonly Element[],
+  card: CaosCard | undefined,
 ) => {
-  const elements = document.elementsFromPoint(clientX, clientY);
   const bayOf = (element: HTMLElement | null | undefined) =>
     Number(element?.dataset.bayTarget);
   const button = elements.find(isBayButton);
@@ -85,12 +84,9 @@ export const bayTargetAt = (
     : bayOf(
         elements
           .map((element) => element.closest<HTMLElement>("[data-bay-target]"))
-          .find((element) => {
-            const id = bayOf(element);
-            return isBayId(id) && id !== from;
-          }),
+          .find((element) => isBayId(bayOf(element))),
       );
-  if (!isBayId(bayId) || bayId === from) return null;
+  if (!isBayId(bayId)) return null;
   if (card && !caosDripperAllowed(card, bayId)) return null;
   return bayId;
 };
@@ -103,6 +99,8 @@ export const bayTargetAt = (
 export interface DropTarget {
   bayId: number;
   place?: CaosPlace;
+  /** 運んでいるカード自身の列の空いた所（その列の待機の最後へ。札「3rd の最後へ」） */
+  ownLane?: true;
   /** 統合する相手のカード（key） */
   mergeKey?: string;
   near?: {
@@ -120,7 +118,9 @@ export interface DropTarget {
  * 落とす先（管制盤 A・C・D）。1〜6 のボタンが下にあればそのボタン（列の最後）。列の待機・抽出中のカード（data-queued-ticket）の上なら、
  * 左の端はそのカードの前・右の端は後ろ・真ん中は統合（運んでいるカード card と統合できる（caosMergePair。cards から引く。
  * 運んでいるのが抽出中なら相手を抽出中のカードに入れる）ときだけ。できなければ近いほうの端。logic/lanes の dropSideAt）。
- * 同じ列の中の入れ替えにも使う。ほかは列（最後。bayTargetAt）。運んでいるカード自身は飛ばし、置けない列は null。
+ * 同じ列の中の入れ替えにも使う。ほかは列（最後。bayTargetAt）。置けない列は null。
+ * 運んでいるカード自身の上は null（掴んだ所に戻して離したら何もしない）。カード自身の列（from）の空いた所は、ほかの列と同じくその列の待機の最後へ
+ * （抽出中のカードなら、代わりに待機の先頭が始まる。assignWrites）。もう最後にある（動かしても同じ場所）なら null。
  * merge が false なら統合しない（前か後ろだけ）
  */
 export const dropTargetAt = (
@@ -143,7 +143,8 @@ export const dropTargetAt = (
     for (const element of elements) {
       const ticket = element.closest<HTMLElement>("[data-queued-ticket]");
       const key = ticket?.dataset.queuedTicket;
-      if (!ticket || !key || key === card?.key) continue;
+      if (!ticket || !key) continue;
+      if (key === card?.key) return null;
       const bayId = Number(
         ticket.parentElement?.closest<HTMLElement>("[data-bay-target]")?.dataset
           .bayTarget,
@@ -173,14 +174,20 @@ export const dropTargetAt = (
       };
     }
   }
-  const bayId = bayTargetAt(clientX, clientY, { from, card });
-  return bayId === null ? null : { bayId };
+  const bayId = bayTargetAt(elements, card);
+  if (bayId === null) return null;
+  if (bayId !== from || !card) return { bayId };
+  const moved = assignWrites(cards, card, bayId, { newId: () => "" });
+  return "error" in moved || moved.writes.length === 0
+    ? null
+    : { bayId, ownLane: true };
 };
 
-/** 落とす先の札（「→ 3」・「#012 の前へ（今から始める）」・「#012 の後ろへ（待機の先頭）」・「#012 と統合」） */
+/** 落とす先の札（「→ 3」・「3rd の最後へ」・「#012 の前へ（今から始める）」・「#012 の後ろへ（待機の先頭）」・「#012 と統合」） */
 export const dropTargetLabel = (target: DropTarget | null) => {
   if (!target) return null;
   const { near } = target;
+  if (target.ownLane) return `${dripperLabel(target.bayId)} の最後へ`;
   if (!near) return `→ ${target.bayId}`;
   if (near.side === "merge") return `${near.label} と統合`;
   if (near.side === "before")
