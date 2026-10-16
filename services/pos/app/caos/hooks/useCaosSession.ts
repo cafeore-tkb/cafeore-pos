@@ -25,6 +25,7 @@ import {
   seniorOnlyOffSenior,
   splitWrites,
   unassignWrites,
+  unstartWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -39,6 +40,7 @@ import {
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { orderBacklog } from "../logic/alerts";
 import { waitingCupsByBean } from "../logic/beans";
+import type { CardBoardAction } from "../logic/cardActions";
 import {
   cardLooks,
   orderAndCupCounts,
@@ -192,7 +194,7 @@ export const useCaosSession = () => {
     }
     return ok;
   };
-  // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。押した待機のカードを始めるときは、先にそのカードを待機の先頭へ動かす
+  // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。未着手のカードを ▶ で始めるときは、そのカードが待機の先頭でなければ（ほかの端末で入れ替わった）先に待機の先頭へ動かす
   // （同じ 1 つの操作として端末に残す）。書けたら音を鳴らし、「直前の操作」に覚える
   const runNext = (bayId: number, seen: string | null, start: NextStart) => {
     const { brewing, queued } = caosLane(cards, bayId);
@@ -235,8 +237,8 @@ export const useCaosSession = () => {
       () => soundManager.playComplete(),
     );
   };
-  // 抽出中のカードを終える操作（「次へ」・抽出中のカードを押す・待機のカードを押して始める）。始めてから 10 秒は終えられず、
-  // 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）すぐには送らず右上で確かめる。抽出中が無ければそのまま始める
+  // 抽出中のカードを終える操作（カードの ✓・✋）。始めてから 10 秒は終えられず、
+  // 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）すぐには送らず右上で確かめる
   const endBrewing = (bayId: number, start: NextStart) => {
     const lane = lanes.find((l) => l.id === bayId);
     if (!lane) return;
@@ -487,20 +489,29 @@ export const useCaosSession = () => {
       return ok;
     },
     /**
-     * 「次へ」。抽出中のカードを終え、待機の先頭を始める。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ null で、待機の先頭を始める。押し間違いの確かめは endBrewing
+     * カードの上のアイコンの操作（logic/cardActions）。
+     *   - start（▶）：未着手のカードを始める（「次へ」。抽出中があれば断る）
+     *   - finish（✓）：抽出中のカードを終え、待機の先頭を始める（「次へ」）
+     *   - hold（✋）：抽出中のカードを終え、待機の先頭は始めない（未着手で止める。「次へ」の start_next: false）
+     *   - unstart（↻）：抽出中のカードを未着手に戻す（始めた時刻を消して待機の先頭へ。@cafeore/common の unstartWrites）
+     * 終える操作は「次へ」と同じ押し間違いの決まり（endBrewing）。押したときの盤面とカードの段階が違えば断る
      */
-    advance: (bayId: number) => endBrewing(bayId, "head"),
-    /**
-     * ドリッパーのカードを押した。抽出中のカードは終える（待機の先頭は始めない）、待機のカードはそれを始める（抽出中のカードがあれば終える。
-     * 待機の先頭でなくても、押したカードを始める）。終わったカードは何もしない
-     */
-    pressCard: (pressed: CaosCard) => {
+    runCardAction: (pressed: CaosCard, action: CardBoardAction) => {
       const card = cardOf(pressed.key);
-      if (!card?.dripper) return;
-      if (card.status === "brewing") endBrewing(card.dripper, "none");
-      else if (card.status === "queued")
-        endBrewing(card.dripper, { key: card.key });
+      if (!card?.dripper) return fail(NOT_FOUND);
+      const { brewing } = caosLane(cards, card.dripper);
+      if (action === "unstart")
+        return write(
+          unstartWrites(cards, card),
+          `未着手に戻す ${orderLabel(card)}`,
+        );
+      if (action === "start") {
+        if (brewing) return fail(`${orderLabel(brewing)} が抽出中です`);
+        return runNext(card.dripper, null, { key: card.key });
+      }
+      if (brewing?.key !== card.key)
+        return fail("このカードはもう抽出中ではありません");
+      return endBrewing(card.dripper, action === "finish" ? "head" : "none");
     },
     /** 右上の確かめ（「次へ」）と知らせ（時間のたったカードへの統合・上級生のみのカードを上級生でない担当者に置いた）。新しいものが先 */
     cornerToasts: toasts.open,
