@@ -21,6 +21,13 @@ export const longWaitMinutes = (card: CaosCard, nowMs: number) => {
 /** 受けてからこれだけ（秒）を超えて、まだ抽出を始めていない（未割当・待機の）注文を、ヘッダーで「15分超 N件」と数える */
 export const LATE_ORDER_SEC = 15 * 60;
 
+/** 受けてから LATE_ORDER_SEC を超えて、まだ抽出を始めていない（未割当・待機の）カード（カードに「15」の印） */
+export const lateCard = (card: CaosCard, nowMs: number) =>
+  (card.status === "unassigned" || card.status === "queued") &&
+  card.cups.some(
+    (cup) => (nowMs - cup.orderedAt.getTime()) / 1000 > LATE_ORDER_SEC,
+  );
+
 /** 待っている注文（注文番号と、受けてからの秒。late は LATE_ORDER_SEC を超えた） */
 export interface WaitingOrder {
   orderNo: number;

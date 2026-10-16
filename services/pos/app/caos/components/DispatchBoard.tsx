@@ -15,27 +15,28 @@ import { cardName, orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
-import { DripperIndicator, EmptySlotButton, NextButton } from "./BoardParts";
+import { DripperIndicator, EmptySlotButton } from "./BoardParts";
+import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
-// 左端はドリッパーの番号（列の状態のインジケーター）と担当者、その右に「次へ」。
-// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中・終わりは緊急のパネル（onHoldCard）。
+// 左端はドリッパーの番号（列の状態のインジケーター）と担当者。
+// カードを押すと、その段階の操作のアイコンをカードの上に出す（cardMenu。CardOverlay）。長押しで待機は詳細、抽出中・終わりは緊急のパネル（onHoldCard）。
 // 未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
 // 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後。待機・抽出中のカードの上に落とすと、左の端はそのカードの前・
 // 右の端は後ろ・真ん中は統合（統合できる相手のときだけ。useCardDrag の dropTargetAt）。抽出中のカードの前は列の先頭で今から始まり、
 // 後ろは待機の先頭。同じ列の中の入れ替えにも使う。抽出中のカードを落として統合したら相手を抽出中のカードに入れる）。
 // 指の下のカードには、入れる所の線か統合の枠を出す（DropMark）。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
-// （左の固定の列はなぞってもスクロールしない。「次へ」を急いで押して指が滑っても、NOW の追従が外れない）。
+// （左の固定の列はなぞってもスクロールしない。担当者の交代を押して指が滑っても、NOW の追従が外れない）。
 // 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
 // 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
-// 左端の列（ドリッパーの番号・担当者と「次へ」）の幅
+// 左端の列（ドリッパーの番号・担当者）の幅
 const STICKY_LEFT_WIDTH = 240;
 // NOW の左に見せる過去（2 分半）。抽出中のカードの始めてから今までと、寄せて残した商品・注文番号が NOW の線の左に収まる幅
 const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
@@ -67,8 +68,7 @@ export const DispatchBoard: React.FC<
   looks,
   selectedOrderId,
   onSelectOrder,
-  onAdvanceBay,
-  onPressCard,
+  cardMenu,
   onHoldCard,
   onMoveTicket,
   onOpenEmptySlot,
@@ -234,7 +234,7 @@ export const DispatchBoard: React.FC<
                   data-bay-target={bay.id}
                   className="relative flex h-[80px] touch-manipulation items-center bg-white"
                 >
-                  {/* ドリッパーの番号（列の状態）と担当者・交代、その右に「次へ」 */}
+                  {/* ドリッパーの番号（列の状態）と担当者・交代 */}
                   <div
                     style={{ width: STICKY_LEFT_WIDTH }}
                     className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
@@ -257,15 +257,6 @@ export const DispatchBoard: React.FC<
                       />
                       <LaneChangeButton dripper={bay.id} />
                     </div>
-                    {!readOnly && (
-                      <NextButton
-                        bayId={bay.id}
-                        active={Boolean(lane.current)}
-                        locked={lane.nextLocked}
-                        onAdvance={onAdvanceBay}
-                        className="h-[64px] w-[64px] shrink-0 text-[16px]"
-                      />
-                    )}
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
@@ -325,12 +316,21 @@ export const DispatchBoard: React.FC<
                             }
                             onClick={() => {
                               if (isMergeTap) pick?.tap(ticket);
-                              else onPressCard(ticket);
+                              else cardMenu?.toggle(ticket);
                             }}
                             // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
                             className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
                             dragging={drag.source?.card.key === ticket.key}
-                          />
+                          >
+                            <CardOverlay
+                              card={ticket}
+                              lane={bay}
+                              look={looks.get(ticket.key)}
+                              nowMs={nowMs}
+                              menu={cardMenu}
+                              inset={cardInset(left, width)}
+                            />
+                          </OrderCard>
                         </div>
                       );
                     })}

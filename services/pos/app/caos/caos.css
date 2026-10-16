@@ -40,7 +40,7 @@ html:has(.caos-root) body {
 
 /* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-overtime) のように使う */
 .caos-root {
-  /* 予定より長くかかっている（赤。緊急の赤より薄くし、「次へ」の橙と分ける） */
+  /* 予定より長くかかっている（赤。緊急の赤より薄くする） */
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
@@ -100,7 +100,7 @@ html:has(.caos-root) body {
   --caos-side-panel-width: max(360px, min(440px, 44vw));
 }
 
-/* 「次へ」の確かめと、統合・上級生のみの知らせ（BoardParts の CornerToasts）は右上に出す（「次へ」は左の列の見出しにあるので隠さない）。
+/* 「次へ」の確かめと、統合・上級生のみの知らせ（BoardParts の CornerToasts）は右上に出す（左の列の見出し・カードを隠さない）。
    右のパネルが開いていれば、その左に出す（パネルと重ねない） */
 .caos-root .caos-corner-toasts {
   right: 12px;
