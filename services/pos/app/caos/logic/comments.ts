@@ -23,7 +23,10 @@ export const STAMPS = [
   "🙏 ごめん",
 ];
 
-/** CaOS から返したスタンプ（マスターが付けた STAMPS の 1 つ）。新しいコメントとして知らせない（返した側の画面なので） */
+/**
+ * CaOS から返したスタンプ（マスターが付けた STAMPS の 1 つ）。新しいコメントとして知らせない（返した側の画面なので）。
+ * コメントには付けた画面の印が無いので、マスターの画面（/master）で同じ文字を手で付けたものも同じに扱う（どちらもマスターの側から出したもので、CaOS で知らせなくてよい）
+ */
 export const isStampReply = (comment: OrderComment) =>
   comment.author === "master" && STAMPS.includes(comment.text);
 
