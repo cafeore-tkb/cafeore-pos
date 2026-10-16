@@ -2,29 +2,30 @@ import type { CaosCard } from "@cafeore/common";
 import { CircleDot } from "lucide-react";
 import type React from "react";
 import { dropSideOn, useCardHold } from "../hooks/useCardDrag";
+import type { CardMenu } from "../hooks/useCardMenu";
 import {
   type UnassignedPick,
   useControlPick,
 } from "../hooks/useUnassignedPick";
 import { type CardLook, orderLabel, sharesOrder } from "../logic/cards";
-import { laneActive, pendingNominatedCups } from "../logic/lanes";
+import { type Lane, laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import {
   DripperIndicator,
   EmptySlotButton,
   NextAvailableChips,
-  NextButton,
   PanelHeader,
 } from "./BoardParts";
+import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
-// 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・待機。「次へ」は担当者の名前のすぐ右。
+// 行は時系列の順に、ドリッパーの番号（列の状態）・抽出中・待機。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
-// カードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細（移動・先頭へ・待機の先頭へ・未割当に戻す・統合の解除）、
+// カードを押すと、その段階の操作のアイコンをカードの上に出す（cardMenu。CardOverlay）。長押しで待機は詳細（移動・先頭へ・待機の先頭へ・未割当に戻す・統合の解除）、
 // 抽出中は緊急のパネル（1〜6 に移す・未割当に戻すも）（onHoldCard）。ドリッパーの列のカードはドラッグしない（横になぞると待機の列のスクロール）ので、長押しだけ。
 // 右の未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。右の注文の列と共有。詳細は開かない）。
 // 未割当のカードを待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（統合できる相手のときだけ）
@@ -44,8 +45,7 @@ const ControlViewCBoard: React.FC<
   nextAvailable,
   nowMs,
   selectedOrderId,
-  onAdvanceBay,
-  onPressCard,
+  cardMenu,
   onOpenEmptySlot,
   onOpenLane,
   pick,
@@ -86,13 +86,6 @@ const ControlViewCBoard: React.FC<
                     dripper={bay.id}
                     className="font-black text-[18px] text-slate-950"
                   />
-                  <NextButton
-                    bayId={bay.id}
-                    active={Boolean(current)}
-                    locked={lane.nextLocked}
-                    onAdvance={onAdvanceBay}
-                    className="h-9 w-[76px] shrink-0 text-[15px]"
-                  />
                   <LaneAbility dripper={bay.id} />
                   <LaneChangeButton
                     dripper={bay.id}
@@ -106,10 +99,11 @@ const ControlViewCBoard: React.FC<
                       card={current}
                       look={looks.get(current.key)}
                       selected={sharesOrder(current, selectedOrderId)}
+                      lane={bay}
+                      nowMs={nowMs}
                       pick={pick}
                       hold={hold}
-                      // 抽出中が無い列の先頭（「次へ」で始める）は、まだ待機のカード
-                      onPress={onPressCard}
+                      menu={cardMenu}
                       className="cursor-pointer hover:ring-2 hover:ring-blue-400"
                     />
                   ) : (
@@ -124,9 +118,11 @@ const ControlViewCBoard: React.FC<
                         card={ticket}
                         look={looks.get(ticket.key)}
                         selected={sharesOrder(ticket, selectedOrderId)}
+                        lane={bay}
+                        nowMs={nowMs}
                         pick={pick}
                         hold={hold}
-                        onPress={onPressCard}
+                        menu={cardMenu}
                         className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
                       />
                     ))}
@@ -159,18 +155,20 @@ const ControlViewCBoard: React.FC<
 
 type CardHold = ReturnType<typeof useCardHold<CaosCard>>;
 
-// ドリッパーの列のカード（抽出中・待機）。開いた未割当のカードと統合できれば押して統合し、ほかは onPress（抽出中は終える・待機は始める）。
+// ドリッパーの列のカード（抽出中・待機）。開いた未割当のカードと統合できれば押して統合し、ほかは操作のアイコンを開く（menu）。
 // 長押しは hold（待機の詳細・抽出中の入れ直し）。ドラッグで落とす先の目印（前・後ろ・統合。useCardDrag の dropTargetAt）を持ち、
 // 指の下なら入れる所の線か統合の枠を出す
 const LaneCard: React.FC<{
   card: CaosCard;
   look?: CardLook;
   selected: boolean;
+  lane: Lane;
+  nowMs: number;
   pick: UnassignedPick;
   hold: CardHold;
-  onPress: (card: CaosCard) => void;
+  menu?: CardMenu;
   className: string;
-}> = ({ card, look, selected, pick, hold, onPress, className }) => {
+}> = ({ card, look, selected, lane, nowMs, pick, hold, menu, className }) => {
   const mergeTap = pick.canMergeWith(card);
   return (
     <OrderCard
@@ -185,8 +183,16 @@ const LaneCard: React.FC<{
       dropSide={dropSideOn(pick.drag.target, card.key)}
       onPointerDown={(event) => hold.press(card, event)}
       onClickCapture={hold.suppressClick}
-      onClick={() => (mergeTap ? pick.tap(card) : onPress(card))}
+      onClick={() => (mergeTap ? pick.tap(card) : menu?.toggle(card))}
       className={className}
-    />
+    >
+      <CardOverlay
+        card={card}
+        lane={lane}
+        look={look}
+        nowMs={nowMs}
+        menu={menu}
+      />
+    </OrderCard>
   );
 };

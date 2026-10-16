@@ -37,11 +37,11 @@ import {
   DripperIndicator,
   EmptySlotButton,
   LongWaitTag,
-  NextButton,
   OrderCountLabel,
   PanelHeader,
   PlaceTag,
 } from "./BoardParts";
+import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
@@ -50,12 +50,12 @@ import { ScrollArea } from "./ScrollArea";
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
 // （抽出中のカードは始めた時刻を消して待機の最後へ。抽出中も待機も無い列なら今から始め直す）か、右の注文へドラッグして未割当に戻す。
-// 表のカードはボタンを付けず、押すと抽出中は終える・待機はそれを始める（onPressCard）。長押しで待機は詳細、抽出中は緊急のパネル（onHoldCard）。終わったカードは表に出さない（logic/sheet.ts）。
+// 表のカードを押すと、その段階の操作のアイコンをカードの上に出す（cardMenu。CardOverlay）。長押しで待機は詳細、抽出中は緊急のパネル（onHoldCard）。終わったカードは表に出さない（logic/sheet.ts）。
 // 表の待機・抽出中のカードの上に落とすと、左の端はそのカードの前・右の端は後ろ・真ん中は統合（統合できる相手のときだけ。管制盤 A・C と同じ
 // useCardDrag の dropTargetAt。表の行は注文番号なので、列の中の順番は札「3rd 2番目」で見る）。
 // 右の注文カードを選んでいるあいだは、統合できる表の待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する。
 // 統合したカードは、重ねた枠でなく入っている注文ごとの段に分けて出す（OrderCard の byOrder。表では元の注文の行にまたがって縦に長い）。
-// 列の見出しはドリッパーの番号（列の状態）と担当者、担当者の名前のすぐ右に「次へ」。
+// 列の見出しはドリッパーの番号（列の状態）と担当者。
 // 表のカードには、どのドリッパーの何番目か（「3rd 2番目」）の札を付ける。
 // カードはなぞると掴むので、表と右の注文の縦のスクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
@@ -103,8 +103,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   nowMs,
   selectedOrderId,
   onSelectOrder,
-  onAdvanceBay,
-  onPressCard,
+  cardMenu,
   onHoldCard,
   onCancelEmergency,
   onOpenEmptySlot,
@@ -230,10 +229,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         mergeTap={mergeTap}
         dropSide={dropSideOn(sheetTarget, ticket.key)}
         onClickCapture={drag.suppressClick}
-        // 押すと始める・終える（選んだ注文カードと統合できる待機・抽出中のカードは統合）
+        // 押すと操作のアイコンを開く（選んだ注文カードと統合できる待機・抽出中のカードは統合）
         onClick={() => {
           if (mergeTap) picked.mergeWith(ticket);
-          else onPressCard(ticket);
+          else cardMenu?.toggle(ticket);
         }}
         // 統合したカードは注文ごとの段の分だけ高く（元の注文の行にまたがる枠では枠いっぱい）。
         // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
@@ -241,6 +240,13 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         dragging={dragCup?.key === ticket.key}
       >
         <PlaceTag label={places.get(ticket.key)} />
+        <CardOverlay
+          card={ticket}
+          lane={bays[bayId - 1]}
+          look={looks.get(ticket.key)}
+          nowMs={nowMs}
+          menu={cardMenu}
+        />
       </OrderCard>
     );
   };
@@ -312,23 +318,13 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       onOpenLane={onOpenLane}
                       className="h-[56px] w-full"
                     />
-                    {/* 担当者のすぐ右に「次へ」、その下に「交代」（列の幅が狭いので縦に並べる） */}
+                    {/* 担当者、その下に「交代」（列の幅が狭いので縦に並べる） */}
                     <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
-                      <div className="flex w-full min-w-0 items-center justify-center gap-1">
-                        <LaneName
-                          dripper={bay.id}
-                          wrap
-                          className="min-w-0 font-black text-[16px] leading-tight"
-                        />
-                        <NextButton
-                          bayId={bay.id}
-                          active={Boolean(lane.current)}
-                          locked={lane.nextLocked}
-                          onAdvance={onAdvanceBay}
-                          // 列の幅が狭いので矢印は出さない（名前を残す）
-                          className="h-9 shrink-0 px-1.5 text-[14px] [&>svg]:hidden"
-                        />
-                      </div>
+                      <LaneName
+                        dripper={bay.id}
+                        wrap
+                        className="min-w-0 font-black text-[16px] leading-tight"
+                      />
                       <LaneChangeButton dripper={bay.id} />
                     </div>
                   </th>

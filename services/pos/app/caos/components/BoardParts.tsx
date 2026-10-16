@@ -1,21 +1,15 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import {
-  ArrowRightCircle,
-  Clock3,
-  type LucideIcon,
-  Pause,
-  Play,
-  Plus,
-} from "lucide-react";
+import { Clock3, type LucideIcon, Pause, Play, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenCornerToast } from "../hooks/useCornerToasts";
-import { longWaitMinutes } from "../logic/alerts";
+import lateIcon from "../icons/late.svg";
+import { lateCard, longWaitMinutes } from "../logic/alerts";
 import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
 /** パネルの見出し（アイコン・題・右に添えるもの） */
 export const PanelHeader: React.FC<{
@@ -58,8 +52,8 @@ export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
 );
 
 // 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
-// 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤・「次へ」の橙と分ける）。
-// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない。logic/alerts）は FORGOTTEN
+// 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤と分ける）。
+// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・終えるのを押し忘れたのかもしれない。logic/alerts）は FORGOTTEN
 const PHASES: Record<LanePhase, { label: string; className: string }> = {
   empty: {
     label: "空き",
@@ -138,31 +132,6 @@ export const DripperIndicator: React.FC<{
   );
 };
 
-/**
- * 「次へ」（抽出中のカードを終えて待機の先頭を始める）。押せないとき（カードが無い・locked）は薄い枠だけ。列の状態はドリッパーの番号に出す。
- * locked のあいだ（抽出を始めてすぐ。二度押しを防ぐ）は押せない
- */
-export const NextButton: React.FC<{
-  bayId: number;
-  /** 抽出中か待機のカードがある */
-  active: boolean;
-  /** まだ押せない（抽出を始めてすぐ） */
-  locked?: boolean;
-  onAdvance: (bayId: number) => void;
-  className?: string;
-}> = ({ bayId, active, locked = false, onAdvance, className = "" }) => (
-  <button
-    type="button"
-    disabled={!active || locked}
-    onClick={() => onAdvance(bayId)}
-    title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
-    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg border-2 font-black shadow-xs active:scale-95 enabled:border-orange-700 enabled:bg-orange-600 enabled:text-white disabled:border-slate-200 disabled:border-dashed disabled:bg-white disabled:text-slate-300 disabled:shadow-none ${className}`}
-  >
-    次へ
-    {active && <ArrowRightCircle className="h-4 w-4 shrink-0" />}
-  </button>
-);
-
 // 知らせのあとに添える文
 const FIX_HINT = "違っていたら逆の操作（外す・移す）で直してください。";
 
@@ -173,12 +142,7 @@ const toastText = (toast: OpenCornerToast) => {
       label: `${dripperLabel(toast.bayId)}の抽出を終える確かめ`,
       title: `${dripperLabel(toast.bayId)} の ${orderLabel(toast.card)} を終えますか？`,
       body: `始めてからまだ ${clockLabel(toast.elapsedSec)} です。押す列を間違えていませんか？`,
-      action:
-        toast.start === "none"
-          ? "終える"
-          : toast.start === "head"
-            ? "次へ進める"
-            : "終えて始める",
+      action: toast.start === "none" ? "終える" : "次へ進める",
       frame: "border-orange-600",
     };
   if (toast.kind === "lateMerge")
@@ -207,11 +171,12 @@ const toastText = (toast: OpenCornerToast) => {
 };
 
 /**
- * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
+ * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない、抽出中のカードを終える操作（カードの ✓・✋。抽出時間の半分もたっていない）は
+ * ［やめる（残りの秒）］［次へ進める］（✋ は［終える］）。
  * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
  * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
  * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
- * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
+ * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのカードの操作）はそのまま。
  * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-corner-toasts。右のパネルを避ける）
  */
 export const CornerToasts: React.FC<{
@@ -294,7 +259,10 @@ export const NextAvailableChips: React.FC<{
   </div>
 );
 
-/** 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる */
+/**
+ * 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる。
+ * 15 分を超えたら（lateCard）時計を「15」の印にする
+ */
 export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
   card,
   nowMs,
@@ -306,7 +274,15 @@ export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
         title={`受けてから ${minutes} 分、未割当で待っています`}
         className="-top-2 border-(color:--caos-overtime-line) bg-(color:--caos-overtime) text-(color:--caos-overtime-text) pointer-events-none absolute left-5 z-20 flex items-center gap-0.5 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-black text-[11px] leading-none shadow-xs"
       >
-        <Clock3 className="h-3 w-3" />
+        {lateCard(card, nowMs) ? (
+          <img
+            src={lateIcon}
+            alt=""
+            className="h-4 w-4 rounded-full bg-white"
+          />
+        ) : (
+          <Clock3 className="h-3 w-3" />
+        )}
         待ち {minutes}分
       </span>
     )
