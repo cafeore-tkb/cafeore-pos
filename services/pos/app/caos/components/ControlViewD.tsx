@@ -46,7 +46,7 @@ import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
-import { UnassignedTabs, UnfinishedList } from "./UnfinishedOrders";
+import { UnassignedHeading, UnfinishedList } from "./UnfinishedOrders";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
@@ -492,10 +492,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           </div>
         )}
         <PanelHeader className={`border-b-2 ${LINE}`}>
-          <UnassignedTabs
+          <UnassignedHeading
             view={unfinished}
             label="注文内容"
-            className={unfinished ? "text-[13px]" : "text-[15px]"}
+            className={unfinished ? "text-[13px]" : undefined}
           />
           <span className="ml-auto font-black text-[12px] text-slate-700">
             未割り振り <OrderCountLabel cards={unassignedOrders} />

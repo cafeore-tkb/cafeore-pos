@@ -19,7 +19,7 @@ export interface UnfinishedOrder extends FoundOrder {
 }
 
 /**
- * その日（nowMs の日本時間の日）のまだ提供していない注文（カップが 1 つでも提供済みでないか、抽出を終えていないカード（入れ直しも）がある）を、注文番号の順に。
+ * その日（nowMs の日本時間の日）のまだ提供していない注文（カップが 1 つでも提供済みでないか、まだ抽出を終えていない入れ直しがある）を、注文番号の順に。
  * 実データテスト（practice）には提供の画面が無いので、抽出の要るカップが全部抽出を終えた注文を済みとみる（実績の提供時間と同じ）
  */
 export const unfinishedOrders = ({
@@ -47,10 +47,14 @@ export const unfinishedOrders = ({
         late: waitSec > LATE_ORDER_SEC,
       };
     })
-    .filter(
-      (row) =>
-        row.cards.some(({ card }) => card.status !== "done") ||
-        (!practice && row.status !== "served"),
+    .filter((row) =>
+      practice
+        ? row.cards.some(({ card }) => card.status !== "done")
+        : row.status !== "served" ||
+          row.cards.some(
+            ({ card }) =>
+              card.status !== "done" && card.cups.some((cup) => cup.emergency),
+          ),
     )
     .sort((a, b) => a.orderNo - b.orderNo);
 };

@@ -25,7 +25,7 @@ import {
 } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 import {
-  UnassignedTabs,
+  UnassignedHeading,
   UnfinishedList,
   type UnfinishedView,
 } from "./UnfinishedOrders";
@@ -184,9 +184,9 @@ export const UnassignedStrip: React.FC<
       className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
-        <UnassignedTabs view={unfinished} className="text-[18px]">
+        <UnassignedHeading view={unfinished} className="text-[18px]">
           <CountChip orders={orders} />
-        </UnassignedTabs>
+        </UnassignedHeading>
         <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         <NextAvailableChips
           nextAvailable={nextAvailable}
@@ -269,12 +269,12 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <PanelHeader>
-        <UnassignedTabs view={unfinished}>
+        <UnassignedHeading view={unfinished}>
           <CountChip
             orders={orders}
             className="shrink-0 font-bold text-[11px]"
           />
-        </UnassignedTabs>
+        </UnassignedHeading>
       </PanelHeader>
       {unfinished?.tab === "unfinished" ? (
         <UnfinishedList view={unfinished} axis="y" />

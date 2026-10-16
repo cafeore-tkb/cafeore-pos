@@ -1,7 +1,7 @@
 import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
-import { orderNoLabel } from "../logic/cards";
+import { labelHasOrder, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
 import { CommentList } from "./OrderComments";
@@ -18,6 +18,8 @@ export interface UnfinishedView {
   /** 「未完了」のタブの印の件数（まだ見ていない 15 分超の注文と新しいコメント） */
   badge: number;
   rows: readonly UnfinishedOrder[];
+  /** 選んだ注文（orderLabel。その行に選択中の黄の輪） */
+  selectedOrderId: string | null;
   /** 行を押した（その注文を番号の検索と同じく選んで見せる） */
   onSelectOrder: (orderNo: number) => void;
 }
@@ -28,10 +30,10 @@ const TAB_ON = "border-slate-900 bg-slate-900 text-white";
 const TAB_OFF = "border-slate-300 bg-white text-slate-600 hover:bg-slate-100";
 
 /**
- * 未割当の欄の見出しのタブ。children は「未割当」のタブに添えるもの（件数）。className で字の大きさ（アイコンも合わせる）。
- * view が無ければ（閲覧だけの画面）タブにせず、今までどおり題と children を並べる
+ * 未割当の欄の見出し。view があれば「未割当」「未完了」のタブにし、children（件数）は「未割当」のタブの中に添える。
+ * view が無ければ（閲覧だけの画面）タブにせず、今までどおり題と、その横に children を並べる。className で字の大きさ（アイコンも合わせる）
  */
-export const UnassignedTabs: React.FC<{
+export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
@@ -79,7 +81,7 @@ export const UnassignedTabs: React.FC<{
         {view.badge > 0 && (
           <output
             aria-label={`未完了に新しい知らせ ${view.badge} 件`}
-            className="-top-1.5 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
+            className="-top-1 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
           >
             {view.badge}
           </output>
@@ -92,11 +94,12 @@ export const UnassignedTabs: React.FC<{
 /** 未完了の注文の 1 行。上を押すとその注文を選び、下にコメント（とスタンプ） */
 const UnfinishedRow: React.FC<{
   row: UnfinishedOrder;
+  selected: boolean;
   onSelect: (orderNo: number) => void;
   className: string;
-}> = ({ row, onSelect, className }) => (
+}> = ({ row, selected, onSelect, className }) => (
   <article
-    className={`rounded-lg border-2 bg-white p-1.5 ${row.late ? "border-red-500" : "border-slate-300"} ${className}`}
+    className={`rounded-lg border-2 bg-white p-1.5 ${row.late ? "border-red-500" : "border-slate-300"} ${selected ? "ring-4 ring-amber-400" : ""} ${className}`}
   >
     <button
       type="button"
@@ -167,6 +170,7 @@ export const UnfinishedList: React.FC<{
           <UnfinishedRow
             key={row.orderId}
             row={row}
+            selected={labelHasOrder(view.selectedOrderId, row.orderNo)}
             onSelect={view.onSelectOrder}
             className={layout.row}
           />

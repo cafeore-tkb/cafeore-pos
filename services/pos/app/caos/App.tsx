@@ -189,7 +189,11 @@ export default function App() {
               onMergeOrders={selection.merge}
               onSplitCup={selection.split}
               onFollowNowChange={setFollowingNow}
-              unfinished={{ ...unfinished, onSelectOrder: search.select }}
+              unfinished={{
+                ...unfinished,
+                selectedOrderId: selection.selectedOrderId,
+                onSelectOrder: search.select,
+              }}
             />
           </OpenCommentsContext.Provider>
         </main>

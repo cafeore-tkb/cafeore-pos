@@ -706,7 +706,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
   });
   // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
-  // #6：提供済みのカップを入れ直した（入れ直しが未割当）
+  // #6：提供済みのカップを入れ直した（入れ直しが未割当）。#7 は下に
   const rebrew = {
     id: "e6",
     createdAt: T0,
@@ -724,6 +724,17 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     at(2, 10, [{}]),
     at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
     at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
+    // #7：「次へ」を押し忘れたまま提供済みにした（入れ直しではないので出さない）
+    at(7, 40, [
+      {
+        dripper: 3,
+        dripId: "d7",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        readyAt: T0,
+        servedAt: T0,
+      },
+    ]),
     at(4, 5, [
       {
         dripper: 2,
@@ -782,7 +793,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
   });
 
   test("実データテストは、抽出の要るカップが全部抽出を終えた注文を済みとみる", () => {
-    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5, 6]);
+    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5, 6, 7]);
   });
 
   test("タブの印は、まだ見ていない 15 分超の注文と新しいコメント（返したスタンプは数えない）。見たら消え、今の未完了に無いものは忘れる", () => {

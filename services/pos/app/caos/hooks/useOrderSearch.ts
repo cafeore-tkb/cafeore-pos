@@ -178,11 +178,12 @@ export const useOrderSearch = ({
     pending: digits !== searched,
     press,
     finish,
-    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未完了の行）。盤面にカードが無ければ何もしない */
+    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未完了の行）。盤面にカードが無ければ選ぶだけ */
     select: (orderNo: number) => {
       const found = findOrder({ ...board, orderNo });
       const card = found && focusCard(found);
       if (card) reveal(orderNo, card);
+      else selectOrder(`#${orderNoLabel(orderNo)}`);
     },
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
