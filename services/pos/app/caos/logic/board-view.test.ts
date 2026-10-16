@@ -33,6 +33,7 @@ import {
   frontTargets,
   moveTargets,
   pendingNominatedCups,
+  staysInLane,
 } from "./lanes";
 import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
@@ -265,6 +266,25 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       [false, ""],
       [false, ""],
     ]);
+    // 自分の列の空いた所（待機の最後）に落としたとき：もう最後なら何もしない。抽出中も、ひとりでなければ最後へ下がる
+    const stays = (dripId: string) => {
+      const c = cards.find((x) => x.dripId === dripId);
+      if (!c?.dripper) throw new Error("no card");
+      return staysInLane(cards, c, c.dripper);
+    };
+    expect(["b", "q1", "q2", "w1", "w2"].map(stays)).toEqual([
+      false,
+      false,
+      true,
+      false,
+      true,
+    ]);
+    const [alone] = buildCaosCards([
+      order(50, [
+        { dripper: 4, dripId: "a", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+    ]);
+    expect(staysInLane([alone], alone, 4)).toBe(true);
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {

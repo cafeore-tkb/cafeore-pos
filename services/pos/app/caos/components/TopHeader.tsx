@@ -49,7 +49,7 @@ interface TopHeaderProps {
   onSelectTab: (tab: NavTab) => void;
   onSelectControlViewMode: (mode: ControlViewMode) => void;
   timeStr: string;
-  /** 未割当と、全ドリッパーの待ち（抽出中・待機）の注文の数と杯数 */
+  /** 未割当と、全ドリッパーの待ち（待機。まだ抽出を始めていない）の注文の数と杯数 */
   counts: { unassigned: Counts; waiting: Counts };
   /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
   backlog: ReturnType<typeof orderBacklog>;
