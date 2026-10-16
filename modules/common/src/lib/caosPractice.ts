@@ -317,7 +317,6 @@ export const applyCaosPracticeWrites = (
   for (const write of writes) {
     const before = stateOf(write.before);
     const cups: (Cup | CupEmergency)[] = [];
-    let ready = true;
     for (const id of write.cup_ids) {
       const unit = allUnits(next).find((unit) => unit.row.id === id);
       if (!unit)
@@ -329,8 +328,6 @@ export const applyCaosPracticeWrites = (
         return {
           error: "ほかの端末で先に変わりました。もう一度操作してください",
         };
-      // 入れ直しは準備完了を持たない（サーバーの caosUnits）
-      ready &&= !isEmergency(unit) && unit.cup.readyAt !== null;
       if (
         (write.after.dripper !== null || write.after.drip_id !== null) &&
         !cupNeedsBrew(unit.cup)
@@ -350,7 +347,7 @@ export const applyCaosPracticeWrites = (
     }
     // 終わったカードは動かさない（終えるのは「次へ」）。抽出中のカードは動かせるが、ほかのカードには統合せず、分けない（サーバーの checkCaosStartedMove）
     if (before.brewStartedAt !== null) {
-      if (before.brewFinishedAt !== null || ready)
+      if (before.brewFinishedAt !== null)
         return { error: "終わったカードは動かせません" };
       if (write.after.drip_id !== null && write.after.drip_id !== before.dripId)
         return {

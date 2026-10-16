@@ -237,17 +237,15 @@ type CaosPress struct {
 type CaosUndoCup struct {
 	CupId openapi_types.UUID `json:"cup_id"`
 
-	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
+	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列）
 	Current CaosUndoCupState `json:"current"`
 
-	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
+	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列）
 	Restore CaosUndoCupState `json:"restore"`
 }
 
-// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
+// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列）
 type CaosUndoCupState struct {
-	ReadyAt *time.Time `json:"ready_at"`
-
 	// State カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 	State CaosCupState `json:"state"`
 }

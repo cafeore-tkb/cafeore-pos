@@ -1082,16 +1082,11 @@
   },
   "CaosUndoCupState": {
     "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない",
-    "required": ["state", "ready_at"],
+    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列）",
+    "required": ["state"],
     "properties": {
       "state": {
         "$ref": "#/components/schemas/CaosCupState"
-      },
-      "ready_at": {
-        "type": "string",
-        "format": "date-time",
-        "nullable": true
       }
     }
   },

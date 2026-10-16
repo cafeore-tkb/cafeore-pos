@@ -361,6 +361,40 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
   });
 
+  test("カップが全部準備完了・提供済みになっても、抽出中のカードは抽出中のまま動かせ、終えるのは「次へ」だけ", () => {
+    let orders = ordersOf([hot], [hot]);
+    const [first, second] = unassigned(orders);
+    orders = assign(orders, first, 2, at(0));
+    orders = assign(orders, second, 2, at(1));
+    // 提供の画面で両方のカップを提供済みにした（提供済みは準備完了も持つ）
+    orders = orders.map((order) => ({
+      ...order,
+      cups: order.cups.map((cup) => ({
+        ...cup,
+        readyAt: at(2),
+        servedAt: at(2),
+      })),
+    }));
+    const lane = caosLane(cardsOf(orders), 2);
+    expect(lane.brewing?.orderNo).toBe(1);
+    expect(queuedOrderNos(orders, 2)).toStrictEqual([2]);
+    if (!lane.brewing) throw new Error("no brewing");
+    // 抽出中のカードは動かせる（3 番の空きへ移すと今から始め直す）
+    const moved = assign(orders, lane.brewing, 3, at(3));
+    expect(caosLane(cardsOf(moved), 3).brewing?.orderNo).toBe(1);
+    // 「次へ」で終わり、待機の先頭が始まる
+    const advanced = advanceCaosPracticeDripper(
+      orders,
+      2,
+      lane.brewing.dripId,
+      at(20),
+    );
+    if (advanced.error !== undefined) throw new Error(advanced.error);
+    const after = caosLane(cardsOf(advanced.orders), 2);
+    expect(after.done.map((card) => card.orderNo)).toStrictEqual([1]);
+    expect(after.brewing?.orderNo).toBe(2);
+  });
+
   test("抽出中のカードを同じ列の待機へ下げると次のカードが今から始まり、抽出中のある列の先頭へ移すとそこの抽出中が待機の先頭へ", () => {
     let orders = ordersOf([hot], [hot], [hot], [hot]);
     for (const dripper of [1, 1, 1, 2])

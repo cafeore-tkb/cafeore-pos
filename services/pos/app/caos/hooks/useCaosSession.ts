@@ -488,7 +488,7 @@ export const useCaosSession = () => {
     },
     /**
      * 「次へ」。抽出中のカードを終え、待機の先頭を始める。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ（提供の画面で全部準備完了にして終わった、など）null で、待機の先頭を始める。押し間違いの確かめは endBrewing
+     * 抽出中が無ければ null で、待機の先頭を始める。押し間違いの確かめは endBrewing
      */
     advance: (bayId: number) => endBrewing(bayId, "head"),
     /**

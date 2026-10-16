@@ -18,8 +18,9 @@ import (
 //
 // PUT /api/caos/cups と違い、抽出中・終わりのカップの時刻も書き戻す（「次へ」を戻す・始めたカードを戻す・
 // 動かして始めた時刻を消した抽出中のカードを戻す）。戻すのは前の値なので、終えた時刻は current と同じか null だけ、
-// 始めた時刻は今日の今までの時刻（動かして消した・付け直した前の時刻）。提供済みのカップは戻さない。
-// 準備完了（ready_at）は CaOS の操作では変わらないので書き戻さない（restore の ready_at は読まない）。今の値が current と違えば断る。
+// 始めた時刻は今日の今までの時刻（動かして消した・付け直した前の時刻）。
+// 準備完了・提供（ready_at・served_at）は CaOS の操作では変わらず、盤面の決まりにも使わないので、比べも書き戻しもしない
+// （提供の画面で提供可能・提供にしたカップの操作も戻せる）。
 // 書き戻した結果も PUT と同じ決まり（指名・1 枚 2 杯まで・同じカードは同じ値・指名のそろい）と、
 // 1 つのドリッパーで抽出中は 1 枚を確かめる。
 
@@ -94,7 +95,7 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 		if err != nil {
 			return err
 		}
-		// 今の値（注文の行をロックしてから読む。入れ直しは準備完了を持たない）
+		// 今の値（注文の行をロックしてから読む）
 		locked, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
 		if err != nil {
 			return err
@@ -125,14 +126,7 @@ func (h *CaosHandler) undoCups(cups []models.CaosUndoCup) ([]uuid.UUID, error) {
 			if !ok {
 				return conflictErrorf("カップが消えたので戻せません（注文が編集されたかもしれません）")
 			}
-			// 提供済みは、入れ直しでないカップだけ見る（入れ直しは提供済みのカップにも足すので）
-			if cup := findOrderCup(orders[unit.OrderID], unit.ID); cup != nil && cup.ServedAt != nil {
-				return conflictErrorf("提供済みになったカップがあるので戻せません")
-			}
-			switch {
-			case !timeEqual(msTime(unit.ReadyAt), msTime(c.Current.ReadyAt)):
-				return conflictErrorf("準備完了がほかの画面で変わったので戻せません")
-			case !sameCaosState(&unit.OrderCup, c.Current.State):
+			if !sameCaosState(&unit.OrderCup, c.Current.State) {
 				return conflictErrorf("ほかの画面で先に変わったので戻せません")
 			}
 			if (r.Dripper != nil || r.DripId != nil) && !items[c.CupId].ItemType.BrewRequired() {
