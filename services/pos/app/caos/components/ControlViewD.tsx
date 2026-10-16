@@ -46,6 +46,7 @@ import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
+import { UnassignedTabs, UnfinishedList } from "./UnfinishedOrders";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
@@ -113,6 +114,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onMoveTicket,
   onReturnToUnassigned,
   onMergeOrders,
+  unfinished,
 }) => {
   const picked = useSheetSelection({
     unassigned: unassignedOrders,
@@ -494,16 +496,25 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           </div>
         )}
         <PanelHeader
-          icon={ClipboardList}
-          title="注文内容"
+          icon={unfinished ? undefined : ClipboardList}
+          title={unfinished ? undefined : "注文内容"}
           className={`border-b-2 ${LINE}`}
         >
+          {unfinished && (
+            <UnassignedTabs
+              view={unfinished}
+              label="注文内容"
+              className="text-[13px]"
+            />
+          )}
           <span className="ml-auto font-black text-[12px] text-slate-700">
             未割り振り <OrderCountLabel cards={unassignedOrders} />
           </span>
         </PanelHeader>
 
-        {orderGroups.length === 0 ? (
+        {unfinished?.tab === "unfinished" ? (
+          <UnfinishedList view={unfinished} axis="y" />
+        ) : orderGroups.length === 0 ? (
           <p className="flex-1 py-8 text-center font-bold text-[13px] text-slate-400">
             未割り振りの注文はありません
           </p>

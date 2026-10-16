@@ -55,14 +55,42 @@ const orderStatus = (statuses: CupStatus[]): CupStatus => {
   return "preparing";
 };
 
+/** 注文の今（注文の状態・緊急・その注文のカードの場所・コメント）。places は盤面のカードの場所（logic/lanes の cardPlaces） */
+export const orderNow = (
+  order: CaosOrderInput,
+  {
+    cards,
+    places,
+    comments,
+    nowMs,
+  }: {
+    cards: readonly CaosCard[];
+    places: ReadonlyMap<string, string>;
+    /** 本番の注文のコメント（実データテスト中は null） */
+    comments: CommentsByOrder | null;
+    nowMs: number;
+  },
+): FoundOrder => {
+  const statuses = order.cups.map(getCupStatus);
+  return {
+    orderNo: order.orderId,
+    status: orderStatus(statuses),
+    readyCups: statuses.filter((status) => status !== "preparing").length,
+    cups: statuses.length,
+    emergency: order.cups.some((cup) => cup.emergencies.length > 0),
+    cards: cards
+      .filter((card) => card.cups.some((cup) => cup.orderId === order.id))
+      .map((card) => ({ card, place: placeOf(card, places, nowMs) })),
+    comments: comments?.get(order.id) ?? [],
+  };
+};
+
 /** その日（nowMs の日本時間の日）の注文から、注文番号 orderNo の注文を探す。無ければ null */
 export const findOrder = ({
   orders,
-  cards,
   lanes,
-  comments,
   orderNo,
-  nowMs,
+  ...board
 }: {
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
@@ -73,24 +101,12 @@ export const findOrder = ({
   nowMs: number;
 }): FoundOrder | null => {
   const order = orderByNo(
-    caosDayOrders(orders, jstDate(nowMs)),
+    caosDayOrders(orders, jstDate(board.nowMs)),
     String(orderNo),
   );
-  if (!order) return null;
-  const statuses = order.cups.map(getCupStatus);
-  const readyCups = statuses.filter((status) => status !== "preparing").length;
-  const places = cardPlaces(lanes);
-  return {
-    orderNo,
-    status: orderStatus(statuses),
-    readyCups,
-    cups: statuses.length,
-    emergency: order.cups.some((cup) => cup.emergencies.length > 0),
-    cards: cards
-      .filter((card) => card.cups.some((cup) => cup.orderId === order.id))
-      .map((card) => ({ card, place: placeOf(card, places, nowMs) })),
-    comments: comments?.get(order.id) ?? [],
-  };
+  return order
+    ? orderNow(order, { ...board, places: cardPlaces(lanes) })
+    : null;
 };
 
 // 探した注文のどのカードを見せるか（抽出中・待機・未割当・終わりの順）

@@ -3,9 +3,57 @@ import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
 import { createContext, useContext } from "react";
 import { orderNoLabel } from "../logic/cards";
-import { type BoardComment, commentKey } from "../logic/comments";
+import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
 
-// 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
+// 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身（スタンプで返す）と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
+
+/** コメントにスタンプで返す（hooks/useStampReply）。操作の画面（本番の盤面）にだけ渡す。無ければスタンプを出さない */
+export const StampReplyContext = createContext<{
+  /** 送っているあいだ（押せない） */
+  sending: boolean;
+  send: (orderId: string, stamp: string) => void;
+} | null>(null);
+
+/** 注文（orderId）にスタンプを返すボタンの並び（キーボードを出さずに返す）。label は何の注文に返すか（いくつかの注文のコメントを並べたとき） */
+const StampBar: React.FC<{ orderId: string; label?: string }> = ({
+  orderId,
+  label,
+}) => {
+  const reply = useContext(StampReplyContext);
+  if (!reply) return null;
+  return (
+    <li className="flex flex-wrap items-center gap-1">
+      {label && (
+        <span className="font-black font-mono text-[12px] text-slate-600">
+          {label}
+        </span>
+      )}
+      {STAMPS.map((stamp) => {
+        const [emoji, ...words] = stamp.split(" ");
+        return (
+          <button
+            key={stamp}
+            type="button"
+            title={`「${stamp}」と返す`}
+            aria-label={`「${stamp}」と返す`}
+            disabled={reply.sending}
+            onClick={(event) => {
+              // 行・カードを押したときの選ぶ・開くに渡さない
+              event.stopPropagation();
+              reply.send(orderId, stamp);
+            }}
+            className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-10 min-w-10 flex-1 touch-manipulation flex-col items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
+          >
+            <span className="text-[17px]">{emoji}</span>
+            <span className="mt-0.5 font-bold text-[9px] text-slate-600">
+              {words.join(" ")}
+            </span>
+          </button>
+        );
+      })}
+    </li>
+  );
+};
 
 /** コメントの印を押したときに、その注文（orderLabel）のコメントを右下の CommentDock に出す。操作の画面の盤面（App の ControlWorkspace）にだけ渡す（右のパネルは中身を出しているので渡さない）。無ければ印は押せない */
 export const OpenCommentsContext = createContext<
@@ -58,13 +106,17 @@ export const CommentMark: React.FC<{
   );
 };
 
-/** コメントの中身（付けた順。書き手は POS と同じ 1 文字）。いくつかの注文のコメントなら注文番号も出す */
+/**
+ * コメントの中身（付けた順。書き手は POS と同じ 1 文字）。いくつかの注文のコメントなら注文番号も出す。
+ * 下にスタンプで返すボタン（StampReplyContext があるとき。注文ごとに）
+ */
 export const CommentList: React.FC<{
   comments?: readonly BoardComment[];
   className?: string;
 }> = ({ comments = [], className = "" }) => {
   if (comments.length === 0) return null;
-  const withNo = new Set(comments.map((c) => c.orderNo)).size > 1;
+  const orders = new Map(comments.map((c) => [c.orderId, c.orderNo]));
+  const withNo = orders.size > 1;
   return (
     <ul className={`grid gap-1 ${className}`}>
       {comments.map((comment) => (
@@ -79,6 +131,13 @@ export const CommentList: React.FC<{
           </span>
           <span className="min-w-0 break-words">{comment.text}</span>
         </li>
+      ))}
+      {[...orders].map(([orderId, orderNo]) => (
+        <StampBar
+          key={orderId}
+          orderId={orderId}
+          label={withNo ? `#${orderNoLabel(orderNo)}` : undefined}
+        />
       ))}
     </ul>
   );

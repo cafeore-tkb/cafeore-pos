@@ -5,7 +5,11 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
-import { CommentDock, OpenCommentsContext } from "./components/OrderComments";
+import {
+  CommentDock,
+  OpenCommentsContext,
+  StampReplyContext,
+} from "./components/OrderComments";
 import { OrderSearchPanel } from "./components/OrderSearchPanel";
 import {
   AssignPanel,
@@ -24,7 +28,9 @@ import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
+import { useStampReply } from "./hooks/useStampReply";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
+import { useUnfinishedTab } from "./hooks/useUnfinishedTab";
 import { useViewedComments } from "./hooks/useViewedComments";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
@@ -78,6 +84,22 @@ export default function App() {
       Boolean(selection.scheduled),
   });
   const commentNotices = useCommentNotices(session.comments, viewed.label);
+  // 未割当の欄の「未完了」のタブ（まだ提供していない注文。15 分超・新しいコメントはタブに件数の印）と、コメントにスタンプで返す
+  const unfinished = useUnfinishedTab({
+    orders: session.emergency.orders,
+    cards: session.cards,
+    lanes,
+    comments: session.comments,
+    nowMs: session.nowMs,
+    practice: session.simulating,
+    viewedLabel: viewed.label,
+  });
+  // 返した注文の新しいコメントの知らせは閉じる
+  const stampReply = useStampReply((orderId) =>
+    commentNotices.dismiss(
+      commentNotices.notices.filter((comment) => comment.orderId === orderId),
+    ),
+  );
   // 本番（cafeore-pos の注文）の盤面に戻る（テストの盤面を捨て、開いているものを閉じる）
   const backToLive = () => {
     session.reset();
@@ -89,7 +111,7 @@ export default function App() {
     else selection.closeAuxiliary();
   };
 
-  return (
+  const page = (
     <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
@@ -161,6 +183,7 @@ export default function App() {
               onMergeOrders={selection.merge}
               onSplitCup={selection.split}
               onFollowNowChange={setFollowingNow}
+              unfinished={{ ...unfinished, onSelectOrder: search.show }}
             />
           </OpenCommentsContext.Provider>
         </main>
@@ -276,5 +299,11 @@ export default function App() {
         />
       )}
     </div>
+  );
+  // コメントの中身（右下・未完了の行・パネル）の下に、スタンプで返すボタンを出す
+  return (
+    <StampReplyContext.Provider value={stampReply}>
+      {page}
+    </StampReplyContext.Provider>
   );
 }

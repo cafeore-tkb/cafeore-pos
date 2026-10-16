@@ -8,6 +8,7 @@ import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
 import { ControlViewD } from "./ControlViewD";
 import type { UnassignedFold } from "./UnassignedOrdersPanel";
+import type { UnfinishedView } from "./UnfinishedOrders";
 
 // 管制盤 A・C・D。ドリッパーのカードは押すと始める・終える、長押しで右の詳細（待機）・緊急の入力（抽出中・終わり）のパネル
 export const CONTROL_VIEWS = {
@@ -63,6 +64,8 @@ export interface ControlViewProps {
   readOnly?: boolean;
   /** 点滅させるカード（key。閲覧だけの画面で、タイムラインに新しく入ったカード。管制盤 A） */
   flashKeys?: ReadonlySet<string>;
+  /** 未割当の欄の「未完了」のタブ（操作の画面だけ。渡したときだけ、未割当の欄の見出しを「未割当」「未完了」のタブにする） */
+  unfinished?: UnfinishedView;
   /** 未割当の横帯をたたむか（管制盤 A。渡したときだけ、横帯のヘッダーに「たたむ」「ひらく」を出す） */
   unassignedFold?: UnassignedFold;
   /** タイムラインが NOW を追っているかが変わったとき（管制盤 A。ヘッダーの「現在」の見た目） */

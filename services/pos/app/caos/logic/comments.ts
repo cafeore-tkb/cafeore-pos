@@ -5,13 +5,27 @@ import type {
   WithId,
 } from "@cafeore/common";
 
-// 注文のコメント（レジ・マスター・提供で付ける。POST /api/orders/{id}/comments）。CaOS は読むだけで、
-// 共有の WebSocket で届く注文（OrderEntity の comments）から引く。
+// 注文のコメント（レジ・マスター・提供で付ける。POST /api/orders/{id}/comments）。CaOS は共有の WebSocket で届く注文
+// （OrderEntity の comments）から読み、返すときは決まったスタンプ（STAMPS）をマスターのコメントとして付ける（キーボードは出さない）。
 
-/** 注文番号を添えたコメント（統合したカードでは、どの注文のコメントか分かるように） */
+/** 注文番号と注文の id を添えたコメント（統合したカードでは、どの注文のコメントか分かるように。スタンプを返す先） */
 export interface BoardComment extends OrderComment {
   orderNo: number;
+  orderId: string;
 }
+
+/** コメントに返すスタンプ（押すと、その文字をそのままマスターのコメントとして付ける。提供の画面などでもふつうのコメントとして見える） */
+export const STAMPS = [
+  "👀 見た",
+  "👍 了解",
+  "⏳ 待って",
+  "✅ 済み",
+  "🙏 ごめん",
+];
+
+/** CaOS から返したスタンプ（マスターが付けた STAMPS の 1 つ）。新しいコメントとして知らせない（返した側の画面なので） */
+export const isStampReply = (comment: OrderComment) =>
+  comment.author === "master" && STAMPS.includes(comment.text);
 
 /** 注文（id）ごとのコメント（付けた順）。コメントの無い注文は入れない */
 export type CommentsByOrder = ReadonlyMap<string, BoardComment[]>;
@@ -25,7 +39,11 @@ export const commentsByOrder = (
       .map((order) => [
         order.id,
         order.comments
-          .map((comment) => ({ ...comment, orderNo: order.orderId }))
+          .map((comment) => ({
+            ...comment,
+            orderNo: order.orderId,
+            orderId: order.id,
+          }))
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
       ]),
   );

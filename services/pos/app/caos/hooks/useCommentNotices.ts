@@ -4,6 +4,7 @@ import {
   type BoardComment,
   type CommentsByOrder,
   commentKey,
+  isStampReply,
 } from "../logic/comments";
 import { soundManager } from "../utils/audio";
 
@@ -16,7 +17,8 @@ const without =
 /**
  * 注文に付いた新しいコメントの知らせ（画面の右下の CommentDock に出す）。見落とさないよう、届いたら音を鳴らし（ヘッダーの音の切り替えに従う）、
  * 押す（その注文を開く）か閉じるか、その注文を見る（viewedLabel。選ぶ・印を押す・番号で探す）まで残す。
- * 画面を開いたとき（最初に注文が届いたとき）にもう付いていたコメントは知らせない。comments が null（実データテスト中など）のあいだは見ない
+ * 画面を開いたとき（最初に注文が届いたとき）にもう付いていたコメントと、CaOS から返したスタンプ（isStampReply）は知らせない。
+ * comments が null（実データテスト中など）のあいだは見ない
  */
 export const useCommentNotices = (
   comments: CommentsByOrder | null,
@@ -37,9 +39,10 @@ export const useCommentNotices = (
       return;
     }
     const known = seen.current;
-    const fresh = all.filter((comment) => !known.has(commentKey(comment)));
+    const added = all.filter((comment) => !known.has(commentKey(comment)));
+    for (const comment of added) known.add(commentKey(comment));
+    const fresh = added.filter((comment) => !isStampReply(comment));
     if (fresh.length === 0) return;
-    for (const comment of fresh) known.add(commentKey(comment));
     soundManager.playComment();
     // 今見ている注文のコメントは、右下の見ている注文の欄に出ている
     setNotices((list) => [
