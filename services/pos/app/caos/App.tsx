@@ -23,6 +23,7 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
+import { useCardMenu } from "./hooks/useCardMenu";
 import { useCommentNotices } from "./hooks/useCommentNotices";
 import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
@@ -100,6 +101,12 @@ export default function App() {
       commentNotices.notices.filter((comment) => comment.orderId === orderId),
     ),
   );
+  // ドリッパーのカードの上に出す操作（押すと開き、アイコンを押して決める）
+  const cardMenu = useCardMenu({
+    onRun: session.runCardAction,
+    onEmergency: selection.openCard,
+    onComments: viewed.open,
+  });
   // 本番（cafeore-pos の注文）の盤面に戻る（テストの盤面を捨て、開いているものを閉じる）
   const backToLive = () => {
     session.reset();
@@ -171,8 +178,7 @@ export default function App() {
               nowMs={session.nowMs}
               timelineCommand={timelineCommand}
               onSelectOrder={selection.selectOrder}
-              onAdvanceBay={session.advance}
-              onPressCard={session.pressCard}
+              cardMenu={cardMenu}
               onHoldCard={selection.openCard}
               onCancelEmergency={selection.cancelEmergency}
               onMoveTicket={selection.move}

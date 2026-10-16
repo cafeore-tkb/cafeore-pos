@@ -479,6 +479,29 @@ export const unassignWrites = (card: CaosCard): CaosWritesResult => {
   return { writes: [writeOf(card, UNASSIGNED_AFTER)] };
 };
 
+/**
+ * 抽出中のカードを未着手に戻す（始めた時刻を消し、同じ列の待機の先頭へ。待機の先頭だったカードは始めない）。
+ * 列は抽出中の無い「未着手」になり、もう一度始めるのは「次へ」（start_next）
+ */
+export const unstartWrites = (
+  cards: readonly CaosCard[],
+  card: CaosCard,
+): CaosWritesResult => {
+  if (card.status !== "brewing" || card.dripper === null)
+    return { error: "抽出中のカードだけ未着手に戻せます" };
+  const [head] = caosLane(cards, card.dripper).queued;
+  return {
+    writes: [
+      writeOf(card, {
+        dripper: card.dripper,
+        drip_id: card.dripId,
+        insert_before: head?.dripId ?? null,
+        start_brew: false,
+      }),
+    ],
+  };
+};
+
 // 同じ商品のカップか（統合できるのは同じ商品の 1 杯どうしだけ）
 const sameItem = (a: CaosBoardCup, b: CaosBoardCup) =>
   (a.item.id ?? a.item.name) === (b.item.id ?? b.item.name);

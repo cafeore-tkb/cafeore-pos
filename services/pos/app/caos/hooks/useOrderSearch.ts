@@ -15,7 +15,7 @@ const SEARCH_DELAY_MS = 500;
 const appendDigit = (value: string, digit: string) =>
   value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
 
-// 番号を押す前にフォーカスしていたボタン（指で押した「次へ」など）を、あとの Enter で押さないように外す
+// 番号を押す前にフォーカスしていたボタン（指で押したヘッダーのボタンなど）を、あとの Enter で押さないように外す
 const blurFocus = () => {
   if (document.activeElement instanceof HTMLElement)
     document.activeElement.blur();

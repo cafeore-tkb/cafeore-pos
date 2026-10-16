@@ -10,6 +10,7 @@ import {
   caosLane,
   mergeWrites,
   unassignWrites,
+  unstartWrites,
 } from "./caos-board";
 import {
   type CaosPracticeOrder,
@@ -359,6 +360,32 @@ describe("[unit] CaOS の練習の盤面の操作（本番の API と同じ決�
       1, 2,
     ]);
     expect(orders[0].cups[0].brewStartedAt).toBeNull();
+  });
+
+  test("抽出中のカードを未着手に戻すと、始めた時刻を消して待機の先頭へ（次は始めない）。「次へ」で始め直す", () => {
+    let orders = ordersOf([hot], [hot], [hot]);
+    const [first, second, third] = unassigned(orders);
+    orders = assign(orders, first, 2, at(0));
+    orders = assign(orders, second, 2, at(1));
+    orders = assign(orders, third, 3, at(1));
+    const brewing = caosLane(cardsOf(orders), 2).brewing;
+    if (!brewing) throw new Error("no brewing");
+    orders = apply(orders, unstartWrites(cardsOf(orders), brewing), at(5));
+    expect(caosLane(cardsOf(orders), 2).brewing).toBeUndefined();
+    expect(queuedOrderNos(orders, 2)).toStrictEqual([1, 2]);
+    expect(caosLane(cardsOf(orders), 2).queued[0].startedAt).toBeNull();
+    const started = advanceCaosPracticeDripper(orders, 2, null, at(6));
+    expect(
+      started.orders && caosLane(cardsOf(started.orders), 2).brewing?.orderNo,
+    ).toBe(1);
+    // 待機の無い列でも戻せる。抽出中でないカードは断る
+    const alone = caosLane(cardsOf(orders), 3).brewing;
+    if (!alone) throw new Error("no brewing");
+    orders = apply(orders, unstartWrites(cardsOf(orders), alone), at(7));
+    expect(queuedOrderNos(orders, 3)).toStrictEqual([3]);
+    expect(
+      unstartWrites(cardsOf(orders), caosLane(cardsOf(orders), 2).queued[0]),
+    ).toEqual({ error: "抽出中のカードだけ未着手に戻せます" });
   });
 
   test("カップが全部準備完了・提供済みになっても、抽出中のカードは抽出中のまま動かせ、終えるのは「次へ」だけ", () => {
