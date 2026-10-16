@@ -10,7 +10,7 @@ import type { Lane } from "./lanes";
 //   - 終わり（done。管制盤 A のタイムラインだけ）：🚨 で入れ直し
 
 /** カードの段階（未着手は、抽出中の無い列の待機の先頭） */
-export type CardStage = "ready" | CaosCard["status"];
+type CardStage = "ready" | CaosCard["status"];
 
 /** カードの段階。lane はカードのある列 */
 export const cardStage = (
