@@ -3,7 +3,7 @@ import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
 import { orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import type { UnfinishedOrder } from "../logic/unfinished";
+import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
 import { CommentList } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
@@ -27,62 +27,66 @@ const TAB =
 const TAB_ON = "border-slate-900 bg-slate-900 text-white";
 const TAB_OFF = "border-slate-300 bg-white text-slate-600 hover:bg-slate-100";
 
-/** 見出しのタブ。children は「未割当」のタブに添えるもの（件数） */
+/**
+ * 未割当の欄の見出しのタブ。children は「未割当」のタブに添えるもの（件数）。className で字の大きさ（アイコンも合わせる）。
+ * view が無ければ（閲覧だけの画面）タブにせず、今までどおり題と children を並べる
+ */
 export const UnassignedTabs: React.FC<{
-  view: UnfinishedView;
+  view?: UnfinishedView;
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
   className?: string;
   children?: React.ReactNode;
-}> = ({ view, label = "未割当", className = "text-[15px]", children }) => (
-  <div role="tablist" className={`flex items-center gap-1 ${className}`}>
-    <button
-      type="button"
-      role="tab"
-      aria-selected={view.tab === "unassigned"}
-      onClick={() => view.onSelectTab("unassigned")}
-      className={`${TAB} ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
-    >
-      <ClipboardList className="h-4 w-4 shrink-0" />
-      {label}
-      {children}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      aria-selected={view.tab === "unfinished"}
-      onClick={() => view.onSelectTab("unfinished")}
-      className={`${TAB} ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
-    >
-      <ListChecks className="h-4 w-4 shrink-0" />
-      未完了
-      <span className="font-mono text-[0.8em] opacity-75">
-        {view.rows.length} 件
-      </span>
-      {view.badge > 0 && (
-        <output
-          aria-label={`未完了に新しい知らせ ${view.badge} 件`}
-          className="-top-2 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
+}> = ({ view, label = "未割当", className = "text-[15px]", children }) => {
+  const icon = <ClipboardList className="h-[1.1em] w-[1.1em] shrink-0" />;
+  if (!view)
+    return (
+      <>
+        <h2
+          className={`flex items-center gap-1.5 whitespace-nowrap font-black text-slate-950 [&>svg]:text-slate-700 ${className}`}
         >
-          {view.badge}
-        </output>
-      )}
-    </button>
-  </div>
-);
-
-// 注文の今の札（カードの場所と準備完了。同じ札は 1 つ。カードも準備完了も無ければ準備中）
-const stateLabels = (row: UnfinishedOrder) => {
-  const ready =
-    row.readyCups === 0
-      ? []
-      : [
-          row.readyCups === row.cups
-            ? "準備完了"
-            : `準備完了 ${row.readyCups}/${row.cups}`,
-        ];
-  const labels = [...new Set(row.cards.map(({ place }) => place)), ...ready];
-  return labels.length > 0 ? labels : ["準備中"];
+          {icon}
+          {label}
+        </h2>
+        {children}
+      </>
+    );
+  return (
+    <div role="tablist" className={`flex items-center gap-1 ${className}`}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view.tab === "unassigned"}
+        onClick={() => view.onSelectTab("unassigned")}
+        className={`${TAB} ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+      >
+        {icon}
+        {label}
+        {children}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view.tab === "unfinished"}
+        onClick={() => view.onSelectTab("unfinished")}
+        className={`${TAB} ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+      >
+        <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
+        未完了
+        <span className="font-mono text-[0.8em] opacity-75">
+          {view.rows.length} 件
+        </span>
+        {view.badge > 0 && (
+          <output
+            aria-label={`未完了に新しい知らせ ${view.badge} 件`}
+            className="-top-1.5 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
+          >
+            {view.badge}
+          </output>
+        )}
+      </button>
+    </div>
+  );
 };
 
 /** 未完了の注文の 1 行。上を押すとその注文を選び、下にコメント（とスタンプ） */
@@ -114,7 +118,7 @@ const UnfinishedRow: React.FC<{
         </span>
       )}
       <span className="flex flex-wrap gap-1">
-        {stateLabels(row).map((label) => (
+        {unfinishedStates(row).map((label) => (
           <span
             key={label}
             className="whitespace-nowrap rounded-md border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-bold text-[12px] text-slate-800"
@@ -128,51 +132,50 @@ const UnfinishedRow: React.FC<{
   </article>
 );
 
+// 横に並べる（管制盤 A の横帯）か、縦に並べる（C・D の右の列）か
+const LIST_LAYOUT = {
+  x: {
+    scroller: "overscroll-x-contain",
+    list: "flex h-full w-max min-w-full items-start gap-2 px-2 pt-1.5 pb-2",
+    row: "max-h-full w-[240px] shrink-0 overflow-y-auto",
+  },
+  y: {
+    scroller: "overscroll-contain",
+    list: "grid auto-rows-max content-start gap-1.5 p-2 pb-8",
+    row: "",
+  },
+} as const;
+
 /**
  * 未完了の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C・D の右の列）
  */
 export const UnfinishedList: React.FC<{
   view: UnfinishedView;
-  axis: "x" | "y";
+  axis: keyof typeof LIST_LAYOUT;
   trackSlot?: HTMLElement | null;
-}> = ({ view, axis, trackSlot }) => (
-  <ScrollArea
-    axis={axis}
-    trackSlot={trackSlot}
-    className="flex-1"
-    scrollerClassName={
-      axis === "x"
-        ? "overscroll-x-contain"
-        : "grid auto-rows-max content-start gap-1.5 overscroll-contain p-2 pb-8"
-    }
-  >
-    {axis === "x" ? (
-      <div className="flex h-full w-max min-w-full items-start gap-2 px-2 pt-1.5 pb-2">
+}> = ({ view, axis, trackSlot }) => {
+  const layout = LIST_LAYOUT[axis];
+  return (
+    <ScrollArea
+      axis={axis}
+      trackSlot={trackSlot}
+      className="flex-1"
+      scrollerClassName={layout.scroller}
+    >
+      <div className={layout.list}>
         {view.rows.map((row) => (
           <UnfinishedRow
             key={row.orderId}
             row={row}
             onSelect={view.onSelectOrder}
-            className="max-h-full w-[240px] shrink-0 overflow-y-auto"
+            className={layout.row}
           />
         ))}
         {view.rows.length === 0 && <EmptyNote />}
       </div>
-    ) : (
-      <>
-        {view.rows.map((row) => (
-          <UnfinishedRow
-            key={row.orderId}
-            row={row}
-            onSelect={view.onSelectOrder}
-            className=""
-          />
-        ))}
-        {view.rows.length === 0 && <EmptyNote />}
-      </>
-    )}
-  </ScrollArea>
-);
+    </ScrollArea>
+  );
+};
 
 const EmptyNote: React.FC = () => (
   <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">

@@ -23,6 +23,7 @@ export interface FoundCard {
 
 /** 探した注文の今 */
 export interface FoundOrder {
+  orderId: string;
   orderNo: number;
   /** 注文のカップの状態。全部提供済みなら served、全部準備完了（提供済みも）なら ready、ほかは preparing */
   status: CupStatus;
@@ -73,6 +74,7 @@ export const orderNow = (
 ): FoundOrder => {
   const statuses = order.cups.map(getCupStatus);
   return {
+    orderId: order.id,
     orderNo: order.orderId,
     status: orderStatus(statuses),
     readyCups: statuses.filter((status) => status !== "preparing").length,

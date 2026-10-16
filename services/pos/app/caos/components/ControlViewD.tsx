@@ -3,7 +3,7 @@ import {
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
-import { ClipboardList, Table2, X } from "lucide-react";
+import { Table2, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
 import {
@@ -495,18 +495,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             ここで離すと未割当に戻す
           </div>
         )}
-        <PanelHeader
-          icon={unfinished ? undefined : ClipboardList}
-          title={unfinished ? undefined : "注文内容"}
-          className={`border-b-2 ${LINE}`}
-        >
-          {unfinished && (
-            <UnassignedTabs
-              view={unfinished}
-              label="注文内容"
-              className="text-[13px]"
-            />
-          )}
+        <PanelHeader className={`border-b-2 ${LINE}`}>
+          <UnassignedTabs
+            view={unfinished}
+            label="注文内容"
+            className={unfinished ? "text-[13px]" : "text-[15px]"}
+          />
           <span className="ml-auto font-black text-[12px] text-slate-700">
             未割り振り <OrderCountLabel cards={unassignedOrders} />
           </span>

@@ -1,5 +1,5 @@
 import { type CaosCard, canSplitCard } from "@cafeore/common";
-import { ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
@@ -128,7 +128,6 @@ const CountChip: React.FC<{
     <OrderCountLabel cards={orders} />
   </span>
 );
-const C_COUNT = "shrink-0 font-bold text-[11px]";
 
 const EmptyNote: React.FC = () => (
   <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
@@ -185,19 +184,9 @@ export const UnassignedStrip: React.FC<
       className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
-        {unfinished ? (
-          <UnassignedTabs view={unfinished}>
-            <CountChip orders={orders} />
-          </UnassignedTabs>
-        ) : (
-          <>
-            <h2 className="flex items-center gap-1.5 whitespace-nowrap font-black text-[18px] text-slate-950">
-              <ClipboardList className="h-5 w-5 shrink-0 text-slate-700" />
-              未割当
-            </h2>
-            <CountChip orders={orders} />
-          </>
-        )}
+        <UnassignedTabs view={unfinished} className="text-[18px]">
+          <CountChip orders={orders} />
+        </UnassignedTabs>
         <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         <NextAvailableChips
           nextAvailable={nextAvailable}
@@ -279,17 +268,14 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   const rows = unassignedRows(orders);
   return (
     <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      {unfinished ? (
-        <PanelHeader>
-          <UnassignedTabs view={unfinished}>
-            <CountChip orders={orders} className={C_COUNT} />
-          </UnassignedTabs>
-        </PanelHeader>
-      ) : (
-        <PanelHeader icon={ClipboardList} title="未割当">
-          <CountChip orders={orders} className={C_COUNT} />
-        </PanelHeader>
-      )}
+      <PanelHeader>
+        <UnassignedTabs view={unfinished}>
+          <CountChip
+            orders={orders}
+            className="shrink-0 font-bold text-[11px]"
+          />
+        </UnassignedTabs>
+      </PanelHeader>
       {unfinished?.tab === "unfinished" ? (
         <UnfinishedList view={unfinished} axis="y" />
       ) : (

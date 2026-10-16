@@ -25,7 +25,7 @@ const validSeen = (seen: UnfinishedSeen): UnfinishedSeen =>
 /**
  * 未割当の欄のタブと、未完了の注文（logic/unfinished）と、「未完了」のタブの件数の印（まだ見ていない 15 分超の注文と新しいコメント）。
  * 「未完了」を開いているあいだは、出ているものをみな見たことにする。右下などでその注文のコメントを見ている（viewedLabel）ときは、そのコメントも見たことにする。
- * 見た印はこの端末にだけ覚える（localStorage。開き直しても残る）
+ * 見た印はこの端末にだけ覚える（localStorage。開き直しても残る）。実データテスト中は覚えない
  */
 export const useUnfinishedTab = ({
   orders,
@@ -64,12 +64,15 @@ export const useUnfinishedTab = ({
       .filter((row) => labelHasOrder(viewedLabel, row.orderNo))
       .flatMap((row) => row.comments.map(commentKey)),
   );
-  const toMark: UnfinishedSeen = open
-    ? unseen
-    : {
-        late: [],
-        comments: unseen.comments.filter((key) => viewedKeys.has(key)),
-      };
+  // 実データテスト中は書かない（練習の注文で、本番の注文の見た印を忘れないように）
+  const toMark: UnfinishedSeen = practice
+    ? NOTHING_SEEN
+    : open
+      ? unseen
+      : {
+          late: [],
+          comments: unseen.comments.filter((key) => viewedKeys.has(key)),
+        };
   // 見たことにするものが変わったときだけ書く（書いたら空になる）。書くときは今の値で
   const marking = [...toMark.late, ...toMark.comments].join("\n");
   const write = () => setSeen(markSeen(rows, seen, toMark));

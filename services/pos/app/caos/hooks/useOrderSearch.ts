@@ -103,8 +103,17 @@ export const useOrderSearch = ({
     close();
   };
 
+  // 注文を選び、そのカードを見せる（A のタイムラインのカードはタイムラインで、ほかは並べた枠の中で）
+  const reveal = (orderNo: number, card: CaosCard) => {
+    selectOrder(`#${orderNoLabel(orderNo)}`);
+    if (showOnTimeline && card.status !== "unassigned")
+      showOnTimeline(card.key);
+    else scrollCardIntoView(card.key);
+  };
+
   // 効果の中で読む今の値（効果は番号・キーで動かし、毎回は張り直さない）
   const current = {
+    reveal,
     found,
     target,
     digits,
@@ -114,7 +123,6 @@ export const useOrderSearch = ({
     open,
     close,
     selectOrder,
-    showOnTimeline,
   };
   const latest = useRef(current);
   useLayoutEffect(() => {
@@ -124,16 +132,12 @@ export const useOrderSearch = ({
   // 探す番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
   // 開いたまま番号を変えて、盤面に見せるカードが無くなったら（消した・無い番号）選んだ注文を外す（閉じたときは選んだままにする）
   useEffect(() => {
-    const { found, target, searched, selectOrder, showOnTimeline } =
-      latest.current;
+    const { found, target, searched, selectOrder } = latest.current;
     if (targetId === null || !found || !target) {
       if (searched !== null) selectOrder(null);
       return;
     }
-    selectOrder(`#${orderNoLabel(found.orderNo)}`);
-    if (showOnTimeline && target.status !== "unassigned")
-      showOnTimeline(target.key);
-    else scrollCardIntoView(target.key);
+    latest.current.reveal(found.orderNo, target);
   }, [targetId]);
 
   useEffect(() => {
@@ -174,6 +178,12 @@ export const useOrderSearch = ({
     pending: digits !== searched,
     press,
     finish,
+    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未完了の行）。盤面にカードが無ければ何もしない */
+    select: (orderNo: number) => {
+      const found = findOrder({ ...board, orderNo });
+      const card = found && focusCard(found);
+      if (card) reveal(orderNo, card);
+    },
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
       const shown = String(orderNo);

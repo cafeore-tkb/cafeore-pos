@@ -33,7 +33,12 @@ import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
 import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
 import { timelineArrivals } from "./timeline";
-import { markSeen, unfinishedOrders, unseenAlerts } from "./unfinished";
+import {
+  markSeen,
+  unfinishedOrders,
+  unfinishedStates,
+  unseenAlerts,
+} from "./unfinished";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -659,13 +664,25 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     ...order(orderId, cups),
     createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
   });
-  // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了
+  // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
+  // #6：提供済みのカップを入れ直した（入れ直しが未割当）
+  const rebrew = {
+    id: "e6",
+    createdAt: T0,
+    reason: "こぼした",
+    dripper: null,
+    dripperPosition: null,
+    dripId: null,
+    brewStartedAt: null,
+    brewFinishedAt: null,
+  };
   const orders = [
     at(1, 20, [
       { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
     ]),
     at(2, 10, [{}]),
     at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
+    at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
     at(4, 5, [
       {
         dripper: 2,
@@ -711,12 +728,20 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
       { no: 2, late: false, places: ["未割当"], ready: 0 },
       { no: 4, late: false, places: ["2nd 済"], ready: 0 },
       { no: 5, late: false, places: ["未割当"], ready: 1 },
+      { no: 6, late: false, places: ["未割当"], ready: 1 },
     ]);
     expect(rows()[1].comments).toHaveLength(2);
+    expect(rows().map(unfinishedStates)).toEqual([
+      ["1st 抽出中 0:00"],
+      ["未割当"],
+      ["2nd 済"],
+      ["未割当", "準備完了 1/2"],
+      ["未割当", "準備完了"],
+    ]);
   });
 
   test("実データテストは、抽出の要るカップが全部抽出を終えた注文を済みとみる", () => {
-    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5]);
+    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5, 6]);
   });
 
   test("タブの印は、まだ見ていない 15 分超の注文と新しいコメント（返したスタンプは数えない）。見たら消え、今の未完了に無いものは忘れる", () => {

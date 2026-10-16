@@ -15,9 +15,9 @@ export const useStampReply = (onReply: (orderId: string) => void) => {
     send: async (orderId: string, stamp: string) => {
       if (sending) return;
       setSending(true);
-      onReply(orderId);
       try {
         await orderRepository.addComment(orderId, "master", stamp);
+        onReply(orderId);
       } catch {
         toast.error(`スタンプ「${stamp}」を送れませんでした`);
       } finally {

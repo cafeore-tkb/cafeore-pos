@@ -14,13 +14,12 @@ import { type FoundOrder, orderNow } from "./search";
 
 /** 未完了の注文の 1 行（注文の今と、受けてからの秒。late は LATE_ORDER_SEC を超えた） */
 export interface UnfinishedOrder extends FoundOrder {
-  orderId: string;
   waitSec: number;
   late: boolean;
 }
 
 /**
- * その日（nowMs の日本時間の日）のまだ提供していない注文（カップが 1 つでも提供済みでない）を、注文番号の順に。
+ * その日（nowMs の日本時間の日）のまだ提供していない注文（カップが 1 つでも提供済みでないか、抽出を終えていないカード（入れ直しも）がある）を、注文番号の順に。
  * 実データテスト（practice）には提供の画面が無いので、抽出の要るカップが全部抽出を終えた注文を済みとみる（実績の提供時間と同じ）
  */
 export const unfinishedOrders = ({
@@ -44,17 +43,30 @@ export const unfinishedOrders = ({
       const waitSec = (nowMs - order.createdAt.getTime()) / 1000;
       return {
         ...orderNow(order, { cards, places, comments, nowMs }),
-        orderId: order.id,
         waitSec,
         late: waitSec > LATE_ORDER_SEC,
       };
     })
-    .filter((row) =>
-      practice
-        ? row.cards.some(({ card }) => card.status !== "done")
-        : row.status !== "served",
+    .filter(
+      (row) =>
+        row.cards.some(({ card }) => card.status !== "done") ||
+        (!practice && row.status !== "served"),
     )
     .sort((a, b) => a.orderNo - b.orderNo);
+};
+
+/** 注文の今の札（カードの場所と準備完了。同じ札は 1 つ。カードも準備完了も無ければ準備中） */
+export const unfinishedStates = (row: FoundOrder) => {
+  const ready =
+    row.readyCups === 0
+      ? []
+      : [
+          row.readyCups === row.cups
+            ? "準備完了"
+            : `準備完了 ${row.readyCups}/${row.cups}`,
+        ];
+  const labels = [...new Set(row.cards.map(({ place }) => place)), ...ready];
+  return labels.length > 0 ? labels : ["準備中"];
 };
 
 /** この端末で見た未完了の印（15 分を超えた注文の id・コメントの commentKey） */
