@@ -41,6 +41,7 @@ func preloadOrder(db *gorm.DB) *gorm.DB {
 		Preload("OrderCups.Item", unscoped).
 		Preload("OrderCups.Item.ItemType", unscoped).
 		Preload("OrderCups.Emergencies", func(db *gorm.DB) *gorm.DB { return db.Order("created_at, id") }).
+		Preload("Payments", func(db *gorm.DB) *gorm.DB { return db.Order("order_payments.position") }).
 		Preload("Comments")
 }
 
@@ -223,10 +224,12 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		Menus:             make([]models.MenuInfo, 0, len(order.OrderMenus)),
 		Cups:              make([]models.OrderCupResponse, 0, len(order.OrderCups)),
 	}
-	if order.SquareCheckout != nil {
-		status := squareRefundOutcome(order.SquareCheckout, time.Now())
+	now := time.Now()
+	if len(order.SquareCheckouts) > 0 {
+		status := squareRefundOutcomeOf(order.SquareCheckouts, now)
 		resp.SquareRefundStatus = &status
 	}
+	resp.Payments = toOrderPaymentResponses(order, now)
 	for i := range order.OrderCups {
 		resp.Cups = append(resp.Cups, toOrderCupResponse(&order.OrderCups[i]))
 	}
@@ -254,7 +257,50 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 	return resp
 }
 
+// toOrderPaymentResponses は個別会計の支払いを応答の形にする。Square の支払いには、その決済の
+// 決済画面の種類と返金の状態を載せる（attachSquareCheckouts で埋めた決済から引く）。
+// 明細は、今の注文にあるものだけを返す（あとで編集して外した明細は落とす）。
+func toOrderPaymentResponses(order *models.Order, now time.Time) []models.OrderPaymentResponse {
+	lines := make(map[uuid.UUID]bool, len(order.OrderMenus))
+	for _, line := range order.OrderMenus {
+		lines[line.ID] = true
+	}
+	checkouts := make(map[uuid.UUID]*models.SquareCheckout, len(order.SquareCheckouts))
+	for i := range order.SquareCheckouts {
+		checkouts[order.SquareCheckouts[i].ID] = &order.SquareCheckouts[i]
+	}
+	payments := make([]models.OrderPaymentResponse, 0, len(order.Payments))
+	for _, payment := range order.Payments {
+		menuIDs := make([]openapi_types.UUID, 0, len(payment.OrderMenuIDs))
+		for _, id := range payment.OrderMenuIDs {
+			if lines[id] {
+				menuIDs = append(menuIDs, openapi_types.UUID(id))
+			}
+		}
+		resp := models.OrderPaymentResponse{
+			Method:       models.PaymentMethod(payment.Method),
+			Amount:       payment.Amount,
+			Received:     payment.Received,
+			Discount:     payment.Discount,
+			OrderMenuIds: menuIDs,
+		}
+		if payment.SquareCheckoutID != nil {
+			id := openapi_types.UUID(*payment.SquareCheckoutID)
+			resp.SquareCheckoutId = &id
+			if checkout := checkouts[*payment.SquareCheckoutID]; checkout != nil {
+				paymentType := checkout.PaymentType
+				status := squareRefundOutcome(checkout, now)
+				resp.SquarePaymentType = &paymentType
+				resp.SquareRefundStatus = &status
+			}
+		}
+		payments = append(payments, resp)
+	}
+	return payments
+}
+
 // attachSquareCheckouts は Square で払った注文に、その決済（返金の状態を応答に載せる）を埋める。
+// 個別会計の注文には決済が複数あり、作った順に並べる。
 func attachSquareCheckouts(db *gorm.DB, orders []models.Order) error {
 	ids := make([]uuid.UUID, 0, len(orders))
 	for i := range orders {
@@ -266,15 +312,15 @@ func attachSquareCheckouts(db *gorm.DB, orders []models.Order) error {
 		return nil
 	}
 	var checkouts []models.SquareCheckout
-	if err := db.Where("order_id IN ?", ids).Find(&checkouts).Error; err != nil {
+	if err := db.Where("order_id IN ?", ids).Order("created_at, id").Find(&checkouts).Error; err != nil {
 		return err
 	}
-	byOrder := make(map[uuid.UUID]*models.SquareCheckout, len(checkouts))
-	for i := range checkouts {
-		byOrder[*checkouts[i].OrderID] = &checkouts[i]
+	byOrder := make(map[uuid.UUID][]models.SquareCheckout, len(ids))
+	for _, checkout := range checkouts {
+		byOrder[*checkout.OrderID] = append(byOrder[*checkout.OrderID], checkout)
 	}
 	for i := range orders {
-		orders[i].SquareCheckout = byOrder[orders[i].ID]
+		orders[i].SquareCheckouts = byOrder[orders[i].ID]
 	}
 	return nil
 }
@@ -309,6 +355,80 @@ func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID
 	default:
 		return nil, fmt.Errorf("payment_method %q には対応していません", method)
 	}
+}
+
+// orderPaymentsFromRequest は作成リクエストの個別会計の支払いを確かめ、支払いと、それぞれが払った明細の
+// menu_ids の中の位置を返す（明細の ID は明細を作ってから埋める）。payments が無ければ nil。
+//
+// amount の合計は billing_amount と同じでなければならない。現金はお預かりが amount 以上、
+// Square は決済依頼の ID が要り、お預かりは amount にする。
+func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.OrderPayment, [][]int, error) {
+	if req.Payments == nil {
+		return nil, nil, nil
+	}
+	if req.SquareCheckoutId != nil || (req.PaymentMethod != nil && *req.PaymentMethod != models.Cash) {
+		return nil, nil, errors.New("payments を指定するときは payment_method・square_checkout_id は指定できません")
+	}
+	requests := *req.Payments
+	if len(requests) == 0 {
+		return nil, nil, errors.New("payments を空にはできません")
+	}
+	payments := make([]models.OrderPayment, len(requests))
+	indexes := make([][]int, len(requests))
+	usedLines := map[int]bool{}
+	usedCheckouts := map[uuid.UUID]bool{}
+	total := 0
+	for i, request := range requests {
+		discount := 0
+		if request.Discount != nil {
+			discount = *request.Discount
+		}
+		if request.Amount < 0 || discount < 0 {
+			return nil, nil, fmt.Errorf("payments[%d] の amount・discount は 0 以上にしてください", i)
+		}
+		payment := models.OrderPayment{
+			Position: i, Method: string(request.Method), Amount: request.Amount, Received: request.Received,
+			Discount: discount, OrderMenuIDs: []uuid.UUID{},
+		}
+		switch request.Method {
+		case models.Cash:
+			if request.SquareCheckoutId != nil {
+				return nil, nil, fmt.Errorf("payments[%d] の square_checkout_id は method が square のときだけ指定できます", i)
+			}
+			if request.Received < request.Amount {
+				return nil, nil, fmt.Errorf("payments[%d] のお預かり %d 円が %d 円に足りません", i, request.Received, request.Amount)
+			}
+		case models.Square:
+			if request.SquareCheckoutId == nil {
+				return nil, nil, fmt.Errorf("payments[%d] は method が square なので square_checkout_id が必要です", i)
+			}
+			id := uuid.UUID(*request.SquareCheckoutId)
+			if usedCheckouts[id] {
+				return nil, nil, fmt.Errorf("payments[%d] の決済は別の支払いにも使われています", i)
+			}
+			usedCheckouts[id] = true
+			payment.SquareCheckoutID = &id
+			// 端末で amount ちょうどを受け取っているので、お預かりは amount と同じ。
+			payment.Received = request.Amount
+		default:
+			return nil, nil, fmt.Errorf("payments[%d] の method %q には対応していません", i, request.Method)
+		}
+		if request.MenuIndexes != nil {
+			for _, index := range *request.MenuIndexes {
+				if index < 0 || index >= len(req.MenuIds) || usedLines[index] {
+					return nil, nil, fmt.Errorf("payments[%d] の menu_indexes が正しくありません", i)
+				}
+				usedLines[index] = true
+				indexes[i] = append(indexes[i], index)
+			}
+		}
+		total += request.Amount
+		payments[i] = payment
+	}
+	if total != req.BillingAmount {
+		return nil, nil, fmt.Errorf("payments の amount の合計 %d 円が請求額 %d 円と一致しません", total, req.BillingAmount)
+	}
+	return payments, indexes, nil
 }
 
 // 全オーダーを WSMessage にする。取得に失敗したら ok = false
@@ -411,6 +531,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	payments, paymentLines, err := orderPaymentsFromRequest(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	createdAt := orderCreatedAt(req.CreatedAt, time.Now())
 
 	// API型 → DB型に変換
@@ -427,6 +552,17 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		// 端末で請求額ちょうどを受け取っているので、お預かりは請求額と同じ。
 		order.PaymentMethod = string(models.Square)
 		order.Received = req.BillingAmount
+	}
+	// 個別会計は、お預かりの合計を注文のお預かりにし、Square の支払いを含めば Square の注文として扱う
+	if payments != nil {
+		order.Received = 0
+		for i := range payments {
+			payments[i].OrderID, payments[i].CreatedAt = order.ID, createdAt
+			order.Received += payments[i].Received
+			if payments[i].Method == string(models.Square) {
+				order.PaymentMethod = string(models.Square)
+			}
+		}
 	}
 
 	if req.DiscountOrderId != nil {
@@ -475,13 +611,31 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 				return err
 			}
 			order.OrderMenus, order.OrderCups = lines, cups
+			// 個別会計の支払いに、払った明細の ID を入れる（作り直しても同じ値になるよう、ここで毎回入れ直す）
+			order.Payments = make([]models.OrderPayment, len(payments))
+			for i, payment := range payments {
+				payment.OrderMenuIDs = make([]uuid.UUID, 0, len(paymentLines[i]))
+				for _, index := range paymentLines[i] {
+					payment.OrderMenuIDs = append(payment.OrderMenuIDs, lines[index].ID)
+				}
+				order.Payments[i] = payment
+			}
 			// グッズだけの注文は作るものが無いので、作った時点で準備完了・提供済みにする
 			serveCuplessOrder(&order, order.CreatedAt)
 			if err := tx.Create(&order).Error; err != nil {
 				return err
 			}
+			now := time.Now()
 			if squareCheckoutID != nil {
-				return linkSquareCheckout(tx, *squareCheckoutID, &order, time.Now())
+				return linkSquareCheckout(tx, *squareCheckoutID, order.ID, order.BillingAmount, now)
+			}
+			for _, payment := range order.Payments {
+				if payment.SquareCheckoutID == nil {
+					continue
+				}
+				if err := linkSquareCheckout(tx, *payment.SquareCheckoutID, order.ID, payment.Amount, now); err != nil {
+					return err
+				}
 			}
 			return nil
 		})
@@ -706,6 +860,9 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderPayment{}).Error; err != nil {
 			return err
 		}
 		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して

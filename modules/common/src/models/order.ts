@@ -35,6 +35,32 @@ export const commentSchema = z.object({
   createdAt: z.date(),
 });
 
+/**
+ * 個別会計の支払い 1 回分（openapi.yaml の OrderPaymentResponse・OrderPaymentCreate）
+ *
+ * 保存した注文ではサーバーが返したもの。一括で払った注文には無い（空）。
+ * レジで入力中の注文では、個別会計で払った分を入れ、注文を作るときに一緒に送る。
+ */
+export const splitPaymentSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  /** 払った額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+  amount: z.number(),
+  /** お預かり。Square なら amount と同じ */
+  received: z.number(),
+  /** この支払いで引いた割引 */
+  discount: z.number(),
+  /** この支払いで払った明細の、menus の中の位置 */
+  menuIndexes: z.array(z.number()),
+  /** Square の決済依頼の ID。Square で払ったときだけ */
+  squareCheckoutId: z.string().optional(),
+  /** Square の決済画面の種類（SquarePaymentType）。保存した注文の Square の支払いだけ */
+  squarePaymentType: z.string().optional(),
+  /** Square の決済の返金の状態。保存した注文の Square の支払いだけ */
+  squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+});
+
+export type SplitPayment = z.infer<typeof splitPaymentSchema>;
+
 export const orderSchema = z.object({
   id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
@@ -57,6 +83,8 @@ export const orderSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS).optional(),
   // Square で払った注文の、その決済の返金の状態。現金の注文と保存前の注文には無い
   squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+  // 個別会計の支払い（払った順）。一括で払う注文には無い（空）
+  payments: z.array(splitPaymentSchema).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -140,6 +168,7 @@ export class OrderEntity implements Order {
     private readonly _cups: Cup[],
     private readonly _paymentMethod: PaymentMethod | undefined,
     private readonly _squareRefundStatus: Order["squareRefundStatus"],
+    private _payments: SplitPayment[],
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -162,6 +191,7 @@ export class OrderEntity implements Order {
       [],
       undefined,
       undefined,
+      [],
     );
   }
 
@@ -189,6 +219,7 @@ export class OrderEntity implements Order {
       order.cups ?? [],
       order.paymentMethod,
       order.squareRefundStatus,
+      order.payments ?? [],
     );
   }
 
@@ -286,6 +317,14 @@ export class OrderEntity implements Order {
 
   get squareRefundStatus() {
     return this._squareRefundStatus;
+  }
+
+  /** 個別会計の支払い（払った順）。一括で払う注文では空 */
+  get payments() {
+    return this._payments;
+  }
+  set payments(payments: SplitPayment[]) {
+    this._payments = payments;
   }
 
   // --------------------------------------------------
@@ -488,6 +527,7 @@ export class OrderEntity implements Order {
       cups: this.cups,
       paymentMethod: this.paymentMethod,
       squareRefundStatus: this.squareRefundStatus,
+      payments: this.payments,
     };
   }
 
