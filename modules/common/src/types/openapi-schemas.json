@@ -1080,45 +1080,6 @@
       }
     }
   },
-  "CaosUndoCupState": {
-    "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列）",
-    "required": ["state"],
-    "properties": {
-      "state": {
-        "$ref": "#/components/schemas/CaosCupState"
-      }
-    }
-  },
-  "CaosUndoCup": {
-    "type": "object",
-    "required": ["cup_id", "current", "restore"],
-    "properties": {
-      "cup_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "current": {
-        "$ref": "#/components/schemas/CaosUndoCupState"
-      },
-      "restore": {
-        "$ref": "#/components/schemas/CaosUndoCupState"
-      }
-    }
-  },
-  "CaosUndoRequest": {
-    "type": "object",
-    "required": ["cups"],
-    "properties": {
-      "cups": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "$ref": "#/components/schemas/CaosUndoCup"
-        }
-      }
-    }
-  },
   "CaosLane": {
     "type": "object",
     "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",

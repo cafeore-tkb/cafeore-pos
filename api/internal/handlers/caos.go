@@ -513,7 +513,7 @@ func requireCaosStartable(tx *gorm.DB, drippers []int, cupIDs []uuid.UUID, start
 }
 
 // caosBrewingTwice は、drippers のうち抽出中のカードが 2 枚以上あるドリッパーを返す（無ければ 0）。抽出中は「次へ」と同じ決まりで数える（splitCaosLane）。
-// 書いたあとに、そのドリッパーの advisory lock を取ったまま呼ぶ（PUT・「1つ戻す」）。
+// 書いたあとに、そのドリッパーの advisory lock を取ったまま呼ぶ（PUT）。
 func caosBrewingTwice(tx *gorm.DB, drippers []int, start, end time.Time) (int, error) {
 	for _, d := range sortedUnique(drippers, cmp.Compare) {
 		rows, err := readCaosLane(tx, d, start, end)
