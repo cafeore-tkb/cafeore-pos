@@ -1,7 +1,6 @@
 import {
   type CaosCard,
   type CaosPlace,
-  assignWrites,
   caosDripperAllowed,
   caosMergePair,
   dripperLabel,
@@ -15,7 +14,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { type DropSide, dropSideAt, isBayId } from "../logic/lanes";
+import {
+  type DropSide,
+  dropSideAt,
+  isBayId,
+  staysInLane,
+} from "../logic/lanes";
 
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機・抽出中のカード）で共通。
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
@@ -120,7 +124,7 @@ export interface DropTarget {
  * 運んでいるのが抽出中なら相手を抽出中のカードに入れる）ときだけ。できなければ近いほうの端。logic/lanes の dropSideAt）。
  * 同じ列の中の入れ替えにも使う。ほかは列（最後。bayTargetAt）。置けない列は null。
  * 運んでいるカード自身の上は null（掴んだ所に戻して離したら何もしない）。カード自身の列（from）の空いた所は、ほかの列と同じくその列の待機の最後へ
- * （抽出中のカードなら、代わりに待機の先頭が始まる。assignWrites）。もう最後にある（動かしても同じ場所）なら null。
+ * （抽出中のカードなら、代わりに待機の先頭が始まる。assignWrites）。もう最後にある（動かしても同じ場所。staysInLane）なら null。
  * merge が false なら統合しない（前か後ろだけ）
  */
 export const dropTargetAt = (
@@ -177,10 +181,7 @@ export const dropTargetAt = (
   const bayId = bayTargetAt(elements, card);
   if (bayId === null) return null;
   if (bayId !== from || !card) return { bayId };
-  const moved = assignWrites(cards, card, bayId, { newId: () => "" });
-  return "error" in moved || moved.writes.length === 0
-    ? null
-    : { bayId, ownLane: true };
+  return staysInLane(cards, card, bayId) ? null : { bayId, ownLane: true };
 };
 
 /** 落とす先の札（「→ 3」・「3rd の最後へ」・「#012 の前へ（今から始める）」・「#012 の後ろへ（待機の先頭）」・「#012 と統合」） */
