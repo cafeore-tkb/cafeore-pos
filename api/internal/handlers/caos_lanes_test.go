@@ -280,15 +280,6 @@ func TestCaosSeniorOnlyCupsOnDB(t *testing.T) {
 	if cup := f.cup(t, o1.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 4 {
 		t.Fatalf("limited cup on a non-senior = %+v", cup)
 	}
-	// 「1つ戻す」で上級生でないドリッパーへ戻すのもできる
-	before := map[uuid.UUID]map[string]any{o1.OrderCups[0].ID: f.undoState(t, o1.OrderCups[0].ID)}
-	f.mustPut(t, write(ids(o1.OrderCups[0]), f.state(t, o1.OrderCups[0].ID), toUnassigned))
-	if code, body := f.undo(t, before); code != http.StatusNoContent {
-		t.Fatalf("undo onto a non-senior = %d: %s", code, body)
-	}
-	if cup := f.cup(t, o1.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 4 {
-		t.Fatalf("limited cup after undo = %+v", cup)
-	}
 
 	// 指名は今まで通り：指名（2nd）のカップは 2nd にしか置けない（上級生の 3rd でも断る）
 	if code, body := f.put(t, write(ids(o2.OrderCups[0]), unassigned, placed(3, card2, false))); code != http.StatusBadRequest || !strings.Contains(body, "指名のあるカップは 2 番") {

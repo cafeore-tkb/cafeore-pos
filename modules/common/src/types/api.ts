@@ -206,21 +206,6 @@ export interface paths {
      */
     delete: operations["deleteCupEmergency"];
   };
-  "/api/caos/undo": {
-    /**
-     * CaOS の「1つ戻す」
-     * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
-     * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
-     * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-     * PUT /api/caos/cups と違い、抽出の時刻も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻る。
-     * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-     * 戻すのは前の値なので、restore の brew_finished_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。
-     * 準備完了・提供（ready_at・served_at）は CaOS の操作では変わらず、盤面の決まりにも使わないので、比べも書き戻しもしない（提供の画面で提供可能・提供にしたカップの操作も戻せる）。
-     * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
-     * 書いたカップの注文は PUT と同じく配る。
-     */
-    post: operations["undoCaosCups"];
-  };
   "/api/caos/lanes/{dripper}": {
     /**
      * CaOS のドリッパーの担当者を替える（交代）
@@ -950,19 +935,6 @@ export interface components {
        */
       start_drip_id?: string;
       press?: components["schemas"]["CaosPress"];
-    };
-    /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列） */
-    CaosUndoCupState: {
-      state: components["schemas"]["CaosCupState"];
-    };
-    CaosUndoCup: {
-      /** Format: uuid */
-      cup_id: string;
-      current: components["schemas"]["CaosUndoCupState"];
-      restore: components["schemas"]["CaosUndoCupState"];
-    };
-    CaosUndoRequest: {
-      cups: components["schemas"]["CaosUndoCup"][];
     };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
@@ -2047,43 +2019,6 @@ export interface operations {
         };
       };
       /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
-      409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  /**
-   * CaOS の「1つ戻す」
-   * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
-   * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
-   * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-   * PUT /api/caos/cups と違い、抽出の時刻も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻る。
-   * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-   * 戻すのは前の値なので、restore の brew_finished_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。
-   * 準備完了・提供（ready_at・served_at）は CaOS の操作では変わらず、盤面の決まりにも使わないので、比べも書き戻しもしない（提供の画面で提供可能・提供にしたカップの操作も戻せる）。
-   * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
-   * 書いたカップの注文は PUT と同じく配る。
-   */
-  undoCaosCups: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CaosUndoRequest"];
-      };
-    };
-    responses: {
-      /** @description 書き戻した */
-      204: {
-        content: never;
-      };
-      /** @description 形の違うリクエスト・書き戻した結果が決まりに合わない（何も書かない）。error を画面にそのまま出す */
-      400: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description 今の値が current と違う・抽出中が 2 枚になる（何も書かない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
