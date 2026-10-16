@@ -233,30 +233,6 @@ type CaosPress struct {
 	SentAt int64 `json:"sent_at"`
 }
 
-// CaosUndoCup defines model for CaosUndoCup.
-type CaosUndoCup struct {
-	CupId openapi_types.UUID `json:"cup_id"`
-
-	// Current 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
-	Current CaosUndoCupState `json:"current"`
-
-	// Restore 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
-	Restore CaosUndoCupState `json:"restore"`
-}
-
-// CaosUndoCupState 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）。ready_at は current でだけ比べ、restore の ready_at は書き戻さない
-type CaosUndoCupState struct {
-	ReadyAt *time.Time `json:"ready_at"`
-
-	// State カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
-	State CaosCupState `json:"state"`
-}
-
-// CaosUndoRequest defines model for CaosUndoRequest.
-type CaosUndoRequest struct {
-	Cups []CaosUndoCup `json:"cups"`
-}
-
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -938,9 +914,6 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
-
-// UndoCaosCupsJSONRequestBody defines body for UndoCaosCups for application/json ContentType.
-type UndoCaosCupsJSONRequestBody = CaosUndoRequest
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

@@ -148,7 +148,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if err := db.First(&after, "id = ?", o2.ID).Error; err != nil || after.ReadyAt != nil {
 		t.Fatalf("order = %+v, want not ready", after)
 	}
-	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にすると終わりとみなす）
+	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にしても残り、終えるのは「次へ」だけ）
 	if cup := f.cup(t, o2.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 || cup.ReadyAt != nil {
 		t.Fatalf("cup = %+v", cup)
 	}
@@ -457,7 +457,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 }
 
-// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す・戻す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
+// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
 // 使った時刻は足した時刻で、CaOS の抽出の時刻には依らない
 func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
@@ -496,7 +496,6 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	card := uuid.New()
 	f.mustPut(t, write([]uuid.UUID{e}, unassigned, placed(1, card, true)))
 	expect("始めた")
-	before := map[uuid.UUID]map[string]any{e: f.undoState(t, e)}
 	first := startedAt()
 	// 抽出中の 2 番の待機へ（始めた時刻を消す）
 	other := f.createOrder(t, 2, line(f.blend))
@@ -513,14 +512,6 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 		t.Fatalf("restarted at %v, want after %v", restarted, first)
 	}
 	expect("始め直した")
-	// 戻すと前の始めた時刻
-	if code, body := f.undo(t, before); code != http.StatusNoContent {
-		t.Fatalf("undo = %d: %s", code, body)
-	}
-	if got := startedAt(); !timeEqual(msTime(got), msTime(first)) {
-		t.Fatalf("started at %v after undo, want %v", got, first)
-	}
-	expect("戻した")
 }
 
 // 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない

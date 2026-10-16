@@ -10,6 +10,7 @@ import {
   type CardLook,
   cardLooks,
   cardOrderParts,
+  cardServedLabel,
   orderAndCupCounts,
   orderLabel,
   quickMergePartner,
@@ -29,7 +30,7 @@ import {
 import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { findOrder, focusCard } from "./search";
-import { linkedOrderNos } from "./sheet";
+import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
 import { brewStarts, timelineArrivals } from "./timeline";
 
 // 作りものの注文（本物のデータは入れない）
@@ -55,7 +56,9 @@ type CupPlace = Partial<
     | "dripId"
     | "dripperPosition"
     | "brewStartedAt"
+    | "brewFinishedAt"
     | "readyAt"
+    | "servedAt"
     | "emergencies"
   >
 >;
@@ -529,7 +532,13 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     order(6, [{ readyAt: T0 }]),
     // #7：3 杯を 3 枚に分けた（4th で終わり・5th で待機・6th で抽出中）
     order(7, [
-      { dripper: 4, dripId: "d7a", dripperPosition: 1, readyAt: T0 },
+      {
+        dripper: 4,
+        dripId: "d7a",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        brewFinishedAt: T0,
+      },
       { dripper: 5, dripId: "d7b", dripperPosition: 1 },
       { dripper: 6, dripId: "d7c", dripperPosition: 1, brewStartedAt: T0 },
     ]),
@@ -589,5 +598,58 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     expect(find(4)?.comments).toEqual([]);
     expect(find(3)?.comments).toEqual([comment]);
     expect(selectedComments(cards, looks, "#004")).toEqual([]);
+  });
+});
+
+describe("[unit] CaOS の終わったカードと提供済みのカード", () => {
+  // #1：1st で「次へ」で終えた、#2：1st で抽出中（提供の画面で提供済み）、#3：1st の待機（2 杯のうち 1 杯だけ提供済み）
+  const cards = buildCaosCards([
+    order(1, [
+      {
+        dripper: 1,
+        dripId: "d1",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        brewFinishedAt: T0,
+      },
+    ]),
+    order(2, [
+      {
+        dripper: 1,
+        dripId: "d2",
+        dripperPosition: 2,
+        brewStartedAt: T0,
+        readyAt: T0,
+        servedAt: T0,
+      },
+    ]),
+    order(3, [
+      { dripper: 1, dripId: "d3", dripperPosition: 3, servedAt: T0 },
+      { dripper: 1, dripId: "d3", dripperPosition: 3 },
+    ]),
+  ]);
+  const lanes = boardLanes(cards);
+
+  test("提供済みのカップがあっても抽出中・待機のまま。札は全部なら「提供済」、一部なら杯数", () => {
+    expect(lanes[0].brewing?.key).toBe("d2");
+    expect(lanes[0].queued.map((card) => card.key)).toEqual(["d3"]);
+    const label = (key: string) =>
+      cardServedLabel(cards.find((card) => card.key === key) as CaosCard);
+    expect(label("d2")).toBe("提供済");
+    expect(label("d3")).toBe("提供済 1/2");
+    // 終わったカードには付けない
+    expect(label("d1")).toBe("");
+  });
+
+  test("管制盤 D の表は、終わったカードを枠に出さず、淹れ終わった行は灰色の行として残す", () => {
+    const sheet = buildSheet(lanes, [], new Map());
+    expect(sheet.cells.get(cellKey(1, 1))?.entries ?? []).toEqual([]);
+    expect(
+      sheet.cells.get(cellKey(2, 1))?.entries.map((entry) => entry.state),
+    ).toEqual(["current"]);
+    expect(sheet.rows.find((row) => row.orderNo === 1)).toMatchObject({
+      isPast: true,
+      cups: 1,
+    });
   });
 });
