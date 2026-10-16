@@ -1,4 +1,5 @@
 import {
+  DRIPPER_NUMBERS,
   type MenuEntity,
   type OrderEntity,
   type SquarePaymentType,
@@ -190,6 +191,32 @@ export const selectLine = (
 };
 
 /**
+ * 選んでいる行のドリッパーを決める（数字のキー）。自由記述はそのまま残し（番号を外したら消す）、行は選んだまま。
+ * 自由記述は指名のダイアログで書く
+ */
+export const assignSelectedDripper = (
+  draft: CashierDraft,
+  dripper: number | null,
+): CashierDraft => {
+  if (!canEditLines(draft) || !canAssignSelected(draft)) return draft;
+  const index = draft.selected;
+  if (index === null) return draft;
+  const line = draft.lines[index];
+  const menu = line.menu.clone();
+  menu.assign(dripper, line.menu.assignee);
+  return {
+    ...draft,
+    lines: draft.lines.map((l, i) => (i === index ? { ...l, menu } : l)),
+  };
+};
+
+/** 数字のキーの指名。1〜6 は 1st〜6th、0 は指名なし。ほかは undefined */
+const dripperFromKey = (key: string): number | null | undefined => {
+  if (key === "0") return null;
+  return DRIPPER_NUMBERS.find((dripper) => String(dripper) === key);
+};
+
+/**
  * 行の指名を決めて、選んでいた行を外す。
  * 指名はドリッパーの番号が必須で、番号が無ければ自由記述も消す（MenuEntity.assign）
  */
@@ -276,14 +303,20 @@ export const focusMemo = (draft: CashierDraft): CashierDraft => ({
 
 /**
  * 特殊な割引を切り替える。引換券で割引できているときは付けない。
- * 付けるときも外すときも、引換券番号は消す
+ * 付けるときも外すときも、引換券番号は消す。付けたら備考に移り、外したら引換券番号の欄に移る
  */
 export const toggleSpecial = (
   draft: CashierDraft,
   couponApplied: boolean,
 ): CashierDraft => {
   if (!draft.special && couponApplied) return draft;
-  return { ...draft, special: !draft.special, coupon: "" };
+  return {
+    ...draft,
+    special: !draft.special,
+    coupon: "",
+    selected: null,
+    zone: draft.special ? "coupon" : "memo",
+  };
 };
 
 export const setMemo = (draft: CashierDraft, memo: string): CashierDraft => ({
@@ -297,7 +330,7 @@ export const setMemo = (draft: CashierDraft, memo: string): CashierDraft => ({
 
 /**
  * 数字を打つ。入れる段階は引換券番号に（行・備考を選んでいれば引換券番号の欄に移る）、
- * 会計の段階は受取金額に足す（現金にする）
+ * 3 桁そろったら備考に移る。会計の段階は受取金額に足す（現金にする）
  */
 export const inputDigits = (
   draft: CashierDraft,
@@ -305,11 +338,11 @@ export const inputDigits = (
 ): CashierDraft => {
   if (draft.step === "entry") {
     if (!canInputCoupon(draft)) return draft;
-    const coupon = toCouponZone(draft);
-    return {
-      ...coupon,
-      coupon: (coupon.coupon + digits).slice(0, COUPON_DIGITS),
-    };
+    const current = toCouponZone(draft);
+    const coupon = (current.coupon + digits).slice(0, COUPON_DIGITS);
+    const completed =
+      current.coupon.length < COUPON_DIGITS && coupon.length === COUPON_DIGITS;
+    return { ...current, coupon, zone: completed ? "memo" : current.zone };
   }
   const received = (draft.received + digits).replace(/^0+/, "");
   if (received.length > RECEIVED_MAX_DIGITS) {
@@ -429,11 +462,12 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * レジの画面で押したキーを、何をするかに直す
  *
  * - 商品キー: 商品を足す（入れる段階だけ）
- * - 数字: 入れる段階は引換券番号、会計の段階は受取金額
+ * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
+ *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（戻す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
- * - Space: 選んでいる行を指名する
- * - Enter: 備考を選んでいれば備考を開く・一括会計・確定（Square なら決済を始める）。
+ * - Space: 選んでいる行の指名・備考を開く
+ * - Enter: 一括会計・確定（Square なら決済を始める）。
  *   現金で受取金額が空なら、まず受取金額をちょうどにする（もう一度 Enter で確定）
  * - Esc: 入力中の注文を消す
  */
@@ -447,6 +481,13 @@ export const cashierKeyIntent = (
     return draft.step === "entry" ? update(addLine(draft, menu)) : NONE;
   }
   if (/^[0-9]$/.test(key)) {
+    if (draft.step === "entry" && draft.selected !== null) {
+      // 行を選んでいる間の数字は指名。指名できない行（グッズなど）では何もしない
+      const dripper = dripperFromKey(key);
+      return dripper !== undefined && canAssignSelected(draft)
+        ? update(assignSelectedDripper(draft, dripper))
+        : NONE;
+    }
     return update(inputDigits(draft, key));
   }
   switch (key) {
@@ -469,7 +510,17 @@ export const cashierKeyIntent = (
       );
     }
     case " ":
-      return canAssignSelected(draft) ? { type: "openAssign" } : NONE;
+      if (canAssignSelected(draft)) {
+        return { type: "openAssign" };
+      }
+      if (
+        draft.step === "entry" &&
+        draft.selected === null &&
+        draft.zone === "memo"
+      ) {
+        return { type: "openMemo" };
+      }
+      return NONE;
     case "Enter":
       if (draft.step === "pay") {
         if (draft.payment !== "cash") {
@@ -478,9 +529,6 @@ export const cashierKeyIntent = (
         return draft.received === ""
           ? { type: "exactReceived" }
           : { type: "submitCash" };
-      }
-      if (draft.selected === null && draft.zone === "memo") {
-        return { type: "openMemo" };
       }
       return activeMenus(draft).length > 0 ? { type: "goPay" } : NONE;
     case "Escape":

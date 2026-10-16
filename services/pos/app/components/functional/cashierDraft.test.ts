@@ -11,6 +11,7 @@ import {
   cyclePayment,
   deleteDigit,
   emptyCashierDraft,
+  focusCoupon,
   focusMemo,
   goPay,
   hasDraftInput,
@@ -116,10 +117,16 @@ describe("[unit] cashierDraft の商品", () => {
 });
 
 describe("[unit] cashierDraft の数字", () => {
-  test("入れる段階は引換券番号に 3 桁まで入れる", () => {
-    const draft = inputDigits(inputDigits(withLines(blend), "04"), "29");
+  test("入れる段階は引換券番号に 3 桁まで入れ、3 桁そろったら備考に移る", () => {
+    const partial = inputDigits(withLines(blend), "04");
+    expect(partial.zone).toBe("coupon");
+    const draft = inputDigits(partial, "29");
     expect(draft.coupon).toBe("042");
-    expect(deleteDigit(draft).coupon).toBe("04");
+    expect(draft.zone).toBe("memo");
+    // 備考に移ってからも、消すと引換券番号の欄に戻る
+    const deleted = deleteDigit(draft);
+    expect(deleted.coupon).toBe("04");
+    expect(deleted.zone).toBe("coupon");
     expect(clearDigits(draft).coupon).toBe("");
   });
 
@@ -137,6 +144,13 @@ describe("[unit] cashierDraft の数字", () => {
   test("特殊な割引のときは、引換券番号を打てない", () => {
     const special = toggleSpecial(withLines(blend), false);
     expect(inputDigits(special, "1").coupon).toBe("");
+  });
+
+  test("特殊な割引を付けたら備考に、外したら引換券番号の欄に移る", () => {
+    const special = toggleSpecial(withLines(blend), false);
+    expect(special.selected).toBeNull();
+    expect(special.zone).toBe("memo");
+    expect(toggleSpecial(special, false).zone).toBe("coupon");
   });
 
   test("引換券で割引できているときは特殊な割引を付けない。付けると引換券番号を消す", () => {
@@ -227,7 +241,34 @@ describe("[unit] cashierKeyIntent", () => {
     const voided = keys(withLines(blend, coaster), "Backspace");
     expect(voided.lines[1].voided).toBe(true);
     expect(voided.selected).toBeNull();
-    expect(keys(withLines(blend), "1", "2", "Backspace").coupon).toBe("1");
+    const onCoupon = focusCoupon(withLines(blend));
+    expect(keys(onCoupon, "1", "2", "Backspace").coupon).toBe("1");
+  });
+
+  test("行を選んでいる間の数字は指名（1〜6 は 1st〜6th、0 は指名なし）で、行は選んだまま", () => {
+    const draft = withLines(blend);
+    const second = keys(draft, "2");
+    expect(second.lines[0].menu.dripper).toBe(2);
+    expect(second.selected).toBe(0);
+    expect(second.coupon).toBe("");
+    expect(keys(second, "0").lines[0].menu.dripper).toBeNull();
+    expect(cashierKeyIntent(draft, "7", { menus, payments }).type).toBe("none");
+  });
+
+  test("数字の指名では自由記述を残し、指名なしにしたら消す", () => {
+    const assigned = selectLine(
+      assignLine(withLines(blend), 0, 1, "たなか"),
+      0,
+    );
+    const third = keys(assigned, "3");
+    expect(third.lines[0].menu.dripper).toBe(3);
+    expect(third.lines[0].menu.assignee).toBe("たなか");
+    expect(keys(third, "0").lines[0].menu.assignee).toBeNull();
+  });
+
+  test("指名できない行を選んでいるときの数字は何もしない", () => {
+    const draft = withLines(coaster);
+    expect(cashierKeyIntent(draft, "1", { menus, payments }).type).toBe("none");
   });
 
   test("Space は指名できる行を選んでいるときだけ指名を開く", () => {
@@ -242,11 +283,14 @@ describe("[unit] cashierKeyIntent", () => {
     );
   });
 
-  test("備考を選んでいるときの Enter は備考を開く", () => {
+  test("備考を選んでいるときの Space は備考を開き、Enter は一括会計する", () => {
     // 足した行 → 割引 → 備考
     const draft = keys(withLines(blend), "ArrowDown", "ArrowDown");
-    expect(cashierKeyIntent(draft, "Enter", { menus, payments }).type).toBe(
+    expect(cashierKeyIntent(draft, " ", { menus, payments }).type).toBe(
       "openMemo",
+    );
+    expect(cashierKeyIntent(draft, "Enter", { menus, payments }).type).toBe(
+      "goPay",
     );
   });
 

@@ -429,6 +429,7 @@ const MemoSection = ({ draft, onOpenMemo }: props) => {
         >
           {draft.memo ? draft.memo.replace(/\n/g, " ") : "特記事項（任意）"}
         </span>
+        {focused && <KeyHint className="flex-none">Space</KeyHint>}
         <Pencil2Icon className="h-4 w-4 flex-none text-stone-500" />
       </button>
     </div>

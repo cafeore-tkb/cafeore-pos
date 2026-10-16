@@ -130,7 +130,8 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
         {exampleKeys && <span>{exampleKeys} … 商品キー</span>}
         <span>Enter 一括会計</span>
         <span>
-          ↑ ↓ 商品 → 割引 → 備考・Space で指名・Enter で備考・Backspace で削除
+          ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
+          で指名／備考・Backspace で削除
         </span>
         <span>
           会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
