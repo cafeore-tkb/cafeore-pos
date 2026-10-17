@@ -97,6 +97,79 @@ func TestCancelTerminalCheckoutSendsEmptyObject(t *testing.T) {
 	}
 }
 
+func TestCreateTerminalActionSendsSelect(t *testing.T) {
+	client, recorded := newTestServer(t, http.StatusOK, `{"action":{"id":"act1","device_id":"dev","deadline_duration":"PT5M","status":"PENDING","type":"SELECT","select_options":{"title":"t","body":"b","options":[{"reference_id":"CASH","title":"現金"},{"reference_id":"QR_CODE","title":"QR コード"}]}}}`)
+	action, err := client.CreateTerminalAction(context.Background(), "key-1", TerminalAction{
+		DeviceID:         "dev",
+		DeadlineDuration: "PT5M",
+		Type:             "SELECT",
+		SelectOptions: &SelectOptions{
+			Title:   "t",
+			Body:    "b",
+			Options: []SelectOption{{ReferenceID: "CASH", Title: "現金"}, {ReferenceID: "QR_CODE", Title: "QR コード"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.ID != "act1" || action.Status != "PENDING" || action.SelectOptions == nil || len(action.SelectOptions.Options) != 2 {
+		t.Fatalf("unexpected action: %+v", action)
+	}
+	if recorded.method != http.MethodPost || recorded.path != "/v2/terminals/actions" {
+		t.Fatalf("unexpected endpoint: %s %s", recorded.method, recorded.path)
+	}
+	if recorded.body["idempotency_key"] != "key-1" {
+		t.Fatalf("idempotency_key missing: %v", recorded.body)
+	}
+	sent, _ := recorded.body["action"].(map[string]any)
+	options, _ := sent["select_options"].(map[string]any)
+	buttons, _ := options["options"].([]any)
+	if sent["device_id"] != "dev" || sent["type"] != "SELECT" || sent["deadline_duration"] != "PT5M" ||
+		options["title"] != "t" || options["body"] != "b" || len(buttons) != 2 {
+		t.Fatalf("unexpected action body: %v", sent)
+	}
+	// 読み取り専用のフィールドと、まだ選ばれていない選択肢は送らない。
+	for _, field := range []string{"id", "status", "cancel_reason", "created_at", "updated_at"} {
+		if _, ok := sent[field]; ok {
+			t.Fatalf("read-only field %q must not be sent: %v", field, sent)
+		}
+	}
+	if _, ok := options["selected_option"]; ok {
+		t.Fatalf("selected_option must not be sent: %v", options)
+	}
+}
+
+func TestGetTerminalActionReadsSelectedOption(t *testing.T) {
+	client, recorded := newTestServer(t, http.StatusOK, `{"action":{"id":"act1","status":"COMPLETED","type":"SELECT","select_options":{"title":"t","body":"b","options":[{"reference_id":"CASH","title":"現金"}],"selected_option":{"reference_id":"CASH","title":"現金"}}}}`)
+	action, err := client.GetTerminalAction(context.Background(), "act1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded.method != http.MethodGet || recorded.path != "/v2/terminals/actions/act1" {
+		t.Fatalf("unexpected endpoint: %s %s", recorded.method, recorded.path)
+	}
+	if action.Status != "COMPLETED" || action.SelectOptions.SelectedOption == nil || action.SelectOptions.SelectedOption.ReferenceID != "CASH" {
+		t.Fatalf("unexpected action: %+v", action)
+	}
+}
+
+func TestCancelTerminalActionSendsEmptyObject(t *testing.T) {
+	client, recorded := newTestServer(t, http.StatusOK, `{"action":{"id":"act1","status":"CANCELED","cancel_reason":"SELLER_CANCELED"}}`)
+	action, err := client.CancelTerminalAction(context.Background(), "act1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded.method != http.MethodPost || recorded.path != "/v2/terminals/actions/act1/cancel" {
+		t.Fatalf("unexpected endpoint: %s %s", recorded.method, recorded.path)
+	}
+	if recorded.body == nil || len(recorded.body) != 0 {
+		t.Fatalf("expected an empty JSON object, got %v", recorded.body)
+	}
+	if action.Status != "CANCELED" || action.CancelReason != "SELLER_CANCELED" {
+		t.Fatalf("unexpected action: %+v", action)
+	}
+}
+
 func TestGetPaymentReadsAmounts(t *testing.T) {
 	client, recorded := newTestServer(t, http.StatusOK, `{"payment":{"id":"p1","status":"COMPLETED","amount_money":{"amount":600,"currency":"JPY"},"total_money":{"amount":600,"currency":"JPY"},"source_type":"WALLET"}}`)
 	payment, err := client.GetPayment(context.Background(), "p1")

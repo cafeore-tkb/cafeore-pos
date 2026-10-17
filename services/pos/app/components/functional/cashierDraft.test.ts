@@ -400,18 +400,19 @@ describe("[unit] cashierKeyIntent", () => {
 });
 
 describe("[unit] cashierPaymentKeyIntent", () => {
-  test("入れる段階は一括会計に進み、Alt+T・Q は進んだらその決済手段で始める", () => {
+  test("入れる段階は一括会計に進み、進んだらその決済手段を選ぶ（Alt+T・Q は決済を始める）", () => {
     const draft = withLines(blend);
     expect(cashierPaymentKeyIntent(draft, "KeyC", { payments })).toEqual({
       type: "goPay",
+      payment: "cash",
     });
     expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
       type: "goPay",
-      square: "CARD_PRESENT",
+      payment: "CARD_PRESENT",
     });
     expect(cashierPaymentKeyIntent(draft, "KeyQ", { payments })).toEqual({
       type: "goPay",
-      square: "QR_CODE",
+      payment: "QR_CODE",
     });
   });
 

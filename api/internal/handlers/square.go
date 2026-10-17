@@ -51,6 +51,9 @@ type squareAPI interface {
 	CreateTerminalCheckout(ctx context.Context, idempotencyKey string, checkout square.TerminalCheckout) (*square.TerminalCheckout, error)
 	GetTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	CancelTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
+	CreateTerminalAction(ctx context.Context, idempotencyKey string, action square.TerminalAction) (*square.TerminalAction, error)
+	GetTerminalAction(ctx context.Context, actionID string) (*square.TerminalAction, error)
+	CancelTerminalAction(ctx context.Context, actionID string) (*square.TerminalAction, error)
 	GetPayment(ctx context.Context, paymentID string) (*square.Payment, error)
 	RefundPayment(ctx context.Context, idempotencyKey, paymentID string, amount square.Money, reason string) (*square.PaymentRefund, error)
 	GetPaymentRefund(ctx context.Context, refundID string) (*square.PaymentRefund, error)
@@ -370,6 +373,11 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 
 	// 進行中かどうかは Square に問い合わせないと分からない。ロックを取る前に最新にしておく。
 	if err := h.refreshActiveCandidates(ctx, req.DeviceId); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// 決済手段を選ぶ画面を出したままだと、決済画面がその後ろに並んで出てこない。先に取り消す。
+	if err := h.cancelPendingActions(ctx, req.DeviceId, ""); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
