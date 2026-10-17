@@ -127,6 +127,16 @@ const notifyOfflineOrders = () => {
   });
 };
 
+/**
+ * 端末に残っている、まだ保存できていない注文のうち、いちばん大きい番号（無ければ 0）。
+ * 読み込み直したあとも、溜めた注文と同じ番号を次の注文に付けないために使う
+ */
+const latestUnsentOrderId = () =>
+  Object.values(readUnsentOrders()).reduce(
+    (acc, order) => Math.max(acc, order.orderId),
+    0,
+  );
+
 // 保存できたら端末に残した分も消す。後から送るとき（溜めた注文・再送）は確定した時刻も送る
 const saver =
   (order: OrderEntity, idempotencyKey: string, sendCreatedAt: boolean) => () =>
@@ -219,4 +229,9 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
     promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 
-export { notifyOfflineOrders, saveOrderInBackground, sendUnsentOrders };
+export {
+  latestUnsentOrderId,
+  notifyOfflineOrders,
+  saveOrderInBackground,
+  sendUnsentOrders,
+};
