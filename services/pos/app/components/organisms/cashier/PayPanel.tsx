@@ -50,7 +50,7 @@ type PadKey = {
   label: string;
   column: string;
   row: string;
-  kind: "digit" | "back" | "clear" | "amount";
+  kind: "digit" | "back" | "clear" | "exact";
 };
 
 const PAD_KEYS: PadKey[] = [
@@ -65,7 +65,7 @@ const PAD_KEYS: PadKey[] = [
   { label: "7", column: "1", row: "3", kind: "digit" },
   { label: "8", column: "2", row: "3", kind: "digit" },
   { label: "9", column: "3", row: "3", kind: "digit" },
-  { label: "+1万", column: "4", row: "3 / span 2", kind: "amount" },
+  { label: "ちょうど", column: "4", row: "3 / span 2", kind: "exact" },
   { label: "0", column: "1 / span 2", row: "4", kind: "digit" },
   { label: "00", column: "3", row: "4", kind: "digit" },
 ];
@@ -246,15 +246,7 @@ export const PayPanel = ({
         </div>
 
         {cash && (
-          <div className="mt-2 grid grid-cols-5 gap-1.75">
-            <button
-              type="button"
-              onClick={onExactReceived}
-              disabled={!paying}
-              className="h-9 rounded-lg border border-stone-200 bg-white p-0 font-bold text-stone-600 text-xs active:bg-stone-100"
-            >
-              ちょうど
-            </button>
+          <div className="mt-2 grid grid-cols-4 gap-1.75">
             {QUICK_AMOUNTS.map(({ label, amount }) => (
               <button
                 key={label}
@@ -278,8 +270,8 @@ export const PayPanel = ({
         )}
       >
         {PAD_KEYS.map((key) => {
-          // +1万 は受取金額にだけ使う
-          const off = !padEnabled || (key.kind === "amount" && !paying);
+          // ちょうど は受取金額にだけ使う
+          const off = !padEnabled || (key.kind === "exact" && !paying);
           return (
             <button
               key={key.label}
@@ -288,7 +280,7 @@ export const PayPanel = ({
               onClick={() => {
                 if (key.kind === "back") onDeleteDigit();
                 else if (key.kind === "clear") onClearDigits();
-                else if (key.kind === "amount") onAddReceived(10000);
+                else if (key.kind === "exact") onExactReceived();
                 else onDigits(key.label);
               }}
               className={cn(
@@ -299,8 +291,8 @@ export const PayPanel = ({
                 key.kind === "back" && "bg-stone-100 active:bg-stone-200",
                 key.kind === "clear" &&
                   "bg-stone-100 font-extrabold text-[22px] text-red-700 active:bg-stone-200",
-                key.kind === "amount" &&
-                  "bg-white font-extrabold text-lg text-stone-400 active:bg-stone-100",
+                key.kind === "exact" &&
+                  "bg-white font-extrabold text-base text-stone-900 active:bg-stone-100",
               )}
               style={{ gridColumn: key.column, gridRow: key.row }}
             >
