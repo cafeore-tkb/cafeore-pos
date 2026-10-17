@@ -120,6 +120,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onReturnToUnassigned,
   onMergeOrders,
   unfinished,
+  readOnly = false,
+  flashKeys,
 }) => {
   const picked = useSheetSelection({
     unassigned: unassignedOrders,
@@ -129,7 +131,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     onAssign: onAssignToBay,
     onMerge: onMergeOrders,
   });
-  const selectedOrder = picked.selected;
+  const selectedOrder = readOnly ? null : picked.selected;
   const sheetScrollRef = useScrollToFirstLive(HISTORY_ROWS_ON_OPEN);
 
   const sheet = useMemo(
@@ -204,6 +206,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   const sheetTarget = hoveredTarget === "unassigned" ? null : hoveredTarget;
 
   const headerHint = () => {
+    if (readOnly) return "閲覧のみ：注文と担当者の進行状況";
     if (dragSource?.kind === "ticket")
       return `${orderLabel(dragSource.ticket)} ${cardName(dragSource.ticket)} ${dragSource.ticket.cups.length}杯 → 移す担当者の列・カードの前後で離す（真ん中で統合）／右の注文内容で離すと未割当に戻す`;
     if (!selectedOrder)
@@ -219,7 +222,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
     { card: ticket, state, rowIds }: SheetEntry,
     bayId: number,
   ) => {
-    const mergeTap = picked.canMergeWith(ticket);
+    const mergeTap = !readOnly && picked.canMergeWith(ticket);
     return (
       <OrderCard
         key={ticket.key}
@@ -228,23 +231,30 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         size="sm"
         byOrder
         data-search-key={ticket.key}
-        onPointerDown={(event) =>
-          drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
+        onPointerDown={
+          readOnly
+            ? undefined
+            : (event) =>
+                drag.press({ kind: "ticket", ticket, fromBayId: bayId }, event)
         }
         // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
         data-queued-ticket={ticket.key}
         data-ticket-label={orderLabel(ticket)}
         mergeTap={mergeTap}
         dropSide={dropSideOn(sheetTarget, ticket.key)}
-        onClickCapture={drag.suppressClick}
+        onClickCapture={readOnly ? undefined : drag.suppressClick}
         // 押すと操作のアイコンを開く（選んだ注文カードと統合できる待機・抽出中のカードは統合）
-        onClick={() => {
-          if (mergeTap) picked.mergeWith(ticket);
-          else cardMenu?.toggle(ticket);
-        }}
+        onClick={
+          readOnly
+            ? undefined
+            : () => {
+                if (mergeTap) picked.mergeWith(ticket);
+                else cardMenu?.toggle(ticket);
+              }
+        }
         // 統合したカードは注文ごとの段の分だけ高く（元の注文の行にまたがる枠では枠いっぱい）。
         // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
-        className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} cursor-grab touch-none scroll-mt-3 hover:ring-2 hover:ring-slate-400 active:cursor-grabbing ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+        className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} ${readOnly ? "touch-manipulation" : "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"} scroll-mt-3 ${flashKeys?.has(ticket.key) ? "caos-arrival" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
         dragging={dragCup?.key === ticket.key}
       >
         <PlaceTag label={places.get(ticket.key)} />
@@ -253,7 +263,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           lane={bays[bayId - 1]}
           look={looks.get(ticket.key)}
           nowMs={nowMs}
-          menu={cardMenu}
+          menu={readOnly ? undefined : cardMenu}
         />
       </OrderCard>
     );
@@ -323,7 +333,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         unassignedOrders,
                         bay.id,
                       )}
-                      onOpenLane={onOpenLane}
+                      onOpenLane={readOnly ? undefined : onOpenLane}
                       className="h-[56px] w-full"
                     />
                     {/* 担当者、その下に「交代」（列の幅が狭いので縦に並べる） */}
@@ -333,7 +343,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         wrap
                         className="min-w-0 font-black text-[16px] leading-tight"
                       />
-                      <LaneChangeButton dripper={bay.id} />
+                      {!readOnly && <LaneChangeButton dripper={bay.id} />}
                     </div>
                   </th>
                 ))}
@@ -377,6 +387,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       const isDropColumn = hoveredBay === bay.id;
                       // 選んだカードを置ける枠（指名の番号のあるカードは、その番号の列だけ）
                       const isTargetCell =
+                        !readOnly &&
                         isTargetRow &&
                         selectedOrder !== null &&
                         caosDripperAllowed(selectedOrder, bay.id);
@@ -466,7 +477,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         hoveredBay === bay.id ? "bg-blue-50" : ""
                       }`}
                     >
-                      {index === 0 && !selectedOrder && (
+                      {!readOnly && index === 0 && !selectedOrder && (
                         <EmptySlotButton
                           onClick={() => onOpenEmptySlot(bay.id)}
                           className="h-[64px] w-full"
@@ -545,7 +556,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                   {group.items.map((order) => {
                     const uid = order.key;
                     const isSelected = selectedOrder?.key === uid;
-                    const isMergeCandidate = picked.canMergeWith(order);
+                    const isMergeCandidate =
+                      !readOnly && picked.canMergeWith(order);
                     return (
                       <OrderCard
                         key={uid}
@@ -562,26 +574,38 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                         mergeInto={isSelected ? picked.partner : undefined}
                         mergeTap={isMergeCandidate}
                         data-search-key={uid}
-                        onPointerDown={(event) =>
-                          drag.press({ kind: "unassigned", order }, event)
+                        onPointerDown={
+                          readOnly
+                            ? undefined
+                            : (event) =>
+                                drag.press({ kind: "unassigned", order }, event)
                         }
-                        onClickCapture={drag.suppressClick}
-                        onClick={() => {
-                          if (isMergeCandidate) picked.mergeWith(order);
-                          else picked.toggle(order);
-                        }}
-                        className="min-h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
+                        onClickCapture={
+                          readOnly ? undefined : drag.suppressClick
+                        }
+                        onClick={
+                          readOnly
+                            ? undefined
+                            : () => {
+                                if (isMergeCandidate) picked.mergeWith(order);
+                                else picked.toggle(order);
+                              }
+                        }
+                        className={`min-h-[64px] ${readOnly ? "touch-manipulation" : "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"}`}
                         dragging={dragCup?.key === uid}
                       >
                         <LongWaitTag card={order} nowMs={nowMs} />
-                        {isSelected && order.emergency && onCancelEmergency && (
-                          <CancelEmergencyButton
-                            onConfirm={() => {
-                              onCancelEmergency(order);
-                              picked.clear();
-                            }}
-                          />
-                        )}
+                        {!readOnly &&
+                          isSelected &&
+                          order.emergency &&
+                          onCancelEmergency && (
+                            <CancelEmergencyButton
+                              onConfirm={() => {
+                                onCancelEmergency(order);
+                                picked.clear();
+                              }}
+                            />
+                          )}
                       </OrderCard>
                     );
                   })}

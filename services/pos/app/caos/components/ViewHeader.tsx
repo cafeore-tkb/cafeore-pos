@@ -9,7 +9,7 @@ import { PosStatusBadge } from "./TopHeader";
 
 // 閲覧だけの画面（盤面を読むだけで、書き込みは送らない）。ヘッダーから行き来する
 const VIEW_SCREENS = [
-  { to: "/master-sheet/view", label: "タイムライン" },
+  { to: "/master-sheet/view", label: "管制盤" },
   { to: "/master-sheet/libero", label: "リベロ" },
 ];
 
@@ -26,7 +26,7 @@ export const ViewHeader: React.FC<{
   sound: ViewSound;
   children?: React.ReactNode;
 }> = ({ nowMs, status, sound, children }) => (
-  <header className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+  <header className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
     <span className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-black text-sm text-white">
       CaOS
     </span>
