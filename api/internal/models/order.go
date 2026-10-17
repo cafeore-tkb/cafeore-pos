@@ -9,11 +9,15 @@ import (
 )
 
 type Order struct {
-	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	OrderId           int       `gorm:"column:order_id;type:bigint;not null"`
-	CreatedAt         time.Time `gorm:"not null"`
-	ReadyAt           *time.Time
-	ServedAt          *time.Time
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	OrderId   int       `gorm:"column:order_id;type:bigint;not null"`
+	CreatedAt time.Time `gorm:"not null"`
+	ReadyAt   *time.Time
+	ServedAt  *time.Time
+	// キャンセルした時刻。キャンセルしても注文は消さずに残す（handlers/order_cancel.go）
+	CancelledAt *time.Time
+	// 現金で受け取った分を返した時刻（handlers/order_cancel.go）
+	CashRefundedAt    *time.Time
 	BillingAmount     int `gorm:"not null"`
 	Received          int `gorm:"not null"`
 	DiscountOrderId   int
