@@ -87,7 +87,7 @@ export const OrderPanel = (props: props) => {
           onClick={props.onOpenItems}
           disabled={!props.canOpenItems}
           title="商品を選び、その分を小計として先に会計します"
-          className="h-13 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
+          className="h-16 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
         >
           個別小計
         </button>
@@ -101,7 +101,7 @@ export const OrderPanel = (props: props) => {
                 ? "会計をやめて商品の入力に戻ります"
                 : "この小計を途中まで払ったので、払い終えるか取り消すまで戻れません"
             }
-            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] border border-stone-400 bg-white font-extrabold text-lg text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
+            className="flex h-16 items-center justify-center gap-2.5 rounded-[10px] border border-stone-400 bg-white font-extrabold text-lg text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
           >
             会計取消
             <KeyHint className="px-1.5 py-0.5 text-[11px]">Esc</KeyHint>
@@ -111,7 +111,7 @@ export const OrderPanel = (props: props) => {
             type="button"
             onClick={props.onGoPay}
             disabled={!canGoPay(draft)}
-            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
+            className="flex h-16 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
           >
             {props.prepaid > 0 ? "残りを会計" : "一括会計"}
             <KeyHint inverted className="px-1.5 py-0.5 text-[11px]">

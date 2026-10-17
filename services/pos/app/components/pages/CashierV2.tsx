@@ -49,7 +49,7 @@ import {
   focusCoupon,
   focusMemo,
   hasDraftInput,
-  inputDigits,
+  inputPadDigits,
   removeAllLines,
   removeLine,
   selectLine,
@@ -1434,7 +1434,7 @@ const CashierV2 = ({
               onSquare={startSquarePayment}
               onDigits={(digits) =>
                 updatePayment((current) =>
-                  inputDigits(current, digits, checkCoupon),
+                  inputPadDigits(current, digits, checkCoupon),
                 )
               }
               onDeleteDigit={() => updatePayment(deleteDigit)}
