@@ -97,22 +97,26 @@
   }
 }
 
-/* 呼び出し画面で新しく入った番号に流す光（callscreen.components の CallGlow）。
-   浮かび上がって、終わる前に消える */
-@keyframes call-glow {
-  0% {
+/* 呼び出し画面で新しく入った番号に敷く光の地（callscreen.components の GlowBase）。浮かび上がり、終わりに消える */
+@keyframes call-glow-in {
+  from {
     opacity: 0;
   }
-  15%,
-  80% {
+  to {
     opacity: 1;
   }
-  100% {
+}
+
+@keyframes call-glow-out {
+  from {
+    opacity: 1;
+  }
+  to {
     opacity: 0;
   }
 }
 
-/* CallGlow のプリズムの光の帯。斜めに傾けたまま、プレートの左の外から右の外まで抜ける */
+/* プリズムの光の帯（callscreen.components の PrismLight）。斜めに傾けたまま、プレートの左の外から右の外まで抜ける */
 @keyframes prism-sweep {
   from {
     transform: translateX(-130%) skewX(-20deg);

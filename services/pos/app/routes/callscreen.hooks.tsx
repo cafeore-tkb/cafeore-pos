@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** 新しく入った番号を光らせる長さ（以前の点滅 280ms × 8 コマと同じ） */
-export const FLASH_MS = 2240;
+/** 光り始めてから、元に戻り始めるまで */
+const FLASH_HOLD_MS = 5000;
+/** 元に戻るフェードの長さ */
+export const FLASH_FADE_MS = 1000;
+/** 新しく入った番号を光らせる長さ（元に戻るフェードまで含む） */
+export const FLASH_MS = FLASH_HOLD_MS + FLASH_FADE_MS;
 
 /**
  * 固定サイズのステージを画面に収める倍率を返す。
@@ -25,43 +29,76 @@ export function useStageScale(width: number, height: number) {
   return scale;
 }
 
+/** 光らせている 1 回分 */
+export type Flash = {
+  key: number;
+  /** 光り始めた時刻（performance.now()）。作り直されたプレートでも、光り始めからの続きを出すのに使う */
+  startedAt: number;
+  /** 元に戻るフェードに入ったか */
+  fading: boolean;
+};
+
+const NO_FLASHES: readonly Flash[] = [];
+
 /**
  * 新しく入った番号を FLASH_MS だけ光らせる。
- * 光り方（地が浮かび、プリズムの光が抜けて消える）は CSS のアニメーションに任せ、ここでは光らせる番号だけを持つ。
+ * 同じ番号でも呼ぶたびに別の 1 回として重ねるので、光っている最中にまた呼ばれても、それぞれが最後まで光る。
+ * 光り方（地が浮かび、プリズムの光が抜けて、元に戻る）は CSS のアニメーションに任せ、ここでは光らせている回だけを持つ。
  */
 export function useFlash() {
-  const [flashing, setFlashing] = useState<ReadonlySet<number>>(
-    () => new Set(),
+  const [flashes, setFlashes] = useState<ReadonlyMap<number, readonly Flash[]>>(
+    () => new Map(),
   );
-  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const keyRef = useRef(0);
+  const timersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
     const timers = timersRef.current;
     return () => {
-      for (const timer of timers.values()) clearTimeout(timer);
+      for (const timer of timers) clearTimeout(timer);
     };
   }, []);
 
   const startFlash = useCallback((id: number) => {
-    // 光っている最中にもう一度来たら、そこから数え直す
-    clearTimeout(timersRef.current.get(id));
-    timersRef.current.set(
-      id,
-      setTimeout(() => {
-        timersRef.current.delete(id);
-        setFlashing((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
+    keyRef.current += 1;
+    const key = keyRef.current;
+    const timers = timersRef.current;
+
+    // この回を書き換える。null なら外す
+    const update = (change: (flash: Flash) => Flash | null) =>
+      setFlashes((prev) => {
+        const rest = (prev.get(id) ?? []).flatMap((flash) => {
+          if (flash.key !== key) return [flash];
+          const changed = change(flash);
+          return changed ? [changed] : [];
         });
-      }, FLASH_MS),
+        const next = new Map(prev);
+        if (rest.length > 0) next.set(id, rest);
+        else next.delete(id);
+        return next;
+      });
+    const later = (ms: number, run: () => void) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        run();
+      }, ms);
+      timers.add(timer);
+    };
+
+    const flash = { key, startedAt: performance.now(), fading: false };
+    setFlashes((prev) =>
+      new Map(prev).set(id, [...(prev.get(id) ?? []), flash]),
     );
-    setFlashing((prev) => new Set(prev).add(id));
+    later(FLASH_HOLD_MS, () => update((it) => ({ ...it, fading: true })));
+    later(FLASH_MS, () => update(() => null));
   }, []);
 
-  const isFlashing = useCallback((id: number) => flashing.has(id), [flashing]);
+  const flashesOf = useCallback(
+    (id: number) => flashes.get(id) ?? NO_FLASHES,
+    [flashes],
+  );
 
-  return { startFlash, isFlashing };
+  return { startFlash, flashesOf };
 }
 
 /**

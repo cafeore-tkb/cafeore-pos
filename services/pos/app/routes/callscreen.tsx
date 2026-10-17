@@ -80,7 +80,7 @@ export default function FieldsOfCallScreen() {
   );
   const brewingKeys = useMemo(() => brewing.map((card) => card.key), [brewing]);
 
-  const { startFlash, isFlashing } = useFlash();
+  const { startFlash, flashesOf } = useFlash();
 
   const announce = useAnnouncer(soundRef, voiceRef);
   // 呼んだ時点の一覧で「順番が前後するか」を決めたいので、最新の一覧を持っておく
@@ -228,7 +228,7 @@ export default function FieldsOfCallScreen() {
           {!showCall && hasDrip && (
             <DripBand
               plates={bandPlates}
-              isFlashing={isFlashing}
+              flashesOf={flashesOf}
               preparingCount={preparing.length}
             />
           )}
@@ -268,7 +268,7 @@ export default function FieldsOfCallScreen() {
               <PlateBoard
                 plates={callingPlates}
                 tone="calling"
-                isFlashing={isFlashing}
+                flashesOf={flashesOf}
               />
             </div>
 
@@ -285,7 +285,7 @@ export default function FieldsOfCallScreen() {
                 <PlateBoard
                   plates={drippingPlates}
                   tone="drip"
-                  isFlashing={isFlashing}
+                  flashesOf={flashesOf}
                 />
               </div>
             )}
