@@ -210,7 +210,8 @@ func TestSquareIntegrationRefundOrder(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("cash order: %d", code)
 	}
-	if code, _, _ := env.refundOrder(cash["id"].(string)); code != http.StatusNotFound {
+	// 注文はあるので 404 ではなく 409、注文が無ければ 404
+	if code, _, _ := env.refundOrder(cash["id"].(string)); code != http.StatusConflict {
 		t.Fatalf("cash order refund: %d", code)
 	}
 	if code, _, _ := env.refundOrder(uuid.NewString()); code != http.StatusNotFound {

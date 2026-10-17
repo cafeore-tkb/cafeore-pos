@@ -2163,8 +2163,14 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description オーダーが見つからない、またはその注文に現金の支払いが無い（Square だけで払った注文） */
+      /** @description オーダーが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description その注文に現金の支払いが無い（Square だけで払った注文） */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -3223,16 +3229,21 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
         };
       };
-      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      /** @description 注文が無い */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      /**
+       * @description 支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+       * 注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
+       */
       409: {
         content: {
-          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+          "application/json":
+            | components["schemas"]["SquareCheckoutConflictResponse"]
+            | components["schemas"]["ErrorResponse"];
         };
       };
       /** @description 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする */
@@ -3277,16 +3288,21 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
         };
       };
-      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      /** @description 注文が無い */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      /**
+       * @description 支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+       * 注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
+       */
       409: {
         content: {
-          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+          "application/json":
+            | components["schemas"]["SquareCheckoutConflictResponse"]
+            | components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Square が返金を断った、または応答が無かった */

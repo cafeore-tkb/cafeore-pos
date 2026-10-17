@@ -49,7 +49,7 @@ func paidByCash(order *models.Order) bool {
 }
 
 // refundOrderCash は、現金で受け取った分を返したことを記録する。配るのは呼ぶ側。
-// 注文が無ければ gorm.ErrRecordNotFound、現金の支払いが無ければ errNoCashPayment を返す。
+// 注文が無ければ gorm.ErrRecordNotFound（404）、現金の支払いが無ければ errNoCashPayment（409）を返す。
 func refundOrderCash(db *gorm.DB, orderID uuid.UUID, now time.Time) error {
 	var order models.Order
 	if err := db.Preload("Payments").First(&order, "id = ?", orderID).Error; err != nil {
@@ -85,7 +85,8 @@ func (h *OrderHandler) markOrder(c *gin.Context, mark func(db *gorm.DB, orderID 
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	case errors.Is(err, errNoCashPayment):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		// 注文はあるので 404 にしない（Square の返金で Square の決済が無いときと同じく 409）
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	case err != nil:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

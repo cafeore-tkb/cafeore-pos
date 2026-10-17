@@ -690,7 +690,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: オーダーが見つからない、またはその注文に現金の支払いが無い（Square だけで払った注文）
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: その注文に現金の支払いが無い（Square だけで払った注文）
           content:
             application/json:
               schema:
@@ -1832,17 +1838,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutResponse'
         '404':
-          description: 注文が無い、またはその注文に Square の決済が無い（現金の注文など）
+          description: 注文が無い
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: 支払いを確かめられていない、または返金を頼んでいる途中
+          description: |
+            支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+            注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする
           content:
@@ -1889,17 +1899,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutResponse'
         '404':
-          description: 注文が無い、またはその注文に Square の決済が無い（現金の注文など）
+          description: 注文が無い
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: 支払いを確かめられていない、または返金を頼んでいる途中
+          description: |
+            支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+            注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/SquareCheckoutConflictResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
         '502':
           description: Square が返金を断った、または応答が無かった
           content:

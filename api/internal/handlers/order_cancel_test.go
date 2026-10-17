@@ -99,7 +99,8 @@ func TestRefundOrderCashNeedsCashPayment(t *testing.T) {
 	if err := api.db.Model(&models.Order{}).Where("id = ?", order.Id).Update("payment_method", string(models.Square)).Error; err != nil {
 		t.Fatal(err)
 	}
-	api.do(http.MethodPost, "/api/orders/"+order.Id.String()+"/cash-refund", nil).expect(http.StatusNotFound)
+	// 注文はあるので 404 ではなく 409
+	api.do(http.MethodPost, "/api/orders/"+order.Id.String()+"/cash-refund", nil).expect(http.StatusConflict)
 	api.noBroadcast()
 	if got := api.loadOrder(uuid.UUID(order.Id)); got.CashRefundedAt != nil {
 		t.Fatalf("cash refund must not be recorded: %v", got.CashRefundedAt)

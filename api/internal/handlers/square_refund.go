@@ -490,6 +490,7 @@ func (h *SquareHandler) RefundOrderKeepingOrder(c *gin.Context) {
 
 // refundOrder は注文に使った Square の決済を全部（個別会計では複数）、作った順に返金する。
 // 返金できない決済があればそこで止める（もう一度呼ぶと、受け付け済みの決済は頼み直さずに続きを返金する）。
+// 注文が無ければ 404、注文はあるが Square の決済が無ければ（現金の注文など）409。
 func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -509,7 +510,15 @@ func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 		return
 	}
 	if len(checkoutIDs) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": notFound})
+		err := h.db.WithContext(ctx).Select("id").First(&models.Order{}, "id = ?", id).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		case err != nil:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusConflict, gin.H{"error": notFound})
+		}
 		return
 	}
 	records := make([]*models.SquareCheckout, 0, len(checkoutIDs))
