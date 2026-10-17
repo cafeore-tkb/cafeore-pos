@@ -1505,6 +1505,7 @@ const CashierV2 = ({
           connectionIssues={connectionIssues}
           squareRefundable={squareEnabled}
           onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
+          onPrintCancelLabel={printer.printCancelLabel}
           onBack={() => setView("register")}
         />
       )}

@@ -13,6 +13,7 @@ import { ChevronLeftIcon } from "@radix-ui/react-icons";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { hasCancelLabel } from "~/label/cancel-label";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import type { ConnectionIssue } from "../../functional/connectionIssues";
@@ -31,6 +32,8 @@ type props = {
   squareRefundable: boolean;
   /** 領収書を刷る。プリンターに送れたら true */
   onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
+  /** キャンセルした注文のシールを刷る。刷れたら（刷るシールが無ければ）true */
+  onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
   /** レジに戻る */
   onBack: () => void;
 };
@@ -91,6 +94,7 @@ const discountNote = (order: OrderEntity) => {
  * （商品・コメント・会計・領収書・Square の返金・キャンセル）
  *
  * キャンセルした注文も消さずに「キャンセル」として出す。
+ * キャンセルしたら、カップのシールを刷った注文ならラベル用のプリンターでキャンセルのシール（黒地）を刷る。
  *
  * ↑↓ で選び、Esc でレジに戻る。
  */
@@ -99,6 +103,7 @@ export const PastOrdersView = ({
   connectionIssues,
   squareRefundable,
   onPrintFormalReceipt,
+  onPrintCancelLabel,
   onBack,
 }: props) => {
   const [query, setQuery] = useState("");
@@ -243,6 +248,7 @@ export const PastOrdersView = ({
             order={selected}
             squareRefundable={squareRefundable}
             onPrintFormalReceipt={onPrintFormalReceipt}
+            onPrintCancelLabel={onPrintCancelLabel}
           />
         ) : (
           <div className="flex items-center justify-center text-[15px] text-stone-400">
@@ -329,10 +335,12 @@ const OrderDetail = ({
   order,
   squareRefundable,
   onPrintFormalReceipt,
+  onPrintCancelLabel,
 }: {
   order: WithId<OrderEntity>;
   squareRefundable: boolean;
   onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
+  onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
 }) => {
   const { colorSettings } = useColorSettings();
   const [comment, setComment] = useState("");
@@ -360,6 +368,18 @@ const OrderDetail = ({
     } else {
       toast.error(
         "レシート用のプリンターにつながっていないため、領収書を印刷できません",
+      );
+    }
+  };
+
+  /** キャンセルのシール（黒地）を刷る。キャンセルしたときと、刷り直すときに呼ぶ */
+  const printCancelLabel = async (reprint = false) => {
+    if (await onPrintCancelLabel(order)) {
+      if (reprint)
+        toast(`No.${order.orderId} のキャンセルのシールを印刷しました`);
+    } else {
+      toast.error(
+        `No.${order.orderId} のキャンセルのシールを印刷できませんでした。ラベル用のプリンターを確かめて「キャンセルのシールを印刷」で刷り直してください`,
       );
     }
   };
@@ -560,6 +580,16 @@ const OrderDetail = ({
         >
           領収書を印刷
         </button>
+        {/* カップのシールを刷った注文だけ（キャンセルしたときに刷れなかったら、ここで刷り直す） */}
+        {order.isCancelled() && hasCancelLabel(order) && (
+          <button
+            type="button"
+            onClick={() => void printCancelLabel(true)}
+            className="h-12 rounded-[10px] border border-stone-400 bg-white px-5 font-bold text-[15px] hover:bg-stone-50"
+          >
+            キャンセルのシールを印刷
+          </button>
+        )}
         <div className="ml-auto flex gap-2.5">
           {/* 返す分（Square・現金）が無ければ、返金のボタンは出ない */}
           {order.isCancelled() ? (
@@ -582,11 +612,13 @@ const OrderDetail = ({
                 mode="cancel"
                 squareRefundable={squareRefundable}
                 triggerClassName={SOLID_BUTTON}
+                onCancelled={() => void printCancelLabel()}
               />
               {/* 返金せずにキャンセルする。現金・返金済みの注文もキャンセルできる */}
               <CancelOrderButton
                 order={order}
                 triggerClassName={OUTLINE_BUTTON}
+                onCancelled={() => void printCancelLabel()}
               />
             </>
           )}

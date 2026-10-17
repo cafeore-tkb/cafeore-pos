@@ -23,6 +23,8 @@ type Props = {
   order: WithId<OrderEntity>;
   /** 押すボタンの見た目を変える */
   triggerClassName?: string;
+  /** キャンセルできたら呼ぶ（キャンセルのシールを刷る） */
+  onCancelled?: () => void;
 };
 
 /**
@@ -32,7 +34,11 @@ type Props = {
  * 番号は使ったまま、使った在庫も戻さない。作る画面（マスター・提供・CaOS・呼び出し）からは消える。
  * 返金していなければ売上に数えたままにする（あとで「返金」で返せる）
  */
-export const CancelOrderButton = ({ order, triggerClassName }: Props) => {
+export const CancelOrderButton = ({
+  order,
+  triggerClassName,
+  onCancelled,
+}: Props) => {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const label = `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
@@ -44,6 +50,7 @@ export const CancelOrderButton = ({ order, triggerClassName }: Props) => {
       await orderRepository.cancel(order.id);
       toast.success(`${label} をキャンセルしました`);
       setOpen(false);
+      onCancelled?.();
     } catch (error) {
       toast.error(
         `キャンセルできませんでした: ${error instanceof Error ? error.message : String(error)}`,

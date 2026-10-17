@@ -59,6 +59,8 @@ type Props = {
   squareRefundable: boolean;
   /** 押すボタンの見た目を変える */
   triggerClassName?: string;
+  /** mode が cancel で、返金して注文をキャンセルできたら呼ぶ（キャンセルのシールを刷る） */
+  onCancelled?: () => void;
 };
 
 /**
@@ -73,6 +75,7 @@ export const RefundOrderButton = ({
   mode,
   squareRefundable,
   triggerClassName,
+  onCancelled,
 }: Props) => {
   const [open, setOpen] = useState(false);
   const [refunding, setRefunding] = useState(false);
@@ -122,6 +125,7 @@ export const RefundOrderButton = ({
           : `${label} を返金しました${after}`,
       );
       setOpen(false);
+      if (mode === "cancel") onCancelled?.();
     } catch (error) {
       toast.error(
         `返金できませんでした: ${error instanceof Error ? error.message : String(error)}`,

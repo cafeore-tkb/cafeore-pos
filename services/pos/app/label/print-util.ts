@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { cancelLabelJob } from "./cancel-label";
 import type { PrintJob } from "./document";
 import type {
   CreateLabelPrinter,
@@ -157,12 +158,31 @@ export const usePrinter = (
     [printJob, width],
   );
 
+  /**
+   * キャンセルした注文のシールを刷る（カップのシールを刷らない注文には刷らない）。
+   * 画像なので端末には残さず、刷れなくても送り直さない（過去の注文から刷り直す）。
+   * 刷れたら（刷るシールが無ければ）true
+   */
+  const printCancelLabel = useCallback(
+    async (order: OrderEntity) => {
+      try {
+        const job = await cancelLabelJob(order, width);
+        return job === null || (await print(job));
+      } catch (error) {
+        console.error("キャンセルのシールを印刷できませんでした", error);
+        return false;
+      }
+    },
+    [print, width],
+  );
+
   return {
     status,
     pendingCount,
     retry,
     printOrderLabel,
     printCupLabel,
+    printCancelLabel,
   };
 };
 
