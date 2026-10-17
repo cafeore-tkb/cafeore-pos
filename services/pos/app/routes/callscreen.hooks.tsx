@@ -7,6 +7,10 @@ const FLASH_HOLD_MS = 5000;
 export const FLASH_FADE_MS = 1000;
 /** 新しく入った番号を光らせる長さ（元に戻るフェードまで含む） */
 export const FLASH_MS = FLASH_HOLD_MS + FLASH_FADE_MS;
+/** 呼び出し催促した番号を目立たせ始めてから、元に戻り始めるまで */
+export const URGENT_HOLD_MS = 60_000;
+/** 呼び出し催促した番号を目立たせる長さ（元に戻るフェードまで含む） */
+export const URGENT_MS = URGENT_HOLD_MS + FLASH_FADE_MS;
 
 /**
  * 固定サイズのステージを画面に収める倍率を返す。
@@ -42,11 +46,12 @@ export type Flash = {
 const NO_FLASHES: readonly Flash[] = [];
 
 /**
- * 新しく入った番号を FLASH_MS だけ光らせる。
+ * 番号を holdMs のあいだ光らせ、FLASH_FADE_MS で元に戻す。既定は新しく入った番号の光（FLASH_MS）。
+ * 呼び出し催促した番号を目立たせるのにも使う（URGENT_HOLD_MS を渡して URGENT_MS）。
  * 同じ番号でも呼ぶたびに別の 1 回として重ねるので、光っている最中にまた呼ばれても、それぞれが最後まで光る。
  * 光り方（地が浮かび、プリズムの光が抜けて、元に戻る）は CSS のアニメーションに任せ、ここでは光らせている回だけを持つ。
  */
-export function useFlash() {
+export function useFlash(holdMs = FLASH_HOLD_MS) {
   const [flashes, setFlashes] = useState<ReadonlyMap<number, readonly Flash[]>>(
     () => new Map(),
   );
@@ -60,39 +65,42 @@ export function useFlash() {
     };
   }, []);
 
-  const startFlash = useCallback((id: number) => {
-    keyRef.current += 1;
-    const key = keyRef.current;
-    const timers = timersRef.current;
+  const startFlash = useCallback(
+    (id: number) => {
+      keyRef.current += 1;
+      const key = keyRef.current;
+      const timers = timersRef.current;
 
-    // この回を書き換える。null なら外す
-    const update = (change: (flash: Flash) => Flash | null) =>
-      setFlashes((prev) => {
-        const rest = (prev.get(id) ?? []).flatMap((flash) => {
-          if (flash.key !== key) return [flash];
-          const changed = change(flash);
-          return changed ? [changed] : [];
+      // この回を書き換える。null なら外す
+      const update = (change: (flash: Flash) => Flash | null) =>
+        setFlashes((prev) => {
+          const rest = (prev.get(id) ?? []).flatMap((flash) => {
+            if (flash.key !== key) return [flash];
+            const changed = change(flash);
+            return changed ? [changed] : [];
+          });
+          const next = new Map(prev);
+          if (rest.length > 0) next.set(id, rest);
+          else next.delete(id);
+          return next;
         });
-        const next = new Map(prev);
-        if (rest.length > 0) next.set(id, rest);
-        else next.delete(id);
-        return next;
-      });
-    const later = (ms: number, run: () => void) => {
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        run();
-      }, ms);
-      timers.add(timer);
-    };
+      const later = (ms: number, run: () => void) => {
+        const timer = setTimeout(() => {
+          timers.delete(timer);
+          run();
+        }, ms);
+        timers.add(timer);
+      };
 
-    const flash = { key, startedAt: performance.now(), fading: false };
-    setFlashes((prev) =>
-      new Map(prev).set(id, [...(prev.get(id) ?? []), flash]),
-    );
-    later(FLASH_HOLD_MS, () => update((it) => ({ ...it, fading: true })));
-    later(FLASH_MS, () => update(() => null));
-  }, []);
+      const flash = { key, startedAt: performance.now(), fading: false };
+      setFlashes((prev) =>
+        new Map(prev).set(id, [...(prev.get(id) ?? []), flash]),
+      );
+      later(holdMs, () => update((it) => ({ ...it, fading: true })));
+      later(holdMs + FLASH_FADE_MS, () => update(() => null));
+    },
+    [holdMs],
+  );
 
   const flashesOf = useCallback(
     (id: number) => flashes.get(id) ?? NO_FLASHES,
@@ -207,6 +215,10 @@ const WARM_TIMEOUT_MS = 15_000;
 export const callVoicePath = (orderNo: number, reordered: boolean) =>
   `/call-voice/call?order=${orderNo}${reordered ? "&reordered=1" : ""}`;
 
+/** 呼び出し催促の読み上げ（「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」） */
+export const recallVoicePath = (orderNo: number) =>
+  `/call-voice/recall?order=${orderNo}`;
+
 /** ドリップの案内の読み上げ。invite が false なら「よろしければぜひ、お近くでご覧ください。」を省く */
 export const dripVoicePath = (
   orderNos: readonly number[],
@@ -307,11 +319,11 @@ function useEcho(audioRef: React.RefObject<HTMLAudioElement>) {
 }
 
 export type Announcement = {
-  /** 読み上げの音声（callVoicePath・dripVoicePath） */
+  /** 読み上げの音声（callVoicePath・recallVoicePath・dripVoicePath） */
   path: string;
-  /** 読み上げの前にチャイムを鳴らすか（呼び出しだけ鳴らす） */
+  /** 読み上げの前にチャイムを鳴らすか（呼び出しと呼び出し催促だけ鳴らす） */
   chime: boolean;
-  /** 鳴らし始めるとき（音声が届いて、チャイムを鳴らす直前）に呼ぶ。呼び出しの番号を音と同時に画面に出すのに使う */
+  /** 鳴らし始めるとき（音声が届いて、チャイムを鳴らす直前）に呼ぶ。呼び出しの番号を音と同時に画面に出したり、催促した番号を目立たせ始めたりするのに使う */
   onStart?: () => void;
 };
 

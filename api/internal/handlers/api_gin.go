@@ -161,6 +161,9 @@ type ServerInterface interface {
 	// オーダーを準備完了にする
 	// (PATCH /api/orders/{id}/ready)
 	MarkOrderReady(c *gin.Context, id openapi_types.UUID)
+	// 呼び出し中の注文をもう一度呼ぶ（呼び出し催促）
+	// (POST /api/orders/{id}/recall)
+	RecallOrder(c *gin.Context, id openapi_types.UUID)
 	// オーダーを提供完了にする
 	// (PATCH /api/orders/{id}/served)
 	MarkOrderServe(c *gin.Context, id openapi_types.UUID)
@@ -1185,6 +1188,30 @@ func (siw *ServerInterfaceWrapper) MarkOrderReady(c *gin.Context) {
 	siw.Handler.MarkOrderReady(c, id)
 }
 
+// RecallOrder operation middleware
+func (siw *ServerInterfaceWrapper) RecallOrder(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RecallOrder(c, id)
+}
+
 // MarkOrderServe operation middleware
 func (siw *ServerInterfaceWrapper) MarkOrderServe(c *gin.Context) {
 
@@ -1596,6 +1623,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/ready", wrapper.MarkOrderCupReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
+	router.POST(options.BaseURL+"/api/orders/:id/recall", wrapper.RecallOrder)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
 	router.POST(options.BaseURL+"/api/orders/:id/square-refund", wrapper.RefundOrderSquarePayment)
 	router.POST(options.BaseURL+"/api/orders/:id/square-refund-keep-order", wrapper.RefundOrderSquarePaymentKeepingOrder)

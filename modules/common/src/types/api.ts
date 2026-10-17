@@ -126,6 +126,15 @@ export interface paths {
      */
     patch: operations["markOrderCupServe"];
   };
+  "/api/orders/{id}/recall": {
+    /**
+     * 呼び出し中の注文をもう一度呼ぶ（呼び出し催促）
+     * @description 呼び出し中（準備完了で、まだ提供していない）の注文を、もう一度呼ぶ。注文には何も書かない。
+     * 催促したことは /api/ws/orders の {"type":"order_recalled","order_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 order_recalled で）。
+     * 呼び出し画面は、この知らせを受けたら「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」と読み上げ、その番号をしばらく目立たせる。
+     */
+    post: operations["recallOrder"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -1911,6 +1920,44 @@ export interface operations {
       };
       /** @description オーダーまたはカップが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 呼び出し中の注文をもう一度呼ぶ（呼び出し催促）
+   * @description 呼び出し中（準備完了で、まだ提供していない）の注文を、もう一度呼ぶ。注文には何も書かない。
+   * 催促したことは /api/ws/orders の {"type":"order_recalled","order_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 order_recalled で）。
+   * 呼び出し画面は、この知らせを受けたら「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」と読み上げ、その番号をしばらく目立たせる。
+   */
+  recallOrder: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 知らせた */
+      204: {
+        content: never;
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 呼び出し中ではない（まだ呼んでいない・提供済み。ほかの端末で提供したか、呼び出しを取り消したかもしれない）。error を画面にそのまま出す */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

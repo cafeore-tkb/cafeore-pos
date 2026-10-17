@@ -28,8 +28,10 @@ import {
   stageContentStyle,
 } from "./callscreen.components";
 import {
+  URGENT_HOLD_MS,
   callVoicePath,
   dripVoicePath,
+  recallVoicePath,
   useAnnouncer,
   useCallVisibility,
   useFlash,
@@ -38,7 +40,10 @@ import {
   useStageScale,
   useWarmCallVoices,
 } from "./callscreen.hooks";
-import { useOrdersWSContext } from "./context/OrdersWSContext";
+import {
+  useOrderRecalled,
+  useOrdersWSContext,
+} from "./context/OrdersWSContext";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
@@ -84,6 +89,9 @@ export default function FieldsOfCallScreen() {
   const brewingKeys = useMemo(() => brewing.map((card) => card.key), [brewing]);
 
   const { startFlash, flashesOf } = useFlash();
+  // 呼び出し催促した番号は、読み上げを鳴らし始めてから URGENT_MS のあいだ目立たせる
+  const { startFlash: startUrgent, flashesOf: urgentsOf } =
+    useFlash(URGENT_HOLD_MS);
   // 新しく呼んだ番号は、チャイムを鳴らすときに画面に出して光らせる（何件入っても 1 件ずつ音と揃える）
   const { shown: shownCalling, reveal } = useRevealedCalls(
     calling,
@@ -99,6 +107,10 @@ export default function FieldsOfCallScreen() {
   // ドリップの案内を流した注文（ID）と、最後に「よろしければ…」を付けた時刻
   const announcedDripOrdersRef = useRef(new Set<string>());
   const lastDripInviteAtRef = useRef<number | null>(null);
+  const shownCallingRef = useRef(shownCalling);
+  shownCallingRef.current = shownCalling;
+  // 読み上げを待っている呼び出し催促の番号。続けて押されても、まだ流していないものには重ねない
+  const queuedRecallsRef = useRef(new Set<number>());
 
   const onCalled = useCallback(
     (orderId: number) => {
@@ -116,8 +128,33 @@ export default function FieldsOfCallScreen() {
     [announce, reveal, startFlash],
   );
 
+  // 提供の画面で「呼び出し催促」を押したとき。お呼び出し中に出している番号だけ、チャイムを鳴らして
+  // 「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」を流し、鳴らし始めたらその番号を目立たせる
+  const onRecalled = useCallback(
+    (id: string) => {
+      const orderNo = ordersRef.current.find(
+        (order) => order.id === id,
+      )?.orderId;
+      if (orderNo === undefined || !shownCallingRef.current.includes(orderNo)) {
+        return;
+      }
+      if (queuedRecallsRef.current.has(orderNo)) return;
+      queuedRecallsRef.current.add(orderNo);
+      announce({
+        path: recallVoicePath(orderNo),
+        chime: true,
+        onStart: () => {
+          queuedRecallsRef.current.delete(orderNo);
+          startUrgent(orderNo);
+        },
+      });
+    },
+    [announce, startUrgent],
+  );
+  useOrderRecalled(onRecalled);
+
   // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
-  // 「N番のお客様、ファーストにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない。
+  // 「N番のお客様、M番ドリッパーにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない。
   // 1 つの注文につき最初の 1 回だけ流し、立て続け（1 分以内）なら「よろしければ…」を省く（@cafeore/common の planDripAnnouncement）
   const onBrewStarted = useCallback(
     (key: string) => {
@@ -164,8 +201,15 @@ export default function FieldsOfCallScreen() {
   const heights = sectionHeights(hasDrip, hasPrep);
 
   const callingItems: PlateItem[] = useMemo(
-    () => shownCalling.map((orderId) => ({ id: orderId, caption: null })),
-    [shownCalling],
+    () =>
+      shownCalling.map((orderId) => ({
+        id: orderId,
+        // 呼び出し催促した番号には、目立たせている間「お急ぎください」を添える
+        caption: urgentsOf(orderId).some((urgent) => !urgent.fading)
+          ? "お急ぎください"
+          : null,
+      })),
+    [shownCalling, urgentsOf],
   );
   const drippingItems: PlateItem[] = useMemo(
     () =>
@@ -280,6 +324,7 @@ export default function FieldsOfCallScreen() {
                 plates={callingPlates}
                 tone="calling"
                 flashesOf={flashesOf}
+                urgentsOf={urgentsOf}
               />
             </div>
 

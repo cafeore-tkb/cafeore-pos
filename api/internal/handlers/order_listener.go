@@ -24,11 +24,13 @@ const (
 	cashierStateChangedChannel = "cashier_state_changed"
 	// 取り消された緊急（入れ直し）。通知の中身は "<送ったインスタンスの ID> <入れ直しの ID>"
 	cupEmergencyCancelledChannel = "cup_emergency_cancelled"
+	// 呼び出し催促。通知の中身は "<送ったインスタンスの ID> <注文 ID>"
+	orderRecalledChannel = "order_recalled"
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
 // CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel}
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel, orderRecalledChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -189,10 +191,12 @@ type changeSet struct {
 	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
 	// 取り消された緊急（入れ直し）。DB から読み直すものは無く、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
 	cancelledEmergencies map[uuid.UUID]struct{}
+	// 呼び出し催促した注文。取り消された緊急と同じく、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
+	recalledOrders map[uuid.UUID]struct{}
 }
 
 func newChangeSet() changeSet {
-	return changeSet{orderIDs: map[uuid.UUID]struct{}{}, cancelledEmergencies: map[uuid.UUID]struct{}{}}
+	return changeSet{orderIDs: map[uuid.UUID]struct{}{}, cancelledEmergencies: map[uuid.UUID]struct{}{}, recalledOrders: map[uuid.UUID]struct{}{}}
 }
 
 func newPendingChanges() *pendingChanges {
@@ -219,6 +223,11 @@ func (q *pendingChanges) add(channel, payload string) {
 		// 形の分からない通知は、どの入れ直しか分からないので配らない（その端末は余分に刷るだけ）
 		if id, err := uuid.Parse(rest); err == nil {
 			q.update(func(s *changeSet) { s.cancelledEmergencies[id] = struct{}{} })
+		}
+	case orderRecalledChannel:
+		// 形の分からない通知は、どの注文か分からないので配らない（その呼び出し画面は読み上げないだけ）
+		if id, err := uuid.Parse(rest); err == nil {
+			q.update(func(s *changeSet) { s.recalledOrders[id] = struct{}{} })
 		}
 	}
 }
@@ -305,6 +314,9 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		for id := range s.cancelledEmergencies {
 			broadcastCupEmergencyCancelled(h.hub, id)
+		}
+		for id := range s.recalledOrders {
+			broadcastOrderRecalled(h.hub, id)
 		}
 		if failed.allOrders || len(failed.orderIDs) > 0 {
 			select {
