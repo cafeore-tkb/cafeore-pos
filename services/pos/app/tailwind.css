@@ -138,7 +138,7 @@
   }
 }
 
-/* 呼び出し催促した番号の明るい赤と縁の光（callscreen.components の UrgentBase）。行き来させて、ゆっくり脈打たせる */
+/* 呼び出し催促した番号の金の縁（callscreen.components の UrgentRim）。行き来させて、ゆっくり脈打たせる */
 @keyframes call-urgent-pulse {
   from {
     opacity: 0;

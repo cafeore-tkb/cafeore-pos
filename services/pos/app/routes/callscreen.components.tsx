@@ -350,24 +350,21 @@ function PrismLight({ startedAt }: { startedAt: number }) {
   );
 }
 
-// 呼び出し催促した番号は、青い硝子のカードの中で一つだけ赤くして脈打たせる。赤はテーマのホットの色から取る
-/** 催促した番号の地。ホットの色を沈めた赤 */
-const URGENT_GROUND =
-  "linear-gradient(40deg in oklch, color-mix(in oklch, var(--color-hot) 60%, black), color-mix(in oklch, var(--color-hot) 82%, black))";
-/** 脈打つときに重ねる縁の光。番号の後ろは明るくしすぎず、縁の内側だけを白く光らせる */
+// 呼び出し催促した番号は、地は変えずに金の縁を脈打たせる
+/** 脈打つ金の縁。縁の内側だけを光らせ、番号の後ろは明るくしない */
 const URGENT_RIM =
-  "inset 0 0 0 4px rgb(255 255 255 / 0.85), inset 0 0 72px 8px color-mix(in oklch, var(--color-hot) 45%, white)";
-/** プレートの外ににじませる赤い光 */
+  "inset 0 0 0 4px color-mix(in oklch, var(--color-theme-gold) 70%, white), inset 0 0 56px 4px color-mix(in oklch, var(--color-theme-gold) 45%, transparent)";
+/** プレートの外ににじませる金の光（プレートは中身をはみ出させないので、外の光は脈打たせず一定で出す） */
 const URGENT_HALO =
-  "0 0 56px 4px color-mix(in oklch, var(--color-hot) 55%, transparent)";
-/** 暗い赤から明るい赤になるまでの長さ（行き来するので、1 回の脈はこの 2 倍） */
+  "0 0 48px 4px color-mix(in oklch, var(--color-theme-gold) 50%, transparent)";
+/** 縁の光が消えてから光り切るまでの長さ（行き来するので、1 回の脈はこの 2 倍） */
 const URGENT_PULSE_MS = 700;
 
 /**
- * 呼び出し催促した番号の地。沈めた赤を浮かべ、明るい赤と縁の光をゆっくり脈打たせて、URGENT_MS の終わりの FLASH_FADE_MS で元に戻す。
+ * 呼び出し催促した番号の縁。金の縁と内側の光をゆっくり脈打たせ、URGENT_MS の終わりの FLASH_FADE_MS で消す。
  * 脈も光り始めからの続きを出すので、プレートが作り直されても拍子がずれない
  */
-function UrgentBase({ startedAt }: { startedAt: number }) {
+function UrgentRim({ startedAt }: { startedAt: number }) {
   const delay = useFlashDelay(startedAt);
 
   return (
@@ -375,14 +372,12 @@ function UrgentBase({ startedAt }: { startedAt: number }) {
       aria-hidden
       className="pointer-events-none absolute inset-0 rounded-[inherit]"
       style={{
-        backgroundImage: URGENT_GROUND,
         animation: `call-glow-in ${GLOW_IN_MS}ms ease-out ${delay(0)} both, call-glow-out ${FLASH_FADE_MS}ms ease-in-out ${delay(URGENT_MS - FLASH_FADE_MS)} forwards`,
       }}
     >
       <div
         className="absolute inset-0 rounded-[inherit]"
         style={{
-          background: "var(--color-hot)",
           boxShadow: URGENT_RIM,
           animation: `call-urgent-pulse ${URGENT_PULSE_MS}ms ease-in-out ${delay(0)} infinite alternate`,
         }}
@@ -412,7 +407,7 @@ type PlateBoardProps = {
  * （そのまま滑らせると、段をまたいで斜めに横切ったり、どいていくプレートの下から出てきたりして重なる）。
  * プレートは地が透ける硝子のカード。新しく入った番号は光の地を浮かべてプリズムの光を流し、終われば硝子のカードに戻る。
  * 光らせている最中にまた呼ばれたら、地は重ね、光の帯はそれぞれ流す。
- * 呼び出し催促した番号は、目立たせている間は赤い地で脈打たせ、外に赤い光をにじませる（また催促されたら、地を重ねて後の回で続ける）
+ * 呼び出し催促した番号は、目立たせている間は金の縁を脈打たせ、外に金の光をにじませる（また催促されたら、縁を重ねて後の回で続ける）
  */
 export function PlateBoard({
   plates,
@@ -452,12 +447,14 @@ export function PlateBoard({
             className={cn(
               "isolate flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
               tone === "calling" ? "bg-white/[0.1]" : "bg-white/[0.07]",
-              // 光らせている間は金の縁を白にする（光に黄色を混ぜない）
-              lit || hurried
+              // 光らせている間は金の縁を白にする（光に黄色を混ぜない）。催促した番号は金の縁を濃くする
+              lit
                 ? "border-white/60"
-                : tone === "calling"
-                  ? "border-theme-gold/50"
-                  : "border-white/15",
+                : hurried
+                  ? "border-theme-gold"
+                  : tone === "calling"
+                    ? "border-theme-gold/50"
+                    : "border-white/15",
               shadow &&
                 "shadow-[0_12px_30px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]",
             )}
@@ -474,21 +471,21 @@ export function PlateBoard({
               animation: `plate-enter ${ENTER_MS}ms ${EASE} ${enterDelays.get(key)}ms both`,
             }}
           >
-            {/* 地を全部敷いてから光の帯を重ねる（後の地で前の光の帯が隠れないように）。催促の赤い地は、光の地より上に敷く */}
+            {/* 地を全部敷いてから光の帯を重ねる（後の地で前の光の帯が隠れないように）。催促の金の縁は、光の上に重ねる */}
             {flashes.map((flash) => (
               <GlowBase key={flash.key} startedAt={flash.startedAt} />
-            ))}
-            {urgents.map((urgent) => (
-              <UrgentBase key={urgent.key} startedAt={urgent.startedAt} />
             ))}
             {flashes.map((flash) => (
               <PrismLight key={flash.key} startedAt={flash.startedAt} />
             ))}
+            {urgents.map((urgent) => (
+              <UrgentRim key={urgent.key} startedAt={urgent.startedAt} />
+            ))}
             <div
               className={cn(
                 "relative font-semibold font-zen text-white tabular-nums leading-none",
-                // 光の白い芯や明るい赤が重なっても白い番号が沈まないよう、影を敷く
-                (lit || hurried) && "[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]",
+                // 光の白い芯が重なっても白い番号が沈まないよう、影を敷く
+                lit && "[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]",
               )}
               style={{
                 fontSize: `${plate.fontSize}px`,
@@ -501,7 +498,7 @@ export function PlateBoard({
               <div
                 className={cn(
                   "relative whitespace-nowrap font-medium font-noto leading-tight tracking-[0.08em]",
-                  lit || hurried ? "text-white" : "text-theme-gold",
+                  lit ? "text-white" : "text-theme-gold",
                 )}
                 style={{
                   fontSize: `${Math.max(20, Math.round(plate.fontSize * 0.24))}px`,

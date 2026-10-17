@@ -201,15 +201,8 @@ export default function FieldsOfCallScreen() {
   const heights = sectionHeights(hasDrip, hasPrep);
 
   const callingItems: PlateItem[] = useMemo(
-    () =>
-      shownCalling.map((orderId) => ({
-        id: orderId,
-        // 呼び出し催促した番号には、目立たせている間「お急ぎください」を添える
-        caption: urgentsOf(orderId).some((urgent) => !urgent.fading)
-          ? "お急ぎください"
-          : null,
-      })),
-    [shownCalling, urgentsOf],
+    () => shownCalling.map((orderId) => ({ id: orderId, caption: null })),
+    [shownCalling],
   );
   const drippingItems: PlateItem[] = useMemo(
     () =>
