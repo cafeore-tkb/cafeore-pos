@@ -1,4 +1,4 @@
-import { type ItemType, MenuEntity } from "@cafeore/common";
+import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import {
   type CashierDraft,
@@ -9,6 +9,7 @@ import {
   cashierKeyIntent,
   cashierPaymentKeyIntent,
   clearDigits,
+  couponStatus,
   cyclePayment,
   deleteDigit,
   emptyCashierDraft,
@@ -57,9 +58,23 @@ const payments = ["cash", "CARD_PRESENT", "FELICA_ALL", "QR_CODE"] as const;
 const withLines = (...items: (typeof blend)[]): CashierDraft =>
   items.reduce(addLine, emptyCashierDraft());
 
+// 過去の注文は、提供済みの No.42 だけ（042 は割引でき、ほかの 3 桁は割引できない）
+const orders = [
+  OrderEntity.fromOrder({
+    ...OrderEntity.createNew({ orderId: 42 }).toOrder(),
+    id: "order-42",
+    servedAt: new Date("2026-11-07T10:23:45+09:00"),
+  }),
+];
+const checkCoupon = (coupon: string) => couponStatus(coupon, orders);
+
 const keys = (draft: CashierDraft, ...pressed: string[]) =>
   pressed.reduce((current, key) => {
-    const intent = cashierKeyIntent(current, key, { menus, payments });
+    const intent = cashierKeyIntent(current, key, {
+      menus,
+      payments,
+      checkCoupon,
+    });
     return intent.type === "update" ? intent.draft : current;
   }, draft);
 
@@ -132,6 +147,27 @@ describe("[unit] cashierDraft の数字", () => {
     expect(deleted.coupon).toBe("04");
     expect(deleted.zone).toBe("coupon");
     expect(clearDigits(draft).coupon).toBe("");
+  });
+
+  test("3 桁で割引できなければ引換券番号の欄に残り、次の数字で消して 1 桁目から打ち直す", () => {
+    const rejected = inputDigits(withLines(blend), "123", checkCoupon);
+    expect(rejected.coupon).toBe("123");
+    expect(rejected.zone).toBe("coupon");
+    const retyped = inputDigits(rejected, "0", checkCoupon);
+    expect(retyped.coupon).toBe("0");
+    expect(retyped.zone).toBe("coupon");
+    const applied = inputDigits(retyped, "42", checkCoupon);
+    expect(applied.coupon).toBe("042");
+    expect(applied.zone).toBe("memo");
+    // 割引できている 3 桁は、数字を打っても変えない
+    expect(inputDigits(applied, "9", checkCoupon).coupon).toBe("042");
+  });
+
+  test("割引できない 3 桁のまま備考に移っても、数字を打てば引換券番号の欄に戻って打ち直す", () => {
+    const onMemo = focusMemo(inputDigits(withLines(blend), "123", checkCoupon));
+    const retyped = inputDigits(onMemo, "4", checkCoupon);
+    expect(retyped.coupon).toBe("4");
+    expect(retyped.zone).toBe("coupon");
   });
 
   test("行・備考を選んでいても、数字は引換券番号に入れ、引換券番号の欄に移る", () => {
@@ -262,6 +298,15 @@ describe("[unit] cashierKeyIntent", () => {
     expect(removed.selected).toBeNull();
     const onCoupon = focusCoupon(withLines(blend));
     expect(keys(onCoupon, "1", "2", "Backspace").coupon).toBe("1");
+  });
+
+  test("数字のキーも、割引できない 3 桁なら備考に移らず、次の数字で打ち直す", () => {
+    const rejected = keys(focusCoupon(withLines(blend)), "1", "2", "3");
+    expect(rejected.coupon).toBe("123");
+    expect(rejected.zone).toBe("coupon");
+    const applied = keys(rejected, "0", "4", "2");
+    expect(applied.coupon).toBe("042");
+    expect(applied.zone).toBe("memo");
   });
 
   test("行を選んでいる間の数字は指名（1〜6 は 1st〜6th、0 は指名なし）で、行は選んだまま", () => {

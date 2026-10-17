@@ -1,4 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  caosRepliesRevision,
+  isPendingCaosReply,
+  isSentCaosReply,
+  subscribeCaosReplies,
+} from "../logic/caosReplies";
 import { labelHasOrder } from "../logic/cards";
 import {
   type BoardComment,
@@ -24,6 +36,11 @@ export const useCommentNotices = (
   comments: CommentsByOrder | null,
   viewedLabel: string | null,
 ) => {
+  const replyRevision = useSyncExternalStore(
+    subscribeCaosReplies,
+    caosRepliesRevision,
+    () => 0,
+  );
   const seen = useRef<Set<string> | null>(null);
   const viewed = useRef(viewedLabel);
   useLayoutEffect(() => {
@@ -31,6 +48,7 @@ export const useCommentNotices = (
   });
   const [notices, setNotices] = useState<readonly BoardComment[]>([]);
   useEffect(() => {
+    void replyRevision;
     if (!comments) return;
     const all = [...comments.values()].flat();
     // 最初に届いたときは、見た印を付けるだけ
@@ -39,9 +57,14 @@ export const useCommentNotices = (
       return;
     }
     const known = seen.current;
-    const added = all.filter((comment) => !known.has(commentKey(comment)));
+    const added = all.filter(
+      (comment) =>
+        !known.has(commentKey(comment)) && !isPendingCaosReply(comment),
+    );
     for (const comment of added) known.add(commentKey(comment));
-    const fresh = added.filter((comment) => !isStampReply(comment));
+    const fresh = added.filter(
+      (comment) => !isStampReply(comment) && !isSentCaosReply(comment),
+    );
     if (fresh.length === 0) return;
     soundManager.playComment();
     // 今見ている注文のコメントは、右下の見ている注文の欄に出ている
@@ -51,7 +74,7 @@ export const useCommentNotices = (
         (comment) => !labelHasOrder(viewed.current, comment.orderNo),
       ),
     ]);
-  }, [comments]);
+  }, [comments, replyRevision]);
   // その注文を見たら、知らせは消す
   useEffect(() => {
     if (viewedLabel)

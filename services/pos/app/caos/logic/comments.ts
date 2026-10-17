@@ -15,20 +15,28 @@ export interface BoardComment extends OrderComment {
 }
 
 /** コメントに返すスタンプ（押すと、その文字をそのままマスターのコメントとして付ける。提供の画面などでもふつうのコメントとして見える） */
-export const STAMPS = [
-  "👀 見た",
-  "👍 了解",
-  "⏳ 待って",
-  "✅ 済み",
-  "🙏 ごめん",
-];
+export const STAMPS = ["OK", "待って", "済み", "来て！"];
 
-/**
- * CaOS から返したスタンプ（マスターが付けた STAMPS の 1 つ）。新しいコメントとして知らせない（返した側の画面なので）。
- * コメントには付けた画面の印が無いので、マスターの画面（/master）で同じ文字を手で付けたものも同じに扱う（どちらもマスターの側から出したもので、CaOS で知らせなくてよい）
- */
+// 以前送ったコメントもリアクションとして扱い、再通知しない。
+const LEGACY_STAMPS: Record<string, string> = {
+  "👀 見た": "見た",
+  "👍 了解": "OK",
+  "⏳ 待って": "待って",
+  "✅ 済み": "済み",
+  "🙏 ごめん": "ごめん",
+};
+
+/** 通知と表示で共通の判定。旧スタンプも現在のフラット表示へ変換する。 */
+export const commentReaction = (comment: OrderComment): string | null => {
+  if (comment.author !== "master") return null;
+  return STAMPS.includes(comment.text)
+    ? comment.text
+    : Object.hasOwn(LEGACY_STAMPS, comment.text)
+      ? LEGACY_STAMPS[comment.text]
+      : null;
+};
 export const isStampReply = (comment: OrderComment) =>
-  comment.author === "master" && STAMPS.includes(comment.text);
+  commentReaction(comment) !== null;
 
 /** 注文（id）ごとのコメント（付けた順）。コメントの無い注文は入れない */
 export type CommentsByOrder = ReadonlyMap<string, BoardComment[]>;

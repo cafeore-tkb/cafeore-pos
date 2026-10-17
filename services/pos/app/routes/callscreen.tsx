@@ -33,6 +33,7 @@ import {
   useCallVisibility,
   useFlash,
   useOnAdded,
+  useRevealedCalls,
   useStageScale,
   useWarmCallVoices,
 } from "./callscreen.hooks";
@@ -80,7 +81,12 @@ export default function FieldsOfCallScreen() {
   );
   const brewingKeys = useMemo(() => brewing.map((card) => card.key), [brewing]);
 
-  const { startFlash, isFlashing } = useFlash();
+  const { startFlash, flashesOf } = useFlash();
+  // 新しく呼んだ番号は、チャイムを鳴らすときに画面に出して光らせる（何件入っても 1 件ずつ音と揃える）
+  const { shown: shownCalling, reveal } = useRevealedCalls(
+    calling,
+    isOrdersLoaded,
+  );
 
   const announce = useAnnouncer(soundRef, voiceRef);
   // 呼んだ時点の一覧で「順番が前後するか」を決めたいので、最新の一覧を持っておく
@@ -100,10 +106,12 @@ export default function FieldsOfCallScreen() {
           isCallOutOfOrder(ordersRef.current, orderId),
         ),
         chime: true,
+        onStart: () => {
+          if (reveal(orderId)) startFlash(orderId);
+        },
       });
-      startFlash(orderId);
     },
-    [announce, startFlash],
+    [announce, reveal, startFlash],
   );
 
   // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
@@ -139,13 +147,13 @@ export default function FieldsOfCallScreen() {
 
   // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える
   // （開いたときにもう呼んでいた・淹れていたものは読み上げない）。
-  // 呼び出しはチャイムと読み上げと点滅、ドリップ入りは点滅、淹れ始めたカードはドリップの案内
+  // 呼び出しはチャイムと読み上げと光（鳴らすときに画面に出す）、ドリップ入りは光、淹れ始めたカードはドリップの案内
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
   useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);
   useWarmCallVoices(waitingIds, isOrdersLoaded);
 
-  const showCall = useCallVisibility(calling.length > 0, RETURN_TO_CM_MS);
+  const showCall = useCallVisibility(shownCalling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);
 
   const hasDrip = dripping.length > 0;
@@ -153,8 +161,8 @@ export default function FieldsOfCallScreen() {
   const heights = sectionHeights(hasDrip, hasPrep);
 
   const callingItems: PlateItem[] = useMemo(
-    () => calling.map((orderId) => ({ id: orderId, caption: null })),
-    [calling],
+    () => shownCalling.map((orderId) => ({ id: orderId, caption: null })),
+    [shownCalling],
   );
   const drippingItems: PlateItem[] = useMemo(
     () =>
@@ -228,7 +236,7 @@ export default function FieldsOfCallScreen() {
           {!showCall && hasDrip && (
             <DripBand
               plates={bandPlates}
-              isFlashing={isFlashing}
+              flashesOf={flashesOf}
               preparingCount={preparing.length}
             />
           )}
@@ -268,7 +276,7 @@ export default function FieldsOfCallScreen() {
               <PlateBoard
                 plates={callingPlates}
                 tone="calling"
-                isFlashing={isFlashing}
+                flashesOf={flashesOf}
               />
             </div>
 
@@ -285,7 +293,7 @@ export default function FieldsOfCallScreen() {
                 <PlateBoard
                   plates={drippingPlates}
                   tone="drip"
-                  isFlashing={isFlashing}
+                  flashesOf={flashesOf}
                 />
               </div>
             )}

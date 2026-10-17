@@ -305,6 +305,10 @@ export const couponStatus = (
   return { kind: status === "already_used" ? "already_used" : "unserved" };
 };
 
+/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない番号） */
+export const isCouponRejected = (status: CouponStatus): boolean =>
+  status.kind === "already_used" || status.kind === "unserved";
+
 /** 引換券番号の欄を選ぶ */
 export const focusCoupon = (draft: CashierDraft): CashierDraft =>
   draft.step === "entry" && !draft.special && !isDiscountLocked(draft)
@@ -349,19 +353,30 @@ export const setMemo = (draft: CashierDraft, memo: string): CashierDraft => ({
 
 /**
  * 数字を打つ。入れる段階は引換券番号に（行・備考を選んでいれば引換券番号の欄に移る）、
- * 3 桁そろったら備考に移る。会計の段階は受取金額に足す（現金にする）
+ * 3 桁そろって割引できれば備考に移る。割引できない 3 桁なら引換券番号の欄に残り、
+ * 次に打った数字で消して 1 桁目から打ち直す。会計の段階は受取金額に足す（現金にする）
+ *
+ * checkCoupon は引換券番号を過去の注文と照らし合わせる（couponStatus）。渡さなければ照らし合わせない
  */
 export const inputDigits = (
   draft: CashierDraft,
   digits: string,
+  checkCoupon?: (coupon: string) => CouponStatus,
 ): CashierDraft => {
   if (draft.step === "entry") {
     if (!canInputCoupon(draft)) return draft;
+    const rejected = (coupon: string) =>
+      checkCoupon !== undefined && isCouponRejected(checkCoupon(coupon));
     const current = toCouponZone(draft);
-    const coupon = (current.coupon + digits).slice(0, COUPON_DIGITS);
+    const typed = rejected(current.coupon) ? "" : current.coupon;
+    const coupon = (typed + digits).slice(0, COUPON_DIGITS);
     const completed =
-      current.coupon.length < COUPON_DIGITS && coupon.length === COUPON_DIGITS;
-    return { ...current, coupon, zone: completed ? "memo" : current.zone };
+      typed.length < COUPON_DIGITS && coupon.length === COUPON_DIGITS;
+    return {
+      ...current,
+      coupon,
+      zone: completed && !rejected(coupon) ? "memo" : current.zone,
+    };
   }
   const received = (draft.received + digits).replace(/^0+/, "");
   if (received.length > RECEIVED_MAX_DIGITS) {
@@ -479,6 +494,8 @@ type KeyContext = {
   heldLineKeys?: readonly number[];
   /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さない */
   repeat?: boolean;
+  /** 引換券番号を過去の注文と照らし合わせる（inputDigits） */
+  checkCoupon?: (coupon: string) => CouponStatus;
 };
 
 const NONE: CashierKeyIntent = { type: "none" };
@@ -493,7 +510,7 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * - 商品キー: 商品を足す（入れる段階だけ）。同時押し（「a+s」）は、押しているキーがそろったときに足し、
  *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
- *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
+ *   選んでいなければ、入れる段階は引換券番号（3 桁で割引できれば備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない
@@ -511,6 +528,7 @@ export const cashierKeyIntent = (
     held = [key],
     heldLineKeys = [],
     repeat = false,
+    checkCoupon,
   }: KeyContext,
 ): CashierKeyIntent => {
   // 同時押しは、そのキーのどれかを押したときだけ（Shift などを押し足したときは足さない）
@@ -537,7 +555,7 @@ export const cashierKeyIntent = (
         ? update(assignSelectedDripper(draft, dripper))
         : NONE;
     }
-    return update(inputDigits(draft, key));
+    return update(inputDigits(draft, key, checkCoupon));
   }
   switch (key) {
     case "Backspace":

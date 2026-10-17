@@ -1,4 +1,8 @@
-import { type CaosCard, dripperLabel } from "@cafeore/common";
+import {
+  type CaosCard,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
 import {
@@ -288,6 +292,7 @@ export const DispatchBoard: React.FC<
                           style={{ left, width }}
                         >
                           <OrderCard
+                            newCommentsOnly
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
@@ -343,7 +348,16 @@ export const DispatchBoard: React.FC<
                         }}
                       >
                         <EmptySlotButton
-                          onClick={() => onOpenEmptySlot(bay.id)}
+                          assigning={Boolean(pick?.openCard)}
+                          disabled={Boolean(
+                            pick?.openCard &&
+                              !caosDripperAllowed(pick.openCard, bay.id),
+                          )}
+                          onClick={() => {
+                            if (pick?.openCard)
+                              pick.assign(pick.openCard, bay.id);
+                            else onOpenEmptySlot(bay.id);
+                          }}
                           className="h-full min-w-[130px]"
                         />
                       </div>
@@ -378,6 +392,7 @@ export const DispatchBoard: React.FC<
       {drag.source &&
         drag.ghost(
           <OrderCard
+            newCommentsOnly
             card={drag.source.card}
             look={looks.get(drag.source.card.key)}
           />,

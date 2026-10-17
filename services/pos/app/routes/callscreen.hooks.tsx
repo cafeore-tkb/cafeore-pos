@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/** 点滅 1 コマの長さ */
-const FLASH_STEP_MS = 280;
-/** 1 つの番号が点滅するコマ数 */
-const FLASH_STEPS = 8;
+/** 光り始めてから、元に戻り始めるまで */
+const FLASH_HOLD_MS = 5000;
+/** 元に戻るフェードの長さ */
+export const FLASH_FADE_MS = 1000;
+/** 新しく入った番号を光らせる長さ（元に戻るフェードまで含む） */
+export const FLASH_MS = FLASH_HOLD_MS + FLASH_FADE_MS;
 
 /**
  * 固定サイズのステージを画面に収める倍率を返す。
@@ -27,53 +29,76 @@ export function useStageScale(width: number, height: number) {
   return scale;
 }
 
-type FlashState = {
-  beat: number;
-  /** 番号 → 点滅が終わるビート */
-  until: Record<number, number>;
+/** 光らせている 1 回分 */
+export type Flash = {
+  key: number;
+  /** 光り始めた時刻（performance.now()）。作り直されたプレートでも、光り始めからの続きを出すのに使う */
+  startedAt: number;
+  /** 元に戻るフェードに入ったか */
+  fading: boolean;
 };
 
+const NO_FLASHES: readonly Flash[] = [];
+
 /**
- * 点滅を共通の 1 本のビートで駆動する。
- * 番号ごとに終わりのビートだけを持つので、何件同時に光ってもタイミングが揃い、
- * どの番号も同じ長さだけ点滅する。
+ * 新しく入った番号を FLASH_MS だけ光らせる。
+ * 同じ番号でも呼ぶたびに別の 1 回として重ねるので、光っている最中にまた呼ばれても、それぞれが最後まで光る。
+ * 光り方（地が浮かび、プリズムの光が抜けて、元に戻る）は CSS のアニメーションに任せ、ここでは光らせている回だけを持つ。
  */
 export function useFlash() {
-  const [state, setState] = useState<FlashState>({ beat: 0, until: {} });
-  const running = Object.keys(state.until).length > 0;
+  const [flashes, setFlashes] = useState<ReadonlyMap<number, readonly Flash[]>>(
+    () => new Map(),
+  );
+  const keyRef = useRef(0);
+  const timersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
-    if (!running) return;
-
-    const timer = setInterval(() => {
-      setState((prev) => {
-        const beat = prev.beat + 1;
-        const until: Record<number, number> = {};
-        for (const [id, end] of Object.entries(prev.until)) {
-          if (end > beat) until[Number(id)] = end;
-        }
-        return { beat, until };
-      });
-    }, FLASH_STEP_MS);
-
-    return () => clearInterval(timer);
-  }, [running]);
-
-  const startFlash = useCallback((id: number) => {
-    setState((prev) => {
-      // 既に回っているビートには合わせる。止まっていれば点灯から始める
-      const isRunning = Object.keys(prev.until).length > 0;
-      const beat = isRunning ? prev.beat : prev.beat + (prev.beat % 2);
-      return { beat, until: { ...prev.until, [id]: beat + FLASH_STEPS } };
-    });
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
   }, []);
 
-  const isFlashing = useCallback(
-    (id: number) => state.until[id] !== undefined && state.beat % 2 === 0,
-    [state],
+  const startFlash = useCallback((id: number) => {
+    keyRef.current += 1;
+    const key = keyRef.current;
+    const timers = timersRef.current;
+
+    // この回を書き換える。null なら外す
+    const update = (change: (flash: Flash) => Flash | null) =>
+      setFlashes((prev) => {
+        const rest = (prev.get(id) ?? []).flatMap((flash) => {
+          if (flash.key !== key) return [flash];
+          const changed = change(flash);
+          return changed ? [changed] : [];
+        });
+        const next = new Map(prev);
+        if (rest.length > 0) next.set(id, rest);
+        else next.delete(id);
+        return next;
+      });
+    const later = (ms: number, run: () => void) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        run();
+      }, ms);
+      timers.add(timer);
+    };
+
+    const flash = { key, startedAt: performance.now(), fading: false };
+    setFlashes((prev) =>
+      new Map(prev).set(id, [...(prev.get(id) ?? []), flash]),
+    );
+    later(FLASH_HOLD_MS, () => update((it) => ({ ...it, fading: true })));
+    later(FLASH_MS, () => update(() => null));
+  }, []);
+
+  const flashesOf = useCallback(
+    (id: number) => flashes.get(id) ?? NO_FLASHES,
+    [flashes],
   );
 
-  return { startFlash, isFlashing };
+  return { startFlash, flashesOf };
 }
 
 /**
@@ -100,6 +125,47 @@ export function useOnAdded<T>(
       if (!known.has(id)) onAdded(id);
     }
   }, [ids, onAdded, enabled]);
+}
+
+/**
+ * お呼び出し中のうち、画面に出す番号を返す。新しく呼んだ番号は reveal（チャイムを鳴らすとき）まで出さない。
+ * 何件も立て続けに入っても、読み上げは 1 件ずつ順に流れるので、番号もそれに合わせて 1 件ずつ音と同時に出すため。
+ *
+ * useOnAdded と同じく、enabled（最初の一覧を受け取ったか）が true になった最初の一覧は読み上げないので、そのまま出す。
+ * 呼び出しから外れた番号は忘れ、また呼ばれたら reveal まで待たせる
+ */
+export function useRevealedCalls(calling: readonly number[], enabled: boolean) {
+  // null の間は最初の一覧を待っている（その一覧はそのまま出す）
+  const [revealed, setRevealed] = useState<ReadonlySet<number> | null>(null);
+  const callingRef = useRef(calling);
+  callingRef.current = calling;
+
+  useEffect(() => {
+    if (!enabled) {
+      setRevealed(null);
+      return;
+    }
+    setRevealed((prev) => {
+      if (prev === null) return new Set(calling);
+      const kept = [...prev].filter((id) => calling.includes(id));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [calling, enabled]);
+
+  /** 番号を画面に出す。鳴らすまでに提供済みなどで呼び出しから外れていたら false */
+  const reveal = useCallback((id: number) => {
+    if (!callingRef.current.includes(id)) return false;
+    setRevealed((prev) => new Set(prev ?? []).add(id));
+    return true;
+  }, []);
+
+  const shown = useMemo(
+    () =>
+      revealed === null ? calling : calling.filter((id) => revealed.has(id)),
+    [calling, revealed],
+  );
+
+  return { shown, reveal };
 }
 
 /**
@@ -193,6 +259,8 @@ export type Announcement = {
   path: string;
   /** 読み上げの前にチャイムを鳴らすか（呼び出しだけ鳴らす） */
   chime: boolean;
+  /** 鳴らし始めるとき（音声が届いて、チャイムを鳴らす直前）に呼ぶ。呼び出しの番号を音と同時に画面に出すのに使う */
+  onStart?: () => void;
 };
 
 /**
@@ -208,7 +276,7 @@ export function useAnnouncer(
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
   return useCallback(
-    ({ path, chime }: Announcement) => {
+    ({ path, chime, onStart }: Announcement) => {
       const voice = loadVoice(path);
       queueRef.current = queueRef.current.then(async () => {
         const url = await voice;
@@ -218,6 +286,7 @@ export function useAnnouncer(
           audio.src = url;
           audio.load();
         }
+        onStart?.();
         const chimeAudio = chimeRef.current;
         if (chime && chimeAudio) await playToEnd(chimeAudio, CHIME_TIMEOUT_MS);
         if (url && audio) await playToEnd(audio, VOICE_TIMEOUT_MS);

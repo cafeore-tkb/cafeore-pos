@@ -122,8 +122,12 @@ export const usePrinter = (
 
   useRetryInterval(pendingCount > 0, retry);
 
+  /** 注文のシールを刷る。刷るシールが無い（抽出が要るものが無い）注文は、紙を送るだけになるので送らない */
   const printOrderLabel = useCallback(
-    (order: OrderEntity) => printJob(orderLabelJob(order, width)),
+    async (order: OrderEntity) => {
+      const job = orderLabelJob(order, width);
+      if (job.labels.length > 0) await printJob(job);
+    },
     [printJob, width],
   );
 
