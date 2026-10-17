@@ -31,6 +31,7 @@ func All() []any {
 		&DripperAssignee{},
 		&DripperAssigneeChange{},
 		&SquareCheckout{},
+		&SquareAction{},
 		&SquareDevice{},
 		&PrinterSetting{},
 	}

@@ -1,4 +1,5 @@
 // Package square は Square の REST API（Terminal / Payments / Refunds / Devices）を呼ぶ最小限のクライアント。
+// Terminal API は checkout（決済画面）と action（決済手段を選ぶ画面）を使う。
 //
 // 公式 SDK は使わず net/http で呼ぶ。使う API が少なく、レスポンスも必要な
 // フィールドだけ読めば足りるため。
@@ -203,6 +204,72 @@ func (c *Client) CancelTerminalCheckout(ctx context.Context, checkoutID string) 
 		return nil, err
 	}
 	return &out.Checkout, nil
+}
+
+// SelectOption は SELECT の画面に出すボタン 1 つ。
+type SelectOption struct {
+	ReferenceID string `json:"reference_id"`
+	Title       string `json:"title"`
+}
+
+// SelectOptions は SELECT の画面の中身。選ばれたら selected_option に入る。
+type SelectOptions struct {
+	Title          string         `json:"title"`
+	Body           string         `json:"body"`
+	Options        []SelectOption `json:"options"`
+	SelectedOption *SelectOption  `json:"selected_option,omitempty"`
+}
+
+// TerminalAction は Square の TerminalAction オブジェクトのうち使うフィールド。
+// checkout と違って reference_id は無い。
+type TerminalAction struct {
+	ID               string         `json:"id,omitempty"`
+	DeviceID         string         `json:"device_id,omitempty"`
+	DeadlineDuration string         `json:"deadline_duration,omitempty"`
+	Status           string         `json:"status,omitempty"`
+	CancelReason     string         `json:"cancel_reason,omitempty"`
+	Type             string         `json:"type,omitempty"`
+	SelectOptions    *SelectOptions `json:"select_options,omitempty"`
+	CreatedAt        string         `json:"created_at,omitempty"`
+	UpdatedAt        string         `json:"updated_at,omitempty"`
+}
+
+type actionEnvelope struct {
+	Action TerminalAction `json:"action"`
+}
+
+// CreateTerminalAction は端末に決済以外の画面（選択肢など）を出させる（POST /v2/terminals/actions）。
+//
+// idempotencyKey が同じなら、Square は同じ action を返す。
+func (c *Client) CreateTerminalAction(ctx context.Context, idempotencyKey string, action TerminalAction) (*TerminalAction, error) {
+	body := struct {
+		IdempotencyKey string         `json:"idempotency_key"`
+		Action         TerminalAction `json:"action"`
+	}{IdempotencyKey: idempotencyKey, Action: action}
+	var out actionEnvelope
+	if err := c.do(ctx, http.MethodPost, "/v2/terminals/actions", body, &out); err != nil {
+		return nil, err
+	}
+	return &out.Action, nil
+}
+
+// GetTerminalAction は action の現在の状態を取る（GET /v2/terminals/actions/{action_id}）。
+func (c *Client) GetTerminalAction(ctx context.Context, actionID string) (*TerminalAction, error) {
+	var out actionEnvelope
+	if err := c.do(ctx, http.MethodGet, "/v2/terminals/actions/"+url.PathEscape(actionID), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out.Action, nil
+}
+
+// CancelTerminalAction は PENDING / IN_PROGRESS の action を取り消す
+// （POST /v2/terminals/actions/{action_id}/cancel）。
+func (c *Client) CancelTerminalAction(ctx context.Context, actionID string) (*TerminalAction, error) {
+	var out actionEnvelope
+	if err := c.do(ctx, http.MethodPost, "/v2/terminals/actions/"+url.PathEscape(actionID)+"/cancel", struct{}{}, &out); err != nil {
+		return nil, err
+	}
+	return &out.Action, nil
 }
 
 // --------------------------------------------------

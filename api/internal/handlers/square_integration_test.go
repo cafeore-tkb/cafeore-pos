@@ -46,6 +46,10 @@ type fakeSquare struct {
 	refundRequests  []map[string]any  // POST /v2/refunds に届いた本文
 	declinePayments map[string]bool   // 返金を断る決済（交通系 IC など）
 	loseRefunds     int               // この回数だけ、返金を作ってから応答を 500 にする（応答が失われた）
+
+	actions       map[string]*square.TerminalAction
+	actionKeys    map[string]string // idempotency_key → action の ID
+	actionCancels []string          // 取り消しを頼まれた action の ID（頼まれた順）
 }
 
 func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
@@ -57,6 +61,9 @@ func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
 		refunds:         map[string]*square.PaymentRefund{},
 		refundKeys:      map[string]string{},
 		declinePayments: map[string]bool{},
+
+		actions:    map[string]*square.TerminalAction{},
+		actionKeys: map[string]string{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
 	t.Cleanup(server.Close)
@@ -124,7 +131,42 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(http.StatusOK, map[string]any{"checkout": checkout})
-	case r.Method == http.MethodPost && strings.HasSuffix(path, "/cancel"):
+	case r.Method == http.MethodPost && path == "/v2/terminals/actions":
+		var body struct {
+			IdempotencyKey string                `json:"idempotency_key"`
+			Action         square.TerminalAction `json:"action"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		if id, ok := f.actionKeys[body.IdempotencyKey]; ok {
+			writeJSON(http.StatusOK, map[string]any{"action": f.actions[id]})
+			return
+		}
+		action := body.Action
+		action.ID = fmt.Sprintf("act_%d", len(f.actions)+1)
+		action.Status = squareStatusPending
+		f.actions[action.ID] = &action
+		f.actionKeys[body.IdempotencyKey] = action.ID
+		writeJSON(http.StatusOK, map[string]any{"action": action})
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v2/terminals/actions/") && strings.HasSuffix(path, "/cancel"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/v2/terminals/actions/"), "/cancel")
+		f.actionCancels = append(f.actionCancels, id)
+		action, ok := f.actions[id]
+		if !ok || action.Status == squareStatusCompleted || action.Status == squareStatusCanceled {
+			writeJSON(http.StatusBadRequest, map[string]any{"errors": []square.Error{{Code: "BAD_REQUEST", Detail: "cannot cancel"}}})
+			return
+		}
+		action.Status = squareStatusCanceled
+		action.CancelReason = "SELLER_CANCELED"
+		writeJSON(http.StatusOK, map[string]any{"action": action})
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/terminals/actions/"):
+		action, ok := f.actions[strings.TrimPrefix(path, "/v2/terminals/actions/")]
+		if !ok {
+			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
+			return
+		}
+		writeJSON(http.StatusOK, map[string]any{"action": action})
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v2/terminals/checkouts/") && strings.HasSuffix(path, "/cancel"):
 		id := strings.TrimSuffix(strings.TrimPrefix(path, "/v2/terminals/checkouts/"), "/cancel")
 		checkout, ok := f.checkouts[id]
 		if !ok || checkout.Status == squareStatusCompleted {
@@ -200,6 +242,27 @@ func (f *fakeSquare) complete(checkoutID string, paid int64) {
 	checkout := f.checkouts[checkoutID]
 	checkout.Status = squareStatusCompleted
 	checkout.PaymentIDs = []string{paymentID}
+}
+
+// selectOption は端末でお客さんが選択肢を押した状態にする。
+func (f *fakeSquare) selectOption(actionID, referenceID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	action := f.actions[actionID]
+	action.Status = squareStatusCompleted
+	for _, option := range action.SelectOptions.Options {
+		if option.ReferenceID == referenceID {
+			selected := option
+			action.SelectOptions.SelectedOption = &selected
+		}
+	}
+}
+
+// actionStatus は Square 側の action の状態を返す。
+func (f *fakeSquare) actionStatus(actionID string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.actions[actionID].Status
 }
 
 // completeRefund は Square で返金が終わった状態にする。
@@ -327,6 +390,9 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.GET("/square/checkouts/:id", squareHandler.GetCheckout)
 	api.POST("/square/checkouts/:id/cancel", squareHandler.CancelCheckout)
 	api.POST("/square/checkouts/:id/refund", squareHandler.RefundCheckout)
+	api.POST("/square/actions", squareHandler.CreateAction)
+	api.GET("/square/actions/:id", squareHandler.GetAction)
+	api.POST("/square/actions/:id/cancel", squareHandler.CancelAction)
 	api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
 	api.POST("/orders/:id/square-refund-keep-order", squareHandler.RefundOrderKeepingOrder)
 	api.POST("/square/webhook", squareHandler.ReceiveWebhook)
