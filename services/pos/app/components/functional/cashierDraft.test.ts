@@ -77,7 +77,7 @@ describe("[unit] cashierDraft の商品", () => {
     expect(activeMenus(draft)).toEqual([]);
   });
 
-  test("会計の段階では商品を足さず、削除・選択・指名もしない（シールを先に刷っている）", () => {
+  test("会計の段階では商品を足さず、削除・選択・指名もしない（会計取消で戻ってから変える）", () => {
     const draft = goPay(withLines(blend));
     expect(addLine(draft, coaster)).toBe(draft);
     expect(removeLine(draft, 0)).toBe(draft);
