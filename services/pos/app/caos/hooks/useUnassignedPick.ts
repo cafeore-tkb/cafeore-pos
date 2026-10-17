@@ -71,7 +71,11 @@ export const useUnassignedPick = ({
   useOutsidePress(
     openKey !== null,
     (target) =>
-      Boolean(target.closest("[data-unassigned-uid], [data-merge-tap]")),
+      Boolean(
+        target.closest(
+          "[data-unassigned-uid], [data-merge-tap], [data-unassigned-slot]",
+        ),
+      ),
     () => {
       setOpenKey(null);
       onSelectOrder(null);
@@ -93,6 +97,8 @@ export const useUnassignedPick = ({
   return {
     drag,
     assign,
+    /** 未割当で現在選んでいるカード（空きスロットを押して割当可能） */
+    openCard,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
     partner,

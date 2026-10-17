@@ -226,19 +226,29 @@ export const CornerToasts: React.FC<{
     </div>
   );
 
-/** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
+/** 空きスロット。未割当カードの選択中は直接割当し、未選択なら割当パネルを開く */
 export const EmptySlotButton: React.FC<{
   onClick: () => void;
   className?: string;
-}> = ({ onClick, className = "" }) => (
+  assigning?: boolean;
+  disabled?: boolean;
+}> = ({ onClick, className = "", assigning = false, disabled = false }) => (
   <button
     type="button"
     onClick={onClick}
-    title="タップして未割当オーダーをこのドリッパーに割り当て"
-    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-50 px-2 font-bold text-[12px] text-slate-500 hover:border-blue-400 hover:text-blue-600 active:bg-blue-100/70 ${className}`}
+    disabled={disabled}
+    data-unassigned-slot={assigning || undefined}
+    title={
+      disabled
+        ? "指名のあるカードはこの担当者に割り当てられません"
+        : assigning
+          ? "選択中のコーヒーをこの担当者の列の最後に割り当て"
+          : "タップして未割当オーダーをこのドリッパーに割り当て"
+    }
+    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[12px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:hover:border-blue-400 enabled:hover:text-blue-600 enabled:active:bg-blue-100/70"} ${className}`}
   >
     <Plus className="h-4 w-4 shrink-0" />
-    空きスロット
+    {assigning ? "ここに割当" : "空きスロット"}
   </button>
 );
 
