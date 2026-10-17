@@ -153,6 +153,8 @@ html:has(.caos-root) body {
 }
 .caos-root .caos-order-digits {
   display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 .caos-root .caos-order-digit {
   display: inline-block;
@@ -171,7 +173,19 @@ html:has(.caos-root) body {
   line-height: 1;
   text-align: center;
 }
-.caos-root .caos-order-empty {
-  width: 1.95em;
-  text-align: center;
+
+/* タブの件数・杯数・時間は同じ文字と余白で整える。 */
+.caos-root .caos-tab-count,
+.caos-root .caos-tab-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  font-size: 0.8em;
+  font-weight: inherit;
+  line-height: 1;
+}
+.caos-root .caos-tab-count {
+  border: 1px solid var(--color-slate-300);
+  border-radius: 0.25rem;
+  padding: 0.2em 0.35em;
 }

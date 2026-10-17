@@ -3,11 +3,15 @@ import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
 import lateIcon from "../icons/late.svg";
-import { labelHasOrder, orderNoLabel } from "../logic/cards";
+import { labelHasOrder, orderAndCupCounts, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
 import { CommentList } from "./OrderComments";
-import { RollingOrderNumber } from "./RollingOrderNumber";
+import {
+  RollingClock,
+  RollingNumber,
+  RollingOrderNumber,
+} from "./RollingOrderNumber";
 import { ScrollArea } from "./ScrollArea";
 
 // 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
@@ -54,6 +58,8 @@ export const UnassignedHeading: React.FC<{
   className = "text-[15px]",
   children,
 }) => {
+  const unassignedCounts = orderAndCupCounts(unassignedOrders);
+  const unservedCups = view?.rows.reduce((sum, row) => sum + row.cups, 0) ?? 0;
   const smallestUnassigned = unassignedOrders.reduce<number | null>(
     (smallest, card) =>
       card.cups.reduce<number | null>(
@@ -94,7 +100,10 @@ export const UnassignedHeading: React.FC<{
         {icon}
         {label}
         <RollingOrderNumber value={smallestUnassigned} />
-        {children}
+        <span className="caos-tab-count">
+          <RollingNumber value={unassignedCounts.orders} />件{" "}
+          <RollingNumber value={unassignedCounts.cups} />杯
+        </span>
       </button>
       <button
         type="button"
@@ -113,18 +122,22 @@ export const UnassignedHeading: React.FC<{
             className="h-6 w-6 rounded-full bg-white"
           />
         )}
-        <span className="font-mono text-[0.8em] opacity-75">
-          {view.rows.length} 件
+        <span className="caos-tab-count">
+          <RollingNumber value={view.rows.length} />件{" "}
+          <RollingNumber value={unservedCups} />杯
         </span>
-        <span className="font-mono text-[0.8em]">
-          最長 {clockLabel(Math.max(0, ...view.rows.map((row) => row.waitSec)))}
+        <span className="caos-tab-time">
+          最長{" "}
+          <RollingClock
+            seconds={Math.max(0, ...view.rows.map((row) => row.waitSec))}
+          />
         </span>
         {view.badge > 0 && (
           <output
             aria-label={`未提供に新しい知らせ ${view.badge} 件`}
-            className="-top-1 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
+            className="-top-1 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black text-[11px] text-white leading-none"
           >
-            {view.badge}
+            <RollingNumber value={view.badge} label={`${view.badge}件`} />
           </output>
         )}
       </button>

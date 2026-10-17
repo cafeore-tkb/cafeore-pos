@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
-import { orderNoLabel } from "../logic/cards";
 
 /** 数値計算ではなく各桁だけを短くスライドさせ、桁上がりでも何周も回さない。 */
-const RollingDigit = ({ digit }: { digit: string }) => {
+const RollingDigit = ({
+  digit,
+  duration,
+}: { digit: string; duration: number }) => {
   const track = useRef<HTMLSpanElement>(null);
   const oldCell = useRef<HTMLSpanElement>(null);
   const previous = useRef(digit);
@@ -14,10 +16,10 @@ const RollingDigit = ({ digit }: { digit: string }) => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const animation = track.current.animate(
       [{ transform: "translateY(0)" }, { transform: "translateY(-50%)" }],
-      { duration: 280, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      { duration, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
     );
     return () => animation.cancel();
-  }, [digit]);
+  }, [digit, duration]);
   return (
     <span className="caos-order-digit">
       <span ref={track} className="caos-order-digit-track">
@@ -30,29 +32,78 @@ const RollingDigit = ({ digit }: { digit: string }) => {
   );
 };
 
-/** フォントはタブラベルから継承。空の対象は固定幅のダッシュで示す。 */
-export const RollingOrderNumber = ({ value }: { value: number | null }) => {
-  const text = value === null ? "—" : orderNoLabel(value);
+/** タブ内のすべての数値で同じフォント・桁送りを共有する。 */
+export const RollingNumber = ({
+  value,
+  minDigits = 1,
+  duration = 280,
+  label,
+}: {
+  value: number | null;
+  minDigits?: number;
+  duration?: number;
+  label?: string;
+}) => {
+  const text =
+    value === null
+      ? "—"
+      : Math.max(0, Math.floor(value)).toString().padStart(minDigits, "0");
   const digits = text
     .split("")
     .map((digit, index) => ({ digit, place: 10 ** (text.length - index - 1) }));
   return (
-    <span
-      className="caos-order-number"
-      aria-label={value === null ? "対象の注文なし" : `最小注文番号 ${text}`}
-    >
-      <span aria-hidden="true" className="opacity-60">
-        #
-      </span>
+    <span className="caos-order-digits" aria-label={label ?? text}>
       <span aria-hidden="true" className="caos-order-digits">
         {value === null ? (
-          <span className="caos-order-empty">—</span>
+          <span
+            style={{ width: `${minDigits * 0.65}em` }}
+            className="text-center"
+          >
+            —
+          </span>
         ) : (
           digits.map(({ digit, place }) => (
-            <RollingDigit key={place} digit={digit} />
+            <RollingDigit key={place} digit={digit} duration={duration} />
           ))
         )}
       </span>
+    </span>
+  );
+};
+
+export const RollingOrderNumber = ({ value }: { value: number | null }) => (
+  <span className="caos-order-number">
+    <span aria-hidden="true" className="opacity-60">
+      #
+    </span>
+    <RollingNumber
+      value={value}
+      minDigits={3}
+      label={
+        value === null
+          ? "対象の注文なし"
+          : `最小注文番号 ${value.toString().padStart(3, "0")}`
+      }
+    />
+  </span>
+);
+
+/** 秒は毎秒更新されるため、他の数字よりゆっくりと切り替える。 */
+export const RollingClock = ({ seconds }: { seconds: number }) => {
+  const safe = Math.max(0, Math.round(seconds));
+  return (
+    <span className="caos-order-number">
+      <RollingNumber
+        value={Math.floor(safe / 60)}
+        label={`${Math.floor(safe / 60)}分`}
+      />
+      <span aria-hidden="true">:</span>
+      <RollingNumber
+        value={safe % 60}
+        minDigits={2}
+        duration={520}
+        label={`${safe % 60}秒`}
+      />
     </span>
   );
 };
