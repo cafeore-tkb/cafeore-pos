@@ -208,3 +208,25 @@ html:has(.caos-root) body {
     animation: none;
   }
 }
+
+/* 録音中の操作元を控えめな揺れで示す。盤面全体の操作はブロックしない。 */
+@keyframes caos-voice-recording {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-2deg);
+  }
+  75% {
+    transform: rotate(2deg);
+  }
+}
+.caos-root .caos-voice-recording {
+  animation: caos-voice-recording 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caos-root .caos-voice-recording {
+    animation: none;
+  }
+}

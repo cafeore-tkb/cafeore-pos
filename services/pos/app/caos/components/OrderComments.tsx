@@ -218,23 +218,24 @@ export const CommentDock: React.FC<{
     if (!viewing || !popup.element) return;
     const element = popup.element;
     let voiceProtectedAtPress = false;
+    let voiceBusyAtPress = false;
     const rememberVoiceInput = () => {
+      voiceBusyAtPress = Boolean(
+        element.querySelector('[data-voice-busy="true"]'),
+      );
       voiceProtectedAtPress = Boolean(
-        element.querySelector(
-          '[data-voice-busy="true"], [data-voice-panel] textarea:focus',
-        ),
+        element.querySelector("[data-voice-panel] textarea:focus"),
       );
     };
     const closeOutside = (event: MouseEvent) => {
       if (event.target instanceof Node && element.contains(event.target))
         return;
+      // 親のポップアップ側も録音中・送信中の枠外操作を飲み込まない。
+      if (voiceBusyAtPress || element.querySelector('[data-voice-busy="true"]'))
+        return;
       const protectedVoice =
         voiceProtectedAtPress ||
-        Boolean(
-          element.querySelector(
-            '[data-voice-busy="true"], [data-voice-panel] textarea:focus',
-          ),
-        );
+        Boolean(element.querySelector("[data-voice-panel] textarea:focus"));
       if (protectedVoice) {
         const focused = element.querySelector<HTMLTextAreaElement>(
           "[data-voice-panel] textarea:focus",

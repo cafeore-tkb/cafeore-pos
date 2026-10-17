@@ -11,7 +11,7 @@ import {
   unassignedRows,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import { LongWaitTag, OrderCountLabel, PanelHeader } from "./BoardParts";
+import { LongWaitTag, PanelHeader } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
@@ -114,18 +114,6 @@ const DragGhost: React.FC<{
     dropTargetLabel(pick.drag.target),
   );
 
-// 未割当の注文の数（見出しの赤い札）
-const CountChip: React.FC<{
-  orders: readonly CaosCard[];
-  className?: string;
-}> = ({ orders, className = "w-fit font-black text-[13px]" }) => (
-  <span
-    className={`whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-mono text-red-600 ${className}`}
-  >
-    <OrderCountLabel cards={orders} />
-  </span>
-);
-
 const EmptyNote: React.FC = () => (
   <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
     レジからのオーダーを待っています
@@ -187,9 +175,7 @@ export const UnassignedStrip: React.FC<
           nextBayId={nextAvailable?.[0]?.bayId}
           unassignedOrders={orders}
           className="text-[18px]"
-        >
-          <CountChip orders={orders} />
-        </UnassignedHeading>
+        />
         <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         {fold && (
           <button
@@ -285,12 +271,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
           view={unfinished}
           nextBayId={nextAvailable?.[0]?.bayId}
           unassignedOrders={orders}
-        >
-          <CountChip
-            orders={orders}
-            className="shrink-0 font-bold text-[11px]"
-          />
-        </UnassignedHeading>
+        />
       </PanelHeader>
       {unfinished?.tab === "unfinished" ? (
         <UnfinishedList view={unfinished} axis="y" />

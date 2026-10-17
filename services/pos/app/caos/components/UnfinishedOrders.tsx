@@ -41,8 +41,8 @@ const TAB_ON = "text-slate-950";
 const TAB_OFF = "text-slate-600 hover:text-slate-950";
 
 /**
- * 未割当の欄の見出し。view があれば「未割当」「未提供」のタブにし、children（件数）は「未割当」のタブの中に添える。
- * view が無ければ（閲覧だけの画面）タブにせず、今までどおり題と、その横に children を並べる。className で字の大きさ（アイコンも合わせる）
+ * 未割当の欄の見出し。view があれば「未割当」「未提供」のタブにし、注文番号・件数・杯数・NEXTを内部で描画する。
+ * view が無ければ（閲覧だけの画面）タブにせず、題と件数・杯数を並べる。className で字の大きさ（アイコンも合わせる）
  */
 export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
@@ -51,14 +51,12 @@ export const UnassignedHeading: React.FC<{
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
   className?: string;
-  children?: React.ReactNode;
 }> = ({
   view,
   unassignedOrders = [],
   nextBayId,
   label = "未割当",
   className = "text-[15px]",
-  children,
 }) => {
   const unassignedCounts = orderAndCupCounts(unassignedOrders);
   const unassignedNumberTone =
@@ -99,7 +97,10 @@ export const UnassignedHeading: React.FC<{
           {icon}
           {label}
         </h2>
-        {children}
+        <span className="caos-tab-count">
+          <RollingNumber value={unassignedCounts.orders} />件{" "}
+          <RollingNumber value={unassignedCounts.cups} />杯
+        </span>
       </>
     );
   return (

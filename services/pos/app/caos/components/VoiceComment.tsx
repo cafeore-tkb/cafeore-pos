@@ -78,10 +78,12 @@ export const VoiceComment = ({
         micRef.current?.contains(target)
       )
         return;
+      // 録音中・送信中はほかの盤面操作を止めず、クリックをそのまま通す。
+      if (listening || sending) return;
       // 入力中の最初のタップではキーボードだけを閉じ、下書きとパネルは残す。
       if (typingAtPress || document.activeElement === inputRef.current)
         inputRef.current?.blur();
-      else if (!listening && !sending) setOpen(false);
+      else setOpen(false);
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -152,7 +154,7 @@ export const VoiceComment = ({
           if (listening) recognition.current?.stop();
           else start();
         }}
-        className={`flex h-12 min-w-10 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1 disabled:opacity-40 ${listening ? "border-red-600 bg-red-100 text-red-700" : "border-slate-300 bg-white text-slate-700 active:bg-slate-100"}`}
+        className={`flex h-12 min-w-10 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1 disabled:opacity-40 ${listening ? "caos-voice-recording border-red-600 bg-red-100 text-red-700" : "border-slate-300 bg-white text-slate-700 active:bg-slate-100"}`}
       >
         {listening ? (
           <Square aria-hidden="true" className="h-5 w-5 fill-current" />
