@@ -169,10 +169,9 @@ type props = {
 /** シールの中身が同じかを比べるためのキー（刷る印刷データそのもの） */
 const labelKey = (order: OrderEntity) => JSON.stringify(orderLabelJob(order));
 
-/** 会計の欄に出す Square の決済手段（左から順） */
+/** 会計の欄に出す Square の決済手段（左から順）。電子マネー（FELICA_ALL）は使わない */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
   "CARD_PRESENT",
-  "FELICA_ALL",
   "QR_CODE",
 ];
 const NO_SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [];
