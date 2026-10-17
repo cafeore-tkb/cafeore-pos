@@ -1977,20 +1977,21 @@
   },
   "SquareActionOption": {
     "type": "string",
-    "enum": ["CASH", "CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
+    "enum": ["CASH", "CARD_PRESENT", "FELICA_ALL", "QR_CODE", "SPLIT"],
     "x-enum-varnames": [
       "OptionCash",
       "OptionCardPresent",
       "OptionFelicaAll",
-      "OptionQrCode"
+      "OptionQrCode",
+      "OptionSplit"
     ],
-    "description": "決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。\n端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。\n"
+    "description": "決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘したい」（決済手段ではなく、\nスタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。\n端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。\n"
   },
   "SquareActionOutcome": {
     "type": "string",
     "enum": ["pending", "selected", "closed"],
     "x-enum-varnames": ["ActionPending", "ActionSelected", "ActionClosed"],
-    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ\n  - selected: お客さんが選んだ。selected の決済手段で会計する\n  - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ\n"
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ\n  - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）\n  - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ\n"
   },
   "SquareActionCreateRequest": {
     "type": "object",
@@ -2020,7 +2021,7 @@
         "items": {
           "$ref": "#/components/schemas/SquareActionOption"
         },
-        "description": "端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個"
+        "description": "端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個"
       }
     }
   },
@@ -2074,7 +2075,7 @@
       "selected": {
         "type": "string",
         "nullable": true,
-        "description": "お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る"
+        "description": "お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る"
       },
       "error_message": {
         "type": "string",
