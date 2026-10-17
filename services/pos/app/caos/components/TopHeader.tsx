@@ -4,7 +4,6 @@ import {
   Coffee,
   Database,
   History,
-  LayoutGrid,
   type LucideIcon,
   Printer,
   Search,
@@ -17,6 +16,7 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import dripperIcon from "../icons/dripper.svg";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
@@ -27,10 +27,30 @@ export type NavTab = "control" | AuxiliaryTab;
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
 
+/** 支給SVGをマスクとして使い、選択状態に合わせた文字色をそのまま継承する。 */
+const DripperNavIcon: React.FC<{ className?: string }> = ({
+  className = "",
+}) => (
+  <span
+    aria-hidden="true"
+    className={`inline-block bg-current ${className}`}
+    style={{
+      maskImage: `url("${dripperIcon}")`,
+      WebkitMaskImage: `url("${dripperIcon}")`,
+      maskSize: "contain",
+      WebkitMaskSize: "contain",
+      maskRepeat: "no-repeat",
+      WebkitMaskRepeat: "no-repeat",
+      maskPosition: "center",
+      WebkitMaskPosition: "center",
+    }}
+  />
+);
+
 // 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
 const NAV_ITEMS = [
   { id: "control", label: "CaOS", icon: null },
-  { id: "bays", label: AUXILIARY_TITLES.bays, icon: LayoutGrid },
+  { id: "bays", label: AUXILIARY_TITLES.bays, icon: DripperNavIcon },
   { id: "beans", label: AUXILIARY_TITLES.beans, icon: Coffee },
   { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
 ] as const;

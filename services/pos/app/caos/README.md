@@ -44,6 +44,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - **A**: NOW線を基準に、6人のレーンと時間軸で進行・待機カードを確認する管制盤
 - **C**: 担当者ごとに現在の抽出と待機を横に並べ、次に空く担当者を確認する比較案
 - **D**: 紙のマスターシートを画面上に再現する案。6人を列、注文番号を行とした表に、右の注文カードを選んで枠をタップするか、列へドラッグして割り振ります（[cafeore-pos#699](https://github.com/cafeore-tkb/cafeore-pos/pull/699) のコンセプトを移植）
+- ヘッダーのCaOSの隣にあるドリッパーボタンは支給の `icons/dripper.svg` を使い、通常時は文字色、選択時は白に合わせる。開いたドリッパーの一覧は1st〜6thを上から縦1列で表示する。
 - 最上段のヘッダーからA/C/Dを切り替えます。
 - 補助情報は右側パネルに表示し、管制盤全体を隠しません。
 - iPad で画面全体が動かないよう、CaOS の 3 つの画面（`/master-sheet`・`/master-sheet/view`・`/master-sheet/libero`）を開いているあいだは、ページのスクロール・はね返り・ピンチとダブルタップの拡大を止めます（`caos.css` の `html:has(.caos-root)` で `overflow: hidden`・`overscroll-behavior: none`・`touch-action: pan-x pan-y`、盤面は `h-dvh` で見えている高さに収める。`hooks/useFixedViewport.ts` で viewport に `maximum-scale=1, user-scalable=no` を足し（入力欄を押したときの自動の拡大も止まる）、Safari の `gesturestart`・`gesturechange` を止める）。枠の中のスクロールとスクロールバー・カードのドラッグ・入力欄は今まで通りです。

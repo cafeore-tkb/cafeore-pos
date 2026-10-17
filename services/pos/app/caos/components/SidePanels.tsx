@@ -432,9 +432,9 @@ export const AuxiliaryContent: React.FC<
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
+  // ドリッパー：1st〜6thを上から縦1列に並べ、担当者（交代も）と、今の抽出と待ちの件数
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-1 gap-2">
       {lanes.map((lane) => {
         const [current, ...waiting] = laneActive(lane);
         return (
