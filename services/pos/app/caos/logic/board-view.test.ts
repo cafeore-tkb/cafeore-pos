@@ -440,7 +440,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(longWaitMinutes(lanes[0].brewing ?? card, at(999))).toBeNull();
   });
 
-  test("カードの上の操作は段階ごと。終える ✓・✋ は始めてから 10 秒は押せず、抽出時間の半分までは押し間違いかを確かめる", () => {
+  test("カードの操作は60秒で切り替わり、未着手は再割当・未割当へ戻せる", () => {
     const at = (sec: number) => T0.getTime() + sec * 1000;
     const actions = (card: CaosCard, lane: (typeof lanes)[number], sec = 60) =>
       cardActions(card, lane, { nowMs: at(sec), comments: false })
@@ -449,31 +449,48 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     const [first] = lanes;
     if (!first.brewing) throw new Error("no brewing");
     expect(cardStage(first.brewing, first)).toBe("brewing");
-    expect(actions(first.brewing, first)).toBe(
-      "emergency unstart hold finish close",
-    );
-    expect(actions(first.brewing, first, 9)).toBe(
-      "emergency unstart (hold) (finish) close",
-    );
-    // 抽出中のある列の待機は移す・統合（ドラッグ）だけ。コメントのある注文は 💬
+    expect(actions(first.brewing, first)).toBe("emergency finish");
+    expect(actions(first.brewing, first, 9)).toBe("unstart");
+    expect(actions(first.brewing, first, 59.999)).toBe("unstart");
+    expect(actions(first.brewing, first, 60)).toBe("emergency finish");
+    expect(
+      cardActions(first.brewing, first, { nowMs: at(60), comments: true }).map(
+        ({ action }) => action,
+      ),
+    ).toEqual(["emergency", "comment", "finish"]);
+    expect(
+      cardActions(first.brewing, first, { nowMs: at(59), comments: true }).map(
+        ({ action }) => action,
+      ),
+    ).toEqual(["unstart", "comment"]);
+    // 抽出中のある列の待機も1〜6で再割当できる。
     expect(cardStage(first.queued[0], first)).toBe("queued");
     expect(
       cardActions(first.queued[0], first, {
         nowMs: at(60),
         comments: true,
       }).map(({ action }) => action),
-    ).toEqual(["comment", "close"]);
+    ).toEqual([
+      "assign:1",
+      "assign:2",
+      "assign:3",
+      "assign:4",
+      "assign:5",
+      "assign:6",
+      "unassign",
+      "comment",
+    ]);
     // 抽出中の無い列の待機の先頭は未着手（▶）、その後ろは待機
     const idle = { ...first, brewing: undefined };
     expect(cardStage(first.queued[0], idle)).toBe("ready");
-    expect(actions(first.queued[0], idle)).toBe("start close");
-    // 待機の無い列では ✋ を出さない（✓ と同じになる）。終わったカードは入れ直しだけ
-    const alone = { ...first, queued: [] };
-    expect(actions(first.brewing, alone)).toBe(
-      "emergency unstart finish close",
+    expect(actions(first.queued[0], idle)).toBe(
+      "assign:1 assign:2 assign:3 assign:4 assign:5 assign:6 start unassign",
     );
+    // 待機の有無で完了の操作は変わらない。終わったカードは入れ直しだけ
+    const alone = { ...first, queued: [] };
+    expect(actions(first.brewing, alone)).toBe("emergency finish");
     const done = { ...first.brewing, status: "done" as const };
-    expect(actions(done, alone)).toBe("emergency close");
+    expect(actions(done, alone)).toBe("emergency");
     // 1 杯は 300 秒なので、149 秒までは確かめる
     expect(earlyNext(lanes[0], at(149))?.elapsedSec).toBe(149);
     expect(earlyNext(lanes[0], at(150))).toBeNull();
