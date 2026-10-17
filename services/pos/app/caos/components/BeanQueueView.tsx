@@ -3,6 +3,8 @@ import { Coffee } from "lucide-react";
 import type React from "react";
 import { StockCard } from "~/components/organisms/inventory/StockCard";
 
+import { caosLog } from "../utils/log";
+
 interface BeanQueueViewProps {
   /** POS の在庫のうち、抽出が要るアイテムの在庫の残量。API の値をそのまま出す */
   statuses: InventoryStatus[];
@@ -54,6 +56,9 @@ const BeanStockList: React.FC<BeanQueueViewProps> = ({
             key={status.resource.id}
             status={status}
             onRecorded={onRecorded}
+            onRecordActivity={(phase, details) =>
+              caosLog(`inventory.${phase}`, details)
+            }
           >
             {waitingCups && (
               <div className="text-sm tabular-nums">

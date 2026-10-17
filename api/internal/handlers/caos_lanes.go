@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -215,11 +217,29 @@ func (h *CaosHandler) updateLanes(c *gin.Context, write func(tx *gorm.DB, cur mo
 		if err != nil {
 			return err
 		}
+		before, err := json.Marshal(cur)
+		if err != nil {
+			return err
+		}
 		if changed, err = write(tx, cur, now); err != nil {
 			return err
 		}
 		lanes, _, err = loadCaosLanes(tx, day)
-		return err
+		if err != nil || !changed {
+			return err
+		}
+		details, err := json.Marshal(map[string]any{"before": json.RawMessage(before), "after": lanes})
+		if err != nil {
+			return err
+		}
+		kind := "lanes.change"
+		switch c.Request.URL.Path {
+		case "/api/caos/lanes/swap":
+			kind = "lanes.swap"
+		case "/api/caos/lanes/seniors":
+			kind = "lanes.seniors"
+		}
+		return tx.Create(&models.CaosOperation{ID: uuid.New(), Kind: kind, OccurredAt: now, RecordedAt: now, ContextAt: now, Details: details}).Error
 	})
 	if respondError(c, err) {
 		return

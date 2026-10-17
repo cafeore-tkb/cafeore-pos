@@ -13,6 +13,7 @@ import {
   commentKey,
   commentReaction,
 } from "../logic/comments";
+import { caosLog } from "../utils/log";
 import { ReactionIcon } from "./ReactionIcon";
 import { VoiceComment } from "./VoiceComment";
 
@@ -141,6 +142,7 @@ export const CommentMark: React.FC<{
       // カードを押したとき（開く）に渡さない（掴むのは、useCardDrag がボタンの上の押下を見ないので渡らない）
       onClick={(event) => {
         event.stopPropagation();
+        caosLog("comment.mark.clicked", { label, count });
         open(label, event.currentTarget);
       }}
       className={`touch-manipulation ${look}`}
@@ -270,7 +272,14 @@ export const CommentDock: React.FC<{
         >
           <button
             type="button"
-            onClick={() => onOpen(comment)}
+            onClick={() => {
+              caosLog("comment.notice.clicked", {
+                orderId: comment.orderId,
+                orderNo: comment.orderNo,
+                key: commentKey(comment),
+              });
+              onOpen(comment);
+            }}
             className="flex min-w-0 flex-1 touch-manipulation items-center gap-2 px-2 py-1.5 text-left"
           >
             <MessageSquareText className="text-(color:--caos-comment) h-5 w-5 shrink-0" />

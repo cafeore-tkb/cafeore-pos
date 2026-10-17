@@ -76,6 +76,7 @@ const countPendingPrints = () => readPendingPrints().length;
 export const usePrinter = (
   createPrinter: CreateLabelPrinter,
   width: number,
+  onActivity?: (event: string, details: Record<string, unknown>) => void,
 ) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   const pendingCount = useSyncExternalStore(
@@ -86,9 +87,15 @@ export const usePrinter = (
 
   const printJob = useCallback(
     async (job: PrintJob, pendingId?: string) => {
-      if (!(await print(job))) addPendingPrint(job, pendingId);
+      onActivity?.("printer.print.requested", { emergencyId: pendingId });
+      const printed = await print(job);
+      onActivity?.(
+        printed ? "printer.print.succeeded" : "printer.print.queued",
+        { emergencyId: pendingId },
+      );
+      if (!printed) addPendingPrint(job, pendingId);
     },
-    [print],
+    [print, onActivity],
   );
 
   // 残りを古い順に送り、刷れたものを消す（刷れなかったものは残して次を送る。1 件のせいで後ろが刷れなくならないように）
@@ -101,13 +108,19 @@ export const usePrinter = (
         for (const pending of readPendingPrints()) {
           // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
           if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
-          if (await print(pending.job)) removePendingPrint(pending.id);
+          onActivity?.("printer.resend.requested", { pendingId: pending.id });
+          const printed = await print(pending.job);
+          onActivity?.(
+            printed ? "printer.resend.succeeded" : "printer.resend.pending",
+            { pendingId: pending.id },
+          );
+          if (printed) removePendingPrint(pending.id);
         }
       });
     } finally {
       sending.current = false;
     }
-  }, [print]);
+  }, [print, onActivity]);
 
   /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る） */
   const retry = useCallback(() => {

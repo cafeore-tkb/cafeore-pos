@@ -19,6 +19,8 @@ import {
   isStampReply,
 } from "../logic/comments";
 import { soundManager } from "../utils/audio";
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
 
 // 知らせから gone のものを除く（無ければそのまま。描き直さない）
 const without =
@@ -47,6 +49,9 @@ export const useCommentNotices = (
     viewed.current = viewedLabel;
   });
   const [notices, setNotices] = useState<readonly BoardComment[]>([]);
+  useCaosStateLog("comment.notices.changed", {
+    notices: notices.map((c) => ({ orderId: c.orderId, key: commentKey(c) })),
+  });
   useEffect(() => {
     void replyRevision;
     if (!comments) return;
@@ -66,6 +71,16 @@ export const useCommentNotices = (
       (comment) => !isStampReply(comment) && !isSentCaosReply(comment),
     );
     if (fresh.length === 0) return;
+    for (const comment of fresh) {
+      caosLog("comment.notice.received", {
+        orderId: comment.orderId,
+        orderNo: comment.orderNo,
+        key: commentKey(comment),
+        shownIn: labelHasOrder(viewed.current, comment.orderNo)
+          ? "viewing"
+          : "notification",
+      });
+    }
     soundManager.playComment();
     // 今見ている注文のコメントは、右下の見ている注文の欄に出ている
     setNotices((list) => [
@@ -85,7 +100,12 @@ export const useCommentNotices = (
   return {
     notices,
     /** 知らせを消す（押した・閉じた） */
-    dismiss: (dismissed: readonly BoardComment[]) => {
+    dismiss: (dismissed: readonly BoardComment[], reason = "close") => {
+      caosLog("comment.notices.dismissed", {
+        keys: dismissed.map(commentKey),
+        orderIds: dismissed.map((c) => c.orderId),
+        reason,
+      });
       const keys = new Set(dismissed.map(commentKey));
       setNotices(without((comment) => keys.has(commentKey(comment))));
     },

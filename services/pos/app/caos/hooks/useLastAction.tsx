@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react";
+import { caosLog } from "../utils/log";
 
 /** 覚えた操作。ids はその操作で端末に残した（後ろで送る）操作の id（useCaosOutbox。通らなかったら忘れるのに使う） */
 type LastAction = { label: string; ids: readonly string[] };
@@ -25,8 +26,10 @@ export const LastActionProvider = ({
 // 通った操作を覚える（前の操作は出さなくなる）
 const rememberWith =
   (setLast: (action: LastAction) => void) =>
-  (label: string, ids: readonly string[]) =>
+  (label: string, ids: readonly string[]) => {
+    caosLog("operation.accepted", { label, ids });
     setLast({ label, ids });
+  };
 
 /** 「直前の操作」に覚える。閲覧だけの画面（LastActionProvider が無い）では undefined */
 export const useRememberAction = () => {

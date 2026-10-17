@@ -140,6 +140,9 @@ type CaosCupsWrite struct {
 	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
+
+	// MergeInto 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+	MergeInto *openapi_types.UUID `json:"merge_into,omitempty"`
 }
 
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
@@ -208,6 +211,28 @@ type CaosLanes struct {
 	Lanes []CaosLane `json:"lanes"`
 }
 
+// CaosLogBatch defines model for CaosLogBatch.
+type CaosLogBatch struct {
+	Entries []CaosLogEntry `json:"entries"`
+}
+
+// CaosLogEntry defines model for CaosLogEntry.
+type CaosLogEntry struct {
+	At       time.Time              `json:"at"`
+	Details  map[string]interface{} `json:"details"`
+	Event    string                 `json:"event"`
+	Sequence int64                  `json:"sequence"`
+	TabId    openapi_types.UUID     `json:"tabId"`
+}
+
+// CaosLogPage defines model for CaosLogPage.
+type CaosLogPage struct {
+	Entries []CaosStoredLogEntry `json:"entries"`
+	HasMore bool                 `json:"hasMore"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+}
+
 // CaosNextRequest defines model for CaosNextRequest.
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
@@ -243,6 +268,16 @@ type CaosPress struct {
 
 	// SentAt 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
 	SentAt int64 `json:"sent_at"`
+}
+
+// CaosStoredLogEntry defines model for CaosStoredLogEntry.
+type CaosStoredLogEntry struct {
+	At         time.Time              `json:"at"`
+	Details    map[string]interface{} `json:"details"`
+	Event      string                 `json:"event"`
+	ReceivedAt time.Time              `json:"receivedAt"`
+	Sequence   int64                  `json:"sequence"`
+	TabId      openapi_types.UUID     `json:"tabId"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -999,6 +1034,14 @@ type StockResourceResponse struct {
 	Unit       string  `json:"unit"`
 }
 
+// GetCaosLogsParams defines parameters for GetCaosLogs.
+type GetCaosLogsParams struct {
+	Limit  *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                `form:"offset,omitempty" json:"offset,omitempty"`
+	TabId  *openapi_types.UUID `form:"tab_id,omitempty" json:"tab_id,omitempty"`
+	Event  *string             `form:"event,omitempty" json:"event,omitempty"`
+}
+
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
@@ -1016,6 +1059,9 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
+
+// CreateCaosLogsJSONRequestBody defines body for CreateCaosLogs for application/json ContentType.
+type CreateCaosLogsJSONRequestBody = CaosLogBatch
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

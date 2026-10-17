@@ -29,6 +29,15 @@ type ServerInterface interface {
 	// CaOS のドリッパーの担当者を替える（交代）
 	// (PUT /api/caos/lanes/{dripper})
 	PutCaosLane(c *gin.Context, dripper int)
+	// master-sheet の保存済みクライアント操作ログを取得する
+	// (GET /api/caos/logs)
+	GetCaosLogs(c *gin.Context, params GetCaosLogsParams)
+	// master-sheet のクライアント操作ログをまとめて保存する
+	// (POST /api/caos/logs)
+	CreateCaosLogs(c *gin.Context)
+	// CaOSのDBログをJSONファイルとして書き出す
+	// (GET /api/caos/logs/export)
+	ExportCaosLogs(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -305,6 +314,82 @@ func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
 	}
 
 	siw.Handler.PutCaosLane(c, dripper)
+}
+
+// GetCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosLogs(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCaosLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "tab_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tab_id", c.Request.URL.Query(), &params.TabId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter tab_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "event" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "event", c.Request.URL.Query(), &params.Event)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter event: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosLogs(c, params)
+}
+
+// CreateCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) CreateCaosLogs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCaosLogs(c)
+}
+
+// ExportCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) ExportCaosLogs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportCaosLogs(c)
 }
 
 // GetCashierState operation middleware
@@ -1467,6 +1552,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/caos/lanes/seniors", wrapper.UpdateCaosLaneSeniors)
 	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
 	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
+	router.GET(options.BaseURL+"/api/caos/logs", wrapper.GetCaosLogs)
+	router.POST(options.BaseURL+"/api/caos/logs", wrapper.CreateCaosLogs)
+	router.GET(options.BaseURL+"/api/caos/logs/export", wrapper.ExportCaosLogs)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)

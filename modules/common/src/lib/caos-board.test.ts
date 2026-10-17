@@ -903,6 +903,8 @@ describe("[unit] CaOS の書き込み", () => {
     expect(merged.writes.map((w) => w.cup_ids)).toEqual([ids(o8), ids(o5)]);
     expect(merged.writes[1].after).toEqual(merged.writes[0].after);
     expect(merged.writes[0].after.dripper).toBeNull();
+    expect(merged.writes[0].merge_into).toBe(o5.cups[0].id);
+    expect(merged.writes[1].merge_into).toBeUndefined();
 
     // 待機どうし：q2 を q3 のカードへ。番号は送らない（サーバーが q3 と同じ番号にする。ほかはずらさない）
     const q2 = find(cards, (c) => c.dripId === "q2");
@@ -918,6 +920,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(queued.writes).toEqual([
       {
         cup_ids: ids(q2),
+        merge_into: q3.cups[0].id,
         before: expect.objectContaining({ drip_id: "q2" }),
         after: q3After,
       },
@@ -954,6 +957,7 @@ describe("[unit] CaOS の書き込み", () => {
       writes: [
         {
           cup_ids: ids(o5),
+          merge_into: brewing.cups[0].id,
           before: expect.objectContaining({ drip_id: null }),
           after: {
             dripper: 1,

@@ -3,6 +3,8 @@ import type { CaosCupsWrite } from "../lib/caos-board";
 import type { CaosOutboxOp } from "../lib/caos-outbox";
 import type { components } from "../types/api";
 
+export type CaosLogEntry = components["schemas"]["CaosLogEntry"];
+
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップの列で持つので、読むのは注文の一覧（共有の WebSocket の orders）。
 // 書いた結果は、書いた注文の配信（{"type":"order"}）で全部の画面に届く。
 // ルールに合わない（400）・ほかの端末が先に書いた（409）ときは何も変わらず、その理由（error）を返す。画面にそのまま出す。
