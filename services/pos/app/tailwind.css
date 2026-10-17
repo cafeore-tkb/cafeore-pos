@@ -97,7 +97,7 @@
   }
 }
 
-/* 呼び出し画面で新しく入った番号に流すグラデーション（callscreen.components の CallGlow）。
+/* 呼び出し画面で新しく入った番号に流す光（callscreen.components の CallGlow）。
    浮かび上がって、終わる前に消える */
 @keyframes call-glow {
   0% {
@@ -112,36 +112,13 @@
   }
 }
 
-/* CallGlow の色の玉の動き（Aceternity の Background Gradient Animation と同じ） */
-@keyframes glow-vertical {
-  0%,
-  100% {
-    transform: translateY(-50%);
+/* CallGlow のプリズムの光の帯。斜めに傾けたまま、プレートの左の外から右の外まで抜ける */
+@keyframes prism-sweep {
+  from {
+    transform: translateX(-130%) skewX(-20deg);
   }
-  50% {
-    transform: translateY(50%);
-  }
-}
-
-@keyframes glow-circle {
-  0% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(180deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes glow-horizontal {
-  0%,
-  100% {
-    transform: translateX(-50%) translateY(-10%);
-  }
-  50% {
-    transform: translateX(50%) translateY(10%);
+  to {
+    transform: translateX(210%) skewX(-20deg);
   }
 }
 

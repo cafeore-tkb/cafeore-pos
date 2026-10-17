@@ -27,7 +27,7 @@ export function useStageScale(width: number, height: number) {
 
 /**
  * 新しく入った番号を FLASH_MS だけ光らせる。
- * 光り方（グラデーションが流れて消える）は CSS のアニメーションに任せ、ここでは光らせる番号だけを持つ。
+ * 光り方（地が浮かび、プリズムの光が抜けて消える）は CSS のアニメーションに任せ、ここでは光らせる番号だけを持つ。
  */
 export function useFlash() {
   const [flashing, setFlashing] = useState<ReadonlySet<number>>(

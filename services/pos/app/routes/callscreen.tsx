@@ -139,7 +139,7 @@ export default function FieldsOfCallScreen() {
 
   // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える
   // （開いたときにもう呼んでいた・淹れていたものは読み上げない）。
-  // 呼び出しはチャイムと読み上げとグラデーション、ドリップ入りはグラデーション、淹れ始めたカードはドリップの案内
+  // 呼び出しはチャイムと読み上げと光、ドリップ入りは光、淹れ始めたカードはドリップの案内
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
   useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);

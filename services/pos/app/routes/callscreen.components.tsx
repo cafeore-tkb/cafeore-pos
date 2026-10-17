@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { cn } from "~/lib/utils";
 import { FLASH_MS } from "./callscreen.hooks";
 
@@ -280,59 +279,19 @@ export function BrewingIndicator() {
   );
 }
 
-/** 色の玉をテーマカラーで作る。中心は alpha の濃さで、半径の半分で消える */
-const glowBlob = (color: string, alpha: number) =>
-  `radial-gradient(circle at center, color-mix(in oklch, ${color} ${alpha}%, transparent) 0, transparent 50%) no-repeat`;
-
 /**
- * CallGlow で回す色の玉。Aceternity の Background Gradient Animation の 5 つの玉を、
- * 色はテーマカラーに、回転の中心は画面の px からプレートの割合に、速さは 2 秒ほどで動きが見えるよう 8 倍にした
+ * プリズムで分けた光の色。白い芯の両側に、撫子色・紫・青・水色を並べる。
+ * 分光の色のうち黄色（と黄緑）は入れない。テーマカラーではなく光の色なので、ここに直に書く
  */
-const GLOW_BLOBS = [
-  {
-    background: glowBlob("var(--color-theme-primary)", 80),
-    origin: "center center",
-    animation: "glow-vertical 3.75s ease infinite",
-    opacity: 1,
-  },
-  {
-    background: glowBlob("var(--color-theme-sub)", 80),
-    origin: "24% 50%",
-    animation: "glow-circle 2.5s reverse infinite",
-    opacity: 1,
-  },
-  {
-    background: glowBlob(
-      "color-mix(in oklch, var(--color-theme-primary) 60%, white)",
-      80,
-    ),
-    origin: "76% 50%",
-    animation: "glow-circle 5s linear infinite",
-    opacity: 1,
-  },
-  {
-    background: glowBlob("var(--color-theme-sub-deep)", 80),
-    origin: "37% 50%",
-    animation: "glow-horizontal 5s ease infinite",
-    opacity: 0.7,
-  },
-  {
-    background: glowBlob("var(--color-theme-gold)", 80),
-    origin: "-2% 143%",
-    animation: "glow-circle 2.5s ease infinite",
-    opacity: 1,
-  },
-];
+const PRISM_LIGHT =
+  "linear-gradient(90deg in oklch, transparent 0%, oklch(0.82 0.1 0 / 0.5) 18%, oklch(0.74 0.17 340 / 0.75) 32%, oklch(0.97 0.02 300 / 0.95) 50%, oklch(0.7 0.16 285 / 0.8) 64%, oklch(0.74 0.13 245 / 0.65) 78%, oklch(0.86 0.09 210 / 0.45) 90%, transparent 100%)";
 
 /**
- * 呼び出した番号のプレートに流すグラデーション（Aceternity の Background Gradient Animation を元にした）。
- * 色の玉を回したり往復させたりしながら hard-light で重ね、ぼかしとグー（くっつくような）フィルタで溶かす。
- * マウスに付いてくる玉は、触らない画面なので入れていない。
+ * 呼び出した番号のプレートに流す光。深い青から撫子色の地を浮かべ、
+ * その上をプリズムのような光の帯が左から右へ一度抜けていく。
  * FLASH_MS のあいだに浮かんで消えるので、置くのは光らせている間だけでよい
  */
 function CallGlow() {
-  const filterId = useId();
-
   return (
     <div
       aria-hidden
@@ -343,43 +302,15 @@ function CallGlow() {
         animation: `call-glow ${FLASH_MS}ms ease-in-out forwards`,
       }}
     >
-      {/* display: none の svg だと filter が効かないブラウザがあるので、大きさ 0 で置く */}
-      <svg aria-hidden="true" width="0" height="0" className="absolute">
-        <defs>
-          <filter id={filterId}>
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation="10"
-              result="blur"
-            />
-            <feColorMatrix
-              in="blur"
-              mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8"
-              result="goo"
-            />
-            <feBlend in="SourceGraphic" in2="goo" />
-          </filter>
-        </defs>
-      </svg>
+      {/* 地が浮かび切ってから抜け始め、消え始める前に抜け切る */}
       <div
-        className="size-full"
-        style={{ filter: `url("#${filterId}") blur(24px)` }}
-      >
-        {GLOW_BLOBS.map((blob) => (
-          <div
-            key={blob.animation}
-            className="absolute top-[10%] left-[10%] size-[80%] mix-blend-hard-light"
-            style={{
-              background: blob.background,
-              transformOrigin: blob.origin,
-              animation: blob.animation,
-              opacity: blob.opacity,
-            }}
-          />
-        ))}
-      </div>
-      <div className="absolute inset-0 rounded-[inherit] border-2 border-theme-gold" />
+        className="-inset-y-[10%] absolute left-0 w-[55%] mix-blend-screen"
+        style={{
+          background: PRISM_LIGHT,
+          filter: "blur(10px)",
+          animation: `prism-sweep ${Math.round(FLASH_MS * 0.65)}ms ease-in-out ${Math.round(FLASH_MS * 0.1)}ms both`,
+        }}
+      />
     </div>
   );
 }
@@ -396,7 +327,7 @@ type PlateBoardProps = {
 /**
  * プレートを並べる領域。位置と大きさは絶対指定で、
  * 件数が変わったときは同じプレートが滑って移動する。
- * プレートは地が透ける硝子のカード。新しく入った番号は CallGlow のグラデーションを流し、終われば硝子のカードに戻る
+ * プレートは地が透ける硝子のカード。新しく入った番号は CallGlow の光を流し、終われば硝子のカードに戻る
  */
 export function PlateBoard({
   plates,
@@ -414,9 +345,13 @@ export function PlateBoard({
             key={plate.id}
             className={cn(
               "flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
-              tone === "calling"
-                ? "border-theme-gold/50 bg-white/[0.1]"
-                : "border-white/15 bg-white/[0.07]",
+              tone === "calling" ? "bg-white/[0.1]" : "bg-white/[0.07]",
+              // 光らせている間は金の縁を白にする（光に黄色を混ぜない）
+              on
+                ? "border-white/60"
+                : tone === "calling"
+                  ? "border-theme-gold/50"
+                  : "border-white/15",
               shadow &&
                 "shadow-[0_12px_30px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]",
             )}
@@ -427,14 +362,14 @@ export function PlateBoard({
               width: `${plate.w}px`,
               height: `${plate.h}px`,
               gap: plate.caption ? "4px" : 0,
-              transition: `left 300ms ${EASE}, top 300ms ${EASE}, width 300ms ${EASE}, height 300ms ${EASE}`,
+              transition: `left 300ms ${EASE}, top 300ms ${EASE}, width 300ms ${EASE}, height 300ms ${EASE}, border-color 300ms ${EASE}`,
             }}
           >
             {on && <CallGlow />}
             <div
               className={cn(
                 "relative font-semibold font-zen text-white tabular-nums leading-none",
-                // 撫子色の明るいところでも白い番号が沈まないよう、影を敷く
+                // 光の白い芯が重なっても白い番号が沈まないよう、影を敷く
                 on && "[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]",
               )}
               style={{ fontSize: `${plate.fontSize}px` }}
