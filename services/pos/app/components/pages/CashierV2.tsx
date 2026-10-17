@@ -192,7 +192,12 @@ const isOutsideRegister = (target: EventTarget | null) =>
     "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
   ) !== null;
 
-type CashierDialogKind = "assign" | "memo" | "removeAll" | "reset";
+type CashierDialogKind =
+  | "assign"
+  | "memo"
+  | "removeAll"
+  | "reset"
+  | "cancelPayment";
 
 /** 先払い（個別小計・小計分割）のダイアログ */
 type PrepayDialogState =
@@ -934,6 +939,20 @@ const CashierV2 = ({
     resyncDisplay();
   }, [draft, updateDraft, resyncDisplay]);
 
+  /**
+   * 会計の段階で、薄くしたメニューを押した。会計を取り消すか尋ねる。
+   * 小計を途中まで払ったら戻れないので、尋ねずに知らせる
+   */
+  const confirmCancelPayment = useCallback(() => {
+    if (!canLeavePayment(draft)) {
+      toast.warning(
+        "この小計を途中まで払ったので、払い終えるか取り消すまで戻れません",
+      );
+      return;
+    }
+    setDialog("cancelPayment");
+  }, [draft]);
+
   /** 会計の段階の Esc。小計分割中なら分割をやめ、でなければ会計取消 */
   const leavePay = useCallback(() => {
     if (draft.split.part !== null) {
@@ -1387,9 +1406,11 @@ const CashierV2 = ({
           {/* 会計の列は 432px 以上にし、余った幅をメニューと 4:3 で分ける（メニューだけが広がらないように）。
               1280px より狭い画面（iPad など）では、メニューが細くなりすぎないよう会計の列を 392px にする */}
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px] xl:grid-cols-[minmax(0,1fr)_384px_minmax(432px,0.75fr)]">
-            {/* 会計の段階では、商品の列を左に押し出し、空いた真ん中に内訳（小計・受取金額・お釣り）を入れる */}
+            {/* 会計の段階では、商品の列を左に押し出し、空いた真ん中に内訳（小計・受取金額・お釣り）を入れる。
+                メニューは薄くして左端に残し、押したら会計を取り消すか尋ねる */}
             <RegisterStrip
               paying={paying}
+              onMenuWhilePaying={confirmCancelPayment}
               menu={
                 <MenuPanel
                   menus={items ?? []}
@@ -1514,6 +1535,22 @@ const CashierV2 = ({
         onConfirm={() => {
           updateDraft(removeAllLines);
           setDialog(null);
+        }}
+        onClose={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog === "cancelPayment"}
+        title="会計取消"
+        sub={`No.${newOrder.orderId}`}
+        question="会計を取り消しますか？"
+        note="商品の入力に戻ります。入れた受取金額は消えますが、商品・割引・備考はそのまま残ります。"
+        hint="Enter でやめる ・ 取り消すときは「会計を取り消す」を押す（Tab で移って Enter）"
+        confirmLabel="会計を取り消す"
+        // メニューを押し間違えたあとの Enter（確定のつもり）で取り消さない
+        focus="cancel"
+        onConfirm={() => {
+          setDialog(null);
+          cancelPayment();
         }}
         onClose={() => setDialog(null)}
       />

@@ -62,7 +62,7 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列（会計の段階では左の列）。商品（削除・指名）、割引、備考、個別小計・一括会計
+ * レジの真ん中の列（会計の段階では薄くしたメニューの右へ左に寄せる）。商品（削除・指名）、割引、備考、個別小計・一括会計
  *
  * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
  */
@@ -73,8 +73,9 @@ export const OrderPanel = (props: props) => {
     <div
       className={cn(
         "flex min-h-0 flex-col border-stone-200 border-x bg-stone-50 transition-[border-color] duration-300",
-        // 線は隣の列との間に引く。入れる段階はメニューとの間（左）、会計の段階は左端の列になるので内訳との間（右）
-        paying ? "border-l-transparent" : "border-r-transparent",
+        // 線は隣の列との間に引く。左はメニューとの間、右は会計の段階の内訳との間
+        // （入れる段階の右は会計の列の線があるので引かない）
+        !paying && "border-r-transparent",
       )}
     >
       <div
