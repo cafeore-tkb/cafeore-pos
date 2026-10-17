@@ -141,7 +141,7 @@ type props = {
   squareEnabled: boolean;
   /** このレジで使う Square 端末。決まっていなければ Square のボタンを出さない */
   squareDevice: SquareDeviceSelection;
-  /** つなぐプリンター（ラベル用・レシート用）の IP アドレス */
+  /** つなぐプリンター（ラベル用・レシート用）の IP アドレスと、レシート用のプリンターの機種 */
   printerAddresses: PrinterSettings;
   /** 注文を裏で送る。onSaved は、すぐに送って保存できたときに呼ぶ */
   submitPayload: (
@@ -325,13 +325,15 @@ const CashierV2 = ({
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
   );
-  // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る
+  // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
+  // 機種が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;
   const receiptPrinter = useReceiptPrinter(
     useMemo(
       () => eposPrinterAt(receiptPrinterIp, RECEIPT_EPOS_PRINTER_CONFIG),
       [receiptPrinterIp],
     ),
+    printerAddresses.receipt_printer_model,
   );
 
   /**

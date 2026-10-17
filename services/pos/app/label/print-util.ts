@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import type { OrderEntity, ReceiptPrinterModel } from "@cafeore/common";
 import {
   useCallback,
   useEffect,
@@ -157,8 +157,12 @@ export const usePrinter = (
  * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
  * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
  * つながっていなければ、シールのプリンターと同じ間隔でつなぎ直す（刷れなかったものは送り直さない）。
+ * レシート・領収書の画像は、プリンターの機種（model）の印字幅で描く。
  */
-export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
+export const useReceiptPrinter = (
+  createPrinter: CreateLabelPrinter,
+  model: ReceiptPrinterModel,
+) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   useRetryInterval(status === "disconnected", reconnect);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -190,14 +194,14 @@ export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
   /** 会計のたびに刷るレシート */
   const printReceipt = useCallback(
     (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
-      printSafely(() => orderReceiptJob(order, payment, split)),
-    [printSafely],
+      printSafely(() => orderReceiptJob(model, order, payment, split)),
+    [printSafely, model],
   );
 
   /** 求められたときだけ刷る領収書 */
   const printFormalReceipt = useCallback(
-    (order: OrderEntity) => printSafely(() => formalReceiptJob(order)),
-    [printSafely],
+    (order: OrderEntity) => printSafely(() => formalReceiptJob(model, order)),
+    [printSafely, model],
   );
 
   return { status, printReceipt, printFormalReceipt };
