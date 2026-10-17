@@ -1,7 +1,9 @@
 // data/printerSettings.ts
 import useSWR from "swr";
 import {
+  DEFAULT_LABEL_PRINTER_PAPER_WIDTH,
   DEFAULT_RECEIPT_PRINTER_MODEL,
+  DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
   type PrinterSettings,
   printerSettingRepository,
 } from "../repositories/printerSetting";
@@ -13,10 +15,12 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   label_printer_ip: "192.168.77.2",
   receipt_printer_ip: "192.168.77.3",
   receipt_printer_model: DEFAULT_RECEIPT_PRINTER_MODEL,
+  label_printer_paper_width: DEFAULT_LABEL_PRINTER_PAPER_WIDTH,
+  receipt_printer_paper_width: DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
 };
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種（全レジで共通）
+ * ラベル用とレシート用のプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種（全レジで共通）
  *
  * 取れるまで（と取れなかったとき）は undefined。
  */

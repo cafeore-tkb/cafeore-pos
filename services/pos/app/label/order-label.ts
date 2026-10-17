@@ -26,7 +26,7 @@ const assignmentLine = (assignment: string | null) =>
   assignment ? `指名： ${assignment}` : "　";
 
 /**
- * カップのシール 1 枚の範囲
+ * カップのシール 1 枚の範囲（80mm の紙のとき）
  *
  * 範囲の終わり（y + height）まで紙が送られるので、ラベル 1 枚（ラベルと隙間）より長いと次のラベルの頭を越え、
  * 次のシールでそのラベルを飛ばして白紙が出る（高さ 230 で同じ注文のシールの間に毎回出た）。
@@ -34,15 +34,16 @@ const assignmentLine = (assignment: string | null) =>
  */
 const CUP_LABEL_AREA = { x: 0, y: 24, width: 570, height: 210 };
 
-/** カップに貼るシール（1 杯につき 1 枚） */
+/** カップに貼るシール（1 杯につき 1 枚）。範囲の幅は、印字幅（width ドット）が狭い紙ではそれに縮める */
 const cupLabel = (
   orderId: number,
   index: number,
   total: number,
   item: CupItem,
+  width: number,
 ): Label => ({
   type: "fixed",
-  area: CUP_LABEL_AREA,
+  area: { ...CUP_LABEL_AREA, width: Math.min(CUP_LABEL_AREA.width, width) },
   elements: [
     {
       type: "text",
@@ -105,32 +106,36 @@ const cupLabel = (
 
 /**
  * カップ 1 杯のシール（緊急で入れ直したカップに貼る）。注文で刷るカップのシールと同じ中身で、
- * 「2/3」はその注文の抽出が要るカップの中の順番。注文にそのカップが無ければ null
+ * 「2/3」はその注文の抽出が要るカップの中の順番。注文にそのカップが無ければ null。
+ * width は刷るプリンターの印字幅（ドット）
  */
 export const cupLabelJob = (
   order: OrderEntity,
   cupId: string,
+  width: number,
 ): PrintJob | null => {
   const cups = order.getCups().filter((cup) => cup.item_type.needs_brew);
   const index = cups.findIndex((cup) => cup.cupId === cupId);
   if (index < 0) return null;
   return {
-    labels: [cupLabel(order.orderId, index + 1, cups.length, cups[index])],
+    labels: [
+      cupLabel(order.orderId, index + 1, cups.length, cups[index], width),
+    ],
   };
 };
 
 /**
- * 注文で刷るシール
+ * 注文で刷るシール。width は刷るプリンターの印字幅（ドット）
  *
  * 抽出が要るもの 1 杯ごとにカップに貼るシールを刷る（抽出が要るものが無ければ空）。
  * 引換券に貼るシールは刷らない（コメントアウトしてある）。
  */
-export const orderLabelJob = (order: OrderEntity): PrintJob => {
+export const orderLabelJob = (order: OrderEntity, width: number): PrintJob => {
   const cups = order.getCoffeeCups();
   return {
     labels: [
       ...cups.map((item, idx) =>
-        cupLabel(order.orderId, idx + 1, cups.length, item),
+        cupLabel(order.orderId, idx + 1, cups.length, item, width),
       ),
       // summaryLabel(order),
     ],

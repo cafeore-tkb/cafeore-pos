@@ -41,7 +41,7 @@ export type PlacedElement =
  * - fixed: シールの先頭へ送ってから、範囲（area）の中に座標で置く
  * - flow: 先頭へは送らず、前のシールの続きから行を上から順に流す。
  *   align が center なら各行を紙の中央に寄せる（省略したら左寄せ）
- * - image: 先頭へは送らず、前のシールの続きに画像を紙の中央に寄せて刷る
+ * - image: 前のシールの続きに画像を紙の中央に寄せて刷る。top なら、シールの先頭へ送ってから刷る
  */
 export type Label =
   | {
@@ -50,7 +50,7 @@ export type Label =
       elements: readonly PlacedElement[];
     }
   | { type: "flow"; lines: readonly TextLine[]; align?: "left" | "center" }
-  | { type: "image"; image: RasterImage };
+  | { type: "image"; image: RasterImage; top?: boolean };
 
 /** 1 回で刷るシール（1 件の注文の分）。レシート・領収書も 1 枚の image のシールとして同じ形で刷る */
 export type PrintJob = {
