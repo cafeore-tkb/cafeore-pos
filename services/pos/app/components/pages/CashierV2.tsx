@@ -362,13 +362,17 @@ const CashierV2 = ({
   }, [fixedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
-  const checkCoupon = useCallback(
-    (value: string) => couponStatus(value, orders ?? []),
-    [orders],
-  );
   const coupon = useMemo(
-    () => checkCoupon(draft.coupon),
-    [checkCoupon, draft.coupon],
+    () => couponStatus(draft.coupon, orders ?? []),
+    [draft.coupon, orders],
+  );
+  // 打った番号で備考に移るか・打ち直すかの照合。過去の注文がまだ届いていなければ、割引できないと決めつけない
+  const checkCoupon = useMemo(
+    () =>
+      orders === undefined
+        ? undefined
+        : (value: string) => couponStatus(value, orders),
+    [orders],
   );
   const couponApplied = coupon.kind === "available";
   const couponOrderRef = useRef<WithId<OrderEntity> | null>(null);
