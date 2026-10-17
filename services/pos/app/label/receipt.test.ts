@@ -136,4 +136,14 @@ describe("[unit] formalReceipt", () => {
       date: "2026年11月7日",
     });
   });
+
+  test("店舗控は同じ中身に店舗控の印を付ける", () => {
+    const order = createOrder();
+    order.applyServiceOneCupDiscount();
+
+    expect(formalReceipt(order, { storeCopy: true })).toEqual({
+      ...formalReceipt(order),
+      copyMark: "店舗控",
+    });
+  });
 });

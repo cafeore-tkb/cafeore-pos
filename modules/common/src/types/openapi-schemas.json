@@ -390,7 +390,7 @@
         "nullable": true,
         "minimum": 1,
         "maximum": 6,
-        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない"
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）"
       },
       "dripper_position": {
         "type": "integer",

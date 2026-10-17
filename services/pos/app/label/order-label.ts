@@ -27,9 +27,6 @@ const assignmentLine = (assignment: string | null) =>
 /** カップのシール 1 枚の範囲 */
 const CUP_LABEL_AREA = { x: 0, y: 24, width: 570, height: 230 };
 
-/** カップのシールの 1 行に入る文字数（等倍の全角） */
-const CUP_LABEL_CHARS = 22;
-
 /** カップに貼るシール（1 杯につき 1 枚） */
 const cupLabel = (
   orderId: number,
@@ -128,58 +125,6 @@ export const orderLabelJob = (order: OrderEntity): PrintJob => {
         cupLabel(order.orderId, idx + 1, cups.length, item),
       ),
       summaryLabel(order),
-    ],
-  };
-};
-
-/**
- * 取り消したシールの知らせ（1 枚）
- *
- * 会計の前に先に刷ったシール（orderLabelJob）を、会計を取り消して使わなくなったときに刷る。
- * 番号と、捨てるシールの枚数・中身を出す。
- */
-export const cancelLabelJob = (order: OrderEntity): PrintJob => {
-  const cups = order.getCoffeeCups();
-  // orderLabelJob はカップのシールと引換券のシール 1 枚を刷る
-  const labelCount = cups.length + 1;
-  const contents = `${labelCount}枚 ${cups.map((cup) => cup.abbr).join("・") || "明細"}`;
-  return {
-    labels: [
-      {
-        type: "fixed",
-        area: CUP_LABEL_AREA,
-        elements: [
-          {
-            type: "text",
-            x: 0,
-            y: 48,
-            line: [
-              MARGIN,
-              { text: "取消 ", size: [2, 2] },
-              { text: "No.", size: [1, 1] },
-              { text: `${order.orderId}`, size: [2, 2] },
-            ],
-          },
-          {
-            type: "text",
-            x: 0,
-            y: 108,
-            line: line("この番号のシールは捨てる", [1, 2]),
-          },
-          {
-            type: "text",
-            x: 0,
-            y: 156,
-            line: line(contents.slice(0, CUP_LABEL_CHARS), [1, 1]),
-          },
-          {
-            type: "text",
-            x: 0,
-            y: 204,
-            line: line("会計を取り消しました", [1, 1]),
-          },
-        ],
-      },
     ],
   };
 };

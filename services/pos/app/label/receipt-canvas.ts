@@ -433,8 +433,18 @@ const FORMAL_LOGO_SIZE = 185;
 const FORMAL_TITLE: TextStyle = { size: 56, weight: 700 };
 const FORMAL_BODY: TextStyle = { size: 33, weight: 600 };
 const FORMAL_AMOUNT: TextStyle = { size: 51, weight: 700 };
+const COPY_MARK: TextStyle = {
+  size: 36,
+  weight: 700,
+  align: "center",
+  color: "#fff",
+};
 
+const FORMAL_TITLE_TEXT = "領収書";
 const FORMAL_ACKNOWLEDGEMENT = "上記 正に領収いたしました";
+
+/** 店舗控の印の白抜きの箱。「領収書」の右に置く */
+const COPY_MARK_BOX = { height: 60, paddingX: 18, marginLeft: 28 };
 
 /** 時計回りに 90 度回す */
 const rotateClockwise = (source: HTMLCanvasElement) => {
@@ -452,7 +462,7 @@ export const drawFormalReceipt = async (
 ): Promise<RasterImage> => {
   const scale = scaleFor(model);
   await loadFonts([
-    "領収書様",
+    `${FORMAL_TITLE_TEXT}様`,
     receipt.orderNo,
     receipt.amount,
     receipt.note,
@@ -460,6 +470,7 @@ export const drawFormalReceipt = async (
     receipt.date,
     RECEIPT_ISSUER,
     RECEIPT_ISSUER_READING,
+    receipt.copyMark ?? "",
   ]);
   const logo = await loadLogo();
 
@@ -470,11 +481,28 @@ export const drawFormalReceipt = async (
   );
   const right = FORMAL_WIDTH - PADDING_X;
 
-  drawText(ctx, "領収書", PADDING_X, 67, FORMAL_TITLE);
+  drawText(ctx, FORMAL_TITLE_TEXT, PADDING_X, 67, FORMAL_TITLE);
   drawText(ctx, receipt.orderNo, right, 67, {
     ...FORMAL_BODY,
     align: "right",
   });
+
+  if (receipt.copyMark) {
+    const left =
+      PADDING_X +
+      textWidth(ctx, FORMAL_TITLE_TEXT, FORMAL_TITLE) +
+      COPY_MARK_BOX.marginLeft;
+    const width =
+      textWidth(ctx, receipt.copyMark, COPY_MARK) + COPY_MARK_BOX.paddingX * 2;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(
+      left,
+      67 - COPY_MARK_BOX.height / 2,
+      width,
+      COPY_MARK_BOX.height,
+    );
+    drawText(ctx, receipt.copyMark, left + width / 2, 67, COPY_MARK);
+  }
 
   // 宛名は手で書けるよう、下線と「様」だけ置く
   ctx.fillStyle = "#000";
@@ -504,9 +532,13 @@ export const orderReceiptJob = async (
 ): Promise<PrintJob> =>
   imageJob(await drawOrderReceipt(orderReceipt(order, payment, split), model));
 
-/** 求められたときだけ刷る領収書の印刷データ。model は刷るプリンターの機種（注文の中身は呼んだときに読む） */
+/**
+ * 求められたときだけ刷る領収書の印刷データ。model は刷るプリンターの機種、storeCopy なら店舗控
+ * （注文の中身は呼んだときに読む）
+ */
 export const formalReceiptJob = async (
   model: ReceiptPrinterModel,
   order: OrderEntity,
+  options?: { storeCopy?: boolean },
 ): Promise<PrintJob> =>
-  imageJob(await drawFormalReceipt(formalReceipt(order), model));
+  imageJob(await drawFormalReceipt(formalReceipt(order, options), model));

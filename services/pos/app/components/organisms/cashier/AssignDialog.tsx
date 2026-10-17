@@ -20,7 +20,8 @@ const CHOICES: (number | null)[] = [null, ...DRIPPER_NUMBERS];
  * 商品の指名を決めるダイアログ。ドリッパー（なし・1st〜6th）と、ラベルに印刷する自由記述
  *
  * 指名はドリッパーの番号が必須で、自由記述は番号を選んだときだけ書ける。
- * 入力欄で ↑↓ を押すとドリッパーを選び、Enter で確定する。
+ * 入力欄で ←→ を押すとドリッパーを選び（ボタンの並びと同じ向き）、Enter で確定する。
+ * ←→ はドリッパーに使うので、自由記述の中でカーソルは動かせない。
  */
 export const AssignDialog = ({ target, initial, onCommit, onClose }: props) => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,7 +31,7 @@ export const AssignDialog = ({ target, initial, onCommit, onClose }: props) => {
       onClose={onClose}
       title="指名"
       sub={target}
-      // 開いたらすぐ ↑↓・Enter を使えるよう、入力欄にフォーカスする
+      // 開いたらすぐ ←→・Enter を使えるよう、入力欄にフォーカスする
       onOpenAutoFocus={(event) => {
         event.preventDefault();
         inputRef.current?.focus();
@@ -97,14 +98,14 @@ const AssignForm = ({
           id="cashier-assignee"
           ref={inputRef}
           value={dripper === null ? "" : assignee}
-          // 番号を選ぶまでは書けない。↑↓・Enter を受けるために、フォーカスは置ける
+          // 番号を選ぶまでは書けない。←→・Enter を受けるために、フォーカスは置ける
           readOnly={dripper === null}
           onChange={(e) => setAssignee(e.target.value)}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
-            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
               e.preventDefault();
-              const step = e.key === "ArrowDown" ? 1 : -1;
+              const step = e.key === "ArrowRight" ? 1 : -1;
               const index = CHOICES.indexOf(dripper);
               setDripper(
                 CHOICES[(index + step + CHOICES.length) % CHOICES.length],
@@ -126,7 +127,7 @@ const AssignForm = ({
           )}
         />
         <span className="text-stone-400 text-xs">
-          ↑ ↓ でドリッパー ・ Enter で確定 ・ Esc で閉じる
+          ← → でドリッパー ・ Enter で確定 ・ Esc で閉じる
         </span>
       </div>
       <div className="flex flex-none items-center gap-2 px-4 pb-4">

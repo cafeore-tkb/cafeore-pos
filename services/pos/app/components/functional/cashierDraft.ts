@@ -52,18 +52,12 @@ export type CashierDraft = {
   received: string;
   payment: CashierPayment;
   /**
-   * 一括会計・Square の決済のときに先に刷ったシール（まだ登録していない注文の）。
-   * 番号はこのシールの番号のまま確定まで変えず、同じ中身なら刷り直さない
+   * 先払いのレシートに載せた注文番号（引換券番号）。番号はこのまま確定まで変えない
+   * （別のレジが送って次の番号が進んでも、レシートと登録する注文の番号をずらさない）
    */
-  printedLabel: PrintedLabel | null;
+  fixedOrderId: number | null;
   /** 小計と、受け取った支払い（先会計）・小計分割（cashierSplit） */
   split: CashierSplit;
-};
-
-export type PrintedLabel = {
-  orderId: number;
-  /** シールの中身（刷る印刷データ）。中身が変わったら刷り直す */
-  key: string;
 };
 
 export const COUPON_DIGITS = 3;
@@ -82,7 +76,7 @@ export const emptyCashierDraft = (): CashierDraft => ({
   memo: "",
   received: "",
   payment: "cash",
-  printedLabel: null,
+  fixedOrderId: null,
   split: emptySplit(),
 });
 
@@ -103,8 +97,7 @@ export const canAssignMenu = (menu: MenuEntity): boolean =>
   menu.items.some(({ item }) => item.item_type.needs_brew);
 
 /**
- * 商品を変えられるか。会計の段階ではシールを先に刷っているので変えない
- * （変えるときは会計取消で戻る。取り消しのシールを刷り、新しい番号で刷り直す）。
+ * 商品を変えられるか。会計の段階では小計を作っているので変えない（変えるときは会計取消で戻る）。
  * 先払いがある間も変えない（変えるときは先払いを取り消す）
  */
 export const canEditLines = (draft: CashierDraft): boolean =>
@@ -443,7 +436,7 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
-  /** 一括会計・残りを会計（シールを刷って会計の段階に進む） */
+  /** 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る） */
   | { type: "goPay" }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
@@ -474,6 +467,7 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
+ * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない
  * - Space: 選んでいる行の指名・備考を開く
  * - Enter: 一括会計・確定（Square なら決済を始める）。
  *   現金で受取金額が空なら、まず受取金額をちょうどにする（もう一度 Enter で確定）
@@ -505,8 +499,9 @@ export const cashierKeyIntent = (
           ? removeLine(draft, draft.selected)
           : deleteDigit(draft),
       );
-    case "ArrowLeft":
     case "ArrowRight":
+      return canGoPay(draft) ? { type: "goPay" } : NONE;
+    case "ArrowLeft":
       return NONE;
     case "ArrowUp":
     case "ArrowDown": {

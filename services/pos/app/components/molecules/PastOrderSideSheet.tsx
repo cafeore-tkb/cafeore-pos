@@ -124,7 +124,7 @@ const PastOrderCard = ({
   const printFormalReceipt = async () => {
     if (!onPrintFormalReceipt) return;
     if (await onPrintFormalReceipt(order)) {
-      toast(`No.${order.orderId} の領収書を印刷しました`);
+      toast(`No.${order.orderId} の領収書と店舗控を印刷しました`);
     } else {
       toast.error(
         "レシート用のプリンターにつながっていないため、領収書を印刷できません",

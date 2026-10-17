@@ -13,7 +13,7 @@ import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { cancelLabelJob, cupLabelJob, orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
   readPendingPrints,
@@ -126,12 +126,6 @@ export const usePrinter = (
     [printJob],
   );
 
-  /** 先に刷ったシールを使わないよう、取り消しのシールを刷る */
-  const printCancelLabel = useCallback(
-    (order: OrderEntity) => printJob(cancelLabelJob(order)),
-    [printJob],
-  );
-
   /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
   const printCupLabel = useCallback(
     async (order: OrderEntity, cupId: string, emergencyId: string) => {
@@ -146,7 +140,6 @@ export const usePrinter = (
     pendingCount,
     retry,
     printOrderLabel,
-    printCancelLabel,
     printCupLabel,
   };
 };
@@ -198,9 +191,19 @@ export const useReceiptPrinter = (
     [printSafely, model],
   );
 
-  /** 求められたときだけ刷る領収書 */
+  /**
+   * 求められたときだけ刷る領収書
+   *
+   * お客さんに渡すものの後に、同じ中身の店舗控を続けて刷る（1 枚ずつ切る）。どちらも送れたら true
+   */
   const printFormalReceipt = useCallback(
-    (order: OrderEntity) => printSafely(() => formalReceiptJob(model, order)),
+    async (order: OrderEntity) => {
+      const printed = await Promise.all([
+        printSafely(() => formalReceiptJob(model, order)),
+        printSafely(() => formalReceiptJob(model, order, { storeCopy: true })),
+      ]);
+      return printed.every(Boolean);
+    },
     [printSafely, model],
   );
 
