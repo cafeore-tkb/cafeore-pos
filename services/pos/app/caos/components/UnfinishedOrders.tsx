@@ -30,10 +30,9 @@ export const unassignedAreaBackground = (view?: UnfinishedView) =>
   view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
 
 const TAB =
-  "relative flex h-8 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap rounded-md border px-2 font-black";
-const TAB_ON =
-  "border-slate-700 text-slate-950 shadow-[inset_0_-2px_0_var(--color-slate-700)]";
-const TAB_OFF = "border-slate-300 text-slate-600 hover:border-slate-500";
+  "relative flex h-8 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
+const TAB_ON = "text-slate-950";
+const TAB_OFF = "text-slate-600 hover:text-slate-950";
 
 /**
  * 未割当の欄の見出し。view があれば「未割当」「未提供」のタブにし、children（件数）は「未割当」のタブの中に添える。
@@ -60,7 +59,7 @@ export const UnassignedHeading: React.FC<{
       </>
     );
   return (
-    <div role="tablist" className={`flex items-center gap-1 ${className}`}>
+    <div role="tablist" className={`caos-folder-tabs flex gap-1 ${className}`}>
       <button
         type="button"
         role="tab"

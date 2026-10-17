@@ -497,8 +497,8 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           </div>
         )}
         <PanelHeader
-          backgroundClassName={unassignedAreaBackground(unfinished)}
-          className={`border-b-2 ${LINE}`}
+          backgroundClassName="bg-slate-100"
+          className={`border-b-2 [--caos-folder-border:2px] [--caos-folder-line:var(--color-slate-900)] ${LINE}`}
         >
           <UnassignedHeading
             view={unfinished}

@@ -185,9 +185,7 @@ export const UnassignedStrip: React.FC<
     <section
       className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 ${unassignedAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
     >
-      <header
-        className={`flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b px-2 ${unassignedAreaBackground(unfinished)}`}
-      >
+      <header className="flex h-10 shrink-0 items-center gap-2 border-slate-300 border-b bg-slate-100 px-2">
         <UnassignedHeading view={unfinished} className="text-[18px]">
           <CountChip orders={orders} />
         </UnassignedHeading>
@@ -281,7 +279,10 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
     <section
       className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${unassignedAreaBackground(unfinished)}`}
     >
-      <PanelHeader backgroundClassName={unassignedAreaBackground(unfinished)}>
+      <PanelHeader
+        backgroundClassName="bg-slate-100"
+        className="border-slate-300 border-b"
+      >
         <UnassignedHeading view={unfinished}>
           <CountChip
             orders={orders}

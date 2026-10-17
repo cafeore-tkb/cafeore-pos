@@ -116,3 +116,28 @@ html:has(.caos-root) body {
 .caos-root:has(.caos-side-panel) .caos-comment-dock {
   right: calc(var(--caos-side-panel-width) + 8px);
 }
+
+/* Folder Tab：選択中の下辺をコンテンツ色で覆い、タブと表示領域を一体化する。
+   Dの太い罫線も同じ境界幅を使う。通知バッジの位置には影響しない。 */
+.caos-root .caos-folder-tabs {
+  align-self: stretch;
+  align-items: flex-end;
+  margin-bottom: calc(-1 * var(--caos-folder-border, 1px));
+}
+.caos-root .caos-folder-tab {
+  border-color: var(--caos-folder-line, var(--color-slate-300));
+  border-width: var(--caos-folder-border, 1px);
+}
+.caos-root .caos-folder-tab[aria-selected="true"] {
+  z-index: 1;
+  border-bottom-color: transparent;
+}
+.caos-root .caos-folder-tab[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--caos-folder-border, 1px));
+  left: 0;
+  height: calc(var(--caos-folder-border, 1px) + 1px);
+  background: inherit;
+  content: "";
+}
