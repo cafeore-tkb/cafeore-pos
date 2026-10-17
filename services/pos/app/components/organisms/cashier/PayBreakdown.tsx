@@ -44,8 +44,8 @@ type props = {
 };
 
 /**
- * 会計中のレジの左の列（商品の一覧の場所）。合計・割引・先会計と決済手段ごとの行、
- * いまの小計の説明、色分けの帯と、小計・受取金額・お釣りを出す
+ * 会計中のレジの真ん中の列（商品の列は左に寄せる）。合計・割引・先会計と決済手段ごとの行、
+ * いまの小計の説明、色分けの帯と、小計・受取金額・お釣りを出す。大きさと色は商品の列と同じ
  */
 export const PayBreakdown = ({
   itemCount,
@@ -65,7 +65,7 @@ export const PayBreakdown = ({
   onCancelPart,
   hints,
 }: props) => (
-  <div className="flex min-h-0 flex-col px-5 pt-4 pb-3.5">
+  <div className="flex min-h-0 flex-col border-stone-200 border-l bg-stone-50 px-5 pt-4 pb-3.5">
     <div className="flex flex-col pt-1">
       <div className="flex flex-col gap-0.5 text-[15px] text-stone-500 tabular-nums leading-[1.6]">
         <div className="flex justify-between">

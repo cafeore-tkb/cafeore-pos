@@ -62,7 +62,7 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列。商品（削除・指名）、割引、備考、個別小計・一括会計
+ * レジの真ん中の列（会計の段階では左の列）。商品（削除・指名）、割引、備考、個別小計・一括会計
  *
  * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
  */
@@ -70,7 +70,13 @@ export const OrderPanel = (props: props) => {
   const { draft } = props;
   const paying = draft.step === "pay";
   return (
-    <div className="flex min-h-0 flex-col border-stone-200 border-l bg-stone-50">
+    <div
+      className={cn(
+        "flex min-h-0 flex-col border-stone-200 bg-stone-50",
+        // 会計の段階では左端の列になるので、左の線は引かない
+        !paying && "border-l",
+      )}
+    >
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col transition-opacity duration-200",
