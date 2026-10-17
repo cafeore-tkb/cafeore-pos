@@ -70,6 +70,7 @@ import {
   displayOrder,
   dueAmount,
   hasTenders,
+  isSplittingSubtotal,
   leavePayment,
   paidLineKeys,
   preferDiscount,
@@ -727,10 +728,12 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
-  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる（小計分割の途中は並べない）
+  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる
+  // （小計分割の途中は、受け取ったあとの「残りを全て会計」を含めて並べない）
   const choices = splitChoices(draft, squarePaymentActive);
   const offerSplit =
-    split.part === null && (choices.items === null || choices.part === null);
+    !isSplittingSubtotal(draft) &&
+    (choices.items === null || choices.part === null);
 
   /**
    * お客さんが Square 端末で決済手段を選べるようにする（会計の段階で、スタッフがまだ選んでいない間）。
