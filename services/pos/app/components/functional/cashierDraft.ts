@@ -453,12 +453,17 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
-  /** 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る） */
-  | { type: "goPay" }
+  /**
+   * 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る）。
+   * square があれば、進んだらその決済手段で決済を始める（決済手段のキー）
+   */
+  | { type: "goPay"; square?: SquarePaymentType }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
   | { type: "submitCash" }
   | { type: "startSquare"; paymentType: SquarePaymentType }
+  /** 決済手段のキーで選んだ Square の決済手段が今使えない（知らせる） */
+  | { type: "paymentUnavailable"; paymentType: SquarePaymentType }
   /** 会計の段階の Esc。小計分割をやめる、でなければ会計をやめて入れる段階に戻る */
   | { type: "leavePay" }
   | { type: "reset" };
@@ -586,4 +591,51 @@ export const cashierKeyIntent = (
         ? NONE
         : { type: "ignore" };
   }
+};
+
+/**
+ * 決済手段のキー（Alt と一緒に押す。キーパッドの決済のボタン）。左から順にヒントに出す。
+ * 配列や Option で出る文字が変わらないよう、KeyboardEvent.code（キーの位置）で引く
+ */
+export const PAYMENT_KEYS: readonly {
+  code: string;
+  payment: CashierPayment;
+}[] = [
+  { code: "KeyC", payment: "cash" },
+  { code: "KeyT", payment: "CARD_PRESENT" },
+  { code: "KeyQ", payment: "QR_CODE" },
+];
+
+/**
+ * Alt と一緒に押したキー（code）を、何をするかに直す。決済手段のキーは押したらすぐ決済を始める
+ *
+ * - 入れる段階: 一括会計に進む。Square の決済手段なら、進んだらその手段で決済を始める
+ * - 会計の段階: 現金は選ぶだけ（受取金額を入れて Enter で確定）、Square の決済手段は決済を始める
+ * - 今使えない Square の決済手段（端末が決まっていない・つながっていないなど）は知らせる
+ * - 押しっぱなしの繰り返し（keydown の repeat）は何もしない（決済を二重に始めない）
+ */
+export const cashierPaymentKeyIntent = (
+  draft: CashierDraft,
+  code: string,
+  { payments, repeat = false }: Pick<KeyContext, "payments" | "repeat">,
+): CashierKeyIntent => {
+  const payment = PAYMENT_KEYS.find((key) => key.code === code)?.payment;
+  if (payment === undefined) {
+    return { type: "ignore" };
+  }
+  if (repeat) {
+    return NONE;
+  }
+  if (draft.step === "entry") {
+    if (!canGoPay(draft)) return NONE;
+    return payment === "cash"
+      ? { type: "goPay" }
+      : { type: "goPay", square: payment };
+  }
+  if (payment === "cash") {
+    return update(setPayment(draft, "cash"));
+  }
+  return payments.includes(payment)
+    ? { type: "startSquare", paymentType: payment }
+    : { type: "paymentUnavailable", paymentType: payment };
 };

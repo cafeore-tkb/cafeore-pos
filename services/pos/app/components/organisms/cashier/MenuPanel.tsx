@@ -10,6 +10,8 @@ import {
 import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
+import { PAYMENT_KEYS } from "../../functional/cashierDraft";
+import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 
 type props = {
   menus: WithId<MenuEntity>[];
@@ -129,6 +131,14 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
   );
 };
 
+/** 決済手段のキーの案内（「Alt+C 現金・Alt+T カード・…」） */
+const paymentKeyHint = PAYMENT_KEYS.map(
+  ({ code, payment }) =>
+    `Alt+${code.replace(/^Key/, "")} ${
+      payment === "cash" ? "現金" : squarePaymentTypeLabel[payment]
+    }`,
+).join("・");
+
 /** レジの左の列の下に出すキーの案内 */
 export const RegisterKeyHints = ({
   exampleKeys,
@@ -153,6 +163,7 @@ export const RegisterKeyHints = ({
     <span>
       会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
     </span>
+    <span>{paymentKeyHint} ですぐ会計</span>
     <span>Esc 取消</span>
   </div>
 );
