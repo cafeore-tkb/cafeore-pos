@@ -10,7 +10,7 @@ import {
   useColorSettings,
 } from "@cafeore/common";
 import dayjs from "dayjs";
-import { LuCheck, LuHourglass } from "react-icons/lu";
+import { LuCheck, LuCoffee, LuHourglass } from "react-icons/lu";
 import { cn } from "~/lib/utils";
 import { PendingSpinner } from "../atoms/PendingSpinner";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -22,6 +22,7 @@ export type CupView = ReturnType<OrderEntity["getItems"]>[number] & {
   gray?: boolean; // 灰色にして、色の設定の色を付けない
   servable?: boolean; // 提供可能。緑の枠で目立たせる
   served?: boolean; // 提供済。薄くする
+  delivered?: boolean; // ドリッパーが提供へ届けた（ドリップ完了の報告。まだ準備完了ではない）
   busy?: boolean; // 応答待ち
   onClick?: () => void; // 押せるカップだけ
   action?: React.ReactNode; // カップの下に出すボタン（マスターの緊急など）
@@ -131,6 +132,18 @@ export function OrderInfoCard({
                         className="fade-in animate-in text-center font-bold text-xs duration-200"
                       >
                         提供済
+                      </p>
+                    )}
+                    {cup.delivered && !cup.servable && !cup.served && (
+                      <p
+                        key="delivered"
+                        className="fade-in zoom-in-50 flex animate-in items-center justify-center gap-0.5 whitespace-nowrap font-bold text-sky-700 text-xs duration-200"
+                      >
+                        <LuCoffee
+                          className="h-3.5 w-3.5 shrink-0"
+                          strokeWidth={3}
+                        />
+                        届いた
                       </p>
                     )}
                     {assignmentDisplay(cup) && (

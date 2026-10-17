@@ -22,6 +22,7 @@ describe("[unit] itemTypeSchema", () => {
       needs_brew: false,
       senior_only: true,
       iced_brew: true,
+      needs_finishing: true,
     };
     expect(itemTypeSchema.parse(itemType)).toEqual(itemType);
   });

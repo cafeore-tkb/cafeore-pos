@@ -36,6 +36,7 @@ const blend: Cup["item"] = {
     needs_brew: true,
     senior_only: false,
     iced_brew: false,
+    needs_finishing: false,
   },
 };
 
@@ -50,6 +51,7 @@ const cup = (id: string, init: Partial<Cup> = {}): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  deliveredAt: null,
   emergencies: [],
   ...init,
 });

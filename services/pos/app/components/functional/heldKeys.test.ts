@@ -25,6 +25,7 @@ const itemType: ItemType = {
   needs_brew: false,
   senior_only: false,
   iced_brew: false,
+  needs_finishing: false,
 };
 
 const menu = (id: string, key: string) =>

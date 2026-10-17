@@ -6,6 +6,7 @@ export * from "./master-transfer";
 export * from "./elapsed-time";
 export * from "./caosPracticeData";
 export * from "./caos-board";
+export * from "./caos-deliver";
 export * from "./caos-outbox";
 export * from "./callscreen";
 export * from "./caosLanes";

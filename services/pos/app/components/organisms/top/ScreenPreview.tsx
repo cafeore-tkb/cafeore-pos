@@ -15,6 +15,7 @@ export type ScreenKind =
   | "master-sheet"
   | "master-sheet-view"
   | "master-sheet-libero"
+  | "master-sheet-deliver"
   | "serve"
   | "cashier-mini"
   | "callscreen"
@@ -40,6 +41,7 @@ const previews: Record<ScreenKind, () => JSX.Element> = {
   "master-sheet": () => <CaosPreview />,
   "master-sheet-view": () => <CaosPreview readOnly />,
   "master-sheet-libero": LiberoPreview,
+  "master-sheet-deliver": DeliverPreview,
   serve: () => <OrderBoardPreview user="serve" />,
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
@@ -614,6 +616,63 @@ function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
 
 // CaOS のリベロビュー（/master-sheet/libero）：ドリッパー1〜6の行に、入れ始めてからの時間の長い順の順位と経過を大きく。
 // 長いほど濃く、予定の抽出時間を過ぎたら赤。抽出していないドリッパーは薄く
+function DeliverPreview() {
+  const lanes = [
+    { no: "#012", item: "ブ", cups: 2, state: "抽出中 4:12" },
+    { no: "#015", item: "オ", cups: 1, state: "抽出済み" },
+    null,
+    { no: "#013", item: "ケ", cups: 1, state: "抽出中 2:48" },
+    null,
+    { no: "#016", item: "ブ", cups: 2, state: "抽出中 0:51" },
+  ];
+  return (
+    <div className="flex h-full flex-col gap-[0.3em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
+      <div className="flex items-center gap-[0.4em]">
+        <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
+          CaOS
+        </span>
+        <span className="font-black text-[0.8em]">ドリップ完了の報告</span>
+        <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
+      </div>
+      <div className="grid flex-1 grid-cols-3 grid-rows-2 gap-[0.3em]">
+        {lanes.map((lane, i) => (
+          <div
+            key={`lane-${i + 1}`}
+            className={cn(
+              "flex flex-col gap-[0.2em] rounded border-2 p-[0.3em]",
+              lane
+                ? "border-slate-300 bg-white"
+                : "border-transparent bg-slate-200/60 text-slate-400",
+            )}
+          >
+            <span className="font-black font-mono text-[0.8em]">{i + 1}</span>
+            {lane ? (
+              <span className="flex flex-1 flex-col justify-between rounded border border-slate-400 bg-amber-50 p-[0.3em]">
+                <span className="flex items-baseline justify-between">
+                  <span className="font-black font-mono text-[1.2em]">
+                    {lane.no}
+                  </span>
+                  <span className="font-black text-[0.8em]">{lane.cups}杯</span>
+                </span>
+                <span className="flex justify-between text-[0.55em]">
+                  <span className="font-bold">{lane.item}</span>
+                  <span className="rounded bg-white px-[0.3em]">
+                    {lane.state}
+                  </span>
+                </span>
+              </span>
+            ) : (
+              <span className="m-auto font-bold text-[0.55em]">
+                報告するカードなし
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LiberoPreview() {
   const rows = [
     {

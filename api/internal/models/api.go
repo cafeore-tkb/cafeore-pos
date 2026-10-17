@@ -9,6 +9,14 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CaosDeliverCall.
+const (
+	CaosDeliverAlready   CaosDeliverCall = "already"
+	CaosDeliverCalled    CaosDeliverCall = "called"
+	CaosDeliverFinishing CaosDeliverCall = "finishing"
+	CaosDeliverWaiting   CaosDeliverCall = "waiting"
+)
+
 // Defines values for ColorScreen.
 const (
 	ColorScreenCashier      ColorScreen = "cashier"
@@ -162,6 +170,39 @@ type CaosCupsWriteRequest struct {
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press  *CaosPress      `json:"press,omitempty"`
 	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosDeliverCall 届けた注文をどうしたか。
+// - called：全部のカップがそろったので呼び出した（準備完了にした）
+// - finishing：提供で仕上げるカップ（抽出が要らないカップ・提供で仕上げる種類）が残っているので、提供が呼び出す
+// - waiting：まだ届いていないカップがある（ほかのカードのカップ・入れ直し）。最後のカップが届いたら呼び出す
+// - already：もう呼び出し中か提供済み（変えない）
+type CaosDeliverCall string
+
+// CaosDeliverRequest defines model for CaosDeliverRequest.
+type CaosDeliverRequest struct {
+	// DripId 届けたカードの drip_id（そのドリッパーの抽出中か、終えたカード）
+	DripId openapi_types.UUID `json:"drip_id"`
+}
+
+// CaosDeliverResponse defines model for CaosDeliverResponse.
+type CaosDeliverResponse struct {
+	// Orders 届けたカードのカップの注文（注文番号の順。入れ直しは入れ直したカップの注文）
+	Orders []CaosDeliveredOrder `json:"orders"`
+}
+
+// CaosDeliveredOrder defines model for CaosDeliveredOrder.
+type CaosDeliveredOrder struct {
+	// Call 届けた注文をどうしたか。
+	// - called：全部のカップがそろったので呼び出した（準備完了にした）
+	// - finishing：提供で仕上げるカップ（抽出が要らないカップ・提供で仕上げる種類）が残っているので、提供が呼び出す
+	// - waiting：まだ届いていないカップがある（ほかのカードのカップ・入れ直し）。最後のカップが届いたら呼び出す
+	// - already：もう呼び出し中か提供済み（変えない）
+	Call CaosDeliverCall    `json:"call"`
+	Id   openapi_types.UUID `json:"id"`
+
+	// OrderId 注文番号
+	OrderId int `json:"order_id"`
 }
 
 // CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
@@ -377,6 +418,7 @@ type CupEmergencyResponse struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
 	CreatedAt       time.Time           `json:"created_at"`
+	DeliveredAt     *time.Time          `json:"delivered_at"`
 	DripId          *openapi_types.UUID `json:"drip_id"`
 	Dripper         *int                `json:"dripper"`
 	DripperPosition *int                `json:"dripper_position"`
@@ -454,6 +496,9 @@ type ItemTypeCreateRequest struct {
 	// NeedsBrew 省略したら makes_cup と同じ。makes_cup が false のときに true は 400
 	NeedsBrew *bool `json:"needs_brew,omitempty"`
 
+	// NeedsFinishing 省略したら false。needs_brew が false のときに true は 400
+	NeedsFinishing *bool `json:"needs_finishing,omitempty"`
+
 	// SeniorOnly 省略したら false。needs_brew が false のときに true は 400
 	SeniorOnly *bool `json:"senior_only,omitempty"`
 }
@@ -473,6 +518,9 @@ type ItemTypeResponse struct {
 	// NeedsBrew この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false
 	NeedsBrew bool `json:"needs_brew"`
 
+	// NeedsFinishing この種類のアイテムは、ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）では呼び出さず、提供が呼び出す。needs_brew が false なら必ず false
+	NeedsFinishing bool `json:"needs_finishing"`
+
 	// SeniorOnly この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false
 	SeniorOnly bool `json:"senior_only"`
 }
@@ -491,6 +539,9 @@ type ItemTypeUpdateRequest struct {
 
 	// NeedsBrew 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400
 	NeedsBrew *bool `json:"needs_brew,omitempty"`
+
+	// NeedsFinishing 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+	NeedsFinishing *bool `json:"needs_finishing,omitempty"`
 
 	// SeniorOnly 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
 	SeniorOnly *bool `json:"senior_only,omitempty"`
@@ -630,11 +681,14 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
-	// BrewFinishedAt CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
+	// BrewFinishedAt CaOS で抽出を終えた時刻（CaOS の「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）が付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
 	BrewFinishedAt *time.Time `json:"brew_finished_at"`
 
 	// BrewStartedAt CaOS で抽出を始めた時刻
 	BrewStartedAt *time.Time `json:"brew_started_at"`
+
+	// DeliveredAt ドリッパーがこのカップを提供へ届けた時刻（ドリップ完了の報告。POST /api/caos/drippers/{dripper}/deliver だけが付ける）。届けていなければ null。準備完了（ready_at）とは別に持つ
+	DeliveredAt *time.Time `json:"delivered_at"`
 
 	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
 	DripId *openapi_types.UUID `json:"drip_id"`
@@ -653,7 +707,7 @@ type OrderCupResponse struct {
 	// OrderMenuId このカップを含む注文明細のID（MenuInfo.id）
 	OrderMenuId openapi_types.UUID `json:"order_menu_id"`
 
-	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
+	// ReadyAt このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付けるほか、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）で注文のカップがそろったときにも付く（CaOS の「次へ」では付かない）
 	ReadyAt *time.Time `json:"ready_at"`
 
 	// ServedAt このカップを提供した時刻。未提供なら null
@@ -1056,6 +1110,9 @@ type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
 // WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
 type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// DeliverCaosDripJSONRequestBody defines body for DeliverCaosDrip for application/json ContentType.
+type DeliverCaosDripJSONRequestBody = CaosDeliverRequest
 
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest

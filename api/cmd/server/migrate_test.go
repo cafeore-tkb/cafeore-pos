@@ -121,21 +121,21 @@ type itemTypeBeforeFlags struct {
 func (itemTypeBeforeFlags) TableName() string { return "item_types" }
 
 type itemTypeFlags struct {
-	MakesCup, NeedsBrew, SeniorOnly, IcedBrew bool
+	MakesCup, NeedsBrew, SeniorOnly, IcedBrew, NeedsFinishing bool
 }
 
 func readItemTypeFlags(t *testing.T, db *gorm.DB) map[string]itemTypeFlags {
 	t.Helper()
 	var rows []struct {
-		Name                                      string
-		MakesCup, NeedsBrew, SeniorOnly, IcedBrew bool
+		Name                                                      string
+		MakesCup, NeedsBrew, SeniorOnly, IcedBrew, NeedsFinishing bool
 	}
-	if err := db.Raw("SELECT name, makes_cup, needs_brew, senior_only, iced_brew FROM item_types").Scan(&rows).Error; err != nil {
+	if err := db.Raw("SELECT name, makes_cup, needs_brew, senior_only, iced_brew, needs_finishing FROM item_types").Scan(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	got := map[string]itemTypeFlags{}
 	for _, r := range rows {
-		got[r.Name] = itemTypeFlags{r.MakesCup, r.NeedsBrew, r.SeniorOnly, r.IcedBrew}
+		got[r.Name] = itemTypeFlags{r.MakesCup, r.NeedsBrew, r.SeniorOnly, r.IcedBrew, r.NeedsFinishing}
 	}
 	return got
 }
@@ -146,7 +146,7 @@ func TestMigrateBackfillsItemTypeFlags(t *testing.T) {
 	if err := db.AutoMigrate(&itemTypeBeforeFlags{}); err != nil {
 		t.Fatal(err)
 	}
-	names := []string{"brend", "gourmet", "hot", "ice", "iceOre", "limited", "milk", "others"}
+	names := []string{"brend", "gourmet", "hot", "hotOre", "ice", "iceOre", "limited", "milk", "others"}
 	for _, name := range names {
 		if err := db.Create(&itemTypeBeforeFlags{ID: uuid.New(), Name: name, DisplayName: name}).Error; err != nil {
 			t.Fatal(err)
@@ -171,8 +171,9 @@ func TestMigrateBackfillsItemTypeFlags(t *testing.T) {
 		"brend":   coffee,
 		"gourmet": coffee,
 		"hot":     coffee,
+		"hotOre":  {MakesCup: true, NeedsBrew: true, NeedsFinishing: true},
 		"ice":     iced,
-		"iceOre":  iced,
+		"iceOre":  {MakesCup: true, NeedsBrew: true, IcedBrew: true, NeedsFinishing: true},
 		"limited": {MakesCup: true, NeedsBrew: true, SeniorOnly: true},
 		"milk":    {MakesCup: true},
 		"others":  {},
@@ -200,6 +201,57 @@ func TestMigrateBackfillsItemTypeFlags(t *testing.T) {
 	got = readItemTypeFlags(t, db)
 	if got["ice"].IcedBrew || !got["hot"].IcedBrew {
 		t.Errorf("backfill ran again: ice %+v, hot %+v", got["ice"], got["hot"])
+	}
+}
+
+// 提供で仕上げる（needs_finishing）より前の項目まである種類（本番の DB）。
+type itemTypeBeforeFinishing struct {
+	ID          uuid.UUID `gorm:"type:uuid;primary_key"`
+	Name        string    `gorm:"not null"`
+	DisplayName string    `gorm:"not null"`
+	DeletedAt   gorm.DeletedAt
+	MakesCup    bool `gorm:"not null"`
+	NeedsBrew   bool `gorm:"not null"`
+	SeniorOnly  bool `gorm:"not null"`
+	IcedBrew    bool `gorm:"not null"`
+}
+
+func (itemTypeBeforeFinishing) TableName() string { return "item_types" }
+
+// 足していない列（needs_finishing）だけ最初の値を入れ、前からある列の値（画面で変えたもの）は変えない
+func TestMigrateBackfillsOnlyNewItemTypeFlags(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+	if err := db.AutoMigrate(&itemTypeBeforeFinishing{}); err != nil {
+		t.Fatal(err)
+	}
+	// ice は画面でアイスを外し、milk は画面で抽出が要るにした種類
+	for _, row := range []itemTypeBeforeFinishing{
+		{Name: "hot", MakesCup: true, NeedsBrew: true},
+		{Name: "ice", MakesCup: true, NeedsBrew: true},
+		{Name: "iceOre", MakesCup: true, NeedsBrew: true, IcedBrew: true},
+		{Name: "milk", MakesCup: true, NeedsBrew: true},
+	} {
+		row.ID, row.DisplayName = uuid.New(), row.Name
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]itemTypeFlags{
+		"hot":    {MakesCup: true, NeedsBrew: true},
+		"ice":    {MakesCup: true, NeedsBrew: true},
+		"iceOre": {MakesCup: true, NeedsBrew: true, IcedBrew: true, NeedsFinishing: true},
+		"milk":   {MakesCup: true, NeedsBrew: true},
+	}
+	got := readItemTypeFlags(t, db)
+	for name, w := range want {
+		if got[name] != w {
+			t.Errorf("%s: got %+v, want %+v", name, got[name], w)
+		}
 	}
 }
 

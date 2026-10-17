@@ -93,6 +93,7 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 		api.DELETE("/color-settings/:id", colorSetting.DeleteColorSetting)
 		api.PUT("/caos/cups", caos.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caos.AdvanceCaosDripper)
+		api.POST("/caos/drippers/:dripper/deliver", caos.DeliverCaosDrip)
 
 		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
 		// 表示用の端末が決済を待つことは無いので

@@ -56,6 +56,7 @@ const item = {
     needs_brew: true,
     senior_only: false,
     iced_brew: false,
+    needs_finishing: false,
   },
 } as Cup["item"];
 
@@ -97,6 +98,7 @@ const order = (
     dripId: null,
     brewStartedAt: null,
     brewFinishedAt: null,
+    deliveredAt: null,
     emergencies: [],
     ...place,
   })),
@@ -289,6 +291,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       dripId: null,
       brewStartedAt: null,
       brewFinishedAt: null,
+      deliveredAt: null,
     };
     const rows = unassignedRows(
       buildCaosCards([
@@ -359,6 +362,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       dripId: "em",
       brewStartedAt: null,
       brewFinishedAt: null,
+      deliveredAt: null,
     });
     const rebrew = buildCaosCards([
       order(7, [{ emergencies: [emergency("e7", "こぼした")] }]),
@@ -807,6 +811,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     dripId: null,
     brewStartedAt: null,
     brewFinishedAt: null,
+    deliveredAt: null,
   };
   const orders = [
     at(1, 20, [

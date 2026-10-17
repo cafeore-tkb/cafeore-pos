@@ -15,7 +15,7 @@ import { jstDate } from "./jst";
 //   - dripId：同じカードで淹れるカップの印（統合したら同じ値）
 //   - brewStartedAt・brewFinishedAt：抽出の開始・終了の時刻。どちらもサーバーの時刻で、サーバーが付ける（画面からは送らない）
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
-// ドリッパーに置いたカードは、提供の画面でカップを準備完了（提供可能）・提供済みにしても終わらない（終えるのは CaOS の「次へ」だけ）。
+// ドリッパーに置いたカードは、提供の画面でカップを準備完了（提供可能）・提供済みにしても終わらない（終えるのは CaOS の「次へ」とドリップ完了の報告だけ）。
 // 準備完了・提供済みのカップを除くのは、まだドリッパーに置いていない未割当だけ。
 // 緊急（入れ直し。カップの emergencies）も同じ列を持ち、カップと同じ決まりでカードに入る（書き込みの cup_ids には入れ直しの id を入れる）。
 // 入れ直しは準備完了・提供の時刻を持たない（準備完了のカップも入れ直すので）。未割当の入れ直しは未割当のいちばん上に出す。
@@ -25,6 +25,7 @@ import { jstDate } from "./jst";
 //
 // CaOS の画面は、注文の一覧（共有の WebSocket の orders）から buildCaosCards でカードを組み立て、
 // 操作は *Writes で PUT /api/caos/cups に送る書き込みを作る（「次へ」だけは POST /api/caos/drippers/{dripper}/next）。
+// ドリッパーが提供で送るドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）の決まりは lib/caos-deliver.ts。
 // 書き込みの before はカップの今の値（届いた値をそのまま送り返す）、after は順番の数の代わりに「どのカードの前に入れるか」（insert_before）、
 // 時刻の代わりに「始める」の印（start_brew）を持つ。
 
@@ -98,6 +99,8 @@ export interface CaosBoardCup {
   nominee: string | null;
   readyAt: Date | null;
   servedAt: Date | null;
+  /** ドリッパーが提供へ届けた時刻（ドリップ完了の報告。lib/caos-deliver.ts）。カードの状態には使わない */
+  deliveredAt: Date | null;
   state: CaosCupState;
 }
 
@@ -288,6 +291,7 @@ export const buildCaosCards = (
           orderedAt: order.createdAt,
           readyAt: cup.readyAt,
           servedAt: cup.servedAt,
+          deliveredAt: cup.deliveredAt,
           state: cupState(cup),
         },
         ...cup.emergencies.map((emergency) => ({
@@ -298,6 +302,7 @@ export const buildCaosCards = (
           orderedAt: emergency.createdAt,
           readyAt: null,
           servedAt: null,
+          deliveredAt: emergency.deliveredAt,
           state: cupState(emergency),
         })),
       ];

@@ -24,4 +24,5 @@ type CupEmergency struct {
 	DripID          *uuid.UUID `gorm:"type:uuid;index"`
 	BrewStartedAt   *time.Time
 	BrewFinishedAt  *time.Time
+	DeliveredAt     *time.Time
 }

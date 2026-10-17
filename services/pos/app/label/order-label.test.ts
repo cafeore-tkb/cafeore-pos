@@ -15,6 +15,7 @@ const hotType: ItemType = {
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  needs_finishing: false,
 };
 const goodsType: ItemType = {
   ...hotType,
@@ -168,6 +169,7 @@ describe("[unit] cupLabelJob", () => {
           dripId: null,
           brewStartedAt: null,
           brewFinishedAt: null,
+          deliveredAt: null,
           emergencies: [],
         })),
     });

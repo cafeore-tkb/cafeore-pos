@@ -2,6 +2,7 @@ import {
   type CupStatus,
   type OrderEntity,
   type WithId,
+  cupDelivered,
   orderRepository,
 } from "@cafeore/common";
 import dayjs from "dayjs";
@@ -107,6 +108,11 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
     });
   };
 
+  // ドリッパーが届けた（ドリップ完了の報告）カップ。準備中のあいだだけ「届いた」と出す
+  const delivered = new Set(
+    order.cups.filter(cupDelivered).map((cup) => cup.id),
+  );
+
   return (
     <OrderInfoCard
       order={order}
@@ -124,6 +130,10 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
           gray: shown === "served",
           servable: shown === "ready",
           served: shown === "served",
+          delivered:
+            shown === "preparing" &&
+            cupId !== undefined &&
+            delivered.has(cupId),
           busy: cupId !== undefined && cupPending.isBusy(cupId),
           // 押せるのはサーバーが作ったカップだけ。応答待ちの間は押せなくして、ダブルタップで2回進むのを防ぐ
           onClick: cupId
