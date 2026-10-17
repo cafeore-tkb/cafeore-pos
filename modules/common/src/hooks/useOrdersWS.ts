@@ -58,6 +58,13 @@ export const useOrdersWS = ({
 } = {}) => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
+  // 削除通知はIDだけなので、直前の受信注文から表示用番号を引く。
+  const knownOrdersRef = useRef(new Map<string, WithId<OrderEntity>>());
+  const [lastDeletedOrder, setLastDeletedOrder] = useState<{
+    id: string;
+    orderNo: number;
+    receivedAtMs: number;
+  } | null>(null);
   // オーダーストップの状態。記録がまだ無ければサーバーは何も流さないので null のまま。
   // 切断しても null に戻さず、最後に受け取った状態を保つ（つなぎ直すとサーバーが最新を送ってくる）
   const [masterState, setMasterState] = useState<MasterState | null>(null);
@@ -80,13 +87,19 @@ export const useOrdersWS = ({
         const data: WSMessage = JSON.parse(e.data);
 
         switch (data.type) {
-          case "orders":
-            setOrders((data.orders ?? []).map(responseToOrderEntity));
+          case "orders": {
+            const snapshot = (data.orders ?? []).map(responseToOrderEntity);
+            knownOrdersRef.current = new Map(
+              snapshot.map((order) => [order.id, order]),
+            );
+            setOrders(snapshot);
             break;
+          }
 
           case "order": {
             // 変わった注文だけ作り直し、他の注文はそのまま使う
             const order = responseToOrderEntity(data.order);
+            knownOrdersRef.current.set(order.id, order);
             setOrders((prev) => {
               // 全件より先には届かないが、届いても全件を待つ
               if (prev === undefined) return prev;
@@ -99,9 +112,18 @@ export const useOrdersWS = ({
             break;
           }
 
-          case "order_deleted":
+          case "order_deleted": {
+            const deleted = knownOrdersRef.current.get(data.order_id);
+            if (deleted)
+              setLastDeletedOrder({
+                id: deleted.id,
+                orderNo: deleted.orderId,
+                receivedAtMs: Date.now(),
+              });
+            knownOrdersRef.current.delete(data.order_id);
             setOrders((prev) => prev?.filter((o) => o.id !== data.order_id));
             break;
+          }
 
           case "master_state":
             setMasterState(responseToMasterState(data.master_state));
@@ -144,6 +166,8 @@ export const useOrdersWS = ({
   }, []);
 
   return {
+    /** 一覧の差分ではなく削除イベントで受けた直近のキャンセル。未受信ならnull */
+    lastDeletedOrder,
     orders: orders ?? EMPTY_ORDERS,
     /** WebSocket から一度でも orders を受信したか */
     isOrdersLoaded: orders !== undefined,
