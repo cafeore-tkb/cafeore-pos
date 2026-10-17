@@ -72,7 +72,7 @@ const countPendingPrints = () => readPendingPrints().length;
  *
  * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
  * 使うプリンターは createPrinter で差し替えられる（Epson の ePOS なら infra/epos の eposPrinterAt）。
- * シールは用紙の印字幅（width ドット。paper.ts の LABEL_WIDTHS）に収める。
+ * シールは用紙の印字幅（width ドット。用紙の種類と幅で決まる。paper.ts の labelPrintableWidth）に収める。
  *
  * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
  * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
@@ -172,7 +172,7 @@ export const usePrinter = (
  * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
  * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
  * つながっていなければ、シールのプリンターと同じ間隔でつなぎ直す（刷れなかったものは送り直さない）。
- * レシート・領収書の画像は、プリンターの印字幅（width ドット。機種と用紙の幅で決まる。paper.ts の RECEIPT_WIDTHS）で描く。
+ * レシート・領収書の画像は、プリンターの印字幅（width ドット。機種と用紙の種類・幅で決まる。paper.ts の receiptPrintableWidth）で描く。
  */
 export const useReceiptPrinter = (
   createPrinter: CreateLabelPrinter,

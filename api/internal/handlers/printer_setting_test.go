@@ -15,6 +15,8 @@ func validPrinterSettingsRequest() models.PrinterSettingsUpdateRequest {
 		ReceiptPrinterModel:      models.ReceiptPrinterModelTmL90,
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth80mm,
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth58mm,
+		LabelPrinterPaperType:    models.PrinterPaperTypeDieCutLabel,
+		ReceiptPrinterPaperType:  models.PrinterPaperTypeReceipt,
 	}
 }
 
@@ -25,11 +27,13 @@ func TestBuildPrinterSettingNormalizesAddresses(t *testing.T) {
 		ReceiptPrinterModel:      models.ReceiptPrinterModelTmM30,
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth58mm,
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth80mm,
+		LabelPrinterPaperType:    models.PrinterPaperTypeReceipt,
+		ReceiptPrinterPaperType:  models.PrinterPaperTypeDieCutLabel,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" {
+	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" {
 		t.Fatalf("incorrect setting: %+v", setting)
 	}
 }
@@ -58,6 +62,25 @@ func TestBuildPrinterSettingRejectsUnknownPaperWidths(t *testing.T) {
 		t.Run("receipt "+string(width), func(t *testing.T) {
 			request := validPrinterSettingsRequest()
 			request.ReceiptPrinterPaperWidth = width
+			if _, err := buildPrinterSetting(request); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestBuildPrinterSettingRejectsUnknownPaperTypes(t *testing.T) {
+	for _, paperType := range []models.PrinterPaperType{"", "label", "RECEIPT", "die-cut-label"} {
+		t.Run("label "+string(paperType), func(t *testing.T) {
+			request := validPrinterSettingsRequest()
+			request.LabelPrinterPaperType = paperType
+			if _, err := buildPrinterSetting(request); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+		t.Run("receipt "+string(paperType), func(t *testing.T) {
+			request := validPrinterSettingsRequest()
+			request.ReceiptPrinterPaperType = paperType
 			if _, err := buildPrinterSetting(request); err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -108,6 +131,8 @@ func TestPrinterSettings(t *testing.T) {
 		ReceiptPrinterModel:      models.DefaultReceiptPrinterModel,
 		LabelPrinterPaperWidth:   models.DefaultLabelPrinterPaperWidth,
 		ReceiptPrinterPaperWidth: models.DefaultReceiptPrinterPaperWidth,
+		LabelPrinterPaperType:    models.DefaultLabelPrinterPaperType,
+		ReceiptPrinterPaperType:  models.DefaultReceiptPrinterPaperType,
 	}) {
 		t.Fatalf("defaults: %+v", got)
 	}
@@ -119,6 +144,8 @@ func TestPrinterSettings(t *testing.T) {
 		ReceiptPrinterModel:      models.ReceiptPrinterModelTmM30,
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth58mm,
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth80mm,
+		LabelPrinterPaperType:    models.PrinterPaperTypeReceipt,
+		ReceiptPrinterPaperType:  models.PrinterPaperTypeDieCutLabel,
 	}).expect(http.StatusOK).decode(&saved)
 	if saved != (models.PrinterSettingsResponse{
 		LabelPrinterIp:           "192.168.77.12",
@@ -126,6 +153,8 @@ func TestPrinterSettings(t *testing.T) {
 		ReceiptPrinterModel:      models.ReceiptPrinterModelTmM30,
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth58mm,
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth80mm,
+		LabelPrinterPaperType:    models.PrinterPaperTypeReceipt,
+		ReceiptPrinterPaperType:  models.PrinterPaperTypeDieCutLabel,
 	}) {
 		t.Fatalf("saved: %+v", saved)
 	}
@@ -137,6 +166,8 @@ func TestPrinterSettings(t *testing.T) {
 		ReceiptPrinterModel:      models.ReceiptPrinterModelTmL90,
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth80mm,
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth58mm,
+		LabelPrinterPaperType:    models.PrinterPaperTypeDieCutLabel,
+		ReceiptPrinterPaperType:  models.PrinterPaperTypeReceipt,
 	}
 	want := models.PrinterSettingsResponse(replacement)
 	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK)
@@ -149,13 +180,15 @@ func TestPrinterSettings(t *testing.T) {
 	}
 
 	// 不正な値では変えない
-	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "printer.local", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
-	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
-	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
-	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_t88", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
-	// 用紙の幅が無い（選べるようにする前のレジ）・知らない幅
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "printer.local", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_t88", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
+	// 用紙の幅・種類が無い（選べるようにする前のレジ）・知らない幅・種類
 	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90"}`).expect(http.StatusBadRequest)
-	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "100mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "100mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "label", "receipt_printer_paper_type": "receipt"}`).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, "/api/printer-settings", `{`).expect(http.StatusBadRequest)
 	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
 	if got != want {
