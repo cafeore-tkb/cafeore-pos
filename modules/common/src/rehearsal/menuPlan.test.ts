@@ -140,6 +140,18 @@ describe("[unit] rehearsal menu plan", () => {
     ).toEqual(["ice", "iceOre"]);
   });
 
+  test.each([
+    { baskets: [] },
+    { baskets: [{ types: { hot: 1 }, weight: 0 }] },
+    { baskets: [{ types: { hot: 0 }, weight: 1 }] },
+    { baskets: [{ types: { hot: 1 }, weight: -1 }] },
+  ])(
+    "typeSharesOf returns no shares for a non-positive total: %j",
+    ({ baskets }) => {
+      expect(typeSharesOf(baskets)).toEqual({});
+    },
+  );
+
   test("reweightBaskets hits the target type shares", () => {
     const target = { hot: 30, ice: 40, iceOre: 20, others: 10 };
     const reweighted = reweightBaskets(baskets, target);

@@ -50,7 +50,10 @@ const isNumbers = (value: unknown): value is number[] =>
   Array.isArray(value) && value.every((n) => typeof n === "number");
 
 const isCounts = (value: unknown): value is Record<string, number> =>
-  isRecord(value) && Object.values(value).every((n) => typeof n === "number");
+  isRecord(value) &&
+  Object.values(value).every(
+    (n) => typeof n === "number" && Number.isFinite(n),
+  );
 
 // localStorage に覚えるので、形が足りないものを通すと描画で落ちて毎回開けなくなる。使う項目は中まで確かめる
 const isParams = (value: unknown): value is GeneratorParams => {

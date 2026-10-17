@@ -147,6 +147,7 @@ export const typeSharesOf = (baskets: Basket[]) => {
       total += n * basket.weight;
     }
   }
+  if (total <= 0) return {};
   return Object.fromEntries(
     Object.entries(counts).map(([type, n]) => [type, n / total]),
   );
