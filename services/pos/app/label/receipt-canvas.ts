@@ -2,6 +2,7 @@ import type { OrderEntity } from "@cafeore/common";
 import oreLogoUrl from "~/assets/receipt/ore-logo.svg";
 import type { PrintJob, RasterImage } from "./document";
 import {
+  type ClaimReceipt,
   type FormalReceipt,
   type OrderReceipt,
   RECEIPT_ISSUER,
@@ -9,6 +10,7 @@ import {
   type ReceiptPayment,
   type ReceiptRow,
   type ReceiptSplit,
+  claimReceipt,
   formalReceipt,
   orderReceipt,
 } from "./receipt";
@@ -356,6 +358,27 @@ const claimNumberBlock = (claimNumber: string): Block => ({
     ),
 });
 
+/** レシートの頭。ロゴ・名前・読みと、日時・注文番号の行、その下の点線 */
+const headerBlocks = (
+  receipt: { dateTime: string; orderNo: string },
+  logo: HTMLImageElement | null,
+  scale: number,
+): Block[] => [
+  gap(16),
+  issuerBlock(logo, scale),
+  gap(35),
+  row({ label: receipt.dateTime, amount: receipt.orderNo }),
+  gap(15),
+  rule,
+];
+
+/** 引換券番号の見出しと案内、その下の大きな番号 */
+const claimBlocks = (claimNumber: string): Block[] => [
+  claimLabelBlock,
+  gap(53),
+  claimNumberBlock(claimNumber),
+];
+
 /** 会計のたびに刷るレシートを、印字幅（width ドット）で描く */
 export const drawOrderReceipt = async (
   receipt: OrderReceipt,
@@ -369,7 +392,7 @@ export const drawOrderReceipt = async (
     receipt.dateTime,
     receipt.orderNo,
     receipt.total,
-    receipt.claimNumber,
+    receipt.claimNumber ?? "",
     "合計引換券番号…",
     ...CLAIM_NOTE_LINES,
     ...rows.flatMap(({ label, quantity = "", amount }) => [
@@ -381,12 +404,7 @@ export const drawOrderReceipt = async (
   const logo = await loadLogo();
 
   const blocks: Block[] = [
-    gap(16),
-    issuerBlock(logo, scale),
-    gap(35),
-    row({ label: receipt.dateTime, amount: receipt.orderNo }),
-    gap(15),
-    rule,
+    ...headerBlocks(receipt, logo, scale),
     ...receipt.items.map((item) => row(item)),
     rule,
   ];
@@ -397,14 +415,44 @@ export const drawOrderReceipt = async (
     row({ label: "合計", amount: receipt.total }, TOTAL_LINE, TOTAL_AMOUNT),
     gap(21),
     ...receipt.payments.map((item) => row(item)),
-    gap(42),
-    claimLabelBlock,
-    gap(53),
-    claimNumberBlock(receipt.claimNumber),
-    gap(40),
   );
+  // 注文を何回かに分けて払うときは、引換券番号を載せない（払い終えたら別のレシートで刷る）
+  if (receipt.claimNumber !== undefined) {
+    blocks.push(gap(42), ...claimBlocks(receipt.claimNumber));
+  }
+  blocks.push(gap(40));
 
   const { ctx } = stack(DESIGN_WIDTH, blocks, scale);
+  return toRasterImage(ctx);
+};
+
+/** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートを、印字幅（width ドット）で描く */
+export const drawClaimReceipt = async (
+  receipt: ClaimReceipt,
+  width: number,
+): Promise<RasterImage> => {
+  const scale = scaleFor(width);
+  await loadFonts([
+    RECEIPT_ISSUER,
+    RECEIPT_ISSUER_READING,
+    receipt.dateTime,
+    receipt.orderNo,
+    receipt.claimNumber,
+    "引換券番号",
+    ...CLAIM_NOTE_LINES,
+  ]);
+  const logo = await loadLogo();
+
+  const { ctx } = stack(
+    DESIGN_WIDTH,
+    [
+      ...headerBlocks(receipt, logo, scale),
+      gap(21),
+      ...claimBlocks(receipt.claimNumber),
+      gap(40),
+    ],
+    scale,
+  );
   return toRasterImage(ctx);
 };
 
@@ -520,6 +568,16 @@ export const orderReceiptJob = async (
   split?: ReceiptSplit,
 ): Promise<PrintJob> =>
   imageJob(await drawOrderReceipt(orderReceipt(order, payment, split), width));
+
+/**
+ * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの印刷データ。
+ * width は刷るプリンターの印字幅（ドット）（注文の中身は呼んだときに読む）
+ */
+export const claimReceiptJob = async (
+  width: number,
+  order: OrderEntity,
+): Promise<PrintJob> =>
+  imageJob(await drawClaimReceipt(claimReceipt(order), width));
 
 /**
  * 求められたときだけ刷る領収書の印刷データ。width は刷るプリンターの印字幅（ドット）、storeCopy なら店舗控

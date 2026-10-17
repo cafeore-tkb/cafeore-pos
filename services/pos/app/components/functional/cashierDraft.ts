@@ -53,7 +53,7 @@ export type CashierDraft = {
   received: string;
   payment: CashierPayment;
   /**
-   * 先払いのレシートに載せた注文番号（引換券番号）。番号はこのまま確定まで変えない
+   * 先払いのレシートに載せた注文番号（No.）。番号はこのまま確定まで変えない
    * （別のレジが送って次の番号が進んでも、レシートと登録する注文の番号をずらさない）
    */
   fixedOrderId: number | null;
