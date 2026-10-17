@@ -1,11 +1,49 @@
-import { AUTHOR_MARKS } from "@cafeore/common";
+import { AUTHOR_MARKS, type CaosCard } from "@cafeore/common";
 import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
 import { createContext, useContext } from "react";
-import { orderNoLabel } from "../logic/cards";
-import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
-
+import {
+  type CommentAnchor,
+  useCommentPopupPosition,
+} from "../hooks/useCommentPopupPosition";
+import { type CardLooks, orderNoLabel } from "../logic/cards";
+import {
+  type BoardComment,
+  STAMPS,
+  commentKey,
+  commentReaction,
+} from "../logic/comments";
 import { caosLog } from "../utils/log";
+import { ReactionIcon } from "./ReactionIcon";
+import { VoiceComment } from "./VoiceComment";
+
+/** 新着通知と同じ寿命でタイムラインのバッジを表示する。初回の既存コメントは含めない。 */
+export const FreshCommentsContext = createContext<readonly BoardComment[]>([]);
+
+/** 未割当では注文見出しに1つだけ表示。複数カードで同じコメントを重複集計しない。 */
+export const OrderCommentBadge = ({
+  cards,
+  looks,
+  orderNo,
+}: { cards: readonly CaosCard[]; looks: CardLooks; orderNo?: number }) => {
+  const comments = new Map(
+    cards
+      .flatMap((card) => looks.get(card.key)?.comments ?? [])
+      .filter((comment) => orderNo === undefined || comment.orderNo === orderNo)
+      .map((comment) => [commentKey(comment), comment]),
+  );
+  if (!comments.size) return null;
+  const nos = [
+    ...new Set([...comments.values()].map((comment) => comment.orderNo)),
+  ];
+  return (
+    <CommentMark
+      count={comments.size}
+      label={nos.map((no) => `#${orderNoLabel(no)}`).join("+")}
+      className="h-6 w-6 shrink-0"
+    />
+  );
+};
 
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身（スタンプで返す）と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
 
@@ -13,7 +51,7 @@ import { caosLog } from "../utils/log";
 export const StampReplyContext = createContext<{
   /** 送っているあいだ（押せない） */
   sending: boolean;
-  send: (orderId: string, stamp: string) => void;
+  send: (orderId: string, stamp: string) => Promise<boolean>;
 } | null>(null);
 
 /** 注文（orderId）にスタンプを返すボタンの並び（キーボードを出さずに返す）。label は何の注文に返すか（いくつかの注文のコメントを並べたとき） */
@@ -31,12 +69,15 @@ const StampBar: React.FC<{ orderId: string; label?: string }> = ({
         </span>
       )}
       {STAMPS.map((stamp) => {
-        const [emoji, ...words] = stamp.split(" ");
         return (
           <button
             key={stamp}
             type="button"
-            title={`「${stamp}」と返す`}
+            title={
+              stamp === "来て！"
+                ? "直接来て状況を確認してください、と返す"
+                : `「${stamp}」と返す`
+            }
             aria-label={`「${stamp}」と返す`}
             disabled={reply.sending}
             onClick={(event) => {
@@ -44,27 +85,29 @@ const StampBar: React.FC<{ orderId: string; label?: string }> = ({
               event.stopPropagation();
               reply.send(orderId, stamp);
             }}
-            className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-10 min-w-10 flex-1 touch-manipulation flex-col items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
+            className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-12 min-w-10 flex-1 touch-manipulation items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
           >
-            <span className="text-[17px]">{emoji}</span>
-            <span className="mt-0.5 font-bold text-[9px] text-slate-600">
-              {words.join(" ")}
-            </span>
+            <ReactionIcon stamp={stamp} />
           </button>
         );
       })}
+      <VoiceComment
+        orderId={orderId}
+        sending={reply.sending}
+        send={reply.send}
+      />
     </li>
   );
 };
 
-/** コメントの印を押したときに、その注文（orderLabel）のコメントを右下の CommentDock に出す。操作の画面の盤面（App の ControlWorkspace）にだけ渡す（右のパネルは中身を出しているので渡さない）。無ければ印は押せない */
+/** コメントの印を押したときに、その注文（orderLabel）のコメントを押した位置の近くの CommentDock に出す。操作の画面の盤面（App の ControlWorkspace）にだけ渡す（右のパネルは中身を出しているので渡さない）。無ければ印は押せない */
 export const OpenCommentsContext = createContext<
-  ((label: string) => void) | null
+  ((label: string, anchor?: HTMLElement) => void) | null
 >(null);
 
 /**
  * コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる（className で置き場所と大きさを替える。D の統合したカードの段では小さく並べる）。
- * 押すと（OpenCommentsContext があれば）label の注文のコメントを右下に出す（カードを押したとき（掴む・開く）とは別。選択を外してもコメントを読めるように）
+ * 押すと（OpenCommentsContext があれば）label の注文のコメントを押した位置の近くに出す（カードを押したとき（掴む・開く）とは別。選択を外してもコメントを読めるように）
  */
 export const CommentMark: React.FC<{
   count: number;
@@ -95,12 +138,12 @@ export const CommentMark: React.FC<{
     <button
       type="button"
       aria-label={`${title}を見る`}
-      title={`${title}（押すと右下に出す）`}
+      title={`${title}（押した場所の近くに表示）`}
       // カードを押したとき（開く）に渡さない（掴むのは、useCardDrag がボタンの上の押下を見ないので渡らない）
       onClick={(event) => {
         event.stopPropagation();
         caosLog("comment.mark.clicked", { label, count });
-        open(label);
+        open(label, event.currentTarget);
       }}
       className={`touch-manipulation ${look}`}
     >
@@ -132,7 +175,13 @@ export const CommentList: React.FC<{
             {withNo && `#${orderNoLabel(comment.orderNo)} `}
             {AUTHOR_MARKS[comment.author]}
           </span>
-          <span className="min-w-0 break-words">{comment.text}</span>
+          <span className="min-w-0 break-words">
+            {commentReaction(comment) ? (
+              <ReactionIcon stamp={commentReaction(comment) ?? ""} />
+            ) : (
+              comment.text
+            )}
+          </span>
         </li>
       ))}
       {[...orders].map(([orderId, orderNo]) => (
@@ -156,12 +205,17 @@ const NOTICES_SHOWN = 3;
  */
 export const CommentDock: React.FC<{
   /** 見ている注文（orderLabel）と、そのコメント（コメントがあるときだけ） */
-  viewing?: { label: string; comments: readonly BoardComment[] };
+  viewing?: {
+    label: string;
+    comments: readonly BoardComment[];
+    anchor?: CommentAnchor;
+  };
   onCloseViewing: () => void;
   notices: readonly BoardComment[];
   onOpen: (comment: BoardComment) => void;
   onDismiss: (comments: readonly BoardComment[]) => void;
 }> = ({ viewing, onCloseViewing, notices, onOpen, onDismiss }) => {
+  const popup = useCommentPopupPosition(viewing?.anchor);
   const shown = notices.slice(-NOTICES_SHOWN);
   const hidden = notices.length - shown.length;
   if (notices.length === 0 && !viewing) return null;
@@ -174,6 +228,8 @@ export const CommentDock: React.FC<{
     >
       {viewing && (
         <section
+          ref={popup.ref}
+          style={popup.style}
           aria-label={`${viewing.label} のコメント`}
           className="border-(color:--caos-comment) pointer-events-auto rounded-lg border-2 bg-white p-1.5 shadow-lg"
         >

@@ -7,6 +7,7 @@ import {
 } from "./components/ControlWorkspace";
 import {
   CommentDock,
+  FreshCommentsContext,
   OpenCommentsContext,
   StampReplyContext,
 } from "./components/OrderComments";
@@ -177,35 +178,37 @@ export default function App() {
             />
           )}
           {/* 盤面のカードのコメントの印を押すと、その注文のコメントを右下に出す */}
-          <OpenCommentsContext.Provider value={viewed.open}>
-            <ControlWorkspace
-              mode={controlViewMode}
-              lanes={lanes}
-              unassignedOrders={session.unassigned}
-              looks={looks}
-              nextAvailable={session.nextAvailable}
-              selectedOrderId={selection.selectedOrderId}
-              nowMs={session.nowMs}
-              timelineCommand={timelineCommand}
-              onSelectOrder={selection.selectOrder}
-              cardMenu={cardMenu}
-              onHoldCard={selection.openCard}
-              onCancelEmergency={selection.cancelEmergency}
-              onMoveTicket={selection.move}
-              onReturnToUnassigned={selection.returnToUnassigned}
-              onOpenEmptySlot={selection.openAssignSlot}
-              onOpenLane={selection.openLane}
-              onAssignToBay={selection.assign}
-              onMergeOrders={selection.merge}
-              onSplitCup={selection.split}
-              onFollowNowChange={setFollowingNow}
-              unfinished={{
-                ...unfinished,
-                selectedOrderId: selection.selectedOrderId,
-                onSelectOrder: search.select,
-              }}
-            />
-          </OpenCommentsContext.Provider>
+          <FreshCommentsContext.Provider value={commentNotices.notices}>
+            <OpenCommentsContext.Provider value={viewed.open}>
+              <ControlWorkspace
+                mode={controlViewMode}
+                lanes={lanes}
+                unassignedOrders={session.unassigned}
+                looks={looks}
+                nextAvailable={session.nextAvailable}
+                selectedOrderId={selection.selectedOrderId}
+                nowMs={session.nowMs}
+                timelineCommand={timelineCommand}
+                onSelectOrder={selection.selectOrder}
+                cardMenu={cardMenu}
+                onHoldCard={selection.openCard}
+                onCancelEmergency={selection.cancelEmergency}
+                onMoveTicket={selection.move}
+                onReturnToUnassigned={selection.returnToUnassigned}
+                onOpenEmptySlot={selection.openAssignSlot}
+                onOpenLane={selection.openLane}
+                onAssignToBay={selection.assign}
+                onMergeOrders={selection.merge}
+                onSplitCup={selection.split}
+                onFollowNowChange={setFollowingNow}
+                unfinished={{
+                  ...unfinished,
+                  selectedOrderId: selection.selectedOrderId,
+                  onSelectOrder: search.select,
+                }}
+              />
+            </OpenCommentsContext.Provider>
+          </FreshCommentsContext.Provider>
         </main>
 
         {panel?.kind === "auxiliary" && (
