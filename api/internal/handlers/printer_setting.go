@@ -32,6 +32,8 @@ func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSet
 		ReceiptPrinterModel:      models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
 		LabelPrinterPaperWidth:   models.PrinterPaperWidth(setting.LabelPrinterPaperWidth),
 		ReceiptPrinterPaperWidth: models.PrinterPaperWidth(setting.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:    models.PrinterPaperType(setting.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:  models.PrinterPaperType(setting.ReceiptPrinterPaperType),
 	}
 }
 
@@ -52,6 +54,15 @@ func validatePaperWidth(field string, value models.PrinterPaperWidth) error {
 		return nil
 	}
 	return fmt.Errorf("%s must be 58mm or 80mm", field)
+}
+
+// 知っている用紙の種類か確かめる。
+func validatePaperType(field string, value models.PrinterPaperType) error {
+	switch value {
+	case models.PrinterPaperTypeReceipt, models.PrinterPaperTypeDieCutLabel:
+		return nil
+	}
+	return fmt.Errorf("%s must be receipt or die_cut_label", field)
 }
 
 // リクエストを検証して DB モデルに変換する。
@@ -75,6 +86,12 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	if err := validatePaperWidth("receipt_printer_paper_width", request.ReceiptPrinterPaperWidth); err != nil {
 		return models.PrinterSetting{}, err
 	}
+	if err := validatePaperType("label_printer_paper_type", request.LabelPrinterPaperType); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	if err := validatePaperType("receipt_printer_paper_type", request.ReceiptPrinterPaperType); err != nil {
+		return models.PrinterSetting{}, err
+	}
 	return models.PrinterSetting{
 		ID:                       models.PrinterSettingID,
 		LabelPrinterIP:           label,
@@ -82,6 +99,8 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 		ReceiptPrinterModel:      string(request.ReceiptPrinterModel),
 		LabelPrinterPaperWidth:   string(request.LabelPrinterPaperWidth),
 		ReceiptPrinterPaperWidth: string(request.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:    string(request.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:  string(request.ReceiptPrinterPaperType),
 		UpdatedAt:                time.Now(),
 	}, nil
 }

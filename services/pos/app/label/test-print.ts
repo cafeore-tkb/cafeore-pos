@@ -34,6 +34,8 @@ export type TestPrintTarget = {
   name: string;
   address: string;
   paperWidth: PrinterPaperWidth;
+  /** 用紙の種類の名前（「ダイカットラベル」など） */
+  paperType: string;
   /** 印字幅（ドット） */
   width: number;
   /** 機種の名前（機種を選ぶレシート用だけ） */
@@ -42,19 +44,19 @@ export type TestPrintTarget = {
 
 // ---- 確認用のページ ----
 
-const TITLE: TextStyle = { size: 36, weight: 800 };
-const TARGET_NAME: TextStyle = { size: 28, weight: 700, align: "right" };
-const BODY: TextStyle = { size: 26, weight: 600 };
-const PRINTED_AT: TextStyle = { size: 22, weight: 500 };
+const TITLE: TextStyle = { size: 34, weight: 800 };
+const TARGET_NAME: TextStyle = { size: 26, weight: 700, align: "right" };
+const BODY: TextStyle = { size: 24, weight: 600 };
+const PRINTED_AT: TextStyle = { size: 20, weight: 500 };
 
 const TITLE_TEXT = "テスト印刷";
 
 /** 枠の線の太さと、枠の内側の余白（ドット） */
 const BORDER = 4;
-const PADDING = 16;
+const PADDING = 12;
 
-const TITLE_LINE = 52;
-const LINE = 36;
+const TITLE_LINE = 48;
+const LINE = 32;
 
 /** 2026/10/17 12:34:56（日本時間） */
 const dateTime = (ms: number) =>
@@ -65,7 +67,7 @@ const dateTime = (ms: number) =>
  *
  * 文字は印字幅に縮めず、刷るドットの大きさで描く（58mm の紙にも収まる大きさ）。
  * ラベル用のシールにも収まるよう、高さはカップのシールの範囲の終わり（y + height = 234 ドット）より低くする
- * （ラベル用は機種の行が無く 200 ドット。超えるとシールの切れ目にかかり、次のシールを飛ばして白紙が出る）。
+ * （ラベル用は機種の行が無く 208 ドット。超えるとシールの切れ目にかかり、次のシールを飛ばして白紙が出る）。
  */
 const drawTestPage = async (
   target: TestPrintTarget,
@@ -73,7 +75,8 @@ const drawTestPage = async (
 ): Promise<RasterImage> => {
   const lines = [
     `IP ${target.address}`,
-    `用紙 ${target.paperWidth}・${target.width} ドット`,
+    `用紙 ${target.paperWidth}・${target.paperType}`,
+    `印字幅 ${target.width} ドット`,
     ...(target.model ? [`機種 ${target.model}`] : []),
   ];
   const printedAtText = dateTime(printedAt);

@@ -1,5 +1,6 @@
 import {
   DEFAULT_PRINTER_SETTINGS,
+  type PrinterPaperType,
   type PrinterPaperWidth,
   type PrinterSettings,
   type ReceiptPrinterModel,
@@ -20,7 +21,7 @@ import {
   eposCertificateUrl,
   eposPrinterAt,
 } from "~/label/infra/epos";
-import { LABEL_WIDTHS, RECEIPT_WIDTHS } from "~/label/paper";
+import { printableWidths as paperPrintableWidths } from "~/label/paper";
 import {
   type PrintOnceResult,
   type TestPrintTarget,
@@ -45,6 +46,7 @@ const printers = {
     name: "ラベル用",
     description: "注文を送ったときに、カップに貼るシールを刷るプリンター",
     ip: "label_printer_ip",
+    paperType: "label_printer_paper_type",
     paperWidth: "label_printer_paper_width",
     sample: "シール",
   },
@@ -53,6 +55,7 @@ const printers = {
     description:
       "会計のたびにレシートを、過去の注文の「領収書」を押したときに領収書を刷るプリンター",
     ip: "receipt_printer_ip",
+    paperType: "receipt_printer_paper_type",
     paperWidth: "receipt_printer_paper_width",
     sample: "レシート",
   },
@@ -62,12 +65,14 @@ const printers = {
     name: string;
     description: string;
     ip: keyof PrinterSettings;
+    paperType: keyof PrinterSettings;
     paperWidth: keyof PrinterSettings;
     sample: string;
   }
 >;
 
 const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
+const paperTypeLabels = openapiEnumLabels("PrinterPaperType");
 const paperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
 
 /** 選べるレシート用のプリンターの機種（openapi.yaml の並び） */
@@ -75,17 +80,16 @@ const receiptPrinterModels = Object.keys(
   receiptPrinterModelLabels,
 ) as ReceiptPrinterModel[];
 
-/** 選べる用紙の幅（openapi.yaml の並び） */
+/** 選べる用紙の種類・幅（openapi.yaml の並び） */
+const paperTypes = Object.keys(paperTypeLabels) as PrinterPaperType[];
 const paperWidths = Object.keys(paperWidthLabels) as PrinterPaperWidth[];
 
-/** 用紙の幅ごとの印字幅（ドット）。レシート用は機種で変わる */
-const printableWidths = (
-  kind: PrinterKind,
-  values: PrinterSettings,
-): Record<PrinterPaperWidth, number> =>
-  kind === "label"
-    ? LABEL_WIDTHS
-    : RECEIPT_WIDTHS[values.receipt_printer_model];
+/** 用紙の幅ごとの印字幅（ドット）。用紙の種類と、レシート用は機種でも変わる */
+const printableWidths = (kind: PrinterKind, values: PrinterSettings) =>
+  paperPrintableWidths(
+    values[printers[kind].paperType],
+    kind === "receipt" ? values.receipt_printer_model : undefined,
+  );
 
 const errorText = (e: unknown, fallback: string) =>
   e instanceof Error ? e.message : fallback;
@@ -124,7 +128,7 @@ export default function PrinterSettingsPage() {
         <h1 className="font-semibold text-2xl tracking-tight">プリンター</h1>
         <p className="text-muted-foreground text-sm">
           レジがつなぐ Epson のプリンター（ePOS-Print）の IP
-          アドレスと用紙の幅、レシート用のプリンターの機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。
+          アドレスと用紙（種類と幅）、レシート用のプリンターの機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。
         </p>
       </header>
 
@@ -193,6 +197,7 @@ function PrinterSettingsForm({
       name: printer.name,
       address,
       paperWidth,
+      paperType: paperTypeLabels[values[printer.paperType]],
       width: printableWidths(kind, values)[paperWidth],
       ...(kind === "receipt" && {
         model: receiptPrinterModelLabels[values.receipt_printer_model],
@@ -211,13 +216,14 @@ function PrinterSettingsForm({
     notifyTestPrint(kind, address, result);
   };
 
-  const setPaperWidth = (kind: PrinterKind, value: string) => {
-    const paperWidth = paperWidths.find((w) => w === value);
-    if (paperWidth) {
-      setValues((prev) => ({
-        ...prev,
-        [printers[kind].paperWidth]: paperWidth,
-      }));
+  /** key の項目を value にする（choices に無い値なら変えない） */
+  const choose = (
+    key: keyof PrinterSettings,
+    choices: readonly string[],
+    value: string,
+  ) => {
+    if (choices.includes(value)) {
+      setValues((prev) => ({ ...prev, [key]: value }));
     }
   };
 
@@ -250,37 +256,27 @@ function PrinterSettingsForm({
           </p>
         </div>
         {extra}
-        <div className="flex flex-col gap-2">
-          <Label id={printer.paperWidth} className="font-bold">
-            用紙の幅
-          </Label>
-          <p className="text-muted-foreground text-sm">
-            プリンターに入れている紙の幅。{printer.sample}
-            はこの紙の印字幅（かっこ内）に収めて刷ります。紙より広い幅を選ぶと右端が切れます
-          </p>
-          <RadioGroup
-            aria-labelledby={printer.paperWidth}
-            className="flex flex-wrap gap-6"
-            value={values[printer.paperWidth]}
-            onValueChange={(value) => setPaperWidth(kind, value)}
-          >
-            {paperWidths.map((paperWidth) => (
-              <div key={paperWidth} className="flex items-center gap-2">
-                <RadioGroupItem
-                  id={`${printer.paperWidth}_${paperWidth}`}
-                  value={paperWidth}
-                />
-                <Label htmlFor={`${printer.paperWidth}_${paperWidth}`}>
-                  {paperWidthLabels[paperWidth]}（{widths[paperWidth]} ドット）
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
-          <p className="text-muted-foreground text-xs">
-            既定値:{" "}
-            {paperWidthLabels[DEFAULT_PRINTER_SETTINGS[printer.paperWidth]]}
-          </p>
-        </div>
+        <ChoiceField
+          id={printer.paperType}
+          label="用紙の種類"
+          description="レシート紙（ロール紙・連続ラベル）か、ダイカットラベル（台紙に 1 枚ずつ並んだシール）か。ダイカットラベルは印字幅が狭くなります"
+          choices={paperTypes}
+          labels={paperTypeLabels}
+          value={values[printer.paperType]}
+          defaultValue={DEFAULT_PRINTER_SETTINGS[printer.paperType]}
+          onChange={(value) => choose(printer.paperType, paperTypes, value)}
+        />
+        <ChoiceField
+          id={printer.paperWidth}
+          label="用紙の幅"
+          description={`プリンターに入れている紙の幅。${printer.sample}はこの紙の印字幅（かっこ内）に収めて刷ります。紙より広い幅を選ぶと右端が切れます`}
+          choices={paperWidths}
+          labels={paperWidthLabels}
+          detail={(paperWidth) => `${widths[paperWidth]} ドット`}
+          value={values[printer.paperWidth]}
+          defaultValue={DEFAULT_PRINTER_SETTINGS[printer.paperWidth]}
+          onChange={(value) => choose(printer.paperWidth, paperWidths, value)}
+        />
         <TestPrintButton
           sample={printer.sample}
           onTestPrint={() => testPrint(kind)}
@@ -300,56 +296,31 @@ function PrinterSettingsForm({
       {section("label")}
       {section(
         "receipt",
-        <div className="flex flex-col gap-2">
-          <Label id="receipt_printer_model" className="font-bold">
-            機種
-          </Label>
-          <p className="text-muted-foreground text-sm">
-            レシート・領収書は、この機種と用紙の幅で決まる印字幅に合わせた画像で刷ります。プリンターと違う機種を選ぶと、幅が合わずに右端が切れることがあります
-          </p>
-          <RadioGroup
-            aria-labelledby="receipt_printer_model"
-            className="flex flex-wrap gap-6"
-            value={values.receipt_printer_model}
-            onValueChange={(value) => {
-              const model = receiptPrinterModels.find((m) => m === value);
-              if (model) {
-                setValues((prev) => ({
-                  ...prev,
-                  receipt_printer_model: model,
-                }));
-              }
-            }}
-          >
-            {receiptPrinterModels.map((model) => (
-              <div key={model} className="flex items-center gap-2">
-                <RadioGroupItem
-                  id={`receipt_printer_model_${model}`}
-                  value={model}
-                />
-                <Label htmlFor={`receipt_printer_model_${model}`}>
-                  {receiptPrinterModelLabels[model]}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
-          <p className="text-muted-foreground text-xs">
-            既定値:{" "}
-            {
-              receiptPrinterModelLabels[
-                DEFAULT_PRINTER_SETTINGS.receipt_printer_model
-              ]
-            }
-          </p>
-        </div>,
+        <ChoiceField
+          id="receipt_printer_model"
+          label="機種"
+          description="レシート・領収書は、この機種と用紙で決まる印字幅に合わせた画像で刷ります。プリンターと違う機種を選ぶと、幅が合わずに右端が切れることがあります"
+          choices={receiptPrinterModels}
+          labels={receiptPrinterModelLabels}
+          value={values.receipt_printer_model}
+          defaultValue={DEFAULT_PRINTER_SETTINGS.receipt_printer_model}
+          onChange={(value) =>
+            choose("receipt_printer_model", receiptPrinterModels, value)
+          }
+        />,
       )}
       <div className="space-y-1 text-muted-foreground text-sm">
         <p>
           テスト印刷は、保存する前の入力中の設定で、確認用のページ（プリンター・IP
-          アドレス・用紙の幅を書き、印字幅いっぱいを枠で囲んだもの）と見本を刷ります。
+          アドレス・用紙を書き、印字幅いっぱいを枠で囲んだもの）と見本を刷ります。
         </p>
         <p>
           枠の左右が欠けていれば、紙より広い幅を選んでいます。枠の外に広い余白があれば、紙より狭い幅を選んでいます。
+        </p>
+        <p>
+          ここの設定が紙と合っているのに欠けるときは、プリンター本体の用紙幅の設定（電源を入れるときに
+          FEED を押したままにして刷る自己診断の「Paper Roll
+          Width」）が紙と合っているかを確かめてください。
         </p>
       </div>
       <div>
@@ -358,6 +329,57 @@ function PrinterSettingsForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** 選択肢から 1 つ選ぶ欄。detail があれば、名前の後ろのかっこに添える */
+function ChoiceField<T extends string>({
+  id,
+  label,
+  description,
+  choices,
+  labels,
+  detail,
+  value,
+  defaultValue,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  choices: readonly T[];
+  labels: Record<T, string>;
+  detail?: (choice: T) => string;
+  value: T;
+  defaultValue: T;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label id={id} className="font-bold">
+        {label}
+      </Label>
+      <p className="text-muted-foreground text-sm">{description}</p>
+      <RadioGroup
+        aria-labelledby={id}
+        className="flex flex-wrap gap-6"
+        value={value}
+        onValueChange={onChange}
+      >
+        {choices.map((choice) => (
+          <div key={choice} className="flex items-center gap-2">
+            <RadioGroupItem id={`${id}_${choice}`} value={choice} />
+            <Label htmlFor={`${id}_${choice}`}>
+              {labels[choice]}
+              {detail && `（${detail(choice)}）`}
+            </Label>
+          </div>
+        ))}
+      </RadioGroup>
+      <p className="text-muted-foreground text-xs">
+        既定値: {labels[defaultValue]}
+      </p>
+    </div>
   );
 }
 

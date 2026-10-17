@@ -44,6 +44,12 @@ const (
 	Square PaymentMethod = "square"
 )
 
+// Defines values for PrinterPaperType.
+const (
+	PrinterPaperTypeDieCutLabel PrinterPaperType = "die_cut_label"
+	PrinterPaperTypeReceipt     PrinterPaperType = "receipt"
+)
+
 // Defines values for PrinterPaperWidth.
 const (
 	PrinterPaperWidth58mm PrinterPaperWidth = "58mm"
@@ -766,6 +772,10 @@ type OrderUpdateRequest struct {
 // PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 type PaymentMethod string
 
+// PrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+type PrinterPaperType string
+
 // PrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 type PrinterPaperWidth string
 
@@ -774,15 +784,23 @@ type PrinterSettingsResponse struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
+
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
-	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
-	// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
 	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	ReceiptPrinterPaperType PrinterPaperType `json:"receipt_printer_paper_type"`
 
 	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
@@ -793,22 +811,30 @@ type PrinterSettingsUpdateRequest struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
+
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
-	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
-	// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
 	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	ReceiptPrinterPaperType PrinterPaperType `json:"receipt_printer_paper_type"`
 
 	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
 }
 
-// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
-// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
+// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
 type ReceiptPrinterModel string
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.

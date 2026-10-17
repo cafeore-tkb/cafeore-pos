@@ -11,7 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
-import { LABEL_WIDTHS } from "~/label/paper";
+import { labelPrintableWidth } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
@@ -37,10 +37,11 @@ export const toastEmergenciesCancelled = (count: number) =>
 export const useCupEmergency = (
   onActivity?: (event: string, details: Record<string, unknown>) => void,
 ) => {
-  const { label_printer_ip, label_printer_paper_width } = usePrinterAddresses();
+  const printerSettings = usePrinterAddresses();
+  const { label_printer_ip } = printerSettings;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
-    LABEL_WIDTHS[label_printer_paper_width],
+    labelPrintableWidth(printerSettings),
     onActivity,
   );
   const { printCupLabel } = printer;

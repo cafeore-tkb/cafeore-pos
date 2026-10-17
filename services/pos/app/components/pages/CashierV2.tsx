@@ -19,7 +19,7 @@ import {
   eposCertificateUrl,
   eposPrinterAt,
 } from "~/label/infra/epos";
-import { LABEL_WIDTHS, RECEIPT_WIDTHS } from "~/label/paper";
+import { labelPrintableWidth, receiptPrintableWidth } from "~/label/paper";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
 import { isModifierKey } from "~/lib/menuKey";
@@ -327,23 +327,21 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレスが変わったら、つなぎ直す。用紙の幅が変わっても、つなぎ直さずに刷るものの幅だけ変える
+  // プリンターの IP アドレスが変わったら、つなぎ直す。用紙が変わっても、つなぎ直さずに刷るものの幅だけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
-    LABEL_WIDTHS[printerAddresses.label_printer_paper_width],
+    labelPrintableWidth(printerAddresses),
   );
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
-  // 機種・用紙の幅が変わっても、つなぎ直さずに画像の幅だけ変える
+  // 機種・用紙が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;
   const receiptPrinter = useReceiptPrinter(
     useMemo(
       () => eposPrinterAt(receiptPrinterIp, RECEIPT_EPOS_PRINTER_CONFIG),
       [receiptPrinterIp],
     ),
-    RECEIPT_WIDTHS[printerAddresses.receipt_printer_model][
-      printerAddresses.receipt_printer_paper_width
-    ],
+    receiptPrintableWidth(printerAddresses),
   );
 
   /**

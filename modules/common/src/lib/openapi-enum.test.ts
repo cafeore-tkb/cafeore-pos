@@ -30,4 +30,11 @@ describe("[unit] openapiEnumLabels", () => {
       "80mm": "80mm",
     });
   });
+
+  test("プリンターの用紙の種類の名前", () => {
+    expect(openapiEnumLabels("PrinterPaperType")).toEqual({
+      receipt: "レシート紙",
+      die_cut_label: "ダイカットラベル",
+    });
+  });
 });

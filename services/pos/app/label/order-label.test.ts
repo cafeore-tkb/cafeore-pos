@@ -2,10 +2,10 @@ import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import type { Label, TextLine } from "./document";
 import { cupLabelJob, orderLabelJob } from "./order-label";
-import { LABEL_WIDTHS } from "./paper";
+import { DIE_CUT_LABEL_WIDTHS, RECEIPT_PAPER_WIDTHS } from "./paper";
 
-/** 80mm の紙の印字幅 */
-const WIDTH = LABEL_WIDTHS["80mm"];
+/** 80mm のダイカットラベル（いつものシール）の印字幅 */
+const WIDTH = DIE_CUT_LABEL_WIDTHS["80mm"];
 
 const hotType: ItemType = {
   id: "1",
@@ -92,23 +92,22 @@ describe("[unit] orderLabelJob", () => {
     });
   });
 
-  test("カップのシールの範囲は、80mm の紙では今までどおり、58mm の紙では印字幅に縮める", () => {
+  test("カップのシールの範囲（幅 570）は、印字幅がそれより狭い紙では印字幅に縮める", () => {
     const order = orderOf(7, [menu("ブレンド", hotType, null)]);
-    const areaOf = (width: number) => {
+    const widthOf = (width: number) => {
       const [cup] = orderLabelJob(order, width).labels;
-      return cup.type === "fixed" && cup.area;
+      return cup.type === "fixed" && cup.area.width;
     };
 
-    expect(areaOf(LABEL_WIDTHS["80mm"])).toEqual({
+    expect(widthOf(RECEIPT_PAPER_WIDTHS.tm_l90["80mm"])).toBe(570);
+    expect(widthOf(DIE_CUT_LABEL_WIDTHS["80mm"])).toBe(560);
+    expect(widthOf(DIE_CUT_LABEL_WIDTHS["58mm"])).toBe(384);
+    // 高さと位置は変えない
+    const [cup] = orderLabelJob(order, WIDTH).labels;
+    expect(cup.type === "fixed" && cup.area).toEqual({
       x: 0,
       y: 24,
-      width: 570,
-      height: 210,
-    });
-    expect(areaOf(LABEL_WIDTHS["58mm"])).toEqual({
-      x: 0,
-      y: 24,
-      width: 416,
+      width: 560,
       height: 210,
     });
   });

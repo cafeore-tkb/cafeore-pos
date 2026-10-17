@@ -75,12 +75,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスと用紙の幅、機種をまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -848,8 +848,8 @@ export interface components {
       color: string;
     };
     /**
-     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
-     * 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
+     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+     * 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
      *
      * @enum {string}
      */
@@ -860,6 +860,13 @@ export interface components {
      * @enum {string}
      */
     PrinterPaperWidth: "58mm" | "80mm";
+    /**
+     * @description プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+     * receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+     *
+     * @enum {string}
+     */
+    PrinterPaperType: "receipt" | "die_cut_label";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -874,6 +881,8 @@ export interface components {
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      label_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -889,6 +898,8 @@ export interface components {
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      label_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1692,7 +1703,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1706,7 +1717,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスと用紙の幅、機種をまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {
