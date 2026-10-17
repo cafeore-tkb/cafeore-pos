@@ -306,7 +306,9 @@ export type CouponStatus =
   /** 割引できる。order は引換券の注文 */
   | { kind: "available"; order: WithId<OrderEntity> }
   | { kind: "already_used" }
-  | { kind: "unserved" };
+  | { kind: "unserved" }
+  /** 返金した注文の番号 */
+  | { kind: "refunded" };
 
 /** 引換券番号を過去の注文と照らし合わせる */
 export const couponStatus = (
@@ -321,12 +323,14 @@ export const couponStatus = (
   const status = getDiscountOrderStatus(orderId, [...orders]);
   const order = orders.find((candidate) => candidate.orderId === orderId);
   if (status === "available" && order) return { kind: "available", order };
-  return { kind: status === "already_used" ? "already_used" : "unserved" };
+  return { kind: status === "available" ? "unserved" : status };
 };
 
-/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない番号） */
+/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない・返金した番号） */
 export const isCouponRejected = (status: CouponStatus): boolean =>
-  status.kind === "already_used" || status.kind === "unserved";
+  status.kind === "already_used" ||
+  status.kind === "unserved" ||
+  status.kind === "refunded";
 
 /** 引換券番号の欄を選ぶ */
 export const focusCoupon = (draft: CashierDraft): CashierDraft =>

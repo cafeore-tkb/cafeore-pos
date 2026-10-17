@@ -1,5 +1,5 @@
 // hooks/useOrdersWS.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiWebSocketUrl } from "../api/client";
 import {
   type OrderResponse,
@@ -143,8 +143,21 @@ export const useOrdersWS = ({
     };
   }, []);
 
+  // キャンセルした注文は、注文を消したときと同じく作る画面（マスター・提供・CaOS・呼び出し）や集計に出さない。
+  // キャンセルが無ければ受け取った配列をそのまま返し、参照を変えない（参照で比べる側が無駄に動かないように）
+  const activeOrders = useMemo(
+    () =>
+      orders?.some((order) => order.isCancelled())
+        ? orders.filter((order) => !order.isCancelled())
+        : orders,
+    [orders],
+  );
+
   return {
-    orders: orders ?? EMPTY_ORDERS,
+    /** キャンセルしていない注文 */
+    orders: activeOrders ?? EMPTY_ORDERS,
+    /** キャンセルした注文も含む全部の注文（レジの番号・引換券・過去の注文に使う） */
+    allOrders: orders ?? EMPTY_ORDERS,
     /** WebSocket から一度でも orders を受信したか */
     isOrdersLoaded: orders !== undefined,
     masterState,

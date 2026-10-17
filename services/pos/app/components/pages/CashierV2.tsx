@@ -70,6 +70,7 @@ import {
   displayOrder,
   dueAmount,
   hasTenders,
+  isSplittingSubtotal,
   leavePayment,
   paidLineKeys,
   preferDiscount,
@@ -77,6 +78,7 @@ import {
   recordTender,
   removeTenders,
   setPart,
+  splitChoices,
   splitOrderForSubmit,
   subtotalOrder,
   subtotalPaid,
@@ -134,6 +136,7 @@ import {
   RefundDialog,
   SettledDialog,
   type SettledRow,
+  SplitChoiceDialog,
   type SquareRefundResult,
   SubtotalItemsDialog,
   SubtotalPaidDialog,
@@ -148,6 +151,7 @@ import { Label } from "../ui/label";
 
 type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
+  /** キャンセルした注文も含む全部の注文（番号・引換券・過去の注文に使う） */
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
@@ -201,6 +205,8 @@ type CashierDialogKind =
 
 /** 先払い（個別小計・小計分割）のダイアログ */
 type PrepayDialogState =
+  /** お客さんが端末で「割り勘」を選んだ。分け方（個別小計・小計分割）を選ぶ */
+  | { kind: "splitChoice" }
   /** 個別小計の商品を選ぶ */
   | { kind: "items" }
   /** 小計分割の金額を入れる。preset は端末で決済できなかった決済手段（その手段で先に払う） */
@@ -289,8 +295,13 @@ const CashierV2 = ({
     null,
   );
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  // 作る量の見込みには、キャンセルした注文を入れない（orders はキャンセルした注文も含む）
+  const activeOrders = useMemo(
+    () => orders?.filter((order) => !order.isCancelled()),
+    [orders],
+  );
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
-    useLatestOrderId(orders);
+    useLatestOrderId(orders, canSaveNow);
   // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
   // オフラインの注文はこの端末に溜まり、つながったらまとめて送る（submitPayload）
   const canSubmitOrder = canSaveNow || manualOrderId !== null;
@@ -484,9 +495,10 @@ const CashierV2 = ({
 
   /** 注文を送った後、次の注文を入力できるようにする */
   const afterSubmit = useCallback(() => {
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && !canSaveNow) {
-      setOrderIdOverride(manualOrderId + 1);
+    // 手動番号指定時、オフラインなら次の番号を手動のまま進める。
+    // オンラインなら自動に戻し、届いている注文と手元の最大 + 1 にする（同じ番号を続けて付けない）
+    if (manualOrderId !== null) {
+      setOrderIdOverride(canSaveNow ? null : manualOrderId + 1);
     }
     resetAll();
     playSound();
@@ -665,6 +677,7 @@ const CashierV2 = ({
       const submitOne = prepareSubmit(order);
       submitOne.received = submitOne.billingAmount;
       const savedOrder = await submitSquarePayload(submitOne, checkout.id);
+      markOrderIdIssued(submitOne.orderId);
       if (autoSquareRefund) {
         void refundSquareOrderAutomatically(savedOrder);
       }
@@ -683,6 +696,7 @@ const CashierV2 = ({
       canSaveNow,
       prepareSubmit,
       submitSquarePayload,
+      markOrderIdIssued,
       autoSquareRefund,
       printOrderLabel,
       receiptPrinter,
@@ -720,35 +734,50 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
+  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる
+  // （小計分割の途中は、受け取ったあとの「残りを全て会計」を含めて並べない）
+  const choices = splitChoices(draft, squarePaymentActive);
+  const offerSplit =
+    !isSplittingSubtotal(draft) &&
+    (choices.items === null || choices.part === null);
+
   /**
    * お客さんが Square 端末で決済手段を選べるようにする（会計の段階で、スタッフがまだ選んでいない間）。
-   * 選んだら、その決済手段で会計する（onTerminalSelectedRef）。スタッフがレジで決済手段を選ぶ（dismiss）・
-   * 決済を始める・会計を終える・今払う額が変わる・先払いのダイアログを開くと取り消す
+   * 選んだら、その決済手段で会計する（onTerminalSelectedRef）。「割り勘」なら分け方を選ぶウィンドウを出す。
+   * スタッフがレジで決済手段を選ぶ（dismiss）・決済を始める・会計を終える・今払う額が変わる・
+   * 先払いのダイアログを開くと取り消す
    */
-  const squareSelectRequest = useMemo<SquarePaymentSelectRequest | null>(
-    () =>
-      squareDeviceId !== null &&
-      canStartSquare &&
-      !squarePaymentActive &&
-      prepayDialog === null
-        ? {
-            key: `${squareDeviceId}:${current?.id ?? ""}:${split.tenders.length}:${due}`,
-            deviceId: squareDeviceId,
-            amount: due,
-            options: ["CASH", ...squarePaymentTypes],
-          }
-        : null,
-    [
-      squareDeviceId,
-      canStartSquare,
-      squarePaymentActive,
-      prepayDialog,
-      current?.id,
-      split.tenders.length,
-      due,
-      squarePaymentTypes,
-    ],
-  );
+  const squareSelectRequest = useMemo<SquarePaymentSelectRequest | null>(() => {
+    if (
+      squareDeviceId === null ||
+      !canStartSquare ||
+      squarePaymentActive ||
+      prepayDialog !== null
+    ) {
+      return null;
+    }
+    const options: SquareActionOption[] = [
+      "CASH",
+      ...squarePaymentTypes,
+      ...(offerSplit ? (["SPLIT"] as const) : []),
+    ];
+    return {
+      key: `${squareDeviceId}:${current?.id ?? ""}:${split.tenders.length}:${due}:${options.join(",")}`,
+      deviceId: squareDeviceId,
+      amount: due,
+      options,
+    };
+  }, [
+    squareDeviceId,
+    canStartSquare,
+    squarePaymentActive,
+    prepayDialog,
+    current?.id,
+    split.tenders.length,
+    due,
+    squarePaymentTypes,
+    offerSplit,
+  ]);
   // お客さんが選んだときは決済を始める（startSquarePayment）ので、それを作ってから中身を入れる
   const onTerminalSelectedRef = useRef<(option: SquareActionOption) => void>(
     () => {},
@@ -895,9 +924,12 @@ const CashierV2 = ({
     warnSquareUnavailable,
   ]);
 
-  // お客さんが端末で選んだ。現金ならレジを現金にして知らせ、Square の決済手段なら決済を始める
+  // お客さんが端末で選んだ。現金ならレジを現金にして知らせ、Square の決済手段なら決済を始める。
+  // 「割り勘」なら分け方を選ぶウィンドウを出す
   onTerminalSelectedRef.current = (option) => {
-    if (option === "CASH") {
+    if (option === "SPLIT") {
+      setPrepayDialog({ kind: "splitChoice" });
+    } else if (option === "CASH") {
       updateDraft((c) => setPayment(c, "cash"));
       showNotice(
         "お客さんが端末で現金を選びました",
@@ -953,6 +985,19 @@ const CashierV2 = ({
     setDialog("cancelPayment");
   }, [draft]);
 
+  /**
+   * 割り勘の分け方で個別小計を選んだ。会計の段階を抜けて（会計取消と同じ）、先に払う商品を選ぶ。
+   * 選ぶのをやめたら入れる段階のまま
+   */
+  const switchToItems = useCallback(() => {
+    if (choices.items !== null) {
+      return;
+    }
+    updateDraft(leavePayment);
+    resyncDisplay();
+    setPrepayDialog({ kind: "items" });
+  }, [choices.items, updateDraft, resyncDisplay]);
+
   /** 会計の段階の Esc。小計分割中なら分割をやめ、でなければ会計取消 */
   const leavePay = useCallback(() => {
     if (draft.split.part !== null) {
@@ -963,8 +1008,8 @@ const CashierV2 = ({
     cancelPayment();
   }, [draft.split.part, updateDraft, resyncDisplay, cancelPayment]);
 
-  /** 小計分割・一部金額先払い。いまの小計（の残り）を金額で分ける */
-  const canSplit = paying && currentRemaining > 1 && !squarePaymentActive;
+  /** 小計分割・一部金額先払い。いまの小計（の残り）を金額で分ける。割り勘のウィンドウのボタンと同じ条件で開く */
+  const canSplit = choices.part === null;
   const openPart = useCallback(() => {
     if (canSplit) {
       setPrepayDialog({ kind: "part", preset: null });
@@ -1315,7 +1360,7 @@ const CashierV2 = ({
                 onOrderIdOverride={overrideOrderId}
               />
               <ReadyTimeEstimate
-                orders={orders}
+                orders={activeOrders}
                 drinkCups={newOrder.getDrinkCups().length}
               />
               {locked && (
@@ -1489,6 +1534,7 @@ const CashierV2 = ({
           connectionIssues={connectionIssues}
           squareRefundable={squareEnabled}
           onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
+          onPrintCancelLabel={printer.printCancelLabel}
           onBack={() => setView("register")}
         />
       )}
@@ -1596,6 +1642,15 @@ const CashierV2 = ({
               }
             : undefined
         }
+      />
+      <SplitChoiceDialog
+        open={prepayDialog?.kind === "splitChoice"}
+        due={due}
+        itemsBlocked={choices.items}
+        partBlocked={choices.part}
+        onItems={switchToItems}
+        onPart={openPart}
+        onClose={() => setPrepayDialog(null)}
       />
       <SubtotalItemsDialog
         open={prepayDialog?.kind === "items"}

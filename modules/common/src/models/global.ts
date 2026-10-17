@@ -19,6 +19,8 @@ export const cashierStateWireSchema = globalCashierStateSchema.extend({
     createdAt: dateFromWire,
     readyAt: dateFromWire.nullable(),
     servedAt: dateFromWire.nullable(),
+    cancelledAt: dateFromWire.nullable().optional(),
+    cashRefundedAt: dateFromWire.nullable().optional(),
     comments: z.array(commentSchema.extend({ createdAt: dateFromWire })),
   }),
 });
