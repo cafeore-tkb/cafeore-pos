@@ -23,6 +23,7 @@ import {
   STAGE_W,
   SectionHeading,
   dripBandLayout,
+  layoutDripPlates,
   layoutPlates,
   sectionHeights,
   stageContentStyle,
@@ -223,11 +224,12 @@ export default function FieldsOfCallScreen() {
     heights.callingBoard,
     CALLING_FONT_CAP,
   );
-  const drippingPlates = layoutPlates(
+  // ドリップ中の番号は、お呼び出し中のいちばん小さい番号より大きくしない（呼び出しが多くても、呼んでいる番号を目立たせる）
+  const drippingPlates = layoutDripPlates(
     drippingItems,
     BOARD_W,
     heights.dripBoard,
-    DRIP_FONT_CAP,
+    Math.min(DRIP_FONT_CAP, ...callingPlates.map((plate) => plate.fontSize)),
   );
   const bandPlates = dripBandLayout(drippingItems);
 
