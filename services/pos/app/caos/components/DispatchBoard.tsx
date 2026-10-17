@@ -324,7 +324,6 @@ export const DispatchBoard: React.FC<
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             <CardOverlay
-                              newCommentsOnly
                               card={ticket}
                               lane={bay}
                               look={looks.get(ticket.key)}

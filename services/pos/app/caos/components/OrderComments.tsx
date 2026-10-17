@@ -3,7 +3,12 @@ import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
 import { createContext, useContext } from "react";
 import { type CardLooks, orderNoLabel } from "../logic/cards";
-import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
+import {
+  type BoardComment,
+  STAMPS,
+  commentKey,
+  commentReaction,
+} from "../logic/comments";
 import { ReactionIcon } from "./ReactionIcon";
 import { VoiceComment } from "./VoiceComment";
 
@@ -165,8 +170,8 @@ export const CommentList: React.FC<{
             {AUTHOR_MARKS[comment.author]}
           </span>
           <span className="min-w-0 break-words">
-            {comment.author === "master" && STAMPS.includes(comment.text) ? (
-              <ReactionIcon stamp={comment.text} />
+            {commentReaction(comment) ? (
+              <ReactionIcon stamp={commentReaction(comment) ?? ""} />
             ) : (
               comment.text
             )}

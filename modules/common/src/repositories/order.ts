@@ -1,11 +1,12 @@
 import { apiClient, throwApiError } from "../api/client";
 import {
+  commentConverter,
   orderEntityToCreateRequest,
   orderToUpdateRequest,
   responseToOrderEntity,
 } from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
-import type { OrderEntity } from "../models/order";
+import type { OrderComment, OrderEntity } from "../models/order";
 import type { OrderRepository } from "./type";
 
 // TODO(toririm): エラーハンドリングをやる
@@ -132,8 +133,8 @@ export const orderRepoFactory = (): OrderRepository => {
       id: string,
       author: string,
       text: string,
-    ): Promise<void> => {
-      const { error, response } = await apiClient.POST(
+    ): Promise<OrderComment> => {
+      const { data, error, response } = await apiClient.POST(
         "/api/orders/{id}/comments",
         {
           params: {
@@ -146,6 +147,7 @@ export const orderRepoFactory = (): OrderRepository => {
       if (error || !response.ok) {
         throwApiError(response, error, "Failed to add comment");
       }
+      return commentConverter(data);
     },
 
     delete: async (id) => {

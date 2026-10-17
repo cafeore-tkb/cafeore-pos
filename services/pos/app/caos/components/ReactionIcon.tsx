@@ -1,4 +1,4 @@
-import { Check, Hand } from "lucide-react";
+import { Check, Eye, Hand, HandHeart } from "lucide-react";
 import comeHere from "../icons/reactions/come-here.png";
 import done from "../icons/reactions/done.png";
 
@@ -21,6 +21,10 @@ export const ReactionIcon = ({ stamp }: { stamp: string }) => {
           className="h-5 w-5 text-emerald-600"
           strokeWidth={3}
         />
+      ) : stamp === "見た" ? (
+        <Eye aria-hidden="true" className="h-5 w-5 text-sky-600" />
+      ) : stamp === "ごめん" ? (
+        <HandHeart aria-hidden="true" className="h-5 w-5 text-slate-600" />
       ) : (
         <Hand aria-hidden="true" className="h-5 w-5 text-amber-600" />
       )}
