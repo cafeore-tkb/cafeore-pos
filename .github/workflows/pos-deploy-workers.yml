@@ -10,6 +10,10 @@ name: pos / deploy (Workers)
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
 # プレビュー URL 付きのバージョンだけ作る。
 #
+# PR のバージョンには pr-<番号> のエイリアス（--preview-alias）も付ける。
+# pr-<番号>-<Worker 名>.<subdomain>.workers.dev という push しても変わらない URL が、
+# その PR で最後に上げたバージョンを指す（上げるたびに付け替わる）。
+#
 # ただし versions upload は Worker が既にあることが前提なので、まだ無いと
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
 # その場合だけ deploy にフォールバックして Worker を作る。
@@ -344,8 +348,11 @@ jobs:
           if [ "$mode" = "deploy" ]; then
             out=$(pnpm exec wrangler deploy "${var_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
           else
+            # エイリアスは英字で始まり、Worker 名と - でつないで 63 文字以内であること
+            # （DNS のラベルになるため）。pr-<番号> なら収まる。
             out=$(pnpm exec wrangler versions upload \
               --tag "pr-$PR_NUMBER" \
+              --preview-alias "pr-$PR_NUMBER" \
               --message "PR #$PR_NUMBER ($GITHUB_SHA)" \
               "${secret_args[@]}" 2>&1) || status=$?
           fi
@@ -353,15 +360,22 @@ jobs:
           echo "$out"
 
           # wrangler の出力から workers.dev の URL を拾う。
-          # versions upload ならプレビュー URL、deploy なら本番の URL。
+          # versions upload ならプレビュー URL（そのバージョンのもの）、deploy なら本番の URL。
+          # versions upload ではエイリアスの URL がその後ろの行
+          # （Version Preview Alias URL: ...）に出るので、そちらは行の見出しで拾う。
           # 取れなくてもここでは失敗させない（コメントを省くだけ）。
           preview_url=$(printf '%s\n' "$out" \
+            | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
+            | head -1) || true
+          alias_url=$(printf '%s\n' "$out" \
+            | grep -F 'Preview Alias URL' \
             | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
             | head -1) || true
 
           {
             echo "mode=$mode"
             echo "preview_url=$preview_url"
+            echo "alias_url=$alias_url"
           } >> "$GITHUB_OUTPUT"
 
           {
@@ -380,10 +394,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+          ALIAS_URL: ${{ steps.deploy.outputs.alias_url }}
           MODE: ${{ steps.deploy.outputs.mode }}
           API_OWNER: ${{ steps.api_url.outputs.owner }}
         run: |
           set -uo pipefail
+
+          # エイリアスの URL は push しても変わらないので、そちらを URL として出し、
+          # バージョンの URL は「この commit」として添える。エイリアスが取れなかったとき
+          # （deploy に倒したときなど）はバージョンの URL だけを出す。
+          url_rows="| URL | $PREVIEW_URL |"
+          if [ -n "$ALIAS_URL" ]; then
+            url_rows=$(printf '%s\n' \
+              "| URL | $ALIAS_URL |" \
+              "| この commit の URL | $PREVIEW_URL |")
+          fi
 
           body=$(printf '%s\n' \
             "$COMMENT_MARKER" \
@@ -391,7 +416,7 @@ jobs:
             "" \
             "| | |" \
             "| --- | --- |" \
-            "| URL | $PREVIEW_URL |" \
+            "$url_rows" \
             "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
             "| commit | \`$GITHUB_SHA\` |" \
             "| mode | \`$MODE\` |" \

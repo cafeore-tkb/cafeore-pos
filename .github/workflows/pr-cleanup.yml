@@ -45,7 +45,8 @@ name: pr / cleanup
 # こちらは**片付けていない**。wrangler に versions delete が無く、
 # versions upload で作ったバージョンを個別に消す手段が今のところ無いため
 # （wrangler preview delete は private beta）。閉じた PR のプレビュー URL も
-# 残り続ける。気になる場合は wrangler.jsonc の preview_urls を false にして
+# 残り続ける。pr-<番号> のエイリアスも、最後に上げたバージョンを指したまま残る。
+# 気になる場合は wrangler.jsonc の preview_urls を false にして
 # プレビュー URL の配信自体を止めること。
 #
 # ラベルを外した場合も同じで、フロントのプレビュー URL は開ける。ただし

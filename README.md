@@ -75,8 +75,14 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
 プレビュー URL 付きのバージョンだけ作る。
 
-PR ではプレビュー URL を**コメントで貼る**。2回目以降は新しいコメントを足さず、
-同じコメントを書き換える（本文に埋めた目印で自分のコメントを探している）。
+PR のバージョンには `pr-<番号>` のエイリアス（`--preview-alias`）も付ける。
+`https://pr-<番号>-cafeore-pos.<subdomain>.workers.dev` は push しても変わらず、
+その PR で最後に上げたバージョンを指す。バージョンごとの URL
+（`https://<バージョン ID の先頭 8 文字>-cafeore-pos.…`）も別に残る。
+
+PR ではプレビュー URL を**コメントで貼る**（エイリアスの URL と、その commit の URL）。
+2回目以降は新しいコメントを足さず、同じコメントを書き換える
+（本文に埋めた目印で自分のコメントを探している）。
 
 PR のビルドでは、**その PR のリビジョンの URL をビルド前に確定させて**
 `VITE_API_BASE_URL` に焼き込む。
@@ -164,7 +170,9 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
 - **バケットが無いと Worker のデプロイが失敗する。** はじめにダッシュボードで R2 を有効にし、
   `pnpm exec wrangler r2 bucket create cafeore-call-voices` で作っておくこと
 - プレビューの URL（`preview_urls`）は PR を閉じても残る（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。
-  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。片の数は番号の幅で抑えてあるが、
+  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。エイリアスの URL
+  （`pr-<番号>-cafeore-pos.…`）は PR の番号から推測できるので、URL を知られていないことは当てにできない。
+  片の数は番号の幅で抑えてあるが、
   ElevenLabs の利用枠が気になるなら、プレビューの URL も Access で守るか、`preview_urls` を止める
 
 ### backend（Artifact Registry → Cloud Run）
@@ -754,7 +762,9 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 **Cloudflare Workers** … 片付けていない。wrangler に `versions delete` が無く、
 `versions upload` で作ったバージョンを個別に消す手段が今のところ無いため
 （`wrangler preview delete` は private beta）。閉じた PR のプレビュー URL も
-残り続ける。公開したままにしたくない場合は `wrangler.jsonc` の `preview_urls` を
+残り続ける。`pr-<番号>` のエイリアスも、最後に上げたバージョンを指したまま残る
+（Cloudflare は直近に上げた 1000 個までしか持たず、超えると古いものから消える）。
+公開したままにしたくない場合は `wrangler.jsonc` の `preview_urls` を
 `false` にして、プレビュー URL の配信自体を止めること。
 
 ### 必要な設定

@@ -6,7 +6,8 @@
   "compatibility_date": "2026-08-04",
 
   // PR ごとの versions upload で <version>-<name>.<subdomain>.workers.dev の
-  // プレビュー URL を出すために有効化している。
+  // プレビュー URL と、pr-<番号>-<name>.<subdomain>.workers.dev のエイリアスの URL
+  // （--preview-alias）を出すために有効化している。
   //
   // 注意: **閉じた PR のプレビュー URL も残り続ける。** wrangler には
   // versions delete が無く、バージョンを個別に消す手段が今のところ無い
