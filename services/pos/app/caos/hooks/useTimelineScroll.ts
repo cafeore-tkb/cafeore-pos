@@ -289,7 +289,8 @@ export const useTimelineScroll = ({
     rulerDragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
-    if (drag.moved && containerRef.current)
+    // 動かさないタップでも、止めた追従確認を必ず再開する。
+    if (containerRef.current)
       scheduleFollowCheck(containerRef.current.scrollLeft);
   };
   const rulerHandlers = {
