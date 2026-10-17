@@ -151,6 +151,12 @@ func getAllowedOrigins() []string {
 	return result
 }
 
+// /status・/health を登録する。API のルートは handlers.RegisterRoutes が登録する。
+func registerStatusRoutes(r gin.IRouter) {
+	r.GET("/status", statusHandler)
+	r.GET("/health", healthHandler)
+}
+
 func statusHandler(c *gin.Context) {
 	dbStatus := "connected"
 
@@ -260,9 +266,6 @@ func main() {
 	}
 	activity := notify.NewActivity(notify.NewSlack(activityWebhook))
 
-	itemHandler := handlers.NewItemHandler(db, activity)
-	menuHandler := handlers.NewMenuHandler(db, activity)
-	itemTypeHandler := handlers.NewItemTypeHandler(db, activity)
 	// 在庫の通知先。SLACK_WEBHOOK_URL が無ければ通知せずログに残すだけ。
 	//
 	// 残量確認のリマインド（POST /api/inventory/remind）を叩けるのは、
@@ -280,8 +283,6 @@ func main() {
 		os.Getenv("POS_BASE_URL"),
 		activity,
 	)
-	inventoryHandler := handlers.NewInventoryHandler(inventory)
-	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	// ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更も POS の画面へ届けるため、
 	// DB の通知を待ち受ける。
 	// LISTEN はトランザクションプーラーでは使えないので、別の接続文字列を渡せるようにしている。
@@ -289,14 +290,8 @@ func main() {
 	if listenDSN == "" {
 		listenDSN = os.Getenv("DATABASE_URL")
 	}
+	orderHandler := handlers.NewOrderHandler(db, hub, inventory)
 	go orderHandler.ListenChanges(context.Background(), listenDSN)
-	commentHandler := handlers.NewCommentHandler(db, hub)
-	masterStateHandler := handlers.NewMasterStateHandler(db, hub, activity)
-	cashierStateHandler := handlers.NewCashierStateHandler(db, hub)
-	colorSettingHandler := handlers.NewColorSettingHandler(db, activity)
-	printerSettingHandler := handlers.NewPrinterSettingHandler(db)
-	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
-	caosHandler := handlers.NewCaosHandler(db, hub, inventory)
 	// Square Terminal 連携。SQUARE_ACCESS_TOKEN が無ければ無効
 	// （/api/square/status が enabled: false を返し、レジは Square のボタンを出さない）。
 	// 決済に使う端末は DB に持ち、POS の管理画面（/square-devices）でペアリングする。
@@ -327,103 +322,10 @@ func main() {
 		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
 	}
 
-	// エンドポイント
 	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、
 	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。
-	r.GET("/status", statusHandler)
-	r.GET("/health", healthHandler)
-
-	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access を通らず
-	// Cloud Run に直接来る（Google の ID トークンと Webhook の署名で確かめる）。
-	// /api のグループに入れると Access の認証が掛かって届かなくなる。
-	r.POST("/api/inventory/remind", inventoryHandler.RemindInventory)
-	r.POST("/api/square/webhook", squareHandler.ReceiveWebhook)
-
-	// API エンドポイント
-	// GET は表示用の端末（呼び出し画面など）も、それ以外はスタッフの端末だけ。
-	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
-	api := r.Group("/api", authz.RequireByMethod())
-	{
-		api.GET("/items", itemHandler.GetItems)
-		api.POST("/items", itemHandler.CreateItem)
-		api.GET("/items/:id", itemHandler.GetItem)
-		api.PUT("/items/:id", itemHandler.UpdateItem)
-		api.DELETE("/items/:id", itemHandler.DeleteItem)
-
-		api.GET("/menus", menuHandler.GetMenus)
-		api.POST("/menus", menuHandler.CreateMenu)
-		api.GET("/menus/:id", menuHandler.GetMenu)
-		api.PUT("/menus/:id", menuHandler.UpdateMenu)
-		api.DELETE("/menus/:id", menuHandler.DeleteMenu)
-
-		api.GET("/item-types", itemTypeHandler.GetItemTypes)
-		api.POST("/item-types", itemTypeHandler.CreateItemType)
-		api.GET("/item-types/:id", itemTypeHandler.GetItemType)
-		api.PUT("/item-types/:id", itemTypeHandler.UpdateItemType)
-		api.DELETE("/item-types/:id", itemTypeHandler.DeleteItemType)
-
-		api.GET("/orders", orderHandler.GetOrders)
-		api.GET("/ws/orders", orderHandler.WSHandler)
-		api.POST("/orders", orderHandler.CreateOrder)
-		api.GET("/orders/:id", orderHandler.GetOrder)
-		api.PUT("/orders/:id", orderHandler.UpdateOrder)
-		api.DELETE("/orders/:id", orderHandler.DeleteOrder)
-		api.PATCH("/orders/:id/ready", orderHandler.MarkOrderReady)
-		api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
-		api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
-		api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
-		api.POST("/orders/:id/recall", orderHandler.RecallOrder)
-
-		api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
-		api.POST("/orders/:id/comments", commentHandler.CreateComment)
-
-		api.GET("/master-status", masterStateHandler.GetMasterStatus)
-		api.POST("/master-status", masterStateHandler.UpdateMasterStatus)
-
-		api.GET("/cashier-state", cashierStateHandler.GetCashierState)
-		api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
-
-		api.GET("/inventory", inventoryHandler.GetInventory)
-		api.POST("/inventory/resources", inventoryHandler.CreateStockResource)
-		api.PUT("/inventory/resources/:id", inventoryHandler.UpdateStockResource)
-		api.DELETE("/inventory/resources/:id", inventoryHandler.DeleteStockResource)
-		api.POST("/inventory/resources/:id/events", inventoryHandler.CreateStockEvent)
-		api.GET("/color-settings", colorSettingHandler.GetColorSettings)
-		api.PUT("/color-settings", colorSettingHandler.UpsertColorSetting)
-		api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
-		api.GET("/printer-settings", printerSettingHandler.GetPrinterSettings)
-		api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
-		api.GET("/caos/logs/export", caosHandler.ExportCaosLogs)
-		api.GET("/caos/logs", caosHandler.GetCaosLogs)
-		api.POST("/caos/logs", caosHandler.CreateCaosLogs)
-		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
-		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
-		api.POST("/cup-emergencies", caosHandler.CreateCupEmergencies)
-		api.GET("/cup-emergencies/reasons", caosHandler.GetCupEmergencyReasons)
-		api.DELETE("/cup-emergencies/:id", caosHandler.DeleteCupEmergency)
-		api.PUT("/caos/lanes/:dripper", caosHandler.PutCaosLane)
-		api.POST("/caos/lanes/swap", caosHandler.SwapCaosLanes)
-		api.POST("/caos/lanes/seniors", caosHandler.UpdateCaosLaneSeniors)
-
-		// Square は読むだけのものもスタッフだけ。決済の中身が見えるのと、
-		// 表示用の端末が決済を待つことは無いので
-		square := api.Group("/square", authz.Require(auth.RoleStaff))
-		square.GET("/status", squareHandler.GetStatus)
-		square.GET("/devices", squareHandler.GetDevices)
-		square.POST("/devices", squareHandler.CreateDevice)
-		square.POST("/devices/pair", squareHandler.PairDevice)
-		square.POST("/devices/import", squareHandler.ImportDevices)
-		square.DELETE("/devices/:id", squareHandler.DeleteDevice)
-		square.POST("/devices/:id/code", squareHandler.IssueDeviceCode)
-		square.POST("/checkouts", squareHandler.CreateCheckout)
-		square.GET("/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
-		square.GET("/checkouts/:id", squareHandler.GetCheckout)
-		square.POST("/checkouts/:id/cancel", squareHandler.CancelCheckout)
-		square.POST("/checkouts/:id/refund", squareHandler.RefundCheckout)
-		// 注文から Square の決済を返金する（注文を消す／残す）。POST なので RequireByMethod でスタッフだけ
-		api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
-		api.POST("/orders/:id/square-refund-keep-order", squareHandler.RefundOrderKeepingOrder)
-	}
+	registerStatusRoutes(r)
+	handlers.RegisterRoutes(r, authz, db, hub, inventory, orderHandler, squareHandler, activity)
 
 	// サーバー起動
 	port := os.Getenv("PORT")

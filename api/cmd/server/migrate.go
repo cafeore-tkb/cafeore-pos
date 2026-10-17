@@ -97,6 +97,11 @@ func migrate(db *gorm.DB) error {
 			}
 		}
 
+		// 新しい列が既にあっても、旧リビジョンなどが残した使用量の表を回収する。
+		if err := migrateLegacyStockUsages(tx); err != nil {
+			return fmt.Errorf("failed to migrate legacy stock usages: %w", err)
+		}
+
 		for _, sql := range valueRenames {
 			if err := tx.Exec(sql).Error; err != nil {
 				return fmt.Errorf("failed to rename values: %w", err)
@@ -163,8 +168,7 @@ func prepareItemStockMigration(tx *gorm.DB) (bool, error) {
 	return true, nil
 }
 
-// AutoMigrate の後に、今のアイテムそれぞれの在庫を作る。使用量の表（item_stock_usages）があれば、
-// 前からある注文で減った量をその表から 1 回だけ埋めて、表を消す。カップの使う種類は空で始める。
+// AutoMigrate の後に、今のアイテムそれぞれの在庫を作る。カップの使う種類は空で始める。
 func migrateItemStock(tx *gorm.DB) error {
 	var items []models.Item
 	if err := tx.Find(&items).Error; err != nil {
@@ -179,6 +183,12 @@ func migrateItemStock(tx *gorm.DB) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// 旧使用量の表が残っていれば注文の履歴を補完して消す。既存の履歴は注文時の値なので上書きしない。
+// item_id の有無とは別に実行し、新旧の表が共存する DB でも在庫対象を重複して作らない。
+func migrateLegacyStockUsages(tx *gorm.DB) error {
 	if !tx.Migrator().HasTable("item_stock_usages") {
 		return nil
 	}
@@ -190,7 +200,8 @@ func migrateItemStock(tx *gorm.DB) error {
 		JOIN menu_items mi ON mi.menu_id = om.menu_id
 		JOIN item_stock_usages u ON u.item_id = mi.item_id
 		JOIN stock_resources r ON r.id = u.resource_id
-		GROUP BY om.id, u.resource_id, om.order_id`).Error; err != nil {
+		GROUP BY om.id, u.resource_id, om.order_id
+		ON CONFLICT (order_menu_id, resource_id) DO NOTHING`).Error; err != nil {
 		return err
 	}
 	return tx.Exec(`DROP TABLE item_stock_usages`).Error

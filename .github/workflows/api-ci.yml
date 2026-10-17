@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'api/**'
+      # ルートが openapi.yaml と食い違っていないかを api のテストで見る
+      - 'openapi/openapi.yaml'
       - '.github/workflows/api-ci.yml'
       - 'go.mod'
       - 'go.sum'

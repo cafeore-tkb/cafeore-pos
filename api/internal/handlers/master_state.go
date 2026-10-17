@@ -34,7 +34,7 @@ func toMasterStateResponse(masterState *models.MasterState) models.MasterStateRe
 // GET /api/master-status - オーダー状態取得
 func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
 	var masterStatus []models.MasterState
-	if err := h.db.Find(&masterStatus).Error; err != nil {
+	if err := h.db.Order("created_at ASC").Find(&masterStatus).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -57,6 +57,11 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
+	if req.Type != models.Stop && req.Type != models.Operational {
+		c.JSON(http.StatusBadRequest, gin.H{"error": `type は "stop" か "operational" にしてください`})
+		return
+	}
+
 	// 同じ状態を続けて送られたときは通知しない。初めてなら無いのが普通なので、
 	// First で「record not found」をログに出さないよう Find で読む。
 	// 読めなかったら空と比べた誤った通知になるので、通知だけしない
@@ -67,7 +72,7 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	}
 
 	state := models.MasterState{
-		Type:      req.Type,
+		Type:      string(req.Type),
 		CreatedAt: time.Now(),
 	}
 
@@ -91,11 +96,14 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 // ほかのインスタンスからの通知で配り直すときも使う。Publish で読み込みから配信までを
 // 1つずつ行い、POST での配信と通知での配信が入れ違って古い状態が後から届かないようにする。
 func broadcastMasterState(db *gorm.DB, hub *Hub) {
-	_ = hub.Publish(func() (WSMessage, error) {
+	err := hub.Publish(func() (WSMessage, error) {
 		msg, ok := masterStateMessage(db)
 		if !ok {
 			return WSMessage{}, errors.New("no master state")
 		}
 		return msg, nil
 	})
+	if err != nil {
+		log.Println("failed to broadcast master state:", err)
+	}
 }

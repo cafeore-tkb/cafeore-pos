@@ -114,8 +114,8 @@ func TestMasterStatus(t *testing.T) {
 	}
 
 	// 配信するのは最新の状態
-	api.do(http.MethodPost, "/api/master-status", models.MasterStateUpdateRequest{Type: "start"}).expect(http.StatusCreated)
-	if msg := api.nextBroadcast(); msg.MasterState == nil || msg.MasterState.Type != "start" {
+	api.do(http.MethodPost, "/api/master-status", models.MasterStateUpdateRequest{Type: "operational"}).expect(http.StatusCreated)
+	if msg := api.nextBroadcast(); msg.MasterState == nil || msg.MasterState.Type != "operational" {
 		t.Fatalf("broadcast: %+v", msg)
 	}
 

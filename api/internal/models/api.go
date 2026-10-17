@@ -32,6 +32,12 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for MasterStateUpdateRequestType.
+const (
+	Operational MasterStateUpdateRequestType = "operational"
+	Stop        MasterStateUpdateRequestType = "stop"
+)
+
 // Defines values for PaymentMethod.
 const (
 	Cash   PaymentMethod = "cash"
@@ -506,8 +512,11 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type string `json:"type"`
+	Type MasterStateUpdateRequestType `json:"type"`
 }
+
+// MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
+type MasterStateUpdateRequestType string
 
 // MenuCreateRequest defines model for MenuCreateRequest.
 type MenuCreateRequest struct {

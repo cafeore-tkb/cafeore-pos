@@ -268,9 +268,17 @@ export interface paths {
     post: operations["updateCaosLaneSeniors"];
   };
   "/api/master-status": {
-    /** マスターステート取得 */
+    /**
+     * オーダーストップの記録の一覧
+     * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+     * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+     */
     get: operations["getMasterState"];
-    /** マスターステート更新 */
+    /**
+     * オーダーストップ・再開
+     * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+     * オーダーストップの状態を書くのはここだけ。
+     */
     post: operations["updateMasterState"];
   };
   "/api/inventory": {
@@ -319,7 +327,6 @@ export interface paths {
      * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
      *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
      *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
-     * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
      * 直近に注文が無い（営業していない）ときは送らない。
      */
     post: operations["remindInventory"];
@@ -809,7 +816,8 @@ export interface components {
       type: string;
     };
     MasterStateUpdateRequest: {
-      type: string;
+      /** @enum {string} */
+      type: "stop" | "operational";
     };
     /**
      * @description 背景色を設定する対象の種類
@@ -2368,7 +2376,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート取得 */
+  /**
+   * オーダーストップの記録の一覧
+   * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+   * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+   */
   getMasterState: {
     responses: {
       /** @description 成功 */
@@ -2379,7 +2391,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート更新 */
+  /**
+   * オーダーストップ・再開
+   * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+   * オーダーストップの状態を書くのはここだけ。
+   */
   updateMasterState: {
     requestBody: {
       content: {
@@ -2387,10 +2403,16 @@ export interface operations {
       };
     };
     responses: {
-      /** @description 成功 */
-      200: {
+      /** @description 記録した */
+      201: {
         content: {
           "application/json": components["schemas"]["MasterStateResponse"];
+        };
+      };
+      /** @description type が stop でも operational でもない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
@@ -2523,7 +2545,6 @@ export interface operations {
    * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
    *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
    *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
-   * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
    * 直近に注文が無い（営業していない）ときは送らない。
    */
   remindInventory: {

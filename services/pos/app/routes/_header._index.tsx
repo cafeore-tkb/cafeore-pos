@@ -1,9 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
-import { DownloadButton } from "~/components/organisms/DownloadData";
 import { BuildInfo } from "~/components/organisms/top/BuildInfo";
-import { DownloadCaosLogs } from "~/components/organisms/top/DownloadCaosLogs";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -222,18 +220,17 @@ export default function Index() {
           </div>
         </div>
         <div className="rounded-lg border p-4">
-          <h2 className="font-bold">オーダーデータ書き出し</h2>
+          <h2 className="font-bold">各種データ書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">
-            全注文を CSV でダウンロードします
+            注文・商品マスタ・オーダーストップ記録・CaOS
+            操作ログをダウンロードします
           </p>
-          <DownloadButton />
-        </div>
-        <div className="rounded-lg border p-4">
-          <h2 className="font-bold">CaOS 操作ログ</h2>
-          <p className="mt-1 mb-3 text-muted-foreground text-sm">
-            DBに保存された操作ログと、統合・割当ての履歴をJSONでダウンロードします
-          </p>
-          <DownloadCaosLogs />
+          <Link
+            to="/exports"
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+          >
+            書き出しページを開く <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </section>
 
