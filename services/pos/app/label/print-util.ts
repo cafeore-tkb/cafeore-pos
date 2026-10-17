@@ -21,7 +21,7 @@ import {
   subscribePendingPrints,
   withPendingPrintsLock,
 } from "./pending-prints";
-import type { ReceiptPayment } from "./receipt";
+import type { ReceiptPayment, ReceiptSplit } from "./receipt";
 import { formalReceiptJob, orderReceiptJob } from "./receipt-canvas";
 
 /**
@@ -189,8 +189,8 @@ export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
 
   /** 会計のたびに刷るレシート */
   const printReceipt = useCallback(
-    (order: OrderEntity, payment: ReceiptPayment) =>
-      printSafely(() => orderReceiptJob(order, payment)),
+    (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
+      printSafely(() => orderReceiptJob(order, payment, split)),
     [printSafely],
   );
 

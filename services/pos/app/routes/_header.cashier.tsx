@@ -1,5 +1,6 @@
 import {
   OrderEntity,
+  type WithId,
   cashierRepository,
   orderRepository,
   orderSchema,
@@ -61,7 +62,10 @@ export default function Cashier() {
   }, [canSaveNow, connecting]);
 
   const submitPayload = useCallback(
-    (newOrder: OrderEntity) => saveOrderInBackground(newOrder, canSaveNow),
+    (
+      newOrder: OrderEntity,
+      onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+    ) => saveOrderInBackground(newOrder, canSaveNow, onSaved),
     [canSaveNow],
   );
   // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。

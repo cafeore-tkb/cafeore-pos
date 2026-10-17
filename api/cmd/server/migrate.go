@@ -72,6 +72,10 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to drop idx_menus_key: %w", err)
 		}
 
+		if err := dropUniqueSquareCheckoutOrderIndex(tx); err != nil {
+			return fmt.Errorf("failed to drop idx_square_checkouts_order_id: %w", err)
+		}
+
 		splitStock, err := prepareItemStockMigration(tx)
 		if err != nil {
 			return fmt.Errorf("failed to prepare stock_resources: %w", err)
@@ -116,6 +120,23 @@ func dropOldMenuKeyIndex(tx *gorm.DB) error {
 		return nil
 	}
 	return tx.Exec(`DROP INDEX idx_menus_key`).Error
+}
+
+// 個別会計で 1 つの注文に Square の決済を複数結び付けるようにしたとき（2026-10）の移行。
+// square_checkouts.order_id の索引を一意でない索引にする。AutoMigrate は同じ名前の索引があると作り直さないので、
+// 一意の索引なら消しておく（AutoMigrate が一意でない索引で作り直す）。
+func dropUniqueSquareCheckoutOrderIndex(tx *gorm.DB) error {
+	var unique bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM pg_indexes
+		WHERE schemaname = current_schema() AND indexname = 'idx_square_checkouts_order_id' AND indexdef LIKE 'CREATE UNIQUE INDEX %')`).
+		Scan(&unique).Error; err != nil {
+		return err
+	}
+	if !unique {
+		return nil
+	}
+	return tx.Exec(`DROP INDEX idx_square_checkouts_order_id`).Error
 }
 
 // 在庫をアイテムの在庫とカップの 2 種類にしたとき（2026-10）の一度だけの移行。stock_resources に item_id が無ければ流す。

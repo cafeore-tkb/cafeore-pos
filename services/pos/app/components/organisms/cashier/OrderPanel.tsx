@@ -16,6 +16,8 @@ import {
   canAssignSelected,
   canEditCoupon,
   canEditLines,
+  canGoPay,
+  isDiscountLocked,
 } from "../../functional/cashierDraft";
 import { menuColor } from "./MenuPanel";
 
@@ -27,8 +29,16 @@ type props = {
   coffeeCups: number;
   /** ドリッパーを 3 人以上確保する注文。分けるよう知らせる */
   needsSplit: boolean;
-  /** 一括会計で先に刷ったシールの番号。刷っていなければ null */
-  printedOrderId: number | null;
+  /** 払い終えた小計の行（「会計済」） */
+  paidKeys: ReadonlySet<number>;
+  /** 会計中の個別小計の行（「個別小計」）。個別小計の会計中でなければ空 */
+  currentItemKeys: ReadonlySet<number>;
+  /** 先会計（受け取った額の合計）。先払いが無ければ 0 */
+  prepaid: number;
+  /** 個別小計を選べるか（入れる段階で、まだ払っていない商品が 2 点以上） */
+  canOpenItems: boolean;
+  /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
+  canCancelPayment: boolean;
   onSelect: (index: number) => void;
   onToggleVoid: (index: number) => void;
   onOpenAssign: () => void;
@@ -36,8 +46,10 @@ type props = {
   onFocusCoupon: () => void;
   onToggleSpecial: () => void;
   onOpenMemo: () => void;
+  onOpenItems: () => void;
   onGoPay: () => void;
-  onBackToEntry: () => void;
+  onCancelPayment: () => void;
+  onRefundAll: () => void;
 };
 
 /** 指名の表示（「1st・たなか」） */
@@ -50,58 +62,62 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列。商品（削除・指名）、割引、備考、一括会計
+ * レジの真ん中の列。商品（削除・指名）、割引、備考、個別小計・一括会計
+ *
+ * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
  */
 export const OrderPanel = (props: props) => {
   const { draft } = props;
+  const paying = draft.step === "pay";
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l bg-stone-50">
-      <LinesSection {...props} />
-      <DiscountSection {...props} />
-      <MemoSection {...props} />
-      <div className="flex-none border-stone-200 border-t px-3.5 pt-3 pb-3.5">
-        {draft.step === "entry" ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled
-              title="準備中"
-              className="h-15 flex-[0_0_112px] cursor-not-allowed rounded-xl border border-stone-200 bg-stone-100 font-bold text-[15px] text-stone-400"
-            >
-              個別小計
-            </button>
-            <button
-              type="button"
-              onClick={props.onGoPay}
-              disabled={!draft.lines.some((line) => !line.voided)}
-              className="relative flex h-15 min-w-0 flex-1 items-center justify-center rounded-xl bg-stone-900 font-extrabold text-[22px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
-            >
-              一括会計
-              <KeyHint
-                inverted
-                className="-translate-y-1/2 absolute top-1/2 right-3.5 px-1.5 py-1 text-xs"
-              >
-                Enter
-              </KeyHint>
-            </button>
-          </div>
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col transition-opacity duration-200",
+          paying && "pointer-events-none opacity-42",
+        )}
+      >
+        <LinesSection {...props} />
+        <DiscountSection {...props} />
+        <MemoSection {...props} />
+      </div>
+      <div className="grid flex-none grid-cols-[98px_minmax(0,1fr)] gap-2 border-stone-200 border-t px-3 pt-2.5 pb-3">
+        <button
+          type="button"
+          onClick={props.onOpenItems}
+          disabled={!props.canOpenItems}
+          title="商品を選び、その分を小計として先に会計します"
+          className="h-13 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
+        >
+          個別小計
+        </button>
+        {paying ? (
+          <button
+            type="button"
+            onClick={props.onCancelPayment}
+            disabled={!props.canCancelPayment}
+            title={
+              props.canCancelPayment
+                ? "会計をやめて商品の入力に戻ります"
+                : "この小計を途中まで払ったので、払い終えるか取り消すまで戻れません"
+            }
+            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] border border-stone-400 bg-white font-extrabold text-lg text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
+          >
+            会計取消
+            <KeyHint className="px-1.5 py-0.5 text-[11px]">Esc</KeyHint>
+          </button>
         ) : (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-stone-500 text-xs leading-normal">
-              {props.printedOrderId !== null &&
-                `No.${props.printedOrderId} のシールを印刷しました。`}
-              商品を変えるときは会計取消
-              {props.printedOrderId !== null &&
-                "（取り消しのシールを刷ります）"}
-            </p>
-            <button
-              type="button"
-              onClick={props.onBackToEntry}
-              className="h-15 w-full rounded-xl border border-stone-400 bg-white font-bold text-[17px] text-stone-900 hover:bg-stone-50"
-            >
-              会計取消
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={props.onGoPay}
+            disabled={!canGoPay(draft)}
+            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
+          >
+            {props.prepaid > 0 ? "残りを会計" : "一括会計"}
+            <KeyHint inverted className="px-1.5 py-0.5 text-[11px]">
+              Enter
+            </KeyHint>
+          </button>
         )}
       </div>
     </div>
@@ -111,10 +127,14 @@ export const OrderPanel = (props: props) => {
 const LinesSection = ({
   draft,
   needsSplit,
+  paidKeys,
+  currentItemKeys,
+  prepaid,
   onSelect,
   onToggleVoid,
   onOpenAssign,
   onVoidAll,
+  onRefundAll,
 }: props) => {
   const { colorSettings } = useColorSettings();
   const listRef = useRef<HTMLDivElement>(null);
@@ -154,6 +174,8 @@ const LinesSection = ({
         {lines.map((line, index) => {
           const isSelected = selected === index;
           const assign = assignText(line);
+          const paid = paidKeys.has(line.key);
+          const inCurrent = currentItemKeys.has(line.key);
           return (
             <div
               key={line.key}
@@ -162,7 +184,9 @@ const LinesSection = ({
                 "flex flex-none rounded-lg",
                 isSelected
                   ? "bg-orange-50 shadow-[inset_0_0_0_3px_var(--color-orange-600)]"
-                  : "bg-white shadow-[inset_0_0_0_1px_var(--color-stone-200)]",
+                  : inCurrent
+                    ? "bg-white shadow-[inset_0_0_0_1px_var(--color-prepay-line)]"
+                    : "bg-white shadow-[inset_0_0_0_1px_var(--color-stone-200)]",
               )}
             >
               <button
@@ -187,6 +211,7 @@ const LinesSection = ({
                   <span
                     className={cn(
                       "font-bold text-[15px] leading-[1.3]",
+                      paid && "text-stone-400",
                       line.voided &&
                         "text-stone-400 line-through decoration-red-700 decoration-double",
                     )}
@@ -199,9 +224,20 @@ const LinesSection = ({
                     </span>
                   )}
                 </span>
+                {paid && (
+                  <span className="flex-none rounded-[5px] bg-prepay-soft px-1.75 py-0.5 font-extrabold text-[11px] text-prepay">
+                    会計済
+                  </span>
+                )}
+                {inCurrent && (
+                  <span className="flex-none rounded-[5px] bg-prepay px-1.75 py-0.5 font-extrabold text-[11px] text-white">
+                    個別小計
+                  </span>
+                )}
                 <span
                   className={cn(
                     "font-medium text-[15px] tabular-nums",
+                    paid && "text-stone-400",
                     line.voided &&
                       "text-stone-400 line-through decoration-red-700 decoration-double",
                   )}
@@ -218,6 +254,20 @@ const LinesSection = ({
           </div>
         )}
       </div>
+      {prepaid > 0 && draft.step === "entry" && (
+        <div className="flex flex-none items-center gap-2.5 rounded-lg bg-prepay-soft py-2.25 pr-2 pl-3">
+          <span className="flex-1 font-medium text-prepay-ink text-xs leading-normal">
+            先会計 {formatYen(prepaid)} を受け取り済み。商品は変えられません
+          </span>
+          <button
+            type="button"
+            onClick={onRefundAll}
+            className="h-7.5 whitespace-nowrap rounded-md border border-prepay-line bg-white px-2.5 font-extrabold text-prepay text-xs"
+          >
+            先払いを取り消す
+          </button>
+        </div>
+      )}
       <div className="flex flex-none gap-2">
         <button
           type="button"
@@ -319,7 +369,9 @@ const DiscountSection = (props: props) => {
   const { draft, couponStatus, onFocusCoupon, onToggleSpecial } = props;
   const editable = canEditCoupon(draft);
   const couponApplied = couponStatus.kind === "available";
-  const specialBlocked = !draft.special && couponApplied;
+  // 先払いがあれば、割引は変えない
+  const locked = isDiscountLocked(draft);
+  const specialBlocked = (!draft.special && couponApplied) || locked;
   const message = discountMessage(props);
   const complete = draft.coupon.length === COUPON_DIGITS;
 
@@ -332,9 +384,11 @@ const DiscountSection = (props: props) => {
           onClick={onToggleSpecial}
           disabled={specialBlocked}
           title={
-            specialBlocked
-              ? "引換券で割引しているときは使えません"
-              : "今年以外の引換券があるときは、1杯分に限り割引できます"
+            locked
+              ? "先払いがあるので変えられません"
+              : specialBlocked
+                ? "引換券で割引しているときは使えません"
+                : "今年以外の引換券があるときは、1杯分に限り割引できます"
           }
           className={cn(
             "ml-auto h-11 rounded-[10px] border px-3.5 font-bold text-[13px] disabled:opacity-40",
@@ -354,10 +408,10 @@ const DiscountSection = (props: props) => {
           type="button"
           aria-label={`引換券番号 ${draft.coupon || "未入力"}`}
           onClick={onFocusCoupon}
-          disabled={draft.special}
+          disabled={draft.special || locked}
           className={cn(
             "flex flex-none gap-1.5",
-            draft.special && "opacity-40",
+            (draft.special || locked) && "opacity-40",
           )}
         >
           {Array.from({ length: COUPON_DIGITS }, (_, i) => {
@@ -400,7 +454,10 @@ const DiscountSection = (props: props) => {
           {message.tone === "bad" && (
             <CrossCircledIcon className="mt-px h-4 w-4 flex-none" />
           )}
-          <span>{message.text}</span>
+          <span>
+            {message.text}
+            {locked && props.discount > 0 && "。先払いがあるので変えられません"}
+          </span>
         </div>
       </div>
     </div>

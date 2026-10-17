@@ -34,7 +34,7 @@ type SquareCheckout struct {
 	PaidAmount     *int       // 完了後に Payments API で確かめた受取額（円）
 	ErrorMessage   *string    // 依頼や確認に失敗したときの Square のエラー
 	OrderNumber    *int       // 依頼時点の注文番号（表示用。注文と結び付けるのは OrderID）
-	OrderID        *uuid.UUID `gorm:"type:uuid;uniqueIndex"`
+	OrderID        *uuid.UUID `gorm:"type:uuid;index"` // 個別会計では 1 つの注文に複数の決済が結び付く（どの支払いかは order_payments.square_checkout_id）
 	// 返金を頼んでいなければ空。REQUESTING（Square に頼んでいる間）/ PENDING / COMPLETED / FAILED
 	RefundStatus      *string
 	RefundKey         *uuid.UUID `gorm:"type:uuid"`

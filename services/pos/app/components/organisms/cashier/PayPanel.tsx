@@ -1,38 +1,42 @@
 import type { SquarePaymentType } from "@cafeore/common";
-import { EnterIcon } from "@radix-ui/react-icons";
-import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
   type CashierDraft,
+  type CashierPayment,
   canInputCoupon,
 } from "../../functional/cashierDraft";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 
 type props = {
   draft: CashierDraft;
-  /** 削除していない商品の数と合計 */
-  itemCount: number;
-  total: number;
-  discount: number;
-  /** 割引の内訳（「（引換券 042）」「（特殊な割引）」）。割引が無ければ空 */
-  discountNote: string;
-  billing: number;
+  /** 小計。会計の段階は今払う額、入れる段階は注文の残り */
+  due: number;
+  /** 個別小計の会計中（小計に「個別」の札を付ける） */
+  itemsSubtotal: boolean;
+  /** 小計分割中なら、あとに回した額（この小計の残り − 今払う額）。分けていなければ null */
+  deferred: number | null;
+  /** 確定ボタンに添える説明（「分割 · この小計の残り ¥400」）。無ければ空 */
+  note: string;
   /** 出す Square の決済手段。Square を使わないレジでは空 */
   squarePaymentTypes: readonly SquarePaymentType[];
-  /** Square で決済を始められるか（つながっている・商品がある） */
+  /** Square で決済を始められるか（つながっている・1 円以上） */
   canStartSquare: boolean;
   /** 注文を送れるか（つながっている、または番号を手で付けた） */
   canSubmit: boolean;
+  /** 小計分割・一部金額先払いを押せるか */
+  canSplit: boolean;
   onCash: () => void;
+  /** Square の決済手段を押した。押すとすぐ小計の額で端末に送る */
   onSquare: (paymentType: SquarePaymentType) => void;
   onDigits: (digits: string) => void;
   onDeleteDigit: () => void;
   onClearDigits: () => void;
   onAddReceived: (amount: number) => void;
   onExactReceived: () => void;
-  onSubmitExact: () => void;
   onSubmitCash: () => void;
+  onOpenSplit: () => void;
+  onCancelPart: () => void;
 };
 
 const QUICK_AMOUNTS = [
@@ -46,18 +50,18 @@ type PadKey = {
   label: string;
   column: string;
   row: string;
-  kind: "digit" | "function" | "amount";
+  kind: "digit" | "back" | "clear" | "amount";
 };
 
 const PAD_KEYS: PadKey[] = [
   { label: "1", column: "1", row: "1", kind: "digit" },
   { label: "2", column: "2", row: "1", kind: "digit" },
   { label: "3", column: "3", row: "1", kind: "digit" },
-  { label: "⌫", column: "4", row: "1", kind: "function" },
+  { label: "⌫", column: "4", row: "1", kind: "back" },
   { label: "4", column: "1", row: "2", kind: "digit" },
   { label: "5", column: "2", row: "2", kind: "digit" },
   { label: "6", column: "3", row: "2", kind: "digit" },
-  { label: "C", column: "4", row: "2", kind: "function" },
+  { label: "C", column: "4", row: "2", kind: "clear" },
   { label: "7", column: "1", row: "3", kind: "digit" },
   { label: "8", column: "2", row: "3", kind: "digit" },
   { label: "9", column: "3", row: "3", kind: "digit" },
@@ -66,21 +70,31 @@ const PAD_KEYS: PadKey[] = [
   { label: "00", column: "3", row: "4", kind: "digit" },
 ];
 
+/** 決済手段のボタンの色。現金は橙、Square は theme-primary */
+const methodColor = (payment: CashierPayment) =>
+  payment === "cash"
+    ? { color: "var(--color-cash)", tint: "var(--color-cash-tint)" }
+    : {
+        color: "var(--color-theme-primary)",
+        tint: "var(--color-square-tint)",
+      };
+
 /**
- * レジの右の列。小計、決済手段、受取金額（テンキー）、お釣り、確定
+ * レジの右の列。小計、決済手段、受取金額（テンキー）、お釣り、小計分割・確定
  *
  * テンキーは、入れる段階では引換券番号、会計の段階では受取金額に打つ。
+ * Square の決済手段は押すとすぐ小計の額で端末に送る（↑↓ で選んで Enter でも送る）。
  */
 export const PayPanel = ({
   draft,
-  itemCount,
-  total,
-  discount,
-  discountNote,
-  billing,
+  due,
+  itemsSubtotal,
+  deferred,
+  note,
   squarePaymentTypes,
   canStartSquare,
   canSubmit,
+  canSplit,
   onCash,
   onSquare,
   onDigits,
@@ -88,213 +102,233 @@ export const PayPanel = ({
   onClearDigits,
   onAddReceived,
   onExactReceived,
-  onSubmitExact,
   onSubmitCash,
+  onOpenSplit,
+  onCancelPart,
 }: props) => {
   const paying = draft.step === "pay";
   const cash = draft.payment === "cash";
   const received = draft.received === "" ? null : Number(draft.received);
-  const change = received === null ? null : received - billing;
+  const change = received === null ? null : received - due;
   const cashReady =
-    paying && canSubmit && itemCount > 0 && change !== null && change >= 0;
-  const exactReady = paying && canSubmit && itemCount > 0 && billing >= 0;
-  const padEnabled = paying || canInputCoupon(draft);
-  // Enter で押すボタン。現金で受取金額が空ならちょうど、入っていれば確定
-  const enterExact = paying && cash && received === null;
-  const enterSubmit = paying && cash && received !== null;
+    paying && canSubmit && cash && change !== null && change >= 0 && due >= 0;
+  const squareReady = paying && !cash && canStartSquare;
+  const padEnabled = paying ? cash : canInputCoupon(draft);
+  const selected = methodColor(draft.payment);
+  const methods: CashierPayment[] = ["cash", ...squarePaymentTypes];
+  const squareLabel = cash
+    ? ""
+    : squarePaymentTypeLabel[draft.payment as SquarePaymentType];
+
+  const primary = cash
+    ? {
+        label: "現金会計確定",
+        sub: note,
+        ready: cashReady,
+        background: "var(--color-stone-900)",
+        size: note ? "text-[19px]" : "text-[21px]",
+      }
+    : {
+        label: "端末に送る",
+        sub: note || `${squareLabel} · ${formatYen(due)}`,
+        ready: squareReady,
+        background: "var(--color-theme-primary)",
+        size: "text-[19px]",
+      };
 
   return (
-    <div className="flex min-h-0 flex-col border-stone-200 border-l">
-      <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-2.5 pb-2">
-        <div className="flex flex-col gap-px border-stone-200 border-b pb-1 tabular-nums">
-          <div className="flex justify-between text-[13px] text-stone-500">
-            <span>{itemCount > 0 ? `合計（${itemCount}点）` : "合計"}</span>
-            <span>{formatYen(total)}</span>
-          </div>
-          <div
-            className={cn(
-              "flex justify-between text-[13px]",
-              discount > 0 ? "text-green-700" : "text-stone-400",
-            )}
-          >
-            <span>割引{discountNote}</span>
-            <span>{discount > 0 ? formatYen(-discount) : "—"}</span>
-          </div>
-          <div className="flex justify-between text-[13px] text-stone-400">
-            <span>先会計</span>
-            <span>—</span>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="font-bold text-[15px]">小計</span>
-            <span className="font-extrabold text-[26px]">
-              {formatYen(billing)}
-            </span>
-          </div>
-        </div>
-
-        <div
-          className={cn(
-            "flex items-center gap-1.5",
-            !paying && "pointer-events-none opacity-35",
-          )}
-        >
-          <div className="relative min-w-0 flex-1">
+    <div className="flex min-h-0 flex-col border-stone-200 border-l px-3.75 py-3">
+      <div
+        className={cn(
+          "flex flex-none flex-col transition-opacity duration-200",
+          !paying && "pointer-events-none opacity-38",
+        )}
+      >
+        {deferred !== null && (
+          <div className="flex h-5.5 items-center gap-2 font-bold text-prepay text-xs">
+            <span>小計分割</span>
             <button
               type="button"
-              aria-pressed={cash}
-              onClick={onCash}
-              disabled={!paying}
-              className={cn(
-                "h-14 w-full rounded-[10px] font-extrabold text-[17px]",
-                cash
-                  ? "bg-orange-50 text-orange-700 shadow-[inset_0_0_0_2px_var(--color-orange-600)]"
-                  : "bg-white text-stone-700 shadow-[inset_0_0_0_1px_var(--color-stone-300)]",
-              )}
+              onClick={onCancelPart}
+              className="h-5 rounded-[5px] border border-stone-200 bg-white px-1.75 font-bold text-[10.5px] text-stone-600"
             >
-              現金
+              やめる
             </button>
-            {cash && (
-              <span className="-bottom-2 -translate-x-1/2 absolute left-1/2 h-0 w-0 border-t-[9px] border-t-orange-600 border-r-[9px] border-r-transparent border-l-[9px] border-l-transparent" />
-            )}
+            <span className="flex-1" />
+            <span className="font-extrabold text-[13px] tabular-nums">
+              {formatYen(-deferred)}
+            </span>
           </div>
-          {squarePaymentTypes.map((paymentType) => {
-            const selected = paying && draft.payment === paymentType;
-            return (
-              <button
-                key={paymentType}
-                type="button"
-                onClick={() => onSquare(paymentType)}
-                disabled={!paying || !canStartSquare}
-                className={cn(
-                  "h-14 min-w-0 flex-1 rounded-[10px] font-bold text-base text-white",
-                  canStartSquare
-                    ? "bg-sky-800 hover:brightness-110"
-                    : "cursor-not-allowed bg-stone-400",
-                  selected &&
-                    "shadow-[inset_0_0_0_3px_var(--color-orange-600),0_0_0_2px_var(--color-orange-300)]",
-                )}
-              >
-                {squarePaymentTypeLabel[paymentType]}
-              </button>
-            );
-          })}
-        </div>
-
-        <div
-          className={cn(
-            "-mb-1 text-[13px] text-stone-600",
-            !paying && "opacity-35",
+        )}
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="font-extrabold text-sm">小計</span>
+          {paying && itemsSubtotal && (
+            <span className="self-center rounded-[5px] bg-prepay px-1.75 py-px font-extrabold text-[11px] text-white">
+              個別
+            </span>
           )}
-        >
-          受取金額
-        </div>
-        <div
-          className={cn(
-            "flex h-11 items-center justify-end gap-2 rounded-xl bg-white px-4.5",
-            !paying && "opacity-35",
+          {deferred !== null && (
+            <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
+              分割
+            </span>
           )}
-          style={{
-            boxShadow:
-              paying && cash
-                ? "inset 0 0 0 2px var(--color-orange-600)"
-                : "inset 0 0 0 1px var(--color-stone-300)",
-          }}
-        >
-          <span className="font-bold text-stone-500 text-xl">¥</span>
-          <span
-            className={cn(
-              "font-extrabold text-3xl tabular-nums leading-none",
-              received === null ? "text-stone-300" : "text-stone-900",
-            )}
-          >
-            {(received ?? 0).toLocaleString("ja-JP")}
+          <span className="flex-1" />
+          <span className="font-extrabold text-[27px] tabular-nums leading-[1.15] tracking-[-.01em]">
+            {formatYen(due)}
           </span>
         </div>
-        <div
-          className={cn(
-            "grid grid-cols-5 gap-1.5",
-            !paying && "pointer-events-none opacity-35",
-          )}
-        >
-          <QuickButton
-            label="ちょうど"
-            dim={false}
-            enter={enterExact}
-            disabled={!paying}
-            onClick={onExactReceived}
-          />
-          {QUICK_AMOUNTS.map(({ label, amount }) => (
-            <QuickButton
-              key={label}
-              label={label}
-              dim={amount < billing}
-              enter={false}
-              disabled={!paying}
-              onClick={() => onAddReceived(amount)}
-            />
-          ))}
-        </div>
+        <div className="mt-2.25 mb-2.5 h-px bg-stone-200" />
 
         <div
-          className={cn(
-            "grid min-h-0 flex-1 grid-cols-4 grid-rows-[repeat(4,minmax(44px,1fr))] gap-2",
-            !padEnabled && "pointer-events-none opacity-35",
-          )}
+          className="grid gap-2"
+          style={{
+            gridTemplateColumns: `repeat(${methods.length}, minmax(0, 1fr))`,
+          }}
         >
-          {PAD_KEYS.map((key) => {
-            // +1万 は受取金額にだけ使う
-            const off = !padEnabled || (key.kind === "amount" && !paying);
+          {methods.map((payment) => {
+            const on = paying && draft.payment === payment;
+            const { color, tint } = methodColor(payment);
+            const disabled = payment !== "cash" && !canStartSquare;
             return (
               <button
-                key={key.label}
+                key={payment}
                 type="button"
-                disabled={off}
-                onClick={() => {
-                  if (key.label === "⌫") onDeleteDigit();
-                  else if (key.label === "C") onClearDigits();
-                  else if (key.kind === "amount") onAddReceived(10000);
-                  else onDigits(key.label);
-                }}
-                className={cn(
-                  "rounded-[10px] border tabular-nums active:bg-stone-200",
-                  // テンキーごと使えないときは、列の側で薄くする
-                  padEnabled && "disabled:opacity-35",
-                  key.kind === "digit" &&
-                    "border-stone-200 bg-white font-semibold text-[22px]",
-                  key.kind === "function" &&
-                    "border-stone-200 bg-stone-100 font-bold text-[22px]",
-                  key.kind === "amount" &&
-                    "border-stone-400 bg-white font-bold text-xl",
-                  key.label === "C" ? "text-red-700" : "text-stone-900",
-                )}
-                style={{ gridColumn: key.column, gridRow: key.row }}
+                aria-pressed={on}
+                onClick={() =>
+                  payment === "cash" ? onCash() : onSquare(payment)
+                }
+                disabled={!paying || disabled}
+                className="relative h-12 whitespace-nowrap rounded-lg border-2 p-0 font-extrabold text-[13.5px] tracking-[-.03em] disabled:cursor-not-allowed"
+                style={
+                  disabled
+                    ? {
+                        borderColor: "var(--color-stone-400)",
+                        backgroundColor: "var(--color-stone-400)",
+                        color: "white",
+                      }
+                    : {
+                        borderColor: color,
+                        backgroundColor: on ? tint : color,
+                        color: on ? color : "white",
+                      }
+                }
               >
-                {key.label}
+                {payment === "cash" ? "現金" : squarePaymentTypeLabel[payment]}
+                {on && (
+                  <span
+                    className="-bottom-1.75 -ml-1.25 absolute left-1/2 h-2.5 w-2.5 rotate-45 border-r-2 border-b-2"
+                    style={{ backgroundColor: tint, borderColor: color }}
+                  />
+                )}
               </button>
             );
           })}
         </div>
+
+        <div className="mt-3 flex h-6 items-center font-medium text-stone-500 text-xs">
+          {cash ? "受取金額" : "請求額"}
+        </div>
+        <div
+          className="mt-1 flex h-10.5 items-center justify-end gap-2 rounded-lg border-2 bg-white px-3 transition-colors duration-150"
+          style={{
+            borderColor: paying ? selected.color : "var(--color-stone-200)",
+          }}
+        >
+          <span className="font-bold text-[17px] text-stone-400">¥</span>
+          <span
+            className={cn(
+              "font-extrabold text-[28px] tabular-nums leading-none tracking-[-.01em]",
+              cash && received === null ? "text-stone-300" : "text-stone-900",
+            )}
+          >
+            {(cash ? (received ?? 0) : due).toLocaleString("ja-JP")}
+          </span>
+        </div>
+
+        {cash && (
+          <div className="mt-2 grid grid-cols-5 gap-1.75">
+            <button
+              type="button"
+              onClick={onExactReceived}
+              disabled={!paying}
+              className="h-9 rounded-lg border border-stone-200 bg-white p-0 font-bold text-stone-600 text-xs active:bg-stone-100"
+            >
+              ちょうど
+            </button>
+            {QUICK_AMOUNTS.map(({ label, amount }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => onAddReceived(amount)}
+                disabled={!paying}
+                className="h-9 rounded-lg border border-stone-200 bg-white p-0 font-bold text-stone-600 text-xs active:bg-stone-100"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div
         className={cn(
-          "flex flex-none flex-col gap-2 px-4 pb-3.5",
-          !paying && "pointer-events-none opacity-35",
+          "mt-2 grid min-h-0 flex-1 grid-cols-4 grid-rows-[repeat(4,minmax(40px,1fr))] gap-2 transition-opacity duration-200",
+          !padEnabled && "pointer-events-none",
+          !padEnabled && (paying ? "opacity-30" : "opacity-38"),
         )}
       >
-        <div className="flex items-center gap-2.5">
-          <span className="font-bold text-sm text-stone-600">お釣り</span>
+        {PAD_KEYS.map((key) => {
+          // +1万 は受取金額にだけ使う
+          const off = !padEnabled || (key.kind === "amount" && !paying);
+          return (
+            <button
+              key={key.label}
+              type="button"
+              disabled={off}
+              onClick={() => {
+                if (key.kind === "back") onDeleteDigit();
+                else if (key.kind === "clear") onClearDigits();
+                else if (key.kind === "amount") onAddReceived(10000);
+                else onDigits(key.label);
+              }}
+              className={cn(
+                "flex items-center justify-center rounded-lg border border-stone-200 p-0 tabular-nums",
+                padEnabled && "disabled:opacity-35",
+                key.kind === "digit" &&
+                  "bg-white font-bold text-[22px] text-stone-900 active:bg-stone-100",
+                key.kind === "back" && "bg-stone-100 active:bg-stone-200",
+                key.kind === "clear" &&
+                  "bg-stone-100 font-extrabold text-[22px] text-red-700 active:bg-stone-200",
+                key.kind === "amount" &&
+                  "bg-white font-extrabold text-lg text-stone-400 active:bg-stone-100",
+              )}
+              style={{ gridColumn: key.column, gridRow: key.row }}
+            >
+              {key.kind === "back" ? <BackspaceIcon /> : key.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className={cn(
+          "flex flex-none flex-col transition-opacity duration-200",
+          !paying && "pointer-events-none opacity-38",
+        )}
+      >
+        <div className="mt-2.5 flex h-6.5 items-center justify-between">
+          <span className="font-medium text-stone-500 text-xs">お釣り</span>
           <span
             className={cn(
-              "ml-auto font-extrabold text-3xl tabular-nums",
-              change !== null && change < 0
-                ? "text-red-700"
-                : change === null || itemCount === 0
-                  ? "text-stone-400"
-                  : "text-stone-900",
+              "font-extrabold tabular-nums",
+              cash && change !== null && change >= 0
+                ? "text-[22px] text-stone-900"
+                : "text-lg",
+              cash && change !== null && change < 0 && "text-red-700",
+              (!cash || change === null) && "text-stone-300",
             )}
           >
-            {itemCount === 0 || change === null
+            {!cash || change === null
               ? "—"
               : change < 0
                 ? `不足 ${formatYen(-change)}`
@@ -306,37 +340,49 @@ export const PayPanel = ({
             オフラインです。左上の No. を押して番号を指定すると送信できます
           </p>
         )}
-        <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+        <div className="mt-2 grid grid-cols-[104px_minmax(0,1fr)] gap-2">
           <button
             type="button"
-            onClick={onSubmitExact}
-            disabled={!exactReady}
-            className="h-16 rounded-[10px] border border-stone-400 bg-white font-bold text-sm text-stone-900 leading-snug hover:bg-stone-50 disabled:opacity-40"
+            onClick={onOpenSplit}
+            disabled={!canSplit}
+            className="flex h-14 flex-col items-center justify-center rounded-[10px] border border-prepay-line bg-white p-0 font-extrabold text-prepay text-xs leading-[1.35] hover:bg-prepay-tint disabled:opacity-45 disabled:hover:bg-white"
           >
-            お釣り0で
-            <br />
-            送信
+            <span>小計分割・</span>
+            <span>一部金額先払い</span>
           </button>
           <button
             type="button"
-            onClick={onSubmitCash}
-            disabled={!cashReady}
-            className={cn(
-              "relative h-16 rounded-[10px] pr-12 pl-2 font-extrabold text-[22px] text-white",
-              cashReady
-                ? "bg-stone-900 shadow-[0_0_0_4px_rgb(44_91_127/0.25)]"
-                : "cursor-not-allowed bg-stone-300",
-            )}
+            onClick={() => {
+              if (!primary.ready) return;
+              if (cash) onSubmitCash();
+              else onSquare(draft.payment as SquarePaymentType);
+            }}
+            disabled={!primary.ready}
+            className="flex h-14 items-center justify-center gap-2.5 rounded-[10px] px-3 text-white transition-colors duration-150 disabled:cursor-default"
+            style={{
+              backgroundColor: primary.ready
+                ? primary.background
+                : "var(--color-stone-200)",
+            }}
           >
-            現金会計確定
-            {(enterSubmit || !paying) && (
-              <KeyHint
-                inverted
-                className="-translate-y-1/2 absolute top-1/2 right-2.5"
+            <span className="flex min-w-0 flex-col items-start gap-px">
+              <span
+                className={cn(
+                  "whitespace-nowrap font-black leading-[1.2]",
+                  primary.size,
+                )}
               >
-                Enter
-              </KeyHint>
-            )}
+                {primary.label}
+              </span>
+              {primary.sub && (
+                <span className="whitespace-nowrap font-medium text-[11px] opacity-90">
+                  {primary.sub}
+                </span>
+              )}
+            </span>
+            <span className="flex-none rounded border border-white/60 px-1.25 py-px font-bold text-[10px]">
+              Enter
+            </span>
           </button>
         </div>
       </div>
@@ -344,37 +390,27 @@ export const PayPanel = ({
   );
 };
 
-const QuickButton = ({
-  label,
-  dim,
-  enter,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  /** 足しても請求額に届かない */
-  dim: boolean;
-  /** Enter で押せる。印を添える */
-  enter: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    title={enter ? "Enter でちょうど" : undefined}
-    className={cn(
-      "flex h-11 items-center justify-center gap-0.5 rounded-lg border border-stone-300 bg-white p-0 font-bold text-[13px] tabular-nums active:bg-stone-100",
-      dim ? "text-stone-400" : "text-stone-900",
-    )}
+/** テンキーの 1 桁消すキー */
+export const BackspaceIcon = () => (
+  <svg
+    width="26"
+    height="20"
+    viewBox="0 0 26 20"
+    fill="none"
+    aria-label="1 桁消す"
+    role="img"
   >
-    {label}
-    {enter && (
-      <EnterIcon
-        aria-label="Enter"
-        className="h-3.5 w-3.5 flex-none text-theme-primary"
-      />
-    )}
-  </button>
+    <path
+      d="M8 2h15a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 23 18H8l-6.5-8z"
+      stroke="#1c1917"
+      strokeWidth="2"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M12.5 6.5l7 7M19.5 6.5l-7 7"
+      stroke="#1c1917"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
 );

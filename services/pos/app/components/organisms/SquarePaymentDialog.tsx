@@ -47,11 +47,15 @@ type Props = {
   /** 決済画面を出している端末の名前 */
   deviceName?: string;
   canSubmitOrder: boolean;
+  /** 小計分割の 1 回分なら、このあと残る小計の額。でなければ undefined */
+  remainingAfter?: number;
   onCancel: () => void;
   onRetry: () => void;
   onCancelConflicting: () => void;
   onSubmitPaid: () => void;
   onClose: () => void;
+  /** 決済できなかったときの「一部金額を先払い」（残高不足など）。出さなければ undefined */
+  onSplit?: () => void;
 };
 
 /**
@@ -63,16 +67,19 @@ export const SquarePaymentDialog = ({
   state,
   deviceName,
   canSubmitOrder,
+  remainingAfter,
   onCancel,
   onRetry,
   onCancelConflicting,
   onSubmitPaid,
   onClose,
+  onSplit,
 }: Props) => {
   if (state === null) {
     return null;
   }
-  const { phase, order, paymentType, checkout, message, started } = state;
+  const { phase, order, amount, paymentType, checkout, message, started } =
+    state;
   // 結果がいつまでも決まらない（受取額を確かめられないなど）ときの逃げ道。
   // 閉じた後に支払いが確定したら「未登録の Square 決済」に出る。
   const stuck =
@@ -133,10 +140,16 @@ export const SquarePaymentDialog = ({
               </div>
               <div className="flex items-baseline justify-between font-extrabold text-stone-900 tabular-nums">
                 <span className="text-[22px]">請求額</span>
-                <span className="text-3xl">
-                  {formatYen(order.billingAmount)}
-                </span>
+                <span className="text-3xl">{formatYen(amount)}</span>
               </div>
+              {remainingAfter !== undefined && remainingAfter > 0 && (
+                <div className="flex justify-between font-bold text-[13px] text-prepay">
+                  <span>分割の 1 回分（このあと残り）</span>
+                  <span className="tabular-nums">
+                    {formatYen(remainingAfter)}
+                  </span>
+                </div>
+              )}
               {phase === "waiting" && (
                 <p>
                   端末の画面でお客さんに操作してもらってください。5
@@ -168,6 +181,13 @@ export const SquarePaymentDialog = ({
               {phase === "failed" && (
                 <p className="text-stone-700">
                   お金は受け取っていません。もう一度端末で決済するか、現金で受け取ってください。
+                </p>
+              )}
+              {phase === "failed" && onSplit && (
+                <p className="rounded-lg bg-prepay-soft px-3.5 py-3 font-medium text-prepay-ink">
+                  残高が足りないときは、使える分だけ
+                  {squarePaymentTypeLabel[paymentType]}
+                  で先に払ってもらい、残りを別の方法で受け取れます。
                 </p>
               )}
               {phase === "failed" && started && (
@@ -204,13 +224,22 @@ export const SquarePaymentDialog = ({
               取り消す
             </button>
           )}
-          {phase === "failed" && checkout === null && (
+          {phase === "failed" && (
             <button
               type="button"
               onClick={onRetry}
-              className={dialogButton.primary}
+              className={dialogButton.cancel}
             >
               もう一度送る
+            </button>
+          )}
+          {phase === "failed" && onSplit && (
+            <button
+              type="button"
+              onClick={onSplit}
+              className="h-12 rounded-[10px] bg-prepay px-5 font-bold text-[15px] text-white"
+            >
+              一部金額を先払い
             </button>
           )}
           {phase === "conflict" && (

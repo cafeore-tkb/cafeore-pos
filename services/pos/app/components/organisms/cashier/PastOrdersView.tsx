@@ -19,6 +19,7 @@ import { formatYen } from "~/lib/yen";
 import type { ConnectionIssue } from "../../functional/connectionIssues";
 import { useCurrentTime } from "../../functional/useCurrentTime";
 import { SquareRefundButton } from "../../molecules/SquareRefundButton";
+import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 import { ConnectionIssueDot } from "./PrinterStatusDot";
 
 type props = {
@@ -53,7 +54,21 @@ const REFUND_TAG: Partial<
 };
 
 const paymentText = (order: OrderEntity) =>
-  order.paymentMethod === "square" ? "Square" : "現金";
+  order.payments.length > 0
+    ? `分けて会計 ${order.payments.length}回`
+    : order.paymentMethod === "square"
+      ? "Square"
+      : "現金";
+
+/** 分けて会計した支払いの決済手段（「現金」「カード」など） */
+const splitPaymentText = (payment: OrderEntity["payments"][number]) =>
+  payment.method === "cash"
+    ? "現金"
+    : ((payment.squarePaymentType &&
+        squarePaymentTypeLabel[
+          payment.squarePaymentType as keyof typeof squarePaymentTypeLabel
+        ]) ??
+      "Square");
 
 /** 割引の内訳。番号の無い 1 杯分の割引は特殊な割引 */
 const discountNote = (order: OrderEntity) => {
@@ -317,7 +332,16 @@ const OrderDetail = ({
     order.paymentMethod === "square" &&
     refundStatus !== "pending" &&
     refundStatus !== "refunded";
-  const label = `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
+  // 分けて会計した注文で返金するのは Square で払った分だけ（現金で払った分は手で返す）
+  const squarePayments = order.payments.filter(
+    (payment) => payment.method === "square",
+  );
+  const label =
+    order.payments.length > 0
+      ? `No.${order.orderId} の Square の支払い ${squarePayments.length}件（${formatYen(
+          squarePayments.reduce((acc, payment) => acc + payment.amount, 0),
+        )}）`
+      : `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
 
   const addComment = () => {
     const text = comment.trim();
@@ -485,13 +509,16 @@ const OrderDetail = ({
             <span
               className={cn(
                 "font-bold",
-                order.paymentMethod === "square" && "text-sky-800",
+                order.paymentMethod === "square" &&
+                  order.payments.length === 0 &&
+                  "text-sky-800",
               )}
             >
               {paymentText(order)}
             </span>
           </div>
-          {order.paymentMethod !== "square" && (
+          {order.payments.length > 0 && <SplitPayments order={order} />}
+          {order.payments.length === 0 && order.paymentMethod !== "square" && (
             <>
               <div className="flex justify-between text-sm">
                 <span className="text-stone-600">お預り</span>
@@ -538,6 +565,70 @@ const OrderDetail = ({
     </div>
   );
 };
+
+/** 分けて会計した支払いの内訳（払った順） */
+const SplitPayments = ({ order }: { order: OrderEntity }) => (
+  <div className="mt-1 flex flex-col gap-1.5">
+    {order.payments.map((payment, index) => (
+      <div
+        // biome-ignore lint/suspicious/noArrayIndexKey: 払った順は変わらない
+        key={index}
+        className="flex flex-col gap-0.5 rounded-lg bg-white px-2.5 py-1.5 text-sm shadow-[inset_0_0_0_1px_var(--color-stone-200)]"
+      >
+        <div className="flex items-baseline gap-2">
+          <span className="text-stone-500 text-xs">{index + 1}.</span>
+          <span
+            className={cn(
+              "font-bold",
+              payment.method === "square" && "text-sky-800",
+            )}
+          >
+            {splitPaymentText(payment)}
+          </span>
+          {payment.squareRefundStatus &&
+            REFUND_TAG[payment.squareRefundStatus] && (
+              <span
+                className={cn(
+                  "text-xs",
+                  payment.squareRefundStatus === "failed" ||
+                    payment.squareRefundStatus === "unknown"
+                    ? "text-red-700"
+                    : "text-stone-500",
+                )}
+              >
+                {REFUND_TAG[payment.squareRefundStatus]?.replace("・", "")}
+              </span>
+            )}
+          <span className="ml-auto font-bold">{formatYen(payment.amount)}</span>
+        </div>
+        <span className="truncate text-stone-600 text-xs">
+          {payment.menuIndexes
+            .map((menuIndex) => order.menus[menuIndex]?.name)
+            .filter(Boolean)
+            .join("・")}
+        </span>
+        {(payment.method === "cash" || payment.discount > 0) && (
+          <span className="text-stone-500 text-xs">
+            {[
+              payment.discount > 0 && `割引 ${formatYen(-payment.discount)}`,
+              payment.method === "cash" &&
+                `お預り ${formatYen(payment.received)}・お釣り ${formatYen(payment.received - payment.amount)}`,
+            ]
+              .filter(Boolean)
+              .join("・")}
+          </span>
+        )}
+      </div>
+    ))}
+    {order.paymentMethod === "square" &&
+      order.payments.some((payment) => payment.method === "cash") && (
+        <p className="text-stone-500 text-xs leading-normal">
+          返金するのは Square
+          で払った分だけです。現金で払った分は手で返してください
+        </p>
+      )}
+  </div>
+);
 
 const RefundNote = ({
   status,

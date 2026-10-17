@@ -92,6 +92,36 @@ describe("[unit] orderReceipt", () => {
       ).toEqual([{ label: "キャッシュレス決済", amount: "￥1,250" }]);
     }
   });
+
+  test("小計を金額で分けたら、先に払った分とあとで払う分を引いた額を合計にし、お釣りもその額から出す", () => {
+    const order = createOrder();
+    order.applyServiceOneCupDiscount();
+    order.received = 500;
+    const receipt = orderReceipt(
+      order,
+      { method: "cash" },
+      { prepaid: 300, deferred: 400 },
+    );
+
+    expect(receipt.adjustments).toEqual([
+      { label: "小計", amount: "￥1,250" },
+      { label: "割引", amount: "-￥100" },
+      { label: "先にお支払い済み", amount: "-￥300" },
+      { label: "あとでお支払い", amount: "-￥400" },
+    ]);
+    expect(receipt.total).toBe("￥450");
+    expect(receipt.payments).toEqual([
+      { label: "お預り", amount: "￥500" },
+      { label: "お釣り", amount: "￥50" },
+    ]);
+    expect(
+      orderReceipt(
+        order,
+        { method: "square", paymentType: "FELICA_ALL" },
+        { prepaid: 0, deferred: 850 },
+      ).payments,
+    ).toEqual([{ label: "電子マネー", amount: "￥300" }]);
+  });
 });
 
 describe("[unit] formalReceipt", () => {

@@ -408,6 +408,9 @@ export interface paths {
     /**
      * 注文に使った Square の決済を全額返金し、注文を消す
      * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+     * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+     * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
      */
     post: operations["refundOrderSquarePayment"];
   };
@@ -419,6 +422,7 @@ export interface paths {
      * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
      * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
      * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+     * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
      */
     post: operations["refundOrderSquarePaymentKeepingOrder"];
   };
@@ -666,6 +670,8 @@ export interface components {
       discount_order_cups?: number;
       payment_method: components["schemas"]["PaymentMethod"];
       square_refund_status?: components["schemas"]["SquareRefundStatus"];
+      /** @description 個別会計の支払い（払った順）。一括で払った注文では空 */
+      payments: components["schemas"]["OrderPaymentResponse"][];
       menus: components["schemas"]["MenuInfo"][];
       /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
       cups: components["schemas"]["OrderCupResponse"][];
@@ -690,6 +696,12 @@ export interface components {
        * @description payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
        */
       square_checkout_id?: string | null;
+      /**
+       * @description 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
+       * amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+       * Square の支払いを含めば square、含まなければ cash になる。
+       */
+      payments?: components["schemas"]["OrderPaymentCreate"][];
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
       /**
@@ -1090,6 +1102,38 @@ export interface components {
      * @enum {string}
      */
     PaymentMethod: "cash" | "square";
+    OrderPaymentCreate: {
+      method: components["schemas"]["PaymentMethod"];
+      /** @description この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+      amount: number;
+      /** @description お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する） */
+      received: number;
+      /**
+       * @description この支払いで引いた割引（円）
+       * @default 0
+       */
+      discount?: number;
+      /** @description この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない） */
+      menu_indexes?: number[];
+      /**
+       * Format: uuid
+       * @description method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。
+       */
+      square_checkout_id?: string | null;
+    };
+    OrderPaymentResponse: {
+      method: components["schemas"]["PaymentMethod"];
+      amount: number;
+      received: number;
+      discount: number;
+      /** @description この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない */
+      order_menu_ids: string[];
+      /** Format: uuid */
+      square_checkout_id?: string | null;
+      /** @description Square で払ったときの決済画面の種類（SquarePaymentType の値） */
+      square_payment_type?: string | null;
+      square_refund_status?: components["schemas"]["SquareRefundStatus"];
+    };
     /**
      * @description Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
      * @enum {string}
@@ -2662,6 +2706,9 @@ export interface operations {
   /**
    * 注文に使った Square の決済を全額返金し、注文を消す
    * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+   * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
    */
   refundOrderSquarePayment: {
     parameters: {
@@ -2715,6 +2762,7 @@ export interface operations {
    * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
    * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
    * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+   * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
    */
   refundOrderSquarePaymentKeepingOrder: {
     parameters: {

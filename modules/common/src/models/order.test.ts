@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
+import { cashierStateWireSchema } from "./global";
 import type { ItemType } from "./item";
 import { MenuEntity } from "./menu";
 import { OrderEntity } from "./order";
@@ -368,5 +369,33 @@ describe("[unit] order entity", () => {
     order.addComment("master", "2");
     expect(order.comments[1].author).toBe("master");
     expect(order.comments[1].text).toBe("2");
+  });
+});
+
+describe("[unit] order split payments", () => {
+  test("survive JSON and the wire schema (orders queued while offline)", () => {
+    const order = OrderEntity.createNew({ orderId: 5 });
+    order.payments = [
+      {
+        method: "cash",
+        amount: 400,
+        received: 1000,
+        discount: 100,
+        menuIndexes: [0, 2],
+      },
+      {
+        method: "square",
+        amount: 300,
+        received: 300,
+        discount: 0,
+        menuIndexes: [1],
+        squareCheckoutId: "00000000-0000-4000-8000-000000000031",
+      },
+    ];
+    const stored = cashierStateWireSchema.shape.edittingOrder.parse(
+      JSON.parse(JSON.stringify(order.toOrder())),
+    );
+    expect(OrderEntity.fromOrder(stored).payments).toEqual(order.payments);
+    expect(OrderEntity.createNew({ orderId: 6 }).payments).toEqual([]);
   });
 });
