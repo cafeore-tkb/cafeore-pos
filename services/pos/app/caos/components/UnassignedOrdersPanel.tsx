@@ -55,8 +55,8 @@ const UnassignedCard: React.FC<{
   readOnly = false,
   className = "",
 }) => {
-  const isOpen = pick.isOpen(card);
-  const isMergeCandidate = pick.canMergeWith(card);
+  const isOpen = !readOnly && pick.isOpen(card);
+  const isMergeCandidate = !readOnly && pick.canMergeWith(card);
   return (
     <OrderCard
       card={card}
@@ -243,19 +243,20 @@ export const UnassignedStrip: React.FC<
           </div>
         </ScrollArea>
       )}
-      <DragGhost pick={pick} looks={looks} size="queue" />
+      {!readOnly && <DragGhost pick={pick} looks={looks} size="queue" />}
     </section>
   );
 };
 
 /** 管制盤 C の右の注文の列。未割当のカードを注文番号の行ごとに並べる（logic/cards の unassignedRows）。10 注文くらいが一度に見える高さ */
-export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
+export const OrderQueuePanel: React.FC<UnassignedProps> = ({
   orders,
   looks,
   selectedOrderId,
   nowMs,
   pick,
   unfinished,
+  readOnly = false,
   nextAvailable,
 }) => {
   const rows = unassignedRows(orders);
@@ -308,6 +309,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
                     card={card}
                     looks={looks}
                     pick={pick}
+                    readOnly={readOnly}
                     size="sm"
                     selected={sharesOrder(card, selectedOrderId)}
                     nowMs={nowMs}
@@ -320,7 +322,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
           {rows.length === 0 && <EmptyNote />}
         </ScrollArea>
       )}
-      <DragGhost pick={pick} looks={looks} size="sm" />
+      {!readOnly && <DragGhost pick={pick} looks={looks} size="sm" />}
     </section>
   );
 };

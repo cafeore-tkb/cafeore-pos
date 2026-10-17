@@ -60,9 +60,9 @@ export interface ControlViewProps {
   onMergeOrders: (firstKey: string, intoKey: string) => void;
   /** 統合の解除（統合した未割当・待機のカードから cupId の 1 杯を外して未割当に戻す） */
   onSplitCup: (card: CaosCard, cupId: string) => void;
-  /** 閲覧だけの画面（/master-sheet/view）。空きスロットを出さず、カードを押しても動かさない */
+  /** 閲覧だけの画面（/master-sheet/view、A・C・D共通）。空きスロット・交代・割当操作を出さず、カードのタップ・長押し・ドラッグで盤面を変更しない */
   readOnly?: boolean;
-  /** 点滅させるカード（key。閲覧だけの画面で、タイムラインに新しく入ったカード。管制盤 A） */
+  /** 点滅させるカード（key。閲覧だけの画面で、新しく割り当てた・抽出を始めたカード。管制盤 A・C・D） */
   flashKeys?: ReadonlySet<string>;
   /** 未割当の欄の「未提供」のタブ（操作の画面だけ。渡したときだけ、未割当の欄の見出しを「未割当」「未提供」のタブにする） */
   unfinished?: UnfinishedView;

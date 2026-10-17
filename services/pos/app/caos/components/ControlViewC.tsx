@@ -46,6 +46,8 @@ const ControlViewCBoard: React.FC<
   unfinished,
   pick,
   hold,
+  readOnly = false,
+  flashKeys,
 }) => (
   <section
     className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
@@ -71,7 +73,7 @@ const ControlViewCBoard: React.FC<
                 bayId={bay.id}
                 status={lane}
                 nominatedCups={pendingNominatedCups(unassignedOrders, bay.id)}
-                onOpenLane={onOpenLane}
+                onOpenLane={readOnly ? undefined : onOpenLane}
                 className="w-[46px]"
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -81,15 +83,19 @@ const ControlViewCBoard: React.FC<
                     className="font-black text-[18px] text-slate-950"
                   />
                   <LaneAbility dripper={bay.id} />
-                  <LaneChangeButton
-                    dripper={bay.id}
-                    layout="inline"
-                    className="ml-auto h-6"
-                  />
+                  {!readOnly && (
+                    <LaneChangeButton
+                      dripper={bay.id}
+                      layout="inline"
+                      className="ml-auto h-6"
+                    />
+                  )}
                 </div>
                 <div className="grid min-h-0 flex-1 grid-cols-[156px_minmax(0,1fr)] items-stretch gap-1.5">
                   {current ? (
                     <LaneCard
+                      readOnly={readOnly}
+                      flash={flashKeys?.has(current.key)}
                       card={current}
                       look={looks.get(current.key)}
                       selected={sharesOrder(current, selectedOrderId)}
@@ -98,7 +104,11 @@ const ControlViewCBoard: React.FC<
                       pick={pick}
                       hold={hold}
                       menu={cardMenu}
-                      className="cursor-pointer hover:ring-2 hover:ring-blue-400"
+                      className={
+                        readOnly
+                          ? ""
+                          : "cursor-pointer hover:ring-2 hover:ring-blue-400"
+                      }
                     />
                   ) : (
                     <span className="rounded-lg border border-slate-300 border-dashed" />
@@ -109,6 +119,8 @@ const ControlViewCBoard: React.FC<
                     {lane.waiting.map((ticket) => (
                       <LaneCard
                         key={ticket.key}
+                        readOnly={readOnly}
+                        flash={flashKeys?.has(ticket.key)}
                         card={ticket}
                         look={looks.get(ticket.key)}
                         selected={sharesOrder(ticket, selectedOrderId)}
@@ -117,10 +129,10 @@ const ControlViewCBoard: React.FC<
                         pick={pick}
                         hold={hold}
                         menu={cardMenu}
-                        className="w-[150px] shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
+                        className={`w-[150px] shrink-0 ${readOnly ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-400"}`}
                       />
                     ))}
-                    {lane.waiting.length === 0 && (
+                    {!readOnly && lane.waiting.length === 0 && (
                       <EmptySlotButton
                         onClick={() => onOpenEmptySlot(bay.id)}
                         className="flex-1"
@@ -137,6 +149,7 @@ const ControlViewCBoard: React.FC<
 
     <aside className="min-h-0 min-w-0">
       <OrderQueuePanel
+        readOnly={readOnly}
         nextAvailable={nextAvailable}
         orders={unassignedOrders}
         looks={looks}
@@ -164,8 +177,22 @@ const LaneCard: React.FC<{
   hold: CardHold;
   menu?: CardMenu;
   className: string;
-}> = ({ card, look, selected, lane, nowMs, pick, hold, menu, className }) => {
-  const mergeTap = pick.canMergeWith(card);
+  readOnly?: boolean;
+  flash?: boolean;
+}> = ({
+  card,
+  look,
+  selected,
+  lane,
+  nowMs,
+  pick,
+  hold,
+  menu,
+  className,
+  readOnly = false,
+  flash = false,
+}) => {
+  const mergeTap = !readOnly && pick.canMergeWith(card);
   return (
     <OrderCard
       card={card}
@@ -177,17 +204,21 @@ const LaneCard: React.FC<{
       data-ticket-label={orderLabel(card)}
       mergeTap={mergeTap}
       dropSide={dropSideOn(pick.drag.target, card.key)}
-      onPointerDown={(event) => hold.press(card, event)}
-      onClickCapture={hold.suppressClick}
-      onClick={() => (mergeTap ? pick.tap(card) : menu?.toggle(card))}
-      className={className}
+      onPointerDown={readOnly ? undefined : (event) => hold.press(card, event)}
+      onClickCapture={readOnly ? undefined : hold.suppressClick}
+      onClick={
+        readOnly
+          ? undefined
+          : () => (mergeTap ? pick.tap(card) : menu?.toggle(card))
+      }
+      className={`${className} ${flash ? "caos-arrival" : ""}`}
     >
       <CardOverlay
         card={card}
         lane={lane}
         look={look}
         nowMs={nowMs}
-        menu={menu}
+        menu={readOnly ? undefined : menu}
       />
     </OrderCard>
   );
