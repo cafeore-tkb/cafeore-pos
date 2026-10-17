@@ -177,7 +177,7 @@ export const useCaosSession = () => {
       ),
     [cards, colorSettings, beanIndex, comments, testing, people],
   );
-  // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
+  // 豆残量確認に出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
     () => (test.session ? undefined : waitingCupsByBean(cards, beanIndex)),
     [cards, beanIndex, test.session],
@@ -392,7 +392,7 @@ export const useCaosSession = () => {
     nowMs,
     /** ヘッダーの時刻（日本時間の「10:05:09」） */
     timeLabel: jstClock(nowMs),
-    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
+    /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
     beans: {
       ...beanStock,
       waitingCups: beanWaitingCups,
