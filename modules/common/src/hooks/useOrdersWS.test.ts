@@ -18,6 +18,7 @@ vi.mock("react", () => ({
   useState: (initial: unknown) => [initial, () => {}],
   useRef: (current: unknown) => ({ current }),
   useEffect: (effect: () => void) => effect(),
+  useMemo: (factory: () => unknown) => factory(),
 }));
 
 const { useOrdersWS } = await import("./useOrdersWS");

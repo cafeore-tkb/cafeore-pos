@@ -147,6 +147,7 @@ import { Label } from "../ui/label";
 
 type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
+  /** キャンセルした注文も含む全部の注文（番号・引換券・過去の注文に使う） */
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
@@ -283,6 +284,11 @@ const CashierV2 = ({
     null,
   );
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  // 作る量の見込みには、キャンセルした注文を入れない（orders はキャンセルした注文も含む）
+  const activeOrders = useMemo(
+    () => orders?.filter((order) => !order.isCancelled()),
+    [orders],
+  );
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
     useLatestOrderId(orders, canSaveNow);
   // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
@@ -1269,7 +1275,7 @@ const CashierV2 = ({
                 onOrderIdOverride={overrideOrderId}
               />
               <ReadyTimeEstimate
-                orders={orders}
+                orders={activeOrders}
                 drinkCups={newOrder.getDrinkCups().length}
               />
               {locked && (

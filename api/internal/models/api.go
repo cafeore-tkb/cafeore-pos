@@ -741,9 +741,15 @@ type OrderPaymentResponse struct {
 
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount int                `json:"billing_amount"`
-	Comments      *[]CommentResponse `json:"comments,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
+	BillingAmount int `json:"billing_amount"`
+
+	// CancelledAt キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない
+	CancelledAt *time.Time `json:"cancelled_at"`
+
+	// CashRefundedAt 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
+	CashRefundedAt *time.Time         `json:"cash_refunded_at"`
+	Comments       *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
 
 	// Cups 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
 	Cups              []OrderCupResponse `json:"cups"`

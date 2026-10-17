@@ -177,7 +177,7 @@ const PastOrderCard = ({
   );
 };
 
-// Square で払った注文の返金。注文を消す返金と、返金だけして注文を残す返金を選べる。
+// Square で払った注文の返金。注文をキャンセルする（消さずに残す）返金と、返金だけしてキャンセルしない返金を選べる。
 // 返金を受け付けたら（結果待ち・返金済み）ボタンは出さず、状態だけを出す。
 const SquareRefundActions = ({ order }: { order: WithId<OrderEntity> }) => {
   const status = order.squareRefundStatus;
@@ -213,9 +213,11 @@ const SquareRefundActions = ({ order }: { order: WithId<OrderEntity> }) => {
           </SquareRefundButton>
           <SquareRefundButton
             label={label}
-            orderOnRefund="delete"
+            orderOnRefund="cancel"
             refund={() => squareRepository.refundOrder(order.id)}
-          />
+          >
+            返金＆キャンセル
+          </SquareRefundButton>
         </div>
       )}
     </div>

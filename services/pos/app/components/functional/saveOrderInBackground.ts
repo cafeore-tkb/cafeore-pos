@@ -199,6 +199,9 @@ const readUnsentOrders = () => {
   }
 };
 
+// まだ保存できていない注文が変わったら呼ぶ（溜めた・保存できた）
+const unsentListeners = new Set<() => void>();
+
 const updateUnsentOrders = (
   update: (orders: Record<string, Order>) => Record<string, Order>,
 ) => {
@@ -208,7 +211,27 @@ const updateUnsentOrders = (
   } catch (error) {
     console.error(error);
   }
+  for (const listener of unsentListeners) listener();
 };
+
+/**
+ * 端末に残っている、まだ保存できていない注文が無くなるまで待つ（オフラインで溜めた注文・保存に失敗した注文が、
+ * まとめて送ったり再送したりして全部保存できるまで）。signal で待つのをやめる
+ */
+const waitUntilUnsentOrdersSaved = (signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const check = () => {
+      if (Object.keys(readUnsentOrders()).length === 0) {
+        unsentListeners.delete(check);
+        resolve();
+      }
+    };
+    unsentListeners.add(check);
+    signal.addEventListener("abort", () => unsentListeners.delete(check), {
+      once: true,
+    });
+    check();
+  });
 
 // randomUUID は https か localhost でしか使えないので、使えないときは getRandomValues で UUID（v4）を作る
 const newKey = (): string => {
@@ -234,4 +257,5 @@ export {
   notifyOfflineOrders,
   saveOrderInBackground,
   sendUnsentOrders,
+  waitUntilUnsentOrdersSaved,
 };

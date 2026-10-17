@@ -122,11 +122,14 @@ func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.T
 // caosUnits は CaOS のカードに入る行：注文のカップ（最初の抽出）と、緊急（入れ直し）。列は order_cups と同じ名前で、
 // cup_id は入れ直したカップ（カップなら自分）。注文・明細・商品は入れ直したカップのもの。
 // 準備完了・提供の時刻は盤面の決まりに使わないので読まない。
-const caosUnits = `(SELECT id, id AS cup_id, order_id, order_menu_id, item_id,
-		dripper, dripper_position, drip_id, brew_started_at, brew_finished_at FROM order_cups
+// キャンセルした注文のカップは入れない（注文を消したときと同じく盤面から消える。order_cancel.go）。
+const caosUnits = `(SELECT c.id, c.id AS cup_id, c.order_id, c.order_menu_id, c.item_id,
+		c.dripper, c.dripper_position, c.drip_id, c.brew_started_at, c.brew_finished_at
+	FROM order_cups c JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL
 	UNION ALL SELECT e.id, e.order_cup_id, c.order_id, c.order_menu_id, c.item_id,
 		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at
-	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id)`
+	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id
+	JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL)`
 
 // caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）。
 // 準備完了・提供（ReadyAt・ServedAt）は読まないので、いつも nil
@@ -227,7 +230,8 @@ func compareUUID(a, b uuid.UUID) int {
 	return strings.Compare(a.String(), b.String())
 }
 
-// lockCaosOrders は注文の行を ID の順にロックし、カップを読む。orderIDs（書くカップの注文）は、消えていれば 409、今日の注文でなければ 400。
+// lockCaosOrders は注文の行を ID の順にロックし、カップを読む。orderIDs（書くカップの注文）は、消えているかキャンセルしていれば 409、
+// 今日の注文でなければ 400。
 // extra（番号をずらすかもしれないカップと、入るカードの書かないカップの注文）もいっしょに ID の順でロックする（消えていたら飛ばす）。返すのは orderIDs の注文だけ。
 // ロックは 1 回の並びで取る（2 回に分けると、ほかの書き込みと順番が逆になってデッドロックしうる）。
 func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Time) (map[uuid.UUID]*models.Order, error) {
@@ -248,6 +252,9 @@ func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Ti
 			return nil, err
 		case !must[id]:
 			continue
+		}
+		if order.CancelledAt != nil {
+			return nil, conflictErrorf("注文がキャンセルされました（ほかの端末でキャンセルされたかもしれません）")
 		}
 		if order.CreatedAt.Before(start) || !order.CreatedAt.Before(end) {
 			return nil, ruleErrorf("今日の注文のカップだけ書けます")

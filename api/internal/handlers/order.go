@@ -216,6 +216,8 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		CreatedAt:         order.CreatedAt,
 		ReadyAt:           order.ReadyAt,
 		ServedAt:          order.ServedAt,
+		CancelledAt:       order.CancelledAt,
+		CashRefundedAt:    order.CashRefundedAt,
 		BillingAmount:     order.BillingAmount,
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
@@ -726,6 +728,9 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		if order.CancelledAt != nil {
+			return errOrderCancelled
+		}
 		orderMenus, orderCups, err := loadOrderMenus(tx, order.ID, req.MenuIds, &order)
 		if err != nil {
 			return err
@@ -790,6 +795,8 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 			status, message = http.StatusNotFound, "Order not found"
 		case errors.Is(err, errInvalidOrderMenus):
 			status = http.StatusBadRequest
+		case errors.Is(err, errOrderCancelled):
+			status = http.StatusConflict
 		}
 		c.JSON(status, gin.H{"error": message})
 		return

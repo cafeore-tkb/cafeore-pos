@@ -622,6 +622,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/cancel:
+    post:
+      summary: 注文をキャンセルする（返金はしない）
+      description: |
+        注文は消さずに cancelled_at を付けて残す（レジの「過去の注文」に「キャンセル」として出す）。
+        番号は使ったまま（次の注文は次の番号）、使った在庫も戻さない。マスター・提供・CaOS・呼び出しの画面には出さない。
+        返金はしない。Square で払った分は POST /api/orders/{id}/square-refund-keep-order、
+        現金で払った分は手で返して POST /api/orders/{id}/cash-refund で記録する。
+        キャンセル済みなら、キャンセルした時刻を変えずに注文を返す。
+      operationId: cancelOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: キャンセルした注文
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: IDの形式が不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: オーダーが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/orders/{id}/cash-refund:
+    post:
+      summary: 現金で受け取った分を返したことを記録する
+      description: |
+        お金はレジが手で返す。ここでは返したこと（cash_refunded_at）を残すだけで、注文はキャンセルしない
+        （キャンセルもするときは POST /api/orders/{id}/cancel も呼ぶ）。
+        返金した分は売上に数えず、返金した注文の番号は引換券の割引に使えない。
+        個別会計では、現金で受け取った分を全部返したことにする。記録済みなら、記録した時刻を変えずに注文を返す。
+      operationId: refundOrderCash
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: オーダーID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 現金の返金を記録した注文
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: IDの形式が不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: オーダーが見つからない、またはその注文に現金の支払いが無い（Square だけで払った注文）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders/{id}/comments:
     get:
       summary: 特定オーダーのコメント一覧取得
@@ -1676,9 +1749,9 @@ paths:
       summary: 支払い済みの決済を全額返金する
       description: |
         Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
-        注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
-        Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
-        GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+        注文と結び付いていれば、Square が返金を受け付けた時点（refund_status が pending）でその注文をキャンセルする
+        （消さずに cancelled_at を付ける）。決済は注文に結び付いたままなので、あとで Square で失敗したら、
+        その注文の square_refund_status が failed になる。
         交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
         応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
         返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
@@ -1696,7 +1769,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した
+          description: Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文はキャンセルした
           content:
             application/json:
               schema:
@@ -1714,7 +1787,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutConflictResponse'
         '500':
-          description: 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す
+          description: 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする
           content:
             application/json:
               schema:
@@ -1733,10 +1806,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/orders/{id}/square-refund:
     post:
-      summary: 注文に使った Square の決済を全額返金し、注文を消す
+      summary: 注文に使った Square の決済を全額返金し、注文をキャンセルする
       description: |
         その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
-        個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+        個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文をキャンセルする
+        （消さずに cancelled_at を付ける。番号は使ったまま、在庫も戻さない）。現金で払った分は返さない
+        （手で返して POST /api/orders/{id}/cash-refund で記録する）。
         応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
         途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
       operationId: refundOrderSquarePayment
@@ -1751,7 +1826,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Square が返金を受け付け、注文を消した
+          description: Square が返金を受け付け、注文をキャンセルした
           content:
             application/json:
               schema:
@@ -1769,7 +1844,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SquareCheckoutConflictResponse'
         '500':
-          description: 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す
+          description: 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする
           content:
             application/json:
               schema:
@@ -1794,7 +1869,7 @@ paths:
         （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
         あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
         結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
-        返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+        返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずにキャンセルだけをする。
         個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
       operationId: refundOrderSquarePaymentKeepingOrder
       tags:
@@ -2453,6 +2528,16 @@ components:
           type: string
           format: date-time
           nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない
+        cash_refunded_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
         billing_amount:
           type: integer
         received:
