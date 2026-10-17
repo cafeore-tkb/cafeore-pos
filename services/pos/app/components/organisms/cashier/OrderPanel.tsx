@@ -40,9 +40,9 @@ type props = {
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
   canCancelPayment: boolean;
   onSelect: (index: number) => void;
-  onToggleVoid: (index: number) => void;
+  onRemove: (index: number) => void;
   onOpenAssign: () => void;
-  onVoidAll: () => void;
+  onRemoveAll: () => void;
   onFocusCoupon: () => void;
   onToggleSpecial: () => void;
   onOpenMemo: () => void;
@@ -131,16 +131,14 @@ const LinesSection = ({
   currentItemKeys,
   prepaid,
   onSelect,
-  onToggleVoid,
+  onRemove,
   onOpenAssign,
-  onVoidAll,
+  onRemoveAll,
   onRefundAll,
 }: props) => {
   const { colorSettings } = useColorSettings();
   const listRef = useRef<HTMLDivElement>(null);
   const { lines, selected } = draft;
-  const activeCount = lines.filter((line) => !line.voided).length;
-  const voidedCount = lines.length - activeCount;
   const selectedLine = selected === null ? null : lines[selected];
   const canAssign = canAssignSelected(draft);
 
@@ -163,7 +161,7 @@ const LinesSection = ({
         )}
         {lines.length > 0 && (
           <span className="ml-auto text-sm text-stone-600">
-            {activeCount}点{voidedCount > 0 && `（削除 ${voidedCount}）`}
+            {lines.length}点
           </span>
         )}
       </div>
@@ -212,8 +210,6 @@ const LinesSection = ({
                     className={cn(
                       "font-bold text-[15px] leading-[1.3]",
                       paid && "text-stone-400",
-                      line.voided &&
-                        "text-stone-400 line-through decoration-red-700 decoration-double",
                     )}
                   >
                     {line.menu.name}
@@ -238,8 +234,6 @@ const LinesSection = ({
                   className={cn(
                     "font-medium text-[15px] tabular-nums",
                     paid && "text-stone-400",
-                    line.voided &&
-                      "text-stone-400 line-through decoration-red-700 decoration-double",
                   )}
                 >
                   {formatYen(line.menu.price)}
@@ -287,26 +281,24 @@ const LinesSection = ({
         </button>
         <button
           type="button"
-          onClick={() => selected !== null && onToggleVoid(selected)}
+          onClick={() => selected !== null && onRemove(selected)}
           disabled={selectedLine === null}
           className={cn(
             "h-12 min-w-0 flex-1 rounded-[10px] border font-bold text-sm leading-tight",
             selectedLine === null
               ? "cursor-not-allowed border-stone-200 bg-stone-100 text-stone-400"
-              : selectedLine.voided
-                ? "border-stone-400 bg-white text-stone-900"
-                : "border-red-700 bg-white text-red-700",
+              : "border-red-700 bg-white text-red-700",
           )}
         >
-          {selectedLine?.voided ? "削除を戻す" : "削除"}
+          削除
         </button>
         <button
           type="button"
-          onClick={onVoidAll}
-          disabled={activeCount === 0 || !canEditLines(draft)}
+          onClick={onRemoveAll}
+          disabled={lines.length === 0 || !canEditLines(draft)}
           className={cn(
             "h-12 min-w-0 flex-1 rounded-[10px] border font-bold text-sm leading-tight",
-            activeCount > 0 && canEditLines(draft)
+            lines.length > 0 && canEditLines(draft)
               ? "border-red-700 bg-white text-red-700"
               : "cursor-not-allowed border-stone-200 bg-stone-100 text-stone-400",
           )}

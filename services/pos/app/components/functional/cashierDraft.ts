@@ -16,7 +16,7 @@ import {
 /**
  * レジで入力中の注文の下書き（画面の状態）
  *
- * 送る注文（OrderEntity）は、ここから削除していない商品と受取金額を写して作る（cashierAtoms）。
+ * 送る注文（OrderEntity）は、ここから商品と受取金額を写して作る（cashierAtoms）。
  * 割引は過去の注文と照らし合わせるので、画面（CashierV2）が引換券番号から決める。
  */
 
@@ -33,8 +33,6 @@ export type CashierLine = {
   /** 同じ商品を何度足しても見分けられる番号 */
   key: number;
   menu: WithId<MenuEntity>;
-  /** 削除した。二重線で一覧に残し、「削除を戻す」で戻せる。送る注文には入れない */
-  voided: boolean;
 };
 
 export type CashierDraft = {
@@ -90,15 +88,15 @@ export const emptyCashierDraft = (): CashierDraft => ({
 
 /** 消すと失うものがあるか（商品・引換券番号・特殊な割引・特記事項・受取金額） */
 export const hasDraftInput = (draft: CashierDraft): boolean =>
-  draft.lines.some((line) => !line.voided) ||
+  draft.lines.length > 0 ||
   draft.coupon !== "" ||
   draft.special ||
   draft.memo !== "" ||
   draft.received !== "";
 
-/** 削除していない商品 */
+/** 送る注文に入れる商品（行の並び順） */
 export const activeMenus = (draft: CashierDraft): WithId<MenuEntity>[] =>
-  draft.lines.filter((line) => !line.voided).map((line) => line.menu);
+  draft.lines.map((line) => line.menu);
 
 /** 指名できる商品か。指名するのはドリッパーで淹れるもの（抽出が要るもの）だけ */
 export const canAssignMenu = (menu: MenuEntity): boolean =>
@@ -119,10 +117,10 @@ export const canEditLines = (draft: CashierDraft): boolean =>
 export const isDiscountLocked = (draft: CashierDraft): boolean =>
   hasTenders(draft);
 
-/** 選んでいる行が、今指名できるか（削除していない・抽出が要る） */
+/** 選んでいる行が、今指名できるか（抽出が要る） */
 export const canAssignSelected = (draft: CashierDraft): boolean => {
   const line = draft.selected === null ? null : draft.lines[draft.selected];
-  return !!line && !line.voided && canAssignMenu(line.menu);
+  return !!line && canAssignMenu(line.menu);
 };
 
 /** 引換券番号の欄を選んでいるか（入れる段階で、特殊な割引でなく、行も備考も選んでいない）。欄に枠を出す */
@@ -161,39 +159,30 @@ export const addLine = (
   if (!canEditLines(draft)) return draft;
   return {
     ...draft,
-    lines: [...draft.lines, { key: draft.nextKey, menu, voided: false }],
+    lines: [...draft.lines, { key: draft.nextKey, menu }],
     nextKey: draft.nextKey + 1,
     selected: draft.lines.length,
   };
 };
 
-/** 行を削除する（削除した行は戻す）。選んでいた行は外す */
-export const toggleVoid = (
+/** 行を削除する（一覧から消す。戻すときはもう一度足す）。選んでいた行は外す */
+export const removeLine = (
   draft: CashierDraft,
   index: number,
 ): CashierDraft => {
   if (!canEditLines(draft) || !draft.lines[index]) return draft;
   return {
     ...draft,
-    lines: draft.lines.map((line, i) =>
-      i === index ? { ...line, voided: !line.voided } : line,
-    ),
+    lines: draft.lines.filter((_, i) => i !== index),
     selected: null,
     zone: "coupon",
   };
 };
 
 /** 全部の行を削除する */
-export const voidAll = (draft: CashierDraft): CashierDraft =>
-  canEditLines(draft)
-    ? {
-        ...draft,
-        lines: draft.lines.map((line) =>
-          line.voided ? line : { ...line, voided: true },
-        ),
-        selected: null,
-        zone: "coupon",
-      }
+export const removeAllLines = (draft: CashierDraft): CashierDraft =>
+  canEditLines(draft) && draft.lines.length > 0
+    ? { ...draft, lines: [], selected: null, zone: "coupon" }
     : draft;
 
 /** 行を選ぶ。選んでいる行をもう一度選ぶと外す */
@@ -483,7 +472,7 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * - 商品キー: 商品を足す（入れる段階だけ）
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
  *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
- * - Backspace: 行を選んでいれば削除（戻す）、でなければ数字を 1 桁消す
+ * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - Space: 選んでいる行の指名・備考を開く
  * - Enter: 一括会計・確定（Square なら決済を始める）。
@@ -513,7 +502,7 @@ export const cashierKeyIntent = (
     case "Backspace":
       return update(
         draft.selected !== null
-          ? toggleVoid(draft, draft.selected)
+          ? removeLine(draft, draft.selected)
           : deleteDigit(draft),
       );
     case "ArrowLeft":

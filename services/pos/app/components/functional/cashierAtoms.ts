@@ -43,7 +43,7 @@ type UpdateCashierDraftPayload = {
 };
 
 /**
- * Side-effect bridge: update the draft, then copy its items (without voided lines)
+ * Side-effect bridge: update the draft, then copy its items
  * and received amount to the editing order and sync it.
  */
 const updateCashierDraftAtom = atom(

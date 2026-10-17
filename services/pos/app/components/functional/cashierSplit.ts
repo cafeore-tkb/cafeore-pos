@@ -116,10 +116,10 @@ export const paidLineKeys = (draft: CashierDraft): Set<number> => {
   );
 };
 
-/** まだ払っていない行（削除した行を除く。並び順） */
+/** まだ払っていない行（並び順） */
 export const unpaidLines = (draft: CashierDraft): CashierLine[] => {
   const paid = paidLineKeys(draft);
-  return draft.lines.filter((line) => !line.voided && !paid.has(line.key));
+  return draft.lines.filter((line) => !paid.has(line.key));
 };
 
 /** 行の、割引の対象のコーヒーの杯数（OrderEntity.getCoffeeCups と同じ数え方） */
@@ -146,9 +146,7 @@ export const allocateDiscount = (
     0,
   );
   const inSubtotal = new Set(split.subtotals.flatMap((s) => s.lineKeys));
-  const free = draft.lines.filter(
-    (line) => !line.voided && !inSubtotal.has(line.key),
-  );
+  const free = draft.lines.filter((line) => !inSubtotal.has(line.key));
   const first = split.discountFirst.flatMap((key) => {
     const line = free.find((candidate) => candidate.key === key);
     return line ? [line] : [];
@@ -420,9 +418,7 @@ export const removeTenders = (
 export const splitPaymentsForOrder = (draft: CashierDraft): SplitPayment[] => {
   const { split } = draft;
   const positions = new Map(
-    draft.lines
-      .filter((line) => !line.voided)
-      .map((line, index) => [line.key, index]),
+    draft.lines.map((line, index) => [line.key, index]),
   );
   return split.tenders.map((tender) => {
     const subtotal = split.subtotals.find((s) => s.id === tender.subtotalId);

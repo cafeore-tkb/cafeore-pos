@@ -47,13 +47,13 @@ import {
   focusMemo,
   hasDraftInput,
   inputDigits,
+  removeAllLines,
+  removeLine,
   selectLine,
   setExactReceived,
   setMemo,
   setPayment,
   toggleSpecial,
-  toggleVoid,
-  voidAll,
 } from "../functional/cashierDraft";
 import {
   type CashierTender,
@@ -179,7 +179,7 @@ const isOutsideRegister = (target: EventTarget | null) =>
     "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
   ) !== null;
 
-type CashierDialogKind = "assign" | "memo" | "voidAll" | "reset";
+type CashierDialogKind = "assign" | "memo" | "removeAll" | "reset";
 
 /** 先払い（個別小計・小計分割）のダイアログ */
 type PrepayDialogState =
@@ -957,9 +957,9 @@ const CashierV2 = ({
     setDialog("memo");
   }, [updateDraft]);
 
-  const openVoidAll = useCallback(() => {
+  const openRemoveAll = useCallback(() => {
     if (newOrder.menus.length > 0) {
-      setDialog("voidAll");
+      setDialog("removeAll");
     }
   }, [newOrder]);
 
@@ -1285,11 +1285,11 @@ const CashierV2 = ({
               onSelect={(index) =>
                 updateDraft((current) => selectLine(current, index))
               }
-              onToggleVoid={(index) =>
-                updateDraft((current) => toggleVoid(current, index))
+              onRemove={(index) =>
+                updateDraft((current) => removeLine(current, index))
               }
               onOpenAssign={openAssign}
-              onVoidAll={openVoidAll}
+              onRemoveAll={openRemoveAll}
               onFocusCoupon={() => updateDraft(focusCoupon)}
               onToggleSpecial={() =>
                 updateDraft((current) => toggleSpecial(current, couponApplied))
@@ -1378,17 +1378,17 @@ const CashierV2 = ({
         onClose={() => setDialog(null)}
       />
       <ConfirmDialog
-        open={dialog === "voidAll"}
+        open={dialog === "removeAll"}
         title="全削除"
         sub={`No.${newOrder.orderId}`}
         question={`商品 ${itemCount}点（${formatYen(newOrder.total)}） をすべて削除しますか？`}
-        note="削除した商品は二重線で一覧に残り、「削除を戻す」で 1 点ずつ戻せます。"
-        hint="Enter で全削除 ・ Esc で閉じる"
+        note="削除した商品は一覧から消え、戻せません（戻すときはもう一度足してください）。"
+        hint="Enter でやめる ・ 消すときは「全削除する」を押す（Tab で移って Enter）"
         confirmLabel="全削除する"
-        // 削除は戻せるので、Enter で全削除できるようにする
-        focus="confirm"
+        // 戻せないので、押し間違いの Enter では消さない
+        focus="cancel"
         onConfirm={() => {
-          updateDraft(voidAll);
+          updateDraft(removeAllLines);
           setDialog(null);
         }}
         onClose={() => setDialog(null)}

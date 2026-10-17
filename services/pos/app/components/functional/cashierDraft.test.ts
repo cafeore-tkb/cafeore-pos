@@ -16,11 +16,11 @@ import {
   hasDraftInput,
   inputDigits,
   moveCursor,
+  removeAllLines,
+  removeLine,
   selectLine,
   setExactReceived,
   toggleSpecial,
-  toggleVoid,
-  voidAll,
 } from "./cashierDraft";
 import { beginRest } from "./cashierSplit";
 
@@ -63,25 +63,25 @@ const keys = (draft: CashierDraft, ...pressed: string[]) =>
   }, draft);
 
 describe("[unit] cashierDraft の商品", () => {
-  test("削除した行は一覧に残し、送る商品からは外す。もう一度で戻す", () => {
-    const draft = toggleVoid(withLines(blend, coaster), 0);
-    expect(draft.lines).toHaveLength(2);
-    expect(draft.lines[0].voided).toBe(true);
+  test("削除した行は一覧から消し、送る商品からも外す。選んでいた行は外す", () => {
+    const draft = removeLine(withLines(blend, coaster), 0);
+    expect(draft.lines).toHaveLength(1);
     expect(activeMenus(draft)).toEqual([coaster]);
-    expect(activeMenus(toggleVoid(draft, 0))).toEqual([blend, coaster]);
+    expect(draft.selected).toBeNull();
+    expect(draft.zone).toBe("coupon");
   });
 
-  test("全削除はすべての行を削除する", () => {
-    const draft = voidAll(withLines(blend, coaster));
+  test("全削除はすべての行を消す", () => {
+    const draft = removeAllLines(withLines(blend, coaster));
+    expect(draft.lines).toEqual([]);
     expect(activeMenus(draft)).toEqual([]);
-    expect(draft.lines.every((line) => line.voided)).toBe(true);
   });
 
   test("会計の段階では商品を足さず、削除・選択・指名もしない（シールを先に刷っている）", () => {
     const draft = goPay(withLines(blend));
     expect(addLine(draft, coaster)).toBe(draft);
-    expect(toggleVoid(draft, 0)).toBe(draft);
-    expect(voidAll(draft)).toBe(draft);
+    expect(removeLine(draft, 0)).toBe(draft);
+    expect(removeAllLines(draft)).toBe(draft);
     expect(selectLine(draft, 0)).toBe(draft);
     expect(assignLine(draft, 0, 1, "たなか")).toBe(draft);
   });
@@ -189,9 +189,9 @@ describe("[unit] cashierDraft の数字", () => {
 });
 
 describe("[unit] hasDraftInput", () => {
-  test("削除した商品しか無ければ、消しても失うものは無い", () => {
+  test("商品を全部削除したら、消しても失うものは無い", () => {
     expect(hasDraftInput(emptyCashierDraft())).toBe(false);
-    expect(hasDraftInput(voidAll(withLines(blend)))).toBe(false);
+    expect(hasDraftInput(removeAllLines(withLines(blend)))).toBe(false);
     expect(hasDraftInput(withLines(blend))).toBe(true);
   });
 
@@ -205,9 +205,9 @@ describe("[unit] hasDraftInput", () => {
 });
 
 describe("[unit] cashierDraft の段階", () => {
-  test("商品が無ければ一括会計に進まない（削除した行だけでも進まない）", () => {
+  test("商品が無ければ一括会計に進まない（全部削除したときも進まない）", () => {
     expect(goPay(emptyCashierDraft()).step).toBe("entry");
-    expect(goPay(toggleVoid(withLines(blend), 0)).step).toBe("entry");
+    expect(goPay(removeLine(withLines(blend), 0)).step).toBe("entry");
     expect(goPay(withLines(blend)).step).toBe("pay");
   });
 
@@ -227,7 +227,8 @@ describe("[unit] cashierKeyIntent", () => {
       "goPay",
     );
     expect(
-      cashierKeyIntent(voidAll(draft), "Enter", { menus, payments }).type,
+      cashierKeyIntent(removeAllLines(draft), "Enter", { menus, payments })
+        .type,
     ).toBe("none");
   });
 
@@ -241,9 +242,9 @@ describe("[unit] cashierKeyIntent", () => {
 
   test("Backspace は選んでいる行を削除し、選んでいなければ 1 桁消す", () => {
     // 足した最後の行を選んでいるので、そのまま Backspace で消せる
-    const voided = keys(withLines(blend, coaster), "Backspace");
-    expect(voided.lines[1].voided).toBe(true);
-    expect(voided.selected).toBeNull();
+    const removed = keys(withLines(blend, coaster), "Backspace");
+    expect(activeMenus(removed)).toEqual([blend]);
+    expect(removed.selected).toBeNull();
     const onCoupon = focusCoupon(withLines(blend));
     expect(keys(onCoupon, "1", "2", "Backspace").coupon).toBe("1");
   });

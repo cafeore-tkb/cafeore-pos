@@ -8,8 +8,8 @@ import {
   emptyCashierDraft,
   inputDigits,
   isDiscountLocked,
+  removeLine,
   toggleSpecial,
-  toggleVoid,
 } from "./cashierDraft";
 import {
   allocateDiscount,
@@ -84,7 +84,7 @@ const cash = (amount: number, received = amount) => ({
 describe("[unit] cashierSplit の小計", () => {
   test("一括会計はまだ払っていない商品を全部 1 つの小計にして、会計の段階に進む", () => {
     const draft = beginRest(
-      toggleVoid(withLines(blend, latte, cookie), 2),
+      removeLine(withLines(blend, latte, cookie), 2),
       0,
       100,
     );
@@ -280,8 +280,8 @@ describe("[unit] cashierSplit の返金", () => {
 
 describe("[unit] cashierSplit の送る注文", () => {
   test("支払いは小計の行を指し、小計の割引はその小計を払い終えた支払いに付ける", () => {
-    const start = toggleVoid(withLines(blend, cookie, latte, pair), 1);
-    const [, , l] = keysOf(start);
+    const start = removeLine(withLines(blend, cookie, latte, pair), 1);
+    const [, l] = keysOf(start);
     const first = recordTender(
       beginSubtotal(preferDiscount(start, l), "items", [l], 1, 100),
       cash(500, 1000),
