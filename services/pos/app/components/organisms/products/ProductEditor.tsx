@@ -157,6 +157,7 @@ export function ProductEditor({
       const menuValues: MenuFormValues = {
         name: item.name,
         abbr: item.abbr,
+        priority: 0,
         ...menu,
         items: [{ item, quantity: 1 }],
       };
@@ -201,6 +202,8 @@ export function ProductEditor({
               price: source.price,
               // キーは重複できないので入れ直してもらう
               key: "",
+              // 複製は元のメニューの隣に並べる
+              priority: source.priority,
               items: source.items,
             }
         : (menuRetry ?? undefined);

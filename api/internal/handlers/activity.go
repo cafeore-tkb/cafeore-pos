@@ -132,6 +132,7 @@ func menuUpdatedMessage(before, after *models.Menu) string {
 		change{"略称", before.Abbr, after.Abbr},
 		change{"価格", formatYen(before.Price), formatYen(after.Price)},
 		change{"キー", before.Key, after.Key},
+		change{"優先度", strconv.Itoa(before.Priority), strconv.Itoa(after.Priority)},
 		change{"構成", menuItemsText(before), menuItemsText(after)},
 	))
 }

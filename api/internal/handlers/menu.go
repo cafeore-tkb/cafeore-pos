@@ -33,12 +33,13 @@ func toMenuResponse(menu *models.Menu) models.MenuResponse {
 	}
 
 	return models.MenuResponse{
-		Id:    openapi_types.UUID(menu.ID),
-		Name:  menu.Name,
-		Abbr:  menu.Abbr,
-		Price: menu.Price,
-		Key:   menu.Key,
-		Items: items,
+		Id:       openapi_types.UUID(menu.ID),
+		Name:     menu.Name,
+		Abbr:     menu.Abbr,
+		Price:    menu.Price,
+		Key:      menu.Key,
+		Priority: menu.Priority,
+		Items:    items,
 	}
 }
 
@@ -73,7 +74,7 @@ func buildMenuItems(menuID uuid.UUID, requests []models.MenuItemRequest) ([]mode
 
 func (h *MenuHandler) GetMenus(c *gin.Context) {
 	var menus []models.Menu
-	if err := preloadMenu(h.db).Find(&menus).Error; err != nil {
+	if err := preloadMenu(h.db).Order("priority DESC, name, id").Find(&menus).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -112,6 +113,9 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 	}
 
 	menu := models.Menu{Name: request.Name, Abbr: request.Abbr, Price: request.Price, Key: request.Key}
+	if request.Priority != nil {
+		menu.Priority = *request.Priority
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&menu).Error; err != nil {
 			return err
@@ -160,9 +164,14 @@ func (h *MenuHandler) UpdateMenu(c *gin.Context) {
 		if err := preloadMenu(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&before, "id = ?", menuID).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&menu).Updates(map[string]any{
+		columns := map[string]any{
 			"name": request.Name, "abbr": request.Abbr, "price": request.Price, "key": request.Key,
-		}).Error; err != nil {
+		}
+		// 優先度を送らない（前の画面の）更新では今の値のままにする
+		if request.Priority != nil {
+			columns["priority"] = *request.Priority
+		}
+		if err := tx.Model(&menu).Updates(columns).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("menu_id = ?", menuID).Delete(&models.MenuItem{}).Error; err != nil {

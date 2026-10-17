@@ -124,7 +124,7 @@
   },
   "MenuResponse": {
     "type": "object",
-    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "required": ["id", "name", "abbr", "price", "key", "priority", "items"],
     "properties": {
       "id": {
         "type": "string",
@@ -141,6 +141,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ"
       },
       "items": {
         "type": "array",
@@ -166,6 +170,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま"
       },
       "items": {
         "type": "array",

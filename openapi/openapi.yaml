@@ -113,6 +113,7 @@ paths:
   /api/menus:
     get:
       summary: メニュー一覧取得
+      description: priority の大きい順に返す（同じなら name・id の順）
       operationId: getMenus
       responses:
         '200':
@@ -1813,6 +1814,7 @@ components:
         - abbr
         - price
         - key
+        - priority
         - items
       properties:
         id:
@@ -1826,6 +1828,9 @@ components:
           type: integer
         key:
           type: string
+        priority:
+          type: integer
+          description: レジ・商品管理での並びの優先度。大きいほど先に並ぶ
         items:
           type: array
           items:
@@ -1848,6 +1853,9 @@ components:
           minimum: 0
         key:
           type: string
+        priority:
+          type: integer
+          description: レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
         items:
           type: array
           minItems: 1

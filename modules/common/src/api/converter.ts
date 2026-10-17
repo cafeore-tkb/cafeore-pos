@@ -75,6 +75,7 @@ export const responseToMenuEntity = (
     abbr: response.abbr,
     price: response.price,
     key: response.key,
+    priority: response.priority,
     items: response.items.map(({ item, quantity }) => ({
       item: responseToItemEntity(item),
       quantity,
@@ -91,6 +92,7 @@ export const menuToCreateRequest = (menu: MenuEntity): MenuCreateRequest => ({
   abbr: menu.abbr,
   price: menu.price,
   key: menu.key,
+  priority: menu.priority,
   items: menuItemsToRequest(menu),
 });
 

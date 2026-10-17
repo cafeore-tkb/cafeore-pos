@@ -28,6 +28,7 @@ const response: OrderResponse = {
         price: 800,
         abbr: "セット",
         key: "s",
+        priority: 0,
         items: [
           {
             quantity: 2,

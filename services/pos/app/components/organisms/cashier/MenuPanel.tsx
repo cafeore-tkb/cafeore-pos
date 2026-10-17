@@ -29,7 +29,8 @@ const NO_COLOR = "#a8a29e";
 const COLUMNS = 4;
 
 /**
- * メニューを種別ごとにまとめる。種別の並びはメニューに最初に出てきた順
+ * メニューを種別ごとにまとめる。メニューは API の並び（優先度の大きい順）のままで、
+ * 種別の並びはメニューに最初に出てきた順（その種別で一番大きい優先度の順）
  */
 const groupByItemType = (menus: WithId<MenuEntity>[]): MenuGroup[] => {
   const groups = new Map<string, MenuGroup>();

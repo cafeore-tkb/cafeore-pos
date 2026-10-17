@@ -454,6 +454,9 @@ type MenuCreateRequest struct {
 	Key   string            `json:"key"`
 	Name  string            `json:"name"`
 	Price int               `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // MenuInfo defines model for MenuInfo.
@@ -508,6 +511,9 @@ type MenuResponse struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ
+	Priority int `json:"priority"`
 }
 
 // MenuUpdateRequest defines model for MenuUpdateRequest.
@@ -518,6 +524,9 @@ type MenuUpdateRequest struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // OrderCreateRequest defines model for OrderCreateRequest.

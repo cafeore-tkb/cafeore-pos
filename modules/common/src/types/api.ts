@@ -29,7 +29,10 @@ export interface paths {
     delete: operations["deleteItem"];
   };
   "/api/menus": {
-    /** メニュー一覧取得 */
+    /**
+     * メニュー一覧取得
+     * @description priority の大きい順に返す（同じなら name・id の順）
+     */
     get: operations["getMenus"];
     /** メニュー作成 */
     post: operations["createMenu"];
@@ -505,6 +508,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ */
+      priority: number;
       items: components["schemas"]["MenuItemResponse"][];
     };
     MenuCreateRequest: {
@@ -512,6 +517,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま */
+      priority?: number;
       items: components["schemas"]["MenuItemRequest"][];
     };
     MenuUpdateRequest: components["schemas"]["MenuCreateRequest"] & {
@@ -1357,7 +1364,10 @@ export interface operations {
       };
     };
   };
-  /** メニュー一覧取得 */
+  /**
+   * メニュー一覧取得
+   * @description priority の大きい順に返す（同じなら name・id の順）
+   */
   getMenus: {
     responses: {
       /** @description 成功 */
