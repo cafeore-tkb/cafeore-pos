@@ -381,3 +381,32 @@ func TestCaosLaneOperationLogOnDB(t *testing.T) {
 		t.Fatalf("seniors = %s", operations[3].Details)
 	}
 }
+
+// merge_intoのない旧画面では、移動前に同じdrip_idだった杯を誤って
+// 統合先に推定し得る。盤面操作は成功させ、不確かな統合情報だけを省く。
+func TestCaosStaleInferredMergeDoesNotRejectWriteOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	a := f.createOrder(t, 1, line(f.blend)).OrderCups[0].ID
+	b := f.createOrder(t, 2, line(f.blend)).OrderCups[0].ID
+	oldDrip, newDrip := uuid.New(), uuid.New()
+	f.mustPut(t, write([]uuid.UUID{b}, unassigned, placed(1, oldDrip, false)))
+	f.mustPut(t,
+		write([]uuid.UUID{a}, unassigned, placed(1, oldDrip, false)),
+		write([]uuid.UUID{b}, f.state(t, b), placed(2, newDrip, false)),
+	)
+	op := latestOperation(t, db)
+	rows := readOperationCups(t, db, op.ID)
+	for _, id := range []uuid.UUID{a, b} {
+		row := rows[id]
+		if !row.Changed || row.AssignedAt == nil || row.MergedAt != nil || row.MergeTargetUnitID != nil || row.MergeTargetCupID != nil || row.MergeTargetOrderID != nil {
+			t.Fatalf("invalid audit for %s: %+v", id, row)
+		}
+	}
+	if cup := f.cup(t, a); cup.DripID == nil || *cup.DripID != oldDrip || cup.Dripper == nil || *cup.Dripper != 1 {
+		t.Fatalf("source update lost: %+v", cup)
+	}
+	if cup := f.cup(t, b); cup.DripID == nil || *cup.DripID != newDrip || cup.Dripper == nil || *cup.Dripper != 2 {
+		t.Fatalf("target update lost: %+v", cup)
+	}
+}

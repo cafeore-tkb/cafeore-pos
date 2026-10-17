@@ -21,8 +21,11 @@ func (h *CaosHandler) ExportCaosLogs(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "書き出しファイルを作成できませんでした"})
 		return
 	}
-	defer os.Remove(file.Name())
-	defer file.Close()
+	defer func() {
+		// 応答後の一時ファイルの後始末。失敗しても送信済みの応答は変更できない。
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}()
 	now := h.now().UTC()
 	err = h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if _, err := fmt.Fprintf(file, `{"exportedAt":%q,"entries":`, now.Format("2006-01-02T15:04:05.999999999Z07:00")); err != nil {
@@ -66,7 +69,7 @@ func writeCaosExportRows[T any](tx *gorm.DB, writer io.Writer, order string) err
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if _, err := io.WriteString(writer, "["); err != nil {
 		return err
 	}

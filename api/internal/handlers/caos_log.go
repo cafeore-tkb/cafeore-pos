@@ -163,7 +163,10 @@ func recordCaosOperation(tx *gorm.DB, kind string, pressed, now time.Time, press
 	for sourceID, targetID := range merged {
 		source, target := rowsByID[sourceID], rowsByID[targetID]
 		if source == nil || target == nil || sourceID == targetID || source.AfterDripID == nil || !ptrEqual(source.AfterDripID, target.AfterDripID) {
-			return ruleErrorf("統合先のカップが統合後のカードにありません")
+			// 旧画面では更新前の状態から統合先を推定するため、
+			// 同時に相手が移動する操作などでは外れる。盤面更新を妨げず、
+			// この組の統合情報だけを省いて前後の状態は記録する。
+			continue
 		}
 		source.MergedAt, target.MergedAt = &pressed, &pressed
 		source.MergeTargetUnitID = &target.UnitID
