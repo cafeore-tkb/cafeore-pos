@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** 点滅 1 コマの長さ */
-const FLASH_STEP_MS = 280;
-/** 1 つの番号が点滅するコマ数 */
-const FLASH_STEPS = 8;
+/** 新しく入った番号を光らせる長さ（以前の点滅 280ms × 8 コマと同じ） */
+export const FLASH_MS = 2240;
 
 /**
  * 固定サイズのステージを画面に収める倍率を返す。
@@ -27,51 +25,41 @@ export function useStageScale(width: number, height: number) {
   return scale;
 }
 
-type FlashState = {
-  beat: number;
-  /** 番号 → 点滅が終わるビート */
-  until: Record<number, number>;
-};
-
 /**
- * 点滅を共通の 1 本のビートで駆動する。
- * 番号ごとに終わりのビートだけを持つので、何件同時に光ってもタイミングが揃い、
- * どの番号も同じ長さだけ点滅する。
+ * 新しく入った番号を FLASH_MS だけ光らせる。
+ * 光り方（グラデーションが流れて消える）は CSS のアニメーションに任せ、ここでは光らせる番号だけを持つ。
  */
 export function useFlash() {
-  const [state, setState] = useState<FlashState>({ beat: 0, until: {} });
-  const running = Object.keys(state.until).length > 0;
+  const [flashing, setFlashing] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
-    if (!running) return;
-
-    const timer = setInterval(() => {
-      setState((prev) => {
-        const beat = prev.beat + 1;
-        const until: Record<number, number> = {};
-        for (const [id, end] of Object.entries(prev.until)) {
-          if (end > beat) until[Number(id)] = end;
-        }
-        return { beat, until };
-      });
-    }, FLASH_STEP_MS);
-
-    return () => clearInterval(timer);
-  }, [running]);
-
-  const startFlash = useCallback((id: number) => {
-    setState((prev) => {
-      // 既に回っているビートには合わせる。止まっていれば点灯から始める
-      const isRunning = Object.keys(prev.until).length > 0;
-      const beat = isRunning ? prev.beat : prev.beat + (prev.beat % 2);
-      return { beat, until: { ...prev.until, [id]: beat + FLASH_STEPS } };
-    });
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+    };
   }, []);
 
-  const isFlashing = useCallback(
-    (id: number) => state.until[id] !== undefined && state.beat % 2 === 0,
-    [state],
-  );
+  const startFlash = useCallback((id: number) => {
+    // 光っている最中にもう一度来たら、そこから数え直す
+    clearTimeout(timersRef.current.get(id));
+    timersRef.current.set(
+      id,
+      setTimeout(() => {
+        timersRef.current.delete(id);
+        setFlashing((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, FLASH_MS),
+    );
+    setFlashing((prev) => new Set(prev).add(id));
+  }, []);
+
+  const isFlashing = useCallback((id: number) => flashing.has(id), [flashing]);
 
   return { startFlash, isFlashing };
 }

@@ -1,4 +1,6 @@
+import { useId } from "react";
 import { cn } from "~/lib/utils";
+import { FLASH_MS } from "./callscreen.hooks";
 
 // 呼び出し画面は 1920x1080 の固定レイアウトで組み、表示側では拡大縮小だけで合わせる。
 // 実機の解像度に関わらず、番号の大きさとすき間の比率が変わらないようにするため。
@@ -278,6 +280,110 @@ export function BrewingIndicator() {
   );
 }
 
+/** 色の玉をテーマカラーで作る。中心は alpha の濃さで、半径の半分で消える */
+const glowBlob = (color: string, alpha: number) =>
+  `radial-gradient(circle at center, color-mix(in oklch, ${color} ${alpha}%, transparent) 0, transparent 50%) no-repeat`;
+
+/**
+ * CallGlow で回す色の玉。Aceternity の Background Gradient Animation の 5 つの玉を、
+ * 色はテーマカラーに、回転の中心は画面の px からプレートの割合に、速さは 2 秒ほどで動きが見えるよう 8 倍にした
+ */
+const GLOW_BLOBS = [
+  {
+    background: glowBlob("var(--color-theme-primary)", 80),
+    origin: "center center",
+    animation: "glow-vertical 3.75s ease infinite",
+    opacity: 1,
+  },
+  {
+    background: glowBlob("var(--color-theme-sub)", 80),
+    origin: "24% 50%",
+    animation: "glow-circle 2.5s reverse infinite",
+    opacity: 1,
+  },
+  {
+    background: glowBlob(
+      "color-mix(in oklch, var(--color-theme-primary) 60%, white)",
+      80,
+    ),
+    origin: "76% 50%",
+    animation: "glow-circle 5s linear infinite",
+    opacity: 1,
+  },
+  {
+    background: glowBlob("var(--color-theme-sub-deep)", 80),
+    origin: "37% 50%",
+    animation: "glow-horizontal 5s ease infinite",
+    opacity: 0.7,
+  },
+  {
+    background: glowBlob("var(--color-theme-gold)", 80),
+    origin: "-2% 143%",
+    animation: "glow-circle 2.5s ease infinite",
+    opacity: 1,
+  },
+];
+
+/**
+ * 呼び出した番号のプレートに流すグラデーション（Aceternity の Background Gradient Animation を元にした）。
+ * 色の玉を回したり往復させたりしながら hard-light で重ね、ぼかしとグー（くっつくような）フィルタで溶かす。
+ * マウスに付いてくる玉は、触らない画面なので入れていない。
+ * FLASH_MS のあいだに浮かんで消えるので、置くのは光らせている間だけでよい
+ */
+function CallGlow() {
+  const filterId = useId();
+
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+      style={{
+        backgroundImage:
+          "linear-gradient(40deg in oklch, var(--color-theme-sub-deep), var(--color-theme-deep))",
+        animation: `call-glow ${FLASH_MS}ms ease-in-out forwards`,
+      }}
+    >
+      {/* display: none の svg だと filter が効かないブラウザがあるので、大きさ 0 で置く */}
+      <svg aria-hidden="true" width="0" height="0" className="absolute">
+        <defs>
+          <filter id={filterId}>
+            <feGaussianBlur
+              in="SourceGraphic"
+              stdDeviation="10"
+              result="blur"
+            />
+            <feColorMatrix
+              in="blur"
+              mode="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8"
+              result="goo"
+            />
+            <feBlend in="SourceGraphic" in2="goo" />
+          </filter>
+        </defs>
+      </svg>
+      <div
+        className="size-full"
+        style={{ filter: `url("#${filterId}") blur(24px)` }}
+      >
+        {GLOW_BLOBS.map((blob) => (
+          <div
+            key={blob.animation}
+            className="absolute top-[10%] left-[10%] size-[80%] mix-blend-hard-light"
+            style={{
+              background: blob.background,
+              transformOrigin: blob.origin,
+              animation: blob.animation,
+              opacity: blob.opacity,
+            }}
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 rounded-[inherit] border-2 border-theme-gold" />
+    </div>
+  );
+}
+
 type PlateBoardProps = {
   plates: PlateRect[];
   /** calling はお呼び出し中（金の縁で目立たせる）、drip はドリップ中 */
@@ -290,7 +396,7 @@ type PlateBoardProps = {
 /**
  * プレートを並べる領域。位置と大きさは絶対指定で、
  * 件数が変わったときは同じプレートが滑って移動する。
- * プレートは地が透ける硝子のカード。点滅は撫子色で光らせ、終われば白い番号に落ち着く
+ * プレートは地が透ける硝子のカード。新しく入った番号は CallGlow のグラデーションを流し、終われば硝子のカードに戻る
  */
 export function PlateBoard({
   plates,
@@ -308,11 +414,9 @@ export function PlateBoard({
             key={plate.id}
             className={cn(
               "flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
-              on
-                ? "border-theme-gold bg-theme-sub-deep/75"
-                : tone === "calling"
-                  ? "border-theme-gold/50 bg-white/[0.1]"
-                  : "border-white/15 bg-white/[0.07]",
+              tone === "calling"
+                ? "border-theme-gold/50 bg-white/[0.1]"
+                : "border-white/15 bg-white/[0.07]",
               shadow &&
                 "shadow-[0_12px_30px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]",
             )}
@@ -326,8 +430,13 @@ export function PlateBoard({
               transition: `left 300ms ${EASE}, top 300ms ${EASE}, width 300ms ${EASE}, height 300ms ${EASE}`,
             }}
           >
+            {on && <CallGlow />}
             <div
-              className="font-semibold font-zen text-white tabular-nums leading-none"
+              className={cn(
+                "relative font-semibold font-zen text-white tabular-nums leading-none",
+                // 撫子色の明るいところでも白い番号が沈まないよう、影を敷く
+                on && "[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]",
+              )}
               style={{ fontSize: `${plate.fontSize}px` }}
             >
               {plate.id}
@@ -335,7 +444,7 @@ export function PlateBoard({
             {plate.caption && (
               <div
                 className={cn(
-                  "whitespace-nowrap font-medium font-noto leading-tight tracking-[0.08em]",
+                  "relative whitespace-nowrap font-medium font-noto leading-tight tracking-[0.08em]",
                   on ? "text-white" : "text-theme-gold",
                 )}
                 style={{
