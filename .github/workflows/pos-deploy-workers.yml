@@ -361,10 +361,12 @@ jobs:
 
           # wrangler の出力から workers.dev の URL を拾う。
           # versions upload ならプレビュー URL（そのバージョンのもの）、deploy なら本番の URL。
-          # versions upload ではエイリアスの URL がその後ろの行
-          # （Version Preview Alias URL: ...）に出るので、そちらは行の見出しで拾う。
+          # versions upload ではエイリアスの URL も別の行（Version Preview Alias URL: ...）に
+          # 出るので、そちらは行の見出しで拾い、プレビュー URL からはその行を除いておく
+          # （wrangler の出力の順が変わっても、エイリアスの URL を取り違えない）。
           # 取れなくてもここでは失敗させない（コメントを省くだけ）。
           preview_url=$(printf '%s\n' "$out" \
+            | grep -vF 'Preview Alias URL' \
             | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
             | head -1) || true
           alias_url=$(printf '%s\n' "$out" \
