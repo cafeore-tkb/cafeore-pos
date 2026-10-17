@@ -232,6 +232,20 @@ describe("[unit] cashierKeyIntent", () => {
     ).toBe("none");
   });
 
+  test("入れる段階の → は一括会計する（商品が無ければ何もしない）。会計の段階では何もしない", () => {
+    const draft = keys(emptyCashierDraft(), "^");
+    expect(
+      cashierKeyIntent(draft, "ArrowRight", { menus, payments }).type,
+    ).toBe("goPay");
+    expect(
+      cashierKeyIntent(emptyCashierDraft(), "ArrowRight", { menus, payments })
+        .type,
+    ).toBe("none");
+    expect(
+      cashierKeyIntent(goPay(draft), "ArrowRight", { menus, payments }).type,
+    ).toBe("none");
+  });
+
   test("商品キーで足すと足した行を選び、続けて Space で指名できる", () => {
     const draft = keys(emptyCashierDraft(), "^");
     expect(draft.selected).toBe(0);

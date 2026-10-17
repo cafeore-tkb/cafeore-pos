@@ -474,6 +474,7 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
+ * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない
  * - Space: 選んでいる行の指名・備考を開く
  * - Enter: 一括会計・確定（Square なら決済を始める）。
  *   現金で受取金額が空なら、まず受取金額をちょうどにする（もう一度 Enter で確定）
@@ -505,8 +506,9 @@ export const cashierKeyIntent = (
           ? removeLine(draft, draft.selected)
           : deleteDigit(draft),
       );
-    case "ArrowLeft":
     case "ArrowRight":
+      return canGoPay(draft) ? { type: "goPay" } : NONE;
+    case "ArrowLeft":
       return NONE;
     case "ArrowUp":
     case "ArrowDown": {
