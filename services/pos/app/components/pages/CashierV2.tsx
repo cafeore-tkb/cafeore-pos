@@ -973,7 +973,10 @@ const CashierV2 = ({
       }
       const held = heldKeysRef.current;
       const intent = event.altKey
-        ? cashierPaymentKeyIntent(viewDraft, event.code, { payments })
+        ? cashierPaymentKeyIntent(viewDraft, event.code, {
+            payments,
+            repeat: event.repeat,
+          })
         : cashierKeyIntent(viewDraft, event.key, {
             menus: items ?? [],
             payments,

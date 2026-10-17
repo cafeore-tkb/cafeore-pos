@@ -395,4 +395,16 @@ describe("[unit] cashierPaymentKeyIntent", () => {
       "ignore",
     );
   });
+
+  test("押しっぱなしの繰り返し（repeat）は、どの段階でも決済を始めない", () => {
+    const repeat = { payments, repeat: true };
+    const entry = withLines(blend);
+    const pay = goPay(entry);
+    for (const code of ["KeyC", "KeyT", "KeyQ"]) {
+      expect(cashierPaymentKeyIntent(entry, code, repeat).type).toBe("none");
+      expect(cashierPaymentKeyIntent(pay, code, repeat).type).toBe("none");
+    }
+    // 決済手段のキーでなければ、今までどおり扱わない
+    expect(cashierPaymentKeyIntent(pay, "KeyX", repeat).type).toBe("ignore");
+  });
 });

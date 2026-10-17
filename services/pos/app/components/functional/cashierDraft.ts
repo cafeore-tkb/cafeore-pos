@@ -612,15 +612,19 @@ export const PAYMENT_KEYS: readonly {
  * - 入れる段階: 一括会計に進む。Square の決済手段なら、進んだらその手段で決済を始める
  * - 会計の段階: 現金は選ぶだけ（受取金額を入れて Enter で確定）、Square の決済手段は決済を始める
  * - 今使えない Square の決済手段（端末が決まっていない・つながっていないなど）は知らせる
+ * - 押しっぱなしの繰り返し（keydown の repeat）は何もしない（決済を二重に始めない）
  */
 export const cashierPaymentKeyIntent = (
   draft: CashierDraft,
   code: string,
-  { payments }: Pick<KeyContext, "payments">,
+  { payments, repeat = false }: Pick<KeyContext, "payments" | "repeat">,
 ): CashierKeyIntent => {
   const payment = PAYMENT_KEYS.find((key) => key.code === code)?.payment;
   if (payment === undefined) {
     return { type: "ignore" };
+  }
+  if (repeat) {
+    return NONE;
   }
   if (draft.step === "entry") {
     if (!canGoPay(draft)) return NONE;
