@@ -131,7 +131,7 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
   );
 };
 
-/** 決済手段のキーの案内（「Alt+C 現金・Alt+T 電子マネー・…」） */
+/** 決済手段のキーの案内（「Alt+C 現金・Alt+T カード・…」） */
 const paymentKeyHint = PAYMENT_KEYS.map(
   ({ code, payment }) =>
     `Alt+${code.replace(/^Key/, "")} ${

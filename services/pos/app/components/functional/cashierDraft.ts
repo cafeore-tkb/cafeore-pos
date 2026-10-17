@@ -602,7 +602,7 @@ export const PAYMENT_KEYS: readonly {
   payment: CashierPayment;
 }[] = [
   { code: "KeyC", payment: "cash" },
-  { code: "KeyT", payment: "FELICA_ALL" },
+  { code: "KeyT", payment: "CARD_PRESENT" },
   { code: "KeyQ", payment: "QR_CODE" },
 ];
 

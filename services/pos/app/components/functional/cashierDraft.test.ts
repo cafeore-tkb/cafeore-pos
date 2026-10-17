@@ -362,7 +362,7 @@ describe("[unit] cashierPaymentKeyIntent", () => {
     });
     expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
       type: "goPay",
-      square: "FELICA_ALL",
+      square: "CARD_PRESENT",
     });
     expect(cashierPaymentKeyIntent(draft, "KeyQ", { payments })).toEqual({
       type: "goPay",
@@ -382,7 +382,7 @@ describe("[unit] cashierPaymentKeyIntent", () => {
     expect(cash.type === "update" && cash.draft.payment).toBe("cash");
     expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
       type: "startSquare",
-      paymentType: "FELICA_ALL",
+      paymentType: "CARD_PRESENT",
     });
   });
 
