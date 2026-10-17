@@ -38,6 +38,12 @@ const (
 	Square PaymentMethod = "square"
 )
 
+// Defines values for ReceiptPrinterModel.
+const (
+	ReceiptPrinterModelTmL90 ReceiptPrinterModel = "tm_l90"
+	ReceiptPrinterModelTmM30 ReceiptPrinterModel = "tm_m30"
+)
+
 // Defines values for SquareCheckoutOutcome.
 const (
 	Attention SquareCheckoutOutcome = "attention"
@@ -717,6 +723,10 @@ type PrinterSettingsResponse struct {
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
 }
 
 // PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
@@ -726,7 +736,15 @@ type PrinterSettingsUpdateRequest struct {
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
 }
+
+// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+type ReceiptPrinterModel string
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
 type SquareCheckoutConflictResponse struct {
