@@ -125,6 +125,16 @@ func (e *integrationEnv) orderCount() int64 {
 	return count
 }
 
+// cancelled は、注文が消えずに残っていて、キャンセルされているか。
+func (e *integrationEnv) cancelled(orderID string) bool {
+	e.t.Helper()
+	var order models.Order
+	if err := e.db.First(&order, "id = ?", orderID).Error; err != nil {
+		e.t.Fatalf("order %s must stay: %v", orderID, err)
+	}
+	return order.CancelledAt != nil
+}
+
 func (e *integrationEnv) unlinked() []models.SquareCheckoutResponse {
 	e.t.Helper()
 	var unlinked []models.SquareCheckoutResponse
@@ -138,8 +148,10 @@ func TestSquareIntegrationRefundOrder(t *testing.T) {
 	env := newIntegrationEnv(t)
 	checkout, orderID := env.payAndOrder(1)
 
+	published := env.watchOrders()
 	code, refunded, raw := env.refundOrder(orderID)
-	if code != http.StatusOK || refunded.RefundStatus != models.RefundPending || refunded.OrderId != nil {
+	if code != http.StatusOK || refunded.RefundStatus != models.RefundPending ||
+		refunded.OrderId == nil || refunded.OrderId.String() != orderID {
 		t.Fatalf("refund: %d %v", code, raw)
 	}
 	if len(env.fake.refundRequests) != 1 {
@@ -152,13 +164,16 @@ func TestSquareIntegrationRefundOrder(t *testing.T) {
 		sent["reason"] != "No.12 の返金" || key == "" || len(key) > 45 {
 		t.Fatalf("unexpected refund request: %v", sent)
 	}
-	// 返金を受け付けたら注文は消える。決済は照合の一覧に返金待ちとして出る。
-	if count := env.orderCount(); count != 0 {
-		t.Fatalf("order must be deleted, %d left", count)
+	// 返金を受け付けたら注文はキャンセルする（消さない）。決済は注文に結び付いたままなので照合の一覧には出ず、
+	// 注文のカードに返金待ちと配る。
+	if !env.cancelled(orderID) {
+		t.Fatal("order must be cancelled")
 	}
-	unlinked := env.unlinked()
-	if len(unlinked) != 1 || unlinked[0].Id != checkout.Id || unlinked[0].RefundStatus != models.RefundPending {
-		t.Fatalf("unlinked while refunding: %+v", unlinked)
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published while refunding: %s", got)
+	}
+	if unlinked := env.unlinked(); len(unlinked) != 0 {
+		t.Fatalf("cancelled order's checkout must not be listed: %+v", unlinked)
 	}
 	// 返金中の決済では注文を作れない。
 	checkoutID := uuid.UUID(checkout.Id)
@@ -172,11 +187,17 @@ func TestSquareIntegrationRefundOrder(t *testing.T) {
 	if len(env.fake.refundRequests) != 1 {
 		t.Fatalf("refund must not be requested twice, got %d", len(env.fake.refundRequests))
 	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published after pressing again: %s", got)
+	}
 
-	// Square で返金が終わると、一覧から消える。
+	// 照合の一覧を取ると、結果待ちの返金も Square に問い合わせ、終わったら注文を配り直す。
 	env.fake.completeRefund("rf_1")
 	if unlinked := env.unlinked(); len(unlinked) != 0 {
-		t.Fatalf("refunded checkout must leave the list: %+v", unlinked)
+		t.Fatalf("refunded checkout must not be listed: %+v", unlinked)
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundRefunded) {
+		t.Fatalf("published after refund: %s", got)
 	}
 	var polled models.SquareCheckoutResponse
 	env.call(http.MethodGet, "/api/square/checkouts/"+checkout.Id.String(), nil, nil, &polled)
@@ -189,7 +210,8 @@ func TestSquareIntegrationRefundOrder(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("cash order: %d", code)
 	}
-	if code, _, _ := env.refundOrder(cash["id"].(string)); code != http.StatusNotFound {
+	// 注文はあるので 404 ではなく 409、注文が無ければ 404
+	if code, _, _ := env.refundOrder(cash["id"].(string)); code != http.StatusConflict {
 		t.Fatalf("cash order refund: %d", code)
 	}
 	if code, _, _ := env.refundOrder(uuid.NewString()); code != http.StatusNotFound {
@@ -208,8 +230,8 @@ func TestSquareIntegrationRefundDeclined(t *testing.T) {
 		declined.RefundError == nil || !strings.Contains(*declined.RefundError, "REFUND_DECLINED") {
 		t.Fatalf("declined: %d %v", code, raw)
 	}
-	if count := env.orderCount(); count != 1 {
-		t.Fatalf("order must stay when the refund is declined, %d left", count)
+	if env.cancelled(orderID) {
+		t.Fatal("order must not be cancelled when the refund is declined")
 	}
 
 	// 断られた後でも、もう一度頼める。
@@ -217,8 +239,8 @@ func TestSquareIntegrationRefundDeclined(t *testing.T) {
 	if code, refunded, raw := env.refundOrder(orderID); code != http.StatusOK || refunded.RefundStatus != models.RefundPending {
 		t.Fatalf("retry: %d %v", code, raw)
 	}
-	if count := env.orderCount(); count != 0 {
-		t.Fatalf("order must be deleted after the retry, %d left", count)
+	if !env.cancelled(orderID) {
+		t.Fatal("order must be cancelled after the retry")
 	}
 }
 
@@ -278,15 +300,19 @@ func TestSquareIntegrationRefundKeepingOrder(t *testing.T) {
 		t.Fatalf("after refund: %s", got)
 	}
 
-	// 返金したあとで注文を消す返金を押すと、Square には頼まずに注文だけを消す。
-	if code, deleted, raw := env.refundOrder(orderID); code != http.StatusOK || deleted.RefundStatus != models.RefundRefunded || deleted.OrderId != nil {
-		t.Fatalf("delete after refund: %d %v", code, raw)
+	// 返金したあとで「返金＆キャンセル」を押すと、Square には頼まずにキャンセルだけをする。
+	if env.cancelled(orderID) {
+		t.Fatal("kept order must not be cancelled")
+	}
+	if code, cancelled, raw := env.refundOrder(orderID); code != http.StatusOK || cancelled.RefundStatus != models.RefundRefunded ||
+		cancelled.OrderId == nil || cancelled.OrderId.String() != orderID {
+		t.Fatalf("cancel after refund: %d %v", code, raw)
 	}
 	if len(env.fake.refundRequests) != 1 {
 		t.Fatalf("refund must not be requested again, got %d", len(env.fake.refundRequests))
 	}
-	if count := env.orderCount(); count != 1 {
-		t.Fatalf("order must be deleted, %d left", count)
+	if count := env.orderCount(); count != 2 || !env.cancelled(orderID) {
+		t.Fatalf("order must stay and be cancelled, %d left", count)
 	}
 	if unlinked := env.unlinked(); len(unlinked) != 0 {
 		t.Fatalf("refunded checkout must not be listed: %+v", unlinked)
@@ -371,7 +397,7 @@ func TestSquareIntegrationRefundResponseLost(t *testing.T) {
 	}
 }
 
-// Square の管理画面で返金済みの決済は、Square に頼まずに返金済みにして注文を消す。
+// Square の管理画面で返金済みの決済は、Square に頼まずに返金済みにして注文をキャンセルする。
 func TestSquareIntegrationRefundAlreadyRefunded(t *testing.T) {
 	env := newIntegrationEnv(t)
 	checkout, orderID := env.payAndOrder(1)
@@ -391,8 +417,8 @@ func TestSquareIntegrationRefundAlreadyRefunded(t *testing.T) {
 	if len(env.fake.refundRequests) != 0 {
 		t.Fatalf("must not refund twice: %v", env.fake.refundRequests)
 	}
-	if count := env.orderCount(); count != 0 {
-		t.Fatalf("order must be deleted, %d left", count)
+	if !env.cancelled(orderID) {
+		t.Fatal("order must be cancelled")
 	}
 	if unlinked := env.unlinked(); len(unlinked) != 0 {
 		t.Fatalf("refunded checkout must not be listed: %+v", unlinked)
@@ -402,7 +428,7 @@ func TestSquareIntegrationRefundAlreadyRefunded(t *testing.T) {
 // 同時に押されても、Square に頼む返金は 1 件だけ。
 func TestSquareIntegrationConcurrentRefund(t *testing.T) {
 	env := newIntegrationEnv(t)
-	checkout, _ := env.payAndOrder(1)
+	checkout, orderID := env.payAndOrder(1)
 	const requests = 6
 	codes := make([]int, requests)
 	var wg sync.WaitGroup
@@ -430,8 +456,8 @@ func TestSquareIntegrationConcurrentRefund(t *testing.T) {
 			t.Fatalf("request %d: %d", i, code)
 		}
 	}
-	if count := env.orderCount(); count != 0 {
-		t.Fatalf("order must be deleted, %d left", count)
+	if !env.cancelled(orderID) {
+		t.Fatal("order must be cancelled")
 	}
 }
 

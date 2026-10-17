@@ -185,6 +185,10 @@ export const responseToOrderEntity = (
     })),
     paymentMethod: response.payment_method,
     squareRefundStatus: response.square_refund_status,
+    cancelledAt: response.cancelled_at ? new Date(response.cancelled_at) : null,
+    cashRefundedAt: response.cash_refunded_at
+      ? new Date(response.cash_refunded_at)
+      : null,
     payments: (response.payments ?? []).map((payment) => ({
       method: payment.method,
       amount: payment.amount,

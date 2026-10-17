@@ -127,6 +127,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 // （order_stock_usages・cup_emergency_stock_usages）で数え、使った時刻はその物を実際に使った時刻にする：
 //   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、提供の画面でそのカップを提供可能にした時刻
 //     （order_cups.ready_at。無ければ提供済みにした時刻 served_at）。どちらも無ければ used_at が NULL で、まだ使っていない。
+//     ただし、キャンセルした注文はキャンセルした時刻（orders.cancelled_at）に使ったことにする（キャンセルしても在庫は戻さない）。
 //     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
 //     明細の回数まで（並びの順）。あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
 //   - 明細の残り（抽出の要らない物：グッズ・ミルク・コースターなど。カップの無い前の注文も）：注文を受けた時刻（orders.created_at）
@@ -135,13 +136,13 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 // 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。
 const stockUsedQuery = `
 WITH lines AS (
-	SELECT u.order_menu_id, u.servings, u.amount, o.created_at
+	SELECT u.order_menu_id, u.servings, u.amount, o.created_at, o.cancelled_at
 	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
 	WHERE u.resource_id = @resource_id AND u.servings > 0 AND o.created_at > @scan_from
 ),
 brewed AS (
 	SELECT * FROM (
-		SELECT l.order_menu_id, l.servings, l.amount, COALESCE(c.ready_at, c.served_at) AS used_at,
+		SELECT l.order_menu_id, l.servings, l.amount, COALESCE(c.ready_at, c.served_at, l.cancelled_at) AS used_at,
 			ROW_NUMBER() OVER (PARTITION BY l.order_menu_id ORDER BY c.position) AS n
 		FROM lines l
 		JOIN order_cups c ON c.order_menu_id = l.order_menu_id

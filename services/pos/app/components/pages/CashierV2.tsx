@@ -149,6 +149,7 @@ import { Label } from "../ui/label";
 
 type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
+  /** キャンセルした注文も含む全部の注文（番号・引換券・過去の注文に使う） */
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
@@ -287,8 +288,13 @@ const CashierV2 = ({
     null,
   );
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  // 作る量の見込みには、キャンセルした注文を入れない（orders はキャンセルした注文も含む）
+  const activeOrders = useMemo(
+    () => orders?.filter((order) => !order.isCancelled()),
+    [orders],
+  );
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
-    useLatestOrderId(orders);
+    useLatestOrderId(orders, canSaveNow);
   // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
   // オフラインの注文はこの端末に溜まり、つながったらまとめて送る（submitPayload）
   const canSubmitOrder = canSaveNow || manualOrderId !== null;
@@ -482,9 +488,10 @@ const CashierV2 = ({
 
   /** 注文を送った後、次の注文を入力できるようにする */
   const afterSubmit = useCallback(() => {
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && !canSaveNow) {
-      setOrderIdOverride(manualOrderId + 1);
+    // 手動番号指定時、オフラインなら次の番号を手動のまま進める。
+    // オンラインなら自動に戻し、届いている注文と手元の最大 + 1 にする（同じ番号を続けて付けない）
+    if (manualOrderId !== null) {
+      setOrderIdOverride(canSaveNow ? null : manualOrderId + 1);
     }
     resetAll();
     playSound();
@@ -663,6 +670,7 @@ const CashierV2 = ({
       const submitOne = prepareSubmit(order);
       submitOne.received = submitOne.billingAmount;
       const savedOrder = await submitSquarePayload(submitOne, checkout.id);
+      markOrderIdIssued(submitOne.orderId);
       if (autoSquareRefund) {
         void refundSquareOrderAutomatically(savedOrder);
       }
@@ -681,6 +689,7 @@ const CashierV2 = ({
       canSaveNow,
       prepareSubmit,
       submitSquarePayload,
+      markOrderIdIssued,
       autoSquareRefund,
       printOrderLabel,
       receiptPrinter,
@@ -1299,7 +1308,7 @@ const CashierV2 = ({
                 onOrderIdOverride={overrideOrderId}
               />
               <ReadyTimeEstimate
-                orders={orders}
+                orders={activeOrders}
                 drinkCups={newOrder.getDrinkCups().length}
               />
               {locked && (

@@ -539,6 +539,18 @@
         "format": "date-time",
         "nullable": true
       },
+      "cancelled_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない"
+      },
+      "cash_refunded_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）"
+      },
       "billing_amount": {
         "type": "integer"
       },

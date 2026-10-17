@@ -354,6 +354,11 @@ const discountMessage = ({
         text: "まだ提供されていない番号です。割引は適用できません",
         tone: "bad",
       };
+    case "refunded":
+      return {
+        text: "返金した注文の番号です。割引は適用できません",
+        tone: "bad",
+      };
   }
 };
 
