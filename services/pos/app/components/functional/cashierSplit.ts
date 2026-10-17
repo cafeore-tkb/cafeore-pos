@@ -354,14 +354,21 @@ export type SplitChoices = {
 };
 
 /**
- * お客さんが端末で「割り勘」を選んだとき、どの分け方に進めるか。
+ * どの分け方に進めるか（会計欄の「小計分割・一部金額先払い」と、端末で「割り勘」を選んだときのウィンドウ）。
  * 個別小計は会計取消（leavePayment）と同じく小計を途中まで払っていなければ、
- * 小計分割は先に払う額を 1 円以上残せれば（checkPart）選べる
+ * 小計分割は先に払う額を 1 円以上残せれば（checkPart）選べる。Square で決済中はどちらも選べない
  */
-export const splitChoices = (draft: CashierDraft): SplitChoices => {
+export const splitChoices = (
+  draft: CashierDraft,
+  squarePaymentActive: boolean,
+): SplitChoices => {
   const subtotal = currentSubtotal(draft);
   if (draft.step !== "pay" || subtotal === null) {
     const reason = "会計中ではありません";
+    return { items: reason, part: reason };
+  }
+  if (squarePaymentActive) {
+    const reason = "端末で決済中です";
     return { items: reason, part: reason };
   }
   return {

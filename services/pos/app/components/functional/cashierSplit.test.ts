@@ -190,29 +190,37 @@ describe("[unit] cashierSplit の小計分割", () => {
 
 describe("[unit] cashierSplit の割り勘の分け方", () => {
   test("会計の段階で、個別小計は商品が 2 点以上、小計分割は残りが 2 円以上なら選べる", () => {
-    expect(splitChoices(withLines(blend, latte))).toEqual({
+    expect(splitChoices(withLines(blend, latte), false)).toEqual({
       items: "会計中ではありません",
       part: "会計中ではありません",
     });
-    expect(splitChoices(beginRest(withLines(blend, latte), 0, 100))).toEqual({
+    expect(
+      splitChoices(beginRest(withLines(blend, latte), 0, 100), false),
+    ).toEqual({
       items: null,
       part: null,
     });
-    expect(splitChoices(beginRest(withLines(blend), 0, 100))).toEqual({
+    expect(splitChoices(beginRest(withLines(blend), 0, 100), false)).toEqual({
       items: "まだ払っていない商品が 1 点だけです",
       part: null,
     });
+    // Square で決済中は、どちらも選べない（会計取消も小計分割もできない）
+    expect(
+      splitChoices(beginRest(withLines(blend, latte), 0, 100), true),
+    ).toEqual({ items: "端末で決済中です", part: "端末で決済中です" });
   });
 
   test("小計を途中まで払ったら個別小計は選べない。残りが 1 円なら分けられない", () => {
     const paying = beginRest(withLines(blend, latte), 0, 100);
     const partlyPaid = recordTender(setPart(paying, 300), cash(300));
-    expect(splitChoices(partlyPaid)).toEqual({
+    expect(splitChoices(partlyPaid, false)).toEqual({
       items: "この小計を途中まで払ったので、払い終えてから選べます",
       part: null,
     });
     const almost = recordTender(setPart(paying, 1099), cash(1099));
-    expect(splitChoices(almost).part).toBe("残りが 1 円なので分けられません");
+    expect(splitChoices(almost, false).part).toBe(
+      "残りが 1 円なので分けられません",
+    );
   });
 
   test("個別小計を払い終えたあとの残りの会計でも選べる", () => {
@@ -222,7 +230,7 @@ describe("[unit] cashierSplit の割り勘の分け方", () => {
       beginSubtotal(start, "items", [b], 0, 100),
       cash(500),
     );
-    expect(splitChoices(beginRest(done, 0, 100))).toEqual({
+    expect(splitChoices(beginRest(done, 0, 100), false)).toEqual({
       items: null,
       part: null,
     });

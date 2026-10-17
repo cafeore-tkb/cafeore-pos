@@ -719,7 +719,7 @@ const CashierV2 = ({
   const squarePaymentActive = squarePayment.active;
 
   // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる（小計分割の途中は並べない）
-  const choices = splitChoices(draft);
+  const choices = splitChoices(draft, squarePaymentActive);
   const offerSplit =
     split.part === null && (choices.items === null || choices.part === null);
 
@@ -976,8 +976,8 @@ const CashierV2 = ({
     cancelPayment();
   }, [draft.split.part, updateDraft, resyncDisplay, cancelPayment]);
 
-  /** 小計分割・一部金額先払い。いまの小計（の残り）を金額で分ける */
-  const canSplit = paying && currentRemaining > 1 && !squarePaymentActive;
+  /** 小計分割・一部金額先払い。いまの小計（の残り）を金額で分ける。割り勘のウィンドウのボタンと同じ条件で開く */
+  const canSplit = choices.part === null;
   const openPart = useCallback(() => {
     if (canSplit) {
       setPrepayDialog({ kind: "part", preset: null });
