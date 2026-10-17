@@ -60,6 +60,7 @@ export const useCommentPopupPosition = (anchor?: CommentAnchor) => {
     };
   }, [anchor, popup]);
   return {
+    element: popup,
     ref: setPopup,
     style: anchor
       ? {

@@ -1,7 +1,7 @@
 import { AUTHOR_MARKS, type CaosCard } from "@cafeore/common";
 import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import {
   type CommentAnchor,
   useCommentPopupPosition,
@@ -214,6 +214,20 @@ export const CommentDock: React.FC<{
   onDismiss: (comments: readonly BoardComment[]) => void;
 }> = ({ viewing, onCloseViewing, notices, onOpen, onDismiss }) => {
   const popup = useCommentPopupPosition(viewing?.anchor);
+  useEffect(() => {
+    if (!viewing || !popup.element) return;
+    const element = popup.element;
+    const closeOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && element.contains(event.target))
+        return;
+      onCloseViewing();
+      // 最初の枠外タップは閉じるだけにし、背後の割当・進行操作へ渡さない。
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("click", closeOutside, true);
+    return () => document.removeEventListener("click", closeOutside, true);
+  }, [viewing, popup.element, onCloseViewing]);
   const shown = notices.slice(-NOTICES_SHOWN);
   const hidden = notices.length - shown.length;
   if (notices.length === 0 && !viewing) return null;
