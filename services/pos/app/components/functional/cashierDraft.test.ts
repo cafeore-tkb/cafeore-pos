@@ -6,6 +6,7 @@ import {
   addLine,
   addReceived,
   assignLine,
+  canAssignByDigit,
   cashierKeyIntent,
   cashierPaymentKeyIntent,
   clearDigits,
@@ -17,6 +18,8 @@ import {
   focusMemo,
   hasDraftInput,
   inputDigits,
+  inputPadDigits,
+  isAssigningByDigits,
   moveCursor,
   removeAllLines,
   removeLine,
@@ -179,6 +182,44 @@ describe("[unit] cashierDraft の数字", () => {
     expect(onMemo.coupon).toBe("1");
     expect(onMemo.zone).toBe("coupon");
     expect(deleteDigit(withLines(blend)).selected).toBeNull();
+  });
+
+  test("テンキーの数字は、キーボードの数字と同じく行を選んでいれば指名し、行は選んだまま", () => {
+    const draft = withLines(blend);
+    const second = inputPadDigits(draft, "2", checkCoupon);
+    expect(second.lines[0].menu.dripper).toBe(2);
+    expect(second.selected).toBe(0);
+    expect(second.coupon).toBe("");
+    expect(inputPadDigits(second, "0").lines[0].menu.dripper).toBeNull();
+    // 7〜9・00 では指名せず、引換券番号にも入れない
+    expect(inputPadDigits(draft, "7")).toBe(draft);
+    expect(inputPadDigits(draft, "00")).toBe(draft);
+    expect(canAssignByDigit(draft, "6")).toBe(true);
+    expect(canAssignByDigit(draft, "0")).toBe(true);
+    expect(canAssignByDigit(draft, "7")).toBe(false);
+    expect(canAssignByDigit(draft, "00")).toBe(false);
+  });
+
+  test("テンキーの数字は、指名できない行を選んでいれば何もせず、行を選んでいなければ引換券番号に入れる", () => {
+    const onCoaster = withLines(coaster);
+    expect(isAssigningByDigits(onCoaster)).toBe(true);
+    expect(canAssignByDigit(onCoaster, "1")).toBe(false);
+    expect(inputPadDigits(onCoaster, "1")).toBe(onCoaster);
+    const onCoupon = focusCoupon(withLines(blend));
+    expect(isAssigningByDigits(onCoupon)).toBe(false);
+    expect(inputPadDigits(onCoupon, "1").coupon).toBe("1");
+  });
+
+  test("特殊な割引のときも、行を選べばテンキーの数字で指名できる", () => {
+    const special = selectLine(toggleSpecial(withLines(blend), false), 0);
+    expect(inputPadDigits(special, "3").lines[0].menu.dripper).toBe(3);
+  });
+
+  test("会計の段階では、テンキーの数字は受取金額に入れる", () => {
+    const draft = goPay(withLines(blend));
+    expect(isAssigningByDigits(draft)).toBe(false);
+    expect(inputPadDigits(draft, "00").received).toBe("");
+    expect(inputPadDigits(draft, "5").received).toBe("5");
   });
 
   test("特殊な割引のときは、引換券番号を打てない", () => {
