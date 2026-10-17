@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Switch } from "~/components/ui/switch";
 import {
   CM_IMAGE_SECONDS_MAX,
   CM_IMAGE_SECONDS_MIN,
@@ -11,10 +12,38 @@ import {
   cmPlaylist,
   useCmPlaylist,
 } from "~/lib/callscreen-cm";
+import {
+  type CallScreenSound,
+  setCallScreenSound,
+  useCallScreenSound,
+} from "~/lib/callscreen-sound";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面の CM / 珈琲・俺POS" }];
 };
+
+const SOUND_FIELDS: {
+  key: keyof CallScreenSound;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "chime",
+    label: "チャイム",
+    description: "呼び出しの読み上げの前に鳴らします",
+  },
+  {
+    key: "voice",
+    label: "読み上げ",
+    description:
+      "呼び出しとドリップの案内を読み上げます。切ると読み上げの音声を作らせません",
+  },
+  {
+    key: "echo",
+    label: "読み上げのエコー",
+    description: "読み上げに少しエコーをかけます",
+  },
+];
 
 /** このブラウザで流せそうか（動画だけ見る。canPlayType が空なら流せない） */
 const playableHere = (item: CmItem) =>
@@ -23,6 +52,7 @@ const playableHere = (item: CmItem) =>
 
 export default function CallScreenCmPage() {
   const { items, imageSeconds } = useCmPlaylist();
+  const sound = useCallScreenSound();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (files: FileList | null) => {
@@ -158,6 +188,34 @@ export default function CallScreenCmPage() {
           ))}
         </ol>
       )}
+
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h2 className="font-semibold text-lg">音</h2>
+          <p className="text-muted-foreground text-sm">
+            呼び出し画面で鳴らす音です。CM
+            のファイルと違い、この端末に覚えます（読み込み直しても残り、ほかのタブで開いている呼び出し画面にもすぐ効きます）。
+          </p>
+        </div>
+        <div className="grid gap-4">
+          {SOUND_FIELDS.map(({ key, label, description }) => (
+            <div key={key} className="flex items-start gap-3">
+              <Switch
+                id={`sound-${key}`}
+                checked={sound[key]}
+                disabled={key === "echo" && !sound.voice}
+                onCheckedChange={(checked) =>
+                  setCallScreenSound({ ...sound, [key]: checked })
+                }
+              />
+              <div className="grid gap-1">
+                <Label htmlFor={`sound-${key}`}>{label}</Label>
+                <p className="text-muted-foreground text-xs">{description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Button asChild>
