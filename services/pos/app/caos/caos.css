@@ -116,3 +116,117 @@ html:has(.caos-root) body {
 .caos-root:has(.caos-side-panel) .caos-comment-dock {
   right: calc(var(--caos-side-panel-width) + 8px);
 }
+
+/* Folder Tab：選択中の下辺をコンテンツ色で覆い、タブと表示領域を一体化する。
+   Dの太い罫線も同じ境界幅を使う。通知バッジの位置には影響しない。 */
+.caos-root .caos-folder-tabs {
+  align-self: stretch;
+  align-items: flex-end;
+  margin-bottom: calc(-1 * var(--caos-folder-border, 1px));
+}
+.caos-root .caos-folder-tab {
+  border-color: var(--caos-folder-line, var(--color-slate-300));
+  border-width: var(--caos-folder-border, 1px);
+}
+.caos-root .caos-folder-tab[aria-selected="true"] {
+  z-index: 1;
+  border-bottom-color: transparent;
+}
+.caos-root .caos-folder-tab[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--caos-folder-border, 1px));
+  left: 0;
+  height: calc(var(--caos-folder-border, 1px) + 1px);
+  background: inherit;
+  content: "";
+}
+
+/* 注文番号：フォントはタブから継承し、各桁の1文字分だけを静かに送る。 */
+.caos-root .caos-order-number {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.15em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.caos-root .caos-order-digits {
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.caos-root .caos-order-digit {
+  display: inline-block;
+  width: 0.65em;
+  height: 1em;
+  overflow: hidden;
+}
+.caos-root .caos-order-digit-track {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(-50%);
+}
+.caos-root .caos-order-digit-cell {
+  display: block;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+
+/* タブの件数・杯数・時間は同じ文字と余白で整える。 */
+.caos-root .caos-tab-count,
+.caos-root .caos-tab-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  font-size: 0.8em;
+  font-weight: inherit;
+  line-height: 1;
+}
+.caos-root .caos-tab-count {
+  border: 1px solid var(--color-slate-300);
+  border-radius: 0.25rem;
+  padding: 0.2em 0.35em;
+}
+
+/* 未提供が20分を超えた場合だけ、最長時間をゆっくり点滅させる。 */
+@keyframes caos-unserved-time-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.caos-root .caos-unserved-time-blink {
+  animation: caos-unserved-time-blink 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caos-root .caos-unserved-time-blink {
+    animation: none;
+  }
+}
+
+/* 録音中の操作元を控えめな揺れで示す。盤面全体の操作はブロックしない。 */
+@keyframes caos-voice-recording {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-2deg);
+  }
+  75% {
+    transform: rotate(2deg);
+  }
+}
+.caos-root .caos-voice-recording {
+  animation: caos-voice-recording 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caos-root .caos-voice-recording {
+    animation: none;
+  }
+}

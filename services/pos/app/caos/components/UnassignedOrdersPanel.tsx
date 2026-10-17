@@ -11,12 +11,7 @@ import {
   unassignedRows,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import {
-  LongWaitTag,
-  NextAvailableChips,
-  OrderCountLabel,
-  PanelHeader,
-} from "./BoardParts";
+import { LongWaitTag, PanelHeader } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
@@ -29,6 +24,7 @@ import {
   UnassignedHeading,
   UnfinishedList,
   type UnfinishedView,
+  unassignedAreaBackground,
 } from "./UnfinishedOrders";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
@@ -118,18 +114,6 @@ const DragGhost: React.FC<{
     dropTargetLabel(pick.drag.target),
   );
 
-// 未割当の注文の数（見出しの赤い札）
-const CountChip: React.FC<{
-  orders: readonly CaosCard[];
-  className?: string;
-}> = ({ orders, className = "w-fit font-black text-[13px]" }) => (
-  <span
-    className={`whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-mono text-red-600 ${className}`}
-  >
-    <OrderCountLabel cards={orders} />
-  </span>
-);
-
 const EmptyNote: React.FC = () => (
   <div className="w-full rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
     レジからのオーダーを待っています
@@ -148,6 +132,7 @@ type UnassignedProps = {
   readOnly?: boolean;
   /** 「未提供」のタブ（操作の画面だけ） */
   unfinished?: UnfinishedView;
+  nextAvailable?: NextAvailable;
 };
 
 /** 未割当の横帯をたたむか（閲覧だけの画面。たたむと見出しの行だけにする） */
@@ -177,22 +162,21 @@ export const UnassignedStrip: React.FC<
 }) => {
   const columns = unassignedRows(orders);
   const folded = fold?.folded ?? false;
-  // 横のスクロールバーを置く、見出しの行の空いた所（件数と「次に空く」の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
+  // 横のスクロールバーを置く、見出しの行の空いた所（件数と右側の操作の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
   const [trackSlot, setTrackSlot] = useState<HTMLDivElement | null>(null);
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
-      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
+      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 ${unassignedAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
     >
-      <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
-        <UnassignedHeading view={unfinished} className="text-[18px]">
-          <CountChip orders={orders} />
-        </UnassignedHeading>
-        <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
-        <NextAvailableChips
-          nextAvailable={nextAvailable}
-          className="shrink-0 text-[12px]"
+      <header className="flex h-10 shrink-0 items-center gap-2 border-slate-300 border-b bg-slate-100 px-2">
+        <UnassignedHeading
+          view={unfinished}
+          nextBayId={nextAvailable?.[0]?.bayId}
+          unassignedOrders={orders}
+          className="text-[18px]"
         />
+        <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
         {fold && (
           <button
             type="button"
@@ -272,17 +256,22 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   nowMs,
   pick,
   unfinished,
+  nextAvailable,
 }) => {
   const rows = unassignedRows(orders);
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader>
-        <UnassignedHeading view={unfinished}>
-          <CountChip
-            orders={orders}
-            className="shrink-0 font-bold text-[11px]"
-          />
-        </UnassignedHeading>
+    <section
+      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${unassignedAreaBackground(unfinished)}`}
+    >
+      <PanelHeader
+        backgroundClassName="bg-slate-100"
+        className="border-slate-300 border-b"
+      >
+        <UnassignedHeading
+          view={unfinished}
+          nextBayId={nextAvailable?.[0]?.bayId}
+          unassignedOrders={orders}
+        />
       </PanelHeader>
       {unfinished?.tab === "unfinished" ? (
         <UnfinishedList view={unfinished} axis="y" />

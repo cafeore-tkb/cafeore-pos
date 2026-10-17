@@ -10,12 +10,7 @@ import {
 import { type CardLook, orderLabel, sharesOrder } from "../logic/cards";
 import { type Lane, laneActive, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
-import {
-  DripperIndicator,
-  EmptySlotButton,
-  NextAvailableChips,
-  PanelHeader,
-} from "./BoardParts";
+import { DripperIndicator, EmptySlotButton, PanelHeader } from "./BoardParts";
 import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
@@ -57,9 +52,7 @@ const ControlViewCBoard: React.FC<
     aria-label="Cコントロール画面"
   >
     <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader icon={CircleDot} title="ドリッパー">
-        <NextAvailableChips nextAvailable={nextAvailable} />
-      </PanelHeader>
+      <PanelHeader icon={CircleDot} title="ドリッパー" />
 
       <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
         {lanes.map((bay) => {
@@ -144,6 +137,7 @@ const ControlViewCBoard: React.FC<
 
     <aside className="min-h-0 min-w-0">
       <OrderQueuePanel
+        nextAvailable={nextAvailable}
         orders={unassignedOrders}
         looks={looks}
         nowMs={nowMs}

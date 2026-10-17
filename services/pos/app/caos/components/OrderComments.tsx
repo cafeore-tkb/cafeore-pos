@@ -1,7 +1,7 @@
 import { AUTHOR_MARKS, type CaosCard } from "@cafeore/common";
 import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import {
   type CommentAnchor,
   useCommentPopupPosition,
@@ -216,6 +216,45 @@ export const CommentDock: React.FC<{
   onDismiss: (comments: readonly BoardComment[]) => void;
 }> = ({ viewing, onCloseViewing, notices, onOpen, onDismiss }) => {
   const popup = useCommentPopupPosition(viewing?.anchor);
+  useEffect(() => {
+    if (!viewing || !popup.element) return;
+    const element = popup.element;
+    let voiceProtectedAtPress = false;
+    let voiceBusyAtPress = false;
+    const rememberVoiceInput = () => {
+      voiceBusyAtPress = Boolean(
+        element.querySelector('[data-voice-busy="true"]'),
+      );
+      voiceProtectedAtPress = Boolean(
+        element.querySelector("[data-voice-panel] textarea:focus"),
+      );
+    };
+    const closeOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && element.contains(event.target))
+        return;
+      // 親のポップアップ側も録音中・送信中の枠外操作を飲み込まない。
+      if (voiceBusyAtPress || element.querySelector('[data-voice-busy="true"]'))
+        return;
+      const protectedVoice =
+        voiceProtectedAtPress ||
+        Boolean(element.querySelector("[data-voice-panel] textarea:focus"));
+      if (protectedVoice) {
+        const focused = element.querySelector<HTMLTextAreaElement>(
+          "[data-voice-panel] textarea:focus",
+        );
+        focused?.blur();
+      } else onCloseViewing();
+      // 最初の枠外タップは閉じるだけにし、背後の割当・進行操作へ渡さない。
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("pointerdown", rememberVoiceInput, true);
+    document.addEventListener("click", closeOutside, true);
+    return () => {
+      document.removeEventListener("pointerdown", rememberVoiceInput, true);
+      document.removeEventListener("click", closeOutside, true);
+    };
+  }, [viewing, popup.element, onCloseViewing]);
   const shown = notices.slice(-NOTICES_SHOWN);
   const hidden = notices.length - shown.length;
   if (notices.length === 0 && !viewing) return null;
