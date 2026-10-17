@@ -29,7 +29,10 @@ export interface paths {
     delete: operations["deleteItem"];
   };
   "/api/menus": {
-    /** メニュー一覧取得 */
+    /**
+     * メニュー一覧取得
+     * @description priority の大きい順に返す（同じなら name・id の順）
+     */
     get: operations["getMenus"];
     /** メニュー作成 */
     post: operations["createMenu"];
@@ -96,24 +99,30 @@ export interface paths {
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
-    /** オーダーを準備完了にする */
+    /**
+     * オーダーを準備完了にする
+     * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+     */
     patch: operations["markOrderReady"];
   };
   "/api/orders/{id}/served": {
-    /** オーダーを提供完了にする */
+    /**
+     * オーダーを提供完了にする
+     * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+     */
     patch: operations["markOrderServe"];
   };
   "/api/orders/{id}/cups/{cupId}/ready": {
     /**
      * カップを準備完了にする
-     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
      */
     patch: operations["markOrderCupReady"];
   };
   "/api/orders/{id}/cups/{cupId}/served": {
     /**
      * カップを提供完了にする
-     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
      */
     patch: operations["markOrderCupServe"];
   };
@@ -138,23 +147,20 @@ export interface paths {
      * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
      * - 列から抜けたカードの番号は空いたまま（詰めない）
      *
-     * 抽出の時刻は画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
-     * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。start_brew が false なら brew_started_at を消す。
+     * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+     * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
      * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
      * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
      *
      * 確かめること：
      * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
      * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
-     * - 終わったカード（brew_finished_at があるか、抽出中でカップが全部準備完了）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
+     * - 終わったカード（brew_finished_at がある）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
      * - 今日（日本時間）の注文のカップだけ書ける
      * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
      * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
      * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
-     * - 上級生のみのカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（担当者の senior。PUT /api/caos/lanes/{dripper} で替える）にしか置けない。
-     *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
-     *   （担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）。
-     *   指名のあるカード（書いたあとのカードに指名のカップが 1 つでも入っている）は指名を優先し、指名のドリッパーの担当者が上級生でなくても置ける
+     * - 上級生のみのカップ（item_types.senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
      * - 抽出を始められる（start_brew）のは、書く前のそのドリッパーに抽出中のカードがあるか、書くカップのほかに待機のカードが無いときだけ（抽出中が無く待機があれば、始めるのは「次へ」で待機の先頭）。
      *   書いたあと、そのドリッパーで抽出中は 1 枚だけ（全部書いてから確かめるので、writes の順によらない）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
      */
@@ -163,9 +169,12 @@ export interface paths {
   "/api/caos/drippers/{dripper}/next": {
     /**
      * CaOS の「次へ」
-     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
-     * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
-     * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
+     * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
+     * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+     * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+     * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
+     * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
@@ -178,8 +187,8 @@ export interface paths {
      * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
      * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
      * 今日（日本時間）の注文の、抽出が要るカップだけ。
-     * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
-     * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
+     * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+     * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
      */
     post: operations["createCupEmergencies"];
   };
@@ -193,26 +202,12 @@ export interface paths {
   "/api/cup-emergencies/{id}": {
     /**
      * 緊急（入れ直し）を取り消す
-     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
      * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
      * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
      * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
      */
     delete: operations["deleteCupEmergency"];
-  };
-  "/api/caos/undo": {
-    /**
-     * CaOS の「1つ戻す」
-     * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
-     * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
-     * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-     * PUT /api/caos/cups と違い、抽出の時刻と準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる。
-     * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-     * 戻すのは前の値なので、restore の brew_finished_at・ready_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
-     * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
-     * 書いたカップの注文は PUT と同じく配る。
-     */
-    post: operations["undoCaosCups"];
   };
   "/api/caos/lanes/{dripper}": {
     /**
@@ -253,7 +248,14 @@ export interface paths {
   "/api/inventory": {
     /**
      * 在庫の残量一覧
-     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+     * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+     *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+     *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+     *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+     *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+     * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
      */
     get: operations["getInventory"];
   };
@@ -318,7 +320,8 @@ export interface paths {
     /**
      * Square 端末の一覧
      * @description 登録した端末と、ペアリング待ちのコード。古い順。
-     * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+     * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+     * Square に問い合わせて最新にしてから返す。
      * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
      */
     get: operations["getSquareDevices"];
@@ -355,6 +358,19 @@ export interface paths {
      * 外した端末は POST /api/square/devices/import で戻せる。
      */
     delete: operations["deleteSquareDevice"];
+  };
+  "/api/square/devices/{id}/code": {
+    /**
+     * ペアリング済みの端末にコード（Device Code）を発行し直す
+     * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+     * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+     * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+     * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+     * 別の端末で入力したら、その端末の device_id に置き換わる。
+     * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+     * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+     */
+    post: operations["issueSquareDeviceCode"];
   };
   "/api/square/checkouts": {
     /**
@@ -408,6 +424,9 @@ export interface paths {
     /**
      * 注文に使った Square の決済を全額返金し、注文を消す
      * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+     * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+     * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
      */
     post: operations["refundOrderSquarePayment"];
   };
@@ -419,6 +438,7 @@ export interface paths {
      * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
      * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
      * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+     * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
      */
     post: operations["refundOrderSquarePaymentKeepingOrder"];
   };
@@ -501,6 +521,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ */
+      priority: number;
       items: components["schemas"]["MenuItemResponse"][];
     };
     MenuCreateRequest: {
@@ -508,6 +530,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま */
+      priority?: number;
       items: components["schemas"]["MenuItemRequest"][];
     };
     MenuUpdateRequest: components["schemas"]["MenuCreateRequest"] & {
@@ -590,7 +614,7 @@ export interface components {
       item: components["schemas"]["ItemResponse"];
       /**
        * Format: date-time
-       * @description このカップが準備完了になった時刻。未準備なら null
+       * @description このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
        */
       ready_at: string | null;
       /**
@@ -614,7 +638,7 @@ export interface components {
       brew_started_at: string | null;
       /**
        * Format: date-time
-       * @description CaOS で抽出を終えた時刻
+       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
        */
       brew_finished_at: string | null;
       /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
@@ -666,6 +690,8 @@ export interface components {
       discount_order_cups?: number;
       payment_method: components["schemas"]["PaymentMethod"];
       square_refund_status?: components["schemas"]["SquareRefundStatus"];
+      /** @description 個別会計の支払い（払った順）。一括で払った注文では空 */
+      payments: components["schemas"]["OrderPaymentResponse"][];
       menus: components["schemas"]["MenuInfo"][];
       /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
       cups: components["schemas"]["OrderCupResponse"][];
@@ -690,6 +716,12 @@ export interface components {
        * @description payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
        */
       square_checkout_id?: string | null;
+      /**
+       * @description 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
+       * amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+       * Square の支払いを含めば square、含まなければ cash になる。
+       */
+      payments?: components["schemas"]["OrderPaymentCreate"][];
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
       /**
@@ -844,8 +876,8 @@ export interface components {
       brew_finished_at: string | null;
     };
     /**
-     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。
-     * start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at にサーバーの今を入れる。抽出中のカードなら今から始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。
+     * start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
      * dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
      */
     CaosCupAfter: {
@@ -858,7 +890,7 @@ export interface components {
        * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
        */
       insert_before: string | null;
-      /** @description 列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻はサーバーの今 */
+      /** @description 列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress） */
       start_brew: boolean;
     };
     /**
@@ -870,8 +902,30 @@ export interface components {
       before: components["schemas"]["CaosCupState"];
       after: components["schemas"]["CaosCupAfter"];
     };
+    /**
+     * @description 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+     * 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+     * - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+     *   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+     * - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+     * - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+     * 省略すると（押した時刻を送らない古い画面）、サーバーの今
+     */
+    CaosPress: {
+      /**
+       * Format: int64
+       * @description 押した時刻（端末の時計、エポックのミリ秒）
+       */
+      at: number;
+      /**
+       * Format: int64
+       * @description 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
+       */
+      sent_at: number;
+    };
     CaosCupsWriteRequest: {
       writes: components["schemas"]["CaosCupsWrite"][];
+      press?: components["schemas"]["CaosPress"];
     };
     CupEmergencyCreateRequest: {
       /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
@@ -889,21 +943,17 @@ export interface components {
        * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
        */
       drip_id: string | null;
-    };
-    /** @description 「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了） */
-    CaosUndoCupState: {
-      state: components["schemas"]["CaosCupState"];
-      /** Format: date-time */
-      ready_at: string | null;
-    };
-    CaosUndoCup: {
-      /** Format: uuid */
-      cup_id: string;
-      current: components["schemas"]["CaosUndoCupState"];
-      restore: components["schemas"]["CaosUndoCupState"];
-    };
-    CaosUndoRequest: {
-      cups: components["schemas"]["CaosUndoCup"][];
+      /**
+       * @description 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
+       * @default true
+       */
+      start_next?: boolean;
+      /**
+       * Format: uuid
+       * @description 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
+       */
+      start_drip_id?: string;
+      press?: components["schemas"]["CaosPress"];
     };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
@@ -1035,16 +1085,16 @@ export interface components {
       received: number;
       /**
        * Format: double
-       * @description counted_at 以降の注文での消費量
+       * @description counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
        */
       consumed: number;
-      /** @description counted_at 以降に売れた回数 */
+      /** @description counted_at より後に使った回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた回数 */
+      /** @description 直近1時間に使った回数（consumed と同じく、使った時刻で数える） */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -1090,6 +1140,38 @@ export interface components {
      * @enum {string}
      */
     PaymentMethod: "cash" | "square";
+    OrderPaymentCreate: {
+      method: components["schemas"]["PaymentMethod"];
+      /** @description この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+      amount: number;
+      /** @description お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する） */
+      received: number;
+      /**
+       * @description この支払いで引いた割引（円）
+       * @default 0
+       */
+      discount?: number;
+      /** @description この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない） */
+      menu_indexes?: number[];
+      /**
+       * Format: uuid
+       * @description method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。
+       */
+      square_checkout_id?: string | null;
+    };
+    OrderPaymentResponse: {
+      method: components["schemas"]["PaymentMethod"];
+      amount: number;
+      received: number;
+      discount: number;
+      /** @description この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない */
+      order_menu_ids: string[];
+      /** Format: uuid */
+      square_checkout_id?: string | null;
+      /** @description Square で払ったときの決済画面の種類（SquarePaymentType の値） */
+      square_payment_type?: string | null;
+      square_refund_status?: components["schemas"]["SquareRefundStatus"];
+    };
     /**
      * @description Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
      * @enum {string}
@@ -1125,7 +1207,7 @@ export interface components {
     /**
      * @description 端末のペアリングの状態（Square の Device Code の status）。
      *   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-     *   - PAIRED: ペアリング済み。決済に使える
+     *   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
      *   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
      *
      * @enum {string}
@@ -1139,11 +1221,15 @@ export interface components {
       status: components["schemas"]["SquareDeviceStatus"];
       /** @description 端末の ID。決済の依頼に使う。PAIRED になるまで null */
       device_id?: string | null;
-      /** @description 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る */
+      /**
+       * @description 端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る
+       * （UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）
+       */
       code?: string | null;
       /**
        * Format: date-time
-       * @description コードの期限。これを過ぎると EXPIRED になる
+       * @description 最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。
+       * ペアリング済みの行は code が消えるだけで PAIRED のまま
        */
       pair_by?: string | null;
       /** Format: date-time */
@@ -1313,7 +1399,10 @@ export interface operations {
       };
     };
   };
-  /** メニュー一覧取得 */
+  /**
+   * メニュー一覧取得
+   * @description priority の大きい順に返す（同じなら name・id の順）
+   */
   getMenus: {
     responses: {
       /** @description 成功 */
@@ -1642,7 +1731,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを準備完了にする */
+  /**
+   * オーダーを準備完了にする
+   * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+   */
   markOrderReady: {
     parameters: {
       path: {
@@ -1664,7 +1756,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを提供完了にする */
+  /**
+   * オーダーを提供完了にする
+   * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+   */
   markOrderServe: {
     parameters: {
       path: {
@@ -1688,7 +1783,7 @@ export interface operations {
   };
   /**
    * カップを準備完了にする
-   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
    */
   markOrderCupReady: {
     parameters: {
@@ -1722,7 +1817,7 @@ export interface operations {
   };
   /**
    * カップを提供完了にする
-   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
    */
   markOrderCupServe: {
     parameters: {
@@ -1819,23 +1914,20 @@ export interface operations {
    * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
    * - 列から抜けたカードの番号は空いたまま（詰めない）
    *
-   * 抽出の時刻は画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが今の時刻を brew_started_at に入れる
-   * （iPad の時計がずれていても、残り時間がサーバーの時刻でそろう）。start_brew が false なら brew_started_at を消す。
+   * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+   * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
    * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
    * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
    *
    * 確かめること：
    * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
    * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
-   * - 終わったカード（brew_finished_at があるか、抽出中でカップが全部準備完了）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
+   * - 終わったカード（brew_finished_at がある）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
    * - 今日（日本時間）の注文のカップだけ書ける
    * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
    * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
    * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
-   * - 上級生のみのカップ（item_types.senior_only）は、今日の担当者が上級生のドリッパー（担当者の senior。PUT /api/caos/lanes/{dripper} で替える）にしか置けない。
-   *   別のドリッパーへ置くとき（未割当から置く・ドリッパーを移す）だけ確かめ、同じドリッパーの中の順番の入れ替えは確かめない
-   *   （担当者を上級生でない人に替えても、待っていた上級生のみのカードはそのドリッパーに残るので）。
-   *   指名のあるカード（書いたあとのカードに指名のカップが 1 つでも入っている）は指名を優先し、指名のドリッパーの担当者が上級生でなくても置ける
+   * - 上級生のみのカップ（item_types.senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
    * - 抽出を始められる（start_brew）のは、書く前のそのドリッパーに抽出中のカードがあるか、書くカップのほかに待機のカードが無いときだけ（抽出中が無く待機があれば、始めるのは「次へ」で待機の先頭）。
    *   書いたあと、そのドリッパーで抽出中は 1 枚だけ（全部書いてから確かめるので、writes の順によらない）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
    */
@@ -1866,9 +1958,12 @@ export interface operations {
   };
   /**
    * CaOS の「次へ」
-   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、そのカードのカップ（入れ直しは、入れ直したカップ）だけを準備完了にして（POS のカップの準備完了と同じく、注文の状態はカップから決め直す）、
-   * 同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。時刻はサーバーの今。
-   * 抽出中が無ければ（マスターで準備完了にして終わった、など）待機の先頭を始めるだけ。
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
+   * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
+   * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+   * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+   * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
+   * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
    */
   advanceCaosDripper: {
@@ -1888,13 +1983,13 @@ export interface operations {
       204: {
         content: never;
       };
-      /** @description 形の違うリクエスト */
+      /** @description 形の違うリクエスト・始めてから 10 秒たっていない（何も変えない） */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い（何も変えない） */
+      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い・start_next が false で抽出中が無い・待機の先頭が start_drip_id と違う（何も変えない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -1909,8 +2004,8 @@ export interface operations {
    * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
    * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
    * 今日（日本時間）の注文の、抽出が要るカップだけ。
-   * 入れ直しで使う在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）は、足したときの在庫の設定で減らす（注文と同じ）。
-   * 棚卸しの前か後かは、入れ直しの抽出を始めた時刻で決める（まだ始めていなければ、まだ使っていない）。
+   * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+   * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
    */
   createCupEmergencies: {
     requestBody: {
@@ -1955,7 +2050,7 @@ export interface operations {
   };
   /**
    * 緊急（入れ直し）を取り消す
-   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す。
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
    * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
    * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
    * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
@@ -1978,42 +2073,6 @@ export interface operations {
         };
       };
       /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
-      409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  /**
-   * CaOS の「1つ戻す」
-   * @description CaOS の画面が、自分が最後にした操作（割当・移動・順番の入れ替え・未割当に戻す・統合・次へ）を、操作の前の値に書き戻す。
-   * cups は書き戻すカップごとに、今の値（current。画面に届いている値をそのまま送り返す）と、操作の前の値（restore）。
-   * 全部のカップの今の値が current と同じ（時刻はミリ秒まで）ときだけ、全部を restore にする。どれか 1 つでも違えば（ほかの端末が先に変えた）何も書かずに 409。
-   * PUT /api/caos/cups と違い、抽出の時刻と準備完了（ready_at）も書き戻す（「次へ」を戻すと、終えたカードは抽出中に、始めたカードは待機に戻り、その「次へ」で付けた準備完了が外れる。
-   * 抽出中のカードを動かしたのを戻すと、消した・付け直した始めた時刻が前の時刻に戻る）。
-   * 戻すのは前の値なので、restore の brew_finished_at・ready_at は current と同じか null だけ、brew_started_at は null か今日（日本時間）の今までの時刻だけ（違えば 400）。提供済みのカップは戻さない（409）。
-   * 書き戻した結果も PUT と同じ決まりで確かめる（指名のドリッパー・上級生のみ・1 枚 2 杯まで・同じカードは同じ値・指名のそろい・1 つのドリッパーで抽出中は 1 枚）。
-   * 書いたカップの注文は PUT と同じく配る。
-   */
-  undoCaosCups: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CaosUndoRequest"];
-      };
-    };
-    responses: {
-      /** @description 書き戻した */
-      204: {
-        content: never;
-      };
-      /** @description 形の違うリクエスト・書き戻した結果が決まりに合わない（何も書かない）。error を画面にそのまま出す */
-      400: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description 今の値が current と違う・提供済み・抽出中が 2 枚になる（何も書かない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -2140,7 +2199,14 @@ export interface operations {
   };
   /**
    * 在庫の残量一覧
-   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。注文での消費は、注文を受けたときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+   * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+   *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+   *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+   *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+   *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+   * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
    */
   getInventory: {
     responses: {
@@ -2341,7 +2407,8 @@ export interface operations {
   /**
    * Square 端末の一覧
    * @description 登録した端末と、ペアリング待ちのコード。古い順。
-   * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+   * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+   * Square に問い合わせて最新にしてから返す。
    * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
    */
   getSquareDevices: {
@@ -2472,6 +2539,61 @@ export interface operations {
       };
       /** @description 見つからない */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * ペアリング済みの端末にコード（Device Code）を発行し直す
+   * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+   * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+   * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+   * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+   * 別の端末で入力したら、その端末の device_id に置き換わる。
+   * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+   * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+   */
+  issueSquareDeviceCode: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 発行した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description ID が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ペアリング済みの端末ではない（ペアリング待ち・期限切れ） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square がコードを発行しなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2662,6 +2784,9 @@ export interface operations {
   /**
    * 注文に使った Square の決済を全額返金し、注文を消す
    * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+   * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
    */
   refundOrderSquarePayment: {
     parameters: {
@@ -2715,6 +2840,7 @@ export interface operations {
    * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
    * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
    * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+   * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
    */
   refundOrderSquarePaymentKeepingOrder: {
     parameters: {

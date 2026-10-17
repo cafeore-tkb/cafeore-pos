@@ -40,7 +40,7 @@ html:has(.caos-root) body {
 
 /* 意味の色。1 つの色は 1 つの意味だけに使う（商品の色（色の設定）はカードの地だけ）。部品からは bg-(color:--caos-overtime) のように使う */
 .caos-root {
-  /* 予定より長くかかっている（赤。緊急の赤より薄くし、「次へ」の橙と分ける） */
+  /* 予定より長くかかっている（赤。緊急の赤より薄くする） */
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
@@ -63,10 +63,14 @@ html:has(.caos-root) body {
   --caos-scrollbar-line: oklch(92.9% 0.013 255.508);
   --caos-scrollbar-thumb: oklch(70.4% 0.04 256.788);
   --caos-scrollbar-thumb-active: oklch(44.6% 0.043 257.281);
+  /* 上級生のみのカードを上級生でない担当者のドリッパーに置いた警告（カードの「⚠上級生」の札と、右上の知らせの枠） */
+  --caos-senior-warning: oklch(57.7% 0.245 27.325);
   /* 統合（「統合する」と、開いたカードの統合する相手の札） */
   --caos-merge: oklch(48.8% 0.243 264.376);
-  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線 */
+  /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線（管制盤 A・C） */
   --caos-card-stack-line: oklch(55.4% 0.046 257.417);
+  /* 統合したカードを注文ごとに分けた段の区切りの点線（管制盤 D）。地の色（商品の色）に合わせた文字色を薄くして、どの地でも見える */
+  --caos-card-order-line: color-mix(in oklch, currentColor 40%, transparent);
 }
 
 /* タイムラインに新しく入ったカード・行（hooks/useViewBoard）を、数秒（4 秒。FLASH_MS と同じ）だけ水色の輪で点滅させる */
@@ -79,16 +83,36 @@ html:has(.caos-root) body {
   animation: caos-arrival 0.8s ease-in-out 5;
 }
 
+/* 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない）のドリッパーの番号（BoardParts の DripperIndicator）を点滅させる。
+   濃い赤と継続中の薄い赤を行き来する（「次へ」で終えるまで続ける） */
+@keyframes caos-forgotten {
+  50% {
+    background-color: var(--caos-overtime);
+    color: var(--caos-overtime-text);
+  }
+}
+.caos-root .caos-forgotten {
+  animation: caos-forgotten 1s steps(1, end) infinite;
+}
+
 /* 右のパネル（SidePanels の SidePanel）の幅 */
 .caos-root {
   --caos-side-panel-width: max(360px, min(440px, 44vw));
 }
 
-/* 「次へ」・統合の確かめ（BoardParts の ToastConfirms）は右上に出す。右手で押す管制盤 A の右端の「次へ」の列（96px）を隠さないよう、
-   その幅だけ右を空ける。右のパネルが開いていれば、その左に出す（パネルと重ねない） */
-.caos-root .caos-toast-confirms {
-  right: 112px;
+/* 「次へ」の確かめと、統合・上級生のみの知らせ（BoardParts の CornerToasts）は右上に出す（左の列の見出し・カードを隠さない）。
+   右のパネルが開いていれば、その左に出す（パネルと重ねない） */
+.caos-root .caos-corner-toasts {
+  right: 12px;
 }
-.caos-root:has(.caos-side-panel) .caos-toast-confirms {
+.caos-root:has(.caos-side-panel) .caos-corner-toasts {
   right: calc(var(--caos-side-panel-width) + 12px);
+}
+
+/* コメントの置き場（OrderComments の CommentDock）は右下に出す（上はヘッダーの操作と右上の確かめ）。右のパネルが開いていれば、その左に出す */
+.caos-root .caos-comment-dock {
+  right: 8px;
+}
+.caos-root:has(.caos-side-panel) .caos-comment-dock {
+  right: calc(var(--caos-side-panel-width) + 8px);
 }

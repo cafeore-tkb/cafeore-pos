@@ -1,4 +1,9 @@
-import { Outlet } from "react-router";
+import { Outlet, useMatches } from "react-router";
+import {
+  type HeaderOutletContext,
+  type StatusBarHandle,
+  connectionIssues,
+} from "~/components/functional/connectionIssues";
 import { useOnlineStatus } from "~/components/functional/useOnlineStatus";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
@@ -16,6 +21,18 @@ export default function BaseHeader() {
   const { status: wsStatus } = useOrdersWSContext();
   // オフライン時は WebSocket も当然切れるので、オフラインの表示だけにする
   const isWsDisconnected = isOnline && wsStatus === "closed";
+  const issues = connectionIssues({
+    isBackendOnline,
+    isDatabaseOnline,
+    isDeviceOnline,
+    isInternetConnectionRequired,
+    isWsDisconnected,
+  });
+  // レジはつながっていないものをヘッダーに出すので、バーは色だけにする
+  const compact = useMatches().some(
+    (match) => (match.handle as StatusBarHandle | undefined)?.compactStatusBar,
+  );
+  const outletContext: HeaderOutletContext = { connectionIssues: issues };
 
   return (
     <div>
@@ -24,36 +41,23 @@ export default function BaseHeader() {
           "sticky top-0 z-10 h-2",
           "flex items-center justify-center",
           isOnline && "bg-green-600",
-          isWsDisconnected && "h-min bg-orange-600",
-          !isOnline && "h-min bg-red-700",
+          isWsDisconnected && "bg-orange-600",
+          !isOnline && "bg-red-700",
+          !compact && issues.length > 0 && "h-min",
           !isOperational && "h-min bg-violet-600",
         )}
       >
-        {isBackendOnline === false && (
-          <div className="p-2 text-center text-white">
-            バックエンドに接続できません。操作は反映されません
-          </div>
-        )}
-        {isBackendOnline && isDatabaseOnline === false && (
-          <div className="p-2 text-center text-white">
-            データベースに接続できません。操作は反映されません
-          </div>
-        )}
-        {isInternetConnectionRequired && !isDeviceOnline && (
-          <div className="p-2 text-center text-white">
-            インターネットに接続されていません。操作は反映されません
-          </div>
-        )}
-        {isWsDisconnected && (
-          <div className="p-2 text-center text-white">
-            サーバーと再接続中です。画面が最新でない可能性があります
-          </div>
-        )}
+        {!compact &&
+          issues.map((issue) => (
+            <div key={issue.key} className="p-2 text-center text-white">
+              {issue.message}
+            </div>
+          ))}
         {!isOperational && (
           <div className="p-2 text-center text-white">オーダーストップ中</div>
         )}
       </header>
-      <Outlet />
+      <Outlet context={outletContext} />
     </div>
   );
 }

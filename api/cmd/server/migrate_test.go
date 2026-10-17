@@ -459,6 +459,63 @@ func menuKeyIndexDef(t *testing.T, db *gorm.DB) string {
 	return def
 }
 
+func squareCheckoutOrderIndexDef(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var def string
+	if err := db.Raw("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_square_checkouts_order_id'").Scan(&def).Error; err != nil {
+		t.Fatal(err)
+	}
+	return def
+}
+
+// 前の形（一意）の square_checkouts.order_id の索引は一意でない索引に変わり、1 つの注文に決済を
+// 2 つ結び付けられる（個別会計）。2 回目は何もせず、モデルともずれない
+func TestMigrateSquareCheckoutOrderIndexAllowsSplitPayments(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	const plain = "CREATE INDEX idx_square_checkouts_order_id ON public.square_checkouts USING btree (order_id)"
+	if def := squareCheckoutOrderIndexDef(t, db); def != plain {
+		t.Fatalf("空の DB に作った索引 = %s", def)
+	}
+	mustExec(t, db, "DROP INDEX idx_square_checkouts_order_id")
+	mustExec(t, db, `CREATE UNIQUE INDEX "idx_square_checkouts_order_id" ON "square_checkouts" ("order_id")`)
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if def := squareCheckoutOrderIndexDef(t, db); def != plain {
+		t.Fatalf("索引 = %s, want %s", def, plain)
+	}
+	orderID := uuid.New()
+	for i := range 2 {
+		checkout := models.SquareCheckout{
+			IdempotencyKey: uuid.NewString(), DeviceID: "device-1", Amount: 600, PaymentType: "CARD_PRESENT",
+			Status: "COMPLETED", OrderID: &orderID, OrderNumber: &i,
+		}
+		if err := db.Create(&checkout).Error; err != nil {
+			t.Fatalf("同じ注文に 2 つ目の決済を結び付けられない: %v", err)
+		}
+	}
+
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("索引を作り直したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
 // 前の形（消したメニューも数える）のメニューのキーの索引は、消していないメニューだけの部分索引に変わり、
 // 消したメニューのキーを使える。2 回目は何もせず、モデルともずれない
 func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {

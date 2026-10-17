@@ -14,6 +14,7 @@ const response: OrderResponse = {
   billing_amount: 500,
   received: 1000,
   payment_method: "cash",
+  payments: [],
   menus: [
     {
       id: "00000000-0000-4000-8000-000000000002",
@@ -27,6 +28,7 @@ const response: OrderResponse = {
         price: 800,
         abbr: "セット",
         key: "s",
+        priority: 0,
         items: [
           {
             quantity: 2,
@@ -123,6 +125,115 @@ describe("[unit] order snapshot conversion", () => {
     expect(order.paymentMethod).toBe("square");
     expect(order.clone().paymentMethod).toBe("square");
     expect(OrderEntity.createNew({ orderId: 1 }).paymentMethod).toBeUndefined();
+  });
+
+  test("split payments point at the lines by their position", () => {
+    const second = {
+      ...response.menus[0],
+      id: "00000000-0000-4000-8000-000000000021",
+    };
+    const order = responseToOrderEntity({
+      ...response,
+      payment_method: "square",
+      menus: [response.menus[0], second],
+      payments: [
+        {
+          method: "cash",
+          amount: 400,
+          received: 500,
+          discount: 100,
+          order_menu_ids: [second.id],
+          square_checkout_id: null,
+        },
+        {
+          method: "square",
+          amount: 500,
+          received: 500,
+          discount: 0,
+          // 注文を編集して外した明細は落とす
+          order_menu_ids: [
+            response.menus[0].id,
+            "00000000-0000-4000-8000-000000000099",
+          ],
+          square_checkout_id: "00000000-0000-4000-8000-000000000031",
+          square_payment_type: "FELICA_ALL",
+          square_refund_status: "refunded",
+        },
+      ],
+    });
+    expect(order.payments).toEqual([
+      {
+        method: "cash",
+        amount: 400,
+        received: 500,
+        discount: 100,
+        menuIndexes: [1],
+        squareCheckoutId: undefined,
+        squarePaymentType: undefined,
+        squareRefundStatus: undefined,
+      },
+      {
+        method: "square",
+        amount: 500,
+        received: 500,
+        discount: 0,
+        menuIndexes: [0],
+        squareCheckoutId: "00000000-0000-4000-8000-000000000031",
+        squarePaymentType: "FELICA_ALL",
+        squareRefundStatus: "refunded",
+      },
+    ]);
+    expect(order.clone().payments).toEqual(order.payments);
+    expect(responseToOrderEntity(response).payments).toEqual([]);
+  });
+
+  test("create request carries split payments instead of the payment method", () => {
+    const order = responseToOrderEntity(response).clone();
+    order.payments = [
+      {
+        method: "cash",
+        amount: 200,
+        received: 1000,
+        discount: 0,
+        menuIndexes: [0],
+      },
+      {
+        method: "square",
+        amount: 300,
+        received: 300,
+        discount: 100,
+        menuIndexes: [],
+        squareCheckoutId: "00000000-0000-4000-8000-000000000031",
+      },
+    ];
+    const request = orderEntityToCreateRequest(order, {
+      method: "square",
+      squareCheckoutId: "00000000-0000-4000-8000-000000000032",
+    });
+    expect(request.payment_method).toBeUndefined();
+    expect(request.square_checkout_id).toBeUndefined();
+    expect(request.payments).toEqual([
+      {
+        method: "cash",
+        amount: 200,
+        received: 1000,
+        discount: 0,
+        menu_indexes: [0],
+        square_checkout_id: null,
+      },
+      {
+        method: "square",
+        amount: 300,
+        received: 300,
+        discount: 100,
+        menu_indexes: [],
+        square_checkout_id: "00000000-0000-4000-8000-000000000031",
+      },
+    ]);
+    // 一括の注文には payments を付けない
+    expect(
+      orderEntityToCreateRequest(responseToOrderEntity(response).clone()),
+    ).not.toHaveProperty("payments");
   });
 
   test("keeps the Square refund status through cloning", () => {

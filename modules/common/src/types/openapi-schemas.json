@@ -124,7 +124,7 @@
   },
   "MenuResponse": {
     "type": "object",
-    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "required": ["id", "name", "abbr", "price", "key", "priority", "items"],
     "properties": {
       "id": {
         "type": "string",
@@ -141,6 +141,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ"
       },
       "items": {
         "type": "array",
@@ -166,6 +170,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま"
       },
       "items": {
         "type": "array",
@@ -369,7 +377,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了になった時刻。未準備なら null"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",
@@ -405,7 +413,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "CaOS で抽出を終えた時刻"
+        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
       },
       "emergencies": {
         "type": "array",
@@ -505,6 +513,7 @@
       "billing_amount",
       "received",
       "payment_method",
+      "payments",
       "menus",
       "cups"
     ],
@@ -548,6 +557,13 @@
       },
       "square_refund_status": {
         "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。一括で払った注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentResponse"
+        }
       },
       "menus": {
         "type": "array",
@@ -603,6 +619,13 @@
         "format": "uuid",
         "nullable": true,
         "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は\nSquare の支払いを含めば square、含まなければ cash になる。\n",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentCreate"
+        }
       },
       "menu_ids": {
         "type": "array",
@@ -941,7 +964,7 @@
   },
   "CaosCupAfter": {
     "type": "object",
-    "description": "CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーの今で付ける）。\nstart_brew が true なら列の先頭に入れて抽出を始める（brew_started_at にサーバーの今を入れる。抽出中のカードなら今から始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。\ndripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）\n",
+    "description": "CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。\nstart_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。\ndripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）\n",
     "required": ["dripper", "drip_id", "insert_before", "start_brew"],
     "properties": {
       "dripper": {
@@ -963,7 +986,7 @@
       },
       "start_brew": {
         "type": "boolean",
-        "description": "列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻はサーバーの今"
+        "description": "列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress）"
       }
     }
   },
@@ -988,6 +1011,23 @@
       }
     }
   },
+  "CaosPress": {
+    "type": "object",
+    "description": "操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。\n端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：\n- 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。\n  そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）\n- サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今\n- 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻\n省略すると（押した時刻を送らない古い画面）、サーバーの今\n",
+    "required": ["at", "sent_at"],
+    "properties": {
+      "at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "押した時刻（端末の時計、エポックのミリ秒）"
+      },
+      "sent_at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻"
+      }
+    }
+  },
   "CaosCupsWriteRequest": {
     "type": "object",
     "required": ["writes"],
@@ -998,6 +1038,9 @@
         "items": {
           "$ref": "#/components/schemas/CaosCupsWrite"
         }
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
       }
     }
   },
@@ -1044,50 +1087,19 @@
         "format": "uuid",
         "nullable": true,
         "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
-      }
-    }
-  },
-  "CaosUndoCupState": {
-    "type": "object",
-    "description": "「1つ戻す」で比べる・書き戻すカップの値（CaOS の列と準備完了）",
-    "required": ["state", "ready_at"],
-    "properties": {
-      "state": {
-        "$ref": "#/components/schemas/CaosCupState"
       },
-      "ready_at": {
+      "start_next": {
+        "type": "boolean",
+        "default": true,
+        "description": "待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true"
+      },
+      "start_drip_id": {
         "type": "string",
-        "format": "date-time",
-        "nullable": true
-      }
-    }
-  },
-  "CaosUndoCup": {
-    "type": "object",
-    "required": ["cup_id", "current", "restore"],
-    "properties": {
-      "cup_id": {
-        "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない"
       },
-      "current": {
-        "$ref": "#/components/schemas/CaosUndoCupState"
-      },
-      "restore": {
-        "$ref": "#/components/schemas/CaosUndoCupState"
-      }
-    }
-  },
-  "CaosUndoRequest": {
-    "type": "object",
-    "required": ["cups"],
-    "properties": {
-      "cups": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "$ref": "#/components/schemas/CaosUndoCup"
-        }
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
       }
     }
   },
@@ -1374,11 +1386,11 @@
       "consumed": {
         "type": "number",
         "format": "double",
-        "description": "counted_at 以降の注文での消費量"
+        "description": "counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）"
       },
       "servings": {
         "type": "integer",
-        "description": "counted_at 以降に売れた回数"
+        "description": "counted_at より後に使った回数"
       },
       "remaining": {
         "type": "number",
@@ -1392,7 +1404,7 @@
       },
       "servings_last_hour": {
         "type": "integer",
-        "description": "直近1時間に売れた回数"
+        "description": "直近1時間に使った回数（consumed と同じく、使った時刻で数える）"
       }
     }
   },
@@ -1488,6 +1500,83 @@
     "default": "cash",
     "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
   },
+  "OrderPaymentCreate": {
+    "type": "object",
+    "required": ["method", "amount", "received"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）"
+      },
+      "received": {
+        "type": "integer",
+        "description": "お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）"
+      },
+      "discount": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "この支払いで引いた割引（円）"
+      },
+      "menu_indexes": {
+        "type": "array",
+        "description": "この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      }
+    }
+  },
+  "OrderPaymentResponse": {
+    "type": "object",
+    "required": ["method", "amount", "received", "discount", "order_menu_ids"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount": {
+        "type": "integer"
+      },
+      "order_menu_ids": {
+        "type": "array",
+        "description": "この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "square_payment_type": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square で払ったときの決済画面の種類（SquarePaymentType の値）"
+      },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      }
+    }
+  },
   "SquarePaymentType": {
     "type": "string",
     "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
@@ -1529,7 +1618,7 @@
   "SquareDeviceStatus": {
     "type": "string",
     "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
-    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
   },
   "SquareDeviceResponse": {
     "type": "object",
@@ -1554,13 +1643,13 @@
       "code": {
         "type": "string",
         "nullable": true,
-        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+        "description": "端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る\n（UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）\n"
       },
       "pair_by": {
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "コードの期限。これを過ぎると EXPIRED になる"
+        "description": "最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。\nペアリング済みの行は code が消えるだけで PAIRED のまま\n"
       },
       "created_at": {
         "type": "string",

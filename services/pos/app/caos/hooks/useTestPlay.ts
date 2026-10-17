@@ -2,7 +2,6 @@ import {
   type CaosCupsWrite,
   type CaosPracticeOrder,
   type CaosPracticeResult,
-  type CaosUndoEntry,
   type ItemType,
   type PracticeDataOrder,
   addCaosPracticeEmergencies,
@@ -20,6 +19,7 @@ import {
   toPracticeOrders,
   withPracticeItemTypes,
 } from "../logic/historical";
+import type { CaosNextOp } from "./useLiveBoard";
 
 /** 実データテスト。時間帯（startMs〜endMs）・練習の時計の今（currentMs）と、時間帯の注文（時刻の順） */
 interface TestPlaySession {
@@ -128,15 +128,29 @@ export const useTestPlay = ({
       commit(
         applyCaosPracticeWrites(practiceRef.current, writes, practiceNow()),
       ),
-    runNext: (dripper: number, dripId: string | null) =>
-      commit(
-        advanceCaosPracticeDripper(
-          practiceRef.current,
-          dripper,
-          dripId,
-          practiceNow(),
-        ),
-      ),
+    // before（押した待機のカードを待機の先頭へ）を当ててから「次へ」
+    runNext: (
+      { dripper, dripId, startNext }: CaosNextOp,
+      _label: string,
+      before: CaosCupsWrite[] = [],
+    ) => {
+      const moved = applyCaosPracticeWrites(
+        practiceRef.current,
+        before,
+        practiceNow(),
+      );
+      return commit(
+        moved.error !== undefined
+          ? moved
+          : advanceCaosPracticeDripper(
+              moved.orders,
+              dripper,
+              dripId,
+              practiceNow(),
+              { startNext },
+            ),
+      );
+    },
     /** 届いた注文（緊急の入力で番号から選ぶ） */
     arrivedOrders,
     /** 緊急（入れ直し）を足す（理由・決まりは本番と同じ。足した時刻は練習の時計の今）。足した入れ直しの id。断ったら理由を出して null */
@@ -164,14 +178,6 @@ export const useTestPlay = ({
         orders = result.orders;
       }
       return commit({ orders });
-    },
-    /** 「1つ戻す」処理。今の練習の盤面を覚えておき、戻すときはそれに戻す（練習の盤面はこの画面だけが変える） */
-    undoRun: (_entry?: CaosUndoEntry) => {
-      const before = practiceRef.current;
-      return () => {
-        replace(before);
-        return true;
-      };
     },
     /** 時間帯（startMs から durationMinutes 分）でテストを始める */
     start: (sessionStartMs: number, durationMinutes: 30 | 60) => {

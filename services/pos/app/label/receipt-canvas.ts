@@ -8,6 +8,7 @@ import {
   RECEIPT_ISSUER_READING,
   type ReceiptPayment,
   type ReceiptRow,
+  type ReceiptSplit,
   formalReceipt,
   orderReceipt,
 } from "./receipt";
@@ -483,8 +484,9 @@ export const drawFormalReceipt = async (
 export const orderReceiptJob = async (
   order: OrderEntity,
   payment: ReceiptPayment,
+  split?: ReceiptSplit,
 ): Promise<PrintJob> =>
-  imageJob(await drawOrderReceipt(orderReceipt(order, payment)));
+  imageJob(await drawOrderReceipt(orderReceipt(order, payment, split)));
 
 /** 求められたときだけ刷る領収書の印刷データ（注文の中身は呼んだときに読む） */
 export const formalReceiptJob = async (order: OrderEntity): Promise<PrintJob> =>

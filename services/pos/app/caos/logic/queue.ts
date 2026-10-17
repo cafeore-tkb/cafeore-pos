@@ -1,4 +1,5 @@
-import { type CaosCard, caosBrewSec, caosNextLocked } from "@cafeore/common";
+import { type CaosCard, caosBrewSec } from "@cafeore/common";
+import { FORGOTTEN_BREW_SEC } from "./alerts";
 import { type Lane, laneActive } from "./lanes";
 
 // ドリッパーの列の時刻（エポックのミリ秒。日付を含むので、日をまたいでもそのまま続く）。
@@ -8,7 +9,7 @@ import { type Lane, laneActive } from "./lanes";
 const CHANGEOVER_SEC = 15;
 /** 抽出の残りがこの秒以下なら「まもなく」（画面で目立たせる） */
 const SOON_SEC = 15;
-/** 抽出中が無い列の待機の先頭を置く、今から先の秒（「次へ」で始める） */
+/** 抽出中が無い列の待機の先頭を置く、今から先の秒（未着手。▶ で始める） */
 const START_SOON_SEC = 10;
 
 // カードの抽出時間（ミリ秒）
@@ -59,7 +60,7 @@ export const laneTimes = (lane: Lane, nowMs: number): CardTime[] => {
 
 /**
  * 列の状態（ドリッパーの番号の色で出す）。
- * 空き：カードが無い／待機：待機のカードがあり、まだ始めていない（「次へ」で始める）／抽出中／
+ * 空き：カードが無い／待機：待機のカードがあり、まだ始めていない（未着手。▶ で始める）／抽出中／
  * まもなく：残りが SOON_SEC 以下／継続中：予定を過ぎても「次へ」が押されていない
  */
 export type LanePhase = "empty" | "waiting" | "brewing" | "soon" | "overtime";
@@ -76,12 +77,18 @@ const lanePhase = (
   return "brewing";
 };
 
-/** 列の今。抽出中のカード（無ければ「次へ」で始める待機の先頭）・そのあとの待機・始めてからの時間と残り（ミリ秒。残りは表示の秒も）・状態（phase） */
+/**
+ * 列の今。抽出中のカード（無ければ ▶ で始める未着手の待機の先頭）・そのあとの待機・始めてからの時間と残り（ミリ秒。残りは表示の秒も）・状態（phase）・
+ * 予定を過ぎた秒と、入れ忘れ・押し忘れかもしれないか（予定を FORGOTTEN_BREW_SEC 過ぎた抽出中）
+ */
 export const laneStatus = (lane: Lane, nowMs: number) => {
   const [current, ...waiting] = laneActive(lane);
   const elapsedMs = lane.brewing ? nowMs - brewStartMs(lane.brewing, nowMs) : 0;
   const remainingMs = current ? Math.max(0, brewMs(current) - elapsedMs) : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
+  const overSec = lane.brewing
+    ? Math.max(0, Math.floor((elapsedMs - brewMs(lane.brewing)) / 1000))
+    : 0;
   return {
     current,
     waiting,
@@ -89,8 +96,8 @@ export const laneStatus = (lane: Lane, nowMs: number) => {
     remainingMs,
     remainingSec,
     phase: lanePhase(current, Boolean(lane.brewing), remainingSec),
-    /** 「次へ」をまだ押せない（抽出を始めてすぐ。@cafeore/common の caosNextLocked） */
-    nextLocked: caosNextLocked(lane.brewing, nowMs),
+    overSec,
+    forgotten: overSec >= FORGOTTEN_BREW_SEC,
   };
 };
 

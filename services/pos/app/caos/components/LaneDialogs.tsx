@@ -9,23 +9,13 @@ import {
   KeyRound,
   RefreshCw,
   Trash2,
-  TriangleAlert,
   UserMinus,
   UserRound,
   X,
 } from "lucide-react";
 import type React from "react";
-import { useMemo, useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
+import { useMemo, useRef, useState } from "react";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
 import {
   type ShiftFeedTone,
@@ -37,7 +27,7 @@ import { LaneName, SeniorMark } from "./LaneParts";
 
 // ドリッパーの「交代」。sohosai-shift の予定（今の枠・次の枠・オペ練の今と次のラウンド）の、そのドリッパーの番目の人を候補に出す。
 // 候補に無い人は自由に入れられ、空き（担当者なし）にもできる。ほかのドリッパーの担当者との入れ替えもここから。
-// 押したらその場で替える（抽出中かどうかは見ない）。指名の無い上級生のみのカードが待っているときの確認は CaosLanesProvider が出す。
+// 押したらその場で替える（抽出中かどうかは見ない）。指名の無い上級生のみのカードがあるときの知らせ（POS の通知）は CaosLanesProvider が出す。
 
 interface LaneChangeDialogProps {
   lane: CaosLane;
@@ -70,6 +60,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
 }) => {
   const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。名前を打っているあいだは入力を終えるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
   const ordinal = dripperLabel(lane.dripper);
   const candidates = useMemo(
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
@@ -81,11 +74,10 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/40 p-4"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
       <dialog
+        ref={dialogRef}
         open
         aria-modal="true"
         aria-label={`${ordinal} の交代`}
@@ -238,45 +230,6 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   );
 };
 
-// 上級生でない人（担当者なしも）にするドリッパーに、指名の無い上級生のみのカードが待っているときの確認。ボタンは［まだ変えない］［変える］の 2 つだけ。
-// ［変える］なら、そのまま交代し、上級生のみのカードもそのドリッパーに残る（未割当へ戻すなどはしない）。
-
-interface LaneConfirmDialogProps {
-  /** 例「このドリッパーに指名の無い上級生のみのカードが2枚あります（佐藤さんは上級生ではありません）」。ドリッパーごとに 1 行 */
-  messages: string[];
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-export const LaneConfirmDialog: React.FC<LaneConfirmDialogProps> = ({
-  messages,
-  onCancel,
-  onConfirm,
-}) => (
-  <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle className="flex items-center gap-2">
-          <TriangleAlert className="h-6 w-6 shrink-0 text-amber-500" />
-          交代の確認
-        </AlertDialogTitle>
-        {messages.map((message) => (
-          <AlertDialogDescription
-            key={message}
-            className="font-black text-[16px] text-slate-950"
-          >
-            {message}
-          </AlertDialogDescription>
-        ))}
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>まだ変えない</AlertDialogCancel>
-        <AlertDialogAction onClick={onConfirm}>変える</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-);
-
 // CaOS の設定：sohosai-shift の合言葉。この iPad にだけ覚えさせる（ビルドには入れない）。
 // 合言葉は sohosai-shift で CaOS へ配信したときのもの。無くても交代（名前の自由入力）は使える。
 
@@ -315,17 +268,19 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
   const { feedKey, feed, loading, fetchedAt } = shiftFeed;
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。合言葉を打っているあいだは入力を終えるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
 
   const status = shiftFeedStatus(shiftFeed);
 
   return (
     <div
       className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/40 p-4"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
       <dialog
+        ref={dialogRef}
         open
         aria-modal="true"
         aria-label="sohosai-shift の合言葉"

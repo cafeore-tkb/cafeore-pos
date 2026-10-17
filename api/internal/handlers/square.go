@@ -688,8 +688,8 @@ func (h *SquareHandler) findByRemote(remote *square.TerminalCheckout) (*models.S
 var errSquareCheckoutUnusable = errors.New("square checkout cannot be used for this order")
 
 // linkSquareCheckout は注文作成のトランザクションの中で、決済依頼を行ロックして
-// 検証し、注文と結び付ける。order.ID は採番済みであること。
-func linkSquareCheckout(tx *gorm.DB, checkoutID uuid.UUID, order *models.Order, now time.Time) error {
+// 検証し、注文と結び付ける。決済額は amount（一括なら請求額、個別会計ならその支払いの額）と一致すること。
+func linkSquareCheckout(tx *gorm.DB, checkoutID, orderID uuid.UUID, amount int, now time.Time) error {
 	var record models.SquareCheckout
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, "id = ?", checkoutID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -697,8 +697,8 @@ func linkSquareCheckout(tx *gorm.DB, checkoutID uuid.UUID, order *models.Order, 
 		}
 		return err
 	}
-	if err := validateSquareCheckoutForOrder(&record, order.BillingAmount, now); err != nil {
+	if err := validateSquareCheckoutForOrder(&record, amount, now); err != nil {
 		return fmt.Errorf("%w: %s", errSquareCheckoutUnusable, err.Error())
 	}
-	return tx.Model(&record).Update("order_id", order.ID).Error
+	return tx.Model(&record).Update("order_id", orderID).Error
 }

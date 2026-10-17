@@ -148,39 +148,14 @@ func findOrderCup(order *models.Order, cupID uuid.UUID) *models.OrderCup {
 	return nil
 }
 
-// markCupsReady は注文のカップのうち match に合うものを準備完了にし（もう準備完了のカップは時刻を変えない）、
-// 注文の状態をカップから決め直す。カップか注文の状態を変えたら true を返す。
-// カップの準備完了（PATCH /api/orders/:id/cups/:cupId/ready）と、CaOS の「次へ」で使う。
-func markCupsReady(order *models.Order, match func(*models.OrderCup) bool, now time.Time) bool {
-	matched, changed := false, false
-	for i := range order.OrderCups {
-		cup := &order.OrderCups[i]
-		if !match(cup) {
-			continue
-		}
-		matched = true
-		if cup.ReadyAt == nil {
-			cup.ReadyAt = &now
-			changed = true
-		}
-	}
-	if !matched {
-		return false
-	}
-	readyAt, servedAt := order.ReadyAt, order.ServedAt
-	syncOrderWithCups(order)
-	return changed || !timeEqual(readyAt, order.ReadyAt) || !timeEqual(servedAt, order.ServedAt)
-}
-
 // PATCH /api/orders/:id/cups/:cupId/ready の切り替え
 func toggleCupReady(order *models.Order, cup *models.OrderCup, now time.Time) {
 	if cup.ReadyAt == nil {
-		// cup は order.OrderCups の中を指す（findOrderCup）ので、ポインタで比べる
-		markCupsReady(order, func(c *models.OrderCup) bool { return c == cup }, now)
-		return
+		cup.ReadyAt = &now
+	} else {
+		// 準備完了でないカップは提供済みにもできない
+		cup.ReadyAt, cup.ServedAt = nil, nil
 	}
-	// 準備完了でないカップは提供済みにもできない
-	cup.ReadyAt, cup.ServedAt = nil, nil
 	syncOrderWithCups(order)
 }
 
@@ -241,8 +216,7 @@ func lockOrderWith(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
 	return order, err
 }
 
-// 注文とカップの状態を1トランザクションで変更し、変更後の注文を返して配信する。
-// 準備完了になったカップが CaOS の抽出中のカードにあれば、そのあとでそのカードの「次へ」を進める（advanceReadyCaosCards）。
+// 注文とカップの状態を1トランザクションで変更し、変更後の注文を返して配信する。CaOS の盤面（抽出の時刻）は書かない。
 func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *models.Order, now time.Time) error) {
 	orderID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -283,7 +257,8 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
-	advanceReadyCaosCards(NewCaosHandler(h.db, h.hub, h.inventory), &before, &order)
+	// 抽出が要るカップの在庫は、提供可能（無ければ提供済み）にした時刻で使う（Inventory.consumption）
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderID)) }()
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

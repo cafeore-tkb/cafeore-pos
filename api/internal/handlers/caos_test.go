@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -216,6 +217,14 @@ func (f *caosFixture) wait() { f.skew += caosNextCooldown }
 func (f *caosFixture) next(t *testing.T, dripper int, seen *uuid.UUID) int {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{"drip_id": seen})
+	w := callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: fmt.Sprint(dripper)}})
+	return w.Code
+}
+
+// finish は「次へ」を start_next: false で呼ぶ（抽出中のカードを終えるだけ）。
+func (f *caosFixture) finish(t *testing.T, dripper int, seen *uuid.UUID) int {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"drip_id": seen, "start_next": false})
 	w := callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: fmt.Sprint(dripper)}})
 	return w.Code
 }
@@ -459,24 +468,26 @@ func TestCaosNextOnDB(t *testing.T) {
 		t.Fatalf("next right after the start = %d, want 400", code)
 	}
 	f.wait()
-	// 次へ：抽出中のカードを終え、そのカップだけ準備完了にし、待機の先頭（順番の小さいもの）を始める
+	// 次へ：抽出中のカードを終え（終えた時刻だけ。準備完了は付けない）、待機の先頭（順番の小さいもの）を始める
 	if code := f.next(t, 1, &card1); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
 	if got, _ := f.lane(t, 1); len(got) != 1 || got[0] != card3 {
 		t.Fatalf("brewing after next = %v, want %v", got, card3)
 	}
-	for _, c := range o1.OrderCups[:2] {
-		if cup := f.cup(t, c.ID); cup.ReadyAt == nil || cup.BrewFinishedAt == nil {
-			t.Fatalf("cup = %+v, want ready and finished", cup)
+	for _, c := range o1.OrderCups {
+		if cup := f.cup(t, c.ID); cup.ReadyAt != nil {
+			t.Fatalf("cup = %+v, want not ready (ready_at is for the serve screen)", cup)
 		}
 	}
-	if cup := f.cup(t, o1.OrderCups[2].ID); cup.ReadyAt != nil {
-		t.Fatal("milk got ready")
+	for _, c := range o1.OrderCups[:2] {
+		if cup := f.cup(t, c.ID); cup.BrewFinishedAt == nil {
+			t.Fatalf("cup = %+v, want finished", cup)
+		}
 	}
 	var order models.Order
 	if err := db.First(&order, "id = ?", o1.ID).Error; err != nil || order.ReadyAt != nil {
-		t.Fatalf("order = %+v, want not ready (the milk is left)", order)
+		t.Fatalf("order = %+v, want not ready", order)
 	}
 	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewStartedAt == nil {
 		t.Fatal("the next card did not start")
@@ -490,24 +501,33 @@ func TestCaosNextOnDB(t *testing.T) {
 		t.Fatalf("next without the brewing card = %d, want 409", code)
 	}
 
-	// マスターや提供の画面でカップを準備完了にしたら、そのカードの「次へ」をサーバーが進める（終えて、待機の先頭を始める）
-	ready := func(o models.Order, cup int) {
-		t.Helper()
-		if w := callWithParams(t, f.orders.MarkOrderCupReady, http.MethodPatch, "", gin.Params{{Key: "id", Value: o.ID.String()}, {Key: "cupId", Value: o.OrderCups[cup].ID.String()}}); w.Code != http.StatusOK {
-			t.Fatalf("PATCH cup ready = %d", w.Code)
+	// 提供の画面でカップを準備完了・提供済みにしても、CaOS の盤面（抽出の時刻）は書かず、抽出中のカードは抽出中のまま。
+	// 終えるのは CaOS の「次へ」だけ
+	cupParams := gin.Params{{Key: "id", Value: o3.ID.String()}, {Key: "cupId", Value: o3.OrderCups[0].ID.String()}}
+	for _, mark := range []gin.HandlerFunc{f.orders.MarkOrderCupReady, f.orders.MarkOrderCupServed} {
+		if w := callWithParams(t, mark, http.MethodPatch, "", cupParams); w.Code != http.StatusOK {
+			t.Fatalf("PATCH cup ready/served = %d", w.Code)
+		}
+		if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewStartedAt == nil || cup.BrewFinishedAt != nil {
+			t.Fatalf("cup made ready/served = %+v, want the brew times unchanged", cup)
+		}
+		if brewing, queued := f.lane(t, 1); !slices.Equal(brewing, []uuid.UUID{card3}) || !slices.Equal(queued, []uuid.UUID{card2}) {
+			t.Fatalf("lane after the cup got ready/served = %v %v, want %v brewing and %v queued", brewing, queued, card3, card2)
 		}
 	}
-	ready(o3, 0)
-	if got, _ := f.lane(t, 1); len(got) != 1 || got[0] != card2 {
-		t.Fatalf("brewing after the cup got ready = %v, want %v", got, card2)
+	if code := f.next(t, 1, nil); code != http.StatusConflict {
+		t.Fatalf("next without the served brewing card = %d, want 409", code)
 	}
-	if cup := f.cup(t, o3.OrderCups[0].ID); cup.BrewFinishedAt == nil {
-		t.Fatal("the card made ready was not finished")
+	f.wait()
+	if code := f.next(t, 1, &card3); code != http.StatusNoContent {
+		t.Fatalf("next of the served card = %d", code)
 	}
-	// 待機が無ければ、終えるだけ（その列は空く）
-	ready(o2, 0)
-	if brewing, queued := f.lane(t, 1); len(brewing)+len(queued) != 0 {
-		t.Fatalf("lane after the last card got ready = %v %v, want empty", brewing, queued)
+	if got, _ := f.lane(t, 1); !slices.Equal(got, []uuid.UUID{card2}) {
+		t.Fatalf("brewing after next = %v, want %v", got, card2)
+	}
+	f.wait()
+	if code := f.next(t, 1, &card2); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
 	}
 	o4 := f.createOrder(t, 4, line(f.blend))
 	card4 := uuid.New()
@@ -538,6 +558,61 @@ func TestCaosNextOnDB(t *testing.T) {
 		t.Fatalf("next with yesterday's card = %d, want 409", code)
 	}
 	f.mustPut(t, write(ids(o1.OrderCups[2]), unassigned, toUnassigned)) // 何も変えない書き込みも通る
+}
+
+// TestCaosFinishOnlyOnDB は start_next: false（抽出中のカードを押して終えるだけ）を確かめる。待機の先頭は始めず、
+// 始めてから 10 秒の決まりは「次へ」と同じ。抽出中が無ければ断る。省略すれば今まで通り待機の先頭を始める（TestCaosNextOnDB）
+func TestCaosFinishOnlyOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o1 := f.createOrder(t, 1, line(f.blend))
+	o2 := f.createOrder(t, 2, line(f.blend))
+	card1, card2 := uuid.New(), uuid.New()
+	f.mustPut(t,
+		write(ids(o1.OrderCups[0]), unassigned, placed(1, card1, true)),
+		write(ids(o2.OrderCups[0]), unassigned, placed(1, card2, false)),
+	)
+
+	if code := f.finish(t, 1, &card1); code != http.StatusBadRequest {
+		t.Fatalf("finish right after the start = %d, want 400", code)
+	}
+	f.wait()
+	if code := f.finish(t, 1, &card1); code != http.StatusNoContent {
+		t.Fatalf("finish = %d", code)
+	}
+	if cup := f.cup(t, o1.OrderCups[0].ID); cup.BrewFinishedAt == nil || cup.ReadyAt != nil {
+		t.Fatalf("finished cup = %+v, want finished and not ready", cup)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	if brewing, queued := f.lane(t, 1); len(brewing) != 0 || !slices.Equal(queued, []uuid.UUID{card2}) {
+		t.Fatalf("lane after finish = %v %v, want none brewing and %v queued", brewing, queued, card2)
+	}
+	// 抽出中が無ければ終えるものが無い（待機の先頭も始めない）
+	if code := f.finish(t, 1, nil); code != http.StatusConflict {
+		t.Fatalf("finish without a brewing card = %d, want 409", code)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	// start_drip_id は、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409）
+	startWith := func(id uuid.UUID) int {
+		body, _ := json.Marshal(map[string]any{"drip_id": nil, "start_drip_id": id})
+		return callWithParams(t, f.caos.AdvanceCaosDripper, http.MethodPost, string(body), gin.Params{{Key: "dripper", Value: "1"}}).Code
+	}
+	if code := startWith(card1); code != http.StatusConflict {
+		t.Fatalf("start another card = %d, want 409", code)
+	}
+	if cup := f.cup(t, o2.OrderCups[0].ID); cup.BrewStartedAt != nil {
+		t.Fatalf("queued cup = %+v, want not started", cup)
+	}
+	if code := startWith(card2); code != http.StatusNoContent {
+		t.Fatalf("start the head = %d", code)
+	}
+	if got, _ := f.lane(t, 1); !slices.Equal(got, []uuid.UUID{card2}) {
+		t.Fatalf("brewing = %v, want %v", got, card2)
+	}
 }
 
 // 抽出を始められるのは、空いている（そのカードのほかに抽出中・待機のカードが無い）ドリッパーに置くときだけ。
@@ -663,7 +738,7 @@ func TestCaosMoveBrewingOnDB(t *testing.T) {
 	}
 	expectLane(3, nil)
 
-	// 終わったカード（「次へ」で終えた・抽出中でカップが全部準備完了）は動かせない。1 番は b を始めて終え、a を始める
+	// 終わったカード（「次へ」で終えた）は動かせない。抽出中のカードは、カップが全部準備完了でも動かせる。1 番は b を始めて終え、a を始める
 	if code := f.next(t, 1, nil); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
@@ -675,13 +750,12 @@ func TestCaosMoveBrewingOnDB(t *testing.T) {
 		!strings.Contains(body, "終わったカード") {
 		t.Fatalf("move a finished card = %d: %s", code, body)
 	}
-	if err := db.Model(&models.OrderCup{}).Where("id = ?", cupOf(1)).Update("ready_at", time.Now()).Error; err != nil {
+	now := time.Now()
+	if err := db.Model(&models.OrderCup{}).Where("id = ?", cupOf(1)).Updates(map[string]any{"ready_at": now, "served_at": now}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if code, body := f.put(t, write(ids(o[1].OrderCups[0]), f.state(t, cupOf(1)), placed(4, a, false))); code != http.StatusBadRequest ||
-		!strings.Contains(body, "終わったカード") {
-		t.Fatalf("move a brewing card whose cups are ready = %d: %s", code, body)
-	}
+	f.mustPut(t, write(ids(o[1].OrderCups[0]), f.state(t, cupOf(1)), placed(4, a, false)))
+	expectLane(4, nil, a)
 }
 
 func TestCaosConcurrentWrites(t *testing.T) {
@@ -1028,8 +1102,8 @@ func TestCaosMergeIntoBrewingOnDB(t *testing.T) {
 	if code := f.next(t, 3, &card); code != http.StatusNoContent {
 		t.Fatalf("next = %d", code)
 	}
-	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt == nil || got.BrewFinishedAt == nil {
-		t.Fatalf("joined cup after next = %+v, want ready and finished", got)
+	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt != nil || got.BrewFinishedAt == nil {
+		t.Fatalf("joined cup after next = %+v, want finished and not ready", got)
 	}
 	// 終わったカードには入れない
 	if code, _ := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(3, card, false))); code != http.StatusBadRequest {
@@ -1037,9 +1111,8 @@ func TestCaosMergeIntoBrewingOnDB(t *testing.T) {
 	}
 }
 
-// 提供の画面などでカップを提供済み・準備完了にしたら、そのカップの抽出中のカードの「次へ」をサーバーが進める。
-// 統合したカードのほかの注文のカップも準備完了になり、待機の先頭が始まる。待機のカードのカップでは進めない
-func TestCaosAdvanceWhenServedOnDB(t *testing.T) {
+// 提供の画面で提供済み・準備完了にしても（取り消しても）、CaOS の盤面（抽出の時刻）は書かない。「次へ」は CaOS で押す
+func TestCaosServeKeepsBoardOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
 	o1 := f.createOrder(t, 1, line(f.blend))
@@ -1051,29 +1124,43 @@ func TestCaosAdvanceWhenServedOnDB(t *testing.T) {
 		write(ids(o2.OrderCups[0]), unassigned, placed(4, merged, false)),
 		write(ids(o3.OrderCups[0]), unassigned, placed(4, next, false)),
 	)
-	// 待機のカード（next）のカップを提供済みにしても、抽出中のカードは進めない
-	if w := callWithParams(t, f.orders.MarkOrderCupServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o3.ID.String()}, {Key: "cupId", Value: o3.OrderCups[1].ID.String()}}); w.Code != http.StatusOK {
-		t.Fatalf("PATCH cup served = %d", w.Code)
+	states := func() []models.CaosCupState {
+		var out []models.CaosCupState
+		for _, o := range []models.Order{o1, o2, o3} {
+			cup := f.cup(t, o.OrderCups[0].ID)
+			out = append(out, caosCupState(&cup))
+		}
+		return out
 	}
-	if brewing, _ := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{merged}) {
-		t.Fatalf("brewing = %v, want %v", brewing, merged)
+	before := states()
+	for _, call := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		params  gin.Params
+	}{
+		{"cup served (queued card)", f.orders.MarkOrderCupServed, gin.Params{{Key: "id", Value: o3.ID.String()}, {Key: "cupId", Value: o3.OrderCups[1].ID.String()}}},
+		{"cup ready (brewing card)", f.orders.MarkOrderCupReady, gin.Params{{Key: "id", Value: o2.ID.String()}, {Key: "cupId", Value: o2.OrderCups[0].ID.String()}}},
+		{"order served", f.orders.MarkOrderServed, gin.Params{{Key: "id", Value: o1.ID.String()}}},
+		{"order served (undo)", f.orders.MarkOrderServed, gin.Params{{Key: "id", Value: o1.ID.String()}}},
+		{"order ready", f.orders.MarkOrderReady, gin.Params{{Key: "id", Value: o1.ID.String()}}},
+	} {
+		if w := callWithParams(t, call.handler, http.MethodPatch, "", call.params); w.Code != http.StatusOK {
+			t.Fatalf("%s = %d", call.name, w.Code)
+		}
+		if got := states(); !reflect.DeepEqual(got, before) {
+			t.Fatalf("after %s the board = %+v, want %+v", call.name, got, before)
+		}
 	}
-	// 注文 1 を提供（注文ごと）：統合したカードを終え、注文 2 のカップも準備完了にし、待機の先頭を始める
-	if w := callWithParams(t, f.orders.MarkOrderServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o1.ID.String()}}); w.Code != http.StatusOK {
-		t.Fatalf("PATCH served = %d", w.Code)
+	// 統合したカードは全部のカップが準備完了・提供済みでも抽出中のまま（終えるのは CaOS の「次へ」だけ）
+	if brewing, queued := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{merged}) || !slices.Equal(queued, []uuid.UUID{next}) {
+		t.Fatalf("lane = %v %v, want %v brewing and %v queued", brewing, queued, merged, next)
 	}
-	if got := f.cup(t, o2.OrderCups[0].ID); got.ReadyAt == nil || got.BrewFinishedAt == nil {
-		t.Fatalf("the other cup of the card = %+v, want ready and finished", got)
+	f.wait()
+	if code := f.next(t, 4, &merged); code != http.StatusNoContent {
+		t.Fatalf("next = %d", code)
 	}
-	if brewing, _ := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{next}) {
-		t.Fatalf("brewing after served = %v, want %v", brewing, next)
-	}
-	// 提供を取り消しても、終えたカードは戻さない
-	if w := callWithParams(t, f.orders.MarkOrderServed, http.MethodPatch, "", gin.Params{{Key: "id", Value: o1.ID.String()}}); w.Code != http.StatusOK {
-		t.Fatalf("PATCH served (undo) = %d", w.Code)
-	}
-	if brewing, _ := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{next}) {
-		t.Fatalf("brewing after undoing served = %v, want %v", brewing, next)
+	if brewing, queued := f.lane(t, 4); !slices.Equal(brewing, []uuid.UUID{next}) || len(queued) != 0 {
+		t.Fatalf("lane after next = %v %v, want %v brewing", brewing, queued, next)
 	}
 }
 
@@ -1206,6 +1293,7 @@ func TestSplitCaosLaneCases(t *testing.T) {
 				Started         bool
 				Finished        bool
 				Ready           bool
+				Served          bool
 			}
 			Brewing *uuid.UUID
 			Queued  []uuid.UUID
@@ -1231,7 +1319,8 @@ func TestSplitCaosLaneCases(t *testing.T) {
 				dripper, pos, id := 1, c.DripperPosition, c.DripID
 				rows = append(rows, caosUnit{OrderNo: c.OrderNo, OrderCup: models.OrderCup{
 					ID: uuid.New(), Dripper: &dripper, DripperPosition: &pos, DripID: &id,
-					BrewStartedAt: timeIf(c.Started), BrewFinishedAt: timeIf(c.Finished), ReadyAt: timeIf(c.Ready),
+					BrewStartedAt: timeIf(c.Started), BrewFinishedAt: timeIf(c.Finished),
+					ReadyAt: timeIf(c.Ready || c.Served), ServedAt: timeIf(c.Served),
 				}})
 			}
 			brewing, queued := splitCaosLane(rows)

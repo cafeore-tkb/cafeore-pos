@@ -29,9 +29,6 @@ type ServerInterface interface {
 	// CaOS のドリッパーの担当者を替える（交代）
 	// (PUT /api/caos/lanes/{dripper})
 	PutCaosLane(c *gin.Context, dripper int)
-	// CaOS の「1つ戻す」
-	// (POST /api/caos/undo)
-	UndoCaosCups(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -200,6 +197,9 @@ type ServerInterface interface {
 	// 端末を一覧から外す
 	// (DELETE /api/square/devices/{id})
 	DeleteSquareDevice(c *gin.Context, id openapi_types.UUID)
+	// ペアリング済みの端末にコード（Device Code）を発行し直す
+	// (POST /api/square/devices/{id}/code)
+	IssueSquareDeviceCode(c *gin.Context, id openapi_types.UUID)
 	// Square 連携が使えるか
 	// (GET /api/square/status)
 	GetSquareStatus(c *gin.Context)
@@ -305,19 +305,6 @@ func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
 	}
 
 	siw.Handler.PutCaosLane(c, dripper)
-}
-
-// UndoCaosCups operation middleware
-func (siw *ServerInterfaceWrapper) UndoCaosCups(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.UndoCaosCups(c)
 }
 
 // GetCashierState operation middleware
@@ -1385,6 +1372,30 @@ func (siw *ServerInterfaceWrapper) DeleteSquareDevice(c *gin.Context) {
 	siw.Handler.DeleteSquareDevice(c, id)
 }
 
+// IssueSquareDeviceCode operation middleware
+func (siw *ServerInterfaceWrapper) IssueSquareDeviceCode(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.IssueSquareDeviceCode(c, id)
+}
+
 // GetSquareStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetSquareStatus(c *gin.Context) {
 
@@ -1456,7 +1467,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/caos/lanes/seniors", wrapper.UpdateCaosLaneSeniors)
 	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
 	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
-	router.POST(options.BaseURL+"/api/caos/undo", wrapper.UndoCaosCups)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
@@ -1513,6 +1523,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/square/devices/import", wrapper.ImportSquareDevices)
 	router.POST(options.BaseURL+"/api/square/devices/pair", wrapper.PairSquareDevice)
 	router.DELETE(options.BaseURL+"/api/square/devices/:id", wrapper.DeleteSquareDevice)
+	router.POST(options.BaseURL+"/api/square/devices/:id/code", wrapper.IssueSquareDeviceCode)
 	router.GET(options.BaseURL+"/api/square/status", wrapper.GetSquareStatus)
 	router.POST(options.BaseURL+"/api/square/webhook", wrapper.ReceiveSquareWebhook)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)

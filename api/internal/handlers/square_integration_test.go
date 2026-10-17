@@ -321,6 +321,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.POST("/square/devices/pair", squareHandler.PairDevice)
 	api.POST("/square/devices/import", squareHandler.ImportDevices)
 	api.DELETE("/square/devices/:id", squareHandler.DeleteDevice)
+	api.POST("/square/devices/:id/code", squareHandler.IssueDeviceCode)
 	api.POST("/square/checkouts", squareHandler.CreateCheckout)
 	api.GET("/square/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
 	api.GET("/square/checkouts/:id", squareHandler.GetCheckout)
@@ -707,6 +708,89 @@ func TestSquareIntegrationPairing(t *testing.T) {
 	// 名前が無ければ断る。
 	if code := env.call(http.MethodPost, "/api/square/devices/pair", map[string]any{"name": "  "}, nil, nil); code != http.StatusBadRequest {
 		t.Fatalf("empty name: %d", code)
+	}
+}
+
+// ペアリング済みの端末にコードを発行し直す。入力を待つ間も今の device_id で決済に使え、
+// 入力されたら device_id を記録し直す。期限が切れてもペアリング済みのまま。
+func TestSquareIntegrationIssueCodeToPairedDevice(t *testing.T) {
+	env := newIntegrationEnv(t)
+	device := findDevice(env.devices(), "レジ1")
+	if device == nil || device.Status != models.PAIRED || device.Code != nil {
+		t.Fatalf("registered device: %+v", device)
+	}
+	path := "/api/square/devices/" + device.Id.String() + "/code"
+
+	var issued models.SquareDeviceResponse
+	if code := env.call(http.MethodPost, path, nil, nil, &issued); code != http.StatusOK {
+		t.Fatalf("issue: %d %+v", code, issued)
+	}
+	if issued.Id != device.Id || issued.Status != models.PAIRED || issued.DeviceId == nil || *issued.DeviceId != "device-1" ||
+		issued.Code == nil || *issued.Code != "CODE01" || issued.PairBy == nil {
+		t.Fatalf("unexpected issued device: %+v", issued)
+	}
+	if sent := env.fake.codes["code_1"]; sent.Name != "レジ1" || sent.ProductType != "TERMINAL_API" {
+		t.Fatalf("unexpected device code request: %+v", sent)
+	}
+
+	// 入力されるまでもペアリング済みのまま、今の device_id で決済に使える。
+	if pending := findDevice(env.devices(), "レジ1"); pending == nil || pending.Status != models.PAIRED || pending.Code == nil {
+		t.Fatalf("pending: %+v", pending)
+	}
+	if code, _, _ := env.createCheckoutOn("device-1", uuid.NewString(), 600); code != http.StatusCreated {
+		t.Fatalf("checkout while waiting for the code: %d", code)
+	}
+
+	// 同じ端末で入力したら、行も device_id もそのままでコードが消える。
+	env.fake.pair("code_1", "device-1", "2026-11-07T12:01:00Z")
+	devices := env.devices()
+	if repaired := findDevice(devices, "レジ1"); len(devices) != 1 || repaired == nil || repaired.Id != device.Id || repaired.Status != models.PAIRED ||
+		repaired.DeviceId == nil || *repaired.DeviceId != "device-1" || repaired.Code != nil {
+		t.Fatalf("re-paired: %+v", devices)
+	}
+
+	// 入力されないまま期限が切れても、ペアリング済みのまま。
+	env.call(http.MethodPost, path, nil, nil, &issued)
+	env.fake.expire("code_2")
+	if expired := findDevice(env.devices(), "レジ1"); expired == nil || expired.Status != models.PAIRED || expired.Code != nil ||
+		expired.DeviceId == nil || *expired.DeviceId != "device-1" {
+		t.Fatalf("expired: %+v", expired)
+	}
+
+	// 入力待ちのときにもう一度発行すると、新しいコードに置き換わる。
+	env.call(http.MethodPost, path, nil, nil, &issued)
+	var replaced models.SquareDeviceResponse
+	env.call(http.MethodPost, path, nil, nil, &replaced)
+	if replaced.Code == nil || *replaced.Code != "CODE04" {
+		t.Fatalf("replaced: %+v", replaced)
+	}
+	// 別の端末で入力したら、その端末の device_id に置き換わる。前の端末には決済画面を出さない。
+	env.fake.pair("code_4", "device-9", "2026-11-07T12:03:00Z")
+	if swapped := findDevice(env.devices(), "レジ1"); swapped == nil || swapped.Id != device.Id || swapped.Status != models.PAIRED ||
+		swapped.DeviceId == nil || *swapped.DeviceId != "device-9" || swapped.Code != nil {
+		t.Fatalf("swapped: %+v", swapped)
+	}
+	if code, _, _ := env.createCheckoutOn("device-1", uuid.NewString(), 600); code != http.StatusBadRequest {
+		t.Fatalf("checkout on the replaced device: %d", code)
+	}
+	if code, _, _ := env.createCheckoutOn("device-9", uuid.NewString(), 600); code != http.StatusCreated {
+		t.Fatalf("checkout on the new device: %d", code)
+	}
+
+	// ペアリング待ちの行・見つからない・ID が不正は断り、Square にはコードを発行させない。
+	var unpaired models.SquareDeviceResponse
+	env.call(http.MethodPost, "/api/square/devices/pair", map[string]any{"name": "レジ2"}, nil, &unpaired)
+	if code := env.call(http.MethodPost, "/api/square/devices/"+unpaired.Id.String()+"/code", nil, nil, nil); code != http.StatusConflict {
+		t.Fatalf("unpaired device: %d", code)
+	}
+	if code := env.call(http.MethodPost, "/api/square/devices/"+uuid.NewString()+"/code", nil, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("unknown device: %d", code)
+	}
+	if code := env.call(http.MethodPost, "/api/square/devices/not-a-uuid/code", nil, nil, nil); code != http.StatusBadRequest {
+		t.Fatalf("invalid id: %d", code)
+	}
+	if len(env.fake.codeOrder) != 5 {
+		t.Fatalf("expected five codes issued on Square, got %d", len(env.fake.codeOrder))
 	}
 }
 

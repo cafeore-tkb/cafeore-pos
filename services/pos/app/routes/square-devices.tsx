@@ -42,11 +42,10 @@ export default function SquareDevicesPage() {
     error,
     mutate,
   } = useSWR("square-devices", squareRepository.listDevices, {
-    // 端末でコードを入力するまで、サーバー経由で Square に問い合わせ続ける
+    // 端末でコードを入力するまで、サーバー経由で Square に問い合わせ続ける。
+    // コードはペアリング待ちの行と、ペアリング済みの端末に発行し直した行にだけ入る
     refreshInterval: (latest) =>
-      latest?.some((device) => device.status === "UNPAIRED")
-        ? PAIRING_POLL_MS
-        : 0,
+      latest?.some((device) => device.code) ? PAIRING_POLL_MS : 0,
   });
   const enabled = status?.enabled ?? false;
   const refresh = () => void mutate();
@@ -166,7 +165,12 @@ function DevicesSection({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-bold text-xl">登録した端末</h2>
+      <div className="space-y-1">
+        <h2 className="font-bold text-xl">登録した端末</h2>
+        <p className="text-muted-foreground text-sm">
+          ペアリング済みの端末がサインアウトしたら（サインイン画面に戻ったら）、その行の「コードを発行」を押し、出たコードを端末で入力します。同じ端末ならレジで選び直す必要はありません。発行しただけでは端末はサインアウトせず、入力するまでも今のまま決済に使えます。
+        </p>
+      </div>
       {error ? (
         <p className="text-red-700 text-sm">
           {errorText(error, "一覧を取得できません")}
@@ -178,25 +182,28 @@ function DevicesSection({
           まだ端末がありません。上でコードを発行するか、下で取り込んでください。
         </p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>名前</TableHead>
-              <TableHead className="w-32">状態</TableHead>
-              <TableHead>コード / device_id</TableHead>
-              <TableHead className="w-24">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {devices.map((device) => (
-              <DeviceRow
-                key={device.id}
-                device={device}
-                onChanged={onChanged}
-              />
-            ))}
-          </TableBody>
-        </Table>
+        // 狭い画面では表だけを横にスクロールさせる（ページごと横にはみ出さない）
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名前</TableHead>
+                <TableHead className="w-32">状態</TableHead>
+                <TableHead>コード / device_id</TableHead>
+                <TableHead className="w-24">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.map((device) => (
+                <DeviceRow
+                  key={device.id}
+                  device={device}
+                  onChanged={onChanged}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </section>
   );
@@ -228,47 +235,78 @@ function DeviceRow({
     }
   };
 
+  const issueCode = async () => {
+    try {
+      setBusy(true);
+      await squareRepository.issueDeviceCode(device.id);
+      toast(`${device.name} のコードを発行しました`);
+      onChanged();
+    } catch (e) {
+      toast(errorText(e, "コードを発行できませんでした"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <TableRow>
       <TableCell className="font-bold">{device.name}</TableCell>
       <TableCell className="whitespace-nowrap">
         {statusLabel[device.status]}
+        {device.status === "PAIRED" && device.code && (
+          <div className="text-muted-foreground text-xs">コードの入力待ち</div>
+        )}
       </TableCell>
       <TableCell>
-        {device.status === "UNPAIRED" && device.code && (
-          <div>
-            <div className="font-bold font-mono text-3xl tracking-widest">
-              {device.code}
-            </div>
-            {device.pair_by && (
-              <div className="text-muted-foreground text-xs">
-                {timeFormat.format(new Date(device.pair_by))}{" "}
-                まで有効。端末で入力してください
+        <div className="flex flex-col gap-1">
+          {device.code && (
+            <div>
+              <div className="font-bold font-mono text-3xl tracking-widest">
+                {device.code}
               </div>
-            )}
-          </div>
-        )}
-        {device.status === "PAIRED" && (
-          <span className="break-all font-mono text-xs">
-            {device.device_id}
-          </span>
-        )}
-        {device.status === "EXPIRED" && (
-          <span className="text-muted-foreground text-sm">
-            外してから発行し直してください
-          </span>
-        )}
+              {device.pair_by && (
+                <div className="text-muted-foreground text-xs">
+                  {timeFormat.format(new Date(device.pair_by))}{" "}
+                  まで有効。端末で入力してください
+                </div>
+              )}
+            </div>
+          )}
+          {device.status === "PAIRED" && (
+            <span className="break-all font-mono text-xs">
+              {device.device_id}
+            </span>
+          )}
+          {device.status === "EXPIRED" && (
+            <span className="text-muted-foreground text-sm">
+              外してから発行し直してください
+            </span>
+          )}
+        </div>
       </TableCell>
       <TableCell>
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          disabled={busy}
-          onClick={() => void remove()}
-        >
-          外す
-        </Button>
+        <div className="flex flex-col items-start gap-2">
+          {device.status === "PAIRED" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void issueCode()}
+            >
+              コードを発行
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => void remove()}
+          >
+            外す
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );
