@@ -1007,6 +1007,36 @@
       }
     }
   },
+  "CashierPrepayResponse": {
+    "type": "object",
+    "required": ["prepay", "updated_at"],
+    "properties": {
+      "prepay": {
+        "type": "object",
+        "additionalProperties": true,
+        "nullable": true,
+        "description": "先払いの途中の状態。フロントの cashierPrepaySchema の JSON をそのまま持つ\n（orderId: レシートに載せた番号、lines: 商品の行、coupon・special・memo、split: 小計と受け取った支払い）。\nサーバーは形を確かめる以外は中身を解釈しない。先払いが無ければ null\n"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "prepay を最後に置き換えた時刻。prepay が null なら null"
+      }
+    }
+  },
+  "CashierPrepayUpdateRequest": {
+    "type": "object",
+    "required": ["prepay"],
+    "properties": {
+      "prepay": {
+        "type": "object",
+        "additionalProperties": true,
+        "nullable": true,
+        "description": "先払いの途中の状態。受け取った支払い（split.tenders）が 1 つ以上要る。null で消す"
+      }
+    }
+  },
   "CaosLogEntry": {
     "type": "object",
     "required": ["at", "tabId", "sequence", "event", "details"],

@@ -2,6 +2,7 @@ import {
   type MenuEntity,
   type OrderEntity,
   type PrinterSettings,
+  type SavedCashierPrepay,
   type SquareActionOption,
   type SquareCheckout,
   SquareCheckoutConflictError,
@@ -59,6 +60,13 @@ import {
   toggleSpecial,
 } from "../functional/cashierDraft";
 import {
+  type CashierPrepay,
+  parsePrepay,
+  prepayPaid,
+  prepaySnapshot,
+  restorePrepay,
+} from "../functional/cashierPrepay";
+import {
   type CashierTender,
   allocateDiscount,
   beginRest,
@@ -97,6 +105,7 @@ import {
   rememberAddedLine,
 } from "../functional/heldKeys";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
+import { hasUnsentOrderId } from "../functional/saveOrderInBackground";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import type { SquareDeviceSelection } from "../functional/useSquareDevice";
@@ -153,6 +162,8 @@ type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
   /** キャンセルした注文も含む全部の注文（番号・引換券・過去の注文に使う） */
   orders: WithId<OrderEntity>[] | undefined;
+  /** 注文が届いたか（届くまで orders は空） */
+  isOrdersLoaded: boolean;
   wsStatus: "connecting" | "open" | "closed" | "error";
   /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
   connectionIssues: ConnectionIssue[];
@@ -175,6 +186,10 @@ type props = {
     squareCheckoutId: string,
   ) => Promise<WithId<OrderEntity>>;
   syncOrder: (order: OrderEntity) => void;
+  /** 先払いの途中の状態をサーバーに送る（null で消す）。送れなければ reject する */
+  syncPrepay: (prepay: CashierPrepay | null) => Promise<void>;
+  /** サーバーに残っている先払いの途中の状態。無ければ null */
+  loadPrepay: () => Promise<SavedCashierPrepay | null>;
 };
 
 /** 会計の欄に出す Square の決済手段（左から順）。電子マネー（FELICA_ALL）は使わない */
@@ -186,6 +201,11 @@ const NO_SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [];
 
 /** 送ったことを知らせる表示を出しておく時間 */
 const NOTICE_MS = 2600;
+
+const prepayTimeFormat = new Intl.DateTimeFormat("ja-JP", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 /**
  * 入力欄・ダイアログ・シートの中で押したキー。レジのキー操作には使わない
@@ -268,6 +288,7 @@ const squareRefundResult = (checkout: SquareCheckout): SquareRefundResult =>
 const CashierV2 = ({
   items,
   orders,
+  isOrdersLoaded,
   wsStatus,
   connectionIssues,
   canSaveNow,
@@ -277,6 +298,8 @@ const CashierV2 = ({
   submitPayload,
   submitSquarePayload,
   syncOrder,
+  syncPrepay,
+  loadPrepay,
 }: props) => {
   const newOrder = useAtomValue(editingOrderAtom);
   const draft = useAtomValue(cashierDraftAtom);
@@ -461,6 +484,92 @@ const CashierV2 = ({
     : wholeOrder
       ? billing
       : dueAmount(draft);
+
+  /**
+   * 先払いの途中の状態を、変わるたびにサーバーに送る（受け取った額の記録。注文を送るまではこの下書きにしか無い）。
+   * 先払いが無くなったら（注文を送った・全部返金した）消す。開いたときに先払いが無ければ送らない
+   * （サーバーに残っている記録を、戻すか尋ねる前に消さない）。つながっていない間は送らず、つながったら今の状態を送る
+   */
+  const prepay = useMemo(
+    () => prepaySnapshot(draft, newOrder.orderId),
+    [draft, newOrder.orderId],
+  );
+  // 最後にサーバーに届けた状態（JSON）。送れなかったら null にして、次に状態が変わるか、つながり直したときに送り直す
+  const sentPrepayRef = useRef<string | null>(JSON.stringify(null));
+  useEffect(() => {
+    const json = JSON.stringify(prepay);
+    if (!canSaveNow || json === sentPrepayRef.current) {
+      return;
+    }
+    sentPrepayRef.current = json;
+    syncPrepay(prepay).catch((error) => {
+      console.error(error);
+      if (sentPrepayRef.current === json) {
+        sentPrepayRef.current = null;
+      }
+    });
+  }, [prepay, canSaveNow, syncPrepay]);
+
+  /**
+   * 開いたときに、サーバーに先払いの途中の状態が残っていれば（読み込み直した・落ちた・端末を替えた）、戻すか尋ねる。
+   * この画面で先払いの途中なら（ほかの画面から戻ってきた）尋ねない。読めなければ、つながったときにもう一度読む
+   */
+  const [savedPrepay, setSavedPrepay] = useState<{
+    prepay: CashierPrepay;
+    updatedAt: Date;
+  } | null>(null);
+  const prepayLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!canSaveNow || prepayLoadedRef.current) {
+      return;
+    }
+    prepayLoadedRef.current = true;
+    loadPrepay().then(
+      (saved) => {
+        if (saved === null || hasTenders(store.get(cashierDraftAtom))) {
+          return;
+        }
+        const parsed = parsePrepay(saved.prepay);
+        if (parsed === null) {
+          console.error("先払いの途中の状態を読めませんでした", saved.prepay);
+          return;
+        }
+        setSavedPrepay({ prepay: parsed, updatedAt: saved.updatedAt });
+      },
+      (error) => {
+        console.error(error);
+        prepayLoadedRef.current = false;
+      },
+    );
+  }, [canSaveNow, loadPrepay, store]);
+  // 尋ねるのは、その番号の注文がまだ無いときだけ（届いている・この端末に溜まっているなら、確定したあと
+  // 記録を消す前に切れた。戻すと同じ注文を二度送ってしまう）
+  const prepayToRestore = useMemo(
+    () =>
+      savedPrepay !== null &&
+      isOrdersLoaded &&
+      !locked &&
+      !orders?.some((order) => order.orderId === savedPrepay.prepay.orderId) &&
+      !hasUnsentOrderId(savedPrepay.prepay.orderId)
+        ? savedPrepay
+        : null,
+    [savedPrepay, isOrdersLoaded, locked, orders],
+  );
+  const askingPrepayRestore =
+    prepayToRestore !== null &&
+    view === "register" &&
+    dialog === null &&
+    prepayDialog === null;
+
+  /** サーバーに残っていた先払いの途中に戻す（入力中の注文は消える）。番号はレシートに載せた番号にする */
+  const restoreSavedPrepay = useCallback(() => {
+    if (prepayToRestore === null) {
+      return;
+    }
+    updateDraft(() => restorePrepay(prepayToRestore.prepay));
+    setSavedPrepay(null);
+    resyncDisplay();
+  }, [prepayToRestore, updateDraft, resyncDisplay]);
 
   // Square のボタンは、このレジで使う端末が決まっているときだけ出す
   const squareDeviceId = squareEnabled
@@ -1115,6 +1224,7 @@ const CashierV2 = ({
       view !== "register" ||
       dialog !== null ||
       prepayDialog !== null ||
+      askingPrepayRestore ||
       squarePaymentActive
     ) {
       return;
@@ -1215,6 +1325,7 @@ const CashierV2 = ({
     view,
     dialog,
     prepayDialog,
+    askingPrepayRestore,
     squarePaymentActive,
     viewDraft,
     items,
@@ -1244,6 +1355,11 @@ const CashierV2 = ({
   ]
     .filter(Boolean)
     .join("・");
+  // 先払いの途中に戻すか尋ねるときに出す、受け取った額と戻したあとのこと
+  const restoreNote =
+    prepayToRestore === null
+      ? ""
+      : `${prepayTimeFormat.format(prepayToRestore.updatedAt)} の時点で ${formatYen(prepayPaid(prepayToRestore.prepay))} を受け取っています（支払い ${prepayToRestore.prepay.split.tenders.length} 回・商品 ${prepayToRestore.prepay.lines.length}点）。戻すと、この番号のまま残りを会計できます。戻さないときは、受け取ったお金を返すか、同じ注文を入れ直してください。${hasDraftInput(draft) ? "入力中の注文は消えます。" : ""}`;
   const discountNote = draft.special
     ? "（特殊な割引）"
     : couponApplied
@@ -1612,6 +1728,27 @@ const CashierV2 = ({
         focus="cancel"
         onConfirm={resetAll}
         onClose={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={askingPrepayRestore}
+        title="先払いの途中"
+        sub={
+          prepayToRestore ? `No.${prepayToRestore.prepay.orderId}` : undefined
+        }
+        question="先払いの途中の注文があります。戻しますか？"
+        note={restoreNote}
+        hint={
+          hasDraftInput(draft)
+            ? "Enter で戻さない ・ 戻すときは「先払いの途中に戻す」を押す（Tab で移って Enter）"
+            : "Enter で戻す ・ 戻さないときは「戻さない」を押す"
+        }
+        confirmLabel="先払いの途中に戻す"
+        cancelLabel="戻さない"
+        confirmTone="primary"
+        // 入力中の注文があれば、押し間違いの Enter で消さない
+        focus={hasDraftInput(draft) ? "cancel" : "confirm"}
+        onConfirm={restoreSavedPrepay}
+        onClose={() => setSavedPrepay(null)}
       />
       <SquarePaymentDialog
         state={squarePayment.state}

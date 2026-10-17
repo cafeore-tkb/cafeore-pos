@@ -92,6 +92,96 @@ func TestUpdateCashierStateRejectsBrokenState(t *testing.T) {
 	api.noBroadcast()
 }
 
+func cashierPrepayRequest(t *testing.T) map[string]any {
+	t.Helper()
+	return map[string]any{"prepay": parseCashierPrepay(t)}
+}
+
+// 先払いの途中の状態は、編集中の注文とは別に置き換える
+func TestCashierPrepay(t *testing.T) {
+	api := newTestAPI(t)
+	const path = "/api/cashier-state/prepay"
+
+	// まだ何も無い
+	var got models.CashierPrepayResponse
+	api.do(http.MethodGet, path, nil).expect(http.StatusOK).decode(&got)
+	if got.Prepay != nil || got.UpdatedAt != nil {
+		t.Fatalf("empty: %+v", got)
+	}
+
+	// レジ状態（編集中の注文）が無いうちは置けない。消すだけなら行が無くても済む
+	api.do(http.MethodPut, path, cashierPrepayRequest(t)).expect(http.StatusConflict)
+	api.do(http.MethodPut, path, `{"prepay": null}`).expect(http.StatusOK)
+
+	api.do(http.MethodPut, "/api/cashier-state", cashierStateRequest(t, nil)).expect(http.StatusOK)
+	api.nextBroadcast()
+
+	var saved models.CashierPrepayResponse
+	api.do(http.MethodPut, path, cashierPrepayRequest(t)).expect(http.StatusOK).decode(&saved)
+	if saved.Prepay == nil || (*saved.Prepay)["orderId"] != 12.0 || saved.UpdatedAt == nil {
+		t.Fatalf("saved: %+v", saved)
+	}
+	// お客さん向けの表示などには配信しない
+	api.noBroadcast()
+
+	// キー入力のたびの編集中の注文の PUT では消えない
+	api.do(http.MethodPut, "/api/cashier-state", cashierStateRequest(t, nil)).expect(http.StatusOK)
+	api.nextBroadcast()
+	api.do(http.MethodGet, path, nil).expect(http.StatusOK).decode(&got)
+	if got.Prepay == nil || got.UpdatedAt == nil || !got.UpdatedAt.Equal(*saved.UpdatedAt) {
+		t.Fatalf("got: %+v", got)
+	}
+	if tenders := (*got.Prepay)["split"].(map[string]any)["tenders"].([]any); len(tenders) != 2 {
+		t.Fatalf("tenders: %+v", tenders)
+	}
+
+	// null で消す。編集中の注文は残る
+	api.do(http.MethodPut, path, `{"prepay": null}`).expect(http.StatusOK).decode(&got)
+	if got.Prepay != nil || got.UpdatedAt != nil {
+		t.Fatalf("cleared: %+v", got)
+	}
+	api.do(http.MethodGet, path, nil).expect(http.StatusOK).decode(&got)
+	if got.Prepay != nil || got.UpdatedAt != nil {
+		t.Fatalf("after clear: %+v", got)
+	}
+	var state models.CashierStateResponse
+	api.do(http.MethodGet, "/api/cashier-state", nil).expect(http.StatusOK).decode(&state)
+	if state.EdittingOrder["orderId"] != 1.0 {
+		t.Fatalf("cashier state: %+v", state)
+	}
+	api.noBroadcast()
+}
+
+func TestUpdateCashierPrepayRejectsBrokenState(t *testing.T) {
+	api := newTestAPI(t)
+	const path = "/api/cashier-state/prepay"
+	api.do(http.MethodPut, "/api/cashier-state", cashierStateRequest(t, nil)).expect(http.StatusOK)
+	api.nextBroadcast()
+	api.do(http.MethodPut, path, cashierPrepayRequest(t)).expect(http.StatusOK)
+
+	noTenders := parseCashierPrepay(t)
+	prepaySplit(noTenders)["tenders"] = []any{}
+	cases := map[string]any{
+		"broken json":     `{`,
+		"body is null":    `null`,
+		"missing prepay":  `{}`,
+		"prepay is array": `{"prepay": []}`,
+		"no tenders":      map[string]any{"prepay": noTenders},
+	}
+	for name, body := range cases {
+		if res := api.do(http.MethodPut, path, body); res.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400: %s", name, res.Code, res.Body)
+		}
+	}
+
+	// 壊れた状態では置き換えない
+	var got models.CashierPrepayResponse
+	api.do(http.MethodGet, path, nil).expect(http.StatusOK).decode(&got)
+	if got.Prepay == nil || (*got.Prepay)["orderId"] != 12.0 {
+		t.Fatalf("prepay changed: %+v", got)
+	}
+}
+
 func TestMasterStatus(t *testing.T) {
 	api := newTestAPI(t)
 

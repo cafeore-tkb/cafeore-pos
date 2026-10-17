@@ -18,6 +18,7 @@ import {
 } from "react-router";
 import useSWR from "swr";
 import { z } from "zod";
+import type { CashierPrepay } from "~/components/functional/cashierPrepay";
 import type {
   HeaderOutletContext,
   StatusBarHandle,
@@ -114,11 +115,18 @@ export default function Cashier() {
     [submit],
   );
 
+  // 先払いの途中の状態は、編集中の注文と同じ行の別の列に置く。変わったときだけ送るので、clientAction を通さず直に送る
+  const syncPrepay = useCallback(
+    (prepay: CashierPrepay | null) => cashierRepository.setPrepay(prepay),
+    [],
+  );
+
   return (
     <>
       <CashierV2
         items={items}
         orders={orders}
+        isOrdersLoaded={isOrdersLoaded}
         wsStatus={status}
         connectionIssues={connectionIssues}
         canSaveNow={canSaveNow}
@@ -128,6 +136,8 @@ export default function Cashier() {
         submitPayload={submitPayload}
         submitSquarePayload={submitSquarePayload}
         syncOrder={syncOrder}
+        syncPrepay={syncPrepay}
+        loadPrepay={cashierRepository.getPrepay}
       />
       <DiscardCouponDialog
         ranges={missing.ranges}

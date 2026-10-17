@@ -3,6 +3,7 @@ import type { WithId } from "../lib/typeguard";
 import {
   CashierStateEntity,
   type GlobalCashierState,
+  type SavedCashierPrepay,
   cashierStateWireSchema,
   globalCashierStateSchema,
 } from "../models/global";
@@ -322,3 +323,13 @@ export const cashierStateToUpdateRequest = (
     submitted_order_id: parsed.submittedOrderId,
   };
 };
+
+type CashierPrepayResponse = components["schemas"]["CashierPrepayResponse"];
+
+/** 先払いの途中の状態。無ければ null */
+export const responseToCashierPrepay = (
+  response: CashierPrepayResponse,
+): SavedCashierPrepay | null =>
+  response.prepay && response.updated_at
+    ? { prepay: response.prepay, updatedAt: new Date(response.updated_at) }
+    : null;

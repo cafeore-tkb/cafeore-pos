@@ -41,6 +41,15 @@ export class CashierStateEntity implements GlobalCashierState {
   }
 }
 
+/**
+ * サーバーに残っている、レジの先払い（個別小計・小計分割）の途中の状態（/api/cashier-state/prepay）。
+ * 中身はレジの画面（cashierPrepaySchema）が決め、サーバーは形を確かめて置くだけ
+ */
+export type SavedCashierPrepay = {
+  prepay: Record<string, unknown>;
+  updatedAt: Date;
+};
+
 // オーダーストップの状態。API（/api/master-status）の type と同じ
 export const orderStatTypes = ["stop", "operational"] as const;
 

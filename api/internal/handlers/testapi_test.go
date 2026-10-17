@@ -113,6 +113,8 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 
 	api.GET("/cashier-state", cashierStateHandler.GetCashierState)
 	api.PUT("/cashier-state", cashierStateHandler.UpdateCashierState)
+	api.GET("/cashier-state/prepay", cashierStateHandler.GetCashierPrepay)
+	api.PUT("/cashier-state/prepay", cashierStateHandler.UpdateCashierPrepay)
 
 	api.GET("/inventory", inventoryHandler.GetInventory)
 	api.POST("/inventory/resources", inventoryHandler.CreateStockResource)

@@ -49,9 +49,15 @@ func (j *JSONB) Scan(value any) error {
 // 編集中の注文はフロントの orderSchema の JSON をそのまま持つだけで、
 // サーバー側では上の階層のキーと型を確かめる以外は中身を解釈しない
 // （orders テーブルとは無関係の一時状態）。
+//
+// Prepay は先払い（個別小計・小計分割）の途中の状態。受け取った支払いは、注文全体を払い終えて
+// 注文を送るまで order_payments に無いので、ここに残す。フロントの cashierPrepaySchema の JSON を
+// そのまま持ち、先払いが無ければ NULL。編集中の注文とは別に PUT /api/cashier-state/prepay で置き換える。
 type CashierState struct {
 	ID               string     `gorm:"primary_key;size:64"`
 	EdittingOrder    JSONB      `gorm:"type:jsonb;not null"`
 	SubmittedOrderID *uuid.UUID `gorm:"type:uuid"`
 	UpdatedAt        time.Time  `gorm:"not null"`
+	Prepay           JSONB      `gorm:"type:jsonb"`
+	PrepayUpdatedAt  *time.Time
 }

@@ -364,6 +364,20 @@ export interface paths {
      */
     put: operations["updateCashierState"];
   };
+  "/api/cashier-state/prepay": {
+    /**
+     * 先払いの途中の状態の取得
+     * @description レジの先払い（個別小計・小計分割）の途中の状態。受け取った支払いと、レジがそれを戻すのに要る下書き。
+     * 先払いが無ければ（まだレジ状態が無いときも）prepay と updated_at は null。
+     */
+    get: operations["getCashierPrepay"];
+    /**
+     * 先払いの途中の状態の更新
+     * @description レジは先払いの途中の状態が変わるたびに送る。注文全体を払い終えた・全部返金したら null を送って消す。
+     * レジ状態（PUT /api/cashier-state）の編集中の注文とは別に置き換え、WebSocket には配信しない。
+     */
+    put: operations["updateCashierPrepay"];
+  };
   "/api/square/status": {
     /**
      * Square 連携が使えるか
@@ -992,6 +1006,27 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    CashierPrepayResponse: {
+      /**
+       * @description 先払いの途中の状態。フロントの cashierPrepaySchema の JSON をそのまま持つ
+       * （orderId: レシートに載せた番号、lines: 商品の行、coupon・special・memo、split: 小計と受け取った支払い）。
+       * サーバーは形を確かめる以外は中身を解釈しない。先払いが無ければ null
+       */
+      prepay: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Format: date-time
+       * @description prepay を最後に置き換えた時刻。prepay が null なら null
+       */
+      updated_at: string | null;
+    };
+    CashierPrepayUpdateRequest: {
+      /** @description 先払いの途中の状態。受け取った支払い（split.tenders）が 1 つ以上要る。null で消す */
+      prepay: {
+        [key: string]: unknown;
+      } | null;
     };
     CaosLogEntry: {
       /** Format: date-time */
@@ -2807,6 +2842,53 @@ export interface operations {
       };
       /** @description editting_order に必須のキーが無い、または型が違う */
       400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 先払いの途中の状態の取得
+   * @description レジの先払い（個別小計・小計分割）の途中の状態。受け取った支払いと、レジがそれを戻すのに要る下書き。
+   * 先払いが無ければ（まだレジ状態が無いときも）prepay と updated_at は null。
+   */
+  getCashierPrepay: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierPrepayResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 先払いの途中の状態の更新
+   * @description レジは先払いの途中の状態が変わるたびに送る。注文全体を払い終えた・全部返金したら null を送って消す。
+   * レジ状態（PUT /api/cashier-state）の編集中の注文とは別に置き換え、WebSocket には配信しない。
+   */
+  updateCashierPrepay: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CashierPrepayUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CashierPrepayResponse"];
+        };
+      };
+      /** @description prepay が無い、または必須のキーが無い・型が違う */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description まだレジ状態が無い（先に PUT /api/cashier-state で編集中の注文を送る） */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

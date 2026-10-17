@@ -308,6 +308,23 @@ type CaosStoredLogEntry struct {
 	TabId      openapi_types.UUID     `json:"tabId"`
 }
 
+// CashierPrepayResponse defines model for CashierPrepayResponse.
+type CashierPrepayResponse struct {
+	// Prepay 先払いの途中の状態。フロントの cashierPrepaySchema の JSON をそのまま持つ
+	// （orderId: レシートに載せた番号、lines: 商品の行、coupon・special・memo、split: 小計と受け取った支払い）。
+	// サーバーは形を確かめる以外は中身を解釈しない。先払いが無ければ null
+	Prepay *map[string]interface{} `json:"prepay"`
+
+	// UpdatedAt prepay を最後に置き換えた時刻。prepay が null なら null
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
+// CashierPrepayUpdateRequest defines model for CashierPrepayUpdateRequest.
+type CashierPrepayUpdateRequest struct {
+	// Prepay 先払いの途中の状態。受け取った支払い（split.tenders）が 1 つ以上要る。null で消す
+	Prepay *map[string]interface{} `json:"prepay"`
+}
+
 // CashierStateResponse defines model for CashierStateResponse.
 type CashierStateResponse struct {
 	// EdittingOrder レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない
@@ -1178,6 +1195,9 @@ type CreateCaosLogsJSONRequestBody = CaosLogBatch
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
+
+// UpdateCashierPrepayJSONRequestBody defines body for UpdateCashierPrepay for application/json ContentType.
+type UpdateCashierPrepayJSONRequestBody = CashierPrepayUpdateRequest
 
 // UpsertColorSettingJSONRequestBody defines body for UpsertColorSetting for application/json ContentType.
 type UpsertColorSettingJSONRequestBody = ColorSettingUpsertRequest

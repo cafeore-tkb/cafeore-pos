@@ -137,6 +137,13 @@ const latestUnsentOrderId = () =>
     0,
   );
 
+/**
+ * 端末に残っている、まだ保存できていない注文に、この番号の注文があるか。
+ * 先払いの途中の状態をサーバーから戻す前に、その注文をもう確定していないかを見るのに使う
+ */
+const hasUnsentOrderId = (orderId: number) =>
+  Object.values(readUnsentOrders()).some((order) => order.orderId === orderId);
+
 // 保存できたら端末に残した分も消す。後から送るとき（溜めた注文・再送）は確定した時刻も送る
 const saver =
   (order: OrderEntity, idempotencyKey: string, sendCreatedAt: boolean) => () =>
@@ -253,6 +260,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
   });
 
 export {
+  hasUnsentOrderId,
   latestUnsentOrderId,
   notifyOfflineOrders,
   saveOrderInBackground,

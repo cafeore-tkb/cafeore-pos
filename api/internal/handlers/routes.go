@@ -85,6 +85,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 
 		api.GET("/cashier-state", cashierState.GetCashierState)
 		api.PUT("/cashier-state", cashierState.UpdateCashierState)
+		api.GET("/cashier-state/prepay", cashierState.GetCashierPrepay)
+		api.PUT("/cashier-state/prepay", cashierState.UpdateCashierPrepay)
 
 		api.GET("/inventory", inv.GetInventory)
 		api.POST("/inventory/resources", inv.CreateStockResource)

@@ -1390,6 +1390,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/cashier-state/prepay:
+    get:
+      summary: 先払いの途中の状態の取得
+      description: |
+        レジの先払い（個別小計・小計分割）の途中の状態。受け取った支払いと、レジがそれを戻すのに要る下書き。
+        先払いが無ければ（まだレジ状態が無いときも）prepay と updated_at は null。
+      operationId: getCashierPrepay
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierPrepayResponse'
+    put:
+      summary: 先払いの途中の状態の更新
+      description: |
+        レジは先払いの途中の状態が変わるたびに送る。注文全体を払い終えた・全部返金したら null を送って消す。
+        レジ状態（PUT /api/cashier-state）の編集中の注文とは別に置き換え、WebSocket には配信しない。
+      operationId: updateCashierPrepay
+      tags:
+        - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashierPrepayUpdateRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashierPrepayResponse'
+        '400':
+          description: prepay が無い、または必須のキーが無い・型が違う
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: まだレジ状態が無い（先に PUT /api/cashier-state で編集中の注文を送る）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/square/status:
     get:
       summary: Square 連携が使えるか
@@ -2978,6 +3028,35 @@ components:
           type: string
           format: uuid
           nullable: true
+    CashierPrepayResponse:
+      type: object
+      required:
+        - prepay
+        - updated_at
+      properties:
+        prepay:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            先払いの途中の状態。フロントの cashierPrepaySchema の JSON をそのまま持つ
+            （orderId: レシートに載せた番号、lines: 商品の行、coupon・special・memo、split: 小計と受け取った支払い）。
+            サーバーは形を確かめる以外は中身を解釈しない。先払いが無ければ null
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: prepay を最後に置き換えた時刻。prepay が null なら null
+    CashierPrepayUpdateRequest:
+      type: object
+      required:
+        - prepay
+      properties:
+        prepay:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: 先払いの途中の状態。受け取った支払い（split.tenders）が 1 つ以上要る。null で消す
     CaosLogEntry:
       type: object
       required: [at, tabId, sequence, event, details]

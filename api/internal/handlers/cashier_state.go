@@ -327,8 +327,9 @@ func (h *CashierStateHandler) saveAndBroadcast(state *models.CashierState) (mode
 
 	if err := h.db.
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			UpdateAll: true,
+			Columns: []clause.Column{{Name: "id"}},
+			// 先払いの途中の状態（prepay）は PUT /api/cashier-state/prepay で置き換えるので、ここでは消さない
+			DoUpdates: clause.AssignmentColumns([]string{"editting_order", "submitted_order_id", "updated_at"}),
 		}).
 		Create(state).Error; err != nil {
 		return models.CashierStateResponse{}, err

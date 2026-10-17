@@ -13,6 +13,10 @@ type props = {
   /** キーの案内（「Enter で全削除 ・ Esc で閉じる」） */
   hint: string;
   confirmLabel: string;
+  /** 閉じるボタンの文言。既定は「キャンセル」 */
+  cancelLabel?: string;
+  /** 確定ボタンの色。消す・取り消す操作は destructive（既定）、戻すなどは primary */
+  confirmTone?: "destructive" | "primary";
   /**
    * 開いたときにフォーカスするボタン（Enter で押すボタン）。
    * 取り返しがつかない操作は cancel にして、押し間違いの Enter で進まないようにする
@@ -22,7 +26,7 @@ type props = {
   onClose: () => void;
 };
 
-/** レジの確認ダイアログ（全削除・入力中の注文を消す） */
+/** レジの確認ダイアログ（全削除・入力中の注文を消す・先払いの途中に戻す） */
 export const ConfirmDialog = ({
   open,
   title,
@@ -31,6 +35,8 @@ export const ConfirmDialog = ({
   note,
   hint,
   confirmLabel,
+  cancelLabel = "キャンセル",
+  confirmTone = "destructive",
   focus,
   onConfirm,
   onClose,
@@ -63,15 +69,18 @@ export const ConfirmDialog = ({
             "focus:outline-none focus:ring-4 focus:ring-stone-300",
           )}
         >
-          キャンセル
+          {cancelLabel}
         </button>
         <button
           ref={confirmRef}
           type="button"
           onClick={onConfirm}
           className={cn(
-            dialogButton.destructive,
-            "focus:outline-none focus:ring-4 focus:ring-red-200",
+            dialogButton[confirmTone],
+            "focus:outline-none focus:ring-4",
+            confirmTone === "destructive"
+              ? "focus:ring-red-200"
+              : "focus:ring-theme-primary/30",
           )}
         >
           {confirmLabel}
