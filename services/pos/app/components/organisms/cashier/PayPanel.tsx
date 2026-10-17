@@ -391,7 +391,7 @@ export const PayPanel = ({
             type="button"
             onClick={onOpenSplit}
             disabled={!canSplit}
-            className="flex h-16 flex-col items-center justify-center rounded-[10px] border border-prepay-line bg-white p-0 font-extrabold text-prepay text-xs leading-[1.35] hover:bg-prepay-tint disabled:opacity-45 disabled:hover:bg-white"
+            className="flex h-20 flex-col items-center justify-center rounded-[10px] border border-prepay-line bg-white p-0 font-extrabold text-prepay text-xs leading-[1.35] hover:bg-prepay-tint disabled:opacity-45 disabled:hover:bg-white"
           >
             <span>小計分割・</span>
             <span>一部金額先払い</span>
@@ -404,7 +404,7 @@ export const PayPanel = ({
               else onSquare(draft.payment as SquarePaymentType);
             }}
             disabled={!primary.ready}
-            className="flex h-16 items-center justify-center gap-2.5 rounded-[10px] px-3 text-white transition-colors duration-150 disabled:cursor-default"
+            className="flex h-20 items-center justify-center gap-2.5 rounded-[10px] px-3 text-white transition-colors duration-150 disabled:cursor-default"
             style={{
               backgroundColor: primary.ready
                 ? primary.background
