@@ -142,6 +142,7 @@ import {
   ConnectionIssueDot,
   PrinterStatusDot,
 } from "../organisms/cashier/PrinterStatusDot";
+import { RegisterStrip } from "../organisms/cashier/RegisterStrip";
 import { tenderDot, tenderLabel } from "../organisms/cashier/tenderStyle";
 import { Label } from "../ui/label";
 
@@ -1253,10 +1254,9 @@ const CashierV2 = ({
     paying && current?.kind === "items" ? current.lineKeys : [],
   );
 
-  // 商品の列。入れる段階は真ん中、会計の段階は左に出す
+  // 商品の列。入れる段階は真ん中、会計の段階は左に押し出す（RegisterStrip）
   const orderPanel = (
     <OrderPanel
-      key="order"
       draft={viewDraft}
       couponStatus={coupon}
       discount={newOrder.discount}
@@ -1384,54 +1384,52 @@ const CashierV2 = ({
               </button>
             </div>
           </header>
-          {/* 会計の列は 432px 以上にし、余った幅を左の列（メニュー、会計の段階では商品の列）と 4:3 で分ける（左の列だけが広がらないように）。
+          {/* 会計の列は 432px 以上にし、余った幅をメニューと 4:3 で分ける（メニューだけが広がらないように）。
               1280px より狭い画面（iPad など）では、メニューが細くなりすぎないよう会計の列を 392px にする */}
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px] xl:grid-cols-[minmax(0,1fr)_384px_minmax(432px,0.75fr)]">
-            {/* 会計の段階では、商品の列を左に寄せ、空いた真ん中に内訳（小計・受取金額・お釣り）を入れる。
-                商品の列は key で同じものとして動かす（作り直してスクロールの位置を失わない） */}
-            {paying
-              ? [
-                  orderPanel,
-                  <PayBreakdown
-                    key="breakdown"
-                    itemCount={itemCount}
-                    total={newOrder.total}
-                    discount={newOrder.discount}
-                    discountNote={discountNote}
-                    prepaid={prepaid}
-                    tenders={split.tenders}
-                    context={context}
-                    bar={bar}
-                    due={due}
-                    itemsSubtotal={current?.kind === "items"}
-                    deferred={
-                      split.part !== null ? currentRemaining - split.part : null
-                    }
-                    cash={viewDraft.payment === "cash"}
-                    received={viewDraft.received}
-                    onRefundSubtotal={(subtotalId) => openRefund(subtotalId)}
-                    onCancelPart={() => {
-                      updateDraft(cancelPart);
-                      resyncDisplay();
-                    }}
-                    hints={
-                      <RegisterKeyHints
-                        exampleKeys={exampleMenuKeys(items ?? [])}
-                      />
-                    }
-                  />,
-                ]
-              : [
-                  <MenuPanel
-                    key="menu"
-                    menus={items ?? []}
-                    disabled={locked}
-                    onAdd={(menu) =>
-                      updateDraft((current) => addLine(current, menu))
-                    }
-                  />,
-                  orderPanel,
-                ]}
+            {/* 会計の段階では、商品の列を左に押し出し、空いた真ん中に内訳（小計・受取金額・お釣り）を入れる */}
+            <RegisterStrip
+              paying={paying}
+              menu={
+                <MenuPanel
+                  menus={items ?? []}
+                  disabled={locked}
+                  onAdd={(menu) =>
+                    updateDraft((current) => addLine(current, menu))
+                  }
+                />
+              }
+              order={orderPanel}
+              breakdown={
+                <PayBreakdown
+                  itemCount={itemCount}
+                  total={newOrder.total}
+                  discount={newOrder.discount}
+                  discountNote={discountNote}
+                  prepaid={prepaid}
+                  tenders={split.tenders}
+                  context={context}
+                  bar={bar}
+                  due={due}
+                  itemsSubtotal={current?.kind === "items"}
+                  deferred={
+                    split.part !== null ? currentRemaining - split.part : null
+                  }
+                  cash={viewDraft.payment === "cash"}
+                  received={viewDraft.received}
+                  onRefundSubtotal={(subtotalId) => openRefund(subtotalId)}
+                  onCancelPart={() => {
+                    updateDraft(cancelPart);
+                    resyncDisplay();
+                  }}
+                  hints={
+                    <RegisterKeyHints
+                      exampleKeys={exampleMenuKeys(items ?? [])}
+                    />
+                  }
+                />
+              }
+            />
             <PayPanel
               draft={viewDraft}
               due={due}

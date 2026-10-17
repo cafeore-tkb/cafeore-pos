@@ -72,9 +72,9 @@ export const OrderPanel = (props: props) => {
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col border-stone-200 bg-stone-50",
-        // 会計の段階では左端の列になるので、左の線は引かない
-        !paying && "border-l",
+        "flex min-h-0 flex-col border-stone-200 border-x bg-stone-50 transition-[border-color] duration-300",
+        // 線は隣の列との間に引く。入れる段階はメニューとの間（左）、会計の段階は左端の列になるので内訳との間（右）
+        paying ? "border-l-transparent" : "border-r-transparent",
       )}
     >
       <div
