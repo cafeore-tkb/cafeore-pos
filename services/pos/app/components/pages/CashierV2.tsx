@@ -769,14 +769,25 @@ const CashierV2 = ({
     startSubtotal((c) => beginRest(c, discountCups, discountPerCup));
   }, [store, startSubtotal, discountCups, discountPerCup]);
 
-  /** 決済手段のキーで選んだ Square の決済手段が、今は使えないことを知らせる */
+  /**
+   * 決済手段のキーで選んだ Square の決済手段が、今は使えないことを知らせる。
+   * 理由は canStartSquare・payments と同じ順に見る
+   */
   const warnSquareUnavailable = useCallback(
     (paymentType: SquarePaymentType) => {
+      const reason =
+        squareDeviceId === null
+          ? "Square の端末が決まっていません"
+          : !canSaveNow
+            ? "つながっていません（現金ならオフラインでも払えます）"
+            : due < 1
+              ? "請求額が 0 円です。現金で確定してください"
+              : "今は始められません";
       toast.warning(
-        `${squarePaymentTypeLabel[paymentType]}は今使えません。Square の端末が決まっているか・つながっているかを確かめてください`,
+        `${squarePaymentTypeLabel[paymentType]}は使えません：${reason}`,
       );
     },
-    [],
+    [squareDeviceId, canSaveNow, due],
   );
 
   // 入れる段階で決済手段のキー（Alt+T など）を押したら、会計の段階に進んでから決済を始める
