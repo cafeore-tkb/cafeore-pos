@@ -6,6 +6,7 @@ import {
   type WithId,
   getDiscountOrderStatus,
 } from "@cafeore/common";
+import { isSameKeySet, menuKeyChord } from "~/lib/menuKey";
 import {
   type CashierSplit,
   emptySplit,
@@ -163,6 +164,22 @@ export const addLine = (
     nextKey: draft.nextKey + 1,
     selected: draft.lines.length,
   };
+};
+
+/**
+ * 同時押しの商品を足す。同時押しの途中で先に押したキーで足した行（replaceLineKeys）は、
+ * 同時押しの商品に置き換える（消してから足す）
+ */
+export const addChordLine = (
+  draft: CashierDraft,
+  menu: WithId<MenuEntity>,
+  replaceLineKeys: readonly number[],
+): CashierDraft => {
+  if (!canEditLines(draft)) return draft;
+  const lines = draft.lines.filter(
+    (line) => !replaceLineKeys.includes(line.key),
+  );
+  return addLine({ ...draft, lines }, menu);
 };
 
 /** 行を削除する（一覧から消す。戻すときはもう一度足す）。選んでいた行は外す */
@@ -458,6 +475,12 @@ type KeyContext = {
   menus: readonly WithId<MenuEntity>[];
   /** 会計の段階で ↑↓ で選べる決済手段 */
   payments: readonly CashierPayment[];
+  /** 押しているキー（このキーも含む）。2 つ以上で同時押しの商品と照らし合わせる */
+  held?: readonly string[];
+  /** 押しているキーで足した行。同時押しがそろったら同時押しの商品に置き換える */
+  heldLineKeys?: readonly number[];
+  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さない */
+  repeat?: boolean;
 };
 
 const NONE: CashierKeyIntent = { type: "none" };
@@ -469,7 +492,8 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
 /**
  * レジの画面で押したキーを、何をするかに直す
  *
- * - 商品キー: 商品を足す（入れる段階だけ）
+ * - 商品キー: 商品を足す（入れる段階だけ）。同時押し（「a+s」）は、押しているキーがそろったときに足し、
+ *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
  *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
@@ -482,8 +506,26 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
 export const cashierKeyIntent = (
   draft: CashierDraft,
   key: string,
-  { menus, payments }: KeyContext,
+  {
+    menus,
+    payments,
+    held = [key],
+    heldLineKeys = [],
+    repeat = false,
+  }: KeyContext,
 ): CashierKeyIntent => {
+  // 同時押しは、そのキーのどれかを押したときだけ（Shift などを押し足したときは足さない）
+  if (held.length >= 2 && held.includes(key)) {
+    const chordMenu = menus.find((candidate) => {
+      const chord = menuKeyChord(candidate.key);
+      return chord !== null && isSameKeySet(chord, held);
+    });
+    if (chordMenu) {
+      return draft.step === "entry" && !repeat
+        ? update(addChordLine(draft, chordMenu, heldLineKeys))
+        : NONE;
+    }
+  }
   const menu = menus.find((candidate) => candidate.key === key);
   if (menu) {
     return draft.step === "entry" ? update(addLine(draft, menu)) : NONE;
@@ -542,6 +584,11 @@ export const cashierKeyIntent = (
     case "Escape":
       return draft.step === "pay" ? { type: "leavePay" } : { type: "reset" };
     default:
-      return { type: "ignore" };
+      // 同時押しに使うキーは、1 つだけでも既定の動き（Firefox の / の検索など）を止める
+      return menus.some((candidate) =>
+        menuKeyChord(candidate.key)?.includes(key),
+      )
+        ? NONE
+        : { type: "ignore" };
   }
 };

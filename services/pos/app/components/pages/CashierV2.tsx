@@ -22,6 +22,7 @@ import {
 import { orderLabelJob } from "~/label/order-label";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
+import { isModifierKey } from "~/lib/menuKey";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
@@ -82,6 +83,15 @@ import {
 } from "../functional/cashierSplit";
 import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
 import type { ConnectionIssue } from "../functional/connectionIssues";
+import {
+  type HeldKeys,
+  emptyHeldKeys,
+  heldKeyValues,
+  heldLineKeys,
+  pressKey,
+  releaseKey,
+  rememberAddedLine,
+} from "../functional/heldKeys";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -963,6 +973,27 @@ const CashierV2 = ({
     }
   }, [newOrder]);
 
+  // 押しているキー（同時押しの商品のため）。離したキーは、レジのキー操作を使わない間も忘れる
+  const heldKeysRef = useRef<HeldKeys>(emptyHeldKeys());
+  useEffect(() => {
+    const release = (event: KeyboardEvent) => {
+      heldKeysRef.current = releaseKey(
+        heldKeysRef.current,
+        event.code || event.key,
+      );
+    };
+    // ほかのウィンドウに移ると keyup が届かないので、全部離したことにする
+    const releaseAll = () => {
+      heldKeysRef.current = emptyHeldKeys();
+    };
+    window.addEventListener("keyup", release);
+    window.addEventListener("blur", releaseAll);
+    return () => {
+      window.removeEventListener("keyup", release);
+      window.removeEventListener("blur", releaseAll);
+    };
+  }, []);
+
   // レジのキー操作。ダイアログ・決済中・過去の注文を見ている間は使わない
   useEffect(() => {
     if (
@@ -981,9 +1012,20 @@ const CashierV2 = ({
       if (isOutsideRegister(event.target)) {
         return;
       }
+      if (!isModifierKey(event.key)) {
+        heldKeysRef.current = pressKey(
+          heldKeysRef.current,
+          event.code || event.key,
+          event.key,
+        );
+      }
+      const held = heldKeysRef.current;
       const intent = cashierKeyIntent(viewDraft, event.key, {
         menus: items ?? [],
         payments,
+        held: heldKeyValues(held),
+        heldLineKeys: heldLineKeys(held),
+        repeat: event.repeat,
       });
       if (intent.type === "ignore") {
         return;
@@ -993,6 +1035,11 @@ const CashierV2 = ({
       switch (intent.type) {
         case "update":
           updateDraft(() => intent.draft);
+          heldKeysRef.current = rememberAddedLine(
+            heldKeysRef.current,
+            viewDraft,
+            intent.draft,
+          );
           return;
         case "openAssign":
           openAssign();
