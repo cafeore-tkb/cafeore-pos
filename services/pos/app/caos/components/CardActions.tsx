@@ -88,7 +88,7 @@ export const CardOverlay: React.FC<{
                   title={label}
                   onClick={(event) => {
                     event.stopPropagation();
-                    menu.run(card, action);
+                    menu.run(card, action, event.currentTarget);
                   }}
                   className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-white font-black text-lg text-slate-950 active:scale-90 disabled:opacity-40"
                 >
