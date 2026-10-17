@@ -151,7 +151,9 @@ html:has(.caos-root) body {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.caos-root .caos-order-digits { display: inline-flex; }
+.caos-root .caos-order-digits {
+  display: inline-flex;
+}
 .caos-root .caos-order-digit {
   display: inline-block;
   width: 0.65em;
@@ -169,4 +171,7 @@ html:has(.caos-root) body {
   line-height: 1;
   text-align: center;
 }
-.caos-root .caos-order-empty { width: 1.95em; text-align: center; }
+.caos-root .caos-order-empty {
+  width: 1.95em;
+  text-align: center;
+}
