@@ -191,7 +191,7 @@ const LinesSection = ({
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => onSelect(index)}
-                // 会計の段階ではシールを先に刷っているので、商品は変えない
+                // 会計の段階では小計を作っているので、商品は変えない（会計取消で戻る）
                 disabled={!canEditLines(draft)}
                 className="flex min-h-12 min-w-0 flex-1 items-center gap-2 pr-3.5 pl-2.5 text-left disabled:cursor-default"
               >

@@ -145,7 +145,7 @@ export const RegisterKeyHints = ({
     )}
   >
     {exampleKeys && <span>{exampleKeys} … 商品キー</span>}
-    <span>Enter 一括会計</span>
+    <span>Enter・→ 一括会計</span>
     <span>
       ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
       で指名／備考・Backspace で削除
