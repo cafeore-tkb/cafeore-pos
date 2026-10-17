@@ -33,7 +33,7 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）。
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生など）。
 // emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
   pad: "px-1.5 py-1",
@@ -170,8 +170,6 @@ export const OrderCard: React.FC<
   const parts = byOrder && merged ? cardOrderParts(card, look) : null;
   const reasons = parts ? "" : emergencyReasons(card);
   const served = cardServedLabel(card);
-  // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
-  const bean = look?.bean?.name;
   // 注文番号の札と、商品の略称
   const noTag = (label: string, size: string) => (
     <span
@@ -292,7 +290,7 @@ export const OrderCard: React.FC<
           ))}
         </div>
       )}
-      {/* 商品・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
+      {/* 商品・指名・上級生のみ（縮めるのは緊急の理由のあと）・緊急の理由 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
@@ -336,17 +334,8 @@ export const OrderCard: React.FC<
             </span>
           )}
         </span>
-        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
-        {reasons
-          ? reasonTag(reasons, "ml-auto")
-          : bean && (
-              <span
-                title={`豆：${bean}`}
-                className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
-              >
-                {bean}
-              </span>
-            )}
+        {/* 入れ直し（緊急）の理由。商品名は注文番号の下の表示にまとめる */}
+        {reasons && reasonTag(reasons, "ml-auto")}
       </div>
       {note && (
         <div
