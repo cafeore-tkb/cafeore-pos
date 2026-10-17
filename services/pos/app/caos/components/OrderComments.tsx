@@ -1,11 +1,39 @@
-import { AUTHOR_MARKS } from "@cafeore/common";
+import { AUTHOR_MARKS, type CaosCard } from "@cafeore/common";
 import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
 import { createContext, useContext } from "react";
-import { orderNoLabel } from "../logic/cards";
+import { type CardLooks, orderNoLabel } from "../logic/cards";
 import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
 import { ReactionIcon } from "./ReactionIcon";
 import { VoiceComment } from "./VoiceComment";
+
+/** 新着通知と同じ寿命でタイムラインのバッジを表示する。初回の既存コメントは含めない。 */
+export const FreshCommentsContext = createContext<readonly BoardComment[]>([]);
+
+/** 未割当では注文見出しに1つだけ表示。複数カードで同じコメントを重複集計しない。 */
+export const OrderCommentBadge = ({
+  cards,
+  looks,
+  orderNo,
+}: { cards: readonly CaosCard[]; looks: CardLooks; orderNo?: number }) => {
+  const comments = new Map(
+    cards
+      .flatMap((card) => looks.get(card.key)?.comments ?? [])
+      .filter((comment) => orderNo === undefined || comment.orderNo === orderNo)
+      .map((comment) => [commentKey(comment), comment]),
+  );
+  if (!comments.size) return null;
+  const nos = [
+    ...new Set([...comments.values()].map((comment) => comment.orderNo)),
+  ];
+  return (
+    <CommentMark
+      count={comments.size}
+      label={nos.map((no) => `#${orderNoLabel(no)}`).join("+")}
+      className="h-6 w-6 shrink-0"
+    />
+  );
+};
 
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身（スタンプで返す）と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
 

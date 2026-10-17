@@ -288,6 +288,7 @@ export const DispatchBoard: React.FC<
                           style={{ left, width }}
                         >
                           <OrderCard
+                            newCommentsOnly
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
@@ -323,6 +324,7 @@ export const DispatchBoard: React.FC<
                             dragging={drag.source?.card.key === ticket.key}
                           >
                             <CardOverlay
+                              newCommentsOnly
                               card={ticket}
                               lane={bay}
                               look={looks.get(ticket.key)}
@@ -378,6 +380,7 @@ export const DispatchBoard: React.FC<
       {drag.source &&
         drag.ghost(
           <OrderCard
+            newCommentsOnly
             card={drag.source.card}
             look={looks.get(drag.source.card.key)}
           />,
