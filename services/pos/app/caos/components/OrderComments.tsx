@@ -4,6 +4,8 @@ import type React from "react";
 import { createContext, useContext } from "react";
 import { orderNoLabel } from "../logic/cards";
 import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
+import { ReactionIcon } from "./ReactionIcon";
+import { VoiceComment } from "./VoiceComment";
 
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身（スタンプで返す）と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
 
@@ -11,7 +13,7 @@ import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
 export const StampReplyContext = createContext<{
   /** 送っているあいだ（押せない） */
   sending: boolean;
-  send: (orderId: string, stamp: string) => void;
+  send: (orderId: string, stamp: string) => Promise<boolean>;
 } | null>(null);
 
 /** 注文（orderId）にスタンプを返すボタンの並び（キーボードを出さずに返す）。label は何の注文に返すか（いくつかの注文のコメントを並べたとき） */
@@ -29,12 +31,15 @@ const StampBar: React.FC<{ orderId: string; label?: string }> = ({
         </span>
       )}
       {STAMPS.map((stamp) => {
-        const [emoji, ...words] = stamp.split(" ");
         return (
           <button
             key={stamp}
             type="button"
-            title={`「${stamp}」と返す`}
+            title={
+              stamp === "来て！"
+                ? "直接来て状況を確認してください、と返す"
+                : `「${stamp}」と返す`
+            }
             aria-label={`「${stamp}」と返す`}
             disabled={reply.sending}
             onClick={(event) => {
@@ -42,15 +47,17 @@ const StampBar: React.FC<{ orderId: string; label?: string }> = ({
               event.stopPropagation();
               reply.send(orderId, stamp);
             }}
-            className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-10 min-w-10 flex-1 touch-manipulation flex-col items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
+            className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-12 min-w-10 flex-1 touch-manipulation items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
           >
-            <span className="text-[17px]">{emoji}</span>
-            <span className="mt-0.5 font-bold text-[9px] text-slate-600">
-              {words.join(" ")}
-            </span>
+            <ReactionIcon stamp={stamp} />
           </button>
         );
       })}
+      <VoiceComment
+        orderId={orderId}
+        sending={reply.sending}
+        send={reply.send}
+      />
     </li>
   );
 };
@@ -129,7 +136,13 @@ export const CommentList: React.FC<{
             {withNo && `#${orderNoLabel(comment.orderNo)} `}
             {AUTHOR_MARKS[comment.author]}
           </span>
-          <span className="min-w-0 break-words">{comment.text}</span>
+          <span className="min-w-0 break-words">
+            {comment.author === "master" && STAMPS.includes(comment.text) ? (
+              <ReactionIcon stamp={comment.text} />
+            ) : (
+              comment.text
+            )}
+          </span>
         </li>
       ))}
       {[...orders].map(([orderId, orderNo]) => (

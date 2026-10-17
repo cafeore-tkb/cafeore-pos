@@ -1,5 +1,5 @@
 import { orderRepository } from "@cafeore/common";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -9,18 +9,23 @@ import { toast } from "sonner";
  */
 export const useStampReply = (onReply: (orderId: string) => void) => {
   const [sending, setSending] = useState(false);
+  const busy = useRef(false);
   return {
     /** 送っているあいだ */
     sending,
     send: async (orderId: string, stamp: string) => {
-      if (sending) return;
+      if (busy.current || !stamp.trim()) return false;
+      busy.current = true;
       setSending(true);
       try {
         await orderRepository.addComment(orderId, "master", stamp);
         onReply(orderId);
+        return true;
       } catch {
-        toast.error(`スタンプ「${stamp}」を送れませんでした`);
+        toast.error("コメントを送れませんでした。もう一度送信してください");
+        return false;
       } finally {
+        busy.current = false;
         setSending(false);
       }
     },

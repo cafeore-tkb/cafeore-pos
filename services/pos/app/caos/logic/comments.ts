@@ -15,7 +15,10 @@ export interface BoardComment extends OrderComment {
 }
 
 /** コメントに返すスタンプ（押すと、その文字をそのままマスターのコメントとして付ける。提供の画面などでもふつうのコメントとして見える） */
-export const STAMPS = [
+export const STAMPS = ["OK", "待って", "済み", "来て！"];
+
+// 以前送ったコメントもリアクションとして扱い、再通知しない。
+const LEGACY_STAMPS = [
   "👀 見た",
   "👍 了解",
   "⏳ 待って",
@@ -28,7 +31,8 @@ export const STAMPS = [
  * コメントには付けた画面の印が無いので、マスターの画面（/master）で同じ文字を手で付けたものも同じに扱う（どちらもマスターの側から出したもので、CaOS で知らせなくてよい）
  */
 export const isStampReply = (comment: OrderComment) =>
-  comment.author === "master" && STAMPS.includes(comment.text);
+  comment.author === "master" &&
+  (STAMPS.includes(comment.text) || LEGACY_STAMPS.includes(comment.text));
 
 /** 注文（id）ごとのコメント（付けた順）。コメントの無い注文は入れない */
 export type CommentsByOrder = ReadonlyMap<string, BoardComment[]>;
