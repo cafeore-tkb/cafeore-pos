@@ -3,16 +3,16 @@ import {
   type CaosOrderInput,
   caosDayOrders,
   jstDate,
+  orderElapsedTime,
 } from "@cafeore/common";
-import { LATE_ORDER_SEC } from "./alerts";
 import { type CommentsByOrder, commentKey, isStampReply } from "./comments";
 import { type Lane, cardPlaces } from "./lanes";
 import { type FoundOrder, orderNow } from "./search";
 
-// 未完了の注文（未割当の欄の「未完了」のタブ）。去年までのマスターシートのように、まだ提供していない注文を注文番号の順に並べ、
+// 未提供の注文（未割当の欄の「未提供」のタブ）。去年までのマスターシートのように、まだ提供していない注文を注文番号の順に並べ、
 // 受けてからの時間・今の状態（カードの場所・準備完了）・コメントを出す。15 分を超えた注文と、まだ見ていないコメントはタブに件数の印を付ける。
 
-/** 未完了の注文の 1 行（注文の今と、受けてからの秒。late は LATE_ORDER_SEC を超えた） */
+/** 未提供の注文の 1 行（注文の今と、受けてからの秒。late は LATE_ORDER_SEC を超えた） */
 export interface UnfinishedOrder extends FoundOrder {
   waitSec: number;
   late: boolean;
@@ -40,11 +40,15 @@ export const unfinishedOrders = ({
   const places = cardPlaces(lanes);
   return caosDayOrders(orders, jstDate(nowMs))
     .map((order) => {
-      const waitSec = (nowMs - order.createdAt.getTime()) / 1000;
+      const elapsed = orderElapsedTime(
+        { createdAt: order.createdAt, servedAt: null },
+        new Date(nowMs),
+      );
+      const waitSec = elapsed.m * 60 + Number(elapsed.ss);
       return {
         ...orderNow(order, { cards, places, comments, nowMs }),
         waitSec,
-        late: waitSec > LATE_ORDER_SEC,
+        late: elapsed.overdue,
       };
     })
     .filter((row) =>
@@ -73,13 +77,13 @@ export const unfinishedStates = (row: FoundOrder) => {
   return labels.length > 0 ? labels : ["準備中"];
 };
 
-/** この端末で見た未完了の印（15 分を超えた注文の id・コメントの commentKey） */
+/** この端末で見た未提供の印（15 分を超えた注文の id・コメントの commentKey） */
 export interface UnfinishedSeen {
   late: string[];
   comments: string[];
 }
 
-/** 未完了の注文のうち、まだ見ていない 15 分超の注文（id）と新しいコメント（commentKey）。CaOS から返したスタンプは数えない */
+/** 未提供の注文のうち、まだ見ていない 15 分超の注文（id）と新しいコメント（commentKey）。CaOS から返したスタンプは数えない */
 export const unseenAlerts = (
   rows: readonly UnfinishedOrder[],
   seen: UnfinishedSeen,
@@ -94,7 +98,7 @@ export const unseenAlerts = (
     .filter((key) => !seen.comments.includes(key)),
 });
 
-/** 見た印に足す（今の未完了の注文に無いものは忘れる。端末に残すものを増やし続けない） */
+/** 見た印に足す（今の未提供の注文に無いものは忘れる。端末に残すものを増やし続けない） */
 export const markSeen = (
   rows: readonly UnfinishedOrder[],
   seen: UnfinishedSeen,
