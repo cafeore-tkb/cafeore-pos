@@ -25,7 +25,6 @@ import {
   seniorOnlyOffSenior,
   splitWrites,
   unassignWrites,
-  unstartWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -40,7 +39,7 @@ import {
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { orderBacklog } from "../logic/alerts";
 import { waitingCupsByBean } from "../logic/beans";
-import { type CardBoardAction, cardActions } from "../logic/cardActions";
+import type { CardBoardAction } from "../logic/cardActions";
 import {
   cardLooks,
   orderAndCupCounts,
@@ -51,6 +50,7 @@ import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
+import { runCardAction } from "../logic/runCardAction";
 import { soundManager } from "../utils/audio";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
@@ -496,39 +496,16 @@ export const useCaosSession = () => {
      *   - assign:1〜6・unassign：未着手のカードを再割当・未割当に戻す
      * 終える操作は「次へ」と同じ押し間違いの決まり（endBrewing）。押したときの盤面とカードの段階が違えば断る
      */
-    runCardAction: (pressed: CaosCard, action: CardBoardAction) => {
-      const card = cardOf(pressed.key);
-      if (!card?.dripper) return fail(NOT_FOUND);
-      const lane = caosLane(cards, card.dripper);
-      const allowed = cardActions(card, lane, { nowMs, comments: false });
-      if (!allowed.some((item) => item.action === action && !item.disabled))
-        return fail("カードの状態が変わりました。もう一度確認してください");
-      if (action.startsWith("assign:")) {
-        const bayId = Number(action.slice(7));
-        const ok = write(
-          assignWrites(cards, card, bayId, { newId: newDripId }),
-          `移動 ${orderLabel(card)} → ${dripperLabel(bayId)}`,
-        );
-        if (ok)
-          noticeNonSenior([card], nonSeniorPlacement(card, bayId, people));
-        return ok;
-      }
-      if (action === "unassign")
-        return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
-      const { brewing } = lane;
-      if (action === "unstart")
-        return write(
-          unstartWrites(cards, card),
-          `未着手に戻す ${orderLabel(card)}`,
-        );
-      if (action === "start") {
-        if (brewing) return fail(`${orderLabel(brewing)} が抽出中です`);
-        return runNext(card.dripper, null, { key: card.key });
-      }
-      if (brewing?.key !== card.key)
-        return fail("このカードはもう抽出中ではありません");
-      return endBrewing(card.dripper, "head");
-    },
+    runCardAction: (pressed: CaosCard, action: CardBoardAction) =>
+      runCardAction(cards, pressed, action, nowMs, {
+        write,
+        fail,
+        newId: newDripId,
+        onAssigned: (card, bayId) =>
+          noticeNonSenior([card], nonSeniorPlacement(card, bayId, people)),
+        start: (bayId, key) => runNext(bayId, null, { key }),
+        finish: (bayId) => endBrewing(bayId, "head"),
+      }),
     /** 右上の確かめ（「次へ」）と知らせ（時間のたったカードへの統合・上級生のみのカードを上級生でない担当者に置いた）。新しいものが先 */
     cornerToasts: toasts.open,
     /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */

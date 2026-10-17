@@ -17,9 +17,11 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import { LATE_ORDER_SEC, type orderBacklog } from "../logic/alerts";
+import lateIcon from "../icons/late.svg";
+import type { orderBacklog } from "../logic/alerts";
 import { type orderAndCupCounts, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
+import type { UnfinishedOrder } from "../logic/unfinished";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
@@ -30,7 +32,6 @@ export type NavTab = "control" | AuxiliaryTab;
 type Counts = ReturnType<typeof orderAndCupCounts>;
 
 // 「15分超」の分
-const LATE_MIN = LATE_ORDER_SEC / 60;
 
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
@@ -51,8 +52,9 @@ interface TopHeaderProps {
   timeStr: string;
   /** 未割当と、全ドリッパーの待ち（待機。まだ抽出を始めていない）の注文の数と杯数 */
   counts: { unassigned: Counts; waiting: Counts };
-  /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
+  /** 未割当の最長待ち時間と最小注文番号 */
   backlog: ReturnType<typeof orderBacklog>;
+  unserved: readonly UnfinishedOrder[];
   /** 注文番号でその注文を選ぶ（番号の検索と同じ） */
   onFindOrder: (orderNo: number) => void;
   soundEnabled: boolean;
@@ -167,6 +169,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   timeStr,
   counts,
   backlog,
+  unserved,
   onFindOrder,
   soundEnabled,
   onToggleSound,
@@ -187,6 +190,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   lastAction,
 }) => {
   const oldest = backlog.oldestUnassigned;
+  const smallest = backlog.smallestUnassigned;
+  const longestUnserved = unserved.reduce<UnfinishedOrder | null>(
+    (longest, row) =>
+      !longest || row.waitSec > longest.waitSec ? row : longest,
+    null,
+  );
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
@@ -290,36 +299,44 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* 注文の数（杯数は小さく添える。統合したカードは中の注文をみな、分けた注文は 1 つと数える）と、入れ忘れ・飛ばしに気づく待ち。
-            押すと、いちばん古い未割当・受けてから LATE_ORDER_SEC を超えて始めていないいちばん古い注文を選ぶ */}
+            押すと、未割当は最小番号・未提供は最長待ち時間の注文を選ぶ */}
         <BacklogButton
           label="未割当"
           counts={counts.unassigned}
           detail={
             oldest
-              ? `最古 #${orderNoLabel(oldest.orderNo)} ${clockLabel(oldest.waitSec)}`
-              : "最古 なし"
+              ? `最小 #${orderNoLabel(smallest ?? oldest.orderNo)} 最長 ${clockLabel(oldest.waitSec)}`
+              : "最小 — 最長 —"
           }
           late={oldest?.late ?? false}
           title={
             oldest
-              ? `いちばん古い未割当 #${orderNoLabel(oldest.orderNo)}（受けてから ${clockLabel(oldest.waitSec)}）を選ぶ`
+              ? `未割当の最小番号 #${orderNoLabel(smallest ?? oldest.orderNo)}を選ぶ。最長待ち時間 ${clockLabel(oldest.waitSec)}（#${orderNoLabel(oldest.orderNo)}）`
               : "未割当の注文はありません"
           }
-          onClick={oldest ? () => onFindOrder(oldest.orderNo) : undefined}
+          onClick={smallest !== null ? () => onFindOrder(smallest) : undefined}
         />
         <BacklogButton
-          label="待ち"
-          counts={counts.waiting}
-          detail={`${LATE_MIN}分超 ${backlog.late.length}件`}
-          late={backlog.late.length > 0}
+          label="未提供"
+          counts={{
+            orders: unserved.length,
+            cups: unserved.reduce((sum, row) => sum + row.cups, 0),
+          }}
+          detail={
+            longestUnserved
+              ? `最長 ${clockLabel(longestUnserved.waitSec)}`
+              : "最長 —"
+          }
+          late={longestUnserved?.late ?? false}
+          lateIconVisible={longestUnserved?.late ?? false}
           title={
-            backlog.late.length > 0
-              ? `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文が ${backlog.late.length} 件（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
-              : `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文はありません`
+            longestUnserved
+              ? `提供画面と同じ受付からの最長時間 ${clockLabel(longestUnserved.waitSec)}（#${orderNoLabel(longestUnserved.orderNo)}）を選ぶ`
+              : "未提供の注文はありません"
           }
           onClick={
-            backlog.late.length > 0
-              ? () => onFindOrder(backlog.late[0].orderNo)
+            longestUnserved
+              ? () => onFindOrder(longestUnserved.orderNo)
               : undefined
           }
         />
@@ -406,20 +423,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
  */
 const BacklogButton: React.FC<{
   label: string;
+  lateIconVisible?: boolean;
   counts: Counts;
   detail: string;
   late: boolean;
   title: string;
   onClick?: () => void;
-}> = ({ label, counts, detail, late, title, onClick }) => (
+}> = ({ label, counts, detail, late, title, onClick, lateIconVisible }) => (
   <button
     type="button"
     disabled={!onClick}
     onClick={onClick}
     title={title}
-    className="flex h-11 w-[104px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 text-[#475569] leading-tight"
+    className="flex h-11 w-[148px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 text-[#475569] leading-tight"
   >
     <span className="flex items-baseline gap-1 font-semibold text-[11px]">
+      {lateIconVisible && (
+        <img
+          src={lateIcon}
+          alt="提供待ち15分以上"
+          className="h-4 w-4 rounded-full bg-white"
+        />
+      )}
       {label}
       <span className="font-extrabold font-mono text-[#0f172a] text-[16px]">
         {counts.orders}

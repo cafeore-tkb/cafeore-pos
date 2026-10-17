@@ -37,9 +37,9 @@ export const cardActions = (
   const own: CardAction[] = [];
   if (stage === "queued" || stage === "ready") {
     own.push(
-      ...moveTargets(card, card.dripper).map(
-        ({ bayId }) => `assign:${bayId}` as const,
-      ),
+      ...moveTargets(card, card.dripper)
+        .filter(({ current }) => !current)
+        .map(({ bayId }) => `assign:${bayId}` as const),
     );
     if (stage === "ready") own.push("start");
     own.push("unassign");
