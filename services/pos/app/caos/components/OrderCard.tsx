@@ -1,7 +1,7 @@
 import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
-import { Fragment } from "react";
+import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import {
@@ -15,8 +15,9 @@ import {
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
+import { commentKey } from "../logic/comments";
 import { type DropSide, moveTargets } from "../logic/lanes";
-import { CommentMark } from "./OrderComments";
+import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
@@ -131,6 +132,8 @@ export const OrderCard: React.FC<
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
+    /** タイムラインでは既存コメントを隠し、新着通知が残っている間だけ表示 */
+    newCommentsOnly?: boolean;
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
@@ -148,6 +151,7 @@ export const OrderCard: React.FC<
   look,
   size = "md",
   selected = false,
+  newCommentsOnly = false,
   dragging = false,
   note,
   mergeInto,
@@ -159,6 +163,14 @@ export const OrderCard: React.FC<
   children,
   ...props
 }) => {
+  const freshComments = useContext(FreshCommentsContext);
+  const freshKeys = new Set(freshComments.map(commentKey));
+  const badgeComments =
+    card.status === "unassigned"
+      ? []
+      : (look?.comments ?? []).filter(
+          (comment) => !newCommentsOnly || freshKeys.has(commentKey(comment)),
+        );
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
@@ -230,15 +242,19 @@ export const OrderCard: React.FC<
       {children}
       {mergeTap && <MergeOverlay />}
       <DropMark side={dropSide} />
-      {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
-      {look?.comments && (
-        <CommentMark count={look.comments.length} label={orderLabel(card)} />
-      )}
       {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
+        {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
+        {!parts && badgeComments.length > 0 && (
+          <CommentMark
+            count={badgeComments.length}
+            label={orderLabel(card)}
+            className="h-5 w-5 shrink-0"
+          />
+        )}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {!text.emergencyBelow && emergencyTag(text.cups)}
@@ -264,18 +280,24 @@ export const OrderCard: React.FC<
                   <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
                 </div>
               )}
-              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右に並べ、番号は字の間を、段は札の間を詰める */}
               <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
-                <span className="relative shrink-0">
+                <span className="flex min-w-0 shrink-0 items-center gap-1">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
                     `tracking-tighter ${text.no}`,
                   )}
-                  {part.comments > 0 && (
+                  {badgeComments.some(
+                    (comment) => comment.orderNo === part.orderNo,
+                  ) && (
                     <CommentMark
-                      count={part.comments}
+                      count={
+                        badgeComments.filter(
+                          (comment) => comment.orderNo === part.orderNo,
+                        ).length
+                      }
                       label={`#${orderNoLabel(part.orderNo)}`}
-                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                      className="h-4 w-4 shrink-0"
                     />
                   )}
                 </span>

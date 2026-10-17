@@ -97,6 +97,47 @@
   }
 }
 
+/* 呼び出し画面で新しく入った番号に敷く光の地（callscreen.components の GlowBase）。浮かび上がり、終わりに消える */
+@keyframes call-glow-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes call-glow-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* プリズムの光の帯（callscreen.components の PrismLight）。斜めに傾けたまま、プレートの左の外から右の外まで抜ける */
+@keyframes prism-sweep {
+  from {
+    transform: translateX(-130%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(210%) skewX(-20deg);
+  }
+}
+
+/* 呼び出し画面に入ってきたプレート（callscreen.components の PlateBoard）。ほかが滑り終わってから、その場所に浮かぶ */
+@keyframes plate-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @utility container {
   margin-left: auto;
   margin-right: auto;

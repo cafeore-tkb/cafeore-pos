@@ -1,5 +1,16 @@
 import type { CaosCard, CaosOrderInput } from "@cafeore/common";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  caosRepliesRevision,
+  subscribeCaosReplies,
+} from "../logic/caosReplies";
 import { labelHasOrder } from "../logic/cards";
 import { type CommentsByOrder, commentKey } from "../logic/comments";
 import type { Lane } from "../logic/lanes";
@@ -47,6 +58,7 @@ export const useUnfinishedTab = ({
   /** 右下などでコメントを見ている注文（orderLabel） */
   viewedLabel: string | null;
 }) => {
+  useSyncExternalStore(subscribeCaosReplies, caosRepliesRevision, () => 0);
   const rows = useMemo(
     () => unfinishedOrders({ orders, cards, lanes, comments, nowMs, practice }),
     [orders, cards, lanes, comments, nowMs, practice],

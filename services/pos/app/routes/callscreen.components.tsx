@@ -1,4 +1,6 @@
+import { useRef, useState } from "react";
 import { cn } from "~/lib/utils";
+import { FLASH_FADE_MS, FLASH_MS, type Flash } from "./callscreen.hooks";
 
 // 呼び出し画面は 1920x1080 の固定レイアウトで組み、表示側では拡大縮小だけで合わせる。
 // 実機の解像度に関わらず、番号の大きさとすき間の比率が変わらないようにするため。
@@ -37,6 +39,10 @@ const PREP_BAR_CAP = 10;
 const GRAD_DEEP =
   "linear-gradient(135deg in oklch, var(--color-theme-deep), color-mix(in oklch, var(--color-theme-deep) 65%, black))";
 const EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
+/** 件数が変わったときに、プレートが新しい場所へ滑る長さ */
+const SLIDE_MS = 300;
+/** 入ってきたプレートが浮かぶ長さ */
+const ENTER_MS = 360;
 
 /**
  * 件数ごとの行割り。行が増えるほど 1 件あたりが小さくなるので、
@@ -84,6 +90,8 @@ export type PlateRect = PlateItem & {
   w: number;
   h: number;
   fontSize: number;
+  /** 上から何段目か */
+  row: number;
 };
 
 /**
@@ -125,6 +133,7 @@ export const layoutPlates = (
         fontSize: Math.round(
           Math.min(box, (w * 0.82) / String(item.id).length, maxFontSize),
         ),
+        row: rowIndex,
       });
       index++;
     }
@@ -278,41 +287,125 @@ export function BrewingIndicator() {
   );
 }
 
+/**
+ * プリズムで分けた光の色。白い芯の両側に、撫子色・紫・青・水色を並べる。
+ * 分光の色のうち黄色（と黄緑）は入れない。テーマカラーではなく光の色なので、ここに直に書く
+ */
+const PRISM_LIGHT =
+  "linear-gradient(90deg in oklch, transparent 0%, oklch(0.82 0.1 0 / 0.5) 18%, oklch(0.74 0.17 340 / 0.75) 32%, oklch(0.97 0.02 300 / 0.95) 50%, oklch(0.7 0.16 285 / 0.8) 64%, oklch(0.74 0.13 245 / 0.65) 78%, oklch(0.86 0.09 210 / 0.45) 90%, transparent 100%)";
+
+/** 光らせている間の地が浮かぶ長さ */
+const GLOW_IN_MS = 340;
+/** プリズムの光が抜け始めるまで（地が浮かび切るころ）と、抜けるのにかける長さ */
+const PRISM_DELAY_MS = 220;
+const PRISM_MS = 1460;
+
+/**
+ * 光り始めてから ms 後を、アニメーションの開始の遅れ（animation-delay）に直す。
+ * プレートが作り直されても（CM と呼び出し画面の切り替えなど）、頭からではなく光り始めからの続きを出すため
+ */
+function useFlashDelay(startedAt: number) {
+  const [mountedAt] = useState(() => performance.now());
+  return (ms: number) => `${Math.round(startedAt + ms - mountedAt)}ms`;
+}
+
+/**
+ * 光らせている間の地。深い青から撫子色を浮かべ、FLASH_MS の終わりの FLASH_FADE_MS で元に戻す
+ */
+function GlowBase({ startedAt }: { startedAt: number }) {
+  const delay = useFlashDelay(startedAt);
+
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-[inherit]"
+      style={{
+        backgroundImage:
+          "linear-gradient(40deg in oklch, var(--color-theme-sub-deep), var(--color-theme-deep))",
+        animation: `call-glow-in ${GLOW_IN_MS}ms ease-out ${delay(0)} both, call-glow-out ${FLASH_FADE_MS}ms ease-in-out ${delay(FLASH_MS - FLASH_FADE_MS)} forwards`,
+      }}
+    />
+  );
+}
+
+/** プリズムのような光の帯。地が浮かび切ってから、左の外から右の外へ一度抜ける */
+function PrismLight({ startedAt }: { startedAt: number }) {
+  const delay = useFlashDelay(startedAt);
+
+  return (
+    <div
+      aria-hidden
+      className="-inset-y-[10%] pointer-events-none absolute left-0 w-[55%] mix-blend-screen"
+      style={{
+        background: PRISM_LIGHT,
+        filter: "blur(10px)",
+        animation: `prism-sweep ${PRISM_MS}ms ease-in-out ${delay(PRISM_DELAY_MS)} both`,
+      }}
+    />
+  );
+}
+
+/** 段が変わったら別のプレートとして作り直す */
+const plateKey = (plate: PlateRect) => `${plate.id}:${plate.row}`;
+
 type PlateBoardProps = {
   plates: PlateRect[];
   /** calling はお呼び出し中（金の縁で目立たせる）、drip はドリップ中 */
   tone: "calling" | "drip";
-  isFlashing: (id: number) => boolean;
+  flashesOf: (id: number) => readonly Flash[];
   /** CM に重ねる帯では影を消す */
   shadow?: boolean;
 };
 
 /**
  * プレートを並べる領域。位置と大きさは絶対指定で、
- * 件数が変わったときは同じプレートが滑って移動する。
- * プレートは地が透ける硝子のカード。点滅は撫子色で光らせ、終われば白い番号に落ち着く
+ * 件数が変わったときは、同じ段に残るプレートは滑って移動する（どれも同じ速さで動くので、すき間を保ったまま重ならない）。
+ * 新しく入った番号と段が変わる番号は作り直し、ほかのプレートが滑り終わってから、その場所に浮かべる
+ * （そのまま滑らせると、段をまたいで斜めに横切ったり、どいていくプレートの下から出てきたりして重なる）。
+ * プレートは地が透ける硝子のカード。新しく入った番号は光の地を浮かべてプリズムの光を流し、終われば硝子のカードに戻る。
+ * 光らせている最中にまた呼ばれたら、地は重ね、光の帯はそれぞれ流す
  */
 export function PlateBoard({
   plates,
   tone,
-  isFlashing,
+  flashesOf,
   shadow = true,
 }: PlateBoardProps) {
+  // プレート（番号と段）ごとの、浮かべ始めるまでの待ち。初めて出たときに決めて、あとは変えない
+  const enterDelaysRef = useRef(new Map<string, number>());
+  const prevDelays = enterDelaysRef.current;
+  const keys = plates.map(plateKey);
+  // 前から残るプレートがあれば、それが滑り終わるのを待つ。無ければ（最初の 1 件など）すぐ浮かべる
+  const othersSlide = keys.some((key) => prevDelays.has(key));
+  const enterDelays = new Map(
+    keys.map((key) => [
+      key,
+      prevDelays.get(key) ?? (othersSlide ? SLIDE_MS : 0),
+    ]),
+  );
+  enterDelaysRef.current = enterDelays;
+
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
       {plates.map((plate) => {
-        const on = isFlashing(plate.id);
+        const key = plateKey(plate);
+        const flashes = flashesOf(plate.id);
+        // 縁と文字は、元に戻るフェードに入ったら地と一緒に戻す
+        const lit = flashes.some((flash) => !flash.fading);
+        const litTransition = `${lit ? GLOW_IN_MS : FLASH_FADE_MS}ms ${EASE}`;
 
         return (
           <div
-            key={plate.id}
+            key={key}
             className={cn(
-              "flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
-              on
-                ? "border-theme-gold bg-theme-sub-deep/75"
+              "isolate flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
+              tone === "calling" ? "bg-white/[0.1]" : "bg-white/[0.07]",
+              // 光らせている間は金の縁を白にする（光に黄色を混ぜない）
+              lit
+                ? "border-white/60"
                 : tone === "calling"
-                  ? "border-theme-gold/50 bg-white/[0.1]"
-                  : "border-white/15 bg-white/[0.07]",
+                  ? "border-theme-gold/50"
+                  : "border-white/15",
               shadow &&
                 "shadow-[0_12px_30px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.12)]",
             )}
@@ -323,23 +416,40 @@ export function PlateBoard({
               width: `${plate.w}px`,
               height: `${plate.h}px`,
               gap: plate.caption ? "4px" : 0,
-              transition: `left 300ms ${EASE}, top 300ms ${EASE}, width 300ms ${EASE}, height 300ms ${EASE}`,
+              transition: `left ${SLIDE_MS}ms ${EASE}, top ${SLIDE_MS}ms ${EASE}, width ${SLIDE_MS}ms ${EASE}, height ${SLIDE_MS}ms ${EASE}, border-color ${litTransition}`,
+              // 出てきたときだけ流れる（作り直さない限り、二度は流れない）
+              animation: `plate-enter ${ENTER_MS}ms ${EASE} ${enterDelays.get(key)}ms both`,
             }}
           >
+            {/* 地を全部敷いてから光の帯を重ねる（後の地で前の光の帯が隠れないように） */}
+            {flashes.map((flash) => (
+              <GlowBase key={flash.key} startedAt={flash.startedAt} />
+            ))}
+            {flashes.map((flash) => (
+              <PrismLight key={flash.key} startedAt={flash.startedAt} />
+            ))}
             <div
-              className="font-semibold font-zen text-white tabular-nums leading-none"
-              style={{ fontSize: `${plate.fontSize}px` }}
+              className={cn(
+                "relative font-semibold font-zen text-white tabular-nums leading-none",
+                // 光の白い芯が重なっても白い番号が沈まないよう、影を敷く
+                lit && "[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]",
+              )}
+              style={{
+                fontSize: `${plate.fontSize}px`,
+                transition: `font-size ${SLIDE_MS}ms ${EASE}, text-shadow ${litTransition}`,
+              }}
             >
               {plate.id}
             </div>
             {plate.caption && (
               <div
                 className={cn(
-                  "whitespace-nowrap font-medium font-noto leading-tight tracking-[0.08em]",
-                  on ? "text-white" : "text-theme-gold",
+                  "relative whitespace-nowrap font-medium font-noto leading-tight tracking-[0.08em]",
+                  lit ? "text-white" : "text-theme-gold",
                 )}
                 style={{
                   fontSize: `${Math.max(20, Math.round(plate.fontSize * 0.24))}px`,
+                  transition: `font-size ${SLIDE_MS}ms ${EASE}, color ${litTransition}`,
                 }}
               >
                 {plate.caption}
@@ -411,7 +521,7 @@ export function PreparingBar({
 
 type DripBandProps = {
   plates: PlateRect[];
-  isFlashing: (id: number) => boolean;
+  flashesOf: (id: number) => readonly Flash[];
   preparingCount: number;
 };
 
@@ -419,11 +529,7 @@ type DripBandProps = {
  * CM の下側に重ねるドリップ中の帯。
  * 呼び出しが無い間はここだけ出して CM は流し続ける。
  */
-export function DripBand({
-  plates,
-  isFlashing,
-  preparingCount,
-}: DripBandProps) {
+export function DripBand({ plates, flashesOf, preparingCount }: DripBandProps) {
   return (
     <div
       className="absolute right-0 bottom-0 left-0 flex flex-col gap-4 border-theme-gold/40 border-t"
@@ -447,7 +553,7 @@ export function DripBand({
       <PlateBoard
         plates={plates}
         tone="drip"
-        isFlashing={isFlashing}
+        flashesOf={flashesOf}
         shadow={false}
       />
     </div>
