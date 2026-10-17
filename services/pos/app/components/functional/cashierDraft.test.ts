@@ -7,6 +7,7 @@ import {
   addReceived,
   assignLine,
   cashierKeyIntent,
+  cashierPaymentKeyIntent,
   clearDigits,
   cyclePayment,
   deleteDigit,
@@ -348,6 +349,49 @@ describe("[unit] cashierKeyIntent", () => {
       cashierKeyIntent(goPay(draft), "Escape", { menus, payments }).type,
     ).toBe("leavePay");
     expect(cashierKeyIntent(draft, "a", { menus, payments }).type).toBe(
+      "ignore",
+    );
+  });
+});
+
+describe("[unit] cashierPaymentKeyIntent", () => {
+  test("入れる段階は一括会計に進み、Alt+T・Q は進んだらその決済手段で始める", () => {
+    const draft = withLines(blend);
+    expect(cashierPaymentKeyIntent(draft, "KeyC", { payments })).toEqual({
+      type: "goPay",
+    });
+    expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
+      type: "goPay",
+      square: "FELICA_ALL",
+    });
+    expect(cashierPaymentKeyIntent(draft, "KeyQ", { payments })).toEqual({
+      type: "goPay",
+      square: "QR_CODE",
+    });
+  });
+
+  test("商品が無ければ何もしない", () => {
+    expect(
+      cashierPaymentKeyIntent(emptyCashierDraft(), "KeyT", { payments }).type,
+    ).toBe("none");
+  });
+
+  test("会計の段階の Alt+C は現金を選ぶだけ、Alt+T・Q は決済を始める", () => {
+    const draft = { ...goPay(withLines(blend)), payment: "QR_CODE" as const };
+    const cash = cashierPaymentKeyIntent(draft, "KeyC", { payments });
+    expect(cash.type === "update" && cash.draft.payment).toBe("cash");
+    expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
+      type: "startSquare",
+      paymentType: "FELICA_ALL",
+    });
+  });
+
+  test("今使えない Square の決済手段は知らせ、決済手段のキーでなければ扱わない", () => {
+    const draft = goPay(withLines(blend));
+    expect(
+      cashierPaymentKeyIntent(draft, "KeyQ", { payments: ["cash"] }),
+    ).toEqual({ type: "paymentUnavailable", paymentType: "QR_CODE" });
+    expect(cashierPaymentKeyIntent(draft, "KeyX", { payments }).type).toBe(
       "ignore",
     );
   });

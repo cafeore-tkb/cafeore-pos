@@ -38,6 +38,7 @@ import {
   canAssignSelected,
   canGoPay,
   cashierKeyIntent,
+  cashierPaymentKeyIntent,
   clearDigits,
   couponStatus,
   deleteDigit,
@@ -757,6 +758,42 @@ const CashierV2 = ({
     startSubtotal((c) => beginRest(c, discountCups, discountPerCup));
   }, [store, startSubtotal, discountCups, discountPerCup]);
 
+  /** 決済手段のキーで選んだ Square の決済手段が、今は使えないことを知らせる */
+  const warnSquareUnavailable = useCallback(
+    (paymentType: SquarePaymentType) => {
+      toast.warning(
+        `${squarePaymentTypeLabel[paymentType]}は今使えません。Square の端末が決まっているか・つながっているかを確かめてください`,
+      );
+    },
+    [],
+  );
+
+  // 入れる段階で決済手段のキー（Alt+T など）を押したら、会計の段階に進んでから決済を始める
+  // （今払う額は、進んで小計を作ってから決まるので）
+  const [queuedSquare, setQueuedSquare] = useState<SquarePaymentType | null>(
+    null,
+  );
+  useEffect(() => {
+    if (queuedSquare === null) {
+      return;
+    }
+    setQueuedSquare(null);
+    if (!paying) {
+      return;
+    }
+    if (payments.includes(queuedSquare)) {
+      startSquarePayment(queuedSquare);
+    } else {
+      warnSquareUnavailable(queuedSquare);
+    }
+  }, [
+    queuedSquare,
+    paying,
+    payments,
+    startSquarePayment,
+    warnSquareUnavailable,
+  ]);
+
   /** 個別小計。選んだ商品の小計を会計する */
   const startItemsSubtotal = useCallback(
     (keys: number[]) =>
@@ -887,17 +924,19 @@ const CashierV2 = ({
       return;
     }
     const handler = (event: KeyboardEvent) => {
-      // Shift は商品キー（* # など）に使うので見ない
-      if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
+      // Shift は商品キー（* # など）に使うので見ない。Alt は決済手段のキー（Alt+C など）に使う
+      if (event.isComposing || event.metaKey || event.ctrlKey) {
         return;
       }
       if (isOutsideRegister(event.target)) {
         return;
       }
-      const intent = cashierKeyIntent(viewDraft, event.key, {
-        menus: items ?? [],
-        payments,
-      });
+      const intent = event.altKey
+        ? cashierPaymentKeyIntent(viewDraft, event.code, { payments })
+        : cashierKeyIntent(viewDraft, event.key, {
+            menus: items ?? [],
+            payments,
+          });
       if (intent.type === "ignore") {
         return;
       }
@@ -915,6 +954,9 @@ const CashierV2 = ({
           return;
         case "goPay":
           startPayment();
+          if (intent.square !== undefined) {
+            setQueuedSquare(intent.square);
+          }
           return;
         case "exactReceived":
           updateDraft((c) => setExactReceived(c, due));
@@ -924,6 +966,9 @@ const CashierV2 = ({
           return;
         case "startSquare":
           startSquarePayment(intent.paymentType);
+          return;
+        case "paymentUnavailable":
+          warnSquareUnavailable(intent.paymentType);
           return;
         case "leavePay":
           leavePay();
@@ -964,6 +1009,7 @@ const CashierV2 = ({
     startPayment,
     submitCash,
     startSquarePayment,
+    warnSquareUnavailable,
     leavePay,
     resetAll,
   ]);
