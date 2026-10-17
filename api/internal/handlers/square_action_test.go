@@ -103,6 +103,11 @@ func TestValidateSquareActionRequest(t *testing.T) {
 	if err := validateSquareActionRequest(valid); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
 	}
+	withSplit := valid
+	withSplit.Options = append(append([]models.SquareActionOption(nil), valid.Options...), models.OptionSplit)
+	if err := validateSquareActionRequest(withSplit); err != nil {
+		t.Fatalf("request with SPLIT rejected: %v", err)
+	}
 	cases := map[string]func(*models.SquareActionCreateRequest){
 		"no key": func(r *models.SquareActionCreateRequest) { r.IdempotencyKey = "" },
 		"long key": func(r *models.SquareActionCreateRequest) {
@@ -134,7 +139,10 @@ func TestValidateSquareActionRequest(t *testing.T) {
 }
 
 func TestBuildTerminalAction(t *testing.T) {
-	record := squareActionRecord(squareStatusCreating, func(r *models.SquareAction) { r.Amount = 12300 })
+	record := squareActionRecord(squareStatusCreating, func(r *models.SquareAction) {
+		r.Amount = 12300
+		r.Options = append(r.Options, "SPLIT")
+	})
 	action := buildTerminalAction(record)
 	if action.DeviceID != "dev" || action.Type != "SELECT" || action.DeadlineDuration != "PT5M" || action.SelectOptions == nil {
 		t.Fatalf("unexpected action: %+v", action)
@@ -146,6 +154,7 @@ func TestBuildTerminalAction(t *testing.T) {
 		{ReferenceID: "CASH", Title: "現金"},
 		{ReferenceID: "CARD_PRESENT", Title: "カード"},
 		{ReferenceID: "QR_CODE", Title: "QR コード"},
+		{ReferenceID: "SPLIT", Title: "割り勘"},
 	}
 	if len(action.SelectOptions.Options) != len(want) {
 		t.Fatalf("unexpected options: %+v", action.SelectOptions.Options)

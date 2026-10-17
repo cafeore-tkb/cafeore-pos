@@ -554,6 +554,136 @@ export const PartAmountDialog = ({
 };
 
 // --------------------------------------------------
+// 割り勘の分け方を選ぶ（お客さんが端末で「割り勘」を選んだ）
+// --------------------------------------------------
+
+/** 分け方のボタン。押せないときは理由を出す */
+const SplitChoiceButton = ({
+  keyLabel,
+  title,
+  sub,
+  blocked,
+  onClick,
+}: {
+  /** 押すキー（1・2） */
+  keyLabel: string;
+  /** 題。行を折るときは、ここで分けたところだけで折る */
+  title: string[];
+  sub: string;
+  /** 押せない理由。押せれば null */
+  blocked: string | null;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={blocked !== null}
+    className="flex min-h-28 flex-col items-start gap-1.5 rounded-[10px] border border-prepay-line bg-white px-4 py-3.5 text-left hover:bg-prepay-tint disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
+  >
+    <span className="flex w-full items-start gap-2">
+      <span className="font-extrabold text-base text-prepay">
+        {title.map((part) => (
+          <span key={part} className="inline-block">
+            {part}
+          </span>
+        ))}
+      </span>
+      <span className="flex-1" />
+      <span className="mt-0.5 rounded border border-prepay-line px-1 font-bold text-[10px] text-prepay leading-[15px]">
+        {keyLabel}
+      </span>
+    </span>
+    <span className="text-[13px] text-stone-600 leading-[1.5]">{sub}</span>
+    {blocked && (
+      <span className="font-bold text-red-700 text-xs">{blocked}</span>
+    )}
+  </button>
+);
+
+/**
+ * お客さんが端末で「割り勘」を選んだ。分け方を「個別小計」（商品で分ける）か
+ * 「小計分割・一部金額先払い」（金額で分ける）から選ぶ。1・2 のキーでも選べる
+ */
+export const SplitChoiceDialog = ({
+  open,
+  due,
+  itemsBlocked,
+  partBlocked,
+  onItems,
+  onPart,
+  onClose,
+}: {
+  open: boolean;
+  /** 今払う額 */
+  due: number;
+  /** 個別小計・小計分割を選べない理由。選べれば null */
+  itemsBlocked: string | null;
+  partBlocked: string | null;
+  onItems: () => void;
+  onPart: () => void;
+  onClose: () => void;
+}) => {
+  useDialogKeys(open, (key) => {
+    if (key === "1") {
+      if (itemsBlocked === null) onItems();
+      return true;
+    }
+    if (key === "2") {
+      if (partBlocked === null) onPart();
+      return true;
+    }
+    if (key === "Escape") {
+      onClose();
+      return true;
+    }
+    return false;
+  });
+
+  return (
+    <PrepayDialogShell
+      open={open}
+      width={540}
+      title="割り勘"
+      sub="お客さんが端末で選びました。分け方を選んでください"
+      aside={
+        <span className="font-bold text-sm text-stone-600 tabular-nums">
+          小計 {formatYen(due)}
+        </span>
+      }
+    >
+      <div className="grid grid-cols-2 gap-2.5">
+        <SplitChoiceButton
+          keyLabel="1"
+          title={["個別小計"]}
+          sub="先に払う商品を選んで、その分を会計します"
+          blocked={itemsBlocked}
+          onClick={onItems}
+        />
+        <SplitChoiceButton
+          keyLabel="2"
+          title={["小計分割・", "一部金額先払い"]}
+          sub="いまの小計を金額で分けて、先に払う額を入れます"
+          blocked={partBlocked}
+          onClick={onPart}
+        />
+      </div>
+      <div className="flex items-center justify-end gap-3">
+        <span className="text-stone-500 text-xs">
+          戻ると、端末にまた決済手段を出します
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className={buttonClass.secondary}
+        >
+          戻る
+        </button>
+      </div>
+    </PrepayDialogShell>
+  );
+};
+
+// --------------------------------------------------
 // 受け取ったあと（金額で分けた・個別小計を払い終えた）
 // --------------------------------------------------
 
