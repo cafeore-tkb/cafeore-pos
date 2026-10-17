@@ -40,8 +40,8 @@ import { ScrollArea } from "./ScrollArea";
 // 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
-// 左端の列（ドリッパーの番号・担当者）の幅
-const STICKY_LEFT_WIDTH = 240;
+// 番号44px＋担当者116px＋間隔8px＋左右余白16px。「次へ」用の空きを残さない。
+const STICKY_LEFT_WIDTH = 184;
 // NOW の左に見せる過去（2 分半）。抽出中のカードの始めてから今までと、寄せて残した商品・注文番号が NOW の線の左に収まる幅
 const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
 // 左へ隠れたカードで、商品・注文番号・杯数を寄せて残す幅（px。これより狭くは寄せず、カードと一緒に流れる）
