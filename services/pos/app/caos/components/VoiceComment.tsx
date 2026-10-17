@@ -36,6 +36,9 @@ export const VoiceComment = ({
   const [listening, setListening] = useState(false);
   const [text, setText] = useState("");
   const [message, setMessage] = useState("");
+  const panelRef = useRef<HTMLDivElement>(null);
+  const micRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognition = useRef<Recognition | null>(null);
   const stop = () => {
     const active = recognition.current;
@@ -60,6 +63,35 @@ export const VoiceComment = ({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    let typingAtPress = false;
+    const rememberTyping = () => {
+      typingAtPress = document.activeElement === inputRef.current;
+    };
+    const closeOutside = (event: MouseEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        panelRef.current?.contains(target) ||
+        micRef.current?.contains(target)
+      )
+        return;
+      // 入力中の最初のタップではキーボードだけを閉じ、下書きとパネルは残す。
+      if (typingAtPress || document.activeElement === inputRef.current)
+        inputRef.current?.blur();
+      else if (!listening && !sending) setOpen(false);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    document.addEventListener("pointerdown", rememberTyping, true);
+    document.addEventListener("click", closeOutside, true);
+    return () => {
+      document.removeEventListener("pointerdown", rememberTyping, true);
+      document.removeEventListener("click", closeOutside, true);
+    };
+  }, [open, listening, sending]);
 
   const start = () => {
     if (recognition.current || sending) return;
@@ -109,6 +141,7 @@ export const VoiceComment = ({
   return (
     <>
       <button
+        ref={micRef}
         type="button"
         aria-label={listening ? "音声入力を停止" : "音声でコメントを入力"}
         aria-pressed={listening}
@@ -132,6 +165,9 @@ export const VoiceComment = ({
       </button>
       {open && (
         <div
+          ref={panelRef}
+          data-voice-panel
+          data-voice-busy={listening || sending || undefined}
           className="grid w-full gap-2 rounded-lg border border-slate-300 bg-white p-2"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
@@ -143,6 +179,7 @@ export const VoiceComment = ({
           )}
           <div className="flex min-w-0 items-stretch gap-2">
             <textarea
+              ref={inputRef}
               aria-label="送信するコメント"
               value={text}
               disabled={listening || sending}

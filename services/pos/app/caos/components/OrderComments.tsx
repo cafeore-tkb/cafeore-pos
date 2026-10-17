@@ -217,16 +217,40 @@ export const CommentDock: React.FC<{
   useEffect(() => {
     if (!viewing || !popup.element) return;
     const element = popup.element;
+    let voiceProtectedAtPress = false;
+    const rememberVoiceInput = () => {
+      voiceProtectedAtPress = Boolean(
+        element.querySelector(
+          '[data-voice-busy="true"], [data-voice-panel] textarea:focus',
+        ),
+      );
+    };
     const closeOutside = (event: MouseEvent) => {
       if (event.target instanceof Node && element.contains(event.target))
         return;
-      onCloseViewing();
+      const protectedVoice =
+        voiceProtectedAtPress ||
+        Boolean(
+          element.querySelector(
+            '[data-voice-busy="true"], [data-voice-panel] textarea:focus',
+          ),
+        );
+      if (protectedVoice) {
+        const focused = element.querySelector<HTMLTextAreaElement>(
+          "[data-voice-panel] textarea:focus",
+        );
+        focused?.blur();
+      } else onCloseViewing();
       // 最初の枠外タップは閉じるだけにし、背後の割当・進行操作へ渡さない。
       event.preventDefault();
       event.stopPropagation();
     };
+    document.addEventListener("pointerdown", rememberVoiceInput, true);
     document.addEventListener("click", closeOutside, true);
-    return () => document.removeEventListener("click", closeOutside, true);
+    return () => {
+      document.removeEventListener("pointerdown", rememberVoiceInput, true);
+      document.removeEventListener("click", closeOutside, true);
+    };
   }, [viewing, popup.element, onCloseViewing]);
   const shown = notices.slice(-NOTICES_SHOWN);
   const hidden = notices.length - shown.length;
