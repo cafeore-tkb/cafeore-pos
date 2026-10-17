@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
+import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -21,6 +22,7 @@ import {
   setCallScreenSound,
   useCallScreenSound,
 } from "~/lib/callscreen-sound";
+import { callVoicePath, useAnnouncer } from "./callscreen.hooks";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面の CM / 珈琲・俺POS" }];
@@ -49,6 +51,9 @@ const SOUND_FIELDS: {
   },
 ];
 
+/** 試しに聞くときに読む番号 */
+const PREVIEW_ORDER_NO = 1;
+
 /** このブラウザで流せそうか（動画だけ見る。canPlayType が空なら流せない） */
 const playableHere = (item: CmItem) =>
   item.kind !== "video" ||
@@ -58,6 +63,10 @@ export default function CallScreenCmPage() {
   const { items, imageSeconds } = useCmPlaylist();
   const sound = useCallScreenSound();
   const fileRef = useRef<HTMLInputElement>(null);
+  // 試しに聞くとき用。呼び出し画面と同じ流し方（useAnnouncer）で鳴らす
+  const chimeRef = useRef<HTMLAudioElement>(null);
+  const voiceRef = useRef<HTMLAudioElement>(null);
+  const announce = useAnnouncer(chimeRef, voiceRef);
 
   const addFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -247,6 +256,30 @@ export default function CallScreenCmPage() {
             </p>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            disabled={!sound.chime && !sound.voice}
+            onClick={() =>
+              announce({
+                path: callVoicePath(PREVIEW_ORDER_NO, false),
+                chime: true,
+              })
+            }
+          >
+            試しに聞く
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            {PREVIEW_ORDER_NO}
+            番の呼び出しを、今の設定（チャイム・読み上げ・エコー）でこの端末から流します
+          </p>
+        </div>
+        <audio src={brightNotifications} ref={chimeRef} preload="auto">
+          <track kind="captions" />
+        </audio>
+        <audio ref={voiceRef} preload="none">
+          <track kind="captions" />
+        </audio>
       </section>
 
       <div className="flex flex-wrap gap-2">

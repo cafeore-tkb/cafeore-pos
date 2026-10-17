@@ -29,7 +29,7 @@ export const CALL_SCREEN_SOUND_DEFAULT: CallScreenSound = {
   chime: true,
   voice: true,
   echo: true,
-  echoLevel: 20,
+  echoLevel: 10,
 };
 
 /** 覚えたものを読む。無い・形の違う項目は既定のまま。エコーの強さは ECHO_LEVEL_MIN〜MAX の、ECHO_LEVEL_STEP 刻みに丸める */
