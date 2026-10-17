@@ -62,7 +62,7 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列。商品（削除・指名）、割引、備考、個別小計・一括会計
+ * レジの真ん中の列（会計の段階では左の列）。商品（削除・指名）、割引、備考、個別小計・一括会計
  *
  * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
  */
@@ -70,7 +70,13 @@ export const OrderPanel = (props: props) => {
   const { draft } = props;
   const paying = draft.step === "pay";
   return (
-    <div className="flex min-h-0 flex-col border-stone-200 border-l bg-stone-50">
+    <div
+      className={cn(
+        "flex min-h-0 flex-col border-stone-200 border-x bg-stone-50 transition-[border-color] duration-300",
+        // 線は隣の列との間に引く。入れる段階はメニューとの間（左）、会計の段階は左端の列になるので内訳との間（右）
+        paying ? "border-l-transparent" : "border-r-transparent",
+      )}
+    >
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col transition-opacity duration-200",
@@ -87,7 +93,7 @@ export const OrderPanel = (props: props) => {
           onClick={props.onOpenItems}
           disabled={!props.canOpenItems}
           title="商品を選び、その分を小計として先に会計します"
-          className="h-13 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
+          className="h-20 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
         >
           個別小計
         </button>
@@ -101,7 +107,7 @@ export const OrderPanel = (props: props) => {
                 ? "会計をやめて商品の入力に戻ります"
                 : "この小計を途中まで払ったので、払い終えるか取り消すまで戻れません"
             }
-            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] border border-stone-400 bg-white font-extrabold text-lg text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
+            className="flex h-20 items-center justify-center gap-2.5 rounded-[10px] border border-stone-400 bg-white font-extrabold text-lg text-stone-900 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
           >
             会計取消
             <KeyHint className="px-1.5 py-0.5 text-[11px]">Esc</KeyHint>
@@ -111,7 +117,7 @@ export const OrderPanel = (props: props) => {
             type="button"
             onClick={props.onGoPay}
             disabled={!canGoPay(draft)}
-            className="flex h-13 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
+            className="flex h-20 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
           >
             {props.prepaid > 0 ? "残りを会計" : "一括会計"}
             <KeyHint inverted className="px-1.5 py-0.5 text-[11px]">
