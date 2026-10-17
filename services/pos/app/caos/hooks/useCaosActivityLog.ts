@@ -19,6 +19,7 @@ export const useCaosActivityLog = () => {
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement;
       caosLog(`ui.${event.type}`, {
+        isTrusted: event.isTrusted,
         tag: target.tagName,
         pointer:
           event instanceof PointerEvent
@@ -95,6 +96,7 @@ export const useCaosActivityLog = () => {
         ].includes(event.key)
       )
         caosLog("ui.keydown", {
+          isTrusted: event.isTrusted,
           key: event.key,
           tag:
             event.target instanceof Element ? event.target.tagName : undefined,

@@ -267,10 +267,10 @@ export default function App() {
         onCloseViewing={viewed.close}
         notices={commentNotices.notices}
         onOpen={(comment) => {
-          commentNotices.dismiss([comment]);
+          commentNotices.dismiss([comment], "open");
           search.show(comment.orderNo);
         }}
-        onDismiss={commentNotices.dismiss}
+        onDismiss={(comments) => commentNotices.dismiss(comments)}
       />
 
       {selection.searchDigits !== null && (

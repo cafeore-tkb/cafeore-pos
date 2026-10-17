@@ -55,3 +55,24 @@ UI操作の記録と、業務操作の成功は別です。クリック・`opera
 コンソール出力はありません。端末に残してからDBに送り、`GET /api/caos/logs` とPOSトップの「ログを保存」（`GET /api/caos/logs/export`）で取得できます。通信不能や保存容量超過、ブラウザデータの消去などでは端末ログが完全には届かない可能性があります。サーバーの成功履歴は盤面/緊急/担当者の更新と同じトランザクションで保存します。
 
 同時間窓のcupはサーバー適用直前のスナップショットです。オフライン中に端末が見ていた盤面の完全な再現とは区別します。
+
+### コメントの記録
+
+- `comment.created`: コメント保存と同一トランザクションでサーバーが記録する成功履歴（export の operations）。details は orderId / orderNo / author / text。マスター以外の投稿も記録する。投稿画面はこの記録だけでは判別できない。既存コメントの遡及追加は行わない。
+- `comment.stamp.requested/succeeded/failed`: 画面からの返信試行と結果（entries）。
+- `comment.notice.received`: 新着受信。orderId / orderNo / key / shownIn（notification または viewing）。初回読込の既存コメントと返信スタンプは通知対象外。
+- `comment.notice.clicked`: 通知の「開く」を押した注文とコメントキー。
+- `comment.notices.dismissed`: reason が open なら通知から開く、close なら閉じる。閲覧による自動消去は notices.changed で追える。
+- `comment.mark.clicked`: カードのコメント印を押した label / count。
+- `search.result.changed`: 注文番号で検索した searched、注文ID、コメント件数・キー、カードキー。番号入力の待機後に記録する。検索結果が更新された場合も記録する。
+- `search.submitted`: Enter または検索パネルを閉じて確定した番号と注文ID・コメント件数。
+- `search.opened-from-comment`: コメント通知から番号検索を開いた注文番号。
+
+### 人間の操作とシステム処理の区分
+
+GET `/api/caos/logs` と保存JSONの entries / operations に `details.category` を付ける。
+- `human`: クリック、キー入力、ドラッグ、返信受付、通知クリック、検索確定など、明示的な操作の記録。
+- `system`: API送信・成功・失敗、新着通知受信、状態変化、自動更新など。operations はサーバーの処理成功履歴なので system（コメント保存結果も含む）。
+- 既存行も出力時にイベント名から分類する。分類は操作者の認証・本人証明ではない。未知イベントは system。新しいDOMログの isTrusted=false は system。古いDOMログにはこの情報がないためイベント名で推定する。
+- scroll は自動スクロールでも発火するため system。状態の changed は原則 system（明示的操作のハンドラー内だけで記録する音設定などを除く）。
+- 人間の操作だけを読む場合は entries から `details.category == "human"` を抽出する。処理成功まで追う場合は system の結果ログと operations も参照する。保存先DBのログ自体は削除・抑制しない。

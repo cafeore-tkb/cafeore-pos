@@ -5,6 +5,8 @@ import { createContext, useContext } from "react";
 import { orderNoLabel } from "../logic/cards";
 import { type BoardComment, STAMPS, commentKey } from "../logic/comments";
 
+import { caosLog } from "../utils/log";
+
 // 注文のコメント（レジなどで付けたもの）。カードの印と、開いたときの中身（スタンプで返す）と、右下の置き場（選んだ注文のコメント・新しいコメントの知らせ）
 
 /** コメントにスタンプで返す（hooks/useStampReply）。操作の画面（本番の盤面）にだけ渡す。無ければスタンプを出さない */
@@ -97,6 +99,7 @@ export const CommentMark: React.FC<{
       // カードを押したとき（開く）に渡さない（掴むのは、useCardDrag がボタンの上の押下を見ないので渡らない）
       onClick={(event) => {
         event.stopPropagation();
+        caosLog("comment.mark.clicked", { label, count });
         open(label);
       }}
       className={`touch-manipulation ${look}`}
@@ -213,7 +216,14 @@ export const CommentDock: React.FC<{
         >
           <button
             type="button"
-            onClick={() => onOpen(comment)}
+            onClick={() => {
+              caosLog("comment.notice.clicked", {
+                orderId: comment.orderId,
+                orderNo: comment.orderNo,
+                key: commentKey(comment),
+              });
+              onOpen(comment);
+            }}
             className="flex min-w-0 flex-1 touch-manipulation items-center gap-2 px-2 py-1.5 text-left"
           >
             <MessageSquareText className="text-(color:--caos-comment) h-5 w-5 shrink-0" />

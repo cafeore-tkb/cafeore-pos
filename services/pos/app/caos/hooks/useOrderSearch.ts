@@ -4,6 +4,7 @@ import { orderNoLabel } from "../logic/cards";
 import type { CommentsByOrder } from "../logic/comments";
 import type { Lane } from "../logic/lanes";
 import { findOrder, focusCard } from "../logic/search";
+import { caosLog } from "../utils/log";
 import { scrollCardIntoView } from "../utils/scrollToCard";
 import { useCaosStateLog } from "./useCaosStateLog";
 
@@ -103,8 +104,23 @@ export const useOrderSearch = ({
     searched,
     orderNo: found?.orderNo ?? null,
     cardKey: target?.key ?? null,
+    orderId: found?.orderId ?? null,
+    commentCount: found?.comments.length ?? 0,
+    commentKeys:
+      found?.comments.map((c) => ({
+        orderId: c.orderId,
+        createdAt: c.createdAt,
+      })) ?? [],
   });
   const finish = () => {
+    const result = digits
+      ? findOrder({ ...board, orderNo: Number(digits) })
+      : null;
+    caosLog("search.submitted", {
+      digits,
+      orderId: result?.orderId ?? null,
+      commentCount: result?.comments.length ?? 0,
+    });
     setSearched(digits);
     close();
   };
@@ -193,6 +209,7 @@ export const useOrderSearch = ({
     },
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
+      caosLog("search.opened-from-comment", { orderNo });
       const shown = String(orderNo);
       open(shown);
       setSearched(shown);
