@@ -1367,7 +1367,18 @@ const CashierV2 = ({
                 tenders={split.tenders}
                 context={context}
                 bar={bar}
+                due={due}
+                itemsSubtotal={current?.kind === "items"}
+                deferred={
+                  split.part !== null ? currentRemaining - split.part : null
+                }
+                cash={viewDraft.payment === "cash"}
+                received={viewDraft.received}
                 onRefundSubtotal={(subtotalId) => openRefund(subtotalId)}
+                onCancelPart={() => {
+                  updateDraft(cancelPart);
+                  resyncDisplay();
+                }}
                 hints={
                   <RegisterKeyHints
                     exampleKeys={exampleMenuKeys(items ?? [])}
@@ -1415,12 +1426,6 @@ const CashierV2 = ({
             <PayPanel
               draft={viewDraft}
               due={due}
-              itemsSubtotal={paying && current?.kind === "items"}
-              deferred={
-                paying && split.part !== null
-                  ? currentRemaining - split.part
-                  : null
-              }
               note={payNote}
               squarePaymentTypes={squarePaymentTypes}
               terminalSelect={squareSelect.status}
@@ -1447,10 +1452,6 @@ const CashierV2 = ({
               }
               onSubmitCash={() => submitCash(false)}
               onOpenSplit={openPart}
-              onCancelPart={() => {
-                updateDraft(cancelPart);
-                resyncDisplay();
-              }}
             />
           </div>
         </>

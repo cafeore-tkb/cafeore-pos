@@ -15,10 +15,6 @@ type props = {
   draft: CashierDraft;
   /** 小計。会計の段階は今払う額、入れる段階は注文の残り */
   due: number;
-  /** 個別小計の会計中（小計に「個別」の札を付ける） */
-  itemsSubtotal: boolean;
-  /** 小計分割中なら、あとに回した額（この小計の残り − 今払う額）。分けていなければ null */
-  deferred: number | null;
   /** 確定ボタンに添える説明（「分割 · この小計の残り ¥400」）。無ければ空 */
   note: string;
   /** 出す Square の決済手段。Square を使わないレジでは空 */
@@ -44,7 +40,6 @@ type props = {
   onExactReceived: () => void;
   onSubmitCash: () => void;
   onOpenSplit: () => void;
-  onCancelPart: () => void;
 };
 
 const QUICK_AMOUNTS = [
@@ -90,8 +85,9 @@ const methodColor = (payment: CashierPayment) =>
       };
 
 /**
- * レジの右の列。小計、決済手段、受取金額（テンキー）、お釣り、小計分割・確定
+ * レジの右の列。決済手段、受取金額（テンキー）、小計分割・確定
  *
+ * 小計は入れる段階だけここに出す。会計の段階では、小計・受取金額・お釣りは左の列（PayBreakdown）に出す。
  * テンキーは、入れる段階では引換券番号（行を選んでいればキーボードの数字と同じく指名）、
  * 会計の段階では受取金額に打つ。受取金額に足すボタン（+1千 など）はテンキーの上に、1 行の半分の高さで並べる。
  * Square の決済手段は押すとすぐ小計の額で端末に送る（↑↓ で選んで Enter でも送る）。
@@ -100,8 +96,6 @@ const methodColor = (payment: CashierPayment) =>
 export const PayPanel = ({
   draft,
   due,
-  itemsSubtotal,
-  deferred,
   note,
   squarePaymentTypes,
   terminalSelect,
@@ -118,7 +112,6 @@ export const PayPanel = ({
   onExactReceived,
   onSubmitCash,
   onOpenSplit,
-  onCancelPart,
 }: props) => {
   const paying = draft.step === "pay";
   const cash = draft.payment === "cash";
@@ -165,47 +158,25 @@ export const PayPanel = ({
 
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l px-3.75 py-3">
+      {/* 入れる段階の小計（注文の残り）。会計の段階では左の列に出す */}
+      {!paying && (
+        <div className="flex flex-none flex-col">
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="font-extrabold text-sm">小計</span>
+            <span className="flex-1" />
+            <span className="font-extrabold text-[27px] tabular-nums leading-[1.15] tracking-[-.01em]">
+              {formatYen(due)}
+            </span>
+          </div>
+          <div className="mt-2.25 mb-2.5 h-px bg-stone-200" />
+        </div>
+      )}
       <div
         className={cn(
           "flex flex-none flex-col transition-opacity duration-200",
           !paying && "pointer-events-none opacity-38",
         )}
       >
-        {deferred !== null && (
-          <div className="flex h-5.5 items-center gap-2 font-bold text-prepay text-xs">
-            <span>小計分割</span>
-            <button
-              type="button"
-              onClick={onCancelPart}
-              className="h-5 rounded-[5px] border border-stone-200 bg-white px-1.75 font-bold text-[10.5px] text-stone-600"
-            >
-              やめる
-            </button>
-            <span className="flex-1" />
-            <span className="font-extrabold text-[13px] tabular-nums">
-              {formatYen(-deferred)}
-            </span>
-          </div>
-        )}
-        <div className="mt-1 flex items-baseline gap-1.5">
-          <span className="font-extrabold text-sm">小計</span>
-          {paying && itemsSubtotal && (
-            <span className="self-center rounded-[5px] bg-prepay px-1.75 py-px font-extrabold text-[11px] text-white">
-              個別
-            </span>
-          )}
-          {deferred !== null && (
-            <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
-              分割
-            </span>
-          )}
-          <span className="flex-1" />
-          <span className="font-extrabold text-[27px] tabular-nums leading-[1.15] tracking-[-.01em]">
-            {formatYen(due)}
-          </span>
-        </div>
-        <div className="mt-2.25 mb-2.5 h-px bg-stone-200" />
-
         <div
           className="grid gap-2"
           style={{
@@ -362,31 +333,12 @@ export const PayPanel = ({
           !paying && "pointer-events-none opacity-38",
         )}
       >
-        <div className="mt-2.5 flex h-6.5 items-center justify-between">
-          <span className="font-medium text-stone-500 text-xs">お釣り</span>
-          <span
-            className={cn(
-              "font-extrabold tabular-nums",
-              cash && change !== null && change >= 0
-                ? "text-[22px] text-stone-900"
-                : "text-lg",
-              cash && change !== null && change < 0 && "text-red-700",
-              (!cash || change === null) && "text-stone-300",
-            )}
-          >
-            {!cash || change === null
-              ? "—"
-              : change < 0
-                ? `不足 ${formatYen(-change)}`
-                : formatYen(change)}
-          </span>
-        </div>
         {paying && !canSubmit && (
-          <p className="font-bold text-red-700 text-xs">
+          <p className="mt-2 font-bold text-red-700 text-xs">
             オフラインです。左上の No. を押して番号を指定すると送信できます
           </p>
         )}
-        <div className="mt-2 grid grid-cols-[104px_minmax(0,1fr)] gap-2">
+        <div className="mt-3 grid grid-cols-[104px_minmax(0,1fr)] gap-2">
           <button
             type="button"
             onClick={onOpenSplit}

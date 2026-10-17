@@ -25,15 +25,27 @@ type props = {
   context: string;
   /** 色分けの帯。出さなければ空 */
   bar: BreakdownBarSegment[];
+  /** 小計（今払う額） */
+  due: number;
+  /** 個別小計の会計中（小計に「個別」の札を付ける） */
+  itemsSubtotal: boolean;
+  /** 小計分割中なら、あとに回した額（この小計の残り − 今払う額）。分けていなければ null */
+  deferred: number | null;
+  /** 現金で払うか。Square の決済手段なら、受取金額とお釣りは出さない（—） */
+  cash: boolean;
+  /** 受取金額（数字だけ）。入れていなければ空 */
+  received: string;
   /** 先会計の行の ×。その小計で受け取った分をまとめて返金する */
   onRefundSubtotal: (subtotalId: number) => void;
+  /** 小計分割をやめる */
+  onCancelPart: () => void;
   /** 列の下に出すキーの案内 */
   hints: ReactNode;
 };
 
 /**
  * 会計中のレジの左の列（商品の一覧の場所）。合計・割引・先会計と決済手段ごとの行、
- * いまの小計の説明、色分けの帯を出す
+ * いまの小計の説明、色分けの帯と、小計・受取金額・お釣りを出す
  */
 export const PayBreakdown = ({
   itemCount,
@@ -44,7 +56,13 @@ export const PayBreakdown = ({
   tenders,
   context,
   bar,
+  due,
+  itemsSubtotal,
+  deferred,
+  cash,
+  received,
   onRefundSubtotal,
+  onCancelPart,
   hints,
 }: props) => (
   <div className="flex min-h-0 flex-col px-5 pt-4 pb-3.5">
@@ -120,6 +138,97 @@ export const PayBreakdown = ({
         </div>
       )}
     </div>
+    <PaySummary
+      due={due}
+      itemsSubtotal={itemsSubtotal}
+      deferred={deferred}
+      cash={cash}
+      received={received}
+      onCancelPart={onCancelPart}
+    />
     <div className="mt-auto">{hints}</div>
   </div>
 );
+
+/** 小計・受取金額・お釣り。お釣りはお客さんに伝える額なので一番大きく出す */
+const PaySummary = ({
+  due,
+  itemsSubtotal,
+  deferred,
+  cash,
+  received,
+  onCancelPart,
+}: Pick<
+  props,
+  "due" | "itemsSubtotal" | "deferred" | "cash" | "received" | "onCancelPart"
+>) => {
+  const receivedAmount = !cash || received === "" ? null : Number(received);
+  const change = receivedAmount === null ? null : receivedAmount - due;
+  return (
+    <div className="mt-4 flex flex-col border-stone-200 border-t pt-3">
+      {deferred !== null && (
+        <div className="flex h-7 items-center gap-2 font-bold text-prepay text-sm">
+          <span>小計分割</span>
+          <button
+            type="button"
+            onClick={onCancelPart}
+            className="h-6 rounded-[5px] border border-stone-200 bg-white px-2 font-bold text-stone-600 text-xs"
+          >
+            やめる
+          </button>
+          <span className="flex-1" />
+          <span className="font-extrabold text-[15px] tabular-nums">
+            {formatYen(-deferred)}
+          </span>
+        </div>
+      )}
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-extrabold text-[15px]">小計</span>
+        {itemsSubtotal && (
+          <span className="self-center rounded-[5px] bg-prepay px-1.75 py-px font-extrabold text-[11px] text-white">
+            個別
+          </span>
+        )}
+        {deferred !== null && (
+          <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
+            分割
+          </span>
+        )}
+        <span className="flex-1" />
+        <span className="font-extrabold text-[32px] tabular-nums leading-[1.25] tracking-[-.01em]">
+          {formatYen(due)}
+        </span>
+      </div>
+      <div className="flex items-baseline">
+        <span className="font-bold text-[15px] text-stone-600">受取金額</span>
+        <span className="flex-1" />
+        <span
+          className={cn(
+            "font-extrabold text-[32px] tabular-nums leading-[1.25] tracking-[-.01em]",
+            receivedAmount === null && "text-stone-300",
+          )}
+        >
+          {receivedAmount === null ? "—" : formatYen(receivedAmount)}
+        </span>
+      </div>
+      <div className="mt-3 flex items-baseline border-stone-200 border-t pt-2">
+        <span className="font-extrabold text-[15px]">お釣り</span>
+        <span className="flex-1" />
+        <span
+          className={cn(
+            "font-black tabular-nums leading-[1.2] tracking-[-.01em]",
+            change === null && "text-[44px] text-stone-300",
+            change !== null && change >= 0 && "text-[44px] text-stone-900",
+            change !== null && change < 0 && "text-[28px] text-red-700",
+          )}
+        >
+          {change === null
+            ? "—"
+            : change < 0
+              ? `不足 ${formatYen(-change)}`
+              : formatYen(change)}
+        </span>
+      </div>
+    </div>
+  );
+};
