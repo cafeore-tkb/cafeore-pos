@@ -96,7 +96,6 @@ export const VoiceComment = ({
     active.onend = () => {
       recognition.current = null;
       setListening(false);
-      setMessage((current) => current || "内容を確認して送信してください。");
     };
     try {
       setMessage("");
@@ -137,30 +136,21 @@ export const VoiceComment = ({
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <output className="text-[12px] text-slate-600">
-            {listening ? "聞き取り中… 話し終えたら停止してください" : message}
-          </output>
-          <textarea
-            aria-label="送信するコメント"
-            value={text}
-            disabled={listening || sending}
-            onChange={(event) => setText(event.target.value)}
-            rows={2}
-            placeholder="コメントを入力"
-            className="w-full resize-y rounded border border-slate-300 p-2 text-[16px] text-slate-950 disabled:bg-slate-100"
-          />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={sending}
-              onClick={() => {
-                stop();
-                setOpen(false);
-              }}
-              className="min-h-10 rounded border border-slate-300 px-3 text-sm disabled:opacity-40"
-            >
-              閉じる
-            </button>
+          {(listening || message) && (
+            <output className="text-[12px] text-slate-600">
+              {listening ? "聞き取り中… 話し終えたら停止してください" : message}
+            </output>
+          )}
+          <div className="flex min-w-0 items-stretch gap-2">
+            <textarea
+              aria-label="送信するコメント"
+              value={text}
+              disabled={listening || sending}
+              onChange={(event) => setText(event.target.value)}
+              rows={2}
+              placeholder="コメントを入力"
+              className="min-w-0 flex-1 resize-y rounded border border-slate-300 p-2 text-[16px] text-slate-950 disabled:bg-slate-100"
+            />
             <button
               type="button"
               disabled={listening || sending || !text.trim()}
@@ -171,7 +161,7 @@ export const VoiceComment = ({
                   setOpen(false);
                 }
               }}
-              className="min-h-10 rounded bg-slate-900 px-3 font-bold text-sm text-white disabled:opacity-40"
+              className="min-h-10 w-16 shrink-0 rounded bg-slate-900 px-2 font-bold text-sm text-white disabled:opacity-40"
             >
               {sending ? "送信中" : "送信"}
             </button>
