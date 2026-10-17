@@ -361,9 +361,13 @@ const CashierV2 = ({
   }, [fixedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
+  const checkCoupon = useCallback(
+    (value: string) => couponStatus(value, orders ?? []),
+    [orders],
+  );
   const coupon = useMemo(
-    () => couponStatus(draft.coupon, orders ?? []),
-    [draft.coupon, orders],
+    () => checkCoupon(draft.coupon),
+    [checkCoupon, draft.coupon],
   );
   const couponApplied = coupon.kind === "available";
   const couponOrderRef = useRef<WithId<OrderEntity> | null>(null);
@@ -940,6 +944,7 @@ const CashierV2 = ({
         held: heldKeyValues(held),
         heldLineKeys: heldLineKeys(held),
         repeat: event.repeat,
+        checkCoupon,
       });
       if (intent.type === "ignore") {
         return;
@@ -1005,6 +1010,7 @@ const CashierV2 = ({
     viewDraft,
     items,
     payments,
+    checkCoupon,
     due,
     updateDraft,
     openAssign,
@@ -1280,7 +1286,9 @@ const CashierV2 = ({
               }
               onSquare={startSquarePayment}
               onDigits={(digits) =>
-                updateDraft((current) => inputDigits(current, digits))
+                updateDraft((current) =>
+                  inputDigits(current, digits, checkCoupon),
+                )
               }
               onDeleteDigit={() => updateDraft(deleteDigit)}
               onClearDigits={() => updateDraft(clearDigits)}
