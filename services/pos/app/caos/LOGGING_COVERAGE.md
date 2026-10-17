@@ -29,7 +29,7 @@
 | 交代ダイアログ・予定の設定 | `ui.lane-dialog.changed`、`shift-feed.key.*` / `load.*` / `reload`。合言葉の文字列は含めない | `useCaosLanes` / `useShiftFeed` |
 | コメントを表示・閉じる・通知を閉じる | `ui.workspace.changed` / `ui.selection.changed`、`comment.notices.*` | `App` / `useBoardSelection` / `useCommentNotices` |
 | スタンプ返信 | `comment.stamp.requested` / `succeeded` / `failed`。order IDとスタンプ、共通actionId | `useStampReply` |
-| 豆キューの棚卸し・入荷 | `inventory.requested` / `succeeded` / `rejected` / `failed`。在庫対象・数量・結果 | `BeanQueueView` → `StockCard` |
+| 豆残量確認の棚卸し・入荷 | `inventory.requested` / `succeeded` / `rejected` / `failed`。在庫対象・数量・結果 | `BeanQueueView` → `StockCard` |
 | 緊急シールの印刷・自動再送 | `printer.print.*` / `printer.resend.*`。入れ直しID/未印刷IDと、印刷成功/未印刷キューへの追加 | `useCupEmergency` → `usePrinter` |
 | プリンターの手動再接続・再送・接続状態 | `printer.retry` / `printer.state.changed` | `useCaosSession` |
 | 未送信操作の再送・破棄・拒否 | `outbox.retry` / `discard` / `send` / `response` / `error` / `rejected` | `useCaosOutbox` |

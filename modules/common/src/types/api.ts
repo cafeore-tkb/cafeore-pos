@@ -506,7 +506,8 @@ export interface paths {
     /**
      * Square Terminal にお客さんが決済手段を選ぶ画面を出す
      * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
-     * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+     * お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘）が選ばれたら、
+     * レジが分け方（個別小計・小計分割）を選ぶウィンドウを出す。スタッフがレジで決済手段を選んだら取り消す。
      * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
      * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
      * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。
@@ -1450,16 +1451,22 @@ export interface components {
       checkout: components["schemas"]["SquareCheckoutResponse"];
     };
     /**
-     * @description 決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+     * @description 決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、
+     * スタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
      * 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
      *
      * @enum {string}
      */
-    SquareActionOption: "CASH" | "CARD_PRESENT" | "FELICA_ALL" | "QR_CODE";
+    SquareActionOption:
+      | "CASH"
+      | "CARD_PRESENT"
+      | "FELICA_ALL"
+      | "QR_CODE"
+      | "SPLIT";
     /**
      * @description レジが次に何をすべきかをサーバーが判定したもの。
      *   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
-     *   - selected: お客さんが選んだ。selected の決済手段で会計する
+     *   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
      *   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
      *
      * @enum {string}
@@ -1472,7 +1479,7 @@ export interface components {
       idempotency_key: string;
       /** @description 今払う額（円）。画面に出す */
       amount: number;
-      /** @description 端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個 */
+      /** @description 端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個 */
       options: components["schemas"]["SquareActionOption"][];
     };
     SquareActionResponse: {
@@ -1489,7 +1496,7 @@ export interface components {
       cancel_reason?: string | null;
       amount: number;
       options: components["schemas"]["SquareActionOption"][];
-      /** @description お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る */
+      /** @description お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る */
       selected?: string | null;
       error_message?: string | null;
       /** Format: date-time */
@@ -3299,7 +3306,8 @@ export interface operations {
   /**
    * Square Terminal にお客さんが決済手段を選ぶ画面を出す
    * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
-   * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+   * お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘）が選ばれたら、
+   * レジが分け方（個別小計・小計分割）を選ぶウィンドウを出す。スタッフがレジで決済手段を選んだら取り消す。
    * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
    * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
    * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。

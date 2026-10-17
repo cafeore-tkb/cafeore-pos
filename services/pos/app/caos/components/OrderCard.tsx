@@ -468,7 +468,7 @@ const MergeOverlay: React.FC = () => (
 );
 
 /**
- * 統合の解除。統合したカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children
+ * 統合の解除。未割当は結果が同じなので「分ける」1つ。割当済みは1杯ずつ「外す」で残すほうを選べる。開いたカードの children
  * （注文番号の行を隠さないよう下の行に重ねる）か、詳細のパネルに置く
  */
 export const SplitCupButtons: React.FC<{
@@ -481,19 +481,23 @@ export const SplitCupButtons: React.FC<{
   className = "absolute bottom-1 left-1 z-[75] flex",
 }) => (
   <div className={`gap-1 ${className}`}>
-    {card.cups.map((cup) => (
-      <button
-        key={cup.id}
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onSplit(cup.id);
-        }}
-        className="min-h-[32px] touch-manipulation whitespace-nowrap rounded-md border-2 border-red-300 bg-white px-2 font-black font-mono text-[12px] text-red-700 shadow-sm active:bg-red-50"
-      >
-        #{orderNoLabel(cup.orderNo)} 外す
-      </button>
-    ))}
+    {(card.status === "unassigned" ? card.cups.slice(0, 1) : card.cups).map(
+      (cup) => (
+        <button
+          key={cup.id}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSplit(cup.id);
+          }}
+          className="min-h-[32px] touch-manipulation whitespace-nowrap rounded-md border-2 border-red-300 bg-white px-2 font-black font-mono text-[12px] text-red-700 shadow-sm active:bg-red-50"
+        >
+          {card.status === "unassigned"
+            ? "分ける"
+            : `#${orderNoLabel(cup.orderNo)} 外す`}
+        </button>
+      ),
+    )}
   </div>
 );
 
