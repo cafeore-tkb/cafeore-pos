@@ -40,6 +40,17 @@
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
+  /* レジの先払い（個別小計・小計分割）。撫子色を沈めた色で、先会計・小計分割の地と文字に使う */
+  --color-prepay: #9b5c73;
+  --color-prepay-ink: #6e3b4f;
+  --color-prepay-line: #d9a9ba;
+  --color-prepay-soft: #f8eef2;
+  --color-prepay-tint: #fbf4f6;
+  /* レジの決済手段の色。現金は橙、Square は theme-primary。内訳の帯・印にも使う */
+  --color-cash: #c24e1f;
+  --color-cash-tint: #fff4ee;
+  --color-square-tint: #eef3f7;
+  --color-emoney: #6a9cc4;
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);

@@ -36,6 +36,8 @@ export type SquarePaymentState = {
   idempotencyKey: string;
   /** 決済を始めた時点の注文。支払い中に画面の注文が変わっても、これを送る */
   order: OrderEntity;
+  /** 端末で受け取る額。ふつうは注文の請求額、個別小計・小計分割ではその小計（の一部）の額 */
+  amount: number;
   checkout: SquareCheckout | null;
   /** 端末に決済画面を出せた（onStarted を呼んだ） */
   started: boolean;
@@ -164,7 +166,7 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
         const checkout = await squareRepository.createCheckout({
           idempotencyKey: base.idempotencyKey,
           deviceId: base.deviceId,
-          amount: base.order.billingAmount,
+          amount: base.amount,
           paymentType: base.paymentType,
           orderNumber: base.order.orderId,
         });
@@ -208,9 +210,14 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
     [applyCheckout],
   );
 
-  /** 端末に決済画面を出す */
+  /** 端末に決済画面を出す。amount を省くと注文の請求額 */
   const start = useCallback(
-    (order: OrderEntity, paymentType: SquarePaymentType, deviceId: string) => {
+    (
+      order: OrderEntity,
+      paymentType: SquarePaymentType,
+      deviceId: string,
+      amount = order.billingAmount,
+    ) => {
       if (state !== null) {
         return;
       }
@@ -220,6 +227,7 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
         deviceId,
         idempotencyKey: crypto.randomUUID(),
         order: order.clone(),
+        amount,
         checkout: null,
         started: false,
         conflicting: null,
@@ -229,12 +237,29 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
     [state, create],
   );
 
-  /** 端末に届かなかったとき、同じ依頼を送り直す */
+  /**
+   * もう一度送る。端末に届かなかったときは同じ依頼を送り直す（二重にならない）。
+   * 端末で決済できなかった（残高不足・取り消しなど）ときは、新しい依頼として送る
+   */
   const retry = useCallback(() => {
-    if (state === null || state.checkout !== null) {
+    if (state === null) {
       return;
     }
-    void create(state);
+    if (state.checkout === null) {
+      void create(state);
+      return;
+    }
+    if (state.phase !== "failed") {
+      return;
+    }
+    void create({
+      ...state,
+      idempotencyKey: crypto.randomUUID(),
+      checkout: null,
+      started: false,
+      conflicting: null,
+      message: null,
+    });
   }, [state, create]);
 
   /** 進行中の決済を取り消す */

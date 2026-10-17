@@ -159,7 +159,12 @@ export const squareRepository = {
     return refundResult(data, error, response);
   },
 
-  /** 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ） */
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ）
+   *
+   * 個別会計で Square の決済が複数あれば全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 戻り値はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+   */
   async refundOrder(orderId: string): Promise<SquareCheckout> {
     const { data, error, response } = await apiClient.POST(
       "/api/orders/{id}/square-refund",
@@ -171,6 +176,7 @@ export const squareRepository = {
   /**
    * 注文に使った Square の決済を全額返金し、注文は残す（戻り値と例外は refundCheckout と同じ）
    *
+   * 個別会計で Square の決済が複数あれば全部を返金する（戻り値の選び方は refundOrder と同じ）。
    * 返金の状態は、配られた注文の squareRefundStatus で分かる。
    */
   async refundOrderKeepingOrder(orderId: string): Promise<SquareCheckout> {

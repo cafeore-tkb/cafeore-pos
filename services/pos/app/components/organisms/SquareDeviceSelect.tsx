@@ -39,14 +39,14 @@ export const SquareDeviceSelect = ({
   const [open, setOpen] = useState(false);
 
   if (devices.length === 0 && !missing) {
-    return <div className="text-sm text-stone-400">Square 端末未登録</div>;
+    return <div className="text-[13px] text-stone-400">Square 端末未登録</div>;
   }
 
   const trigger =
     device !== null ? (
       <Button
         variant="ghost"
-        className="h-8 px-2 text-stone-500"
+        className="h-11 px-2.5 font-medium text-[13px] text-stone-500 hover:bg-stone-100"
         disabled={disabled}
       >
         Square: {device.name}
@@ -54,7 +54,7 @@ export const SquareDeviceSelect = ({
     ) : (
       <Button
         variant={missing ? "destructive" : "outline"}
-        className="h-8 gap-1 px-3"
+        className="h-11 gap-1 px-3"
         disabled={disabled}
       >
         <ExclamationTriangleIcon />

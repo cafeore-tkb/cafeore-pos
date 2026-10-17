@@ -9,6 +9,8 @@ export type MenuFormValues = {
   abbr: string;
   price: number;
   key: string;
+  /** 大きいほどレジ・商品管理で先に並ぶ */
+  priority: number;
   items: { item: WithId<ItemEntity>; quantity: number }[];
 };
 
@@ -33,6 +35,7 @@ export function MenuForm({
     initialMenu ? String(initialMenu.price) : "",
   );
   const [key, setKey] = useState(initialMenu?.key ?? "");
+  const [priority, setPriority] = useState(String(initialMenu?.priority ?? 0));
   const [validationError, setValidationError] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>(
     Object.fromEntries(
@@ -73,6 +76,11 @@ export function MenuForm({
           setValidationError("価格は0以上で入力してください");
           return;
         }
+        const parsedPriority = Number(priority);
+        if (priority.trim() === "" || !Number.isInteger(parsedPriority)) {
+          setValidationError("優先度は整数で入力してください");
+          return;
+        }
         if (keyTaken) {
           setValidationError(`キー「${key}」は他のメニューで使われています`);
           return;
@@ -90,6 +98,7 @@ export function MenuForm({
           abbr,
           price: parsedPrice,
           key,
+          priority: parsedPriority,
           items: selectedItems,
         });
       }}
@@ -152,6 +161,20 @@ export function MenuForm({
               レジでこのキーを押すと追加されます。取り込み・書き出しでメニューの見分けにも使います
             </p>
           )}
+        </div>
+        <div className="grid content-start gap-2">
+          <Label htmlFor={`${id}-priority`}>優先度</Label>
+          <Input
+            id={`${id}-priority`}
+            inputMode="numeric"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            placeholder="0"
+            required
+          />
+          <p className="text-muted-foreground text-xs">
+            大きいほどレジで先（左上）に並びます。同じなら名前の順。種別の並びは、その種別で一番大きい優先度の順です
+          </p>
         </div>
       </div>
 

@@ -23,6 +23,8 @@ type Props = {
   refund: () => Promise<SquareCheckout>;
   /** Square が返金を受け付けたあと */
   onRefunded?: (checkout: SquareCheckout) => void;
+  /** 押すボタンの見た目を変える */
+  triggerClassName?: string;
   children?: ReactNode;
 };
 
@@ -36,6 +38,7 @@ export const SquareRefundButton = ({
   orderOnRefund,
   refund,
   onRefunded,
+  triggerClassName,
   children = "返金",
 }: Props) => {
   const [open, setOpen] = useState(false);
@@ -82,7 +85,7 @@ export const SquareRefundButton = ({
       }}
     >
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline">
+        <Button size="sm" variant="outline" className={triggerClassName}>
           {children}
         </Button>
       </AlertDialogTrigger>

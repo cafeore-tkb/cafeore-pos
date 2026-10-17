@@ -55,7 +55,10 @@ const OrderIdDisplay = ({
 
   const handleOrderIdKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        // 上下キーで番号を増減させない
+        e.preventDefault();
+      } else if (e.key === "Enter") {
         handleOrderIdBlur();
       } else if (e.key === "Escape") {
         setIsEditingOrderId(false);
@@ -68,7 +71,7 @@ const OrderIdDisplay = ({
     <div className="flex items-center gap-2">
       {isEditingOrderId ? (
         <div className="flex items-center gap-1">
-          <span className="font-extrabold text-3xl">No.</span>
+          <span className="font-extrabold text-[28px]">No.</span>
           <input
             ref={orderIdInputRef}
             type="number"
@@ -76,7 +79,7 @@ const OrderIdDisplay = ({
             onChange={handleOrderIdChange}
             onBlur={handleOrderIdBlur}
             onKeyDown={handleOrderIdKeyDown}
-            className="w-24 rounded border-2 border-theme px-2 py-1 font-extrabold text-3xl"
+            className="w-24 rounded border-2 border-theme-primary px-2 py-0.5 font-extrabold text-[28px]"
           />
         </div>
       ) : (
@@ -84,9 +87,9 @@ const OrderIdDisplay = ({
           type="button"
           onClick={handleOrderIdClick}
           className={cn(
-            "font-extrabold text-3xl",
+            "font-extrabold text-[28px]",
             isEditable &&
-              "cursor-pointer underline decoration-dotted hover:text-theme",
+              "cursor-pointer underline decoration-dotted hover:text-theme-primary",
           )}
           title={
             isEditable
@@ -100,7 +103,7 @@ const OrderIdDisplay = ({
         </button>
       )}
       {isNeedManualOrderId && (
-        <span className="rounded bg-yellow-500 px-2 py-1 text-sm text-white">
+        <span className="rounded bg-yellow-500 px-2 py-0.5 font-bold text-white text-xs">
           オフライン
         </span>
       )}
@@ -108,7 +111,7 @@ const OrderIdDisplay = ({
         <button
           type="button"
           onClick={() => onOrderIdOverride(null)}
-          className="rounded bg-gray-400 px-2 py-1 text-sm text-white hover:bg-gray-500"
+          className="rounded bg-stone-400 px-2 py-0.5 font-bold text-white text-xs hover:bg-stone-500"
         >
           自動に戻す
         </button>

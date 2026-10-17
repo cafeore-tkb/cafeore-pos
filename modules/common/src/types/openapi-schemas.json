@@ -124,7 +124,7 @@
   },
   "MenuResponse": {
     "type": "object",
-    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "required": ["id", "name", "abbr", "price", "key", "priority", "items"],
     "properties": {
       "id": {
         "type": "string",
@@ -141,6 +141,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ"
       },
       "items": {
         "type": "array",
@@ -166,6 +170,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま"
       },
       "items": {
         "type": "array",
@@ -505,6 +513,7 @@
       "billing_amount",
       "received",
       "payment_method",
+      "payments",
       "menus",
       "cups"
     ],
@@ -548,6 +557,13 @@
       },
       "square_refund_status": {
         "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。一括で払った注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentResponse"
+        }
       },
       "menus": {
         "type": "array",
@@ -603,6 +619,13 @@
         "format": "uuid",
         "nullable": true,
         "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は\nSquare の支払いを含めば square、含まなければ cash になる。\n",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentCreate"
+        }
       },
       "menu_ids": {
         "type": "array",
@@ -1476,6 +1499,83 @@
     "enum": ["cash", "square"],
     "default": "cash",
     "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
+  },
+  "OrderPaymentCreate": {
+    "type": "object",
+    "required": ["method", "amount", "received"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）"
+      },
+      "received": {
+        "type": "integer",
+        "description": "お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）"
+      },
+      "discount": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "この支払いで引いた割引（円）"
+      },
+      "menu_indexes": {
+        "type": "array",
+        "description": "この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      }
+    }
+  },
+  "OrderPaymentResponse": {
+    "type": "object",
+    "required": ["method", "amount", "received", "discount", "order_menu_ids"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount": {
+        "type": "integer"
+      },
+      "order_menu_ids": {
+        "type": "array",
+        "description": "この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "square_payment_type": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square で払ったときの決済画面の種類（SquarePaymentType の値）"
+      },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      }
+    }
   },
   "SquarePaymentType": {
     "type": "string",

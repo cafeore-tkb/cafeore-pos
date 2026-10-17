@@ -1,6 +1,7 @@
 import {
   type Order,
   OrderEntity,
+  type WithId,
   cashierRepository,
   cashierStateWireSchema,
   orderRepository,
@@ -25,9 +26,14 @@ const OFFLINE_TOAST_ID = "cashier-offline-orders";
  * つながったら sendUnsentOrders でまとめて送る。
  * 失敗したら、保存できるまで消えないトーストで知らせ、「再送」で同じ内容を送り直せるようにする。
  * 応答が届かなくてもサーバー側では保存できていることがあるので、同じ注文には同じ
- * idempotencyKey を付けて送り、送り直しで二重にしない
+ * idempotencyKey を付けて送り、送り直しで二重にしない。
+ * onSaved は、すぐに送って保存できたときだけ呼ぶ（溜めた注文・再送で保存できたときは呼ばない）
  */
-const saveOrderInBackground = (order: OrderEntity, online: boolean) => {
+const saveOrderInBackground = (
+  order: OrderEntity,
+  online: boolean,
+  onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+) => {
   const idempotencyKey = newKey();
   updateUnsentOrders((orders) => ({
     ...orders,
@@ -38,9 +44,13 @@ const saveOrderInBackground = (order: OrderEntity, online: boolean) => {
     return;
   }
   saver(order, idempotencyKey, false)().then(
-    // cashier-mini の「ご注文ありがとうございました」の表示用
-    (savedOrder) =>
-      cashierRepository.setSubmittedOrder(savedOrder).catch(console.error),
+    (savedOrder) => {
+      onSaved?.(savedOrder);
+      // cashier-mini の「ご注文ありがとうございました」の表示用
+      return cashierRepository
+        .setSubmittedOrder(savedOrder)
+        .catch(console.error);
+    },
     (error) =>
       notifySaveFailed(
         order.orderId,

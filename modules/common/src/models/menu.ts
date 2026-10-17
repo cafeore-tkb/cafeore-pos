@@ -15,6 +15,8 @@ export const menuSchema = z.object({
   abbr: z.string(),
   price: z.number().int(),
   key: z.string(),
+  // レジ・商品管理での並びの優先度。大きいほど先。優先度より前のデータには無いので 0 にする
+  priority: z.number().int().default(0),
   items: z.array(menuItemSchema).min(1),
   // 指名の自由記述（ラベルに印刷する文）。指名するときは dripper が必須
   assignee: z.string().nullable(),
@@ -23,8 +25,11 @@ export const menuSchema = z.object({
 });
 
 export type Menu = z.infer<typeof menuSchema>;
-// dripper を省いてよい形（番号より前のデータ・指名しないメニュー）
-type MenuInput = Omit<Menu, "dripper"> & { dripper?: number | null };
+// dripper・priority を省いてよい形（番号・優先度より前のデータ・指名しないメニュー）
+type MenuInput = Omit<Menu, "dripper" | "priority"> & {
+  dripper?: number | null;
+  priority?: number;
+};
 
 type LegacyMenu = {
   id?: string;
@@ -35,6 +40,7 @@ type LegacyMenu = {
   item_type: z.infer<typeof itemSchema>["item_type"];
   assignee: string | null;
   dripper?: number | null;
+  priority?: number;
 };
 
 export class MenuEntity implements Menu {
@@ -44,6 +50,7 @@ export class MenuEntity implements Menu {
     private readonly _abbr: string,
     private readonly _price: number,
     private readonly _key: string,
+    private readonly _priority: number,
     private readonly _items: { item: WithId<ItemEntity>; quantity: number }[],
     private _assignee: string | null,
     private _dripper: number | null,
@@ -51,7 +58,7 @@ export class MenuEntity implements Menu {
   ) {}
 
   static createNew(
-    menu: Omit<Menu, "id" | "assignee" | "dripper">,
+    menu: Omit<MenuInput, "id" | "assignee" | "dripper">,
   ): MenuEntity {
     return MenuEntity.fromMenu({ ...menu, assignee: null, dripper: null });
   }
@@ -83,6 +90,7 @@ export class MenuEntity implements Menu {
       menu.abbr,
       menu.price,
       menu.key,
+      menu.priority ?? 0,
       items.map(({ item, quantity }) => ({
         item: ItemEntity.fromItem(item),
         quantity,
@@ -110,6 +118,9 @@ export class MenuEntity implements Menu {
   }
   get key() {
     return this._key;
+  }
+  get priority() {
+    return this._priority;
   }
   get items() {
     return this._items;
@@ -144,6 +155,7 @@ export class MenuEntity implements Menu {
       abbr: this.abbr,
       price: this.price,
       key: this.key,
+      priority: this.priority,
       items: this.items.map(({ item, quantity }) => ({
         item: item.toItem(),
         quantity,

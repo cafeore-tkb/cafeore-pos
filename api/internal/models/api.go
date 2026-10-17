@@ -469,6 +469,9 @@ type MenuCreateRequest struct {
 	Key   string            `json:"key"`
 	Name  string            `json:"name"`
 	Price int               `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // MenuInfo defines model for MenuInfo.
@@ -523,6 +526,9 @@ type MenuResponse struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ
+	Priority int `json:"priority"`
 }
 
 // MenuUpdateRequest defines model for MenuUpdateRequest.
@@ -533,6 +539,9 @@ type MenuUpdateRequest struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // OrderCreateRequest defines model for OrderCreateRequest.
@@ -552,7 +561,12 @@ type OrderCreateRequest struct {
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
-	Received      int            `json:"received"`
+
+	// Payments 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
+	// amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+	// Square の支払いを含めば square、含まなければ cash になる。
+	Payments *[]OrderPaymentCreate `json:"payments,omitempty"`
+	Received int                   `json:"received"`
 
 	// SquareCheckoutId payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
 	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
@@ -602,6 +616,52 @@ type OrderListItem struct {
 	ServedAt          *time.Time         `json:"served_at"`
 }
 
+// OrderPaymentCreate defines model for OrderPaymentCreate.
+type OrderPaymentCreate struct {
+	// Amount この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）
+	Amount int `json:"amount"`
+
+	// Discount この支払いで引いた割引（円）
+	Discount *int `json:"discount,omitempty"`
+
+	// MenuIndexes この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）
+	MenuIndexes *[]int `json:"menu_indexes,omitempty"`
+
+	// Method 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	Method PaymentMethod `json:"method"`
+
+	// Received お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）
+	Received int `json:"received"`
+
+	// SquareCheckoutId method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。
+	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
+}
+
+// OrderPaymentResponse defines model for OrderPaymentResponse.
+type OrderPaymentResponse struct {
+	Amount   int `json:"amount"`
+	Discount int `json:"discount"`
+
+	// Method 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	Method PaymentMethod `json:"method"`
+
+	// OrderMenuIds この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない
+	OrderMenuIds     []openapi_types.UUID `json:"order_menu_ids"`
+	Received         int                  `json:"received"`
+	SquareCheckoutId *openapi_types.UUID  `json:"square_checkout_id"`
+
+	// SquarePaymentType Square で払ったときの決済画面の種類（SquarePaymentType の値）
+	SquarePaymentType *string `json:"square_payment_type"`
+
+	// SquareRefundStatus 返金（全額）の状態。
+	//   - none: 返金を頼んでいない
+	//   - pending: Square に頼んだ。結果を待っている
+	//   - refunded: 返金が終わった
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+	SquareRefundStatus *SquareRefundStatus `json:"square_refund_status,omitempty"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
 	BillingAmount int                `json:"billing_amount"`
@@ -618,9 +678,12 @@ type OrderResponse struct {
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod PaymentMethod `json:"payment_method"`
-	ReadyAt       *time.Time    `json:"ready_at"`
-	Received      int           `json:"received"`
-	ServedAt      *time.Time    `json:"served_at"`
+
+	// Payments 個別会計の支払い（払った順）。一括で払った注文では空
+	Payments []OrderPaymentResponse `json:"payments"`
+	ReadyAt  *time.Time             `json:"ready_at"`
+	Received int                    `json:"received"`
+	ServedAt *time.Time             `json:"served_at"`
 
 	// SquareRefundStatus 返金（全額）の状態。
 	//   - none: 返金を頼んでいない

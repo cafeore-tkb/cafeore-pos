@@ -31,12 +31,12 @@ const ReadyTimeEstimate = ({ orders, drinkCups }: Props) => {
 
   return (
     <div
-      className="flex items-baseline gap-2"
+      className="flex items-baseline gap-1.5"
       title="まだ提供可能になっていないドリンクの杯数から予測しています"
     >
-      <span className="text-muted-foreground text-sm">提供まで</span>
-      <span className="font-bold text-2xl">約 {minutes} 分</span>
-      <span className="text-muted-foreground text-sm">（待ち {stack} 杯）</span>
+      <span className="text-[13px] text-stone-500">提供まで</span>
+      <span className="font-bold text-xl">約 {minutes} 分</span>
+      <span className="text-[13px] text-stone-500">待ち {stack} 杯</span>
     </div>
   );
 };

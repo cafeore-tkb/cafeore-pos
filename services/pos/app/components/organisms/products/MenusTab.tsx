@@ -60,6 +60,12 @@ export function MenusTab({
                   {menu.key}
                 </kbd>
               </span>
+              <span className="text-muted-foreground text-sm">
+                優先度{" "}
+                <span className="font-medium text-foreground tabular-nums">
+                  {menu.priority}
+                </span>
+              </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {menu.items.map(({ item, quantity }) => {

@@ -29,6 +29,12 @@ const SQUARE_PAYMENT_LABEL: Partial<Record<string, string>> = {
   QR_CODE: "QRコード決済",
 } satisfies Record<SquarePaymentType, string>;
 
+/**
+ * 小計を分けて払ったとき（小計分割・一部金額先払い）の、この支払いの前後。
+ * prepaid はこの小計で先に払った額、deferred はこのあとに払う額
+ */
+export type ReceiptSplit = { prepaid: number; deferred: number };
+
 /** 左に名前（と個数）、右に金額を置く 1 行 */
 export type ReceiptRow = {
   label: string;
@@ -100,20 +106,35 @@ const receiptItems = (order: OrderEntity): ReceiptRow[] => {
  *
  * 商品ごとの金額・割引・合計と、現金ならお預り・お釣り、Square なら決済手段を載せる。
  * 日時は注文を確定した時刻（日本時間）。
+ *
+ * 個別小計では order はその小計の商品だけの注文。小計を金額で分けて払ったとき（split）は、
+ * 小計から先に払った額とあとで払う額を引いた残りを、この支払いの合計にする。
  */
 export const orderReceipt = (
   order: OrderEntity,
   payment: ReceiptPayment,
+  split?: ReceiptSplit,
 ): OrderReceipt => {
   const createdAt = order.createdAt.getTime();
   const date = jstDate(createdAt).replaceAll("-", "/");
   const time = jstClock(createdAt).slice(0, 5);
+  const prepaid = split?.prepaid ?? 0;
+  const deferred = split?.deferred ?? 0;
+  const total = order.billingAmount - prepaid - deferred;
 
   const adjustments =
-    order.discount > 0
+    order.discount > 0 || prepaid > 0 || deferred > 0
       ? [
           { label: "小計", amount: yen(order.total) },
-          { label: "割引", amount: yen(-order.discount) },
+          ...(order.discount > 0
+            ? [{ label: "割引", amount: yen(-order.discount) }]
+            : []),
+          ...(prepaid > 0
+            ? [{ label: "先にお支払い済み", amount: yen(-prepaid) }]
+            : []),
+          ...(deferred > 0
+            ? [{ label: "あとでお支払い", amount: yen(-deferred) }]
+            : []),
         ]
       : [];
 
@@ -121,7 +142,7 @@ export const orderReceipt = (
     payment.method === "cash"
       ? [
           { label: "お預り", amount: yen(order.received) },
-          { label: "お釣り", amount: yen(order.getCharge()) },
+          { label: "お釣り", amount: yen(order.received - total) },
         ]
       : [
           {
@@ -129,7 +150,7 @@ export const orderReceipt = (
               (payment.paymentType &&
                 SQUARE_PAYMENT_LABEL[payment.paymentType]) ??
               "キャッシュレス決済",
-            amount: yen(order.billingAmount),
+            amount: yen(total),
           },
         ];
 
@@ -138,7 +159,7 @@ export const orderReceipt = (
     orderNo: orderNo(order),
     items: receiptItems(order),
     adjustments,
-    total: yen(order.billingAmount),
+    total: yen(total),
     payments,
     claimNumber: `${order.orderId}`,
   };

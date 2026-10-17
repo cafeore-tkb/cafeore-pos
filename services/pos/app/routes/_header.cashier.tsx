@@ -1,5 +1,6 @@
 import {
   OrderEntity,
+  type WithId,
   cashierRepository,
   orderRepository,
   orderSchema,
@@ -12,10 +13,15 @@ import { useCallback, useEffect } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
+  useOutletContext,
   useSubmit,
 } from "react-router";
 import useSWR from "swr";
 import { z } from "zod";
+import type {
+  HeaderOutletContext,
+  StatusBarHandle,
+} from "~/components/functional/connectionIssues";
 import {
   notifyOfflineOrders,
   saveOrderInBackground,
@@ -31,10 +37,14 @@ export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
 };
 
+// つながっていないものはレジのヘッダーに出すので、上のバーは色だけにする
+export const handle: StatusBarHandle = { compactStatusBar: true };
+
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
+  const { connectionIssues } = useOutletContext<HeaderOutletContext>();
   const { isDeviceOnline } = useDeviceOnlineStatus();
   const submit = useSubmit();
   // 今すぐ保存できるか（つながっているか）は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
@@ -52,7 +62,10 @@ export default function Cashier() {
   }, [canSaveNow, connecting]);
 
   const submitPayload = useCallback(
-    (newOrder: OrderEntity) => saveOrderInBackground(newOrder, canSaveNow),
+    (
+      newOrder: OrderEntity,
+      onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+    ) => saveOrderInBackground(newOrder, canSaveNow, onSaved),
     [canSaveNow],
   );
   // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
@@ -97,6 +110,7 @@ export default function Cashier() {
       items={items}
       orders={orders}
       wsStatus={status}
+      connectionIssues={connectionIssues}
       canSaveNow={canSaveNow}
       squareEnabled={squareEnabled}
       squareDevice={squareDevice}
