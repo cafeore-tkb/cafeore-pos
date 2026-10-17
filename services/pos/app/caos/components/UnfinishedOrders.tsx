@@ -1,21 +1,22 @@
 import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
+import lateIcon from "../icons/late.svg";
 import { labelHasOrder, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
 import { CommentList } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 
-// 未割当の欄のタブ（「未割当」と「未完了」）と、未完了の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
-// 未完了は、去年までのマスターシートのように、まだ提供していない注文を注文番号の順に、受けてからの時間（15 分を超えたら赤）・今の状態・コメントで並べる。
+// 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
+// 未提供は、去年までのマスターシートのように、まだ提供していない注文を注文番号の順に、受けてからの時間（15 分を超えたら赤）・今の状態・コメントで並べる。
 // 行を押すとその注文を番号の検索と同じく選んで見せる。コメントにはスタンプで返せる（CommentList）。
 
-/** 未割当の欄に「未完了」のタブを出すときに渡すもの（操作の画面だけ。閲覧だけの画面では渡さない） */
+/** 未割当の欄に「未提供」のタブを出すときに渡すもの（操作の画面だけ。閲覧だけの画面では渡さない） */
 export interface UnfinishedView {
   tab: UnassignedTab;
   onSelectTab: (tab: UnassignedTab) => void;
-  /** 「未完了」のタブの印の件数（まだ見ていない 15 分超の注文と新しいコメント） */
+  /** 「未提供」のタブの印の件数（まだ見ていない 15 分超の注文と新しいコメント） */
   badge: number;
   rows: readonly UnfinishedOrder[];
   /** 選んだ注文（orderLabel。その行に選択中の黄の輪） */
@@ -30,7 +31,7 @@ const TAB_ON = "border-slate-900 bg-slate-900 text-white";
 const TAB_OFF = "border-slate-300 bg-white text-slate-600 hover:bg-slate-100";
 
 /**
- * 未割当の欄の見出し。view があれば「未割当」「未完了」のタブにし、children（件数）は「未割当」のタブの中に添える。
+ * 未割当の欄の見出し。view があれば「未割当」「未提供」のタブにし、children（件数）は「未割当」のタブの中に添える。
  * view が無ければ（閲覧だけの画面）タブにせず、今までどおり題と、その横に children を並べる。className で字の大きさ（アイコンも合わせる）
  */
 export const UnassignedHeading: React.FC<{
@@ -74,13 +75,23 @@ export const UnassignedHeading: React.FC<{
         className={`${TAB} ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
-        未完了
+        未提供
+        {view.rows.some((row) => row.late) && (
+          <img
+            src={lateIcon}
+            alt="提供待ち15分以上"
+            className="h-6 w-6 rounded-full bg-white"
+          />
+        )}
         <span className="font-mono text-[0.8em] opacity-75">
           {view.rows.length} 件
         </span>
+        <span className="font-mono text-[0.8em]">
+          最長 {clockLabel(Math.max(0, ...view.rows.map((row) => row.waitSec)))}
+        </span>
         {view.badge > 0 && (
           <output
-            aria-label={`未完了に新しい知らせ ${view.badge} 件`}
+            aria-label={`未提供に新しい知らせ ${view.badge} 件`}
             className="-top-1 -right-2 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-black font-mono text-[11px] text-white leading-none"
           >
             {view.badge}
@@ -91,7 +102,7 @@ export const UnassignedHeading: React.FC<{
   );
 };
 
-/** 未完了の注文の 1 行。上を押すとその注文を選び、下にコメント（とスタンプ） */
+/** 未提供の注文の 1 行。上を押すとその注文を選び、下にコメント（とスタンプ） */
 const UnfinishedRow: React.FC<{
   row: UnfinishedOrder;
   selected: boolean;
@@ -115,6 +126,13 @@ const UnfinishedRow: React.FC<{
       >
         {clockLabel(row.waitSec)}
       </span>
+      {row.late && (
+        <img
+          src={lateIcon}
+          alt="提供待ち15分以上"
+          className="h-7 w-7 rounded-full bg-white"
+        />
+      )}
       {row.emergency && (
         <span className="rounded-md border-2 border-red-800 bg-red-600 px-1.5 font-black text-[12px] text-white">
           緊急
@@ -150,7 +168,7 @@ const LIST_LAYOUT = {
 } as const;
 
 /**
- * 未完了の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C・D の右の列）
+ * 未提供の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C・D の右の列）
  */
 export const UnfinishedList: React.FC<{
   view: UnfinishedView;

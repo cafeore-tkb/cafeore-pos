@@ -75,12 +75,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -622,7 +622,7 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
-      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない */
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む） */
       dripper: number | null;
       /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
       dripper_position: number | null;
@@ -820,6 +820,13 @@ export interface components {
       /** @example #bfdbfe */
       color: string;
     };
+    /**
+     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+     * tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+     *
+     * @enum {string}
+     */
+    ReceiptPrinterModel: "tm_l90" | "tm_m30";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -831,6 +838,7 @@ export interface components {
        * @example 192.168.77.3
        */
       receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -843,6 +851,7 @@ export interface components {
        * @example 192.168.77.3
        */
       receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1616,7 +1625,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1630,7 +1639,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {

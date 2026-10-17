@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,8 +27,9 @@ func NewPrinterSettingHandler(db *gorm.DB) *PrinterSettingHandler {
 
 func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSettingsResponse {
 	return models.PrinterSettingsResponse{
-		LabelPrinterIp:   setting.LabelPrinterIP,
-		ReceiptPrinterIp: setting.ReceiptPrinterIP,
+		LabelPrinterIp:      setting.LabelPrinterIP,
+		ReceiptPrinterIp:    setting.ReceiptPrinterIP,
+		ReceiptPrinterModel: models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
 	}
 }
 
@@ -51,11 +53,17 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	if err != nil {
 		return models.PrinterSetting{}, err
 	}
+	switch request.ReceiptPrinterModel {
+	case models.ReceiptPrinterModelTmL90, models.ReceiptPrinterModelTmM30:
+	default:
+		return models.PrinterSetting{}, errors.New("receipt_printer_model must be tm_l90 or tm_m30")
+	}
 	return models.PrinterSetting{
-		ID:               models.PrinterSettingID,
-		LabelPrinterIP:   label,
-		ReceiptPrinterIP: receipt,
-		UpdatedAt:        time.Now(),
+		ID:                  models.PrinterSettingID,
+		LabelPrinterIP:      label,
+		ReceiptPrinterIP:    receipt,
+		ReceiptPrinterModel: string(request.ReceiptPrinterModel),
+		UpdatedAt:           time.Now(),
 	}, nil
 }
 

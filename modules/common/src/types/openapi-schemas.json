@@ -390,7 +390,7 @@
         "nullable": true,
         "minimum": 1,
         "maximum": 6,
-        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない"
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）"
       },
       "dripper_position": {
         "type": "integer",
@@ -856,9 +856,20 @@
       }
     }
   },
+  "ReceiptPrinterModel": {
+    "type": "string",
+    "description": "レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。\ntm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）\n",
+    "enum": ["tm_l90", "tm_m30"],
+    "x-enum-varnames": ["ReceiptPrinterModelTmL90", "ReceiptPrinterModelTmM30"],
+    "x-enum-descriptions": ["TM-L90", "TM-m30"]
+  },
   "PrinterSettingsResponse": {
     "type": "object",
-    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model"
+    ],
     "properties": {
       "label_printer_ip": {
         "type": "string",
@@ -869,12 +880,19 @@
         "type": "string",
         "description": "レシート・領収書用のプリンターの IPv4 アドレス",
         "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
       }
     }
   },
   "PrinterSettingsUpdateRequest": {
     "type": "object",
-    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model"
+    ],
     "properties": {
       "label_printer_ip": {
         "type": "string",
@@ -885,6 +903,9 @@
         "type": "string",
         "description": "レシート・領収書用のプリンターの IPv4 アドレス",
         "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
       }
     }
   },

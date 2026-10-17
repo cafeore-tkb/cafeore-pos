@@ -38,6 +38,12 @@ const (
 	Square PaymentMethod = "square"
 )
 
+// Defines values for ReceiptPrinterModel.
+const (
+	ReceiptPrinterModelTmL90 ReceiptPrinterModel = "tm_l90"
+	ReceiptPrinterModelTmM30 ReceiptPrinterModel = "tm_m30"
+)
+
 // Defines values for SquareCheckoutOutcome.
 const (
 	Attention SquareCheckoutOutcome = "attention"
@@ -583,7 +589,7 @@ type OrderCupResponse struct {
 	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
 	DripId *openapi_types.UUID `json:"drip_id"`
 
-	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
@@ -717,6 +723,10 @@ type PrinterSettingsResponse struct {
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
 }
 
 // PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
@@ -726,7 +736,15 @@ type PrinterSettingsUpdateRequest struct {
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
 }
+
+// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+type ReceiptPrinterModel string
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
 type SquareCheckoutConflictResponse struct {
