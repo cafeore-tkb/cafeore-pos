@@ -34,7 +34,7 @@ func toMasterStateResponse(masterState *models.MasterState) models.MasterStateRe
 // GET /api/master-status - オーダー状態取得
 func (h *MasterStateHandler) GetMasterStatus(c *gin.Context) {
 	var masterStatus []models.MasterState
-	if err := h.db.Find(&masterStatus).Error; err != nil {
+	if err := h.db.Order("created_at ASC").Find(&masterStatus).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

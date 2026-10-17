@@ -41,7 +41,7 @@ func TestGetMasterStatusOrdersByCreatedAtAsc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if w := serveMasterStatus(NewMasterStateHandler(db, nil).GetMasterStatus, http.MethodGet, ""); w.Code != http.StatusOK {
+	if w := serveMasterStatus(NewMasterStateHandler(db, nil, nil).GetMasterStatus, http.MethodGet, ""); w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	if !strings.Contains(sql, "ORDER BY created_at ASC") {
@@ -51,7 +51,7 @@ func TestGetMasterStatusOrdersByCreatedAtAsc(t *testing.T) {
 
 func TestUpdateMasterStatusRejectsUnknownType(t *testing.T) {
 	// 検証で弾くので DB には触らない
-	h := NewMasterStateHandler(nil, nil)
+	h := NewMasterStateHandler(nil, nil, nil)
 	for _, body := range []string{`{"type":"paused"}`, `{"type":""}`, `{}`} {
 		if w := serveMasterStatus(h.UpdateMasterStatus, http.MethodPost, body); w.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", body, w.Code)
@@ -62,7 +62,7 @@ func TestUpdateMasterStatusRejectsUnknownType(t *testing.T) {
 // POST の応答も GET・WebSocket と同じ snake_case のキーで返し、master_state を配信する
 func TestUpdateMasterStatusRespondsAndBroadcasts(t *testing.T) {
 	hub := NewHub()
-	h := NewMasterStateHandler(newDryRunDB(t), hub)
+	h := NewMasterStateHandler(newDryRunDB(t), hub, nil)
 	w := serveMasterStatus(h.UpdateMasterStatus, http.MethodPost, `{"type":"stop"}`)
 
 	if w.Code != http.StatusCreated {
