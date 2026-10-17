@@ -242,15 +242,19 @@ export const OrderCard: React.FC<
       {children}
       {mergeTap && <MergeOverlay />}
       <DropMark side={dropSide} />
-      {/* タイムラインは新着だけ左上に印。未割当は注文見出しに集約（押すと中身を右下に出す） */}
-      {badgeComments.length > 0 && (
-        <CommentMark count={badgeComments.length} label={orderLabel(card)} />
-      )}
       {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
+        {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
+        {!parts && badgeComments.length > 0 && (
+          <CommentMark
+            count={badgeComments.length}
+            label={orderLabel(card)}
+            className="h-5 w-5 shrink-0"
+          />
+        )}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {!text.emergencyBelow && emergencyTag(text.cups)}
@@ -276,18 +280,24 @@ export const OrderCard: React.FC<
                   <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
                 </div>
               )}
-              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右に並べ、番号は字の間を、段は札の間を詰める */}
               <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
-                <span className="relative shrink-0">
+                <span className="flex min-w-0 shrink-0 items-center gap-1">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
                     `tracking-tighter ${text.no}`,
                   )}
-                  {part.comments > 0 && (
+                  {badgeComments.some(
+                    (comment) => comment.orderNo === part.orderNo,
+                  ) && (
                     <CommentMark
-                      count={part.comments}
+                      count={
+                        badgeComments.filter(
+                          (comment) => comment.orderNo === part.orderNo,
+                        ).length
+                      }
                       label={`#${orderNoLabel(part.orderNo)}`}
-                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                      className="h-4 w-4 shrink-0"
                     />
                   )}
                 </span>
