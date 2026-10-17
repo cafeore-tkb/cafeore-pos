@@ -583,7 +583,7 @@ type OrderCupResponse struct {
 	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
 	DripId *openapi_types.UUID `json:"drip_id"`
 
-	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）

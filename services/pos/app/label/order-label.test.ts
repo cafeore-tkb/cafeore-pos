@@ -1,7 +1,7 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import type { Label, TextLine } from "./document";
-import { cancelLabelJob, cupLabelJob, orderLabelJob } from "./order-label";
+import { cupLabelJob, orderLabelJob } from "./order-label";
 
 const hotType: ItemType = {
   id: "1",
@@ -160,28 +160,5 @@ describe("[unit] cupLabelJob", () => {
       labels: [orderLabelJob(order).labels[1]],
     });
     expect(cupLabelJob(saved, "cup-クッキー")).toBeNull();
-  });
-});
-
-describe("[unit] cancelLabelJob", () => {
-  test("番号と、捨てるシールの枚数（カップの分と引換券の 1 枚）・中身を 1 枚に刷る", () => {
-    const order = orderOf(12, [
-      menu("俺ブレ", hotType, null),
-      menu("優ブレ", hotType, null),
-      menu("バッジ", goodsType, null),
-    ]);
-    const { labels } = cancelLabelJob(order);
-    expect(labels).toHaveLength(1);
-    expect(cupLines(labels[0])).toEqual([
-      " 取消 No.12",
-      " この番号のシールは捨てる",
-      " 3枚 俺ブレ・優ブレ",
-      " 会計を取り消しました",
-    ]);
-  });
-
-  test("抽出が要るものが無ければ、引換券のシール 1 枚だけを捨てる", () => {
-    const order = orderOf(3, [menu("バッジ", goodsType, null)]);
-    expect(cupLines(cancelLabelJob(order).labels[0])[2]).toBe(" 1枚 明細");
   });
 });

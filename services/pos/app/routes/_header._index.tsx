@@ -121,7 +121,7 @@ const sections: Section[] = [
         audience: "customer",
         where: "受け取り口の大型ディスプレイ",
         description:
-          "お呼び出し中の番号を大きく表示し、ドリップ中の番号も一覧。呼び出しのたびに通知音が鳴ります。",
+          "呼び出しが無い間は CM を流し、呼び出しが入るとお呼び出し中の番号を大きく表示。ドリップ中（ドリッパー付き）と準備中の番号も出し、呼び出しのたびに通知音のあと番号を読み上げ、ドリップを始めたら「〜番のお客様、ファーストにてドリップいたします」と案内します。",
       },
     ],
   },
@@ -173,6 +173,7 @@ const sections: Section[] = [
 const settingLinks = [
   { to: "/square-devices", label: "Square 端末" },
   { to: "/printer-settings", label: "プリンター" },
+  { to: "/callscreen-cm", label: "呼び出し画面の CM" },
 ];
 
 export default function Index() {
@@ -205,7 +206,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            Square 端末・プリンターを設定します
+            Square 端末・プリンター・呼び出し画面の CM を設定します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (

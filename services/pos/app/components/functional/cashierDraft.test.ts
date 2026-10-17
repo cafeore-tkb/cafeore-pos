@@ -77,7 +77,7 @@ describe("[unit] cashierDraft の商品", () => {
     expect(activeMenus(draft)).toEqual([]);
   });
 
-  test("会計の段階では商品を足さず、削除・選択・指名もしない（シールを先に刷っている）", () => {
+  test("会計の段階では商品を足さず、削除・選択・指名もしない（会計取消で戻ってから変える）", () => {
     const draft = goPay(withLines(blend));
     expect(addLine(draft, coaster)).toBe(draft);
     expect(removeLine(draft, 0)).toBe(draft);
@@ -229,6 +229,20 @@ describe("[unit] cashierKeyIntent", () => {
     expect(
       cashierKeyIntent(removeAllLines(draft), "Enter", { menus, payments })
         .type,
+    ).toBe("none");
+  });
+
+  test("入れる段階の → は一括会計する（商品が無ければ何もしない）。会計の段階では何もしない", () => {
+    const draft = keys(emptyCashierDraft(), "^");
+    expect(
+      cashierKeyIntent(draft, "ArrowRight", { menus, payments }).type,
+    ).toBe("goPay");
+    expect(
+      cashierKeyIntent(emptyCashierDraft(), "ArrowRight", { menus, payments })
+        .type,
+    ).toBe("none");
+    expect(
+      cashierKeyIntent(goPay(draft), "ArrowRight", { menus, payments }).type,
     ).toBe("none");
   });
 
