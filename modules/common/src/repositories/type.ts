@@ -2,7 +2,7 @@ import type { WithId } from "../lib/typeguard";
 import type { ColorSetting } from "../models/colorSetting";
 import type { ItemEntity, ItemType } from "../models/item";
 import type { MenuEntity } from "../models/menu";
-import type { OrderEntity, OrderPayment } from "../models/order";
+import type { OrderComment, OrderEntity, OrderPayment } from "../models/order";
 
 export type BaseRepository<T extends { id?: unknown }> = {
   save(data: T): Promise<WithId<T>>;
@@ -44,5 +44,5 @@ export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
   // カップ（1杯）単位の準備完了・提供済みの切り替え。切り替え後の注文を返す。
   readyCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
   serveCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
-  addComment(id: string, author: string, text: string): Promise<void>;
+  addComment(id: string, author: string, text: string): Promise<OrderComment>;
 };

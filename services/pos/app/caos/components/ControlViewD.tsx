@@ -45,6 +45,7 @@ import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
+import { OrderCommentBadge } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 import { UnassignedHeading, UnfinishedList } from "./UnfinishedOrders";
 
@@ -522,8 +523,9 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                 <div
                   className={`flex items-center justify-between gap-2 border-b-2 bg-slate-100 px-2 py-1 ${LINE}`}
                 >
-                  <h3 className="font-black font-mono text-[17px]">
+                  <h3 className="flex items-center gap-1 font-black font-mono text-[17px]">
                     注文 {group.key}
+                    <OrderCommentBadge cards={group.items} looks={looks} />
                   </h3>
                   <span className="font-black text-[13px]">
                     {totalCups(group.items)}杯

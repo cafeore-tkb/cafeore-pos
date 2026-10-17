@@ -5,6 +5,7 @@ import {
   jstDate,
   orderElapsedTime,
 } from "@cafeore/common";
+import { isPendingCaosReply, isSentCaosReply } from "./caosReplies";
 import { type CommentsByOrder, commentKey, isStampReply } from "./comments";
 import { type Lane, cardPlaces } from "./lanes";
 import { type FoundOrder, orderNow } from "./search";
@@ -93,7 +94,12 @@ export const unseenAlerts = (
     .map((row) => row.orderId),
   comments: rows
     .flatMap((row) => row.comments)
-    .filter((comment) => !isStampReply(comment))
+    .filter(
+      (comment) =>
+        !isStampReply(comment) &&
+        !isSentCaosReply(comment) &&
+        !isPendingCaosReply(comment),
+    )
     .map(commentKey)
     .filter((key) => !seen.comments.includes(key)),
 });

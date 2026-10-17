@@ -16,7 +16,7 @@ export const useCardMenu = ({
 }: {
   onRun: (card: CaosCard, action: CardBoardAction) => void;
   onEmergency: (card: CaosCard) => void;
-  onComments: (label: string) => void;
+  onComments: (label: string, anchor?: HTMLElement) => void;
 }) => {
   const [openKey, setOpenKey] = useState<string | null>(null);
   useOutsidePress(
@@ -31,10 +31,10 @@ export const useCardMenu = ({
     isOpen: (card: CaosCard) => card.key === openKey,
     toggle: (card: CaosCard) =>
       setOpenKey((key) => (key === card.key ? null : card.key)),
-    run: (card: CaosCard, action: CardAction) => {
+    run: (card: CaosCard, action: CardAction, anchor?: HTMLElement) => {
       setOpenKey(null);
       if (action === "emergency") onEmergency(card);
-      else if (action === "comment") onComments(orderLabel(card));
+      else if (action === "comment") onComments(orderLabel(card), anchor);
       else onRun(card, action);
     },
   };

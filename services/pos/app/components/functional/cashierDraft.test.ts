@@ -7,6 +7,7 @@ import {
   addReceived,
   assignLine,
   cashierKeyIntent,
+  cashierPaymentKeyIntent,
   clearDigits,
   couponStatus,
   cyclePayment,
@@ -395,5 +396,60 @@ describe("[unit] cashierKeyIntent", () => {
     expect(cashierKeyIntent(draft, "a", { menus, payments }).type).toBe(
       "ignore",
     );
+  });
+});
+
+describe("[unit] cashierPaymentKeyIntent", () => {
+  test("入れる段階は一括会計に進み、Alt+T・Q は進んだらその決済手段で始める", () => {
+    const draft = withLines(blend);
+    expect(cashierPaymentKeyIntent(draft, "KeyC", { payments })).toEqual({
+      type: "goPay",
+    });
+    expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
+      type: "goPay",
+      square: "CARD_PRESENT",
+    });
+    expect(cashierPaymentKeyIntent(draft, "KeyQ", { payments })).toEqual({
+      type: "goPay",
+      square: "QR_CODE",
+    });
+  });
+
+  test("商品が無ければ何もしない", () => {
+    expect(
+      cashierPaymentKeyIntent(emptyCashierDraft(), "KeyT", { payments }).type,
+    ).toBe("none");
+  });
+
+  test("会計の段階の Alt+C は現金を選ぶだけ、Alt+T・Q は決済を始める", () => {
+    const draft = { ...goPay(withLines(blend)), payment: "QR_CODE" as const };
+    const cash = cashierPaymentKeyIntent(draft, "KeyC", { payments });
+    expect(cash.type === "update" && cash.draft.payment).toBe("cash");
+    expect(cashierPaymentKeyIntent(draft, "KeyT", { payments })).toEqual({
+      type: "startSquare",
+      paymentType: "CARD_PRESENT",
+    });
+  });
+
+  test("今使えない Square の決済手段は知らせ、決済手段のキーでなければ扱わない", () => {
+    const draft = goPay(withLines(blend));
+    expect(
+      cashierPaymentKeyIntent(draft, "KeyQ", { payments: ["cash"] }),
+    ).toEqual({ type: "paymentUnavailable", paymentType: "QR_CODE" });
+    expect(cashierPaymentKeyIntent(draft, "KeyX", { payments }).type).toBe(
+      "ignore",
+    );
+  });
+
+  test("押しっぱなしの繰り返し（repeat）は、どの段階でも決済を始めない", () => {
+    const repeat = { payments, repeat: true };
+    const entry = withLines(blend);
+    const pay = goPay(entry);
+    for (const code of ["KeyC", "KeyT", "KeyQ"]) {
+      expect(cashierPaymentKeyIntent(entry, code, repeat).type).toBe("none");
+      expect(cashierPaymentKeyIntent(pay, code, repeat).type).toBe("none");
+    }
+    // 決済手段のキーでなければ、今までどおり扱わない
+    expect(cashierPaymentKeyIntent(pay, "KeyX", repeat).type).toBe("ignore");
   });
 });
