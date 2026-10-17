@@ -1,4 +1,5 @@
 import {
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useEffect,
   useLayoutEffect,
@@ -143,9 +144,16 @@ export const useTimelineScroll = ({
   }, [followLeftPx]);
   // 「現在」で滑らかに戻っている先と期限。着いたら・ほかの操作で null
   const returnRef = useRef<Return | null>(null);
-  const isPressing = usePressing(containerRef, () => {
+  const rulerDragRef = useRef<{
+    pointerId: number;
+    x: number;
+    left: number;
+    moved: boolean;
+  } | null>(null);
+  const nativePressing = usePressing(containerRef, () => {
     returnRef.current = null;
   });
+  const isPressing = () => nativePressing() || rulerDragRef.current !== null;
 
   useEffect(() => {
     onFollowingChange?.(isFollowingNow);
@@ -163,6 +171,7 @@ export const useTimelineScroll = ({
     previousOriginRef.current = originPx;
     const container = containerRef.current;
     if (!shiftPx || !container) return;
+    if (rulerDragRef.current) rulerDragRef.current.left -= shiftPx;
     returnRef.current = null;
     ownLeftRef.current = placeScroll(container, container.scrollLeft - shiftPx);
   }, [originPx]);
@@ -273,7 +282,58 @@ export const useTimelineScroll = ({
     container.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
   }, [command, cardInsetPx]);
 
+  // 時刻バーはカードを掴む操作と分離し、指・ペン・マウスで同じ1:1のパンにする。
+  const endRulerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = rulerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    rulerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    if (drag.moved && containerRef.current)
+      scheduleFollowCheck(containerRef.current.scrollLeft);
+  };
+  const rulerHandlers = {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const container = containerRef.current;
+      if (
+        !container ||
+        !event.isPrimary ||
+        event.button !== 0 ||
+        rulerDragRef.current
+      )
+        return;
+      returnRef.current = null;
+      window.clearTimeout(followSettleTimerRef.current);
+      // 進行中のsmooth scrollも止め、掴んだ位置から動かす。
+      container.scrollTo({ left: container.scrollLeft, behavior: "instant" });
+      rulerDragRef.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        left: container.scrollLeft,
+        moved: false,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = rulerDragRef.current;
+      const container = containerRef.current;
+      if (!drag || !container || drag.pointerId !== event.pointerId) return;
+      const delta = event.clientX - drag.x;
+      if (!drag.moved && Math.abs(delta) < 3) return;
+      drag.moved = true;
+      event.preventDefault();
+      returnRef.current = null;
+      ownLeftRef.current = null;
+      setIsFollowingNow(false);
+      placeScroll(container, drag.left - delta);
+    },
+    onPointerUp: endRulerDrag,
+    onPointerCancel: endRulerDrag,
+    onLostPointerCapture: endRulerDrag,
+  };
+
   return {
+    rulerHandlers,
     containerRef,
     onScroll,
     /** NOW を決まった位置に置いて追っている */

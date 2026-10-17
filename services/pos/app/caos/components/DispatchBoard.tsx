@@ -201,7 +201,10 @@ export const DispatchBoard: React.FC<
               )}
             </div>
             <div
-              className="relative h-full"
+              {...scroll.rulerHandlers}
+              data-timeline-ruler
+              title="左右にスワイプ・ドラッグして表示時間を移動"
+              className="relative h-full cursor-grab touch-none select-none active:cursor-grabbing"
               style={{ width: `${timelineWidthPx}px` }}
             >
               {markers.map((marker) => (
