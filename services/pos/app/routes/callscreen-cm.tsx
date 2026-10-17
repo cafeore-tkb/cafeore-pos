@@ -1,9 +1,11 @@
 import { useRef } from "react";
 import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
+import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Switch } from "~/components/ui/switch";
 import {
   CM_IMAGE_SECONDS_MAX,
   CM_IMAGE_SECONDS_MIN,
@@ -11,10 +13,46 @@ import {
   cmPlaylist,
   useCmPlaylist,
 } from "~/lib/callscreen-cm";
+import {
+  CALL_SCREEN_SOUND_DEFAULT,
+  type CallScreenSoundFlag,
+  ECHO_LEVEL_MAX,
+  ECHO_LEVEL_MIN,
+  ECHO_LEVEL_STEP,
+  setCallScreenSound,
+  useCallScreenSound,
+} from "~/lib/callscreen-sound";
+import { callVoicePath, useAnnouncer } from "./callscreen.hooks";
 
 export const meta: MetaFunction = () => {
   return [{ title: "呼び出し画面の CM / 珈琲・俺POS" }];
 };
+
+const SOUND_FIELDS: {
+  key: CallScreenSoundFlag;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "chime",
+    label: "チャイム",
+    description: "呼び出しの読み上げの前に鳴らします",
+  },
+  {
+    key: "voice",
+    label: "読み上げ",
+    description:
+      "呼び出しとドリップの案内を読み上げます。切ると読み上げの音声を作らせません",
+  },
+  {
+    key: "echo",
+    label: "読み上げのエコー",
+    description: "読み上げに少しエコーをかけます",
+  },
+];
+
+/** 試しに聞くときに読む番号 */
+const PREVIEW_ORDER_NO = 1;
 
 /** このブラウザで流せそうか（動画だけ見る。canPlayType が空なら流せない） */
 const playableHere = (item: CmItem) =>
@@ -23,7 +61,12 @@ const playableHere = (item: CmItem) =>
 
 export default function CallScreenCmPage() {
   const { items, imageSeconds } = useCmPlaylist();
+  const sound = useCallScreenSound();
   const fileRef = useRef<HTMLInputElement>(null);
+  // 試しに聞くとき用。呼び出し画面と同じ流し方（useAnnouncer）で鳴らす
+  const chimeRef = useRef<HTMLAudioElement>(null);
+  const voiceRef = useRef<HTMLAudioElement>(null);
+  const announce = useAnnouncer(chimeRef, voiceRef);
 
   const addFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -158,6 +201,86 @@ export default function CallScreenCmPage() {
           ))}
         </ol>
       )}
+
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h2 className="font-semibold text-lg">音</h2>
+          <p className="text-muted-foreground text-sm">
+            呼び出し画面で鳴らす音です。CM
+            のファイルと違い、この端末に覚えます（読み込み直しても残り、ほかのタブで開いている呼び出し画面にもすぐ効きます）。
+          </p>
+        </div>
+        <div className="grid gap-4">
+          {SOUND_FIELDS.map(({ key, label, description }) => (
+            <div key={key} className="flex items-start gap-3">
+              <Switch
+                id={`sound-${key}`}
+                checked={sound[key]}
+                disabled={key === "echo" && !sound.voice}
+                onCheckedChange={(checked) =>
+                  setCallScreenSound({ ...sound, [key]: checked })
+                }
+              />
+              <div className="grid gap-1">
+                <Label htmlFor={`sound-${key}`}>{label}</Label>
+                <p className="text-muted-foreground text-xs">{description}</p>
+              </div>
+            </div>
+          ))}
+          {/* スイッチの幅（w-11）と間（gap-3）だけずらし、エコーの欄の下にそろえる */}
+          <div className="grid gap-1 pl-14">
+            <Label htmlFor="sound-echo-level">エコーの強さ</Label>
+            <div className="flex items-center gap-3">
+              <input
+                id="sound-echo-level"
+                type="range"
+                min={ECHO_LEVEL_MIN}
+                max={ECHO_LEVEL_MAX}
+                step={ECHO_LEVEL_STEP}
+                value={sound.echoLevel}
+                disabled={!sound.voice || !sound.echo}
+                onChange={(e) =>
+                  setCallScreenSound({
+                    ...sound,
+                    echoLevel: Number(e.target.value),
+                  })
+                }
+                className="w-56 accent-primary disabled:opacity-50"
+              />
+              <span className="text-sm tabular-nums">{sound.echoLevel}%</span>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              返す声の大きさです（読み上げの声を 100% として）。既定は{" "}
+              {CALL_SCREEN_SOUND_DEFAULT.echoLevel}
+              %。上げるほど響きますが、番号は聞き取りにくくなります
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            disabled={!sound.chime && !sound.voice}
+            onClick={() =>
+              announce({
+                path: callVoicePath(PREVIEW_ORDER_NO, false),
+                chime: true,
+              })
+            }
+          >
+            試しに聞く
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            {PREVIEW_ORDER_NO}
+            番の呼び出しを、今の設定（チャイム・読み上げ・エコー）でこの端末から流します
+          </p>
+        </div>
+        <audio src={brightNotifications} ref={chimeRef} preload="auto">
+          <track kind="captions" />
+        </audio>
+        <audio ref={voiceRef} preload="none">
+          <track kind="captions" />
+        </audio>
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Button asChild>
