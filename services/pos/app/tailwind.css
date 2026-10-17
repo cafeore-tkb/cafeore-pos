@@ -138,10 +138,11 @@
   }
 }
 
-/* 呼び出し催促した番号の金の縁（callscreen.components の UrgentRim）。行き来させて、ゆっくり脈打たせる */
+/* 呼び出し催促した番号の金の縁（callscreen.components の UrgentRim）。行き来させて、ゆっくり脈打たせる。
+   暗いときも消し切らない（消し切るとほかの番号と見分けがつかない） */
 @keyframes call-urgent-pulse {
   from {
-    opacity: 0;
+    opacity: 0.4;
   }
   to {
     opacity: 1;

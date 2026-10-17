@@ -357,7 +357,7 @@ const URGENT_RIM =
 /** プレートの外ににじませる金の光（プレートは中身をはみ出させないので、外の光は脈打たせず一定で出す） */
 const URGENT_HALO =
   "0 0 48px 4px color-mix(in oklch, var(--color-theme-gold) 50%, transparent)";
-/** 縁の光が消えてから光り切るまでの長さ（行き来するので、1 回の脈はこの 2 倍） */
+/** 縁の光がいちばん暗いときから光り切るまでの長さ（行き来するので、1 回の脈はこの 2 倍） */
 const URGENT_PULSE_MS = 700;
 
 /**
