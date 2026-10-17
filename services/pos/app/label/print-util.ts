@@ -22,7 +22,11 @@ import {
   withPendingPrintsLock,
 } from "./pending-prints";
 import type { ReceiptPayment, ReceiptSplit } from "./receipt";
-import { formalReceiptJob, orderReceiptJob } from "./receipt-canvas";
+import {
+  claimReceiptJob,
+  formalReceiptJob,
+  orderReceiptJob,
+} from "./receipt-canvas";
 
 /**
  * プリンターにつないでおき、印刷データを刷る
@@ -188,10 +192,16 @@ export const useReceiptPrinter = (
     [print],
   );
 
-  /** 会計のたびに刷るレシート */
+  /** 会計のたびに刷るレシート。split（注文を何回かに分けて払う 1 回分）なら引換券番号は載せない */
   const printReceipt = useCallback(
     (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
       printSafely(() => orderReceiptJob(model, order, payment, split)),
+    [printSafely, model],
+  );
+
+  /** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート */
+  const printClaimReceipt = useCallback(
+    (order: OrderEntity) => printSafely(() => claimReceiptJob(model, order)),
     [printSafely, model],
   );
 
@@ -211,5 +221,5 @@ export const useReceiptPrinter = (
     [printSafely, model],
   );
 
-  return { status, printReceipt, printFormalReceipt };
+  return { status, printReceipt, printClaimReceipt, printFormalReceipt };
 };
