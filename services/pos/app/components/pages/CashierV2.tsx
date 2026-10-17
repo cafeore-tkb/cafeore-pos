@@ -348,7 +348,7 @@ const CashierV2 = ({
    */
   const printOrderLabel = printer.printOrderLabel;
 
-  // 先払いのレシートを刷った注文は、レシートの番号（引換券番号）のまま確定する（別のレジが送って次の番号が進んでも変えない）
+  // 先払いのレシートを刷った注文は、レシートに載せた番号（No.）のまま確定する（別のレジが送って次の番号が進んでも変えない）
   const fixedOrderId = draft.fixedOrderId;
   /**
    * FIXME #412 useEffect内でstateを更新している
@@ -489,10 +489,11 @@ const CashierV2 = ({
   );
 
   /**
-   * 会計中の小計で受け取った（一括で払う注文でないとき）。その分のレシートを刷り、受け取った分として覚える。
-   * 注文全体を払い終えたら、支払いを全部付けて注文を送り、支払いの内訳とお釣りを出す。
+   * 会計中の小計で受け取った（一括で払う注文でないとき）。その分のレシート（引換券番号は載せない）を刷り、
+   * 受け取った分として覚える。注文全体を払い終えたら、支払いを全部付けて注文を送り、引換券番号のレシートを
+   * 別に刷って、支払いの内訳とお釣りを出す。
    * まだ残っていれば、小計の残り（金額で分けた）か残りの商品（個別小計を払い終えた）を出し、
-   * レシートに載せた番号（引換券番号）で確定するよう、番号を固定する。
+   * レシートに載せた番号（No.）で確定するよう、番号を固定する。
    * 下書きは決済の途中（非同期）からも呼ぶので、ストアから今の値を読む
    */
   const completeTender = useCallback(
@@ -523,6 +524,7 @@ const CashierV2 = ({
       if (after.split.current === null && unpaidLines(after).length === 0) {
         const submitOne = splitOrderForSubmit(prepareSubmit(order), after);
         printOrderLabel(submitOne);
+        receiptPrinter.printClaimReceipt(submitOne);
         const paidBySquare = submitOne.payments.some(
           (payment) => payment.method === "square",
         );
