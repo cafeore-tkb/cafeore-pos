@@ -554,7 +554,7 @@ export const PartAmountDialog = ({
 };
 
 // --------------------------------------------------
-// 割り勘の分け方を選ぶ（お客さんが端末で「割り勘したい」を選んだ）
+// 割り勘の分け方を選ぶ（お客さんが端末で「割り勘」を選んだ）
 // --------------------------------------------------
 
 /** 分け方のボタン。押せないときは理由を出す */
@@ -601,7 +601,7 @@ const SplitChoiceButton = ({
 );
 
 /**
- * お客さんが端末で「割り勘したい」を選んだ。分け方を「個別小計」（商品で分ける）か
+ * お客さんが端末で「割り勘」を選んだ。分け方を「個別小計」（商品で分ける）か
  * 「小計分割・一部金額先払い」（金額で分ける）から選ぶ。1・2 のキーでも選べる
  */
 export const SplitChoiceDialog = ({
@@ -643,7 +643,7 @@ export const SplitChoiceDialog = ({
     <PrepayDialogShell
       open={open}
       width={540}
-      title="割り勘したい"
+      title="割り勘"
       sub="お客さんが端末で選びました。分け方を選んでください"
       aside={
         <span className="font-bold text-sm text-stone-600 tabular-nums">

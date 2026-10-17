@@ -1842,7 +1842,7 @@ paths:
       summary: Square Terminal にお客さんが決済手段を選ぶ画面を出す
       description: |
         Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
-        お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘したい）が選ばれたら、
+        お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘）が選ばれたら、
         レジが分け方（個別小計・小計分割）を選ぶウィンドウを出す。スタッフがレジで決済手段を選んだら取り消す。
         同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
         端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
@@ -3680,7 +3680,7 @@ components:
       # models.CARDPRESENT などが消える。こちらだけ名前を決めておく。
       x-enum-varnames: [OptionCash, OptionCardPresent, OptionFelicaAll, OptionQrCode, OptionSplit]
       description: |
-        決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘したい」（決済手段ではなく、
+        決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、
         スタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
         端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
     SquareActionOutcome:

@@ -197,7 +197,7 @@ type CashierDialogKind = "assign" | "memo" | "removeAll" | "reset";
 
 /** 先払い（個別小計・小計分割）のダイアログ */
 type PrepayDialogState =
-  /** お客さんが端末で「割り勘したい」を選んだ。分け方（個別小計・小計分割）を選ぶ */
+  /** お客さんが端末で「割り勘」を選んだ。分け方（個別小計・小計分割）を選ぶ */
   | { kind: "splitChoice" }
   /** 個別小計の商品を選ぶ */
   | { kind: "items" }
@@ -718,14 +718,14 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
-  // 割り勘の分け方。端末の「割り勘したい」は、どちらかに進めるときだけ並べる（小計分割の途中は並べない）
+  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる（小計分割の途中は並べない）
   const choices = splitChoices(draft);
   const offerSplit =
     split.part === null && (choices.items === null || choices.part === null);
 
   /**
    * お客さんが Square 端末で決済手段を選べるようにする（会計の段階で、スタッフがまだ選んでいない間）。
-   * 選んだら、その決済手段で会計する（onTerminalSelectedRef）。「割り勘したい」なら分け方を選ぶウィンドウを出す。
+   * 選んだら、その決済手段で会計する（onTerminalSelectedRef）。「割り勘」なら分け方を選ぶウィンドウを出す。
    * スタッフがレジで決済手段を選ぶ（dismiss）・決済を始める・会計を終える・今払う額が変わる・
    * 先払いのダイアログを開くと取り消す
    */
@@ -907,7 +907,7 @@ const CashierV2 = ({
   ]);
 
   // お客さんが端末で選んだ。現金ならレジを現金にして知らせ、Square の決済手段なら決済を始める。
-  // 「割り勘したい」なら分け方を選ぶウィンドウを出す
+  // 「割り勘」なら分け方を選ぶウィンドウを出す
   onTerminalSelectedRef.current = (option) => {
     if (option === "SPLIT") {
       setPrepayDialog({ kind: "splitChoice" });

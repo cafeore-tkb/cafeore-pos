@@ -154,7 +154,7 @@ func TestBuildTerminalAction(t *testing.T) {
 		{ReferenceID: "CASH", Title: "現金"},
 		{ReferenceID: "CARD_PRESENT", Title: "カード"},
 		{ReferenceID: "QR_CODE", Title: "QR コード"},
-		{ReferenceID: "SPLIT", Title: "割り勘したい"},
+		{ReferenceID: "SPLIT", Title: "割り勘"},
 	}
 	if len(action.SelectOptions.Options) != len(want) {
 		t.Fatalf("unexpected options: %+v", action.SelectOptions.Options)
