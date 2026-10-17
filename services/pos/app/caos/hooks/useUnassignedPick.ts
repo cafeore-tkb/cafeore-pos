@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ControlViewProps } from "../components/ControlWorkspace";
 import { orderLabel, quickMergePartner } from "../logic/cards";
 import { laneActive } from "../logic/lanes";
+import { useCaosStateLog } from "./useCaosStateLog";
 import {
   type DropTarget,
   dropTargetAt,
@@ -42,6 +43,7 @@ export const useUnassignedPick = ({
   onCancelEmergency?: (card: CaosCard) => void;
 }) => {
   const [openKey, setOpenKey] = useState<string | null>(null);
+  useCaosStateLog("ui.unassigned-menu.changed", { openKey });
   const openCard = orders.find((order) => order.key === openKey);
   const assign = (card: CaosCard, bayId: number, place?: CaosPlace) => {
     onAssignToBay(card, bayId, place);

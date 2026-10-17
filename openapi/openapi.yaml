@@ -646,6 +646,98 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/caos/logs/export:
+    get:
+      summary: CaOSのDBログをJSONファイルとして書き出す
+      operationId: exportCaosLogs
+      tags: [caos]
+      description: クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+      responses:
+        '200':
+          description: ログのJSONファイル
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exportedAt, entries, operations, cups]
+                properties:
+                  exportedAt:
+                    type: string
+                    format: date-time
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaosStoredLogEntry'
+                  operations:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  cups:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '500':
+          description: 書き出しに失敗
+  /api/caos/logs:
+    get:
+      summary: master-sheet の保存済みクライアント操作ログを取得する
+      operationId: getCaosLogs
+      tags: [caos]
+      description: 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: tab_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: event
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 保存済みログ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosLogPage'
+        '400':
+          description: 検索条件が不正
+        '500':
+          description: DBから取得できない
+    post:
+      summary: master-sheet のクライアント操作ログをまとめて保存する
+      operationId: createCaosLogs
+      tags: [caos]
+      description: 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosLogBatch'
+      responses:
+        '204':
+          description: 保存済み（重複を含む）
+        '400':
+          description: 不正なログ
+        '413':
+          description: リクエストが大きすぎる
   /api/caos/cups:
     put:
       summary: CaOS が決めたことを注文のカップに書く
@@ -2529,6 +2621,60 @@ components:
           type: string
           format: uuid
           nullable: true
+    CaosLogEntry:
+      type: object
+      required: [at, tabId, sequence, event, details]
+      properties:
+        at:
+          type: string
+          format: date-time
+        tabId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+        event:
+          type: string
+          minLength: 1
+          maxLength: 128
+        details:
+          type: object
+          additionalProperties: true
+    CaosStoredLogEntry:
+      allOf:
+        - $ref: '#/components/schemas/CaosLogEntry'
+        - type: object
+          required: [receivedAt]
+          properties:
+            receivedAt:
+              type: string
+              format: date-time
+    CaosLogPage:
+      type: object
+      required: [entries, limit, offset, hasMore]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaosStoredLogEntry'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        hasMore:
+          type: boolean
+    CaosLogBatch:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CaosLogEntry'
     CaosCupState:
       type: object
       description: カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
@@ -2588,6 +2734,10 @@ components:
         終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く
       required: [cup_ids, before, after]
       properties:
+        merge_into:
+          type: string
+          format: uuid
+          description: 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
         cup_ids:
           type: array
           minItems: 1

@@ -7,6 +7,8 @@ import {
   isStampReply,
 } from "../logic/comments";
 import { soundManager } from "../utils/audio";
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
 
 // 知らせから gone のものを除く（無ければそのまま。描き直さない）
 const without =
@@ -30,6 +32,9 @@ export const useCommentNotices = (
     viewed.current = viewedLabel;
   });
   const [notices, setNotices] = useState<readonly BoardComment[]>([]);
+  useCaosStateLog("comment.notices.changed", {
+    notices: notices.map((c) => ({ orderId: c.orderId, key: commentKey(c) })),
+  });
   useEffect(() => {
     if (!comments) return;
     const all = [...comments.values()].flat();
@@ -63,6 +68,7 @@ export const useCommentNotices = (
     notices,
     /** 知らせを消す（押した・閉じた） */
     dismiss: (dismissed: readonly BoardComment[]) => {
+      caosLog("comment.notices.dismissed", { keys: dismissed.map(commentKey) });
       const keys = new Set(dismissed.map(commentKey));
       setNotices(without((comment) => keys.has(commentKey(comment))));
     },

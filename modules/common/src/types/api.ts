@@ -132,6 +132,25 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/logs/export": {
+    /**
+     * CaOSのDBログをJSONファイルとして書き出す
+     * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+     */
+    get: operations["exportCaosLogs"];
+  };
+  "/api/caos/logs": {
+    /**
+     * master-sheet の保存済みクライアント操作ログを取得する
+     * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+     */
+    get: operations["getCaosLogs"];
+    /**
+     * master-sheet のクライアント操作ログをまとめて保存する
+     * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+     */
+    post: operations["createCaosLogs"];
+  };
   "/api/caos/cups": {
     /**
      * CaOS が決めたことを注文のカップに書く
@@ -864,6 +883,31 @@ export interface components {
       /** Format: uuid */
       submitted_order_id: string | null;
     };
+    CaosLogEntry: {
+      /** Format: date-time */
+      at: string;
+      /** Format: uuid */
+      tabId: string;
+      /** Format: int64 */
+      sequence: number;
+      event: string;
+      details: {
+        [key: string]: unknown;
+      };
+    };
+    CaosStoredLogEntry: components["schemas"]["CaosLogEntry"] & {
+      /** Format: date-time */
+      receivedAt: string;
+    };
+    CaosLogPage: {
+      entries: components["schemas"]["CaosStoredLogEntry"][];
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    CaosLogBatch: {
+      entries: components["schemas"]["CaosLogEntry"][];
+    };
     /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
     CaosCupState: {
       dripper: number | null;
@@ -898,6 +942,11 @@ export interface components {
      * 終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く
      */
     CaosCupsWrite: {
+      /**
+       * Format: uuid
+       * @description 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+       */
+      merge_into?: string;
       cup_ids: string[];
       before: components["schemas"]["CaosCupState"];
       after: components["schemas"]["CaosCupAfter"];
@@ -1897,6 +1946,89 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
+      };
+    };
+  };
+  /**
+   * CaOSのDBログをJSONファイルとして書き出す
+   * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+   */
+  exportCaosLogs: {
+    responses: {
+      /** @description ログのJSONファイル */
+      200: {
+        content: {
+          "application/json": {
+            /** Format: date-time */
+            exportedAt: string;
+            entries: components["schemas"]["CaosStoredLogEntry"][];
+            operations: {
+              [key: string]: unknown;
+            }[];
+            cups: {
+              [key: string]: unknown;
+            }[];
+          };
+        };
+      };
+      /** @description 書き出しに失敗 */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet の保存済みクライアント操作ログを取得する
+   * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+   */
+  getCaosLogs: {
+    parameters: {
+      query?: {
+        limit?: number;
+        offset?: number;
+        tab_id?: string;
+        event?: string;
+      };
+    };
+    responses: {
+      /** @description 保存済みログ */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLogPage"];
+        };
+      };
+      /** @description 検索条件が不正 */
+      400: {
+        content: never;
+      };
+      /** @description DBから取得できない */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet のクライアント操作ログをまとめて保存する
+   * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+   */
+  createCaosLogs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLogBatch"];
+      };
+    };
+    responses: {
+      /** @description 保存済み（重複を含む） */
+      204: {
+        content: never;
+      };
+      /** @description 不正なログ */
+      400: {
+        content: never;
+      };
+      /** @description リクエストが大きすぎる */
+      413: {
+        content: never;
       };
     };
   };

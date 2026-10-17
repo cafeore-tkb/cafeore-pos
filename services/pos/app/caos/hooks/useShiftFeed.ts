@@ -5,6 +5,8 @@ import {
 } from "@cafeore/common";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { caosLog } from "../utils/log";
+
 // sohosai-shift の担当者の予定（caosFeeds/{合言葉}）を読む。合言葉はビルドに入れず、各 iPad の CaOS の設定で入れて、
 // その端末に覚えさせる（localStorage）。合言葉が無い・読めないときは、名前の候補と上級生の判定が無いだけで、
 // 交代（名前の自由入力）は使える。
@@ -67,15 +69,20 @@ export const useShiftFeed = (enabled: boolean): ShiftFeedState => {
       setLoading(false);
       return;
     }
+    caosLog("shift-feed.load.requested", { configured: true });
     setLoading(true);
     try {
       const next = await fetchShiftFeed(key);
       if (request !== requestRef.current) return;
+      caosLog("shift-feed.load.succeeded");
       setFeed(next);
       setError(null);
       setFetchedAt(Date.now());
     } catch (err) {
       if (request !== requestRef.current) return;
+      caosLog("shift-feed.load.failed", {
+        error: "予定を取得できませんでした",
+      });
       setError(err instanceof Error ? err.message : "読めませんでした");
     } finally {
       if (request === requestRef.current) setLoading(false);
@@ -91,7 +98,11 @@ export const useShiftFeed = (enabled: boolean): ShiftFeedState => {
 
   const saveKey = (key: string) => {
     const normalized = normalizeFeedKey(key);
-    if (!normalized) return "合言葉の形が違います（空白や / は入りません）";
+    if (!normalized) {
+      caosLog("shift-feed.key.rejected");
+      return "合言葉の形が違います（空白や / は入りません）";
+    }
+    caosLog("shift-feed.key.saved", { configured: true });
     writeStoredKey(normalized);
     if (normalized === feedKey) void load(normalized);
     else {
@@ -104,6 +115,7 @@ export const useShiftFeed = (enabled: boolean): ShiftFeedState => {
   };
 
   const clearKey = () => {
+    caosLog("shift-feed.key.cleared");
     writeStoredKey("");
     setFeedKey("");
   };
@@ -116,6 +128,9 @@ export const useShiftFeed = (enabled: boolean): ShiftFeedState => {
     fetchedAt,
     saveKey,
     clearKey,
-    reload: () => void load(feedKey),
+    reload: () => {
+      caosLog("shift-feed.reload");
+      void load(feedKey);
+    },
   };
 };

@@ -6,8 +6,9 @@ import {
   jstDate,
   overlayCaosOrders,
 } from "@cafeore/common";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { caosLog, createCaosStateLog } from "../utils/log";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
 import { usePosOrders } from "./usePosOrders";
 
@@ -38,6 +39,26 @@ export const useLiveBoard = ({
     [orders, today, entries],
   );
   const cards = useMemo(() => buildCaosCards(board), [board]);
+  const [logState] = useState(() => createCaosStateLog());
+  const previousCards = useRef(new Map<string, string>());
+  useEffect(() => {
+    const next = new Map(cards.map((card) => [card.key, JSON.stringify(card)]));
+    const changed = cards.filter(
+      (card) => previousCards.current.get(card.key) !== next.get(card.key),
+    );
+    const removed = [...previousCards.current.keys()].filter(
+      (key) => !next.has(key),
+    );
+    if (changed.length || removed.length)
+      caosLog("board.changed", { changed, removed });
+    previousCards.current = next;
+  }, [cards]);
+  useEffect(() => {
+    logState("connection.changed", { enabled, status });
+  }, [enabled, status, logState]);
+  useEffect(() => {
+    logState("outbox.changed", { entries });
+  }, [entries, logState]);
   // 押した操作は押したときの盤面に当てる
   const latest = useRef({ board, cards });
   latest.current = { board, cards };
@@ -46,8 +67,10 @@ export const useLiveBoard = ({
 
   // 操作（ops は続けて当てる）を今の盤面に当ててみて、合えば端末に残す（画面はすぐ変わる）。合わなければ理由を通知で出して false
   const run = (label: string, ...ops: CaosOutboxOp[]) => {
+    caosLog("operation.requested", { label, ops });
     const { error } = applyCaosOutboxOps(latest.current.board, ops, new Date());
     if (error !== undefined) {
+      caosLog("operation.rejected", { label, ops, error });
       toast.error(error);
       return false;
     }

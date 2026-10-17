@@ -114,6 +114,10 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 				resourceIDs = append(resourceIDs, r.ID)
 			}
 		}
+		window, err := readCaosLogWindow(tx, cupIDs, nil, start, end)
+		if err != nil {
+			return err
+		}
 		if err := tx.Create(&rows).Error; err != nil {
 			return err
 		}
@@ -125,7 +129,21 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 		for id := range orders {
 			orderIDs = append(orderIDs, id)
 		}
-		return nil
+		var addedIDs []uuid.UUID
+		for _, row := range rows {
+			addedIDs = append(addedIDs, row.ID)
+		}
+		added, err := readCaosLogWindow(tx, addedIDs, nil, start, end)
+		if err != nil {
+			return err
+		}
+		for _, row := range added {
+			if containsUUID(addedIDs, row.UnitID) {
+				row.Added = true
+				window = append(window, row)
+			}
+		}
+		return recordCaosEmergency(tx, "emergency.add", now, window, addedIDs, reason)
 	})
 	return rows, orderIDs, resourceIDs, err
 }
@@ -163,7 +181,8 @@ func broadcastCupEmergencyCancelled(hub *Hub, id uuid.UUID) {
 // cancelEmergency は入れ直しを消す。消した入れ直しの注文と、戻した在庫対象の ID を返す。
 // 待機の入れ直しはドリッパーの列から抜けるので、CaOS の書き込みと同じく、ドリッパーの advisory lock を取ってから注文の行をロックする。
 func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resourceIDs []uuid.UUID, err error) {
-	start, end := caosToday(h.now())
+	now := h.now()
+	start, end := caosToday(now)
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 入れ直しの行だけ（カップの行は id と cup_id が同じ）
 		read := func() (caosUnit, error) {
@@ -204,7 +223,21 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 			Pluck("resource_id", &resourceIDs).Error; err != nil {
 			return err
 		}
-		return deleteCupEmergencies(tx, "id = ?", id)
+		window, err := readCaosLogWindow(tx, []uuid.UUID{id}, nil, start, end)
+		if err != nil {
+			return err
+		}
+		reason := ""
+		for i := range window {
+			if window[i].UnitID == id {
+				reason = window[i].EmergencyReason
+				window[i].Removed = true
+			}
+		}
+		if err := deleteCupEmergencies(tx, "id = ?", id); err != nil {
+			return err
+		}
+		return recordCaosEmergency(tx, "emergency.cancel", now, window, []uuid.UUID{id}, reason)
 	})
 	return orderID, resourceIDs, err
 }

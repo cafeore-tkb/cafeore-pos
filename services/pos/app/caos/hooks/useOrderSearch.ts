@@ -5,6 +5,7 @@ import type { CommentsByOrder } from "../logic/comments";
 import type { Lane } from "../logic/lanes";
 import { findOrder, focusCard } from "../logic/search";
 import { scrollCardIntoView } from "../utils/scrollToCard";
+import { useCaosStateLog } from "./useCaosStateLog";
 
 /** 入れられる番号の桁 */
 const MAX_DIGITS = 4;
@@ -98,6 +99,11 @@ export const useOrderSearch = ({
     else setDigits((value) => appendDigit(value, key));
   };
   /** 待たずに今の番号で探して閉じる（Enter・×・パネルの外。閉じても選んだまま、番号が空なら外す） */
+  useCaosStateLog("search.result.changed", {
+    searched,
+    orderNo: found?.orderNo ?? null,
+    cardKey: target?.key ?? null,
+  });
   const finish = () => {
     setSearched(digits);
     close();

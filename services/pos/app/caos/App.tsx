@@ -23,6 +23,7 @@ import { TestPlaySetup } from "./components/TestPlaySetup";
 import { type NavTab, TopHeader } from "./components/TopHeader";
 import { useBoardSelection } from "./hooks/useBoardSelection";
 import { useCaosSession } from "./hooks/useCaosSession";
+import { useCaosStateLog } from "./hooks/useCaosStateLog";
 import { useCardMenu } from "./hooks/useCardMenu";
 import { useCommentNotices } from "./hooks/useCommentNotices";
 import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
@@ -94,6 +95,14 @@ export default function App() {
     nowMs: session.nowMs,
     practice: session.simulating,
     viewedLabel: viewed.label,
+  });
+  useCaosStateLog("ui.workspace.changed", {
+    controlViewMode,
+    followingNow,
+    testSetupOpen,
+    timelineCommand,
+    unfinishedTab: unfinished.tab,
+    viewedOrder: viewed.label,
   });
   // 返した注文の新しいコメントの知らせは閉じる
   const stampReply = useStampReply((orderId) =>

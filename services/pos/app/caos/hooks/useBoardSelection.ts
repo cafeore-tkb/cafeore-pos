@@ -2,6 +2,7 @@ import type { CaosCard, CaosPlace } from "@cafeore/common";
 import { useEffect, useState } from "react";
 import type { AuxiliaryTab } from "../components/SidePanels";
 import { orderLabel } from "../logic/cards";
+import { useCaosStateLog } from "./useCaosStateLog";
 
 /**
  * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
@@ -33,6 +34,7 @@ export const useBoardSelection = (
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [panel, setPanel] = useState<OpenPanel>(null);
+  useCaosStateLog("ui.selection.changed", { selectedOrderId, panel });
   // 閉じるのは、そのパネルが開いているときだけ（ほかのパネルに替わっていたら何もしない）
   const close = (kind: NonNullable<OpenPanel>["kind"]) =>
     setPanel((open) => (open?.kind === kind ? null : open));

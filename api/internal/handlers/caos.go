@@ -615,6 +615,12 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 			lockedByID[c.ID] = c
 		}
 
+		logWindow, err := readCaosLogWindow(tx, cupIDs, dripIDs, start, end)
+		if err != nil {
+			return err
+		}
+		merges := caosLogMerges(writes, logWindow)
+
 		if err := requireCaosStartable(tx, starting, cupIDs, start, end); err != nil {
 			return err
 		}
@@ -683,7 +689,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 		for id := range changed {
 			orderIDs = append(orderIDs, id)
 		}
-		return nil
+		return recordCaosOperation(tx, "cups", pressed, now, press, logWindow, cupIDs, merges)
 	})
 	return orderIDs, err
 }
@@ -820,6 +826,11 @@ func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.U
 			}
 		}
 
+		logWindow, err := readCaosLogWindow(tx, unitIDs, nil, start, end)
+		if err != nil {
+			return err
+		}
+
 		if cur != nil {
 			// 終えるのは抽出だけ。カップの準備完了（ready_at）は提供の画面で付ける
 			if err := updateCaosUnits(tx, map[string]any{"brew_finished_at": at}, "drip_id = ?", cur.dripID); err != nil {
@@ -834,7 +845,7 @@ func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.U
 		for id := range orders {
 			orderIDs = append(orderIDs, id)
 		}
-		return nil
+		return recordCaosOperation(tx, "next", pressed, now, req.Press, logWindow, unitIDs, nil)
 	})
 	return orderIDs, err
 }

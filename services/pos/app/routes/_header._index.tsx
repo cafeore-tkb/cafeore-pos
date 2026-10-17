@@ -3,6 +3,7 @@ import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
 import { BuildInfo } from "~/components/organisms/top/BuildInfo";
+import { DownloadCaosLogs } from "~/components/organisms/top/DownloadCaosLogs";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -226,6 +227,13 @@ export default function Index() {
             全注文を CSV でダウンロードします
           </p>
           <DownloadButton />
+        </div>
+        <div className="rounded-lg border p-4">
+          <h2 className="font-bold">CaOS 操作ログ</h2>
+          <p className="mt-1 mb-3 text-muted-foreground text-sm">
+            DBに保存された操作ログと、統合・割当ての履歴をJSONでダウンロードします
+          </p>
+          <DownloadCaosLogs />
         </div>
       </section>
 
