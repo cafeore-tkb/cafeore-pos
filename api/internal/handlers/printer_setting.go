@@ -27,9 +27,11 @@ func NewPrinterSettingHandler(db *gorm.DB) *PrinterSettingHandler {
 
 func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSettingsResponse {
 	return models.PrinterSettingsResponse{
-		LabelPrinterIp:      setting.LabelPrinterIP,
-		ReceiptPrinterIp:    setting.ReceiptPrinterIP,
-		ReceiptPrinterModel: models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
+		LabelPrinterIp:           setting.LabelPrinterIP,
+		ReceiptPrinterIp:         setting.ReceiptPrinterIP,
+		ReceiptPrinterModel:      models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:   models.PrinterPaperWidth(setting.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth: models.PrinterPaperWidth(setting.ReceiptPrinterPaperWidth),
 	}
 }
 
@@ -41,6 +43,15 @@ func parsePrinterIP(field, value string) (string, error) {
 		return "", fmt.Errorf("%s must be an IPv4 address", field)
 	}
 	return addr.String(), nil
+}
+
+// 知っている用紙の幅か確かめる。
+func validatePaperWidth(field string, value models.PrinterPaperWidth) error {
+	switch value {
+	case models.PrinterPaperWidth58mm, models.PrinterPaperWidth80mm:
+		return nil
+	}
+	return fmt.Errorf("%s must be 58mm or 80mm", field)
 }
 
 // リクエストを検証して DB モデルに変換する。
@@ -58,12 +69,20 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	default:
 		return models.PrinterSetting{}, errors.New("receipt_printer_model must be tm_l90 or tm_m30")
 	}
+	if err := validatePaperWidth("label_printer_paper_width", request.LabelPrinterPaperWidth); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	if err := validatePaperWidth("receipt_printer_paper_width", request.ReceiptPrinterPaperWidth); err != nil {
+		return models.PrinterSetting{}, err
+	}
 	return models.PrinterSetting{
-		ID:                  models.PrinterSettingID,
-		LabelPrinterIP:      label,
-		ReceiptPrinterIP:    receipt,
-		ReceiptPrinterModel: string(request.ReceiptPrinterModel),
-		UpdatedAt:           time.Now(),
+		ID:                       models.PrinterSettingID,
+		LabelPrinterIP:           label,
+		ReceiptPrinterIP:         receipt,
+		ReceiptPrinterModel:      string(request.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:   string(request.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth: string(request.ReceiptPrinterPaperWidth),
+		UpdatedAt:                time.Now(),
 	}, nil
 }
 

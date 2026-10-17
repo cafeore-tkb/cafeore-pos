@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
+import { LABEL_WIDTHS } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
@@ -34,9 +35,10 @@ export const toastEmergenciesCancelled = (count: number) =>
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。
  */
 export const useCupEmergency = () => {
-  const { label_printer_ip } = usePrinterAddresses();
+  const { label_printer_ip, label_printer_paper_width } = usePrinterAddresses();
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
+    LABEL_WIDTHS[label_printer_paper_width],
   );
   const { printCupLabel } = printer;
 

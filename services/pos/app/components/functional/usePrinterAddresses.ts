@@ -1,8 +1,8 @@
 import {
   DEFAULT_PRINTER_SETTINGS,
   type PrinterSettings,
-  isReceiptPrinterModel,
   usePrinterSettings,
+  withPrinterSettingDefaults,
 } from "@cafeore/common";
 import { useEffect, useState } from "react";
 
@@ -12,7 +12,7 @@ const STORAGE_KEY = "cafeore:printer-settings";
 /**
  * 覚えておいたプリンター設定を読む。読めなければ null
  *
- * 機種を選べるようにする前に覚えた設定には機種が無いので、そのときは既定の機種にする。
+ * 機種・用紙の幅を選べるようにする前に覚えた設定にはそれが無いので、そのときは既定にする。
  */
 export const parseStoredPrinterSettings = (
   raw: string | null,
@@ -28,15 +28,18 @@ export const parseStoredPrinterSettings = (
       typeof parsed.label_printer_ip === "string" &&
       typeof parsed.receipt_printer_ip === "string"
     ) {
-      const model =
-        "receipt_printer_model" in parsed ? parsed.receipt_printer_model : null;
-      return {
+      const {
+        receipt_printer_model,
+        label_printer_paper_width,
+        receipt_printer_paper_width,
+      }: Record<string, unknown> = parsed;
+      return withPrinterSettingDefaults({
         label_printer_ip: parsed.label_printer_ip,
         receipt_printer_ip: parsed.receipt_printer_ip,
-        receipt_printer_model: isReceiptPrinterModel(model)
-          ? model
-          : DEFAULT_PRINTER_SETTINGS.receipt_printer_model,
-      };
+        receipt_printer_model,
+        label_printer_paper_width,
+        receipt_printer_paper_width,
+      });
     }
     return null;
   } catch {
@@ -61,7 +64,7 @@ const storeSettings = (settings: PrinterSettings) => {
 };
 
 /**
- * レジがつなぐプリンターの IP アドレスと、レシート用のプリンターの機種
+ * レジがつなぐプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種
  *
  * 設定は管理画面で決め、サーバーから取る。レジは API に届かなくても会計を続けられるので、
  * 取れないとき（取れるまでの間も）は最後に取れた設定、それも無ければ既定値でつなぐ。

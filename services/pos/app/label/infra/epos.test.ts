@@ -175,6 +175,31 @@ describe("[unit] writeEposJob", () => {
       ["addCut", "cut_feed"],
     ]);
   });
+
+  test("top の画像は、シールの先頭へ送ってから刷る", () => {
+    const { builder, calls } = recordingBuilder();
+    const image = {
+      width: 1,
+      height: 1,
+      data: new Uint8ClampedArray([0, 0, 0, 255]),
+    };
+
+    writeEposJob(
+      builder,
+      { labels: [{ type: "image", image, top: true }] },
+      { logoKey: [32, 32], trailingFeedLines: 7, cut: false },
+    );
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ["addFeedPosition", "current_tof"],
+      ["addTextAlign", "center"],
+      ["addImage", image, 0, 0, 1, 1, "color_1", "mono"],
+      ["addTextAlign", "left"],
+      ["addFeedLine", 7],
+    ]);
+  });
 });
 
 describe("[unit] createEposPrinter", () => {

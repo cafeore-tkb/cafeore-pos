@@ -1,4 +1,4 @@
-import type { OrderEntity, ReceiptPrinterModel } from "@cafeore/common";
+import type { OrderEntity } from "@cafeore/common";
 import {
   useCallback,
   useEffect,
@@ -8,7 +8,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { PrintJob } from "./document";
-import { createEposPrinter } from "./infra/epos";
 import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
@@ -68,13 +67,15 @@ const countPendingPrints = () => readPendingPrints().length;
  * シールのプリンター
  *
  * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
- * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
+ * 使うプリンターは createPrinter で差し替えられる（Epson の ePOS なら infra/epos の eposPrinterAt）。
+ * シールは用紙の印字幅（width ドット。paper.ts の LABEL_WIDTHS）に収める。
  *
  * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
  * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
  */
 export const usePrinter = (
-  createPrinter: CreateLabelPrinter = createEposPrinter,
+  createPrinter: CreateLabelPrinter,
+  width: number,
 ) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   const pendingCount = useSyncExternalStore(
@@ -122,17 +123,17 @@ export const usePrinter = (
   useRetryInterval(pendingCount > 0, retry);
 
   const printOrderLabel = useCallback(
-    (order: OrderEntity) => printJob(orderLabelJob(order)),
-    [printJob],
+    (order: OrderEntity) => printJob(orderLabelJob(order, width)),
+    [printJob, width],
   );
 
   /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
   const printCupLabel = useCallback(
     async (order: OrderEntity, cupId: string, emergencyId: string) => {
-      const job = cupLabelJob(order, cupId);
+      const job = cupLabelJob(order, cupId, width);
       if (job) await printJob(job, emergencyId);
     },
-    [printJob],
+    [printJob, width],
   );
 
   return {
@@ -150,11 +151,11 @@ export const usePrinter = (
  * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
  * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
  * つながっていなければ、シールのプリンターと同じ間隔でつなぎ直す（刷れなかったものは送り直さない）。
- * レシート・領収書の画像は、プリンターの機種（model）の印字幅で描く。
+ * レシート・領収書の画像は、プリンターの印字幅（width ドット。機種と用紙の幅で決まる。paper.ts の RECEIPT_WIDTHS）で描く。
  */
 export const useReceiptPrinter = (
   createPrinter: CreateLabelPrinter,
-  model: ReceiptPrinterModel,
+  width: number,
 ) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   useRetryInterval(status === "disconnected", reconnect);
@@ -187,8 +188,8 @@ export const useReceiptPrinter = (
   /** 会計のたびに刷るレシート */
   const printReceipt = useCallback(
     (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
-      printSafely(() => orderReceiptJob(model, order, payment, split)),
-    [printSafely, model],
+      printSafely(() => orderReceiptJob(width, order, payment, split)),
+    [printSafely, width],
   );
 
   /**
@@ -199,12 +200,12 @@ export const useReceiptPrinter = (
   const printFormalReceipt = useCallback(
     async (order: OrderEntity) => {
       const printed = await Promise.all([
-        printSafely(() => formalReceiptJob(model, order)),
-        printSafely(() => formalReceiptJob(model, order, { storeCopy: true })),
+        printSafely(() => formalReceiptJob(width, order)),
+        printSafely(() => formalReceiptJob(width, order, { storeCopy: true })),
       ]);
       return printed.every(Boolean);
     },
-    [printSafely, model],
+    [printSafely, width],
   );
 
   return { status, printReceipt, printFormalReceipt };
