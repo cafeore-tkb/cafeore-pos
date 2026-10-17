@@ -600,7 +600,7 @@ type OrderPaymentCreate struct {
 	// Discount この支払いで引いた割引（円）
 	Discount *int `json:"discount,omitempty"`
 
-	// MenuIndexes この支払いで払った明細の、menu_ids の中の位置（0 から）。同じ明細を 2 つの支払いに入れることはできない
+	// MenuIndexes この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）
 	MenuIndexes *[]int `json:"menu_indexes,omitempty"`
 
 	// Method 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）

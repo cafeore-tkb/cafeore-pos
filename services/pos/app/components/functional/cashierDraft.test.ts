@@ -13,7 +13,6 @@ import {
   emptyCashierDraft,
   focusCoupon,
   focusMemo,
-  goPay,
   hasDraftInput,
   inputDigits,
   moveCursor,
@@ -23,6 +22,10 @@ import {
   toggleVoid,
   voidAll,
 } from "./cashierDraft";
+import { beginRest } from "./cashierSplit";
+
+/** 一括会計（割引なし）で会計の段階に進む */
+const goPay = (draft: CashierDraft) => beginRest(draft, 0, 100);
 
 const itemType = (name: string, needsBrew: boolean): ItemType => ({
   id: name,
@@ -321,11 +324,14 @@ describe("[unit] cashierKeyIntent", () => {
     expect(cashierKeyIntent(draft, "^", { menus, payments }).type).toBe("none");
   });
 
-  test("Esc は消す。扱わないキーはそのまま", () => {
+  test("Esc は入れる段階なら消し、会計の段階なら会計をやめる。扱わないキーはそのまま", () => {
     const draft = withLines(blend);
     expect(cashierKeyIntent(draft, "Escape", { menus, payments }).type).toBe(
       "reset",
     );
+    expect(
+      cashierKeyIntent(goPay(draft), "Escape", { menus, payments }).type,
+    ).toBe("leavePay");
     expect(cashierKeyIntent(draft, "a", { menus, payments }).type).toBe(
       "ignore",
     );

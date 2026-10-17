@@ -1113,7 +1113,7 @@ export interface components {
        * @default 0
        */
       discount?: number;
-      /** @description この支払いで払った明細の、menu_ids の中の位置（0 から）。同じ明細を 2 つの支払いに入れることはできない */
+      /** @description この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない） */
       menu_indexes?: number[];
       /**
        * Format: uuid

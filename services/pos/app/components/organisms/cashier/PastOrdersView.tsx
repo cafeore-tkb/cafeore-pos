@@ -55,12 +55,12 @@ const REFUND_TAG: Partial<
 
 const paymentText = (order: OrderEntity) =>
   order.payments.length > 0
-    ? `個別会計 ${order.payments.length}回`
+    ? `分けて会計 ${order.payments.length}回`
     : order.paymentMethod === "square"
       ? "Square"
       : "現金";
 
-/** 個別会計の支払いの決済手段（「現金」「カード」など） */
+/** 分けて会計した支払いの決済手段（「現金」「カード」など） */
 const splitPaymentText = (payment: OrderEntity["payments"][number]) =>
   payment.method === "cash"
     ? "現金"
@@ -332,7 +332,7 @@ const OrderDetail = ({
     order.paymentMethod === "square" &&
     refundStatus !== "pending" &&
     refundStatus !== "refunded";
-  // 個別会計で返金するのは Square で払った分だけ（現金で払った分は手で返す）
+  // 分けて会計した注文で返金するのは Square で払った分だけ（現金で払った分は手で返す）
   const squarePayments = order.payments.filter(
     (payment) => payment.method === "square",
   );
@@ -566,7 +566,7 @@ const OrderDetail = ({
   );
 };
 
-/** 個別会計の支払いの内訳（払った順） */
+/** 分けて会計した支払いの内訳（払った順） */
 const SplitPayments = ({ order }: { order: OrderEntity }) => (
   <div className="mt-1 flex flex-col gap-1.5">
     {order.payments.map((payment, index) => (

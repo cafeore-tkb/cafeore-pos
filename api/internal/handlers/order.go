@@ -362,6 +362,7 @@ func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID
 //
 // amount の合計は billing_amount と同じでなければならない。現金はお預かりが amount 以上、
 // Square は決済依頼の ID が要り、お預かりは amount にする。
+// 小計を金額で分けて払うと、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）。
 func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.OrderPayment, [][]int, error) {
 	if req.Payments == nil {
 		return nil, nil, nil
@@ -375,7 +376,6 @@ func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.O
 	}
 	payments := make([]models.OrderPayment, len(requests))
 	indexes := make([][]int, len(requests))
-	usedLines := map[int]bool{}
 	usedCheckouts := map[uuid.UUID]bool{}
 	total := 0
 	for i, request := range requests {
@@ -414,6 +414,7 @@ func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.O
 			return nil, nil, fmt.Errorf("payments[%d] の method %q には対応していません", i, request.Method)
 		}
 		if request.MenuIndexes != nil {
+			usedLines := map[int]bool{}
 			for _, index := range *request.MenuIndexes {
 				if index < 0 || index >= len(req.MenuIds) || usedLines[index] {
 					return nil, nil, fmt.Errorf("payments[%d] の menu_indexes が正しくありません", i)

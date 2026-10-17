@@ -50,6 +50,15 @@ func TestOrderPaymentsFromRequest(t *testing.T) {
 		t.Fatalf("indexes: %v", indexes)
 	}
 
+	// 小計を金額で分けて払うと、同じ明細が 2 つの支払いに入る
+	_, indexes, err = orderPaymentsFromRequest(request(1000, cashPayment(400, 500, 0, 1), squarePayment(600, checkout, 0, 1)))
+	if err != nil {
+		t.Fatalf("same lines in two payments: %v", err)
+	}
+	if len(indexes) != 2 || len(indexes[0]) != 2 || len(indexes[1]) != 2 {
+		t.Fatalf("same lines in two payments: %v", indexes)
+	}
+
 	square := models.Square
 	invalid := map[string]models.CreateOrderJSONRequestBody{
 		"empty":                    request(0),
@@ -59,7 +68,7 @@ func TestOrderPaymentsFromRequest(t *testing.T) {
 		"square without checkout":  request(500, models.OrderPaymentCreate{Method: models.Square, Amount: 500}),
 		"cash with checkout":       request(500, models.OrderPaymentCreate{Method: models.Cash, Amount: 500, Received: 500, SquareCheckoutId: squarePayment(500, checkout).SquareCheckoutId}),
 		"same checkout twice":      request(1000, squarePayment(500, checkout, 0), squarePayment(500, checkout, 1)),
-		"same line twice":          request(1000, cashPayment(500, 500, 0), cashPayment(500, 500, 0)),
+		"same line twice in one":   request(1000, cashPayment(1000, 1000, 0, 0)),
 		"line out of range":        request(500, cashPayment(500, 500, 3)),
 		"unknown method":           request(500, models.OrderPaymentCreate{Method: "card", Amount: 500, Received: 500}),
 		"with payment_method":      {BillingAmount: 500, MenuIds: lines, PaymentMethod: &square, Payments: &[]models.OrderPaymentCreate{cashPayment(500, 500)}},
@@ -141,6 +150,22 @@ func TestCreateSplitOrderSavesPayments(t *testing.T) {
 	if single := api.createOrder(9, m.blendMenu); len(single.Payments) != 0 {
 		t.Errorf("single payment order: %+v", single.Payments)
 	}
+
+	// 小計を金額で分けて払った注文は、同じ明細が 2 つの支払いに入る
+	var shared models.OrderResponse
+	api.do(http.MethodPost, "/api/orders", models.OrderCreateRequest{
+		OrderId:       10,
+		BillingAmount: 400,
+		Received:      0,
+		MenuIds:       []models.MenuInfoCreate{menuLine(m.blendMenu)},
+		Payments:      &[]models.OrderPaymentCreate{cashPayment(150, 150, 0), cashPayment(250, 300, 0)},
+	}).expect(http.StatusCreated).decode(&shared)
+	if len(shared.Payments) != 2 || shared.Received != 450 ||
+		len(shared.Payments[0].OrderMenuIds) != 1 || shared.Payments[0].OrderMenuIds[0] != shared.Menus[0].Id ||
+		len(shared.Payments[1].OrderMenuIds) != 1 || shared.Payments[1].OrderMenuIds[0] != shared.Menus[0].Id {
+		t.Fatalf("shared line payments: %+v", shared)
+	}
+	api.nextBroadcast()
 
 	// 注文を編集してアイスコーヒーを外すと、その支払いの明細からも外れる（支払いはそのまま）
 	var updated models.OrderResponse

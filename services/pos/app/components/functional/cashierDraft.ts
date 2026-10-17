@@ -8,9 +8,9 @@ import {
 } from "@cafeore/common";
 import {
   type CashierSplit,
-  moveSplitCursor,
-  splitLowerLines,
-  toggleSplitCursorLine,
+  emptySplit,
+  hasTenders,
+  unpaidLines,
 } from "./cashierSplit";
 
 /**
@@ -58,8 +58,8 @@ export type CashierDraft = {
    * 番号はこのシールの番号のまま確定まで変えず、同じ中身なら刷り直さない
    */
   printedLabel: PrintedLabel | null;
-  /** 個別会計（上下の枠・払い終えた分）。個別会計でなければ null（cashierSplit） */
-  split: CashierSplit | null;
+  /** 小計と、受け取った支払い（先会計）・小計分割（cashierSplit） */
+  split: CashierSplit;
 };
 
 export type PrintedLabel = {
@@ -85,7 +85,7 @@ export const emptyCashierDraft = (): CashierDraft => ({
   received: "",
   payment: "cash",
   printedLabel: null,
-  split: null,
+  split: emptySplit(),
 });
 
 /** 消すと失うものがあるか（商品・引換券番号・特殊な割引・特記事項・受取金額） */
@@ -107,17 +107,17 @@ export const canAssignMenu = (menu: MenuEntity): boolean =>
 /**
  * 商品を変えられるか。会計の段階ではシールを先に刷っているので変えない
  * （変えるときは会計取消で戻る。取り消しのシールを刷り、新しい番号で刷り直す）。
- * 個別会計の間も変えない（変えるときは個別会計をやめる）
+ * 先払いがある間も変えない（変えるときは先払いを取り消す）
  */
 export const canEditLines = (draft: CashierDraft): boolean =>
-  draft.step === "entry" && draft.split === null;
+  draft.step === "entry" && !hasTenders(draft);
 
 /**
- * 割引を変えられないか。個別会計で 1 回でも払ったら、その会計で引いた割引が変わらないよう、
+ * 割引を変えられないか。先払いがある間は、払った小計の額が変わらないよう、
  * 引換券番号・特殊な割引は変えない
  */
 export const isDiscountLocked = (draft: CashierDraft): boolean =>
-  (draft.split?.payments.length ?? 0) > 0;
+  hasTenders(draft);
 
 /** 選んでいる行が、今指名できるか（削除していない・抽出が要る） */
 export const canAssignSelected = (draft: CashierDraft): boolean => {
@@ -152,7 +152,7 @@ const toCouponZone = (draft: CashierDraft): CashierDraft =>
 
 /**
  * 商品を足し、足した行を選ぶ（続けて Space で指名、Backspace で削除できるように）。
- * 会計の段階と個別会計の間は足さない
+ * 会計の段階と、先払いがある間は足さない
  */
 export const addLine = (
   draft: CashierDraft,
@@ -418,22 +418,12 @@ export const setExactReceived = (
 // 段階・決済手段
 // --------------------------------------------------
 
-/** 会計の段階に進めるか。一括会計は商品があるとき、個別会計は下の枠に商品を入れたとき */
+/**
+ * 会計の段階に進めるか（一括会計・残りを会計）。まだ払っていない商品があるとき。
+ * 進むときは、まだ払っていない商品を全部 1 つの小計にする（cashierSplit の beginRest）
+ */
 export const canGoPay = (draft: CashierDraft): boolean =>
-  draft.step === "entry" &&
-  (draft.split === null
-    ? activeMenus(draft).length > 0
-    : splitLowerLines(draft).length > 0);
-
-/** 会計の段階に進む（一括会計・個別会計の下の枠の会計） */
-export const goPay = (draft: CashierDraft): CashierDraft => {
-  if (!canGoPay(draft)) return draft;
-  return { ...draft, step: "pay", selected: null, payment: "cash" };
-};
-
-/** 入れる段階に戻る（会計取消）。受取金額は残す */
-export const backToEntry = (draft: CashierDraft): CashierDraft =>
-  draft.step === "entry" ? draft : { ...draft, step: "entry" };
+  draft.step === "entry" && unpaidLines(draft).length > 0;
 
 export const setPayment = (
   draft: CashierDraft,
@@ -464,12 +454,14 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
-  /** 一括会計・個別会計の下の枠の会計（シールを刷って会計の段階に進む） */
+  /** 一括会計・残りを会計（シールを刷って会計の段階に進む） */
   | { type: "goPay" }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
   | { type: "submitCash" }
   | { type: "startSquare"; paymentType: SquarePaymentType }
+  /** 会計の段階の Esc。小計分割をやめる、でなければ会計をやめて入れる段階に戻る */
+  | { type: "leavePay" }
   | { type: "reset" };
 
 type KeyContext = {
@@ -496,20 +488,13 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * - Space: 選んでいる行の指名・備考を開く
  * - Enter: 一括会計・確定（Square なら決済を始める）。
  *   現金で受取金額が空なら、まず受取金額をちょうどにする（もう一度 Enter で確定）
- * - Esc: 入力中の注文を消す
- *
- * 個別会計で商品を選ぶ段階（splitKeyIntent）は、商品キーは使わず、
- * ↑↓ で行を選び、Space で上下の枠の間を動かし、Enter で下の枠を会計する。
+ * - Esc: 入れる段階は入力中の注文を消す。会計の段階は小計分割をやめる・会計をやめる（leavePay）
  */
 export const cashierKeyIntent = (
   draft: CashierDraft,
   key: string,
-  context: KeyContext,
+  { menus, payments }: KeyContext,
 ): CashierKeyIntent => {
-  if (draft.split !== null && draft.step === "entry") {
-    return splitKeyIntent(draft, key);
-  }
-  const { menus, payments } = context;
   const menu = menus.find((candidate) => candidate.key === key);
   if (menu) {
     return draft.step === "entry" ? update(addLine(draft, menu)) : NONE;
@@ -566,34 +551,8 @@ export const cashierKeyIntent = (
       }
       return canGoPay(draft) ? { type: "goPay" } : NONE;
     case "Escape":
-      return { type: "reset" };
+      return draft.step === "pay" ? { type: "leavePay" } : { type: "reset" };
     default:
-      return { type: "ignore" };
-  }
-};
-
-/** 個別会計で商品を選ぶ段階のキー。数字は引換券番号（払い始める前だけ） */
-const splitKeyIntent = (draft: CashierDraft, key: string): CashierKeyIntent => {
-  if (/^[0-9]$/.test(key)) {
-    return update(inputDigits(draft, key));
-  }
-  switch (key) {
-    case "Backspace":
-      return update(deleteDigit(draft));
-    case "ArrowUp":
-    case "ArrowDown":
-      return update(moveSplitCursor(draft, key === "ArrowDown" ? 1 : -1));
-    case " ":
-      return update(toggleSplitCursorLine(draft));
-    case "Enter":
-      return canGoPay(draft) ? { type: "goPay" } : NONE;
-    case "ArrowLeft":
-    case "ArrowRight":
-      return NONE;
-    case "Escape":
-      return { type: "reset" };
-    default:
-      // 商品キーも扱わない（個別会計の間は商品を足さない）
       return { type: "ignore" };
   }
 };

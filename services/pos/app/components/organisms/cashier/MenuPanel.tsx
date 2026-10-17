@@ -14,7 +14,7 @@ import { formatYen } from "~/lib/yen";
 type props = {
   menus: WithId<MenuEntity>[];
   onAdd: (menu: WithId<MenuEntity>) => void;
-  /** 会計の段階。灰色にして押せなくする */
+  /** 会計の段階・先払いがある間。薄くして押せなくする */
   disabled: boolean;
 };
 
@@ -67,17 +67,14 @@ export const menuColor = (
 export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
   const { colorSettings } = useColorSettings();
   const groups = groupByItemType(menus);
-  const exampleKeys = menus
-    .slice(0, 3)
-    .map((menu) => menu.key)
-    .join(" ");
+  const exampleKeys = exampleMenuKeys(menus);
 
   return (
     <div
       aria-disabled={disabled}
       className={cn(
         "flex min-h-0 flex-col gap-3 overflow-hidden transition-opacity duration-150",
-        disabled && "pointer-events-none opacity-35 grayscale",
+        disabled && "pointer-events-none opacity-42",
       )}
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-2">
@@ -126,21 +123,45 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
           })}
         </div>
       </div>
-      <div className="flex flex-none flex-wrap gap-x-4.5 gap-y-1.5 px-5 pb-3.5 text-stone-500 text-xs">
-        {exampleKeys && <span>{exampleKeys} … 商品キー</span>}
-        <span>Enter 一括会計</span>
-        <span>
-          ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
-          で指名／備考・Backspace で削除
-        </span>
-        <span>
-          会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
-        </span>
-        <span>Esc 取消</span>
-      </div>
+      <RegisterKeyHints exampleKeys={exampleKeys} className="px-5 pb-3.5" />
     </div>
   );
 };
+
+/** レジの左の列の下に出すキーの案内 */
+export const RegisterKeyHints = ({
+  exampleKeys,
+  className,
+}: {
+  /** 商品キーの例（「^ ¥ [」）。無ければ出さない */
+  exampleKeys: string;
+  className?: string;
+}) => (
+  <div
+    className={cn(
+      "flex flex-none flex-wrap gap-x-4.5 gap-y-1.5 text-stone-500 text-xs",
+      className,
+    )}
+  >
+    {exampleKeys && <span>{exampleKeys} … 商品キー</span>}
+    <span>Enter 一括会計</span>
+    <span>
+      ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
+      で指名／備考・Backspace で削除
+    </span>
+    <span>
+      会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
+    </span>
+    <span>Esc 取消</span>
+  </div>
+);
+
+/** 商品キーの例（メニューの先頭の 3 つ） */
+export const exampleMenuKeys = (menus: WithId<MenuEntity>[]) =>
+  menus
+    .slice(0, 3)
+    .map((menu) => menu.key)
+    .join(" ");
 
 const MenuButton = ({
   menu,
